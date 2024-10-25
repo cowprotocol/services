@@ -4,12 +4,19 @@
 pub mod external;
 
 use {
-    crate::price_estimation::{PriceEstimationError, Query},
-    anyhow::Result,
+    crate::{
+        conversions::U256Ext,
+        price_estimation::{PriceEstimationError, Query},
+        trade_finding::external::dto,
+    },
+    anyhow::{Context, Result},
     derivative::Derivative,
     ethcontract::{contract::MethodBuilder, tokens::Tokenize, web3::Transport, Bytes, H160, U256},
-    model::interaction::InteractionData,
+    model::{interaction::InteractionData, order::OrderKind},
+    num::CheckedDiv,
+    number::conversions::big_rational_to_u256,
     serde::Serialize,
+    std::{collections::HashMap, ops::Mul},
     thiserror::Error,
 };
 
@@ -32,9 +39,73 @@ pub struct Quote {
     pub solver: H160,
 }
 
-/// A trade.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Trade {
+    Legacy(LegacyTrade),
+    WithJitOrders(TradeWithJitOrders),
+}
+
+impl Trade {
+    pub fn gas_estimate(&self) -> Option<u64> {
+        match self {
+            Trade::Legacy(trade) => trade.gas_estimate,
+            Trade::WithJitOrders(trade) => trade.gas_estimate,
+        }
+    }
+
+    pub fn solver(&self) -> H160 {
+        match self {
+            Trade::Legacy(trade) => trade.solver,
+            Trade::WithJitOrders(trade) => trade.solver,
+        }
+    }
+
+    pub fn tx_origin(&self) -> Option<H160> {
+        match self {
+            Trade::Legacy(trade) => trade.tx_origin,
+            Trade::WithJitOrders(trade) => trade.tx_origin,
+        }
+    }
+
+    pub fn out_amount(
+        &self,
+        buy_token: &H160,
+        sell_token: &H160,
+        in_amount: &U256,
+        order_kind: &OrderKind,
+    ) -> Result<U256> {
+        match self {
+            Trade::Legacy(trade) => Ok(trade.out_amount),
+            Trade::WithJitOrders(trade) => {
+                trade.out_amount(buy_token, sell_token, in_amount, order_kind)
+            }
+        }
+    }
+
+    pub fn interactions(&self) -> Vec<Interaction> {
+        match self {
+            Trade::Legacy(trade) => trade.interactions.clone(),
+            Trade::WithJitOrders(trade) => trade.interactions.clone(),
+        }
+    }
+
+    pub fn pre_interactions(&self) -> Vec<Interaction> {
+        match self {
+            Trade::Legacy(_) => Vec::new(),
+            Trade::WithJitOrders(trade) => trade.pre_interactions.clone(),
+        }
+    }
+}
+
+impl Default for Trade {
+    fn default() -> Self {
+        Trade::Legacy(LegacyTrade::default())
+    }
+}
+
+/// A legacy trade.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct Trade {
+pub struct LegacyTrade {
     /// For sell orders: how many buy_tokens this trade will produce.
     /// For buy orders: how many sell_tokens this trade will cost.
     pub out_amount: U256,
@@ -47,6 +118,58 @@ pub struct Trade {
     /// If this is set the quote verification need to use this as the
     /// `tx.origin` to make the quote pass the simulation.
     pub tx_origin: Option<H160>,
+}
+
+/// A trade with JIT orders.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct TradeWithJitOrders {
+    pub clearing_prices: HashMap<H160, U256>,
+    /// How many units of gas this trade will roughly cost.
+    pub gas_estimate: Option<u64>,
+    pub pre_interactions: Vec<Interaction>,
+    /// Interactions needed to produce the expected trade amount.
+    pub interactions: Vec<Interaction>,
+    /// Which solver provided this trade.
+    pub solver: H160,
+    /// If this is set the quote verification need to use this as the
+    /// `tx.origin` to make the quote pass the simulation.
+    pub tx_origin: Option<H160>,
+    pub jit_orders: Vec<dto::JitOrder>,
+}
+
+impl TradeWithJitOrders {
+    pub fn out_amount(
+        &self,
+        buy_token: &H160,
+        sell_token: &H160,
+        in_amount: &U256,
+        order_kind: &OrderKind,
+    ) -> Result<U256> {
+        let sell_price = self
+            .clearing_prices
+            .get(sell_token)
+            .context("clearing sell price missing")?
+            .to_big_rational();
+        let buy_price = self
+            .clearing_prices
+            .get(buy_token)
+            .context("clearing buy price missing")?
+            .to_big_rational();
+        let order_amount = in_amount.to_big_rational();
+
+        let out_amount = match order_kind {
+            OrderKind::Sell => order_amount
+                .mul(&sell_price)
+                .checked_div(&buy_price)
+                .context("div by zero: buy price")?,
+            OrderKind::Buy => order_amount
+                .mul(&buy_price)
+                .checked_div(&sell_price)
+                .context("div by zero: sell price")?,
+        };
+
+        big_rational_to_u256(&out_amount).context("out amount is not a valid U256")
+    }
 }
 
 /// Data for a raw GPv2 interaction.

@@ -4,7 +4,15 @@ use {
     crate::{
         price_estimation::{PriceEstimationError, Query},
         request_sharing::RequestSharing,
-        trade_finding::{Interaction, Quote, Trade, TradeError, TradeFinding},
+        trade_finding::{
+            Interaction,
+            LegacyTrade,
+            Quote,
+            Trade,
+            TradeError,
+            TradeFinding,
+            TradeWithJitOrders,
+        },
     },
     anyhow::{anyhow, Context},
     ethrpc::block_stream::CurrentBlockWatcher,
@@ -93,21 +101,15 @@ impl ExternalTradeFinder {
                     .text()
                     .await
                     .map_err(|err| PriceEstimationError::EstimatorInternal(anyhow!(err)))?;
-                let quote = serde_json::from_str::<dto::Quote>(&text).map_err(|err| {
-                    if let Ok(err) = serde_json::from_str::<dto::Error>(&text) {
-                        PriceEstimationError::from(err)
-                    } else {
-                        PriceEstimationError::EstimatorInternal(anyhow!(err))
-                    }
-                })?;
-                match quote {
-                    dto::Quote::LegacyQuote(quote) => Ok(Trade::from(quote)),
-                    dto::Quote::QuoteWithJitOrders(_) => {
-                        Err(PriceEstimationError::EstimatorInternal(anyhow!(
-                            "Quote with JIT orders is not currently supported"
-                        )))
-                    }
-                }
+                serde_json::from_str::<dto::Quote>(&text)
+                    .map(Trade::from)
+                    .map_err(|err| {
+                        if let Ok(err) = serde_json::from_str::<dto::Error>(&text) {
+                            PriceEstimationError::from(err)
+                        } else {
+                            PriceEstimationError::EstimatorInternal(anyhow!(err))
+                        }
+                    })
             }
             .boxed()
         };
@@ -119,7 +121,16 @@ impl ExternalTradeFinder {
     }
 }
 
-impl From<dto::LegacyQuote> for Trade {
+impl From<dto::Quote> for Trade {
+    fn from(quote: dto::Quote) -> Self {
+        match quote {
+            dto::Quote::LegacyQuote(quote) => Trade::Legacy(quote.into()),
+            dto::Quote::QuoteWithJitOrders(quote) => Trade::WithJitOrders(quote.into()),
+        }
+    }
+}
+
+impl From<dto::LegacyQuote> for LegacyTrade {
     fn from(quote: dto::LegacyQuote) -> Self {
         Self {
             out_amount: quote.amount,
@@ -135,6 +146,36 @@ impl From<dto::LegacyQuote> for Trade {
                 .collect(),
             solver: quote.solver,
             tx_origin: quote.tx_origin,
+        }
+    }
+}
+
+impl From<dto::QuoteWithJITOrders> for TradeWithJitOrders {
+    fn from(quote: dto::QuoteWithJITOrders) -> Self {
+        Self {
+            clearing_prices: quote.clearing_prices,
+            gas_estimate: quote.gas,
+            pre_interactions: quote
+                .pre_interactions
+                .into_iter()
+                .map(|interaction| Interaction {
+                    target: interaction.target,
+                    value: interaction.value,
+                    data: interaction.call_data,
+                })
+                .collect(),
+            interactions: quote
+                .interactions
+                .into_iter()
+                .map(|interaction| Interaction {
+                    target: interaction.target,
+                    value: interaction.value,
+                    data: interaction.call_data,
+                })
+                .collect(),
+            solver: quote.solver,
+            tx_origin: quote.tx_origin,
+            jit_orders: quote.jit_orders,
         }
     }
 }
@@ -165,13 +206,20 @@ impl TradeFinding for ExternalTradeFinder {
         // reuse the same logic here.
         let trade = self.get_trade(query).await?;
         let gas_estimate = trade
-            .gas_estimate
+            .gas_estimate()
             .context("no gas estimate")
             .map_err(TradeError::Other)?;
         Ok(Quote {
-            out_amount: trade.out_amount,
+            out_amount: trade
+                .out_amount(
+                    &query.buy_token,
+                    &query.sell_token,
+                    &query.in_amount.get(),
+                    &query.kind,
+                )
+                .map_err(TradeError::Other)?,
             gas_estimate,
-            solver: trade.solver,
+            solver: trade.solver(),
         })
     }
 
@@ -180,7 +228,7 @@ impl TradeFinding for ExternalTradeFinder {
     }
 }
 
-mod dto {
+pub(crate) mod dto {
     use {
         app_data::AppDataHash,
         bytes_hex::BytesHex,
