@@ -7,20 +7,26 @@ set -u
 
 # Setup parameters
 HOST=localhost:8080
-SELLTOKEN="0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
-BUYTOKEN="0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+WETHADDRESS="0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2" # WETH token
+SELLTOKEN=$WETHADDRESS
+BUYTOKEN="0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48" # USDC token
 RECEIVER="0xa0Ee7A142d267C1f36714E4a8F75612F20a79720"
 AMOUNT="1000000000000000000"
 PRIVATEKEY="0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6"
 APPDATA='{"version":"1.3.0","metadata":{}}'
 
 # Run test flow
+echo "Using private key:" $PRIVATEKEY
 
 # Calculate AppData hash
 app_data_hash=$(cast keccak $APPDATA)
 
+# Deposit WETH
+echo "Wrapping some ETH"
+cast send --private-key $PRIVATEKEY --value 3ether $WETHADDRESS > /dev/null
+
 echo "Request price qoute for buying USDC for WETH"
-quote_reponse=$( curl --fail-with-body -s -X 'POST' \
+quote_response=$( curl --fail-with-body -s -X 'POST' \
   "http://$HOST/api/v1/quote" \
   -H 'accept: application/json' \
   -H 'Content-Type: application/json' \
@@ -39,8 +45,8 @@ quote_reponse=$( curl --fail-with-body -s -X 'POST' \
   "sellAmountBeforeFee": "'$AMOUNT'"
 }')
 
-buyAmount=$(jq -r --args '.quote.buyAmount' <<< "${quote_reponse}")
-feeAmount=$(jq -r --args '.quote.feeAmount' <<< "${quote_reponse}")
+buyAmount=$(jq -r --args '.quote.buyAmount' <<< "${quote_response}")
+feeAmount=$(jq -r --args '.quote.feeAmount' <<< "${quote_response}")
 validTo=$(($(date +%s) + 120)) # validity time: now + 2 minutes
 sellAmount=$((AMOUNT-feeAmount))
 
@@ -51,7 +57,7 @@ eip712_message=$(jq -r --args '
   .quote|=(.sellAmount="'$sellAmount'") |
   .quote|=(.feeAmount="0") |
   .quote|=(.validTo='$validTo') |
-  .quote' <<< "${quote_reponse}")
+  .quote' <<< "${quote_response}")
 
 # Prepare EIP-712 typed struct
 eip712_typed_struct='{
@@ -93,7 +99,7 @@ eip712_typed_struct=$(jq -r -c <<< "${eip712_typed_struct}")
 # Dump to file as there are some spaces in field values
 echo $eip712_typed_struct > tmp.json
 
-# Sign quote_reponse with private key
+# Sign quote_response with private key
 signature=$(cast wallet sign --private-key $PRIVATEKEY --data --from-file tmp.json)
 echo "Intent signature:" $signature
 
