@@ -7,8 +7,10 @@ on:
 jobs:
   playground-check:
     runs-on: ubuntu-latest
+    env:
+      FORK_URL_MAINNET: ${{ secrets.FORK_URL_MAINNET }}
     steps:
-      - name: Free space check #1
+      - name: Free space check
         run: df -h
 
       - name: Free Disk Space (Ubuntu)
@@ -22,9 +24,6 @@ jobs:
           docker-images: true
           swap-storage: true
 
-      - name: Free space check #2
-        run: df -h
-
       - name: Checkout code
         uses: actions/checkout@v4
 
@@ -34,9 +33,6 @@ jobs:
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
 
-      - name: Free space check #3
-        run: df -h
-
       - name: Setup environment
         run: |
           cp playground/.env.example playground/.env
@@ -45,11 +41,10 @@ jobs:
 
       - name: Start docker containers
         run: |
-          cd playground
-          COMPOSE_PARALLEL_LIMIT=1
-          docker compose -f docker-compose.fork.yml up -d
+          cd playground 
+          COMPOSE_PARALLEL_LIMIT=1 docker compose -f docker-compose.fork.yml up -d
 
-      - name: Free space check #4
+      - name: Free space check
         run: df -h
 
       - name: Execute validation script
