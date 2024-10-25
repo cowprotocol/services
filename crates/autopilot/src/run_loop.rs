@@ -558,7 +558,7 @@ impl RunLoop {
         
         // Filter out solutions that don't come from their corresponding submission
         // address
-        let solutions = solutions
+        let mut solutions = solutions
             .into_iter()
             .filter(|participant| {
                 let submission_address = participant.driver().submission_address;
