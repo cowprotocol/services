@@ -11,6 +11,7 @@ chrono = { workspace = true }
 clap = { workspace = true }
 humantime = { workspace = true }
 observe = { path = "../observe" }
+mimalloc = { workspace = true }
 model = { path = "../model" }
 number = { path = "../number" }
 primitive-types = { workspace = true }
