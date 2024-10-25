@@ -246,7 +246,6 @@ mod dto {
         pub interactions: Vec<Interaction>,
         pub solver: H160,
         pub gas: Option<u64>,
-        #[serde(default)]
         pub tx_origin: Option<H160>,
     }
 
@@ -261,7 +260,6 @@ mod dto {
         pub interactions: Vec<Interaction>,
         pub solver: H160,
         pub gas: Option<u64>,
-        #[serde(default)]
         pub tx_origin: Option<H160>,
         #[serde_as(as = "HashMap<_, HexOrDecimalU256>")]
         pub clearing_prices: HashMap<H160, U256>,
@@ -280,7 +278,7 @@ mod dto {
     }
 
     #[serde_as]
-    #[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize)]
+    #[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
     #[serde(rename_all = "camelCase")]
     #[allow(unused)]
     pub struct JitOrder {
@@ -312,10 +310,9 @@ mod dto {
     }
 
     #[serde_as]
-    #[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize)]
+    #[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
     #[serde(rename_all = "camelCase")]
     pub enum Side {
-        #[default]
         Buy,
         Sell,
     }
