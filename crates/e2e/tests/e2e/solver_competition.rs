@@ -325,6 +325,8 @@ async fn wrong_solution_submission_address(web3: Web3) {
                 solver.clone(),
                 onchain.contracts().weth.address(),
                 vec![base_a.address()],
+                1,
+                true,
             )
             .await,
             colocation::start_baseline_solver(
@@ -332,6 +334,8 @@ async fn wrong_solution_submission_address(web3: Web3) {
                 solver.clone(),
                 onchain.contracts().weth.address(),
                 vec![base_b.address()],
+                1,
+                true,
             )
             .await,
         ],
