@@ -11,12 +11,9 @@ use {
         PriceEstimationError,
         Query,
     },
-    crate::{
-        request_sharing::RequestSharing,
-        trade_finding::{TradeError, TradeFinding},
-    },
+    crate::trade_finding::{TradeError, TradeFinding},
     anyhow::{anyhow, Result},
-    futures::future::{BoxFuture, FutureExt as _},
+    futures::future::FutureExt,
     rate_limit::RateLimiter,
     std::sync::Arc,
 };
@@ -26,7 +23,6 @@ use {
 #[derive(Clone)]
 pub struct TradeEstimator {
     inner: Arc<Inner>,
-    sharing: RequestSharing<Arc<Query>, BoxFuture<'static, Result<Estimate, PriceEstimationError>>>,
     rate_limiter: Arc<RateLimiter>,
 }
 
@@ -38,17 +34,12 @@ struct Inner {
 }
 
 impl TradeEstimator {
-    pub fn new(
-        finder: Arc<dyn TradeFinding>,
-        rate_limiter: Arc<RateLimiter>,
-        label: String,
-    ) -> Self {
+    pub fn new(finder: Arc<dyn TradeFinding>, rate_limiter: Arc<RateLimiter>) -> Self {
         Self {
             inner: Arc::new(Inner {
                 finder,
                 verifier: None,
             }),
-            sharing: RequestSharing::labelled(format!("estimator_{}", label)),
             rate_limiter,
         }
     }
@@ -62,14 +53,11 @@ impl TradeEstimator {
     }
 
     async fn estimate(&self, query: Arc<Query>) -> Result<Estimate, PriceEstimationError> {
-        let fut = move |query: &Arc<Query>| {
-            rate_limited(
-                self.rate_limiter.clone(),
-                self.inner.clone().estimate(query.clone()),
-            )
-            .boxed()
-        };
-        self.sharing.shared_or_else(query, fut).await
+        rate_limited(
+            self.rate_limiter.clone(),
+            self.inner.clone().estimate(query.clone()),
+        )
+        .await
     }
 }
 

@@ -31,7 +31,6 @@ impl ExternalPriceEstimator {
                 timeout,
             )),
             rate_limiter,
-            driver.to_string(),
         ))
     }
 
