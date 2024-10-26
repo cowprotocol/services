@@ -482,7 +482,7 @@ fn serve_api(
     let warp_svc = observe::make_service_with_task_local_storage!(warp_svc);
     let server = hyper::Server::bind(&address)
         .serve(warp_svc)
-        .with_graceful_shutdown(shutdown_receiver)
+        // .with_graceful_shutdown(shutdown_receiver)
         .map(|_| ());
     task::spawn(server)
 }
