@@ -10,6 +10,7 @@ use {
     ethrpc::block_stream::CurrentBlockWatcher,
     futures::FutureExt,
     reqwest::{header, Client},
+    std::sync::Arc,
     url::Url,
 };
 
@@ -20,7 +21,7 @@ pub struct ExternalTradeFinder {
     /// Utility to make sure no 2 identical requests are in-flight at the same
     /// time. Instead of issuing a duplicated request this awaits the
     /// response of the in-flight request.
-    sharing: BoxRequestSharing<Query, Result<Trade, PriceEstimationError>>,
+    sharing: Arc<BoxRequestSharing<Query, Result<Trade, PriceEstimationError>>>,
 
     /// Client to issue http requests with.
     client: Client,
@@ -41,7 +42,7 @@ impl ExternalTradeFinder {
     ) -> Self {
         Self {
             quote_endpoint: crate::url::join(&driver, "quote"),
-            sharing: RequestSharing::labelled(format!("tradefinder_{}", driver)),
+            sharing: Arc::new(RequestSharing::labelled(format!("tradefinder_{}", driver))),
             client,
             block_stream,
             timeout,
@@ -106,7 +107,8 @@ impl ExternalTradeFinder {
             .boxed()
         };
 
-        self.sharing
+        let sharing = Arc::clone(&self.sharing);
+        sharing
             .shared_or_else(query.clone(), fut)
             .await
             .map_err(TradeError::from)
