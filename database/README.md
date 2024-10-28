@@ -352,7 +352,7 @@ All solutions reported by solvers, that were part of a solver competition. A sol
 ---------------|-----------|----------|--------
  auction\_id   | bigint    | not null | auction for which the solution was proposed 
  uid           | bigint    | not null | unique id of the proposed solution within a single auction
- id            | bytea     | not null | id of the proposed solution as reported by the solver
+ id            | text      | not null | id of the proposed solution as reported by the solver
  solver        | bytea     | not null | solver submission address
  is\_winner    | boolean   | not null | specifies if a solver that proposed this solution is required to execute the solution
  score         | numeric   | not null | score of a solution, based on a scoring criteria used at the time of competition
