@@ -89,7 +89,7 @@ pub struct Solution {
     pub uid: i64,
     // Id as reported by the solver (solvers are unaware of how other solvers are numbering their
     // solutions)
-    pub id: i64,
+    pub id: BigDecimal,
     pub solver: Address,
     pub is_winner: bool,
     pub score: BigDecimal,
@@ -140,7 +140,7 @@ async fn save_solutions(
     builder.push_values(solutions.iter(), |mut b, solution| {
         b.push_bind(auction_id)
             .push_bind(solution.uid)
-            .push_bind(solution.id)
+            .push_bind(&solution.id)
             .push_bind(solution.solver)
             .push_bind(solution.is_winner)
             .push_bind(&solution.score)
@@ -244,7 +244,7 @@ pub async fn fetch(
     #[derive(sqlx::FromRow)]
     struct Row {
         uid: i64,
-        id: i64,
+        id: BigDecimal,
         solver: Address,
         is_winner: bool,
         score: BigDecimal,
@@ -410,21 +410,21 @@ mod tests {
         let solutions = vec![
             Solution {
                 uid: 0,
-                id: 0,
+                id: 0.into(),
                 solver: ByteArray([1u8; 20]), // from solver 1
                 orders: vec![Default::default()],
                 ..Default::default()
             },
             Solution {
                 uid: 1,
-                id: 0,
+                id: 0.into(),
                 solver: ByteArray([2u8; 20]), // from solver 2
                 orders: vec![Default::default()],
                 ..Default::default()
             },
             Solution {
                 uid: 2,
-                id: 1,
+                id: 1.into(),
                 solver: ByteArray([2u8; 20]), // from solver 2
                 orders: vec![
                     Order {
