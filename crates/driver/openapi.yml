@@ -366,7 +366,6 @@ components:
             $ref: "#/components/schemas/JitOrder"
       required:
         - clearingPrices
-        - interactions
         - solver
     DateTime:
       description: An ISO 8601 UTC date time string.
@@ -604,6 +603,21 @@ components:
         signingScheme:
           type: string
           enum: ["eip712", "ethsign", "presign", "eip1271"]
+      required:
+        - sellToken
+        - buyToken
+        - sellAmount
+        - buyAmount
+        - executedAmount
+        - receiver
+        - validTo
+        - side
+        - partiallyFillable
+        - sellTokenSource
+        - buyTokenSource
+        - appData
+        - signature
+        - signingScheme
     Error:
       description: Response on API errors.
       type: object

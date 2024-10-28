@@ -257,6 +257,7 @@ mod dto {
         pub clearing_prices: HashMap<H160, U256>,
         #[serde(default)]
         pub pre_interactions: Vec<Interaction>,
+        #[serde(default)]
         pub interactions: Vec<Interaction>,
         pub solver: H160,
         pub gas: Option<u64>,
