@@ -26,10 +26,10 @@ app_data_hash=$(cast keccak $APPDATA)
 
 # Deposit WETH
 echo "Wrapping some ETH"
-cast send --private-key $PRIVATE_KEY --value 3ether $WETH_ADDRESS > /dev/null
+docker exec playground-chain-1 cast send --private-key $PRIVATE_KEY --value 3ether $WETH_ADDRESS > /dev/null
 
 echo "Setting WETH allowance"
-cast send --private-key $PRIVATE_KEY $WETH_ADDRESS "approve(address, uint)" $COW_VAULT_RELAYER_CONTRACT $MAXUINT256 > /dev/null
+docker exec playground-chain-1 cast send --private-key $PRIVATE_KEY $WETH_ADDRESS "approve(address, uint)" $COW_VAULT_RELAYER_CONTRACT $MAXUINT256 > /dev/null
 
 echo "Request price qoute for buying USDC for WETH"
 quote_response=$( curl --fail-with-body -s -X 'POST' \

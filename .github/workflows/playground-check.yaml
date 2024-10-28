@@ -39,6 +39,9 @@ jobs:
           sed -i -e 's/ETH_RPC_URL=.*/ETH_RPC_URL=$FORK_URL_MAINNET/g' playground/.env
           cat playground/.env
 
+      - name: Free space check
+        run: df -h
+
       - name: Start docker containers
         run: |
           cd playground 
@@ -50,5 +53,4 @@ jobs:
       - name: Execute validation script
         run: |
           cd playground
-          source .env
           ./test_playground.sh
