@@ -93,7 +93,7 @@ impl ExternalTradeFinder {
                     .text()
                     .await
                     .map_err(|err| PriceEstimationError::EstimatorInternal(anyhow!(err)))?;
-                let quote = serde_json::from_str::<dto::Quote>(&text).map_err(|err| {
+                let quote = serde_json::from_str::<dto::QuoteKind>(&text).map_err(|err| {
                     if let Ok(err) = serde_json::from_str::<dto::Error>(&text) {
                         PriceEstimationError::from(err)
                     } else {
@@ -101,8 +101,8 @@ impl ExternalTradeFinder {
                     }
                 })?;
                 match quote {
-                    dto::Quote::Legacy(quote) => Ok(Trade::from(quote)),
-                    dto::Quote::WithJitOrders(_) => Err(PriceEstimationError::EstimatorInternal(
+                    dto::QuoteKind::Legacy(quote) => Ok(Trade::from(quote)),
+                    dto::QuoteKind::Regular(_) => Err(PriceEstimationError::EstimatorInternal(
                         anyhow!("Quote with JIT orders is not currently supported"),
                     )),
                 }
@@ -188,7 +188,7 @@ mod dto {
             signature::SigningScheme,
         },
         number::serialization::HexOrDecimalU256,
-        serde::{de, Deserialize, Deserializer, Serialize},
+        serde::{Deserialize, Serialize},
         serde_with::serde_as,
         std::collections::HashMap,
     };
@@ -206,33 +206,11 @@ mod dto {
     }
 
     #[serde_as]
-    #[derive(Clone, Debug)]
-    pub enum Quote {
+    #[derive(Clone, Debug, Deserialize)]
+    pub enum QuoteKind {
         Legacy(LegacyQuote),
         #[allow(unused)]
-        WithJitOrders(QuoteWithJITOrders),
-    }
-
-    impl<'de> Deserialize<'de> for Quote {
-        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where
-            D: Deserializer<'de>,
-        {
-            let value: serde_json::Value = Deserialize::deserialize(deserializer)?;
-
-            if value.get("clearingPrices").is_some()
-                || value.get("jitOrders").is_some()
-                || value.get("preInteractions").is_some()
-            {
-                Ok(Quote::WithJitOrders(
-                    QuoteWithJITOrders::deserialize(value).map_err(de::Error::custom)?,
-                ))
-            } else {
-                Ok(Quote::Legacy(
-                    LegacyQuote::deserialize(value).map_err(de::Error::custom)?,
-                ))
-            }
-        }
+        Regular(Quote),
     }
 
     #[serde_as]
@@ -251,14 +229,16 @@ mod dto {
     #[derive(Clone, Debug, Deserialize)]
     #[serde(rename_all = "camelCase")]
     #[allow(unused)]
-    pub struct QuoteWithJITOrders {
+    pub struct Quote {
         #[serde_as(as = "HashMap<_, HexOrDecimalU256>")]
         pub clearing_prices: HashMap<H160, U256>,
+        #[serde(default)]
         pub pre_interactions: Vec<Interaction>,
         pub interactions: Vec<Interaction>,
         pub solver: H160,
         pub gas: Option<u64>,
         pub tx_origin: Option<H160>,
+        #[serde(default)]
         pub jit_orders: Vec<JitOrder>,
     }
 
@@ -290,6 +270,7 @@ mod dto {
         pub valid_to: u32,
         pub app_data: AppDataHash,
         pub side: Side,
+        pub partially_fillable: bool,
         pub sell_token_source: SellTokenSource,
         pub buy_token_destination: BuyTokenDestination,
         #[serde_as(as = "BytesHex")]

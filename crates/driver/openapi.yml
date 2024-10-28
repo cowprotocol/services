@@ -48,7 +48,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/QuoteResponse"
+                $ref: "#/components/schemas/QuoteResponseKind"
         400:
           $ref: "#/components/responses/BadRequest"
         429:
@@ -292,12 +292,12 @@ components:
         and bytes 52..56 valid to,
       type: string
       example: "0x30cff40d9f60caa68a37f0ee73253ad6ad72b45580c945fe3ab67596476937197854163b1b0d24e77dca702b97b5cc33e0f83dcb626122a6"
-    QuoteResponse:
+    QuoteResponseKind:
       oneOf:
-        - $ref: "#/components/schemas/LegacyQuote"
-        - $ref: "#/components/schemas/QuoteWithJitOrders"
+        - $ref: "#/components/schemas/LegacyQuoteResponse"
+        - $ref: "#/components/schemas/QuoteResponse"
         - $ref: "#/components/schemas/Error"
-    LegacyQuote:
+    LegacyQuoteResponse:
       description: |
         Successful Quote
 
@@ -320,7 +320,15 @@ components:
         gas:
           type: integer
           description: How many units of gas this trade is estimated to cost.
-    QuoteWithJitOrders:
+        txOrigin:
+          allOf:
+            - $ref: "#/components/schemas/Address"
+          description: Which `tx.origin` is required to make a quote simulation pass.
+      required:
+        - amount
+        - interactions
+        - solver
+    QuoteResponse:
       description: |
         Successful Quote with JIT orders support.
 
@@ -342,15 +350,24 @@ components:
           items:
             $ref: "#/components/schemas/Interaction"
         solver:
+          allOf:
+            - $ref: "#/components/schemas/Address"
           description: The address of the solver that quoted this order.
-          $ref: "#/components/schemas/Address"
         gas:
           type: integer
           description: How many units of gas this trade is estimated to cost.
+        txOrigin:
+          allOf:
+            - $ref: "#/components/schemas/Address"
+          description: Which `tx.origin` is required to make a quote simulation pass.
         jitOrders:
           type: array
           items:
             $ref: "#/components/schemas/JitOrder"
+      required:
+        - clearingPrices
+        - interactions
+        - solver
     DateTime:
       description: An ISO 8601 UTC date time string.
       type: string
@@ -568,6 +585,8 @@ components:
         side:
           type: string
           enum: ["buy", "sell"]
+        partiallyFillable:
+          type: boolean
         sellTokenSource:
           type: string
           enum: ["erc20", "internal", "external"]
