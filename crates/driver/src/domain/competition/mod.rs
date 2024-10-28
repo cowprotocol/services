@@ -128,12 +128,16 @@ impl Competition {
             })
             .collect::<FuturesUnordered<_>>()
             .filter_map(|(id, result)| async move {
-                result
-                    .tap_err(|err| {
-                        observe::encoding_failed(self.solver.name(), &id, err);
-                        notify::encoding_failed(&self.solver, auction.id(), &id, err);
-                    })
-                    .ok()
+                match result {
+                    Ok(solution) => Some(solution),
+                    // don't report on errors coming from solution merging
+                    Err(_err) if id.solutions().len() > 1 => None,
+                    Err(err) => {
+                        observe::encoding_failed(self.solver.name(), &id, &err);
+                        notify::encoding_failed(&self.solver, auction.id(), &id, &err);
+                        None
+                    }
+                }
             });
 
         // Encode settlements as they arrive until there are no more new settlements or
