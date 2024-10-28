@@ -188,7 +188,7 @@ mod dto {
             signature::SigningScheme,
         },
         number::serialization::HexOrDecimalU256,
-        serde::{Deserialize, Serialize},
+        serde::{de, Deserialize, Deserializer, Serialize},
         serde_with::serde_as,
         std::collections::HashMap,
     };
@@ -206,11 +206,33 @@ mod dto {
     }
 
     #[serde_as]
-    #[derive(Clone, Debug, Deserialize)]
+    #[derive(Clone, Debug)]
     pub enum QuoteKind {
         Legacy(LegacyQuote),
         #[allow(unused)]
         Regular(Quote),
+    }
+
+    impl<'de> Deserialize<'de> for QuoteKind {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            let value: serde_json::Value = Deserialize::deserialize(deserializer)?;
+
+            if value.get("clearingPrices").is_some()
+                || value.get("jitOrders").is_some()
+                || value.get("preInteractions").is_some()
+            {
+                Ok(QuoteKind::Regular(
+                    Quote::deserialize(value).map_err(de::Error::custom)?,
+                ))
+            } else {
+                Ok(QuoteKind::Legacy(
+                    LegacyQuote::deserialize(value).map_err(de::Error::custom)?,
+                ))
+            }
+        }
     }
 
     #[serde_as]
@@ -222,6 +244,7 @@ mod dto {
         pub interactions: Vec<Interaction>,
         pub solver: H160,
         pub gas: Option<u64>,
+        #[serde(default)]
         pub tx_origin: Option<H160>,
     }
 
