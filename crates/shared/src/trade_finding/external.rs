@@ -101,7 +101,7 @@ impl ExternalTradeFinder {
                     .text()
                     .await
                     .map_err(|err| PriceEstimationError::EstimatorInternal(anyhow!(err)))?;
-                serde_json::from_str::<dto::Quote>(&text)
+                serde_json::from_str::<dto::QuoteKind>(&text)
                     .map(Trade::from)
                     .map_err(|err| {
                         if let Ok(err) = serde_json::from_str::<dto::Error>(&text) {
@@ -121,8 +121,8 @@ impl ExternalTradeFinder {
     }
 }
 
-impl From<dto::Quote> for Trade {
-    fn from(quote: dto::Quote) -> Self {
+impl From<dto::QuoteKind> for Trade {
+    fn from(quote: dto::QuoteKind) -> Self {
         match quote {
             dto::Quote::LegacyQuote(quote) => Trade::Legacy(quote.into()),
             dto::Quote::QuoteWithJitOrders(quote) => Trade::WithJitOrders(quote.into()),
@@ -150,8 +150,8 @@ impl From<dto::LegacyQuote> for LegacyTrade {
     }
 }
 
-impl From<dto::QuoteWithJITOrders> for TradeWithJitOrders {
-    fn from(quote: dto::QuoteWithJITOrders) -> Self {
+impl From<dto::Quote> for TradeWithJitOrders {
+    fn from(quote: dto::Quote) -> Self {
         Self {
             clearing_prices: quote.clearing_prices,
             gas_estimate: quote.gas,
@@ -238,7 +238,7 @@ pub(crate) mod dto {
             signature::SigningScheme,
         },
         number::serialization::HexOrDecimalU256,
-        serde::{de, Deserialize, Deserializer, Serialize},
+        serde::{Deserialize, Serialize},
         serde_with::serde_as,
         std::collections::HashMap,
     };
@@ -256,33 +256,12 @@ pub(crate) mod dto {
     }
 
     #[serde_as]
-    #[derive(Clone, Debug)]
-    pub enum Quote {
-        LegacyQuote(LegacyQuote),
+    #[derive(Clone, Debug, Deserialize)]
+    #[serde(untagged)]
+    pub enum QuoteKind {
+        Legacy(LegacyQuote),
         #[allow(unused)]
-        QuoteWithJitOrders(QuoteWithJITOrders),
-    }
-
-    impl<'de> Deserialize<'de> for Quote {
-        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where
-            D: Deserializer<'de>,
-        {
-            let value: serde_json::Value = Deserialize::deserialize(deserializer)?;
-
-            if value.get("clearingPrices").is_some()
-                || value.get("jitOrders").is_some()
-                || value.get("preInteractions").is_some()
-            {
-                Ok(Quote::QuoteWithJitOrders(
-                    QuoteWithJITOrders::deserialize(value).map_err(de::Error::custom)?,
-                ))
-            } else {
-                Ok(Quote::LegacyQuote(
-                    LegacyQuote::deserialize(value).map_err(de::Error::custom)?,
-                ))
-            }
-        }
+        Regular(Quote),
     }
 
     #[serde_as]
@@ -294,6 +273,7 @@ pub(crate) mod dto {
         pub interactions: Vec<Interaction>,
         pub solver: H160,
         pub gas: Option<u64>,
+        #[serde(default)]
         pub tx_origin: Option<H160>,
     }
 
@@ -301,16 +281,17 @@ pub(crate) mod dto {
     #[derive(Clone, Debug, Deserialize)]
     #[serde(rename_all = "camelCase")]
     #[allow(unused)]
-    pub struct QuoteWithJITOrders {
-        #[serde_as(as = "HexOrDecimalU256")]
-        pub amount: U256,
+    pub struct Quote {
+        #[serde_as(as = "HashMap<_, HexOrDecimalU256>")]
+        pub clearing_prices: HashMap<H160, U256>,
+        #[serde(default)]
         pub pre_interactions: Vec<Interaction>,
+        #[serde(default)]
         pub interactions: Vec<Interaction>,
         pub solver: H160,
         pub gas: Option<u64>,
         pub tx_origin: Option<H160>,
-        #[serde_as(as = "HashMap<_, HexOrDecimalU256>")]
-        pub clearing_prices: HashMap<H160, U256>,
+        #[serde(default)]
         pub jit_orders: Vec<JitOrder>,
     }
 
@@ -342,6 +323,7 @@ pub(crate) mod dto {
         pub valid_to: u32,
         pub app_data: AppDataHash,
         pub side: Side,
+        pub partially_fillable: bool,
         pub sell_token_source: SellTokenSource,
         pub buy_token_destination: BuyTokenDestination,
         #[serde_as(as = "BytesHex")]
