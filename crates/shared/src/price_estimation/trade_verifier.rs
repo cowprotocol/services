@@ -402,7 +402,7 @@ fn encode_settlement(
         (TradeKind::Legacy(_), OrderKind::Buy) => {
             vec![query.in_amount.get(), *out_amount]
         }
-        (TradeKind::Regular(trade), OrderKind::Sell) => {
+        (TradeKind::Regular(trade), _) => {
             vec![
                 *trade
                     .clearing_prices
@@ -412,18 +412,6 @@ fn encode_settlement(
                     .clearing_prices
                     .get(&query.buy_token)
                     .context("buy token clearing price is missing")?,
-            ]
-        }
-        (TradeKind::Regular(trade), OrderKind::Buy) => {
-            vec![
-                *trade
-                    .clearing_prices
-                    .get(&query.buy_token)
-                    .context("buy token clearing price is missing")?,
-                *trade
-                    .clearing_prices
-                    .get(&query.sell_token)
-                    .context("sell token clearing price is missing")?,
             ]
         }
     };
