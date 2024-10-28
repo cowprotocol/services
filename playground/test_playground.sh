@@ -11,11 +11,13 @@ WETH_ADDRESS="0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"  # WETH token
 SELL_TOKEN=$WETH_ADDRESS
 BUY_TOKEN="0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"  # USDC token
 AMOUNT="1000000000000000000"  # 1 ETH
+SLIPPAGE=2  # 2%
 PRIVATE_KEY="0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6"
 COW_SETTLMENT_CONTRACT="0x9008D19f58AAbD9eD0D60971565AA8510560ab41"
 COW_VAULT_RELAYER_CONTRACT="0xC92E8bdf79f0507f65a392b0ab4667716BFE0110"
-APPDATA='{"version":"1.3.0","metadata":{"quote":{"slippageBips":200}}}'
+APPDATA='{"version":"1.3.0","metadata":{}}'
 MAXUINT256="115792089237316195423570985008687907853269984665640564039457584007913129639935"
+
 
 # Run test flow
 echo "Using private key:" $PRIVATE_KEY
@@ -55,6 +57,13 @@ buyAmount=$(jq -r --args '.quote.buyAmount' <<< "${quote_response}")
 feeAmount=$(jq -r --args '.quote.feeAmount' <<< "${quote_response}")
 validTo=$(($(date +%s) + 120)) # validity time: now + 2 minutes
 sellAmount=$((AMOUNT - feeAmount))
+
+# Apply slippage
+buy_token_decimals=$(cast call $BUY_TOKEN "decimals()(uint8)") # get decimal places for buy token
+buyAmount=$((buyAmount / (10**buy_token_decimals) )) # discard decimal places
+buyAmount=$((buyAmount - buyAmount * $SLIPPAGE / 100 )) # apply slippage
+buyAmount=$((buyAmount * (10**buy_token_decimals) )) # add decimal places back
+
 
 # Prepare EIP712 message
 eip712_message=$(jq -r --args '
