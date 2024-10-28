@@ -59,7 +59,7 @@ validTo=$(($(date +%s) + 120)) # validity time: now + 2 minutes
 sellAmount=$((AMOUNT - feeAmount))
 
 # Apply slippage
-buy_token_decimals=$(cast call $BUY_TOKEN "decimals()(uint8)") # get decimal places for buy token
+buy_token_decimals=$(docker exec playground-chain-1 cast call $BUY_TOKEN "decimals()(uint8)") # get decimal places for buy token
 buyAmount=$((buyAmount / (10**buy_token_decimals) )) # discard decimal places
 buyAmount=$((buyAmount - buyAmount * $SLIPPAGE / 100 )) # apply slippage
 buyAmount=$((buyAmount * (10**buy_token_decimals) )) # add decimal places back
