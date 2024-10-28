@@ -10,9 +10,6 @@ jobs:
     env:
       FORK_URL_MAINNET: ${{ secrets.FORK_URL_MAINNET }}
     steps:
-      - name: Free space check
-        run: df -h
-
       - name: Free Disk Space (Ubuntu)
         uses: jlumbroso/free-disk-space@main
         with:
@@ -39,9 +36,6 @@ jobs:
           sed -i -e 's/ETH_RPC_URL=.*/ETH_RPC_URL=$FORK_URL_MAINNET/g' playground/.env
           cat playground/.env
 
-      - name: Free space check
-        run: df -h
-
       - name: Start docker containers
         run: |
           cd playground
@@ -49,10 +43,24 @@ jobs:
           docker compose -f docker-compose.fork.yml up -d explorer
           docker compose -f docker-compose.fork.yml up -d
 
-      - name: Free space check
-        run: df -h
-
       - name: Execute validation script
         run: |
           cd playground
           ./test_playground.sh
+
+      - name: Collect docker logs on failure
+        if: failure()
+        uses: jwalton/gh-docker-logs@v2
+        with:
+          dest: './logs'
+
+      - name: Tar logs
+        if: failure()
+        run: tar cvzf ./logs.tgz ./logs
+
+      - name: Upload logs to GitHub
+        if: failure()
+        uses: actions/upload-artifact@master
+        with:
+          name: logs.tgz
+          path: ./logs.tgz
