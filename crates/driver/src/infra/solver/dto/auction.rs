@@ -83,7 +83,7 @@ impl Auction {
                     let mut available = order.available();
 
                     if solver_native_token.wrap_address {
-                        available.buy.token = available.buy.token.wrap(weth)
+                        available.buy.token = available.buy.token.as_erc20(weth)
                     }
                     // In case of volume based fees, fee withheld by driver might be higher than the
                     // surplus of the solution. This would lead to violating limit prices when

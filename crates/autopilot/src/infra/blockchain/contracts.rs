@@ -89,6 +89,12 @@ impl Contracts {
         &self.weth
     }
 
+    /// Wrapped version of the native token (e.g. WETH for Ethereum, WXDAI for
+    /// Gnosis Chain)
+    pub fn wrapped_native_token(&self) -> domain::eth::WrappedNativeToken {
+        self.weth.address().into()
+    }
+
     pub fn authenticator(&self) -> &contracts::GPv2AllowListAuthentication {
         &self.authenticator
     }

@@ -17,7 +17,6 @@ use {
     },
     ethcontract::{Event as EthContractEvent, EventMetadata},
     number::conversions::u256_to_big_decimal,
-    sqlx::PgConnection,
     std::convert::TryInto,
 };
 
@@ -41,18 +40,6 @@ pub fn contract_to_db_events(
             }
         })
         .collect::<Result<Vec<_>>>()
-}
-
-pub async fn last_event_block(connection: &mut PgConnection) -> Result<u64> {
-    let _timer = super::Metrics::get()
-        .database_queries
-        .with_label_values(&["last_event_block"])
-        .start_timer();
-
-    let block_number = database::events::last_block(connection)
-        .await
-        .context("block_number_of_most_recent_event failed")?;
-    block_number.try_into().context("block number is negative")
 }
 
 pub async fn append_events(

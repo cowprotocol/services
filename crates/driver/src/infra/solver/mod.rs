@@ -29,8 +29,6 @@ use {
 
 pub mod dto;
 
-const SOLVER_RESPONSE_MAX_BYTES: usize = 10_000_000;
-
 // TODO At some point I should be checking that the names are unique, I don't
 // think I'm doing that.
 /// The solver name. The user can configure this to be anything that they like.
@@ -124,6 +122,7 @@ pub struct Config {
     pub solver_native_token: ManageNativeToken,
     /// Which `tx.origin` is required to make quote verification pass.
     pub quote_tx_origin: Option<eth::Address>,
+    pub response_size_limit_max_bytes: usize,
 }
 
 impl Solver {
@@ -234,7 +233,7 @@ impl Solver {
         if let Some(id) = observe::request_id::get_task_local_storage() {
             req = req.header("X-REQUEST-ID", id);
         }
-        let res = util::http::send(SOLVER_RESPONSE_MAX_BYTES, req).await;
+        let res = util::http::send(self.config.response_size_limit_max_bytes, req).await;
         super::observe::solver_response(&url, res.as_deref());
         let res = res?;
         let res: dto::Solutions = serde_json::from_str(&res)
@@ -260,8 +259,9 @@ impl Solver {
         if let Some(id) = observe::request_id::get_task_local_storage() {
             req = req.header("X-REQUEST-ID", id);
         }
+        let response_size = self.config.response_size_limit_max_bytes;
         let future = async move {
-            if let Err(error) = util::http::send(SOLVER_RESPONSE_MAX_BYTES, req).await {
+            if let Err(error) = util::http::send(response_size, req).await {
                 tracing::warn!(?error, "failed to notify solver");
             }
         };
