@@ -44,8 +44,10 @@ jobs:
 
       - name: Start docker containers
         run: |
-          cd playground 
-          COMPOSE_PARALLEL_LIMIT=1 docker compose -f docker-compose.fork.yml up -d
+          cd playground
+          # firstly start explorer container to workaround yarn cache problem 
+          docker compose -f docker-compose.fork.yml up -d explorer
+          docker compose -f docker-compose.fork.yml up -d
 
       - name: Free space check
         run: df -h
