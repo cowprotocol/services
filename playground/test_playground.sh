@@ -137,7 +137,7 @@ do
     echo -e "\nSuccess"
     exit 0
   fi
-  sleep 2
+  sleep 5
 done
 
 echo -e "\nTimeout"
