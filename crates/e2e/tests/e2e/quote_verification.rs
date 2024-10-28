@@ -13,7 +13,7 @@ use {
             Estimate,
             Verification,
         },
-        trade_finding::{Interaction, LegacyTrade, Trade},
+        trade_finding::{Interaction, LegacyTrade, TradeKind},
     },
     std::{str::FromStr, sync::Arc},
 };
@@ -88,7 +88,7 @@ async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
                         sell_token_source: SellTokenSource::Erc20,
                         buy_token_destination: BuyTokenDestination::Erc20,
                     },
-                    Trade::Legacy(LegacyTrade {
+                    TradeKind::Legacy(LegacyTrade {
                         out_amount: 16380122291179526144u128.into(),
                         gas_estimate: Some(225000),
                         interactions: vec![Interaction {

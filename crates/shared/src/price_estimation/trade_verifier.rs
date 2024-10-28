@@ -5,7 +5,7 @@ use {
         code_simulation::CodeSimulating,
         encoded_settlement::{encode_trade, EncodedSettlement},
         interaction::EncodedInteraction,
-        trade_finding::{external::dto, Interaction, Trade},
+        trade_finding::{external::dto, Interaction, TradeKind},
     },
     anyhow::{Context, Result},
     contracts::{
@@ -31,12 +31,13 @@ use {
 
 #[async_trait::async_trait]
 pub trait TradeVerifying: Send + Sync + 'static {
-    /// Verifies if the proposed [`Trade`] actually fulfills the [`PriceQuery`].
+    /// Verifies if the proposed [`TradeKind`] actually fulfills the
+    /// [`PriceQuery`].
     async fn verify(
         &self,
         query: &PriceQuery,
         verification: &Verification,
-        trade: Trade,
+        trade: TradeKind,
     ) -> Result<Estimate>;
 }
 
@@ -87,7 +88,7 @@ impl TradeVerifier {
         &self,
         query: &PriceQuery,
         verification: &Verification,
-        trade: &Trade,
+        trade: &TradeKind,
         out_amount: &U256,
     ) -> Result<Estimate, Error> {
         if verification.from.is_zero() {
@@ -252,7 +253,7 @@ impl TradeVerifier {
     async fn prepare_state_overrides(
         &self,
         verification: &Verification,
-        trade: &Trade,
+        trade: &TradeKind,
     ) -> Result<HashMap<H160, StateOverride>> {
         // Set up mocked trader.
         let mut overrides = hashmap! {
@@ -318,7 +319,7 @@ impl TradeVerifying for TradeVerifier {
         &self,
         query: &PriceQuery,
         verification: &Verification,
-        trade: Trade,
+        trade: TradeKind,
     ) -> Result<Estimate> {
         let out_amount = trade
             .out_amount(
@@ -372,7 +373,7 @@ fn encode_interactions(interactions: &[Interaction]) -> Vec<EncodedInteraction> 
 fn encode_settlement(
     query: &PriceQuery,
     verification: &Verification,
-    trade: &Trade,
+    trade: &TradeKind,
     out_amount: &U256,
     native_token: H160,
     domain_separator: &DomainSeparator,
@@ -395,13 +396,13 @@ fn encode_settlement(
 
     let mut tokens = vec![query.sell_token, query.buy_token];
     let mut clearing_prices = match (trade, query.kind) {
-        (Trade::Legacy(_), OrderKind::Sell) => {
+        (TradeKind::Legacy(_), OrderKind::Sell) => {
             vec![*out_amount, query.in_amount.get()]
         }
-        (Trade::Legacy(_), OrderKind::Buy) => {
+        (TradeKind::Legacy(_), OrderKind::Buy) => {
             vec![query.in_amount.get(), *out_amount]
         }
-        (Trade::WithJitOrders(trade), OrderKind::Sell) => {
+        (TradeKind::Regular(trade), OrderKind::Sell) => {
             vec![
                 *trade
                     .clearing_prices
@@ -413,7 +414,7 @@ fn encode_settlement(
                     .context("buy token clearing price is missing")?,
             ]
         }
-        (Trade::WithJitOrders(trade), OrderKind::Buy) => {
+        (TradeKind::Regular(trade), OrderKind::Buy) => {
             vec![
                 *trade
                     .clearing_prices
@@ -465,7 +466,7 @@ fn encode_settlement(
 
     let mut trades = vec![encoded_trade];
 
-    if let Trade::WithJitOrders(trade) = trade {
+    if let TradeKind::Regular(trade) = trade {
         for jit_order in trade.jit_orders.iter() {
             let order_data = OrderData {
                 sell_token: jit_order.sell_token,
@@ -480,7 +481,7 @@ fn encode_settlement(
                     dto::Side::Buy => OrderKind::Buy,
                     dto::Side::Sell => OrderKind::Sell,
                 },
-                partially_fillable: false,
+                partially_fillable: jit_order.partially_fillable,
                 sell_token_balance: jit_order.sell_token_source,
                 buy_token_balance: jit_order.buy_token_destination,
             };

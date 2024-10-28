@@ -28,7 +28,7 @@ use {
 #[async_trait::async_trait]
 pub trait TradeFinding: Send + Sync + 'static {
     async fn get_quote(&self, query: &Query) -> Result<Quote, TradeError>;
-    async fn get_trade(&self, query: &Query) -> Result<Trade, TradeError>;
+    async fn get_trade(&self, query: &Query) -> Result<TradeKind, TradeError>;
 }
 
 /// A quote.
@@ -40,30 +40,30 @@ pub struct Quote {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum Trade {
+pub enum TradeKind {
     Legacy(LegacyTrade),
-    WithJitOrders(TradeWithJitOrders),
+    Regular(Trade),
 }
 
-impl Trade {
+impl TradeKind {
     pub fn gas_estimate(&self) -> Option<u64> {
         match self {
-            Trade::Legacy(trade) => trade.gas_estimate,
-            Trade::WithJitOrders(trade) => trade.gas_estimate,
+            TradeKind::Legacy(trade) => trade.gas_estimate,
+            TradeKind::Regular(trade) => trade.gas_estimate,
         }
     }
 
     pub fn solver(&self) -> H160 {
         match self {
-            Trade::Legacy(trade) => trade.solver,
-            Trade::WithJitOrders(trade) => trade.solver,
+            TradeKind::Legacy(trade) => trade.solver,
+            TradeKind::Regular(trade) => trade.solver,
         }
     }
 
     pub fn tx_origin(&self) -> Option<H160> {
         match self {
-            Trade::Legacy(trade) => trade.tx_origin,
-            Trade::WithJitOrders(trade) => trade.tx_origin,
+            TradeKind::Legacy(trade) => trade.tx_origin,
+            TradeKind::Regular(trade) => trade.tx_origin,
         }
     }
 
@@ -75,8 +75,8 @@ impl Trade {
         order_kind: &OrderKind,
     ) -> Result<U256> {
         match self {
-            Trade::Legacy(trade) => Ok(trade.out_amount),
-            Trade::WithJitOrders(trade) => {
+            TradeKind::Legacy(trade) => Ok(trade.out_amount),
+            TradeKind::Regular(trade) => {
                 trade.out_amount(buy_token, sell_token, in_amount, order_kind)
             }
         }
@@ -84,22 +84,22 @@ impl Trade {
 
     pub fn interactions(&self) -> Vec<Interaction> {
         match self {
-            Trade::Legacy(trade) => trade.interactions.clone(),
-            Trade::WithJitOrders(trade) => trade.interactions.clone(),
+            TradeKind::Legacy(trade) => trade.interactions.clone(),
+            TradeKind::Regular(trade) => trade.interactions.clone(),
         }
     }
 
     pub fn pre_interactions(&self) -> Vec<Interaction> {
         match self {
-            Trade::Legacy(_) => Vec::new(),
-            Trade::WithJitOrders(trade) => trade.pre_interactions.clone(),
+            TradeKind::Legacy(_) => Vec::new(),
+            TradeKind::Regular(trade) => trade.pre_interactions.clone(),
         }
     }
 }
 
-impl Default for Trade {
+impl Default for TradeKind {
     fn default() -> Self {
-        Trade::Legacy(LegacyTrade::default())
+        TradeKind::Legacy(LegacyTrade::default())
     }
 }
 
@@ -122,7 +122,7 @@ pub struct LegacyTrade {
 
 /// A trade with JIT orders.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct TradeWithJitOrders {
+pub struct Trade {
     pub clearing_prices: HashMap<H160, U256>,
     /// How many units of gas this trade will roughly cost.
     pub gas_estimate: Option<u64>,
@@ -137,7 +137,7 @@ pub struct TradeWithJitOrders {
     pub jit_orders: Vec<dto::JitOrder>,
 }
 
-impl TradeWithJitOrders {
+impl Trade {
     pub fn out_amount(
         &self,
         buy_token: &H160,

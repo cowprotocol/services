@@ -11,7 +11,7 @@ use {
             Trade,
             TradeError,
             TradeFinding,
-            TradeWithJitOrders,
+            TradeKind,
         },
     },
     anyhow::{anyhow, Context},
@@ -28,7 +28,7 @@ pub struct ExternalTradeFinder {
     /// Utility to make sure no 2 identical requests are in-flight at the same
     /// time. Instead of issuing a duplicated request this awaits the
     /// response of the in-flight request.
-    sharing: RequestSharing<Query, BoxFuture<'static, Result<Trade, PriceEstimationError>>>,
+    sharing: RequestSharing<Query, BoxFuture<'static, Result<TradeKind, PriceEstimationError>>>,
 
     /// Client to issue http requests with.
     client: Client,
@@ -58,7 +58,7 @@ impl ExternalTradeFinder {
 
     /// Queries the `/quote` endpoint of the configured driver and deserializes
     /// the result into a Quote or Trade.
-    async fn shared_query(&self, query: &Query) -> Result<Trade, TradeError> {
+    async fn shared_query(&self, query: &Query) -> Result<TradeKind, TradeError> {
         let fut = move |query: &Query| {
             let order = dto::Order {
                 sell_token: query.sell_token,
@@ -102,7 +102,7 @@ impl ExternalTradeFinder {
                     .await
                     .map_err(|err| PriceEstimationError::EstimatorInternal(anyhow!(err)))?;
                 serde_json::from_str::<dto::QuoteKind>(&text)
-                    .map(Trade::from)
+                    .map(TradeKind::from)
                     .map_err(|err| {
                         if let Ok(err) = serde_json::from_str::<dto::Error>(&text) {
                             PriceEstimationError::from(err)
@@ -121,11 +121,11 @@ impl ExternalTradeFinder {
     }
 }
 
-impl From<dto::QuoteKind> for Trade {
+impl From<dto::QuoteKind> for TradeKind {
     fn from(quote: dto::QuoteKind) -> Self {
         match quote {
-            dto::Quote::LegacyQuote(quote) => Trade::Legacy(quote.into()),
-            dto::Quote::QuoteWithJitOrders(quote) => Trade::WithJitOrders(quote.into()),
+            dto::QuoteKind::Legacy(quote) => TradeKind::Legacy(quote.into()),
+            dto::QuoteKind::Regular(quote) => TradeKind::Regular(quote.into()),
         }
     }
 }
@@ -150,7 +150,7 @@ impl From<dto::LegacyQuote> for LegacyTrade {
     }
 }
 
-impl From<dto::Quote> for TradeWithJitOrders {
+impl From<dto::Quote> for Trade {
     fn from(quote: dto::Quote) -> Self {
         Self {
             clearing_prices: quote.clearing_prices,
@@ -223,7 +223,7 @@ impl TradeFinding for ExternalTradeFinder {
         })
     }
 
-    async fn get_trade(&self, query: &Query) -> Result<Trade, TradeError> {
+    async fn get_trade(&self, query: &Query) -> Result<TradeKind, TradeError> {
         self.shared_query(query).await
     }
 }
