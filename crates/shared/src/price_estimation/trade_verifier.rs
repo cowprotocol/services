@@ -131,6 +131,11 @@ impl TradeVerifier {
                 self.native_token,
                 verification.receiver,
                 Bytes(settlement.data.unwrap().0),
+                // only if the user did not provide pre-interactions is it safe
+                // to set up the trade's pre-conditions on behalf of the user.
+                // if the user provided pre-interactions it's reasonable to assume
+                // that they will set up all the necessary details for the trade.
+                verification.pre_interactions.is_empty(),
             )
             .tx;
 
