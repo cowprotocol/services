@@ -20,9 +20,9 @@ jobs:
           android: true
           dotnet: true
           haskell: true
-          large-packages: true
-          docker-images: true
-          swap-storage: true
+          large-packages: false
+          docker-images: false
+          swap-storage: false
 
       - name: Checkout code
         uses: actions/checkout@v4
