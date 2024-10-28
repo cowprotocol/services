@@ -71,6 +71,7 @@ eip712_message=$(jq -r --args '
   del(.quote.appDataHash) | 
   .quote|=(.sellAmount="'$sellAmount'") |
   .quote|=(.feeAmount="0") |
+  .quote|=(.buyAmount="'$buyAmount'") |
   .quote|=(.validTo='$validTo') |
   .quote' <<< "${quote_response}")
 
