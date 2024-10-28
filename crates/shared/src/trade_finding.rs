@@ -7,7 +7,7 @@ use {
     crate::{
         conversions::U256Ext,
         price_estimation::{PriceEstimationError, Query},
-        trade_finding::external::dto,
+        trade_finding::external::{dto, dto::Side},
     },
     anyhow::{Context, Result},
     derivative::Derivative,
@@ -169,6 +169,58 @@ impl Trade {
         };
 
         big_rational_to_u256(&out_amount).context("out amount is not a valid U256")
+    }
+
+    pub fn jit_orders_executed_amounts(&self) -> Result<HashMap<H160, U256>> {
+        let mut executed_amounts: HashMap<H160, U256> = HashMap::new();
+
+        for jit_order in self.jit_orders.iter() {
+            let sell_price = self
+                .clearing_prices
+                .get(&jit_order.sell_token)
+                .context("JIT order sell token clearing price is missing")?
+                .to_big_rational();
+            let buy_price = self
+                .clearing_prices
+                .get(&jit_order.buy_token)
+                .context("JIT order buy token clearing price is missing")?
+                .to_big_rational();
+            let executed_amount = jit_order.executed_amount.to_big_rational();
+            let (executed_sell, executed_buy) = match jit_order.side {
+                Side::Sell => {
+                    let buy_amount = executed_amount
+                        .clone()
+                        .mul(&sell_price)
+                        .checked_div(&buy_price)
+                        .context("division by zero in JIT order sell")?;
+                    (executed_amount, buy_amount)
+                }
+                Side::Buy => {
+                    let sell_amount = executed_amount
+                        .clone()
+                        .mul(&buy_price)
+                        .checked_div(&sell_price)
+                        .context("division by zero in JIT order buy")?;
+                    (sell_amount, executed_amount)
+                }
+            };
+            let (executed_sell, executed_buy) = (
+                big_rational_to_u256(&executed_sell)
+                    .context("executed sell amount is not a valid U256")?,
+                big_rational_to_u256(&executed_buy)
+                    .context("executed buy amount is not a valid U256")?,
+            );
+            executed_amounts
+                .entry(jit_order.sell_token)
+                .and_modify(|executed| *executed += executed_sell)
+                .or_insert(executed_sell);
+            executed_amounts
+                .entry(jit_order.buy_token)
+                .and_modify(|executed| *executed += executed_buy)
+                .or_insert(executed_buy);
+        }
+
+        Ok(executed_amounts)
     }
 }
 

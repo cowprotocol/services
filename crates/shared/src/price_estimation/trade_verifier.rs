@@ -111,6 +111,7 @@ impl TradeVerifier {
             self.native_token,
             &self.domain_separator,
         )?;
+
         let settlement = add_balance_queries(
             settlement,
             query,
@@ -245,12 +246,7 @@ impl TradeVerifier {
             "verified quote",
         );
 
-        ensure_quote_accuracy(
-            &self.quote_inaccuracy_limit,
-            query,
-            trade.solver(),
-            &summary,
-        )
+        ensure_quote_accuracy(&self.quote_inaccuracy_limit, query, trade, &summary)
     }
 
     /// Configures all the state overrides that are needed to mock the given
@@ -633,7 +629,7 @@ impl SettleOutput {
 fn ensure_quote_accuracy(
     inaccuracy_limit: &BigRational,
     query: &PriceQuery,
-    solver: H160,
+    trade: &TradeKind,
     summary: &SettleOutput,
 ) -> Result<Estimate, Error> {
     // amounts verified by the simulation
@@ -642,8 +638,26 @@ fn ensure_quote_accuracy(
         OrderKind::Sell => (query.in_amount.get(), summary.out_amount),
     };
 
-    if summary.sell_tokens_lost >= inaccuracy_limit * u256_to_big_rational(&sell_amount)
-        || summary.buy_tokens_lost >= inaccuracy_limit * u256_to_big_rational(&buy_amount)
+    let (expected_sell_token_lost, expected_buy_token_lost) = match trade {
+        TradeKind::Regular(trade) => {
+            let jit_orders_executed_amounts = trade.jit_orders_executed_amounts()?;
+            let expected_sell_token_lost = sell_amount
+                - jit_orders_executed_amounts
+                    .get(&query.sell_token)
+                    .context("missing jit orders sell token executed amount")?;
+            let expected_buy_token_lost = buy_amount
+                - jit_orders_executed_amounts
+                    .get(&query.buy_token)
+                    .context("missing jit orders buy token executed amount")?;
+            (expected_sell_token_lost, expected_buy_token_lost)
+        }
+        TradeKind::Legacy(_) => (sell_amount, buy_amount),
+    };
+
+    if summary.sell_tokens_lost
+        >= inaccuracy_limit * u256_to_big_rational(&expected_sell_token_lost)
+        || summary.buy_tokens_lost
+            >= inaccuracy_limit * u256_to_big_rational(&expected_buy_token_lost)
     {
         return Err(Error::TooInaccurate);
     }
@@ -651,7 +665,7 @@ fn ensure_quote_accuracy(
     Ok(Estimate {
         out_amount: summary.out_amount,
         gas: summary.gas_used.as_u64(),
-        solver,
+        solver: trade.solver(),
         verified: true,
     })
 }
@@ -701,11 +715,12 @@ mod tests {
             sell_tokens_lost: BigRational::from_integer(500.into()),
         };
 
-        let estimate = ensure_quote_accuracy(&low_threshold, &query, H160::zero(), &sell_more);
+        let trade = TradeKind::Legacy(Default::default());
+        let estimate = ensure_quote_accuracy(&low_threshold, &query, &trade, &sell_more);
         assert!(matches!(estimate, Err(Error::TooInaccurate)));
 
         // passes with slightly higher tolerance
-        let estimate = ensure_quote_accuracy(&high_threshold, &query, H160::zero(), &sell_more);
+        let estimate = ensure_quote_accuracy(&high_threshold, &query, &trade, &sell_more);
         assert!(estimate.is_ok());
 
         let pay_out_more = SettleOutput {
@@ -715,11 +730,11 @@ mod tests {
             sell_tokens_lost: BigRational::from_integer(0.into()),
         };
 
-        let estimate = ensure_quote_accuracy(&low_threshold, &query, H160::zero(), &pay_out_more);
+        let estimate = ensure_quote_accuracy(&low_threshold, &query, &trade, &pay_out_more);
         assert!(matches!(estimate, Err(Error::TooInaccurate)));
 
         // passes with slightly higher tolerance
-        let estimate = ensure_quote_accuracy(&high_threshold, &query, H160::zero(), &pay_out_more);
+        let estimate = ensure_quote_accuracy(&high_threshold, &query, &trade, &pay_out_more);
         assert!(estimate.is_ok());
 
         let sell_less = SettleOutput {
@@ -729,7 +744,7 @@ mod tests {
             sell_tokens_lost: BigRational::from_integer((-500).into()),
         };
         // Ending up with surplus in the buffers is always fine
-        let estimate = ensure_quote_accuracy(&low_threshold, &query, H160::zero(), &sell_less);
+        let estimate = ensure_quote_accuracy(&low_threshold, &query, &trade, &sell_less);
         assert!(estimate.is_ok());
 
         let pay_out_less = SettleOutput {
@@ -739,7 +754,7 @@ mod tests {
             sell_tokens_lost: BigRational::from_integer(0.into()),
         };
         // Ending up with surplus in the buffers is always fine
-        let estimate = ensure_quote_accuracy(&low_threshold, &query, H160::zero(), &pay_out_less);
+        let estimate = ensure_quote_accuracy(&low_threshold, &query, &trade, &pay_out_less);
         assert!(estimate.is_ok());
     }
 }
