@@ -10,13 +10,17 @@ HOST=localhost:8080
 WETH_ADDRESS="0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"  # WETH token
 SELL_TOKEN=$WETH_ADDRESS
 BUY_TOKEN="0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"  # USDC token
-AMOUNT="1000000000000000000"  # 1 ETH
+SELL_AMOUNT="1000000000000000000"  # 1 ETH
 SLIPPAGE=2  # 2%
-PRIVATE_KEY="0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6"
 COW_SETTLMENT_CONTRACT="0x9008D19f58AAbD9eD0D60971565AA8510560ab41"
 COW_VAULT_RELAYER_CONTRACT="0xC92E8bdf79f0507f65a392b0ab4667716BFE0110"
 APPDATA='{"version":"1.3.0","metadata":{}}'
 MAXUINT256="115792089237316195423570985008687907853269984665640564039457584007913129639935"
+
+# Following private key is only used for testing purposes in a local environment.
+# For security reasons please do not use it on a production network, most likely 
+# all funds sent to this account will be stolen immediately.
+PRIVATE_KEY="0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6"
 
 
 # Run test flow
@@ -45,30 +49,24 @@ quote_response=$( curl --fail-with-body -s -X 'POST' \
   "receiver": "'$receiver'",
   "sellTokenBalance": "erc20",
   "buyTokenBalance": "erc20",
-  "priceQuality": "fast",
   "signingScheme": "eip712",
   "onchainOrder": false,
   "partiallyFillable": false,
   "kind": "sell",
-  "sellAmountBeforeFee": "'$AMOUNT'"
+  "sellAmountBeforeFee": "'$SELL_AMOUNT'"
 }')
 
 buyAmount=$(jq -r --args '.quote.buyAmount' <<< "${quote_response}")
 feeAmount=$(jq -r --args '.quote.feeAmount' <<< "${quote_response}")
 validTo=$(($(date +%s) + 120)) # validity time: now + 2 minutes
-sellAmount=$((AMOUNT - feeAmount))
+sellAmount=$((SELL_AMOUNT - feeAmount))
 
 # Apply slippage
-buy_token_decimals=$(docker exec playground-chain-1 cast call $BUY_TOKEN "decimals()(uint8)") # get decimal places for buy token
-buyAmount=$((buyAmount / (10**buy_token_decimals) )) # discard decimal places
-buyAmount=$((buyAmount - buyAmount * $SLIPPAGE / 100 )) # apply slippage
-buyAmount=$((buyAmount * (10**buy_token_decimals) )) # add decimal places back
-
+buyAmount=$((buyAmount * ( 100 - $SLIPPAGE ) / 100 )) # apply slippage
 
 # Prepare EIP712 message
 eip712_message=$(jq -r --args '
   .quote|=(.appData="'$app_data_hash'") | 
-  del(.quote.appDataHash) | 
   .quote|=(.sellAmount="'$sellAmount'") |
   .quote|=(.feeAmount="0") |
   .quote|=(.buyAmount="'$buyAmount'") |
@@ -109,14 +107,12 @@ eip712_typed_struct='{
   "message": '$eip712_message'
 }'
 
-# Check if json is well formatted and compact it
+# Compact json and escape quotes
 eip712_typed_struct=$(jq -r -c <<< "${eip712_typed_struct}")
-
-# Dump to file as there are some spaces in field values
-echo $eip712_typed_struct > tmp.json
+eip712_typed_struct=${eip712_typed_struct//\"/\\\"}
 
 # Sign quote_response with private key
-signature=$(cast wallet sign --private-key $PRIVATE_KEY --data --from-file tmp.json)
+signature=$(cast wallet sign --private-key $PRIVATE_KEY --data \""$eip712_typed_struct"\")
 echo "Intent signature:" $signature
 
 app_data=${APPDATA//\"/\\\"}   # escape quotes for json field
@@ -137,7 +133,7 @@ orderUid=$( curl --fail-with-body -s -X 'POST' \
 orderUid=${orderUid:1:-1} # remove quotes
 echo "Order UID: $orderUid"
 
-for i in $(seq 1 60);
+for i in $(seq 1 24);
 do
   orderStatus=$( curl --fail-with-body -s -X 'GET' \
     "http://$HOST/api/v1/orders/$orderUid/status" \
