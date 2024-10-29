@@ -38,7 +38,7 @@ echo "Setting WETH allowance"
 docker exec playground-chain-1 cast send --private-key $PRIVATE_KEY $WETH_ADDRESS "approve(address, uint)" $COW_VAULT_RELAYER_CONTRACT $MAXUINT256 > /dev/null
 
 echo "Request price qoute for buying USDC for WETH"
-quote_response=$( curl --fail-with-body -s -X 'POST' \
+quote_response=$( curl --retry 5 --retry-all-errors --fail-with-body -s -X 'POST' \
   "http://$HOST/api/v1/quote" \
   -H 'accept: application/json' \
   -H 'Content-Type: application/json' \
@@ -125,7 +125,7 @@ order_proposal=$(jq -r -c --args '
   .signature="'$signature'"' <<< "${eip712_message}")
 
 echo "Submit an order"
-orderUid=$( curl --fail-with-body -s -X 'POST' \
+orderUid=$( curl --retry 5 --retry-all-errors --fail-with-body -s -X 'POST' \
   "http://$HOST/api/v1/orders" \
   -H 'accept: application/json' \
   -H 'Content-Type: application/json' \
@@ -135,7 +135,7 @@ echo "Order UID: $orderUid"
 
 for i in $(seq 1 24);
 do
-  orderStatus=$( curl --fail-with-body -s -X 'GET' \
+  orderStatus=$( curl --retry 5 --retry-all-errors --fail-with-body -s -X 'GET' \
     "http://$HOST/api/v1/orders/$orderUid/status" \
     -H 'accept: application/json' | jq -r '.type')
   echo -e -n "Order status: $orderStatus     \r"
