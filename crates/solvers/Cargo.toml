@@ -24,6 +24,7 @@ futures = { workspace = true }
 hex = { workspace = true }
 hyper = { workspace = true }
 itertools = { workspace = true }
+mimalloc = { workspace = true }
 num = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }

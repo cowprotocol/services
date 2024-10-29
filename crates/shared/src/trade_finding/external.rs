@@ -93,15 +93,19 @@ impl ExternalTradeFinder {
                     .text()
                     .await
                     .map_err(|err| PriceEstimationError::EstimatorInternal(anyhow!(err)))?;
-                serde_json::from_str::<dto::Quote>(&text)
-                    .map(Trade::from)
-                    .map_err(|err| {
-                        if let Ok(err) = serde_json::from_str::<dto::Error>(&text) {
-                            PriceEstimationError::from(err)
-                        } else {
-                            PriceEstimationError::EstimatorInternal(anyhow!(err))
-                        }
-                    })
+                let quote = serde_json::from_str::<dto::QuoteKind>(&text).map_err(|err| {
+                    if let Ok(err) = serde_json::from_str::<dto::Error>(&text) {
+                        PriceEstimationError::from(err)
+                    } else {
+                        PriceEstimationError::EstimatorInternal(anyhow!(err))
+                    }
+                })?;
+                match quote {
+                    dto::QuoteKind::Legacy(quote) => Ok(Trade::from(quote)),
+                    dto::QuoteKind::Regular(_) => Err(PriceEstimationError::EstimatorInternal(
+                        anyhow!("Quote with JIT orders is not currently supported"),
+                    )),
+                }
             }
             .boxed()
         };
@@ -113,8 +117,8 @@ impl ExternalTradeFinder {
     }
 }
 
-impl From<dto::Quote> for Trade {
-    fn from(quote: dto::Quote) -> Self {
+impl From<dto::LegacyQuote> for Trade {
+    fn from(quote: dto::LegacyQuote) -> Self {
         Self {
             out_amount: quote.amount,
             gas_estimate: quote.gas,
@@ -138,6 +142,16 @@ impl From<dto::Error> for PriceEstimationError {
         match value.kind.as_str() {
             "QuotingFailed" => Self::NoLiquidity,
             _ => Self::EstimatorInternal(anyhow!("{}", value.description)),
+        }
+    }
+}
+
+impl From<dto::Interaction> for Interaction {
+    fn from(interaction: dto::Interaction) -> Self {
+        Self {
+            target: interaction.target,
+            value: interaction.value,
+            data: interaction.call_data,
         }
     }
 }
@@ -166,12 +180,17 @@ impl TradeFinding for ExternalTradeFinder {
 
 mod dto {
     use {
+        app_data::AppDataHash,
         bytes_hex::BytesHex,
         ethcontract::{H160, U256},
-        model::order::OrderKind,
+        model::{
+            order::{BuyTokenDestination, OrderKind, SellTokenSource},
+            signature::SigningScheme,
+        },
         number::serialization::HexOrDecimalU256,
         serde::{Deserialize, Serialize},
         serde_with::serde_as,
+        std::collections::HashMap,
     };
 
     #[serde_as]
@@ -188,8 +207,17 @@ mod dto {
 
     #[serde_as]
     #[derive(Clone, Debug, Deserialize)]
+    #[serde(untagged)]
+    pub enum QuoteKind {
+        Legacy(LegacyQuote),
+        #[allow(unused)]
+        Regular(Quote),
+    }
+
+    #[serde_as]
+    #[derive(Clone, Debug, Deserialize)]
     #[serde(rename_all = "camelCase")]
-    pub struct Quote {
+    pub struct LegacyQuote {
         #[serde_as(as = "HexOrDecimalU256")]
         pub amount: U256,
         pub interactions: Vec<Interaction>,
@@ -197,6 +225,24 @@ mod dto {
         pub gas: Option<u64>,
         #[serde(default)]
         pub tx_origin: Option<H160>,
+    }
+
+    #[serde_as]
+    #[derive(Clone, Debug, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    #[allow(unused)]
+    pub struct Quote {
+        #[serde_as(as = "HashMap<_, HexOrDecimalU256>")]
+        pub clearing_prices: HashMap<H160, U256>,
+        #[serde(default)]
+        pub pre_interactions: Vec<Interaction>,
+        #[serde(default)]
+        pub interactions: Vec<Interaction>,
+        pub solver: H160,
+        pub gas: Option<u64>,
+        pub tx_origin: Option<H160>,
+        #[serde(default)]
+        pub jit_orders: Vec<JitOrder>,
     }
 
     #[serde_as]
@@ -211,10 +257,43 @@ mod dto {
     }
 
     #[serde_as]
+    #[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    #[allow(unused)]
+    pub struct JitOrder {
+        pub buy_token: H160,
+        pub sell_token: H160,
+        #[serde_as(as = "HexOrDecimalU256")]
+        pub sell_amount: U256,
+        #[serde_as(as = "HexOrDecimalU256")]
+        pub buy_amount: U256,
+        #[serde_as(as = "HexOrDecimalU256")]
+        pub executed_amount: U256,
+        pub receiver: H160,
+        pub valid_to: u32,
+        pub app_data: AppDataHash,
+        pub side: Side,
+        pub partially_fillable: bool,
+        pub sell_token_source: SellTokenSource,
+        pub buy_token_destination: BuyTokenDestination,
+        #[serde_as(as = "BytesHex")]
+        pub signature: Vec<u8>,
+        pub signing_scheme: SigningScheme,
+    }
+
+    #[serde_as]
     #[derive(Clone, Debug, Deserialize)]
     #[serde(rename_all = "camelCase")]
     pub struct Error {
         pub kind: String,
         pub description: String,
+    }
+
+    #[serde_as]
+    #[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub enum Side {
+        Buy,
+        Sell,
     }
 }

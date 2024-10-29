@@ -68,6 +68,7 @@ dependencies = [
  "chrono",
  "clap",
  "humantime",
+ "mimalloc",
  "model",
  "number",
  "observe",
@@ -293,6 +294,7 @@ dependencies = [
  "indexmap 2.2.6",
  "itertools 0.12.1",
  "maplit",
+ "mimalloc",
  "mockall 0.12.1",
  "model",
  "num",
@@ -1785,6 +1787,7 @@ dependencies = [
  "itertools 0.12.1",
  "lazy_static",
  "maplit",
+ "mimalloc",
  "mockall 0.12.1",
  "model",
  "num",
@@ -2868,6 +2871,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4ec2a862134d2a7d32d7983ddcdd1c4923530833c9f2ea1a44fc5fa473989058"
 
 [[package]]
+name = "libmimalloc-sys"
+version = "0.1.39"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "23aa6811d3bd4deb8a84dde645f943476d13b248d818edcf8ce0b2f37f036b44"
+dependencies = [
+ "cc",
+ "libc",
+]
+
+[[package]]
 name = "libsqlite3-sys"
 version = "0.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2963,6 +2976,15 @@ name = "memchr"
 version = "2.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c8640c5d730cb13ebd907d8d04b52f55ac9a2eec55b440c8892f40d56c76c1d"
+
+[[package]]
+name = "mimalloc"
+version = "0.1.43"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "68914350ae34959d83f732418d51e2427a794055d0b9529f48259ac07af65633"
+dependencies = [
+ "libmimalloc-sys",
+]
 
 [[package]]
 name = "mime"
@@ -3379,6 +3401,7 @@ dependencies = [
  "humantime",
  "hyper",
  "maplit",
+ "mimalloc",
  "mockall 0.12.1",
  "model",
  "multibase",
@@ -3864,6 +3887,7 @@ dependencies = [
  "gas-estimation",
  "humantime",
  "lazy_static",
+ "mimalloc",
  "model",
  "number",
  "observe",
@@ -4601,6 +4625,7 @@ dependencies = [
  "hex-literal",
  "hyper",
  "itertools 0.12.1",
+ "mimalloc",
  "model",
  "num",
  "observe",

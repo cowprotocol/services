@@ -61,21 +61,18 @@ contract Trader {
     // settlement contract anyway.
     receive() external payable {}
 
-    /// @dev Prepares everything needed by the trader for successfully executing the swap.
-    /// This includes giving the required approval, wrapping the required ETH (if needed)
-    /// and warming the needed storage for sending native ETH to smart contracts.
+    /// @dev Executes needed actions on behalf of the trader to make the trade possible.
+    ///      (e.g. wrapping ETH and setting approvals)
     /// @param settlementContract - pass in settlement contract because it does not have
     /// a stable address in tests.
     /// @param sellToken - token being sold by the trade
     /// @param sellAmount - expected amount to be sold according to the quote
     /// @param nativeToken - ERC20 version of the chain's native token
-    /// @param receiver - address that will receive the bought tokens
     function prepareSwap(
         ISettlement settlementContract,
         address sellToken,
         uint256 sellAmount,
-        address nativeToken,
-        address payable receiver
+        address nativeToken
     ) external {
         require(!alreadyCalled(), "prepareSwap can only be called once");
 
@@ -105,11 +102,6 @@ contract Trader {
 
         uint256 availableSellToken = IERC20(sellToken).balanceOf(address(this));
         require(availableSellToken >= sellAmount, "trader does not have enough sell_token");
-        // Warm the storage for sending ETH to smart contract addresses.
-        // We allow this call to revert becaues it was either unnecessary in the first place
-        // or failing to send `ETH` to the `receiver` will cause a revert in the settlement
-        // contract.
-        receiver.call{value: 0}("");
     }
 
     /// @dev Validate all signature requests. This makes "signing" CoW protocol

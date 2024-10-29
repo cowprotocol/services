@@ -34,6 +34,7 @@ hex-literal = { workspace = true }
 humantime = { workspace = true }
 hyper = { workspace = true }
 maplit = { workspace = true }
+mimalloc = { workspace = true }
 model = { path = "../model" }
 multibase = "0.9"
 num = { workspace = true }
