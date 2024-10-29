@@ -22,6 +22,11 @@ MAXUINT256="11579208923731619542357098500868790785326998466564056403945758400791
 # all funds sent to this account will be stolen immediately.
 PRIVATE_KEY="0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6"
 
+# Wait for 2 minutes for all services are read
+echo "Waiting until all services are ready"
+curl --retry 24 --retry-delay 5 --retry-all-errors --fail-with-body -s --show-error \
+  -H 'accept:application/json' \
+  http://$HOST/api/v1/token/$BUY_TOKEN/native_price > /dev/null 
 
 # Run test flow
 echo "Using private key:" $PRIVATE_KEY
@@ -38,7 +43,7 @@ echo "Setting WETH allowance"
 docker exec playground-chain-1 cast send --private-key $PRIVATE_KEY $WETH_ADDRESS "approve(address, uint)" $COW_VAULT_RELAYER_CONTRACT $MAXUINT256 > /dev/null
 
 echo "Request price qoute for buying USDC for WETH"
-quote_response=$( curl --retry 5 --retry-all-errors --fail-with-body -s -X 'POST' \
+quote_response=$( curl --retry 5 --fail-with-body -s --show-error -X 'POST' \
   "http://$HOST/api/v1/quote" \
   -H 'accept: application/json' \
   -H 'Content-Type: application/json' \
@@ -125,7 +130,7 @@ order_proposal=$(jq -r -c --args '
   .signature="'$signature'"' <<< "${eip712_message}")
 
 echo "Submit an order"
-orderUid=$( curl --retry 5 --retry-all-errors --fail-with-body -s -X 'POST' \
+orderUid=$( curl --retry 5 --fail-with-body -s --show-error -X 'POST' \
   "http://$HOST/api/v1/orders" \
   -H 'accept: application/json' \
   -H 'Content-Type: application/json' \
@@ -135,7 +140,7 @@ echo "Order UID: $orderUid"
 
 for i in $(seq 1 24);
 do
-  orderStatus=$( curl --retry 5 --retry-all-errors --fail-with-body -s -X 'GET' \
+  orderStatus=$( curl --retry 5 --fail-with-body -s --show-error -X 'GET' \
     "http://$HOST/api/v1/orders/$orderUid/status" \
     -H 'accept: application/json' | jq -r '.type')
   echo -e -n "Order status: $orderStatus     \r"
