@@ -30,7 +30,6 @@ use {
         gas_price::InstrumentedGasEstimator,
         http_client::HttpClientFactory,
         metrics::{serve_metrics, DEFAULT_METRICS_PORT},
-        network::network_name,
         order_quoting::{self, OrderQuoter},
         order_validation::{OrderValidPeriodConfiguration, OrderValidator},
         price_estimation::{
@@ -104,12 +103,11 @@ pub async fn run(args: Arguments) {
             .expect("load native token contract"),
     };
 
-    let network_name = network_name(chain_id);
+    let network = network::Network::try_from(chain_id).unwrap();
 
     let signature_validator = signature_validator::validator(
         &web3,
         signature_validator::Contracts {
-            chain_id,
             settlement: settlement_contract.address(),
             vault_relayer,
         },
@@ -145,7 +143,6 @@ pub async fn run(args: Arguments) {
     let balance_fetcher = account_balances::fetcher(
         &web3,
         account_balances::Contracts {
-            chain_id,
             settlement: settlement_contract.address(),
             vault_relayer,
             vault: vault.as_ref().map(|contract| contract.address()),
@@ -163,9 +160,11 @@ pub async fn run(args: Arguments) {
         .expect("failed to create gas price estimator"),
     ));
 
-    let baseline_sources = args.shared.baseline_sources.clone().unwrap_or_else(|| {
-        sources::defaults_for_chain(chain_id).expect("failed to get default baseline sources")
-    });
+    let baseline_sources = args
+        .shared
+        .baseline_sources
+        .clone()
+        .unwrap_or_else(|| sources::defaults_for_network(&network));
     tracing::info!(?baseline_sources, "using baseline sources");
     let univ2_sources = baseline_sources
         .iter()
@@ -198,7 +197,7 @@ pub async fn run(args: Arguments) {
     let finder = token_owner_finder::init(
         &args.token_owner_finder,
         web3.clone(),
-        chain_id,
+        &network,
         &http_factory,
         &pair_providers,
         vault.as_ref(),
@@ -255,8 +254,7 @@ pub async fn run(args: Arguments) {
         factory::Network {
             web3: web3.clone(),
             simulation_web3,
-            name: network_name.to_string(),
-            chain_id,
+            network,
             native_token: native_token.address(),
             settlement: settlement_contract.address(),
             authenticator: settlement_contract

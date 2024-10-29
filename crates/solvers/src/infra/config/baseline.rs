@@ -18,8 +18,7 @@ use {
 struct Config {
     /// Optional chain ID. This is used to automatically determine the address
     /// of the WETH contract.
-    #[serde_as(as = "Option<serialize::ChainId>")]
-    chain_id: Option<eth::ChainId>,
+    chain_id: Option<network::Network>,
 
     /// Optional WETH contract address. This can be used to specify a manual
     /// value **instead** of using the canonical WETH contract for the

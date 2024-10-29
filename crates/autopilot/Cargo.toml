@@ -40,6 +40,7 @@ itertools = { workspace = true }
 maplit = { workspace = true }
 mimalloc = { workspace = true }
 model = { path = "../model" }
+network = { path = "../network" }
 num = { workspace = true }
 number = { path = "../number" }
 order-validation = { path = "../order-validation" }

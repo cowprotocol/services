@@ -25,6 +25,7 @@ hex = { workspace = true }
 hyper = { workspace = true }
 itertools = { workspace = true }
 mimalloc = { workspace = true }
+network = { path = "../network" }
 num = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }

@@ -38,6 +38,7 @@ lazy_static = { workspace = true }
 maplit = { workspace = true }
 mockall = { workspace = true }
 model = { path = "../model" }
+network = { path = "../network" }
 num = { workspace = true }
 number = { path = "../number" }
 order-validation = { path = "../order-validation" }

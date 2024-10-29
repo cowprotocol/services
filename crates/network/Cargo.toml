@@ -1,0 +1,17 @@
+[package]
+name = "network"
+version = "0.1.0"
+authors = ["Cow Protocol Developers <dev@cow.fi>"]
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+ethcontract = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

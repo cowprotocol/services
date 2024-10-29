@@ -53,7 +53,7 @@ impl CoinGecko {
         client: Client,
         base_url: Url,
         api_key: Option<String>,
-        chain_id: u64,
+        network: &network::Network,
         native_token: H160,
         token_infos: Arc<dyn TokenInfoFetching>,
     ) -> Result<Self> {
@@ -68,11 +68,14 @@ impl CoinGecko {
             decimals: denominator_decimals,
         };
 
-        let chain = match chain_id {
-            1 => "ethereum".to_string(),
-            100 => "xdai".to_string(),
-            42161 => "arbitrum-one".to_string(),
-            n => anyhow::bail!("unsupported network {n}"),
+        let chain = match network {
+            network::Network::Mainnet => "ethereum".to_string(),
+            network::Network::Gnosis => "xdai".to_string(),
+            network::Network::ArbitrumOne => "arbitrum-one".to_string(),
+            network::Network::Base => "base".to_string(),
+            network::Network::Sepolia | network::Network::Goerli => {
+                anyhow::bail!("unsupported network {}", network.name())
+            }
         };
         Ok(Self {
             client,
@@ -304,32 +307,32 @@ mod tests {
             client: Client,
             base_url: Url,
             api_key: Option<String>,
-            chain_id: u64,
+            network: &network::Network,
             token_infos: Arc<dyn TokenInfoFetching>,
         ) -> Result<Self> {
-            let (chain, denominator) = match chain_id {
-                1 => (
+            let (chain, denominator) = match network {
+                network::Network::Mainnet => (
                     "ethereum".to_string(),
                     Denominator {
                         address: addr!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
                         decimals: 18,
                     },
                 ),
-                100 => (
+                network::Network::Gnosis => (
                     "xdai".to_string(),
                     Denominator {
                         address: addr!("e91d153e0b41518a2ce8dd3d7944fa863463a97d"),
                         decimals: 18,
                     },
                 ),
-                42161 => (
+                network::Network::ArbitrumOne => (
                     "arbitrum-one".to_string(),
                     Denominator {
                         address: addr!("82af49447d8a07e3bd95bd0d56f35241523fbab1"),
                         decimals: 18,
                     },
                 ),
-                n => anyhow::bail!("unsupported network {n}"),
+                n => anyhow::bail!("unsupported network {}", n.name()),
             };
             Ok(Self {
                 client,
@@ -379,7 +382,7 @@ mod tests {
             Client::default(),
             Url::parse(BASE_API_URL).unwrap(),
             None,
-            1,
+            &network::Network::Mainnet,
             default_token_info_fetcher(),
         )
         .unwrap();
@@ -399,7 +402,7 @@ mod tests {
             Client::default(),
             Url::parse(BASE_API_PRO_URL).unwrap(),
             env::var("COIN_GECKO_API_KEY").ok(),
-            100,
+            &network::Network::Gnosis,
             default_token_info_fetcher(),
         )
         .unwrap();
@@ -419,7 +422,7 @@ mod tests {
             Client::default(),
             Url::parse(BASE_API_PRO_URL).unwrap(),
             env::var("COIN_GECKO_API_KEY").ok(),
-            100,
+            &network::Network::Gnosis,
             default_token_info_fetcher(),
         )
         .unwrap();
@@ -445,7 +448,7 @@ mod tests {
             Client::default(),
             Url::parse(BASE_API_PRO_URL).unwrap(),
             env::var("COIN_GECKO_API_KEY").ok(),
-            100,
+            &network::Network::Gnosis,
             default_token_info_fetcher(),
         )
         .unwrap();
@@ -486,7 +489,7 @@ mod tests {
             Client::default(),
             Url::parse(BASE_API_PRO_URL).unwrap(),
             env::var("COIN_GECKO_API_KEY").ok(),
-            100,
+            &network::Network::Gnosis,
             Arc::new(mock),
         )
         .unwrap();
@@ -534,7 +537,7 @@ mod tests {
             Client::default(),
             Url::parse(BASE_API_PRO_URL).unwrap(),
             env::var("COIN_GECKO_API_KEY").ok(),
-            100,
+            &network::Network::Gnosis,
             Arc::new(mock),
         )
         .unwrap();

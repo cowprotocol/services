@@ -697,8 +697,11 @@ mod tests {
                     .unwrap(),
                 ),
                 Arc::new(
-                    BlockscoutTokenOwnerFinder::try_with_network(reqwest::Client::new(), 1)
-                        .unwrap(),
+                    BlockscoutTokenOwnerFinder::with_network(
+                        reqwest::Client::new(),
+                        &network::Network::Mainnet,
+                    )
+                    .unwrap(),
                 ),
             ],
         });

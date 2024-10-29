@@ -190,11 +190,14 @@ pub enum TokenOwnerFindingStrategy {
 
 impl TokenOwnerFindingStrategy {
     /// Returns the default set of token owner finding strategies.
-    pub fn defaults_for_chain(chain_id: u64) -> &'static [Self] {
-        match chain_id {
-            1 => &[Self::Liquidity, Self::Blockscout, Self::Ethplorer],
-            100 => &[Self::Liquidity, Self::Blockscout],
-            _ => &[Self::Liquidity],
+    pub fn defaults_for_network(network: &network::Network) -> &'static [Self] {
+        match network {
+            network::Network::Mainnet => &[Self::Liquidity, Self::Blockscout, Self::Ethplorer],
+            network::Network::Gnosis => &[Self::Liquidity, Self::Blockscout],
+            network::Network::Sepolia
+            | network::Network::Goerli
+            | network::Network::ArbitrumOne
+            | network::Network::Base => &[Self::Liquidity],
         }
     }
 }
@@ -270,7 +273,7 @@ impl Display for Arguments {
 pub async fn init(
     args: &Arguments,
     web3: Web3,
-    chain_id: u64,
+    network: &network::Network,
     http_factory: &HttpClientFactory,
     pair_providers: &[PairProvider],
     vault: Option<&BalancerV2Vault>,
@@ -282,7 +285,7 @@ pub async fn init(
     let finders = args
         .token_owner_finders
         .as_deref()
-        .unwrap_or_else(|| TokenOwnerFindingStrategy::defaults_for_chain(chain_id));
+        .unwrap_or_else(|| TokenOwnerFindingStrategy::defaults_for_network(network));
     tracing::debug!(?finders, "initializing token owner finders");
 
     let mut proposers = Vec::<Arc<dyn TokenOwnerProposing>>::new();
@@ -315,7 +318,7 @@ pub async fn init(
 
     if finders.contains(&TokenOwnerFindingStrategy::Blockscout) {
         let mut blockscout =
-            BlockscoutTokenOwnerFinder::try_with_network(http_factory.create(), chain_id)?;
+            BlockscoutTokenOwnerFinder::with_network(http_factory.create(), network)?;
         if let Some(blockscout_config) = &args.blockscout {
             blockscout.with_base_url(blockscout_config.blockscout_api_url.clone());
             blockscout.with_api_key(blockscout_config.blockscout_api_key.clone());
@@ -332,7 +335,7 @@ pub async fn init(
             args.ethplorer
                 .as_ref()
                 .map(|ethplorer| ethplorer.ethplorer_api_key.clone()),
-            chain_id,
+            network,
         )?;
         if let Some(ethplorer_config) = &args.ethplorer {
             ethplorer.with_base_url(ethplorer_config.ethplorer_api_url.clone());

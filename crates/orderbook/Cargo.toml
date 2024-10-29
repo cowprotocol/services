@@ -37,6 +37,7 @@ maplit = { workspace = true }
 mimalloc = { workspace = true }
 model = { path = "../model" }
 multibase = "0.9"
+network = { path = "../network" }
 num = { workspace = true }
 number = { path = "../number" }
 order-validation = { path = "../order-validation" }

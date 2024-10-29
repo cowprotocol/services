@@ -1,6 +1,6 @@
 use {
     super::TokenOwnerProposing,
-    anyhow::{bail, Result},
+    anyhow::Result,
     ethcontract::H160,
     prometheus::IntCounterVec,
     prometheus_metric_storage::MetricStorage,
@@ -17,14 +17,14 @@ pub struct BlockscoutTokenOwnerFinder {
 }
 
 impl BlockscoutTokenOwnerFinder {
-    pub fn try_with_network(client: Client, network_id: u64) -> Result<Self> {
-        let base_url = match network_id {
-            1 => "https://eth.blockscout.com/api",
-            5 => "https://eth-goerli.blockscout.com/api",
-            100 => "https://blockscout.com/xdai/mainnet/api",
-            11155111 => "https://eth-sepolia.blockscout.com/api",
-            42161 => "https://arbitrum.blockscout.com/api",
-            _ => bail!("Unsupported Network"),
+    pub fn with_network(client: Client, network: &network::Network) -> Result<Self> {
+        let base_url = match network {
+            network::Network::Mainnet => "https://eth.blockscout.com/api",
+            network::Network::Goerli => "https://eth-goerli.blockscout.com/api",
+            network::Network::Gnosis => "https://blockscout.com/xdai/mainnet/api",
+            network::Network::Sepolia => "https://eth-sepolia.blockscout.com/api",
+            network::Network::ArbitrumOne => "https://arbitrum.blockscout.com/api",
+            network::Network::Base => "https://base.blockscout.com/api",
         };
 
         Ok(Self {
@@ -138,7 +138,9 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_blockscout_token_finding_mainnet() {
-        let finder = BlockscoutTokenOwnerFinder::try_with_network(Client::default(), 1).unwrap();
+        let finder =
+            BlockscoutTokenOwnerFinder::with_network(Client::default(), &network::Network::Mainnet)
+                .unwrap();
         let owners = finder
             .find_candidate_owners(H160(hex!("1337BedC9D22ecbe766dF105c9623922A27963EC")))
             .await;
@@ -148,7 +150,9 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_blockscout_token_finding_xdai() {
-        let finder = BlockscoutTokenOwnerFinder::try_with_network(Client::default(), 100).unwrap();
+        let finder =
+            BlockscoutTokenOwnerFinder::with_network(Client::default(), &network::Network::Gnosis)
+                .unwrap();
         let owners = finder
             .find_candidate_owners(H160(hex!("1337BedC9D22ecbe766dF105c9623922A27963EC")))
             .await;
@@ -158,7 +162,9 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_blockscout_token_finding_no_owners() {
-        let finder = BlockscoutTokenOwnerFinder::try_with_network(Client::default(), 100).unwrap();
+        let finder =
+            BlockscoutTokenOwnerFinder::with_network(Client::default(), &network::Network::Gnosis)
+                .unwrap();
         let owners = finder
             .find_candidate_owners(H160(hex!("000000000000000000000000000000000000def1")))
             .await;

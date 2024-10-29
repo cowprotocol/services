@@ -9,12 +9,12 @@ pub struct Contracts {
 }
 
 impl Contracts {
-    pub fn for_chain(chain: eth::ChainId) -> Self {
+    pub fn for_chain(chain: network::Network) -> Self {
         let a = |contract: &contracts::ethcontract::Contract| {
             eth::ContractAddress(
                 contract
                     .networks
-                    .get(chain.network_id())
+                    .get(&chain.chain_id().to_string())
                     .expect("contract address for all supported chains")
                     .address,
             )

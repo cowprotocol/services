@@ -106,11 +106,11 @@ impl Settlement {
     pub async fn new(
         settled: Transaction,
         persistence: &infra::Persistence,
-        chain: &infra::blockchain::Id,
+        network: &network::Network,
     ) -> Result<Self, Error> {
         let auction = persistence.get_auction(settled.auction_id).await?;
 
-        if settled.block > auction.block + max_settlement_age(chain) {
+        if settled.block > auction.block + max_settlement_age(network) {
             // A settled transaction references a VERY old auction.
             //
             // A hacky way to detect processing of production settlements in the staging
@@ -138,23 +138,13 @@ impl Settlement {
     }
 }
 
-const MAINNET_BLOCK_TIME: u64 = 13_000; // ms
-const GNOSIS_BLOCK_TIME: u64 = 5_000; // ms
-const SEPOLIA_BLOCK_TIME: u64 = 13_000; // ms
-const ARBITRUM_ONE_BLOCK_TIME: u64 = 100; // ms
-
 /// How old (in terms of blocks) a settlement should be, to be considered as a
 /// settlement from another environment.
 ///
 /// Currently set to ~6h
-fn max_settlement_age(chain: &infra::blockchain::Id) -> u64 {
+fn max_settlement_age(network: &network::Network) -> u64 {
     const TARGET_AGE: u64 = 6 * 60 * 60 * 1000; // 6h in ms
-    match chain {
-        infra::blockchain::Id::Mainnet => TARGET_AGE / MAINNET_BLOCK_TIME,
-        infra::blockchain::Id::Gnosis => TARGET_AGE / GNOSIS_BLOCK_TIME,
-        infra::blockchain::Id::Sepolia => TARGET_AGE / SEPOLIA_BLOCK_TIME,
-        infra::blockchain::Id::ArbitrumOne => TARGET_AGE / ARBITRUM_ONE_BLOCK_TIME,
-    }
+    network.number_of_blocks_in(TARGET_AGE).round() as u64
 }
 
 #[derive(Debug, thiserror::Error)]
