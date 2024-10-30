@@ -67,7 +67,8 @@ jobs:
 
       - name: Upload logs to GitHub
         if: failure()
-        uses: actions/upload-artifact@master
+        id: artifact-upload-step
+        uses: actions/upload-artifact@v4
         with:
           name: logs.tgz
           path: ./logs.tgz
@@ -85,7 +86,8 @@ jobs:
               "event_name":"${{ github.event_name }}",
               "head_ref":"${{ github.head_ref }}",
               "step_containers":"${{ steps.containers.conclusion }}",
-              "step_test_script":"${{ steps.test_script.conclusion }}"
+              "step_test_script":"${{ steps.test_script.conclusion }}",
+              "log_artifcat":"${{ steps.artifact-upload-step.outputs.artifact-url }}"
             }
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_PLAYGROUND_CI_WEBHOOK_URL }}
