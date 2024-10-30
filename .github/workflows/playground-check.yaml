@@ -76,6 +76,6 @@ jobs:
         uses: slackapi/slack-github-action@v1.27.0
         with:
           payload: |
-            {"job_link":"${{env.GITHUB_SERVER_URL}}/${{env.GITHUB_REPOSITORY}}/actions/runs/${{env.GITHUB_RUN_ID}}"}
+            {"job_link":"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"}
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_PLAYGROUND_CI_WEBHOOK_URL }}
