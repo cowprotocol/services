@@ -5,7 +5,6 @@ use {
         code_fetching::CodeFetching,
         order_quoting::{
             CalculateQuoteError,
-            FindQuoteError,
             OrderQuoting,
             Quote,
             QuoteParameters,
@@ -130,11 +129,6 @@ pub enum AppDataValidationError {
 pub enum ValidationError {
     Partial(PartialValidationError),
     AppData(AppDataValidationError),
-    /// The quote ID specified with the order could not be found.
-    QuoteNotFound,
-    /// The quote specified by ID is invalid. Either it doesn't match the order
-    /// or it has already expired.
-    InvalidQuote,
     /// Unable to compute quote because of a price estimation error.
     PriceForQuote(PriceEstimationError),
     /// Orders with positive signed fee amount are deprecated
@@ -176,16 +170,6 @@ impl From<VerificationError> for ValidationError {
             VerificationError::UnexpectedSigner(recovered) => Self::WrongOwner(recovered),
             VerificationError::MissingFrom => Self::MissingFrom,
             VerificationError::AppdataFromMismatch(mismatch) => Self::AppdataFromMismatch(mismatch),
-        }
-    }
-}
-
-impl From<FindQuoteError> for ValidationError {
-    fn from(err: FindQuoteError) -> Self {
-        match err {
-            FindQuoteError::NotFound(_) => Self::QuoteNotFound,
-            FindQuoteError::ParameterMismatch(_) | FindQuoteError::Expired(_) => Self::InvalidQuote,
-            FindQuoteError::Other(err) => Self::Other(err),
         }
     }
 }
@@ -853,7 +837,8 @@ async fn get_or_create_quote(
             quote
         }
         // We couldn't find a quote, so try computing a fresh quote to use instead.
-        Err(FindQuoteError::NotFound(_)) => {
+        Err(err) => {
+            tracing::debug!(?err, "failed to find quote for order creation");
             let parameters = QuoteParameters {
                 sell_token: quote_search_parameters.sell_token,
                 buy_token: quote_search_parameters.buy_token,
@@ -887,7 +872,6 @@ async fn get_or_create_quote(
             tracing::debug!(quote_id =? quote.id, "computed fresh quote for order creation");
             quote
         }
-        Err(err) => return Err(err.into()),
     };
 
     Ok(quote)

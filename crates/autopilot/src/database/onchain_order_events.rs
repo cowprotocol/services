@@ -555,27 +555,13 @@ async fn get_quote(
         // verified quote here on purpose.
         verification: Default::default(),
     };
-    let mut result = get_quote_and_check_fee(
+    let result = get_quote_and_check_fee(
         quoter,
         &parameters.clone(),
         Some(*quote_id),
         Some(order_data.fee_amount),
     )
     .await;
-
-    // If we didn't find the quote, recompute a fresh one
-    if matches!(
-        result,
-        Err(ValidationError::QuoteNotFound | ValidationError::InvalidQuote)
-    ) {
-        result = get_quote_and_check_fee(
-            quoter,
-            &parameters.clone(),
-            None,
-            Some(order_data.fee_amount),
-        )
-        .await;
-    }
 
     result.map_err(|err| match err {
         ValidationError::Partial(_) => OnchainOrderPlacementError::PreValidationError,
