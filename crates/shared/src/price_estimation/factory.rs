@@ -127,9 +127,11 @@ impl<'a> PriceEstimatorFactory<'a> {
             self.args
                 .amount_to_estimate_prices_with
                 .or_else(|| {
-                    self.network
-                        .network
-                        .default_amount_to_estimate_native_prices_with()
+                    Some(
+                        self.network
+                            .network
+                            .default_amount_to_estimate_native_prices_with(),
+                    )
                 })
                 .context("No amount to estimate prices with set.")?,
         )

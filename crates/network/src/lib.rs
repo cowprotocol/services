@@ -3,6 +3,7 @@ use {
         jsonrpc::serde::{de, Deserialize, Deserializer},
         U256,
     },
+    std::time::Duration,
     thiserror::Error,
 };
 
@@ -38,31 +39,32 @@ impl Network {
         }
     }
 
-    pub fn default_amount_to_estimate_native_prices_with(&self) -> Option<U256> {
+    /// The default amount in native tokens atoms to use for price estimation
+    pub fn default_amount_to_estimate_native_prices_with(&self) -> U256 {
         match &self {
             Self::Mainnet | Self::Goerli | Self::Sepolia | Self::ArbitrumOne | Self::Base => {
-                Some(10u128.pow(18).into())
+                10u128.pow(17).into()
             }
-            Self::Gnosis => Some(10u128.pow(21).into()),
+            Self::Gnosis => 10u128.pow(18).into(),
         }
     }
 
     /// Returns the block time in milliseconds
-    pub fn block_time_in_ms(&self) -> u64 {
+    pub fn block_time_in_ms(&self) -> Duration {
         match self {
-            Self::Mainnet => 12_000,
-            Self::Goerli => 12_000,
-            Self::Gnosis => 5_000,
-            Self::Sepolia => 12_000,
-            Self::ArbitrumOne => 250,
-            Self::Base => 2_000,
+            Self::Mainnet => Duration::from_millis(12_000),
+            Self::Goerli => Duration::from_millis(12_000),
+            Self::Gnosis => Duration::from_millis(5_000),
+            Self::Sepolia => Duration::from_millis(12_000),
+            Self::ArbitrumOne => Duration::from_millis(250),
+            Self::Base => Duration::from_millis(2_000),
         }
     }
 
     /// Returns the number of blocks that fits into the given time (in
     /// milliseconds)
     pub fn blocks_in(&self, time_in_ms: u64) -> f64 {
-        time_in_ms as f64 / self.block_time_in_ms() as f64
+        time_in_ms as f64 / self.block_time_in_ms().as_millis() as f64
     }
 }
 
