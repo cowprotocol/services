@@ -42,6 +42,7 @@ jobs:
           cat playground/.env
 
       - name: Start docker containers
+        id: containers
         run: |
           cd playground
           # firstly start explorer container to workaround yarn cache problem 
@@ -49,6 +50,7 @@ jobs:
           docker compose -f docker-compose.fork.yml up -d
 
       - name: Execute validation script
+        id: test_script
         run: |
           cd playground
           ./test_playground.sh
@@ -76,6 +78,15 @@ jobs:
         uses: slackapi/slack-github-action@v1.27.0
         with:
           payload: |
-            {"job_link":"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"}
+            {
+              "job_link":"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+              "actor":"${{ github.actor }}",
+              "action":"${{ github.action_status }}",
+              "base_ref":"${{ github.base_ref }}",
+              "event_name":"${{ github.event_name }}",
+              "head_ref":"${{ github.head_ref }}",
+              "step_containers":"${{ steps.containers.conclusion }}",
+              "step_test_script":"${{ steps.test_script.conclusion }}"
+            }
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_PLAYGROUND_CI_WEBHOOK_URL }}
