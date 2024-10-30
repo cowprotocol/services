@@ -844,52 +844,51 @@ async fn get_or_create_quote(
     quote_search_parameters: &QuoteSearchParameters,
     quote_id: Option<i64>,
 ) -> Result<Quote, ValidationError> {
-    let quote = match quoter
-        .find_quote(quote_id, quote_search_parameters.clone())
-        .await
-    {
-        Ok(quote) => {
-            tracing::debug!(quote_id =? quote.id, "found quote for order creation");
-            quote
-        }
-        // We couldn't find a quote, so try computing a fresh quote to use instead.
-        Err(FindQuoteError::NotFound(_)) => {
-            let parameters = QuoteParameters {
-                sell_token: quote_search_parameters.sell_token,
-                buy_token: quote_search_parameters.buy_token,
-                side: match quote_search_parameters.kind {
-                    OrderKind::Buy => OrderQuoteSide::Buy {
-                        buy_amount_after_fee: quote_search_parameters
-                            .buy_amount
-                            .try_into()
-                            .map_err(|_| ValidationError::ZeroAmount)?,
-                    },
-                    OrderKind::Sell => OrderQuoteSide::Sell {
-                        sell_amount: SellAmount::AfterFee {
-                            value: quote_search_parameters
-                                .sell_amount
-                                .try_into()
-                                .map_err(|_| ValidationError::ZeroAmount)?,
-                        },
-                    },
+    if let Ok(quote) = quoter.find_quote(quote_id, quote_search_parameters.clone()).await {
+        tracing::debug!(
+            found_quote = ?quote.id,
+            user_provided_quote = ?quote_id,
+            "found quote for order creation"
+        );
+        return Ok(quote);
+    }
+
+    // Quote could not be found so let's compute a fresh one.
+    let parameters = QuoteParameters {
+        sell_token: quote_search_parameters.sell_token,
+        buy_token: quote_search_parameters.buy_token,
+        side: match quote_search_parameters.kind {
+            OrderKind::Buy => OrderQuoteSide::Buy {
+                buy_amount_after_fee: quote_search_parameters
+                    .buy_amount
+                    .try_into()
+                    .map_err(|_| ValidationError::ZeroAmount)?,
+            },
+            OrderKind::Sell => OrderQuoteSide::Sell {
+                sell_amount: SellAmount::AfterFee {
+                    value: quote_search_parameters
+                        .sell_amount
+                        .try_into()
+                        .map_err(|_| ValidationError::ZeroAmount)?,
                 },
-                verification: quote_search_parameters.verification.clone(),
-                signing_scheme: quote_search_parameters.signing_scheme,
-                additional_gas: quote_search_parameters.additional_gas,
-            };
-
-            let quote = quoter.calculate_quote(parameters).await?;
-            let quote = quoter
-                .store_quote(quote)
-                .await
-                .map_err(ValidationError::Other)?;
-
-            tracing::debug!(quote_id =? quote.id, "computed fresh quote for order creation");
-            quote
-        }
-        Err(err) => return Err(err.into()),
+            },
+        },
+        verification: quote_search_parameters.verification.clone(),
+        signing_scheme: quote_search_parameters.signing_scheme,
+        additional_gas: quote_search_parameters.additional_gas,
     };
 
+    let quote = quoter.calculate_quote(parameters).await?;
+    let quote = quoter
+        .store_quote(quote)
+        .await
+        .map_err(ValidationError::Other)?;
+
+    tracing::debug!(
+        computed_quote = ?quote.id,
+        user_provided_quote = ?quote_id,
+        "computed fresh quote for order creation"
+    );
     Ok(quote)
 }
 
