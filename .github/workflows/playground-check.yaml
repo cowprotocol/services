@@ -79,10 +79,9 @@ jobs:
         with:
           payload: |
             {
+              "channel_id": "C0546R7QZJT",
               "job_link":"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
               "actor":"${{ github.actor }}",
-              "action":"${{ github.action_status }}",
-              "base_ref":"${{ github.base_ref }}",
               "event_name":"${{ github.event_name }}",
               "head_ref":"${{ github.head_ref }}",
               "step_containers":"${{ steps.containers.conclusion }}",
