@@ -189,20 +189,18 @@ impl Trade {
 
             let (executed_sell, executed_buy) = match jit_order.side {
                 Side::Sell => {
-                    let buy_amount = executed_amount
-                        .clone()
+                    let buy_amount = (&executed_amount)
                         .mul(&sell_price)
                         .checked_div(&buy_price)
                         .context("division by zero in JIT order sell")?;
-                    (executed_amount.clone(), buy_amount)
+                    (executed_amount, buy_amount)
                 }
                 Side::Buy => {
-                    let sell_amount = executed_amount
-                        .clone()
+                    let sell_amount = (&executed_amount)
                         .mul(&buy_price)
                         .checked_div(&sell_price)
                         .context("division by zero in JIT order buy")?;
-                    (sell_amount, executed_amount.clone())
+                    (sell_amount, executed_amount)
                 }
             };
 
