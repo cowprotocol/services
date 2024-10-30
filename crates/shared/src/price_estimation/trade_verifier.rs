@@ -800,9 +800,9 @@ mod tests {
 
         let jit_orders = [
             dto::JitOrder {
-                sell_token: buy_token, // Solver sells Token B
-                buy_token: sell_token, // Solver buys Token A
-                executed_amount: U256::from(200u64),
+                sell_token: buy_token,               // Solver sells Token B
+                buy_token: sell_token,               // Solver buys Token A
+                executed_amount: U256::from(200u64), // Fills the query partially
                 side: dto::Side::Sell,
                 sell_amount: U256::from(200u64),
                 buy_amount: U256::from(400u64),
@@ -816,9 +816,9 @@ mod tests {
                 signing_scheme: SigningScheme::Eip1271,
             },
             dto::JitOrder {
-                sell_token: buy_token, // Solver sell Token B
-                buy_token: sell_token, // Solver buys Token A
-                executed_amount: U256::from(400u64),
+                sell_token: buy_token,               // Solver sell Token B
+                buy_token: sell_token,               // Solver buys Token A
+                executed_amount: U256::from(400u64), // Fills the query partially
                 side: dto::Side::Buy,
                 sell_amount: U256::from(200u64),
                 buy_amount: U256::from(400u64),
@@ -908,9 +908,9 @@ mod tests {
 
         let jit_orders = [
             dto::JitOrder {
-                sell_token: buy_token, // Solver sells Token B
-                buy_token: sell_token, // Solver buys Token A
-                executed_amount: U256::from(200u64),
+                sell_token: buy_token,               // Solver sells Token B
+                buy_token: sell_token,               // Solver buys Token A
+                executed_amount: U256::from(250u64), // Fully fills the query
                 side: dto::Side::Sell,
                 sell_amount: U256::from(250u64),
                 buy_amount: U256::from(500u64),
@@ -924,9 +924,9 @@ mod tests {
                 signing_scheme: SigningScheme::Eip1271,
             },
             dto::JitOrder {
-                sell_token: buy_token, // Solver sell Token B
-                buy_token: sell_token, // Solver buys Token A
-                executed_amount: U256::from(500u64),
+                sell_token: buy_token,               // Solver sell Token B
+                buy_token: sell_token,               // Solver buys Token A
+                executed_amount: U256::from(500u64), // Fully fills the query
                 side: dto::Side::Buy,
                 sell_amount: U256::from(250u64),
                 buy_amount: U256::from(500u64),
