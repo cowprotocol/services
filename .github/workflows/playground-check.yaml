@@ -80,7 +80,7 @@ jobs:
         with:
           payload: |
             {
-              "channel_id": "C0546R7QZJT",
+              "channel_id": "C037PB929ME",
               "job_link":"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
               "actor":"${{ github.actor }}",
               "event_name":"${{ github.event_name }}",
