@@ -838,8 +838,7 @@ pub async fn get_quote_and_check_fee(
 /// Retrieves the quote for an order that is being created
 ///
 /// This works by first trying to find an existing quote, and then falling back
-/// to calculating a brand new one if none can be found and a quote ID was not
-/// specified.
+/// to calculating a brand new one if none can be found.
 async fn get_or_create_quote(
     quoter: &dyn OrderQuoting,
     quote_search_parameters: &QuoteSearchParameters,
@@ -853,9 +852,8 @@ async fn get_or_create_quote(
             tracing::debug!(quote_id =? quote.id, "found quote for order creation");
             quote
         }
-        // We couldn't find a quote, and no ID was specified. Try computing a
-        // fresh quote to use instead.
-        Err(FindQuoteError::NotFound(_)) if quote_id.is_none() => {
+        // We couldn't find a quote, so try computing a fresh quote to use instead.
+        Err(FindQuoteError::NotFound(_)) => {
             let parameters = QuoteParameters {
                 sell_token: quote_search_parameters.sell_token,
                 buy_token: quote_search_parameters.buy_token,
