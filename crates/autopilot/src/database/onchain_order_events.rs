@@ -555,15 +555,15 @@ async fn get_quote(
         // verified quote here on purpose.
         verification: Default::default(),
     };
-    let result = get_quote_and_check_fee(
+
+    get_quote_and_check_fee(
         quoter,
         &parameters.clone(),
         Some(*quote_id),
         Some(order_data.fee_amount),
     )
-    .await;
-
-    result.map_err(|err| match err {
+    .await
+    .map_err(|err| match err {
         ValidationError::Partial(_) => OnchainOrderPlacementError::PreValidationError,
         ValidationError::NonZeroFee => OnchainOrderPlacementError::NonZeroFee,
         _ => OnchainOrderPlacementError::Other,
