@@ -3,7 +3,7 @@
 use {
     crate::{
         price_estimation::{PriceEstimationError, Query},
-        request_sharing::RequestSharing,
+        request_sharing::{BoxRequestSharing, RequestSharing},
         trade_finding::{
             Interaction,
             LegacyTrade,
@@ -16,7 +16,7 @@ use {
     },
     anyhow::{anyhow, Context},
     ethrpc::block_stream::CurrentBlockWatcher,
-    futures::{future::BoxFuture, FutureExt},
+    futures::FutureExt,
     reqwest::{header, Client},
     url::Url,
 };
@@ -28,7 +28,7 @@ pub struct ExternalTradeFinder {
     /// Utility to make sure no 2 identical requests are in-flight at the same
     /// time. Instead of issuing a duplicated request this awaits the
     /// response of the in-flight request.
-    sharing: RequestSharing<Query, BoxFuture<'static, Result<TradeKind, PriceEstimationError>>>,
+    sharing: BoxRequestSharing<Query, Result<TradeKind, PriceEstimationError>>,
 
     /// Client to issue http requests with.
     client: Client,

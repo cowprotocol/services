@@ -56,12 +56,11 @@ where
 
     fn collect_garbage(cache: &Cache<Request, Fut>, label: &str) {
         let mut cache = cache.lock().unwrap();
-        let len_before = cache.len() as u64;
         cache.retain(|_request, weak| weak.upgrade().is_some());
         Metrics::get()
             .request_sharing_cached_items
             .with_label_values(&[label])
-            .sub(len_before - cache.len() as u64);
+            .set(cache.len() as u64);
     }
 
     fn spawn_gc(cache: Cache<Request, Fut>, label: String) {
@@ -76,11 +75,10 @@ where
 
 impl<A, B: Future> Drop for RequestSharing<A, B> {
     fn drop(&mut self) {
-        let cache = self.in_flight.lock().unwrap();
         Metrics::get()
             .request_sharing_cached_items
             .with_label_values(&[&self.request_label])
-            .sub(cache.len() as u64);
+            .set(0);
     }
 }
 
@@ -130,7 +128,7 @@ where
         Metrics::get()
             .request_sharing_cached_items
             .with_label_values(&[&self.request_label])
-            .inc();
+            .set(in_flight.len() as u64);
         shared
     }
 }
