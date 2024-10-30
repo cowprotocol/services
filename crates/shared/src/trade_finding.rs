@@ -171,6 +171,9 @@ impl Trade {
         big_rational_to_u256(&out_amount).context("out amount is not a valid U256")
     }
 
+    /// Calculate the net token changes for all the JIT orders.
+    /// Positive values mean the solver gains the token, negative values mean
+    /// the solver loses it.
     pub fn jit_orders_net_token_changes(&self) -> Result<HashMap<H160, BigRational>> {
         let mut net_token_changes: HashMap<H160, BigRational> = HashMap::new();
 
