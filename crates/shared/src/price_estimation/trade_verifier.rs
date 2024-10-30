@@ -395,25 +395,23 @@ fn encode_settlement(
         tracing::trace!("adding unwrap interaction for paying out ETH");
     }
 
-    let mut tokens = vec![query.sell_token, query.buy_token];
-    let mut clearing_prices = match (trade, query.kind) {
-        (TradeKind::Legacy(_), OrderKind::Sell) => {
-            vec![*out_amount, query.in_amount.get()]
+    let (tokens, clearing_prices) = match trade {
+        TradeKind::Legacy(_) => {
+            let tokens = vec![query.sell_token, query.buy_token];
+            let prices = match query.kind {
+                OrderKind::Sell => vec![*out_amount, query.in_amount.get()],
+                OrderKind::Buy => vec![query.in_amount.get(), *out_amount],
+            };
+            (tokens, prices)
         }
-        (TradeKind::Legacy(_), OrderKind::Buy) => {
-            vec![query.in_amount.get(), *out_amount]
-        }
-        (TradeKind::Regular(trade), _) => {
-            vec![
-                *trade
-                    .clearing_prices
-                    .get(&query.sell_token)
-                    .context("sell token clearing price is missing")?,
-                *trade
-                    .clearing_prices
-                    .get(&query.buy_token)
-                    .context("buy token clearing price is missing")?,
-            ]
+        TradeKind::Regular(trade) => {
+            let mut tokens = Vec::with_capacity(trade.clearing_prices.len());
+            let mut prices = Vec::with_capacity(trade.clearing_prices.len());
+            for (token, price) in trade.clearing_prices.iter() {
+                tokens.push(*token);
+                prices.push(*price);
+            }
+            (tokens, prices)
         }
     };
 
@@ -448,8 +446,15 @@ fn encode_settlement(
         &fake_order,
         &fake_signature,
         verification.from,
-        0,
-        1,
+        // the tokens set length is small so the linear search is acceptable
+        tokens
+            .iter()
+            .position(|token| token == &query.sell_token)
+            .context("missing sell token index")?,
+        tokens
+            .iter()
+            .position(|token| token == &query.buy_token)
+            .context("missing buy token index")?,
         &query.in_amount.get(),
     );
 
@@ -498,27 +503,19 @@ fn encode_settlement(
                 }
             };
 
-            tokens.push(jit_order.sell_token);
-            tokens.push(jit_order.buy_token);
-            clearing_prices.push(
-                *trade
-                    .clearing_prices
-                    .get(&jit_order.sell_token)
-                    .context("jit order sell token clearing price is missing")?,
-            );
-            clearing_prices.push(
-                *trade
-                    .clearing_prices
-                    .get(&jit_order.buy_token)
-                    .context("jit order buy token clearing price is missing")?,
-            );
-
             trades.push(encode_trade(
                 &order_data,
                 &signature,
                 owner,
-                tokens.len() - 2,
-                tokens.len() - 1,
+                // the tokens set length is small so the linear search is acceptable
+                tokens
+                    .iter()
+                    .position(|token| token == &jit_order.sell_token)
+                    .context("missing jit order sell token index")?,
+                tokens
+                    .iter()
+                    .position(|token| token == &jit_order.buy_token)
+                    .context("missing jit order buy token index")?,
                 &jit_order.executed_amount,
             ));
         }
