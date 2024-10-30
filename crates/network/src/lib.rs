@@ -8,6 +8,7 @@ use {
 
 /// Represents each available network
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[repr(u64)]
 pub enum Network {
     Mainnet = 1,
     Goerli = 5,
@@ -20,14 +21,7 @@ pub enum Network {
 impl Network {
     /// Returns the network's chain ID
     pub fn chain_id(&self) -> u64 {
-        match self {
-            Self::Mainnet => 1,
-            Self::Goerli => 5,
-            Self::Gnosis => 100,
-            Self::Sepolia => 11155111,
-            Self::ArbitrumOne => 42161,
-            Self::Base => 8453,
-        }
+        *self as u64
     }
 
     /// Returns the canonical name of the network on CoW Protocol.
@@ -56,10 +50,10 @@ impl Network {
     /// Returns the block time in milliseconds
     pub fn block_time_in_ms(&self) -> u64 {
         match self {
-            Self::Mainnet => 13_000,
-            Self::Goerli => 13_000,
+            Self::Mainnet => 12_000,
+            Self::Goerli => 12_000,
             Self::Gnosis => 5_000,
-            Self::Sepolia => 13_000,
+            Self::Sepolia => 12_000,
             Self::ArbitrumOne => 250,
             Self::Base => 2_000,
         }
@@ -78,15 +72,16 @@ impl TryFrom<u64> for Network {
     /// Initializes `Network` from a chain ID, returns error if the chain id is
     /// not supported
     fn try_from(value: u64) -> Result<Self, Self::Error> {
-        match value {
-            1 => Ok(Self::Mainnet),
-            5 => Ok(Self::Goerli),
-            100 => Ok(Self::Gnosis),
-            11155111 => Ok(Self::Sepolia),
-            42161 => Ok(Self::ArbitrumOne),
-            8453 => Ok(Self::Base),
-            _ => Err(Error::ChainIdNotSupported(value)),
-        }
+        let network = match value {
+            x if x == Self::Mainnet as u64 => Self::Mainnet,
+            x if x == Self::Goerli as u64 => Self::Goerli,
+            x if x == Self::Gnosis as u64 => Self::Gnosis,
+            x if x == Self::Sepolia as u64 => Self::Sepolia,
+            x if x == Self::ArbitrumOne as u64 => Self::ArbitrumOne,
+            x if x == Self::Base as u64 => Self::Base,
+            _ => Err(Error::ChainIdNotSupported)?,
+        };
+        Ok(network)
     }
 }
 
@@ -96,6 +91,12 @@ impl TryFrom<U256> for Network {
     /// Initializes `Network` from a chain ID, returns error if the chain id is
     /// not supported
     fn try_from(value: U256) -> Result<Self, Self::Error> {
+        // Check to avoid panics for large `U256` values, as there is no checked
+        // conversion API available, and we don't support chains with IDs greater
+        // than `u64::MAX` anyway.
+        if value > U256::from(u64::MAX) {
+            return Err(Error::ChainIdNotSupported);
+        }
         value.as_u64().try_into()
     }
 }
@@ -136,8 +137,8 @@ impl<'de> Deserialize<'de> for Network {
 
 #[derive(Error, Debug)]
 pub enum Error {
-    #[error("chain id not supported: {0}")]
-    ChainIdNotSupported(u64),
+    #[error("chain id not supported")]
+    ChainIdNotSupported,
 }
 
 #[cfg(test)]
