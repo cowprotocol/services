@@ -8,7 +8,7 @@ use {
         trade_finding::{external::dto, Interaction, TradeKind},
     },
     anyhow::{Context, Result},
-    bigdecimal::{Signed, Zero},
+    bigdecimal::Zero,
     contracts::{
         deployed_bytecode,
         dummy_contract,
@@ -660,9 +660,9 @@ fn ensure_quote_accuracy(
         TradeKind::Legacy(_) => (BigRational::zero(), BigRational::zero()),
     };
 
-    let sell_token_lost = (&summary.sell_tokens_lost - expected_sell_token_lost).abs();
+    let sell_token_lost = &summary.sell_tokens_lost - expected_sell_token_lost;
     let sell_token_lost_limit = inaccuracy_limit * &sell_amount;
-    let buy_token_lost = (&summary.buy_tokens_lost - expected_buy_token_lost).abs();
+    let buy_token_lost = &summary.buy_tokens_lost - expected_buy_token_lost;
     let buy_token_lost_limit = inaccuracy_limit * &buy_amount;
 
     if sell_token_lost >= sell_token_lost_limit || buy_token_lost >= buy_token_lost_limit {
@@ -712,8 +712,8 @@ mod tests {
     fn discards_inaccurate_quotes() {
         // let's use 0.5 as the base case to avoid rounding issues introduced by float
         // conversion
-        let low_threshold = BigRational::from_float(0.5).unwrap();
-        let high_threshold = BigRational::from_float(0.51).unwrap();
+        let low_threshold = big_rational_from_decimal_str("0.5").unwrap();
+        let high_threshold = big_rational_from_decimal_str("0.51").unwrap();
 
         let query = PriceQuery {
             in_amount: 1_000.try_into().unwrap(),
