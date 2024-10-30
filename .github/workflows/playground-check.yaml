@@ -66,3 +66,13 @@ jobs:
         with:
           name: logs.tgz
           path: ./logs.tgz
+
+      - name: Slack notification on failure
+        if: failure()
+        id: slack
+        uses: slackapi/slack-github-action@v1.27.0
+        with:
+          payload: |
+            {"job_link":"${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_PLAYGROUND_CI_WEBHOOK_URL }}
