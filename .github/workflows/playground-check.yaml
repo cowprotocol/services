@@ -32,6 +32,9 @@ jobs:
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
 
+      - name: Test fail scenario
+        run: exit 1
+
       - name: Setup environment
         run: |
           cp playground/.env.example playground/.env
