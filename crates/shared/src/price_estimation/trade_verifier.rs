@@ -8,6 +8,7 @@ use {
         trade_finding::{external::dto, Interaction, TradeKind},
     },
     anyhow::{Context, Result},
+    bigdecimal::{Signed, Zero},
     contracts::{
         deployed_bytecode,
         dummy_contract,
@@ -66,7 +67,7 @@ impl TradeVerifier {
         block_stream: CurrentBlockWatcher,
         settlement: H160,
         native_token: H160,
-        quote_inaccuracy_limit: f64,
+        quote_inaccuracy_limit: BigRational,
     ) -> Result<Self> {
         let settlement_contract = GPv2Settlement::at(&web3, settlement);
         let domain_separator =
@@ -77,8 +78,7 @@ impl TradeVerifier {
             block_stream,
             settlement: settlement_contract,
             native_token,
-            quote_inaccuracy_limit: BigRational::from_float(quote_inaccuracy_limit)
-                .expect("can represent all finite values"),
+            quote_inaccuracy_limit,
             web3,
             domain_separator,
         })
@@ -631,34 +631,41 @@ fn ensure_quote_accuracy(
     query: &PriceQuery,
     trade: &TradeKind,
     summary: &SettleOutput,
-) -> Result<Estimate, Error> {
+) -> std::result::Result<Estimate, Error> {
     // amounts verified by the simulation
     let (sell_amount, buy_amount) = match query.kind {
         OrderKind::Buy => (summary.out_amount, query.in_amount.get()),
         OrderKind::Sell => (query.in_amount.get(), summary.out_amount),
     };
+    let (sell_amount, buy_amount) = (
+        u256_to_big_rational(&sell_amount),
+        u256_to_big_rational(&buy_amount),
+    );
 
     let (expected_sell_token_lost, expected_buy_token_lost) = match trade {
         TradeKind::Regular(trade) => {
-            let jit_orders_executed_amounts = trade.jit_orders_executed_amounts()?;
-            let expected_sell_token_lost = sell_amount
-                - jit_orders_executed_amounts
-                    .get(&query.sell_token)
-                    .context("missing jit orders sell token executed amount")?;
-            let expected_buy_token_lost = buy_amount
-                - jit_orders_executed_amounts
+            let jit_orders_net_token_changes = trade.jit_orders_net_token_changes()?;
+            let jit_orders_sell_token_changes = jit_orders_net_token_changes
+                .get(&query.sell_token)
+                .context("missing jit orders sell token executed amount")?;
+            let jit_orders_buy_token_changes =
+                jit_orders_net_token_changes
                     .get(&query.buy_token)
                     .context("missing jit orders buy token executed amount")?;
+
+            let expected_sell_token_lost = -&sell_amount - jit_orders_sell_token_changes;
+            let expected_buy_token_lost = &buy_amount - jit_orders_buy_token_changes;
             (expected_sell_token_lost, expected_buy_token_lost)
         }
-        TradeKind::Legacy(_) => (sell_amount, buy_amount),
+        TradeKind::Legacy(_) => (BigRational::zero(), BigRational::zero()),
     };
 
-    if summary.sell_tokens_lost
-        >= inaccuracy_limit * u256_to_big_rational(&expected_sell_token_lost)
-        || summary.buy_tokens_lost
-            >= inaccuracy_limit * u256_to_big_rational(&expected_buy_token_lost)
-    {
+    let sell_token_lost = (&summary.sell_tokens_lost - expected_sell_token_lost).abs();
+    let sell_token_lost_limit = inaccuracy_limit * &sell_amount;
+    let buy_token_lost = (&summary.buy_tokens_lost - expected_buy_token_lost).abs();
+    let buy_token_lost_limit = inaccuracy_limit * &buy_amount;
+
+    if sell_token_lost >= sell_token_lost_limit || buy_token_lost >= buy_token_lost_limit {
         return Err(Error::TooInaccurate);
     }
 
@@ -692,7 +699,15 @@ enum Error {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use {
+        super::*,
+        crate::trade_finding::Trade,
+        app_data::AppDataHash,
+        bigdecimal::FromPrimitive,
+        model::order::{BuyTokenDestination, SellTokenSource},
+        num::BigInt,
+        number::conversions::big_rational_from_decimal_str,
+    };
 
     #[test]
     fn discards_inaccurate_quotes() {
@@ -756,5 +771,447 @@ mod tests {
         // Ending up with surplus in the buffers is always fine
         let estimate = ensure_quote_accuracy(&low_threshold, &query, &trade, &pay_out_less);
         assert!(estimate.is_ok());
+    }
+
+    #[test]
+    fn test_ensure_quote_accuracy_with_jit_orders_partial_sell_sell() {
+        // Inaccuracy limit of 10%
+        let low_threshold = big_rational_from_decimal_str("0.1").unwrap();
+        let high_threshold = big_rational_from_decimal_str("0.11").unwrap();
+
+        let sell_token: H160 = H160::from_low_u64_be(1);
+        let buy_token: H160 = H160::from_low_u64_be(2);
+
+        // User wants to sell 500 units of Token A for Token B
+        let query = PriceQuery {
+            in_amount: NonZeroU256::new(500u64.into()).unwrap(),
+            kind: OrderKind::Sell,
+            sell_token,
+            buy_token,
+        };
+
+        // Clearing prices: Token A = 1, Token B = 2
+        let mut clearing_prices = HashMap::new();
+        clearing_prices.insert(sell_token, U256::from(1u64));
+        clearing_prices.insert(buy_token, U256::from(2u64));
+
+        // JIT order partially covers the user's trade
+        let jit_order = dto::JitOrder {
+            sell_token: buy_token, // Solver sells Token B
+            buy_token: sell_token, // Solver buys Token A
+            executed_amount: U256::from(200u64),
+            side: dto::Side::Sell,
+            sell_amount: U256::from(200u64),
+            buy_amount: U256::from(400u64),
+            receiver: H160::zero(),
+            valid_to: 0,
+            app_data: AppDataHash::default(),
+            partially_fillable: false,
+            sell_token_source: SellTokenSource::Erc20,
+            buy_token_destination: BuyTokenDestination::Erc20,
+            signature: vec![],
+            signing_scheme: SigningScheme::Eip1271,
+        };
+
+        let trade_kind = TradeKind::Regular(Trade {
+            clearing_prices: clearing_prices.clone(),
+            gas_estimate: Some(50_000),
+            pre_interactions: vec![],
+            interactions: vec![],
+            solver: H160::from_low_u64_be(0x1234),
+            tx_origin: None,
+            jit_orders: vec![jit_order],
+        });
+
+        // Simulation summary with zero net changes for the settlement contract
+        let summary = SettleOutput {
+            gas_used: U256::from(50_000u64),
+            // The out amount still covers the full query amount
+            out_amount: U256::from(250u64),
+            // Since the JIT order covered only 200 units of Token B, the settlement contract is
+            // expected to lose the remaining 50 units. Let's lose a bit more.
+            buy_tokens_lost: BigRational::from_u64(75).unwrap(),
+            // And the settlement contract is expected to receive 100 units of Token A. Let's gain a
+            // bit more.
+            sell_tokens_lost: BigRational::from_i64(-150).unwrap(),
+        };
+
+        // The summary has 10% inaccuracy
+        let estimate = ensure_quote_accuracy(&low_threshold, &query, &trade_kind, &summary);
+        assert!(matches!(estimate, Err(Error::TooInaccurate)));
+
+        // The summary has less than 11% inaccuracy
+        let estimate =
+            ensure_quote_accuracy(&high_threshold, &query, &trade_kind, &summary).unwrap();
+        assert!(estimate.verified);
+    }
+
+    #[test]
+    fn test_ensure_quote_accuracy_with_jit_orders_sell_sell() {
+        // Inaccuracy limit of 10%
+        let low_threshold = big_rational_from_decimal_str("0.1").unwrap();
+        let high_threshold = big_rational_from_decimal_str("0.11").unwrap();
+
+        let sell_token: H160 = H160::from_low_u64_be(1);
+        let buy_token: H160 = H160::from_low_u64_be(2);
+
+        // User wants to sell 500 units of Token A for Token B
+        let query = PriceQuery {
+            in_amount: NonZeroU256::new(500u64.into()).unwrap(),
+            kind: OrderKind::Sell,
+            sell_token,
+            buy_token,
+        };
+
+        // Clearing prices: Token A = 1, Token B = 2
+        let mut clearing_prices = HashMap::new();
+        clearing_prices.insert(sell_token, U256::from(1u64));
+        clearing_prices.insert(buy_token, U256::from(2u64));
+
+        // JIT order fully covers the user's trade
+        let jit_order = dto::JitOrder {
+            sell_token: buy_token, // Solver sells Token B
+            buy_token: sell_token, // Solver buys Token A
+            executed_amount: U256::from(250u64),
+            side: dto::Side::Sell,
+            sell_amount: U256::from(250u64),
+            buy_amount: U256::from(500u64),
+            receiver: H160::zero(),
+            valid_to: 0,
+            app_data: AppDataHash::default(),
+            partially_fillable: false,
+            sell_token_source: SellTokenSource::Erc20,
+            buy_token_destination: BuyTokenDestination::Erc20,
+            signature: vec![],
+            signing_scheme: SigningScheme::Eip1271,
+        };
+
+        let trade_kind = TradeKind::Regular(Trade {
+            clearing_prices: clearing_prices.clone(),
+            gas_estimate: Some(50_000),
+            pre_interactions: vec![],
+            interactions: vec![],
+            solver: H160::from_low_u64_be(0x1234),
+            tx_origin: None,
+            jit_orders: vec![jit_order],
+        });
+
+        // Simulation summary with zero net changes for the settlement contract
+        let summary = SettleOutput {
+            gas_used: U256::from(50_000u64),
+            // The out amount still covers the full query amount
+            out_amount: U256::from(250u64),
+            // Since the JIT order fully covered the requested amount, the settlement contract
+            // should not have any net changes but we add some withing the 11% limit.
+            buy_tokens_lost: BigRational::from_u64(25).unwrap(),
+            sell_tokens_lost: BigRational::from_i64(50).unwrap(),
+        };
+
+        // The summary has 10% inaccuracy
+        let estimate = ensure_quote_accuracy(&low_threshold, &query, &trade_kind, &summary);
+        assert!(matches!(estimate, Err(Error::TooInaccurate)));
+
+        // The summary has less than 11% inaccuracy
+        let estimate =
+            ensure_quote_accuracy(&high_threshold, &query, &trade_kind, &summary).unwrap();
+        assert!(estimate.verified);
+    }
+
+    #[test]
+    fn test_ensure_quote_accuracy_with_jit_orders_partial_buy_buy() {
+        // Inaccuracy limit of 10%
+        let low_threshold = big_rational_from_decimal_str("0.1").unwrap();
+        let high_threshold = big_rational_from_decimal_str("0.11").unwrap();
+
+        let sell_token: H160 = H160::from_low_u64_be(1);
+        let buy_token: H160 = H160::from_low_u64_be(2);
+
+        // User wants to buy 250 units of Token B using Token A
+        let query = PriceQuery {
+            in_amount: NonZeroU256::new(250u64.into()).unwrap(),
+            kind: OrderKind::Buy,
+            sell_token,
+            buy_token,
+        };
+
+        // Clearing prices: Token A = 1, Token B = 2
+        let mut clearing_prices = HashMap::new();
+        clearing_prices.insert(sell_token, U256::from(1u64));
+        clearing_prices.insert(buy_token, U256::from(2u64));
+
+        // JIT order partially covers the user's trade
+        let jit_order = dto::JitOrder {
+            sell_token: buy_token, // Solver sell Token B
+            buy_token: sell_token, // Solver buys Token A
+            executed_amount: U256::from(400u64),
+            side: dto::Side::Buy,
+            sell_amount: U256::from(200u64),
+            buy_amount: U256::from(400u64),
+            receiver: H160::zero(),
+            valid_to: 0,
+            app_data: AppDataHash::default(),
+            partially_fillable: false,
+            sell_token_source: SellTokenSource::Erc20,
+            buy_token_destination: BuyTokenDestination::Erc20,
+            signature: vec![],
+            signing_scheme: SigningScheme::Eip1271,
+        };
+
+        let trade_kind = TradeKind::Regular(Trade {
+            clearing_prices: clearing_prices.clone(),
+            gas_estimate: Some(50_000),
+            pre_interactions: vec![],
+            interactions: vec![],
+            solver: H160::from_low_u64_be(0x1234),
+            tx_origin: None,
+            jit_orders: vec![jit_order],
+        });
+
+        // Simulation summary with net changes for the settlement contract
+        let summary = SettleOutput {
+            gas_used: U256::from(50_000u64),
+            // The out amount is the total amount of buy token the user gets
+            out_amount: U256::from(500u64),
+            // Settlement contract covers the remaining 50 units of Token B, but to test the 11%
+            // limit we lose a bit more.
+            buy_tokens_lost: BigRational::from_u64(75).unwrap(),
+            // Settlement contract gains 100 units of Token A. To test the 11% limit we gain a bit
+            // more.
+            sell_tokens_lost: BigRational::from_i64(-150).unwrap(),
+        };
+
+        // The summary has 10% inaccuracy
+        let estimate = ensure_quote_accuracy(&low_threshold, &query, &trade_kind, &summary);
+        assert!(matches!(estimate, Err(Error::TooInaccurate)));
+
+        // The summary has less than 11% inaccuracy
+        let estimate =
+            ensure_quote_accuracy(&high_threshold, &query, &trade_kind, &summary).unwrap();
+        assert!(estimate.verified);
+    }
+
+    #[test]
+    fn test_ensure_quote_accuracy_with_jit_orders_buy_buy() {
+        // Inaccuracy limit of 10%
+        let low_threshold = big_rational_from_decimal_str("0.1").unwrap();
+        let high_threshold = big_rational_from_decimal_str("0.11").unwrap();
+
+        let sell_token: H160 = H160::from_low_u64_be(1);
+        let buy_token: H160 = H160::from_low_u64_be(2);
+
+        // User wants to buy 250 units of Token B using Token A
+        let query = PriceQuery {
+            in_amount: NonZeroU256::new(250u64.into()).unwrap(),
+            kind: OrderKind::Buy,
+            sell_token,
+            buy_token,
+        };
+
+        // Clearing prices: Token A = 1, Token B = 2
+        let mut clearing_prices = HashMap::new();
+        clearing_prices.insert(sell_token, U256::from(1u64));
+        clearing_prices.insert(buy_token, U256::from(2u64));
+
+        // JIT order fully covers the user's trade
+        let jit_order = dto::JitOrder {
+            sell_token: buy_token, // Solver sell Token B
+            buy_token: sell_token, // Solver buys Token A
+            executed_amount: U256::from(500u64),
+            side: dto::Side::Buy,
+            sell_amount: U256::from(250u64),
+            buy_amount: U256::from(500u64),
+            receiver: H160::zero(),
+            valid_to: 0,
+            app_data: AppDataHash::default(),
+            partially_fillable: false,
+            sell_token_source: SellTokenSource::Erc20,
+            buy_token_destination: BuyTokenDestination::Erc20,
+            signature: vec![],
+            signing_scheme: SigningScheme::Eip1271,
+        };
+
+        let trade_kind = TradeKind::Regular(Trade {
+            clearing_prices: clearing_prices.clone(),
+            gas_estimate: Some(50_000),
+            pre_interactions: vec![],
+            interactions: vec![],
+            solver: H160::from_low_u64_be(0x1234),
+            tx_origin: None,
+            jit_orders: vec![jit_order],
+        });
+
+        // Simulation summary with net changes for the settlement contract
+        let summary = SettleOutput {
+            gas_used: U256::from(50_000u64),
+            // The out amount is the total amount of buy token the user gets
+            out_amount: U256::from(500u64),
+            // Settlement contract balance shouldn't change, but to test the 11% limit we lose a
+            // bit.
+            buy_tokens_lost: BigRational::from_u64(25).unwrap(),
+            // Settlement contract balance shouldn't change, but to test the 11% limit we gain a
+            // bit.
+            sell_tokens_lost: BigRational::from_i64(-50).unwrap(),
+        };
+
+        // The summary has 10% inaccuracy
+        let estimate = ensure_quote_accuracy(&low_threshold, &query, &trade_kind, &summary);
+        assert!(matches!(estimate, Err(Error::TooInaccurate)));
+
+        // The summary has less than 11% inaccuracy
+        let estimate =
+            ensure_quote_accuracy(&high_threshold, &query, &trade_kind, &summary).unwrap();
+        assert!(estimate.verified);
+    }
+
+    #[test]
+    fn test_ensure_quote_accuracy_with_jit_orders_partial_buy_sell() {
+        // Inaccuracy limit of 10%
+        let low_threshold = big_rational_from_decimal_str("0.1").unwrap();
+        let high_threshold = big_rational_from_decimal_str("0.11").unwrap();
+
+        let sell_token: H160 = H160::from_low_u64_be(1);
+        let buy_token: H160 = H160::from_low_u64_be(2);
+
+        // User wants to buy 250 units of Token B using Token A
+        let query = PriceQuery {
+            in_amount: NonZeroU256::new(250u64.into()).unwrap(),
+            kind: OrderKind::Buy,
+            sell_token,
+            buy_token,
+        };
+
+        // Clearing prices: Token A = 1, Token B = 2
+        let mut clearing_prices = HashMap::new();
+        clearing_prices.insert(sell_token, U256::from(1u64));
+        clearing_prices.insert(buy_token, U256::from(2u64));
+
+        // JIT order partially covers the user's trade
+        let jit_order = dto::JitOrder {
+            sell_token: buy_token, // Solver sells Token B
+            buy_token: sell_token, // Solver buys Token A
+            executed_amount: U256::from(200u64),
+            side: dto::Side::Sell,
+            sell_amount: U256::from(200u64),
+            buy_amount: U256::from(400u64),
+            receiver: H160::zero(),
+            valid_to: 0,
+            app_data: AppDataHash::default(),
+            partially_fillable: false,
+            sell_token_source: SellTokenSource::Erc20,
+            buy_token_destination: BuyTokenDestination::Erc20,
+            signature: vec![],
+            signing_scheme: SigningScheme::Eip1271,
+        };
+
+        let trade_kind = TradeKind::Regular(Trade {
+            clearing_prices: clearing_prices.clone(),
+            gas_estimate: Some(50_000),
+            pre_interactions: vec![],
+            interactions: vec![],
+            solver: H160::from_low_u64_be(0x1234),
+            tx_origin: None,
+            jit_orders: vec![jit_order],
+        });
+
+        // Simulation summary with net changes for the settlement contract
+        let summary = SettleOutput {
+            gas_used: U256::from(50_000u64),
+            // The out amount is the total amount of buy token the user gets
+            out_amount: U256::from(500u64),
+            // Settlement contract covers the remaining 50 units of Token B, but to test the 11%
+            // limit we lose a bit more.
+            buy_tokens_lost: BigRational::from_u64(75).unwrap(),
+            // Settlement contract gains 100 units of Token A. To test the 11% limit we gain a bit
+            // more.
+            sell_tokens_lost: BigRational::from_i64(-150).unwrap(),
+        };
+
+        // The summary has 10% inaccuracy
+        let estimate = ensure_quote_accuracy(&low_threshold, &query, &trade_kind, &summary);
+        assert!(matches!(estimate, Err(Error::TooInaccurate)));
+
+        // The summary has less than 11% inaccuracy
+        let estimate =
+            ensure_quote_accuracy(&high_threshold, &query, &trade_kind, &summary).unwrap();
+        assert!(estimate.verified);
+    }
+
+    #[test]
+    fn test_ensure_quote_accuracy_with_jit_orders_partial_sell_buy() {
+        // Inaccuracy limit of 10%
+        let low_threshold = big_rational_from_decimal_str("0.1").unwrap();
+        let high_threshold = big_rational_from_decimal_str("0.11").unwrap();
+
+        let sell_token: H160 = H160::from_low_u64_be(1);
+        let buy_token: H160 = H160::from_low_u64_be(2);
+
+        // User wants to sell 500 units of Token A for Token B
+        let query = PriceQuery {
+            in_amount: NonZeroU256::new(500u64.into()).unwrap(),
+            kind: OrderKind::Sell,
+            sell_token,
+            buy_token,
+        };
+
+        assert_eq!(
+            BigRational::from_u64(50).unwrap(),
+            BigRational::new(BigInt::from(1), BigInt::from(10))
+                * BigRational::from_u64(500).unwrap()
+        );
+
+        // Clearing prices: Token A = 1, Token B = 2
+        let mut clearing_prices = HashMap::new();
+        clearing_prices.insert(sell_token, U256::from(1u64));
+        clearing_prices.insert(buy_token, U256::from(2u64));
+
+        // JIT order partially covers the user's trade
+        let jit_order = dto::JitOrder {
+            sell_token: buy_token, // Solver sell Token B
+            buy_token: sell_token, // Solver buys Token A
+            executed_amount: U256::from(400u64),
+            side: dto::Side::Buy,
+            sell_amount: U256::from(200u64),
+            buy_amount: U256::from(400u64),
+            receiver: H160::zero(),
+            valid_to: 0,
+            app_data: AppDataHash::default(),
+            partially_fillable: false,
+            sell_token_source: SellTokenSource::Erc20,
+            buy_token_destination: BuyTokenDestination::Erc20,
+            signature: vec![],
+            signing_scheme: SigningScheme::Eip1271,
+        };
+
+        let trade_kind = TradeKind::Regular(Trade {
+            clearing_prices: clearing_prices.clone(),
+            gas_estimate: Some(50_000),
+            pre_interactions: vec![],
+            interactions: vec![],
+            solver: H160::from_low_u64_be(0x1234),
+            tx_origin: None,
+            jit_orders: vec![jit_order],
+        });
+
+        // Simulation summary with net changes for the settlement contract
+        let summary = SettleOutput {
+            gas_used: U256::from(50_000u64),
+            // The out amount is the total amount of buy token the user gets
+            out_amount: U256::from(250u64),
+            // Settlement contract covers the remaining 50 units of Token B, but to test the 11%
+            // limit we lose a bit more.
+            buy_tokens_lost: BigRational::from_u64(75).unwrap(),
+            // Settlement contract gains 100 units of Token A. To test the 11% limit we gain a bit
+            // more.
+            sell_tokens_lost: BigRational::from_i64(-150).unwrap(),
+        };
+
+        // The summary has 10% inaccuracy
+        let estimate = ensure_quote_accuracy(&low_threshold, &query, &trade_kind, &summary);
+        assert!(matches!(estimate, Err(Error::TooInaccurate)));
+
+        // The summary has less than 11% inaccuracy
+        let estimate =
+            ensure_quote_accuracy(&high_threshold, &query, &trade_kind, &summary).unwrap();
+        assert!(estimate.verified);
     }
 }

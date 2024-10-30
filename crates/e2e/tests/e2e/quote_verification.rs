@@ -6,7 +6,7 @@ use {
         order::{BuyTokenDestination, OrderKind, SellTokenSource},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
     },
-    number::nonzero::U256 as NonZeroU256,
+    number::{conversions::big_rational_from_decimal_str, nonzero::U256 as NonZeroU256},
     shared::{
         price_estimation::{
             trade_verifier::{PriceQuery, TradeVerifier, TradeVerifying},
@@ -61,7 +61,7 @@ async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
         block_stream,
         onchain.contracts().gp_settlement.address(),
         onchain.contracts().weth.address(),
-        0.0,
+        big_rational_from_decimal_str("0.0").unwrap(),
     )
     .await
     .unwrap();

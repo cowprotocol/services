@@ -1,8 +1,9 @@
 use {
-    anyhow::{ensure, Result},
+    anyhow::{ensure, Context, Result},
     bigdecimal::{num_bigint::ToBigInt, BigDecimal},
     num::{bigint::Sign, rational::Ratio, BigInt, BigRational, BigUint, Zero},
     primitive_types::U256,
+    std::str::FromStr,
 };
 
 pub fn u256_to_big_uint(input: &U256) -> BigUint {
@@ -78,6 +79,57 @@ pub fn big_decimal_to_big_rational(value: &BigDecimal) -> BigRational {
     };
 
     BigRational::new(adjusted_numer, denom)
+}
+
+/// Floats in Rust have wrong bytes representation which leaks into
+/// `BigRational` instance when converting from float.
+///
+/// This function converts a decimal string (e.g., `"0.1"`) to an exact
+/// `BigRational`.
+pub fn big_rational_from_decimal_str(s: &str) -> Result<BigRational> {
+    let s = s.trim();
+    // Handle negative numbers
+    let (is_negative, s) = if let Some(stripped) = s.strip_prefix('-') {
+        (true, stripped)
+    } else {
+        (false, s)
+    };
+
+    let parts: Vec<&str> = s.split('.').collect();
+    let unsigned_rational = match parts.len() {
+        1 => {
+            // No fractional part
+            let numerator = BigInt::from_str(parts[0]).context("unable to parse integer part")?;
+            Ok(BigRational::from_integer(numerator))
+        }
+        2 => {
+            let integer_part = if parts[0].is_empty() {
+                // Handle cases like ".5" as "0.5"
+                BigInt::zero()
+            } else {
+                BigInt::from_str(parts[0]).context("unable to parse integer part")?
+            };
+
+            let fractional_part = if parts[1].is_empty() {
+                // Handle cases like "1." as "1.0"
+                BigInt::zero()
+            } else {
+                BigInt::from_str(parts[1]).context("unable to parse fractional part")?
+            };
+
+            let fractional_length = parts[1].len() as u32;
+
+            let denominator = BigInt::from(10u32).pow(fractional_length);
+            let numerator = integer_part
+                .checked_mul(&denominator)
+                .context("rational overflow during multiplication")?
+                .checked_add(&fractional_part)
+                .context("rational overflow during addition")?;
+            Ok(BigRational::new(numerator, denominator))
+        }
+        _ => Err(anyhow::anyhow!("invalid decimal number")),
+    };
+    unsigned_rational.map(|rational| if is_negative { -rational } else { rational })
 }
 
 #[cfg(test)]
@@ -214,5 +266,61 @@ mod tests {
             Some(U256::MAX)
         );
         assert!(big_decimal_to_u256(&(max_u256_as_big_decimal + BigDecimal::one())).is_none());
+    }
+
+    #[test]
+    fn big_rational_from_decimal_str_() {
+        assert_eq!(
+            big_rational_from_decimal_str("0").unwrap(),
+            BigRational::zero()
+        );
+        assert_eq!(
+            big_rational_from_decimal_str("1").unwrap(),
+            BigRational::one()
+        );
+        assert_eq!(
+            big_rational_from_decimal_str("-1").unwrap(),
+            -BigRational::one()
+        );
+        assert_eq!(
+            big_rational_from_decimal_str("1.0").unwrap(),
+            BigRational::one()
+        );
+        assert_eq!(
+            big_rational_from_decimal_str("1.").unwrap(),
+            BigRational::one()
+        );
+        assert_eq!(
+            big_rational_from_decimal_str("-1.").unwrap(),
+            -BigRational::one()
+        );
+        assert_eq!(
+            big_rational_from_decimal_str("1.000").unwrap(),
+            BigRational::one()
+        );
+        assert_eq!(
+            big_rational_from_decimal_str("0.1").unwrap(),
+            BigRational::new(1.into(), 10.into())
+        );
+        assert_eq!(
+            big_rational_from_decimal_str(".1").unwrap(),
+            BigRational::new(1.into(), 10.into())
+        );
+        assert_eq!(
+            big_rational_from_decimal_str("-.1").unwrap(),
+            -BigRational::new(1.into(), 10.into())
+        );
+        assert_eq!(
+            big_rational_from_decimal_str("0.125").unwrap(),
+            BigRational::new(1.into(), 8.into())
+        );
+        assert_eq!(
+            big_rational_from_decimal_str("-0.125").unwrap(),
+            -BigRational::new(1.into(), 8.into())
+        );
+
+        assert!(big_rational_from_decimal_str("0.1.0").is_err());
+        assert!(big_rational_from_decimal_str("a").is_err());
+        assert!(big_rational_from_decimal_str("1 0").is_err());
     }
 }

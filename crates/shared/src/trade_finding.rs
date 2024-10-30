@@ -13,7 +13,7 @@ use {
     derivative::Derivative,
     ethcontract::{contract::MethodBuilder, tokens::Tokenize, web3::Transport, Bytes, H160, U256},
     model::{interaction::InteractionData, order::OrderKind},
-    num::CheckedDiv,
+    num::{BigRational, CheckedDiv},
     number::conversions::big_rational_to_u256,
     serde::Serialize,
     std::{collections::HashMap, ops::Mul},
@@ -171,8 +171,8 @@ impl Trade {
         big_rational_to_u256(&out_amount).context("out amount is not a valid U256")
     }
 
-    pub fn jit_orders_executed_amounts(&self) -> Result<HashMap<H160, U256>> {
-        let mut executed_amounts: HashMap<H160, U256> = HashMap::new();
+    pub fn jit_orders_net_token_changes(&self) -> Result<HashMap<H160, BigRational>> {
+        let mut net_token_changes: HashMap<H160, BigRational> = HashMap::new();
 
         for jit_order in self.jit_orders.iter() {
             let sell_price = self
@@ -186,6 +186,7 @@ impl Trade {
                 .context("JIT order buy token clearing price is missing")?
                 .to_big_rational();
             let executed_amount = jit_order.executed_amount.to_big_rational();
+
             let (executed_sell, executed_buy) = match jit_order.side {
                 Side::Sell => {
                     let buy_amount = executed_amount
@@ -193,7 +194,7 @@ impl Trade {
                         .mul(&sell_price)
                         .checked_div(&buy_price)
                         .context("division by zero in JIT order sell")?;
-                    (executed_amount, buy_amount)
+                    (executed_amount.clone(), buy_amount)
                 }
                 Side::Buy => {
                     let sell_amount = executed_amount
@@ -201,26 +202,22 @@ impl Trade {
                         .mul(&buy_price)
                         .checked_div(&sell_price)
                         .context("division by zero in JIT order buy")?;
-                    (sell_amount, executed_amount)
+                    (sell_amount, executed_amount.clone())
                 }
             };
-            let (executed_sell, executed_buy) = (
-                big_rational_to_u256(&executed_sell)
-                    .context("executed sell amount is not a valid U256")?,
-                big_rational_to_u256(&executed_buy)
-                    .context("executed buy amount is not a valid U256")?,
-            );
-            executed_amounts
+
+            net_token_changes
                 .entry(jit_order.sell_token)
-                .and_modify(|executed| *executed += executed_sell)
-                .or_insert(executed_sell);
-            executed_amounts
+                .and_modify(|e| *e += executed_sell.clone())
+                .or_insert(executed_sell.clone());
+
+            net_token_changes
                 .entry(jit_order.buy_token)
-                .and_modify(|executed| *executed += executed_buy)
-                .or_insert(executed_buy);
+                .and_modify(|e| *e -= executed_buy.clone())
+                .or_insert(-executed_buy.clone());
         }
 
-        Ok(executed_amounts)
+        Ok(net_token_changes)
     }
 }
 

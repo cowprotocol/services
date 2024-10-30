@@ -191,8 +191,8 @@ pub struct Arguments {
     /// factor.
     /// E.g. a value of `0.01` means at most 1 percent of the sell or buy tokens
     /// can be paid out of the settlement contract buffers.
-    #[clap(long, env, default_value = "1.")]
-    pub quote_inaccuracy_limit: f64,
+    #[clap(long, env, default_value = "1.", value_parser = number::conversions::big_rational_from_decimal_str)]
+    pub quote_inaccuracy_limit: BigRational,
 
     /// How strict quote verification should be.
     #[clap(

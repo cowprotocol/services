@@ -122,7 +122,7 @@ impl<'a> PriceEstimatorFactory<'a> {
                 network.block_stream.clone(),
                 network.settlement,
                 network.native_token,
-                args.quote_inaccuracy_limit,
+                args.quote_inaccuracy_limit.clone(),
             )
             .await?,
         )))
