@@ -874,17 +874,6 @@ async fn get_or_create_quote(
         }
     };
 
-    let quote = quoter.calculate_quote(parameters).await?;
-    let quote = quoter
-        .store_quote(quote)
-        .await
-        .map_err(ValidationError::Other)?;
-
-    tracing::debug!(
-        computed_quote = ?quote.id,
-        user_provided_quote = ?quote_id,
-        "computed fresh quote for order creation"
-    );
     Ok(quote)
 }
 
