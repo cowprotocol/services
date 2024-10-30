@@ -11,6 +11,7 @@ use {
     crate::recent_block_cache::Block,
     anyhow::Result,
     model::TokenPair,
+    network::Network,
     std::{collections::HashSet, sync::Arc},
 };
 
@@ -29,9 +30,9 @@ pub enum BaselineSource {
     TestnetUniswapV2,
 }
 
-pub fn defaults_for_network(network: &network::Network) -> Vec<BaselineSource> {
+pub fn defaults_for_network(network: &Network) -> Vec<BaselineSource> {
     match network {
-        network::Network::Mainnet => vec![
+        Network::Mainnet => vec![
             BaselineSource::UniswapV2,
             BaselineSource::SushiSwap,
             BaselineSource::Swapr,
@@ -39,18 +40,18 @@ pub fn defaults_for_network(network: &network::Network) -> Vec<BaselineSource> {
             BaselineSource::ZeroEx,
             BaselineSource::UniswapV3,
         ],
-        network::Network::Goerli => vec![
+        Network::Goerli => vec![
             BaselineSource::UniswapV2,
             BaselineSource::SushiSwap,
             BaselineSource::BalancerV2,
         ],
-        network::Network::Gnosis => vec![
+        Network::Gnosis => vec![
             BaselineSource::Honeyswap,
             BaselineSource::SushiSwap,
             BaselineSource::Baoswap,
             BaselineSource::Swapr,
         ],
-        network::Network::ArbitrumOne => vec![
+        Network::ArbitrumOne => vec![
             BaselineSource::UniswapV2,
             BaselineSource::SushiSwap,
             BaselineSource::Swapr,
@@ -58,7 +59,7 @@ pub fn defaults_for_network(network: &network::Network) -> Vec<BaselineSource> {
             BaselineSource::ZeroEx,
             BaselineSource::UniswapV3,
         ],
-        network::Network::Base => vec![
+        Network::Base => vec![
             BaselineSource::UniswapV2,
             BaselineSource::SushiSwap,
             BaselineSource::Swapr,
@@ -66,7 +67,7 @@ pub fn defaults_for_network(network: &network::Network) -> Vec<BaselineSource> {
             BaselineSource::ZeroEx,
             BaselineSource::UniswapV3,
         ],
-        network::Network::Sepolia => vec![BaselineSource::TestnetUniswapV2],
+        Network::Sepolia => vec![BaselineSource::TestnetUniswapV2],
     }
 }
 

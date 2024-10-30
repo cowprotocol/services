@@ -4,6 +4,7 @@ use {
         infra::blockchain::contracts::{deployment_address, Contracts},
     },
     ethcontract::{dyns::DynWeb3, GasPrice},
+    network::Network,
 };
 
 #[allow(dead_code)]
@@ -22,7 +23,7 @@ impl Manager {
     /// Creates an authenticator which can remove solvers from the allow-list
     pub async fn new(
         web3: DynWeb3,
-        network: &network::Network,
+        network: &Network,
         contracts: Contracts,
         authenticator_pk: eth::H256,
     ) -> Self {

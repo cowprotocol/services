@@ -5,6 +5,7 @@ use {
         util::serialize,
     },
     ethereum_types::H160,
+    network::Network,
     serde::Deserialize,
     serde_with::serde_as,
     shared::price_estimation::gas::SETTLEMENT_OVERHEAD,
@@ -18,7 +19,7 @@ use {
 struct Config {
     /// Optional chain ID. This is used to automatically determine the address
     /// of the WETH contract.
-    chain_id: Option<network::Network>,
+    chain_id: Option<Network>,
 
     /// Optional WETH contract address. This can be used to specify a manual
     /// value **instead** of using the canonical WETH contract for the

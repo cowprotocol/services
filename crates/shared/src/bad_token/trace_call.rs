@@ -333,6 +333,7 @@ mod tests {
         },
         contracts::{BalancerV2Vault, IUniswapV3Factory},
         hex_literal::hex,
+        network::Network,
         std::{env, time::Duration},
         web3::types::{
             Action,
@@ -699,7 +700,7 @@ mod tests {
                 Arc::new(
                     BlockscoutTokenOwnerFinder::with_network(
                         reqwest::Client::new(),
-                        &network::Network::Mainnet,
+                        &Network::Mainnet,
                     )
                     .unwrap(),
                 ),

@@ -34,6 +34,7 @@ use {
     contracts::{BalancerV2Vault, IUniswapV3Factory, ERC20},
     ethcontract::U256,
     futures::{Stream, StreamExt as _},
+    network::Network,
     primitive_types::H160,
     rate_limit::Strategy,
     reqwest::Url,
@@ -190,14 +191,13 @@ pub enum TokenOwnerFindingStrategy {
 
 impl TokenOwnerFindingStrategy {
     /// Returns the default set of token owner finding strategies.
-    pub fn defaults_for_network(network: &network::Network) -> &'static [Self] {
+    pub fn defaults_for_network(network: &Network) -> &'static [Self] {
         match network {
-            network::Network::Mainnet => &[Self::Liquidity, Self::Blockscout, Self::Ethplorer],
-            network::Network::Gnosis => &[Self::Liquidity, Self::Blockscout],
-            network::Network::Sepolia
-            | network::Network::Goerli
-            | network::Network::ArbitrumOne
-            | network::Network::Base => &[Self::Liquidity],
+            Network::Mainnet => &[Self::Liquidity, Self::Blockscout, Self::Ethplorer],
+            Network::Gnosis => &[Self::Liquidity, Self::Blockscout],
+            Network::Sepolia | Network::Goerli | Network::ArbitrumOne | Network::Base => {
+                &[Self::Liquidity]
+            }
         }
     }
 }
@@ -273,7 +273,7 @@ impl Display for Arguments {
 pub async fn init(
     args: &Arguments,
     web3: Web3,
-    network: &network::Network,
+    network: &Network,
     http_factory: &HttpClientFactory,
     pair_providers: &[PairProvider],
     vault: Option<&BalancerV2Vault>,

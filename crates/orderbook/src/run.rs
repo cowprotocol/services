@@ -15,6 +15,7 @@ use {
     ethcontract::errors::DeployError,
     futures::{FutureExt, StreamExt},
     model::{order::BUY_ETH_ADDRESS, DomainSeparator},
+    network::Network,
     order_validation,
     shared::{
         account_balances,
@@ -103,7 +104,7 @@ pub async fn run(args: Arguments) {
             .expect("load native token contract"),
     };
 
-    let network = network::Network::try_from(chain_id).unwrap();
+    let network = Network::try_from(chain_id).unwrap();
 
     let signature_validator = signature_validator::validator(
         &web3,

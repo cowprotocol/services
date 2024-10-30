@@ -61,7 +61,7 @@ impl Network {
 
     /// Returns the number of blocks that fits into the given time (in
     /// milliseconds)
-    pub fn number_of_blocks_in(&self, time_in_ms: u64) -> f64 {
+    pub fn blocks_in(&self, time_in_ms: u64) -> f64 {
         time_in_ms as f64 / self.block_time_in_ms() as f64
     }
 }
@@ -149,30 +149,12 @@ mod test {
     fn test_number_of_blocks_in() {
         const TARGET_AGE: u64 = 6 * 60 * 60 * 1000; // 6h in ms
 
-        assert_eq!(
-            Network::Mainnet.number_of_blocks_in(TARGET_AGE).round(),
-            1662.0
-        );
-        assert_eq!(
-            Network::Sepolia.number_of_blocks_in(TARGET_AGE).round(),
-            1662.0
-        );
-        assert_eq!(
-            Network::Goerli.number_of_blocks_in(TARGET_AGE).round(),
-            1662.0
-        );
-        assert_eq!(
-            Network::Gnosis.number_of_blocks_in(TARGET_AGE).round(),
-            4320.0
-        );
-        assert_eq!(
-            Network::Base.number_of_blocks_in(TARGET_AGE).round(),
-            10800.0
-        );
-        assert_eq!(
-            Network::ArbitrumOne.number_of_blocks_in(TARGET_AGE).round(),
-            86400.0
-        );
+        assert_eq!(Network::Mainnet.blocks_in(TARGET_AGE).round(), 1662.0);
+        assert_eq!(Network::Sepolia.blocks_in(TARGET_AGE).round(), 1662.0);
+        assert_eq!(Network::Goerli.blocks_in(TARGET_AGE).round(), 1662.0);
+        assert_eq!(Network::Gnosis.blocks_in(TARGET_AGE).round(), 4320.0);
+        assert_eq!(Network::Base.blocks_in(TARGET_AGE).round(), 10800.0);
+        assert_eq!(Network::ArbitrumOne.blocks_in(TARGET_AGE).round(), 86400.0);
     }
 
     #[test]

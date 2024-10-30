@@ -29,6 +29,7 @@ use {
     ethrpc::block_stream::block_number_to_block_number_hash,
     futures::StreamExt,
     model::DomainSeparator,
+    network::Network,
     shared::{
         account_balances,
         bad_token::{
@@ -93,7 +94,7 @@ async fn ethrpc(url: &Url, ethrpc_args: &shared::ethrpc::Arguments) -> infra::bl
 
 async fn ethereum(
     web3: DynWeb3,
-    network: &network::Network,
+    network: &Network,
     url: Url,
     contracts: infra::blockchain::contracts::Addresses,
     poll_interval: Duration,
@@ -197,7 +198,7 @@ pub async fn run(args: Arguments) {
         other => Some(other.unwrap()),
     };
 
-    let network = network::Network::try_from(chain_id).unwrap();
+    let network = Network::try_from(chain_id).unwrap();
 
     let signature_validator = signature_validator::validator(
         &web3,

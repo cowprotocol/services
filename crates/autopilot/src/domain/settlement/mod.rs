@@ -15,6 +15,7 @@ mod auction;
 mod observer;
 mod trade;
 mod transaction;
+use network::Network;
 pub use {auction::Auction, observer::Observer, trade::Trade, transaction::Transaction};
 
 /// A settled transaction together with the `Auction`, for which it was executed
@@ -106,7 +107,7 @@ impl Settlement {
     pub async fn new(
         settled: Transaction,
         persistence: &infra::Persistence,
-        network: &network::Network,
+        network: &Network,
     ) -> Result<Self, Error> {
         let auction = persistence.get_auction(settled.auction_id).await?;
 
@@ -142,9 +143,9 @@ impl Settlement {
 /// settlement from another environment.
 ///
 /// Currently set to ~6h
-fn max_settlement_age(network: &network::Network) -> u64 {
+fn max_settlement_age(network: &Network) -> u64 {
     const TARGET_AGE: u64 = 6 * 60 * 60 * 1000; // 6h in ms
-    network.number_of_blocks_in(TARGET_AGE).round() as u64
+    network.blocks_in(TARGET_AGE).round() as u64
 }
 
 #[derive(Debug, thiserror::Error)]
