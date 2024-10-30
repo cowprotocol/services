@@ -1,4 +1,4 @@
-use {crate::domain::eth, network::Network};
+use {crate::domain::eth, chain::Chain};
 
 #[derive(Clone, Debug)]
 pub struct Contracts {
@@ -9,12 +9,12 @@ pub struct Contracts {
 }
 
 impl Contracts {
-    pub fn for_chain(chain: Network) -> Self {
+    pub fn for_chain(chain: Chain) -> Self {
         let a = |contract: &contracts::ethcontract::Contract| {
             eth::ContractAddress(
                 contract
                     .networks
-                    .get(&chain.chain_id().to_string())
+                    .get(&chain.id().to_string())
                     .expect("contract address for all supported chains")
                     .address,
             )

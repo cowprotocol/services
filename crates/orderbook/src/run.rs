@@ -10,12 +10,12 @@ use {
     },
     anyhow::{anyhow, Context, Result},
     app_data::Validator,
+    chain::Chain,
     clap::Parser,
     contracts::{BalancerV2Vault, GPv2Settlement, HooksTrampoline, IUniswapV3Factory, WETH9},
     ethcontract::errors::DeployError,
     futures::{FutureExt, StreamExt},
     model::{order::BUY_ETH_ADDRESS, DomainSeparator},
-    network::Network,
     order_validation,
     shared::{
         account_balances,
@@ -104,7 +104,7 @@ pub async fn run(args: Arguments) {
             .expect("load native token contract"),
     };
 
-    let network = Network::try_from(chain_id).unwrap();
+    let chain = Chain::try_from(chain_id).unwrap();
 
     let signature_validator = signature_validator::validator(
         &web3,
@@ -165,7 +165,7 @@ pub async fn run(args: Arguments) {
         .shared
         .baseline_sources
         .clone()
-        .unwrap_or_else(|| sources::defaults_for_network(&network));
+        .unwrap_or_else(|| sources::defaults_for_network(&chain));
     tracing::info!(?baseline_sources, "using baseline sources");
     let univ2_sources = baseline_sources
         .iter()
@@ -198,7 +198,7 @@ pub async fn run(args: Arguments) {
     let finder = token_owner_finder::init(
         &args.token_owner_finder,
         web3.clone(),
-        &network,
+        &chain,
         &http_factory,
         &pair_providers,
         vault.as_ref(),
@@ -255,7 +255,7 @@ pub async fn run(args: Arguments) {
         factory::Network {
             web3: web3.clone(),
             simulation_web3,
-            network,
+            chain,
             native_token: native_token.address(),
             settlement: settlement_contract.address(),
             authenticator: settlement_contract

@@ -56,7 +56,7 @@ struct EstimatorEntry {
 pub struct Network {
     pub web3: Web3,
     pub simulation_web3: Option<Web3>,
-    pub network: network::Network,
+    pub chain: chain::Chain,
     pub native_token: H160,
     pub settlement: H160,
     pub authenticator: H160,
@@ -101,7 +101,7 @@ impl<'a> PriceEstimatorFactory<'a> {
             .tenderly
             .get_api_instance(&components.http_factory, "price_estimation".to_owned())
             .unwrap()
-            .map(|t| TenderlyCodeSimulator::new(t, network.network.chain_id()));
+            .map(|t| TenderlyCodeSimulator::new(t, network.chain.id()));
 
         let simulator: Arc<dyn CodeSimulating> = match tenderly {
             Some(tenderly) => Arc::new(code_simulation::Web3ThenTenderly::new(
@@ -129,7 +129,7 @@ impl<'a> PriceEstimatorFactory<'a> {
                 .or_else(|| {
                     Some(
                         self.network
-                            .network
+                            .chain
                             .default_amount_to_estimate_native_prices_with(),
                     )
                 })
@@ -211,7 +211,7 @@ impl<'a> PriceEstimatorFactory<'a> {
                             self.components.http_factory.create(),
                             self.args.one_inch_url.clone(),
                             self.args.one_inch_api_key.clone(),
-                            self.network.network.chain_id(),
+                            self.network.chain.id(),
                             self.network.block_stream.clone(),
                             self.components.tokens.clone(),
                         ),
@@ -225,7 +225,7 @@ impl<'a> PriceEstimatorFactory<'a> {
                     self.components.http_factory.create(),
                     self.args.coin_gecko.coin_gecko_url.clone(),
                     self.args.coin_gecko.coin_gecko_api_key.clone(),
-                    &self.network.network,
+                    &self.network.chain,
                     weth.address(),
                     self.components.tokens.clone(),
                 )

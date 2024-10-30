@@ -20,6 +20,7 @@ bytes-hex = { path = "../bytes-hex" }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 bigdecimal = { workspace = true }
+chain = { path = "../chain" }
 chrono = { workspace = true }
 clap = { workspace = true }
 contracts = { path = "../contracts" }
@@ -40,7 +41,6 @@ itertools = { workspace = true }
 maplit = { workspace = true }
 mimalloc = { workspace = true }
 model = { path = "../model" }
-network = { path = "../network" }
 num = { workspace = true }
 number = { path = "../number" }
 order-validation = { path = "../order-validation" }

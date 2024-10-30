@@ -23,13 +23,13 @@ use {
         shadow,
         solvable_orders::SolvableOrdersCache,
     },
+    chain::Chain,
     clap::Parser,
     contracts::{BalancerV2Vault, IUniswapV3Factory},
     ethcontract::{dyns::DynWeb3, errors::DeployError, BlockNumber},
     ethrpc::block_stream::block_number_to_block_number_hash,
     futures::StreamExt,
     model::DomainSeparator,
-    network::Network,
     shared::{
         account_balances,
         bad_token::{
@@ -94,12 +94,12 @@ async fn ethrpc(url: &Url, ethrpc_args: &shared::ethrpc::Arguments) -> infra::bl
 
 async fn ethereum(
     web3: DynWeb3,
-    network: &Network,
+    chain: &Chain,
     url: Url,
     contracts: infra::blockchain::contracts::Addresses,
     poll_interval: Duration,
 ) -> infra::Ethereum {
-    infra::Ethereum::new(web3, network, url, contracts, poll_interval).await
+    infra::Ethereum::new(web3, chain, url, contracts, poll_interval).await
 }
 
 pub async fn start(args: impl Iterator<Item = String>) {
@@ -157,7 +157,7 @@ pub async fn run(args: Arguments) {
     }
 
     let ethrpc = ethrpc(&args.shared.node_url, &args.shared.ethrpc).await;
-    let chain = ethrpc.network();
+    let chain = ethrpc.chain();
     let web3 = ethrpc.web3().clone();
     let url = ethrpc.url().clone();
     let contracts = infra::blockchain::contracts::Addresses {
@@ -198,7 +198,7 @@ pub async fn run(args: Arguments) {
         other => Some(other.unwrap()),
     };
 
-    let network = Network::try_from(chain_id).unwrap();
+    let chain = Chain::try_from(chain_id).unwrap();
 
     let signature_validator = signature_validator::validator(
         &web3,
@@ -233,7 +233,7 @@ pub async fn run(args: Arguments) {
         .shared
         .baseline_sources
         .clone()
-        .unwrap_or_else(|| shared::sources::defaults_for_network(&network));
+        .unwrap_or_else(|| shared::sources::defaults_for_network(&chain));
     tracing::info!(?baseline_sources, "using baseline sources");
     let univ2_sources = baseline_sources
         .iter()
@@ -261,7 +261,7 @@ pub async fn run(args: Arguments) {
     let finder = token_owner_finder::init(
         &args.token_owner_finder,
         web3.clone(),
-        &network,
+        &chain,
         &http_factory,
         &pair_providers,
         vault.as_ref(),
@@ -312,7 +312,7 @@ pub async fn run(args: Arguments) {
         factory::Network {
             web3: web3.clone(),
             simulation_web3,
-            network,
+            chain,
             native_token: eth.contracts().weth().address(),
             settlement: eth.contracts().settlement().address(),
             authenticator: eth

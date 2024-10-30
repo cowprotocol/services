@@ -7,10 +7,10 @@ use {
     thiserror::Error,
 };
 
-/// Represents each available network
+/// Represents each available chain
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[repr(u64)]
-pub enum Network {
+pub enum Chain {
     Mainnet = 1,
     Goerli = 5,
     Gnosis = 100,
@@ -19,15 +19,15 @@ pub enum Network {
     Base = 8453,
 }
 
-impl Network {
-    /// Returns the network's chain ID
-    pub fn chain_id(&self) -> u64 {
+impl Chain {
+    /// Returns the chain's chain ID
+    pub fn id(&self) -> u64 {
         *self as u64
     }
 
-    /// Returns the canonical name of the network on CoW Protocol.
+    /// Returns the canonical name of the chain on CoW Protocol.
     pub fn name(&self) -> &'static str {
-        // You can find a list of available networks by network and chain id here:
+        // You can find a list of available networks by chain and chain id here:
         // https://chainid.network/chains.json
         match &self {
             Self::Mainnet => "Ethereum / Mainnet",
@@ -68,7 +68,7 @@ impl Network {
     }
 }
 
-impl TryFrom<u64> for Network {
+impl TryFrom<u64> for Chain {
     type Error = Error;
 
     /// Initializes `Network` from a chain ID, returns error if the chain id is
@@ -87,7 +87,7 @@ impl TryFrom<u64> for Network {
     }
 }
 
-impl TryFrom<U256> for Network {
+impl TryFrom<U256> for Chain {
     type Error = Error;
 
     /// Initializes `Network` from a chain ID, returns error if the chain id is
@@ -103,7 +103,7 @@ impl TryFrom<U256> for Network {
     }
 }
 
-impl<'de> Deserialize<'de> for Network {
+impl<'de> Deserialize<'de> for Chain {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -111,7 +111,7 @@ impl<'de> Deserialize<'de> for Network {
         struct NetworkVisitor;
 
         impl<'de> de::Visitor<'de> for NetworkVisitor {
-            type Value = Network;
+            type Value = Chain;
 
             fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
                 formatter.write_str("a u64 or a string")
@@ -121,14 +121,14 @@ impl<'de> Deserialize<'de> for Network {
             where
                 E: de::Error,
             {
-                Network::try_from(value).map_err(de::Error::custom)
+                Chain::try_from(value).map_err(de::Error::custom)
             }
 
             fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
             where
                 E: de::Error,
             {
-                Network::try_from(value.parse::<u64>().map_err(de::Error::custom)?)
+                Chain::try_from(value.parse::<u64>().map_err(de::Error::custom)?)
                     .map_err(de::Error::custom)
             }
         }
@@ -151,32 +151,32 @@ mod test {
     fn test_blocks_in() {
         const TARGET_AGE: u64 = 6 * 60 * 60 * 1000; // 6h in ms
 
-        assert_eq!(Network::Mainnet.blocks_in(TARGET_AGE).round(), 1800.0);
-        assert_eq!(Network::Sepolia.blocks_in(TARGET_AGE).round(), 1800.0);
-        assert_eq!(Network::Goerli.blocks_in(TARGET_AGE).round(), 1800.0);
-        assert_eq!(Network::Gnosis.blocks_in(TARGET_AGE).round(), 4320.0);
-        assert_eq!(Network::Base.blocks_in(TARGET_AGE).round(), 10800.0);
-        assert_eq!(Network::ArbitrumOne.blocks_in(TARGET_AGE).round(), 86400.0);
+        assert_eq!(Chain::Mainnet.blocks_in(TARGET_AGE).round(), 1800.0);
+        assert_eq!(Chain::Sepolia.blocks_in(TARGET_AGE).round(), 1800.0);
+        assert_eq!(Chain::Goerli.blocks_in(TARGET_AGE).round(), 1800.0);
+        assert_eq!(Chain::Gnosis.blocks_in(TARGET_AGE).round(), 4320.0);
+        assert_eq!(Chain::Base.blocks_in(TARGET_AGE).round(), 10800.0);
+        assert_eq!(Chain::ArbitrumOne.blocks_in(TARGET_AGE).round(), 86400.0);
     }
 
     #[test]
     fn test_deserialize_from_u64() {
         // Test valid u64 deserialization
         let json_data = "1"; // Should deserialize to Network::Mainnet
-        let network: Network = serde_json::from_str(json_data).unwrap();
-        assert_eq!(network, Network::Mainnet);
+        let network: Chain = serde_json::from_str(json_data).unwrap();
+        assert_eq!(network, Chain::Mainnet);
 
         let json_data = "5"; // Should deserialize to Network::Goerli
-        let network: Network = serde_json::from_str(json_data).unwrap();
-        assert_eq!(network, Network::Goerli);
+        let network: Chain = serde_json::from_str(json_data).unwrap();
+        assert_eq!(network, Chain::Goerli);
 
         let json_data = "100"; // Should deserialize to Network::Gnosis
-        let network: Network = serde_json::from_str(json_data).unwrap();
-        assert_eq!(network, Network::Gnosis);
+        let network: Chain = serde_json::from_str(json_data).unwrap();
+        assert_eq!(network, Chain::Gnosis);
 
         // Test invalid u64 deserialization (should return an error)
         let json_data = "9999999"; // Not a valid Network variant
-        let result: Result<Network, _> = serde_json::from_str(json_data);
+        let result: Result<Chain, _> = serde_json::from_str(json_data);
         assert!(result.is_err());
     }
 
@@ -184,20 +184,20 @@ mod test {
     fn test_deserialize_from_str() {
         // Test valid string deserialization
         let json_data = "\"1\""; // Should parse to u64 1 and then to Network::Mainnet
-        let network: Network = serde_json::from_str(json_data).unwrap();
-        assert_eq!(network, Network::Mainnet);
+        let network: Chain = serde_json::from_str(json_data).unwrap();
+        assert_eq!(network, Chain::Mainnet);
 
         let json_data = "\"5\""; // Should parse to u64 5 and then to Network::Goerli
-        let network: Network = serde_json::from_str(json_data).unwrap();
-        assert_eq!(network, Network::Goerli);
+        let network: Chain = serde_json::from_str(json_data).unwrap();
+        assert_eq!(network, Chain::Goerli);
 
         let json_data = "\"100\""; // Should parse to u64 100 and then to Network::Gnosis
-        let network: Network = serde_json::from_str(json_data).unwrap();
-        assert_eq!(network, Network::Gnosis);
+        let network: Chain = serde_json::from_str(json_data).unwrap();
+        assert_eq!(network, Chain::Gnosis);
 
         // Test invalid string deserialization (should return an error)
         let json_data = "\"invalid\""; // Cannot be parsed as u64
-        let result: Result<Network, _> = serde_json::from_str(json_data);
+        let result: Result<Chain, _> = serde_json::from_str(json_data);
         assert!(result.is_err());
     }
 }

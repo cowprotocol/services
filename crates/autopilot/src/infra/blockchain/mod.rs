@@ -1,9 +1,9 @@
 use {
     self::contracts::Contracts,
     crate::{boundary, domain::eth},
+    chain::Chain,
     ethcontract::dyns::DynWeb3,
     ethrpc::block_stream::CurrentBlockWatcher,
-    network::Network,
     primitive_types::U256,
     std::time::Duration,
     thiserror::Error,
@@ -16,7 +16,7 @@ pub mod contracts;
 /// An Ethereum RPC connection.
 pub struct Rpc {
     web3: DynWeb3,
-    network: Network,
+    chain: Chain,
     url: Url,
 }
 
@@ -28,19 +28,19 @@ impl Rpc {
         ethrpc_args: &shared::ethrpc::Arguments,
     ) -> Result<Self, Error> {
         let web3 = boundary::web3_client(url, ethrpc_args);
-        let network =
-            Network::try_from(web3.eth().chain_id().await?).map_err(|_| Error::UnsupportedChain)?;
+        let chain =
+            Chain::try_from(web3.eth().chain_id().await?).map_err(|_| Error::UnsupportedChain)?;
 
         Ok(Self {
             web3,
-            network,
+            chain,
             url: url.clone(),
         })
     }
 
-    /// Returns the chain id for the RPC connection.
-    pub fn network(&self) -> Network {
-        self.network
+    /// Returns the chain for the RPC connection.
+    pub fn chain(&self) -> Chain {
+        self.chain
     }
 
     /// Returns a reference to the underlying web3 client.
@@ -58,7 +58,7 @@ impl Rpc {
 #[derive(Clone)]
 pub struct Ethereum {
     web3: DynWeb3,
-    network: Network,
+    chain: Chain,
     current_block: CurrentBlockWatcher,
     contracts: Contracts,
 }
@@ -72,25 +72,25 @@ impl Ethereum {
     /// any initialization error.
     pub async fn new(
         web3: DynWeb3,
-        network: &Network,
+        chain: &Chain,
         url: Url,
         addresses: contracts::Addresses,
         poll_interval: Duration,
     ) -> Self {
-        let contracts = Contracts::new(&web3, network, addresses).await;
+        let contracts = Contracts::new(&web3, chain, addresses).await;
 
         Self {
             current_block: ethrpc::block_stream::current_block_stream(url, poll_interval)
                 .await
                 .expect("couldn't initialize current block stream"),
             web3,
-            network: *network,
+            chain: *chain,
             contracts,
         }
     }
 
-    pub fn network(&self) -> &Network {
-        &self.network
+    pub fn chain(&self) -> &Chain {
+        &self.chain
     }
 
     /// Returns a stream that monitors the block chain to inform about the

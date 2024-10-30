@@ -1,5 +1,5 @@
 [package]
-name = "network"
+name = "chain"
 version = "0.1.0"
 authors = ["Cow Protocol Developers <dev@cow.fi>"]
 edition = "2021"

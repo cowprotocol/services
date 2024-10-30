@@ -31,10 +31,10 @@ use {
         sources::uniswap_v2::pair_provider::PairProvider,
     },
     anyhow::{Context, Result},
+    chain::Chain,
     contracts::{BalancerV2Vault, IUniswapV3Factory, ERC20},
     ethcontract::U256,
     futures::{Stream, StreamExt as _},
-    network::Network,
     primitive_types::H160,
     rate_limit::Strategy,
     reqwest::Url,
@@ -191,13 +191,11 @@ pub enum TokenOwnerFindingStrategy {
 
 impl TokenOwnerFindingStrategy {
     /// Returns the default set of token owner finding strategies.
-    pub fn defaults_for_network(network: &Network) -> &'static [Self] {
-        match network {
-            Network::Mainnet => &[Self::Liquidity, Self::Blockscout, Self::Ethplorer],
-            Network::Gnosis => &[Self::Liquidity, Self::Blockscout],
-            Network::Sepolia | Network::Goerli | Network::ArbitrumOne | Network::Base => {
-                &[Self::Liquidity]
-            }
+    pub fn defaults_for_network(chain: &Chain) -> &'static [Self] {
+        match chain {
+            Chain::Mainnet => &[Self::Liquidity, Self::Blockscout, Self::Ethplorer],
+            Chain::Gnosis => &[Self::Liquidity, Self::Blockscout],
+            Chain::Sepolia | Chain::Goerli | Chain::ArbitrumOne | Chain::Base => &[Self::Liquidity],
         }
     }
 }
@@ -273,7 +271,7 @@ impl Display for Arguments {
 pub async fn init(
     args: &Arguments,
     web3: Web3,
-    network: &Network,
+    chain: &Chain,
     http_factory: &HttpClientFactory,
     pair_providers: &[PairProvider],
     vault: Option<&BalancerV2Vault>,
@@ -285,7 +283,7 @@ pub async fn init(
     let finders = args
         .token_owner_finders
         .as_deref()
-        .unwrap_or_else(|| TokenOwnerFindingStrategy::defaults_for_network(network));
+        .unwrap_or_else(|| TokenOwnerFindingStrategy::defaults_for_network(chain));
     tracing::debug!(?finders, "initializing token owner finders");
 
     let mut proposers = Vec::<Arc<dyn TokenOwnerProposing>>::new();
@@ -318,7 +316,7 @@ pub async fn init(
 
     if finders.contains(&TokenOwnerFindingStrategy::Blockscout) {
         let mut blockscout =
-            BlockscoutTokenOwnerFinder::with_network(http_factory.create(), network)?;
+            BlockscoutTokenOwnerFinder::with_network(http_factory.create(), chain)?;
         if let Some(blockscout_config) = &args.blockscout {
             blockscout.with_base_url(blockscout_config.blockscout_api_url.clone());
             blockscout.with_api_key(blockscout_config.blockscout_api_key.clone());
@@ -335,7 +333,7 @@ pub async fn init(
             args.ethplorer
                 .as_ref()
                 .map(|ethplorer| ethplorer.ethplorer_api_key.clone()),
-            network,
+            chain,
         )?;
         if let Some(ethplorer_config) = &args.ethplorer {
             ethplorer.with_base_url(ethplorer_config.ethplorer_api_url.clone());

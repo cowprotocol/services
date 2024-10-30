@@ -3,8 +3,8 @@ use {
         domain::{self, eth},
         infra::blockchain::contracts::{deployment_address, Contracts},
     },
+    chain::Chain,
     ethcontract::{dyns::DynWeb3, GasPrice},
-    network::Network,
 };
 
 #[allow(dead_code)]
@@ -23,13 +23,13 @@ impl Manager {
     /// Creates an authenticator which can remove solvers from the allow-list
     pub async fn new(
         web3: DynWeb3,
-        network: &Network,
+        chain: &Chain,
         contracts: Contracts,
         authenticator_pk: eth::H256,
     ) -> Self {
         let authenticator_role = contracts::Roles::at(
             &web3,
-            deployment_address(contracts::Roles::raw_contract(), network).expect("roles address"),
+            deployment_address(contracts::Roles::raw_contract(), chain).expect("roles address"),
         );
 
         Self {

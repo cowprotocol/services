@@ -15,7 +15,7 @@ mod auction;
 mod observer;
 mod trade;
 mod transaction;
-use network::Network;
+use chain::Chain;
 pub use {auction::Auction, observer::Observer, trade::Trade, transaction::Transaction};
 
 /// A settled transaction together with the `Auction`, for which it was executed
@@ -107,11 +107,11 @@ impl Settlement {
     pub async fn new(
         settled: Transaction,
         persistence: &infra::Persistence,
-        network: &Network,
+        chain: &Chain,
     ) -> Result<Self, Error> {
         let auction = persistence.get_auction(settled.auction_id).await?;
 
-        if settled.block > auction.block + max_settlement_age(network) {
+        if settled.block > auction.block + max_settlement_age(chain) {
             // A settled transaction references a VERY old auction.
             //
             // A hacky way to detect processing of production settlements in the staging
@@ -143,9 +143,9 @@ impl Settlement {
 /// settlement from another environment.
 ///
 /// Currently set to ~6h
-fn max_settlement_age(network: &Network) -> u64 {
+fn max_settlement_age(chain: &Chain) -> u64 {
     const TARGET_AGE: u64 = 6 * 60 * 60 * 1000; // 6h in ms
-    network.blocks_in(TARGET_AGE).round() as u64
+    chain.blocks_in(TARGET_AGE).round() as u64
 }
 
 #[derive(Debug, thiserror::Error)]

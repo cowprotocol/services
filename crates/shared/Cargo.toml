@@ -16,6 +16,7 @@ bytes-hex = { path = "../bytes-hex" }
 async-trait = { workspace = true }
 bigdecimal = { workspace = true }
 cached = { workspace = true }
+chain = { path = "../chain" }
 chrono = { workspace = true, features = ["clock"] }
 clap = { workspace = true }
 contracts = { path = "../contracts" }
@@ -38,7 +39,6 @@ lazy_static = { workspace = true }
 maplit = { workspace = true }
 mockall = { workspace = true }
 model = { path = "../model" }
-network = { path = "../network" }
 num = { workspace = true }
 number = { path = "../number" }
 order-validation = { path = "../order-validation" }

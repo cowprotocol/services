@@ -10,8 +10,8 @@ use {
     self::uniswap_v2::pool_fetching::{Pool, PoolFetching},
     crate::recent_block_cache::Block,
     anyhow::Result,
+    chain::Chain,
     model::TokenPair,
-    network::Network,
     std::{collections::HashSet, sync::Arc},
 };
 
@@ -30,9 +30,9 @@ pub enum BaselineSource {
     TestnetUniswapV2,
 }
 
-pub fn defaults_for_network(network: &Network) -> Vec<BaselineSource> {
-    match network {
-        Network::Mainnet => vec![
+pub fn defaults_for_network(chain: &Chain) -> Vec<BaselineSource> {
+    match chain {
+        Chain::Mainnet => vec![
             BaselineSource::UniswapV2,
             BaselineSource::SushiSwap,
             BaselineSource::Swapr,
@@ -40,18 +40,18 @@ pub fn defaults_for_network(network: &Network) -> Vec<BaselineSource> {
             BaselineSource::ZeroEx,
             BaselineSource::UniswapV3,
         ],
-        Network::Goerli => vec![
+        Chain::Goerli => vec![
             BaselineSource::UniswapV2,
             BaselineSource::SushiSwap,
             BaselineSource::BalancerV2,
         ],
-        Network::Gnosis => vec![
+        Chain::Gnosis => vec![
             BaselineSource::Honeyswap,
             BaselineSource::SushiSwap,
             BaselineSource::Baoswap,
             BaselineSource::Swapr,
         ],
-        Network::ArbitrumOne => vec![
+        Chain::ArbitrumOne => vec![
             BaselineSource::UniswapV2,
             BaselineSource::SushiSwap,
             BaselineSource::Swapr,
@@ -59,7 +59,7 @@ pub fn defaults_for_network(network: &Network) -> Vec<BaselineSource> {
             BaselineSource::ZeroEx,
             BaselineSource::UniswapV3,
         ],
-        Network::Base => vec![
+        Chain::Base => vec![
             BaselineSource::UniswapV2,
             BaselineSource::SushiSwap,
             BaselineSource::Swapr,
@@ -67,7 +67,7 @@ pub fn defaults_for_network(network: &Network) -> Vec<BaselineSource> {
             BaselineSource::ZeroEx,
             BaselineSource::UniswapV3,
         ],
-        Network::Sepolia => vec![BaselineSource::TestnetUniswapV2],
+        Chain::Sepolia => vec![BaselineSource::TestnetUniswapV2],
     }
 }
 
