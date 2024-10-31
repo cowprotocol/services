@@ -13,7 +13,7 @@ const GAS_LIMIT: u64 = 30_000_000;
 #[derive(Debug, Clone)]
 pub(super) struct Enso {
     url: reqwest::Url,
-    chain_id: eth::ChainId,
+    chain_id: chain::Id,
     current_block: CurrentBlockWatcher,
     network_block_interval: Option<Duration>,
 }
@@ -29,7 +29,7 @@ pub struct Config {
 impl Enso {
     pub(super) fn new(
         config: Config,
-        chain_id: eth::ChainId,
+        chain_id: chain::Id,
         current_block: CurrentBlockWatcher,
     ) -> Self {
         Self {

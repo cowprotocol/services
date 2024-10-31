@@ -23,6 +23,7 @@ use {
         shadow,
         solvable_orders::SolvableOrdersCache,
     },
+    chain::Chain,
     clap::Parser,
     contracts::{BalancerV2Vault, IUniswapV3Factory},
     ethcontract::{dyns::DynWeb3, errors::DeployError, BlockNumber},
@@ -93,7 +94,7 @@ async fn ethrpc(url: &Url, ethrpc_args: &shared::ethrpc::Arguments) -> infra::bl
 
 async fn ethereum(
     web3: DynWeb3,
-    chain: infra::blockchain::Id,
+    chain: &Chain,
     url: Url,
     contracts: infra::blockchain::contracts::Addresses,
     poll_interval: Duration,
@@ -165,7 +166,7 @@ pub async fn run(args: Arguments) {
     };
     let eth = ethereum(
         web3.clone(),
-        chain,
+        &chain,
         url,
         contracts.clone(),
         args.shared.current_block.block_stream_poll_interval,
@@ -197,12 +198,11 @@ pub async fn run(args: Arguments) {
         other => Some(other.unwrap()),
     };
 
-    let network_name = shared::network::network_name(chain_id);
+    let chain = Chain::try_from(chain_id).expect("incorrect chain ID");
 
     let signature_validator = signature_validator::validator(
         &web3,
         signature_validator::Contracts {
-            chain_id,
             settlement: eth.contracts().settlement().address(),
             vault_relayer,
         },
@@ -211,7 +211,6 @@ pub async fn run(args: Arguments) {
     let balance_fetcher = account_balances::cached(
         &web3,
         account_balances::Contracts {
-            chain_id,
             settlement: eth.contracts().settlement().address(),
             vault_relayer,
             vault: vault.as_ref().map(|contract| contract.address()),
@@ -230,10 +229,11 @@ pub async fn run(args: Arguments) {
         .expect("failed to create gas price estimator"),
     );
 
-    let baseline_sources = args.shared.baseline_sources.clone().unwrap_or_else(|| {
-        shared::sources::defaults_for_chain(chain_id)
-            .expect("failed to get default baseline sources")
-    });
+    let baseline_sources = args
+        .shared
+        .baseline_sources
+        .clone()
+        .unwrap_or_else(|| shared::sources::defaults_for_network(&chain));
     tracing::info!(?baseline_sources, "using baseline sources");
     let univ2_sources = baseline_sources
         .iter()
@@ -261,7 +261,7 @@ pub async fn run(args: Arguments) {
     let finder = token_owner_finder::init(
         &args.token_owner_finder,
         web3.clone(),
-        chain_id,
+        &chain,
         &http_factory,
         &pair_providers,
         vault.as_ref(),
@@ -312,8 +312,7 @@ pub async fn run(args: Arguments) {
         factory::Network {
             web3: web3.clone(),
             simulation_web3,
-            name: network_name.to_string(),
-            chain_id,
+            chain,
             native_token: eth.contracts().weth().address(),
             settlement: eth.contracts().settlement().address(),
             authenticator: eth

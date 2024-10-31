@@ -20,6 +20,7 @@ bytes-hex = { path = "../bytes-hex" }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 bigdecimal = { workspace = true }
+chain = { path = "../chain" }
 chrono = { workspace = true }
 clap = { workspace = true }
 contracts = { path = "../contracts" }

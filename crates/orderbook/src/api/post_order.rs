@@ -122,20 +122,6 @@ impl IntoWarpReply for ValidationErrorWrapper {
         match self.0 {
             ValidationError::Partial(pre) => PartialValidationErrorWrapper(pre).into_warp_reply(),
             ValidationError::AppData(err) => AppDataValidationErrorWrapper(err).into_warp_reply(),
-            ValidationError::QuoteNotFound => with_status(
-                error(
-                    "QuoteNotFound",
-                    "could not find quote with the specified ID",
-                ),
-                StatusCode::BAD_REQUEST,
-            ),
-            ValidationError::InvalidQuote => with_status(
-                error(
-                    "InvalidQuote",
-                    "the quote with the specified ID does not match the order",
-                ),
-                StatusCode::BAD_REQUEST,
-            ),
             ValidationError::PriceForQuote(err) => err.into_warp_reply(),
             ValidationError::MissingFrom => with_status(
                 error(

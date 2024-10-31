@@ -9,7 +9,8 @@ pub mod uniswap_v3_pair_provider;
 use {
     self::uniswap_v2::pool_fetching::{Pool, PoolFetching},
     crate::recent_block_cache::Block,
-    anyhow::{bail, Result},
+    anyhow::Result,
+    chain::Chain,
     model::TokenPair,
     std::{collections::HashSet, sync::Arc},
 };
@@ -29,9 +30,9 @@ pub enum BaselineSource {
     TestnetUniswapV2,
 }
 
-pub fn defaults_for_chain(chain_id: u64) -> Result<Vec<BaselineSource>> {
-    Ok(match chain_id {
-        1 => vec![
+pub fn defaults_for_network(chain: &Chain) -> Vec<BaselineSource> {
+    match chain {
+        Chain::Mainnet => vec![
             BaselineSource::UniswapV2,
             BaselineSource::SushiSwap,
             BaselineSource::Swapr,
@@ -39,18 +40,18 @@ pub fn defaults_for_chain(chain_id: u64) -> Result<Vec<BaselineSource>> {
             BaselineSource::ZeroEx,
             BaselineSource::UniswapV3,
         ],
-        5 => vec![
+        Chain::Goerli => vec![
             BaselineSource::UniswapV2,
             BaselineSource::SushiSwap,
             BaselineSource::BalancerV2,
         ],
-        100 => vec![
+        Chain::Gnosis => vec![
             BaselineSource::Honeyswap,
             BaselineSource::SushiSwap,
             BaselineSource::Baoswap,
             BaselineSource::Swapr,
         ],
-        42161 => vec![
+        Chain::ArbitrumOne => vec![
             BaselineSource::UniswapV2,
             BaselineSource::SushiSwap,
             BaselineSource::Swapr,
@@ -58,9 +59,16 @@ pub fn defaults_for_chain(chain_id: u64) -> Result<Vec<BaselineSource>> {
             BaselineSource::ZeroEx,
             BaselineSource::UniswapV3,
         ],
-        11155111 => vec![BaselineSource::TestnetUniswapV2],
-        _ => bail!("unsupported chain {:#x}", chain_id),
-    })
+        Chain::Base => vec![
+            BaselineSource::UniswapV2,
+            BaselineSource::SushiSwap,
+            BaselineSource::Swapr,
+            BaselineSource::BalancerV2,
+            BaselineSource::ZeroEx,
+            BaselineSource::UniswapV3,
+        ],
+        Chain::Sepolia => vec![BaselineSource::TestnetUniswapV2],
+    }
 }
 
 pub struct PoolAggregator {

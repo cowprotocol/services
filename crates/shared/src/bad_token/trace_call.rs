@@ -331,6 +331,7 @@ mod tests {
             ethrpc::create_env_test_transport,
             sources::{uniswap_v2, BaselineSource},
         },
+        chain::Chain,
         contracts::{BalancerV2Vault, IUniswapV3Factory},
         hex_literal::hex,
         std::{env, time::Duration},
@@ -697,8 +698,11 @@ mod tests {
                     .unwrap(),
                 ),
                 Arc::new(
-                    BlockscoutTokenOwnerFinder::try_with_network(reqwest::Client::new(), 1)
-                        .unwrap(),
+                    BlockscoutTokenOwnerFinder::with_network(
+                        reqwest::Client::new(),
+                        &Chain::Mainnet,
+                    )
+                    .unwrap(),
                 ),
             ],
         });

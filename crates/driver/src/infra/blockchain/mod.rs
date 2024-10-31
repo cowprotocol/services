@@ -20,7 +20,7 @@ pub use self::{contracts::Contracts, gas::GasPriceEstimator};
 /// An Ethereum RPC connection.
 pub struct Rpc {
     web3: DynWeb3,
-    chain: eth::ChainId,
+    chain: chain::Id,
     url: Url,
 }
 
@@ -39,7 +39,7 @@ impl Rpc {
     }
 
     /// Returns the chain id for the RPC connection.
-    pub fn chain(&self) -> eth::ChainId {
+    pub fn chain(&self) -> chain::Id {
         self.chain
     }
 
@@ -57,7 +57,7 @@ pub struct Ethereum {
 }
 
 struct Inner {
-    chain: eth::ChainId,
+    chain: chain::Id,
     contracts: Contracts,
     gas: Arc<GasPriceEstimator>,
     current_block: CurrentBlockWatcher,
@@ -104,7 +104,7 @@ impl Ethereum {
         }
     }
 
-    pub fn network(&self) -> eth::ChainId {
+    pub fn network(&self) -> chain::Id {
         self.inner.chain
     }
 
