@@ -226,6 +226,7 @@ impl BalancerV2 {
                 contracts::BalancerV2ComposableStablePoolFactoryV3::raw_contract(),
                 contracts::BalancerV2ComposableStablePoolFactoryV4::raw_contract(),
                 contracts::BalancerV2ComposableStablePoolFactoryV5::raw_contract(),
+                contracts::BalancerV2ComposableStablePoolFactoryV6::raw_contract(),
             ]),
             pool_deny_list: Vec::new(),
             graph_url: graph_url.clone(),

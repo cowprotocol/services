@@ -251,26 +251,15 @@ impl OnchainComponents {
         let solvers = self.make_accounts::<N>(with_wei).await;
 
         for solver in &solvers {
-            self.allow_solving(solver, true).await;
+            self.contracts
+                .gp_authenticator
+                .add_solver(solver.address())
+                .send()
+                .await
+                .expect("failed to add solver");
         }
 
         solvers
-    }
-
-    /// Adds or removes the passed `account` from the list of allowed solver
-    /// addresses. This can be useful to temporarily disable active solvers
-    /// until all the necessary pre-conditions for a test have been set up.
-    pub async fn allow_solving(&self, account: &TestAccount, is_allowed: bool) {
-        let tx = if is_allowed {
-            self.contracts
-                .gp_authenticator
-                .add_solver(account.address())
-        } else {
-            self.contracts
-                .gp_authenticator
-                .remove_solver(account.address())
-        };
-        tx.send().await.expect("failed to update authenticator");
     }
 
     /// Generate next `N` accounts with the given initial balance and
