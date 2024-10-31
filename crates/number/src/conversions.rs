@@ -3,7 +3,7 @@ use {
     bigdecimal::{num_bigint::ToBigInt, BigDecimal},
     num::{bigint::Sign, rational::Ratio, BigInt, BigRational, BigUint, Zero},
     primitive_types::U256,
-    std::str::FromStr,
+    std::{ops::Neg, str::FromStr},
 };
 
 pub fn u256_to_big_uint(input: &U256) -> BigUint {
@@ -96,7 +96,7 @@ pub fn big_rational_from_decimal_str(s: &str) -> Result<BigRational> {
     };
 
     let parts: Vec<&str> = s.split('.').collect();
-    let unsigned_rational = match parts.len() {
+    match parts.len() {
         1 => {
             // No fractional part
             let numerator = BigInt::from_str(parts[0]).context("unable to parse integer part")?;
@@ -128,8 +128,8 @@ pub fn big_rational_from_decimal_str(s: &str) -> Result<BigRational> {
             Ok(BigRational::new(numerator, denominator))
         }
         _ => Err(anyhow::anyhow!("invalid decimal number")),
-    };
-    unsigned_rational.map(|rational| if is_negative { -rational } else { rational })
+    }
+    .map(|ratio| if is_negative { ratio.neg() } else { ratio })
 }
 
 #[cfg(test)]
