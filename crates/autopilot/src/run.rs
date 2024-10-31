@@ -198,7 +198,7 @@ pub async fn run(args: Arguments) {
         other => Some(other.unwrap()),
     };
 
-    let chain = Chain::try_from(chain_id).unwrap();
+    let chain = Chain::try_from(chain_id).expect("incorrect chain ID");
 
     let signature_validator = signature_validator::validator(
         &web3,

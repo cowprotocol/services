@@ -1,6 +1,7 @@
 use {
     self::contracts::ContractAt,
     crate::{boundary, domain::eth},
+    chain::Chain,
     ethcontract::dyns::DynWeb3,
     ethrpc::block_stream::CurrentBlockWatcher,
     std::{fmt, sync::Arc},
@@ -20,7 +21,7 @@ pub use self::{contracts::Contracts, gas::GasPriceEstimator};
 /// An Ethereum RPC connection.
 pub struct Rpc {
     web3: DynWeb3,
-    chain: eth::ChainId,
+    chain: chain::Id,
     url: Url,
 }
 
@@ -29,17 +30,17 @@ impl Rpc {
     /// at the specifed URL.
     pub async fn new(url: &url::Url) -> Result<Self, Error> {
         let web3 = boundary::buffered_web3_client(url);
-        let chain = web3.eth().chain_id().await?.into();
+        let chain = Chain::try_from(web3.eth().chain_id().await?).expect("invalid chain ID");
 
         Ok(Self {
             web3,
-            chain,
+            chain: chain.id(),
             url: url.clone(),
         })
     }
 
     /// Returns the chain id for the RPC connection.
-    pub fn chain(&self) -> eth::ChainId {
+    pub fn chain(&self) -> chain::Id {
         self.chain
     }
 
@@ -57,7 +58,7 @@ pub struct Ethereum {
 }
 
 struct Inner {
-    chain: eth::ChainId,
+    chain: chain::Id,
     contracts: Contracts,
     gas: Arc<GasPriceEstimator>,
     current_block: CurrentBlockWatcher,
@@ -104,7 +105,7 @@ impl Ethereum {
         }
     }
 
-    pub fn network(&self) -> eth::ChainId {
+    pub fn network(&self) -> chain::Id {
         self.inner.chain
     }
 

@@ -23,7 +23,7 @@ use {
 /// # Panics
 ///
 /// This method panics if the config is invalid or on I/O errors.
-pub async fn load(chain: eth::ChainId, path: &Path) -> infra::Config {
+pub async fn load(chain: chain::Id, path: &Path) -> infra::Config {
     let data = fs::read_to_string(path)
         .await
         .unwrap_or_else(|e| panic!("I/O error while reading {path:?}: {e:?}"));
@@ -40,7 +40,10 @@ pub async fn load(chain: eth::ChainId, path: &Path) -> infra::Config {
     });
 
     assert_eq!(
-        config.chain_id.map(eth::ChainId).unwrap_or(chain),
+        config
+            .chain_id
+            .map(|id| chain::Id::from(id))
+            .unwrap_or(chain),
         chain,
         "The configured chain ID does not match connected Ethereum node"
     );

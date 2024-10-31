@@ -1,4 +1,5 @@
 use {
+    derive_more::{From, Into},
     ethcontract::{
         jsonrpc::serde::{de, Deserialize, Deserializer},
         U256,
@@ -21,8 +22,8 @@ pub enum Chain {
 
 impl Chain {
     /// Returns the chain's chain ID
-    pub fn id(&self) -> u64 {
-        *self as u64
+    pub fn id(&self) -> Id {
+        Id(*self as u64)
     }
 
     /// Returns the canonical name of the chain on CoW Protocol.
@@ -69,7 +70,7 @@ impl Chain {
 }
 
 impl TryFrom<u64> for Chain {
-    type Error = Error;
+    type Error = ChainIdNotSupported;
 
     /// Initializes `Network` from a chain ID, returns error if the chain id is
     /// not supported
@@ -81,14 +82,26 @@ impl TryFrom<u64> for Chain {
             x if x == Self::Sepolia as u64 => Self::Sepolia,
             x if x == Self::ArbitrumOne as u64 => Self::ArbitrumOne,
             x if x == Self::Base as u64 => Self::Base,
-            _ => Err(Error::ChainIdNotSupported)?,
+            _ => Err(ChainIdNotSupported)?,
         };
         Ok(network)
     }
 }
 
+/// Chain ID as defined by EIP-155.
+///
+/// https://eips.ethereum.org/EIPS/eip-155
+#[derive(Clone, Copy, Debug, Eq, PartialEq, From, Into)]
+pub struct Id(u64);
+
+impl std::fmt::Display for Id {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 impl TryFrom<U256> for Chain {
-    type Error = Error;
+    type Error = ChainIdNotSupported;
 
     /// Initializes `Network` from a chain ID, returns error if the chain id is
     /// not supported
@@ -97,7 +110,7 @@ impl TryFrom<U256> for Chain {
         // conversion API available, and we don't support chains with IDs greater
         // than `u64::MAX` anyway.
         if value > U256::from(u64::MAX) {
-            return Err(Error::ChainIdNotSupported);
+            return Err(ChainIdNotSupported);
         }
         value.as_u64().try_into()
     }
@@ -138,10 +151,8 @@ impl<'de> Deserialize<'de> for Chain {
 }
 
 #[derive(Error, Debug)]
-pub enum Error {
-    #[error("chain id not supported")]
-    ChainIdNotSupported,
-}
+#[error("chain id not supported")]
+pub struct ChainIdNotSupported;
 
 #[cfg(test)]
 mod test {
@@ -199,5 +210,11 @@ mod test {
         let json_data = "\"invalid\""; // Cannot be parsed as u64
         let result: Result<Chain, _> = serde_json::from_str(json_data);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_try() {
+        let id = Id(3);
+        assert_eq!(id.to_string(), "1".to_string());
     }
 }
