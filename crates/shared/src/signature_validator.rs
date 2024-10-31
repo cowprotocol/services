@@ -60,7 +60,6 @@ pub fn check_erc1271_result(result: Bytes<[u8; 4]>) -> Result<(), SignatureValid
 
 /// Contracts required for signature verification simulation.
 pub struct Contracts {
-    pub chain_id: u64,
     pub settlement: H160,
     pub vault_relayer: H160,
 }

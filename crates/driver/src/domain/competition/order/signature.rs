@@ -43,7 +43,7 @@ pub enum Scheme {
 }
 
 pub fn domain_separator(
-    chain_id: eth::ChainId,
+    chain_id: chain::Id,
     verifying_contract: eth::ContractAddress,
 ) -> eth::DomainSeparator {
     eth::DomainSeparator::new(&eth::DomainFields {

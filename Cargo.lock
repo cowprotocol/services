@@ -277,6 +277,7 @@ dependencies = [
  "async-trait",
  "bigdecimal",
  "bytes-hex",
+ "chain",
  "chrono",
  "clap",
  "contracts",
@@ -1274,6 +1275,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
+name = "chain"
+version = "0.1.0"
+dependencies = [
+ "derive_more",
+ "ethcontract",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "chrono"
 version = "0.4.38"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1766,6 +1778,7 @@ dependencies = [
  "axum",
  "bigdecimal",
  "bytes-hex",
+ "chain",
  "chrono",
  "clap",
  "contracts",
@@ -3389,6 +3402,7 @@ dependencies = [
  "async-trait",
  "bigdecimal",
  "cached",
+ "chain",
  "chrono",
  "clap",
  "contracts",
@@ -4454,6 +4468,7 @@ dependencies = [
  "bigdecimal",
  "bytes-hex",
  "cached",
+ "chain",
  "chrono",
  "clap",
  "contracts",
@@ -4613,6 +4628,7 @@ dependencies = [
  "anyhow",
  "axum",
  "bigdecimal",
+ "chain",
  "chrono",
  "clap",
  "contracts",
