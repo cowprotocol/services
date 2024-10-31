@@ -570,14 +570,6 @@ fn main() {
                     deployment_information: Some(DeploymentInformation::BlockNumber(184805448)),
                 },
             )
-            .add_network(
-                ARBITRUM_ONE,
-                Network {
-                    address: addr("0x956CCab09898C0AF2aCa5e6C229c3aD4E93d9288"),
-                    // <https://basescan.org/tx/0x5d3342faf0368b939daa93247536afa26cc72c83de52ba7711ae1b8646688467>
-                    deployment_information: Some(DeploymentInformation::BlockNumber(11099703)),
-                },
-            )
     });
     generate_contract("BalancerV2WeightedPool");
     generate_contract_with_config("BalancerV2StablePool", |builder| {
