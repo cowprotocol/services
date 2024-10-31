@@ -415,6 +415,37 @@ fn encode_settlement(
         }
     };
 
+    let fake_trade = encode_fake_trade(query, verification, out_amount, &tokens)?;
+    let mut trades = vec![fake_trade];
+    if let TradeKind::Regular(trade) = trade {
+        trades.extend(encode_jit_orders(
+            &trade.jit_orders,
+            &tokens,
+            domain_separator,
+        )?);
+    }
+
+    let mut pre_interactions = verification.pre_interactions.clone();
+    pre_interactions.extend(trade.pre_interactions().iter().cloned());
+
+    Ok(EncodedSettlement {
+        tokens,
+        clearing_prices,
+        trades,
+        interactions: [
+            encode_interactions(&pre_interactions),
+            trade_interactions,
+            encode_interactions(&verification.post_interactions),
+        ],
+    })
+}
+
+fn encode_fake_trade(
+    query: &PriceQuery,
+    verification: &Verification,
+    out_amount: &U256,
+    tokens: &[H160],
+) -> Result<EncodedTrade, Error> {
     // Configure the most disadvantageous trade possible (while taking possible
     // overflows into account). Should the trader not receive the amount promised by
     // the [`Trade`] the simulation will still work and we can compute the actual
@@ -458,27 +489,7 @@ fn encode_settlement(
         &query.in_amount.get(),
     );
 
-    let mut trades = vec![encoded_trade];
-    if let TradeKind::Regular(trade) = trade {
-        trades.extend(encode_jit_orders(
-            &trade.jit_orders,
-            &tokens,
-            domain_separator,
-        )?);
-    }
-    let mut pre_interactions = verification.pre_interactions.clone();
-    pre_interactions.extend(trade.pre_interactions().iter().cloned());
-
-    Ok(EncodedSettlement {
-        tokens,
-        clearing_prices,
-        trades,
-        interactions: [
-            encode_interactions(&pre_interactions),
-            trade_interactions,
-            encode_interactions(&verification.post_interactions),
-        ],
-    })
+    Ok(encoded_trade)
 }
 
 fn encode_jit_orders(
