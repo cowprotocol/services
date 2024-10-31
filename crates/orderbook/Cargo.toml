@@ -22,6 +22,7 @@ app-data-hash = { path = "../app-data-hash" }
 async-trait = { workspace = true }
 bigdecimal = { workspace = true }
 cached = { workspace = true }
+chain = { path = "../chain" }
 chrono = { workspace = true, features = ["clock"] }
 clap = { workspace = true }
 contracts = { path = "../contracts" }

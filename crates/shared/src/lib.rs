@@ -26,7 +26,6 @@ pub mod http_solver;
 pub mod interaction;
 pub mod maintenance;
 pub mod metrics;
-pub mod network;
 pub mod order_quoting;
 pub mod order_validation;
 pub mod price_estimation;
