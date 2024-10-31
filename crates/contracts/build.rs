@@ -534,6 +534,43 @@ fn main() {
                 },
             )
     });
+    generate_contract_with_config("BalancerV2ComposableStablePoolFactoryV6", |builder| {
+        builder
+            .contract_mod_override("balancer_v2_composable_stable_pool_factory_v6")
+            .add_network(
+                MAINNET,
+                Network {
+                    address: addr("0x5B42eC6D40f7B7965BE5308c70e2603c0281C1E9"),
+                    // <https://etherscan.io/tx/0x4149cadfe5d3431205d9819fca44ed7a4c2b101adc51adc75cc4586dee237be8>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(19314764)),
+                },
+            )
+            .add_network(
+                GNOSIS,
+                Network {
+                    address: addr("0x47B489bf5836f83ABD928C316F8e39bC0587B020"),
+                    // <https://gnosisscan.io/tx/0xc3fc1fb96712a0659b7e9e5f406f63bdf5cbd5df9e04f0372c28f75785036791>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(32650879)),
+                },
+            )
+            .add_network(
+                // <https://docs.balancer.fi/reference/contracts/deployment-addresses/sepolia.html#ungrouped-active-current-contracts>
+                SEPOLIA,
+                Network {
+                    address: addr("0x05503B3aDE04aCA81c8D6F88eCB73Ba156982D2B"),
+                    // <https://sepolia.etherscan.io/tx/0x53aa3587002469b758e2bb87135d9599fd06e7be944fe61c7f82045c45328566>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(5369821)),
+                },
+            )
+            .add_network(
+                ARBITRUM_ONE,
+                Network {
+                    address: addr("0x4bdCc2fb18AEb9e2d281b0278D946445070EAda7"),
+                    // <https://arbiscan.io/tx/0xfa1e7642e135fb32dc14c990b851e5e7a0ac7a463e3a60c5003ae4142396f45e>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(184805448)),
+                },
+            )
+    });
     generate_contract("BalancerV2WeightedPool");
     generate_contract_with_config("BalancerV2StablePool", |builder| {
         builder.add_method_alias(
