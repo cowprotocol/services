@@ -1,0 +1,90 @@
+name: Playground operation check
+
+on:
+  pull_request:
+  schedule:
+    # Run this job once per day
+    - cron: "0 0 * * *"
+
+jobs:
+  playground-check:
+    runs-on: ubuntu-latest
+    env:
+      FORK_URL_MAINNET: ${{ secrets.FORK_URL_MAINNET }}
+    steps:
+      - name: Free Disk Space (Ubuntu)
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+          docker-images: false
+          swap-storage: false
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependency
+        run: sudo apt-get -qq update && sudo apt-get -y -q install curl jq
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Setup environment
+        run: |
+          cp playground/.env.example playground/.env
+          sed -i -e 's/ETH_RPC_URL=.*/ETH_RPC_URL=$FORK_URL_MAINNET/g' playground/.env
+          cat playground/.env
+
+      - name: Start docker containers
+        id: containers
+        run: |
+          cd playground
+          # firstly start explorer container to workaround yarn cache problem 
+          docker compose -f docker-compose.fork.yml up -d explorer
+          docker compose -f docker-compose.fork.yml up -d
+
+      - name: Execute validation script
+        id: test_script
+        run: |
+          cd playground
+          ./test_playground.sh
+
+      - name: Collect docker logs on failure
+        if: failure()
+        uses: jwalton/gh-docker-logs@v2
+        with:
+          dest: './logs'
+
+      - name: Tar logs
+        if: failure()
+        run: tar cvzf ./logs.tgz ./logs
+
+      - name: Upload logs to GitHub
+        if: failure()
+        id: artifact-upload-step
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs.tgz
+          path: ./logs.tgz
+
+      - name: Slack notification on failure
+        if: failure()
+        id: slack
+        uses: slackapi/slack-github-action@v1.27.0
+        with:
+          payload: |
+            {
+              "channel_id": "C037PB929ME",
+              "job_link":"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+              "actor":"${{ github.actor }}",
+              "event_name":"${{ github.event_name }}",
+              "head_ref":"${{ github.head_ref }}",
+              "step_containers":"${{ steps.containers.conclusion }}",
+              "step_test_script":"${{ steps.test_script.conclusion }}",
+              "log_artifcat":"${{ steps.artifact-upload-step.outputs.artifact-url }}"
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_PLAYGROUND_CI_WEBHOOK_URL }}
