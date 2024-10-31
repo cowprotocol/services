@@ -615,6 +615,14 @@ fn main() {
                     deployment_information: Some(DeploymentInformation::BlockNumber(184805448)),
                 },
             )
+            .add_network(
+                BASE,
+                Network {
+                    address: addr("0x956CCab09898C0AF2aCa5e6C229c3aD4E93d9288"),
+                    // <https://basescan.org/tx/0x5d3342faf0368b939daa93247536afa26cc72c83de52ba7711ae1b8646688467>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(11099703)),
+                },
+            )
     });
     generate_contract("BalancerV2WeightedPool");
     generate_contract_with_config("BalancerV2StablePool", |builder| {
@@ -852,7 +860,9 @@ fn main() {
             .add_network_str(GOERLI, "0xE592427A0AEce92De3Edee1F18E0157C05861564")
             .add_network_str(SEPOLIA, "0xE592427A0AEce92De3Edee1F18E0157C05861564")
             .add_network_str(ARBITRUM_ONE, "0xE592427A0AEce92De3Edee1F18E0157C05861564")
-        // Not available on Gnosis Chain and Base
+            // Universal router
+            .add_network_str(ARBITRUM_ONE, "0x3fC91A3afd70395Cd496C647d5a6CC9D4B2b7FAD")
+        // Not available on Gnosis Chain
     });
     generate_contract("UniswapV3Pool");
     generate_contract_with_config("WETH9", |builder| {
@@ -873,7 +883,8 @@ fn main() {
             .add_network_str(GOERLI, "0x1F98431c8aD98523631AE4a59f267346ea31F984")
             .add_network_str(SEPOLIA, "0x1F98431c8aD98523631AE4a59f267346ea31F984")
             .add_network_str(ARBITRUM_ONE, "0x1F98431c8aD98523631AE4a59f267346ea31F984")
-        // Not available on Gnosis Chain and Base
+            .add_network_str(BASE, "0x33128a8fC17869897dcE68Ed026d694621f6FDfD")
+        // Not available on Gnosis Chain
     });
     generate_contract_with_config("IZeroEx", |builder| {
         // <https://docs.0xprotocol.org/en/latest/basics/addresses.html?highlight=contracts#addresses>
