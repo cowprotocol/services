@@ -73,6 +73,7 @@ impl Solutions {
                                             token: jit.order.buy_token.into(),
                                         },
                                         receiver: jit.order.receiver.into(),
+                                        partially_fillable: jit.order.partially_fillable,
                                         valid_to: jit.order.valid_to.into(),
                                         app_data: jit.order.app_data.into(),
                                         side: match jit.order.kind {
@@ -286,6 +287,8 @@ struct JitOrder {
     sell_amount: eth::U256,
     #[serde_as(as = "serialize::U256")]
     buy_amount: eth::U256,
+    #[serde(default)]
+    partially_fillable: bool,
     valid_to: u32,
     #[serde_as(as = "serialize::Hex")]
     app_data: [u8; order::APP_DATA_LEN],
@@ -312,7 +315,7 @@ impl JitOrder {
                 Kind::Sell => OrderKind::Sell,
                 Kind::Buy => OrderKind::Buy,
             },
-            partially_fillable: false,
+            partially_fillable: self.partially_fillable,
             sell_token_balance: match self.sell_token_balance {
                 SellTokenBalance::Erc20 => SellTokenSource::Erc20,
                 SellTokenBalance::Internal => SellTokenSource::Internal,

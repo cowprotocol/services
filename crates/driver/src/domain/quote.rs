@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use {
     super::competition::{auction, solution},
     crate::{
@@ -24,14 +25,14 @@ use {
 /// A quote describing the expected outcome of an order.
 #[derive(Debug)]
 pub struct Quote {
-    /// The amount that can be bought if this was a sell order, or sold if this
-    /// was a buy order.
-    pub amount: eth::U256,
+    pub clearing_prices: Vec<eth::Asset>,
+    pub pre_interactions: Vec<eth::Interaction>,
     pub interactions: Vec<eth::Interaction>,
     pub solver: eth::Address,
     pub gas: Option<eth::Gas>,
     /// Which `tx.origin` is required to make the quote simulation pass.
     pub tx_origin: Option<eth::Address>,
+    pub jit_orders: Vec<solution::trade::Jit>,
 }
 
 impl Quote {
@@ -58,7 +59,8 @@ impl Quote {
         };
 
         Ok(Self {
-            amount: eth::U256::from_big_rational(&amount)?,
+            clearing_prices: solution.clearing_prices(),
+            pre_interactions: solution.pre_interactions().to_vec(),
             interactions: solution
                 .interactions()
                 .iter()
@@ -70,6 +72,14 @@ impl Quote {
             solver: solution.solver().address(),
             gas: solution.gas(),
             tx_origin: *solution.solver().quote_tx_origin(),
+            jit_orders: solution
+                .trades()
+                .iter()
+                .filter_map(|trade| match trade {
+                    solution::Trade::Jit(jit) => Some(jit.clone()),
+                    _ => None,
+                })
+                .collect(),
         })
     }
 }

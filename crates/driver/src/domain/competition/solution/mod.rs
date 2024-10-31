@@ -174,6 +174,10 @@ impl Solution {
         &self.interactions
     }
 
+    pub fn pre_interactions(&self) -> &[eth::Interaction] {
+        &self.pre_interactions
+    }
+
     /// The solver which generated this solution.
     pub fn solver(&self) -> &Solver {
         &self.solver

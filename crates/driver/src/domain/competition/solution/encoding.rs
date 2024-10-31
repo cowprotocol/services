@@ -312,7 +312,7 @@ struct Flags {
     buy_token_balance: order::BuyTokenBalance,
 }
 
-mod codec {
+pub mod codec {
     use crate::domain::{competition::order, eth};
 
     // cf. https://github.com/cowprotocol/contracts/blob/v1.5.0/src/contracts/libraries/GPv2Trade.sol#L16
@@ -392,7 +392,7 @@ mod codec {
         )
     }
 
-    pub(super) fn signature(signature: &order::Signature) -> super::Bytes<Vec<u8>> {
+    pub fn signature(signature: &order::Signature) -> super::Bytes<Vec<u8>> {
         match signature.scheme {
             order::signature::Scheme::Eip712 | order::signature::Scheme::EthSign => {
                 signature.data.clone()
