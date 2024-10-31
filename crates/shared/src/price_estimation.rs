@@ -5,6 +5,7 @@ use {
         trade_finding::Interaction,
     },
     anyhow::Result,
+    bigdecimal::BigDecimal,
     ethcontract::{H160, U256},
     futures::future::BoxFuture,
     itertools::Itertools,
@@ -191,8 +192,8 @@ pub struct Arguments {
     /// factor.
     /// E.g. a value of `0.01` means at most 1 percent of the sell or buy tokens
     /// can be paid out of the settlement contract buffers.
-    #[clap(long, env, default_value = "1.", value_parser = number::conversions::big_rational_from_decimal_str)]
-    pub quote_inaccuracy_limit: BigRational,
+    #[clap(long, env, default_value = "1.")]
+    pub quote_inaccuracy_limit: BigDecimal,
 
     /// How strict quote verification should be.
     #[clap(
