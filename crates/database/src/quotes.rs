@@ -73,6 +73,15 @@ RETURNING id
     Ok(id)
 }
 
+pub async fn get(ex: &mut PgConnection, id: QuoteId) -> Result<Option<Quote>, sqlx::Error> {
+    const QUERY: &str = r#"
+SELECT *
+FROM quotes
+WHERE id = $1
+    "#;
+    sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
+}
+
 /// Fields for searching stored quotes.
 #[derive(Clone)]
 pub struct QuoteSearchParameters {
@@ -149,6 +158,38 @@ mod tests {
     /// Work around the issue by created `DateTime`s with lower precision.
     fn low_precision_now() -> DateTime<Utc> {
         Utc.timestamp_opt(Utc::now().timestamp(), 0).unwrap()
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_save_and_get_quote_by_id() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let now = low_precision_now();
+        let mut quote = Quote {
+            id: Default::default(),
+            sell_token: ByteArray([1; 20]),
+            buy_token: ByteArray([2; 20]),
+            sell_amount: 3.into(),
+            buy_amount: 4.into(),
+            gas_amount: 5.,
+            gas_price: 6.,
+            sell_token_price: 7.,
+            order_kind: OrderKind::Sell,
+            expiration_timestamp: now,
+            quote_kind: QuoteKind::Standard,
+            solver: ByteArray([1; 20]),
+        };
+        let id = save(&mut db, &quote).await.unwrap();
+        quote.id = id;
+        assert_eq!(get(&mut db, id).await.unwrap().unwrap(), quote);
+
+        remove_expired_quotes(&mut db, now + Duration::seconds(30))
+            .await
+            .unwrap();
+        assert_eq!(get(&mut db, id).await.unwrap(), None);
     }
 
     #[tokio::test]
