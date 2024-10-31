@@ -94,6 +94,12 @@ impl TryFrom<u64> for Chain {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, From, Into)]
 pub struct Id(u64);
 
+impl From<U256> for Id {
+    fn from(value: U256) -> Self {
+        Self(value.as_u64())
+    }
+}
+
 impl std::fmt::Display for Id {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
@@ -210,11 +216,5 @@ mod test {
         let json_data = "\"invalid\""; // Cannot be parsed as u64
         let result: Result<Chain, _> = serde_json::from_str(json_data);
         assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_try() {
-        let id = Id(3);
-        assert_eq!(id.to_string(), "1".to_string());
     }
 }

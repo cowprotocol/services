@@ -40,10 +40,7 @@ pub async fn load(chain: chain::Id, path: &Path) -> infra::Config {
     });
 
     assert_eq!(
-        config
-            .chain_id
-            .map(|id| chain::Id::from(id))
-            .unwrap_or(chain),
+        config.chain_id.map(chain::Id::from).unwrap_or(chain),
         chain,
         "The configured chain ID does not match connected Ethereum node"
     );

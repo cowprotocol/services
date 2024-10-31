@@ -1,7 +1,6 @@
 use {
     self::contracts::ContractAt,
     crate::{boundary, domain::eth},
-    chain::Chain,
     ethcontract::dyns::DynWeb3,
     ethrpc::block_stream::CurrentBlockWatcher,
     std::{fmt, sync::Arc},
@@ -30,11 +29,11 @@ impl Rpc {
     /// at the specifed URL.
     pub async fn new(url: &url::Url) -> Result<Self, Error> {
         let web3 = boundary::buffered_web3_client(url);
-        let chain = Chain::try_from(web3.eth().chain_id().await?).expect("invalid chain ID");
+        let chain = web3.eth().chain_id().await?.into();
 
         Ok(Self {
             web3,
-            chain: chain.id(),
+            chain,
             url: url.clone(),
         })
     }
