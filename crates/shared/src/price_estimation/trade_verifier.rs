@@ -669,7 +669,7 @@ fn ensure_quote_accuracy(
     );
 
     let (expected_sell_token_lost, expected_buy_token_lost) = match trade {
-        TradeKind::Regular(trade) => {
+        TradeKind::Regular(trade) if !trade.jit_orders.is_empty() => {
             let jit_orders_net_token_changes = trade.jit_orders_net_token_changes()?;
             let jit_orders_sell_token_changes = jit_orders_net_token_changes
                 .get(&query.sell_token)
@@ -683,7 +683,7 @@ fn ensure_quote_accuracy(
             let expected_buy_token_lost = &buy_amount - jit_orders_buy_token_changes;
             (expected_sell_token_lost, expected_buy_token_lost)
         }
-        TradeKind::Legacy(_) => (BigRational::zero(), BigRational::zero()),
+        _ => (BigRational::zero(), BigRational::zero()),
     };
 
     let sell_token_lost = &summary.sell_tokens_lost - expected_sell_token_lost;
