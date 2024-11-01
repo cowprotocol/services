@@ -101,8 +101,8 @@ async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
                         solver: H160::from_str("0xe3067c7c27c1038de4e8ad95a83b927d23dfbd99")
                             .unwrap(),
                         tx_origin,
-                    }),
-                )
+                    },
+                ))
                 .await
         }
     };
