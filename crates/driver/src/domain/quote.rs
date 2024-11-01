@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use {
     super::competition::{auction, solution},
     crate::{
@@ -14,12 +13,10 @@ use {
             blockchain::{self, Ethereum},
             solver::{self, Solver},
         },
-        util::{self, conv::u256::U256Ext},
+        util,
     },
-    anyhow::Context,
     chrono::Utc,
-    num::CheckedDiv,
-    std::{collections::HashSet, iter, ops::Mul},
+    std::{collections::HashSet, iter},
 };
 
 /// A quote describing the expected outcome of an order.
@@ -36,28 +33,7 @@ pub struct Quote {
 }
 
 impl Quote {
-    fn new(eth: &Ethereum, order: &Order, solution: competition::Solution) -> Result<Self, Error> {
-        let sell_price = solution
-            .clearing_price(order.tokens.sell)
-            .ok_or(QuotingFailed::ClearingSellMissing)?
-            .to_big_rational();
-        let buy_price = solution
-            .clearing_price(order.tokens.buy)
-            .ok_or(QuotingFailed::ClearingBuyMissing)?
-            .to_big_rational();
-        let order_amount = order.amount.0.to_big_rational();
-
-        let amount = match order.side {
-            order::Side::Sell => order_amount
-                .mul(sell_price)
-                .checked_div(&buy_price)
-                .context("div by zero: buy price")?,
-            order::Side::Buy => order_amount
-                .mul(&buy_price)
-                .checked_div(&sell_price)
-                .context("div by zero: sell price")?,
-        };
-
+    fn new(eth: &Ethereum, solution: competition::Solution) -> Result<Self, Error> {
         Ok(Self {
             clearing_prices: solution.clearing_prices(),
             pre_interactions: solution.pre_interactions().to_vec(),
@@ -120,7 +96,6 @@ impl Order {
         let solutions = solver.solve(&auction, &liquidity).await?;
         Quote::new(
             eth,
-            self,
             // TODO(#1468): choose the best solution in the future, but for now just pick the
             // first solution
             solutions

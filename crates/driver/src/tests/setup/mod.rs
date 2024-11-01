@@ -1076,6 +1076,7 @@ impl Test {
             trades: &self.trades,
             status,
             body,
+            blockchain: &self.blockchain,
         }
     }
 
@@ -1397,6 +1398,7 @@ pub struct Quote<'a> {
     trades: &'a [Trade],
     status: StatusCode,
     body: String,
+    blockchain: &'a Blockchain,
 }
 
 impl<'a> Quote<'a> {
@@ -1406,6 +1408,7 @@ impl<'a> Quote<'a> {
         QuoteOk {
             trades: self.trades,
             body: self.body,
+            blockchain: self.blockchain,
         }
     }
 }
@@ -1413,6 +1416,7 @@ impl<'a> Quote<'a> {
 pub struct QuoteOk<'a> {
     trades: &'a [Trade],
     body: String,
+    blockchain: &'a Blockchain,
 }
 
 impl QuoteOk<'_> {
@@ -1429,14 +1433,30 @@ impl QuoteOk<'_> {
             .collect::<Vec<_>>();
         assert_eq!(quoted_orders.len(), 1);
 
-        let result: serde_json::Value = serde_json::from_str(&self.body).unwrap();
-        let amount = result.get("amount").unwrap().as_str().unwrap().to_owned();
         let quoted_order = quoted_orders[0];
+        let sell_token = self.blockchain.get_token(quoted_order.order.sell_token);
+        let buy_token = self.blockchain.get_token(quoted_order.order.buy_token);
+
+        let result: serde_json::Value = serde_json::from_str(&self.body).unwrap();
+        let clearing_prices = result
+            .get("clearingPrices")
+            .unwrap()
+            .as_object()
+            .unwrap()
+            .into_iter()
+            .map(|(token, price)| (H160::from_str(token).unwrap(), price.as_str().unwrap()))
+            .collect::<HashMap<_, _>>();
+
+        let amount = match quoted_order.order.side {
+            order::Side::Buy => clearing_prices.get(&buy_token).unwrap(),
+            order::Side::Sell => clearing_prices.get(&sell_token).unwrap(),
+        };
+
         let expected = match quoted_order.order.side {
             order::Side::Buy => (quoted_order.sell - quoted_order.order.surplus_fee()).to_string(),
             order::Side::Sell => quoted_order.buy.to_string(),
         };
-        assert_eq!(amount, expected);
+        assert_eq!(amount, &expected);
         self
     }
 
@@ -1503,11 +1523,11 @@ impl QuoteOk<'_> {
             .to_owned();
         assert_eq!(
             result_pre_interactions.len(),
-            expected.pre_interactions.len()
+            expected.quoted_order.order.pre_interactions.len()
         );
         for (interaction, expected) in result_pre_interactions
             .iter()
-            .zip(&expected.pre_interactions)
+            .zip(&expected.quoted_order.order.pre_interactions)
         {
             let target = interaction.get("target").unwrap().as_str().unwrap();
             let value = interaction.get("value").unwrap().as_str().unwrap();

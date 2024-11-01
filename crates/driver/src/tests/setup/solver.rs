@@ -251,7 +251,8 @@ impl Solver {
                         }
                     }
                     Trade::Jit(jit) => {
-                        pre_interactions_json.extend(jit.pre_interactions.iter().map(
+                        pre_interactions_json
+                            .extend(jit.quoted_order.order.pre_interactions.iter().map(
                             |interaction| {
                                 json!({
                                     "kind": "custom",
@@ -366,6 +367,7 @@ impl Solver {
                 "prices": prices_json,
                 "trades": trades_json,
                 "interactions": interactions_json,
+                "preInteractions": pre_interactions_json,
             }));
         }
 
