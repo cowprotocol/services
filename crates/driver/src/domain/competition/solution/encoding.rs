@@ -312,7 +312,7 @@ struct Flags {
     buy_token_balance: order::BuyTokenBalance,
 }
 
-pub mod codec {
+pub(crate) mod codec {
     use crate::domain::{competition::order, eth};
 
     // cf. https://github.com/cowprotocol/contracts/blob/v1.5.0/src/contracts/libraries/GPv2Trade.sol#L16
