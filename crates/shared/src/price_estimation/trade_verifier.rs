@@ -8,7 +8,7 @@ use {
         trade_finding::{external::dto, Interaction, TradeKind},
     },
     anyhow::{Context, Result},
-    bigdecimal::Zero,
+    bigdecimal::{BigDecimal, Zero},
     contracts::{
         deployed_bytecode,
         dummy_contract,
@@ -25,7 +25,10 @@ use {
         DomainSeparator,
     },
     num::BigRational,
-    number::{conversions::u256_to_big_rational, nonzero::U256 as NonZeroU256},
+    number::{
+        conversions::{big_decimal_to_big_rational, u256_to_big_rational},
+        nonzero::U256 as NonZeroU256,
+    },
     std::{collections::HashMap, sync::Arc},
     web3::{ethabi::Token, types::CallRequest},
 };
@@ -67,7 +70,7 @@ impl TradeVerifier {
         block_stream: CurrentBlockWatcher,
         settlement: H160,
         native_token: H160,
-        quote_inaccuracy_limit: BigRational,
+        quote_inaccuracy_limit: BigDecimal,
     ) -> Result<Self> {
         let settlement_contract = GPv2Settlement::at(&web3, settlement);
         let domain_separator =
@@ -78,7 +81,7 @@ impl TradeVerifier {
             block_stream,
             settlement: settlement_contract,
             native_token,
-            quote_inaccuracy_limit,
+            quote_inaccuracy_limit: big_decimal_to_big_rational(&quote_inaccuracy_limit),
             web3,
             domain_separator,
         })
@@ -666,7 +669,7 @@ fn ensure_quote_accuracy(
     );
 
     let (expected_sell_token_lost, expected_buy_token_lost) = match trade {
-        TradeKind::Regular(trade) => {
+        TradeKind::Regular(trade) if !trade.jit_orders.is_empty() => {
             let jit_orders_net_token_changes = trade.jit_orders_net_token_changes()?;
             let jit_orders_sell_token_changes = jit_orders_net_token_changes
                 .get(&query.sell_token)
@@ -680,7 +683,7 @@ fn ensure_quote_accuracy(
             let expected_buy_token_lost = &buy_amount - jit_orders_buy_token_changes;
             (expected_sell_token_lost, expected_buy_token_lost)
         }
-        TradeKind::Legacy(_) => (BigRational::zero(), BigRational::zero()),
+        _ => (BigRational::zero(), BigRational::zero()),
     };
 
     let sell_token_lost = &summary.sell_tokens_lost - expected_sell_token_lost;
@@ -728,15 +731,15 @@ mod tests {
         app_data::AppDataHash,
         bigdecimal::FromPrimitive,
         model::order::{BuyTokenDestination, SellTokenSource},
-        number::conversions::big_rational_from_decimal_str,
+        std::str::FromStr,
     };
 
     #[test]
     fn discards_inaccurate_quotes() {
         // let's use 0.5 as the base case to avoid rounding issues introduced by float
         // conversion
-        let low_threshold = big_rational_from_decimal_str("0.5").unwrap();
-        let high_threshold = big_rational_from_decimal_str("0.51").unwrap();
+        let low_threshold = big_decimal_to_big_rational(&BigDecimal::from_str("0.5").unwrap());
+        let high_threshold = big_decimal_to_big_rational(&BigDecimal::from_str("0.51").unwrap());
 
         let query = PriceQuery {
             in_amount: 1_000.try_into().unwrap(),
@@ -798,8 +801,8 @@ mod tests {
     #[test]
     fn ensure_quote_accuracy_with_jit_orders_partial_fills() {
         // Inaccuracy limit of 10%
-        let low_threshold = big_rational_from_decimal_str("0.1").unwrap();
-        let high_threshold = big_rational_from_decimal_str("0.11").unwrap();
+        let low_threshold = big_decimal_to_big_rational(&BigDecimal::from_str("0.1").unwrap());
+        let high_threshold = big_decimal_to_big_rational(&BigDecimal::from_str("0.11").unwrap());
 
         let sell_token: H160 = H160::from_low_u64_be(1);
         let buy_token: H160 = H160::from_low_u64_be(2);
@@ -906,8 +909,8 @@ mod tests {
     #[test]
     fn ensure_quote_accuracy_with_jit_orders_fully_fills() {
         // Inaccuracy limit of 10%
-        let low_threshold = big_rational_from_decimal_str("0.1").unwrap();
-        let high_threshold = big_rational_from_decimal_str("0.11").unwrap();
+        let low_threshold = big_decimal_to_big_rational(&BigDecimal::from_str("0.1").unwrap());
+        let high_threshold = big_decimal_to_big_rational(&BigDecimal::from_str("0.11").unwrap());
 
         let sell_token: H160 = H160::from_low_u64_be(1);
         let buy_token: H160 = H160::from_low_u64_be(2);
