@@ -1,11 +1,9 @@
 use {
+    crate::api::{ApiReply, IntoWarpReply},
     anyhow::Result,
     ethcontract::H160,
     serde::Serialize,
-    shared::{
-        api::{ApiReply, IntoWarpReply},
-        price_estimation::native::NativePriceEstimating,
-    },
+    shared::price_estimation::native::NativePriceEstimating,
     std::{convert::Infallible, sync::Arc},
     warp::{hyper::StatusCode, reply::with_status, Filter, Rejection},
 };
