@@ -3,9 +3,13 @@ use {
     crate::database::events::meta_to_event_index,
     anyhow::{anyhow, Context, Result},
     chrono::Duration,
-    contracts::cowswap_onchain_orders::{
-        event_data::OrderPlacement as ContractOrderPlacement,
-        Event as ContractEvent,
+    contracts::{
+        cowswap_onchain_orders::{
+            event_data::OrderPlacement as ContractOrderPlacement,
+            Event as ContractEvent,
+        },
+        deployment_block,
+        GPv2Settlement,
     },
     database::{
         byte_array::ByteArray,
@@ -22,9 +26,9 @@ use {
     },
     hex_literal::hex,
     model::time::now_in_epoch_seconds,
-    shared::contracts::settlement_deployment_block_number_hash,
     sqlx::types::BigDecimal,
     std::{collections::HashMap, convert::TryInto},
+    web3::types::U64,
 };
 
 // 4c84c1c8 is the identifier of the following function:
@@ -143,6 +147,16 @@ fn convert_to_quote_id_and_user_valid_to(
     let quote_id = i64::from_be_bytes(data[0..8].try_into().unwrap());
     let user_valid_to = u32::from_be_bytes(data[8..12].try_into().unwrap());
     Ok((quote_id, user_valid_to))
+}
+
+async fn settlement_deployment_block_number_hash(
+    web3: &Web3,
+    chain_id: u64,
+) -> Result<BlockNumberHash> {
+    let block_number = deployment_block(GPv2Settlement::raw_contract(), chain_id)?;
+    block_number_to_block_number_hash(web3, U64::from(block_number).into())
+        .await
+        .ok_or_else(|| anyhow!("Deployment block not found"))
 }
 
 /// The block from which to start indexing eth-flow events. Note that this
