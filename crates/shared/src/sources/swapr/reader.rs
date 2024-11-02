@@ -53,11 +53,11 @@ mod tests {
     use {
         super::*,
         crate::{
-            ethcontract_error,
             ethrpc::{create_env_test_transport, Web3},
             recent_block_cache::Block,
             sources::{uniswap_v2, BaselineSource},
         },
+        contracts::errors::testing_contract_error,
         ethcontract::H160,
         maplit::hashset,
     };
@@ -93,7 +93,7 @@ mod tests {
         let address = H160::from_low_u64_be(1);
         assert!(handle_results(
             Ok(Some(Pool::uniswap(address, tokens, (0, 0)))),
-            Err(ethcontract_error::testing_contract_error()),
+            Err(testing_contract_error()),
         )
         .unwrap()
         .is_none());

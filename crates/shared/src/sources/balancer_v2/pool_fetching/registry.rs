@@ -4,7 +4,6 @@
 use {
     super::{internal::InternalPoolFetching, pool_storage::PoolStorage},
     crate::{
-        ethcontract_error::EthcontractErrorType,
         event_handling::{EventHandler, EventRetrieving},
         maintenance::Maintaining,
         recent_block_cache::Block,
@@ -16,7 +15,11 @@ use {
         },
     },
     anyhow::Result,
-    contracts::{balancer_v2_base_pool_factory, BalancerV2BasePoolFactory},
+    contracts::{
+        balancer_v2_base_pool_factory,
+        errors::EthcontractErrorType,
+        BalancerV2BasePoolFactory,
+    },
     ethcontract::{dyns::DynAllEventsBuilder, errors::MethodError, BlockId, Instance, H256},
     ethrpc::{
         block_stream::{BlockNumberHash, BlockRetrieving},
@@ -156,13 +159,11 @@ fn is_contract_error(err: &anyhow::Error) -> bool {
 mod tests {
     use {
         super::*,
-        crate::{
-            ethcontract_error,
-            sources::balancer_v2::{
-                pools::{weighted, PoolKind},
-                swap::fixed_point::Bfp,
-            },
+        crate::sources::balancer_v2::{
+            pools::{weighted, PoolKind},
+            swap::fixed_point::Bfp,
         },
+        contracts::errors::{testing_contract_error, testing_node_error},
     };
 
     #[tokio::test]
@@ -177,14 +178,14 @@ mod tests {
                 }),
             })),
             Ok(PoolStatus::Paused),
-            Err(ethcontract_error::testing_contract_error().into()),
+            Err(testing_contract_error().into()),
         ];
         assert_eq!(collect_pool_results(results).unwrap().len(), 1);
     }
 
     #[tokio::test]
     async fn collecting_results_forwards_node_error() {
-        let node_err = Err(ethcontract_error::testing_node_error().into());
+        let node_err = Err(testing_node_error().into());
         assert!(collect_pool_results(vec![node_err]).is_err());
     }
 }
