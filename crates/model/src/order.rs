@@ -10,7 +10,7 @@ use {
         TokenPair,
     },
     anyhow::{anyhow, Result},
-    app_data::AppDataHash,
+    app_data::{hash_full_app_data, AppDataHash},
     chrono::{offset::Utc, DateTime},
     derivative::Derivative,
     hex_literal::hex,
@@ -465,7 +465,7 @@ impl OrderCreationAppData {
         match self {
             Self::Hash { hash } => *hash,
             Self::Full { full } | Self::Both { full, .. } => {
-                AppDataHash(app_data_hash::hash_full_app_data(full.as_bytes()))
+                AppDataHash(hash_full_app_data(full.as_bytes()))
             }
         }
     }

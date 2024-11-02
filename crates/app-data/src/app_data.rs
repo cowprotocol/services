@@ -1,5 +1,5 @@
 use {
-    crate::{AppDataHash, Hooks},
+    crate::{app_data_hash::hash_full_app_data, AppDataHash, Hooks},
     anyhow::{anyhow, Context, Result},
     primitive_types::H160,
     serde::{de, Deserialize, Deserializer, Serialize, Serializer},
@@ -79,7 +79,7 @@ impl Validator {
             .unwrap_or_default();
 
         Ok(ValidatedAppData {
-            hash: AppDataHash(app_data_hash::hash_full_app_data(full_app_data)),
+            hash: AppDataHash(hash_full_app_data(full_app_data)),
             document,
             protocol,
         })
