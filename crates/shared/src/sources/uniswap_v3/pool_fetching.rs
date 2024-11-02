@@ -496,7 +496,7 @@ impl Maintaining for UniswapV3PoolFetcher {
 mod tests {
     use {
         super::*,
-        crate::assert_json_matches,
+        testlib::assert_json_matches,
         contracts::uniswap_v3_pool::event_data::{Burn, Mint, Swap},
         ethcontract::EventMetadata,
         serde_json::json,

@@ -58,7 +58,7 @@ mod tests {
         crate::order::{OrderMetadata, OrderUid},
         maplit::btreemap,
         serde_json::json,
-        shared::assert_json_matches,
+        testlib::assert_json_matches,
     };
 
     #[test]

@@ -29,9 +29,9 @@ use {anyhow::anyhow, std::collections::HashSet};
 #[macro_export]
 macro_rules! assert_json_matches_excluding {
     ($actual:expr, $expected:expr, $exclude_paths:expr) => {{
-        let exclude_paths = $crate::test_utils::parse_field_paths(&$exclude_paths);
+        let exclude_paths = $crate::json_matching::parse_field_paths(&$exclude_paths);
         let result =
-            $crate::test_utils::json_matches_excluding(&$actual, &$expected, &exclude_paths);
+            $crate::json_matching::json_matches_excluding(&$actual, &$expected, &exclude_paths);
         if let Err(e) = result {
             panic!(
                 "JSON did not match with the exclusion of specified paths. Error: {}\nActual \
@@ -78,7 +78,7 @@ macro_rules! assert_json_matches_excluding {
 #[macro_export]
 macro_rules! assert_json_matches {
     ($actual:expr, $expected:expr) => {{
-        let result = $crate::test_utils::json_matches_excluding(
+        let result = $crate::json_matching::json_matches_excluding(
             &$actual,
             &$expected,
             &std::collections::HashSet::new(),

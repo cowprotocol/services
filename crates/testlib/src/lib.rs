@@ -4,3 +4,4 @@ pub use ethcontract_mock::utils::*;
 
 pub mod protocol;
 pub mod tokens;
+pub mod json_matching;

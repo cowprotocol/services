@@ -318,7 +318,7 @@ impl OrderQuoteRequest {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, serde_json::json, shared::assert_json_matches};
+    use {super::*, serde_json::json, testlib::assert_json_matches};
 
     #[test]
     fn serialize_defaults() {

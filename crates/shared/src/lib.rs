@@ -36,7 +36,6 @@ pub mod sources;
 pub mod subgraph;
 pub mod submitter_constants;
 pub mod tenderly_api;
-pub mod test_utils;
 pub mod token_info;
 pub mod token_list;
 pub mod trace_many;
