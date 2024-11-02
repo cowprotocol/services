@@ -3308,6 +3308,7 @@ dependencies = [
 name = "observe"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "atty",
  "console-subscriber",
  "futures",
@@ -3319,6 +3320,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "warp",
 ]
 
 [[package]]

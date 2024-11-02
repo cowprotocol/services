@@ -27,10 +27,10 @@ use {
         DomainSeparator,
     },
     number::conversions::big_decimal_to_u256,
+    observe::metrics::LivenessChecking,
     primitive_types::H160,
     shared::{
         fee::FeeParameters,
-        metrics::LivenessChecking,
         order_quoting::Quote,
         order_validation::{
             is_order_outside_market_price,
