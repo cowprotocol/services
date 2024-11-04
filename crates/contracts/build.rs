@@ -860,9 +860,7 @@ fn main() {
             .add_network_str(GOERLI, "0xE592427A0AEce92De3Edee1F18E0157C05861564")
             .add_network_str(SEPOLIA, "0xE592427A0AEce92De3Edee1F18E0157C05861564")
             .add_network_str(ARBITRUM_ONE, "0xE592427A0AEce92De3Edee1F18E0157C05861564")
-            // Universal router
-            .add_network_str(ARBITRUM_ONE, "0x3fC91A3afd70395Cd496C647d5a6CC9D4B2b7FAD")
-        // Not available on Gnosis Chain
+        // Not available on Gnosis Chain and Base
     });
     generate_contract("UniswapV3Pool");
     generate_contract_with_config("WETH9", |builder| {
