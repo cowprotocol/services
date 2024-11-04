@@ -15,21 +15,6 @@ WITH regular_orders AS (
 onchain_orders AS (
     SELECT ARRAY_AGG(uid) AS ids FROM onchain_placed_orders WHERE sender = $1
 ),
-all_orders AS (
-    -- Get orders from the orders table that match the owner criteria
-    SELECT uid, kind, buy_amount, sell_amount, fee_amount, buy_token, sell_token
-    FROM orders
-    -- use this weird construction instead of `where owner=address or sender=address` to help postgres make efficient use of indices
-    WHERE uid = ANY(ARRAY_CAT((SELECT ids FROM regular_orders), (SELECT ids FROM onchain_orders)))
-    
-    UNION ALL
-    
-    -- Get orders from the jit_orders table that match the owner criteria but are not in orders
-    SELECT j.uid, j.kind, j.buy_amount, j.sell_amount, j.fee_amount, j.buy_token, j.sell_token
-    FROM jit_orders j
-    LEFT JOIN orders o ON j.uid = o.uid
-    WHERE j.owner = $1 AND o.uid IS NULL
-),
 trade_components AS (
     SELECT
        CASE kind
@@ -49,9 +34,36 @@ trade_components AS (
           WHEN 'sell' THEN (SELECT price FROM auction_prices ap WHERE ap.token = o.buy_token AND ap.auction_id = oe.auction_id)
           WHEN 'buy' THEN (SELECT price FROM auction_prices ap WHERE ap.token = o.sell_token AND ap.auction_id = oe.auction_id)
        END AS surplus_token_native_price
-    FROM all_orders o
+    FROM orders o
     JOIN trades t ON o.uid = t.order_uid
     JOIN order_execution oe ON o.uid = oe.order_uid
+    WHERE o.uid = ANY(ARRAY_CAT((SELECT ids FROM regular_orders), (SELECT ids FROM onchain_orders)))
+
+    UNION ALL
+
+    -- Additional query for jit_orders
+    SELECT
+       CASE j.kind
+          WHEN 'sell' THEN t.buy_amount
+          WHEN 'buy' THEN t.sell_amount - t.fee_amount
+       END AS trade_amount,
+       CASE j.kind
+          WHEN 'sell' THEN (t.sell_amount - t.fee_amount) * j.buy_amount / j.sell_amount
+          WHEN 'buy' THEN t.buy_amount * j.sell_amount / j.buy_amount
+       END AS limit_amount,
+       j.kind,
+       CASE j.kind
+          WHEN 'sell' THEN (SELECT price FROM auction_prices ap WHERE ap.token = j.buy_token AND ap.auction_id = oe.auction_id)
+          WHEN 'buy' THEN (SELECT price FROM auction_prices ap WHERE ap.token = j.sell_token AND ap.auction_id = oe.auction_id)
+       END AS surplus_token_native_price
+    FROM jit_orders j
+    JOIN trades t ON j.uid = t.order_uid
+    JOIN order_execution oe ON j.uid = oe.order_uid
+    WHERE j.owner = $1 AND NOT EXISTS (
+        SELECT 1 
+        FROM orders o 
+        WHERE o.uid = j.uid
+    )
 ),
 trade_surplus AS (
     SELECT
