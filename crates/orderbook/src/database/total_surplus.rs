@@ -38,7 +38,7 @@ trade_components AS (
     JOIN trades t ON o.uid = t.order_uid
     JOIN order_execution oe ON o.uid = oe.order_uid
     -- use this weird construction instead of `where owner=address or sender=address` to help postgres make efficient use of indices
-    WHERE o.uid = ANY(ARRAY_CAT((SELECT ids FROM regular_orders), (SELECT ids FROM onchain_orders)))
+    WHERE uid = ANY(ARRAY_CAT((SELECT ids FROM regular_orders), (SELECT ids FROM onchain_orders)))
 
     UNION ALL
 
