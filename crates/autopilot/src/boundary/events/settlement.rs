@@ -23,11 +23,17 @@ impl Indexer {
     }
 }
 
+/// This name is used to store the latest indexed block in the db.
+const INDEX_NAME: &str = "settlements";
+
 #[async_trait::async_trait]
 impl EventStoring<contracts::gpv2_settlement::Event> for Indexer {
     async fn last_event_block(&self) -> Result<u64> {
-        let mut con = self.db.pool.acquire().await?;
-        crate::database::events::last_event_block(&mut con).await
+        super::read_last_block_from_db(&self.db.pool, INDEX_NAME).await
+    }
+
+    async fn persist_last_indexed_block(&mut self, latest_block: u64) -> Result<()> {
+        super::write_last_block_to_db(&self.db.pool, latest_block, INDEX_NAME).await
     }
 
     async fn replace_events(

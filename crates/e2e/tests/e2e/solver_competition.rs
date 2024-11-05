@@ -50,6 +50,8 @@ async fn solver_competition(web3: Web3) {
                 solver.clone(),
                 onchain.contracts().weth.address(),
                 vec![],
+                1,
+                true,
             )
             .await,
             colocation::start_baseline_solver(
@@ -57,6 +59,8 @@ async fn solver_competition(web3: Web3) {
                 solver,
                 onchain.contracts().weth.address(),
                 vec![],
+                1,
+                true,
             )
             .await,
         ],
@@ -139,7 +143,7 @@ async fn fairness_check(web3: Web3) {
     token_b.mint(trader_b.address(), to_wei(10)).await;
 
     // Create more liquid routes between token_a (token_b) and weth via base_a
-    // (base_b). base_a has more liquidity then base_b, leading to the solver that
+    // (base_b). base_a has more liquidity than base_b, leading to the solver that
     // knows about base_a to win
     let [base_a, base_b] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(10_000), to_wei(10_000))
@@ -171,13 +175,17 @@ async fn fairness_check(web3: Web3) {
                 solver.clone(),
                 onchain.contracts().weth.address(),
                 vec![base_a.address()],
+                1,
+                true,
             )
             .await,
             colocation::start_baseline_solver(
                 "solver2".into(),
-                solver.clone(),
+                solver,
                 onchain.contracts().weth.address(),
                 vec![base_b.address()],
+                1,
+                true,
             )
             .await,
         ],
@@ -200,9 +208,6 @@ async fn fairness_check(web3: Web3) {
         ])
         .await;
 
-    // Disable solving until all orders have been placed.
-    onchain.allow_solving(&solver, false).await;
-
     // Place Orders
     let order_a = OrderCreation {
         sell_token: token_a.address(),
@@ -220,6 +225,8 @@ async fn fairness_check(web3: Web3) {
     );
     let uid_a = services.create_order(&order_a).await.unwrap();
 
+    onchain.mint_block().await;
+
     let order_b = OrderCreation {
         sell_token: token_b.address(),
         sell_amount: to_wei(10),
@@ -235,9 +242,6 @@ async fn fairness_check(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader_b.private_key()).unwrap()),
     );
     services.create_order(&order_b).await.unwrap();
-
-    // Enable solving again
-    onchain.allow_solving(&solver, true).await;
 
     // Wait for trade
     let indexed_trades = || async {

@@ -37,6 +37,7 @@ use {
         BalancerV2ComposableStablePoolFactoryV3,
         BalancerV2ComposableStablePoolFactoryV4,
         BalancerV2ComposableStablePoolFactoryV5,
+        BalancerV2ComposableStablePoolFactoryV6,
         BalancerV2LiquidityBootstrappingPoolFactory,
         BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory,
         BalancerV2StablePoolFactoryV2,
@@ -180,6 +181,7 @@ pub enum BalancerFactoryKind {
     ComposableStableV3,
     ComposableStableV4,
     ComposableStableV5,
+    ComposableStableV6,
 }
 
 impl BalancerFactoryKind {
@@ -197,6 +199,7 @@ impl BalancerFactoryKind {
                 Self::ComposableStableV3,
                 Self::ComposableStableV4,
                 Self::ComposableStableV5,
+                Self::ComposableStableV6,
             ],
             100 => vec![
                 Self::WeightedV3,
@@ -205,11 +208,13 @@ impl BalancerFactoryKind {
                 Self::ComposableStableV3,
                 Self::ComposableStableV4,
                 Self::ComposableStableV5,
+                Self::ComposableStableV6,
             ],
             11155111 => vec![
                 Self::WeightedV4,
                 Self::ComposableStableV4,
                 Self::ComposableStableV5,
+                Self::ComposableStableV6,
                 Self::NoProtocolFeeLiquidityBootstrapping,
             ],
             _ => Default::default(),
@@ -270,6 +275,9 @@ impl BalancerContracts {
                 }
                 BalancerFactoryKind::ComposableStableV5 => {
                     instance!(BalancerV2ComposableStablePoolFactoryV5)
+                }
+                BalancerFactoryKind::ComposableStableV6 => {
+                    instance!(BalancerV2ComposableStablePoolFactoryV6)
                 }
             };
 
@@ -422,7 +430,8 @@ async fn create_aggregate_pool_fetcher(
             BalancerFactoryKind::ComposableStable
             | BalancerFactoryKind::ComposableStableV3
             | BalancerFactoryKind::ComposableStableV4
-            | BalancerFactoryKind::ComposableStableV5 => {
+            | BalancerFactoryKind::ComposableStableV5
+            | BalancerFactoryKind::ComposableStableV6 => {
                 registry!(BalancerV2ComposableStablePoolFactory, instance)
             }
         };

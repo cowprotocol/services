@@ -15,6 +15,7 @@ const GOERLI: &str = "5";
 const GNOSIS: &str = "100";
 const SEPOLIA: &str = "11155111";
 const ARBITRUM_ONE: &str = "42161";
+const BASE: &str = "8453";
 
 fn main() {
     // NOTE: This is a workaround for `rerun-if-changed` directives for
@@ -66,7 +67,16 @@ fn main() {
                 ARBITRUM_ONE,
                 Network {
                     address: addr("0x6DFE75B5ddce1ADE279D4fa6BD6AeF3cBb6f49dB"),
+                    // <https://arbiscan.io/tx/0xa4066ca77bbe1f21776b4c26315ead3b1c054b35814b49e0c35afcbff23e1b8d>
                     deployment_information: Some(DeploymentInformation::BlockNumber(204747458)),
+                },
+            )
+            .add_network(
+                BASE,
+                Network {
+                    address: addr("0x3C3eA1829891BC9bEC3d06A81d5d169e52a415e3"),
+                    // <https://basescan.org/tx/0xc3555c4b065867cbf34382438e1bbaf8ee39eaf10fb0c70940c8955962e76e2c>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(21490258)),
                 },
             )
     });
@@ -123,7 +133,16 @@ fn main() {
                 ARBITRUM_ONE,
                 Network {
                     address: addr("0xBA12222222228d8Ba445958a75a0704d566BF2C8"),
+                    // <https://arbiscan.io/tx/0xe2c3826bd7b15ef8d338038769fe6140a44f1957a36b0f27ab321ab6c68d5a8e>
                     deployment_information: Some(DeploymentInformation::BlockNumber(222832)),
+                },
+            )
+            .add_network(
+                BASE,
+                Network {
+                    address: addr("0xBA12222222228d8Ba445958a75a0704d566BF2C8"),
+                    // <https://basescan.org/tx/0x0dc2e3d436424f2f038774805116896d31828c0bf3795a6901337bdec4e0dff6>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(1196036)),
                 },
             )
     });
@@ -223,9 +242,12 @@ fn main() {
                 ARBITRUM_ONE,
                 Network {
                     address: addr("0xc7E5ED1054A24Ef31D827E6F86caA58B3Bc168d7"),
+                    // <https://arbiscan.io/tx/0x167fe7eb776d1be36b21402d8ae120088c393e28ae7ca0bd1defac84e0f2848b>
                     deployment_information: Some(DeploymentInformation::BlockNumber(72222060)),
                 },
             )
+        // Not available on Base
+        // <https://docs.balancer.fi/reference/contracts/deployment-addresses/base.html>
     });
     generate_contract_with_config("BalancerV2WeightedPool2TokensFactory", |builder| {
         builder
@@ -255,8 +277,9 @@ fn main() {
                     deployment_information: Some(DeploymentInformation::BlockNumber(222864)),
                 },
             )
-        // Not available on Sepolia
+        // Not available on Sepolia and Base
         // <https://docs.balancer.fi/reference/contracts/deployment-addresses/sepolia.html>
+        // <https://docs.balancer.fi/reference/contracts/deployment-addresses/base.html>
     });
     generate_contract_with_config("BalancerV2StablePoolFactoryV2", |builder| {
         builder
@@ -294,8 +317,9 @@ fn main() {
                     deployment_information: Some(DeploymentInformation::BlockNumber(14244664)),
                 },
             )
-        // Not available on Sepolia
+        // Not available on Sepolia and Base
         // <https://docs.balancer.fi/reference/contracts/deployment-addresses/sepolia.html>
+        // <https://docs.balancer.fi/reference/contracts/deployment-addresses/base.html>
     });
     generate_contract_with_config("BalancerV2LiquidityBootstrappingPoolFactory", |builder| {
         builder
@@ -324,8 +348,9 @@ fn main() {
                     deployment_information: Some(DeploymentInformation::BlockNumber(222870)),
                 },
             )
-        // Not available on Sepolia
+        // Not available on Sepolia and Base
         // <https://docs.balancer.fi/reference/contracts/deployment-addresses/sepolia.html>
+        // <https://docs.balancer.fi/reference/contracts/deployment-addresses/base.html>
     });
     generate_contract_with_config(
         "BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory",
@@ -377,6 +402,14 @@ fn main() {
                         deployment_information: Some(DeploymentInformation::BlockNumber(4859669)),
                     },
                 )
+                .add_network(
+                    BASE,
+                    Network {
+                        address: addr("0x0c6052254551EAe3ECac77B01DFcf1025418828f"),
+                        // <https://basescan.org/tx/0x0529de9dbe772f4b4f48da93ae2c2d2c46e3d3221ced9e0c4063a7a5bc47e874>
+                        deployment_information: Some(DeploymentInformation::BlockNumber(1206531)),
+                    },
+                )
         },
     );
     generate_contract_with_config("BalancerV2ComposableStablePoolFactory", |builder| {
@@ -405,9 +438,10 @@ fn main() {
                     deployment_information: Some(DeploymentInformation::BlockNumber(23227044)),
                 },
             )
-        // Not available on Sepolia and Gnosis Chain
+        // Not available on Sepolia, Gnosis Chain and Base
         // <https://docs.balancer.fi/reference/contracts/deployment-addresses/gnosis.html>
         // <https://docs.balancer.fi/reference/contracts/deployment-addresses/sepolia.html>
+        // <https://docs.balancer.fi/reference/contracts/deployment-addresses/base.html>
     });
     generate_contract_with_config("BalancerV2ComposableStablePoolFactoryV3", |builder| {
         builder
@@ -443,8 +477,9 @@ fn main() {
                     deployment_information: Some(DeploymentInformation::BlockNumber(58948370)),
                 },
             )
-        // Not available on Sepolia (only version ≥ 4)
+        // Not available on Sepolia (only version ≥ 4) and on Base (only version ≥ 5)
         // <https://docs.balancer.fi/reference/contracts/deployment-addresses/sepolia.html>
+        // <https://docs.balancer.fi/reference/contracts/deployment-addresses/base.html>
     });
     generate_contract_with_config("BalancerV2ComposableStablePoolFactoryV4", |builder| {
         builder
@@ -489,6 +524,8 @@ fn main() {
                     deployment_information: Some(DeploymentInformation::BlockNumber(72235860)),
                 },
             )
+        // Not available on Base
+        // <https://docs.balancer.fi/reference/contracts/deployment-addresses/base.html>
     });
     generate_contract_with_config("BalancerV2ComposableStablePoolFactoryV5", |builder| {
         builder
@@ -531,6 +568,59 @@ fn main() {
                 Network {
                     address: addr("0xA8920455934Da4D853faac1f94Fe7bEf72943eF1"),
                     deployment_information: Some(DeploymentInformation::BlockNumber(110212282)),
+                },
+            )
+            .add_network(
+                BASE,
+                Network {
+                    address: addr("0x8df317a729fcaA260306d7de28888932cb579b88"),
+                    // <https://basescan.org/tx/0x1d291ba796b0397d73581b17695cf0e53e61551e419c43d11d81198b00c2bfd3>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(1204710)),
+                },
+            )
+    });
+    generate_contract_with_config("BalancerV2ComposableStablePoolFactoryV6", |builder| {
+        builder
+            .contract_mod_override("balancer_v2_composable_stable_pool_factory_v6")
+            .add_network(
+                MAINNET,
+                Network {
+                    address: addr("0x5B42eC6D40f7B7965BE5308c70e2603c0281C1E9"),
+                    // <https://etherscan.io/tx/0x4149cadfe5d3431205d9819fca44ed7a4c2b101adc51adc75cc4586dee237be8>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(19314764)),
+                },
+            )
+            .add_network(
+                GNOSIS,
+                Network {
+                    address: addr("0x47B489bf5836f83ABD928C316F8e39bC0587B020"),
+                    // <https://gnosisscan.io/tx/0xc3fc1fb96712a0659b7e9e5f406f63bdf5cbd5df9e04f0372c28f75785036791>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(32650879)),
+                },
+            )
+            .add_network(
+                // <https://docs.balancer.fi/reference/contracts/deployment-addresses/sepolia.html#ungrouped-active-current-contracts>
+                SEPOLIA,
+                Network {
+                    address: addr("0x05503B3aDE04aCA81c8D6F88eCB73Ba156982D2B"),
+                    // <https://sepolia.etherscan.io/tx/0x53aa3587002469b758e2bb87135d9599fd06e7be944fe61c7f82045c45328566>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(5369821)),
+                },
+            )
+            .add_network(
+                ARBITRUM_ONE,
+                Network {
+                    address: addr("0x4bdCc2fb18AEb9e2d281b0278D946445070EAda7"),
+                    // <https://arbiscan.io/tx/0xfa1e7642e135fb32dc14c990b851e5e7a0ac7a463e3a60c5003ae4142396f45e>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(184805448)),
+                },
+            )
+            .add_network(
+                BASE,
+                Network {
+                    address: addr("0x956CCab09898C0AF2aCa5e6C229c3aD4E93d9288"),
+                    // <https://basescan.org/tx/0x5d3342faf0368b939daa93247536afa26cc72c83de52ba7711ae1b8646688467>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(11099703)),
                 },
             )
     });
@@ -588,7 +678,16 @@ fn main() {
                 ARBITRUM_ONE,
                 Network {
                     address: addr("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE"),
+                    // <https://arbiscan.io/tx/0xe994adff141a2e72bd9dab3eb7b3480637013bdfb1aa42c62d9d6c90de091237>
                     deployment_information: Some(DeploymentInformation::BlockNumber(204702129)),
+                },
+            )
+            .add_network(
+                BASE,
+                Network {
+                    address: addr("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE"),
+                    // <https://basescan.org/tx/0x5497004d2a37c9eafd0bd1e5861a67d3a209c5b845724166e3dbca9527ee05ec>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(21407137)),
                 },
             )
     });
@@ -634,6 +733,14 @@ fn main() {
                     deployment_information: Some(DeploymentInformation::BlockNumber(204704802)),
                 },
             )
+            .add_network(
+                BASE,
+                Network {
+                    address: addr("0x9008D19f58AAbD9eD0D60971565AA8510560ab41"),
+                    // <https://basescan.org/tx/0x00a3c4e2dc4241465208beeba27e90a9ce3159ad4f41581c4c3a1ef02d6e37cb>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(21407238)),
+                },
+            )
     });
     generate_contract("GnosisSafe");
     generate_contract_with_config("GnosisSafeCompatibilityFallbackHandler", |builder| {
@@ -676,6 +783,14 @@ fn main() {
                     deployment_information: Some(DeploymentInformation::BlockNumber(176504820)),
                 },
             )
+            .add_network(
+                BASE,
+                Network {
+                    address: addr("0x9646fDAD06d3e24444381f44362a3B0eB343D337"),
+                    // <https://basescan.org/tx/0x4cb6655b1e68492ecd0e1ee69706468b00775a6df671837a89abdeae6c6934e3>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(13191709)),
+                },
+            )
     });
     generate_contract_with_config("HoneyswapRouter", |builder| {
         builder.add_network_str(GNOSIS, "0x1C232F01118CB8B424793ae03F870aa7D0ac7f77")
@@ -688,6 +803,7 @@ fn main() {
             .add_network_str(GNOSIS, "0x01DcB88678aedD0C4cC9552B20F4718550250574")
             .add_network_str(SEPOLIA, "0x01DcB88678aedD0C4cC9552B20F4718550250574")
             .add_network_str(ARBITRUM_ONE, "0x01DcB88678aedD0C4cC9552B20F4718550250574")
+            .add_network_str(BASE, "0x01DcB88678aedD0C4cC9552B20F4718550250574")
     });
     generate_contract("IUniswapLikeRouter");
     generate_contract("IUniswapLikePair");
@@ -697,6 +813,7 @@ fn main() {
         builder
             .add_network_str(MAINNET, "0xEfF92A263d31888d860bD50809A8D171709b7b1c")
             .add_network_str(ARBITRUM_ONE, "0x8cFe327CEc66d1C090Dd72bd0FF11d690C33a2Eb")
+            .add_network_str(BASE, "0x8cFe327CEc66d1C090Dd72bd0FF11d690C33a2Eb")
     });
     generate_contract_with_config("SushiSwapRouter", |builder| {
         // <https://docs.sushi.com/docs/Products/Classic%20AMM/Deployment%20Addresses>
@@ -705,6 +822,7 @@ fn main() {
             .add_network_str(GOERLI, "0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506")
             .add_network_str(GNOSIS, "0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506")
             .add_network_str(ARBITRUM_ONE, "0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506")
+            .add_network_str(BASE, "0x6BDED42c6DA8FBf0d2bA55B2fa120C5e0c8D7891")
     });
     generate_contract_with_config("SwaprRouter", |builder| {
         // <https://swapr.gitbook.io/swapr/contracts>
@@ -712,6 +830,7 @@ fn main() {
             .add_network_str(MAINNET, "0xb9960d9bca016e9748be75dd52f02188b9d0829f")
             .add_network_str(GNOSIS, "0xE43e60736b1cb4a75ad25240E2f9a62Bff65c0C0")
             .add_network_str(ARBITRUM_ONE, "0x530476d5583724A89c8841eB6Da76E7Af4C0F17E")
+        // Not available on Base
     });
     generate_contract("ISwaprPair");
     generate_contract_with_config("UniswapV2Factory", |builder| {
@@ -721,6 +840,7 @@ fn main() {
             .add_network_str(GOERLI, "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f")
             .add_network_str(GNOSIS, "0xA818b4F111Ccac7AA31D0BCc0806d64F2E0737D7")
             .add_network_str(ARBITRUM_ONE, "0xf1D7CC64Fb4452F05c498126312eBE29f30Fbcf9")
+            .add_network_str(BASE, "0x8909Dc15e40173Ff4699343b6eB8132c65e18eC6")
         // Not available on Sepolia
     });
     generate_contract_with_config("UniswapV2Router02", |builder| {
@@ -730,6 +850,7 @@ fn main() {
             .add_network_str(GOERLI, "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D")
             .add_network_str(GNOSIS, "0x1C232F01118CB8B424793ae03F870aa7D0ac7f77")
             .add_network_str(ARBITRUM_ONE, "0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24")
+            .add_network_str(BASE, "0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24")
         // Not available on Sepolia
     });
     generate_contract_with_config("UniswapV3SwapRouter", |builder| {
@@ -739,7 +860,7 @@ fn main() {
             .add_network_str(GOERLI, "0xE592427A0AEce92De3Edee1F18E0157C05861564")
             .add_network_str(SEPOLIA, "0xE592427A0AEce92De3Edee1F18E0157C05861564")
             .add_network_str(ARBITRUM_ONE, "0xE592427A0AEce92De3Edee1F18E0157C05861564")
-        // Not available on Gnosis Chain
+        // Not available on Gnosis Chain and Base
     });
     generate_contract("UniswapV3Pool");
     generate_contract_with_config("WETH9", |builder| {
@@ -751,6 +872,7 @@ fn main() {
             .add_network_str(GNOSIS, "0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d")
             .add_network_str(SEPOLIA, "0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14")
             .add_network_str(ARBITRUM_ONE, "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1")
+            .add_network_str(BASE, "0x4200000000000000000000000000000000000006")
     });
     generate_contract_with_config("IUniswapV3Factory", |builder| {
         // <https://github.com/Uniswap/v3-periphery/blob/697c2474757ea89fec12a4e6db16a574fe259610/deploys.md>
@@ -759,6 +881,7 @@ fn main() {
             .add_network_str(GOERLI, "0x1F98431c8aD98523631AE4a59f267346ea31F984")
             .add_network_str(SEPOLIA, "0x1F98431c8aD98523631AE4a59f267346ea31F984")
             .add_network_str(ARBITRUM_ONE, "0x1F98431c8aD98523631AE4a59f267346ea31F984")
+            .add_network_str(BASE, "0x33128a8fC17869897dcE68Ed026d694621f6FDfD")
         // Not available on Gnosis Chain
     });
     generate_contract_with_config("IZeroEx", |builder| {
@@ -768,6 +891,7 @@ fn main() {
             .add_network_str(MAINNET, "0xdef1c0ded9bec7f1a1670819833240f027b25eff")
             .add_network_str(SEPOLIA, "0xdef1c0ded9bec7f1a1670819833240f027b25eff")
             .add_network_str(ARBITRUM_ONE, "0xdef1c0ded9bec7f1a1670819833240f027b25eff")
+            .add_network_str(BASE, "0xdef1c0ded9bec7f1a1670819833240f027b25eff")
             .add_method_alias(
                 "_transformERC20((address,address,address,uint256,uint256,(uint32,bytes)[],bool,\
                  address))",
@@ -796,6 +920,7 @@ fn main() {
             .add_network_str(GOERLI, "0x91056D4A53E1faa1A84306D4deAEc71085394bC8")
             .add_network_str(GNOSIS, "0x177127622c4A00F3d409B75571e12cB3c8973d3c")
             .add_network_str(SEPOLIA, "0x0625aFB445C3B6B7B929342a04A22599fd5dBB59")
+            .add_network_str(BASE, "0xc694a91e6b071bF030A18BD3053A7fE09B6DaE69")
     });
 
     // Unofficial Uniswap v2 liquidity on the Sepolia testnet.
@@ -809,6 +934,7 @@ fn main() {
         builder
             .add_network_str(MAINNET, "0x40C57923924B5c5c5455c48D93317139ADDaC8fb")
             .add_network_str(ARBITRUM_ONE, "0x40C57923924B5c5c5455c48D93317139ADDaC8fb")
+            .add_network_str(BASE, "0x3A91A31cB3dC49b4db9Ce721F50a9D076c8D739B")
     });
 
     generate_contract("CowAmm");

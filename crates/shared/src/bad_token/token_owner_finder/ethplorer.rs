@@ -1,6 +1,7 @@
 use {
     super::TokenOwnerProposing,
     anyhow::{ensure, Result},
+    chain::Chain,
     ethcontract::H160,
     prometheus::IntCounterVec,
     prometheus_metric_storage::MetricStorage,
@@ -28,9 +29,12 @@ impl EthplorerTokenOwnerFinder {
     pub fn try_with_network(
         client: Client,
         api_key: Option<String>,
-        chain_id: u64,
+        chain: &Chain,
     ) -> Result<Self> {
-        ensure!(chain_id == 1, "Ethplorer API unsupported network");
+        ensure!(
+            *chain == Chain::Mainnet,
+            "Ethplorer API unsupported network"
+        );
         Ok(Self {
             client,
             base: Url::try_from(BASE).unwrap(),
@@ -153,7 +157,8 @@ mod tests {
     #[ignore]
     async fn token_finding_mainnet() {
         let finder =
-            EthplorerTokenOwnerFinder::try_with_network(Client::default(), None, 1).unwrap();
+            EthplorerTokenOwnerFinder::try_with_network(Client::default(), None, &Chain::Mainnet)
+                .unwrap();
         let owners = finder
             .find_candidate_owners(H160(hex!("1337BedC9D22ecbe766dF105c9623922A27963EC")))
             .await;
@@ -164,7 +169,8 @@ mod tests {
     #[ignore]
     async fn returns_no_owners_on_invalid_token() {
         let finder =
-            EthplorerTokenOwnerFinder::try_with_network(Client::default(), None, 1).unwrap();
+            EthplorerTokenOwnerFinder::try_with_network(Client::default(), None, &Chain::Gnosis)
+                .unwrap();
         let owners = finder
             .find_candidate_owners(H160(hex!("000000000000000000000000000000000000def1")))
             .await;

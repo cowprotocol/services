@@ -147,10 +147,30 @@ where
     ) -> EventRow;
 }
 
+/// This name is used to store the latest indexed block in the db.
+const INDEX_NAME: &str = "onchain_orders";
+
 #[async_trait::async_trait]
 impl<T: Sync + Send + Clone, W: Sync + Send + Clone> EventStoring<ContractEvent>
     for OnchainOrderParser<T, W>
 {
+    async fn last_event_block(&self) -> Result<u64> {
+        let _timer = DatabaseMetrics::get()
+            .database_queries
+            .with_label_values(&["read_last_block_onchain_orders"])
+            .start_timer();
+        crate::boundary::events::read_last_block_from_db(&self.db.pool, INDEX_NAME).await
+    }
+
+    async fn persist_last_indexed_block(&mut self, latest_block: u64) -> Result<()> {
+        let _timer = DatabaseMetrics::get()
+            .database_queries
+            .with_label_values(&["update_last_block_onchain_orders"])
+            .start_timer();
+        crate::boundary::events::write_last_block_to_db(&self.db.pool, latest_block, INDEX_NAME)
+            .await
+    }
+
     async fn replace_events(
         &mut self,
         events: Vec<EthContractEvent<ContractEvent>>,
@@ -182,19 +202,6 @@ impl<T: Sync + Send + Clone, W: Sync + Send + Clone> EventStoring<ContractEvent>
         transaction.commit().await.context("commit")?;
 
         Ok(())
-    }
-
-    async fn last_event_block(&self) -> Result<u64> {
-        let _timer = DatabaseMetrics::get()
-            .database_queries
-            .with_label_values(&["last_event_block"])
-            .start_timer();
-
-        let mut con = self.db.pool.acquire().await?;
-        let block_number = database::onchain_broadcasted_orders::last_block(&mut con)
-            .await
-            .context("block_number_of_most_recent_event failed")?;
-        block_number.try_into().context("block number is negative")
     }
 }
 
@@ -548,29 +555,15 @@ async fn get_quote(
         // verified quote here on purpose.
         verification: Default::default(),
     };
-    let mut result = get_quote_and_check_fee(
+
+    get_quote_and_check_fee(
         quoter,
         &parameters.clone(),
         Some(*quote_id),
         Some(order_data.fee_amount),
     )
-    .await;
-
-    // If we didn't find the quote, recompute a fresh one
-    if matches!(
-        result,
-        Err(ValidationError::QuoteNotFound | ValidationError::InvalidQuote)
-    ) {
-        result = get_quote_and_check_fee(
-            quoter,
-            &parameters.clone(),
-            None,
-            Some(order_data.fee_amount),
-        )
-        .await;
-    }
-
-    result.map_err(|err| match err {
+    .await
+    .map_err(|err| match err {
         ValidationError::Partial(_) => OnchainOrderPlacementError::PreValidationError,
         ValidationError::NonZeroFee => OnchainOrderPlacementError::NonZeroFee,
         _ => OnchainOrderPlacementError::Other,
@@ -1126,7 +1119,7 @@ mod test {
         let cloned_quote = quote.clone();
         order_quoter
             .expect_find_quote()
-            .returning(move |_| Ok(cloned_quote.clone()));
+            .returning(move |_, _| Ok(cloned_quote.clone()));
         let mut custom_onchain_order_parser = MockOnchainOrderParsing::<u8, u8>::new();
         custom_onchain_order_parser
             .expect_parse_custom_event_data()

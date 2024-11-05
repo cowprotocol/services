@@ -29,24 +29,6 @@ pub use {
 /// ERC20 token.
 pub const ETH_TOKEN: TokenAddress = TokenAddress(ContractAddress(H160([0xee; 20])));
 
-/// Chain ID as defined by EIP-155.
-///
-/// https://eips.ethereum.org/EIPS/eip-155
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Into)]
-pub struct ChainId(pub u64);
-
-impl std::fmt::Display for ChainId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl From<U256> for ChainId {
-    fn from(value: U256) -> Self {
-        Self(value.as_u64())
-    }
-}
-
 /// An EIP-2930 access list. This type ensures that the addresses and storage
 /// keys are not repeated, and that the ordering is deterministic.
 ///
@@ -129,8 +111,8 @@ impl From<ContractAddress> for Address {
 pub struct TokenAddress(pub ContractAddress);
 
 impl TokenAddress {
-    /// If the token is ETH, return WETH, thereby "wrapping" it.
-    pub fn wrap(self, weth: WethAddress) -> Self {
+    /// If the token is ETH, return WETH, thereby converting it to erc20.
+    pub fn as_erc20(self, weth: WethAddress) -> Self {
         if self == ETH_TOKEN {
             weth.into()
         } else {

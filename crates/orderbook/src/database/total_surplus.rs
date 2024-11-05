@@ -44,6 +44,32 @@ trade_components AS (
     JOIN order_execution oe ON o.uid = oe.order_uid
     -- use this weird construction instead of `where owner=address or sender=address` to help postgres make efficient use of indices
     WHERE uid = ANY(ARRAY_CAT((SELECT ids FROM regular_orders), (SELECT ids FROM onchain_orders)))
+
+    UNION ALL
+
+    -- Additional query for jit_orders
+    SELECT
+       CASE j.kind
+          WHEN 'sell' THEN t.buy_amount
+          WHEN 'buy' THEN t.sell_amount - t.fee_amount
+       END AS trade_amount,
+       CASE j.kind
+          WHEN 'sell' THEN (t.sell_amount - t.fee_amount) * j.buy_amount / j.sell_amount
+          WHEN 'buy' THEN t.buy_amount * j.sell_amount / j.buy_amount
+       END AS limit_amount,
+       j.kind,
+       CASE j.kind
+          WHEN 'sell' THEN (SELECT price FROM auction_prices ap WHERE ap.token = j.buy_token AND ap.auction_id = oe.auction_id)
+          WHEN 'buy' THEN (SELECT price FROM auction_prices ap WHERE ap.token = j.sell_token AND ap.auction_id = oe.auction_id)
+       END AS surplus_token_native_price
+    FROM jit_orders j
+    JOIN trades t ON j.uid = t.order_uid
+    JOIN order_execution oe ON j.uid = oe.order_uid
+    WHERE j.owner = $1 AND NOT EXISTS (
+        SELECT 1 
+        FROM orders o 
+        WHERE o.uid = j.uid
+    )
 ),
 trade_surplus AS (
     SELECT

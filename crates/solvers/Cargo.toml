@@ -15,6 +15,7 @@ path = "src/main.rs"
 [dependencies]
 axum = { workspace = true }
 bigdecimal = { version = "0.3", features = ["serde"] }
+chain = { path = "../chain" }
 chrono = { workspace = true, features = ["serde"], default-features = false }
 clap = { workspace = true, features = ["derive", "env"] }
 derive_more = { workspace = true }
@@ -24,6 +25,7 @@ futures = { workspace = true }
 hex = { workspace = true }
 hyper = { workspace = true }
 itertools = { workspace = true }
+mimalloc = { workspace = true }
 num = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }

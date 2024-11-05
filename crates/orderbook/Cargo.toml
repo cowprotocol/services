@@ -22,6 +22,7 @@ app-data-hash = { path = "../app-data-hash" }
 async-trait = { workspace = true }
 bigdecimal = { workspace = true }
 cached = { workspace = true }
+chain = { path = "../chain" }
 chrono = { workspace = true, features = ["clock"] }
 clap = { workspace = true }
 contracts = { path = "../contracts" }
@@ -34,6 +35,7 @@ hex-literal = { workspace = true }
 humantime = { workspace = true }
 hyper = { workspace = true }
 maplit = { workspace = true }
+mimalloc = { workspace = true }
 model = { path = "../model" }
 multibase = "0.9"
 num = { workspace = true }

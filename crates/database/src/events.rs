@@ -43,15 +43,6 @@ pub struct EventIndex {
     pub log_index: i64,
 }
 
-pub async fn last_block(ex: &mut PgConnection) -> Result<i64, sqlx::Error> {
-    const QUERY: &str = "\
-            SELECT GREATEST( (SELECT COALESCE(MAX(block_number), 0) FROM trades), (SELECT \
-                         COALESCE(MAX(block_number), 0) FROM settlements), (SELECT \
-                         COALESCE(MAX(block_number), 0) FROM invalidations), (SELECT \
-                         COALESCE(MAX(block_number), 0) FROM presignature_events));";
-    sqlx::query_scalar(QUERY).fetch_one(ex).await
-}
-
 pub async fn delete(
     ex: &mut PgTransaction<'_>,
     delete_from_block_number: u64,
@@ -170,93 +161,4 @@ async fn insert_presignature(
         .execute(ex)
         .await?;
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use {super::*, sqlx::Connection};
-
-    #[tokio::test]
-    #[ignore]
-    async fn postgres_events() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        assert_eq!(last_block(&mut db).await.unwrap(), 0);
-
-        let mut event_index = EventIndex {
-            block_number: 1,
-            log_index: 0,
-        };
-        append(
-            &mut db,
-            &[(event_index, Event::Invalidation(Default::default()))],
-        )
-        .await
-        .unwrap();
-        assert_eq!(last_block(&mut db).await.unwrap(), 1);
-
-        event_index.block_number = 2;
-        append(&mut db, &[(event_index, Event::Trade(Default::default()))])
-            .await
-            .unwrap();
-        assert_eq!(last_block(&mut db).await.unwrap(), 2);
-
-        event_index.block_number = 3;
-        append(
-            &mut db,
-            &[(event_index, Event::PreSignature(Default::default()))],
-        )
-        .await
-        .unwrap();
-        assert_eq!(last_block(&mut db).await.unwrap(), 3);
-
-        event_index.block_number = 4;
-        append(
-            &mut db,
-            &[(event_index, Event::Settlement(Default::default()))],
-        )
-        .await
-        .unwrap();
-        assert_eq!(last_block(&mut db).await.unwrap(), 4);
-
-        delete(&mut db, 5).await.unwrap();
-        assert_eq!(last_block(&mut db).await.unwrap(), 4);
-
-        delete(&mut db, 3).await.unwrap();
-        assert_eq!(last_block(&mut db).await.unwrap(), 2);
-
-        delete(&mut db, 0).await.unwrap();
-        assert_eq!(last_block(&mut db).await.unwrap(), 0);
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn postgres_repeated_event_insert_ignored() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-        async fn append(con: &mut PgTransaction<'_>, log_index: i64, event: Event) {
-            super::append(
-                con,
-                &[(
-                    EventIndex {
-                        block_number: 2,
-                        log_index,
-                    },
-                    event,
-                )],
-            )
-            .await
-            .unwrap()
-        }
-        for _ in 0..2 {
-            append(&mut db, 0, Event::Trade(Default::default())).await;
-            append(&mut db, 1, Event::Invalidation(Default::default())).await;
-            append(&mut db, 2, Event::Settlement(Default::default())).await;
-            append(&mut db, 3, Event::PreSignature(Default::default())).await;
-        }
-        assert_eq!(last_block(&mut db).await.unwrap(), 2);
-    }
 }
