@@ -1,6 +1,7 @@
 use {
     self::contracts::Contracts,
     crate::{boundary, domain::eth},
+    chain::Chain,
     ethcontract::dyns::DynWeb3,
     ethrpc::block_stream::CurrentBlockWatcher,
     primitive_types::U256,
@@ -11,14 +12,11 @@ use {
 
 pub mod authenticator;
 pub mod contracts;
-pub mod id;
-
-pub use id::Id;
 
 /// An Ethereum RPC connection.
 pub struct Rpc {
     web3: DynWeb3,
-    chain: Id,
+    chain: Chain,
     url: Url,
 }
 
@@ -30,7 +28,8 @@ impl Rpc {
         ethrpc_args: &shared::ethrpc::Arguments,
     ) -> Result<Self, Error> {
         let web3 = boundary::web3_client(url, ethrpc_args);
-        let chain = Id::new(web3.eth().chain_id().await?).map_err(|_| Error::UnsupportedChain)?;
+        let chain =
+            Chain::try_from(web3.eth().chain_id().await?).map_err(|_| Error::UnsupportedChain)?;
 
         Ok(Self {
             web3,
@@ -39,8 +38,8 @@ impl Rpc {
         })
     }
 
-    /// Returns the chain id for the RPC connection.
-    pub fn chain(&self) -> Id {
+    /// Returns the chain for the RPC connection.
+    pub fn chain(&self) -> Chain {
         self.chain
     }
 
@@ -59,7 +58,7 @@ impl Rpc {
 #[derive(Clone)]
 pub struct Ethereum {
     web3: DynWeb3,
-    chain: Id,
+    chain: Chain,
     current_block: CurrentBlockWatcher,
     contracts: Contracts,
 }
@@ -73,24 +72,24 @@ impl Ethereum {
     /// any initialization error.
     pub async fn new(
         web3: DynWeb3,
-        chain: Id,
+        chain: &Chain,
         url: Url,
         addresses: contracts::Addresses,
         poll_interval: Duration,
     ) -> Self {
-        let contracts = Contracts::new(&web3, &chain, addresses).await;
+        let contracts = Contracts::new(&web3, chain, addresses).await;
 
         Self {
             current_block: ethrpc::block_stream::current_block_stream(url, poll_interval)
                 .await
                 .expect("couldn't initialize current block stream"),
             web3,
-            chain,
+            chain: *chain,
             contracts,
         }
     }
 
-    pub fn chain(&self) -> &Id {
+    pub fn chain(&self) -> &Chain {
         &self.chain
     }
 
