@@ -118,7 +118,7 @@ pub enum Order {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, maplit::btreemap, shared::assert_json_matches};
+    use {super::*, maplit::btreemap, testlib::assert_json_matches};
 
     #[test]
     fn serialize() {
