@@ -1192,7 +1192,7 @@ async fn cow_amm_quoting(web3: Web3) {
 
     // Compensate a delay between the `CurrentBlockStream` and the actual onchain
     // data.
-    tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
 
     // Configure the mock solver's solution
     let mocked_solution = Solution {
