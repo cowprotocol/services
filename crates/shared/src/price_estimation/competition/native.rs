@@ -1,7 +1,7 @@
 use {
     super::{compare_error, CompetitionEstimator},
     crate::price_estimation::{
-        native::{NativePriceEstimateResult, NativePriceEstimating},
+        native::{is_price_malformed, NativePriceEstimateResult, NativePriceEstimating},
         PriceEstimationError,
     },
     anyhow::Context,
@@ -15,23 +15,26 @@ impl NativePriceEstimating for CompetitionEstimator<Arc<dyn NativePriceEstimatin
     fn estimate_native_price(&self, token: H160) -> BoxFuture<'_, NativePriceEstimateResult> {
         async move {
             let results = self
-                .produce_results(token, is_result_usable, |e, q| e.estimate_native_price(q))
+                .produce_results(token, Result::is_ok, |e, q| {
+                    async move {
+                        let res = e.estimate_native_price(q).await;
+                        if res.as_ref().is_ok_and(|price| is_price_malformed(*price)) {
+                            let err = anyhow::anyhow!("estimator returned malformed price");
+                            return Err(PriceEstimationError::EstimatorInternal(err));
+                        }
+                        res
+                    }
+                    .boxed()
+                })
                 .await;
             let winner = results
                 .into_iter()
-                .filter(|(_index, result)| is_result_usable(result))
                 .max_by(|a, b| compare_native_result(&a.1, &b.1))
                 .context("could not get any native price")?;
             self.report_winner(&token, OrderKind::Buy, winner)
         }
         .boxed()
     }
-}
-
-fn is_result_usable(result: &NativePriceEstimateResult) -> bool {
-    result
-        .as_ref()
-        .is_ok_and(|price| price.is_normal() && *price > 0.)
 }
 
 fn compare_native_result(
