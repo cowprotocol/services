@@ -7,10 +7,7 @@ WORKDIR /src/
 
 # Install dependencies
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update && \
-    apt-get install -y git libssl-dev pkg-config make google-perftools
-
-# Workaround for missing library link 
-RUN ln -d /usr/lib/x86_64-linux-gnu/libtcmalloc.so.4 /usr/lib/x86_64-linux-gnu/libtcmalloc.so
+    apt-get install -y git libssl-dev pkg-config make libgoogle-perftools-dev
 
 # Copy and Build Code
 COPY . .
@@ -56,7 +53,7 @@ ENTRYPOINT [ "solvers" ]
 # Extract Binary
 FROM intermediate
 RUN apt-get update && \
-    apt-get install -y build-essential cmake git zlib1g-dev libelf-dev libdw-dev libboost-dev libboost-iostreams-dev libboost-program-options-dev libboost-system-dev libboost-filesystem-dev libunwind-dev libzstd-dev git
+    apt-get install -y build-essential cmake git zlib1g-dev libelf-dev libdw-dev libboost-dev libboost-iostreams-dev libboost-program-options-dev libboost-system-dev libboost-filesystem-dev libunwind-dev libzstd-dev libgoogle-perftools4
 RUN git clone https://invent.kde.org/sdk/heaptrack.git /heaptrack && \
     mkdir /heaptrack/build && cd /heaptrack/build && \
     cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_GUI=OFF .. && \
