@@ -334,7 +334,7 @@ impl Metrics {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, testlib::assert_json_matches, hex_literal::hex, serde_json::json};
+    use {super::*, hex_literal::hex, serde_json::json, testlib::assert_json_matches};
 
     #[test]
     fn serialize_deserialize_simulation_request() {
