@@ -11,7 +11,6 @@ pub mod conversions;
 pub mod current_block;
 pub mod db_order_conversions;
 pub mod encoded_settlement;
-pub mod ethcontract_error;
 pub mod ethrpc;
 pub mod event_handling;
 pub mod event_storing_helpers;

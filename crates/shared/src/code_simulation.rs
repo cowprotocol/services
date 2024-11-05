@@ -1,11 +1,9 @@
 //! Abstraction for simulating calls with overrides.
 
 use {
-    crate::{
-        ethcontract_error::EthcontractErrorType,
-        tenderly_api::{SimulationKind, SimulationRequest, StateObject, TenderlyApi},
-    },
+    crate::tenderly_api::{SimulationKind, SimulationRequest, StateObject, TenderlyApi},
     anyhow::{ensure, Context as _, Result},
+    contracts::errors::EthcontractErrorType,
     ethcontract::{errors::ExecutionError, H256},
     ethrpc::{
         extensions::{EthExt as _, StateOverride, StateOverrides},
