@@ -1,0 +1,23 @@
+[package]
+name = "alloc"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+mimalloc = { workspace = true, optional = true }
+tcmalloc = { workspace = true, optional = true } # requires gooogle-perftools package
+jemallocator = { workspace = true, optional = true }
+
+[lib]
+bench = false
+test = false
+doctest = false
+
+[lints]
+workspace = true
+
+[features]
+default = []
+allocator-mimalloc = [ "dep:mimalloc" ]
+allocator-tcmalloc = [ "dep:tcmalloc" ]
+allocator-jemalloc = [ "dep:jemallocator" ]
