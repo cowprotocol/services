@@ -17,7 +17,7 @@ doctest = false
 workspace = true
 
 [features]
-default = [ "allocator-tcmalloc" ]
+default = [ "allocator-jemalloc" ]
 allocator-mimalloc = [ "dep:mimalloc" ]
 allocator-tcmalloc = [ "dep:tcmalloc" ]
 allocator-jemalloc = [ "dep:tikv-jemallocator" ]
