@@ -65,6 +65,7 @@ async fn solver_competition(web3: Web3) {
             .await,
         ],
         colocation::LiquidityProvider::UniswapV2,
+        false,
     );
 
     let services = Services::new(&onchain).await;
@@ -190,6 +191,7 @@ async fn fairness_check(web3: Web3) {
             .await,
         ],
         colocation::LiquidityProvider::UniswapV2,
+        false,
     );
 
     let services = Services::new(&onchain).await;
