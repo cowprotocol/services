@@ -24,14 +24,14 @@ use {anyhow::anyhow, std::collections::HashSet};
 /// ```
 /// let actual = serde_json::json!({"user": {"id": 1, "name": "Alice", "email": "alice@example.com"}});
 /// let expected = serde_json::json!({"user": {"id": 1, "name": "Alice", "email": "bob@example.com"}});
-/// shared::assert_json_matches_excluding!(actual, expected, ["user.email"]);
+/// testlib::assert_json_matches_excluding!(actual, expected, ["user.email"]);
 /// ```
 #[macro_export]
 macro_rules! assert_json_matches_excluding {
     ($actual:expr, $expected:expr, $exclude_paths:expr) => {{
-        let exclude_paths = $crate::test_utils::parse_field_paths(&$exclude_paths);
+        let exclude_paths = $crate::json_matching::parse_field_paths(&$exclude_paths);
         let result =
-            $crate::test_utils::json_matches_excluding(&$actual, &$expected, &exclude_paths);
+            $crate::json_matching::json_matches_excluding(&$actual, &$expected, &exclude_paths);
         if let Err(e) = result {
             panic!(
                 "JSON did not match with the exclusion of specified paths. Error: {}\nActual \
@@ -65,7 +65,7 @@ macro_rules! assert_json_matches_excluding {
 /// # Examples
 ///
 /// ```
-/// use shared::assert_json_matches;
+/// use testlib::assert_json_matches;
 ///
 /// let actual = serde_json::json!({"user": {"id": 1, "name": "Alice"}});
 /// let expected = serde_json::json!({"user": {"id": 1, "name": "Alice"}});
@@ -78,7 +78,7 @@ macro_rules! assert_json_matches_excluding {
 #[macro_export]
 macro_rules! assert_json_matches {
     ($actual:expr, $expected:expr) => {{
-        let result = $crate::test_utils::json_matches_excluding(
+        let result = $crate::json_matching::json_matches_excluding(
             &$actual,
             &$expected,
             &std::collections::HashSet::new(),
