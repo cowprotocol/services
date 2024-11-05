@@ -12,6 +12,7 @@ use {
 
 #[derive(Clone, Debug)]
 pub struct Amm {
+    contract: contracts::CowAmm,
     helper: contracts::CowAmmLegacyHelper,
     address: Address,
     tradeable_tokens: Vec<Address>,
@@ -23,8 +24,10 @@ impl Amm {
         helper: &CowAmmLegacyHelper,
     ) -> Result<Self, MethodError> {
         let tradeable_tokens = helper.tokens(address).call().await?;
+        let contract = contracts::CowAmm::at(&helper.raw_instance().web3(), address);
 
         Ok(Self {
+            contract,
             helper: helper.clone(),
             address,
             tradeable_tokens,
@@ -48,12 +51,13 @@ impl Amm {
         let (order, pre_interactions, post_interactions, signature) =
             self.helper.order(self.address, prices).call().await?;
         self.convert_orders_reponse(order, signature, pre_interactions, post_interactions)
+            .await
     }
 
     /// Converts a successful response of the CowAmmHelper into domain types.
     /// Can be used for any contract that correctly implements the CoW AMM
     /// helper interface.
-    fn convert_orders_reponse(
+    async fn convert_orders_reponse(
         &self,
         order: RawOrder,
         signature: Bytes<Vec<u8>>,
@@ -85,6 +89,17 @@ impl Amm {
         // will be concatenated in the encoding logic) so we discard the first 20 bytes.
         let raw_signature = signature.0.into_iter().skip(20).collect();
         let signature = Signature::Eip1271(raw_signature);
+
+        // Cow AMM pools can have specific requirements for the signature validity.
+        // https://sepolia.etherscan.io/address/0xaceb697457db8bb567e7d8e4411c5364ca07101e#code
+        let _ = self
+            .contract
+            .is_valid_signature(
+                ethcontract::Bytes(order.hash_struct()),
+                ethcontract::Bytes(signature.to_bytes()),
+            )
+            .call()
+            .await?;
 
         Ok(TemplateOrder {
             order,
