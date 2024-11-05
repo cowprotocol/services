@@ -94,10 +94,7 @@ impl Amm {
         // https://sepolia.etherscan.io/address/0xaceb697457db8bb567e7d8e4411c5364ca07101e#code
         let _ = self
             .contract
-            .is_valid_signature(
-                ethcontract::Bytes(order.hash_struct()),
-                ethcontract::Bytes(signature.to_bytes()),
-            )
+            .is_valid_signature(Bytes(order.hash_struct()), Bytes(signature.to_bytes()))
             .call()
             .await?;
 
