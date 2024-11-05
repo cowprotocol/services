@@ -24,7 +24,7 @@ use {anyhow::anyhow, std::collections::HashSet};
 /// ```
 /// let actual = serde_json::json!({"user": {"id": 1, "name": "Alice", "email": "alice@example.com"}});
 /// let expected = serde_json::json!({"user": {"id": 1, "name": "Alice", "email": "bob@example.com"}});
-/// shared::assert_json_matches_excluding!(actual, expected, ["user.email"]);
+/// testlib::assert_json_matches_excluding!(actual, expected, ["user.email"]);
 /// ```
 #[macro_export]
 macro_rules! assert_json_matches_excluding {
@@ -65,7 +65,7 @@ macro_rules! assert_json_matches_excluding {
 /// # Examples
 ///
 /// ```
-/// use shared::assert_json_matches;
+/// use testlib::assert_json_matches;
 ///
 /// let actual = serde_json::json!({"user": {"id": 1, "name": "Alice"}});
 /// let expected = serde_json::json!({"user": {"id": 1, "name": "Alice"}});
