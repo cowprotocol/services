@@ -1,4 +1,5 @@
 use {
+    bigdecimal::{BigDecimal, Zero},
     e2e::setup::*,
     ethcontract::H160,
     ethrpc::Web3,
@@ -15,7 +16,6 @@ use {
         },
         trade_finding::{Interaction, LegacyTrade, TradeKind},
     },
-    sqlx::types::BigDecimal,
     std::{str::FromStr, sync::Arc},
 };
 
@@ -62,7 +62,7 @@ async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
         block_stream,
         onchain.contracts().gp_settlement.address(),
         onchain.contracts().weth.address(),
-        BigDecimal::from_str("0.0").unwrap(),
+        BigDecimal::zero(),
     )
     .await
     .unwrap();
