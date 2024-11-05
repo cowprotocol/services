@@ -91,22 +91,30 @@ impl Amm {
 
         // Cow AMM pools can have specific requirements for the signature validity.
         // https://sepolia.etherscan.io/address/0xaceb697457db8bb567e7d8e4411c5364ca07101e#code
-        let magic_value = Bytes(
-            self.contract
-                .raw_instance()
-                .abi()
-                .function("isValidSignature")
-                .expect("isValidSignature function not found")
-                .selector(),
-        );
-        if self
-            .contract
-            .is_valid_signature(Bytes(order.hash_struct()), raw_signature)
+        // Check the signature only for non-legacy pools
+        if !self
+            .helper
+            .is_legacy(self.contract.address())
             .call()
             .await?
-            != magic_value
         {
-            anyhow::bail!("invalid signature");
+            let magic_value = Bytes(
+                self.contract
+                    .raw_instance()
+                    .abi()
+                    .function("isValidSignature")
+                    .expect("isValidSignature function not found")
+                    .selector(),
+            );
+            if self
+                .contract
+                .is_valid_signature(Bytes(order.hash_struct()), Bytes(signature.to_bytes()))
+                .call()
+                .await?
+                != magic_value
+            {
+                anyhow::bail!("invalid signature");
+            }
         }
 
         Ok(TemplateOrder {
