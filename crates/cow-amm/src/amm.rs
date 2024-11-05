@@ -14,28 +14,25 @@ use {
 pub struct Amm {
     contract: contracts::CowAmm,
     helper: contracts::CowAmmLegacyHelper,
-    address: Address,
     tradeable_tokens: Vec<Address>,
 }
 
 impl Amm {
     pub(crate) async fn new(
-        address: Address,
+        contract: &contracts::CowAmm,
         helper: &CowAmmLegacyHelper,
     ) -> Result<Self, MethodError> {
-        let tradeable_tokens = helper.tokens(address).call().await?;
-        let contract = contracts::CowAmm::at(&helper.raw_instance().web3(), address);
+        let tradeable_tokens = helper.tokens(contract.address()).call().await?;
 
         Ok(Self {
-            contract,
+            contract: contract.clone(),
             helper: helper.clone(),
-            address,
             tradeable_tokens,
         })
     }
 
-    pub fn address(&self) -> &Address {
-        &self.address
+    pub fn address(&self) -> Address {
+        self.contract.address()
     }
 
     /// Returns all tokens traded by this pool in stable order.
@@ -48,8 +45,11 @@ impl Amm {
     /// need to be supplied in the same order as `traded_tokens` returns
     /// token addresses.
     pub async fn template_order(&self, prices: Vec<U256>) -> Result<TemplateOrder> {
-        let (order, pre_interactions, post_interactions, signature) =
-            self.helper.order(self.address, prices).call().await?;
+        let (order, pre_interactions, post_interactions, signature) = self
+            .helper
+            .order(self.contract.address(), prices)
+            .call()
+            .await?;
         self.convert_orders_reponse(order, signature, pre_interactions, post_interactions)
             .await
     }
@@ -100,12 +100,12 @@ impl Amm {
                 .expect("isValidSignature function not found")
                 .selector(),
         );
-        if !self
+        if self
             .contract
             .is_valid_signature(Bytes(order.hash_struct()), Bytes(signature.to_bytes()))
             .call()
-            .await
-            .map(|result| result == magic_value)?
+            .await?
+            != magic_value
         {
             anyhow::bail!("invalid signature");
         }

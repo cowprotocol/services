@@ -26,7 +26,7 @@ impl EmptyPoolRemoval {
             .iter()
             .map(move |token| async move {
                 ERC20::at(&self.web3, *token)
-                    .balance_of(*amm_address)
+                    .balance_of(amm_address)
                     .call()
                     .await
                     .map_err(|err| {
@@ -58,7 +58,7 @@ impl Maintaining for EmptyPoolRemoval {
         let futures = amms_to_check.iter().map(|amm| async {
             self.has_zero_balance(amm.clone())
                 .await
-                .then_some(*amm.address())
+                .then_some(amm.address())
         });
 
         let empty_amms: Vec<_> = join_all(futures).await.into_iter().flatten().collect();

@@ -337,7 +337,7 @@ impl AuctionProcessor {
                 // Only generate orders for cow amms the auction told us about.
                 // Otherwise the solver would expect the order to get surplus but
                 // the autopilot would actually not count it.
-                .filter(|amm| eligible_for_surplus.contains(&eth::Address(*amm.address())))
+                .filter(|amm| eligible_for_surplus.contains(&eth::Address(amm.address())))
                 // Only generate orders where the auction provided the required
                 // reference prices. Otherwise there will be an error during the
                 // surplus calculation which will also result in 0 surplus for
@@ -356,7 +356,7 @@ impl AuctionProcessor {
                     Some((amm, prices))
                 })
                 .map(|(cow_amm, prices)| async move {
-                    (*cow_amm.address(), cow_amm.template_order(prices).await)
+                    (cow_amm.address(), cow_amm.template_order(prices).await)
                 }),
         )
         .await;
