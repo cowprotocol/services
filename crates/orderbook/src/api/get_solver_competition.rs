@@ -65,7 +65,7 @@ fn response(
         ),
         Err(LoadSolverCompetitionError::Other(err)) => {
             tracing::error!(?err, "load solver competition");
-            shared::api::internal_error_reply()
+            crate::api::internal_error_reply()
         }
     }
 }

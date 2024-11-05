@@ -1,13 +1,15 @@
 use {
-    crate::database::{
-        trades::{TradeFilter, TradeRetrieving},
-        Postgres,
+    crate::{
+        api::{error, ApiReply},
+        database::{
+            trades::{TradeFilter, TradeRetrieving},
+            Postgres,
+        },
     },
     anyhow::{Context, Result},
     model::order::OrderUid,
     primitive_types::H160,
     serde::Deserialize,
-    shared::api::{error, ApiReply},
     std::convert::Infallible,
     warp::{hyper::StatusCode, reply::with_status, Filter, Rejection},
 };
@@ -61,7 +63,7 @@ pub fn get_trades(db: Postgres) -> impl Filter<Extract = (ApiReply,), Error = Re
                         Ok(reply) => with_status(warp::reply::json(&reply), StatusCode::OK),
                         Err(err) => {
                             tracing::error!(?err, "get_trades");
-                            shared::api::internal_error_reply()
+                            crate::api::internal_error_reply()
                         }
                     }
                 }

@@ -1,8 +1,10 @@
 use {
-    crate::orderbook::{OrderCancellationError, Orderbook},
+    crate::{
+        api::{convert_json_response, extract_payload, IntoWarpReply},
+        orderbook::{OrderCancellationError, Orderbook},
+    },
     anyhow::Result,
     model::order::{CancellationPayload, OrderCancellation, OrderUid},
-    shared::api::{convert_json_response, extract_payload, IntoWarpReply},
     std::{convert::Infallible, sync::Arc},
     warp::{hyper::StatusCode, reply::with_status, Filter, Rejection},
 };
@@ -55,7 +57,7 @@ impl IntoWarpReply for OrderCancellationError {
             ),
             Self::Other(err) => {
                 tracing::error!(?err, "cancel_order");
-                shared::api::internal_error_reply()
+                crate::api::internal_error_reply()
             }
         }
     }
