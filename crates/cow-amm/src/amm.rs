@@ -60,7 +60,7 @@ impl Amm {
     async fn convert_orders_reponse(
         &self,
         order: RawOrder,
-        signature: Bytes<Vec<u8>>,
+        raw_signature: Bytes<Vec<u8>>,
         pre_interactions: Vec<RawInteraction>,
         post_interactions: Vec<RawInteraction>,
     ) -> Result<TemplateOrder> {
@@ -87,8 +87,7 @@ impl Amm {
         // The helper contract returns exactly that format but in our code base we
         // expect the signature to not already include the signer address (the parts
         // will be concatenated in the encoding logic) so we discard the first 20 bytes.
-        let raw_signature = signature.0.into_iter().skip(20).collect();
-        let signature = Signature::Eip1271(raw_signature);
+        let signature = Signature::Eip1271(raw_signature.0.iter().skip(20).cloned().collect());
 
         // Cow AMM pools can have specific requirements for the signature validity.
         // https://sepolia.etherscan.io/address/0xaceb697457db8bb567e7d8e4411c5364ca07101e#code
@@ -102,7 +101,7 @@ impl Amm {
         );
         if self
             .contract
-            .is_valid_signature(Bytes(order.hash_struct()), Bytes(signature.to_bytes()))
+            .is_valid_signature(Bytes(order.hash_struct()), raw_signature)
             .call()
             .await?
             != magic_value
