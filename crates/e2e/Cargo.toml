@@ -44,7 +44,6 @@ web3 = { workspace = true, features = ["http"] }
 uuid = { version = "1.8.0", features = ["v4"] }
 
 [dev-dependencies]
-app-data-hash = { path = "../app-data-hash" }
 futures = { workspace = true }
 rand = { workspace = true }
 refunder = { path = "../refunder" }

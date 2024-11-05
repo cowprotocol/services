@@ -166,21 +166,14 @@ name = "app-data"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "app-data-hash",
  "bytes-hex",
  "ethcontract",
  "hex",
+ "hex-literal",
  "primitive-types",
  "serde",
  "serde_json",
  "serde_with",
-]
-
-[[package]]
-name = "app-data-hash"
-version = "0.1.0"
-dependencies = [
- "hex-literal",
  "tiny-keccak",
 ]
 
@@ -1838,7 +1831,6 @@ version = "1.0.0"
 dependencies = [
  "anyhow",
  "app-data",
- "app-data-hash",
  "async-trait",
  "autopilot",
  "axum",
@@ -3101,7 +3093,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "app-data",
- "app-data-hash",
  "bigdecimal",
  "bytes-hex",
  "chrono",
@@ -3398,7 +3389,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "app-data",
- "app-data-hash",
  "async-trait",
  "bigdecimal",
  "cached",
@@ -4462,7 +4452,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "app-data",
- "app-data-hash",
  "async-stream",
  "async-trait",
  "bigdecimal",
