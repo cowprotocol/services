@@ -94,7 +94,7 @@ impl NativePriceEstimating for NativePriceEstimator {
             let query = Arc::new(self.query(&token));
             let estimate = self.inner.estimate(query.clone()).await?;
             let price = estimate.price_in_buy_token_f64(&query);
-            if !is_price_malformed(price) {
+            if is_price_malformed(price) {
                 let err = anyhow::anyhow!("estimator returned malformed price: {price}");
                 Err(PriceEstimationError::EstimatorInternal(err))
             } else {
