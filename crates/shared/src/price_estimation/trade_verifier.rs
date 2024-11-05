@@ -519,7 +519,8 @@ fn encode_jit_orders(
                 sell_token_balance: jit_order.sell_token_source,
                 buy_token_balance: jit_order.buy_token_destination,
             };
-            let (owner, signature) = recover_owner(jit_order, &order_data, domain_separator)?;
+            let (owner, signature) =
+                recover_jit_order_owner(jit_order, &order_data, domain_separator)?;
 
             Ok(encode_trade(
                 &order_data,
@@ -541,7 +542,7 @@ fn encode_jit_orders(
 }
 
 /// Recovers the owner and signature from a `JitOrder`.
-fn recover_owner(
+fn recover_jit_order_owner(
     jit_order: &JitOrder,
     order_data: &OrderData,
     domain_separator: &DomainSeparator,
