@@ -5,7 +5,11 @@ use {
         code_simulation::CodeSimulating,
         encoded_settlement::{encode_trade, EncodedSettlement, EncodedTrade},
         interaction::EncodedInteraction,
-        trade_finding::{external::dto, Interaction, TradeKind},
+        trade_finding::{
+            external::{dto, dto::JitOrder},
+            Interaction,
+            TradeKind,
+        },
     },
     anyhow::{Context, Result},
     bigdecimal::{BigDecimal, Zero},
@@ -407,15 +411,7 @@ fn encode_settlement(
             };
             (tokens, prices)
         }
-        TradeKind::Regular(trade) => {
-            let mut tokens = Vec::with_capacity(trade.clearing_prices.len());
-            let mut prices = Vec::with_capacity(trade.clearing_prices.len());
-            for (token, price) in trade.clearing_prices.iter() {
-                tokens.push(*token);
-                prices.push(*price);
-            }
-            (tokens, prices)
-        }
+        TradeKind::Regular(trade) => trade.clearing_prices.iter().map(|e| e.to_owned()).unzip(),
     };
 
     let fake_trade = encode_fake_trade(query, verification, out_amount, &tokens)?;
@@ -428,8 +424,11 @@ fn encode_settlement(
         )?);
     }
 
-    let mut pre_interactions = verification.pre_interactions.clone();
-    pre_interactions.extend(trade.pre_interactions().iter().cloned());
+    let pre_interactions = [
+        verification.pre_interactions.clone(),
+        trade.pre_interactions(),
+    ]
+    .concat();
 
     Ok(EncodedSettlement {
         tokens,
@@ -500,68 +499,75 @@ fn encode_jit_orders(
     tokens: &[H160],
     domain_separator: &DomainSeparator,
 ) -> Result<Vec<EncodedTrade>, Error> {
-    let mut trades = Vec::with_capacity(jit_orders.len());
+    jit_orders
+        .iter()
+        .map(|jit_order| {
+            let order_data = OrderData {
+                sell_token: jit_order.sell_token,
+                buy_token: jit_order.buy_token,
+                receiver: Some(jit_order.receiver),
+                sell_amount: jit_order.sell_amount,
+                buy_amount: jit_order.buy_amount,
+                valid_to: jit_order.valid_to,
+                app_data: jit_order.app_data,
+                fee_amount: 0.into(),
+                kind: match &jit_order.side {
+                    dto::Side::Buy => OrderKind::Buy,
+                    dto::Side::Sell => OrderKind::Sell,
+                },
+                partially_fillable: jit_order.partially_fillable,
+                sell_token_balance: jit_order.sell_token_source,
+                buy_token_balance: jit_order.buy_token_destination,
+            };
+            let (owner, signature) = recover_owner(jit_order, &order_data, domain_separator)?;
 
-    for jit_order in jit_orders.iter() {
-        let order_data = OrderData {
-            sell_token: jit_order.sell_token,
-            buy_token: jit_order.buy_token,
-            receiver: Some(jit_order.receiver),
-            sell_amount: jit_order.sell_amount,
-            buy_amount: jit_order.buy_amount,
-            valid_to: jit_order.valid_to,
-            app_data: jit_order.app_data,
-            fee_amount: 0.into(),
-            kind: match &jit_order.side {
-                dto::Side::Buy => OrderKind::Buy,
-                dto::Side::Sell => OrderKind::Sell,
-            },
-            partially_fillable: jit_order.partially_fillable,
-            sell_token_balance: jit_order.sell_token_source,
-            buy_token_balance: jit_order.buy_token_destination,
-        };
-        let (owner, signature) = match jit_order.signing_scheme {
-            SigningScheme::Eip1271 => {
-                let (owner, signature) = jit_order.signature.split_at(20);
-                let owner = H160::from_slice(owner);
-                let signature = Signature::from_bytes(jit_order.signing_scheme, signature)?;
-                (owner, signature)
-            }
-            SigningScheme::PreSign => {
-                let owner = H160::from_slice(&jit_order.signature);
-                let signature =
-                    Signature::from_bytes(jit_order.signing_scheme, Vec::new().as_slice())?;
-                (owner, signature)
-            }
-            _ => {
-                let signature =
-                    Signature::from_bytes(jit_order.signing_scheme, &jit_order.signature)?;
-                let owner = signature
-                    .recover(domain_separator, &order_data.hash_struct())?
-                    .context("could not recover the owner")?
-                    .signer;
-                (owner, signature)
-            }
-        };
+            Ok(encode_trade(
+                &order_data,
+                &signature,
+                owner,
+                // the tokens set length is small so the linear search is acceptable
+                tokens
+                    .iter()
+                    .position(|token| token == &jit_order.sell_token)
+                    .context("missing jit order sell token index")?,
+                tokens
+                    .iter()
+                    .position(|token| token == &jit_order.buy_token)
+                    .context("missing jit order buy token index")?,
+                &jit_order.executed_amount,
+            ))
+        })
+        .collect::<Result<Vec<EncodedTrade>, Error>>()
+}
 
-        trades.push(encode_trade(
-            &order_data,
-            &signature,
-            owner,
-            // the tokens set length is small so the linear search is acceptable
-            tokens
-                .iter()
-                .position(|token| token == &jit_order.sell_token)
-                .context("missing jit order sell token index")?,
-            tokens
-                .iter()
-                .position(|token| token == &jit_order.buy_token)
-                .context("missing jit order buy token index")?,
-            &jit_order.executed_amount,
-        ));
-    }
-
-    Ok(trades)
+/// Recovers the owner and signature from a `JitOrder`.
+fn recover_owner(
+    jit_order: &JitOrder,
+    order_data: &OrderData,
+    domain_separator: &DomainSeparator,
+) -> Result<(H160, Signature), Error> {
+    let (owner, signature) = match jit_order.signing_scheme {
+        SigningScheme::Eip1271 => {
+            let (owner, signature) = jit_order.signature.split_at(20);
+            let owner = H160::from_slice(owner);
+            let signature = Signature::from_bytes(jit_order.signing_scheme, signature)?;
+            (owner, signature)
+        }
+        SigningScheme::PreSign => {
+            let owner = H160::from_slice(&jit_order.signature);
+            let signature = Signature::from_bytes(jit_order.signing_scheme, Vec::new().as_slice())?;
+            (owner, signature)
+        }
+        _ => {
+            let signature = Signature::from_bytes(jit_order.signing_scheme, &jit_order.signature)?;
+            let owner = signature
+                .recover(domain_separator, &order_data.hash_struct())?
+                .context("could not recover the owner")?
+                .signer;
+            (owner, signature)
+        }
+    };
+    Ok((owner, signature))
 }
 
 /// Adds the interactions that are only needed to query important balances
@@ -668,6 +674,7 @@ fn ensure_quote_accuracy(
         u256_to_big_rational(&buy_amount),
     );
 
+    // Calculate the expected token losses that should be covered by JIT orders.
     let (expected_sell_token_lost, expected_buy_token_lost) = match trade {
         TradeKind::Regular(trade) if !trade.jit_orders.is_empty() => {
             let jit_orders_net_token_changes = trade.jit_orders_net_token_changes()?;

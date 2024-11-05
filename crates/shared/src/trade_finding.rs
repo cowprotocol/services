@@ -16,7 +16,10 @@ use {
     num::{BigRational, CheckedDiv},
     number::conversions::big_rational_to_u256,
     serde::Serialize,
-    std::{collections::HashMap, ops::Mul},
+    std::{
+        collections::HashMap,
+        ops::{AddAssign, Mul, SubAssign},
+    },
     thiserror::Error,
 };
 
@@ -195,10 +198,7 @@ impl Trade {
                         .context("multiplication overflow in JIT order sell")?
                         .checked_ceil_div(&buy_price)
                         .context("division by zero in JIT order sell")?;
-                    (
-                        executed_amount.to_big_rational(),
-                        buy_amount.to_big_rational(),
-                    )
+                    (executed_amount, buy_amount)
                 }
                 Side::Buy => {
                     let sell_amount = executed_amount
@@ -206,22 +206,19 @@ impl Trade {
                         .context("multiplication overflow in JIT order buy")?
                         .checked_ceil_div(&sell_price)
                         .context("division by zero in JIT order buy")?;
-                    (
-                        sell_amount.to_big_rational(),
-                        executed_amount.to_big_rational(),
-                    )
+                    (sell_amount, executed_amount)
                 }
             };
 
             net_token_changes
                 .entry(jit_order.sell_token)
-                .and_modify(|e| *e += &executed_sell)
-                .or_insert(executed_sell);
+                .or_default()
+                .add_assign(executed_sell.to_big_rational());
 
             net_token_changes
                 .entry(jit_order.buy_token)
-                .and_modify(|e| *e -= &executed_buy)
-                .or_insert(-executed_buy);
+                .or_default()
+                .sub_assign(executed_buy.to_big_rational());
         }
 
         Ok(net_token_changes)

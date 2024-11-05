@@ -11,6 +11,7 @@ anyhow = { workspace = true }
 async-trait = { workspace = true }
 autopilot = { path = "../autopilot" }
 axum = { workspace = true }
+bigdecimal = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
 contracts = { path = "../contracts" }
