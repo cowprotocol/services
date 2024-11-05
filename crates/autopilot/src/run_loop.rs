@@ -492,18 +492,14 @@ impl RunLoop {
             competition_table,
         };
 
-        if let Err(err) = futures::try_join!(
+        futures::try_join!(
             self.persistence
                 .save_auction(auction, block_deadline)
                 .map_err(|e| e.0.context("failed to save auction")),
             self.persistence
                 .save_solutions(auction.id, solutions)
                 .map_err(|e| e.0.context("failed to save solutions")),
-        ) {
-            // Don't error if saving of auction and solution fails, until stable.
-            // Various edge cases with JIT orders verifiable only in production.
-            tracing::warn!(?err, "failed to save new competition data");
-        }
+        )?;
 
         tracing::trace!(?competition, "saving competition");
         futures::try_join!(
