@@ -2,7 +2,7 @@ use {
     anyhow::Result,
     app_data::AppDataHash,
     contracts::CowAmmLegacyHelper,
-    ethcontract::{errors::MethodError, Address, Bytes, U256},
+    ethcontract::{common::FunctionExt, errors::MethodError, Address, Bytes, U256},
     model::{
         interaction::InteractionData,
         order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
@@ -92,11 +92,23 @@ impl Amm {
 
         // Cow AMM pools can have specific requirements for the signature validity.
         // https://sepolia.etherscan.io/address/0xaceb697457db8bb567e7d8e4411c5364ca07101e#code
-        let _ = self
+        let magic_value = Bytes(
+            self.contract
+                .raw_instance()
+                .abi()
+                .function("isValidSignature")
+                .expect("isValidSignature function not found")
+                .selector(),
+        );
+        if !self
             .contract
             .is_valid_signature(Bytes(order.hash_struct()), Bytes(signature.to_bytes()))
             .call()
-            .await?;
+            .await
+            .map(|result| result == magic_value)?
+        {
+            anyhow::bail!("invalid signature");
+        }
 
         Ok(TemplateOrder {
             order,
