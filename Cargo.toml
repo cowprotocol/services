@@ -15,7 +15,7 @@ derive_more = "0.99.17"
 ethcontract = { version = "0.25.7", default-features = false, features = ["aws-kms"] }
 mimalloc = "0.1.43"
 tcmalloc = "0.3.0"
-jemallocator = "0.3.2"
+tikv-jemallocator = "0.6"
 ethcontract-generate = { version = "0.25.7", default-features = false }
 ethcontract-mock = { version = "0.25.7", default-features = false }
 ethereum-types = "0.14.1"

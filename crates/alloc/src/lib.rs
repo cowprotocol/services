@@ -33,15 +33,15 @@ macro_rules! custom_global_allocator {
 }
 
 #[cfg(feature="allocator-jemalloc")]
-pub use jemallocator;
+pub use tikv_jemallocator;
 
 #[cfg(feature="allocator-jemalloc")]
 #[macro_export]
 macro_rules! custom_global_allocator {
     () => {
-        use alloc::jemallocator;
+        use alloc::tikv_jemallocator;
 
         #[global_allocator]
-        static GLOBAL: jemallocator::Jemalloc = jemallocator::Jemalloc;
+        static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
     };
 }
