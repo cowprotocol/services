@@ -11,14 +11,16 @@ impl_event_retrieving! {
 
 pub struct Indexer {
     db: Postgres,
+    start_index: u64,
     settlement_observer: settlement::Observer,
 }
 
 impl Indexer {
-    pub fn new(db: Postgres, settlement_observer: settlement::Observer) -> Self {
+    pub fn new(db: Postgres, settlement_observer: settlement::Observer, start_index: u64) -> Self {
         Self {
             db,
             settlement_observer,
+            start_index,
         }
     }
 }
@@ -29,7 +31,9 @@ const INDEX_NAME: &str = "settlements";
 #[async_trait::async_trait]
 impl EventStoring<contracts::gpv2_settlement::Event> for Indexer {
     async fn last_event_block(&self) -> Result<u64> {
-        super::read_last_block_from_db(&self.db.pool, INDEX_NAME).await
+        super::read_last_block_from_db(&self.db.pool, INDEX_NAME)
+            .await
+            .map(|last_block| last_block.max(self.start_index))
     }
 
     async fn persist_last_indexed_block(&mut self, latest_block: u64) -> Result<()> {

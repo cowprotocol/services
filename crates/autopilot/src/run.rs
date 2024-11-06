@@ -26,7 +26,7 @@ use {
     chain::Chain,
     clap::Parser,
     contracts::{BalancerV2Vault, IUniswapV3Factory},
-    ethcontract::{dyns::DynWeb3, errors::DeployError, BlockNumber},
+    ethcontract::{common::DeploymentInformation, dyns::DynWeb3, errors::DeployError, BlockNumber},
     ethrpc::block_stream::block_number_to_block_number_hash,
     futures::StreamExt,
     model::DomainSeparator,
@@ -363,11 +363,27 @@ pub async fn run(args: Arguments) {
         infra::persistence::Persistence::new(args.s3.into().unwrap(), Arc::new(db.clone())).await;
     let settlement_observer =
         crate::domain::settlement::Observer::new(eth.clone(), persistence.clone());
+    let settlement_contract_start_index =
+        if let Some(DeploymentInformation::BlockNumber(settlement_contract_start_index)) =
+            eth.contracts().settlement().deployment_information()
+        {
+            settlement_contract_start_index
+        } else {
+            // If the deployment information can't be found, start from 0 (default
+            // behaviour). For real contracts, the deployment information is specified
+            // for all the networks, but it isn't specified for the e2e tests which deploy
+            // the contracts from scratch
+            0
+        };
     let settlement_event_indexer = EventUpdater::new(
         boundary::events::settlement::GPv2SettlementContract::new(
             eth.contracts().settlement().clone(),
         ),
-        boundary::events::settlement::Indexer::new(db.clone(), settlement_observer),
+        boundary::events::settlement::Indexer::new(
+            db.clone(),
+            settlement_observer,
+            settlement_contract_start_index,
+        ),
         block_retriever.clone(),
         skip_event_sync_start,
     );
