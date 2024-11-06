@@ -5,8 +5,9 @@ edition = "2021"
 
 [dependencies]
 mimalloc = { workspace = true, optional = true }
-tcmalloc = { workspace = true, optional = true } # requires gooogle-perftools package
+tcmalloc = { workspace = true, optional = true } # requires libgoogle-perftools-dev and libgoogle-perftools4 packages
 tikv-jemallocator = { workspace = true, optional = true }
+snmalloc-rs = { workspace = true, optional = true }
 
 [lib]
 bench = false
@@ -17,7 +18,8 @@ doctest = false
 workspace = true
 
 [features]
-default = [ "allocator-tcmalloc" ]
+default = [ "allocator-snmalloc" ]
 allocator-mimalloc = [ "dep:mimalloc" ]
 allocator-tcmalloc = [ "dep:tcmalloc" ]
 allocator-jemalloc = [ "dep:tikv-jemallocator" ]
+allocator-snmalloc = [ "dep:snmalloc-rs" ]
