@@ -9,8 +9,7 @@ use {
         infra::{
             self,
             blockchain::Ethereum,
-            notify,
-            observe,
+            notify, observe,
             simulator::{RevertError, SimulatorError},
             solver::{self, SolutionMerging, Solver},
             Simulator,
@@ -292,6 +291,7 @@ impl Competition {
     /// [`Competition::solve`] to generate the solution.
     pub async fn settle(
         &self,
+        auction_id: i64,
         solution_id: u64,
         submission_deadline: u64,
     ) -> Result<Settled, Error> {
@@ -305,6 +305,10 @@ impl Competition {
             lock.swap_remove_front(index)
                 .ok_or(Error::SolutionNotAvailable)?
         };
+
+        if auction_id != settlement.auction_id.0 {
+            return Err(Error::SolutionIdMismatchedAuctionId);
+        }
 
         let executed = self
             .mempools
@@ -469,4 +473,6 @@ pub enum Error {
     Solver(#[from] solver::Error),
     #[error("failed to submit the solution")]
     SubmissionError,
+    #[error("solution ID cannot be found for provided auction ID")]
+    SolutionIdMismatchedAuctionId,
 }
