@@ -13,6 +13,8 @@ pub struct Request {
     pub solution_id: u64,
     /// The last block number in which the solution TX can be included
     pub submission_deadline_latest_block: u64,
+    /// Auction ID in which the specified solution ID is competting.
+    pub auction_id: i64,
 }
 
 #[serde_as]

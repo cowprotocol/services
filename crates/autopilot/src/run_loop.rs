@@ -24,11 +24,7 @@ use {
     futures::{future::BoxFuture, TryFutureExt},
     itertools::Itertools,
     model::solver_competition::{
-        CompetitionAuction,
-        Order,
-        Score,
-        SolverCompetitionDB,
-        SolverSettlement,
+        CompetitionAuction, Order, Score, SolverCompetitionDB, SolverSettlement,
     },
     primitive_types::H256,
     rand::seq::SliceRandom,
@@ -796,6 +792,7 @@ impl RunLoop {
         let request = settle::Request {
             solution_id,
             submission_deadline_latest_block,
+            auction_id,
         };
 
         // Wait for either the settlement transaction to be mined or the driver returned
