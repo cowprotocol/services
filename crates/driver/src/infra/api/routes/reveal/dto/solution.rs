@@ -7,4 +7,6 @@ pub struct Solution {
     /// Unique ID of the solution (per driver competition), to reveal.
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub solution_id: u64,
+    /// Auction ID in which the specified solution ID is competting.
+    pub auction_id: i64,
 }

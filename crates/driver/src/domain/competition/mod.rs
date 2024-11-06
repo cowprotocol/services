@@ -266,13 +266,13 @@ impl Competition {
         Ok(score)
     }
 
-    pub async fn reveal(&self, solution_id: u64) -> Result<Revealed, Error> {
+    pub async fn reveal(&self, solution_id: u64, auction_id: i64) -> Result<Revealed, Error> {
         let settlement = self
             .settlements
             .lock()
             .unwrap()
             .iter()
-            .find(|s| s.solution().get() == solution_id)
+            .find(|s| s.solution().get() == solution_id && s.auction_id.0 == auction_id)
             .cloned()
             .ok_or(Error::SolutionNotAvailable)?;
         Ok(Revealed {
