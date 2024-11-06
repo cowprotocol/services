@@ -110,10 +110,24 @@ impl TradeVerifier {
         let solver = trade.tx_origin().unwrap_or(trade.solver());
         let solver = dummy_contract!(Solver, solver);
 
+        let (tokens, clearing_prices) = match trade {
+            TradeKind::Legacy(_) => {
+                let tokens = vec![query.sell_token, query.buy_token];
+                let prices = match query.kind {
+                    OrderKind::Sell => vec![*out_amount, query.in_amount.get()],
+                    OrderKind::Buy => vec![query.in_amount.get(), *out_amount],
+                };
+                (tokens, prices)
+            }
+            TradeKind::Regular(trade) => trade.clearing_prices.iter().map(|e| e.to_owned()).unzip(),
+        };
+
         let settlement = encode_settlement(
             query,
             verification,
             trade,
+            &tokens,
+            &clearing_prices,
             out_amount,
             self.native_token,
             &self.domain_separator,
@@ -148,10 +162,14 @@ impl TradeVerifier {
             .swap(
                 self.settlement.address(),
                 verification.from,
-                query.sell_token,
+                tokens
+                    .iter()
+                    .position(|&t| t == query.sell_token)
+                    .context("missing query sell token")?
+                    .into(),
                 sell_amount,
-                query.buy_token,
                 self.native_token,
+                tokens.clone(),
                 verification.receiver,
                 Bytes(settlement.data.unwrap().0),
                 // only if the user did not provide pre-interactions is it safe
@@ -212,7 +230,7 @@ impl TradeVerifier {
             }
         };
 
-        let mut summary = SettleOutput::decode(&output?, query.kind)
+        let mut summary = SettleOutput::decode(&output?, query.kind, &tokens)
             .context("could not decode simulation output")
             .map_err(Error::SimulationFailed)?;
 
@@ -228,19 +246,24 @@ impl TradeVerifier {
             // It looks like the contract lost a lot of sell tokens but only because it was
             // the trader and had to pay for the trade. Adjust tokens lost downward.
             if verification.from == self.settlement.address() {
-                summary.sell_tokens_lost -= u256_to_big_rational(&sell_amount);
+                summary
+                    .tokens_lost
+                    .entry(query.sell_token)
+                    .and_modify(|balance| *balance -= u256_to_big_rational(&sell_amount));
             }
             // It looks like the contract gained a lot of buy tokens (negative loss) but
             // only because it was the receiver and got the payout. Adjust the tokens lost
             // upward.
             if verification.receiver == self.settlement.address() {
-                summary.buy_tokens_lost += u256_to_big_rational(&buy_amount);
+                summary
+                    .tokens_lost
+                    .entry(query.buy_token)
+                    .and_modify(|balance| *balance += u256_to_big_rational(&buy_amount));
             }
         }
 
         tracing::debug!(
-            lost_buy_amount = %summary.buy_tokens_lost,
-            lost_sell_amount = %summary.sell_tokens_lost,
+            tokens_lost = ?summary.tokens_lost,
             gas_diff = ?trade.gas_estimate().unwrap_or_default().abs_diff(summary.gas_used.as_u64()),
             time = ?start.elapsed(),
             promised_out_amount = ?out_amount,
@@ -378,10 +401,13 @@ fn encode_interactions(interactions: &[Interaction]) -> Vec<EncodedInteraction> 
     interactions.iter().map(|i| i.encode()).collect()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn encode_settlement(
     query: &PriceQuery,
     verification: &Verification,
     trade: &TradeKind,
+    tokens: &[H160],
+    clearing_prices: &[U256],
     out_amount: &U256,
     native_token: H160,
     domain_separator: &DomainSeparator,
@@ -402,24 +428,12 @@ fn encode_settlement(
         tracing::trace!("adding unwrap interaction for paying out ETH");
     }
 
-    let (tokens, clearing_prices) = match trade {
-        TradeKind::Legacy(_) => {
-            let tokens = vec![query.sell_token, query.buy_token];
-            let prices = match query.kind {
-                OrderKind::Sell => vec![*out_amount, query.in_amount.get()],
-                OrderKind::Buy => vec![query.in_amount.get(), *out_amount],
-            };
-            (tokens, prices)
-        }
-        TradeKind::Regular(trade) => trade.clearing_prices.iter().map(|e| e.to_owned()).unzip(),
-    };
-
-    let fake_trade = encode_fake_trade(query, verification, out_amount, &tokens)?;
+    let fake_trade = encode_fake_trade(query, verification, out_amount, tokens)?;
     let mut trades = vec![fake_trade];
     if let TradeKind::Regular(trade) = trade {
         trades.extend(encode_jit_orders(
             &trade.jit_orders,
-            &tokens,
+            tokens,
             domain_separator,
         )?);
     }
@@ -431,8 +445,8 @@ fn encode_settlement(
     .concat();
 
     Ok(EncodedSettlement {
-        tokens,
-        clearing_prices,
+        tokens: tokens.to_vec(),
+        clearing_prices: clearing_prices.to_vec(),
         trades,
         interactions: [
             encode_interactions(&pre_interactions),
@@ -598,8 +612,8 @@ fn add_balance_queries(
     let query_balance = solver.methods().store_balance(token, owner, true);
     let query_balance = Bytes(query_balance.tx.data.unwrap().0);
     let interaction = (solver.address(), 0.into(), query_balance);
-    // query balance right after we receive all `sell_token`
-    settlement.interactions[1].insert(0, interaction.clone());
+    // query balance query at the end of pre-interactions
+    settlement.interactions[0].push(interaction.clone());
     // query balance right after we payed out all `buy_token`
     settlement.interactions[2].insert(0, interaction);
     settlement
@@ -613,16 +627,12 @@ struct SettleOutput {
     /// `out_amount` perceived by the trader (sell token for buy orders or buy
     /// token for sell order)
     out_amount: U256,
-    /// Difference in buy tokens of the settlement contract before and after the
-    /// trade.
-    buy_tokens_lost: BigRational,
-    /// Difference in sell tokens of the settlement contract before and after
-    /// the trade.
-    sell_tokens_lost: BigRational,
+    /// Tokens difference of the settlement contract before and after the trade.
+    tokens_lost: HashMap<H160, BigRational>,
 }
 
 impl SettleOutput {
-    fn decode(output: &[u8], kind: OrderKind) -> Result<Self> {
+    fn decode(output: &[u8], kind: OrderKind, tokens_vec: &[H160]) -> Result<Self> {
         let function = Solver::raw_contract()
             .interface
             .abi
@@ -631,14 +641,27 @@ impl SettleOutput {
         let tokens = function.decode_output(output).context("decode")?;
         let (gas_used, balances): (U256, Vec<U256>) = Tokenize::from_token(Token::Tuple(tokens))?;
 
-        let settlement_sell_balance_before = u256_to_big_rational(&balances[0]);
-        let settlement_buy_balance_before = u256_to_big_rational(&balances[1]);
+        let mut i = 0;
+        let mut tokens_lost = HashMap::new();
+        // Get settlement contract balances before the trade
+        for token in &tokens_vec.iter() {
+            let balance_before = u256_to_big_rational(&balances[i]);
+            tokens_lost.insert(token, balance_before);
+            i += 1;
+        }
 
-        let trader_balance_before = balances[2];
-        let trader_balance_after = balances[3];
+        let trader_balance_before = balances[i];
+        let trader_balance_after = balances[i + 1];
+        i += 2;
 
-        let settlement_sell_balance_after = u256_to_big_rational(&balances[4]);
-        let settlement_buy_balance_after = u256_to_big_rational(&balances[5]);
+        // Get settlement contract balances after the trade
+        for token in &tokens_vec.iter() {
+            let balance_after = u256_to_big_rational(&balances[i]);
+            tokens_lost
+                .entry(token)
+                .and_modify(|balance_before| *balance_before -= balance_after);
+            i += 1;
+        }
 
         let out_amount = match kind {
             // for sell orders we track the buy_token amount which increases during the settlement
@@ -651,8 +674,7 @@ impl SettleOutput {
         Ok(SettleOutput {
             gas_used,
             out_amount,
-            buy_tokens_lost: settlement_buy_balance_before - settlement_buy_balance_after,
-            sell_tokens_lost: settlement_sell_balance_before - settlement_sell_balance_after,
+            tokens_lost,
         })
     }
 }
@@ -694,9 +716,17 @@ fn ensure_quote_accuracy(
         _ => (BigRational::zero(), BigRational::zero()),
     };
 
-    let sell_token_lost = &summary.sell_tokens_lost - expected_sell_token_lost;
+    let sell_token_lost = summary
+        .tokens_lost
+        .get(&query.sell_token)
+        .context("summary sell token is missing")?
+        - expected_sell_token_lost;
     let sell_token_lost_limit = inaccuracy_limit * &sell_amount;
-    let buy_token_lost = &summary.buy_tokens_lost - expected_buy_token_lost;
+    let buy_token_lost = summary
+        .tokens_lost
+        .get(&query.buy_token)
+        .context("summary buy token is missing")?
+        - expected_buy_token_lost;
     let buy_token_lost_limit = inaccuracy_limit * &buy_amount;
 
     if sell_token_lost >= sell_token_lost_limit || buy_token_lost >= buy_token_lost_limit {
