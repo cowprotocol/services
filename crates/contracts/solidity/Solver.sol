@@ -29,10 +29,10 @@ contract Solver {
     /// @param settlementContract - address of the settlement contract because
     /// it does not have a stable address in tests.
     /// @param trader - address of the order owner doing the trade
-    /// @param sellToken - address of the token being sold
+    /// @param sellTokenIndex - index in the tokens array of the token being sold
     /// @param sellAmount - amount being sold
-    /// @param buyToken - address of the token being bought
     /// @param nativeToken - ERC20 version of the chain's token
+    /// @param tokens - list of tokens used in the trade
     /// @param receiver - address receiving the bought tokens
     /// @param settlementCall - the calldata of the `settle()` call
     /// @param mockPreconditions - controls whether things like ETH wrapping
@@ -45,10 +45,10 @@ contract Solver {
     function swap(
         ISettlement settlementContract,
         address payable trader,
-        address sellToken,
+        uint256 sellTokenIndex,
         uint256 sellAmount,
-        address buyToken,
         address nativeToken,
+        address[] calldata tokens,
         address payable receiver,
         bytes calldata settlementCall,
         bool mockPreconditions
@@ -64,7 +64,7 @@ contract Solver {
             Trader(trader)
                 .prepareSwap(
                     settlementContract,
-                    sellToken,
+                tokens[sellTokenIndex],
                     sellAmount,
                     nativeToken
                 );
@@ -76,13 +76,16 @@ contract Solver {
         // contract.
         receiver.call{value: 0}("");
 
-        this.storeBalance(sellToken, address(settlementContract), false);
-        this.storeBalance(buyToken, address(settlementContract), false);
+        // Store pre-settlement balances
+        _storeSettlementBalances(tokens, settlementContract);
+
         uint256 gasStart = gasleft();
         address(settlementContract).doCall(settlementCall);
         gasUsed = gasStart - gasleft() - _simulationOverhead;
-        this.storeBalance(sellToken, address(settlementContract), false);
-        this.storeBalance(buyToken, address(settlementContract), false);
+
+        // Store post-settlement balances
+        _storeSettlementBalances(tokens, settlementContract);
+
         queriedBalances = _queriedBalances;
     }
 
@@ -102,6 +105,12 @@ contract Solver {
         if (countGas) {
             // Account for costs of gas used outside of metered section.
             _simulationOverhead += gasStart - gasleft() + 4460;
+        }
+    }
+
+    function _storeSettlementBalances(address[] calldata tokens, ISettlement settlementContract) internal {
+        for (uint256 i = 0; i < tokens.length; i++) {
+            this.storeBalance(tokens[i], address(settlementContract), false);
         }
     }
 }
