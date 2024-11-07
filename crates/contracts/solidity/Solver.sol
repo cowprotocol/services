@@ -79,9 +79,7 @@ contract Solver {
         // Store pre-settlement balances
         _storeSettlementBalances(tokens, settlementContract);
 
-        uint256 gasStart = gasleft();
-        address(settlementContract).doCall(settlementCall);
-        gasUsed = gasStart - gasleft() - _simulationOverhead;
+        gasUsed = _executeSettlement(address(settlementContract), settlementCall);
 
         // Store post-settlement balances
         _storeSettlementBalances(tokens, settlementContract);
@@ -108,9 +106,25 @@ contract Solver {
         }
     }
 
+    /// @dev Helper function that reads and stores the balances of the `settlementContract` for each token in `tokens`.
+    /// @param tokens - list of tokens used in the trade
+    /// @param settlementContract - the settlement contract whose balances are being read
     function _storeSettlementBalances(address[] calldata tokens, ISettlement settlementContract) internal {
         for (uint256 i = 0; i < tokens.length; i++) {
             this.storeBalance(tokens[i], address(settlementContract), false);
         }
+    }
+
+    /// @dev Executes the settlement and measures the gas used.
+    /// @param settlementContract The address of the settlement contract.
+    /// @param settlementCall The calldata for the settlement function.
+    /// @return gasUsed The amount of gas used during the settlement execution.
+    function _executeSettlement(
+        address settlementContract,
+        bytes calldata settlementCall
+    ) private returns (uint256 gasUsed) {
+        uint256 gasStart = gasleft();
+        address(settlementContract).doCall(settlementCall);
+        gasUsed = gasStart - gasleft() - _simulationOverhead;
     }
 }
