@@ -9,7 +9,8 @@ use {
         infra::{
             self,
             blockchain::Ethereum,
-            notify, observe,
+            notify,
+            observe,
             simulator::{RevertError, SimulatorError},
             solver::{self, SolutionMerging, Solver},
             Simulator,
