@@ -299,16 +299,12 @@ impl Competition {
             let mut lock = self.settlements.lock().unwrap();
             let index = lock
                 .iter()
-                .position(|s| s.solution().get() == solution_id)
+                .position(|s| s.solution().get() == solution_id && s.auction_id.0 == auction_id)
                 .ok_or(Error::SolutionNotAvailable)?;
             // remove settlement to ensure we can't settle it twice by accident
             lock.swap_remove_front(index)
                 .ok_or(Error::SolutionNotAvailable)?
         };
-
-        if auction_id != settlement.auction_id.0 {
-            return Err(Error::SolutionIdMismatchedAuctionId);
-        }
 
         let executed = self
             .mempools
@@ -473,6 +469,4 @@ pub enum Error {
     Solver(#[from] solver::Error),
     #[error("failed to submit the solution")]
     SubmissionError,
-    #[error("solution ID cannot be found for provided auction ID")]
-    SolutionIdMismatchedAuctionId,
 }
