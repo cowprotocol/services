@@ -846,30 +846,37 @@ mod tests {
         clearing_prices.insert(sell_token, U256::from(1u64));
         clearing_prices.insert(buy_token, U256::from(2u64));
 
-        let queries = [
-            PriceQuery {
-                in_amount: NonZeroU256::new(500u64.into()).unwrap(),
-                kind: OrderKind::Sell,
+        let query_with_out_amount = |kind: OrderKind| -> (PriceQuery, U256) {
+            let (in_amount, out_amount) = match kind {
+                OrderKind::Sell => (500u64.into(), 250u64.into()),
+                OrderKind::Buy => (250u64.into(), 500u64.into()),
+            };
+            let price_query = PriceQuery {
+                in_amount: NonZeroU256::new(in_amount).unwrap(),
+                kind,
                 sell_token,
                 buy_token,
-            },
-            PriceQuery {
-                in_amount: NonZeroU256::new(250u64.into()).unwrap(),
-                kind: OrderKind::Buy,
-                sell_token,
-                buy_token,
-            },
-        ];
+            };
 
-        let jit_orders = [
-            // Sell order
+            (price_query, out_amount)
+        };
+
+        // The jit order should fully fill the query
+        let jit_executed_amount = |side: &dto::Side| -> U256 {
+            match side {
+                dto::Side::Sell => 250u64.into(),
+                dto::Side::Buy => 500u64.into(),
+            }
+        };
+
+        let jit_order = |side: dto::Side| -> dto::JitOrder {
             dto::JitOrder {
-                sell_token: buy_token,               // Solver sells buy token
-                buy_token: sell_token,               // Solver buys sell token
-                executed_amount: U256::from(250u64), // Fully fills the query
-                side: dto::Side::Sell,
-                sell_amount: U256::from(250u64),
-                buy_amount: U256::from(500u64),
+                sell_token: buy_token,                       // Solver sells buy token
+                buy_token: sell_token,                       // Solver buys sell token
+                executed_amount: jit_executed_amount(&side), // Fully fills the query
+                side,
+                sell_amount: 250u64.into(),
+                buy_amount: 500u64.into(),
                 receiver: H160::zero(),
                 valid_to: 0,
                 app_data: AppDataHash::default(),
@@ -878,30 +885,29 @@ mod tests {
                 buy_token_destination: BuyTokenDestination::Erc20,
                 signature: vec![],
                 signing_scheme: SigningScheme::Eip1271,
-            },
-            // Buy order
-            dto::JitOrder {
-                sell_token: buy_token,               // Solver sells buy token
-                buy_token: sell_token,               // Solver buys sell token
-                executed_amount: U256::from(500u64), // Fully fills the query
-                side: dto::Side::Buy,
-                sell_amount: U256::from(250u64),
-                buy_amount: U256::from(500u64),
-                receiver: H160::zero(),
-                valid_to: 0,
-                app_data: AppDataHash::default(),
-                partially_fillable: false,
-                sell_token_source: SellTokenSource::Erc20,
-                buy_token_destination: BuyTokenDestination::Erc20,
-                signature: vec![],
-                signing_scheme: SigningScheme::Eip1271,
-            },
+            }
+        };
+
+        let test_cases = [
+            (
+                query_with_out_amount(OrderKind::Sell),
+                jit_order(dto::Side::Sell),
+            ),
+            (
+                query_with_out_amount(OrderKind::Buy),
+                jit_order(dto::Side::Buy),
+            ),
+            (
+                query_with_out_amount(OrderKind::Sell),
+                jit_order(dto::Side::Buy),
+            ),
+            (
+                query_with_out_amount(OrderKind::Buy),
+                jit_order(dto::Side::Sell),
+            ),
         ];
 
-        for (query, jit_order) in queries
-            .iter()
-            .flat_map(|query| jit_orders.iter().map(move |jit_order| (query, jit_order)))
-        {
+        for ((query, out_amount), jit_order) in test_cases {
             let trade_kind = TradeKind::Regular(Trade {
                 clearing_prices: clearing_prices.clone(),
                 gas_estimate: Some(50_000),
@@ -911,14 +917,6 @@ mod tests {
                 tx_origin: None,
                 jit_orders: vec![jit_order.clone()],
             });
-
-            // The out amount is the total amount of buy token the user gets
-            let out_amount = match (&query.kind, &jit_order.side) {
-                (OrderKind::Sell, dto::Side::Sell) => U256::from(250u64),
-                (OrderKind::Buy, dto::Side::Buy) => U256::from(500u64),
-                (OrderKind::Sell, dto::Side::Buy) => U256::from(250u64),
-                (OrderKind::Buy, dto::Side::Sell) => U256::from(500u64),
-            };
 
             // The Settlement contract is not expected to lose any tokens, but we lose a bit
             // to test the inaccuracy limit.
@@ -934,12 +932,12 @@ mod tests {
             };
 
             // The summary has 10% inaccuracy
-            let estimate = ensure_quote_accuracy(&low_threshold, query, &trade_kind, &summary);
+            let estimate = ensure_quote_accuracy(&low_threshold, &query, &trade_kind, &summary);
             assert!(matches!(estimate, Err(Error::TooInaccurate)));
 
             // The summary has less than 11% inaccuracy
             let estimate =
-                ensure_quote_accuracy(&high_threshold, query, &trade_kind, &summary).unwrap();
+                ensure_quote_accuracy(&high_threshold, &query, &trade_kind, &summary).unwrap();
             assert!(estimate.verified);
         }
     }
