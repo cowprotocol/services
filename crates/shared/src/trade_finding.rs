@@ -7,19 +7,16 @@ use {
     crate::{
         conversions::U256Ext,
         price_estimation::{PriceEstimationError, Query},
-        trade_finding::external::{dto, dto::Side},
+        trade_finding::external::dto,
     },
     anyhow::{Context, Result},
     derivative::Derivative,
     ethcontract::{contract::MethodBuilder, tokens::Tokenize, web3::Transport, Bytes, H160, U256},
     model::{interaction::InteractionData, order::OrderKind},
-    num::{BigRational, CheckedDiv},
+    num::CheckedDiv,
     number::conversions::big_rational_to_u256,
     serde::Serialize,
-    std::{
-        collections::HashMap,
-        ops::{AddAssign, Mul, SubAssign},
-    },
+    std::{collections::HashMap, ops::Mul},
     thiserror::Error,
 };
 
@@ -172,56 +169,6 @@ impl Trade {
         };
 
         big_rational_to_u256(&out_amount).context("out amount is not a valid U256")
-    }
-
-    /// Calculate the net token changes for all the JIT orders.
-    /// Positive values mean the solver gains the token, negative values mean
-    /// the solver loses it.
-    pub fn jit_orders_net_token_changes(&self) -> Result<HashMap<H160, BigRational>> {
-        let mut net_token_changes: HashMap<H160, BigRational> = HashMap::new();
-
-        for jit_order in self.jit_orders.iter() {
-            let sell_price = *self
-                .clearing_prices
-                .get(&jit_order.sell_token)
-                .context("JIT order sell token clearing price is missing")?;
-            let buy_price = *self
-                .clearing_prices
-                .get(&jit_order.buy_token)
-                .context("JIT order buy token clearing price is missing")?;
-            let executed_amount = jit_order.executed_amount;
-
-            let (executed_sell, executed_buy) = match jit_order.side {
-                Side::Sell => {
-                    let buy_amount = executed_amount
-                        .checked_mul(sell_price)
-                        .context("multiplication overflow in JIT order sell")?
-                        .checked_ceil_div(&buy_price)
-                        .context("division by zero in JIT order sell")?;
-                    (executed_amount, buy_amount)
-                }
-                Side::Buy => {
-                    let sell_amount = executed_amount
-                        .checked_mul(buy_price)
-                        .context("multiplication overflow in JIT order buy")?
-                        .checked_ceil_div(&sell_price)
-                        .context("division by zero in JIT order buy")?;
-                    (sell_amount, executed_amount)
-                }
-            };
-
-            net_token_changes
-                .entry(jit_order.sell_token)
-                .or_default()
-                .add_assign(executed_sell.to_big_rational());
-
-            net_token_changes
-                .entry(jit_order.buy_token)
-                .or_default()
-                .sub_assign(executed_buy.to_big_rational());
-        }
-
-        Ok(net_token_changes)
     }
 }
 
