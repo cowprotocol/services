@@ -344,21 +344,6 @@ impl RunLoop {
         .instrument(tracing::Span::current());
 
         let sender = self.get_settlement_queue_sender(&driver.name).await;
-
-        let current_block = self.eth.current_block().borrow().number;
-        if current_block >= block_deadline {
-            tracing::warn!(
-                driver = %driver.name,
-                solution = %solution_id,
-                "submission deadline was missed while waiting for the settlement queue, skipping the settlement"
-            );
-            self.in_flight_orders
-                .lock()
-                .await
-                .retain(|order| !solved_order_uids.contains(order));
-            return;
-        }
-
         if let Err(err) = sender.send(Box::pin(settle_fut)) {
             tracing::warn!(driver = %driver.name, ?err, "failed to send settle future to queue");
         }
@@ -809,6 +794,18 @@ impl RunLoop {
         auction_id: i64,
         submission_deadline_latest_block: u64,
     ) -> Result<TxId, SettleError> {
+        let current_block = self.eth.current_block().borrow().number;
+        if current_block >= submission_deadline_latest_block {
+            self.in_flight_orders
+                .lock()
+                .await
+                .retain(|order| !solved_order_uids.contains(order));
+
+            return Err(SettleError::Failure(anyhow::anyhow!(
+                "submission deadline was missed while waiting for the settlement queue"
+            )));
+        }
+
         let request = settle::Request {
             solution_id,
             submission_deadline_latest_block,
