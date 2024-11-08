@@ -314,15 +314,16 @@ impl RunLoop {
         let self_ = self.clone();
         let driver_ = driver.clone();
 
+        let solved_order_uids_ = solved_order_uids.clone();
         let settle_fut = async move {
-            tracing::info!(driver = %driver_.name, "settling");
+            tracing::info!(driver = %driver_.name, solution = %solution_id, "settling");
             let submission_start = Instant::now();
 
             match self_
                 .settle(
                     &driver_,
                     solution_id,
-                    solved_order_uids,
+                    solved_order_uids_,
                     solver,
                     auction_id,
                     block_deadline,
@@ -343,6 +344,21 @@ impl RunLoop {
         .instrument(tracing::Span::current());
 
         let sender = self.get_settlement_queue_sender(&driver.name).await;
+
+        let current_block = self.eth.current_block().borrow().number;
+        if current_block >= block_deadline {
+            tracing::warn!(
+                driver = %driver.name,
+                solution = %solution_id,
+                "submission deadline was missed while waiting for the settlement queue, skipping the settlement"
+            );
+            self.in_flight_orders
+                .lock()
+                .await
+                .retain(|order| !solved_order_uids.contains(order));
+            return;
+        }
+
         if let Err(err) = sender.send(Box::pin(settle_fut)) {
             tracing::warn!(driver = %driver.name, ?err, "failed to send settle future to queue");
         }
@@ -803,8 +819,8 @@ impl RunLoop {
         let result = match futures::future::select(
             Box::pin(self.wait_for_settlement_transaction(
                 auction_id,
-                self.config.submission_deadline,
                 solver,
+                submission_deadline_latest_block,
             )),
             Box::pin(driver.settle(&request, self.config.max_settlement_transaction_wait)),
         )
@@ -836,12 +852,11 @@ impl RunLoop {
     async fn wait_for_settlement_transaction(
         &self,
         auction_id: i64,
-        max_blocks_wait: u64,
         solver: eth::Address,
+        submission_deadline_latest_block: u64,
     ) -> Result<eth::TxId, SettleError> {
         let current = self.eth.current_block().borrow().number;
-        let deadline = current.saturating_add(max_blocks_wait);
-        tracing::debug!(%current, %deadline, %auction_id, "waiting for tag");
+        tracing::debug!(%current, deadline=%submission_deadline_latest_block, %auction_id, "waiting for tag");
         loop {
             let block = ethrpc::block_stream::next_block(self.eth.current_block()).await;
             // Run maintenance to ensure the system processed the last available block so
@@ -864,7 +879,7 @@ impl RunLoop {
                     );
                 }
             }
-            if block.number >= deadline {
+            if block.number >= submission_deadline_latest_block {
                 break;
             }
         }
