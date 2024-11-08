@@ -493,26 +493,17 @@ pub enum Mempool {
 /// Create a builder for the setup process.
 pub fn setup() -> Setup {
     Setup {
-        name: Default::default(),
-        pools: Default::default(),
-        orders: Default::default(),
-        order_priority_strategies: Default::default(),
-        trusted: Default::default(),
-        config_file: Default::default(),
-        solutions: Default::default(),
-        quote: Default::default(),
         solvers: vec![test_solver()],
         enable_simulation: true,
-        settlement_address: Default::default(),
         mempools: vec![Mempool::Public],
         rpc_args: vec!["--gas-limit".into(), "10000000".into()],
-        jit_orders: Default::default(),
-        surplus_capturing_jit_order_owners: Default::default(),
         allow_multiple_solve_requests: false,
+        auction_id: 1,
+        ..Default::default()
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Setup {
     name: Option<String>,
     pools: Vec<blockchain::Pool>,
@@ -539,6 +530,8 @@ pub struct Setup {
     surplus_capturing_jit_order_owners: Vec<H160>,
     /// In case your test requires multiple `/solve` requests
     allow_multiple_solve_requests: bool,
+    /// Auction ID used during tests
+    auction_id: i64,
 }
 
 /// The validity of a solution.
@@ -839,6 +832,11 @@ impl Setup {
         self
     }
 
+    pub fn auction_id(mut self, auction_id: i64) -> Self {
+        self.auction_id = auction_id;
+        self
+    }
+
     /// Create the test: set up onchain contracts and pools, start a mock HTTP
     /// server for the solver and start the HTTP server for the driver.
     pub async fn done(self) -> Test {
@@ -959,6 +957,7 @@ impl Setup {
             quoted_orders: quotes,
             quote: self.quote,
             surplus_capturing_jit_order_owners,
+            auction_id: self.auction_id,
         }
     }
 
@@ -999,6 +998,7 @@ pub struct Test {
     quote: bool,
     /// List of surplus capturing JIT-order owners
     surplus_capturing_jit_order_owners: Vec<H160>,
+    auction_id: i64,
 }
 
 impl Test {
@@ -1035,7 +1035,7 @@ impl Test {
                 self.driver.addr,
                 solver::NAME
             ))
-            .json(&driver::reveal_req(solution_id))
+            .json(&driver::reveal_req(solution_id, &self.auction_id.to_string()))
             .send()
             .await
             .unwrap();
@@ -1094,6 +1094,7 @@ impl Test {
             .json(&driver::settle_req(
                 submission_deadline_latest_block,
                 solution_id,
+                &self.auction_id.to_string()
             ))
             .send()
             .await
@@ -1148,6 +1149,10 @@ impl Test {
     #[allow(dead_code)]
     pub fn web3(&self) -> &web3::Web3<DynTransport> {
         &self.blockchain.web3
+    }
+
+    pub fn set_auction_id(&mut self, auction_id: i64) {
+        self.auction_id = auction_id;
     }
 }
 
