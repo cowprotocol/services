@@ -239,7 +239,7 @@ impl RunLoop {
         }
 
         let competition_simulation_block = self.eth.current_block().borrow().number;
-        let block_deadline = competition_simulation_block + self.config.submission_deadline;
+        let block_deadline = auction.block + self.config.submission_deadline;
 
         // Post-processing should not be executed asynchronously since it includes steps
         // of storing all the competition/auction-related data to the DB.
