@@ -63,8 +63,8 @@ pub struct RunLoop {
     solvable_orders_cache: Arc<SolvableOrdersCache>,
     trusted_tokens: AutoUpdatingTokenList,
     in_flight_orders: Arc<Mutex<HashSet<OrderUid>>>,
-    /// Keeps track of the number of in-flight settlements per driver.
-    in_flight_settlements_count: Arc<Mutex<HashMap<String, u32>>>,
+    /// Keeps track of the number of pending settlements per driver.
+    pending_settlements_count: Arc<Mutex<HashMap<String, u32>>>,
     liveness: Arc<Liveness>,
     /// Maintenance tasks that should run before every runloop to have
     /// the most recent data available.
@@ -94,7 +94,7 @@ impl RunLoop {
             solvable_orders_cache,
             trusted_tokens,
             in_flight_orders: Default::default(),
-            in_flight_settlements_count: Default::default(),
+            pending_settlements_count: Default::default(),
             liveness,
             maintenance,
             settlement_queues: Arc::new(Mutex::new(HashMap::new())),
@@ -312,7 +312,7 @@ impl RunLoop {
             .lock()
             .await
             .extend(solved_order_uids.clone());
-        self.in_flight_settlements_count
+        self.pending_settlements_count
             .lock()
             .await
             .entry(driver.name.clone())
@@ -589,12 +589,12 @@ impl RunLoop {
             });
 
         let solutions = {
-            let in_flight_solutions = self.in_flight_settlements_count.lock().await;
+            let pending_solutions_count = self.pending_settlements_count.lock().await;
 
             solutions
                 .cloned()
                 .filter_map(|participant| {
-                    if in_flight_solutions
+                    if pending_solutions_count
                         .get(&participant.driver().name)
                         .cloned()
                         .unwrap_or_default()
@@ -834,7 +834,7 @@ impl RunLoop {
                 .lock()
                 .await
                 .retain(|order| !solved_order_uids.contains(order));
-            self.in_flight_settlements_count
+            self.pending_settlements_count
                 .lock()
                 .await
                 .entry(driver.name.clone())
@@ -877,7 +877,7 @@ impl RunLoop {
             .lock()
             .await
             .retain(|order| !solved_order_uids.contains(order));
-        self.in_flight_settlements_count
+        self.pending_settlements_count
             .lock()
             .await
             .entry(driver.name.clone())
