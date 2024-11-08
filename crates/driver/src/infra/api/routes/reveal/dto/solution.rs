@@ -8,5 +8,6 @@ pub struct Solution {
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub solution_id: u64,
     /// Auction ID in which the specified solution ID is competting.
+    #[serde_as(as = "serde_with::DisplayFromStr")]
     pub auction_id: i64,
 }
