@@ -31,18 +31,35 @@ async fn driver_handles_solutions_based_on_id() {
     // calling `/reveal` or `/settle` with a reasonable id works
     // but wrong auction id results in an error.
     test.set_auction_id(100);
-    test.reveal(&solution_id).await.err().kind("SolutionNotAvailable");
-    test.settle(&solution_id).await.err().kind("SolutionNotAvailable");
+    test.reveal(&solution_id)
+        .await
+        .err()
+        .kind("SolutionNotAvailable");
+    test.settle(&solution_id)
+        .await
+        .err()
+        .kind("SolutionNotAvailable");
     test.set_auction_id(1);
 
     // calling `/reveal` or `/settle` with a reasonable id works.
     test.reveal(&solution_id).await.ok();
-    test.settle(&solution_id).await.ok().await.eth_order_executed().await;
+    test.settle(&solution_id)
+        .await
+        .ok()
+        .await
+        .eth_order_executed()
+        .await;
 
     // calling `/reveal` or `/settle` with for a legit solution that
     // has already been settled also fails.
-    test.settle(&solution_id).await.err().kind("SolutionNotAvailable");
-    test.reveal(&solution_id).await.err().kind("SolutionNotAvailable");
+    test.settle(&solution_id)
+        .await
+        .err()
+        .kind("SolutionNotAvailable");
+    test.reveal(&solution_id)
+        .await
+        .err()
+        .kind("SolutionNotAvailable");
 }
 
 /// Tests that the driver can correctly settle a solution that

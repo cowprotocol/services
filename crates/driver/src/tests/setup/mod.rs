@@ -1035,7 +1035,10 @@ impl Test {
                 self.driver.addr,
                 solver::NAME
             ))
-            .json(&driver::reveal_req(solution_id, &self.auction_id.to_string()))
+            .json(&driver::reveal_req(
+                solution_id,
+                &self.auction_id.to_string(),
+            ))
             .send()
             .await
             .unwrap();
@@ -1094,7 +1097,7 @@ impl Test {
             .json(&driver::settle_req(
                 submission_deadline_latest_block,
                 solution_id,
-                &self.auction_id.to_string()
+                &self.auction_id.to_string(),
             ))
             .send()
             .await
