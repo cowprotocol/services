@@ -322,7 +322,7 @@ impl RunLoop {
                 .settle(
                     &driver_,
                     solution_id,
-                    solved_order_uids,
+                    solved_order_uids.clone(),
                     solver,
                     auction_id,
                     block_deadline,
@@ -1026,7 +1026,7 @@ impl Metrics {
         Self::get()
             .settled
             .with_label_values(&[&driver.name])
-            .inc_by(settled_order_count);
+            .inc_by(settled_order_count.try_into().unwrap_or(u64::MAX));
     }
 
     fn settle_err(driver: &infra::Driver, elapsed: Duration, err: &SettleError) {
