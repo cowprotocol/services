@@ -30,6 +30,7 @@ use {
     ethrpc::block_stream::block_number_to_block_number_hash,
     futures::StreamExt,
     model::DomainSeparator,
+    observe::metrics::LivenessChecking,
     shared::{
         account_balances,
         bad_token::{
@@ -43,7 +44,6 @@ use {
         code_fetching::CachedCodeFetcher,
         http_client::HttpClientFactory,
         maintenance::ServiceMaintenance,
-        metrics::LivenessChecking,
         order_quoting::{self, OrderQuoter},
         price_estimation::factory::{self, PriceEstimatorFactory},
         signature_validator,
@@ -447,7 +447,7 @@ pub async fn run(args: Arguments) {
     );
 
     let liveness = Arc::new(Liveness::new(args.max_auction_age));
-    shared::metrics::serve_metrics(liveness.clone(), args.metrics_address);
+    observe::metrics::serve_metrics(liveness.clone(), args.metrics_address);
 
     let order_events_cleaner_config = crate::periodic_db_cleanup::OrderEventsCleanerConfig::new(
         args.order_events_cleanup_interval,
@@ -620,7 +620,7 @@ async fn shadow_mode(args: Arguments) -> ! {
     };
 
     let liveness = Arc::new(Liveness::new(args.max_auction_age));
-    shared::metrics::serve_metrics(liveness.clone(), args.metrics_address);
+    observe::metrics::serve_metrics(liveness.clone(), args.metrics_address);
 
     let current_block = ethrpc::block_stream::current_block_stream(
         args.shared.node_url,

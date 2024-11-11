@@ -39,7 +39,7 @@ mod tests {
         crate::fee_policy::{FeePolicy, Quote},
         primitive_types::U256,
         serde_json::json,
-        shared::assert_json_matches,
+        testlib::assert_json_matches,
     };
 
     #[test]

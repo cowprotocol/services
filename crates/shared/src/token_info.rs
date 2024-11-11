@@ -1,9 +1,9 @@
 use {
-    crate::{ethcontract_error::EthcontractErrorType, ethrpc::Web3},
     anyhow::Result,
     async_trait::async_trait,
-    contracts::ERC20,
+    contracts::{errors::EthcontractErrorType, ERC20},
     ethcontract::{errors::MethodError, H160},
+    ethrpc::Web3,
     futures::{
         future::{BoxFuture, Shared},
         FutureExt,

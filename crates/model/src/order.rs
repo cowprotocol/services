@@ -1034,7 +1034,7 @@ mod tests {
         primitive_types::H256,
         secp256k1::{PublicKey, Secp256k1, SecretKey},
         serde_json::json,
-        shared::assert_json_matches,
+        testlib::assert_json_matches,
         web3::signing::keccak256,
     };
 
