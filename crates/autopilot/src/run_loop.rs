@@ -314,7 +314,6 @@ impl RunLoop {
         let self_ = self.clone();
         let driver_ = driver.clone();
 
-        let solved_order_uids_ = solved_order_uids.clone();
         let settle_fut = async move {
             tracing::info!(driver = %driver_.name, solution = %solution_id, "settling");
             let submission_start = Instant::now();
@@ -323,7 +322,7 @@ impl RunLoop {
                 .settle(
                     &driver_,
                     solution_id,
-                    solved_order_uids_,
+                    solved_order_uids,
                     solver,
                     auction_id,
                     block_deadline,
