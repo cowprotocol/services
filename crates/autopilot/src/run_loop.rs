@@ -21,7 +21,7 @@ use {
     database::order_events::OrderEventLabel,
     ethcontract::U256,
     ethrpc::block_stream::BlockInfo,
-    futures::{future::BoxFuture, TryFutureExt},
+    futures::{future::BoxFuture, FutureExt, TryFutureExt},
     itertools::Itertools,
     model::solver_competition::{
         CompetitionAuction,
@@ -794,35 +794,30 @@ impl RunLoop {
         auction_id: i64,
         submission_deadline_latest_block: u64,
     ) -> Result<TxId, SettleError> {
-        let current_block = self.eth.current_block().borrow().number;
-        if current_block >= submission_deadline_latest_block {
-            self.in_flight_orders
-                .lock()
-                .await
-                .retain(|order| !solved_order_uids.contains(order));
-
-            return Err(SettleError::Failure(anyhow::anyhow!(
+        let settle = async move {
+            let current_block = self.eth.current_block().borrow().number;
+            anyhow::ensure!(
+                current_block >= submission_deadline_latest_block,
                 "submission deadline was missed while waiting for the settlement queue"
-            )));
-        }
+            );
 
-        let request = settle::Request {
-            solution_id,
-            submission_deadline_latest_block,
-        };
+            let request = settle::Request {
+                solution_id,
+                submission_deadline_latest_block,
+            };
+            driver
+                .settle(&request, self.config.max_settlement_transaction_wait)
+                .await
+        }
+        .boxed();
+
+        let wait_for_settlement_transaction = self
+            .wait_for_settlement_transaction(auction_id, solver, submission_deadline_latest_block)
+            .boxed();
 
         // Wait for either the settlement transaction to be mined or the driver returned
         // a result.
-        let result = match futures::future::select(
-            Box::pin(self.wait_for_settlement_transaction(
-                auction_id,
-                solver,
-                submission_deadline_latest_block,
-            )),
-            Box::pin(driver.settle(&request, self.config.max_settlement_transaction_wait)),
-        )
-        .await
-        {
+        let result = match futures::future::select(wait_for_settlement_transaction, settle).await {
             futures::future::Either::Left((res, _)) => res,
             futures::future::Either::Right((driver_result, wait_for_settlement_transaction)) => {
                 match driver_result {
