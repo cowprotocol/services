@@ -1,8 +1,8 @@
 use {
     self::trade_verifier::balance_overrides,
     crate::{
-        arguments::{display_option, display_secret_option, ExternalSolver},
-        conversions::U256Ext,
+        arguments,
+        arguments::{display_option, display_secret_option},
         trade_finding::Interaction,
     },
     anyhow::{ensure, Result},
