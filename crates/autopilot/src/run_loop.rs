@@ -555,7 +555,7 @@ impl RunLoop {
         solutions.sort_unstable_by_key(|participant| {
             std::cmp::Reverse(participant.solution().score().get().0)
         });
-        
+
         // Filter out solutions that don't come from their corresponding submission
         // address
         let mut solutions = solutions

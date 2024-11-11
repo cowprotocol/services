@@ -79,7 +79,7 @@ async fn solver_competition(web3: Web3) {
         None,
         vec![
             format!("--drivers=test_solver|http://localhost:11088/test_solver|{},solver2|http://localhost:11088/solver2|{}", hex::encode(solver.address()), hex::encode(solver.address())
-                ),
+            ),
             "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver,solver2|http://localhost:11088/solver2".to_string(),
         ],
     ).await;
@@ -340,6 +340,7 @@ async fn wrong_solution_submission_address(web3: Web3) {
             .await,
         ],
         colocation::LiquidityProvider::UniswapV2,
+        false,
     );
 
     let services = Services::new(&onchain).await;

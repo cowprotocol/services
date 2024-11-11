@@ -746,7 +746,10 @@ async fn cow_amm_opposite_direction(web3: Web3) {
         .start_autopilot(
             None,
             vec![
-                "--drivers=mock_solver|http://localhost:11088/mock_solver".to_string(),
+                format!(
+                    "--drivers=mock_solver|http://localhost:11088/mock_solver|{}",
+                    hex::encode(solver.address())
+                ),
                 "--price-estimation-drivers=mock_solver|http://localhost:11088/mock_solver"
                     .to_string(),
             ],
