@@ -796,7 +796,7 @@ impl RunLoop {
         let settle = async move {
             let current_block = self.eth.current_block().borrow().number;
             anyhow::ensure!(
-                current_block >= submission_deadline_latest_block,
+                current_block < submission_deadline_latest_block,
                 "submission deadline was missed while waiting for the settlement queue"
             );
 
