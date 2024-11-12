@@ -39,7 +39,6 @@ humantime = { workspace = true }
 indexmap = { workspace = true }
 itertools = { workspace = true }
 maplit = { workspace = true }
-mimalloc = { workspace = true }
 model = { path = "../model" }
 num = { workspace = true }
 number = { path = "../number" }

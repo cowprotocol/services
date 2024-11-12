@@ -39,6 +39,7 @@ pub mod trace_many;
 pub mod trade_finding;
 pub mod url;
 pub mod zeroex_api;
+pub mod alloc;
 
 use std::{
     future::Future,

@@ -1,5 +1,4 @@
-#[global_allocator]
-static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+shared::use_custom_global_allocator!();
 
 #[tokio::main]
 async fn main() {
