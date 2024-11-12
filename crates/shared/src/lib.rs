@@ -2,6 +2,7 @@
 pub mod macros;
 
 pub mod account_balances;
+pub mod alloc;
 pub mod arguments;
 pub mod bad_token;
 pub mod baseline_solver;
@@ -39,7 +40,6 @@ pub mod trace_many;
 pub mod trade_finding;
 pub mod url;
 pub mod zeroex_api;
-pub mod alloc;
 
 use std::{
     future::Future,
