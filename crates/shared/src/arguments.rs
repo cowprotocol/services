@@ -13,7 +13,7 @@ use {
     },
     anyhow::{ensure, Context, Result},
     bigdecimal::BigDecimal,
-    ethcontract::{H160, H256, U256},
+    ethcontract::{H160, U256},
     std::{
         fmt::{self, Display, Formatter},
         num::NonZeroU64,
