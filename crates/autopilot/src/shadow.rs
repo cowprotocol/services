@@ -274,7 +274,10 @@ impl RunLoop {
             .collect();
 
         let revealed = driver
-            .reveal(&reveal::Request { solution_id })
+            .reveal(&reveal::Request {
+                solution_id,
+                auction_id: request.id,
+            })
             .await
             .map_err(Error::Reveal)?;
         if !revealed

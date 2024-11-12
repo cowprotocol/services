@@ -800,6 +800,7 @@ impl RunLoop {
         let request = settle::Request {
             solution_id,
             submission_deadline_latest_block,
+            auction_id,
         };
 
         // Wait for either the settlement transaction to be mined or the driver returned
