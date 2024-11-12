@@ -832,6 +832,11 @@ impl Setup {
         self
     }
 
+    /// Set specific auction ID which will be used during test.
+    /// Setting auction ID can be used to test various scenarios when handling
+    /// competing solutions in autopilot, and for interface tests between
+    /// autopilot and solvers.
+    /// By default auction ID is set to 1.
     pub fn auction_id(mut self, auction_id: i64) -> Self {
         self.auction_id = auction_id;
         self
@@ -1154,6 +1159,10 @@ impl Test {
         &self.blockchain.web3
     }
 
+    /// Changes auction ID for current test.
+    /// Can be used in autopilot/solver related test cases to
+    /// test context changes for competing solutions.
+    /// Default value is set by Setup builder.
     pub fn set_auction_id(&mut self, auction_id: i64) {
         self.auction_id = auction_id;
     }

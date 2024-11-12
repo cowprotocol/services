@@ -39,9 +39,9 @@ async fn driver_handles_solutions_based_on_id() {
         .await
         .err()
         .kind("SolutionNotAvailable");
-    test.set_auction_id(1);
 
     // calling `/reveal` or `/settle` with a reasonable id works.
+    test.set_auction_id(1);
     test.reveal(&solution_id).await.ok();
     test.settle(&solution_id)
         .await
