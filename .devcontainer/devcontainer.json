@@ -42,7 +42,7 @@
             },
             "extensions": [
                 "rust-lang.rust-analyzer",
-                "serayuzgur.crates"
+                "fill-labs.dependi"
             ]
         }
     },
