@@ -322,7 +322,7 @@ impl RunLoop {
                 .settle(
                     &driver_,
                     solution_id,
-                    solved_order_uids,
+                    solved_order_uids.clone(),
                     solver,
                     auction_id,
                     block_deadline,
@@ -330,7 +330,11 @@ impl RunLoop {
                 .await
             {
                 Ok(tx_hash) => {
-                    Metrics::settle_ok(&driver_, submission_start.elapsed());
+                    Metrics::settle_ok(
+                        &driver_,
+                        solved_order_uids.len(),
+                        submission_start.elapsed(),
+                    );
                     tracing::debug!(?tx_hash, driver = %driver_.name, ?solver, "solution settled");
                 }
                 Err(err) => {
@@ -940,6 +944,11 @@ struct Metrics {
     #[metric(labels("ignored_by"))]
     matched_unsettled: prometheus::IntCounterVec,
 
+    /// Tracks the number of orders that were settled together with the
+    /// settling driver.
+    #[metric(labels("driver"))]
+    settled: prometheus::IntCounterVec,
+
     /// Tracks the number of database errors.
     #[metric(labels("error_type"))]
     db_metric_error: prometheus::IntCounterVec,
@@ -1010,11 +1019,15 @@ impl Metrics {
             .inc();
     }
 
-    fn settle_ok(driver: &infra::Driver, elapsed: Duration) {
+    fn settle_ok(driver: &infra::Driver, settled_order_count: usize, elapsed: Duration) {
         Self::get()
             .settle
             .with_label_values(&[&driver.name, "success"])
             .observe(elapsed.as_secs_f64());
+        Self::get()
+            .settled
+            .with_label_values(&[&driver.name])
+            .inc_by(settled_order_count.try_into().unwrap_or(u64::MAX));
     }
 
     fn settle_err(driver: &infra::Driver, elapsed: Duration, err: &SettleError) {
