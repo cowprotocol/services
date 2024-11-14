@@ -99,6 +99,7 @@ pub struct Order {
     pub full_fee_amount: BigDecimal,
     pub cancellation_timestamp: Option<DateTime<Utc>>,
     pub class: OrderClass,
+    pub call_data: String,
 }
 
 pub async fn insert_orders_and_ignore_conflicts(
@@ -142,9 +143,10 @@ INSERT INTO orders (
     buy_token_balance,
     full_fee_amount,
     cancellation_timestamp,
-    class
+    class,
+    call_data
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
     "#;
 
 pub async fn insert_order_and_ignore_conflicts(
@@ -186,6 +188,7 @@ async fn insert_order_execute_sqlx(
         .bind(&order.full_fee_amount)
         .bind(order.cancellation_timestamp)
         .bind(order.class)
+        .bind(&order.call_data)
         .execute(ex)
         .await?;
     Ok(())
@@ -329,6 +332,8 @@ pub struct Quote {
     pub sell_amount: BigDecimal,
     pub buy_amount: BigDecimal,
     pub solver: Address,
+    pub call_data: String,
+    pub verified: bool,
 }
 
 pub async fn insert_quotes(ex: &mut PgConnection, quotes: &[Quote]) -> Result<(), sqlx::Error> {
@@ -346,9 +351,11 @@ INSERT INTO order_quotes (
     sell_token_price,
     sell_amount,
     buy_amount,
-    solver
+    solver,
+    call_data,
+    verified,
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7)"#;
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"#;
 
 pub async fn insert_quote_and_update_on_conflict(
     ex: &mut PgConnection,
@@ -362,7 +369,7 @@ pub async fn insert_quote_and_update_on_conflict(
         " ON CONFLICT (order_uid) DO UPDATE
 SET gas_amount = $2, gas_price = $3,
 sell_token_price = $4, sell_amount = $5,
-buy_amount = $6
+buy_amount = $6, call_data = $8, verified = $9
     "
     );
     sqlx::query(QUERY)
@@ -373,6 +380,8 @@ buy_amount = $6
         .bind(&quote.sell_amount)
         .bind(&quote.buy_amount)
         .bind(quote.solver)
+        .bind(&quote.call_data)
+        .bind(quote.verified)
         .execute(ex)
         .await?;
     Ok(())
@@ -387,6 +396,8 @@ pub async fn insert_quote(ex: &mut PgConnection, quote: &Quote) -> Result<(), sq
         .bind(&quote.sell_amount)
         .bind(&quote.buy_amount)
         .bind(quote.solver)
+        .bind(&quote.call_data)
+        .bind(quote.verified)
         .execute(ex)
         .await?;
     Ok(())
@@ -487,6 +498,7 @@ pub struct FullOrder {
     pub onchain_placement_error: Option<OnchainOrderPlacementError>,
     pub executed_surplus_fee: BigDecimal,
     pub full_app_data: Option<Vec<u8>>,
+    pub call_data: Option<String>,
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -498,6 +510,7 @@ pub struct FullOrderWithQuote {
     pub quote_gas_amount: Option<f64>,
     pub quote_gas_price: Option<f64>,
     pub quote_sell_token_price: Option<f64>,
+    pub quote_verified: Option<bool>,
     pub solver: Option<Address>,
 }
 
@@ -538,7 +551,7 @@ pub const SELECT: &str = r#"
 o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, o.sell_amount, o.buy_amount,
 o.valid_to, o.app_data, o.fee_amount, o.full_fee_amount, o.kind, o.partially_fillable, o.signature,
 o.receiver, o.signing_scheme, o.settlement_contract, o.sell_token_balance, o.buy_token_balance,
-o.class,
+o.class, o.call_data,
 (SELECT COALESCE(SUM(t.buy_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_buy,
 (SELECT COALESCE(SUM(t.sell_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_sell,
 (SELECT COALESCE(SUM(t.fee_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_fee,
@@ -591,6 +604,7 @@ pub async fn single_full_order_with_quote(
         ", o_quotes.gas_amount as quote_gas_amount",
         ", o_quotes.gas_price as quote_gas_price",
         ", o_quotes.sell_token_price as quote_sell_token_price",
+        ", o_quotes.verified as quote_verified",
         ", o_quotes.solver as solver",
         " FROM ", FROM,
         " LEFT JOIN order_quotes o_quotes ON o.uid = o_quotes.order_uid",
@@ -1201,6 +1215,8 @@ mod tests {
             sell_amount: 4.into(),
             buy_amount: 5.into(),
             solver: ByteArray([1; 20]),
+            call_data: String::new(),
+            verified: false,
         };
         insert_quote(&mut db, &quote).await.unwrap();
         insert_quote_and_update_on_conflict(&mut db, &quote)
@@ -1261,6 +1277,8 @@ mod tests {
             sell_amount: 4.into(),
             buy_amount: 5.into(),
             solver: ByteArray([1; 20]),
+            call_data: String::new(),
+            verified: false,
         };
         insert_quote(&mut db, &quote).await.unwrap();
         let quote_ = read_quote(&mut db, &quote.order_uid)
@@ -1287,6 +1305,8 @@ mod tests {
             sell_amount: 4.into(),
             buy_amount: 5.into(),
             solver: ByteArray([1; 20]),
+            call_data: String::new(),
+            verified: false,
         };
         insert_quote(&mut db, &quote).await.unwrap();
         let order_with_quote = single_full_order_with_quote(&mut db, &quote.order_uid)

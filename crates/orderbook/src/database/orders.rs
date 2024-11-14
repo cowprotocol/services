@@ -100,6 +100,8 @@ impl OrderWithQuote {
                 sell_amount: u256_to_big_decimal(&quote.sell_amount),
                 buy_amount: u256_to_big_decimal(&quote.buy_amount),
                 solver: ByteArray(quote.data.solver.0),
+                call_data: order.metadata.full_app_data.clone().unwrap_or_default(),
+                verified: quote.data.verified,
             }),
             order,
         }
@@ -202,6 +204,7 @@ async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), Insert
         buy_token_balance: buy_token_destination_into(order.data.buy_token_balance),
         full_fee_amount: u256_to_big_decimal(&order.metadata.full_fee_amount),
         cancellation_timestamp: None,
+        call_data: order.metadata.full_app_data.clone().unwrap_or_default(),
     };
 
     database::orders::insert_order(ex, &order)
@@ -221,18 +224,20 @@ async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), Insert
 }
 
 async fn insert_quote(
-    uid: &OrderUid,
+    order: &Order,
     quote: &Quote,
     ex: &mut PgConnection,
 ) -> Result<(), InsertionError> {
     let quote = database::orders::Quote {
-        order_uid: ByteArray(uid.0),
+        order_uid: ByteArray(order.metadata.uid.0),
         gas_amount: quote.data.fee_parameters.gas_amount,
         gas_price: quote.data.fee_parameters.gas_price,
         sell_token_price: quote.data.fee_parameters.sell_token_price,
         sell_amount: u256_to_big_decimal(&quote.sell_amount),
         buy_amount: u256_to_big_decimal(&quote.buy_amount),
         solver: ByteArray(quote.data.solver.0),
+        call_data: order.metadata.full_app_data.clone().unwrap_or_default(),
+        verified: quote.data.verified,
     };
     database::orders::insert_quote(ex, &quote)
         .await
@@ -258,7 +263,7 @@ impl OrderStoring for Postgres {
 
         insert_order(&order, &mut ex).await?;
         if let Some(quote) = quote {
-            insert_quote(&order.metadata.uid, &quote, &mut ex).await?;
+            insert_quote(&order, &quote, &mut ex).await?;
         }
         Self::insert_order_app_data(&order, &mut ex).await?;
 
@@ -318,7 +323,7 @@ impl OrderStoring for Postgres {
                     .await?;
                     insert_order(&new_order, ex).await?;
                     if let Some(quote) = new_quote {
-                        insert_quote(&new_order.metadata.uid, &quote, ex).await?;
+                        insert_quote(&new_order, &quote, ex).await?;
                     }
                     Self::insert_order_app_data(&new_order, ex).await?;
 
@@ -356,12 +361,14 @@ impl OrderStoring for Postgres {
         let order = orders::single_full_order_with_quote(&mut ex, &ByteArray(uid.0)).await?;
         order
             .map(|order_with_quote| {
+                let call_data = order_with_quote.full_order.call_data.clone().unwrap_or_default();
                 let quote = match (
                     order_with_quote.quote_buy_amount,
                     order_with_quote.quote_sell_amount,
                     order_with_quote.quote_gas_amount,
                     order_with_quote.quote_gas_price,
                     order_with_quote.quote_sell_token_price,
+                    order_with_quote.quote_verified,
                     order_with_quote.solver,
                 ) {
                     (
@@ -370,6 +377,7 @@ impl OrderStoring for Postgres {
                         Some(gas_amount),
                         Some(gas_price),
                         Some(sell_token_price),
+                        Some(verified),
                         Some(solver),
                     ) => Some(orders::Quote {
                         order_uid: order_with_quote.full_order.uid,
@@ -379,6 +387,8 @@ impl OrderStoring for Postgres {
                         sell_amount,
                         buy_amount,
                         solver,
+                        call_data,
+                        verified
                     }),
                     _ => None,
                 };
@@ -708,6 +718,7 @@ mod tests {
             onchain_placement_error: None,
             executed_surplus_fee: Default::default(),
             full_app_data: Default::default(),
+            call_data: None,
         };
 
         // Open - sell (filled - 0%)

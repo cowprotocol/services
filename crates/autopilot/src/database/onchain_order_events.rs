@@ -487,6 +487,8 @@ async fn parse_general_onchain_order_placement_data<'a>(
                     sell_amount: u256_to_big_decimal(&quote.sell_amount),
                     buy_amount: u256_to_big_decimal(&quote.buy_amount),
                     solver: ByteArray(quote.data.solver.0),
+                    call_data: order_data.1.call_data.clone(),
+                    verified: quote.data.verified,
                 }),
                 Err(err) => {
                     let err_label = err.to_metrics_label();
@@ -620,6 +622,7 @@ fn convert_onchain_order_placement(
             true => OrderClass::Limit,
             false => OrderClass::Market,
         },
+        call_data: String::new(),
     };
     let onchain_order_placement_event = OnchainOrderPlacement {
         order_uid: ByteArray(order_uid.0),
@@ -925,6 +928,7 @@ mod test {
             buy_token_balance: buy_token_destination_into(expected_order_data.buy_token_balance),
             full_fee_amount: u256_to_big_decimal(&expected_order_data.fee_amount),
             cancellation_timestamp: None,
+            call_data: String::new(),
         };
         assert_eq!(onchain_order_placement, expected_onchain_order_placement);
         assert_eq!(order, expected_order);
@@ -1036,6 +1040,7 @@ mod test {
             buy_token_balance: buy_token_destination_into(expected_order_data.buy_token_balance),
             full_fee_amount: u256_to_big_decimal(&U256::zero()),
             cancellation_timestamp: None,
+            call_data: String::new(),
         };
         assert_eq!(onchain_order_placement, expected_onchain_order_placement);
         assert_eq!(order, expected_order);
@@ -1187,6 +1192,8 @@ mod test {
             sell_amount: u256_to_big_decimal(&quote.sell_amount),
             buy_amount: u256_to_big_decimal(&quote.buy_amount),
             solver: ByteArray(quote.data.solver.0),
+            call_data: String::new(),
+            verified: quote.data.verified,
         };
         assert_eq!(result.1, vec![Some(expected_quote)]);
         assert_eq!(
