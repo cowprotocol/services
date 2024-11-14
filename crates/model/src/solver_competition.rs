@@ -54,6 +54,7 @@ pub struct SolverSettlement {
     #[serde_as(as = "BTreeMap<_, HexOrDecimalU256>")]
     pub clearing_prices: BTreeMap<H160, U256>,
     pub orders: Vec<Order>,
+    pub is_winner: bool,
 }
 
 #[serde_as]
@@ -167,6 +168,7 @@ mod tests {
                             "executedAmount": "14",
                         }
                     ],
+                    "isWinner": true,
                 },
             ],
         });
@@ -208,6 +210,7 @@ mod tests {
                             executed_amount: 14.into(),
                         },
                     ],
+                    is_winner: true,
                 }],
             },
         };
@@ -273,7 +276,8 @@ mod tests {
               "clearingPrices": {
                 "0x9d409a0a012cfba9b15f6d4b36ac57a46966ab9a": "32666943622",
                 "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": "19827747502258423744093"
-              }
+              },
+              "isWinner": true,
             },
             {
               "orders": [
@@ -294,7 +298,8 @@ mod tests {
               "clearingPrices": {
                 "0x9d409a0a012cfba9b15f6d4b36ac57a46966ab9a": "32652483021",
                 "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": "19827747502258423744093"
-              }
+              },
+              "isWinner": false,
             },
             {
               "orders": [
@@ -315,7 +320,8 @@ mod tests {
               "clearingPrices": {
                 "0x9d409a0a012cfba9b15f6d4b36ac57a46966ab9a": "100000",
                 "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": "60721701581190944"
-              }
+              },
+              "isWinner": false,
             },
             {
               "orders": [
@@ -336,7 +342,8 @@ mod tests {
               "clearingPrices": {
                 "0x9d409a0a012cfba9b15f6d4b36ac57a46966ab9a": "32725026283",
                 "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": "19827747502258423744093"
-              }
+              },
+              "isWinner": false,
             },
             {
               "orders": [
@@ -357,7 +364,8 @@ mod tests {
               "clearingPrices": {
                 "0x9d409a0a012cfba9b15f6d4b36ac57a46966ab9a": "32752835446",
                 "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": "19827747502258423744093"
-              }
+              },
+              "isWinner": false,
             }
           ],
           "transactionHashes": ["0x044499c2a830890cb0a8ecf9aec6c5621e8310092a58d369cdef726254d3d108"],

@@ -1504,6 +1504,9 @@ components:
           description: Maps from solver name to object describing that solver's settlement.
           items:
             $ref: "#/components/schemas/SolverSettlement"
+        isWinner:
+          type: boolean
+          description: whether the solution is a winner or not
     SolverSettlement:
       type: object
       properties:
