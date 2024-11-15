@@ -350,7 +350,7 @@ INSERT INTO order_quotes (
     buy_amount,
     solver,
     call_data,
-    verified,
+    verified
 )
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"#;
 
