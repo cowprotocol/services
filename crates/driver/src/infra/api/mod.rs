@@ -14,7 +14,7 @@ use {
     error::Error,
     futures::Future,
     std::{net::SocketAddr, sync::Arc},
-    tokio::sync::oneshot,
+    tokio::sync::{mpsc, oneshot},
 };
 
 mod error;
@@ -83,6 +83,7 @@ impl Api {
                 liquidity: self.liquidity.clone(),
                 tokens: tokens.clone(),
                 pre_processor: pre_processor.clone(),
+                settle_queue_sender: routes::create_settle_queue_sender(),
             })));
             let path = format!("/{name}");
             infra::observe::mounting_solver(&name, &path);
@@ -135,6 +136,10 @@ impl State {
     fn timeouts(&self) -> Timeouts {
         self.0.solver.timeouts()
     }
+
+    fn settle_queue_sender(&self) -> &mpsc::Sender<routes::QueuedSettleRequest> {
+        &self.0.settle_queue_sender
+    }
 }
 
 struct Inner {
@@ -144,4 +149,5 @@ struct Inner {
     liquidity: liquidity::Fetcher,
     tokens: tokens::Fetcher,
     pre_processor: domain::competition::AuctionProcessor,
+    settle_queue_sender: mpsc::Sender<routes::QueuedSettleRequest>,
 }
