@@ -1270,7 +1270,7 @@ mod tests {
                 quote_kind: QuoteKind::Standard,
                 solver: H160([1; 20]),
                 verified: false,
-                call_data: None,
+                call_data: Some(vec![1]),
             }))
         });
 
@@ -1304,7 +1304,7 @@ mod tests {
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
                     verified: false,
-                    call_data: None,
+                    call_data: Some(vec![1]),
                 },
                 sell_amount: 85.into(),
                 // Allows for "out-of-price" buy amounts. This means that order
@@ -1434,8 +1434,8 @@ mod tests {
                         expiration: now + chrono::Duration::seconds(10),
                         quote_kind: QuoteKind::Standard,
                         solver: H160([1; 20]),
-                        verified: false,
-                        call_data: None,
+                        verified: true,
+                        call_data: Some(vec![1]),
                     },
                 )))
             });
@@ -1469,8 +1469,8 @@ mod tests {
                     expiration: now + chrono::Duration::seconds(10),
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
-                    verified: false,
-                    call_data: None,
+                    verified: true,
+                    call_data: Some(vec![1]),
                 },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
