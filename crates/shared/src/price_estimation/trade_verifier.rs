@@ -179,6 +179,7 @@ impl TradeVerifier {
                     gas: trade.gas_estimate.context("no gas estimate")?,
                     solver: trade.solver,
                     verified: true,
+                    call_data: None,
                 };
                 tracing::warn!(
                     ?estimate,
@@ -312,6 +313,7 @@ impl TradeVerifying for TradeVerifier {
                         gas,
                         solver: trade.solver,
                         verified: false,
+                        call_data: None,
                     };
                     tracing::warn!(
                         ?err,
@@ -528,6 +530,7 @@ fn ensure_quote_accuracy(
         gas: summary.gas_used.as_u64(),
         solver,
         verified: true,
+        call_data: None,
     })
 }
 

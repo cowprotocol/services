@@ -166,10 +166,12 @@ impl TradeFinding for ExternalTradeFinder {
             .gas_estimate
             .context("no gas estimate")
             .map_err(TradeError::Other)?;
+        let first_interaction = trade.interactions.first().cloned();
         Ok(Quote {
             out_amount: trade.out_amount,
             gas_estimate,
             solver: trade.solver,
+            call_data: first_interaction.map(|interaction| interaction.data),
         })
     }
 

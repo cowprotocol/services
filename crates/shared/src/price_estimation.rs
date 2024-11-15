@@ -456,7 +456,7 @@ pub struct Verification {
     pub buy_token_destination: BuyTokenDestination,
 }
 
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Deserialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize)]
 pub struct Estimate {
     pub out_amount: U256,
     /// full gas cost when settling this order alone on gp
@@ -465,6 +465,7 @@ pub struct Estimate {
     pub solver: H160,
     /// Did we verify the correctness of this estimate's properties?
     pub verified: bool,
+    pub call_data: Option<Vec<u8>>,
 }
 
 impl Estimate {
@@ -551,7 +552,7 @@ pub mod mocks {
     pub struct FakePriceEstimator(pub Estimate);
     impl PriceEstimating for FakePriceEstimator {
         fn estimate(&self, _query: Arc<Query>) -> BoxFuture<'_, PriceEstimateResult> {
-            async { Ok(self.0) }.boxed()
+            async { Ok(self.0.clone()) }.boxed()
         }
     }
 

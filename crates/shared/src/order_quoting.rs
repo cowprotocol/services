@@ -170,6 +170,7 @@ pub struct QuoteData {
     pub solver: H160,
     /// Were we able to verify that this quote is accurate?
     pub verified: bool,
+    pub call_data: Option<Vec<u8>>,
 }
 
 impl TryFrom<QuoteRow> for QuoteData {
@@ -195,6 +196,7 @@ impl TryFrom<QuoteRow> for QuoteData {
             // Even if the quote was verified at the time of creation
             // it might no longer be accurate.
             verified: false,
+            call_data: row.call_data,
         })
     }
 }
@@ -442,6 +444,7 @@ impl OrderQuoter {
             quote_kind,
             solver: trade_estimate.solver,
             verified: trade_estimate.verified,
+            call_data: trade_estimate.call_data,
         };
 
         Ok(quote)
@@ -727,6 +730,7 @@ mod tests {
                         gas: 3,
                         solver: H160([1; 20]),
                         verified: false,
+                        call_data: None,
                     })
                 }
                 .boxed()
@@ -768,6 +772,7 @@ mod tests {
                 quote_kind: QuoteKind::Standard,
                 solver: H160([1; 20]),
                 verified: false,
+                call_data: None,
             }))
             .returning(|_| Ok(1337));
 
@@ -804,6 +809,7 @@ mod tests {
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
                     verified: false,
+                    call_data: None,
                 },
                 sell_amount: 70.into(),
                 buy_amount: 29.into(),
@@ -862,6 +868,7 @@ mod tests {
                         gas: 3,
                         solver: H160([1; 20]),
                         verified: false,
+                        call_data: None,
                     })
                 }
                 .boxed()
@@ -903,6 +910,7 @@ mod tests {
                 quote_kind: QuoteKind::Standard,
                 solver: H160([1; 20]),
                 verified: false,
+                call_data: None,
             }))
             .returning(|_| Ok(1337));
 
@@ -939,6 +947,7 @@ mod tests {
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
                     verified: false,
+                    call_data: None,
                 },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
@@ -992,6 +1001,7 @@ mod tests {
                         gas: 3,
                         solver: H160([1; 20]),
                         verified: false,
+                        call_data: None,
                     })
                 }
                 .boxed()
@@ -1033,6 +1043,7 @@ mod tests {
                 quote_kind: QuoteKind::Standard,
                 solver: H160([1; 20]),
                 verified: false,
+                call_data: None,
             }))
             .returning(|_| Ok(1337));
 
@@ -1069,6 +1080,7 @@ mod tests {
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
                     verified: false,
+                    call_data: None,
                 },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
@@ -1108,6 +1120,7 @@ mod tests {
                     gas: 200,
                     solver: H160([1; 20]),
                     verified: false,
+                    call_data: None,
                 })
             }
             .boxed()
@@ -1179,6 +1192,7 @@ mod tests {
                     gas: 200,
                     solver: H160([1; 20]),
                     verified: false,
+                    call_data: None,
                 })
             }
             .boxed()
@@ -1255,6 +1269,7 @@ mod tests {
                 quote_kind: QuoteKind::Standard,
                 solver: H160([1; 20]),
                 verified: false,
+                call_data: None,
             }))
         });
 
@@ -1288,6 +1303,7 @@ mod tests {
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
                     verified: false,
+                    call_data: None,
                 },
                 sell_amount: 85.into(),
                 // Allows for "out-of-price" buy amounts. This means that order
@@ -1335,6 +1351,7 @@ mod tests {
                 quote_kind: QuoteKind::Standard,
                 solver: H160([1; 20]),
                 verified: false,
+                call_data: None,
             }))
         });
 
@@ -1368,6 +1385,7 @@ mod tests {
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
                     verified: false,
+                    call_data: None,
                 },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
@@ -1416,6 +1434,7 @@ mod tests {
                         quote_kind: QuoteKind::Standard,
                         solver: H160([1; 20]),
                         verified: false,
+                        call_data: None,
                     },
                 )))
             });
@@ -1450,6 +1469,7 @@ mod tests {
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
                     verified: false,
+                    call_data: None,
                 },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),

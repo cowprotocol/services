@@ -25,6 +25,7 @@ pub fn create_quote_row(data: QuoteData) -> DbQuote {
         expiration_timestamp: data.expiration,
         quote_kind: data.quote_kind,
         solver: ByteArray(data.solver.0),
+        call_data: data.call_data,
     }
 }
 

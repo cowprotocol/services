@@ -30,6 +30,7 @@ pub struct Quote {
     pub out_amount: U256,
     pub gas_estimate: u64,
     pub solver: H160,
+    pub call_data: Option<Vec<u8>>,
 }
 
 /// A trade.

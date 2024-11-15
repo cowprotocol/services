@@ -130,6 +130,7 @@ mod tests {
                     gas: 0,
                     solver: H160([1; 20]),
                     verified: false,
+                    call_data: None,
                 })
             }
             .boxed()
