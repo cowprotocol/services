@@ -170,6 +170,7 @@ pub struct QuoteData {
     pub solver: H160,
     /// Were we able to verify that this quote is accurate?
     pub verified: bool,
+    /// Data provided by the solver in response to /quote request.
     pub call_data: Option<Vec<u8>>,
 }
 

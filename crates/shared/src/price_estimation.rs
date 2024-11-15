@@ -465,6 +465,7 @@ pub struct Estimate {
     pub solver: H160,
     /// Did we verify the correctness of this estimate's properties?
     pub verified: bool,
+    /// Data provided by the solver in response to /quote request.
     pub call_data: Option<Vec<u8>>,
 }
 
