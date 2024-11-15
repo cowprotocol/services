@@ -100,7 +100,7 @@ impl OrderWithQuote {
                 sell_amount: u256_to_big_decimal(&quote.sell_amount),
                 buy_amount: u256_to_big_decimal(&quote.buy_amount),
                 solver: ByteArray(quote.data.solver.0),
-                call_data: order.metadata.full_app_data.clone().unwrap_or_default(),
+                call_data: quote.data.call_data,
                 verified: quote.data.verified,
             }),
             order,
@@ -204,7 +204,6 @@ async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), Insert
         buy_token_balance: buy_token_destination_into(order.data.buy_token_balance),
         full_fee_amount: u256_to_big_decimal(&order.metadata.full_fee_amount),
         cancellation_timestamp: None,
-        call_data: order.metadata.full_app_data.clone().unwrap_or_default(),
     };
 
     database::orders::insert_order(ex, &order)
@@ -236,7 +235,7 @@ async fn insert_quote(
         sell_amount: u256_to_big_decimal(&quote.sell_amount),
         buy_amount: u256_to_big_decimal(&quote.buy_amount),
         solver: ByteArray(quote.data.solver.0),
-        call_data: order.metadata.full_app_data.clone().unwrap_or_default(),
+        call_data: quote.data.call_data.clone(),
         verified: quote.data.verified,
     };
     database::orders::insert_quote(ex, &quote)
@@ -361,7 +360,6 @@ impl OrderStoring for Postgres {
         let order = orders::single_full_order_with_quote(&mut ex, &ByteArray(uid.0)).await?;
         order
             .map(|order_with_quote| {
-                let call_data = order_with_quote.full_order.call_data.clone().unwrap_or_default();
                 let quote = match (
                     order_with_quote.quote_buy_amount,
                     order_with_quote.quote_sell_amount,
@@ -369,6 +367,7 @@ impl OrderStoring for Postgres {
                     order_with_quote.quote_gas_price,
                     order_with_quote.quote_sell_token_price,
                     order_with_quote.quote_verified,
+                    order_with_quote.quote_call_data,
                     order_with_quote.solver,
                 ) {
                     (
@@ -378,6 +377,7 @@ impl OrderStoring for Postgres {
                         Some(gas_price),
                         Some(sell_token_price),
                         Some(verified),
+                        Some(call_data),
                         Some(solver),
                     ) => Some(orders::Quote {
                         order_uid: order_with_quote.full_order.uid,
@@ -718,7 +718,6 @@ mod tests {
             onchain_placement_error: None,
             executed_surplus_fee: Default::default(),
             full_app_data: Default::default(),
-            call_data: None,
         };
 
         // Open - sell (filled - 0%)
