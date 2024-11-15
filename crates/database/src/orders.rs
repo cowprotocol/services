@@ -329,7 +329,7 @@ pub struct Quote {
     pub sell_amount: BigDecimal,
     pub buy_amount: BigDecimal,
     pub solver: Address,
-    pub call_data: Option<Vec<u8>>, 
+    pub call_data: Option<Vec<u8>>,
     pub verified: bool,
 }
 

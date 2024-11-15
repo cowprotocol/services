@@ -388,7 +388,7 @@ impl OrderStoring for Postgres {
                         buy_amount,
                         solver,
                         call_data,
-                        verified
+                        verified,
                     }),
                     _ => None,
                 };
