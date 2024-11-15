@@ -367,7 +367,6 @@ impl OrderStoring for Postgres {
                     order_with_quote.quote_gas_price,
                     order_with_quote.quote_sell_token_price,
                     order_with_quote.quote_verified,
-                    order_with_quote.quote_call_data,
                     order_with_quote.solver,
                 ) {
                     (
@@ -377,7 +376,6 @@ impl OrderStoring for Postgres {
                         Some(gas_price),
                         Some(sell_token_price),
                         Some(verified),
-                        Some(call_data),
                         Some(solver),
                     ) => Some(orders::Quote {
                         order_uid: order_with_quote.full_order.uid,
@@ -387,7 +385,7 @@ impl OrderStoring for Postgres {
                         sell_amount,
                         buy_amount,
                         solver,
-                        call_data,
+                        call_data: order_with_quote.quote_call_data,
                         verified,
                     }),
                     _ => None,

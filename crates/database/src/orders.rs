@@ -507,7 +507,7 @@ pub struct FullOrderWithQuote {
     pub quote_gas_price: Option<f64>,
     pub quote_sell_token_price: Option<f64>,
     pub quote_verified: Option<bool>,
-    pub quote_call_data: Option<Option<Vec<u8>>>,
+    pub quote_call_data: Option<Vec<u8>>,
     pub solver: Option<Address>,
 }
 
