@@ -1219,8 +1219,6 @@ mod tests {
             single_order_with_quote.quote.clone().unwrap().call_data,
             Some(call_data)
         );
-        assert!(
-            single_order_with_quote.quote.unwrap().verified,
-        );
+        assert!(single_order_with_quote.quote.unwrap().verified,);
     }
 }
