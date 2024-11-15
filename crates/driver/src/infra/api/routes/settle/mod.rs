@@ -1,6 +1,5 @@
 mod dto;
 
-use std::sync::Arc;
 use {
     crate::{
         domain::competition,
@@ -37,6 +36,17 @@ pub(in crate::infra::api) fn create_settle_queue_sender() -> mpsc::Sender<Queued
 
             let auction_id = req.auction_id;
             let solver = state.solver().name().to_string();
+            if state.eth().current_block().borrow().number >= req.submission_deadline_latest_block {
+                if let Err(err) =
+                    response_sender.send(Err(competition::Error::QueueAwaitingDeadlineExceeded))
+                {
+                    tracing::error!(
+                        ?err,
+                        "settle deadline exceeded. unable to return a response"
+                    );
+                }
+                return;
+            }
 
             let result = async move {
                 observe::settling();

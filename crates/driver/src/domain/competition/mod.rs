@@ -466,6 +466,8 @@ pub enum Error {
     SolutionNotAvailable,
     #[error("{0:?}")]
     DeadlineExceeded(#[from] time::DeadlineExceeded),
+    #[error("deadline exceeded while waiting for a queue")]
+    QueueAwaitingDeadlineExceeded,
     #[error("solver error: {0:?}")]
     Solver(#[from] solver::Error),
     #[error("failed to submit the solution")]
