@@ -21,7 +21,7 @@ use {
     database::order_events::OrderEventLabel,
     ethcontract::U256,
     ethrpc::block_stream::BlockInfo,
-    futures::{future::BoxFuture, TryFutureExt},
+    futures::{future::BoxFuture, FutureExt, TryFutureExt},
     itertools::Itertools,
     model::solver_competition::{
         CompetitionAuction,
@@ -239,7 +239,7 @@ impl RunLoop {
         }
 
         let competition_simulation_block = self.eth.current_block().borrow().number;
-        let block_deadline = competition_simulation_block + self.config.submission_deadline;
+        let block_deadline = auction.block + self.config.submission_deadline;
 
         // Post-processing should not be executed asynchronously since it includes steps
         // of storing all the competition/auction-related data to the DB.
@@ -315,7 +315,7 @@ impl RunLoop {
         let driver_ = driver.clone();
 
         let settle_fut = async move {
-            tracing::info!(driver = %driver_.name, "settling");
+            tracing::info!(driver = %driver_.name, solution = %solution_id, "settling");
             let submission_start = Instant::now();
 
             match self_
@@ -797,24 +797,31 @@ impl RunLoop {
         auction_id: i64,
         submission_deadline_latest_block: u64,
     ) -> Result<TxId, SettleError> {
-        let request = settle::Request {
-            solution_id,
-            submission_deadline_latest_block,
-            auction_id,
-        };
+        let settle = async move {
+            let current_block = self.eth.current_block().borrow().number;
+            anyhow::ensure!(
+                current_block < submission_deadline_latest_block,
+                "submission deadline was missed while waiting for the settlement queue"
+            );
+
+            let request = settle::Request {
+                solution_id,
+                submission_deadline_latest_block,
+                auction_id,
+            };
+            driver
+                .settle(&request, self.config.max_settlement_transaction_wait)
+                .await
+        }
+        .boxed();
+
+        let wait_for_settlement_transaction = self
+            .wait_for_settlement_transaction(auction_id, solver, submission_deadline_latest_block)
+            .boxed();
 
         // Wait for either the settlement transaction to be mined or the driver returned
         // a result.
-        let result = match futures::future::select(
-            Box::pin(self.wait_for_settlement_transaction(
-                auction_id,
-                self.config.submission_deadline,
-                solver,
-            )),
-            Box::pin(driver.settle(&request, self.config.max_settlement_transaction_wait)),
-        )
-        .await
-        {
+        let result = match futures::future::select(wait_for_settlement_transaction, settle).await {
             futures::future::Either::Left((res, _)) => res,
             futures::future::Either::Right((driver_result, wait_for_settlement_transaction)) => {
                 match driver_result {
@@ -841,12 +848,11 @@ impl RunLoop {
     async fn wait_for_settlement_transaction(
         &self,
         auction_id: i64,
-        max_blocks_wait: u64,
         solver: eth::Address,
+        submission_deadline_latest_block: u64,
     ) -> Result<eth::TxId, SettleError> {
         let current = self.eth.current_block().borrow().number;
-        let deadline = current.saturating_add(max_blocks_wait);
-        tracing::debug!(%current, %deadline, %auction_id, "waiting for tag");
+        tracing::debug!(%current, deadline=%submission_deadline_latest_block, %auction_id, "waiting for tag");
         loop {
             let block = ethrpc::block_stream::next_block(self.eth.current_block()).await;
             // Run maintenance to ensure the system processed the last available block so
@@ -869,7 +875,7 @@ impl RunLoop {
                     );
                 }
             }
-            if block.number >= deadline {
+            if block.number >= submission_deadline_latest_block {
                 break;
             }
         }
