@@ -676,6 +676,7 @@ mod tests {
             signature::{Signature, SigningScheme},
         },
         primitive_types::U256,
+        shared::order_quoting::QuoteData,
         std::sync::atomic::{AtomicI64, Ordering},
     };
 
@@ -1176,6 +1177,50 @@ mod tests {
         assert_eq!(
             single_order_with_quote.quote.unwrap().buy_amount,
             u256_to_big_decimal(&quote.buy_amount)
+        );
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_insert_orders_with_call_data_and_verified() {
+        let db = Postgres::new("postgresql://").unwrap();
+        database::clear_DANGER(&db.pool).await.unwrap();
+
+        let uid = OrderUid([0x42; 56]);
+        let call_data = vec![1];
+        let order = Order {
+            data: OrderData {
+                valid_to: u32::MAX,
+                ..Default::default()
+            },
+            metadata: OrderMetadata {
+                uid,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let quote = Quote {
+            id: Some(5),
+            sell_amount: U256::from(1),
+            buy_amount: U256::from(2),
+            data: QuoteData {
+                call_data: Some(call_data.clone()),
+                verified: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        db.insert_order(&order, Some(quote)).await.unwrap();
+
+        let single_order_with_quote = db.single_order_with_quote(&uid).await.unwrap().unwrap();
+        assert_eq!(single_order_with_quote.order, order);
+        assert_eq!(
+            single_order_with_quote.quote.clone().unwrap().call_data,
+            Some(call_data)
+        );
+        assert!(
+            single_order_with_quote.quote.unwrap().verified,
         );
     }
 }
