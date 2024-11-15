@@ -470,4 +470,8 @@ pub enum Error {
     Solver(#[from] solver::Error),
     #[error("failed to submit the solution")]
     SubmissionError,
+    #[error("unable to enqueue the request")]
+    UnableToEnqueue,
+    #[error("unable to dequeue the result")]
+    UnableToDequeue,
 }

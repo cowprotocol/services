@@ -20,6 +20,8 @@ enum Kind {
     InvalidAmounts,
     QuoteSameTokens,
     FailedToSubmit,
+    UnableToEnqueueRequest,
+    UnableToDequeueResult,
 }
 
 #[derive(Debug, Serialize)]
@@ -51,6 +53,8 @@ impl From<Kind> for (hyper::StatusCode, axum::Json<Error>) {
                  or sell amount"
             }
             Kind::FailedToSubmit => "Could not submit the solution to the blockchain",
+            Kind::UnableToEnqueueRequest => "Could not enqueue the request",
+            Kind::UnableToDequeueResult => "Could not dequeue the result",
         };
         (
             hyper::StatusCode::BAD_REQUEST,
@@ -83,6 +87,8 @@ impl From<competition::Error> for (hyper::StatusCode, axum::Json<Error>) {
             competition::Error::DeadlineExceeded(_) => Kind::DeadlineExceeded,
             competition::Error::Solver(_) => Kind::SolverFailed,
             competition::Error::SubmissionError => Kind::FailedToSubmit,
+            competition::Error::UnableToEnqueue => Kind::UnableToEnqueueRequest,
+            competition::Error::UnableToDequeue => Kind::UnableToDequeueResult,
         };
         error.into()
     }
