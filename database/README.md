@@ -238,6 +238,8 @@ Quotes that an order was created with. These quotes get stored persistently and 
  sell\_amount       | numeric | not null | sell\_amount of the quote used to create the order with
  buy\_amount        | numeric | not null | buy\_amount of the quote used to create the order with
  solver             | bytea   | not null | public address of the solver that provided this quote
+ call\_data         | bytea   |          | call\_data provided by solver in response to the /quote request
+ verified           | boolean |          | information if quote was verified
 
 Indexes:
 - PRIMARY KEY: btree(`order_uid`)
@@ -339,6 +341,7 @@ Stores quotes in order to determine whether it makes sense to allow a user to cr
  id                    | bigint             | not null | unique identifier of this quote
  quote\_kind           | [enum](#quotekind) | not null | quotekind for which this quote is considered valid
  solver                | bytea              | not null | public address of the solver that provided this quote
+ call\_data            | bytea              |          | call\_data provided by solver in response to the /quote request
 
 Indexes:
 - PRIMARY KEY: btree(`id`)
