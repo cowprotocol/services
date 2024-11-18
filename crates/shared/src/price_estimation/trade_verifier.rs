@@ -133,13 +133,7 @@ impl TradeVerifier {
             &self.domain_separator,
         )?;
 
-        let settlement = add_balance_queries(
-            settlement,
-            query,
-            verification,
-            self.settlement.address(),
-            &solver,
-        );
+        let settlement = add_balance_queries(settlement, query, verification, &solver);
 
         let settlement = self
             .settlement
@@ -592,7 +586,6 @@ fn add_balance_queries(
     mut settlement: EncodedSettlement,
     query: &PriceQuery,
     verification: &Verification,
-    settlement_contract: H160,
     solver: &Solver,
 ) -> EncodedSettlement {
     let (token, owner) = match query.kind {
@@ -606,14 +599,14 @@ fn add_balance_queries(
 
             (query.buy_token, receiver)
         }
-        // track how much `sell_token` the settlement contract actually spent
-        OrderKind::Buy => (query.sell_token, settlement_contract),
+        // track how much `sell_token` the `from` address actually spent
+        OrderKind::Buy => (query.sell_token, verification.from),
     };
     let query_balance = solver.methods().store_balance(token, owner, true);
     let query_balance = Bytes(query_balance.tx.data.unwrap().0);
     let interaction = (solver.address(), 0.into(), query_balance);
-    // query balance right after we receive all `sell_token`
-    settlement.interactions[1].insert(0, interaction.clone());
+    // query balance query at the end of pre-interactions
+    settlement.interactions[0].push(interaction.clone());
     // query balance right after we payed out all `buy_token`
     settlement.interactions[2].insert(0, interaction);
     settlement
