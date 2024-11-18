@@ -28,4 +28,5 @@ pub struct Config {
     pub contracts: blockchain::contracts::Addresses,
     pub order_priority_strategies: Vec<OrderPriorityStrategy>,
     pub archive_node_url: Option<Url>,
+    pub settle_queue_size: usize,
 }

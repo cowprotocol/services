@@ -39,6 +39,7 @@ impl Api {
         self,
         shutdown: impl Future<Output = ()> + Send + 'static,
         order_priority_strategies: Vec<OrderPriorityStrategy>,
+        settle_queue_size: usize,
     ) -> Result<(), hyper::Error> {
         // Add middleware.
         let mut app = axum::Router::new().layer(
@@ -83,7 +84,7 @@ impl Api {
                 liquidity: self.liquidity.clone(),
                 tokens: tokens.clone(),
                 pre_processor: pre_processor.clone(),
-                settle_queue_sender: routes::create_settle_queue_sender(),
+                settle_queue_sender: routes::create_settle_queue_sender(settle_queue_size),
             })));
             let path = format!("/{name}");
             infra::observe::mounting_solver(&name, &path);

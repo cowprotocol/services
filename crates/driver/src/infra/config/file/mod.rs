@@ -63,8 +63,17 @@ struct Config {
     )]
     order_priority_strategies: Vec<OrderPriorityStrategy>,
 
+    /// The maximum number of `/settle` requests that can be queued up
+    /// before the driver starts dropping new requests.
+    #[serde(default = "default_settle_queue_size")]
+    settle_queue_size: usize,
+
     /// Archive node URL used to index CoW AMM
     archive_node_url: Option<Url>,
+}
+
+fn default_settle_queue_size() -> usize {
+    3
 }
 
 #[serde_as]

@@ -340,5 +340,6 @@ pub async fn load(chain: chain::Id, path: &Path) -> infra::Config {
         gas_estimator: config.gas_estimator,
         order_priority_strategies: config.order_priority_strategies,
         archive_node_url: config.archive_node_url,
+        settle_queue_size: config.settle_queue_size,
     }
 }

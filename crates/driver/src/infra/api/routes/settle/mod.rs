@@ -22,8 +22,10 @@ pub(in crate::infra::api) struct QueuedSettleRequest {
     response_sender: oneshot::Sender<Result<(), competition::Error>>,
 }
 
-pub(in crate::infra::api) fn create_settle_queue_sender() -> mpsc::Sender<QueuedSettleRequest> {
-    let (sender, mut receiver) = mpsc::channel::<QueuedSettleRequest>(100);
+pub(in crate::infra::api) fn create_settle_queue_sender(
+    queue_size: usize,
+) -> mpsc::Sender<QueuedSettleRequest> {
+    let (sender, mut receiver) = mpsc::channel::<QueuedSettleRequest>(queue_size);
 
     // Spawn the background task to process the queue
     tokio::spawn(async move {
