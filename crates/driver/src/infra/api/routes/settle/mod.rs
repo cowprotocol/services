@@ -95,12 +95,8 @@ async fn route(
         )
     })?;
 
-    match response_rx.await {
-        Ok(Ok(())) => Ok(()),
-        Ok(Err(err)) => Err(err.into()),
-        Err(err) => {
-            tracing::error!(?err, "Failed to dequeue /settle response");
-            Err(competition::Error::UnableToDequeue.into())
-        }
-    }
+    Ok(response_rx.await.map_err(|err| {
+        tracing::error!(?err, "Failed to dequeue /settle response");
+        competition::Error::UnableToDequeue
+    })??)
 }
