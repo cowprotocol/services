@@ -90,9 +90,7 @@ async fn route(
 
     sender.send(queued_request).await.map_err(|err| {
         tracing::error!(?err, "Failed to enqueue /settle request");
-        <competition::Error as Into<(hyper::StatusCode, axum::Json<Error>)>>::into(
-            competition::Error::UnableToEnqueue,
-        )
+        competition::Error::UnableToEnqueue
     })?;
 
     Ok(response_rx.await.map_err(|err| {
