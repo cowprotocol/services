@@ -16,13 +16,16 @@ use {
         util,
     },
     chrono::Utc,
-    std::{collections::HashSet, iter},
+    std::{
+        collections::{HashMap, HashSet},
+        iter,
+    },
 };
 
 /// A quote describing the expected outcome of an order.
 #[derive(Debug)]
 pub struct Quote {
-    pub clearing_prices: Vec<eth::Asset>,
+    pub clearing_prices: HashMap<eth::H160, eth::U256>,
     pub pre_interactions: Vec<eth::Interaction>,
     pub interactions: Vec<eth::Interaction>,
     pub solver: eth::Address,
@@ -35,7 +38,11 @@ pub struct Quote {
 impl Quote {
     fn new(eth: &Ethereum, solution: competition::Solution) -> Result<Self, Error> {
         Ok(Self {
-            clearing_prices: solution.clearing_prices(),
+            clearing_prices: solution
+                .clearing_prices()
+                .into_iter()
+                .map(|(token, amount)| (token.into(), amount))
+                .collect(),
             pre_interactions: solution.pre_interactions().to_vec(),
             interactions: solution
                 .interactions()

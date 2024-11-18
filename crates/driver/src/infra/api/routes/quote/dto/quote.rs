@@ -15,11 +15,7 @@ use {
 impl Quote {
     pub fn new(quote: quote::Quote) -> Self {
         Self {
-            clearing_prices: quote
-                .clearing_prices
-                .iter()
-                .map(|asset| (asset.token.into(), asset.amount.into()))
-                .collect(),
+            clearing_prices: quote.clearing_prices,
             pre_interactions: quote
                 .pre_interactions
                 .iter()
