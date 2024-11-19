@@ -1,9 +1,10 @@
 use {
     serde::{Deserialize, Serialize},
-    serde_with::serde_as,
+    serde_with::{serde_as, skip_serializing_none},
 };
 
 #[serde_as]
+#[skip_serializing_none]
 #[derive(Clone, Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Request {
