@@ -20,7 +20,17 @@ async fn route(
         observe::revealing();
         let result = state
             .competition()
-            .reveal(req.solution_id, req.auction_id)
+            .reveal(
+                req.solution_id,
+                req.auction_id
+                    .as_ref()
+                    .map(|value| {
+                        value
+                            .parse::<i64>()
+                            .map_err(|_| crate::domain::competition::Error::SolutionNotAvailable)
+                    })
+                    .transpose()?,
+            )
             .await;
         observe::revealed(state.solver().name(), &result);
         let result = result?;
