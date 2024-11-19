@@ -47,7 +47,7 @@ pub(in crate::infra::api) fn create_settle_queue_sender(
                         "settle deadline exceeded. unable to return a response"
                     );
                 }
-                return;
+                continue;
             }
 
             let result = async move {
