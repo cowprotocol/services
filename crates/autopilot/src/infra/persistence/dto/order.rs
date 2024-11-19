@@ -49,7 +49,11 @@ pub fn from_domain(order: domain::Order) -> Order {
         buy_token: order.buy.token.into(),
         sell_amount: order.sell.amount.into(),
         buy_amount: order.buy.amount.into(),
-        protocol_fees: order.protocol_fees.into_iter().map(Into::into).collect(),
+        protocol_fees: order
+            .protocol_fees
+            .into_iter()
+            .map(FeePolicy::from_domain)
+            .collect(),
         created: order.created,
         valid_to: order.valid_to,
         kind: order.side.into(),
@@ -83,7 +87,11 @@ pub fn to_domain(order: Order) -> domain::Order {
             token: order.buy_token.into(),
             amount: order.buy_amount.into(),
         },
-        protocol_fees: order.protocol_fees.into_iter().map(Into::into).collect(),
+        protocol_fees: order
+            .protocol_fees
+            .into_iter()
+            .map(|fee_policy| fee_policy.into_domain())
+            .collect(),
         created: order.created,
         valid_to: order.valid_to,
         side: order.kind.into(),
@@ -262,6 +270,66 @@ pub enum FeePolicy {
     Volume { factor: f64 },
 }
 
+impl FeePolicy {
+    pub fn from_domain(policy: domain::fee::Policy) -> Self {
+        match policy {
+            domain::fee::Policy::Surplus {
+                factor,
+                max_volume_factor,
+            } => Self::Surplus {
+                factor: factor.into(),
+                max_volume_factor: max_volume_factor.into(),
+            },
+            domain::fee::Policy::PriceImprovement {
+                factor,
+                max_volume_factor,
+                quote,
+            } => Self::PriceImprovement {
+                factor: factor.into(),
+                max_volume_factor: max_volume_factor.into(),
+                quote: Quote {
+                    sell_amount: quote.sell_amount,
+                    buy_amount: quote.buy_amount,
+                    fee: quote.fee,
+                    solver: quote.solver,
+                },
+            },
+            domain::fee::Policy::Volume { factor } => Self::Volume {
+                factor: factor.into(),
+            },
+        }
+    }
+
+    pub fn into_domain(self) -> domain::fee::Policy {
+        match self {
+            Self::Surplus {
+                factor,
+                max_volume_factor,
+            } => domain::fee::Policy::Surplus {
+                factor: FeeFactor::try_from(factor).unwrap(),
+                max_volume_factor: FeeFactor::try_from(max_volume_factor).unwrap(),
+            },
+            Self::PriceImprovement {
+                factor,
+                max_volume_factor,
+                quote,
+            } => domain::fee::Policy::PriceImprovement {
+                factor: FeeFactor::try_from(factor).unwrap(),
+                max_volume_factor: FeeFactor::try_from(max_volume_factor).unwrap(),
+                quote: domain::fee::Quote {
+                    sell_amount: quote.sell_amount,
+                    buy_amount: quote.buy_amount,
+                    fee: quote.fee,
+                    solver: quote.solver,
+                },
+            },
+            Self::Volume { factor } => domain::fee::Policy::Volume {
+                factor: FeeFactor::try_from(factor).unwrap(),
+            },
+        }
+    }
+}
+
 #[serde_as]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -294,68 +362,6 @@ impl From<domain::Quote> for Quote {
             buy_amount: quote.buy_amount.0,
             fee: quote.fee.0,
             solver: quote.solver.0,
-        }
-    }
-}
-
-impl From<domain::fee::Policy> for FeePolicy {
-    fn from(policy: domain::fee::Policy) -> Self {
-        match policy {
-            domain::fee::Policy::Surplus {
-                factor,
-                max_volume_factor,
-            } => Self::Surplus {
-                factor: factor.into(),
-                max_volume_factor: max_volume_factor.into(),
-            },
-            domain::fee::Policy::PriceImprovement {
-                factor,
-                max_volume_factor,
-                quote,
-            } => Self::PriceImprovement {
-                factor: factor.into(),
-                max_volume_factor: max_volume_factor.into(),
-                quote: Quote {
-                    sell_amount: quote.sell_amount,
-                    buy_amount: quote.buy_amount,
-                    fee: quote.fee,
-                    solver: quote.solver,
-                },
-            },
-            domain::fee::Policy::Volume { factor } => Self::Volume {
-                factor: factor.into(),
-            },
-        }
-    }
-}
-
-impl From<FeePolicy> for domain::fee::Policy {
-    fn from(policy: FeePolicy) -> Self {
-        match policy {
-            FeePolicy::Surplus {
-                factor,
-                max_volume_factor,
-            } => Self::Surplus {
-                factor: FeeFactor::try_from(factor).unwrap(),
-                max_volume_factor: FeeFactor::try_from(max_volume_factor).unwrap(),
-            },
-            FeePolicy::PriceImprovement {
-                factor,
-                max_volume_factor,
-                quote,
-            } => Self::PriceImprovement {
-                factor: FeeFactor::try_from(factor).unwrap(),
-                max_volume_factor: FeeFactor::try_from(max_volume_factor).unwrap(),
-                quote: domain::fee::Quote {
-                    sell_amount: quote.sell_amount,
-                    buy_amount: quote.buy_amount,
-                    fee: quote.fee,
-                    solver: quote.solver,
-                },
-            },
-            FeePolicy::Volume { factor } => Self::Volume {
-                factor: FeeFactor::try_from(factor).unwrap(),
-            },
         }
     }
 }
