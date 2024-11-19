@@ -16,24 +16,8 @@ impl Quote {
     pub fn new(quote: quote::Quote) -> Self {
         Self {
             clearing_prices: quote.clearing_prices,
-            pre_interactions: quote
-                .pre_interactions
-                .iter()
-                .map(|interaction| Interaction {
-                    target: interaction.target.into(),
-                    value: interaction.value.into(),
-                    call_data: interaction.call_data.clone().into(),
-                })
-                .collect(),
-            interactions: quote
-                .interactions
-                .iter()
-                .map(|interaction| Interaction {
-                    target: interaction.target.into(),
-                    value: interaction.value.into(),
-                    call_data: interaction.call_data.clone().into(),
-                })
-                .collect(),
+            pre_interactions: quote.pre_interactions.into_iter().map(Into::into).collect(),
+            interactions: quote.interactions.into_iter().map(Into::into).collect(),
             solver: quote.solver.0,
             gas: quote.gas.map(|gas| gas.0.as_u64()),
             tx_origin: quote.tx_origin.map(|addr| addr.0),
@@ -67,6 +51,16 @@ struct Interaction {
     value: eth::U256,
     #[serde_as(as = "serialize::Hex")]
     call_data: Vec<u8>,
+}
+
+impl From<eth::Interaction> for Interaction {
+    fn from(interaction: eth::Interaction) -> Self {
+        Self {
+            target: interaction.target.into(),
+            value: interaction.value.into(),
+            call_data: interaction.call_data.into(),
+        }
+    }
 }
 
 #[serde_as]
