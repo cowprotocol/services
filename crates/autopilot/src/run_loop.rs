@@ -807,7 +807,6 @@ impl RunLoop {
             let request = settle::Request {
                 solution_id,
                 submission_deadline_latest_block,
-                auction_id,
             };
             driver
                 .settle(&request, self.config.max_settlement_transaction_wait)

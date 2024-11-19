@@ -432,7 +432,7 @@ impl Solver {
                         .0
                         .to_string();
                     let expected = json!({
-                        "id": (!config.quote).then_some("1" ),
+                        "id": if config.quote { None } else { Some("1") },
                         "tokens": tokens_json,
                         "orders": orders_json,
                         "liquidity": [],

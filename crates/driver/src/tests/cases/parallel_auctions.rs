@@ -13,53 +13,28 @@ use crate::tests::setup::{eth_order, eth_solution, setup, weth_pool};
 #[ignore]
 async fn driver_handles_solutions_based_on_id() {
     let order = eth_order();
-    let mut test = setup()
+    let test = setup()
         .pool(weth_pool())
         .order(order.clone())
         .solution(eth_solution())
-        .auction_id(1)
         .done()
         .await;
 
-    let solution_id = test.solve().await.ok().id();
+    let id = test.solve().await.ok().id();
 
     // calling `/reveal` or `/settle` with incorrect solution ids
     // results in an error.
     test.settle("99").await.err().kind("SolutionNotAvailable");
     test.reveal("99").await.err().kind("SolutionNotAvailable");
 
-    // calling `/reveal` or `/settle` with a reasonable id works
-    // but wrong auction id results in an error.
-    test.set_auction_id(100);
-    test.reveal(&solution_id)
-        .await
-        .err()
-        .kind("SolutionNotAvailable");
-    test.settle(&solution_id)
-        .await
-        .err()
-        .kind("SolutionNotAvailable");
-
     // calling `/reveal` or `/settle` with a reasonable id works.
-    test.set_auction_id(1);
-    test.reveal(&solution_id).await.ok();
-    test.settle(&solution_id)
-        .await
-        .ok()
-        .await
-        .eth_order_executed()
-        .await;
+    test.reveal(&id).await.ok();
+    test.settle(&id).await.ok().await.eth_order_executed().await;
 
     // calling `/reveal` or `/settle` with for a legit solution that
     // has already been settled also fails.
-    test.settle(&solution_id)
-        .await
-        .err()
-        .kind("SolutionNotAvailable");
-    test.reveal(&solution_id)
-        .await
-        .err()
-        .kind("SolutionNotAvailable");
+    test.settle(&id).await.err().kind("SolutionNotAvailable");
+    test.reveal(&id).await.err().kind("SolutionNotAvailable");
 }
 
 /// Tests that the driver can correctly settle a solution that

@@ -16,18 +16,17 @@ async fn route(
     state: axum::extract::State<State>,
     req: axum::Json<dto::Solution>,
 ) -> Result<axum::Json<dto::Revealed>, (hyper::StatusCode, axum::Json<Error>)> {
+    let competition = state.competition();
+    let auction_id = competition.auction_id(req.solution_id).map(|id| id.0);
     let handle_request = async {
         observe::revealing();
-        let result = state
-            .competition()
-            .reveal(req.solution_id, req.auction_id)
-            .await;
+        let result = competition.reveal(req.solution_id).await;
         observe::revealed(state.solver().name(), &result);
         let result = result?;
         Ok(axum::Json(dto::Revealed::new(result)))
     };
 
     handle_request
-        .instrument(tracing::info_span!("/reveal", solver = %state.solver().name(), req.auction_id))
+        .instrument(tracing::info_span!("/reveal", solver = %state.solver().name(), auction_id))
         .await
 }
