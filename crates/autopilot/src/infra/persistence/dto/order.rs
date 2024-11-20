@@ -72,7 +72,7 @@ pub fn from_domain(order: domain::Order) -> Order {
         class: boundary::OrderClass::Limit,
         app_data: order.app_data.into(),
         signature: order.signature.into(),
-        quote: order.quote.map(Into::into),
+        quote: order.quote.map(Quote::from_domain),
     }
 }
 
@@ -344,6 +344,15 @@ pub struct Quote {
 }
 
 impl Quote {
+    fn from_domain(quote: domain::Quote) -> Self {
+        Quote {
+            sell_amount: quote.sell_amount.0,
+            buy_amount: quote.buy_amount.0,
+            fee: quote.fee.0,
+            solver: quote.solver.0,
+        }
+    }
+
     pub fn to_domain(&self, order_uid: OrderUid) -> domain::Quote {
         domain::Quote {
             order_uid,
@@ -351,17 +360,6 @@ impl Quote {
             buy_amount: self.buy_amount.into(),
             fee: self.fee.into(),
             solver: self.solver.into(),
-        }
-    }
-}
-
-impl From<domain::Quote> for Quote {
-    fn from(quote: domain::Quote) -> Self {
-        Quote {
-            sell_amount: quote.sell_amount.0,
-            buy_amount: quote.buy_amount.0,
-            fee: quote.fee.0,
-            solver: quote.solver.0,
         }
     }
 }
