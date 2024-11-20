@@ -27,14 +27,7 @@ async fn route(
         let result = state
             .competition()
             .settle(
-                req.auction_id
-                    .as_ref()
-                    .map(|value| {
-                        value
-                            .parse::<i64>()
-                            .map_err(|_| competition::Error::SolutionNotAvailable)
-                    })
-                    .transpose()?,
+                req.auction_id,
                 req.solution_id,
                 req.submission_deadline_latest_block,
             )
