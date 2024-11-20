@@ -493,6 +493,10 @@ components:
           description: The last block number in which the solution TX can be included.
           type: integer
           example: 12345
+        auctionId:
+          description: Auction ID in which the specified solution ID is competing.
+          type: string
+          example: "123"
     RevealedResponse:
       description: Response of the reveal endpoint.
       type: object
