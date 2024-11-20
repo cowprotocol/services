@@ -19,7 +19,7 @@ async fn route(
     state: axum::extract::State<State>,
     req: axum::Json<dto::Solution>,
 ) -> Result<(), (hyper::StatusCode, axum::Json<Error>)> {
-    let auction_id = req.auction_id.clone();
+    let auction_id = req.auction_id;
     let solver = state.solver().name().to_string();
 
     let handle_request = async move {
