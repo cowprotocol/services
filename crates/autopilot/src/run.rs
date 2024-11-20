@@ -373,6 +373,7 @@ pub async fn run(args: Arguments) {
             // behaviour). For real contracts, the deployment information is specified
             // for all the networks, but it isn't specified for the e2e tests which deploy
             // the contracts from scratch
+            tracing::warn!("Settlement contract deployment information not found");
             0
         };
     let settlement_event_indexer = EventUpdater::new(
