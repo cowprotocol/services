@@ -35,6 +35,7 @@ pub struct Quote {
     pub quote_kind: QuoteKind,
     pub solver: Address,
     pub call_data: Option<Vec<u8>>,
+    pub verified: bool,
 }
 
 /// Stores the quote and returns the id. The id of the quote parameter is not
@@ -53,9 +54,10 @@ INSERT INTO quotes (
     expiration_timestamp,
     quote_kind,
     solver,
-    call_data
+    call_data,
+    verified
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 RETURNING id
     "#;
     let (id,) = sqlx::query_as(QUERY)
@@ -71,6 +73,7 @@ RETURNING id
         .bind(&quote.quote_kind)
         .bind(quote.solver)
         .bind(&quote.call_data)
+        .bind(quote.verified)
         .fetch_one(ex)
         .await?;
     Ok(id)
@@ -185,6 +188,7 @@ mod tests {
             quote_kind: QuoteKind::Standard,
             solver: ByteArray([1; 20]),
             call_data: None,
+            verified: false,
         };
         let id = save(&mut db, &quote).await.unwrap();
         quote.id = id;
@@ -219,6 +223,7 @@ mod tests {
             quote_kind: QuoteKind::Standard,
             solver: ByteArray([1; 20]),
             call_data: None,
+            verified: false,
         };
 
         let token_b = ByteArray([2; 20]);
@@ -236,6 +241,7 @@ mod tests {
             quote_kind: QuoteKind::Standard,
             solver: ByteArray([2; 20]),
             call_data: None,
+            verified: false,
         };
 
         // Save two measurements for token_a
@@ -408,6 +414,7 @@ mod tests {
                 quote_kind: QuoteKind::Eip1271OnchainOrder,
                 solver: ByteArray([1; 20]),
                 call_data: None,
+                verified: false,
             };
             let id = save(&mut db, &quote).await.unwrap();
             quote.id = id;

@@ -342,6 +342,7 @@ Stores quotes in order to determine whether it makes sense to allow a user to cr
  quote\_kind           | [enum](#quotekind) | not null | quotekind for which this quote is considered valid
  solver                | bytea              | not null | public address of the solver that provided this quote
  call\_data            | bytea              |          | call\_data provided by solver in response to the /quote request
+ verified              | boolean            |          | information if quote was verified
 
 Indexes:
 - PRIMARY KEY: btree(`id`)

@@ -26,6 +26,7 @@ pub fn create_quote_row(data: QuoteData) -> DbQuote {
         quote_kind: data.quote_kind,
         solver: ByteArray(data.solver.0),
         call_data: data.call_data,
+        verified: data.verified,
     }
 }
 
