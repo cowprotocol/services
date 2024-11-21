@@ -12,6 +12,7 @@ use {
     futures::{future, Stream, StreamExt, TryStreamExt},
     std::sync::Arc,
     tokio::sync::Mutex,
+    tracing::Instrument,
 };
 
 // We expect that there is never a reorg that changes more than the last n
@@ -537,7 +538,12 @@ where
     S: EventStoring<C::Event> + Send + Sync,
 {
     async fn run_maintenance(&self) -> Result<()> {
-        self.lock().await.update_events().await
+        let mut inner = self.lock().await;
+        let address = inner.contract.get_events().filter.address;
+        inner
+            .update_events()
+            .instrument(tracing::info_span!("address", ?address))
+            .await
     }
 
     fn name(&self) -> &str {

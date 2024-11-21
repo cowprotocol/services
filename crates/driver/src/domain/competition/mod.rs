@@ -267,13 +267,20 @@ impl Competition {
         Ok(score)
     }
 
-    pub async fn reveal(&self, solution_id: u64, auction_id: i64) -> Result<Revealed, Error> {
+    pub async fn reveal(
+        &self,
+        solution_id: u64,
+        auction_id: Option<i64>,
+    ) -> Result<Revealed, Error> {
         let settlement = self
             .settlements
             .lock()
             .unwrap()
             .iter()
-            .find(|s| s.solution().get() == solution_id && s.auction_id.0 == auction_id)
+            .find(|s| {
+                s.solution().get() == solution_id
+                    && auction_id.is_none_or(|id| s.auction_id.0 == id)
+            })
             .cloned()
             .ok_or(Error::SolutionNotAvailable)?;
         Ok(Revealed {
@@ -292,7 +299,7 @@ impl Competition {
     /// [`Competition::solve`] to generate the solution.
     pub async fn settle(
         &self,
-        auction_id: i64,
+        auction_id: Option<i64>,
         solution_id: u64,
         submission_deadline: u64,
     ) -> Result<Settled, Error> {
@@ -300,7 +307,10 @@ impl Competition {
             let mut lock = self.settlements.lock().unwrap();
             let index = lock
                 .iter()
-                .position(|s| s.solution().get() == solution_id && s.auction_id.0 == auction_id)
+                .position(|s| {
+                    s.solution().get() == solution_id
+                        && auction_id.is_none_or(|id| s.auction_id.0 == id)
+                })
                 .ok_or(Error::SolutionNotAvailable)?;
             // remove settlement to ensure we can't settle it twice by accident
             lock.swap_remove_front(index)
