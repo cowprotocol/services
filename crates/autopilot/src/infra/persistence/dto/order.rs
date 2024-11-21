@@ -90,7 +90,7 @@ pub fn to_domain(order: Order) -> domain::Order {
         protocol_fees: order
             .protocol_fees
             .into_iter()
-            .map(|fee_policy| fee_policy.into_domain())
+            .map(FeePolicy::into_domain)
             .collect(),
         created: order.created,
         valid_to: order.valid_to,
