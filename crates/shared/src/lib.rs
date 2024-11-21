@@ -9,6 +9,7 @@ pub mod code_fetching;
 pub mod code_simulation;
 pub mod conversions;
 pub mod current_block;
+pub mod database_access;
 pub mod db_order_conversions;
 pub mod encoded_settlement;
 pub mod ethrpc;

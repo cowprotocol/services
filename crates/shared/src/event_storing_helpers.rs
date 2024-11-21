@@ -11,7 +11,7 @@ use {
     number::conversions::u256_to_big_decimal,
 };
 
-pub fn create_quote_row(data: QuoteData) -> DbQuote {
+pub fn create_quote_row(data: &QuoteData) -> DbQuote {
     DbQuote {
         id: Default::default(),
         sell_token: ByteArray(data.sell_token.0),
@@ -23,14 +23,14 @@ pub fn create_quote_row(data: QuoteData) -> DbQuote {
         sell_token_price: data.fee_parameters.sell_token_price,
         order_kind: order_kind_into(data.kind),
         expiration_timestamp: data.expiration,
-        quote_kind: data.quote_kind,
+        quote_kind: data.quote_kind.clone(),
         solver: ByteArray(data.solver.0),
     }
 }
 
 pub fn create_db_search_parameters(
-    params: QuoteSearchParameters,
-    expiration: DateTime<Utc>,
+    params: &QuoteSearchParameters,
+    expiration: &DateTime<Utc>,
 ) -> DbQuoteSearchParameters {
     DbQuoteSearchParameters {
         sell_token: ByteArray(params.sell_token.0),
@@ -39,7 +39,7 @@ pub fn create_db_search_parameters(
         sell_amount_1: u256_to_big_decimal(&(params.sell_amount + params.fee_amount)),
         buy_amount: u256_to_big_decimal(&params.buy_amount),
         kind: order_kind_into(params.kind),
-        expiration,
+        expiration: expiration.clone(),
         quote_kind: quote_kind_from_signing_scheme(&params.signing_scheme),
     }
 }
