@@ -861,6 +861,7 @@ fn main() {
             .add_network_str(SEPOLIA, "0xE592427A0AEce92De3Edee1F18E0157C05861564")
             .add_network_str(ARBITRUM_ONE, "0xE592427A0AEce92De3Edee1F18E0157C05861564")
             // For Base it is only available SwapRouter02
+            // <https://docs.uniswap.org/contracts/v3/reference/deployments/base-deployments>
             .add_network_str(BASE, "0x2626664c2603336E57B271c5C0b26F421741e481")
         // Not available on Gnosis Chain
     });
