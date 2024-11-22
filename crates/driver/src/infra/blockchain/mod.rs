@@ -74,6 +74,7 @@ impl Ethereum {
         rpc: Rpc,
         addresses: contracts::Addresses,
         gas: Arc<GasPriceEstimator>,
+        ethrpc_args: &shared::ethrpc::Arguments,
         archive_node_url: Option<&Url>,
     ) -> Self {
         let Rpc { web3, chain, url } = rpc;
@@ -88,6 +89,7 @@ impl Ethereum {
             chain,
             addresses,
             current_block_stream.clone(),
+            ethrpc_args,
             archive_node_url,
         )
         .await
