@@ -7,6 +7,7 @@ use {
             setup::{ab_order, ab_pool, ab_solution},
         },
     },
+    futures::future::join_all,
     web3::Transport,
 };
 
@@ -109,4 +110,51 @@ async fn high_gas_limit() {
         .await
         .unwrap();
     test.settle(&id).await.ok().await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn too_many_settle_calls() {
+    let test = tests::setup()
+        .allow_multiple_solve_requests()
+        .pool(ab_pool())
+        .order(ab_order())
+        .solution(ab_solution())
+        .ethrpc_args(shared::ethrpc::Arguments {
+            ethrpc_max_batch_size: 10,
+            ethrpc_max_concurrent_requests: 10,
+            ethrpc_batch_delay: std::time::Duration::from_secs(1),
+        })
+        .solve_deadline_timeout(chrono::Duration::seconds(4))
+        .done()
+        .await;
+
+    let id1 = test.solve().await.ok().id();
+    let id2 = test.solve().await.ok().id();
+    let id3 = test.solve().await.ok().id();
+    let id4 = test.solve().await.ok().id();
+
+    assert_ne!(id1, id2);
+    assert_ne!(id2, id3);
+    assert_ne!(id1, id3);
+    assert_ne!(id1, id4);
+
+    let results = join_all(vec![
+        test.settle(&id1),
+        test.settle(&id2),
+        test.settle(&id3),
+        test.settle(&id4),
+    ])
+    .await;
+
+    for (index, result) in results.into_iter().enumerate() {
+        match index {
+            0 => {
+                result.ok().await.ab_order_executed().await;
+            }
+            1 | 2 => result.err().kind("FailedToSubmit"),
+            3 => result.err().kind("QueueAwaitingDeadlineExceeded"),
+            _ => unreachable!(),
+        }
+    }
 }

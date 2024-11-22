@@ -7,6 +7,7 @@ pub use ethrpc::{
 };
 use {
     crate::http_client::HttpClientFactory,
+    clap::Parser,
     reqwest::Url,
     std::{
         fmt::{self, Display, Formatter},
@@ -17,12 +18,12 @@ use {
 pub const MAX_BATCH_SIZE: usize = 100;
 
 /// Command line arguments for the common Ethereum RPC connections.
-#[derive(clap::Parser)]
+#[derive(clap::Parser, Debug)]
 #[group(skip)]
 pub struct Arguments {
     /// Maximum batch size for Ethereum RPC requests. Use '0' to disable
     /// batching.
-    #[clap(long, env, default_value = "100")]
+    #[clap(long, env, default_value = "20")]
     pub ethrpc_max_batch_size: usize,
 
     /// Maximum number of concurrent requests to send to the node. Use '0' for
@@ -34,6 +35,12 @@ pub struct Arguments {
     /// out an incomplete batch.
     #[clap(long, env, value_parser = humantime::parse_duration, default_value = "0s")]
     pub ethrpc_batch_delay: Duration,
+}
+
+impl Default for Arguments {
+    fn default() -> Self {
+        Arguments::parse_from([""])
+    }
 }
 
 impl Display for Arguments {

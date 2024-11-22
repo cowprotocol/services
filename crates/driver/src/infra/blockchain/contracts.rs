@@ -66,9 +66,9 @@ impl Contracts {
                 .0,
         );
 
-        let archive_node_web3 = archive_node_url
-            .as_ref()
-            .map_or(web3.clone(), |url| boundary::buffered_web3_client(url));
+        let archive_node_web3 = archive_node_url.as_ref().map_or(web3.clone(), |url| {
+            boundary::buffered_web3_client(url, &shared::ethrpc::Arguments::default())
+        }); // todo: provide it from the config
         let mut cow_amm_registry = cow_amm::Registry::new(archive_node_web3);
         for config in addresses.cow_amms {
             cow_amm_registry
