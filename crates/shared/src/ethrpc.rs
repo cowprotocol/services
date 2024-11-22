@@ -23,7 +23,7 @@ pub const MAX_BATCH_SIZE: usize = 100;
 pub struct Arguments {
     /// Maximum batch size for Ethereum RPC requests. Use '0' to disable
     /// batching.
-    #[clap(long, env, default_value = "20")]
+    #[clap(long, env, default_value = "100")]
     pub ethrpc_max_batch_size: usize,
 
     /// Maximum number of concurrent requests to send to the node. Use '0' for
