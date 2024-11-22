@@ -114,7 +114,7 @@ async fn high_gas_limit() {
 
 #[tokio::test]
 #[ignore]
-async fn too_many_settle_calls() {
+async fn too_many_settle_requests() {
     let test = tests::setup()
         .allow_multiple_solve_requests()
         .pool(ab_pool())
