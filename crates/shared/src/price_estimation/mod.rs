@@ -1,4 +1,5 @@
 use {
+    self::trade_verifier::balance_overrides::ConfigurationBalanceOverrides,
     crate::{
         arguments::{display_option, display_secret_option, ExternalSolver},
         trade_finding::Interaction,
@@ -211,6 +212,10 @@ pub struct Arguments {
         value_parser = humantime::parse_duration,
     )]
     pub quote_timeout: Duration,
+
+    /// Token configuration for simulated balances on verified quotes.
+    #[clap(long, env, default_value_t)]
+    pub quote_token_balance_overrides: ConfigurationBalanceOverrides,
 }
 
 #[derive(clap::Parser)]
@@ -290,6 +295,7 @@ impl Display for Arguments {
             quote_inaccuracy_limit,
             quote_verification,
             quote_timeout,
+            quote_token_balance_overrides,
         } = self;
 
         display_option(
@@ -367,6 +373,11 @@ impl Display for Arguments {
         writeln!(f, "quote_inaccuracy_limit: {}", quote_inaccuracy_limit)?;
         writeln!(f, "quote_verification: {:?}", quote_verification)?;
         writeln!(f, "quote_timeout: {:?}", quote_timeout)?;
+        writeln!(
+            f,
+            "quote_token_balance_overrides: {:?}",
+            quote_token_balance_overrides
+        )?;
 
         Ok(())
     }

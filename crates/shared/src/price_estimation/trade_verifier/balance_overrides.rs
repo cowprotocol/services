@@ -1,8 +1,13 @@
 use {
+    anyhow::Context as _,
     ethcontract::{Address, H256, U256},
     ethrpc::extensions::StateOverride,
     maplit::hashmap,
-    std::collections::HashMap,
+    std::{
+        collections::HashMap,
+        fmt::{self, Display, Formatter},
+        str::FromStr,
+    },
     web3::signing,
 };
 
@@ -10,7 +15,7 @@ use {
 ///
 /// This allows a wider range of verified quotes to work, even when balances
 /// are not available for the quoter.
-pub trait BalanceOverriding {
+pub trait BalanceOverriding: Send + Sync + 'static {
     fn state_override(&self, request: &BalanceOverrideRequest) -> Option<StateOverride>;
 }
 
@@ -43,13 +48,68 @@ impl BalanceOverriding for ConfigurationBalanceOverrides {
     fn state_override(&self, request: &BalanceOverrideRequest) -> Option<StateOverride> {
         let strategy = self.0.get(&request.token)?;
         match strategy {
-            Strategy::Mapping { slot } => Some(StateOverride {
-                state_diff: Some(hashmap! {
-                    address_mapping_storage_slot(slot, &request.holder) => request.amount,
-                }),
-                ..Default::default()
-            }),
+            Strategy::Mapping { slot } => {
+                let slot = address_mapping_storage_slot(slot, &request.holder);
+                let value = {
+                    let mut value = H256::default();
+                    request.amount.to_big_endian(&mut value.0);
+                    value
+                };
+                Some(StateOverride {
+                    state_diff: Some(hashmap! { slot => value }),
+                    ..Default::default()
+                })
+            }
         }
+    }
+}
+
+impl Display for ConfigurationBalanceOverrides {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        let format_entry =
+            |f: &mut Formatter, (addr, strategy): (&Address, &Strategy)| match strategy {
+                Strategy::Mapping { slot } => write!(f, "{addr:?}@{slot}"),
+            };
+
+        let mut entries = self.0.iter();
+
+        let Some(first) = entries.next() else {
+            return Ok(());
+        };
+        format_entry(f, first)?;
+
+        for entry in entries {
+            f.write_str(",")?;
+            format_entry(f, entry)?;
+        }
+
+        Ok(())
+    }
+}
+
+impl FromStr for ConfigurationBalanceOverrides {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.is_empty() {
+            return Ok(Self::default());
+        }
+
+        let entries = s
+            .split(',')
+            .map(|part| -> Result<_, Self::Err> {
+                let (addr, slot) = part
+                    .split_once('@')
+                    .context("expected {addr}@{slot} format")?;
+                Ok((
+                    addr.parse()?,
+                    Strategy::Mapping {
+                        slot: slot.parse()?,
+                    },
+                ))
+            })
+            .collect::<Result<_, _>>()?;
+        Ok(Self(entries))
     }
 }
 
@@ -84,7 +144,8 @@ mod tests {
             }),
             Some(StateOverride {
                 state_diff: Some(hashmap! {
-                    H256(hex!("fca351f4d96129454cfc8ef7930b638ac71fea35eb69ee3b8d959496beb04a33")) => 0x42_u64.into()
+                    H256(hex!("fca351f4d96129454cfc8ef7930b638ac71fea35eb69ee3b8d959496beb04a33")) =>
+                        H256(hex!("0000000000000000000000000000000000000000000000000000000000000042")),
                 }),
                 ..Default::default()
             }),
