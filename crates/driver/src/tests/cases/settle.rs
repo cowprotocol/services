@@ -149,10 +149,15 @@ async fn too_many_settle_calls() {
 
     for (index, result) in results.into_iter().enumerate() {
         match index {
+            // The first must be settled.
             0 => {
                 result.ok().await.ab_order_executed().await;
             }
+            // We don't really care about the intermediate settlements. They are processed but due
+            // to the test framework limitation, the same solution settlements fail. We
+            // are fine with that to avoid huge changes in the framework.
             1 | 2 => result.err().kind("FailedToSubmit"),
+            // Driver's settlement queue max size is 3. The last request should be discarded.
             3 => result.err().kind("QueueAwaitingDeadlineExceeded"),
             _ => unreachable!(),
         }
