@@ -8,7 +8,10 @@ use {
     ethcontract::{H160, U256},
     futures::future::BoxFuture,
     itertools::Itertools,
-    model::order::{BuyTokenDestination, OrderKind, SellTokenSource},
+    model::{
+        interaction::InteractionData,
+        order::{BuyTokenDestination, OrderKind, SellTokenSource},
+    },
     num::BigRational,
     number::nonzero::U256 as NonZeroU256,
     rate_limit::{RateLimiter, Strategy},
@@ -465,8 +468,8 @@ pub struct Estimate {
     pub solver: H160,
     /// Did we verify the correctness of this estimate's properties?
     pub verified: bool,
-    /// Data provided by the solver in response to /quote request.
-    pub call_data: Option<Vec<u8>>,
+    /// Interactions provided by the solver in response to /quote request.
+    pub interactions: Vec<InteractionData>,
 }
 
 impl Estimate {

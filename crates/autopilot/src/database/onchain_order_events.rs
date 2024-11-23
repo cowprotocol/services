@@ -487,7 +487,6 @@ async fn parse_general_onchain_order_placement_data<'a>(
                     sell_amount: u256_to_big_decimal(&quote.sell_amount),
                     buy_amount: u256_to_big_decimal(&quote.buy_amount),
                     solver: ByteArray(quote.data.solver.0),
-                    call_data: quote.data.call_data,
                     verified: quote.data.verified,
                 }),
                 Err(err) => {
@@ -1189,7 +1188,6 @@ mod test {
             sell_amount: u256_to_big_decimal(&quote.sell_amount),
             buy_amount: u256_to_big_decimal(&quote.buy_amount),
             solver: ByteArray(quote.data.solver.0),
-            call_data: None,
             verified: quote.data.verified,
         };
         assert_eq!(result.1, vec![Some(expected_quote)]);

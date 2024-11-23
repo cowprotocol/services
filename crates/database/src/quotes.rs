@@ -34,7 +34,6 @@ pub struct Quote {
     pub expiration_timestamp: DateTime<Utc>,
     pub quote_kind: QuoteKind,
     pub solver: Address,
-    pub call_data: Option<Vec<u8>>,
     pub verified: bool,
 }
 
@@ -54,10 +53,9 @@ INSERT INTO quotes (
     expiration_timestamp,
     quote_kind,
     solver,
-    call_data,
     verified
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 RETURNING id
     "#;
     let (id,) = sqlx::query_as(QUERY)
@@ -72,7 +70,6 @@ RETURNING id
         .bind(quote.expiration_timestamp)
         .bind(&quote.quote_kind)
         .bind(quote.solver)
-        .bind(&quote.call_data)
         .bind(quote.verified)
         .fetch_one(ex)
         .await?;
@@ -150,6 +147,52 @@ WHERE expiration_timestamp < $1
         .map(|_| ())
 }
 
+/// One row in the `quotes_interactions` table.
+#[derive(Clone, Debug, PartialEq, sqlx::FromRow)]
+pub struct QuoteInteraction {
+    pub id: QuoteId,
+    pub index: i64,
+    pub target: Address,
+    pub value: BigDecimal,
+    pub call_data: Vec<u8>,
+}
+
+/// Stores interactions provided by the solver for quote.
+pub async fn insert_quote_interaction(
+    ex: &mut PgConnection,
+    quote_interaction: &QuoteInteraction,
+) -> Result<(), sqlx::Error> {
+    const QUERY: &str = r#"
+INSERT INTO quotes_interactions (
+    order_uid,
+    index
+    target,
+    value,
+    call_data
+)
+VALUES ($1, $2, $3, $4)
+    "#;
+    sqlx::query(QUERY)
+        .bind(quote_interaction.id)
+        .bind(quote_interaction.index)
+        .bind(quote_interaction.target)
+        .bind(&quote_interaction.value)
+        .bind(&quote_interaction.call_data)
+        .execute(ex)
+        .await?;
+    Ok(())
+}
+
+pub async fn insert_quote_interactions(
+    ex: &mut PgConnection,
+    quote_interactions: &[QuoteInteraction],
+) -> Result<(), sqlx::Error> {
+    for interaction in quote_interactions {
+        insert_quote_interaction(ex, interaction).await?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use {
@@ -187,7 +230,6 @@ mod tests {
             expiration_timestamp: now,
             quote_kind: QuoteKind::Standard,
             solver: ByteArray([1; 20]),
-            call_data: None,
             verified: false,
         };
         let id = save(&mut db, &quote).await.unwrap();
@@ -222,7 +264,6 @@ mod tests {
             expiration_timestamp: now,
             quote_kind: QuoteKind::Standard,
             solver: ByteArray([1; 20]),
-            call_data: None,
             verified: false,
         };
 
@@ -240,7 +281,6 @@ mod tests {
             expiration_timestamp: now,
             quote_kind: QuoteKind::Standard,
             solver: ByteArray([2; 20]),
-            call_data: None,
             verified: false,
         };
 
@@ -413,7 +453,6 @@ mod tests {
                 expiration_timestamp: now,
                 quote_kind: QuoteKind::Eip1271OnchainOrder,
                 solver: ByteArray([1; 20]),
-                call_data: None,
                 verified: false,
             };
             let id = save(&mut db, &quote).await.unwrap();
@@ -435,5 +474,37 @@ mod tests {
         assert_eq!(find(&mut db, &search_a).await.unwrap().unwrap(), quote,);
         search_a.quote_kind = QuoteKind::Standard;
         assert_eq!(find(&mut db, &search_a).await.unwrap(), None,);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_insert_quote_interaction_by_id() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let quote_interaction = QuoteInteraction {
+            id: Default::default(),
+            index: Default::default(),
+            target: ByteArray([1; 20]),
+            value: 2.into(),
+            call_data: vec![3; 20],
+        };
+        insert_quote_interaction(&mut db, &quote_interaction)
+            .await
+            .unwrap();
+
+        const QUERY: &str = r#"
+            SELECT *
+            FROM quotes_interactions
+            WHERE order_uid = $1
+        "#;
+        let interaction: Option<QuoteInteraction> = sqlx::query_as(QUERY)
+            .bind(quote_interaction.id)
+            .fetch_optional(&mut db as &mut PgConnection)
+            .await
+            .unwrap();
+
+        assert_eq!(interaction.unwrap(), quote_interaction);
     }
 }

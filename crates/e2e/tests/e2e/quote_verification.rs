@@ -109,7 +109,7 @@ async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
         gas: 225000,
         solver: H160::from_str("0xe3067c7c27c1038de4e8ad95a83b927d23dfbd99").unwrap(),
         verified: true,
-        call_data: None,
+        interactions: vec![],
     };
 
     // `tx_origin: 0x0000` is currently used to bypass quote verification due to an

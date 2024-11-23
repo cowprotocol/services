@@ -329,7 +329,6 @@ pub struct Quote {
     pub sell_amount: BigDecimal,
     pub buy_amount: BigDecimal,
     pub solver: Address,
-    pub call_data: Option<Vec<u8>>,
     pub verified: bool,
 }
 
@@ -349,10 +348,9 @@ INSERT INTO order_quotes (
     sell_amount,
     buy_amount,
     solver,
-    call_data,
     verified
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"#;
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)"#;
 
 pub async fn insert_quote_and_update_on_conflict(
     ex: &mut PgConnection,
@@ -366,7 +364,7 @@ pub async fn insert_quote_and_update_on_conflict(
         " ON CONFLICT (order_uid) DO UPDATE
 SET gas_amount = $2, gas_price = $3,
 sell_token_price = $4, sell_amount = $5,
-buy_amount = $6, call_data = $8, verified = $9
+buy_amount = $6, verified = $8
     "
     );
     sqlx::query(QUERY)
@@ -377,7 +375,6 @@ buy_amount = $6, call_data = $8, verified = $9
         .bind(&quote.sell_amount)
         .bind(&quote.buy_amount)
         .bind(quote.solver)
-        .bind(&quote.call_data)
         .bind(quote.verified)
         .execute(ex)
         .await?;
@@ -393,7 +390,6 @@ pub async fn insert_quote(ex: &mut PgConnection, quote: &Quote) -> Result<(), sq
         .bind(&quote.sell_amount)
         .bind(&quote.buy_amount)
         .bind(quote.solver)
-        .bind(&quote.call_data)
         .bind(quote.verified)
         .execute(ex)
         .await?;
@@ -1213,7 +1209,6 @@ mod tests {
             sell_amount: 4.into(),
             buy_amount: 5.into(),
             solver: ByteArray([1; 20]),
-            call_data: None,
             verified: false,
         };
         insert_quote(&mut db, &quote).await.unwrap();
@@ -1275,7 +1270,6 @@ mod tests {
             sell_amount: 4.into(),
             buy_amount: 5.into(),
             solver: ByteArray([1; 20]),
-            call_data: None,
             verified: false,
         };
         insert_quote(&mut db, &quote).await.unwrap();
@@ -1303,7 +1297,6 @@ mod tests {
             sell_amount: 4.into(),
             buy_amount: 5.into(),
             solver: ByteArray([1; 20]),
-            call_data: None,
             verified: false,
         };
         insert_quote(&mut db, &quote).await.unwrap();

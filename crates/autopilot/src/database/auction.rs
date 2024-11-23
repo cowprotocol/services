@@ -8,7 +8,11 @@ use {
     num::ToPrimitive,
     shared::{
         db_order_conversions::full_order_into_model_order,
-        event_storing_helpers::{create_db_search_parameters, create_quote_row},
+        event_storing_helpers::{
+            create_db_search_parameters,
+            create_quote_interactions_insert_data,
+            create_quote_row,
+        },
         order_quoting::{QuoteData, QuoteSearchParameters, QuoteStoring},
     },
     std::{collections::HashMap, ops::DerefMut},
@@ -23,8 +27,12 @@ impl QuoteStoring for Postgres {
             .start_timer();
 
         let mut ex = self.pool.acquire().await?;
-        let row = create_quote_row(data);
+        let row = create_quote_row(&data);
         let id = database::quotes::save(&mut ex, &row).await?;
+        if !data.interactions.is_empty() {
+            let interactions = create_quote_interactions_insert_data(id, &data);
+            database::quotes::insert_quote_interactions(&mut ex, &interactions).await?;
+        }
         Ok(id)
     }
 

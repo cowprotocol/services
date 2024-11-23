@@ -6,12 +6,17 @@ use {
     chrono::{DateTime, Utc},
     database::{
         byte_array::ByteArray,
-        quotes::{Quote as DbQuote, QuoteSearchParameters as DbQuoteSearchParameters},
+        quotes::{
+            Quote as DbQuote,
+            QuoteId,
+            QuoteInteraction as DbQuoteInteraction,
+            QuoteSearchParameters as DbQuoteSearchParameters,
+        },
     },
     number::conversions::u256_to_big_decimal,
 };
 
-pub fn create_quote_row(data: QuoteData) -> DbQuote {
+pub fn create_quote_row(data: &QuoteData) -> DbQuote {
     DbQuote {
         id: Default::default(),
         sell_token: ByteArray(data.sell_token.0),
@@ -23,11 +28,27 @@ pub fn create_quote_row(data: QuoteData) -> DbQuote {
         sell_token_price: data.fee_parameters.sell_token_price,
         order_kind: order_kind_into(data.kind),
         expiration_timestamp: data.expiration,
-        quote_kind: data.quote_kind,
+        quote_kind: data.quote_kind.clone(),
         solver: ByteArray(data.solver.0),
-        call_data: data.call_data,
         verified: data.verified,
     }
+}
+
+pub fn create_quote_interactions_insert_data(
+    id: QuoteId,
+    data: &QuoteData,
+) -> Vec<DbQuoteInteraction> {
+    data.interactions
+        .iter()
+        .enumerate()
+        .map(|(index, interaction)| DbQuoteInteraction {
+            id,
+            index: index as i64,
+            target: ByteArray(interaction.target.0),
+            value: u256_to_big_decimal(&interaction.value),
+            call_data: interaction.call_data.clone(),
+        })
+        .collect()
 }
 
 pub fn create_db_search_parameters(

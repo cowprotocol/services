@@ -100,7 +100,6 @@ impl OrderWithQuote {
                 sell_amount: u256_to_big_decimal(&quote.sell_amount),
                 buy_amount: u256_to_big_decimal(&quote.buy_amount),
                 solver: ByteArray(quote.data.solver.0),
-                call_data: quote.data.call_data,
                 verified: quote.data.verified,
             }),
             order,
@@ -235,7 +234,6 @@ async fn insert_quote(
         sell_amount: u256_to_big_decimal(&quote.sell_amount),
         buy_amount: u256_to_big_decimal(&quote.buy_amount),
         solver: ByteArray(quote.data.solver.0),
-        call_data: quote.data.call_data.clone(),
         verified: quote.data.verified,
     };
     database::orders::insert_quote(ex, &quote)
@@ -385,7 +383,6 @@ impl OrderStoring for Postgres {
                         sell_amount,
                         buy_amount,
                         solver,
-                        call_data: order_with_quote.quote_call_data,
                         verified,
                     }),
                     _ => None,
@@ -1205,7 +1202,6 @@ mod tests {
             sell_amount: U256::from(1),
             buy_amount: U256::from(2),
             data: QuoteData {
-                call_data: Some(call_data.clone()),
                 verified: true,
                 ..Default::default()
             },

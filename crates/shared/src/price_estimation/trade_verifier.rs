@@ -179,7 +179,7 @@ impl TradeVerifier {
                     gas: trade.gas_estimate.context("no gas estimate")?,
                     solver: trade.solver,
                     verified: true,
-                    call_data: None,
+                    interactions: crate::trade_finding::map_interactions_data(&trade.interactions),
                 };
                 tracing::warn!(
                     ?estimate,
@@ -231,7 +231,7 @@ impl TradeVerifier {
             "verified quote",
         );
 
-        ensure_quote_accuracy(&self.quote_inaccuracy_limit, query, trade.solver, &summary)
+        ensure_quote_accuracy(&self.quote_inaccuracy_limit, query, &trade, &summary)
     }
 
     /// Configures all the state overrides that are needed to mock the given
@@ -313,7 +313,9 @@ impl TradeVerifying for TradeVerifier {
                         gas,
                         solver: trade.solver,
                         verified: false,
-                        call_data: None,
+                        interactions: crate::trade_finding::map_interactions_data(
+                            &trade.interactions,
+                        ),
                     };
                     tracing::warn!(
                         ?err,
@@ -510,7 +512,7 @@ impl SettleOutput {
 fn ensure_quote_accuracy(
     inaccuracy_limit: &BigRational,
     query: &PriceQuery,
-    solver: H160,
+    trade: &Trade,
     summary: &SettleOutput,
 ) -> Result<Estimate, Error> {
     // amounts verified by the simulation
@@ -528,9 +530,9 @@ fn ensure_quote_accuracy(
     Ok(Estimate {
         out_amount: summary.out_amount,
         gas: summary.gas_used.as_u64(),
-        solver,
+        solver: trade.solver,
         verified: true,
-        call_data: None,
+        interactions: crate::trade_finding::map_interactions_data(&trade.interactions),
     })
 }
 

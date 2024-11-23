@@ -30,7 +30,7 @@ pub struct Quote {
     pub out_amount: U256,
     pub gas_estimate: u64,
     pub solver: H160,
-    pub call_data: Option<Vec<u8>>,
+    pub interactions: Vec<InteractionData>,
 }
 
 /// A trade.
@@ -75,6 +75,14 @@ impl Interaction {
 
     pub fn encode(&self) -> EncodedInteraction {
         (self.target, self.value, Bytes(self.data.clone()))
+    }
+
+    pub fn to_interaction_data(&self) -> InteractionData {
+        InteractionData {
+            target: self.target,
+            value: self.value,
+            call_data: self.data.clone(),
+        }
     }
 }
 
@@ -141,4 +149,12 @@ impl Clone for TradeError {
 
 pub fn map_interactions(interactions: &[InteractionData]) -> Vec<Interaction> {
     interactions.iter().cloned().map(Into::into).collect()
+}
+
+pub fn map_interactions_data(interactions: &[Interaction]) -> Vec<InteractionData> {
+    interactions
+        .iter()
+        .cloned()
+        .map(|i| i.to_interaction_data())
+        .collect()
 }
