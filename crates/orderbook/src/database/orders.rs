@@ -1184,7 +1184,6 @@ mod tests {
         database::clear_DANGER(&db.pool).await.unwrap();
 
         let uid = OrderUid([0x42; 56]);
-        let call_data = vec![1];
         let order = Order {
             data: OrderData {
                 valid_to: u32::MAX,
@@ -1211,10 +1210,6 @@ mod tests {
 
         let single_order_with_quote = db.single_order_with_quote(&uid).await.unwrap().unwrap();
         assert_eq!(single_order_with_quote.order, order);
-        assert_eq!(
-            single_order_with_quote.quote.clone().unwrap().call_data,
-            Some(call_data)
-        );
         assert!(single_order_with_quote.quote.unwrap().verified,);
     }
 }

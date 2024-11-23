@@ -231,7 +231,7 @@ impl TradeVerifier {
             "verified quote",
         );
 
-        ensure_quote_accuracy(&self.quote_inaccuracy_limit, query, &trade, &summary)
+        ensure_quote_accuracy(&self.quote_inaccuracy_limit, query, trade, &summary)
     }
 
     /// Configures all the state overrides that are needed to mock the given
@@ -581,11 +581,11 @@ mod tests {
             sell_tokens_lost: BigRational::from_integer(500.into()),
         };
 
-        let estimate = ensure_quote_accuracy(&low_threshold, &query, H160::zero(), &sell_more);
+        let estimate = ensure_quote_accuracy(&low_threshold, &query, &Default::default(), &sell_more);
         assert!(matches!(estimate, Err(Error::TooInaccurate)));
 
         // passes with slightly higher tolerance
-        let estimate = ensure_quote_accuracy(&high_threshold, &query, H160::zero(), &sell_more);
+        let estimate = ensure_quote_accuracy(&high_threshold, &query, &Default::default(), &sell_more);
         assert!(estimate.is_ok());
 
         let pay_out_more = SettleOutput {
@@ -595,11 +595,11 @@ mod tests {
             sell_tokens_lost: BigRational::from_integer(0.into()),
         };
 
-        let estimate = ensure_quote_accuracy(&low_threshold, &query, H160::zero(), &pay_out_more);
+        let estimate = ensure_quote_accuracy(&low_threshold, &query, &Default::default(), &pay_out_more);
         assert!(matches!(estimate, Err(Error::TooInaccurate)));
 
         // passes with slightly higher tolerance
-        let estimate = ensure_quote_accuracy(&high_threshold, &query, H160::zero(), &pay_out_more);
+        let estimate = ensure_quote_accuracy(&high_threshold, &query, &Default::default(), &pay_out_more);
         assert!(estimate.is_ok());
 
         let sell_less = SettleOutput {
@@ -609,7 +609,7 @@ mod tests {
             sell_tokens_lost: BigRational::from_integer((-500).into()),
         };
         // Ending up with surplus in the buffers is always fine
-        let estimate = ensure_quote_accuracy(&low_threshold, &query, H160::zero(), &sell_less);
+        let estimate = ensure_quote_accuracy(&low_threshold, &query, &Default::default(), &sell_less);
         assert!(estimate.is_ok());
 
         let pay_out_less = SettleOutput {
@@ -619,7 +619,7 @@ mod tests {
             sell_tokens_lost: BigRational::from_integer(0.into()),
         };
         // Ending up with surplus in the buffers is always fine
-        let estimate = ensure_quote_accuracy(&low_threshold, &query, H160::zero(), &pay_out_less);
+        let estimate = ensure_quote_accuracy(&low_threshold, &query, &Default::default(), &pay_out_less);
         assert!(estimate.is_ok());
     }
 }

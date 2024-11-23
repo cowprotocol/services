@@ -43,7 +43,7 @@ pub fn create_quote_interactions_insert_data(
         .enumerate()
         .map(|(index, interaction)| DbQuoteInteraction {
             id,
-            index: index as i64,
+            index: index.try_into().unwrap(),
             target: ByteArray(interaction.target.0),
             value: u256_to_big_decimal(&interaction.value),
             call_data: interaction.call_data.clone(),
