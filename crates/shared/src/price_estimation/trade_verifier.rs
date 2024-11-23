@@ -581,11 +581,13 @@ mod tests {
             sell_tokens_lost: BigRational::from_integer(500.into()),
         };
 
-        let estimate = ensure_quote_accuracy(&low_threshold, &query, &Default::default(), &sell_more);
+        let estimate =
+            ensure_quote_accuracy(&low_threshold, &query, &Default::default(), &sell_more);
         assert!(matches!(estimate, Err(Error::TooInaccurate)));
 
         // passes with slightly higher tolerance
-        let estimate = ensure_quote_accuracy(&high_threshold, &query, &Default::default(), &sell_more);
+        let estimate =
+            ensure_quote_accuracy(&high_threshold, &query, &Default::default(), &sell_more);
         assert!(estimate.is_ok());
 
         let pay_out_more = SettleOutput {
@@ -595,11 +597,13 @@ mod tests {
             sell_tokens_lost: BigRational::from_integer(0.into()),
         };
 
-        let estimate = ensure_quote_accuracy(&low_threshold, &query, &Default::default(), &pay_out_more);
+        let estimate =
+            ensure_quote_accuracy(&low_threshold, &query, &Default::default(), &pay_out_more);
         assert!(matches!(estimate, Err(Error::TooInaccurate)));
 
         // passes with slightly higher tolerance
-        let estimate = ensure_quote_accuracy(&high_threshold, &query, &Default::default(), &pay_out_more);
+        let estimate =
+            ensure_quote_accuracy(&high_threshold, &query, &Default::default(), &pay_out_more);
         assert!(estimate.is_ok());
 
         let sell_less = SettleOutput {
@@ -609,7 +613,8 @@ mod tests {
             sell_tokens_lost: BigRational::from_integer((-500).into()),
         };
         // Ending up with surplus in the buffers is always fine
-        let estimate = ensure_quote_accuracy(&low_threshold, &query, &Default::default(), &sell_less);
+        let estimate =
+            ensure_quote_accuracy(&low_threshold, &query, &Default::default(), &sell_less);
         assert!(estimate.is_ok());
 
         let pay_out_less = SettleOutput {
@@ -619,7 +624,8 @@ mod tests {
             sell_tokens_lost: BigRational::from_integer(0.into()),
         };
         // Ending up with surplus in the buffers is always fine
-        let estimate = ensure_quote_accuracy(&low_threshold, &query, &Default::default(), &pay_out_less);
+        let estimate =
+            ensure_quote_accuracy(&low_threshold, &query, &Default::default(), &pay_out_less);
         assert!(estimate.is_ok());
     }
 }
