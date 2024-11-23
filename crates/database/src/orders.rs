@@ -503,7 +503,6 @@ pub struct FullOrderWithQuote {
     pub quote_gas_price: Option<f64>,
     pub quote_sell_token_price: Option<f64>,
     pub quote_verified: Option<bool>,
-    pub quote_call_data: Option<Vec<u8>>,
     pub solver: Option<Address>,
 }
 
@@ -598,7 +597,6 @@ pub async fn single_full_order_with_quote(
         ", o_quotes.gas_price as quote_gas_price",
         ", o_quotes.sell_token_price as quote_sell_token_price",
         ", o_quotes.verified as quote_verified",
-        ", o_quotes.call_data as quote_call_data",
         ", o_quotes.solver as solver",
         " FROM ", FROM,
         " LEFT JOIN order_quotes o_quotes ON o.uid = o_quotes.order_uid",
