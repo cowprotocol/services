@@ -4,6 +4,7 @@ use {
     sqlx::{
         types::chrono::{DateTime, Utc},
         PgConnection,
+        Row,
     },
 };
 
@@ -139,12 +140,17 @@ pub async fn remove_expired_quotes(
     const QUERY: &str = r#"
 DELETE FROM quotes
 WHERE expiration_timestamp < $1
+RETURNING id
     "#;
-    sqlx::query(QUERY)
+    let deleted_ids = sqlx::query(QUERY)
         .bind(max_expiry)
-        .execute(ex)
-        .await
-        .map(|_| ())
+        .fetch_all(&mut *ex)
+        .await?
+        .iter()
+        .map(|row| row.get(0))
+        .collect::<Vec<_>>();
+
+    delete_quote_interactions(ex, &deleted_ids).await
 }
 
 /// One row in the `quotes_interactions` table.
@@ -190,6 +196,31 @@ pub async fn insert_quote_interactions(
     for interaction in quote_interactions {
         insert_quote_interaction(ex, interaction).await?;
     }
+    Ok(())
+}
+
+pub async fn get_quote_interactions(
+    ex: &mut PgConnection,
+    quote_id: QuoteId,
+) -> Result<Vec<QuoteInteraction>, sqlx::Error> {
+    const QUERY: &str = r#"
+SELECT *
+FROM quotes_interactions
+WHERE quote_id = $1
+        "#;
+    sqlx::query_as(QUERY).bind(quote_id).fetch_all(ex).await
+}
+
+pub async fn delete_quote_interactions(
+    ex: &mut PgConnection,
+    quote_ids: &[QuoteId],
+) -> Result<(), sqlx::Error> {
+    const QUERY: &str = r#"
+DELETE FROM quotes_interactions
+WHERE quote_id = ANY($1)
+    "#;
+
+    sqlx::query(QUERY).bind(&quote_ids).execute(ex).await?;
     Ok(())
 }
 
@@ -494,17 +525,68 @@ mod tests {
             .await
             .unwrap();
 
-        const QUERY: &str = r#"
-            SELECT *
-            FROM quotes_interactions
-            WHERE quote_id = $1
-        "#;
-        let interaction: Option<QuoteInteraction> = sqlx::query_as(QUERY)
-            .bind(quote_interaction.quote_id)
-            .fetch_optional(&mut db as &mut PgConnection)
+        let interactions = get_quote_interactions(&mut db, quote_interaction.quote_id)
+            .await
+            .unwrap();
+        assert_eq!(*interactions.first().unwrap(), quote_interaction);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_removed_quote_interactions_by_id() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let now = low_precision_now();
+        let quote = Quote {
+            id: Default::default(),
+            sell_token: ByteArray([1; 20]),
+            buy_token: ByteArray([2; 20]),
+            sell_amount: 3.into(),
+            buy_amount: 4.into(),
+            gas_amount: 5.,
+            gas_price: 6.,
+            sell_token_price: 7.,
+            order_kind: OrderKind::Sell,
+            expiration_timestamp: now,
+            quote_kind: QuoteKind::Standard,
+            solver: ByteArray([1; 20]),
+            verified: false,
+        };
+        // store quote in database
+        let id = save(&mut db, &quote).await.unwrap();
+
+        let quote_interactions = [
+            QuoteInteraction {
+                quote_id: id,
+                index: 0,
+                target: ByteArray([1; 20]),
+                value: 2.into(),
+                call_data: vec![3; 20],
+            },
+            QuoteInteraction {
+                quote_id: id,
+                index: 1,
+                target: ByteArray([1; 20]),
+                value: 2.into(),
+                call_data: vec![3; 20],
+            },
+        ];
+        // store interactions for the quote in database
+        insert_quote_interactions(&mut db, &quote_interactions)
             .await
             .unwrap();
 
-        assert_eq!(interaction.unwrap(), quote_interaction);
+        let interactions = get_quote_interactions(&mut db, id).await.unwrap();
+        assert_eq!(interactions.len(), 2);
+
+        // remove quote using expired functino call, should also remove interactions
+        remove_expired_quotes(&mut db, now + Duration::seconds(30))
+            .await
+            .unwrap();
+
+        let interactions = get_quote_interactions(&mut db, id).await.unwrap();
+        assert!(interactions.is_empty());
     }
 }

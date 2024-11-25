@@ -1202,6 +1202,18 @@ mod tests {
             buy_amount: U256::from(2),
             data: QuoteData {
                 verified: true,
+                interactions: vec![
+                    InteractionData {
+                        target: H160([1; 20]),
+                        value: U256::from(100),
+                        call_data: vec![1, 20],
+                    },
+                    InteractionData {
+                        target: H160([2; 20]),
+                        value: U256::from(10),
+                        call_data: vec![2, 20],
+                    },
+                ],
                 ..Default::default()
             },
             ..Default::default()
