@@ -242,6 +242,7 @@ async fn accepts_new_settle_requests_after_timeout() {
     }
 
     // Wait for the timeout to expire, so all the settle requests are processed.
+    // Must a bit higher than `ethrpc_batch_delay`.
     tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
 
     // Now we send the last settlement request.
