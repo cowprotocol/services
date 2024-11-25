@@ -165,12 +165,12 @@ pub async fn insert_quote_interaction(
     const QUERY: &str = r#"
 INSERT INTO quotes_interactions (
     order_uid,
-    index
+    index,
     target,
     value,
     call_data
 )
-VALUES ($1, $2, $3, $4)
+VALUES ($1, $2, $3, $4, $5)
     "#;
     sqlx::query(QUERY)
         .bind(quote_interaction.id)
