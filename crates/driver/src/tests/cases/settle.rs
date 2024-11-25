@@ -135,7 +135,7 @@ async fn discards_excess_settle_requests() {
 
     // MAX_SOLUTION_STORAGE = 5. Since this is hardcoded, no more solutions can be
     // stored.
-    let ids = join_all(vec![
+    let solution_ids = join_all(vec![
         test.solve(),
         test.solve(),
         test.solve(),
@@ -147,11 +147,15 @@ async fn discards_excess_settle_requests() {
     .map(|res| res.ok().id())
     .collect::<Vec<_>>();
 
-    let unique_id_count = ids.clone().into_iter().collect::<HashSet<_>>().len();
-    assert_eq!(unique_id_count, ids.len());
+    let unique_solutions_count = solution_ids
+        .clone()
+        .into_iter()
+        .collect::<HashSet<_>>()
+        .len();
+    assert_eq!(unique_solutions_count, solution_ids.len());
 
     // `collect_vec` is required to execute futures in the same order.
-    let results = join_all(ids.iter().map(|id| test.settle(id)).collect_vec()).await;
+    let results = join_all(solution_ids.iter().map(|id| test.settle(id)).collect_vec()).await;
 
     for (index, result) in results.into_iter().enumerate() {
         match index {
@@ -192,7 +196,7 @@ async fn accepts_new_settle_requests_after_timeout() {
 
     // MAX_SOLUTION_STORAGE = 5. Since this is hardcoded, no more solutions can be
     // stored.
-    let ids = join_all(vec![
+    let solution_id = join_all(vec![
         test.solve(),
         test.solve(),
         test.solve(),
@@ -204,12 +208,22 @@ async fn accepts_new_settle_requests_after_timeout() {
     .map(|res| res.ok().id())
     .collect::<Vec<_>>();
 
-    let unique_id_count = ids.clone().into_iter().collect::<HashSet<_>>().len();
-    assert_eq!(unique_id_count, ids.len());
+    let unique_solutions_count = solution_id
+        .clone()
+        .into_iter()
+        .collect::<HashSet<_>>()
+        .len();
+    assert_eq!(unique_solutions_count, solution_id.len());
 
     // Send only first 4 settle requests. `collect_vec` is required to execute
     // futures in the same order.
-    let results = join_all(ids[..4].iter().map(|id| test.settle(id)).collect_vec()).await;
+    let results = join_all(
+        solution_id[..4]
+            .iter()
+            .map(|id| test.settle(id))
+            .collect_vec(),
+    )
+    .await;
 
     for (index, result) in results.into_iter().enumerate() {
         match index {
@@ -231,5 +245,8 @@ async fn accepts_new_settle_requests_after_timeout() {
     tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
 
     // Now we send the last settlement request.
-    test.settle(&ids[4]).await.err().kind("FailedToSubmit");
+    test.settle(&solution_id[4])
+        .await
+        .err()
+        .kind("FailedToSubmit");
 }
