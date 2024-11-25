@@ -150,8 +150,8 @@ WHERE expiration_timestamp < $1
 /// One row in the `quotes_interactions` table.
 #[derive(Clone, Debug, PartialEq, sqlx::FromRow)]
 pub struct QuoteInteraction {
-    pub id: QuoteId,
-    pub index: i64,
+    pub quote_id: QuoteId,
+    pub index: i32,
     pub target: Address,
     pub value: BigDecimal,
     pub call_data: Vec<u8>,
@@ -164,7 +164,7 @@ pub async fn insert_quote_interaction(
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
 INSERT INTO quotes_interactions (
-    order_uid,
+    quote_id,
     index,
     target,
     value,
@@ -173,7 +173,7 @@ INSERT INTO quotes_interactions (
 VALUES ($1, $2, $3, $4, $5)
     "#;
     sqlx::query(QUERY)
-        .bind(quote_interaction.id)
+        .bind(quote_interaction.quote_id)
         .bind(quote_interaction.index)
         .bind(quote_interaction.target)
         .bind(&quote_interaction.value)
@@ -484,7 +484,7 @@ mod tests {
         crate::clear_DANGER_(&mut db).await.unwrap();
 
         let quote_interaction = QuoteInteraction {
-            id: Default::default(),
+            quote_id: Default::default(),
             index: Default::default(),
             target: ByteArray([1; 20]),
             value: 2.into(),
@@ -497,10 +497,10 @@ mod tests {
         const QUERY: &str = r#"
             SELECT *
             FROM quotes_interactions
-            WHERE order_uid = $1
+            WHERE quote_id = $1
         "#;
         let interaction: Option<QuoteInteraction> = sqlx::query_as(QUERY)
-            .bind(quote_interaction.id)
+            .bind(quote_interaction.quote_id)
             .fetch_optional(&mut db as &mut PgConnection)
             .await
             .unwrap();

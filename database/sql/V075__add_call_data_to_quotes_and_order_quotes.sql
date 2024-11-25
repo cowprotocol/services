@@ -8,14 +8,14 @@ ALTER TABLE order_quotes
 
 -- Step 3: Create table with quote interactions
 CREATE TABLE quotes_interactions (
-    order_uid bytea NOT NULL,
+    quote_id bigint NOT NULL,
     index int NOT NULL,
     target bytea NOT NULL,
     value numeric(78,0) NOT NULL,
     call_data bytea,
 
-    PRIMARY KEY (order_uid, index)
+    PRIMARY KEY (quote_id, index)
 );
 
 -- Get a specific quote's interactions.
-CREATE INDEX quote_uid_interactions ON quotes_interactions USING HASH (order_uid);
+CREATE INDEX quote_id_interactions ON quotes_interactions USING HASH (quote_id);

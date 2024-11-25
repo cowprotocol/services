@@ -3,6 +3,7 @@ use {
         db_order_conversions::order_kind_into,
         order_quoting::{quote_kind_from_signing_scheme, QuoteData, QuoteSearchParameters},
     },
+    anyhow::Result,
     chrono::{DateTime, Utc},
     database::{
         byte_array::ByteArray,
@@ -37,16 +38,18 @@ pub fn create_quote_row(data: &QuoteData) -> DbQuote {
 pub fn create_quote_interactions_insert_data(
     id: QuoteId,
     data: &QuoteData,
-) -> Vec<DbQuoteInteraction> {
+) -> Result<Vec<DbQuoteInteraction>> {
     data.interactions
         .iter()
         .enumerate()
-        .map(|(index, interaction)| DbQuoteInteraction {
-            id,
-            index: index.try_into().unwrap(),
-            target: ByteArray(interaction.target.0),
-            value: u256_to_big_decimal(&interaction.value),
-            call_data: interaction.call_data.clone(),
+        .map(|(index, interaction)| {
+            Ok(DbQuoteInteraction {
+                quote_id: id,
+                index: index.try_into()?,
+                target: ByteArray(interaction.target.0),
+                value: u256_to_big_decimal(&interaction.value),
+                call_data: interaction.call_data.clone(),
+            })
         })
         .collect()
 }

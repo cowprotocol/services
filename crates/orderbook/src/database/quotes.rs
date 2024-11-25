@@ -25,7 +25,7 @@ impl QuoteStoring for Postgres {
         let row = create_quote_row(&data);
         let id = database::quotes::save(&mut ex, &row).await?;
         if !data.interactions.is_empty() {
-            let interactions = create_quote_interactions_insert_data(id, &data);
+            let interactions = create_quote_interactions_insert_data(id, &data)?;
             database::quotes::insert_quote_interactions(&mut ex, &interactions).await?;
         }
         Ok(id)
