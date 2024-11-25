@@ -8,6 +8,8 @@ use {
         },
     },
     futures::future::join_all,
+    itertools::Itertools,
+    std::collections::HashSet,
     web3::Transport,
 };
 
@@ -114,7 +116,7 @@ async fn high_gas_limit() {
 
 #[tokio::test]
 #[ignore]
-async fn too_many_settle_requests() {
+async fn discards_excess_settle_requests() {
     let test = tests::setup()
         .allow_multiple_solve_requests()
         .pool(ab_pool())
@@ -129,23 +131,25 @@ async fn too_many_settle_requests() {
         .done()
         .await;
 
-    let id1 = test.solve().await.ok().id();
-    let id2 = test.solve().await.ok().id();
-    let id3 = test.solve().await.ok().id();
-    let id4 = test.solve().await.ok().id();
-
-    assert_ne!(id1, id2);
-    assert_ne!(id2, id3);
-    assert_ne!(id1, id3);
-    assert_ne!(id1, id4);
-
-    let results = join_all(vec![
-        test.settle(&id1),
-        test.settle(&id2),
-        test.settle(&id3),
-        test.settle(&id4),
+    // MAX_SOLUTION_STORAGE = 5. Since this is hardcoded, no more solutions can be
+    // stored.
+    let ids = join_all(vec![
+        test.solve(),
+        test.solve(),
+        test.solve(),
+        test.solve(),
+        test.solve(),
     ])
-    .await;
+    .await
+    .into_iter()
+    .map(|res| res.ok().id())
+    .collect::<Vec<_>>();
+
+    let unique_id_count = ids.clone().into_iter().collect::<HashSet<_>>().len();
+    assert_eq!(unique_id_count, ids.len());
+
+    // `collect_vec` is required to execute futures in the same order.
+    let results = join_all(ids.iter().map(|id| test.settle(id)).collect_vec()).await;
 
     for (index, result) in results.into_iter().enumerate() {
         match index {
@@ -157,9 +161,71 @@ async fn too_many_settle_requests() {
             // to the test framework limitation, the same solution settlements fail. We
             // are fine with that to avoid huge changes in the framework.
             1 | 2 => result.err().kind("FailedToSubmit"),
-            // Driver's settlement queue max size is 3. The last request should be discarded.
+            // Driver's settlement queue max size is 3. Next requests should be discarded.
+            3 => result.err().kind("QueueAwaitingDeadlineExceeded"),
+            4 => result.err().kind("QueueAwaitingDeadlineExceeded"),
+            _ => unreachable!(),
+        }
+    }
+}
+
+#[tokio::test]
+#[ignore]
+async fn accepts_new_settle_requests_after_timeout() {
+    let test = tests::setup()
+        .allow_multiple_solve_requests()
+        .pool(ab_pool())
+        .order(ab_order())
+        .solution(ab_solution())
+        .ethrpc_args(shared::ethrpc::Arguments {
+            ethrpc_max_batch_size: 10,
+            ethrpc_max_concurrent_requests: 10,
+            ethrpc_batch_delay: std::time::Duration::from_secs(1),
+        })
+        .solve_deadline_timeout(chrono::Duration::seconds(4))
+        .done()
+        .await;
+
+    // MAX_SOLUTION_STORAGE = 5. Since this is hardcoded, no more solutions can be
+    // stored.
+    let ids = join_all(vec![
+        test.solve(),
+        test.solve(),
+        test.solve(),
+        test.solve(),
+        test.solve(),
+    ])
+    .await
+    .into_iter()
+    .map(|res| res.ok().id())
+    .collect::<Vec<_>>();
+
+    let unique_id_count = ids.clone().into_iter().collect::<HashSet<_>>().len();
+    assert_eq!(unique_id_count, ids.len());
+
+    // Send only first 4 settle requests. `collect_vec` is required to execute
+    // futures in the same order.
+    let results = join_all(ids[..4].iter().map(|id| test.settle(id)).collect_vec()).await;
+
+    for (index, result) in results.into_iter().enumerate() {
+        match index {
+            // The first must be settled.
+            0 => {
+                result.ok().await.ab_order_executed().await;
+            }
+            // We don't really care about the intermediate settlements. They are processed but due
+            // to the test framework limitation, the same solution settlements fail. We
+            // are fine with that to avoid huge changes in the framework.
+            1 | 2 => result.err().kind("FailedToSubmit"),
+            // Driver's settlement queue max size is 3. Next requests should be discarded.
             3 => result.err().kind("QueueAwaitingDeadlineExceeded"),
             _ => unreachable!(),
         }
     }
+
+    // Wait for the timeout to expire, so all the settle requests are processed.
+    tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
+
+    // Now we send the last settlement request.
+    test.settle(&ids[4]).await.err().kind("FailedToSubmit");
 }
