@@ -7,7 +7,7 @@ use {
     database::{
         byte_array::ByteArray,
         order_events::{insert_order_event, OrderEvent, OrderEventLabel},
-        orders::{self, FullOrder, OrderKind as DbOrderKind},
+        orders::{self, FullOrder, OrderKind as DbOrderKind, OrderQuoteInteraction},
     },
     ethcontract::H256,
     futures::{stream::TryStreamExt, FutureExt, StreamExt},
@@ -226,7 +226,7 @@ async fn insert_quote(
     quote: &Quote,
     ex: &mut PgConnection,
 ) -> Result<(), InsertionError> {
-    let quote = database::orders::Quote {
+    let dbquote = database::orders::Quote {
         order_uid: ByteArray(order.metadata.uid.0),
         gas_amount: quote.data.fee_parameters.gas_amount,
         gas_price: quote.data.fee_parameters.gas_price,
@@ -236,10 +236,29 @@ async fn insert_quote(
         solver: ByteArray(quote.data.solver.0),
         verified: quote.data.verified,
     };
-    database::orders::insert_quote(ex, &quote)
+    database::orders::insert_quote(ex, &dbquote)
         .await
         .map_err(InsertionError::DbError)?;
-    Ok(())
+
+    let dbinteractions = quote
+        .data
+        .interactions
+        .iter()
+        .enumerate()
+        .map(|(idx, interaction)| {
+            Ok(OrderQuoteInteraction {
+                order_uid: dbquote.order_uid,
+                index: idx.try_into()?,
+                target: ByteArray(interaction.target.0),
+                value: u256_to_big_decimal(&interaction.value),
+                call_data: interaction.call_data.clone(),
+            })
+        })
+        .collect::<Result<Vec<_>>>()
+        .map_err(|_| InsertionError::IndexConversionFailed)?;
+    database::orders::insert_order_quote_interactions(ex, dbinteractions.as_slice())
+        .await
+        .map_err(InsertionError::DbError)
 }
 
 #[async_trait::async_trait]

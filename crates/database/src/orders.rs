@@ -471,7 +471,18 @@ pub async fn insert_order_quote_interaction(
         value,
         call_data
     )
-    VALUES ($1, $2, $3, $4, $5)"#;
+    VALUES ($1, $2, $3, $4, $5)
+    ON CONFLICT (order_uid, index) DO UPDATE SET
+    (
+        target,
+        value,
+        call_data
+    ) = (
+        EXCLUDED.target,
+        EXCLUDED.value,
+        EXCLUDED.call_data
+    )
+    "#;
     sqlx::query(INSERT_ORDER_QUOTES_INTERACTION_QUERY)
         .bind(quote_interaction.order_uid)
         .bind(quote_interaction.index)
@@ -2194,5 +2205,36 @@ mod tests {
                 ByteArray([5u8; 56])
             ]
         );
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_insert_order_quote_interaction() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let interaction = OrderQuoteInteraction {
+            order_uid: Default::default(),
+            index: Default::default(),
+            target: ByteArray([1; 20]),
+            value: 2.into(),
+            call_data: vec![3; 20],
+        };
+        insert_order_quote_interaction(&mut db, &interaction)
+            .await
+            .unwrap();
+
+        const QUERY: &str = r#"
+        SELECT * FROM order_quotes_interactions
+        WHERE order_uid = $1
+        "#;
+
+        let interactions: Vec<OrderQuoteInteraction> = sqlx::query_as(QUERY)
+            .bind(&interaction.order_uid)
+            .fetch_all(&mut db as &mut PgConnection)
+            .await
+            .unwrap();
+        assert_eq!(*interactions.first().unwrap(), interaction);
     }
 }

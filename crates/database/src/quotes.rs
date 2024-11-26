@@ -220,7 +220,7 @@ DELETE FROM quotes_interactions
 WHERE quote_id = ANY($1)
     "#;
 
-    sqlx::query(QUERY).bind(&quote_ids).execute(ex).await?;
+    sqlx::query(QUERY).bind(quote_ids).execute(ex).await?;
     Ok(())
 }
 

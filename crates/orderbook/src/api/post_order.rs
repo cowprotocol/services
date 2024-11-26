@@ -262,6 +262,10 @@ impl IntoWarpReply for AddOrderError {
                 super::error("InvalidReplacement", err.to_string()),
                 StatusCode::UNAUTHORIZED,
             ),
+            AddOrderError::QuoteInteractionWrongIndex => {
+                tracing::error!("QuoteInteractionWrongIndex");
+                crate::api::internal_error_reply()
+            }
         }
     }
 }
