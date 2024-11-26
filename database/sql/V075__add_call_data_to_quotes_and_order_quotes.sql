@@ -19,3 +19,17 @@ CREATE TABLE quotes_interactions (
 
 -- Get a specific quote's interactions.
 CREATE INDEX quote_id_interactions ON quotes_interactions USING HASH (quote_id);
+
+-- Step 3: Create table with quote interactions
+CREATE TABLE order_quotes_interactions (
+    order_uid bytea NOT NULL,
+    index int NOT NULL,
+    target bytea NOT NULL,
+    value numeric(78,0) NOT NULL,
+    call_data bytea,
+
+    PRIMARY KEY (order_uid, index)
+);
+
+-- Get a specific order's interactions.
+CREATE INDEX order_uid_interactions ON orders_quotes_interactions USING HASH (order_uid);

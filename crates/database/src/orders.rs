@@ -449,6 +449,50 @@ AND cancellation_timestamp IS NULL
         .map(|_| ())
 }
 
+/// One row in the `order_quotes_interactions` table.
+#[derive(Clone, Default, Debug, PartialEq, sqlx::FromRow)]
+pub struct OrderQuoteInteraction {
+    pub order_uid: OrderUid,
+    pub index: i32,
+    pub target: Address,
+    pub value: BigDecimal,
+    pub call_data: Vec<u8>,
+}
+
+pub async fn insert_order_quote_interaction(
+    ex: &mut PgConnection,
+    quote_interaction: &OrderQuoteInteraction,
+) -> Result<(), sqlx::Error> {
+    const INSERT_ORDER_QUOTES_INTERACTION_QUERY: &str = r#"
+    INSERT INTO order_quotes_interactions (
+        order_uid,
+        index,
+        target,
+        value,
+        call_data
+    )
+    VALUES ($1, $2, $3, $4, $5)"#;
+    sqlx::query(INSERT_ORDER_QUOTES_INTERACTION_QUERY)
+        .bind(quote_interaction.order_uid)
+        .bind(quote_interaction.index)
+        .bind(quote_interaction.target)
+        .bind(&quote_interaction.value)
+        .bind(&quote_interaction.call_data)
+        .execute(ex)
+        .await?;
+    Ok(())
+}
+
+pub async fn insert_order_quote_interactions(
+    ex: &mut PgConnection,
+    quote_interactions: &[OrderQuoteInteraction],
+) -> Result<(), sqlx::Error> {
+    for interactions in quote_interactions {
+        insert_order_quote_interaction(ex, interactions).await?;
+    }
+    Ok(())
+}
+
 /// Interactions are read as arrays of their fields: target, value, data.
 /// This is done as sqlx does not support reading arrays of more complicated
 /// types than just one field. The pre_ and post_interaction's data of
