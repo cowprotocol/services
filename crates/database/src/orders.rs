@@ -2231,7 +2231,7 @@ mod tests {
         "#;
 
         let interactions: Vec<OrderQuoteInteraction> = sqlx::query_as(QUERY)
-            .bind(&interaction.order_uid)
+            .bind(interaction.order_uid)
             .fetch_all(&mut db as &mut PgConnection)
             .await
             .unwrap();
