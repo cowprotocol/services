@@ -32,4 +32,4 @@ CREATE TABLE order_quotes_interactions (
 );
 
 -- Get a specific order's interactions.
-CREATE INDEX order_uid_interactions ON orders_quotes_interactions USING HASH (order_uid);
+CREATE INDEX order_uid_interactions ON order_quotes_interactions USING HASH (order_uid);
