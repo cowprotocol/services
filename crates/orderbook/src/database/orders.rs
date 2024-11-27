@@ -113,7 +113,8 @@ pub enum InsertionError {
     DbError(sqlx::Error),
     /// Full app data to be inserted doesn't match existing.
     AppDataMismatch(Vec<u8>),
-    /// Type conversion (usize to i32) of sequence index of order quote interaction failed.
+    /// Type conversion (usize to i32) of sequence index of order quote
+    /// interaction failed.
     IndexConversionFailed,
 }
 

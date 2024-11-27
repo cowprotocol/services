@@ -2,7 +2,9 @@ use {
     super::Postgres,
     anyhow::{Context, Result},
     chrono::{DateTime, Utc},
-    model::quote::QuoteId,
+    model::{interaction::InteractionData, quote::QuoteId},
+    number::conversions::big_decimal_to_u256,
+    primitive_types::H160,
     shared::{
         event_storing_helpers::{
             create_db_search_parameters,
@@ -39,7 +41,25 @@ impl QuoteStoring for Postgres {
 
         let mut ex = self.pool.acquire().await?;
         let quote = database::quotes::get(&mut ex, id).await?;
-        quote.map(TryFrom::try_from).transpose()
+        let quote_interactions = database::quotes::get_quote_interactions(&mut ex, id)
+            .await?
+            .iter()
+            .map(|data| {
+                Ok(InteractionData {
+                    target: H160(data.target.0),
+                    value: big_decimal_to_u256(&data.value)
+                        .context("quote interaction value is not a valid U256")?,
+                    call_data: data.call_data.clone(),
+                })
+            })
+            .collect::<Result<Vec<InteractionData>>>()?;
+        Ok(quote
+            .map(QuoteData::try_from)
+            .transpose()?
+            .map(|mut quote_data| {
+                quote_data.interactions = quote_interactions;
+                quote_data
+            }))
     }
 
     async fn find(
@@ -57,8 +77,26 @@ impl QuoteStoring for Postgres {
         let quote = database::quotes::find(&mut ex, &params)
             .await
             .context("failed finding quote by parameters")?;
-        quote
-            .map(|quote| Ok((quote.id, quote.try_into()?)))
-            .transpose()
+        if let Some(quote) = quote {
+            let quote_id = quote.id;
+            let quote_interactions = database::quotes::get_quote_interactions(&mut ex, quote_id)
+                .await?
+                .iter()
+                .map(|data| {
+                    Ok(InteractionData {
+                        target: H160(data.target.0),
+                        value: big_decimal_to_u256(&data.value)
+                            .context("quote interaction value is not a valid U256")?,
+                        call_data: data.call_data.clone(),
+                    })
+                })
+                .collect::<Result<Vec<InteractionData>>>()?;
+
+            let mut quote_data = QuoteData::try_from(quote)?;
+            quote_data.interactions = quote_interactions;
+            Ok(Some((quote_id, quote_data)))
+        } else {
+            Ok(None)
+        }
     }
 }
