@@ -32,6 +32,8 @@ services:
       - type: bind
         source: ./database/sql/
         target: /flyway/sql
+    depends_on:
+      - db
 
 volumes:
   postgres:
