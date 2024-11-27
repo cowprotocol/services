@@ -4,7 +4,7 @@
     - "database/sql/**"
 
 - markdown: |
-    Reminder: Please consider backward compatibility when modifying the OpenAPI specification (`openapi.yml`). 
+    Reminder: Please consider backward compatibility when modifying the API specification. 
     If breaking changes are unavoidable, ensure:
     - You communicate the changes to affected teams.
     - You provide proper versioning and migration mechanisms.
