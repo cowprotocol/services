@@ -24,7 +24,7 @@ services:
     build:
       context: .
       target: migrations
-    restart: on-failure
+    restart: no
     command: migrate
     environment:
       FLYWAY_URL: jdbc:postgresql://db/?user=$USER&password=
