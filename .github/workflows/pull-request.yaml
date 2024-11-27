@@ -91,7 +91,6 @@ jobs:
         with:
           file: docker-compose.yaml
           up-opts: -d db migrations
-      - run: docker wait services-migrations-1
       - run: cargo nextest run postgres -p orderbook -p database -p autopilot --test-threads 1 --run-ignored ignored-only
 
   test-local-node:
