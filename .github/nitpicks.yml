@@ -1,4 +1,12 @@
 - markdown: |
-    Reminder: Please update the DB Readme.
+    Reminder: Please update the DB Readme and ensure SQL migrations are reversible (include rollback scripts if applicable).
   pathFilter:
     - "database/sql/**"
+
+- markdown: |
+    Reminder: Please consider backward compatibility when modifying the OpenAPI specification (`openapi.yml`). 
+    If breaking changes are unavoidable, ensure:
+    - You communicate the changes to affected teams.
+    - You provide proper versioning and migration mechanisms.
+  pathFilter:
+    - "**/openapi.yml"
