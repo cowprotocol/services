@@ -487,12 +487,16 @@ components:
       properties:
         solutionId:
           description: Id of the solution that should be executed.
-          type: string
-          example: "123"
+          type: integer
+          example: 123
         submissionDeadlineLatestBlock:
           description: The last block number in which the solution TX can be included.
           type: integer
           example: 12345
+        auctionId:
+          description: Auction ID in which the specified solution ID is competing.
+          type: integer
+          example: 123
     RevealedResponse:
       description: Response of the reveal endpoint.
       type: object
