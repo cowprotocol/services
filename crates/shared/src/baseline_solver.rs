@@ -39,7 +39,7 @@ pub struct Estimate<'a, V, L> {
     pub path: Vec<&'a L>,
 }
 
-impl<'a, V, L: BaselineSolvable> Estimate<'a, V, L> {
+impl<V, L: BaselineSolvable> Estimate<'_, V, L> {
     pub fn gas_cost(&self) -> usize {
         // This could be more accurate by actually simulating the settlement (since
         // different tokens might have more or less expensive transfer costs)

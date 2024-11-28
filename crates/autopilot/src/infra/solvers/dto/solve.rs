@@ -188,7 +188,7 @@ where
 {
     struct SolutionIdVisitor;
 
-    impl<'de> serde::de::Visitor<'de> for SolutionIdVisitor {
+    impl serde::de::Visitor<'_> for SolutionIdVisitor {
         type Value = u64;
 
         fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
