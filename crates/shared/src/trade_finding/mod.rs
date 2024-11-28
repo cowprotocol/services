@@ -162,12 +162,11 @@ impl Trade {
                 .mul(&sell_price)
                 .checked_div(&buy_price)
                 .context("div by zero: buy price")?
-                .ceil(),
+                .ceil(), /* `ceil` is used to compute buy amount only: https://github.com/cowprotocol/contracts/blob/main/src/contracts/GPv2Settlement.sol#L389-L411 */
             OrderKind::Buy => order_amount
                 .mul(&buy_price)
                 .checked_div(&sell_price)
-                .context("div by zero: sell price")?
-                .ceil(),
+                .context("div by zero: sell price")?,
         };
 
         big_rational_to_u256(&out_amount).context("out amount is not a valid U256")
