@@ -10,9 +10,11 @@ pub mod trades;
 
 use {
     crate::database::orders::InsertionError,
-    anyhow::Result,
+    anyhow::{Context, Result},
     database::byte_array::ByteArray,
-    model::order::Order,
+    model::{interaction::InteractionData, order::Order, quote::QuoteId},
+    number::conversions::big_decimal_to_u256,
+    primitive_types::H160,
     sqlx::{PgConnection, PgPool},
 };
 
@@ -52,6 +54,24 @@ impl Postgres {
             }
         }
         Ok(())
+    }
+
+    async fn get_quote_interactions(
+        ex: &mut PgConnection,
+        quote_id: QuoteId,
+    ) -> Result<Vec<InteractionData>> {
+        database::quotes::get_quote_interactions(ex, quote_id)
+            .await?
+            .iter()
+            .map(|data| {
+                Ok(InteractionData {
+                    target: H160(data.target.0),
+                    value: big_decimal_to_u256(&data.value)
+                        .context("quote interaction value is not a valid U256")?,
+                    call_data: data.call_data.clone(),
+                })
+            })
+            .collect::<Result<Vec<InteractionData>>>()
     }
 }
 

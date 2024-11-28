@@ -5,7 +5,7 @@ use {
         code_simulation::CodeSimulating,
         encoded_settlement::{encode_trade, EncodedSettlement},
         interaction::EncodedInteraction,
-        trade_finding::{Interaction, Trade},
+        trade_finding::{map_interactions_data, Interaction, Trade},
     },
     anyhow::{Context, Result},
     contracts::{
@@ -179,7 +179,7 @@ impl TradeVerifier {
                     gas: trade.gas_estimate.context("no gas estimate")?,
                     solver: trade.solver,
                     verified: true,
-                    interactions: crate::trade_finding::map_interactions_data(&trade.interactions),
+                    interactions: map_interactions_data(&trade.interactions),
                 };
                 tracing::warn!(
                     ?estimate,
@@ -313,9 +313,7 @@ impl TradeVerifying for TradeVerifier {
                         gas,
                         solver: trade.solver,
                         verified: false,
-                        interactions: crate::trade_finding::map_interactions_data(
-                            &trade.interactions,
-                        ),
+                        interactions: map_interactions_data(&trade.interactions),
                     };
                     tracing::warn!(
                         ?err,
@@ -532,7 +530,7 @@ fn ensure_quote_accuracy(
         gas: summary.gas_used.as_u64(),
         solver: trade.solver,
         verified: true,
-        interactions: crate::trade_finding::map_interactions_data(&trade.interactions),
+        interactions: map_interactions_data(&trade.interactions),
     })
 }
 

@@ -2,9 +2,7 @@ use {
     super::Postgres,
     anyhow::{Context, Result},
     chrono::{DateTime, Utc},
-    model::{interaction::InteractionData, quote::QuoteId},
-    number::conversions::big_decimal_to_u256,
-    primitive_types::H160,
+    model::quote::QuoteId,
     shared::{
         event_storing_helpers::{
             create_db_search_parameters,
@@ -41,18 +39,8 @@ impl QuoteStoring for Postgres {
 
         let mut ex = self.pool.acquire().await?;
         let quote = database::quotes::get(&mut ex, id).await?;
-        let quote_interactions = database::quotes::get_quote_interactions(&mut ex, id)
-            .await?
-            .iter()
-            .map(|data| {
-                Ok(InteractionData {
-                    target: H160(data.target.0),
-                    value: big_decimal_to_u256(&data.value)
-                        .context("quote interaction value is not a valid U256")?,
-                    call_data: data.call_data.clone(),
-                })
-            })
-            .collect::<Result<Vec<InteractionData>>>()?;
+        let quote_interactions = Self::get_quote_interactions(&mut ex, id).await?;
+
         Ok(quote
             .map(QuoteData::try_from)
             .transpose()?
@@ -79,18 +67,7 @@ impl QuoteStoring for Postgres {
             .context("failed finding quote by parameters")?;
         if let Some(quote) = quote {
             let quote_id = quote.id;
-            let quote_interactions = database::quotes::get_quote_interactions(&mut ex, quote_id)
-                .await?
-                .iter()
-                .map(|data| {
-                    Ok(InteractionData {
-                        target: H160(data.target.0),
-                        value: big_decimal_to_u256(&data.value)
-                            .context("quote interaction value is not a valid U256")?,
-                        call_data: data.call_data.clone(),
-                    })
-                })
-                .collect::<Result<Vec<InteractionData>>>()?;
+            let quote_interactions = Self::get_quote_interactions(&mut ex, quote_id).await?;
 
             let mut quote_data = QuoteData::try_from(quote)?;
             quote_data.interactions = quote_interactions;

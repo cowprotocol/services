@@ -1,3 +1,5 @@
+-- This migration script is reversible.
+
 -- Step 1: Add a new column to the quotes table
 ALTER TABLE quotes 
     ADD COLUMN verified boolean;

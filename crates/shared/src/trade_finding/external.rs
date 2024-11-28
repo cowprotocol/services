@@ -4,7 +4,14 @@ use {
     crate::{
         price_estimation::{PriceEstimationError, Query},
         request_sharing::{BoxRequestSharing, RequestSharing},
-        trade_finding::{Interaction, Quote, Trade, TradeError, TradeFinding},
+        trade_finding::{
+            map_interactions_data,
+            Interaction,
+            Quote,
+            Trade,
+            TradeError,
+            TradeFinding,
+        },
     },
     anyhow::{anyhow, Context},
     ethrpc::block_stream::CurrentBlockWatcher,
@@ -170,7 +177,7 @@ impl TradeFinding for ExternalTradeFinder {
             out_amount: trade.out_amount,
             gas_estimate,
             solver: trade.solver,
-            interactions: crate::trade_finding::map_interactions_data(&trade.interactions),
+            interactions: map_interactions_data(&trade.interactions),
         })
     }
 
