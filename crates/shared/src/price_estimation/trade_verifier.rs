@@ -156,11 +156,7 @@ impl TradeVerifier {
             .swap(
                 self.settlement.address(),
                 verification.from,
-                tokens
-                    .iter()
-                    .position(|&t| t == query.sell_token)
-                    .context("missing query sell token")?
-                    .into(),
+                query.sell_token,
                 sell_amount,
                 self.native_token,
                 tokens.clone(),
@@ -634,6 +630,8 @@ impl SettleOutput {
         let tokens = function.decode_output(output).context("decode")?;
         let (gas_used, balances): (U256, Vec<U256>) = Tokenize::from_token(Token::Tuple(tokens))?;
 
+        // The balances are stored in the following order:
+        // [...tokens_before, user_balance_before, user_balance_after, ...tokens_after]
         let mut i = 0;
         let mut tokens_lost = HashMap::new();
         // Get settlement contract balances before the trade
