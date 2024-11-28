@@ -175,7 +175,7 @@ impl<'de> Deserialize<'de> for OrderUid {
         D: Deserializer<'de>,
     {
         struct Visitor {}
-        impl<'de> de::Visitor<'de> for Visitor {
+        impl de::Visitor<'_> for Visitor {
             type Value = OrderUid;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
