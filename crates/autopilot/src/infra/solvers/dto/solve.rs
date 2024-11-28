@@ -116,7 +116,7 @@ impl Solution {
 /// settled on-chain.
 #[serde_as]
 #[derive(Clone, Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct TradedOrder {
     side: Side,
     sell_token: H160,
@@ -158,7 +158,7 @@ impl TradedOrder {
 
 #[serde_as]
 #[derive(Clone, Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub enum Side {
     Buy,
     Sell,
@@ -166,7 +166,7 @@ pub enum Side {
 
 #[serde_as]
 #[derive(Clone, Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct Solution {
     /// Unique ID of the solution (per driver competition), used to identify
     /// it in subsequent requests (reveal, settle).
@@ -214,7 +214,7 @@ where
 }
 
 #[derive(Clone, Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct Response {
     pub solutions: Vec<Solution>,
 }
