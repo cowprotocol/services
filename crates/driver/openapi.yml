@@ -10,12 +10,6 @@ paths:
       description: Get price estimation quote.
       parameters:
         - in: query
-          name: sellToken
-          description: The token to sell.
-          schema:
-            $ref: "#/components/schemas/Address"
-          required: true
-        - in: query
           name: buyToken
           description: The token to buy.
           schema:

@@ -19,7 +19,6 @@ paths:
               $ref: "#/components/schemas/Auction"
       responses:
         200:
-          description: Auction successfully solved.
           content:
             application/json:
               schema:

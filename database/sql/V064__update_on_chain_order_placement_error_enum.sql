@@ -1,1 +1,1 @@
-ALTER TYPE OnchainOrderPlacementError ADD VALUE 'non_zero_fee';
+ALTER TYPE OnchainOrderPlacementError ADD VALUE 'non_zero_fee_2';
