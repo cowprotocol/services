@@ -63,7 +63,7 @@ paths:
           $ref: '#/components/responses/InternalServerError'
   /solve:
     post:
-      description: >
+      description: |-
         Solve the passed in auction.
 
         The response contains the objective value of the solution the Solver is
@@ -121,7 +121,7 @@ paths:
           $ref: '#/components/responses/InternalServerError'
   /settle:
     post:
-      description: >
+      description: |-
         Execute the previously solved auction on chain.
 
         The auction that should be executed is identified through its id and was
@@ -235,7 +235,7 @@ components:
             - description: The address that created the order.
             - $ref: '#/components/schemas/Address'
         partiallyFillable:
-          description: >
+          description: |-
             Whether the order can be partially filled.
 
             If this is false then the solver must fill the entire order or not
@@ -285,7 +285,7 @@ components:
           description: Hex encoded bytes with `0x` prefix.
           type: string
         protocolFees:
-          description: >
+          description: |-
             Any protocol fee policies that apply to the order.
 
             The solver should make sure the fee policy is applied when computing
@@ -323,7 +323,7 @@ components:
       type: string
       example: '1234567890'
     OrderUID:
-      description: >
+      description: |-
         Unique identifier for the order: 56 bytes encoded as hex with `0x`
         prefix.
 
@@ -338,7 +338,7 @@ components:
         - $ref: '#/components/schemas/QuoteResponse'
         - $ref: '#/components/schemas/Error'
     LegacyQuoteResponse:
-      description: >
+      description: |-
         Successful Quote.
 
         The Solver knows how to fill the request with these parameters.
@@ -422,7 +422,7 @@ components:
           type: string
           example: '0x1234567890'
         uninternalized:
-          description: >
+          description: |-
             The calldata with all internalized interactions encoded.
 
             This is the calldata that should be used for simulation/verification
@@ -666,7 +666,7 @@ components:
         appData:
           type: string
         signature:
-          description: >
+          description: >-
             Hex encoded bytes with `0x` prefix. The content depends on the
             `signingScheme`.
 

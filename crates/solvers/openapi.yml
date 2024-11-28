@@ -54,7 +54,7 @@ paths:
             schema:
               type: object
               additionalProperties: true
-              description: >
+              description: |-
                 A notification that informs the solver how its solution
                 performed in the auction.
 

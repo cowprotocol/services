@@ -116,7 +116,7 @@ paths:
     delete:
       deprecated: true
       summary: Cancel an order by marking it invalid with a timestamp.
-      description: >-
+      description: |-
         The successful deletion might not prevent solvers from settling the
         order.
 
@@ -203,7 +203,7 @@ paths:
           required: false
       responses:
         '200':
-          description: >-
+          description: |-
             ### If `owner` is specified:
 
             Return all trades related to that `owner`.
@@ -222,7 +222,7 @@ paths:
   /api/v1/auction:
     get:
       summary: Get the current batch auction.
-      description: >-
+      description: |-
         The current batch auction that solvers should be solving right now. This
         includes:
 
@@ -242,7 +242,7 @@ paths:
   '/api/v1/account/{owner}/orders':
     get:
       summary: Get orders of one user paginated.
-      description: >
+      description: |-
         The orders are sorted by their creation date descending (newest orders
         first).
 
@@ -283,7 +283,7 @@ paths:
   '/api/v1/token/{token}/native_price':
     get:
       summary: Get native price for the given token.
-      description: >-
+      description: |-
         Price is the exchange rate between the specified token and the network's
         native currency.
 
@@ -495,7 +495,7 @@ paths:
   '/api/v1/users/{address}/total_surplus':
     get:
       summary: 'Get the total surplus earned by the user. [UNSTABLE]'
-      description: >
+      description: |-
         ### Caution
 
         This endpoint is under active development and should NOT be considered
@@ -630,7 +630,7 @@ components:
         - erc20
         - internal
     PriceQuality:
-      description: >
+      description: |-
         How good should the price estimate be?
 
         Fast: The price estimate is chosen among the fastest N price estimates.
@@ -917,7 +917,7 @@ components:
           allOf:
             - $ref: '#/components/schemas/TokenAmount'
         isLiquidityOrder:
-          description: >
+          description: |-
             Liquidity orders are functionally the same as normal smart contract
             orders but are not placed with the intent of actively getting
             traded. Instead they facilitate the trade of normal orders by
@@ -1164,7 +1164,7 @@ components:
             - traded
             - cancelled
         value:
-          description: >
+          description: |-
             A list of solvers who participated in the latest competition, sorted
             by score in ascending order, where the last element is the winner.
 
@@ -1299,7 +1299,7 @@ components:
         - buyAmount
         - txHash
     UID:
-      description: >
+      description: |-
         Unique identifier for the order: 56 bytes encoded as hex with `0x`
         prefix.
 
@@ -1501,7 +1501,7 @@ components:
                 - $ref: '#/components/schemas/Address'
               nullable: true
             appData:
-              description: >
+              description: |-
                 AppData which will be assigned to the order.
 
                 Expects either a string JSON doc as defined on
@@ -1514,7 +1514,7 @@ components:
                 - $ref: '#/components/schemas/AppData'
                 - $ref: '#/components/schemas/AppDataHash'
             appDataHash:
-              description: >
+              description: |-
                 The hash of the stringified JSON appData doc.
 
                 If present, `appData` field must be set with the aforementioned
@@ -1620,7 +1620,7 @@ components:
           description: Name of the solver.
         solverAddress:
           type: string
-          description: >
+          description: |-
             The address used by the solver to execute the settlement on-chain.
 
             This field is missing for old settlements, the zero address has been
