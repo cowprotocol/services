@@ -22,7 +22,7 @@ pub struct SlippageContext<'a> {
     calculator: &'a SlippageCalculator,
 }
 
-impl<'a> SlippageContext<'a> {
+impl SlippageContext<'_> {
     /// Returns the external prices used for the slippage context.
     pub fn prices(&self) -> &ExternalPrices {
         self.prices

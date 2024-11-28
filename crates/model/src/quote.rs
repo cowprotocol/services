@@ -184,7 +184,6 @@ impl Default for Validity {
 }
 
 /// Helper struct for `Validity` serialization.
-
 impl<'de> Deserialize<'de> for Validity {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
