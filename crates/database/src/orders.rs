@@ -449,7 +449,7 @@ AND cancellation_timestamp IS NULL
         .map(|_| ())
 }
 
-/// One row in the `order_quotes_interactions` table.
+/// One row in the `order_quote_interactions` table.
 #[derive(Clone, Default, Debug, PartialEq, sqlx::FromRow)]
 pub struct OrderQuoteInteraction {
     pub order_uid: OrderUid,
@@ -463,8 +463,8 @@ pub async fn insert_order_quote_interaction(
     ex: &mut PgConnection,
     quote_interaction: &OrderQuoteInteraction,
 ) -> Result<(), sqlx::Error> {
-    const INSERT_ORDER_QUOTES_INTERACTION_QUERY: &str = r#"
-    INSERT INTO order_quotes_interactions (
+    const INSERT_ORDER_QUOTE_INTERACTION_QUERY: &str = r#"
+    INSERT INTO order_quote_interactions (
         order_uid,
         index,
         target,
@@ -483,7 +483,7 @@ pub async fn insert_order_quote_interaction(
         EXCLUDED.call_data
     )
     "#;
-    sqlx::query(INSERT_ORDER_QUOTES_INTERACTION_QUERY)
+    sqlx::query(INSERT_ORDER_QUOTE_INTERACTION_QUERY)
         .bind(quote_interaction.order_uid)
         .bind(quote_interaction.index)
         .bind(quote_interaction.target)
@@ -2226,7 +2226,7 @@ mod tests {
             .unwrap();
 
         const QUERY: &str = r#"
-        SELECT * FROM order_quotes_interactions
+        SELECT * FROM order_quote_interactions
         WHERE order_uid = $1
         "#;
 

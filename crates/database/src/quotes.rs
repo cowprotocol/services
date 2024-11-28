@@ -153,7 +153,7 @@ RETURNING id
     delete_quote_interactions(ex, &deleted_ids).await
 }
 
-/// One row in the `quotes_interactions` table.
+/// One row in the `quote_interactions` table.
 #[derive(Clone, Debug, PartialEq, sqlx::FromRow)]
 pub struct QuoteInteraction {
     pub quote_id: QuoteId,
@@ -169,7 +169,7 @@ pub async fn insert_quote_interaction(
     quote_interaction: &QuoteInteraction,
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
-INSERT INTO quotes_interactions (
+INSERT INTO quote_interactions (
     quote_id,
     index,
     target,
@@ -205,7 +205,7 @@ pub async fn get_quote_interactions(
 ) -> Result<Vec<QuoteInteraction>, sqlx::Error> {
     const QUERY: &str = r#"
 SELECT *
-FROM quotes_interactions
+FROM quote_interactions
 WHERE quote_id = $1
         "#;
     sqlx::query_as(QUERY).bind(quote_id).fetch_all(ex).await
@@ -216,7 +216,7 @@ pub async fn delete_quote_interactions(
     quote_ids: &[QuoteId],
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
-DELETE FROM quotes_interactions
+DELETE FROM quote_interactions
 WHERE quote_id = ANY($1)
     "#;
 
