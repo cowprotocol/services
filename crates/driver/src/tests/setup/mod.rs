@@ -1194,7 +1194,7 @@ impl<'a> Solve<'a> {
     }
 }
 
-impl<'a> SolveOk<'a> {
+impl SolveOk<'_> {
     fn solutions(&self) -> Vec<serde_json::Value> {
         #[derive(serde::Deserialize)]
         struct Body {

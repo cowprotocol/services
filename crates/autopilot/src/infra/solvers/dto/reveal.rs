@@ -18,7 +18,7 @@ pub struct Request {
 
 #[serde_as]
 #[derive(Clone, Debug, Default, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct Calldata {
     #[serde(with = "bytes_hex")]
     pub internalized: Vec<u8>,
@@ -27,7 +27,7 @@ pub struct Calldata {
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct Response {
     pub calldata: Calldata,
 }

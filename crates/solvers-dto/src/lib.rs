@@ -19,7 +19,7 @@ mod serialize {
         fn deserialize_as<D: Deserializer<'de>>(deserializer: D) -> Result<Vec<u8>, D::Error> {
             struct Visitor;
 
-            impl<'de> de::Visitor<'de> for Visitor {
+            impl de::Visitor<'_> for Visitor {
                 type Value = Vec<u8>;
 
                 fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -58,7 +58,7 @@ mod serialize {
                 result: [u8; N],
             }
 
-            impl<'de, const N: usize> de::Visitor<'de> for Visitor<N> {
+            impl<const N: usize> de::Visitor<'_> for Visitor<N> {
                 type Value = [u8; N];
 
                 fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
