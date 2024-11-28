@@ -23,10 +23,11 @@ impl SolutionWithId {
         score: Score,
         orders: HashMap<domain::OrderUid, TradedOrder>,
         prices: auction::Prices,
+        auction: &auction::Auction,
     ) -> Self {
         Self {
             id,
-            solution: Solution::new(solver, score, orders, prices),
+            solution: Solution::new(solver, score, orders, prices, auction),
         }
     }
 
@@ -69,9 +70,24 @@ impl Solution {
         score: Score,
         orders: HashMap<domain::OrderUid, TradedOrder>,
         prices: auction::Prices,
+        auction: &auction::Auction,
     ) -> Self {
+        let settlement =
+            // update constructor to use individual fields
+            domain::settlement::Settlement::from_competition(Self::clone(self), auction.clone());
+        let calculated_score = settlement.score();
+        if &calculated_score != score.get() {
+            tracing::warn!(
+                calculated = ?calculated_score,
+                reported = ?score.get(),
+                "The calculated score is different from the reported score",
+            );
+        }
+
         Self {
             solver,
+            // switch to using autopilot calculated score once we make sure no differences in score
+            // calculation between autopilot and driver exists.
             score,
             orders,
             prices,

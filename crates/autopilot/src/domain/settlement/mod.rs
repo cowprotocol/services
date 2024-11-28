@@ -8,6 +8,7 @@ use {
     super::competition,
     crate::{domain, domain::eth, infra},
     std::collections::HashMap,
+    num::Zero,
 };
 
 mod auction;
@@ -45,6 +46,23 @@ impl Settlement {
     /// The effective gas price at the time of settlement.
     pub fn gas_price(&self) -> eth::EffectiveGasPrice {
         self.gas_price
+    }
+
+    /// CIP38 score defined as surplus + protocol fee
+    pub fn score(&self) -> eth::Ether {
+        self.trades
+            .iter()
+            .map(|trade| {
+                trade.score(&self.auction).unwrap_or_else(|err| {
+                    tracing::warn!(
+                        ?err,
+                        trade = %trade.uid(),
+                        "possible incomplete score calculation",
+                    );
+                    eth::Ether::zero()
+                })
+            })
+            .sum()
     }
 
     /// Total surplus for all trades in the settlement.

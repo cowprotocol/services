@@ -59,10 +59,11 @@ impl Request {
 impl Response {
     pub fn into_domain(
         self,
+        auction: &domain::Auction,
     ) -> Vec<Result<domain::competition::SolutionWithId, domain::competition::SolutionError>> {
         self.solutions
             .into_iter()
-            .map(Solution::into_domain)
+            .map(|s| s.into_domain(auction))
             .collect()
     }
 }
@@ -92,6 +93,7 @@ pub struct Token {
 impl Solution {
     pub fn into_domain(
         self,
+        auction: &domain::Auction,
     ) -> Result<domain::competition::SolutionWithId, domain::competition::SolutionError> {
         Ok(domain::competition::SolutionWithId::new(
             self.solution_id,
@@ -127,6 +129,7 @@ impl Solution {
                     domain::auction::Price::new(price.into()).map(|price| (token.into(), price))
                 })
                 .collect::<Result<_, _>>()?,
+            auction,
         ))
     }
 }
