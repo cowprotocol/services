@@ -223,14 +223,14 @@ impl Solutions {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct Solutions {
     solutions: Vec<Solution>,
 }
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct Solution {
     id: u64,
     #[serde_as(as = "HashMap<_, serialize::U256>")]
@@ -245,7 +245,7 @@ pub struct Solution {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
+#[serde(tag = "kind", rename_all = "camelCase")]
 enum Trade {
     Fulfillment(Fulfillment),
     Jit(JitTrade),
@@ -253,7 +253,7 @@ enum Trade {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 struct Fulfillment {
     #[serde_as(as = "serialize::Hex")]
     order: [u8; order::UID_LEN],
@@ -265,7 +265,7 @@ struct Fulfillment {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 struct JitTrade {
     order: JitOrder,
     #[serde_as(as = "serialize::U256")]
@@ -277,7 +277,7 @@ struct JitTrade {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 struct JitOrder {
     sell_token: eth::H160,
     buy_token: eth::H160,
@@ -376,14 +376,14 @@ impl JitOrder {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 enum Kind {
     Sell,
     Buy,
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
+#[serde(tag = "kind", rename_all = "camelCase")]
 enum Interaction {
     Liquidity(LiquidityInteraction),
     Custom(CustomInteraction),
@@ -391,7 +391,7 @@ enum Interaction {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 struct LiquidityInteraction {
     internalize: bool,
     #[serde_as(as = "serde_with::DisplayFromStr")]
@@ -406,7 +406,7 @@ struct LiquidityInteraction {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 struct CustomInteraction {
     internalize: bool,
     target: eth::H160,
@@ -421,7 +421,7 @@ struct CustomInteraction {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 struct Asset {
     token: eth::H160,
     #[serde_as(as = "serialize::U256")]
@@ -430,7 +430,7 @@ struct Asset {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 struct Allowance {
     token: eth::H160,
     spender: eth::H160,
@@ -439,7 +439,7 @@ struct Allowance {
 }
 
 #[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 enum SellTokenBalance {
     #[default]
     Erc20,
@@ -448,7 +448,7 @@ enum SellTokenBalance {
 }
 
 #[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 enum BuyTokenBalance {
     #[default]
     Erc20,
@@ -456,7 +456,7 @@ enum BuyTokenBalance {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 enum SigningScheme {
     Eip712,
     EthSign,
@@ -467,7 +467,7 @@ enum SigningScheme {
 #[serde_as]
 #[allow(dead_code)]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields, tag = "kind")]
+#[serde(rename_all = "camelCase", tag = "kind")]
 pub enum Score {
     Solver {
         #[serde_as(as = "serialize::U256")]

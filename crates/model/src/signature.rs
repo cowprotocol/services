@@ -385,7 +385,7 @@ impl<'de> Deserialize<'de> for EcdsaSignature {
         D: serde::Deserializer<'de>,
     {
         struct Visitor {}
-        impl<'de> de::Visitor<'de> for Visitor {
+        impl de::Visitor<'_> for Visitor {
             type Value = EcdsaSignature;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
