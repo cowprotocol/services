@@ -678,7 +678,6 @@ pub struct OnchainOrderData {
 }
 
 /// An order as provided to the orderbook by the frontend.
-#[allow(clippy::needless_lifetimes)]
 #[serde_as]
 #[derive(Eq, PartialEq, Clone, Default, Derivative, Deserialize, Serialize)]
 #[derivative(Debug)]
