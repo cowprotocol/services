@@ -1,11 +1,12 @@
 - markdown: |
-    Reminder: Please update the DB Readme and ensure SQL migrations are reversible (include rollback scripts if applicable).
+    Reminder: Please update the DB Readme and comment whether migrations are reversible (include rollback scripts if applicable).
   pathFilter:
     - "database/sql/**"
 
 - markdown: |
     Reminder: Please consider backward compatibility when modifying the API specification. 
     If breaking changes are unavoidable, ensure:
+    - You explicitly pointed out breaking changes.
     - You communicate the changes to affected teams.
     - You provide proper versioning and migration mechanisms.
   pathFilter:
