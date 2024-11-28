@@ -238,7 +238,6 @@ Quotes that an order was created with. These quotes get stored persistently and 
  sell\_amount       | numeric | not null | sell\_amount of the quote used to create the order with
  buy\_amount        | numeric | not null | buy\_amount of the quote used to create the order with
  solver             | bytea   | not null | public address of the solver that provided this quote
- call\_data         | bytea   |          | call\_data provided by solver in response to the /quote request
  verified           | boolean |          | information if quote was verified
 
 Indexes:
@@ -275,6 +274,23 @@ Column                    | Type                         | Nullable | Details
 
 Indexes:
 - PRIMARY KEY: btree(`uid`)
+
+### order\_quote\_interactions
+
+Solver responding to quote request provides a list of interactions which need to be executed to fulfill the quote. When order is created
+these interactions are copied from quote. These interactions are stored persistently and can be used to audit auction winning order.
+
+ Colmun             | Type    | Nullable | Details
+--------------------|---------|----------|--------
+ order\_uid         | bytea   | not null | order that this interaction belongs to
+ index              | integer | not null | sequence number of the interaction for that order
+ target             | bytea   | not null | address of the smart contract this interaction should call
+ value              | numeric | not null | amount of ETH this interaction should send to the smart contract
+ call\_data         | bytea   | not null | call data that contains the function selector and the bytes passed to it
+
+Indexes:
+- PRIMARY KEY: composite key(`order_uid`, `index`)
+- order\_uid\_interactions: hash(`order_uid`)
 
 ### fee_policies
 
@@ -341,12 +357,29 @@ Stores quotes in order to determine whether it makes sense to allow a user to cr
  id                    | bigint             | not null | unique identifier of this quote
  quote\_kind           | [enum](#quotekind) | not null | quotekind for which this quote is considered valid
  solver                | bytea              | not null | public address of the solver that provided this quote
- call\_data            | bytea              |          | call\_data provided by solver in response to the /quote request
  verified              | boolean            |          | information if quote was verified
 
 Indexes:
 - PRIMARY KEY: btree(`id`)
 - quotes\_token\_expiration: btree (`sell_token`, `buy_token`, `expiration_timestamp` DESC)
+
+### quote\_interactions
+
+Solver responding to quote request provides a list of interactions which need to be executed to fulfill the quote. This table stores
+these interactions. Later, when order is created basing on this quote, interactions are copied to `order_quote_interactions`.
+Data in this table is removed together with the referenced quote, usually at quote expiration.
+
+ Colmun             | Type    | Nullable | Details
+--------------------|---------|----------|--------
+ quote_id           | bigint  | not null | quote that this interaction belongs to
+ index              | integer | not null | sequence number of the interaction for that quote
+ target             | bytea   | not null | address of the smart contract this interaction should call
+ value              | numeric | not null | amount of ETH this interaction should send to the smart contract
+ call\_data         | bytea   | not null | call data that contains the function selector and the bytes passed to it
+
+Indexes:
+- PRIMARY KEY: composite key(`quote_id`, `index`)
+- quote\_id\_interactions: hash(`quote_id`)
 
 ### proposed\_solutions
 
