@@ -63,7 +63,7 @@ mod tests {
         super::*,
         num::{BigRational, Zero},
         serde_json::{json, value::Serializer},
-        shared::assert_json_matches,
+        testlib::assert_json_matches,
     };
 
     #[test]

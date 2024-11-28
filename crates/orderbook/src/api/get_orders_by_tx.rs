@@ -1,9 +1,8 @@
 use {
-    crate::orderbook::Orderbook,
+    crate::{api::ApiReply, orderbook::Orderbook},
     anyhow::Result,
     ethcontract::H256,
     reqwest::StatusCode,
-    shared::api::ApiReply,
     std::{convert::Infallible, sync::Arc},
     warp::{reply::with_status, Filter, Rejection},
 };
@@ -23,7 +22,7 @@ pub fn get_orders_by_tx(
                 Ok(response) => with_status(warp::reply::json(&response), StatusCode::OK),
                 Err(err) => {
                     tracing::error!(?err, "get_orders_by_tx");
-                    shared::api::internal_error_reply()
+                    crate::api::internal_error_reply()
                 }
             })
         }

@@ -23,12 +23,14 @@ use {
         shadow,
         solvable_orders::SolvableOrdersCache,
     },
+    chain::Chain,
     clap::Parser,
     contracts::{BalancerV2Vault, IUniswapV3Factory},
-    ethcontract::{dyns::DynWeb3, errors::DeployError, BlockNumber},
+    ethcontract::{common::DeploymentInformation, dyns::DynWeb3, errors::DeployError, BlockNumber},
     ethrpc::block_stream::block_number_to_block_number_hash,
     futures::StreamExt,
     model::DomainSeparator,
+    observe::metrics::LivenessChecking,
     shared::{
         account_balances,
         bad_token::{
@@ -42,7 +44,6 @@ use {
         code_fetching::CachedCodeFetcher,
         http_client::HttpClientFactory,
         maintenance::ServiceMaintenance,
-        metrics::LivenessChecking,
         order_quoting::{self, OrderQuoter},
         price_estimation::factory::{self, PriceEstimatorFactory},
         signature_validator,
@@ -93,7 +94,7 @@ async fn ethrpc(url: &Url, ethrpc_args: &shared::ethrpc::Arguments) -> infra::bl
 
 async fn ethereum(
     web3: DynWeb3,
-    chain: infra::blockchain::Id,
+    chain: &Chain,
     url: Url,
     contracts: infra::blockchain::contracts::Addresses,
     poll_interval: Duration,
@@ -165,7 +166,7 @@ pub async fn run(args: Arguments) {
     };
     let eth = ethereum(
         web3.clone(),
-        chain,
+        &chain,
         url,
         contracts.clone(),
         args.shared.current_block.block_stream_poll_interval,
@@ -197,12 +198,11 @@ pub async fn run(args: Arguments) {
         other => Some(other.unwrap()),
     };
 
-    let network_name = shared::network::network_name(chain_id);
+    let chain = Chain::try_from(chain_id).expect("incorrect chain ID");
 
     let signature_validator = signature_validator::validator(
         &web3,
         signature_validator::Contracts {
-            chain_id,
             settlement: eth.contracts().settlement().address(),
             vault_relayer,
         },
@@ -211,7 +211,6 @@ pub async fn run(args: Arguments) {
     let balance_fetcher = account_balances::cached(
         &web3,
         account_balances::Contracts {
-            chain_id,
             settlement: eth.contracts().settlement().address(),
             vault_relayer,
             vault: vault.as_ref().map(|contract| contract.address()),
@@ -230,10 +229,11 @@ pub async fn run(args: Arguments) {
         .expect("failed to create gas price estimator"),
     );
 
-    let baseline_sources = args.shared.baseline_sources.clone().unwrap_or_else(|| {
-        shared::sources::defaults_for_chain(chain_id)
-            .expect("failed to get default baseline sources")
-    });
+    let baseline_sources = args
+        .shared
+        .baseline_sources
+        .clone()
+        .unwrap_or_else(|| shared::sources::defaults_for_network(&chain));
     tracing::info!(?baseline_sources, "using baseline sources");
     let univ2_sources = baseline_sources
         .iter()
@@ -261,7 +261,7 @@ pub async fn run(args: Arguments) {
     let finder = token_owner_finder::init(
         &args.token_owner_finder,
         web3.clone(),
-        chain_id,
+        &chain,
         &http_factory,
         &pair_providers,
         vault.as_ref(),
@@ -312,8 +312,7 @@ pub async fn run(args: Arguments) {
         factory::Network {
             web3: web3.clone(),
             simulation_web3,
-            name: network_name.to_string(),
-            chain_id,
+            chain,
             native_token: eth.contracts().weth().address(),
             settlement: eth.contracts().settlement().address(),
             authenticator: eth
@@ -365,11 +364,28 @@ pub async fn run(args: Arguments) {
         infra::persistence::Persistence::new(args.s3.into().unwrap(), Arc::new(db.clone())).await;
     let settlement_observer =
         crate::domain::settlement::Observer::new(eth.clone(), persistence.clone());
+    let settlement_contract_start_index =
+        if let Some(DeploymentInformation::BlockNumber(settlement_contract_start_index)) =
+            eth.contracts().settlement().deployment_information()
+        {
+            settlement_contract_start_index
+        } else {
+            // If the deployment information can't be found, start from 0 (default
+            // behaviour). For real contracts, the deployment information is specified
+            // for all the networks, but it isn't specified for the e2e tests which deploy
+            // the contracts from scratch
+            tracing::warn!("Settlement contract deployment information not found");
+            0
+        };
     let settlement_event_indexer = EventUpdater::new(
         boundary::events::settlement::GPv2SettlementContract::new(
             eth.contracts().settlement().clone(),
         ),
-        boundary::events::settlement::Indexer::new(db.clone(), settlement_observer),
+        boundary::events::settlement::Indexer::new(
+            db.clone(),
+            settlement_observer,
+            settlement_contract_start_index,
+        ),
         block_retriever.clone(),
         skip_event_sync_start,
     );
@@ -433,7 +449,7 @@ pub async fn run(args: Arguments) {
     );
 
     let liveness = Arc::new(Liveness::new(args.max_auction_age));
-    shared::metrics::serve_metrics(liveness.clone(), args.metrics_address);
+    observe::metrics::serve_metrics(liveness.clone(), args.metrics_address);
 
     let order_events_cleaner_config = crate::periodic_db_cleanup::OrderEventsCleanerConfig::new(
         args.order_events_cleanup_interval,
@@ -606,7 +622,7 @@ async fn shadow_mode(args: Arguments) -> ! {
     };
 
     let liveness = Arc::new(Liveness::new(args.max_auction_age));
-    shared::metrics::serve_metrics(liveness.clone(), args.metrics_address);
+    observe::metrics::serve_metrics(liveness.clone(), args.metrics_address);
 
     let current_block = ethrpc::block_stream::current_block_stream(
         args.shared.node_url,

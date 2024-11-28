@@ -1,13 +1,13 @@
 use {
     super::post_order::{AppDataValidationErrorWrapper, PartialValidationErrorWrapper},
-    crate::quoter::{OrderQuoteError, QuoteHandler},
+    crate::{
+        api::{self, convert_json_response, error, rich_error, ApiReply, IntoWarpReply},
+        quoter::{OrderQuoteError, QuoteHandler},
+    },
     anyhow::Result,
     model::quote::OrderQuoteRequest,
     reqwest::StatusCode,
-    shared::{
-        api::{self, convert_json_response, error, rich_error, ApiReply, IntoWarpReply},
-        order_quoting::CalculateQuoteError,
-    },
+    shared::order_quoting::CalculateQuoteError,
     std::{convert::Infallible, sync::Arc},
     warp::{Filter, Rejection},
 };
@@ -75,7 +75,7 @@ impl IntoWarpReply for CalculateQuoteErrorWrapper {
             ),
             CalculateQuoteError::Other(err) => {
                 tracing::error!(?err, "CalculateQuoteErrorWrapper");
-                shared::api::internal_error_reply()
+                crate::api::internal_error_reply()
             }
         }
     }
@@ -85,6 +85,7 @@ impl IntoWarpReply for CalculateQuoteErrorWrapper {
 mod tests {
     use {
         super::*,
+        crate::api::response_body,
         anyhow::anyhow,
         app_data::AppDataHash,
         chrono::{TimeZone, Utc},
@@ -104,7 +105,7 @@ mod tests {
         number::nonzero::U256 as NonZeroU256,
         reqwest::StatusCode,
         serde_json::json,
-        shared::{api::response_body, order_quoting::CalculateQuoteError},
+        shared::order_quoting::CalculateQuoteError,
         warp::{test::request, Reply},
     };
 

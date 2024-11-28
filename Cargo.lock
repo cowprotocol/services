@@ -166,21 +166,14 @@ name = "app-data"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "app-data-hash",
  "bytes-hex",
  "ethcontract",
  "hex",
+ "hex-literal",
  "primitive-types",
  "serde",
  "serde_json",
  "serde_with",
-]
-
-[[package]]
-name = "app-data-hash"
-version = "0.1.0"
-dependencies = [
- "hex-literal",
  "tiny-keccak",
 ]
 
@@ -277,6 +270,7 @@ dependencies = [
  "async-trait",
  "bigdecimal",
  "bytes-hex",
+ "chain",
  "chrono",
  "clap",
  "contracts",
@@ -1274,6 +1268,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
+name = "chain"
+version = "0.1.0"
+dependencies = [
+ "derive_more",
+ "ethcontract",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "chrono"
 version = "0.4.38"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1766,6 +1771,7 @@ dependencies = [
  "axum",
  "bigdecimal",
  "bytes-hex",
+ "chain",
  "chrono",
  "clap",
  "contracts",
@@ -1825,7 +1831,6 @@ version = "1.0.0"
 dependencies = [
  "anyhow",
  "app-data",
- "app-data-hash",
  "async-trait",
  "autopilot",
  "axum",
@@ -3089,7 +3094,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "app-data",
- "app-data-hash",
  "bigdecimal",
  "bytes-hex",
  "chrono",
@@ -3107,6 +3111,7 @@ dependencies = [
  "serde_with",
  "shared",
  "strum",
+ "testlib",
  "web3",
 ]
 
@@ -3305,6 +3310,7 @@ dependencies = [
 name = "observe"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "atty",
  "console-subscriber",
  "futures",
@@ -3316,6 +3322,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "warp",
 ]
 
 [[package]]
@@ -3386,10 +3393,10 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "app-data",
- "app-data-hash",
  "async-trait",
  "bigdecimal",
  "cached",
+ "chain",
  "chrono",
  "clap",
  "contracts",
@@ -4449,12 +4456,12 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "app-data",
- "app-data-hash",
  "async-stream",
  "async-trait",
  "bigdecimal",
  "bytes-hex",
  "cached",
+ "chain",
  "chrono",
  "clap",
  "contracts",
@@ -4614,6 +4621,7 @@ dependencies = [
  "anyhow",
  "axum",
  "bigdecimal",
+ "chain",
  "chrono",
  "clap",
  "contracts",
@@ -5045,9 +5053,12 @@ checksum = "3369f5ac52d5eb6ab48c6b4ffdc8efbcad6b89c765749064ba298f2c68a16a76"
 name = "testlib"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "ethcontract",
  "ethcontract-mock",
  "hex-literal",
+ "maplit",
+ "serde_json",
 ]
 
 [[package]]

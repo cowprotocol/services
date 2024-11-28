@@ -1,8 +1,10 @@
 use {
-    crate::orderbook::{OrderCancellationError, Orderbook},
+    crate::{
+        api::{convert_json_response, extract_payload},
+        orderbook::{OrderCancellationError, Orderbook},
+    },
     anyhow::Result,
     model::order::SignedOrderCancellations,
-    shared::api::{convert_json_response, extract_payload},
     std::{convert::Infallible, sync::Arc},
     warp::{Filter, Rejection},
 };

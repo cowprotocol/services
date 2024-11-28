@@ -25,7 +25,7 @@ impl Orderbook {
             .error_for_status()?
             .json::<dto::Auction>()
             .await
-            .map(TryInto::try_into)
+            .map(dto::Auction::try_into_domain)
             .map_err(Into::<anyhow::Error>::into)?
     }
 }

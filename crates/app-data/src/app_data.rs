@@ -1,12 +1,10 @@
 use {
-    crate::{AppDataHash, Hooks},
+    crate::{app_data_hash::hash_full_app_data, AppDataHash, Hooks},
     anyhow::{anyhow, Context, Result},
     primitive_types::H160,
     serde::{de, Deserialize, Deserializer, Serialize, Serializer},
     std::{fmt, fmt::Display},
 };
-
-mod compat;
 
 /// The minimum valid empty app data JSON string.
 pub const EMPTY: &str = "{}";
@@ -79,7 +77,7 @@ impl Validator {
             .unwrap_or_default();
 
         Ok(ValidatedAppData {
-            hash: AppDataHash(app_data_hash::hash_full_app_data(full_app_data)),
+            hash: AppDataHash(hash_full_app_data(full_app_data)),
             document,
             protocol,
         })
@@ -131,7 +129,7 @@ struct Root {
     /// hooks, we decided to move the fields to the existing `metadata` field.
     /// However, in order to not break existing integrations, we allow using the
     /// `backend` field for specifying hooks.
-    backend: Option<compat::BackendAppData>,
+    backend: Option<BackendAppData>,
 }
 
 // uid as 56 bytes: 32 for orderDigest, 20 for ownerAddress and 4 for validTo
@@ -202,6 +200,24 @@ impl<'de> Deserialize<'de> for OrderUid {
         }
 
         deserializer.deserialize_str(Visitor {})
+    }
+}
+
+/// The legacy `backend` app data object.
+#[derive(Debug, Default, Deserialize)]
+struct BackendAppData {
+    #[serde(default)]
+    pub hooks: Hooks,
+}
+
+impl From<BackendAppData> for ProtocolAppData {
+    fn from(value: BackendAppData) -> Self {
+        Self {
+            hooks: value.hooks,
+            signer: None,
+            replaced_order: None,
+            partner_fee: None,
+        }
     }
 }
 

@@ -555,29 +555,15 @@ async fn get_quote(
         // verified quote here on purpose.
         verification: Default::default(),
     };
-    let mut result = get_quote_and_check_fee(
+
+    get_quote_and_check_fee(
         quoter,
         &parameters.clone(),
         Some(*quote_id),
         Some(order_data.fee_amount),
     )
-    .await;
-
-    // If we didn't find the quote, recompute a fresh one
-    if matches!(
-        result,
-        Err(ValidationError::QuoteNotFound | ValidationError::InvalidQuote)
-    ) {
-        result = get_quote_and_check_fee(
-            quoter,
-            &parameters.clone(),
-            None,
-            Some(order_data.fee_amount),
-        )
-        .await;
-    }
-
-    result.map_err(|err| match err {
+    .await
+    .map_err(|err| match err {
         ValidationError::Partial(_) => OnchainOrderPlacementError::PreValidationError,
         ValidationError::NonZeroFee => OnchainOrderPlacementError::NonZeroFee,
         _ => OnchainOrderPlacementError::Other,
@@ -1133,7 +1119,7 @@ mod test {
         let cloned_quote = quote.clone();
         order_quoter
             .expect_find_quote()
-            .returning(move |_| Ok(cloned_quote.clone()));
+            .returning(move |_, _| Ok(cloned_quote.clone()));
         let mut custom_onchain_order_parser = MockOnchainOrderParsing::<u8, u8>::new();
         custom_onchain_order_parser
             .expect_parse_custom_event_data()

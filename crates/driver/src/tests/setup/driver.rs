@@ -138,7 +138,7 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
         }
     }
     json!({
-        "id": "1",
+        "id": test.auction_id.to_string(),
         "tokens": tokens_json,
         "orders": orders_json,
         "deadline": test.deadline,
@@ -147,17 +147,23 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
 }
 
 /// Create a request for the driver /reveal endpoint.
-pub fn reveal_req(solution_id: &str) -> serde_json::Value {
+pub fn reveal_req(solution_id: &str, auction_id: &str) -> serde_json::Value {
     json!({
         "solutionId": solution_id,
+        "auctionId": auction_id,
     })
 }
 
 /// Create a request for the driver /settle endpoint.
-pub fn settle_req(submission_deadline_latest_block: u64, solution_id: &str) -> serde_json::Value {
+pub fn settle_req(
+    submission_deadline_latest_block: u64,
+    solution_id: &str,
+    auction_id: &str,
+) -> serde_json::Value {
     json!({
         "solutionId": solution_id,
         "submissionDeadlineLatestBlock": submission_deadline_latest_block,
+        "auctionId": auction_id,
     })
 }
 

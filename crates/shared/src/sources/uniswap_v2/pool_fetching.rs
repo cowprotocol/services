@@ -1,13 +1,8 @@
 use {
     super::pair_provider::PairProvider,
-    crate::{
-        baseline_solver::BaselineSolvable,
-        ethcontract_error::EthcontractErrorType,
-        ethrpc::Web3,
-        recent_block_cache::Block,
-    },
+    crate::{baseline_solver::BaselineSolvable, ethrpc::Web3, recent_block_cache::Block},
     anyhow::Result,
-    contracts::{IUniswapLikePair, ERC20},
+    contracts::{errors::EthcontractErrorType, IUniswapLikePair, ERC20},
     ethcontract::{errors::MethodError, BlockId, H160, U256},
     futures::{
         future::{self, BoxFuture},
@@ -366,7 +361,10 @@ pub mod test_util {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::ethcontract_error};
+    use {
+        super::*,
+        contracts::errors::{testing_contract_error, testing_node_error},
+    };
 
     #[test]
     fn test_get_amounts_out() {
@@ -499,7 +497,7 @@ mod tests {
     #[test]
     fn pool_fetcher_forwards_node_error() {
         let fetched_pool = FetchedPool {
-            reserves: Err(ethcontract_error::testing_node_error()),
+            reserves: Err(testing_node_error()),
             pair: Default::default(),
             token0_balance: Ok(1.into()),
             token1_balance: Ok(1.into()),
@@ -511,7 +509,7 @@ mod tests {
     #[test]
     fn pool_fetcher_skips_contract_error() {
         let fetched_pool = FetchedPool {
-            reserves: Err(ethcontract_error::testing_contract_error()),
+            reserves: Err(testing_contract_error()),
             pair: Default::default(),
             token0_balance: Ok(1.into()),
             token1_balance: Ok(1.into()),

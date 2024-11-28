@@ -29,7 +29,7 @@ contract Solver {
     /// @param settlementContract - address of the settlement contract because
     /// it does not have a stable address in tests.
     /// @param trader - address of the order owner doing the trade
-    /// @param sellTokenIndex - index in the tokens array of the token being sold
+    /// @param sellToken - address of the token being sold
     /// @param sellAmount - amount being sold
     /// @param nativeToken - ERC20 version of the chain's token
     /// @param tokens - list of tokens used in the trade
@@ -45,7 +45,7 @@ contract Solver {
     function swap(
         ISettlement settlementContract,
         address payable trader,
-        uint256 sellTokenIndex,
+        address sellToken,
         uint256 sellAmount,
         address nativeToken,
         address[] calldata tokens,
@@ -64,7 +64,7 @@ contract Solver {
             Trader(trader)
                 .prepareSwap(
                     settlementContract,
-                tokens[sellTokenIndex],
+                    sellToken,
                     sellAmount,
                     nativeToken
                 );
