@@ -1201,7 +1201,7 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    async fn postgres_insert_orders_with_call_data_and_verified() {
+    async fn postgres_insert_orders_with_interactions_and_verified() {
         let db = Postgres::new("postgresql://").unwrap();
         database::clear_DANGER(&db.pool).await.unwrap();
 

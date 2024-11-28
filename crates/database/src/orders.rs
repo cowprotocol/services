@@ -2237,4 +2237,47 @@ mod tests {
             .unwrap();
         assert_eq!(*interactions.first().unwrap(), interaction);
     }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_insert_order_quote_interaction_on_conflict() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let order_uid = Default::default();
+        let interaction1 = OrderQuoteInteraction {
+            order_uid,
+            index: Default::default(),
+            target: ByteArray([1; 20]),
+            value: 2.into(),
+            call_data: vec![3; 20],
+        };
+        insert_order_quote_interaction(&mut db, &interaction1)
+            .await
+            .unwrap();
+
+        let interaction2 = OrderQuoteInteraction {
+            order_uid,
+            index: Default::default(),
+            target: ByteArray([4; 20]),
+            value: 4.into(),
+            call_data: vec![5; 20],
+        };
+        insert_order_quote_interaction(&mut db, &interaction2)
+            .await
+            .unwrap();
+
+        const QUERY: &str = r#"
+        SELECT * FROM order_quote_interactions
+        WHERE order_uid = $1
+        "#;
+
+        let interactions: Vec<OrderQuoteInteraction> = sqlx::query_as(QUERY)
+            .bind(order_uid)
+            .fetch_all(&mut db as &mut PgConnection)
+            .await
+            .unwrap();
+        assert_eq!(*interactions.first().unwrap(), interaction2);
+    }
 }

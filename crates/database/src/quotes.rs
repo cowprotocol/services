@@ -509,7 +509,7 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    async fn postgres_insert_quote_interaction_by_id() {
+    async fn postgres_insert_quote_interaction() {
         let mut db = PgConnection::connect("postgresql://").await.unwrap();
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
