@@ -161,11 +161,13 @@ impl Trade {
             OrderKind::Sell => order_amount
                 .mul(&sell_price)
                 .checked_div(&buy_price)
-                .context("div by zero: buy price")?,
+                .context("div by zero: buy price")?
+                .ceil(),
             OrderKind::Buy => order_amount
                 .mul(&buy_price)
                 .checked_div(&sell_price)
-                .context("div by zero: sell price")?,
+                .context("div by zero: sell price")?
+                .ceil(),
         };
 
         big_rational_to_u256(&out_amount).context("out amount is not a valid U256")
