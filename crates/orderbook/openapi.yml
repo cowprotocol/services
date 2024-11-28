@@ -32,11 +32,13 @@ paths:
         Create a new order. In order to replace an existing order with a new
         one, the appData must contain a [valid replacement order
         UID](https://github.com/cowprotocol/app-data/blob/main/src/schemas/v1.1.0.json#L62),
-        then the indicated order is cancelled, and a new one placed. This allows
-        an old order to be cancelled AND a new order to be created in an atomic
-        operation with a single signature. This may be useful for replacing
-        orders when on-chain prices move outside of the original order's limit
-        price.
+        then the indicated order is cancelled, and a new one placed.
+
+        This allows an old order to be cancelled AND a new order to be created
+        in an atomic operation with a single signature.
+
+        This may be useful for replacing orders when on-chain prices move
+        outside of the original order's limit price.
       responses:
         '201':
           description: Order has been accepted.
@@ -67,12 +69,12 @@ paths:
               $ref: '#/components/schemas/OrderCreation'
     delete:
       summary: Cancel multiple orders by marking them invalid with a timestamp.
-      description: |
+      description: >
         This is a *best effort* cancellation, and might not prevent solvers from
         settling the orders (if the order is part of an in-flight settlement
         transaction for example). Authentication must be provided by an
-        [EIP-712](https://eips.ethereum.org/EIPS/eip-712)
-        signature of an `OrderCancellations(bytes[] orderUids)` message.
+        [EIP-712](https://eips.ethereum.org/EIPS/eip-712) signature of an
+        `OrderCancellations(bytes[] orderUids)` message.
       requestBody:
         description: Signed `OrderCancellations`.
         required: true
@@ -114,14 +116,12 @@ paths:
     delete:
       deprecated: true
       summary: Cancel an order by marking it invalid with a timestamp.
-      description: >
+      description: >-
         The successful deletion might not prevent solvers from settling the
         order.
 
         Authentication must be provided by providing an
-
         [EIP-712](https://eips.ethereum.org/EIPS/eip-712) signature of an
-
         `OrderCancellation(bytes orderUid)` message.
       parameters:
         - in: path
@@ -203,21 +203,16 @@ paths:
           required: false
       responses:
         '200':
-          description: >
+          description: >-
             ### If `owner` is specified:
-
 
             Return all trades related to that `owner`.
 
-
             ### If `orderUid` is specified:
 
-
             Return all trades related to that `orderUid`. Given that an order
-            may be partially
-
-            fillable, it is possible that an individual order may have
-            *multiple* trades.
+            may be partially fillable, it is possible that an individual order
+            may have *multiple* trades.
           content:
             application/json:
               schema:
@@ -227,18 +222,13 @@ paths:
   /api/v1/auction:
     get:
       summary: Get the current batch auction.
-      description: >
+      description: >-
         The current batch auction that solvers should be solving right now. This
         includes:
 
-
-        * A list of solvable orders.
-
-        * The block on which the batch was created.
-
+        * A list of solvable orders. * The block on which the batch was created.
         * Prices for all tokens being traded (used for objective value
         computation).
-
 
         **Note: This endpoint is currently permissioned. Reach out in discord if
         you need access.**
@@ -257,12 +247,8 @@ paths:
         first).
 
         To enumerate all orders start with `offset` 0 and keep increasing the
-        `offset` by the total
-
-        number of returned results. When a response contains less than `limit`
-        the last page has
-
-        been reached.
+        `offset` by the total number of returned results. When a response
+        contains less than `limit` the last page has been reached.
       parameters:
         - name: owner
           in: path
@@ -297,7 +283,7 @@ paths:
   '/api/v1/token/{token}/native_price':
     get:
       summary: Get native price for the given token.
-      description: >
+      description: >-
         Price is the exchange rate between the specified token and the network's
         native currency.
 
@@ -327,12 +313,9 @@ paths:
       summary: Quote a price and fee for the specified order parameters.
       description: >
         Given a partial order compute the minimum fee and a price estimate for
-        the order. Return a
-
-        full order that can be used directly for signing, and with an included
-        signature, passed
-
-        directly to the order creation endpoint.
+        the order. Return a full order that can be used directly for signing,
+        and with an included signature, passed directly to the order creation
+        endpoint.
       requestBody:
         description: The order parameters to compute a quote for.
         required: true
@@ -447,7 +430,6 @@ paths:
       summary: Registers a full `appData` so it can be referenced by `appDataHash`.
       description: >
         Uploads a full `appData` to orderbook so that orders created with the
-
         corresponding `appDataHash` can be linked to the original full
         `appData`.
       parameters:
@@ -515,7 +497,6 @@ paths:
       summary: 'Get the total surplus earned by the user. [UNSTABLE]'
       description: >
         ### Caution
-
 
         This endpoint is under active development and should NOT be considered
         stable.
@@ -585,22 +566,15 @@ components:
         sender:
           description: >
             If orders are placed as on-chain orders, the owner of the order
-            might
-
-            be a smart contract, but not the user placing the order. The
-
+            might be a smart contract, but not the user placing the order. The
             actual user will be provided in this field.
           allOf:
             - $ref: '#/components/schemas/Address'
         placementError:
           description: >
             Describes the error, if the order placement was not successful. This
-            could
-
-            happen, for example, if the `validTo` is too high, or no valid quote
-            was
-
-            found or generated.
+            could happen, for example, if the `validTo` is too high, or no valid
+            quote was found or generated.
           type: string
           enum:
             - QuoteNotFound
@@ -659,14 +633,10 @@ components:
       description: >
         How good should the price estimate be?
 
-
         Fast: The price estimate is chosen among the fastest N price estimates.
-
         Optimal: The price estimate is chosen among all price estimates.
-
         Verified: The price estimate is chosen among all verified/simulated
         price estimates.
-
 
         **NOTE**: Orders are supposed to be created from `verified` or `optimal`
         price estimates.
@@ -699,9 +669,7 @@ components:
         receiver:
           description: >
             An optional Ethereum address to receive the proceeds of the trade
-            instead
-
-            of the owner (i.e. the order signer).
+            instead of the owner (i.e. the order signer).
           allOf:
             - $ref: '#/components/schemas/Address'
           nullable: true
@@ -807,99 +775,63 @@ components:
         from:
           description: >
             If set, the backend enforces that this address matches what is
-            decoded as the *signer* of
-
-            the signature. This helps catch errors with invalid signature
-            encodings as the backend
-
-            might otherwise silently work with an unexpected address that for
-            example does not have
-
-            any balance.
+            decoded as the *signer* of the signature. This helps catch errors
+            with invalid signature encodings as the backend might otherwise
+            silently work with an unexpected address that for example does not
+            have any balance.
           allOf:
             - $ref: '#/components/schemas/Address'
           nullable: true
         quoteId:
           description: >
             Orders can optionally include a quote ID. This way the order can be
-            linked to a quote
-
-            and enable providing more metadata when analysing order slippage.
+            linked to a quote and enable providing more metadata when analysing
+            order slippage.
           type: integer
           nullable: true
         appData:
           description: >
             This field comes in two forms for backward compatibility. The hash
-            form will eventually 
-
-            stop being accepted.
+            form will eventually stop being accepted.
           anyOf:
             - title: Full App Data
               allOf:
                 - $ref: '#/components/schemas/AppData'
-              description: >
+              description: >-
                 **Short**:
 
-
                 If you do not care about `appData`, set this field to `"{}"` and
-                make sure that the
-
-                order you signed for this request had its `appData` field set to
-
+                make sure that the order you signed for this request had its
+                `appData` field set to
                 `0xb48d38f93eaa084033fc5970bf96e559c33c4cdc07d889ab00b4d63f9590739d`.
-
 
                 **Long**:
 
-
                 A string encoding a JSON object like `"{"hello":"world"}"`.
 
-
                 This field determines the smart contract order's `appData`
-                field, which is assumed to
-
-                be set to the `keccak256` hash of the UTF-8 encoded bytes of
-                this string. You must
-
-                ensure that the signature that is part of this request indeed
-                signed a smart contract
-
-                order with the `appData` field set appropriately. If this isn't
-                the case, signature
-
-                verification will fail. For easier debugging it is recommended
-                to additionally set the
-
+                field, which is assumed to be set to the `keccak256` hash of the
+                UTF-8 encoded bytes of this string. You must ensure that the
+                signature that is part of this request indeed signed a smart
+                contract order with the `appData` field set appropriately. If
+                this isn't the case, signature verification will fail. For
+                easier debugging it is recommended to additionally set the
                 `appDataHash` field.
 
-
                 The field must be the encoding of a valid JSON object. The JSON
-                object can contain
-
-                arbitrary application specific data (JSON key values). The
-                optional key `backend` is
-
-                special. It **MUST** conform to the schema documented in
-                `ProtocolAppData`.
-
+                object can contain arbitrary application specific data (JSON key
+                values). The optional key `backend` is special. It **MUST**
+                conform to the schema documented in `ProtocolAppData`.
 
                 The intended use of the other keys of the object is follow the
-                standardized format
+                standardized format defined
+                [here](https://github.com/cowprotocol/app-data). Example:
 
-                defined [here](https://github.com/cowprotocol/app-data).
-                Example:
-
-
-                ```json
-
-                {
+                ```json {
                   "version": "0.7.0",
                   "appCode": "YOUR_APP_CODE",
                   "metadata": {}
-                }
-
-                ```
-
+                } ```
 
                 The total byte size of this field's UTF-8 encoded bytes is
                 limited to 1000.
@@ -908,15 +840,10 @@ components:
         appDataHash:
           description: >
             May be set for debugging purposes. If set, this field is compared to
-            what the backend
-
-            internally calculates as the app data hash based on the contents of
-            `appData`. If the
-
-            hash does not match, an error is returned. If this field is set,
-            then `appData` **MUST** be
-
-            a string encoding of a JSON object.
+            what the backend internally calculates as the app data hash based on
+            the contents of `appData`. If the hash does not match, an error is
+            returned. If this field is set, then `appData` **MUST** be a string
+            encoding of a JSON object.
           allOf:
             - $ref: '#/components/schemas/AppDataHash'
           nullable: true
@@ -935,9 +862,7 @@ components:
     OrderMetaData:
       description: >
         Extra order data that is returned to users when querying orders but not
-        provided by users
-
-        when creating orders.
+        provided by users when creating orders.
       type: object
       properties:
         creationDate:
@@ -994,24 +919,14 @@ components:
         isLiquidityOrder:
           description: >
             Liquidity orders are functionally the same as normal smart contract
-            orders but are not
-
-            placed with the intent of actively getting traded. Instead they
-            facilitate the
-
-            trade of normal orders by allowing them to be matched against
-            liquidity orders which
-
-            uses less gas and can have better prices than external liquidity.
-
+            orders but are not placed with the intent of actively getting
+            traded. Instead they facilitate the trade of normal orders by
+            allowing them to be matched against liquidity orders which uses less
+            gas and can have better prices than external liquidity.
 
             As such liquidity orders will only be used in order to improve
-            settlement of normal
-
-            orders. They should not be expected to be traded otherwise and
-            should not expect to get
-
-            surplus.
+            settlement of normal orders. They should not be expected to be
+            traded otherwise and should not expect to get surplus.
           type: boolean
         ethflowData:
           allOf:
@@ -1020,9 +935,7 @@ components:
           description: >
             This represents the actual trader of an on-chain order.
 
-
             ### ethflow orders
-
 
             In this case, the `owner` would be the `EthFlow` contract and *not*
             the actual trader.
@@ -1031,9 +944,7 @@ components:
         onchainOrderData:
           description: >
             There is some data only available for orders that are placed
-            on-chain. This data
-
-            can be found in this object.
+            on-chain. This data can be found in this object.
           allOf:
             - $ref: '#/components/schemas/OnchainOrderData'
         executedSurplusFee:
@@ -1044,9 +955,7 @@ components:
         fullAppData:
           description: >
             Full `appData`, which the contract-level `appData` is a hash of. See
-            `OrderCreation`
-
-            for more information.
+            `OrderCreation` for more information.
           type: string
           nullable: true
       required:
@@ -1192,19 +1101,16 @@ components:
           type: integer
           description: >
             The block number for the auction. Orders and prices are guaranteed
-            to be valid on this
-
-            block. Proposed settlements should be valid for this block as well.
+            to be valid on this block. Proposed settlements should be valid for
+            this block as well.
         latestSettlementBlock:
           type: integer
           description: >
             The latest block on which a settlement has been processed.
 
-
             **NOTE**: Under certain conditions it is possible for a settlement
-            to have been mined as
-
-            part of `block` but not have yet been processed.
+            to have been mined as part of `block` but not have yet been
+            processed.
         orders:
           type: array
           items:
@@ -1280,15 +1186,10 @@ components:
     AuctionPrices:
       description: >
         The reference prices for all traded tokens in the auction as a mapping
-        from token
-
-        addresses to a price denominated in native token (i.e. 1e18 represents a
-        token that
-
-        trades one to one with the native token). These prices are used for
-        solution competition
-
-        for computing surplus and converting fees to native token.
+        from token addresses to a price denominated in native token (i.e. 1e18
+        represents a token that trades one to one with the native token). These
+        prices are used for solution competition for computing surplus and
+        converting fees to native token.
       type: object
       additionalProperties:
         $ref: '#/components/schemas/BigUint'
@@ -1403,9 +1304,7 @@ components:
         prefix.
 
         Bytes 0..32 are the order digest, bytes 30..52 the owner address and
-        bytes
-
-        52..56 the expiry (`validTo`) as a `uint32` unix epoch timestamp.
+        bytes 52..56 the expiry (`validTo`) as a `uint32` unix epoch timestamp.
       type: string
       example: >-
         0xff2e2e54d178997f173266817c1e9ed6fee1a1aae4b43971c53b543cffcc2969845c6f5599fbb25dbdd1b9b013daf85c03f3c63763e4bc4a
@@ -1522,9 +1421,7 @@ components:
             sellAmountBeforeFee:
               description: >
                 The total amount that is available for the order. From this
-                value, the fee
-
-                is deducted and the buy amount is calculated.
+                value, the fee is deducted and the buy amount is calculated.
               allOf:
                 - $ref: '#/components/schemas/TokenAmount'
           required:
@@ -1608,9 +1505,8 @@ components:
                 AppData which will be assigned to the order.
 
                 Expects either a string JSON doc as defined on
-                [AppData](https://github.com/cowprotocol/app-data) or a
-
-                hex encoded string for backwards compatibility.
+                [AppData](https://github.com/cowprotocol/app-data) or a hex
+                encoded string for backwards compatibility.
 
                 When the first format is used, it's possible to provide the
                 derived appDataHash field.
@@ -1648,9 +1544,7 @@ components:
             onchainOrder:
               description: >
                 Flag to signal whether the order is intended for on-chain order
-                placement. Only valid
-
-                for non ECDSA-signed orders."
+                placement. Only valid for non ECDSA-signed orders."
               default: false
           required:
             - sellToken
@@ -1675,9 +1569,7 @@ components:
         id:
           description: >
             Quote ID linked to a quote to enable providing more metadata when
-            analysing
-
-            order slippage.
+            analysing order slippage.
           type: integer
         verified:
           description: >

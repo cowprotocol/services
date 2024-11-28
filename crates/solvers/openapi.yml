@@ -364,7 +364,7 @@ components:
           maximum: 0.99999
           example: 0.05
         factor:
-          description: >-
+          description: >
             The factor of the user surplus that the protocol will request from
             the solver after settling the order
           type: number
@@ -384,7 +384,7 @@ components:
           type: number
           example: 0.01
         factor:
-          description: >-
+          description: >
             The factor of the user surplus that the protocol will request from
             the solver after settling the order
           type: number
@@ -399,7 +399,7 @@ components:
           enum:
             - volume
         factor:
-          description: >-
+          description: >
             The fraction of the order's volume that the protocol will request
             from the solver after settling the order.
           type: number
@@ -909,7 +909,7 @@ components:
         - interactions
       properties:
         id:
-          description: >-
+          description: >
             An opaque identifier for the solution. This is a solver generated
             number that is unique across multiple solutions within the auction.
           type: number
@@ -960,7 +960,7 @@ components:
             $ref: '#/components/schemas/CallData'
           description: The call data to be used for the interaction.
     CallData:
-      description: >-
+      description: >
         Some `calldata` sent to a contract in a transaction encoded as a hex
         with `0x` prefix.
       type: string
