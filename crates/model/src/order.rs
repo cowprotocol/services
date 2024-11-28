@@ -677,10 +677,8 @@ pub struct OnchainOrderData {
 }
 
 /// An order as provided to the orderbook by the frontend.
-#[allow(clippy::needless_lifetimes)]
 #[serde_as]
-#[derive(Eq, PartialEq, Clone, Default, Derivative, Deserialize, Serialize)]
-#[derivative(Debug)]
+#[derive(Eq, PartialEq, Clone, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderMetadata {
     pub creation_date: DateTime<Utc>,
@@ -689,10 +687,8 @@ pub struct OrderMetadata {
     /// deprecated, always set to null
     #[serde_as(as = "Option<HexOrDecimalU256>")]
     pub available_balance: Option<U256>,
-    #[derivative(Debug(format_with = "debug_biguint_to_string"))]
     #[serde_as(as = "DisplayFromStr")]
     pub executed_buy_amount: BigUint,
-    #[derivative(Debug(format_with = "debug_biguint_to_string"))]
     #[serde_as(as = "DisplayFromStr")]
     pub executed_sell_amount: BigUint,
     #[serde_as(as = "HexOrDecimalU256")]
@@ -737,6 +733,42 @@ pub struct OrderMetadata {
     /// Full app data that `OrderData::app_data` is a hash of. Can be None if
     /// the backend doesn't know about the full app data.
     pub full_app_data: Option<String>,
+}
+
+impl std::fmt::Debug for OrderMetadata {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OrderMetadata")
+            .field("creation_date", &self.creation_date)
+            .field("owner", &self.owner)
+            .field("uid", &self.uid)
+            .field("available_balance", &self.available_balance)
+            .field(
+                "executed_buy_amount",
+                &format_args!("{}", self.executed_buy_amount),
+            )
+            .field(
+                "executed_sell_amount",
+                &format_args!("{}", self.executed_sell_amount),
+            )
+            .field(
+                "executed_sell_amount_before_fees",
+                &self.executed_sell_amount_before_fees,
+            )
+            .field("executed_fee_amount", &self.executed_fee_amount)
+            .field("executed_surplus_fee", &self.executed_surplus_fee)
+            .field("invalidated", &self.invalidated)
+            .field("status", &self.status)
+            .field("class", &self.class)
+            .field("settlement_contract", &self.settlement_contract)
+            .field("full_fee_amount", &self.full_fee_amount)
+            .field("solver_fee", &self.solver_fee)
+            .field("ethflow_data", &self.ethflow_data)
+            .field("onchain_order_data", &self.onchain_order_data)
+            .field("onchain_user", &self.onchain_user)
+            .field("is_liquidity_order", &self.is_liquidity_order)
+            .field("full_app_data", &self.full_app_data)
+            .finish()
+    }
 }
 
 // uid as 56 bytes: 32 for orderDigest, 20 for ownerAddress and 4 for validTo
@@ -1008,20 +1040,6 @@ impl BuyTokenDestination {
             Self::Internal => Self::INTERNAL,
         }
     }
-}
-
-pub fn debug_app_data(
-    app_data: &[u8; 32],
-    formatter: &mut std::fmt::Formatter,
-) -> Result<(), std::fmt::Error> {
-    formatter.write_fmt(format_args!("{:?}", H256(*app_data)))
-}
-
-pub fn debug_biguint_to_string(
-    value: &BigUint,
-    formatter: &mut std::fmt::Formatter,
-) -> Result<(), std::fmt::Error> {
-    formatter.write_fmt(format_args!("{value}"))
 }
 
 #[cfg(test)]

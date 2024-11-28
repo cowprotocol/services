@@ -6,10 +6,10 @@ pub mod external;
 use {
     crate::price_estimation::{PriceEstimationError, Query},
     anyhow::Result,
-    derivative::Derivative,
     ethcontract::{contract::MethodBuilder, tokens::Tokenize, web3::Transport, Bytes, H160, U256},
     model::interaction::InteractionData,
     serde::Serialize,
+    std::fmt,
     thiserror::Error,
 };
 
@@ -50,13 +50,21 @@ pub struct Trade {
 }
 
 /// Data for a raw GPv2 interaction.
-#[derive(Clone, PartialEq, Eq, Hash, Default, Serialize, Derivative)]
-#[derivative(Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Default, Serialize)]
 pub struct Interaction {
     pub target: H160,
     pub value: U256,
-    #[derivative(Debug(format_with = "crate::debug_bytes"))]
     pub data: Vec<u8>,
+}
+
+impl fmt::Debug for Interaction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Interaction")
+            .field("target", &self.target)
+            .field("value", &self.value)
+            .field("data", &format_args!("0x{}", hex::encode(&self.data)))
+            .finish()
+    }
 }
 
 impl Interaction {
