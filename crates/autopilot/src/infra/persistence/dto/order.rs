@@ -49,7 +49,11 @@ pub fn from_domain(order: domain::Order) -> Order {
         buy_token: order.buy.token.into(),
         sell_amount: order.sell.amount.into(),
         buy_amount: order.buy.amount.into(),
-        protocol_fees: order.protocol_fees.into_iter().map(Into::into).collect(),
+        protocol_fees: order
+            .protocol_fees
+            .into_iter()
+            .map(FeePolicy::from_domain)
+            .collect(),
         created: order.created,
         valid_to: order.valid_to,
         kind: order.side.into(),
@@ -68,7 +72,7 @@ pub fn from_domain(order: domain::Order) -> Order {
         class: boundary::OrderClass::Limit,
         app_data: order.app_data.into(),
         signature: order.signature.into(),
-        quote: order.quote.map(Into::into),
+        quote: order.quote.map(Quote::from_domain),
     }
 }
 
@@ -83,7 +87,11 @@ pub fn to_domain(order: Order) -> domain::Order {
             token: order.buy_token.into(),
             amount: order.buy_amount.into(),
         },
-        protocol_fees: order.protocol_fees.into_iter().map(Into::into).collect(),
+        protocol_fees: order
+            .protocol_fees
+            .into_iter()
+            .map(FeePolicy::into_domain)
+            .collect(),
         created: order.created,
         valid_to: order.valid_to,
         side: order.kind.into(),
@@ -262,44 +270,8 @@ pub enum FeePolicy {
     Volume { factor: f64 },
 }
 
-#[serde_as]
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Quote {
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub sell_amount: U256,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub buy_amount: U256,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub fee: U256,
-    pub solver: H160,
-}
-
-impl Quote {
-    pub fn to_domain(&self, order_uid: OrderUid) -> domain::Quote {
-        domain::Quote {
-            order_uid,
-            sell_amount: self.sell_amount.into(),
-            buy_amount: self.buy_amount.into(),
-            fee: self.fee.into(),
-            solver: self.solver.into(),
-        }
-    }
-}
-
-impl From<domain::Quote> for Quote {
-    fn from(quote: domain::Quote) -> Self {
-        Quote {
-            sell_amount: quote.sell_amount.0,
-            buy_amount: quote.buy_amount.0,
-            fee: quote.fee.0,
-            solver: quote.solver.0,
-        }
-    }
-}
-
-impl From<domain::fee::Policy> for FeePolicy {
-    fn from(policy: domain::fee::Policy) -> Self {
+impl FeePolicy {
+    pub fn from_domain(policy: domain::fee::Policy) -> Self {
         match policy {
             domain::fee::Policy::Surplus {
                 factor,
@@ -327,23 +299,21 @@ impl From<domain::fee::Policy> for FeePolicy {
             },
         }
     }
-}
 
-impl From<FeePolicy> for domain::fee::Policy {
-    fn from(policy: FeePolicy) -> Self {
-        match policy {
-            FeePolicy::Surplus {
+    pub fn into_domain(self) -> domain::fee::Policy {
+        match self {
+            Self::Surplus {
                 factor,
                 max_volume_factor,
-            } => Self::Surplus {
+            } => domain::fee::Policy::Surplus {
                 factor: FeeFactor::try_from(factor).unwrap(),
                 max_volume_factor: FeeFactor::try_from(max_volume_factor).unwrap(),
             },
-            FeePolicy::PriceImprovement {
+            Self::PriceImprovement {
                 factor,
                 max_volume_factor,
                 quote,
-            } => Self::PriceImprovement {
+            } => domain::fee::Policy::PriceImprovement {
                 factor: FeeFactor::try_from(factor).unwrap(),
                 max_volume_factor: FeeFactor::try_from(max_volume_factor).unwrap(),
                 quote: domain::fee::Quote {
@@ -353,9 +323,43 @@ impl From<FeePolicy> for domain::fee::Policy {
                     solver: quote.solver,
                 },
             },
-            FeePolicy::Volume { factor } => Self::Volume {
+            Self::Volume { factor } => domain::fee::Policy::Volume {
                 factor: FeeFactor::try_from(factor).unwrap(),
             },
+        }
+    }
+}
+
+#[serde_as]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Quote {
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub sell_amount: U256,
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub buy_amount: U256,
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub fee: U256,
+    pub solver: H160,
+}
+
+impl Quote {
+    fn from_domain(quote: domain::Quote) -> Self {
+        Quote {
+            sell_amount: quote.sell_amount.0,
+            buy_amount: quote.buy_amount.0,
+            fee: quote.fee.0,
+            solver: quote.solver.0,
+        }
+    }
+
+    pub fn to_domain(&self, order_uid: OrderUid) -> domain::Quote {
+        domain::Quote {
+            order_uid,
+            sell_amount: self.sell_amount.into(),
+            buy_amount: self.buy_amount.into(),
+            fee: self.fee.into(),
+            solver: self.solver.into(),
         }
     }
 }

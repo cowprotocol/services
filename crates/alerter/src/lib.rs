@@ -390,7 +390,7 @@ pub async fn start(args: impl Iterator<Item = String>) {
 }
 
 async fn run(args: Arguments) {
-    let filter = shared::metrics::handle_metrics();
+    let filter = observe::metrics::handle_metrics();
     tokio::task::spawn(warp::serve(filter).bind(([0, 0, 0, 0], args.metrics_port)));
 
     let client = Client::builder()

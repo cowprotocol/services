@@ -10,7 +10,7 @@ use {
         TokenPair,
     },
     anyhow::{anyhow, Result},
-    app_data::AppDataHash,
+    app_data::{hash_full_app_data, AppDataHash},
     chrono::{offset::Utc, DateTime},
     derivative::Derivative,
     hex_literal::hex,
@@ -465,7 +465,7 @@ impl OrderCreationAppData {
         match self {
             Self::Hash { hash } => *hash,
             Self::Full { full } | Self::Both { full, .. } => {
-                AppDataHash(app_data_hash::hash_full_app_data(full.as_bytes()))
+                AppDataHash(hash_full_app_data(full.as_bytes()))
             }
         }
     }
@@ -1034,7 +1034,7 @@ mod tests {
         primitive_types::H256,
         secp256k1::{PublicKey, Secp256k1, SecretKey},
         serde_json::json,
-        shared::assert_json_matches,
+        testlib::assert_json_matches,
         web3::signing::keccak256,
     };
 

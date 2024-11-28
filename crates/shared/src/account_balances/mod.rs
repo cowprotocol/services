@@ -67,7 +67,6 @@ pub trait BalanceFetching: Send + Sync {
 
 /// Contracts required for balance simulation.
 pub struct Contracts {
-    pub chain_id: u64,
     pub settlement: H160,
     pub vault_relayer: H160,
     pub vault: Option<H160>,

@@ -1,5 +1,5 @@
 use {
-    app_data::AppDataHash,
+    app_data::{hash_full_app_data, AppDataHash},
     e2e::{setup::*, tx},
     ethcontract::prelude::U256,
     model::{
@@ -74,7 +74,7 @@ async fn app_data(web3: Web3) {
 
     // hash matches
     let app_data = "{}";
-    let app_data_hash = AppDataHash(app_data_hash::hash_full_app_data(app_data.as_bytes()));
+    let app_data_hash = AppDataHash(hash_full_app_data(app_data.as_bytes()));
     let order1 = create_order(OrderCreationAppData::Both {
         full: app_data.to_string(),
         expected: app_data_hash,
@@ -133,7 +133,7 @@ async fn app_data(web3: Web3) {
 
     // pre-register some app-data with the API.
     let pre_app_data = r#"{"pre":"registered"}"#;
-    let pre_app_data_hash = AppDataHash(app_data_hash::hash_full_app_data(pre_app_data.as_bytes()));
+    let pre_app_data_hash = AppDataHash(hash_full_app_data(pre_app_data.as_bytes()));
     let err = services.get_app_data(pre_app_data_hash).await.unwrap_err();
     dbg!(err);
 
@@ -170,9 +170,7 @@ async fn app_data(web3: Web3) {
     // pre-registering invalid app-data fails.
     let err = services
         .put_app_data(
-            Some(AppDataHash(app_data_hash::hash_full_app_data(
-                invalid_app_data.as_bytes(),
-            ))),
+            Some(AppDataHash(hash_full_app_data(invalid_app_data.as_bytes()))),
             invalid_app_data,
         )
         .await
