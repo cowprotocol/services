@@ -154,7 +154,7 @@ async fn discards_excess_settle_requests() {
         .len();
     assert_eq!(unique_solutions_count, solution_ids.len());
 
-    // `collect_vec` is required to execute futures in the same order.
+    // `collect_vec` is required to receive results in the same order.
     let results = join_all(solution_ids.iter().map(|id| test.settle(id)).collect_vec()).await;
 
     for (index, result) in results.into_iter().enumerate() {
@@ -215,8 +215,8 @@ async fn accepts_new_settle_requests_after_timeout() {
         .len();
     assert_eq!(unique_solutions_count, solution_id.len());
 
-    // Send only first 4 settle requests. `collect_vec` is required to execute
-    // futures in the same order.
+    // Send only first 4 settle requests. `collect_vec` is required to receive
+    // results in the same order.
     let results = join_all(
         solution_id[..4]
             .iter()
