@@ -202,7 +202,22 @@ async fn single_replace_order_test(web3: Web3) {
 
     // Place Orders
     let services = Services::new(&onchain).await;
-    services.start_protocol(solver).await;
+    services.start_api(Default::default()).await;
+    colocation::start_driver(
+        onchain.contracts(),
+        vec![
+            colocation::start_baseline_solver(
+                "test_solver".into(),
+                solver,
+                onchain.contracts().weth.address(),
+                vec![],
+                1,
+                true,
+            )
+            .await,
+        ],
+        colocation::LiquidityProvider::UniswapV2,
+    );
 
     let order = OrderCreation {
         sell_token: token_a.address(),
@@ -255,6 +270,18 @@ async fn single_replace_order_test(web3: Web3) {
     );
     let balance_before = token_a.balance_of(trader.address()).call().await.unwrap();
     let new_order_uid = services.create_order(&new_order).await.unwrap();
+
+    // Start autopilot once all the orders are created.
+    services
+        .start_autopilot(
+            None,
+            vec![
+                "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
+                    .to_string(),
+            ],
+        )
+        .await;
 
     onchain.mint_block().await;
 
