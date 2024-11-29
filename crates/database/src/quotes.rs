@@ -491,12 +491,33 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_insert_quote_interaction() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db =
+            PgConnection::connect("postgresql://127.0.0.1:5432/?user=postgres&password=123")
+                .await
+                .unwrap();
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
+        let quote = Quote {
+            id: Default::default(),
+            sell_token: ByteArray([1; 20]),
+            buy_token: ByteArray([2; 20]),
+            sell_amount: 3.into(),
+            buy_amount: 4.into(),
+            gas_amount: 5.,
+            gas_price: 6.,
+            sell_token_price: 7.,
+            order_kind: OrderKind::Sell,
+            expiration_timestamp: low_precision_now(),
+            quote_kind: QuoteKind::Standard,
+            solver: ByteArray([1; 20]),
+            verified: false,
+        };
+        // store quote in database
+        let id = save(&mut db, &quote).await.unwrap();
+
         let quote_interaction = QuoteInteraction {
-            quote_id: Default::default(),
+            quote_id: id,
             index: Default::default(),
             target: ByteArray([1; 20]),
             value: 2.into(),
@@ -515,7 +536,10 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_removed_quote_interactions_by_id() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db =
+            PgConnection::connect("postgresql://127.0.0.1:5432/?user=postgres&password=123")
+                .await
+                .unwrap();
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
