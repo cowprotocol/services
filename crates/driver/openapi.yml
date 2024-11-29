@@ -4,10 +4,6 @@ info:
   description: |
     The API implemented by Solvers to be queried by Autopilot.
   version: 0.0.1
-  contact:
-    name: CoW DAO
-      url: "https://cow.fi"
-    email: dev@cow.fi
 paths:
   /quote:
     get:

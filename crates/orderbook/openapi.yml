@@ -2,10 +2,6 @@ openapi: 3.0.3
 info:
   version: 0.0.1
   title: Order Book API
-  contact:
-    name: CoW DAO
-    url: "https://cow.fi"
-    email: dev@cow.fi
 servers:
   - description: Mainnet (Prod)
     url: "https://api.cow.fi/mainnet"
