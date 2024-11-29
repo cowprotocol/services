@@ -176,13 +176,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
-      - run: npm install @apidevtools/swagger-cli @redocly/openapi-cli
+      - run: npm install @apidevtools/swagger-cli @stoplight/spectral-cli
       - run: node_modules/.bin/swagger-cli validate crates/orderbook/openapi.yml
       - run: node_modules/.bin/swagger-cli validate crates/driver/openapi.yml
       - run: node_modules/.bin/swagger-cli validate crates/solvers/openapi.yml
-      - run: node_modules/.bin/openapi validate crates/orderbook/openapi.yml
-      - run: node_modules/.bin/openapi validate crates/driver/openapi.yml
-      - run: node_modules/.bin/openapi validate crates/solvers/openapi.yml
+      - run: node_modules/.bin/spectral lint crates/orderbook/openapi.yml
+      - run: node_modules/.bin/spectral lint crates/driver/openapi.yml
+      - run: node_modules/.bin/spectral lint crates/solvers/openapi.yml
 
   run-flaky-test:
     # to debug a flaky test set `if` to true and configure the flaky test in the `run` step
