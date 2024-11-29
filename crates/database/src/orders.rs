@@ -2232,10 +2232,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_insert_order_quote_interaction_on_conflict() {
-        let mut db =
-            PgConnection::connect("postgresql://127.0.0.1:5432/?user=postgres&password=123")
-                .await
-                .unwrap();
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
