@@ -48,38 +48,6 @@ pub struct RawAuctionData {
 
 pub type AuctionId = i64;
 
-impl TryFrom<Auction> for domain::Auction {
-    type Error = anyhow::Error;
-
-    fn try_from(dto: Auction) -> anyhow::Result<Self> {
-        Ok(domain::Auction {
-            id: dto.id,
-            block: dto.auction.block,
-            latest_settlement_block: dto.auction.latest_settlement_block,
-            orders: dto
-                .auction
-                .orders
-                .into_iter()
-                .map(super::order::to_domain)
-                .collect(),
-            prices: dto
-                .auction
-                .prices
-                .into_iter()
-                .map(|(key, value)| {
-                    Price::new(value.into()).map(|price| (eth::TokenAddress(key), price))
-                })
-                .collect::<Result<_, _>>()?,
-            surplus_capturing_jit_order_owners: dto
-                .auction
-                .surplus_capturing_jit_order_owners
-                .into_iter()
-                .map(Into::into)
-                .collect(),
-        })
-    }
-}
-
 #[serde_as]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -87,4 +55,34 @@ pub struct Auction {
     pub id: AuctionId,
     #[serde(flatten)]
     pub auction: RawAuctionData,
+}
+
+impl Auction {
+    pub fn try_into_domain(self) -> anyhow::Result<domain::Auction> {
+        Ok(domain::Auction {
+            id: self.id,
+            block: self.auction.block,
+            latest_settlement_block: self.auction.latest_settlement_block,
+            orders: self
+                .auction
+                .orders
+                .into_iter()
+                .map(super::order::to_domain)
+                .collect(),
+            prices: self
+                .auction
+                .prices
+                .into_iter()
+                .map(|(key, value)| {
+                    Price::new(value.into()).map(|price| (eth::TokenAddress(key), price))
+                })
+                .collect::<Result<_, _>>()?,
+            surplus_capturing_jit_order_owners: self
+                .auction
+                .surplus_capturing_jit_order_owners
+                .into_iter()
+                .map(Into::into)
+                .collect(),
+        })
+    }
 }
