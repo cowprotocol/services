@@ -66,9 +66,8 @@ impl Competition {
         liquidity: infra::liquidity::Fetcher,
         simulator: Simulator,
         mempools: Mempools,
-        settltment_queue_size: usize,
     ) -> Arc<Self> {
-        let (settle_tx, settle_rx) = mpsc::channel(settltment_queue_size);
+        let (settle_tx, settle_rx) = mpsc::channel(solver.settle_queue_size());
 
         let competition = Arc::new(Self {
             solver,

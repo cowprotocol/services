@@ -39,7 +39,6 @@ impl Api {
         self,
         shutdown: impl Future<Output = ()> + Send + 'static,
         order_priority_strategies: Vec<OrderPriorityStrategy>,
-        settle_queue_size: usize,
     ) -> Result<(), hyper::Error> {
         // Add middleware.
         let mut app = axum::Router::new().layer(
@@ -79,7 +78,6 @@ impl Api {
                     self.liquidity.clone(),
                     self.simulator.clone(),
                     self.mempools.clone(),
-                    settle_queue_size,
                 ),
                 liquidity: self.liquidity.clone(),
                 tokens: tokens.clone(),
