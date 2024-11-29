@@ -5,6 +5,7 @@ use {
         Address,
         AppId,
         OrderUid,
+        PgTransaction,
         TransactionHash,
     },
     futures::stream::BoxStream,
@@ -485,7 +486,7 @@ pub async fn insert_order_quote_interaction(
 }
 
 pub async fn insert_order_quote_interactions(
-    ex: &mut PgConnection,
+    ex: &mut PgTransaction<'_>,
     quote_interactions: &[OrderQuoteInteraction],
 ) -> Result<(), sqlx::Error> {
     for interactions in quote_interactions {
@@ -2231,7 +2232,10 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_insert_order_quote_interaction_on_conflict() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db =
+            PgConnection::connect("postgresql://127.0.0.1:5432/?user=postgres&password=123")
+                .await
+                .unwrap();
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
@@ -2256,18 +2260,6 @@ mod tests {
         };
         insert_order_quote_interaction(&mut db, &interaction2)
             .await
-            .unwrap();
-
-        const QUERY: &str = r#"
-        SELECT * FROM order_quote_interactions
-        WHERE order_uid = $1
-        "#;
-
-        let interactions: Vec<OrderQuoteInteraction> = sqlx::query_as(QUERY)
-            .bind(order_uid)
-            .fetch_all(&mut db as &mut PgConnection)
-            .await
-            .unwrap();
-        assert_eq!(*interactions.first().unwrap(), interaction2);
+            .expect_err("Inserting interaction for the same key should fail.");
     }
 }

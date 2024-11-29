@@ -1,5 +1,5 @@
 use {
-    crate::{orders::OrderKind, Address},
+    crate::{orders::OrderKind, Address, PgTransaction},
     bigdecimal::BigDecimal,
     sqlx::{
         types::chrono::{DateTime, Utc},
@@ -184,7 +184,7 @@ VALUES ($1, $2, $3, $4, $5)
 }
 
 pub async fn insert_quote_interactions(
-    ex: &mut PgConnection,
+    ex: &mut PgTransaction<'_>,
     quote_interactions: &[QuoteInteraction],
 ) -> Result<(), sqlx::Error> {
     for interaction in quote_interactions {
