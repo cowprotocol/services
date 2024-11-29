@@ -6,7 +6,7 @@ info:
   version: 0.0.1
   contact:
     name: CoW DAO
-    url: 'https://cow.fi'
+      url: "https://cow.fi"
     email: dev@cow.fi
 paths:
   /quote:
@@ -17,13 +17,13 @@ paths:
           name: sellToken
           description: The token to sell.
           schema:
-            $ref: '#/components/schemas/Address'
+            $ref: "#/components/schemas/Address"
           required: true
         - in: query
           name: buyToken
           description: The token to buy.
           schema:
-            $ref: '#/components/schemas/Address'
+            $ref: "#/components/schemas/Address"
           required: true
         - in: query
           name: kind
@@ -40,27 +40,27 @@ paths:
           name: amount
           description: The amount to buy or sell.
           schema:
-            $ref: '#/components/schemas/TokenAmount'
+            $ref: "#/components/schemas/TokenAmount"
           required: true
         - in: query
           name: deadline
           description: The time until which the caller expects a response.
           schema:
-            $ref: '#/components/schemas/DateTime'
+            $ref: "#/components/schemas/DateTime"
           required: true
       responses:
-        '200':
+        "200":
           description: Quote successfully created.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/QuoteResponseKind'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '429':
+                $ref: "#/components/schemas/QuoteResponseKind"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "429":
           description: The solver cannot keep up. It is too busy to handle more requests.
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+        "500":
+          $ref: "#/components/responses/InternalServerError"
   /solve:
     post:
       description: |-
@@ -83,18 +83,18 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/SolveRequest'
+              $ref: "#/components/schemas/SolveRequest"
       responses:
-        '200':
+        "200":
           description: Auction successfully solved.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SolveResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+                $ref: "#/components/schemas/SolveResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
   /reveal:
     post:
       description: >
@@ -107,18 +107,18 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Solution'
+              $ref: "#/components/schemas/Solution"
       responses:
-        '200':
+        "200":
           description: Execution accepted.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RevealedResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+                $ref: "#/components/schemas/RevealedResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
   /settle:
     post:
       description: |-
@@ -134,31 +134,31 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Solution'
+              $ref: "#/components/schemas/Solution"
       responses:
-        '200':
+        "200":
           description: Execution accepted.
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 components:
   schemas:
     Address:
       description: 20 byte Ethereum address encoded as a hex with `0x` prefix.
       type: string
-      example: '0x6810e776880c02933d47db1b9fc05908e5386b96'
+      example: "0x6810e776880c02933d47db1b9fc05908e5386b96"
     TokenAmount:
       description: Amount of an ERC20 token. 256 bit unsigned integer in decimal notation.
       type: string
-      example: '1234567890'
+      example: "1234567890"
     Interaction:
       type: object
       properties:
         target:
-          $ref: '#/components/schemas/Address'
+          $ref: "#/components/schemas/Address"
         value:
-          $ref: '#/components/schemas/TokenAmount'
+          $ref: "#/components/schemas/TokenAmount"
         callData:
           description: Hex encoded bytes with `0x` prefix.
           type: string
@@ -167,11 +167,11 @@ components:
       type: object
       properties:
         address:
-          $ref: '#/components/schemas/Address'
+          $ref: "#/components/schemas/Address"
         price:
           nullable: true
           allOf:
-            - $ref: '#/components/schemas/TokenAmount'
+            - $ref: "#/components/schemas/TokenAmount"
           description: |-
             The reference price denominated in native token (i.e. 1e18
             represents a token that
@@ -197,27 +197,27 @@ components:
       type: object
       properties:
         uid:
-          $ref: '#/components/schemas/OrderUID'
+          $ref: "#/components/schemas/OrderUID"
         sellToken:
           allOf:
             - description: Token being sold
-            - $ref: '#/components/schemas/Address'
+            - $ref: "#/components/schemas/Address"
         buyToken:
           allOf:
             - description: Token being bought
-            - $ref: '#/components/schemas/Address'
+            - $ref: "#/components/schemas/Address"
         sellAmount:
           allOf:
             - description: Amount to be sold
-            - $ref: '#/components/schemas/TokenAmount'
+            - $ref: "#/components/schemas/TokenAmount"
         buyAmount:
           allOf:
             - description: Amount to be bought
-            - $ref: '#/components/schemas/TokenAmount'
+            - $ref: "#/components/schemas/TokenAmount"
         created:
           description: Creation time of the order. Denominated in epoch seconds.
           type: string
-          example: '123456'
+          example: "123456"
         validTo:
           description: The time until which the order is valid.
           type: integer
@@ -229,11 +229,11 @@ components:
         receiver:
           allOf:
             - description: The address that should receive the bought tokens.
-            - $ref: '#/components/schemas/Address'
+            - $ref: "#/components/schemas/Address"
         owner:
           allOf:
             - description: The address that created the order.
-            - $ref: '#/components/schemas/Address'
+            - $ref: "#/components/schemas/Address"
         partiallyFillable:
           description: |-
             Whether the order can be partially filled.
@@ -244,17 +244,17 @@ components:
         executed:
           allOf:
             - description: The amount that has already been filled.
-            - $ref: '#/components/schemas/TokenAmount'
+            - $ref: "#/components/schemas/TokenAmount"
         preInteractions:
           description: Interactions that must be executed before the order can be filled.
           type: array
           items:
-            $ref: '#/components/schemas/Interaction'
+            $ref: "#/components/schemas/Interaction"
         postInteractions:
           description: Interactions that must be executed after the order has been filled.
           type: array
           items:
-            $ref: '#/components/schemas/Interaction'
+            $ref: "#/components/schemas/Interaction"
         sellTokenBalance:
           type: string
           enum:
@@ -292,11 +292,11 @@ components:
             their solution.
           type: array
           items:
-            $ref: '#/components/schemas/FeePolicy'
+            $ref: "#/components/schemas/FeePolicy"
         quote:
           allOf:
             - description: A winning quote.
-            - $ref: '#/components/schemas/Quote'
+            - $ref: "#/components/schemas/Quote"
       required:
         - uid
         - sellToken
@@ -321,7 +321,7 @@ components:
     BigUint:
       description: A big unsigned integer encoded in decimal.
       type: string
-      example: '1234567890'
+      example: "1234567890"
     OrderUID:
       description: |-
         Unique identifier for the order: 56 bytes encoded as hex with `0x`
@@ -334,9 +334,9 @@ components:
         0x30cff40d9f60caa68a37f0ee73253ad6ad72b45580c945fe3ab67596476937197854163b1b0d24e77dca702b97b5cc33e0f83dcb626122a6
     QuoteResponseKind:
       oneOf:
-        - $ref: '#/components/schemas/LegacyQuoteResponse'
-        - $ref: '#/components/schemas/QuoteResponse'
-        - $ref: '#/components/schemas/Error'
+        - $ref: "#/components/schemas/LegacyQuoteResponse"
+        - $ref: "#/components/schemas/QuoteResponse"
+        - $ref: "#/components/schemas/Error"
     LegacyQuoteResponse:
       description: |-
         Successful Quote.
@@ -349,21 +349,21 @@ components:
       type: object
       properties:
         amount:
-          $ref: '#/components/schemas/TokenAmount'
+          $ref: "#/components/schemas/TokenAmount"
         interactions:
           type: array
           items:
-            $ref: '#/components/schemas/Interaction'
+            $ref: "#/components/schemas/Interaction"
         solver:
           allOf:
             - description: The address of the solver that quoted this order.
-            - $ref: '#/components/schemas/Address'
+            - $ref: "#/components/schemas/Address"
         gas:
           type: integer
           description: How many units of gas this trade is estimated to cost.
         txOrigin:
           allOf:
-            - $ref: '#/components/schemas/Address'
+            - $ref: "#/components/schemas/Address"
           description: Which `tx.origin` is required to make a quote simulation pass.
       required:
         - amount
@@ -380,37 +380,37 @@ components:
             Mapping of hex token address to the uniform clearing price.
           type: object
           additionalProperties:
-            $ref: '#/components/schemas/BigUint'
+            $ref: "#/components/schemas/BigUint"
         preInteractions:
           type: array
           items:
-            $ref: '#/components/schemas/Interaction'
+            $ref: "#/components/schemas/Interaction"
         interactions:
           type: array
           items:
-            $ref: '#/components/schemas/Interaction'
+            $ref: "#/components/schemas/Interaction"
         solver:
           allOf:
-            - $ref: '#/components/schemas/Address'
+            - $ref: "#/components/schemas/Address"
           description: The address of the solver that quoted this order.
         gas:
           type: integer
           description: How many units of gas this trade is estimated to cost.
         txOrigin:
           allOf:
-            - $ref: '#/components/schemas/Address'
+            - $ref: "#/components/schemas/Address"
           description: Which `tx.origin` is required to make a quote simulation pass.
         jitOrders:
           type: array
           items:
-            $ref: '#/components/schemas/JitOrder'
+            $ref: "#/components/schemas/JitOrder"
       required:
         - clearingPrices
         - solver
     DateTime:
       description: An ISO 8601 UTC date time string.
       type: string
-      example: '2020-12-03T18:35:18.814523Z'
+      example: "2020-12-03T18:35:18.814523Z"
     Calldata:
       description: hex encoded calldata with `0x` prefix.
       type: object
@@ -420,7 +420,7 @@ components:
             The calldata without any internalized interactions encoded.
             This is the calldata that can be found on chain.
           type: string
-          example: '0x1234567890'
+          example: "0x1234567890"
         uninternalized:
           description: |-
             The calldata with all internalized interactions encoded.
@@ -428,7 +428,7 @@ components:
             This is the calldata that should be used for simulation/verification
             purposes.
           type: string
-          example: '0x1234567890'
+          example: "0x1234567890"
     SolveRequest:
       description: Request to the solve endpoint.
       type: object
@@ -440,21 +440,21 @@ components:
         orders:
           type: array
           items:
-            $ref: '#/components/schemas/Order'
+            $ref: "#/components/schemas/Order"
           description: |
             The solvable orders included in the auction.
         tokens:
           type: array
           items:
-            $ref: '#/components/schemas/Token'
+            $ref: "#/components/schemas/Token"
           description: |
             Information about tokens used in the auction.
         deadline:
-          $ref: '#/components/schemas/DateTime'
+          $ref: "#/components/schemas/DateTime"
         surplusCapturingJitOrderOwners:
           type: array
           items:
-            $ref: '#/components/schemas/Address'
+            $ref: "#/components/schemas/Address"
           description: >
             List of addresses on whose surplus will count towards the objective
             value of their solution (unlike other orders that were created by
@@ -479,11 +479,11 @@ components:
                 description: |
                   The objective value of the solution.
                 type: string
-                example: '100'
+                example: "100"
               submissionAddress:
                 allOf:
                   - description: The address that will be used to submit the solution.
-                  - $ref: '#/components/schemas/Address'
+                  - $ref: "#/components/schemas/Address"
               orders:
                 description: >
                   Mapping of order uid to net executed amount (including all
@@ -499,11 +499,11 @@ components:
                     sellToken:
                       allOf:
                         - description: Token being sold
-                        - $ref: '#/components/schemas/Address'
+                        - $ref: "#/components/schemas/Address"
                     buyToken:
                       allOf:
                         - description: Token being bought
-                        - $ref: '#/components/schemas/Address'
+                        - $ref: "#/components/schemas/Address"
                     limitSell:
                       type: string
                       description: Maximum amount to be sold.
@@ -526,7 +526,7 @@ components:
                   settlement contract.
                 type: object
                 additionalProperties:
-                  $ref: '#/components/schemas/BigUint'
+                  $ref: "#/components/schemas/BigUint"
               gas:
                 type: integer
     Solution:
@@ -550,7 +550,7 @@ components:
       type: object
       properties:
         calldata:
-          $ref: '#/components/schemas/Calldata'
+          $ref: "#/components/schemas/Calldata"
     FeePolicy:
       description: >
         A fee policy that applies to an order.
@@ -559,9 +559,9 @@ components:
         their solution.
       type: object
       oneOf:
-        - $ref: '#/components/schemas/SurplusFee'
-        - $ref: '#/components/schemas/PriceImprovement'
-        - $ref: '#/components/schemas/VolumeFee'
+        - $ref: "#/components/schemas/SurplusFee"
+        - $ref: "#/components/schemas/PriceImprovement"
+        - $ref: "#/components/schemas/VolumeFee"
     SurplusFee:
       description: >
         If the order receives more than limit price, pay the protocol a factor
@@ -603,7 +603,7 @@ components:
           type: number
           example: 0.5
         quote:
-          $ref: '#/components/schemas/Quote'
+          $ref: "#/components/schemas/Quote"
     VolumeFee:
       type: object
       properties:
@@ -621,28 +621,28 @@ components:
       type: object
       properties:
         sellAmount:
-          $ref: '#/components/schemas/TokenAmount'
+          $ref: "#/components/schemas/TokenAmount"
         buyAmount:
-          $ref: '#/components/schemas/TokenAmount'
+          $ref: "#/components/schemas/TokenAmount"
         fee:
-          $ref: '#/components/schemas/TokenAmount'
+          $ref: "#/components/schemas/TokenAmount"
         solver:
-          $ref: '#/components/schemas/Address'
+          $ref: "#/components/schemas/Address"
     JitOrder:
       type: object
       properties:
         sellToken:
-          $ref: '#/components/schemas/Address'
+          $ref: "#/components/schemas/Address"
         buyToken:
-          $ref: '#/components/schemas/Address'
+          $ref: "#/components/schemas/Address"
         sellAmount:
-          $ref: '#/components/schemas/TokenAmount'
+          $ref: "#/components/schemas/TokenAmount"
         buyAmount:
-          $ref: '#/components/schemas/TokenAmount'
+          $ref: "#/components/schemas/TokenAmount"
         executedAmount:
-          $ref: '#/components/schemas/TokenAmount'
+          $ref: "#/components/schemas/TokenAmount"
         receiver:
-          $ref: '#/components/schemas/Address'
+          $ref: "#/components/schemas/Address"
         validTo:
           type: integer
         side:
@@ -708,7 +708,7 @@ components:
           description: Text describing the error.
           type: string
   responses:
-    '200':
+    "200":
       description: The request was successful.
     BadRequest:
       description: |-
