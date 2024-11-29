@@ -229,7 +229,7 @@ Indexes:
 
 Quotes that an order was created with. These quotes get stored persistently and can be used to evaluate how accurate the quoted fee predicted the execution cost that actually happened on-chain.
 
- Colmun             | Type    | Nullable | Details
+ Column             | Type    | Nullable | Details
 --------------------|---------|----------|--------
  order\_uid         | bytea   | not null | order that this quote belongs to
  gas\_amount        | double  | not null | estimated gas used by the quote used to create this order with
@@ -280,7 +280,7 @@ Indexes:
 Solver responding to quote request provides a list of interactions which need to be executed to fulfill the quote. When order is created
 these interactions are copied from quote. These interactions are stored persistently and can be used to audit auction winning order.
 
- Colmun             | Type    | Nullable | Details
+ Column             | Type    | Nullable | Details
 --------------------|---------|----------|--------
  order\_uid         | bytea   | not null | order that this interaction belongs to
  index              | integer | not null | sequence number of the interaction for that order
@@ -369,7 +369,7 @@ Solver responding to quote request provides a list of interactions which need to
 these interactions. Later, when order is created basing on this quote, interactions are copied to `order_quote_interactions`.
 Data in this table is removed together with the referenced quote, usually at quote expiration.
 
- Colmun             | Type    | Nullable | Details
+ Column             | Type    | Nullable | Details
 --------------------|---------|----------|--------
  quote_id           | bigint  | not null | quote that this interaction belongs to
  index              | integer | not null | sequence number of the interaction for that quote
@@ -379,6 +379,7 @@ Data in this table is removed together with the referenced quote, usually at quo
 
 Indexes:
 - PRIMARY KEY: composite key(`quote_id`, `index`)
+- FOREIGN KEY: `quote_id` into `quotes(id)` table
 - quote\_id\_interactions: hash(`quote_id`)
 
 ### proposed\_solutions
