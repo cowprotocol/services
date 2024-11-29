@@ -364,13 +364,10 @@ fn competition_error(err: &competition::Error) -> &'static str {
     match err {
         competition::Error::SolutionNotAvailable => "SolutionNotAvailable",
         competition::Error::DeadlineExceeded(_) => "DeadlineExceeded",
-        competition::Error::QueueAwaitingDeadlineExceeded => "QueueAwaitingDeadlineExceeded",
         competition::Error::Solver(solver::Error::Http(_)) => "SolverHttpError",
         competition::Error::Solver(solver::Error::Deserialize(_)) => "SolverDeserializeError",
         competition::Error::Solver(solver::Error::Dto(_)) => "SolverDtoError",
         competition::Error::SubmissionError => "SubmissionError",
-        competition::Error::UnableToEnqueue => "UnableToEnqueue",
-        competition::Error::UnableToDequeue => "UnableToDequeue",
     }
 }
 
