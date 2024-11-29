@@ -239,10 +239,6 @@ async fn insert_quote(
         solver: ByteArray(quote.data.solver.0),
         verified: quote.data.verified,
     };
-    database::orders::insert_quote(ex, &dbquote)
-        .await
-        .map_err(InsertionError::DbError)?;
-
     let dbinteractions = quote
         .data
         .interactions
@@ -259,9 +255,15 @@ async fn insert_quote(
         })
         .collect::<Result<Vec<_>>>()
         .map_err(|_| InsertionError::IndexConversionFailed)?;
-    database::orders::insert_order_quote_interactions(ex, dbinteractions.as_slice())
+
+    let mut transaction = ex.begin().await?;
+    database::orders::insert_quote(&mut transaction, &dbquote)
         .await
-        .map_err(InsertionError::DbError)
+        .map_err(InsertionError::DbError)?;
+    database::orders::insert_order_quote_interactions(&mut transaction, dbinteractions.as_slice())
+        .await
+        .map_err(InsertionError::DbError)?;
+    transaction.commit().await.map_err(InsertionError::DbError)
 }
 
 #[async_trait::async_trait]

@@ -11,6 +11,7 @@ use {
         },
         order_quoting::{QuoteData, QuoteSearchParameters, QuoteStoring},
     },
+    sqlx::Acquire,
 };
 
 #[async_trait::async_trait]
@@ -23,11 +24,14 @@ impl QuoteStoring for Postgres {
 
         let mut ex = self.pool.acquire().await?;
         let row = create_quote_row(&data);
-        let id = database::quotes::save(&mut ex, &row).await?;
+
+        let mut transaction = ex.begin().await?;
+        let id = database::quotes::save(&mut transaction, &row).await?;
         if !data.interactions.is_empty() {
             let interactions = create_quote_interactions_insert_data(id, &data)?;
-            database::quotes::insert_quote_interactions(&mut ex, &interactions).await?;
+            database::quotes::insert_quote_interactions(&mut transaction, &interactions).await?;
         }
+        transaction.commit().await.context("commit")?;
         Ok(id)
     }
 
