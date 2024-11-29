@@ -472,16 +472,6 @@ pub async fn insert_order_quote_interaction(
         call_data
     )
     VALUES ($1, $2, $3, $4, $5)
-    ON CONFLICT (order_uid, index) DO UPDATE SET
-    (
-        target,
-        value,
-        call_data
-    ) = (
-        EXCLUDED.target,
-        EXCLUDED.value,
-        EXCLUDED.call_data
-    )
     "#;
     sqlx::query(INSERT_ORDER_QUOTE_INTERACTION_QUERY)
         .bind(quote_interaction.order_uid)
