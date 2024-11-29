@@ -1,7 +1,7 @@
 use {
     crate::ipfs::Ipfs,
     anyhow::Result,
-    app_data::AppDataHash,
+    app_data::{create_ipfs_cid, AppDataHash},
     cached::{Cached, TimedSizedCache},
     std::sync::Mutex,
 };
@@ -121,7 +121,7 @@ impl IpfsAppData {
 }
 
 fn new_app_data_cid(contract_app_data: &AppDataHash) -> String {
-    let raw_cid = app_data_hash::create_ipfs_cid(&contract_app_data.0);
+    let raw_cid = create_ipfs_cid(&contract_app_data.0);
     multibase::encode(multibase::Base::Base32Lower, raw_cid)
 }
 

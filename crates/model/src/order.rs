@@ -1,5 +1,6 @@
 //! Contains the order type as described by the specification with serialization
 //! as described by the openapi documentation.
+#![allow(clippy::needless_lifetimes)] // todo: migrate from derivative to derive_more
 
 use {
     crate::{
@@ -10,7 +11,7 @@ use {
         TokenPair,
     },
     anyhow::{anyhow, Result},
-    app_data::AppDataHash,
+    app_data::{hash_full_app_data, AppDataHash},
     chrono::{offset::Utc, DateTime},
     derivative::Derivative,
     hex_literal::hex,
@@ -465,7 +466,7 @@ impl OrderCreationAppData {
         match self {
             Self::Hash { hash } => *hash,
             Self::Full { full } | Self::Both { full, .. } => {
-                AppDataHash(app_data_hash::hash_full_app_data(full.as_bytes()))
+                AppDataHash(hash_full_app_data(full.as_bytes()))
             }
         }
     }
@@ -819,7 +820,7 @@ impl<'de> Deserialize<'de> for OrderUid {
         D: Deserializer<'de>,
     {
         struct Visitor {}
-        impl<'de> de::Visitor<'de> for Visitor {
+        impl de::Visitor<'_> for Visitor {
             type Value = OrderUid;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
@@ -1009,13 +1010,6 @@ impl BuyTokenDestination {
     }
 }
 
-pub fn debug_app_data(
-    app_data: &[u8; 32],
-    formatter: &mut std::fmt::Formatter,
-) -> Result<(), std::fmt::Error> {
-    formatter.write_fmt(format_args!("{:?}", H256(*app_data)))
-}
-
 pub fn debug_biguint_to_string(
     value: &BigUint,
     formatter: &mut std::fmt::Formatter,
@@ -1034,7 +1028,7 @@ mod tests {
         primitive_types::H256,
         secp256k1::{PublicKey, Secp256k1, SecretKey},
         serde_json::json,
-        shared::assert_json_matches,
+        testlib::assert_json_matches,
         web3::signing::keccak256,
     };
 

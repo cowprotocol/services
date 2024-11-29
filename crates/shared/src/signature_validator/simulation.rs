@@ -5,9 +5,8 @@
 
 use {
     super::{SignatureCheck, SignatureValidating, SignatureValidationError},
-    crate::ethcontract_error::EthcontractErrorType,
     anyhow::Result,
-    contracts::ERC1271SignatureValidator,
+    contracts::{errors::EthcontractErrorType, ERC1271SignatureValidator},
     ethcontract::Bytes,
     ethrpc::Web3,
     futures::future,

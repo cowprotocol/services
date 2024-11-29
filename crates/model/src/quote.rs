@@ -184,7 +184,6 @@ impl Default for Validity {
 }
 
 /// Helper struct for `Validity` serialization.
-
 impl<'de> Deserialize<'de> for Validity {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -318,7 +317,7 @@ impl OrderQuoteRequest {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, serde_json::json, shared::assert_json_matches};
+    use {super::*, serde_json::json, testlib::assert_json_matches};
 
     #[test]
     fn serialize_defaults() {

@@ -1,9 +1,8 @@
 use {
-    crate::orderbook::Orderbook,
+    crate::{api::ApiReply, orderbook::Orderbook},
     anyhow::Result,
     primitive_types::H160,
     serde::Deserialize,
-    shared::api::ApiReply,
     std::{convert::Infallible, sync::Arc},
     warp::{hyper::StatusCode, reply::with_status, Filter, Rejection},
 };
@@ -46,7 +45,7 @@ pub fn get_user_orders(
                 Ok(reply) => with_status(warp::reply::json(&reply), StatusCode::OK),
                 Err(err) => {
                     tracing::error!(?err, "get_user_orders");
-                    shared::api::internal_error_reply()
+                    crate::api::internal_error_reply()
                 }
             })
         }

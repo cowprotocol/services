@@ -385,7 +385,7 @@ impl<'de> Deserialize<'de> for EcdsaSignature {
         D: serde::Deserializer<'de>,
     {
         struct Visitor {}
-        impl<'de> de::Visitor<'de> for Visitor {
+        impl de::Visitor<'_> for Visitor {
             type Value = EcdsaSignature;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
@@ -422,7 +422,7 @@ impl<'de> Deserialize<'de> for EcdsaSignature {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, serde_json::json, shared::assert_json_matches};
+    use {super::*, serde_json::json, testlib::assert_json_matches};
 
     #[test]
     fn onchain_signatures_cannot_recover_owners() {

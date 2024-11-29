@@ -1,7 +1,10 @@
 use crate::{
     arguments,
     boundary,
-    domain::{self, fee::FeeFactor},
+    domain::{
+        self,
+        fee::{FeeFactor, Quote},
+    },
 };
 
 pub enum Policy {
@@ -74,7 +77,7 @@ impl PriceImprovement {
             boundary::OrderClass::Limit => Some(domain::fee::Policy::PriceImprovement {
                 factor: self.factor,
                 max_volume_factor: self.max_volume_factor,
-                quote: quote.clone().into(),
+                quote: Quote::from_domain(quote),
             }),
         }
     }

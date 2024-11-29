@@ -197,7 +197,7 @@ impl From<auction::Error> for Error {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct Auction {
     #[serde_as(as = "serde_with::DisplayFromStr")]
     id: i64,
@@ -216,7 +216,7 @@ impl Auction {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 struct Token {
     pub address: eth::H160,
     #[serde_as(as = "Option<serialize::U256>")]
@@ -226,7 +226,7 @@ struct Token {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 struct Order {
     #[serde_as(as = "serialize::Hex")]
     uid: [u8; order::UID_LEN],
@@ -262,7 +262,7 @@ struct Order {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 enum Kind {
     Sell,
     Buy,
@@ -270,7 +270,7 @@ enum Kind {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 struct Interaction {
     target: eth::H160,
     #[serde_as(as = "serialize::U256")]
@@ -280,7 +280,7 @@ struct Interaction {
 }
 
 #[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 enum SellTokenBalance {
     #[default]
     Erc20,
@@ -289,7 +289,7 @@ enum SellTokenBalance {
 }
 
 #[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 enum BuyTokenBalance {
     #[default]
     Erc20,
@@ -297,7 +297,7 @@ enum BuyTokenBalance {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "lowercase", deny_unknown_fields)]
+#[serde(rename_all = "lowercase")]
 enum SigningScheme {
     Eip712,
     EthSign,
@@ -306,14 +306,14 @@ enum SigningScheme {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 enum Class {
     Market,
     Limit,
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 enum FeePolicy {
     #[serde(rename_all = "camelCase")]
     Surplus { factor: f64, max_volume_factor: f64 },
@@ -329,7 +329,7 @@ enum FeePolicy {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct Quote {
     #[serde_as(as = "serialize::U256")]
     pub sell_amount: eth::U256,
