@@ -89,6 +89,11 @@ impl Competition {
 
     /// Solve an auction as part of this competition.
     pub async fn solve(&self, auction: &Auction) -> Result<Option<Solved>, Error> {
+        if self.settle_queue.capacity() == 0 {
+            tracing::warn!("settlement queue is full; auction is rejected");
+            return Err(Error::SubmissionError);
+        }
+
         let liquidity = match self.solver.liquidity() {
             solver::Liquidity::Fetch => {
                 self.liquidity
