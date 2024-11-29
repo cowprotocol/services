@@ -12,6 +12,6 @@ pub(super) use {
     metrics::metrics,
     quote::{quote, OrderError},
     reveal::reveal,
-    settle::{create_settle_queue_sender, settle, QueuedSettleRequest},
+    settle::settle,
     solve::{solve, AuctionError},
 };
