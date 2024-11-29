@@ -2,7 +2,7 @@ use {
     anyhow::Result,
     app_data::AppDataHash,
     contracts::CowAmmLegacyHelper,
-    ethcontract::{common::FunctionExt, errors::MethodError, Address, Bytes, U256},
+    ethcontract::{errors::MethodError, Address, Bytes, U256},
     model::{
         interaction::InteractionData,
         order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
@@ -89,32 +89,17 @@ impl Amm {
         // will be concatenated in the encoding logic) so we discard the first 20 bytes.
         let signature = Signature::Eip1271(raw_signature.0.iter().skip(20).cloned().collect());
 
-        // Cow AMM pools can have specific requirements for the signature validity.
-        // https://sepolia.etherscan.io/address/0xaceb697457db8bb567e7d8e4411c5364ca07101e#code
-        // Check the signature only for non-legacy pools
-        if !self
-            .helper
-            .is_legacy(self.contract.address())
+        // A buggy helper contract could return a signature that is actually not valid.
+        // To avoid issues caused by that we check the validity of the signature.
+        if self
+            .contract
+            .is_valid_signature(Bytes(order.hash_struct()), Bytes(signature.to_bytes()))
             .call()
             .await?
+            .0
+            != VALID_SIGNATURE_RESULT
         {
-            let magic_value = Bytes(
-                self.contract
-                    .raw_instance()
-                    .abi()
-                    .function("isValidSignature")
-                    .expect("isValidSignature function not found")
-                    .selector(),
-            );
-            if self
-                .contract
-                .is_valid_signature(Bytes(order.hash_struct()), Bytes(signature.to_bytes()))
-                .call()
-                .await?
-                != magic_value
-            {
-                anyhow::bail!("invalid signature");
-            }
+            anyhow::bail!("invalid signature");
         }
 
         Ok(TemplateOrder {
@@ -125,6 +110,10 @@ impl Amm {
         })
     }
 }
+
+/// Series of bytes `isValidSignature()` should return in case of success as
+/// defined in the [EIP1271 spec](https://eips.ethereum.org/EIPS/eip-1271#specification).
+const VALID_SIGNATURE_RESULT: &[u8] = &[0x16, 0x26, 0xba, 0x7e];
 
 /// Order suggested by a CoW AMM helper contract to rebalance the AMM according
 /// to an external price vector.
