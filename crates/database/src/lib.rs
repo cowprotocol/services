@@ -87,7 +87,8 @@ pub fn all_tables() -> impl Iterator<Item = &'static str> {
 #[allow(non_snake_case)]
 pub async fn clear_DANGER_(ex: &mut PgTransaction<'_>) -> sqlx::Result<()> {
     for table in all_tables() {
-        ex.execute(format!("TRUNCATE {table};").as_str()).await?;
+        ex.execute(format!("TRUNCATE {table} CASCADE;").as_str())
+            .await?;
     }
     Ok(())
 }

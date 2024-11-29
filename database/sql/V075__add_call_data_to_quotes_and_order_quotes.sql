@@ -16,7 +16,8 @@ CREATE TABLE quote_interactions (
     value numeric(78,0) NOT NULL,
     call_data bytea NOT NULL,
 
-    PRIMARY KEY (quote_id, index)
+    PRIMARY KEY (quote_id, index),
+    FOREIGN KEY (quote_id) REFERENCES quotes(id) ON DELETE CASCADE
 );
 
 -- Get a specific quote's interactions.

@@ -4,7 +4,6 @@ use {
     sqlx::{
         types::chrono::{DateTime, Utc},
         PgConnection,
-        Row,
     },
 };
 
@@ -140,17 +139,12 @@ pub async fn remove_expired_quotes(
     const QUERY: &str = r#"
 DELETE FROM quotes
 WHERE expiration_timestamp < $1
-RETURNING id
     "#;
-    let deleted_ids = sqlx::query(QUERY)
+    sqlx::query(QUERY)
         .bind(max_expiry)
-        .fetch_all(&mut *ex)
-        .await?
-        .iter()
-        .map(|row| row.get(0))
-        .collect::<Vec<_>>();
-
-    delete_quote_interactions(ex, &deleted_ids).await
+        .execute(ex)
+        .await
+        .map(|_| ())
 }
 
 /// One row in the `quote_interactions` table.
@@ -209,19 +203,6 @@ FROM quote_interactions
 WHERE quote_id = $1
         "#;
     sqlx::query_as(QUERY).bind(quote_id).fetch_all(ex).await
-}
-
-pub async fn delete_quote_interactions(
-    ex: &mut PgConnection,
-    quote_ids: &[QuoteId],
-) -> Result<(), sqlx::Error> {
-    const QUERY: &str = r#"
-DELETE FROM quote_interactions
-WHERE quote_id = ANY($1)
-    "#;
-
-    sqlx::query(QUERY).bind(quote_ids).execute(ex).await?;
-    Ok(())
 }
 
 #[cfg(test)]
