@@ -132,6 +132,129 @@ LIMIT 1
         .await
 }
 
+/// Internal structure used for getting Quote with Interactions in one SQL
+/// query.
+#[derive(Clone, sqlx::FromRow)]
+struct QuoteWithInteraction {
+    pub id: QuoteId,
+    pub sell_token: Address,
+    pub buy_token: Address,
+    pub sell_amount: BigDecimal,
+    pub buy_amount: BigDecimal,
+    pub gas_amount: f64,
+    pub gas_price: f64,
+    pub sell_token_price: f64,
+    pub order_kind: OrderKind,
+    pub expiration_timestamp: DateTime<Utc>,
+    pub quote_kind: QuoteKind,
+    pub solver: Address,
+    pub verified: bool,
+    pub index: i32,
+    pub target: Address,
+    pub value: BigDecimal,
+    pub call_data: Vec<u8>,
+}
+
+impl QuoteWithInteraction {
+    fn to_quote(&self) -> Quote {
+        Quote {
+            id: self.id,
+            sell_token: self.sell_token,
+            buy_token: self.buy_token,
+            sell_amount: self.sell_amount.clone(),
+            buy_amount: self.buy_amount.clone(),
+            gas_amount: self.gas_amount,
+            gas_price: self.gas_price,
+            sell_token_price: self.sell_token_price,
+            order_kind: self.order_kind,
+            expiration_timestamp: self.expiration_timestamp,
+            quote_kind: self.quote_kind.clone(),
+            solver: self.solver,
+            verified: self.verified,
+        }
+    }
+
+    fn to_interaction(&self) -> QuoteInteraction {
+        QuoteInteraction {
+            quote_id: self.id,
+            index: self.index,
+            target: self.target,
+            value: self.value.clone(),
+            call_data: self.call_data.clone(),
+        }
+    }
+
+    fn to_quote_with_interactions(items: &[QuoteWithInteraction]) -> Option<QuoteWithInteractions> {
+        if let Some(first_item) = items.first() {
+            // Due to use of sql join, all rows has same quote items.
+            let quote = first_item.to_quote();
+            let interactions = items
+                .iter()
+                .map(|item| item.to_interaction())
+                .collect::<Vec<_>>();
+            Some((quote, interactions))
+        } else {
+            None
+        }
+    }
+}
+
+pub type QuoteWithInteractions = (Quote, Vec<QuoteInteraction>);
+
+pub async fn get_quote_with_interactions(
+    ex: &mut PgConnection,
+    id: QuoteId,
+) -> Result<Option<QuoteWithInteractions>, sqlx::Error> {
+    const QUERY: &str = r#"
+    SELECT q.*, i.index, i.target, i.value, i.call_data FROM quotes q
+    JOIN quote_interactions i ON quote_id = id
+    WHERE id = $1
+    "#;
+
+    Ok(QuoteWithInteraction::to_quote_with_interactions(
+        &sqlx::query_as(QUERY).bind(id).fetch_all(ex).await?,
+    ))
+}
+
+pub async fn find_quote_with_interactions(
+    ex: &mut PgConnection,
+    params: &QuoteSearchParameters,
+) -> Result<Option<QuoteWithInteractions>, sqlx::Error> {
+    const QUERY: &str = r#"
+SELECT quotes.*, i.index, i.target, i.value, i.call_data
+FROM quotes
+JOIN quote_interactions i
+ON i.quote_id = id
+WHERE
+    sell_token = $1 AND
+    buy_token = $2 AND
+    (
+        (order_kind = 'sell' AND sell_amount = $3) OR
+        (order_kind = 'sell' AND sell_amount = $4) OR
+        (order_kind = 'buy' AND buy_amount = $5)
+    ) AND
+    order_kind = $6 AND
+    expiration_timestamp >= $7 AND
+    quote_kind = $8
+ORDER BY gas_amount * gas_price * sell_token_price ASC
+LIMIT 1
+    "#;
+
+    let result: Vec<QuoteWithInteraction> = sqlx::query_as(QUERY)
+        .bind(params.sell_token)
+        .bind(params.buy_token)
+        .bind(&params.sell_amount_0)
+        .bind(&params.sell_amount_1)
+        .bind(&params.buy_amount)
+        .bind(params.kind)
+        .bind(params.expiration)
+        .bind(&params.quote_kind)
+        .fetch_all(ex)
+        .await?;
+
+    Ok(QuoteWithInteraction::to_quote_with_interactions(&result))
+}
+
 pub async fn remove_expired_quotes(
     ex: &mut PgConnection,
     max_expiry: DateTime<Utc>,

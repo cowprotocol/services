@@ -4,10 +4,8 @@ use {
     anyhow::{Context, Result},
     chrono::{DateTime, Utc},
     futures::{StreamExt, TryStreamExt},
-    model::{interaction::InteractionData, order::Order, quote::QuoteId},
+    model::{order::Order, quote::QuoteId},
     num::ToPrimitive,
-    number::conversions::big_decimal_to_u256,
-    primitive_types::H160,
     shared::{
         db_order_conversions::full_order_into_model_order,
         event_storing_helpers::{
@@ -17,7 +15,7 @@ use {
         },
         order_quoting::{QuoteData, QuoteSearchParameters, QuoteStoring},
     },
-    sqlx::{Acquire, PgConnection},
+    sqlx::Acquire,
     std::{collections::HashMap, ops::DerefMut},
 };
 
@@ -49,15 +47,10 @@ impl QuoteStoring for Postgres {
             .start_timer();
 
         let mut ex = self.pool.acquire().await?;
-        let quote = database::quotes::get(&mut ex, id).await?;
-        let quote_interactions = Self::get_quote_interactions(&mut ex, id).await?;
-        Ok(quote
-            .map(QuoteData::try_from)
-            .transpose()?
-            .map(|mut quote_data| {
-                quote_data.interactions = quote_interactions;
-                quote_data
-            }))
+
+        let query_result = database::quotes::get_quote_with_interactions(&mut ex, id).await?;
+
+        Ok(query_result.map(QuoteData::try_from).transpose()?)
     }
 
     async fn find(
@@ -72,15 +65,16 @@ impl QuoteStoring for Postgres {
 
         let mut ex = self.pool.acquire().await?;
         let params = create_db_search_parameters(params, expiration);
-        let quote = database::quotes::find(&mut ex, &params)
+
+        let query_result = database::quotes::find_quote_with_interactions(&mut ex, &params)
             .await
             .context("failed finding quote by parameters")?;
-        if let Some(quote) = quote {
-            let quote_id = quote.id;
-            let quote_interactions = Self::get_quote_interactions(&mut ex, quote_id).await?;
-            let mut quote_data = QuoteData::try_from(quote)?;
-            quote_data.interactions = quote_interactions;
-            Ok(Some((quote_id, quote_data)))
+
+        if let Some(query_result) = query_result {
+            Ok(Some((
+                query_result.0.id,
+                QuoteData::try_from(query_result)?,
+            )))
         } else {
             Ok(None)
         }
@@ -137,23 +131,5 @@ impl Postgres {
         let mut ex = self.pool.acquire().await?;
         let id = database::auction::replace_auction(&mut ex, &data).await?;
         Ok(id)
-    }
-
-    async fn get_quote_interactions(
-        ex: &mut PgConnection,
-        quote_id: QuoteId,
-    ) -> Result<Vec<InteractionData>> {
-        database::quotes::get_quote_interactions(ex, quote_id)
-            .await?
-            .iter()
-            .map(|data| {
-                Ok(InteractionData {
-                    target: H160(data.target.0),
-                    value: big_decimal_to_u256(&data.value)
-                        .context("quote interaction value is not a valid U256")?,
-                    call_data: data.call_data.clone(),
-                })
-            })
-            .collect::<Result<Vec<InteractionData>>>()
     }
 }
