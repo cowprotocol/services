@@ -129,7 +129,7 @@ impl<'de> Deserialize<'de> for Chain {
     {
         struct NetworkVisitor;
 
-        impl<'de> de::Visitor<'de> for NetworkVisitor {
+        impl de::Visitor<'_> for NetworkVisitor {
             type Value = Chain;
 
             fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {

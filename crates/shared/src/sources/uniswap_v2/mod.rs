@@ -11,7 +11,7 @@ use {
     },
     crate::{
         ethrpc::Web3,
-        sources::{swapr::reader::SwaprPoolReader, BaselineSource},
+        sources::{swapr::SwaprPoolReader, BaselineSource},
     },
     anyhow::{Context, Result},
     contracts::IUniswapLikeRouter,

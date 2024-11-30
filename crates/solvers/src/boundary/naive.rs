@@ -25,7 +25,7 @@ use {
             SettlementHandling,
         },
         settlement::SettlementEncoder,
-        solver::naive_solver::multi_order_solver,
+        solver::naive_solver,
     },
     std::sync::{Arc, Mutex},
 };
@@ -106,7 +106,7 @@ pub fn solve(
     );
 
     let boundary_solution =
-        multi_order_solver::solve(&slippage.context(), boundary_orders, &boundary_pool)?;
+        naive_solver::solve(&slippage.context(), boundary_orders, &boundary_pool)?;
 
     let swap = pool_handler.swap.lock().unwrap().take();
     Some(solution::Solution {

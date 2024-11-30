@@ -14,7 +14,7 @@ use {
     error::Error,
     futures::Future,
     std::{net::SocketAddr, sync::Arc},
-    tokio::sync::{mpsc, oneshot},
+    tokio::sync::oneshot,
 };
 
 mod error;
@@ -39,7 +39,6 @@ impl Api {
         self,
         shutdown: impl Future<Output = ()> + Send + 'static,
         order_priority_strategies: Vec<OrderPriorityStrategy>,
-        settle_queue_size: usize,
     ) -> Result<(), hyper::Error> {
         // Add middleware.
         let mut app = axum::Router::new().layer(
@@ -73,18 +72,16 @@ impl Api {
             let router = router.with_state(State(Arc::new(Inner {
                 eth: self.eth.clone(),
                 solver: solver.clone(),
-                competition: domain::Competition {
+                competition: domain::Competition::new(
                     solver,
-                    eth: self.eth.clone(),
-                    liquidity: self.liquidity.clone(),
-                    simulator: self.simulator.clone(),
-                    mempools: self.mempools.clone(),
-                    settlements: Default::default(),
-                },
+                    self.eth.clone(),
+                    self.liquidity.clone(),
+                    self.simulator.clone(),
+                    self.mempools.clone(),
+                ),
                 liquidity: self.liquidity.clone(),
                 tokens: tokens.clone(),
                 pre_processor: pre_processor.clone(),
-                settle_queue_sender: routes::create_settle_queue_sender(settle_queue_size),
             })));
             let path = format!("/{name}");
             infra::observe::mounting_solver(&name, &path);
@@ -137,18 +134,13 @@ impl State {
     fn timeouts(&self) -> Timeouts {
         self.0.solver.timeouts()
     }
-
-    fn settle_queue_sender(&self) -> &mpsc::Sender<routes::QueuedSettleRequest> {
-        &self.0.settle_queue_sender
-    }
 }
 
 struct Inner {
     eth: Ethereum,
     solver: Solver,
-    competition: domain::Competition,
+    competition: Arc<domain::Competition>,
     liquidity: liquidity::Fetcher,
     tokens: tokens::Fetcher,
     pre_processor: domain::competition::AuctionProcessor,
-    settle_queue_sender: mpsc::Sender<routes::QueuedSettleRequest>,
 }

@@ -94,6 +94,7 @@ pub async fn load(chain: chain::Id, path: &Path) -> infra::Config {
                 solver_native_token: config.manage_native_token.to_domain(),
                 quote_tx_origin: config.quote_tx_origin.map(eth::Address),
                 response_size_limit_max_bytes: config.response_size_limit_max_bytes,
+                settle_queue_size: config.settle_queue_size,
             }
         }))
         .await,
@@ -340,6 +341,5 @@ pub async fn load(chain: chain::Id, path: &Path) -> infra::Config {
         gas_estimator: config.gas_estimator,
         order_priority_strategies: config.order_priority_strategies,
         archive_node_url: config.archive_node_url,
-        settle_queue_size: config.settle_queue_size,
     }
 }

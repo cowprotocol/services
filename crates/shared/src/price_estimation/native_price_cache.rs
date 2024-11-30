@@ -115,7 +115,7 @@ impl Inner {
         &'a self,
         tokens: &'a [H160],
         max_age: Duration,
-    ) -> futures::stream::BoxStream<'_, (H160, NativePriceEstimateResult)> {
+    ) -> futures::stream::BoxStream<'a, (H160, NativePriceEstimateResult)> {
         let estimates = tokens.iter().map(move |token| async move {
             {
                 // check if price is cached by now

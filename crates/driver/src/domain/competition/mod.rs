@@ -5,7 +5,7 @@ use {
         Mempools,
     },
     crate::{
-        domain::{competition::solution::Settlement, eth},
+        domain::{competition::solution::Settlement, eth, time::DeadlineExceeded},
         infra::{
             self,
             blockchain::Ethereum,
@@ -22,9 +22,11 @@ use {
     std::{
         cmp::Reverse,
         collections::{HashMap, HashSet, VecDeque},
-        sync::Mutex,
+        sync::{Arc, Mutex},
     },
     tap::TapFallible,
+    tokio::sync::{mpsc, oneshot},
+    tracing::Instrument,
 };
 
 pub mod auction;
@@ -52,11 +54,44 @@ pub struct Competition {
     pub mempools: Mempools,
     /// Cached solutions with the most recent solutions at the front.
     pub settlements: Mutex<VecDeque<Settlement>>,
+    settle_queue: mpsc::Sender<SettleRequest>,
 }
 
 impl Competition {
+    pub fn new(
+        solver: Solver,
+        eth: Ethereum,
+        liquidity: infra::liquidity::Fetcher,
+        simulator: Simulator,
+        mempools: Mempools,
+    ) -> Arc<Self> {
+        let (settle_tx, settle_rx) = mpsc::channel(solver.settle_queue_size());
+
+        let competition = Arc::new(Self {
+            solver,
+            eth,
+            liquidity,
+            simulator,
+            mempools,
+            settlements: Default::default(),
+            settle_queue: settle_tx,
+        });
+
+        let competition_clone = Arc::clone(&competition);
+        tokio::spawn(async move {
+            competition_clone.process_settle_requests(settle_rx).await;
+        });
+
+        competition
+    }
+
     /// Solve an auction as part of this competition.
     pub async fn solve(&self, auction: &Auction) -> Result<Option<Solved>, Error> {
+        if self.settle_queue.capacity() == 0 {
+            tracing::warn!("settlement queue is full; auction is rejected");
+            return Err(Error::SubmissionError);
+        }
+
         let liquidity = match self.solver.liquidity() {
             solver::Liquidity::Fetch => {
                 self.liquidity
@@ -267,13 +302,20 @@ impl Competition {
         Ok(score)
     }
 
-    pub async fn reveal(&self, solution_id: u64, auction_id: i64) -> Result<Revealed, Error> {
+    pub async fn reveal(
+        &self,
+        solution_id: u64,
+        auction_id: Option<i64>,
+    ) -> Result<Revealed, Error> {
         let settlement = self
             .settlements
             .lock()
             .unwrap()
             .iter()
-            .find(|s| s.solution().get() == solution_id && s.auction_id.0 == auction_id)
+            .find(|s| {
+                s.solution().get() == solution_id
+                    && auction_id.is_none_or(|id| s.auction_id.0 == id)
+            })
             .cloned()
             .ok_or(Error::SolutionNotAvailable)?;
         Ok(Revealed {
@@ -292,7 +334,71 @@ impl Competition {
     /// [`Competition::solve`] to generate the solution.
     pub async fn settle(
         &self,
-        auction_id: i64,
+        auction_id: Option<i64>,
+        solution_id: u64,
+        submission_deadline: u64,
+    ) -> Result<Settled, Error> {
+        let (response_tx, response_rx) = oneshot::channel();
+
+        let request = SettleRequest {
+            auction_id,
+            solution_id,
+            submission_deadline,
+            response_sender: response_tx,
+        };
+
+        self.settle_queue.try_send(request).map_err(|err| {
+            tracing::error!(?err, "Failed to enqueue /settle request");
+            Error::SubmissionError
+        })?;
+
+        response_rx.await.map_err(|err| {
+            tracing::error!(?err, "Failed to dequeue /settle response");
+            Error::SubmissionError
+        })?
+    }
+
+    async fn process_settle_requests(
+        self: Arc<Self>,
+        mut settle_rx: mpsc::Receiver<SettleRequest>,
+    ) {
+        while let Some(request) = settle_rx.recv().await {
+            let SettleRequest {
+                auction_id,
+                solution_id,
+                submission_deadline,
+                response_sender,
+            } = request;
+            if self.eth.current_block().borrow().number >= submission_deadline {
+                if let Err(err) = response_sender.send(Err(DeadlineExceeded.into())) {
+                    tracing::error!(
+                        ?err,
+                        "settle deadline exceeded. unable to return a response"
+                    );
+                }
+                continue;
+            }
+            let solver = self.solver.name().to_string();
+            let result = async {
+                observe::settling();
+                let result = self
+                    .process_settle_request(auction_id, solution_id, submission_deadline)
+                    .await;
+                observe::settled(self.solver.name(), &result);
+                result
+            }
+            .instrument(tracing::info_span!("/settle", solver, auction_id))
+            .await;
+
+            if let Err(err) = response_sender.send(result) {
+                tracing::error!(?err, "Failed to send /settle response");
+            }
+        }
+    }
+
+    async fn process_settle_request(
+        &self,
+        auction_id: Option<i64>,
         solution_id: u64,
         submission_deadline: u64,
     ) -> Result<Settled, Error> {
@@ -300,7 +406,10 @@ impl Competition {
             let mut lock = self.settlements.lock().unwrap();
             let index = lock
                 .iter()
-                .position(|s| s.solution().get() == solution_id && s.auction_id.0 == auction_id)
+                .position(|s| {
+                    s.solution().get() == solution_id
+                        && auction_id.is_none_or(|id| s.auction_id.0 == id)
+                })
                 .ok_or(Error::SolutionNotAvailable)?;
             // remove settlement to ensure we can't settle it twice by accident
             lock.swap_remove_front(index)
@@ -403,6 +512,13 @@ fn merge(solutions: impl Iterator<Item = Solution>, auction: &Auction) -> Vec<So
     merged
 }
 
+struct SettleRequest {
+    auction_id: Option<i64>,
+    solution_id: u64,
+    submission_deadline: u64,
+    response_sender: oneshot::Sender<Result<Settled, Error>>,
+}
+
 /// Solution information sent to the protocol by the driver before the solution
 /// ranking happens.
 #[derive(Debug)]
@@ -466,14 +582,8 @@ pub enum Error {
     SolutionNotAvailable,
     #[error("{0:?}")]
     DeadlineExceeded(#[from] time::DeadlineExceeded),
-    #[error("deadline exceeded while waiting for a queue")]
-    QueueAwaitingDeadlineExceeded,
     #[error("solver error: {0:?}")]
     Solver(#[from] solver::Error),
     #[error("failed to submit the solution")]
     SubmissionError,
-    #[error("unable to enqueue the request")]
-    UnableToEnqueue,
-    #[error("unable to dequeue the result")]
-    UnableToDequeue,
 }

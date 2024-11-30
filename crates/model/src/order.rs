@@ -1,5 +1,6 @@
 //! Contains the order type as described by the specification with serialization
 //! as described by the openapi documentation.
+#![allow(clippy::needless_lifetimes)] // todo: migrate from derivative to derive_more
 
 use {
     crate::{
@@ -819,7 +820,7 @@ impl<'de> Deserialize<'de> for OrderUid {
         D: Deserializer<'de>,
     {
         struct Visitor {}
-        impl<'de> de::Visitor<'de> for Visitor {
+        impl de::Visitor<'_> for Visitor {
             type Value = OrderUid;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
@@ -1007,13 +1008,6 @@ impl BuyTokenDestination {
             Self::Internal => Self::INTERNAL,
         }
     }
-}
-
-pub fn debug_app_data(
-    app_data: &[u8; 32],
-    formatter: &mut std::fmt::Formatter,
-) -> Result<(), std::fmt::Error> {
-    formatter.write_fmt(format_args!("{:?}", H256(*app_data)))
 }
 
 pub fn debug_biguint_to_string(

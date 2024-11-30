@@ -13,7 +13,6 @@ enum Kind {
     SolverFailed,
     SolutionNotAvailable,
     DeadlineExceeded,
-    QueueAwaitingDeadlineExceeded,
     Unknown,
     InvalidAuctionId,
     MissingSurplusFee,
@@ -21,8 +20,6 @@ enum Kind {
     InvalidAmounts,
     QuoteSameTokens,
     FailedToSubmit,
-    UnableToEnqueueRequest,
-    UnableToDequeueResult,
 }
 
 #[derive(Debug, Serialize)]
@@ -42,9 +39,6 @@ impl From<Kind> for (hyper::StatusCode, axum::Json<Error>) {
                  /solve returned"
             }
             Kind::DeadlineExceeded => "Exceeded solution deadline",
-            Kind::QueueAwaitingDeadlineExceeded => {
-                "Exceeded solution deadline while waiting in the queue"
-            }
             Kind::Unknown => "An unknown error occurred",
             Kind::InvalidAuctionId => "Invalid ID specified in the auction",
             Kind::MissingSurplusFee => "Auction contains a limit order with no surplus fee",
@@ -57,8 +51,6 @@ impl From<Kind> for (hyper::StatusCode, axum::Json<Error>) {
                  or sell amount"
             }
             Kind::FailedToSubmit => "Could not submit the solution to the blockchain",
-            Kind::UnableToEnqueueRequest => "Could not enqueue the request",
-            Kind::UnableToDequeueResult => "Could not dequeue the result",
         };
         (
             hyper::StatusCode::BAD_REQUEST,
@@ -89,13 +81,8 @@ impl From<competition::Error> for (hyper::StatusCode, axum::Json<Error>) {
         let error = match value {
             competition::Error::SolutionNotAvailable => Kind::SolutionNotAvailable,
             competition::Error::DeadlineExceeded(_) => Kind::DeadlineExceeded,
-            competition::Error::QueueAwaitingDeadlineExceeded => {
-                Kind::QueueAwaitingDeadlineExceeded
-            }
             competition::Error::Solver(_) => Kind::SolverFailed,
             competition::Error::SubmissionError => Kind::FailedToSubmit,
-            competition::Error::UnableToEnqueue => Kind::UnableToEnqueueRequest,
-            competition::Error::UnableToDequeue => Kind::UnableToDequeueResult,
         };
         error.into()
     }
