@@ -168,8 +168,8 @@ async fn discards_excess_settle_requests() {
             // are fine with that to avoid huge changes in the framework.
             1 | 2 => result.err().kind("FailedToSubmit"),
             // Driver's settlement queue max size is 3. Next requests should be discarded.
-            3 => result.err().kind("QueueAwaitingDeadlineExceeded"),
-            4 => result.err().kind("QueueAwaitingDeadlineExceeded"),
+            3 => result.err().kind("DeadlineExceeded"),
+            4 => result.err().kind("DeadlineExceeded"),
             _ => unreachable!(),
         }
     }
@@ -236,7 +236,7 @@ async fn accepts_new_settle_requests_after_timeout() {
             // are fine with that to avoid huge changes in the framework.
             1 | 2 => result.err().kind("FailedToSubmit"),
             // Driver's settlement queue max size is 3. Next requests should be discarded.
-            3 => result.err().kind("QueueAwaitingDeadlineExceeded"),
+            3 => result.err().kind("DeadlineExceeded"),
             _ => unreachable!(),
         }
     }
