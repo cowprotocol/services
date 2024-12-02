@@ -871,7 +871,7 @@ async fn cow_amm_opposite_direction(web3: Web3) {
     let fee_cow_amm = U256::exp10(16); // 0.01 WETH
     let fee_user = to_wei(1); // 1 DAI
 
-    let mocked_solutsion = |order_uid: OrderUid| {
+    let mocked_solutions = |order_uid: OrderUid| {
         Solution {
             id: 1,
             prices: HashMap::from([
@@ -911,7 +911,7 @@ async fn cow_amm_opposite_direction(web3: Web3) {
     };
 
     // Configure the mocked `/quote` solver's solution
-    let mocked_quote_solution = mocked_solutsion(OrderUid([0u8; 56]));
+    let mocked_quote_solution = mocked_solutions(OrderUid([0u8; 56]));
     mock_solver.configure_solution(Some(mocked_quote_solution));
 
     let quote_request = OrderQuoteRequest {
@@ -954,7 +954,7 @@ async fn cow_amm_opposite_direction(web3: Web3) {
     let user_order_id = services.create_order(&user_order).await.unwrap();
 
     // Configure the mocked `/solve` solver's solution
-    let mocked_solve_solution = mocked_solutsion(user_order_id);
+    let mocked_solve_solution = mocked_solutions(user_order_id);
     mock_solver.configure_solution(Some(mocked_solve_solution.clone()));
 
     // Drive solution
