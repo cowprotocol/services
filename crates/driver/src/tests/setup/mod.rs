@@ -1510,6 +1510,8 @@ impl QuoteOk<'_> {
         self
     }
 
+    /// Checks that quote returns the expected jir orders. This is based on the
+    /// test setup.
     pub fn jit_order(self) -> Self {
         let expected_jit_orders = self
             .trades

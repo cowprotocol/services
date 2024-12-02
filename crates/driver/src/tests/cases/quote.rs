@@ -61,5 +61,6 @@ async fn with_jit_order() {
 
     let quote = test.quote().await;
 
+    // Check whether the returned data aligns with the expected.
     quote.ok().amount().interactions().jit_order();
 }
