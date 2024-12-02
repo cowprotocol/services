@@ -1,3 +1,4 @@
+use std::time::Duration;
 use {
     crate::{
         domain::competition::order,
@@ -7,6 +8,9 @@ use {
             setup::{ab_order, ab_pool, ab_solution},
         },
     },
+    futures::future::join_all,
+    itertools::Itertools,
+    std::{collections::HashSet, sync::Arc},
     web3::Transport,
 };
 
@@ -109,4 +113,160 @@ async fn high_gas_limit() {
         .await
         .unwrap();
     test.settle(&id).await.ok().await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn discards_excess_settle_requests() {
+    let test = Arc::new(
+        tests::setup()
+            .allow_multiple_solve_requests()
+            .pool(ab_pool())
+            .order(ab_order())
+            .solution(ab_solution())
+            .rpc_args(vec!["--no-mining".to_string()])
+            .solve_deadline_timeout(chrono::Duration::seconds(4))
+            .done()
+            .await,
+    );
+
+    test.mint_block().await.unwrap();
+
+    // MAX_SOLUTION_STORAGE = 5. Since this is hardcoded, no more solutions can be
+    // stored.
+    let solution_ids = join_all(vec![
+        test.solve(),
+        test.solve(),
+        test.solve(),
+        test.solve(),
+        test.solve(),
+    ])
+    .await
+    .into_iter()
+    .map(|res| res.ok().id())
+    .collect::<Vec<_>>();
+
+    let unique_solutions_count = solution_ids
+        .clone()
+        .into_iter()
+        .collect::<HashSet<_>>()
+        .len();
+    assert_eq!(unique_solutions_count, solution_ids.len());
+
+    // `collect_vec` is required to receive results in the same order.
+    let settlements = {
+        let test_clone = Arc::clone(&test);
+        solution_ids
+            .iter()
+            .cloned()
+            .map(move |id| {
+                let test_clone = Arc::clone(&test_clone);
+                async move { test_clone.settle(&id).await }
+            })
+            .collect_vec()
+    };
+    let results_fut = tokio::spawn(join_all(settlements));
+
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    test.mint_block().await.unwrap();
+
+    for (index, result) in results_fut.await.unwrap().into_iter().enumerate() {
+        match index {
+            // The first must be settled.
+            0 => {
+                result.ok().await.ab_order_executed().await;
+            }
+            // We don't really care about the intermediate settlements. They are processed but due
+            // to the test framework limitation, the same solution settlements fail. We
+            // are fine with that to avoid huge changes in the framework.
+            1 | 2 => result.err().kind("FailedToSubmit"),
+            // Driver's settlement queue max size is 3. Next requests should be discarded.
+            3 => result.err().kind("DeadlineExceeded"),
+            4 => result.err().kind("DeadlineExceeded"),
+            _ => unreachable!(),
+        }
+    }
+}
+
+#[tokio::test]
+#[ignore]
+async fn accepts_new_settle_requests_after_timeout() {
+    let test = Arc::new(
+        tests::setup()
+            .allow_multiple_solve_requests()
+            .pool(ab_pool())
+            .order(ab_order())
+            .solution(ab_solution())
+            .rpc_args(vec!["--no-mining".to_string()])
+            .solve_deadline_timeout(chrono::Duration::seconds(4))
+            .done()
+            .await,
+    );
+
+    test.mint_block().await.unwrap();
+
+    // MAX_SOLUTION_STORAGE = 5. Since this is hardcoded, no more solutions can be
+    // stored.
+    let solution_ids = join_all(vec![
+        test.solve(),
+        test.solve(),
+        test.solve(),
+        test.solve(),
+        test.solve(),
+    ])
+    .await
+    .into_iter()
+    .map(|res| res.ok().id())
+    .collect::<Vec<_>>();
+
+    let unique_solutions_count = solution_ids
+        .clone()
+        .into_iter()
+        .collect::<HashSet<_>>()
+        .len();
+    assert_eq!(unique_solutions_count, solution_ids.len());
+
+    // Send only first 4 settle requests. `collect_vec` is required to receive
+    // results in the same order.
+    let first_solutions = {
+        let test_clone = Arc::clone(&test);
+        solution_ids[..4]
+            .iter()
+            .cloned()
+            .map(move |id| {
+                let test_clone = Arc::clone(&test_clone);
+                async move { test_clone.settle(&id).await }
+            })
+            .collect_vec()
+    };
+    let results_fut = tokio::spawn(join_all(first_solutions));
+
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    test.mint_block().await.unwrap();
+
+    for (index, result) in results_fut.await.unwrap().into_iter().enumerate() {
+        match index {
+            // The first must be settled.
+            0 => {
+                result.ok().await.ab_order_executed().await;
+            }
+            // We don't really care about the intermediate settlements. They are processed but due
+            // to the test framework limitation, the same solution settlements fail. We
+            // are fine with that to avoid huge changes in the framework.
+            1 | 2 => result.err().kind("FailedToSubmit"),
+            // Driver's settlement queue max size is 3. Next requests should be discarded.
+            3 => result.err().kind("DeadlineExceeded"),
+            _ => unreachable!(),
+        }
+    }
+
+    // Wait for the timeout to expire, so all the settle requests are processed.
+    // Must a bit higher than `ethrpc_batch_delay`.
+    tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
+
+    // Now we send the last settlement request.
+    test.settle(&solution_ids[4])
+        .await
+        .err()
+        .kind("FailedToSubmit");
 }

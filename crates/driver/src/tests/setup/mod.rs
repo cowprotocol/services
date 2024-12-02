@@ -46,6 +46,7 @@ use {
         path::PathBuf,
         str::FromStr,
     },
+    web3::Error,
 };
 
 mod blockchain;
@@ -499,6 +500,7 @@ pub fn setup() -> Setup {
         rpc_args: vec!["--gas-limit".into(), "10000000".into()],
         allow_multiple_solve_requests: false,
         auction_id: 1,
+        solve_deadline_timeout: chrono::Duration::seconds(2),
         ..Default::default()
     }
 }
@@ -532,6 +534,8 @@ pub struct Setup {
     allow_multiple_solve_requests: bool,
     /// Auction ID used during tests
     auction_id: i64,
+    /// Auction solving deadline timeout
+    solve_deadline_timeout: chrono::Duration,
 }
 
 /// The validity of a solution.
@@ -981,7 +985,12 @@ impl Setup {
     }
 
     fn deadline(&self) -> chrono::DateTime<chrono::Utc> {
-        crate::infra::time::now() + chrono::Duration::seconds(2)
+        crate::infra::time::now() + self.solve_deadline_timeout
+    }
+
+    pub fn solve_deadline_timeout(mut self, timeout: chrono::Duration) -> Self {
+        self.solve_deadline_timeout = timeout;
+        self
     }
 
     pub fn allow_multiple_solve_requests(mut self) -> Self {
@@ -1165,6 +1174,10 @@ impl Test {
     /// Default value is set by Setup builder.
     pub fn set_auction_id(&mut self, auction_id: i64) {
         self.auction_id = auction_id;
+    }
+
+    pub async fn mint_block(&self) -> Result<(), Error> {
+        self.blockchain.mint_block().await
     }
 }
 
