@@ -1,13 +1,15 @@
 use {
-    anyhow::Result,
+    anyhow::{Context, Result},
     app_data::AppDataHash,
     contracts::CowAmmLegacyHelper,
     ethcontract::{errors::MethodError, Address, Bytes, U256},
     model::{
         interaction::InteractionData,
         order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
-        signature::Signature,
+        signature::{hashed_eip712_message, Signature},
+        DomainSeparator,
     },
+    shared::signature_validator::{SignatureCheck, SignatureValidating},
 };
 
 #[derive(Clone, Debug)]
@@ -25,8 +27,8 @@ impl Amm {
         let tradeable_tokens = helper.tokens(address).call().await?;
 
         Ok(Self {
-            helper: helper.clone(),
             address,
+            helper: helper.clone(),
             tradeable_tokens,
         })
     }
@@ -48,6 +50,33 @@ impl Amm {
         let (order, pre_interactions, post_interactions, signature) =
             self.helper.order(self.address, prices).call().await?;
         self.convert_orders_reponse(order, signature, pre_interactions, post_interactions)
+    }
+
+    /// Generates a template order to rebalance the AMM but also verifies that
+    /// the signature is actually valid to protect against buggy helper
+    /// contracts.
+    pub async fn validated_template_order(
+        &self,
+        prices: Vec<U256>,
+        validator: &dyn SignatureValidating,
+        domain_separator: &DomainSeparator,
+    ) -> Result<TemplateOrder> {
+        let template = self.template_order(prices).await?;
+
+        // A buggy helper contract could return a signature that is actually not valid.
+        // To avoid issues caused by that we check the validity of the signature.
+        let hash = hashed_eip712_message(domain_separator, &template.order.hash_struct());
+        validator
+            .validate_signature_and_get_additional_gas(SignatureCheck {
+                signer: self.address,
+                hash,
+                signature: template.signature.to_bytes(),
+                interactions: template.pre_interactions.clone(),
+            })
+            .await
+            .context("invalid signature")?;
+
+        Ok(template)
     }
 
     /// Converts a successful response of the CowAmmHelper into domain types.

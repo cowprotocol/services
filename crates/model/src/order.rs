@@ -1,6 +1,5 @@
 //! Contains the order type as described by the specification with serialization
 //! as described by the openapi documentation.
-#![allow(clippy::needless_lifetimes)] // todo: migrate from derivative to derive_more
 
 use {
     crate::{
@@ -13,7 +12,7 @@ use {
     anyhow::{anyhow, Result},
     app_data::{hash_full_app_data, AppDataHash},
     chrono::{offset::Utc, DateTime},
-    derivative::Derivative,
+    derive_more::Debug as DeriveDebug,
     hex_literal::hex,
     num::BigUint,
     number::serialization::HexOrDecimalU256,
@@ -642,7 +641,7 @@ impl ::serde::Serialize for EthflowData {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Clone, Derivative, Deserialize, Serialize)]
+#[derive(Debug, Eq, PartialEq, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum OnchainOrderPlacementError {
     ValidToTooFarInTheFuture,
@@ -669,8 +668,7 @@ pub enum OnchainOrderPlacementError {
 
 // stores all data related to onchain order palcement
 #[serde_as]
-#[derive(Eq, PartialEq, Clone, Default, Derivative, Deserialize, Serialize)]
-#[derivative(Debug)]
+#[derive(Eq, PartialEq, Clone, Default, Deserialize, Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct OnchainOrderData {
     pub sender: H160,
@@ -679,8 +677,7 @@ pub struct OnchainOrderData {
 
 /// An order as provided to the orderbook by the frontend.
 #[serde_as]
-#[derive(Eq, PartialEq, Clone, Default, Derivative, Deserialize, Serialize)]
-#[derivative(Debug)]
+#[derive(Eq, PartialEq, Clone, Default, Deserialize, Serialize, DeriveDebug)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderMetadata {
     pub creation_date: DateTime<Utc>,
@@ -689,10 +686,10 @@ pub struct OrderMetadata {
     /// deprecated, always set to null
     #[serde_as(as = "Option<HexOrDecimalU256>")]
     pub available_balance: Option<U256>,
-    #[derivative(Debug(format_with = "debug_biguint_to_string"))]
+    #[debug("{}", format_args!("{executed_buy_amount}"))]
     #[serde_as(as = "DisplayFromStr")]
     pub executed_buy_amount: BigUint,
-    #[derivative(Debug(format_with = "debug_biguint_to_string"))]
+    #[debug("{}", format_args!("{executed_sell_amount}"))]
     #[serde_as(as = "DisplayFromStr")]
     pub executed_sell_amount: BigUint,
     #[serde_as(as = "HexOrDecimalU256")]
@@ -1008,13 +1005,6 @@ impl BuyTokenDestination {
             Self::Internal => Self::INTERNAL,
         }
     }
-}
-
-pub fn debug_biguint_to_string(
-    value: &BigUint,
-    formatter: &mut std::fmt::Formatter,
-) -> Result<(), std::fmt::Error> {
-    formatter.write_fmt(format_args!("{value}"))
 }
 
 #[cfg(test)]
