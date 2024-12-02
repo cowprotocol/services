@@ -70,14 +70,9 @@ impl QuoteStoring for Postgres {
             .await
             .context("failed finding quote by parameters")?;
 
-        if let Some(query_result) = query_result {
-            Ok(Some((
-                query_result.0.id,
-                QuoteData::try_from(query_result)?,
-            )))
-        } else {
-            Ok(None)
-        }
+        query_result
+            .map(|query_result| Ok((query_result.0.id, query_result.try_into()?)))
+            .transpose()
     }
 }
 

@@ -185,17 +185,15 @@ impl QuoteWithInteraction {
     }
 
     fn to_quote_with_interactions(items: &[QuoteWithInteraction]) -> Option<QuoteWithInteractions> {
-        if let Some(first_item) = items.first() {
-            // Due to use of sql join, all rows has same quote items.
-            let quote = first_item.to_quote();
-            let interactions = items
-                .iter()
-                .map(|item| item.to_interaction())
-                .collect::<Vec<_>>();
-            Some((quote, interactions))
-        } else {
-            None
-        }
+        items.first().map(|first_item| {
+            (
+                first_item.to_quote(),
+                items
+                    .iter()
+                    .map(|item| item.to_interaction())
+                    .collect::<Vec<_>>(),
+            )
+        })
     }
 }
 
