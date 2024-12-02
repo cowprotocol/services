@@ -1,6 +1,5 @@
 use {
     crate::{auction::AuctionId, order::OrderUid},
-    derivative::Derivative,
     number::serialization::HexOrDecimalU256,
     primitive_types::{H160, H256, U256},
     serde::{Deserialize, Serialize},
@@ -40,8 +39,7 @@ pub struct CompetitionAuction {
 }
 
 #[serde_as]
-#[derive(Clone, Default, Deserialize, Serialize, PartialEq, Derivative)]
-#[derivative(Debug)]
+#[derive(Clone, Default, Deserialize, Serialize, PartialEq, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct SolverSettlement {
     pub solver: String,

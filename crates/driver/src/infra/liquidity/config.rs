@@ -1,6 +1,6 @@
 use {
     crate::{domain::eth, infra::blockchain::contracts::deployment_address},
-    derivative::Derivative,
+    derive_more::Debug,
     hex_literal::hex,
     reqwest::Url,
     std::{collections::HashSet, time::Duration},
@@ -235,11 +235,10 @@ impl BalancerV2 {
 }
 
 /// ZeroEx liquidity fetching options.
-#[derive(Clone, Derivative)]
-#[derivative(Debug)]
+#[derive(Clone, Debug)]
 pub struct ZeroEx {
     pub base_url: String,
-    #[derivative(Debug = "ignore")]
+    #[debug(ignore)]
     pub api_key: Option<String>,
     pub http_timeout: Duration,
 }
