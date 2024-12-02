@@ -926,6 +926,7 @@ async fn cow_amm_opposite_direction(web3: Web3) {
         ..Default::default()
     };
 
+    // Must align with the mocked_solutions.
     let quote_response = services.submit_quote(&quote_request).await.unwrap();
     assert!(quote_response.verified);
     assert_eq!(quote_response.quote.sell_token, dai.address());
