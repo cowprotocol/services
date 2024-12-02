@@ -5,7 +5,6 @@ info:
     The API implemented by solver engines interacting with the reference driver
     implementation.
   version: 0.0.1
-
 paths:
   /solve:
     post:
@@ -18,7 +17,7 @@ paths:
             schema:
               $ref: "#/components/schemas/Auction"
       responses:
-        200:
+        "200":
           description: Auction successfully solved.
           content:
             application/json:
@@ -28,16 +27,17 @@ paths:
                   - solutions
                 properties:
                   solutions:
-                    description: |
-                      Proposed solutions to settle some of the orders in the auction.
+                    description: >
+                      Proposed solutions to settle some of the orders in the
+                      auction.
                     type: array
                     items:
                       $ref: "#/components/schemas/Solution"
-        400:
+        "400":
           description: There is something wrong with the request.
-        429:
+        "429":
           description: The solver cannot keep up. It is too busy to handle more requests.
-        500:
+        "500":
           description: Something went wrong when handling the request.
   /notify:
     post:
@@ -50,9 +50,13 @@ paths:
             schema:
               type: object
               additionalProperties: true
-              description: |
-                A notification that informs the solver how its solution performed in the auction.
-                Depending on the notification type additional meta data may be attached but this
+              description: |-
+                A notification that informs the solver how its solution
+                performed in the auction.
+
+                Depending on the notification type additional meta data may be
+                attached but this
+
                 is not guaranteed to be stable.
               properties:
                 auctionId:
@@ -61,35 +65,33 @@ paths:
                     for.
                   type: string
                 solutionId:
-                  description: |
-                    The solution ID within the auction for which the notification applies
+                  description: >
+                    The solution ID within the auction for which the
+                    notification applies
                   type: number
                 kind:
                   description: |
                     The kind of notification.
                   type: string
                   enum:
-                    [
-                      timeout,
-                      emptySolution,
-                      duplicatedSolutionId,
-                      simulationFailed,
-                      invalidClearingPrices,
-                      missingPrice,
-                      invalidExecutedAmount,
-                      nonBufferableTokensUsed,
-                      solverAccountInsufficientBalance,
-                      success,
-                      revert,
-                      driverError,
-                      cancelled,
-                      fail,
-                      postprocessingTimedOut,
-                    ]
+                    - timeout
+                    - emptySolution
+                    - duplicatedSolutionId
+                    - simulationFailed
+                    - invalidClearingPrices
+                    - missingPrice
+                    - invalidExecutedAmount
+                    - nonBufferableTokensUsed
+                    - solverAccountInsufficientBalance
+                    - success
+                    - revert
+                    - driverError
+                    - cancelled
+                    - fail
+                    - postprocessingTimedOut
       responses:
-        200:
+        "200":
           description: notification successfully received.
-
 components:
   schemas:
     Address:
@@ -97,73 +99,62 @@ components:
         An Ethereum public address.
       type: string
       example: "0x0000000000000000000000000000000000000000"
-
     Token:
       description: |
         An ERC20 token address.
       type: string
       example: "0xDEf1CA1fb7FBcDC777520aa7f396b4E015F497aB"
-
     TokenAmount:
       description: |
         Amount of an ERC20 token. 256 bit unsigned integer in decimal notation.
       type: string
       example: "1234567890"
-
     U256:
       description: |
         256 bit unsigned integer in decimal notation.
       type: string
       example: "1234567890"
-
     U128:
       description: |
         128 bit unsigned integer in decimal notation.
       type: string
       example: "1234567890"
-
     I128:
       description: |
         128 bit signed integer in decimal notation.
       type: string
       example: "-1234567890"
-
     I32:
       description: |
         32 bit signed integer in decimal notation.
       type: number
       example: -12345
-
     BalancerPoolId:
-      description: |
-        A hex-encoded 32 byte string containing the pool address (0..20), the pool specialization (20..22) and the poolnonce (22..32).
+      description: >
+        A hex-encoded 32 byte string containing the pool address (0..20), the
+        pool specialization (20..22) and the poolnonce (22..32).
       type: string
       example: "0xc88c76dd8b92408fe9bea1a54922a31e232d873c0002000000000000000005b2"
-
     BigInt:
       description: |
         An arbitrary-precision integer value.
       type: string
       example: "1234567890"
-
     Decimal:
       description: |
         An arbitrary-precision decimal value.
       type: string
       example: "13.37"
-
     NativePrice:
       description: |
         The price in wei of the native token (Ether on Mainnet for example) to
         buy 10**18 of a token.
       type: string
       example: "1234567890"
-
     DateTime:
       description: An ISO-8601 formatted date-time.
       type: string
       example: "1970-01-01T00:00:00.000Z"
-
     TokenInfo:
       description: |
         Information about a token relevant to the auction.
@@ -201,7 +192,6 @@ components:
             optimizations for this token by not routing the trades via an AMM,
             and instead use its available balances, as specified by CIP-2.
           type: boolean
-
     Asset:
       description: |
         A token address with an amount.
@@ -214,7 +204,6 @@ components:
           $ref: "#/components/schemas/Token"
         amount:
           $ref: "#/components/schemas/TokenAmount"
-
     OrderUid:
       description: |
         Unique identifier for the order. Order UIDs are 56 bytes long, where
@@ -222,51 +211,58 @@ components:
         [32, 52) represent the owner address and bytes [52, 56) represent the
         order's `validTo` field.
       type: string
-      example: "0x30cff40d9f60caa68a37f0ee73253ad6ad72b45580c945fe3ab67596476937197854163b1b0d24e77dca702b97b5cc33e0f83dcb626122a6"
-
+      example: >-
+        0x30cff40d9f60caa68a37f0ee73253ad6ad72b45580c945fe3ab67596476937197854163b1b0d24e77dca702b97b5cc33e0f83dcb626122a6
     OrderKind:
       description: |
         The trading side of the order.
       type: string
-      enum: [ sell, buy ]
-
+      enum:
+        - sell
+        - buy
     OrderClass:
       description: |
         How the CoW Protocol order was classified.
       type: string
-      enum: [ market, limit ]
-
+      enum:
+        - market
+        - limit
     AppData:
       description: |
         32 bytes of arbitrary application specific data that can be added to an
         order. This can also be used to ensure uniqueness between two orders
         with otherwise the exact same parameters.
       example: "0x0000000000000000000000000000000000000000000000000000000000000000"
-
     SellTokenBalance:
       description: |
         Where should the sell token be drawn from?
       type: string
-      enum: [ erc20, internal, external ]
-
+      enum:
+        - erc20
+        - internal
+        - external
     BuyTokenBalance:
       description: |
         Where should the buy token be transferred to?
       type: string
-      enum: [ erc20, internal ]
-
+      enum:
+        - erc20
+        - internal
     SigningScheme:
       description: |
         How was the order signed?
       type: string
-      enum: [ eip712, ethSign, preSign, eip1271 ]
-
+      enum:
+        - eip712
+        - ethSign
+        - preSign
+        - eip1271
     Signature:
       description: |
         Signature bytes.
       type: string
-      example: "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
-
+      example: >-
+        0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
     Order:
       description: |
         CoW Protocol order information relevant to execution.
@@ -326,11 +322,11 @@ components:
         sellTokenSource:
           allOf:
             - $ref: "#/components/schemas/SellTokenBalance"
-          default: "erc20"
+          default: erc20
         buyTokenDestination:
           allOf:
             - $ref: "#/components/schemas/BuyTokenBalance"
-          default: "erc20"
+          default: erc20
         class:
           $ref: "#/components/schemas/OrderClass"
         appData:
@@ -348,37 +344,45 @@ components:
         - $ref: "#/components/schemas/PriceImprovement"
         - $ref: "#/components/schemas/VolumeFee"
     SurplusFee:
-      description: |
-        If the order receives more than limit price, pay the protocol a factor of the difference.
+      description: >
+        If the order receives more than limit price, pay the protocol a factor
+        of the difference.
       type: object
       properties:
         kind:
           type: string
-          enum: [ "surplus" ]
+          enum:
+            - surplus
         maxVolumeFactor:
           description: Never charge more than that percentage of the order volume.
           type: number
-          minimum: 0.0
+          minimum: 0
           maximum: 0.99999
           example: 0.05
         factor:
-          description: The factor of the user surplus that the protocol will request from the solver after settling the order
+          description: >
+            The factor of the user surplus that the protocol will request from
+            the solver after settling the order
           type: number
           example: 0.5
     PriceImprovement:
-      description: |
-        A cut from the price improvement over the best quote is taken as a protocol fee.
+      description: >
+        A cut from the price improvement over the best quote is taken as a
+        protocol fee.
       type: object
       properties:
         kind:
           type: string
-          enum: [ "priceImprovement" ]
+          enum:
+            - priceImprovement
         maxVolumeFactor:
           description: Never charge more than that percentage of the order volume.
           type: number
           example: 0.01
         factor:
-          description: The factor of the user surplus that the protocol will request from the solver after settling the order
+          description: >
+            The factor of the user surplus that the protocol will request from
+            the solver after settling the order
           type: number
           example: 0.5
         quote:
@@ -388,9 +392,12 @@ components:
       properties:
         kind:
           type: string
-          enum: [ "volume" ]
+          enum:
+            - volume
         factor:
-          description: The fraction of the order's volume that the protocol will request from the solver after settling the order.
+          description: >
+            The fraction of the order's volume that the protocol will request
+            from the solver after settling the order.
           type: number
           example: 0.5
     Quote:
@@ -411,7 +418,6 @@ components:
       properties:
         balance:
           $ref: "#/components/schemas/TokenAmount"
-
     ConstantProductPool:
       description: |
         A UniswapV2-like constant product liquidity pool for a token pair.
@@ -424,7 +430,8 @@ components:
       properties:
         kind:
           type: string
-          enum: [ constantProduct ]
+          enum:
+            - constantProduct
         tokens:
           description: |
             A mapping of token address to its reserve amounts.
@@ -435,7 +442,6 @@ components:
           $ref: "#/components/schemas/Decimal"
         router:
           $ref: "#/components/schemas/Address"
-
     WeightedProductPool:
       description: |
         A Balancer-like weighted product liquidity pool of N tokens.
@@ -448,7 +454,8 @@ components:
       properties:
         kind:
           type: string
-          enum: [ weightedProduct ]
+          enum:
+            - weightedProduct
         tokens:
           description: |
             A mapping of token address to its reserve amounts with weights.
@@ -468,10 +475,11 @@ components:
           $ref: "#/components/schemas/Decimal"
         version:
           type: string
-          enum: [ "v0", "v3Plus" ]
+          enum:
+            - v0
+            - v3Plus
         balancer_pool_id:
           $ref: "#/components/schemas/BalancerPoolId"
-
     StablePool:
       description: |
         A Curve-like stable pool of N tokens.
@@ -485,7 +493,8 @@ components:
       properties:
         kind:
           type: string
-          enum: [ stable ]
+          enum:
+            - stable
         tokens:
           description: |
             A mapping of token address to token balance and scaling rate.
@@ -505,7 +514,6 @@ components:
           $ref: "#/components/schemas/Decimal"
         balancer_pool_id:
           $ref: "#/components/schemas/BalancerPoolId"
-
     ConcentratedLiquidityPool:
       description: |
         A UniswapV3-like concentrated liquidity pool of 2 tokens.
@@ -522,7 +530,8 @@ components:
       properties:
         kind:
           type: string
-          enum: [ concentratedLiquidity ]
+          enum:
+            - concentratedLiquidity
         tokens:
           type: array
           items:
@@ -543,7 +552,6 @@ components:
           $ref: "#/components/schemas/Decimal"
         router:
           $ref: "#/components/schemas/Address"
-
     ForeignLimitOrder:
       description: |
         A 0x-like limit order external to CoW Protocol.
@@ -558,7 +566,8 @@ components:
       properties:
         kind:
           type: string
-          enum: [ limitOrder ]
+          enum:
+            - limitOrder
         makerToken:
           $ref: "#/components/schemas/Token"
         takerToken:
@@ -569,7 +578,6 @@ components:
           $ref: "#/components/schemas/TokenAmount"
         takerTokenFeeAmount:
           $ref: "#/components/schemas/TokenAmount"
-
     LiquidityParameters:
       oneOf:
         - $ref: "#/components/schemas/ConstantProductPool"
@@ -577,7 +585,6 @@ components:
         - $ref: "#/components/schemas/StablePool"
         - $ref: "#/components/schemas/ConcentratedLiquidityPool"
         - $ref: "#/components/schemas/ForeignLimitOrder"
-
     Liquidity:
       description: |
         On-chain liquidity that can be used in a solution. This liquidity is
@@ -610,7 +617,6 @@ components:
                 liquidity on-chain.
               allOf:
                 - $ref: "#/components/schemas/BigInt"
-
     Auction:
       description: |
         The abstract auction to be solved by the searcher.
@@ -665,9 +671,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Address"
-          description: |
-            List of addresses on whose surplus will count towards the objective value of their solution (unlike other orders that were created by the solver).
-
+          description: >
+            List of addresses on whose surplus will count towards the objective
+            value of their solution (unlike other orders that were created by
+            the solver).
     JitOrder:
       description: |
         A just-in-time liquidity order included in a settlement. These will
@@ -703,6 +710,8 @@ components:
           $ref: "#/components/schemas/AppData"
         kind:
           $ref: "#/components/schemas/OrderKind"
+        partiallyFillable:
+          type: boolean
         sellTokenBalance:
           $ref: "#/components/schemas/SellTokenBalance"
         buyTokenBalance:
@@ -711,7 +720,6 @@ components:
           $ref: "#/components/schemas/SigningScheme"
         signature:
           $ref: "#/components/schemas/Signature"
-
     Fulfillment:
       description: |
         A trade which fulfills an order from the auction.
@@ -722,7 +730,8 @@ components:
       properties:
         kind:
           type: string
-          enum: [ fulfillment ]
+          enum:
+            - fulfillment
         order:
           description: |
             A reference by UID of the order to execute in a solution. The order
@@ -740,7 +749,6 @@ components:
             "sellToken" for sell orders, and "buyToken" for buy orders.
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
-
     JitTrade:
       description: |
         A trade with a JIT order.
@@ -752,7 +760,8 @@ components:
       properties:
         kind:
           type: string
-          enum: [ jit ]
+          enum:
+            - jit
         executedAmount:
           description: |
             The amount of the order that was executed. This is denoted in
@@ -778,7 +787,6 @@ components:
       oneOf:
         - $ref: "#/components/schemas/Fulfillment"
         - $ref: "#/components/schemas/JitTrade"
-
     LiquidityInteraction:
       description: |
         Interaction representing the execution of liquidity that was passed in
@@ -794,7 +802,8 @@ components:
       properties:
         kind:
           type: string
-          enum: [ liquidity ]
+          enum:
+            - liquidity
         id:
           description: |
             The ID of executed liquidity provided in the auction input.
@@ -807,7 +816,6 @@ components:
           $ref: "#/components/schemas/TokenAmount"
         outputAmount:
           $ref: "#/components/schemas/TokenAmount"
-
     Allowance:
       description: |
         An ERC20 allowance from the settlement contract to some spender that is
@@ -824,7 +832,6 @@ components:
           $ref: "#/components/schemas/Address"
         amount:
           $ref: "#/components/schemas/TokenAmount"
-
     CustomInteraction:
       description: |
         A searcher-specified custom interaction to be included in the final
@@ -840,7 +847,8 @@ components:
       properties:
         kind:
           type: string
-          enum: [ custom ]
+          enum:
+            - custom
         target:
           $ref: "#/components/schemas/Address"
         value:
@@ -864,7 +872,6 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Asset"
-
     Interaction:
       description: |
         An interaction to execute as part of a settlement.
@@ -879,7 +886,6 @@ components:
         - oneOf:
             - $ref: "#/components/schemas/LiquidityInteraction"
             - $ref: "#/components/schemas/CustomInteraction"
-
     InteractionData:
       type: object
       properties:
@@ -890,7 +896,6 @@ components:
         callData:
           description: Hex encoded bytes with `0x` prefix.
           type: string
-
     Solution:
       description: |
         A computed solution for a given auction.
@@ -902,7 +907,9 @@ components:
         - interactions
       properties:
         id:
-          description: An opaque identifier for the solution. This is a solver generated number that is unique across multiple solutions within the auction.
+          description: >
+            An opaque identifier for the solution. This is a solver generated
+            number that is unique across multiple solutions within the auction.
           type: number
         prices:
           description: |
@@ -951,6 +958,8 @@ components:
             $ref: "#/components/schemas/CallData"
           description: The call data to be used for the interaction.
     CallData:
-      description: Some `calldata` sent to a contract in a transaction encoded as a hex with `0x` prefix.
+      description: >
+        Some `calldata` sent to a contract in a transaction encoded as a hex
+        with `0x` prefix.
       type: string
       example: "0xca11da7a"

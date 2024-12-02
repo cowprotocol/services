@@ -41,7 +41,7 @@ pub struct Blockchain {
     pub pairs: Vec<Pair>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Interaction {
     pub address: ethcontract::H160,
     pub calldata: Vec<u8>,

@@ -288,8 +288,8 @@ pub struct Quote {
     pub solver: H160,
 }
 
-impl From<domain::Quote> for Quote {
-    fn from(value: domain::Quote) -> Self {
+impl Quote {
+    fn from_domain(value: &domain::Quote) -> Self {
         Self {
             sell_amount: value.sell_amount.into(),
             buy_amount: value.buy_amount.into(),
