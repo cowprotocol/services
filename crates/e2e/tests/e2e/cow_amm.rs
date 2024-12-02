@@ -712,8 +712,8 @@ async fn cow_amm_opposite_direction(web3: Web3) {
         .unwrap();
     let cow_amm = contracts::CowAmm::at(&web3, cow_amm_address);
 
-    // Start system with the regular baseline solver as a quoter but a mock solver
-    // for the actual solver competition. This allows us to handcraft a solution.
+    // Start system with the mocked solver. Baseline is still required for the
+    // native price estimation.
     let mock_solver = Mock::default();
     colocation::start_driver(
         onchain.contracts(),
