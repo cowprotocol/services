@@ -14,27 +14,27 @@ use {
 
 #[derive(Clone, Debug)]
 pub struct Amm {
-    contract: contracts::CowAmm,
     helper: contracts::CowAmmLegacyHelper,
+    address: Address,
     tradeable_tokens: Vec<Address>,
 }
 
 impl Amm {
     pub(crate) async fn new(
-        contract: &contracts::CowAmm,
+        address: Address,
         helper: &CowAmmLegacyHelper,
     ) -> Result<Self, MethodError> {
-        let tradeable_tokens = helper.tokens(contract.address()).call().await?;
+        let tradeable_tokens = helper.tokens(address).call().await?;
 
         Ok(Self {
-            contract: contract.clone(),
+            address,
             helper: helper.clone(),
             tradeable_tokens,
         })
     }
 
-    pub fn address(&self) -> Address {
-        self.contract.address()
+    pub fn address(&self) -> &Address {
+        &self.address
     }
 
     /// Returns all tokens traded by this pool in stable order.
@@ -47,13 +47,9 @@ impl Amm {
     /// need to be supplied in the same order as `traded_tokens` returns
     /// token addresses.
     pub async fn template_order(&self, prices: Vec<U256>) -> Result<TemplateOrder> {
-        let (order, pre_interactions, post_interactions, signature) = self
-            .helper
-            .order(self.contract.address(), prices)
-            .call()
-            .await?;
+        let (order, pre_interactions, post_interactions, signature) =
+            self.helper.order(self.address, prices).call().await?;
         self.convert_orders_reponse(order, signature, pre_interactions, post_interactions)
-            .await
     }
 
     /// Generates a template order to rebalance the AMM but also verifies that
@@ -72,7 +68,7 @@ impl Amm {
         let hash = hashed_eip712_message(domain_separator, &template.order.hash_struct());
         validator
             .validate_signature_and_get_additional_gas(SignatureCheck {
-                signer: self.address(),
+                signer: self.address,
                 hash,
                 signature: template.signature.to_bytes(),
                 interactions: template.pre_interactions.clone(),
@@ -86,10 +82,10 @@ impl Amm {
     /// Converts a successful response of the CowAmmHelper into domain types.
     /// Can be used for any contract that correctly implements the CoW AMM
     /// helper interface.
-    async fn convert_orders_reponse(
+    fn convert_orders_reponse(
         &self,
         order: RawOrder,
-        raw_signature: Bytes<Vec<u8>>,
+        signature: Bytes<Vec<u8>>,
         pre_interactions: Vec<RawInteraction>,
         post_interactions: Vec<RawInteraction>,
     ) -> Result<TemplateOrder> {
@@ -116,7 +112,8 @@ impl Amm {
         // The helper contract returns exactly that format but in our code base we
         // expect the signature to not already include the signer address (the parts
         // will be concatenated in the encoding logic) so we discard the first 20 bytes.
-        let signature = Signature::Eip1271(raw_signature.0.iter().skip(20).cloned().collect());
+        let raw_signature = signature.0.iter().skip(20).cloned().collect();
+        let signature = Signature::Eip1271(raw_signature);
 
         Ok(TemplateOrder {
             order,

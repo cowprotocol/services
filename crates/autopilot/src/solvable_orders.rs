@@ -262,6 +262,7 @@ impl SolvableOrdersCache {
                 })
             })
             .map(|cow_amm| cow_amm.address())
+            .cloned()
             .map(eth::Address::from)
             .collect::<Vec<_>>();
         let auction = domain::RawAuctionData {

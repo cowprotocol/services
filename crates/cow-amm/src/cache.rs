@@ -31,7 +31,7 @@ impl Storage {
     pub(crate) async fn remove_amms(&self, amm_addresses: &[Address]) {
         let mut lock = self.0.cache.write().await;
         for (_, amms) in lock.iter_mut() {
-            amms.retain(|amm| !amm_addresses.contains(&amm.address()))
+            amms.retain(|amm| !amm_addresses.contains(amm.address()))
         }
     }
 }
@@ -84,18 +84,18 @@ impl EventStoring<CowAmmEvent> for Storage {
             };
 
             let CowAmmEvent::CowammpoolCreated(cow_amm) = event.data;
-            let cow_amm = contracts::CowAmm::at(&self.0.helper.raw_instance().web3(), cow_amm.amm);
-            match Amm::new(&cow_amm, &self.0.helper).await {
+            let cow_amm = cow_amm.amm;
+            match Amm::new(cow_amm, &self.0.helper).await {
                 Ok(amm) => processed_events.push((meta.block_number, Arc::new(amm))),
                 Err(err) if matches!(&err.inner, ExecutionError::Web3(_)) => {
                     // Abort completely to later try the entire block range again.
                     // That keeps the cache in a consistent state and avoids indexing
                     // the same event multiple times which would result in duplicate amms.
-                    tracing::debug!(cow_amm = ?cow_amm.address(), ?err, "retryable error");
+                    tracing::debug!(?cow_amm, ?err, "retryable error");
                     return Err(err.into());
                 }
                 Err(err) => {
-                    tracing::info!(cow_amm = ?cow_amm.address(), ?err, "helper contract does not support amm");
+                    tracing::info!(?cow_amm, ?err, "helper contract does not support amm");
                     continue;
                 }
             };
