@@ -141,8 +141,6 @@ pub enum AddOrderError {
         provided: String,
         existing: String,
     },
-    #[error("unable to convert type usize to i32 for one of the quote interactions")]
-    QuoteInteractionWrongIndex,
 }
 
 impl AddOrderError {
@@ -163,7 +161,6 @@ impl AddOrderError {
                     s.into_owned()
                 },
             },
-            InsertionError::IndexConversionFailed => AddOrderError::QuoteInteractionWrongIndex,
         }
     }
 }

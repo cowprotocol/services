@@ -113,9 +113,6 @@ pub enum InsertionError {
     DbError(sqlx::Error),
     /// Full app data to be inserted doesn't match existing.
     AppDataMismatch(Vec<u8>),
-    /// Type conversion (usize to i32) of sequence index of order quote
-    /// interaction failed.
-    IndexConversionFailed,
 }
 
 impl From<sqlx::Error> for InsertionError {
@@ -245,16 +242,15 @@ async fn insert_quote(
         .iter()
         .enumerate()
         .map(|(idx, interaction)| {
-            Ok(OrderQuoteInteraction {
+            OrderQuoteInteraction {
                 order_uid: dbquote.order_uid,
-                index: idx.try_into()?,
+                index: idx.try_into().unwrap(), // safe to unwrap
                 target: ByteArray(interaction.target.0),
                 value: u256_to_big_decimal(&interaction.value),
                 call_data: interaction.call_data.clone(),
-            })
+            }
         })
-        .collect::<Result<Vec<_>>>()
-        .map_err(|_| InsertionError::IndexConversionFailed)?;
+        .collect::<Vec<_>>();
 
     let mut transaction = ex.begin().await?;
     database::orders::insert_quote(&mut transaction, &dbquote)

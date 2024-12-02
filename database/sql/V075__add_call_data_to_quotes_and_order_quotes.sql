@@ -4,7 +4,7 @@
 ALTER TABLE quotes 
     ADD COLUMN verified boolean;
 
--- Step 2: Add two new columns to the order_quotes table
+-- Step 2: Add a new column to the order_quotes table
 ALTER TABLE order_quotes 
     ADD COLUMN verified boolean;
 
