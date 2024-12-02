@@ -361,15 +361,6 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
     );
 
     let services = Services::new(&onchain).await;
-    services.start_autopilot(
-        None,
-        vec![
-            "--drivers=solver1|http://localhost:11088/test_solver|10000000000000000,solver2|http://localhost:11088/solver2"
-                .to_string(),
-            "--price-estimation-drivers=solver1|http://localhost:11088/test_solver".to_string(),
-            "--max-winners-per-auction=2".to_string(),
-        ],
-    ).await;
     services
         .start_api(vec![
             "--price-estimation-drivers=solver1|http://localhost:11088/test_solver".to_string(),
@@ -408,6 +399,17 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader_b.private_key()).unwrap()),
     );
     let uid_b = services.create_order(&order_b).await.unwrap();
+
+    // Start autopilot only once all the orders are created.
+    services.start_autopilot(
+        None,
+        vec![
+            "--drivers=solver1|http://localhost:11088/test_solver|10000000000000000,solver2|http://localhost:11088/solver2"
+                .to_string(),
+            "--price-estimation-drivers=solver1|http://localhost:11088/test_solver".to_string(),
+            "--max-winners-per-auction=2".to_string(),
+        ],
+    ).await;
 
     // Wait for trade
     let indexed_trades = || async {

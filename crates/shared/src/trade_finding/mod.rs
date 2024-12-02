@@ -1,5 +1,6 @@
 //! A module for abstracting a component that can produce a quote with calldata
 //! for a specified token pair and amount.
+#![allow(clippy::needless_lifetimes)] // todo: migrate from derivative to derive_more
 
 pub mod external;
 
