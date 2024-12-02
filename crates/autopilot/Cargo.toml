@@ -26,12 +26,10 @@ clap = { workspace = true }
 contracts = { path = "../contracts" }
 cow-amm = { path = "../cow-amm" }
 database = { path = "../database" }
-derivative = { workspace = true }
 derive_more = { workspace = true }
 ethcontract = { workspace = true }
 ethrpc = { path = "../ethrpc" }
 futures = { workspace = true }
-gas-estimation = { workspace = true }
 observe = { path = "../observe" }
 hex = { workspace = true }
 hex-literal = { workspace = true }
@@ -64,7 +62,6 @@ web3 = { workspace = true }
 
 [dev-dependencies]
 mockall = { workspace = true }
-testlib = { path = "../testlib" }
 tokio = { workspace = true, features = ["test-util"] }
 
 [lints]

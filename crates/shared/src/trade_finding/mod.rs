@@ -1,6 +1,5 @@
 //! A module for abstracting a component that can produce a quote with calldata
 //! for a specified token pair and amount.
-#![allow(clippy::needless_lifetimes)] // todo: migrate from derivative to derive_more
 
 pub mod external;
 
@@ -11,7 +10,7 @@ use {
         trade_finding::external::dto,
     },
     anyhow::{Context, Result},
-    derivative::Derivative,
+    derive_more::Debug,
     ethcontract::{contract::MethodBuilder, tokens::Tokenize, web3::Transport, Bytes, H160, U256},
     model::{interaction::InteractionData, order::OrderKind},
     num::CheckedDiv,
@@ -177,12 +176,11 @@ impl Trade {
 }
 
 /// Data for a raw GPv2 interaction.
-#[derive(Clone, PartialEq, Eq, Hash, Default, Serialize, Derivative)]
-#[derivative(Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Default, Serialize, Debug)]
 pub struct Interaction {
     pub target: H160,
     pub value: U256,
-    #[derivative(Debug(format_with = "crate::debug_bytes"))]
+    #[debug("0x{}", hex::encode::<&[u8]>(data.as_ref()))]
     pub data: Vec<u8>,
 }
 
@@ -267,4 +265,26 @@ impl Clone for TradeError {
 
 pub fn map_interactions(interactions: &[InteractionData]) -> Vec<Interaction> {
     interactions.iter().cloned().map(Into::into).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_debug_interaction() {
+        let interaction = Interaction {
+            target: H160::zero(),
+            value: U256::one(),
+            data: vec![0x01, 0x02, 0x03, 0x04, 0x05, 0x06],
+        };
+
+        let interaction_debug = format!("{:?}", interaction);
+
+        assert_eq!(
+            interaction_debug,
+            "Interaction { target: 0x0000000000000000000000000000000000000000, value: 1, data: \
+             0x010203040506 }"
+        );
+    }
 }

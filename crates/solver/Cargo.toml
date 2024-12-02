@@ -14,21 +14,14 @@ doctest = false
 anyhow = { workspace = true }
 arc-swap = "1.7.1"
 async-trait = { workspace = true }
-chrono = { workspace = true, features = ["clock"] }
-clap = { workspace = true }
 contracts = { path = "../contracts" }
-derivative = { workspace = true }
 ethcontract = { workspace = true }
 ethrpc = { path = "../ethrpc" }
-flate2 = { workspace = true }
 futures = { workspace = true }
-gas-estimation = { workspace = true }
 observe = { path = "../observe" }
 hex = { workspace = true }
 hex-literal = { workspace = true }
-humantime = { workspace = true }
 itertools = { workspace = true }
-jsonrpc-core = "18"
 lazy_static = { workspace = true }
 maplit = { workspace = true }
 mockall = { workspace = true }
@@ -39,24 +32,17 @@ once_cell = { workspace = true }
 primitive-types = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
-rand = { workspace = true }
-rate-limit = { path = "../rate-limit" }
-reqwest = { workspace = true, features = ["json"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
-serde_with = { workspace = true }
 shared = { path = "../shared" }
 strum = { workspace = true }
-thiserror = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
 tracing = { workspace = true }
-url = { workspace = true }
 web3 = { workspace = true }
 
 [dev-dependencies]
-ethcontract-mock = { workspace = true }
+derivative = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
-tracing-subscriber = { workspace = true }
 testlib = { path = "../testlib" }
 
 [lints]
