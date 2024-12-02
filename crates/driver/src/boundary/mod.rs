@@ -45,26 +45,24 @@ fn web3(eth: &Ethereum) -> Web3 {
 
 /// Builds a web3 client that buffers requests and sends them in a
 /// batch call.
-pub fn buffered_web3_client(ethrpc_url: &Url, ethrpc_args: &shared::ethrpc::Arguments) -> Web3 {
-    web3_client(ethrpc_url, ethrpc_args)
+pub fn buffered_web3_client(ethrpc: &Url) -> Web3 {
+    web3_client(ethrpc, 20, 10)
 }
 
 /// Builds a web3 client that sends requests one by one.
-pub fn unbuffered_web3_client(ethrpc_url: &Url) -> Web3 {
-    web3_client(
-        ethrpc_url,
-        &shared::ethrpc::Arguments {
-            ethrpc_max_batch_size: 0,
-            ethrpc_max_concurrent_requests: 0,
-            ethrpc_batch_delay: Default::default(),
-        },
-    )
+pub fn unbuffered_web3_client(ethrpc: &Url) -> Web3 {
+    web3_client(ethrpc, 0, 0)
 }
 
-fn web3_client(ethrpc_url: &Url, ethrpc_args: &shared::ethrpc::Arguments) -> Web3 {
+fn web3_client(ethrpc: &Url, max_batch_size: usize, max_concurrent_requests: usize) -> Web3 {
+    let ethrpc_args = shared::ethrpc::Arguments {
+        ethrpc_max_batch_size: max_batch_size,
+        ethrpc_max_concurrent_requests: max_concurrent_requests,
+        ethrpc_batch_delay: Default::default(),
+    };
     let http_factory =
         shared::http_client::HttpClientFactory::new(&shared::http_client::Arguments {
             http_timeout: std::time::Duration::from_secs(10),
         });
-    shared::ethrpc::web3(ethrpc_args, &http_factory, ethrpc_url, "base")
+    shared::ethrpc::web3(&ethrpc_args, &http_factory, ethrpc, "base")
 }

@@ -50,7 +50,7 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
     tracing::info!("running driver with {config:#?}");
 
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
-    let eth = ethereum(&config, ethrpc, &args.ethrpc_args).await;
+    let eth = ethereum(&config, ethrpc).await;
     let serve = Api {
         solvers: solvers(&config, &eth).await,
         liquidity: liquidity(&config, &eth).await,
@@ -124,16 +124,12 @@ fn simulator(config: &infra::Config, eth: &Ethereum) -> Simulator {
 }
 
 async fn ethrpc(args: &cli::Args) -> blockchain::Rpc {
-    blockchain::Rpc::new(&args.ethrpc, &args.ethrpc_args)
+    blockchain::Rpc::new(&args.ethrpc)
         .await
         .expect("connect ethereum RPC")
 }
 
-async fn ethereum(
-    config: &infra::Config,
-    ethrpc: blockchain::Rpc,
-    ethrpc_args: &shared::ethrpc::Arguments,
-) -> Ethereum {
+async fn ethereum(config: &infra::Config, ethrpc: blockchain::Rpc) -> Ethereum {
     let gas = Arc::new(
         blockchain::GasPriceEstimator::new(ethrpc.web3(), &config.gas_estimator, &config.mempools)
             .await
@@ -143,7 +139,6 @@ async fn ethereum(
         ethrpc,
         config.contracts.clone(),
         gas,
-        ethrpc_args,
         config.archive_node_url.as_ref(),
     )
     .await

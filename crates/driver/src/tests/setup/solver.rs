@@ -381,9 +381,7 @@ impl Solver {
             .collect::<HashMap<_, _>>();
 
         let url = config.blockchain.web3_url.parse().unwrap();
-        let rpc = infra::blockchain::Rpc::new(&url, &Default::default())
-            .await
-            .unwrap();
+        let rpc = infra::blockchain::Rpc::new(&url).await.unwrap();
         let gas = Arc::new(
             infra::blockchain::GasPriceEstimator::new(
                 rpc.web3(),
@@ -411,7 +409,6 @@ impl Solver {
                 cow_amms: vec![],
             },
             gas,
-            &Default::default(),
             None,
         )
         .await;

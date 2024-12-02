@@ -122,13 +122,6 @@ async fn discards_excess_settle_requests() {
         .pool(ab_pool())
         .order(ab_order())
         .solution(ab_solution())
-        .ethrpc_args(shared::ethrpc::Arguments {
-            ethrpc_max_batch_size: 10,
-            ethrpc_max_concurrent_requests: 10,
-            // This delay artificially slows down the settlement process, so the /settle calls are
-            // accumulated in the driver's queue.
-            ethrpc_batch_delay: std::time::Duration::from_secs(1),
-        })
         .solve_deadline_timeout(chrono::Duration::seconds(4))
         .done()
         .await;
@@ -183,13 +176,6 @@ async fn accepts_new_settle_requests_after_timeout() {
         .pool(ab_pool())
         .order(ab_order())
         .solution(ab_solution())
-        .ethrpc_args(shared::ethrpc::Arguments {
-            ethrpc_max_batch_size: 10,
-            ethrpc_max_concurrent_requests: 10,
-            // This delay artificially slows down the settlement process, so the /settle calls are
-            // accumulated in the driver's queue.
-            ethrpc_batch_delay: std::time::Duration::from_secs(1),
-        })
         .solve_deadline_timeout(chrono::Duration::seconds(4))
         .done()
         .await;

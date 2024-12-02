@@ -21,9 +21,6 @@ pub struct Args {
     #[clap(long, env)]
     pub ethrpc: Url,
 
-    #[clap(flatten)]
-    pub ethrpc_args: shared::ethrpc::Arguments,
-
     /// Path to the driver configuration file. This file should be in TOML
     /// format. For an example see
     /// https://github.com/cowprotocol/services/blob/main/crates/driver/example.toml.

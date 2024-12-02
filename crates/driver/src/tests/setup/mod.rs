@@ -533,7 +533,6 @@ pub struct Setup {
     allow_multiple_solve_requests: bool,
     /// Auction ID used during tests
     auction_id: i64,
-    ethrpc_args: Option<shared::ethrpc::Arguments>,
     /// Auction solving deadline timeout
     solve_deadline_timeout: chrono::Duration,
 }
@@ -846,11 +845,6 @@ impl Setup {
         self
     }
 
-    pub fn ethrpc_args(mut self, ethrpc_args: shared::ethrpc::Arguments) -> Self {
-        self.ethrpc_args = Some(ethrpc_args);
-        self
-    }
-
     /// Create the test: set up onchain contracts and pools, start a mock HTTP
     /// server for the solver and start the HTTP server for the driver.
     pub async fn done(self) -> Test {
@@ -954,7 +948,6 @@ impl Setup {
                 enable_simulation: self.enable_simulation,
                 mempools: self.mempools,
                 order_priority_strategies: self.order_priority_strategies,
-                ethrpc_args: self.ethrpc_args,
             },
             &solvers_with_address,
             &blockchain,

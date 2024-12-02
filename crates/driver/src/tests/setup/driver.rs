@@ -18,7 +18,6 @@ pub struct Config {
     pub enable_simulation: bool,
     pub mempools: Vec<Mempool>,
     pub order_priority_strategies: Vec<OrderPriorityStrategy>,
-    pub ethrpc_args: Option<shared::ethrpc::Arguments>,
 }
 
 pub struct Driver {
@@ -41,8 +40,7 @@ impl Driver {
             }
         };
         let (addr_sender, addr_receiver) = oneshot::channel();
-
-        let mut args = vec![
+        let args = vec![
             "/test/driver/path".to_owned(),
             "--addr".to_owned(),
             "0.0.0.0:0".to_owned(),
@@ -51,14 +49,6 @@ impl Driver {
             "--config".to_owned(),
             config_file.to_str().unwrap().to_owned(),
         ];
-        if let Some(ethrpc_arg) = &config.ethrpc_args {
-            args.push("--ethrpc-max-batch-size".to_owned());
-            args.push(ethrpc_arg.ethrpc_max_batch_size.to_string());
-            args.push("--ethrpc-max-concurrent-requests".to_owned());
-            args.push(ethrpc_arg.ethrpc_max_concurrent_requests.to_string());
-            args.push("--ethrpc-batch-delay".to_owned());
-            args.push(ethrpc_arg.ethrpc_batch_delay.as_millis().to_string() + "ms");
-        }
         tokio::spawn(crate::run(args.into_iter(), Some(addr_sender)));
         let addr = addr_receiver.await.unwrap();
         Self {

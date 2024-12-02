@@ -27,8 +27,8 @@ pub struct Rpc {
 impl Rpc {
     /// Instantiate an RPC client to an Ethereum (or Ethereum-compatible) node
     /// at the specifed URL.
-    pub async fn new(url: &url::Url, args: &shared::ethrpc::Arguments) -> Result<Self, Error> {
-        let web3 = boundary::buffered_web3_client(url, args);
+    pub async fn new(url: &url::Url) -> Result<Self, Error> {
+        let web3 = boundary::buffered_web3_client(url);
         let chain = web3.eth().chain_id().await?.into();
 
         Ok(Self {
@@ -74,7 +74,6 @@ impl Ethereum {
         rpc: Rpc,
         addresses: contracts::Addresses,
         gas: Arc<GasPriceEstimator>,
-        ethrpc_args: &shared::ethrpc::Arguments,
         archive_node_url: Option<&Url>,
     ) -> Self {
         let Rpc { web3, chain, url } = rpc;
@@ -89,7 +88,6 @@ impl Ethereum {
             chain,
             addresses,
             current_block_stream.clone(),
-            ethrpc_args,
             archive_node_url,
         )
         .await
