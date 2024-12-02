@@ -13,52 +13,37 @@ use {
             blockchain::{self, Ethereum},
             solver::{self, Solver},
         },
-        util::{self, conv::u256::U256Ext},
+        util,
     },
-    anyhow::Context,
     chrono::Utc,
-    num::CheckedDiv,
-    std::{collections::HashSet, iter, ops::Mul},
+    std::{
+        collections::{HashMap, HashSet},
+        iter,
+    },
 };
 
 /// A quote describing the expected outcome of an order.
 #[derive(Debug)]
 pub struct Quote {
-    /// The amount that can be bought if this was a sell order, or sold if this
-    /// was a buy order.
-    pub amount: eth::U256,
+    pub clearing_prices: HashMap<eth::H160, eth::U256>,
+    pub pre_interactions: Vec<eth::Interaction>,
     pub interactions: Vec<eth::Interaction>,
     pub solver: eth::Address,
     pub gas: Option<eth::Gas>,
     /// Which `tx.origin` is required to make the quote simulation pass.
     pub tx_origin: Option<eth::Address>,
+    pub jit_orders: Vec<solution::trade::Jit>,
 }
 
 impl Quote {
-    fn new(eth: &Ethereum, order: &Order, solution: competition::Solution) -> Result<Self, Error> {
-        let sell_price = solution
-            .clearing_price(order.tokens.sell)
-            .ok_or(QuotingFailed::ClearingSellMissing)?
-            .to_big_rational();
-        let buy_price = solution
-            .clearing_price(order.tokens.buy)
-            .ok_or(QuotingFailed::ClearingBuyMissing)?
-            .to_big_rational();
-        let order_amount = order.amount.0.to_big_rational();
-
-        let amount = match order.side {
-            order::Side::Sell => order_amount
-                .mul(sell_price)
-                .checked_div(&buy_price)
-                .context("div by zero: buy price")?,
-            order::Side::Buy => order_amount
-                .mul(&buy_price)
-                .checked_div(&sell_price)
-                .context("div by zero: sell price")?,
-        };
-
+    fn new(eth: &Ethereum, solution: competition::Solution) -> Result<Self, Error> {
         Ok(Self {
-            amount: eth::U256::from_big_rational(&amount)?,
+            clearing_prices: solution
+                .clearing_prices()
+                .into_iter()
+                .map(|(token, amount)| (token.into(), amount))
+                .collect(),
+            pre_interactions: solution.pre_interactions().to_vec(),
             interactions: solution
                 .interactions()
                 .iter()
@@ -70,6 +55,14 @@ impl Quote {
             solver: solution.solver().address(),
             gas: solution.gas(),
             tx_origin: *solution.solver().quote_tx_origin(),
+            jit_orders: solution
+                .trades()
+                .iter()
+                .filter_map(|trade| match trade {
+                    solution::Trade::Jit(jit) => Some(jit.clone()),
+                    _ => None,
+                })
+                .collect(),
         })
     }
 }
@@ -110,7 +103,6 @@ impl Order {
         let solutions = solver.solve(&auction, &liquidity).await?;
         Quote::new(
             eth,
-            self,
             // TODO(#1468): choose the best solution in the future, but for now just pick the
             // first solution
             solutions

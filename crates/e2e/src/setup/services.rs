@@ -210,6 +210,7 @@ impl<'a> Services<'a> {
                 .await,
             ],
             colocation::LiquidityProvider::UniswapV2,
+            false,
         );
         self.start_autopilot(
             None,
@@ -303,6 +304,7 @@ impl<'a> Services<'a> {
             self.contracts,
             solvers,
             colocation::LiquidityProvider::UniswapV2,
+            false,
         );
 
         self.start_autopilot(Some(Duration::from_secs(11)), autopilot_args)

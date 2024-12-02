@@ -387,6 +387,7 @@ pub struct Jit {
     pub buy: eth::Asset,
     pub receiver: eth::Address,
     pub valid_to: util::Timestamp,
+    pub partially_fillable: bool,
     pub app_data: AppData,
     pub side: Side,
     pub sell_token_balance: SellTokenBalance,
