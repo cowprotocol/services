@@ -4,6 +4,7 @@ use {
     sqlx::{
         types::chrono::{DateTime, Utc},
         PgConnection,
+        Row,
     },
 };
 
@@ -35,6 +36,27 @@ pub struct Quote {
     pub quote_kind: QuoteKind,
     pub solver: Address,
     pub verified: bool,
+}
+
+impl Quote {
+    pub fn to_quote_with_interactions(&self) -> QuoteWithInteractions {
+        QuoteWithInteractions {
+            id: self.id,
+            sell_token: self.sell_token,
+            buy_token: self.buy_token,
+            sell_amount: self.sell_amount.clone(),
+            buy_amount: self.buy_amount.clone(),
+            gas_amount: self.gas_amount,
+            gas_price: self.gas_price,
+            sell_token_price: self.sell_token_price,
+            order_kind: self.order_kind,
+            expiration_timestamp: self.expiration_timestamp,
+            quote_kind: self.quote_kind.clone(),
+            solver: self.solver,
+            verified: self.verified,
+            interactions: vec![],
+        }
+    }
 }
 
 /// Stores the quote and returns the id. The id of the quote parameter is not
@@ -132,10 +154,8 @@ LIMIT 1
         .await
 }
 
-/// Internal structure used for getting Quote with Interactions in one SQL
-/// query.
-#[derive(Clone, sqlx::FromRow)]
-struct QuoteWithInteraction {
+#[derive(Clone, Debug, PartialEq)]
+pub struct QuoteWithInteractions {
     pub id: QuoteId,
     pub sell_token: Address,
     pub buy_token: Address,
@@ -149,71 +169,65 @@ struct QuoteWithInteraction {
     pub quote_kind: QuoteKind,
     pub solver: Address,
     pub verified: bool,
-    pub index: i32,
-    pub target: Address,
-    pub value: BigDecimal,
-    pub call_data: Vec<u8>,
+    pub interactions: Vec<QuoteInteraction>,
 }
 
-impl QuoteWithInteraction {
-    fn to_quote(&self) -> Quote {
-        Quote {
-            id: self.id,
-            sell_token: self.sell_token,
-            buy_token: self.buy_token,
-            sell_amount: self.sell_amount.clone(),
-            buy_amount: self.buy_amount.clone(),
-            gas_amount: self.gas_amount,
-            gas_price: self.gas_price,
-            sell_token_price: self.sell_token_price,
-            order_kind: self.order_kind,
-            expiration_timestamp: self.expiration_timestamp,
-            quote_kind: self.quote_kind.clone(),
-            solver: self.solver,
-            verified: self.verified,
-        }
-    }
+impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for QuoteWithInteractions {
+    fn from_row(row: &sqlx::postgres::PgRow) -> sqlx::Result<Self> {
+        let id = row.get("id");
 
-    fn to_interaction(&self) -> QuoteInteraction {
-        QuoteInteraction {
-            quote_id: self.id,
-            index: self.index,
-            target: self.target,
-            value: self.value.clone(),
-            call_data: self.call_data.clone(),
-        }
-    }
+        let interactions = match row
+            .get::<Option<Vec<(i32, crate::ByteArray<20>, BigDecimal, Vec<u8>)>>, &str>(
+                "interactions",
+            ) {
+            None => vec![],
+            Some(col) => col
+                .into_iter()
+                .map(|(index, target, value, call_data)| QuoteInteraction {
+                    quote_id: id,
+                    index,
+                    target,
+                    value,
+                    call_data,
+                })
+                .collect(),
+        };
 
-    fn build_quote_with_interactions(
-        items: &[QuoteWithInteraction],
-    ) -> Option<QuoteWithInteractions> {
-        items.first().map(|first_item| {
-            (
-                first_item.to_quote(),
-                items
-                    .iter()
-                    .map(|item| item.to_interaction())
-                    .collect::<Vec<_>>(),
-            )
+        Ok(QuoteWithInteractions {
+            id,
+            sell_token: row.get("sell_token"),
+            buy_token: row.get("buy_token"),
+            sell_amount: row.get("sell_amount"),
+            buy_amount: row.get("buy_amount"),
+            gas_amount: row.get("gas_amount"),
+            gas_price: row.get("gas_price"),
+            sell_token_price: row.get("sell_token_price"),
+            order_kind: row.get("order_kind"),
+            expiration_timestamp: row.get("expiration_timestamp"),
+            quote_kind: row.get("quote_kind"),
+            solver: row.get("solver"),
+            verified: row.get("verified"),
+            interactions,
         })
     }
 }
-
-pub type QuoteWithInteractions = (Quote, Vec<QuoteInteraction>);
 
 pub async fn get_quote_with_interactions(
     ex: &mut PgConnection,
     id: QuoteId,
 ) -> Result<Option<QuoteWithInteractions>, sqlx::Error> {
-    const QUERY: &str = r#"
-    SELECT q.*, i.index, i.target, i.value, i.call_data FROM quotes q
-    JOIN quote_interactions i ON quote_id = id
-    WHERE id = $1
-    "#;
-
-    Ok(QuoteWithInteraction::build_quote_with_interactions(
-        &sqlx::query_as(QUERY).bind(id).fetch_all(ex).await?,
-    ))
+    sqlx::query_as(
+    r#"
+    SELECT q.*, array_agg((i.index, i.target, i.value, i.call_data)) FILTER (WHERE i.quote_id IS NOT NULL) as "interactions"
+    FROM quotes q
+    LEFT JOIN quote_interactions i ON i.quote_id = q.id
+    WHERE q.id = $1
+    GROUP BY q.id
+    "#,
+    )
+    .bind(id)
+    .fetch_optional(ex)
+    .await
 }
 
 pub async fn find_quote_with_interactions(
@@ -221,10 +235,9 @@ pub async fn find_quote_with_interactions(
     params: &QuoteSearchParameters,
 ) -> Result<Option<QuoteWithInteractions>, sqlx::Error> {
     const QUERY: &str = r#"
-SELECT quotes.*, i.index, i.target, i.value, i.call_data
+SELECT quotes.*, array_agg((i.index, i.target, i.value, i.call_data)) FILTER (WHERE i.quote_id IS NOT NULL) as "interactions"
 FROM quotes
-JOIN quote_interactions i
-ON i.quote_id = id
+LEFT JOIN quote_interactions i ON i.quote_id = id
 WHERE
     sell_token = $1 AND
     buy_token = $2 AND
@@ -236,11 +249,12 @@ WHERE
     order_kind = $6 AND
     expiration_timestamp >= $7 AND
     quote_kind = $8
+GROUP BY id
 ORDER BY gas_amount * gas_price * sell_token_price ASC
 LIMIT 1
     "#;
 
-    let result: Vec<QuoteWithInteraction> = sqlx::query_as(QUERY)
+    sqlx::query_as(QUERY)
         .bind(params.sell_token)
         .bind(params.buy_token)
         .bind(&params.sell_amount_0)
@@ -249,10 +263,8 @@ LIMIT 1
         .bind(params.kind)
         .bind(params.expiration)
         .bind(&params.quote_kind)
-        .fetch_all(ex)
-        .await?;
-
-    Ok(QuoteWithInteraction::build_quote_with_interactions(&result))
+        .fetch_optional(ex)
+        .await
 }
 
 pub async fn remove_expired_quotes(
@@ -527,11 +539,14 @@ mod tests {
             quote_kind: QuoteKind::Standard,
         };
         assert_eq!(
-            find(&mut db, &search_b).await.unwrap().unwrap(),
-            quotes_b[0],
+            find_quote_with_interactions(&mut db, &search_b)
+                .await
+                .unwrap()
+                .unwrap(),
+            quotes_b[0].to_quote_with_interactions(),
         );
         assert_eq!(
-            find(
+            find_quote_with_interactions(
                 &mut db,
                 &QuoteSearchParameters {
                     expiration: now + Duration::seconds(30),
@@ -545,7 +560,7 @@ mod tests {
 
         // Token B has no reading for wrong filter
         assert_eq!(
-            find(
+            find_quote_with_interactions(
                 &mut db,
                 &QuoteSearchParameters {
                     buy_amount: 99.into(),
@@ -561,8 +576,18 @@ mod tests {
         remove_expired_quotes(&mut db, now + Duration::seconds(120))
             .await
             .unwrap();
-        assert_eq!(find(&mut db, &search_a).await.unwrap(), None);
-        assert_eq!(find(&mut db, &search_b).await.unwrap(), None);
+        assert_eq!(
+            find_quote_with_interactions(&mut db, &search_a)
+                .await
+                .unwrap(),
+            None
+        );
+        assert_eq!(
+            find_quote_with_interactions(&mut db, &search_b)
+                .await
+                .unwrap(),
+            None
+        );
     }
 
     #[tokio::test]
@@ -606,9 +631,20 @@ mod tests {
             quote_kind: quote.quote_kind.clone(),
         };
 
-        assert_eq!(find(&mut db, &search_a).await.unwrap().unwrap(), quote,);
+        assert_eq!(
+            find_quote_with_interactions(&mut db, &search_a)
+                .await
+                .unwrap()
+                .unwrap(),
+            quote.to_quote_with_interactions(),
+        );
         search_a.quote_kind = QuoteKind::Standard;
-        assert_eq!(find(&mut db, &search_a).await.unwrap(), None,);
+        assert_eq!(
+            find_quote_with_interactions(&mut db, &search_a)
+                .await
+                .unwrap(),
+            None,
+        );
     }
 
     #[tokio::test]
@@ -735,9 +771,15 @@ mod tests {
             solver: ByteArray([1; 20]),
             verified: false,
         };
+        let mut quote2 = quote.clone();
+        let mut quote3 = quote.clone();
         // store quote in database
         let id = save(&mut db, &quote).await.unwrap();
+        let id2 = save(&mut db, &quote2).await.unwrap();
+        let id3 = save(&mut db, &quote3).await.unwrap();
         quote.id = id;
+        quote2.id = id2;
+        quote3.id = id3;
 
         let quote_interactions = [
             QuoteInteraction {
@@ -750,9 +792,16 @@ mod tests {
             QuoteInteraction {
                 quote_id: id,
                 index: 1,
-                target: ByteArray([1; 20]),
-                value: 2.into(),
-                call_data: vec![3; 20],
+                target: ByteArray([4; 20]),
+                value: 5.into(),
+                call_data: vec![6; 20],
+            },
+            QuoteInteraction {
+                quote_id: id2,
+                index: 0,
+                target: ByteArray([7; 20]),
+                value: 8.into(),
+                call_data: vec![9; 20],
             },
         ];
         // store interactions for the quote in database
@@ -760,17 +809,40 @@ mod tests {
             .await
             .unwrap();
 
-        let (returned_quote, interactions) = get_quote_with_interactions(&mut db, id)
+        let returned_quote: QuoteWithInteractions = get_quote_with_interactions(&mut db, id)
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(returned_quote, quote);
-        assert_eq!(interactions.len(), 2);
+
+        assert_eq!(returned_quote.id, quote.id);
+        assert_eq!(returned_quote.interactions.len(), 2);
         for i in [0, 1] {
             assert_eq!(
-                interactions.iter().find(|val| val.index == i).unwrap(),
+                returned_quote
+                    .interactions
+                    .iter()
+                    .find(|val| val.index == i)
+                    .unwrap(),
                 &quote_interactions[i as usize]
             );
         }
+
+        let returned_quote2: QuoteWithInteractions = get_quote_with_interactions(&mut db, id2)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(returned_quote2.id, quote2.id);
+        assert_eq!(returned_quote2.interactions.len(), 1);
+        assert_eq!(
+            returned_quote2.interactions.first().unwrap(),
+            &quote_interactions[2]
+        );
+
+        let returned_quote3: QuoteWithInteractions = get_quote_with_interactions(&mut db, id3)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(returned_quote3.id, quote3.id);
+        assert!(returned_quote3.interactions.is_empty());
     }
 }

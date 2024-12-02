@@ -207,26 +207,26 @@ impl TryFrom<database::quotes::QuoteWithInteractions> for QuoteData {
 
     fn try_from(input: database::quotes::QuoteWithInteractions) -> Result<QuoteData> {
         Ok(QuoteData {
-            sell_token: H160(input.0.sell_token.0),
-            buy_token: H160(input.0.buy_token.0),
-            quoted_sell_amount: big_decimal_to_u256(&input.0.sell_amount)
+            sell_token: H160(input.sell_token.0),
+            buy_token: H160(input.buy_token.0),
+            quoted_sell_amount: big_decimal_to_u256(&input.sell_amount)
                 .context("quoted sell amount is not a valid U256")?,
-            quoted_buy_amount: big_decimal_to_u256(&input.0.buy_amount)
+            quoted_buy_amount: big_decimal_to_u256(&input.buy_amount)
                 .context("quoted buy amount is not a valid U256")?,
             fee_parameters: FeeParameters {
-                gas_amount: input.0.gas_amount,
-                gas_price: input.0.gas_price,
-                sell_token_price: input.0.sell_token_price,
+                gas_amount: input.gas_amount,
+                gas_price: input.gas_price,
+                sell_token_price: input.sell_token_price,
             },
-            kind: order_kind_from(input.0.order_kind),
-            expiration: input.0.expiration_timestamp,
-            quote_kind: input.0.quote_kind,
-            solver: H160(input.0.solver.0),
+            kind: order_kind_from(input.order_kind),
+            expiration: input.expiration_timestamp,
+            quote_kind: input.quote_kind,
+            solver: H160(input.solver.0),
             // Even if the quote was verified at the time of creation
             // it might no longer be accurate.
             verified: false,
             interactions: input
-                .1
+                .interactions
                 .iter()
                 .map(|data| {
                     Ok(InteractionData {

@@ -71,7 +71,7 @@ impl QuoteStoring for Postgres {
             .context("failed finding quote by parameters")?;
 
         query_result
-            .map(|query_result| Ok((query_result.0.id, query_result.try_into()?)))
+            .map(|query_result| Ok((query_result.id, query_result.try_into()?)))
             .transpose()
     }
 }
