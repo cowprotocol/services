@@ -1,5 +1,6 @@
 //! A module for abstracting a component that can produce a quote with calldata
 //! for a specified token pair and amount.
+#![allow(clippy::needless_lifetimes)] // todo: migrate from derivative to derive_more
 
 pub mod external;
 
@@ -126,6 +127,8 @@ pub struct Trade {
     pub clearing_prices: HashMap<H160, U256>,
     /// How many units of gas this trade will roughly cost.
     pub gas_estimate: Option<u64>,
+    /// The onchain calls to run before sending user funds to the settlement
+    /// contract.
     pub pre_interactions: Vec<Interaction>,
     /// Interactions needed to produce the expected trade amount.
     pub interactions: Vec<Interaction>,
@@ -162,12 +165,11 @@ impl Trade {
                 .mul(&sell_price)
                 .checked_div(&buy_price)
                 .context("div by zero: buy price")?
-                .ceil(),
+                .ceil(), /* `ceil` is used to compute buy amount only: https://github.com/cowprotocol/contracts/blob/main/src/contracts/GPv2Settlement.sol#L389-L411 */
             OrderKind::Buy => order_amount
                 .mul(&buy_price)
                 .checked_div(&sell_price)
-                .context("div by zero: sell price")?
-                .ceil(),
+                .context("div by zero: sell price")?,
         };
 
         big_rational_to_u256(&out_amount).context("out amount is not a valid U256")

@@ -266,7 +266,12 @@ impl TradeVerifier {
             "verified quote",
         );
 
-        ensure_quote_accuracy(&self.quote_inaccuracy_limit, query, trade, &summary)
+        ensure_quote_accuracy(
+            &self.quote_inaccuracy_limit,
+            query,
+            trade.solver(),
+            &summary,
+        )
     }
 
     /// Configures all the state overrides that are needed to mock the given
@@ -675,7 +680,7 @@ impl SettleOutput {
 fn ensure_quote_accuracy(
     inaccuracy_limit: &BigRational,
     query: &PriceQuery,
-    trade: &TradeKind,
+    solver: H160,
     summary: &SettleOutput,
 ) -> std::result::Result<Estimate, Error> {
     // amounts verified by the simulation
@@ -706,7 +711,7 @@ fn ensure_quote_accuracy(
     Ok(Estimate {
         out_amount: summary.out_amount,
         gas: summary.gas_used.as_u64(),
-        solver: trade.solver(),
+        solver,
         verified: true,
     })
 }
@@ -733,13 +738,7 @@ enum Error {
 
 #[cfg(test)]
 mod tests {
-    use {
-        super::*,
-        crate::trade_finding::Trade,
-        app_data::AppDataHash,
-        model::order::{BuyTokenDestination, SellTokenSource},
-        std::str::FromStr,
-    };
+    use {super::*, std::str::FromStr};
 
     #[test]
     fn discards_inaccurate_quotes() {
@@ -758,6 +757,43 @@ mod tests {
             buy_token,
         };
 
+        // buy token is lost
+        let tokens_lost = hashmap! {
+            sell_token => BigRational::from_integer(500.into()),
+        };
+        let summary = SettleOutput {
+            gas_used: 0.into(),
+            out_amount: 2_000.into(),
+            tokens_lost,
+        };
+        let estimate = ensure_quote_accuracy(&low_threshold, &query, H160::zero(), &summary);
+        assert!(matches!(estimate, Err(Error::SimulationFailed(_))));
+
+        // sell token is lost
+        let tokens_lost = hashmap! {
+            buy_token => BigRational::from_integer(0.into()),
+        };
+        let summary = SettleOutput {
+            gas_used: 0.into(),
+            out_amount: 2_000.into(),
+            tokens_lost,
+        };
+        let estimate = ensure_quote_accuracy(&low_threshold, &query, H160::zero(), &summary);
+        assert!(matches!(estimate, Err(Error::SimulationFailed(_))));
+
+        // everything is in-place
+        let tokens_lost = hashmap! {
+            sell_token => BigRational::from_integer(400.into()),
+            buy_token => BigRational::from_integer(0.into()),
+        };
+        let summary = SettleOutput {
+            gas_used: 0.into(),
+            out_amount: 2_000.into(),
+            tokens_lost,
+        };
+        let estimate = ensure_quote_accuracy(&low_threshold, &query, H160::zero(), &summary);
+        assert!(estimate.is_ok());
+
         let tokens_lost = hashmap! {
             sell_token => BigRational::from_integer(500.into()),
             buy_token => BigRational::from_integer(0.into()),
@@ -769,12 +805,11 @@ mod tests {
             tokens_lost,
         };
 
-        let trade = TradeKind::Legacy(Default::default());
-        let estimate = ensure_quote_accuracy(&low_threshold, &query, &trade, &sell_more);
+        let estimate = ensure_quote_accuracy(&low_threshold, &query, H160::zero(), &sell_more);
         assert!(matches!(estimate, Err(Error::TooInaccurate)));
 
         // passes with slightly higher tolerance
-        let estimate = ensure_quote_accuracy(&high_threshold, &query, &trade, &sell_more);
+        let estimate = ensure_quote_accuracy(&high_threshold, &query, H160::zero(), &sell_more);
         assert!(estimate.is_ok());
 
         let tokens_lost = hashmap! {
@@ -788,11 +823,11 @@ mod tests {
             tokens_lost,
         };
 
-        let estimate = ensure_quote_accuracy(&low_threshold, &query, &trade, &pay_out_more);
+        let estimate = ensure_quote_accuracy(&low_threshold, &query, H160::zero(), &pay_out_more);
         assert!(matches!(estimate, Err(Error::TooInaccurate)));
 
         // passes with slightly higher tolerance
-        let estimate = ensure_quote_accuracy(&high_threshold, &query, &trade, &pay_out_more);
+        let estimate = ensure_quote_accuracy(&high_threshold, &query, H160::zero(), &pay_out_more);
         assert!(estimate.is_ok());
 
         let tokens_lost = hashmap! {
@@ -806,7 +841,7 @@ mod tests {
             tokens_lost,
         };
         // Ending up with surplus in the buffers is always fine
-        let estimate = ensure_quote_accuracy(&low_threshold, &query, &trade, &sell_less);
+        let estimate = ensure_quote_accuracy(&low_threshold, &query, H160::zero(), &sell_less);
         assert!(estimate.is_ok());
 
         let tokens_lost = hashmap! {
@@ -820,116 +855,7 @@ mod tests {
             tokens_lost,
         };
         // Ending up with surplus in the buffers is always fine
-        let estimate = ensure_quote_accuracy(&low_threshold, &query, &trade, &pay_out_less);
+        let estimate = ensure_quote_accuracy(&low_threshold, &query, H160::zero(), &pay_out_less);
         assert!(estimate.is_ok());
-    }
-
-    #[test]
-    fn ensure_quote_accuracy_with_jit_orders() {
-        // Inaccuracy limit of 10%
-        let low_threshold = big_decimal_to_big_rational(&BigDecimal::from_str("0.1").unwrap());
-        let high_threshold = big_decimal_to_big_rational(&BigDecimal::from_str("0.11").unwrap());
-
-        let sell_token: H160 = H160::from_low_u64_be(1);
-        let buy_token: H160 = H160::from_low_u64_be(2);
-
-        let mut clearing_prices = HashMap::new();
-        clearing_prices.insert(sell_token, U256::from(1u64));
-        clearing_prices.insert(buy_token, U256::from(2u64));
-
-        let query_with_out_amount = |kind: OrderKind| -> (PriceQuery, U256) {
-            let (in_amount, out_amount) = match kind {
-                OrderKind::Sell => (500u64.into(), 250u64.into()),
-                OrderKind::Buy => (250u64.into(), 500u64.into()),
-            };
-            let price_query = PriceQuery {
-                in_amount: NonZeroU256::new(in_amount).unwrap(),
-                kind,
-                sell_token,
-                buy_token,
-            };
-
-            (price_query, out_amount)
-        };
-
-        // The jit order should fully fill the query
-        let jit_executed_amount = |side: &dto::Side| -> U256 {
-            match side {
-                dto::Side::Sell => 250u64.into(),
-                dto::Side::Buy => 500u64.into(),
-            }
-        };
-
-        let jit_order = |side: dto::Side| -> dto::JitOrder {
-            dto::JitOrder {
-                sell_token: buy_token,                       // Solver sells buy token
-                buy_token: sell_token,                       // Solver buys sell token
-                executed_amount: jit_executed_amount(&side), // Fully fills the query
-                side,
-                sell_amount: 250u64.into(),
-                buy_amount: 500u64.into(),
-                receiver: H160::zero(),
-                valid_to: 0,
-                app_data: AppDataHash::default(),
-                partially_fillable: false,
-                sell_token_source: SellTokenSource::Erc20,
-                buy_token_destination: BuyTokenDestination::Erc20,
-                signature: vec![],
-                signing_scheme: SigningScheme::Eip1271,
-            }
-        };
-
-        let test_cases = [
-            (
-                query_with_out_amount(OrderKind::Sell),
-                jit_order(dto::Side::Sell),
-            ),
-            (
-                query_with_out_amount(OrderKind::Buy),
-                jit_order(dto::Side::Buy),
-            ),
-            (
-                query_with_out_amount(OrderKind::Sell),
-                jit_order(dto::Side::Buy),
-            ),
-            (
-                query_with_out_amount(OrderKind::Buy),
-                jit_order(dto::Side::Sell),
-            ),
-        ];
-
-        for ((query, out_amount), jit_order) in test_cases {
-            let trade_kind = TradeKind::Regular(Trade {
-                clearing_prices: clearing_prices.clone(),
-                gas_estimate: Some(50_000),
-                pre_interactions: vec![],
-                interactions: vec![],
-                solver: H160::from_low_u64_be(0x1234),
-                tx_origin: None,
-                jit_orders: vec![jit_order.clone()],
-            });
-
-            // The Settlement contract is not expected to lose any tokens, but we lose a bit
-            // to test the inaccuracy limit.
-            let tokens_lost = hashmap! {
-                sell_token => BigRational::from_integer(50.into()),
-                buy_token => BigRational::from_integer(25.into()),
-            };
-
-            let summary = SettleOutput {
-                gas_used: U256::from(50_000u64),
-                out_amount,
-                tokens_lost,
-            };
-
-            // The summary has 10% inaccuracy
-            let estimate = ensure_quote_accuracy(&low_threshold, &query, &trade_kind, &summary);
-            assert!(matches!(estimate, Err(Error::TooInaccurate)));
-
-            // The summary has less than 11% inaccuracy
-            let estimate =
-                ensure_quote_accuracy(&high_threshold, &query, &trade_kind, &summary).unwrap();
-            assert!(estimate.verified);
-        }
     }
 }
