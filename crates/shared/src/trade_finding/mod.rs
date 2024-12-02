@@ -127,6 +127,8 @@ pub struct Trade {
     pub clearing_prices: HashMap<H160, U256>,
     /// How many units of gas this trade will roughly cost.
     pub gas_estimate: Option<u64>,
+    /// The onchain calls to run before sending user funds to the settlement
+    /// contract.
     pub pre_interactions: Vec<Interaction>,
     /// Interactions needed to produce the expected trade amount.
     pub interactions: Vec<Interaction>,
