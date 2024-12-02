@@ -89,7 +89,7 @@ impl Competition {
     pub async fn solve(&self, auction: &Auction) -> Result<Option<Solved>, Error> {
         if self.settle_queue.capacity() == 0 {
             tracing::warn!("settlement queue is full; auction is rejected");
-            return Err(Error::SubmissionError);
+            return Err(Error::SettlementQueueIsFull);
         }
 
         let liquidity = match self.solver.liquidity() {
@@ -369,30 +369,30 @@ impl Competition {
                 submission_deadline,
                 response_sender,
             } = request;
-            if self.eth.current_block().borrow().number >= submission_deadline {
-                if let Err(err) = response_sender.send(Err(DeadlineExceeded.into())) {
-                    tracing::error!(
-                        ?err,
-                        "settle deadline exceeded. unable to return a response"
-                    );
+            let solver = self.solver.name().as_str();
+            async {
+                if self.eth.current_block().borrow().number >= submission_deadline {
+                    if let Err(err) = response_sender.send(Err(DeadlineExceeded.into())) {
+                        tracing::warn!(
+                            ?err,
+                            "settle deadline exceeded. unable to return a response"
+                        );
+                    }
+                    return;
                 }
-                continue;
-            }
-            let solver = self.solver.name().to_string();
-            let result = async {
+
                 observe::settling();
                 let result = self
                     .process_settle_request(auction_id, solution_id, submission_deadline)
                     .await;
                 observe::settled(self.solver.name(), &result);
-                result
+
+                if let Err(err) = response_sender.send(result) {
+                    tracing::error!(?err, "Failed to send /settle response");
+                }
             }
             .instrument(tracing::info_span!("/settle", solver, auction_id))
-            .await;
-
-            if let Err(err) = response_sender.send(result) {
-                tracing::error!(?err, "Failed to send /settle response");
-            }
+            .await
         }
     }
 
@@ -586,4 +586,6 @@ pub enum Error {
     Solver(#[from] solver::Error),
     #[error("failed to submit the solution")]
     SubmissionError,
+    #[error("too many pending settlements for the same solver")]
+    SettlementQueueIsFull,
 }

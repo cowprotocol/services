@@ -256,6 +256,10 @@ impl Ethereum {
             .ok()
             .map(|gas| gas.effective().0 .0)
     }
+
+    pub fn web3(&self) -> &DynWeb3 {
+        &self.web3
+    }
 }
 
 impl fmt::Debug for Ethereum {
