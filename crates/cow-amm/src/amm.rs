@@ -1,13 +1,15 @@
 use {
-    anyhow::Result,
+    anyhow::{Context, Result},
     app_data::AppDataHash,
     contracts::CowAmmLegacyHelper,
     ethcontract::{errors::MethodError, Address, Bytes, U256},
     model::{
         interaction::InteractionData,
         order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
-        signature::Signature,
+        signature::{hashed_eip712_message, Signature},
+        DomainSeparator,
     },
+    shared::signature_validator::{SignatureCheck, SignatureValidating},
 };
 
 #[derive(Clone, Debug)]
@@ -54,6 +56,33 @@ impl Amm {
             .await
     }
 
+    /// Generates a template order to rebalance the AMM but also verifies that
+    /// the signature is actually valid to protect against buggy helper
+    /// contracts.
+    pub async fn validated_template_order(
+        &self,
+        prices: Vec<U256>,
+        validator: &dyn SignatureValidating,
+        domain_separator: &DomainSeparator,
+    ) -> Result<TemplateOrder> {
+        let template = self.template_order(prices).await?;
+
+        // A buggy helper contract could return a signature that is actually not valid.
+        // To avoid issues caused by that we check the validity of the signature.
+        let hash = hashed_eip712_message(domain_separator, &template.order.hash_struct());
+        validator
+            .validate_signature_and_get_additional_gas(SignatureCheck {
+                signer: self.address(),
+                hash,
+                signature: template.signature.to_bytes(),
+                interactions: template.pre_interactions.clone(),
+            })
+            .await
+            .context("invalid signature")?;
+
+        Ok(template)
+    }
+
     /// Converts a successful response of the CowAmmHelper into domain types.
     /// Can be used for any contract that correctly implements the CoW AMM
     /// helper interface.
@@ -89,19 +118,6 @@ impl Amm {
         // will be concatenated in the encoding logic) so we discard the first 20 bytes.
         let signature = Signature::Eip1271(raw_signature.0.iter().skip(20).cloned().collect());
 
-        // A buggy helper contract could return a signature that is actually not valid.
-        // To avoid issues caused by that we check the validity of the signature.
-        if self
-            .contract
-            .is_valid_signature(Bytes(order.hash_struct()), Bytes(signature.to_bytes()))
-            .call()
-            .await?
-            .0
-            != VALID_SIGNATURE_RESULT
-        {
-            anyhow::bail!("invalid signature");
-        }
-
         Ok(TemplateOrder {
             order,
             signature,
@@ -110,10 +126,6 @@ impl Amm {
         })
     }
 }
-
-/// Series of bytes `isValidSignature()` should return in case of success as
-/// defined in the [EIP1271 spec](https://eips.ethereum.org/EIPS/eip-1271#specification).
-const VALID_SIGNATURE_RESULT: &[u8] = &[0x16, 0x26, 0xba, 0x7e];
 
 /// Order suggested by a CoW AMM helper contract to rebalance the AMM according
 /// to an external price vector.

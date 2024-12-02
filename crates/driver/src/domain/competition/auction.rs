@@ -14,6 +14,7 @@ use {
     futures::future::{join_all, BoxFuture, FutureExt, Shared},
     itertools::Itertools,
     model::{order::OrderKind, signature::Signature},
+    shared::signature_validator::{Contracts, SignatureValidating},
     std::{
         collections::{HashMap, HashSet},
         sync::{Arc, Mutex},
@@ -133,6 +134,7 @@ struct Inner {
     /// Order sorting strategies should be in the same order as the
     /// `order_priority_strategies` from the driver's config.
     order_sorting_strategies: Vec<Arc<dyn sorting::SortingStrategy>>,
+    signature_validator: Arc<dyn SignatureValidating>,
 }
 
 type BalanceGroup = (order::Trader, eth::TokenAddress, order::SellTokenBalance);
@@ -171,6 +173,7 @@ impl AuctionProcessor {
 
         let rt = tokio::runtime::Handle::current();
         let tokens: Tokens = auction.tokens().clone();
+        let signature_validator = lock.signature_validator.clone();
         let cow_amms = auction.surplus_capturing_jit_order_owners.clone();
         let mut orders = auction.orders.clone();
         let solver = *solver;
@@ -180,7 +183,7 @@ impl AuctionProcessor {
         // and we don't want to block the runtime for too long.
         let fut = tokio::task::spawn_blocking(move || {
             let start = std::time::Instant::now();
-            orders.extend(rt.block_on(Self::cow_amm_orders(&eth, &tokens, &cow_amms)));
+            orders.extend(rt.block_on(Self::cow_amm_orders(&eth, &tokens, &cow_amms, signature_validator.as_ref())));
             sorting::sort_orders(&mut orders, &tokens, &solver, &order_comparators);
             let mut balances =
                 rt.block_on(async { Self::fetch_balances(&eth, &orders).await });
@@ -329,8 +332,11 @@ impl AuctionProcessor {
         eth: &Ethereum,
         tokens: &Tokens,
         eligible_for_surplus: &HashSet<eth::Address>,
+        signature_validator: &dyn SignatureValidating,
     ) -> Vec<Order> {
         let cow_amms = eth.contracts().cow_amm_registry().amms().await;
+        let domain_separator = eth.contracts().settlement_domain_separator();
+        let domain_separator = model::DomainSeparator(domain_separator.0);
         let results: Vec<_> = futures::future::join_all(
             cow_amms
                 .into_iter()
@@ -356,7 +362,7 @@ impl AuctionProcessor {
                     Some((amm, prices))
                 })
                 .map(|(cow_amm, prices)| async move {
-                    (cow_amm.address(), cow_amm.template_order(prices).await)
+                    (cow_amm.address(), cow_amm.validated_template_order(prices, signature_validator, &domain_separator).await)
                 }),
         )
         .await;
@@ -461,11 +467,21 @@ impl AuctionProcessor {
             };
             order_sorting_strategies.push(comparator);
         }
+
+        let signature_validator = shared::signature_validator::validator(
+            eth.web3(),
+            Contracts {
+                settlement: eth.contracts().settlement().address(),
+                vault_relayer: eth.contracts().vault_relayer().0,
+            },
+        );
+
         Self(Arc::new(Mutex::new(Inner {
             auction: Id(0),
             fut: futures::future::pending().boxed().shared(),
             eth,
             order_sorting_strategies,
+            signature_validator,
         })))
     }
 }
