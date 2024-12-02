@@ -1,3 +1,4 @@
+use std::time::Duration;
 use {
     crate::{
         domain::competition::order,
@@ -9,7 +10,7 @@ use {
     },
     futures::future::join_all,
     itertools::Itertools,
-    std::collections::HashSet,
+    std::{collections::HashSet, sync::Arc},
     web3::Transport,
 };
 
@@ -117,14 +118,19 @@ async fn high_gas_limit() {
 #[tokio::test]
 #[ignore]
 async fn discards_excess_settle_requests() {
-    let test = tests::setup()
-        .allow_multiple_solve_requests()
-        .pool(ab_pool())
-        .order(ab_order())
-        .solution(ab_solution())
-        .solve_deadline_timeout(chrono::Duration::seconds(4))
-        .done()
-        .await;
+    let test = Arc::new(
+        tests::setup()
+            .allow_multiple_solve_requests()
+            .pool(ab_pool())
+            .order(ab_order())
+            .solution(ab_solution())
+            .rpc_args(vec!["--no-mining".to_string()])
+            .solve_deadline_timeout(chrono::Duration::seconds(4))
+            .done()
+            .await,
+    );
+
+    test.mint_block().await.unwrap();
 
     // MAX_SOLUTION_STORAGE = 5. Since this is hardcoded, no more solutions can be
     // stored.
@@ -148,9 +154,23 @@ async fn discards_excess_settle_requests() {
     assert_eq!(unique_solutions_count, solution_ids.len());
 
     // `collect_vec` is required to receive results in the same order.
-    let results = join_all(solution_ids.iter().map(|id| test.settle(id)).collect_vec()).await;
+    let settlements = {
+        let test_clone = Arc::clone(&test);
+        solution_ids
+            .iter()
+            .cloned()
+            .map(move |id| {
+                let test_clone = Arc::clone(&test_clone);
+                async move { test_clone.settle(&id).await }
+            })
+            .collect_vec()
+    };
+    let results_fut = tokio::spawn(join_all(settlements));
 
-    for (index, result) in results.into_iter().enumerate() {
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    test.mint_block().await.unwrap();
+
+    for (index, result) in results_fut.await.unwrap().into_iter().enumerate() {
         match index {
             // The first must be settled.
             0 => {
@@ -171,18 +191,23 @@ async fn discards_excess_settle_requests() {
 #[tokio::test]
 #[ignore]
 async fn accepts_new_settle_requests_after_timeout() {
-    let test = tests::setup()
-        .allow_multiple_solve_requests()
-        .pool(ab_pool())
-        .order(ab_order())
-        .solution(ab_solution())
-        .solve_deadline_timeout(chrono::Duration::seconds(4))
-        .done()
-        .await;
+    let test = Arc::new(
+        tests::setup()
+            .allow_multiple_solve_requests()
+            .pool(ab_pool())
+            .order(ab_order())
+            .solution(ab_solution())
+            .rpc_args(vec!["--no-mining".to_string()])
+            .solve_deadline_timeout(chrono::Duration::seconds(4))
+            .done()
+            .await,
+    );
+
+    test.mint_block().await.unwrap();
 
     // MAX_SOLUTION_STORAGE = 5. Since this is hardcoded, no more solutions can be
     // stored.
-    let solution_id = join_all(vec![
+    let solution_ids = join_all(vec![
         test.solve(),
         test.solve(),
         test.solve(),
@@ -194,24 +219,32 @@ async fn accepts_new_settle_requests_after_timeout() {
     .map(|res| res.ok().id())
     .collect::<Vec<_>>();
 
-    let unique_solutions_count = solution_id
+    let unique_solutions_count = solution_ids
         .clone()
         .into_iter()
         .collect::<HashSet<_>>()
         .len();
-    assert_eq!(unique_solutions_count, solution_id.len());
+    assert_eq!(unique_solutions_count, solution_ids.len());
 
     // Send only first 4 settle requests. `collect_vec` is required to receive
     // results in the same order.
-    let results = join_all(
-        solution_id[..4]
+    let first_solutions = {
+        let test_clone = Arc::clone(&test);
+        solution_ids[..4]
             .iter()
-            .map(|id| test.settle(id))
-            .collect_vec(),
-    )
-    .await;
+            .cloned()
+            .map(move |id| {
+                let test_clone = Arc::clone(&test_clone);
+                async move { test_clone.settle(&id).await }
+            })
+            .collect_vec()
+    };
+    let results_fut = tokio::spawn(join_all(first_solutions));
 
-    for (index, result) in results.into_iter().enumerate() {
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    test.mint_block().await.unwrap();
+
+    for (index, result) in results_fut.await.unwrap().into_iter().enumerate() {
         match index {
             // The first must be settled.
             0 => {
@@ -232,7 +265,7 @@ async fn accepts_new_settle_requests_after_timeout() {
     tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
 
     // Now we send the last settlement request.
-    test.settle(&solution_id[4])
+    test.settle(&solution_ids[4])
         .await
         .err()
         .kind("FailedToSubmit");

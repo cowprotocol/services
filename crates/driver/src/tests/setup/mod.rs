@@ -46,6 +46,7 @@ use {
         path::PathBuf,
         str::FromStr,
     },
+    web3::Error,
 };
 
 mod blockchain;
@@ -1173,6 +1174,10 @@ impl Test {
     /// Default value is set by Setup builder.
     pub fn set_auction_id(&mut self, auction_id: i64) {
         self.auction_id = auction_id;
+    }
+
+    pub async fn mint_block(&self) -> Result<(), Error> {
+        self.blockchain.mint_block().await
     }
 }
 

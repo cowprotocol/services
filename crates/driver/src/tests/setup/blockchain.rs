@@ -12,7 +12,7 @@ use {
     secp256k1::SecretKey,
     serde_json::json,
     std::collections::HashMap,
-    web3::signing::Key,
+    web3::{signing::Key, Error, Transport},
 };
 
 // TODO Possibly might be a good idea to use an enum for tokens instead of
@@ -856,6 +856,14 @@ impl Blockchain {
             "WETH" | "ETH" => self.weth.address(),
             _ => self.tokens.get(token).unwrap().address(),
         }
+    }
+
+    pub async fn mint_block(&self) -> Result<(), Error> {
+        self.web3
+            .transport()
+            .execute("anvil_mine", Default::default())
+            .await
+            .map(|_| ())
     }
 }
 
