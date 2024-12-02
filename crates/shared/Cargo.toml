@@ -21,11 +21,11 @@ clap = { workspace = true }
 contracts = { path = "../contracts" }
 dashmap = "6.1.0"
 database = { path = "../database" }
+derive_more = { workspace = true }
 ttl_cache = "0.5"
 derivative = { workspace = true }
 ethcontract = { workspace = true }
 ethrpc = { path = "../ethrpc" }
-flate2 = { workspace = true }
 futures = { workspace = true }
 gas-estimation = { workspace = true }
 observe = { path = "../observe" }
@@ -54,18 +54,14 @@ serde_json = { workspace = true }
 serde_with = { workspace = true }
 strum = { workspace = true }
 thiserror = { workspace = true }
-time = { workspace = true }
 tokio = { workspace = true, features = ["macros", "time"] }
-tokio-stream = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt", "time"] }
 url = { workspace = true }
-warp = { workspace = true }
 web3 = { workspace = true }
 
 [dev-dependencies]
 async-stream = "0.3.5"
-tempfile = { workspace = true }
 ethcontract-mock = { workspace = true }
 regex = { workspace = true }
 testlib = { path = "../testlib" }
