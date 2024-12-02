@@ -711,4 +711,66 @@ mod tests {
         let interactions = get_quote_interactions(&mut db, id).await.unwrap();
         assert!(interactions.is_empty());
     }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_get_quote_with_interactions_by_id() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let now = low_precision_now();
+        let mut quote = Quote {
+            id: Default::default(),
+            sell_token: ByteArray([1; 20]),
+            buy_token: ByteArray([2; 20]),
+            sell_amount: 3.into(),
+            buy_amount: 4.into(),
+            gas_amount: 5.,
+            gas_price: 6.,
+            sell_token_price: 7.,
+            order_kind: OrderKind::Sell,
+            expiration_timestamp: now,
+            quote_kind: QuoteKind::Standard,
+            solver: ByteArray([1; 20]),
+            verified: false,
+        };
+        // store quote in database
+        let id = save(&mut db, &quote).await.unwrap();
+        quote.id = id;
+
+        let quote_interactions = [
+            QuoteInteraction {
+                quote_id: id,
+                index: 0,
+                target: ByteArray([1; 20]),
+                value: 2.into(),
+                call_data: vec![3; 20],
+            },
+            QuoteInteraction {
+                quote_id: id,
+                index: 1,
+                target: ByteArray([1; 20]),
+                value: 2.into(),
+                call_data: vec![3; 20],
+            },
+        ];
+        // store interactions for the quote in database
+        insert_quote_interactions(&mut db, &quote_interactions)
+            .await
+            .unwrap();
+
+        let (returned_quote, interactions) = get_quote_with_interactions(&mut db, id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(returned_quote, quote);
+        assert_eq!(interactions.len(), 2);
+        for i in [0, 1] {
+            assert_eq!(
+                interactions.iter().find(|val| val.index == i).unwrap(),
+                &quote_interactions[i as usize]
+            );
+        }
+    }
 }
