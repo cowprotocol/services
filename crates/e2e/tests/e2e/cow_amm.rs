@@ -934,8 +934,9 @@ async fn cow_amm_opposite_direction(web3: Web3) {
         quote_response.quote.buy_token,
         onchain.contracts().weth.address()
     );
+    // Ensure the amounts are the same as the solution proposes.
     assert_eq!(quote_response.quote.sell_amount, executed_amount);
-    assert!(quote_response.quote.buy_amount >= U256::exp10(17));
+    assert_eq!(quote_response.quote.buy_amount, U256::exp10(17));
 
     // Place user order where bob sells DAI to buy WETH (opposite direction)
     let user_order = OrderCreation {
