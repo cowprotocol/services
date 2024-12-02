@@ -184,7 +184,9 @@ impl QuoteWithInteraction {
         }
     }
 
-    fn to_quote_with_interactions(items: &[QuoteWithInteraction]) -> Option<QuoteWithInteractions> {
+    fn build_quote_with_interactions(
+        items: &[QuoteWithInteraction],
+    ) -> Option<QuoteWithInteractions> {
         items.first().map(|first_item| {
             (
                 first_item.to_quote(),
@@ -209,7 +211,7 @@ pub async fn get_quote_with_interactions(
     WHERE id = $1
     "#;
 
-    Ok(QuoteWithInteraction::to_quote_with_interactions(
+    Ok(QuoteWithInteraction::build_quote_with_interactions(
         &sqlx::query_as(QUERY).bind(id).fetch_all(ex).await?,
     ))
 }
@@ -250,7 +252,7 @@ LIMIT 1
         .fetch_all(ex)
         .await?;
 
-    Ok(QuoteWithInteraction::to_quote_with_interactions(&result))
+    Ok(QuoteWithInteraction::build_quote_with_interactions(&result))
 }
 
 pub async fn remove_expired_quotes(
