@@ -1856,6 +1856,7 @@ dependencies = [
  "app-data",
  "autopilot",
  "axum",
+ "bigdecimal",
  "chrono",
  "clap",
  "contracts",
