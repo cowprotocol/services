@@ -262,7 +262,7 @@ struct SolverConfig {
     response_size_limit_max_bytes: usize,
 
     /// The maximum number of `/settle` requests that can be queued up
-    /// before the driver starts dropping new requests.
+    /// before the driver starts dropping new `/solve` requests.
     #[serde(default = "default_settle_queue_size")]
     settle_queue_size: usize,
 }
