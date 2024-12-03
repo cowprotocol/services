@@ -2,7 +2,7 @@
 
 use {
     crate::domain::eth,
-    bigdecimal::{num_bigint::ToBigInt, BigDecimal},
+    bigdecimal::BigDecimal,
     ethereum_types::U256,
     num::{rational::Ratio, BigInt, BigUint, One},
 };
@@ -43,22 +43,6 @@ pub fn u256_to_biguint(i: &U256) -> BigUint {
     let mut bytes = [0_u8; 32];
     i.to_big_endian(&mut bytes);
     BigUint::from_bytes_be(&bytes)
-}
-
-pub fn u256_to_bigdecimal(i: &U256) -> BigDecimal {
-    BigDecimal::new(u256_to_biguint(i).into(), 0)
-}
-
-pub fn bigint_to_u256(i: &BigInt) -> Option<U256> {
-    if i.sign() == num::bigint::Sign::Minus {
-        return None;
-    }
-    biguint_to_u256(i.magnitude())
-}
-
-pub fn bigdecimal_to_u256(d: &BigDecimal) -> Option<U256> {
-    let d = d.to_bigint()?;
-    bigint_to_u256(&d)
 }
 
 /// Converts a `BigDecimal` amount in Ether units to wei.
