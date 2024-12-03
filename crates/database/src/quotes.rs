@@ -98,62 +98,6 @@ RETURNING id
     Ok(id)
 }
 
-pub async fn get(ex: &mut PgConnection, id: QuoteId) -> Result<Option<Quote>, sqlx::Error> {
-    const QUERY: &str = r#"
-SELECT *
-FROM quotes
-WHERE id = $1
-    "#;
-    sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
-}
-
-/// Fields for searching stored quotes.
-#[derive(Clone)]
-pub struct QuoteSearchParameters {
-    pub sell_token: Address,
-    pub buy_token: Address,
-    pub sell_amount_0: BigDecimal,
-    pub sell_amount_1: BigDecimal,
-    pub buy_amount: BigDecimal,
-    pub kind: OrderKind,
-    pub expiration: DateTime<Utc>,
-    pub quote_kind: QuoteKind,
-}
-
-pub async fn find(
-    ex: &mut PgConnection,
-    params: &QuoteSearchParameters,
-) -> Result<Option<Quote>, sqlx::Error> {
-    const QUERY: &str = r#"
-SELECT *
-FROM quotes
-WHERE
-    sell_token = $1 AND
-    buy_token = $2 AND
-    (
-        (order_kind = 'sell' AND sell_amount = $3) OR
-        (order_kind = 'sell' AND sell_amount = $4) OR
-        (order_kind = 'buy' AND buy_amount = $5)
-    ) AND
-    order_kind = $6 AND
-    expiration_timestamp >= $7 AND
-    quote_kind = $8
-ORDER BY gas_amount * gas_price * sell_token_price ASC
-LIMIT 1
-    "#;
-    sqlx::query_as(QUERY)
-        .bind(params.sell_token)
-        .bind(params.buy_token)
-        .bind(&params.sell_amount_0)
-        .bind(&params.sell_amount_1)
-        .bind(&params.buy_amount)
-        .bind(params.kind)
-        .bind(params.expiration)
-        .bind(&params.quote_kind)
-        .fetch_optional(ex)
-        .await
-}
-
 #[derive(Clone, Debug, PartialEq)]
 pub struct QuoteWithInteractions {
     pub id: QuoteId,
@@ -228,6 +172,19 @@ pub async fn get_quote_with_interactions(
     .bind(id)
     .fetch_optional(ex)
     .await
+}
+
+/// Fields for searching stored quotes.
+#[derive(Clone)]
+pub struct QuoteSearchParameters {
+    pub sell_token: Address,
+    pub buy_token: Address,
+    pub sell_amount_0: BigDecimal,
+    pub sell_amount_1: BigDecimal,
+    pub buy_amount: BigDecimal,
+    pub kind: OrderKind,
+    pub expiration: DateTime<Utc>,
+    pub quote_kind: QuoteKind,
 }
 
 pub async fn find_quote_with_interactions(
@@ -328,18 +285,6 @@ pub async fn insert_quote_interactions(
     Ok(())
 }
 
-pub async fn get_quote_interactions(
-    ex: &mut PgConnection,
-    quote_id: QuoteId,
-) -> Result<Vec<QuoteInteraction>, sqlx::Error> {
-    const QUERY: &str = r#"
-SELECT *
-FROM quote_interactions
-WHERE quote_id = $1
-        "#;
-    sqlx::query_as(QUERY).bind(quote_id).fetch_all(ex).await
-}
-
 #[cfg(test)]
 mod tests {
     use {
@@ -348,6 +293,30 @@ mod tests {
         chrono::Duration,
         sqlx::{types::chrono::TimeZone, Connection},
     };
+
+    pub async fn get_quote(
+        ex: &mut PgConnection,
+        id: QuoteId,
+    ) -> Result<Option<Quote>, sqlx::Error> {
+        const QUERY: &str = r#"
+    SELECT *
+    FROM quotes
+    WHERE id = $1
+        "#;
+        sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
+    }
+
+    pub async fn get_quote_interactions(
+        ex: &mut PgConnection,
+        quote_id: QuoteId,
+    ) -> Result<Vec<QuoteInteraction>, sqlx::Error> {
+        const QUERY: &str = r#"
+        SELECT *
+        FROM quote_interactions
+        WHERE quote_id = $1
+        "#;
+        sqlx::query_as(QUERY).bind(quote_id).fetch_all(ex).await
+    }
 
     /// The postgres database in our CI has different datetime precision than
     /// the `DateTime` uses. This leads to issues comparing round-tripped data.
@@ -381,12 +350,12 @@ mod tests {
         };
         let id = save(&mut db, &quote).await.unwrap();
         quote.id = id;
-        assert_eq!(get(&mut db, id).await.unwrap().unwrap(), quote);
+        assert_eq!(get_quote(&mut db, id).await.unwrap().unwrap(), quote);
 
         remove_expired_quotes(&mut db, now + Duration::seconds(30))
             .await
             .unwrap();
-        assert_eq!(get(&mut db, id).await.unwrap(), None);
+        assert_eq!(get_quote(&mut db, id).await.unwrap(), None);
     }
 
     #[tokio::test]
@@ -479,11 +448,14 @@ mod tests {
             quote_kind: QuoteKind::Standard,
         };
         assert_eq!(
-            find(&mut db, &search_a).await.unwrap().unwrap(),
-            quotes_a[0],
+            find_quote_with_interactions(&mut db, &search_a)
+                .await
+                .unwrap()
+                .unwrap(),
+            quotes_a[0].to_quote_with_interactions(),
         );
         assert_eq!(
-            find(
+            find_quote_with_interactions(
                 &mut db,
                 &QuoteSearchParameters {
                     expiration: now + Duration::seconds(30),
@@ -493,12 +465,12 @@ mod tests {
             .await
             .unwrap()
             .unwrap(),
-            quotes_a[1]
+            quotes_a[1].to_quote_with_interactions()
         );
 
         // Token A has readings for sell + fee amount equal to quoted amount.
         assert_eq!(
-            find(
+            find_quote_with_interactions(
                 &mut db,
                 &QuoteSearchParameters {
                     sell_amount_0: quote_a.sell_amount.clone() - BigDecimal::from(1),
@@ -509,12 +481,12 @@ mod tests {
             .await
             .unwrap()
             .unwrap(),
-            quotes_a[0],
+            quotes_a[0].to_quote_with_interactions(),
         );
 
         // Token A has no reading for wrong filter
         assert_eq!(
-            find(
+            find_quote_with_interactions(
                 &mut db,
                 &QuoteSearchParameters {
                     sell_amount_0: quote_a.sell_amount.clone() - BigDecimal::from(1),

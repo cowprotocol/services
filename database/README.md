@@ -277,8 +277,7 @@ Indexes:
 
 ### order\_quote\_interactions
 
-Solver responding to quote request provides a list of interactions which need to be executed to fulfill the quote. When order is created
-these interactions are copied from quote. These interactions are stored persistently and can be used to audit auction winning order.
+This table contains all interactions provided by the Solver in response to the /quote API request. Interactions are saved persistently when creating an order from a quote. This data can be used to audit auction winning order.
 
  Column             | Type    | Nullable | Details
 --------------------|---------|----------|--------
@@ -365,9 +364,8 @@ Indexes:
 
 ### quote\_interactions
 
-Solver responding to quote request provides a list of interactions which need to be executed to fulfill the quote. This table stores
-these interactions. Later, when order is created basing on this quote, interactions are copied to `order_quote_interactions`.
-Data in this table is removed together with the referenced quote, usually at quote expiration.
+This table contains all interactions provided by the Solver in response to the /quote API request. When an order is created based on a quote, interactions of that particular quote is stored in `order_quote_interactions` table.
+Data in this table is removed at referenced quote expiration.
 
  Column             | Type    | Nullable | Details
 --------------------|---------|----------|--------
