@@ -30,15 +30,6 @@ impl Interaction {
         }
     }
 
-    /// The assets output by this interaction. These assets are sent into the
-    /// settlement contract when the interaction executes.
-    pub fn outputs(&self) -> Vec<eth::Asset> {
-        match self {
-            Interaction::Custom(custom) => custom.outputs.clone(),
-            Interaction::Liquidity(liquidity) => vec![liquidity.output],
-        }
-    }
-
     /// Returns the ERC20 approvals required for executing this interaction
     /// onchain.
     pub fn allowances(&self) -> Vec<eth::allowance::Required> {

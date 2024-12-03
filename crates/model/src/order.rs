@@ -81,12 +81,6 @@ impl Order {
     pub fn is_limit_order(&self) -> bool {
         matches!(self.metadata.class, OrderClass::Limit)
     }
-
-    /// For some orders the protocol doesn't precompute a fee. Instead solvers
-    /// are supposed to compute a reasonable fee themselves.
-    pub fn solver_determines_fee(&self) -> bool {
-        self.is_limit_order()
-    }
 }
 
 #[derive(Clone, Default, Debug)]
@@ -130,11 +124,6 @@ impl OrderBuilder {
 
     pub fn with_fee_amount(mut self, fee_amount: U256) -> Self {
         self.0.data.fee_amount = fee_amount;
-        self
-    }
-
-    pub fn with_full_fee_amount(mut self, full_fee_amount: U256) -> Self {
-        self.0.metadata.full_fee_amount = full_fee_amount;
         self
     }
 
@@ -192,16 +181,6 @@ impl OrderBuilder {
 
     pub fn with_class(mut self, class: OrderClass) -> Self {
         self.0.metadata.class = class;
-        self
-    }
-
-    pub fn with_solver_fee(mut self, fee: U256) -> Self {
-        self.0.metadata.solver_fee = fee;
-        self
-    }
-
-    pub fn with_full_app_data(mut self, full_app_data: String) -> Self {
-        self.0.metadata.full_app_data = Some(full_app_data);
         self
     }
 

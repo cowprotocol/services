@@ -11,7 +11,7 @@ use {
     ethcontract::{H160, U256},
     lazy_static::lazy_static,
     model::order::BUY_ETH_ADDRESS,
-    num::{BigInt, BigRational, CheckedDiv, One as _, ToPrimitive as _},
+    num::{BigInt, BigRational, One as _, ToPrimitive as _},
     std::collections::{BTreeMap, HashMap},
 };
 
@@ -63,61 +63,6 @@ impl ExternalPrices {
     // is needed in order to buy 1 atom of the token T
     pub fn price(&self, token: &H160) -> Option<&BigRational> {
         self.0.get(token)
-    }
-
-    /// Converts a token amount into its native asset equivalent.
-    ///
-    /// # Panic
-    ///
-    /// This method panics if the specified token does not have a price.
-    pub fn get_native_amount(&self, token: H160, amount: BigRational) -> BigRational {
-        self.try_get_native_amount(token, amount)
-            .unwrap_or_else(|| panic!("missing price for {token}"))
-    }
-
-    /// Converts a token amount into its native asset equivalent.
-    ///
-    /// This method is similar to [`get_native_amount`] except that it will
-    /// return `None` if the specified token does not have a price instead of
-    /// panicking.
-    pub fn try_get_native_amount(&self, token: H160, amount: BigRational) -> Option<BigRational> {
-        Some(self.0.get(&token)? * amount)
-    }
-
-    /// Converts a native asset amount into an amount of equivalent value in the
-    /// specified token.
-    ///
-    /// # Panic
-    ///
-    /// This method panics if the specified token does not have a price.
-    pub fn get_token_amount(&self, amount: &BigRational, token: H160) -> BigRational {
-        self.try_get_token_amount(amount, token)
-            .unwrap_or_else(|| panic!("missing price for {token}"))
-    }
-
-    /// Converts a native asset amount into an amount of equivalent value in the
-    /// specified token.
-    ///
-    /// This method is similar to [`get_native_amount`] except that it will
-    /// return `None` if the specified token does not have a price instead of
-    /// panicking.
-    pub fn try_get_token_amount(&self, amount: &BigRational, token: H160) -> Option<BigRational> {
-        amount.checked_div(self.0.get(&token)?)
-    }
-
-    /// Converts a set of external prices into prices for the HTTP solver.
-    ///
-    /// Specifically the HTTP solver expects prices to be in `f64` and there not
-    /// to be an entry for `BUY_ETH_ADDRESS` since orders are already normalized
-    /// to use the native wrapped token.
-    pub fn into_http_solver_prices(&self) -> HashMap<H160, f64> {
-        let mut prices = self
-            .0
-            .iter()
-            .filter_map(|(token, price)| Some((*token, price.to_f64()?)))
-            .collect::<HashMap<H160, f64>>();
-        prices.remove(&BUY_ETH_ADDRESS);
-        prices
     }
 }
 

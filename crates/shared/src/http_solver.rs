@@ -1,16 +1,8 @@
 pub mod model {
-    use {
-        ethcontract::H160,
-        number::serialization::HexOrDecimalU256,
-        primitive_types::U256,
-        serde::{Deserialize, Serialize},
-        serde_with::serde_as,
-    };
+    use {ethcontract::H160, primitive_types::U256, serde::Serialize};
 
-    #[serde_as]
-    #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Default, Eq, PartialEq)]
     pub struct TokenAmount {
-        #[serde_as(as = "HexOrDecimalU256")]
         pub amount: U256,
         pub token: H160,
     }
