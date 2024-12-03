@@ -52,6 +52,7 @@ pub struct SolverSettlement {
     #[serde_as(as = "BTreeMap<_, HexOrDecimalU256>")]
     pub clearing_prices: BTreeMap<H160, U256>,
     pub orders: Vec<Order>,
+    #[serde(default)]
     pub is_winner: bool,
 }
 
