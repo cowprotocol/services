@@ -528,6 +528,14 @@ impl Price {
     /// The base Ether amount for pricing.
     const BASE: u128 = 10_u128.pow(18);
 
+    pub fn new(value: eth::Ether) -> Result<Self, InvalidPrice> {
+        if value.0.is_zero() {
+            Err(InvalidPrice)
+        } else {
+            Ok(Self(value))
+        }
+    }
+
     /// Apply this price to some token amount, converting that token into ETH.
     ///
     /// # Examples
