@@ -71,15 +71,6 @@ enum TokenReference {
     },
 }
 
-impl Default for TokenReference {
-    fn default() -> Self {
-        Self::Indexed {
-            sell_token_index: 0,
-            buy_token_index: 0,
-        }
-    }
-}
-
 /// An trade that was added to the settlement encoder.
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct EncoderTrade {
@@ -164,12 +155,6 @@ impl SettlementEncoder {
             sell_token_price,
             buy_token_price,
         }
-    }
-
-    pub(crate) fn has_interactions(&self) -> bool {
-        self.execution_plan
-            .iter()
-            .any(|(_, internalizable)| !internalizable)
     }
 
     /// Adds an order trade using the uniform clearing prices for sell and buy
