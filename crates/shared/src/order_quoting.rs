@@ -633,7 +633,8 @@ pub fn quote_kind_from_signing_scheme(scheme: &QuoteSigningScheme) -> QuoteKind 
     }
 }
 
-#[derive(serde::Serialize)]
+/// Used to store in database any quote metadata.
+#[derive(Debug, serde::Serialize)]
 pub struct QuoteMetadata {
     pub interactions: Vec<InteractionData>,
 }

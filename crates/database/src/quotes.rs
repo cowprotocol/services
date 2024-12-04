@@ -34,7 +34,7 @@ pub struct Quote {
     pub expiration_timestamp: DateTime<Utc>,
     pub quote_kind: QuoteKind,
     pub solver: Address,
-    pub verified: Option<bool>, // Null value support
+    pub verified: Option<bool>,              // Null value support
     pub metadata: Option<serde_json::Value>, // Null value support
 }
 
@@ -73,7 +73,7 @@ RETURNING id
         .bind(&quote.quote_kind)
         .bind(quote.solver)
         .bind(quote.verified)
-        .bind(sqlx::types::Json(&quote.metadata))
+        .bind(&quote.metadata)
         .fetch_one(ex)
         .await?;
     Ok(id)

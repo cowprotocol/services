@@ -329,8 +329,8 @@ pub struct Quote {
     pub sell_amount: BigDecimal,
     pub buy_amount: BigDecimal,
     pub solver: Address,
-    pub verified: Option<bool>, // Null value support
-    pub metadata: Option<serde_json::Value>,  // Null value support
+    pub verified: Option<bool>,              // Null value support
+    pub metadata: Option<serde_json::Value>, // Null value support
 }
 
 pub async fn insert_quotes(ex: &mut PgConnection, quotes: &[Quote]) -> Result<(), sqlx::Error> {
