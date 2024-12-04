@@ -80,10 +80,14 @@ contract Trader {
             uint256 availableNativeToken = IERC20(sellToken).balanceOf(address(this));
             if (availableNativeToken < sellAmount) {
                 uint256 amountToWrap = sellAmount - availableNativeToken;
-                require(address(this).balance >= amountToWrap, "not enough ETH to wrap");
+                if (address(this).balance < amountToWrap) {
+                    amountToWrap = address(this).balance;
+                }
                 // Simulate wrapping the missing `ETH` so the user doesn't have to spend gas
                 // on that just to get a quote. If they are happy with the quote and want to
-                // create an order they will actually have to do the wrapping, though.
+                // create an order they will actually have to do the wrapping, though. We
+                // only wrap up until the available balance to allow for balance overrides
+                // to fake the remaining amount.
                 INativeERC20(nativeToken).deposit{value: amountToWrap}();
             }
         }

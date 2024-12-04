@@ -10,7 +10,12 @@ use {
     number::nonzero::U256 as NonZeroU256,
     shared::{
         price_estimation::{
-            trade_verifier::{PriceQuery, TradeVerifier, TradeVerifying},
+            trade_verifier::{
+                balance_overrides::BalanceOverrides,
+                PriceQuery,
+                TradeVerifier,
+                TradeVerifying,
+            },
             Estimate,
             Verification,
         },
@@ -110,6 +115,7 @@ async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
         web3.clone(),
         Arc::new(web3.clone()),
         Arc::new(web3.clone()),
+        Arc::new(BalanceOverrides::default()),
         block_stream,
         onchain.contracts().gp_settlement.address(),
         onchain.contracts().weth.address(),
@@ -271,30 +277,71 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
     let [token] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
         .await;
+    let weth = &onchain.contracts().weth;
 
     tracing::info!("Starting services.");
     let services = Services::new(&onchain).await;
     services
         .start_protocol_with_args(
             ExtraServiceArgs {
-                api: vec![format!(
+                api: vec![
                     // The OpenZeppelin `ERC20Mintable` token uses a mapping in
                     // the first (0'th) storage slot for balances.
-                    "--quote-token-balance-overrides={:?}@0",
-                    token.address()
-                )],
+                    format!("--quote-token-balance-overrides={:?}@0", token.address()),
+                    // We don't configure the WETH token and instead rely on
+                    // auto-detection for balance overrides.
+                    "--quote-autodetect-token-balance-overrides=true".to_string(),
+                ],
                 ..Default::default()
             },
             solver,
         )
         .await;
 
-    // quote where the trader has no balances or approval set.
+    // quote where the trader has no balances or approval set from TOKEN->WETH
+    assert_eq!(
+        (
+            token.balance_of(trader.address()).call().await.unwrap(),
+            token
+                .allowance(trader.address(), onchain.contracts().allowance)
+                .call()
+                .await
+                .unwrap(),
+        ),
+        (U256::zero(), U256::zero()),
+    );
     let response = services
         .submit_quote(&OrderQuoteRequest {
             from: trader.address(),
             sell_token: token.address(),
-            buy_token: onchain.contracts().weth.address(),
+            buy_token: weth.address(),
+            side: OrderQuoteSide::Sell {
+                sell_amount: SellAmount::BeforeFee {
+                    value: to_wei(1).try_into().unwrap(),
+                },
+            },
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert!(response.verified);
+
+    // quote where the trader has no balances or approval set from WETH->TOKEN
+    assert_eq!(
+        (
+            weth.balance_of(trader.address()).call().await.unwrap(),
+            weth.allowance(trader.address(), onchain.contracts().allowance)
+                .call()
+                .await
+                .unwrap(),
+        ),
+        (U256::zero(), U256::zero()),
+    );
+    let response = services
+        .submit_quote(&OrderQuoteRequest {
+            from: trader.address(),
+            sell_token: weth.address(),
+            buy_token: token.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
                     value: to_wei(1).try_into().unwrap(),
