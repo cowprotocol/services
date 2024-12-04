@@ -147,7 +147,7 @@ pub struct Arguments {
     /// A list of drivers in the following format:
     /// `<NAME>|<URL>|<SUBMISSION_ADDRESS>|<FAIRNESS_THRESHOLD>`
     #[clap(long, env, use_value_delimiter = true)]
-    pub drivers: Vec<ExternalSolver>,
+    pub drivers: Vec<Solver>,
 
     /// The maximum number of blocks to wait for a settlement to appear on
     /// chain.
@@ -376,7 +376,7 @@ impl std::fmt::Display for Arguments {
 
 /// External solver driver configuration
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct ExternalSolver {
+pub struct Solver {
     pub name: String,
     pub url: Url,
     pub submission_account: Account,
@@ -409,13 +409,13 @@ impl FromStr for Arn {
     }
 }
 
-impl Display for ExternalSolver {
+impl Display for Solver {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}({})", self.name, self.url)
     }
 }
 
-impl FromStr for ExternalSolver {
+impl FromStr for Solver {
     type Err = anyhow::Error;
 
     fn from_str(solver: &str) -> anyhow::Result<Self> {
@@ -632,8 +632,8 @@ mod test {
     #[test]
     fn parse_driver_submission_account_address() {
         let argument = "name1|http://localhost:8080|0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
-        let driver = ExternalSolver::from_str(argument).unwrap();
-        let expected = ExternalSolver {
+        let driver = Solver::from_str(argument).unwrap();
+        let expected = Solver {
             name: "name1".into(),
             url: Url::parse("http://localhost:8080").unwrap(),
             fairness_threshold: None,
@@ -647,8 +647,8 @@ mod test {
     #[test]
     fn parse_driver_submission_account_arn() {
         let argument = "name1|http://localhost:8080|arn:aws:kms:supersecretstuff";
-        let driver = ExternalSolver::from_str(argument).unwrap();
-        let expected = ExternalSolver {
+        let driver = Solver::from_str(argument).unwrap();
+        let expected = Solver {
             name: "name1".into(),
             url: Url::parse("http://localhost:8080").unwrap(),
             fairness_threshold: None,
@@ -662,8 +662,8 @@ mod test {
     #[test]
     fn parse_driver_with_threshold() {
         let argument = "name1|http://localhost:8080|0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2|1000000000000000000";
-        let driver = ExternalSolver::from_str(argument).unwrap();
-        let expected = ExternalSolver {
+        let driver = Solver::from_str(argument).unwrap();
+        let expected = Solver {
             name: "name1".into(),
             url: Url::parse("http://localhost:8080").unwrap(),
             submission_account: Account::Address(H160::from_slice(&hex!(
