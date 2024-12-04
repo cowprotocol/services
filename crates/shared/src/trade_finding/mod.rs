@@ -11,7 +11,7 @@ use {
     },
     anyhow::{Context, Result},
     derive_more::Debug,
-    ethcontract::{contract::MethodBuilder, tokens::Tokenize, web3::Transport, Bytes, H160, U256},
+    ethcontract::{Bytes, H160, U256},
     model::{interaction::InteractionData, order::OrderKind},
     num::CheckedDiv,
     number::conversions::big_rational_to_u256,
@@ -24,7 +24,6 @@ use {
 ///
 /// This is similar to the `PriceEstimating` interface, but it expects calldata
 /// to also be produced.
-#[mockall::automock]
 #[async_trait::async_trait]
 pub trait TradeFinding: Send + Sync + 'static {
     async fn get_quote(&self, query: &Query) -> Result<Quote, TradeError>;
@@ -44,6 +43,12 @@ pub struct Quote {
 pub enum TradeKind {
     Legacy(LegacyTrade),
     Regular(Trade),
+}
+
+impl Default for TradeKind {
+    fn default() -> Self {
+        Self::Legacy(LegacyTrade::default())
+    }
 }
 
 impl TradeKind {
@@ -95,12 +100,6 @@ impl TradeKind {
             TradeKind::Legacy(_) => Vec::new(),
             TradeKind::Regular(trade) => trade.pre_interactions.clone(),
         }
-    }
-}
-
-impl Default for TradeKind {
-    fn default() -> Self {
-        TradeKind::Legacy(LegacyTrade::default())
     }
 }
 
@@ -186,18 +185,6 @@ pub struct Interaction {
 }
 
 impl Interaction {
-    pub fn from_call<T, R>(method: MethodBuilder<T, R>) -> Interaction
-    where
-        T: Transport,
-        R: Tokenize,
-    {
-        Interaction {
-            target: method.tx.to.unwrap(),
-            value: method.tx.value.unwrap_or_default(),
-            data: method.tx.data.unwrap().0,
-        }
-    }
-
     pub fn encode(&self) -> EncodedInteraction {
         (self.target, self.value, Bytes(self.data.clone()))
     }

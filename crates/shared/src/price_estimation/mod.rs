@@ -1,7 +1,6 @@
 use {
     crate::{
         arguments::{display_option, display_secret_option, ExternalSolver},
-        conversions::U256Ext,
         trade_finding::Interaction,
     },
     anyhow::Result,
@@ -13,7 +12,6 @@ use {
         interaction::InteractionData,
         order::{BuyTokenDestination, OrderKind, SellTokenSource},
     },
-    num::BigRational,
     number::nonzero::U256 as NonZeroU256,
     rate_limit::{RateLimiter, Strategy},
     reqwest::Url,
@@ -482,22 +480,6 @@ impl Estimate {
         }
     }
 
-    /// The resulting price is how many units of sell_token needs to be sold for
-    /// one unit of buy_token (sell_amount / buy_amount).
-    pub fn price_in_sell_token_rational(&self, query: &Query) -> Option<BigRational> {
-        let (sell_amount, buy_amount) = self.amounts(query);
-        amounts_to_price(sell_amount, buy_amount)
-    }
-
-    /// The price for the estimate denominated in sell token.
-    ///
-    /// The resulting price is how many units of sell_token needs to be sold for
-    /// one unit of buy_token (sell_amount / buy_amount).
-    pub fn price_in_sell_token_f64(&self, query: &Query) -> f64 {
-        let (sell_amount, buy_amount) = self.amounts(query);
-        sell_amount.to_f64_lossy() / buy_amount.to_f64_lossy()
-    }
-
     /// The price of the estimate denominated in buy token.
     ///
     /// The resulting price is how many units of buy_token are bought for one
@@ -513,16 +495,6 @@ pub type PriceEstimateResult = Result<Estimate, PriceEstimationError>;
 #[mockall::automock]
 pub trait PriceEstimating: Send + Sync + 'static {
     fn estimate(&self, query: Arc<Query>) -> BoxFuture<'_, PriceEstimateResult>;
-}
-
-pub fn amounts_to_price(sell_amount: U256, buy_amount: U256) -> Option<BigRational> {
-    if buy_amount.is_zero() {
-        return None;
-    }
-    Some(BigRational::new(
-        sell_amount.to_big_int(),
-        buy_amount.to_big_int(),
-    ))
 }
 
 pub const HEALTHY_PRICE_ESTIMATION_TIME: Duration = Duration::from_millis(5_000);

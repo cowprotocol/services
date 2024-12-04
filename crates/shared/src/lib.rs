@@ -40,20 +40,6 @@ pub mod trade_finding;
 pub mod url;
 pub mod zeroex_api;
 
-use std::{
-    future::Future,
-    time::{Duration, Instant},
-};
-
-/// Run a future and callback with the time the future took. The call back can
-/// for example log the time.
-pub async fn measure_time<T>(future: impl Future<Output = T>, timer: impl FnOnce(Duration)) -> T {
-    let start = Instant::now();
-    let result = future.await;
-    timer(start.elapsed());
-    result
-}
-
 /// anyhow errors are not clonable natively. This is a workaround that creates a
 /// new anyhow error based on formatting the error with its inner sources
 /// without backtrace.

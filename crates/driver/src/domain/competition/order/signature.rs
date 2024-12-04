@@ -52,17 +52,3 @@ impl Scheme {
         }
     }
 }
-
-pub fn domain_separator(
-    chain_id: chain::Id,
-    verifying_contract: eth::ContractAddress,
-) -> eth::DomainSeparator {
-    eth::DomainSeparator::new(&eth::DomainFields {
-        type_hash:
-            b"EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)",
-        name: b"Gnosis Protocol",
-        version: b"v2",
-        chain_id,
-        verifying_contract,
-    })
-}

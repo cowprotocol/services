@@ -15,7 +15,6 @@ use {
 };
 
 /// Simulate a call with state overrides.
-#[mockall::automock]
 #[async_trait::async_trait]
 pub trait CodeSimulating: Send + Sync + 'static {
     async fn simulate(

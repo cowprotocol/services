@@ -1,6 +1,5 @@
 use {
     super::{Ether, U256},
-    bigdecimal::Zero,
     derive_more::{Display, From, Into},
     std::{ops, ops::Add},
 };
@@ -23,16 +22,6 @@ impl Add for Gas {
 
     fn add(self, rhs: Self) -> Self::Output {
         Self(self.0 + rhs.0)
-    }
-}
-
-impl Zero for Gas {
-    fn zero() -> Self {
-        Self(U256::zero())
-    }
-
-    fn is_zero(&self) -> bool {
-        self.0.is_zero()
     }
 }
 
@@ -118,11 +107,6 @@ impl From<EffectiveGasPrice> for GasPrice {
 pub struct FeePerGas(pub Ether);
 
 impl FeePerGas {
-    /// Subtracts the given fee from this fee, saturating at zero.
-    pub fn saturating_sub(self, rhs: Self) -> Self {
-        self.0 .0.saturating_sub(rhs.0 .0).into()
-    }
-
     /// Multiplies this fee by the given floating point number, rounding up.
     fn mul_ceil(self, rhs: f64) -> Self {
         U256::from_f64_lossy((self.0 .0.to_f64_lossy() * rhs).ceil()).into()
@@ -172,23 +156,5 @@ impl From<U256> for EffectiveGasPrice {
 impl From<EffectiveGasPrice> for U256 {
     fn from(value: EffectiveGasPrice) -> Self {
         value.0.into()
-    }
-}
-
-impl Add for EffectiveGasPrice {
-    type Output = Self;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        Self(self.0 + rhs.0)
-    }
-}
-
-impl Zero for EffectiveGasPrice {
-    fn zero() -> Self {
-        Self(Ether::zero())
-    }
-
-    fn is_zero(&self) -> bool {
-        self.0.is_zero()
     }
 }
