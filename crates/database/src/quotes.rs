@@ -4,7 +4,6 @@ use {
     sqlx::{
         types::chrono::{DateTime, Utc},
         PgConnection,
-        Row,
     },
 };
 
@@ -35,28 +34,8 @@ pub struct Quote {
     pub expiration_timestamp: DateTime<Utc>,
     pub quote_kind: QuoteKind,
     pub solver: Address,
-    pub verified: bool,
-}
-
-impl Quote {
-    pub fn to_quote_with_interactions(&self) -> QuoteWithInteractions {
-        QuoteWithInteractions {
-            id: self.id,
-            sell_token: self.sell_token,
-            buy_token: self.buy_token,
-            sell_amount: self.sell_amount.clone(),
-            buy_amount: self.buy_amount.clone(),
-            gas_amount: self.gas_amount,
-            gas_price: self.gas_price,
-            sell_token_price: self.sell_token_price,
-            order_kind: self.order_kind,
-            expiration_timestamp: self.expiration_timestamp,
-            quote_kind: self.quote_kind.clone(),
-            solver: self.solver,
-            verified: self.verified,
-            interactions: vec![],
-        }
-    }
+    pub verified: Option<bool>, // Null value support
+    pub metadata: Option<serde_json::Value>, // Null value support
 }
 
 /// Stores the quote and returns the id. The id of the quote parameter is not
@@ -75,9 +54,10 @@ INSERT INTO quotes (
     expiration_timestamp,
     quote_kind,
     solver,
-    verified
+    verified,
+    metadata
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 RETURNING id
     "#;
     let (id,) = sqlx::query_as(QUERY)
@@ -93,85 +73,19 @@ RETURNING id
         .bind(&quote.quote_kind)
         .bind(quote.solver)
         .bind(quote.verified)
+        .bind(sqlx::types::Json(&quote.metadata))
         .fetch_one(ex)
         .await?;
     Ok(id)
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct QuoteWithInteractions {
-    pub id: QuoteId,
-    pub sell_token: Address,
-    pub buy_token: Address,
-    pub sell_amount: BigDecimal,
-    pub buy_amount: BigDecimal,
-    pub gas_amount: f64,
-    pub gas_price: f64,
-    pub sell_token_price: f64,
-    pub order_kind: OrderKind,
-    pub expiration_timestamp: DateTime<Utc>,
-    pub quote_kind: QuoteKind,
-    pub solver: Address,
-    pub verified: bool,
-    pub interactions: Vec<QuoteInteraction>,
-}
-
-impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for QuoteWithInteractions {
-    fn from_row(row: &sqlx::postgres::PgRow) -> sqlx::Result<Self> {
-        let id = row.get("id");
-
-        let interactions = match row
-            .get::<Option<Vec<(i32, crate::ByteArray<20>, BigDecimal, Vec<u8>)>>, &str>(
-                "interactions",
-            ) {
-            None => vec![],
-            Some(col) => col
-                .into_iter()
-                .map(|(index, target, value, call_data)| QuoteInteraction {
-                    quote_id: id,
-                    index,
-                    target,
-                    value,
-                    call_data,
-                })
-                .collect(),
-        };
-
-        Ok(QuoteWithInteractions {
-            id,
-            sell_token: row.get("sell_token"),
-            buy_token: row.get("buy_token"),
-            sell_amount: row.get("sell_amount"),
-            buy_amount: row.get("buy_amount"),
-            gas_amount: row.get("gas_amount"),
-            gas_price: row.get("gas_price"),
-            sell_token_price: row.get("sell_token_price"),
-            order_kind: row.get("order_kind"),
-            expiration_timestamp: row.get("expiration_timestamp"),
-            quote_kind: row.get("quote_kind"),
-            solver: row.get("solver"),
-            verified: row.get("verified"),
-            interactions,
-        })
-    }
-}
-
-pub async fn get_quote_with_interactions(
-    ex: &mut PgConnection,
-    id: QuoteId,
-) -> Result<Option<QuoteWithInteractions>, sqlx::Error> {
-    sqlx::query_as(
-    r#"
-    SELECT q.*, array_agg((i.index, i.target, i.value, i.call_data)) FILTER (WHERE i.quote_id IS NOT NULL) as "interactions"
-    FROM quotes q
-    LEFT JOIN quote_interactions i ON i.quote_id = q.id
-    WHERE q.id = $1
-    GROUP BY q.id
-    "#,
-    )
-    .bind(id)
-    .fetch_optional(ex)
-    .await
+pub async fn get(ex: &mut PgConnection, id: QuoteId) -> Result<Option<Quote>, sqlx::Error> {
+    const QUERY: &str = r#"
+SELECT *
+FROM quotes
+WHERE id = $1
+    "#;
+    sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
 }
 
 /// Fields for searching stored quotes.
@@ -187,14 +101,13 @@ pub struct QuoteSearchParameters {
     pub quote_kind: QuoteKind,
 }
 
-pub async fn find_quote_with_interactions(
+pub async fn find(
     ex: &mut PgConnection,
     params: &QuoteSearchParameters,
-) -> Result<Option<QuoteWithInteractions>, sqlx::Error> {
+) -> Result<Option<Quote>, sqlx::Error> {
     const QUERY: &str = r#"
-SELECT quotes.*, array_agg((i.index, i.target, i.value, i.call_data)) FILTER (WHERE i.quote_id IS NOT NULL) as "interactions"
+SELECT *
 FROM quotes
-LEFT JOIN quote_interactions i ON i.quote_id = id
 WHERE
     sell_token = $1 AND
     buy_token = $2 AND
@@ -206,11 +119,9 @@ WHERE
     order_kind = $6 AND
     expiration_timestamp >= $7 AND
     quote_kind = $8
-GROUP BY id
 ORDER BY gas_amount * gas_price * sell_token_price ASC
 LIMIT 1
     "#;
-
     sqlx::query_as(QUERY)
         .bind(params.sell_token)
         .bind(params.buy_token)
@@ -294,30 +205,6 @@ mod tests {
         sqlx::{types::chrono::TimeZone, Connection},
     };
 
-    pub async fn get_quote(
-        ex: &mut PgConnection,
-        id: QuoteId,
-    ) -> Result<Option<Quote>, sqlx::Error> {
-        const QUERY: &str = r#"
-    SELECT *
-    FROM quotes
-    WHERE id = $1
-        "#;
-        sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
-    }
-
-    pub async fn get_quote_interactions(
-        ex: &mut PgConnection,
-        quote_id: QuoteId,
-    ) -> Result<Vec<QuoteInteraction>, sqlx::Error> {
-        const QUERY: &str = r#"
-        SELECT *
-        FROM quote_interactions
-        WHERE quote_id = $1
-        "#;
-        sqlx::query_as(QUERY).bind(quote_id).fetch_all(ex).await
-    }
-
     /// The postgres database in our CI has different datetime precision than
     /// the `DateTime` uses. This leads to issues comparing round-tripped data.
     /// Work around the issue by created `DateTime`s with lower precision.
@@ -346,16 +233,17 @@ mod tests {
             expiration_timestamp: now,
             quote_kind: QuoteKind::Standard,
             solver: ByteArray([1; 20]),
-            verified: false,
+            verified: None,
+            metadata: None,
         };
         let id = save(&mut db, &quote).await.unwrap();
         quote.id = id;
-        assert_eq!(get_quote(&mut db, id).await.unwrap().unwrap(), quote);
+        assert_eq!(get(&mut db, id).await.unwrap().unwrap(), quote);
 
         remove_expired_quotes(&mut db, now + Duration::seconds(30))
             .await
             .unwrap();
-        assert_eq!(get_quote(&mut db, id).await.unwrap(), None);
+        assert_eq!(get(&mut db, id).await.unwrap(), None);
     }
 
     #[tokio::test]
@@ -380,7 +268,8 @@ mod tests {
             expiration_timestamp: now,
             quote_kind: QuoteKind::Standard,
             solver: ByteArray([1; 20]),
-            verified: false,
+            verified: None,
+            metadata: None,
         };
 
         let token_b = ByteArray([2; 20]);
@@ -397,7 +286,8 @@ mod tests {
             expiration_timestamp: now,
             quote_kind: QuoteKind::Standard,
             solver: ByteArray([2; 20]),
-            verified: false,
+            verified: None,
+            metadata: None,
         };
 
         // Save two measurements for token_a
@@ -448,14 +338,11 @@ mod tests {
             quote_kind: QuoteKind::Standard,
         };
         assert_eq!(
-            find_quote_with_interactions(&mut db, &search_a)
-                .await
-                .unwrap()
-                .unwrap(),
-            quotes_a[0].to_quote_with_interactions(),
+            find(&mut db, &search_a).await.unwrap().unwrap(),
+            quotes_a[0]
         );
         assert_eq!(
-            find_quote_with_interactions(
+            find(
                 &mut db,
                 &QuoteSearchParameters {
                     expiration: now + Duration::seconds(30),
@@ -465,12 +352,12 @@ mod tests {
             .await
             .unwrap()
             .unwrap(),
-            quotes_a[1].to_quote_with_interactions()
+            quotes_a[1]
         );
 
         // Token A has readings for sell + fee amount equal to quoted amount.
         assert_eq!(
-            find_quote_with_interactions(
+            find(
                 &mut db,
                 &QuoteSearchParameters {
                     sell_amount_0: quote_a.sell_amount.clone() - BigDecimal::from(1),
@@ -481,12 +368,12 @@ mod tests {
             .await
             .unwrap()
             .unwrap(),
-            quotes_a[0].to_quote_with_interactions(),
+            quotes_a[0]
         );
 
         // Token A has no reading for wrong filter
         assert_eq!(
-            find_quote_with_interactions(
+            find(
                 &mut db,
                 &QuoteSearchParameters {
                     sell_amount_0: quote_a.sell_amount.clone() - BigDecimal::from(1),
@@ -511,14 +398,11 @@ mod tests {
             quote_kind: QuoteKind::Standard,
         };
         assert_eq!(
-            find_quote_with_interactions(&mut db, &search_b)
-                .await
-                .unwrap()
-                .unwrap(),
-            quotes_b[0].to_quote_with_interactions(),
+            find(&mut db, &search_b).await.unwrap().unwrap(),
+            quotes_b[0]
         );
         assert_eq!(
-            find_quote_with_interactions(
+            find(
                 &mut db,
                 &QuoteSearchParameters {
                     expiration: now + Duration::seconds(30),
@@ -532,7 +416,7 @@ mod tests {
 
         // Token B has no reading for wrong filter
         assert_eq!(
-            find_quote_with_interactions(
+            find(
                 &mut db,
                 &QuoteSearchParameters {
                     buy_amount: 99.into(),
@@ -548,18 +432,8 @@ mod tests {
         remove_expired_quotes(&mut db, now + Duration::seconds(120))
             .await
             .unwrap();
-        assert_eq!(
-            find_quote_with_interactions(&mut db, &search_a)
-                .await
-                .unwrap(),
-            None
-        );
-        assert_eq!(
-            find_quote_with_interactions(&mut db, &search_b)
-                .await
-                .unwrap(),
-            None
-        );
+        assert_eq!(find(&mut db, &search_a).await.unwrap(), None);
+        assert_eq!(find(&mut db, &search_b).await.unwrap(), None);
     }
 
     #[tokio::test]
@@ -585,7 +459,8 @@ mod tests {
                 expiration_timestamp: now,
                 quote_kind: QuoteKind::Eip1271OnchainOrder,
                 solver: ByteArray([1; 20]),
-                verified: false,
+                verified: None,
+                metadata: None,
             };
             let id = save(&mut db, &quote).await.unwrap();
             quote.id = id;
@@ -603,25 +478,59 @@ mod tests {
             quote_kind: quote.quote_kind.clone(),
         };
 
-        assert_eq!(
-            find_quote_with_interactions(&mut db, &search_a)
-                .await
-                .unwrap()
-                .unwrap(),
-            quote.to_quote_with_interactions(),
-        );
+        assert_eq!(find(&mut db, &search_a).await.unwrap().unwrap(), quote);
         search_a.quote_kind = QuoteKind::Standard;
-        assert_eq!(
-            find_quote_with_interactions(&mut db, &search_a)
-                .await
-                .unwrap(),
-            None,
-        );
+        assert_eq!(find(&mut db, &search_a).await.unwrap(), None,);
     }
 
     #[tokio::test]
     #[ignore]
-    async fn postgres_insert_quote_interaction() {
+    async fn postgres_insert_quote_metadata() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let metadata: serde_json::Value = serde_json::from_str(
+            r#"{ "interactions": [ {
+                "target": "0102030405060708091011121314151617181920",
+                "value": 2.1,
+                "call_data": "0A0B0C102030"
+            },{
+            "target": "FF02030405060708091011121314151617181920",
+            "value": 1.2,
+            "call_data": "FF0B0C102030"
+            }]
+        }"#,
+        )
+        .unwrap();
+
+        let quote = Quote {
+            id: Default::default(),
+            sell_token: ByteArray([1; 20]),
+            buy_token: ByteArray([2; 20]),
+            sell_amount: 3.into(),
+            buy_amount: 4.into(),
+            gas_amount: 5.,
+            gas_price: 6.,
+            sell_token_price: 7.,
+            order_kind: OrderKind::Sell,
+            expiration_timestamp: low_precision_now(),
+            quote_kind: QuoteKind::Standard,
+            solver: ByteArray([1; 20]),
+            verified: None,
+            metadata: Some(metadata.clone()),
+        };
+        // store quote in database
+        let id = save(&mut db, &quote).await.unwrap();
+
+        let stored_quote = get(&mut db, id).await.unwrap().unwrap();
+        assert_eq!(stored_quote.metadata.unwrap(), metadata);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_get_quote_with_no_metadata_and_validity() {
+        // This test checks backward compatibility
         let mut db = PgConnection::connect("postgresql://").await.unwrap();
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
@@ -639,182 +548,47 @@ mod tests {
             expiration_timestamp: low_precision_now(),
             quote_kind: QuoteKind::Standard,
             solver: ByteArray([1; 20]),
-            verified: false,
+            verified: None,
+            metadata: None,
         };
-        // store quote in database
-        let id = save(&mut db, &quote).await.unwrap();
 
-        let quote_interaction = QuoteInteraction {
-            quote_id: id,
-            index: Default::default(),
-            target: ByteArray([1; 20]),
-            value: 2.into(),
-            call_data: vec![3; 20],
-        };
-        insert_quote_interaction(&mut db, &quote_interaction)
+        // store quote with verified and metadata fields set to NULL
+        const QUERY: &str = r#"
+        INSERT INTO quotes (
+            sell_token,
+            buy_token,
+            sell_amount,
+            buy_amount,
+            gas_amount,
+            gas_price,
+            sell_token_price,
+            order_kind,
+            expiration_timestamp,
+            quote_kind,
+            solver
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        RETURNING id
+        "#;
+        let (id,) = sqlx::query_as(QUERY)
+            .bind(quote.sell_token)
+            .bind(quote.buy_token)
+            .bind(&quote.sell_amount)
+            .bind(&quote.buy_amount)
+            .bind(quote.gas_amount)
+            .bind(quote.gas_price)
+            .bind(quote.sell_token_price)
+            .bind(quote.order_kind)
+            .bind(quote.expiration_timestamp)
+            .bind(&quote.quote_kind)
+            .bind(quote.solver)
+            .fetch_one(&mut db as &mut PgConnection)
             .await
             .unwrap();
 
-        let interactions = get_quote_interactions(&mut db, quote_interaction.quote_id)
-            .await
-            .unwrap();
-        assert_eq!(*interactions.first().unwrap(), quote_interaction);
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn postgres_removed_quote_interactions_by_id() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        let now = low_precision_now();
-        let quote = Quote {
-            id: Default::default(),
-            sell_token: ByteArray([1; 20]),
-            buy_token: ByteArray([2; 20]),
-            sell_amount: 3.into(),
-            buy_amount: 4.into(),
-            gas_amount: 5.,
-            gas_price: 6.,
-            sell_token_price: 7.,
-            order_kind: OrderKind::Sell,
-            expiration_timestamp: now,
-            quote_kind: QuoteKind::Standard,
-            solver: ByteArray([1; 20]),
-            verified: false,
-        };
-        // store quote in database
-        let id = save(&mut db, &quote).await.unwrap();
-
-        let quote_interactions = [
-            QuoteInteraction {
-                quote_id: id,
-                index: 0,
-                target: ByteArray([1; 20]),
-                value: 2.into(),
-                call_data: vec![3; 20],
-            },
-            QuoteInteraction {
-                quote_id: id,
-                index: 1,
-                target: ByteArray([1; 20]),
-                value: 2.into(),
-                call_data: vec![3; 20],
-            },
-        ];
-        // store interactions for the quote in database
-        insert_quote_interactions(&mut db, &quote_interactions)
-            .await
-            .unwrap();
-
-        let interactions = get_quote_interactions(&mut db, id).await.unwrap();
-        assert_eq!(interactions.len(), 2);
-
-        // remove quote using expired functino call, should also remove interactions
-        remove_expired_quotes(&mut db, now + Duration::seconds(30))
-            .await
-            .unwrap();
-
-        let interactions = get_quote_interactions(&mut db, id).await.unwrap();
-        assert!(interactions.is_empty());
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn postgres_get_quote_with_interactions_by_id() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        let now = low_precision_now();
-        let mut quote = Quote {
-            id: Default::default(),
-            sell_token: ByteArray([1; 20]),
-            buy_token: ByteArray([2; 20]),
-            sell_amount: 3.into(),
-            buy_amount: 4.into(),
-            gas_amount: 5.,
-            gas_price: 6.,
-            sell_token_price: 7.,
-            order_kind: OrderKind::Sell,
-            expiration_timestamp: now,
-            quote_kind: QuoteKind::Standard,
-            solver: ByteArray([1; 20]),
-            verified: false,
-        };
-        let mut quote2 = quote.clone();
-        let mut quote3 = quote.clone();
-        // store quote in database
-        let id = save(&mut db, &quote).await.unwrap();
-        let id2 = save(&mut db, &quote2).await.unwrap();
-        let id3 = save(&mut db, &quote3).await.unwrap();
-        quote.id = id;
-        quote2.id = id2;
-        quote3.id = id3;
-
-        let quote_interactions = [
-            QuoteInteraction {
-                quote_id: id,
-                index: 0,
-                target: ByteArray([1; 20]),
-                value: 2.into(),
-                call_data: vec![3; 20],
-            },
-            QuoteInteraction {
-                quote_id: id,
-                index: 1,
-                target: ByteArray([4; 20]),
-                value: 5.into(),
-                call_data: vec![6; 20],
-            },
-            QuoteInteraction {
-                quote_id: id2,
-                index: 0,
-                target: ByteArray([7; 20]),
-                value: 8.into(),
-                call_data: vec![9; 20],
-            },
-        ];
-        // store interactions for the quote in database
-        insert_quote_interactions(&mut db, &quote_interactions)
-            .await
-            .unwrap();
-
-        let returned_quote: QuoteWithInteractions = get_quote_with_interactions(&mut db, id)
-            .await
-            .unwrap()
-            .unwrap();
-
-        assert_eq!(returned_quote.id, quote.id);
-        assert_eq!(returned_quote.interactions.len(), 2);
-        for i in [0, 1] {
-            assert_eq!(
-                returned_quote
-                    .interactions
-                    .iter()
-                    .find(|val| val.index == i)
-                    .unwrap(),
-                &quote_interactions[i as usize]
-            );
-        }
-
-        let returned_quote2: QuoteWithInteractions = get_quote_with_interactions(&mut db, id2)
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(returned_quote2.id, quote2.id);
-        assert_eq!(returned_quote2.interactions.len(), 1);
-        assert_eq!(
-            returned_quote2.interactions.first().unwrap(),
-            &quote_interactions[2]
-        );
-
-        let returned_quote3: QuoteWithInteractions = get_quote_with_interactions(&mut db, id3)
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(returned_quote3.id, quote3.id);
-        assert!(returned_quote3.interactions.is_empty());
+        // read back stored quote
+        let stored_quote = get(&mut db, id).await.unwrap().unwrap();
+        assert!(stored_quote.verified.is_none());
+        assert!(stored_quote.metadata.is_none());
     }
 }

@@ -1,24 +1,24 @@
 use {
     crate::{
         db_order_conversions::order_kind_into,
-        order_quoting::{quote_kind_from_signing_scheme, QuoteData, QuoteSearchParameters},
+        order_quoting::{
+            quote_kind_from_signing_scheme,
+            QuoteData,
+            QuoteMetadata,
+            QuoteSearchParameters,
+        },
     },
     anyhow::Result,
     chrono::{DateTime, Utc},
     database::{
         byte_array::ByteArray,
-        quotes::{
-            Quote as DbQuote,
-            QuoteId,
-            QuoteInteraction as DbQuoteInteraction,
-            QuoteSearchParameters as DbQuoteSearchParameters,
-        },
+        quotes::{Quote as DbQuote, QuoteSearchParameters as DbQuoteSearchParameters},
     },
     number::conversions::u256_to_big_decimal,
 };
 
-pub fn create_quote_row(data: &QuoteData) -> DbQuote {
-    DbQuote {
+pub fn create_quote_row(data: &QuoteData) -> Result<DbQuote> {
+    Ok(DbQuote {
         id: Default::default(),
         sell_token: ByteArray(data.sell_token.0),
         buy_token: ByteArray(data.buy_token.0),
@@ -31,27 +31,14 @@ pub fn create_quote_row(data: &QuoteData) -> DbQuote {
         expiration_timestamp: data.expiration,
         quote_kind: data.quote_kind.clone(),
         solver: ByteArray(data.solver.0),
-        verified: data.verified,
-    }
-}
-
-pub fn create_quote_interactions_insert_data(
-    id: QuoteId,
-    data: &QuoteData,
-) -> Result<Vec<DbQuoteInteraction>> {
-    data.interactions
-        .iter()
-        .enumerate()
-        .map(|(index, interaction)| {
-            Ok(DbQuoteInteraction {
-                quote_id: id,
-                index: index.try_into()?,
-                target: ByteArray(interaction.target.0),
-                value: u256_to_big_decimal(&interaction.value),
-                call_data: interaction.call_data.clone(),
-            })
-        })
-        .collect()
+        verified: Some(data.verified),
+        metadata: Some(
+            QuoteMetadata {
+                interactions: data.interactions.clone(),
+            }
+            .try_into()?,
+        ),
+    })
 }
 
 pub fn create_db_search_parameters(

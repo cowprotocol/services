@@ -141,6 +141,8 @@ pub enum AddOrderError {
         provided: String,
         existing: String,
     },
+    #[error("quote metadata failed to serialize as json")]
+    MetadataSerializationFailed,
 }
 
 impl AddOrderError {
@@ -161,6 +163,9 @@ impl AddOrderError {
                     s.into_owned()
                 },
             },
+            InsertionError::MetadataSerializationFailed => {
+                AddOrderError::MetadataSerializationFailed
+            }
         }
     }
 }
@@ -255,7 +260,7 @@ impl Orderbook {
                 .await
                 .map_err(|err| AddOrderError::from_insertion(err, &order))?;
             Metrics::on_order_operation(
-                &OrderWithQuote::new(order.clone(), quote),
+                &OrderWithQuote::try_new(order.clone(), quote)?,
                 OrderOperation::Created,
             );
 
@@ -413,7 +418,7 @@ impl Orderbook {
             .map_err(|err| AddOrderError::from_insertion(err, &validated_new_order))?;
         Metrics::on_order_operation(&old_order, OrderOperation::Cancelled);
         Metrics::on_order_operation(
-            &OrderWithQuote::new(validated_new_order.clone(), quote),
+            &OrderWithQuote::try_new(validated_new_order.clone(), quote)?,
             OrderOperation::Created,
         );
 

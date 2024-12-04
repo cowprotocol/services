@@ -8,14 +8,9 @@ use {
     num::ToPrimitive,
     shared::{
         db_order_conversions::full_order_into_model_order,
-        event_storing_helpers::{
-            create_db_search_parameters,
-            create_quote_interactions_insert_data,
-            create_quote_row,
-        },
+        event_storing_helpers::{create_db_search_parameters, create_quote_row},
         order_quoting::{QuoteData, QuoteSearchParameters, QuoteStoring},
     },
-    sqlx::Acquire,
     std::{collections::HashMap, ops::DerefMut},
 };
 
@@ -28,15 +23,8 @@ impl QuoteStoring for Postgres {
             .start_timer();
 
         let mut ex = self.pool.acquire().await?;
-        let row = create_quote_row(&data);
-
-        let mut transaction = ex.begin().await?;
-        let id = database::quotes::save(&mut transaction, &row).await?;
-        if !data.interactions.is_empty() {
-            let interactions = create_quote_interactions_insert_data(id, &data)?;
-            database::quotes::insert_quote_interactions(&mut transaction, &interactions).await?;
-        }
-        transaction.commit().await.context("commit")?;
+        let row = create_quote_row(&data)?;
+        let id = database::quotes::save(&mut ex, &row).await?;
         Ok(id)
     }
 
@@ -47,10 +35,8 @@ impl QuoteStoring for Postgres {
             .start_timer();
 
         let mut ex = self.pool.acquire().await?;
-
-        let query_result = database::quotes::get_quote_with_interactions(&mut ex, id).await?;
-
-        Ok(query_result.map(QuoteData::try_from).transpose()?)
+        let quote = database::quotes::get(&mut ex, id).await?;
+        quote.map(TryFrom::try_from).transpose()
     }
 
     async fn find(
@@ -65,13 +51,11 @@ impl QuoteStoring for Postgres {
 
         let mut ex = self.pool.acquire().await?;
         let params = create_db_search_parameters(params, expiration);
-
-        let query_result = database::quotes::find_quote_with_interactions(&mut ex, &params)
+        let quote = database::quotes::find(&mut ex, &params)
             .await
             .context("failed finding quote by parameters")?;
-
-        query_result
-            .map(|query_result| Ok((query_result.id, query_result.try_into()?)))
+        quote
+            .map(|quote| Ok((quote.id, quote.try_into()?)))
             .transpose()
     }
 }

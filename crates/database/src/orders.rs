@@ -5,7 +5,6 @@ use {
         Address,
         AppId,
         OrderUid,
-        PgTransaction,
         TransactionHash,
     },
     futures::stream::BoxStream,
@@ -330,7 +329,8 @@ pub struct Quote {
     pub sell_amount: BigDecimal,
     pub buy_amount: BigDecimal,
     pub solver: Address,
-    pub verified: bool,
+    pub verified: Option<bool>, // Null value support
+    pub metadata: Option<serde_json::Value>,  // Null value support
 }
 
 pub async fn insert_quotes(ex: &mut PgConnection, quotes: &[Quote]) -> Result<(), sqlx::Error> {
@@ -349,9 +349,10 @@ INSERT INTO order_quotes (
     sell_amount,
     buy_amount,
     solver,
-    verified
+    verified,
+    metadata
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)"#;
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"#;
 
 pub async fn insert_quote_and_update_on_conflict(
     ex: &mut PgConnection,
@@ -365,7 +366,7 @@ pub async fn insert_quote_and_update_on_conflict(
         " ON CONFLICT (order_uid) DO UPDATE
 SET gas_amount = $2, gas_price = $3,
 sell_token_price = $4, sell_amount = $5,
-buy_amount = $6, verified = $8
+buy_amount = $6, verified = $8, metadata = $9
     "
     );
     sqlx::query(QUERY)
@@ -377,6 +378,7 @@ buy_amount = $6, verified = $8
         .bind(&quote.buy_amount)
         .bind(quote.solver)
         .bind(quote.verified)
+        .bind(&quote.metadata)
         .execute(ex)
         .await?;
     Ok(())
@@ -392,6 +394,7 @@ pub async fn insert_quote(ex: &mut PgConnection, quote: &Quote) -> Result<(), sq
         .bind(&quote.buy_amount)
         .bind(quote.solver)
         .bind(quote.verified)
+        .bind(&quote.metadata)
         .execute(ex)
         .await?;
     Ok(())
@@ -450,51 +453,6 @@ AND cancellation_timestamp IS NULL
         .map(|_| ())
 }
 
-/// One row in the `order_quote_interactions` table.
-#[derive(Clone, Default, Debug, PartialEq, sqlx::FromRow)]
-pub struct OrderQuoteInteraction {
-    pub order_uid: OrderUid,
-    pub index: i32,
-    pub target: Address,
-    pub value: BigDecimal,
-    pub call_data: Vec<u8>,
-}
-
-pub async fn insert_order_quote_interaction(
-    ex: &mut PgConnection,
-    quote_interaction: &OrderQuoteInteraction,
-) -> Result<(), sqlx::Error> {
-    const INSERT_ORDER_QUOTE_INTERACTION_QUERY: &str = r#"
-    INSERT INTO order_quote_interactions (
-        order_uid,
-        index,
-        target,
-        value,
-        call_data
-    )
-    VALUES ($1, $2, $3, $4, $5)
-    "#;
-    sqlx::query(INSERT_ORDER_QUOTE_INTERACTION_QUERY)
-        .bind(quote_interaction.order_uid)
-        .bind(quote_interaction.index)
-        .bind(quote_interaction.target)
-        .bind(&quote_interaction.value)
-        .bind(&quote_interaction.call_data)
-        .execute(ex)
-        .await?;
-    Ok(())
-}
-
-pub async fn insert_order_quote_interactions(
-    ex: &mut PgTransaction<'_>,
-    quote_interactions: &[OrderQuoteInteraction],
-) -> Result<(), sqlx::Error> {
-    for interactions in quote_interactions {
-        insert_order_quote_interaction(ex, interactions).await?;
-    }
-    Ok(())
-}
-
 /// Interactions are read as arrays of their fields: target, value, data.
 /// This is done as sqlx does not support reading arrays of more complicated
 /// types than just one field. The pre_ and post_interaction's data of
@@ -549,6 +507,7 @@ pub struct FullOrderWithQuote {
     pub quote_gas_price: Option<f64>,
     pub quote_sell_token_price: Option<f64>,
     pub quote_verified: Option<bool>,
+    pub quote_metadata: Option<serde_json::Value>,
     pub solver: Option<Address>,
 }
 
@@ -643,6 +602,7 @@ pub async fn single_full_order_with_quote(
         ", o_quotes.gas_price as quote_gas_price",
         ", o_quotes.sell_token_price as quote_sell_token_price",
         ", o_quotes.verified as quote_verified",
+        ", o_quotes.metadata as quote_metadata",
         ", o_quotes.solver as solver",
         " FROM ", FROM,
         " LEFT JOIN order_quotes o_quotes ON o.uid = o_quotes.order_uid",
@@ -1253,7 +1213,8 @@ mod tests {
             sell_amount: 4.into(),
             buy_amount: 5.into(),
             solver: ByteArray([1; 20]),
-            verified: false,
+            verified: None,
+            metadata: None,
         };
         insert_quote(&mut db, &quote).await.unwrap();
         insert_quote_and_update_on_conflict(&mut db, &quote)
@@ -1306,6 +1267,20 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
+        let metadata: serde_json::Value = serde_json::from_str(
+            r#"{ "interactions": [ {
+            "target": "0102030405060708091011121314151617181920",
+            "value": 2.1,
+            "call_data": "0A0B0C102030"
+            },{
+            "target": "FF02030405060708091011121314151617181920",
+            "value": 1.2,
+            "call_data": "FF0B0C102030"
+            }]
+        }"#,
+        )
+        .unwrap();
+
         let quote = Quote {
             order_uid: Default::default(),
             gas_amount: 1.,
@@ -1314,7 +1289,8 @@ mod tests {
             sell_amount: 4.into(),
             buy_amount: 5.into(),
             solver: ByteArray([1; 20]),
-            verified: false,
+            verified: Some(true),
+            metadata: Some(metadata),
         };
         insert_quote(&mut db, &quote).await.unwrap();
         let quote_ = read_quote(&mut db, &quote.order_uid)
@@ -1341,7 +1317,8 @@ mod tests {
             sell_amount: 4.into(),
             buy_amount: 5.into(),
             solver: ByteArray([1; 20]),
-            verified: false,
+            verified: None,
+            metadata: None,
         };
         insert_quote(&mut db, &quote).await.unwrap();
         let order_with_quote = single_full_order_with_quote(&mut db, &quote.order_uid)
@@ -2200,63 +2177,53 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    async fn postgres_insert_order_quote_interaction() {
+    async fn postgres_get_quote_with_no_metadata_and_validity() {
+        // This test checks backward compatibility
         let mut db = PgConnection::connect("postgresql://").await.unwrap();
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        let interaction = OrderQuoteInteraction {
+        let quote = Quote {
             order_uid: Default::default(),
-            index: Default::default(),
-            target: ByteArray([1; 20]),
-            value: 2.into(),
-            call_data: vec![3; 20],
+            gas_amount: 1.,
+            gas_price: 2.,
+            sell_token_price: 3.,
+            sell_amount: 4.into(),
+            buy_amount: 5.into(),
+            solver: ByteArray([1; 20]),
+            verified: None,
+            metadata: None,
         };
-        insert_order_quote_interaction(&mut db, &interaction)
-            .await
-            .unwrap();
 
-        const QUERY: &str = r#"
-        SELECT * FROM order_quote_interactions
-        WHERE order_uid = $1
-        "#;
-
-        let interactions: Vec<OrderQuoteInteraction> = sqlx::query_as(QUERY)
-            .bind(interaction.order_uid)
-            .fetch_all(&mut db as &mut PgConnection)
-            .await
-            .unwrap();
-        assert_eq!(*interactions.first().unwrap(), interaction);
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn postgres_insert_order_quote_interaction_on_conflict() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        let order_uid = Default::default();
-        let interaction1 = OrderQuoteInteraction {
+        // insert quote with verified and metadata fields set to NULL
+        sqlx::query(
+            r#"
+        INSERT INTO order_quotes (
             order_uid,
-            index: Default::default(),
-            target: ByteArray([1; 20]),
-            value: 2.into(),
-            call_data: vec![3; 20],
-        };
-        insert_order_quote_interaction(&mut db, &interaction1)
-            .await
-            .unwrap();
+            gas_amount,
+            gas_price,
+            sell_token_price,
+            sell_amount,
+            buy_amount,
+            solver
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7)"#,
+        )
+        .bind(quote.order_uid)
+        .bind(quote.gas_amount)
+        .bind(quote.gas_price)
+        .bind(quote.sell_token_price)
+        .bind(&quote.sell_amount)
+        .bind(&quote.buy_amount)
+        .bind(quote.solver)
+        .execute(&mut db as &mut PgConnection)
+        .await
+        .unwrap();
 
-        let interaction2 = OrderQuoteInteraction {
-            order_uid,
-            index: Default::default(),
-            target: ByteArray([4; 20]),
-            value: 4.into(),
-            call_data: vec![5; 20],
-        };
-        insert_order_quote_interaction(&mut db, &interaction2)
+        let quote_ = read_quote(&mut db, &quote.order_uid)
             .await
-            .expect_err("Inserting interaction for the same key should fail.");
+            .unwrap()
+            .unwrap();
+        assert_eq!(quote, quote_);
     }
 }

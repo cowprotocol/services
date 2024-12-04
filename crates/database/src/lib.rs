@@ -72,8 +72,6 @@ pub const TABLES: &[&str] = &[
     "auction_participants",
     "app_data",
     "jit_orders",
-    "quote_interactions",
-    "order_quote_interactions",
 ];
 
 /// The names of potentially big volume tables we use in the db.
@@ -87,8 +85,7 @@ pub fn all_tables() -> impl Iterator<Item = &'static str> {
 #[allow(non_snake_case)]
 pub async fn clear_DANGER_(ex: &mut PgTransaction<'_>) -> sqlx::Result<()> {
     for table in all_tables() {
-        ex.execute(format!("TRUNCATE {table} CASCADE;").as_str())
-            .await?;
+        ex.execute(format!("TRUNCATE {table};").as_str()).await?;
     }
     Ok(())
 }

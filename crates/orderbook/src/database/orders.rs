@@ -1,5 +1,6 @@
 use {
     super::Postgres,
+    crate::orderbook::AddOrderError,
     anyhow::{Context as _, Result},
     app_data::AppDataHash,
     async_trait::async_trait,
@@ -7,7 +8,7 @@ use {
     database::{
         byte_array::ByteArray,
         order_events::{insert_order_event, OrderEvent, OrderEventLabel},
-        orders::{self, FullOrder, OrderKind as DbOrderKind, OrderQuoteInteraction},
+        orders::{self, FullOrder, OrderKind as DbOrderKind},
     },
     ethcontract::H256,
     futures::{stream::TryStreamExt, FutureExt, StreamExt},
@@ -45,7 +46,7 @@ use {
             signing_scheme_into,
         },
         fee::FeeParameters,
-        order_quoting::Quote,
+        order_quoting::{Quote, QuoteMetadata},
         order_validation::{is_order_outside_market_price, Amounts, LimitOrderCounting},
     },
     sqlx::{types::BigDecimal, Connection, PgConnection},
@@ -90,20 +91,31 @@ pub struct OrderWithQuote {
 }
 
 impl OrderWithQuote {
-    pub fn new(order: Order, quote: Option<Quote>) -> Self {
-        Self {
-            quote: quote.map(|quote| orders::Quote {
-                order_uid: ByteArray(order.metadata.uid.0),
-                gas_amount: quote.data.fee_parameters.gas_amount,
-                gas_price: quote.data.fee_parameters.gas_price,
-                sell_token_price: quote.data.fee_parameters.sell_token_price,
-                sell_amount: u256_to_big_decimal(&quote.sell_amount),
-                buy_amount: u256_to_big_decimal(&quote.buy_amount),
-                solver: ByteArray(quote.data.solver.0),
-                verified: quote.data.verified,
-            }),
+    pub fn try_new(order: Order, quote: Option<Quote>) -> Result<Self, AddOrderError> {
+        Ok(Self {
+            quote: quote
+                .map(|quote| {
+                    Ok::<database::orders::Quote, AddOrderError>(orders::Quote {
+                        order_uid: ByteArray(order.metadata.uid.0),
+                        gas_amount: quote.data.fee_parameters.gas_amount,
+                        gas_price: quote.data.fee_parameters.gas_price,
+                        sell_token_price: quote.data.fee_parameters.sell_token_price,
+                        sell_amount: u256_to_big_decimal(&quote.sell_amount),
+                        buy_amount: u256_to_big_decimal(&quote.buy_amount),
+                        solver: ByteArray(quote.data.solver.0),
+                        verified: Some(quote.data.verified),
+                        metadata: Some(
+                            QuoteMetadata {
+                                interactions: quote.data.interactions.clone(),
+                            }
+                            .try_into()
+                            .map_err(|_| AddOrderError::MetadataSerializationFailed)?,
+                        ),
+                    })
+                })
+                .transpose()?,
             order,
-        }
+        })
     }
 }
 
@@ -113,6 +125,7 @@ pub enum InsertionError {
     DbError(sqlx::Error),
     /// Full app data to be inserted doesn't match existing.
     AppDataMismatch(Vec<u8>),
+    MetadataSerializationFailed,
 }
 
 impl From<sqlx::Error> for InsertionError {
@@ -234,32 +247,19 @@ async fn insert_quote(
         sell_amount: u256_to_big_decimal(&quote.sell_amount),
         buy_amount: u256_to_big_decimal(&quote.buy_amount),
         solver: ByteArray(quote.data.solver.0),
-        verified: quote.data.verified,
-    };
-    let dbinteractions = quote
-        .data
-        .interactions
-        .iter()
-        .enumerate()
-        .map(|(idx, interaction)| {
-            OrderQuoteInteraction {
-                order_uid: dbquote.order_uid,
-                index: idx.try_into().unwrap(), // safe to unwrap
-                target: ByteArray(interaction.target.0),
-                value: u256_to_big_decimal(&interaction.value),
-                call_data: interaction.call_data.clone(),
+        verified: Some(quote.data.verified),
+        metadata: Some(
+            QuoteMetadata {
+                interactions: quote.data.interactions.clone(),
             }
-        })
-        .collect::<Vec<_>>();
+            .try_into()
+            .map_err(|_| InsertionError::MetadataSerializationFailed)?,
+        ),
+    };
 
-    let mut transaction = ex.begin().await?;
-    database::orders::insert_quote(&mut transaction, &dbquote)
+    database::orders::insert_quote(ex, &dbquote)
         .await
-        .map_err(InsertionError::DbError)?;
-    database::orders::insert_order_quote_interactions(&mut transaction, dbinteractions.as_slice())
-        .await
-        .map_err(InsertionError::DbError)?;
-    transaction.commit().await.map_err(InsertionError::DbError)
+        .map_err(InsertionError::DbError)
 }
 
 #[async_trait::async_trait]
@@ -384,7 +384,6 @@ impl OrderStoring for Postgres {
                     order_with_quote.quote_gas_amount,
                     order_with_quote.quote_gas_price,
                     order_with_quote.quote_sell_token_price,
-                    order_with_quote.quote_verified,
                     order_with_quote.solver,
                 ) {
                     (
@@ -393,7 +392,6 @@ impl OrderStoring for Postgres {
                         Some(gas_amount),
                         Some(gas_price),
                         Some(sell_token_price),
-                        Some(verified),
                         Some(solver),
                     ) => Some(orders::Quote {
                         order_uid: order_with_quote.full_order.uid,
@@ -403,7 +401,8 @@ impl OrderStoring for Postgres {
                         sell_amount,
                         buy_amount,
                         solver,
-                        verified,
+                        verified: order_with_quote.quote_verified,
+                        metadata: order_with_quote.quote_metadata,
                     }),
                     _ => None,
                 };
@@ -1242,6 +1241,6 @@ mod tests {
 
         let single_order_with_quote = db.single_order_with_quote(&uid).await.unwrap().unwrap();
         assert_eq!(single_order_with_quote.order, order);
-        assert!(single_order_with_quote.quote.unwrap().verified,);
+        assert!(single_order_with_quote.quote.unwrap().verified.unwrap());
     }
 }

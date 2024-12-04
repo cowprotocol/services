@@ -202,45 +202,6 @@ impl TryFrom<QuoteRow> for QuoteData {
     }
 }
 
-impl TryFrom<database::quotes::QuoteWithInteractions> for QuoteData {
-    type Error = anyhow::Error;
-
-    fn try_from(input: database::quotes::QuoteWithInteractions) -> Result<QuoteData> {
-        Ok(QuoteData {
-            sell_token: H160(input.sell_token.0),
-            buy_token: H160(input.buy_token.0),
-            quoted_sell_amount: big_decimal_to_u256(&input.sell_amount)
-                .context("quoted sell amount is not a valid U256")?,
-            quoted_buy_amount: big_decimal_to_u256(&input.buy_amount)
-                .context("quoted buy amount is not a valid U256")?,
-            fee_parameters: FeeParameters {
-                gas_amount: input.gas_amount,
-                gas_price: input.gas_price,
-                sell_token_price: input.sell_token_price,
-            },
-            kind: order_kind_from(input.order_kind),
-            expiration: input.expiration_timestamp,
-            quote_kind: input.quote_kind,
-            solver: H160(input.solver.0),
-            // Even if the quote was verified at the time of creation
-            // it might no longer be accurate.
-            verified: false,
-            interactions: input
-                .interactions
-                .iter()
-                .map(|data| {
-                    Ok(InteractionData {
-                        target: H160(data.target.0),
-                        value: big_decimal_to_u256(&data.value)
-                            .context("quote interaction value is not a valid U256")?,
-                        call_data: data.call_data.clone(),
-                    })
-                })
-                .collect::<Result<Vec<_>>>()?,
-        })
-    }
-}
-
 #[mockall::automock]
 #[async_trait::async_trait]
 pub trait OrderQuoting: Send + Sync {
@@ -669,6 +630,19 @@ pub fn quote_kind_from_signing_scheme(scheme: &QuoteSigningScheme) -> QuoteKind 
             onchain_order: true,
         } => QuoteKind::PreSignOnchainOrder,
         _ => QuoteKind::Standard,
+    }
+}
+
+#[derive(serde::Serialize)]
+pub struct QuoteMetadata {
+    pub interactions: Vec<InteractionData>,
+}
+
+impl TryInto<serde_json::Value> for QuoteMetadata {
+    type Error = serde_json::Error;
+
+    fn try_into(self) -> std::result::Result<serde_json::Value, Self::Error> {
+        serde_json::to_value(self)
     }
 }
 
