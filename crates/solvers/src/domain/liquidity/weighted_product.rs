@@ -42,15 +42,6 @@ impl Reserves {
         self.0.iter().cloned()
     }
 
-    /// Returns the reserve for the specified token.
-    pub fn get(&self, token: eth::TokenAddress) -> Option<Reserve> {
-        let index = self
-            .0
-            .binary_search_by_key(&token, |reserve| reserve.asset.token)
-            .ok()?;
-        Some(self.0[index].clone())
-    }
-
     /// Returns an iterator over the tokens pairs handled by the pool reserves.
     pub fn token_pairs(&self) -> impl Iterator<Item = liquidity::TokenPair> + '_ {
         self.0

@@ -42,10 +42,6 @@ pub fn solved(deadline: &auction::Deadline, solutions: &[solution::Solution]) {
     get().solutions.inc_by(solutions.len() as u64);
 }
 
-pub fn solve_error(reason: &str) {
-    get().solve_errors.with_label_values(&[reason]).inc();
-}
-
 /// Get the metrics instance.
 fn get() -> &'static Metrics {
     Metrics::instance(observe::metrics::get_storage_registry())

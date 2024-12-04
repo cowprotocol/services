@@ -126,23 +126,6 @@ impl Settlement {
             .encode(execution, &mut self.encoder)
     }
 
-    #[cfg(test)]
-    pub fn with_trades(clearing_prices: HashMap<H160, U256>, trades: Vec<Trade>) -> Self {
-        let encoder = SettlementEncoder::with_trades(clearing_prices, trades);
-        Self { encoder }
-    }
-
-    #[cfg(test)]
-    pub fn with_default_prices(trades: Vec<Trade>) -> Self {
-        let clearing_prices = trades
-            .iter()
-            .flat_map(|trade| [trade.order.data.sell_token, trade.order.data.buy_token])
-            .map(|token| (token, U256::from(1_000_000_000_000_000_000_u128)))
-            .collect();
-        let encoder = SettlementEncoder::with_trades(clearing_prices, trades);
-        Self { encoder }
-    }
-
     /// Returns the clearing prices map.
     pub fn clearing_prices(&self) -> &HashMap<H160, U256> {
         self.encoder.clearing_prices()
@@ -169,15 +152,6 @@ impl Settlement {
                 .executed_amounts()
                 .expect("invalid trade was added to encoder")
         })
-    }
-
-    /// Calculates the risk level for settlement to be reverted
-    pub fn revertable(&self) -> Revertable {
-        if self.encoder.has_interactions() {
-            Revertable::HighRisk
-        } else {
-            Revertable::NoRisk
-        }
     }
 
     pub fn encode(self, internalization_strategy: InternalizationStrategy) -> EncodedSettlement {
