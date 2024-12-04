@@ -1,7 +1,7 @@
 //! Module containing Ethereum RPC extension methods.
 
 use {
-    serde::{Deserialize, Serialize},
+    serde::Serialize,
     std::collections::HashMap,
     web3::{
         self,
@@ -50,7 +50,7 @@ where
 pub type StateOverrides = HashMap<H160, StateOverride>;
 
 /// State override object.
-#[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StateOverride {
     /// Fake balance to set for the account before executing the call.

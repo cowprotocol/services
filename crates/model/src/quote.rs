@@ -61,13 +61,6 @@ impl QuoteSigningScheme {
             _ => 0u64,
         }
     }
-
-    pub fn new_eip1271_with_default_gas(onchain_order: bool) -> Self {
-        QuoteSigningScheme::Eip1271 {
-            onchain_order,
-            verification_gas_limit: default_verification_gas_limit(),
-        }
-    }
 }
 
 #[serde_as]
@@ -300,19 +293,6 @@ pub struct OrderQuoteResponse {
     pub expiration: DateTime<Utc>,
     pub id: Option<QuoteId>,
     pub verified: bool,
-}
-
-impl OrderQuoteRequest {
-    /// This method is used by the old, deprecated, fee endpoint to convert
-    /// {Buy, Sell}Requests
-    pub fn new(sell_token: H160, buy_token: H160, side: OrderQuoteSide) -> Self {
-        Self {
-            sell_token,
-            buy_token,
-            side,
-            ..Default::default()
-        }
-    }
 }
 
 #[cfg(test)]

@@ -10,7 +10,6 @@ use {
     url::Url,
 };
 
-pub mod authenticator;
 pub mod contracts;
 
 /// An Ethereum RPC connection.

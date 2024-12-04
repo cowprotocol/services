@@ -8,7 +8,6 @@ use {
     tracing::Instrument,
 };
 
-#[mockall::automock]
 #[async_trait::async_trait]
 pub trait LiquidityCollecting: Send + Sync {
     async fn get_liquidity(

@@ -406,13 +406,6 @@ impl Jit {
         }
     }
 
-    /// Returns the signed fee of the order. You can't set this field in
-    /// the API so it's enforced to be 0. This function only exists to
-    /// not have magic values scattered everywhere.
-    pub fn fee(&self) -> SellAmount {
-        SellAmount(0.into())
-    }
-
     /// Returns the signed partially fillable property of the order. You can't
     /// set this field in the API so it's enforced to be fill-or-kill. This
     /// function only exists to not have magic values scattered everywhere.
