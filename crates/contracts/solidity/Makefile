@@ -14,6 +14,7 @@ CONTRACTS := \
 	Signatures.sol \
 	SimulateCode.sol \
 	Solver.sol \
+	Spardose.sol \
 	Swapper.sol \
 	Trader.sol
 ARTIFACTS := $(patsubst %.sol,$(ARTIFACTDIR)/%.json,$(CONTRACTS))
