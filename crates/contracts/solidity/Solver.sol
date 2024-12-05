@@ -6,7 +6,6 @@ import { Interaction, Trade, ISettlement } from "./interfaces/ISettlement.sol";
 import { Caller } from "./libraries/Caller.sol";
 import { Math } from "./libraries/Math.sol";
 import { SafeERC20 } from "./libraries/SafeERC20.sol";
-import { Spardose } from "./Spardose.sol";
 import { Trader } from "./Trader.sol";
 
 /// @title A contract for impersonating a solver. This contract
@@ -71,16 +70,9 @@ contract Solver {
                     settlementContract,
                     sellToken,
                     sellAmount,
-                    nativeToken
+                    nativeToken,
+                    mock.spardose
                 );
-
-            // Ensure that the user has sufficient sell token balance. In case
-            // balance overrides are enabled, the Spardose will fund the trader
-            // with simulated balances.
-            require(
-                Spardose(mock.spardose).ensureBalance(trader, sellToken, sellAmount),
-                "trader does not have enough sell token"
-            );
         }
 
         // Warm the storage for sending ETH to smart contract addresses.
