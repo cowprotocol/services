@@ -14,7 +14,10 @@ use {
     futures::future::{join_all, BoxFuture, FutureExt, Shared},
     itertools::Itertools,
     model::{order::OrderKind, signature::Signature},
-    shared::signature_validator::{Contracts, SignatureValidating},
+    shared::{
+        bad_token::trace_call::TraceCallDetectorRaw,
+        signature_validator::{Contracts, SignatureValidating},
+    },
     std::{
         collections::{HashMap, HashSet},
         sync::{Arc, Mutex},
@@ -135,6 +138,7 @@ struct Inner {
     /// `order_priority_strategies` from the driver's config.
     order_sorting_strategies: Vec<Arc<dyn sorting::SortingStrategy>>,
     signature_validator: Arc<dyn SignatureValidating>,
+    bad_token_detector: Arc<TraceCallDetectorRaw>,
 }
 
 type BalanceGroup = (order::Trader, eth::TokenAddress, order::SellTokenBalance);

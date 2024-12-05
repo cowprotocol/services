@@ -9,12 +9,13 @@ use {
         transaction::TransactionBuilder,
         PrivateKey,
     },
+    model::interaction::InteractionData,
     primitive_types::{H160, U256},
     std::{cmp, sync::Arc},
     web3::{
         error::TransportError,
         signing::keccak256,
-        types::{BlockTrace, CallRequest, Res},
+        types::{BlockTrace, Bytes, CallRequest, Res},
     },
 };
 
@@ -78,7 +79,9 @@ impl TraceCallDetector {
                 )))
             }
         };
-        self.inner.test_transfer(take_from, token, amount).await
+        self.inner
+            .test_transfer(take_from, token, amount, Vec::new())
+            .await
     }
 }
 
@@ -100,13 +103,23 @@ impl TraceCallDetectorRaw {
         take_from: H160,
         token: H160,
         amount: U256,
+        pre_interactions: Vec<InteractionData>,
     ) -> Result<TokenQuality> {
+        let mut request: Vec<_> = pre_interactions
+            .iter()
+            .map(|i| CallRequest {
+                to: Some(i.target),
+                value: Some(i.value),
+                data: Some(Bytes(i.call_data.clone())),
+                ..Default::default()
+            })
+            .collect();
         // We transfer the full available amount of the token from the amm pool into the
         // settlement contract and then to an arbitrary address.
         // Note that gas use can depend on the recipient because for the standard
         // implementation sending to an address that does not have any balance
         // yet (implicitly 0) causes an allocation.
-        let request = self.create_trace_request(token, amount, take_from);
+        request.append(&mut self.create_trace_request(token, amount, take_from));
         let traces = match trace_many::trace_many(request, &self.web3).await {
             Ok(result) => result,
             Err(e) => {
@@ -132,7 +145,8 @@ impl TraceCallDetectorRaw {
                 return Err(e).context("trace_many");
             }
         };
-        Self::handle_response(&traces, amount, take_from)
+        let relevant_traces = &traces[pre_interactions.len()..];
+        Self::handle_response(&relevant_traces, amount, take_from)
     }
 
     // For the out transfer we use an arbitrary address without balance to detect
