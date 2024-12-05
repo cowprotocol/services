@@ -28,8 +28,8 @@ impl Detector {
     }
 
     /// Tries to detect the balance override strategy for the specified token.
-    /// Returning `None` if it cannot detect the strategy, or an error if an
-    /// internal simulation fails.
+    /// Returns an `Err` if it cannot detect the strategy or an internal
+    /// simulation fails.
     pub async fn detect(&self, token: Address) -> Result<Strategy, DetectionError> {
         // This is a pretty unsophisticated strategy where we basically try a
         // bunch of different slots and see which one sticks. We try balance
