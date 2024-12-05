@@ -13,22 +13,20 @@ contract Spardose {
     using SafeERC20 for *;
 
     /// @dev Ensures that the trader has at least `amount` tokens. If not, it
-    /// will transfer the difference to the trader.
+    /// will try and transfer the difference to the trader.
     ///
     /// @param trader - the address of the trader
     /// @param token - the token to ensure a balance for
-    /// @param amount - the amount of `token` that the `trader` must hold.
-    function ensureBalance(address trader, address token, uint256 amount) external {
+    /// @param amount - the amount of `token` that the `trader` must hold
+    ///
+    /// @return success - the `trader`'s `token` balance is more than `amount`
+    function ensureBalance(address trader, address token, uint256 amount) external returns (bool success) {
         uint256 traderBalance = IERC20(token).balanceOf(trader);
         if (traderBalance >= amount) {
-            // Nothing to do.
-            return;
+            return true;
         }
 
         uint256 difference = amount - traderBalance;
-        require(
-            IERC20(token).trySafeTransfer(trader, difference),
-            "trader does not have enough sell_token"
-        );
+        return IERC20(token).trySafeTransfer(trader, difference);
     }
 }

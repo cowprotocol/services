@@ -335,12 +335,13 @@ impl TradeVerifier {
             },
         );
 
-        // Provide mocked balances if possible to the solver to allow it to
+        // Provide mocked balances if possible to the spardose to allow it to
         // give some balances to the trader in order to verify trades even for
-        // owners without balances. Note that we explicitly override the
-        // **solver's** balance and not the trader's directly. This allows the
+        // owners without balances. Note that we use a separate account for
+        // funding to not interfere with the settlement process. This allows the
         // simulation to conditionally transfer the balance only when it is
-        // safe to mock the trade pre-conditions on behalf of the user. We use
+        // safe to mock the trade pre-conditions on behalf of the user and to
+        // not alter solver balances which may be used during settlement. We use
         // a similar strategy for determining whether or not to set approvals on
         // behalf of the trader.
         if let Some(solver_balance_override) =

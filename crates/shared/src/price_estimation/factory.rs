@@ -124,11 +124,10 @@ impl<'a> PriceEstimatorFactory<'a> {
             network.native_token,
             args.quote_inaccuracy_limit.clone(),
         )
-        .await?;
+        .await?
+        .with_balance_overrides(balance_overrides);
 
-        Ok(Some(Arc::new(
-            verifier.with_balance_overrides(balance_overrides),
-        )))
+        Ok(Some(Arc::new(verifier)))
     }
 
     fn native_token_price_estimation_amount(&self) -> Result<NonZeroU256> {

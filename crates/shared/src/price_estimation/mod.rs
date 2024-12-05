@@ -213,7 +213,14 @@ pub struct Arguments {
     )]
     pub quote_timeout: Duration,
 
-    /// Token configuration for simulated balances on verified quotes.
+    /// Token configuration for simulated balances on verified quotes. This
+    /// allows the quote verification system to produce verified quotes for
+    /// traders without sufficient balance for the configured token pairs.
+    ///
+    /// The expected format is a comma separated list of `${ADDR}@${SLOT}`,
+    /// where `ADDR` is the token address and `SLOT` is the Solidity storage
+    /// slot for the balances mapping. For example for WETH:
+    /// `0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2@3`.
     #[clap(long, env, default_value_t)]
     pub quote_token_balance_overrides: ConfigurationBalanceOverrides,
 }

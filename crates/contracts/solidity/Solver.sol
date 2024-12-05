@@ -74,9 +74,13 @@ contract Solver {
                     nativeToken
                 );
 
-            // Ensure that the user has sufficient sell token balance for the
-            // swap using balance overrides.
-            Spardose(mock.spardose).ensureBalance(trader, sellToken, sellAmount);
+            // Ensure that the user has sufficient sell token balance. In case
+            // balance overrides are enabled, the Spardose will fund the trader
+            // with simulated balances.
+            require(
+                Spardose(mock.spardose).ensureBalance(trader, sellToken, sellAmount),
+                "trader does not have enough sell token"
+            );
         }
 
         // Warm the storage for sending ETH to smart contract addresses.
