@@ -287,17 +287,17 @@ mod tests {
         };
 
         let first = setup_estimator(vec![
-            Ok(estimates[0]),
-            Ok(estimates[0]),
-            Ok(estimates[0]),
+            Ok(estimates[0].clone()),
+            Ok(estimates[0].clone()),
+            Ok(estimates[0].clone()),
             Err(PriceEstimationError::ProtocolInternal(anyhow!("a"))),
             Err(PriceEstimationError::NoLiquidity),
         ]);
 
         let second = setup_estimator(vec![
             Err(PriceEstimationError::ProtocolInternal(anyhow!(""))),
-            Ok(estimates[1]),
-            Ok(estimates[1]),
+            Ok(estimates[1].clone()),
+            Ok(estimates[1].clone()),
             Err(PriceEstimationError::ProtocolInternal(anyhow!("b"))),
             Err(PriceEstimationError::UnsupportedToken {
                 token: H160([0; 20]),

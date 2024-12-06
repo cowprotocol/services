@@ -5,6 +5,7 @@ use {
         price_estimation::{PriceEstimationError, Query},
         request_sharing::{BoxRequestSharing, RequestSharing},
         trade_finding::{
+            map_interactions_data,
             Interaction,
             LegacyTrade,
             Quote,
@@ -220,6 +221,7 @@ impl TradeFinding for ExternalTradeFinder {
                 .map_err(TradeError::Other)?,
             gas_estimate,
             solver: trade.solver(),
+            interactions: map_interactions_data(&trade.interactions()),
         })
     }
 

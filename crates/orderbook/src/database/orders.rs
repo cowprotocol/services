@@ -1,5 +1,6 @@
 use {
     super::Postgres,
+    crate::orderbook::AddOrderError,
     anyhow::{Context as _, Result},
     app_data::AppDataHash,
     async_trait::async_trait,
@@ -90,19 +91,31 @@ pub struct OrderWithQuote {
 }
 
 impl OrderWithQuote {
-    pub fn new(order: Order, quote: Option<Quote>) -> Self {
-        Self {
-            quote: quote.map(|quote| orders::Quote {
-                order_uid: ByteArray(order.metadata.uid.0),
-                gas_amount: quote.data.fee_parameters.gas_amount,
-                gas_price: quote.data.fee_parameters.gas_price,
-                sell_token_price: quote.data.fee_parameters.sell_token_price,
-                sell_amount: u256_to_big_decimal(&quote.sell_amount),
-                buy_amount: u256_to_big_decimal(&quote.buy_amount),
-                solver: ByteArray(quote.data.solver.0),
-            }),
+    pub fn try_new(order: Order, quote: Option<Quote>) -> Result<Self, AddOrderError> {
+        Ok(Self {
+            quote: quote
+                .map(|quote| {
+                    Ok::<database::orders::Quote, AddOrderError>(orders::Quote {
+                        order_uid: ByteArray(order.metadata.uid.0),
+                        gas_amount: quote.data.fee_parameters.gas_amount,
+                        gas_price: quote.data.fee_parameters.gas_price,
+                        sell_token_price: quote.data.fee_parameters.sell_token_price,
+                        sell_amount: u256_to_big_decimal(&quote.sell_amount),
+                        buy_amount: u256_to_big_decimal(&quote.buy_amount),
+                        solver: ByteArray(quote.data.solver.0),
+                        verified: Some(quote.data.verified),
+                        metadata: Some(
+                            quote
+                                .data
+                                .metadata
+                                .try_into()
+                                .map_err(|_| AddOrderError::MetadataSerializationFailed)?,
+                        ),
+                    })
+                })
+                .transpose()?,
             order,
-        }
+        })
     }
 }
 
@@ -112,6 +125,7 @@ pub enum InsertionError {
     DbError(sqlx::Error),
     /// Full app data to be inserted doesn't match existing.
     AppDataMismatch(Vec<u8>),
+    MetadataSerializationFailed,
 }
 
 impl From<sqlx::Error> for InsertionError {
@@ -233,11 +247,19 @@ async fn insert_quote(
         sell_amount: u256_to_big_decimal(&quote.sell_amount),
         buy_amount: u256_to_big_decimal(&quote.buy_amount),
         solver: ByteArray(quote.data.solver.0),
+        verified: Some(quote.data.verified),
+        metadata: Some(
+            quote
+                .data
+                .metadata
+                .clone()
+                .try_into()
+                .map_err(|_| InsertionError::MetadataSerializationFailed)?,
+        ),
     };
     database::orders::insert_quote(ex, &quote)
         .await
-        .map_err(InsertionError::DbError)?;
-    Ok(())
+        .map_err(InsertionError::DbError)
 }
 
 #[async_trait::async_trait]
@@ -379,6 +401,8 @@ impl OrderStoring for Postgres {
                         sell_amount,
                         buy_amount,
                         solver,
+                        verified: order_with_quote.quote_verified,
+                        metadata: order_with_quote.quote_metadata,
                     }),
                     _ => None,
                 };
@@ -668,6 +692,7 @@ mod tests {
             signature::{Signature, SigningScheme},
         },
         primitive_types::U256,
+        shared::order_quoting::{QuoteData, QuoteMetadata},
         std::sync::atomic::{AtomicI64, Ordering},
     };
 
@@ -1169,5 +1194,55 @@ mod tests {
             single_order_with_quote.quote.unwrap().buy_amount,
             u256_to_big_decimal(&quote.buy_amount)
         );
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_insert_orders_with_interactions_and_verified() {
+        let db = Postgres::new("postgresql://").unwrap();
+        database::clear_DANGER(&db.pool).await.unwrap();
+
+        let uid = OrderUid([0x42; 56]);
+        let order = Order {
+            data: OrderData {
+                valid_to: u32::MAX,
+                ..Default::default()
+            },
+            metadata: OrderMetadata {
+                uid,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let quote = Quote {
+            id: Some(5),
+            sell_amount: U256::from(1),
+            buy_amount: U256::from(2),
+            data: QuoteData {
+                verified: true,
+                metadata: QuoteMetadata {
+                    interactions: vec![
+                        InteractionData {
+                            target: H160([1; 20]),
+                            value: U256::from(100),
+                            call_data: vec![1, 20],
+                        },
+                        InteractionData {
+                            target: H160([2; 20]),
+                            value: U256::from(10),
+                            call_data: vec![2, 20],
+                        },
+                    ],
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        db.insert_order(&order, Some(quote)).await.unwrap();
+
+        let single_order_with_quote = db.single_order_with_quote(&uid).await.unwrap().unwrap();
+        assert_eq!(single_order_with_quote.order, order);
+        assert!(single_order_with_quote.quote.unwrap().verified.unwrap());
     }
 }

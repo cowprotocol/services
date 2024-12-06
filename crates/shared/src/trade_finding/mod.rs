@@ -36,12 +36,19 @@ pub struct Quote {
     pub out_amount: U256,
     pub gas_estimate: u64,
     pub solver: H160,
+    pub interactions: Vec<InteractionData>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TradeKind {
     Legacy(LegacyTrade),
     Regular(Trade),
+}
+
+impl Default for TradeKind {
+    fn default() -> Self {
+        Self::Legacy(LegacyTrade::default())
+    }
 }
 
 impl TradeKind {
@@ -181,6 +188,14 @@ impl Interaction {
     pub fn encode(&self) -> EncodedInteraction {
         (self.target, self.value, Bytes(self.data.clone()))
     }
+
+    pub fn to_interaction_data(&self) -> InteractionData {
+        InteractionData {
+            target: self.target,
+            value: self.value,
+            call_data: self.data.clone(),
+        }
+    }
 }
 
 impl From<InteractionData> for Interaction {
@@ -248,6 +263,14 @@ pub fn map_interactions(interactions: &[InteractionData]) -> Vec<Interaction> {
     interactions.iter().cloned().map(Into::into).collect()
 }
 
+pub fn map_interactions_data(interactions: &[Interaction]) -> Vec<InteractionData> {
+    interactions
+        .iter()
+        .cloned()
+        .map(|i| i.to_interaction_data())
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -266,6 +289,6 @@ mod tests {
             interaction_debug,
             "Interaction { target: 0x0000000000000000000000000000000000000000, value: 1, data: \
              0x010203040506 }"
-        );
+        )
     }
 }
