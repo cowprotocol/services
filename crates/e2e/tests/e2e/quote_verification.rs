@@ -409,4 +409,22 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
         .await
         .unwrap();
     assert!(response.verified);
+
+    // with balance overrides we can even verify quotes for the 0 address
+    // which is used when no wallet is connected in the frontend
+    let response = services
+        .submit_quote(&OrderQuoteRequest {
+            from: H160::zero(),
+            sell_token: weth.address(),
+            buy_token: token.address(),
+            side: OrderQuoteSide::Sell {
+                sell_amount: SellAmount::BeforeFee {
+                    value: to_wei(1).try_into().unwrap(),
+                },
+            },
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert!(response.verified);
 }
