@@ -5,7 +5,10 @@ use {
     ethcontract::{Address, U256},
     ethrpc::extensions::StateOverride,
     maplit::hashmap,
-    std::sync::Arc,
+    std::{
+        fmt::{self, Debug, Formatter},
+        sync::Arc,
+    },
     thiserror::Error,
     web3::{signing::keccak256, types::CallRequest},
 };
@@ -13,11 +16,11 @@ use {
 /// A heuristic balance override detector based on `eth_call` simulations.
 ///
 /// This has the exact same node requirements as trade verification.
+#[derive(Clone)]
 pub struct Detector {
     simulator: Arc<dyn CodeSimulating>,
 }
 
-#[allow(dead_code)]
 impl Detector {
     /// Number of different slots to try out.
     const TRIES: u8 = 25;
@@ -87,6 +90,14 @@ impl Detector {
             .find_map(|(strategy, amount)| (amount == balance).then_some(strategy))
             .ok_or(DetectionError::NotFound)?;
         Ok(strategy)
+    }
+}
+
+impl Debug for Detector {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        f.debug_struct("Detector")
+            .field("simulator", &format_args!("Arc<dyn CodeSimulating>"))
+            .finish()
     }
 }
 
