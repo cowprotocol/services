@@ -26,13 +26,8 @@ pub fn create_quote_row(data: QuoteData) -> Result<DbQuote> {
         expiration_timestamp: data.expiration,
         quote_kind: data.quote_kind,
         solver: ByteArray(data.solver.0),
-        verified: Some(data.verified),
-        metadata: Some(
-            QuoteMetadata {
-                interactions: data.interactions,
-            }
-            .try_into()?,
-        ),
+        verified: data.verified,
+        metadata: data.metadata.try_into()?,
     })
 }
 

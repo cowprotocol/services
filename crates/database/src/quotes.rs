@@ -34,8 +34,8 @@ pub struct Quote {
     pub expiration_timestamp: DateTime<Utc>,
     pub quote_kind: QuoteKind,
     pub solver: Address,
-    pub verified: Option<bool>,              // Null value support
-    pub metadata: Option<serde_json::Value>, // Null value support
+    pub verified: bool,
+    pub metadata: serde_json::Value,
 }
 
 /// Stores the quote and returns the id. The id of the quote parameter is not
@@ -187,8 +187,8 @@ mod tests {
             expiration_timestamp: now,
             quote_kind: QuoteKind::Standard,
             solver: ByteArray([1; 20]),
-            verified: None,
-            metadata: None,
+            verified: false,
+            metadata: Default::default(),
         };
         let id = save(&mut db, &quote).await.unwrap();
         quote.id = id;
@@ -222,8 +222,8 @@ mod tests {
             expiration_timestamp: now,
             quote_kind: QuoteKind::Standard,
             solver: ByteArray([1; 20]),
-            verified: None,
-            metadata: None,
+            verified: false,
+            metadata: Default::default(),
         };
 
         let token_b = ByteArray([2; 20]);
@@ -240,8 +240,8 @@ mod tests {
             expiration_timestamp: now,
             quote_kind: QuoteKind::Standard,
             solver: ByteArray([2; 20]),
-            verified: None,
-            metadata: None,
+            verified: false,
+            metadata: Default::default(),
         };
 
         // Save two measurements for token_a
@@ -413,8 +413,8 @@ mod tests {
                 expiration_timestamp: now,
                 quote_kind: QuoteKind::Eip1271OnchainOrder,
                 solver: ByteArray([1; 20]),
-                verified: None,
-                metadata: None,
+                verified: false,
+                metadata: Default::default(),
             };
             let id = save(&mut db, &quote).await.unwrap();
             quote.id = id;
@@ -471,47 +471,13 @@ mod tests {
             expiration_timestamp: low_precision_now(),
             quote_kind: QuoteKind::Standard,
             solver: ByteArray([1; 20]),
-            verified: None,
-            metadata: Some(metadata.clone()),
+            verified: false,
+            metadata: metadata.clone(),
         };
         // store quote in database
         let id = save(&mut db, &quote).await.unwrap();
 
         let stored_quote = get(&mut db, id).await.unwrap().unwrap();
-        assert_eq!(stored_quote.metadata.unwrap(), metadata);
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn postgres_get_quote_with_no_metadata_and_validity() {
-        // This test checks backward compatibility
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        let quote = Quote {
-            id: Default::default(),
-            sell_token: ByteArray([1; 20]),
-            buy_token: ByteArray([2; 20]),
-            sell_amount: 3.into(),
-            buy_amount: 4.into(),
-            gas_amount: 5.,
-            gas_price: 6.,
-            sell_token_price: 7.,
-            order_kind: OrderKind::Sell,
-            expiration_timestamp: low_precision_now(),
-            quote_kind: QuoteKind::Standard,
-            solver: ByteArray([1; 20]),
-            verified: None,
-            metadata: None,
-        };
-
-        // save quote with verified and metadata fields stored as NULL
-        let id = save(&mut db, &quote).await.unwrap();
-
-        // read back stored quote
-        let stored_quote = get(&mut db, id).await.unwrap().unwrap();
-        assert!(stored_quote.verified.is_none());
-        assert!(stored_quote.metadata.is_none());
+        assert_eq!(stored_quote.metadata, metadata);
     }
 }
