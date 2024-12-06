@@ -80,11 +80,12 @@ impl TraceCallDetector {
             }
         };
         self.inner
-            .test_transfer(take_from, token, amount, Vec::new())
+            .test_transfer(take_from, token, amount, &[])
             .await
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct TraceCallDetectorRaw {
     pub web3: Web3,
     pub settlement_contract: H160,
@@ -103,7 +104,7 @@ impl TraceCallDetectorRaw {
         take_from: H160,
         token: H160,
         amount: U256,
-        pre_interactions: Vec<InteractionData>,
+        pre_interactions: &[InteractionData],
     ) -> Result<TokenQuality> {
         let mut request: Vec<_> = pre_interactions
             .iter()
@@ -146,7 +147,7 @@ impl TraceCallDetectorRaw {
             }
         };
         let relevant_traces = &traces[pre_interactions.len()..];
-        Self::handle_response(&relevant_traces, amount, take_from)
+        Self::handle_response(relevant_traces, amount, take_from)
     }
 
     // For the out transfer we use an arbitrary address without balance to detect

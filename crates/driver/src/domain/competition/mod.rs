@@ -28,6 +28,7 @@ use {
 };
 
 pub mod auction;
+pub mod bad_tokens;
 pub mod order;
 pub mod solution;
 mod sorting;
@@ -52,6 +53,7 @@ pub struct Competition {
     pub mempools: Mempools,
     /// Cached solutions with the most recent solutions at the front.
     pub settlements: Mutex<VecDeque<Settlement>>,
+    pub bad_tokens: bad_tokens::Detector,
 }
 
 impl Competition {

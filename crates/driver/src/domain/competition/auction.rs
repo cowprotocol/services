@@ -138,7 +138,7 @@ struct Inner {
     /// `order_priority_strategies` from the driver's config.
     order_sorting_strategies: Vec<Arc<dyn sorting::SortingStrategy>>,
     signature_validator: Arc<dyn SignatureValidating>,
-    bad_token_detector: Arc<TraceCallDetectorRaw>,
+    bad_token_detector: TraceCallDetectorRaw,
 }
 
 type BalanceGroup = (order::Trader, eth::TokenAddress, order::SellTokenBalance);
@@ -182,15 +182,18 @@ impl AuctionProcessor {
         let mut orders = auction.orders.clone();
         let solver = *solver;
         let order_comparators = lock.order_sorting_strategies.clone();
+        let bad_tokens = lock.bad_token_detector.clone();
 
         // Use spawn_blocking() because a lot of CPU bound computations are happening
         // and we don't want to block the runtime for too long.
         let fut = tokio::task::spawn_blocking(move || {
             let start = std::time::Instant::now();
-            orders.extend(rt.block_on(Self::cow_amm_orders(&eth, &tokens, &cow_amms, signature_validator.as_ref())));
+            let cow_amm_orders = rt.block_on(Self::cow_amm_orders(&eth, &tokens, &cow_amms, signature_validator.as_ref()));
+            orders.extend(cow_amm_orders);
             sorting::sort_orders(&mut orders, &tokens, &solver, &order_comparators);
-            let mut balances =
-                rt.block_on(async { Self::fetch_balances(&eth, &orders).await });
+            // TODO add fn to filter bad tokens
+            let mut balances = rt.block_on(Self::fetch_balances(&eth, &orders));
+            rt.block_on(Self::filter_bad_tokens(&mut orders, &bad_tokens));
             Self::filter_orders(&mut balances, &mut orders);
             tracing::debug!(auction_id = new_id.0, time =? start.elapsed(), "auction preprocessing done");
             orders
@@ -209,6 +212,12 @@ impl AuctionProcessor {
         lock.fut = fut.clone();
 
         fut
+    }
+
+    async fn filter_bad_tokens(orders: &mut Vec<order::Order>, detector: &TraceCallDetectorRaw) {
+        // only run detection on sell tokens because we can't fake the balance
+        // for buy tokens? also this bad token detector needs to be
+        // shared acro
     }
 
     /// Removes orders that cannot be filled due to missing funds of the owner.
@@ -483,6 +492,10 @@ impl AuctionProcessor {
         Self(Arc::new(Mutex::new(Inner {
             auction: Id(0),
             fut: futures::future::pending().boxed().shared(),
+            bad_token_detector: TraceCallDetectorRaw::new(
+                eth.web3().clone(),
+                eth.contracts().settlement().address(),
+            ),
             eth,
             order_sorting_strategies,
             signature_validator,

@@ -69,6 +69,9 @@ impl Api {
             let router = routes::solve(router);
             let router = routes::reveal(router);
             let router = routes::settle(router);
+
+            // each solver needs to get its own bad_tokens::Detector
+
             let router = router.with_state(State(Arc::new(Inner {
                 eth: self.eth.clone(),
                 solver: solver.clone(),
