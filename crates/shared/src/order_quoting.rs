@@ -170,8 +170,8 @@ pub struct QuoteData {
     pub solver: H160,
     /// Were we able to verify that this quote is accurate?
     pub verified: bool,
-    /// Data provided by the solver in response to /quote request.
-    pub interactions: Vec<InteractionData>,
+    /// Additional data associated with the quote.
+    pub metadata: QuoteMetadata,
 }
 
 impl TryFrom<QuoteRow> for QuoteData {
@@ -197,7 +197,7 @@ impl TryFrom<QuoteRow> for QuoteData {
             // Even if the quote was verified at the time of creation
             // it might no longer be accurate.
             verified: false,
-            interactions: vec![],
+            metadata: row.metadata.try_into()?,
         })
     }
 }
@@ -445,7 +445,9 @@ impl OrderQuoter {
             quote_kind,
             solver: trade_estimate.solver,
             verified: trade_estimate.verified,
-            interactions: trade_estimate.interactions,
+            metadata: QuoteMetadata {
+                interactions: trade_estimate.interactions,
+            },
         };
 
         Ok(quote)
@@ -634,8 +636,9 @@ pub fn quote_kind_from_signing_scheme(scheme: &QuoteSigningScheme) -> QuoteKind 
 }
 
 /// Used to store in database any quote metadata.
-#[derive(Debug, serde::Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct QuoteMetadata {
+    /// Data provided by the solver in response to /quote request.
     pub interactions: Vec<InteractionData>,
 }
 
@@ -644,6 +647,14 @@ impl TryInto<serde_json::Value> for QuoteMetadata {
 
     fn try_into(self) -> std::result::Result<serde_json::Value, Self::Error> {
         serde_json::to_value(self)
+    }
+}
+
+impl TryFrom<serde_json::Value> for QuoteMetadata {
+    type Error = serde_json::Error;
+
+    fn try_from(value: serde_json::Value) -> std::result::Result<Self, Self::Error> {
+        serde_json::from_value(value)
     }
 }
 
@@ -787,7 +798,7 @@ mod tests {
                 quote_kind: QuoteKind::Standard,
                 solver: H160([1; 20]),
                 verified: false,
-                interactions: vec![],
+                metadata: Default::default(),
             }))
             .returning(|_| Ok(1337));
 
@@ -824,7 +835,7 @@ mod tests {
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
                     verified: false,
-                    interactions: vec![],
+                    metadata: Default::default(),
                 },
                 sell_amount: 70.into(),
                 buy_amount: 29.into(),
@@ -925,7 +936,7 @@ mod tests {
                 quote_kind: QuoteKind::Standard,
                 solver: H160([1; 20]),
                 verified: false,
-                interactions: vec![],
+                metadata: Default::default(),
             }))
             .returning(|_| Ok(1337));
 
@@ -962,7 +973,7 @@ mod tests {
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
                     verified: false,
-                    interactions: vec![],
+                    metadata: Default::default(),
                 },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
@@ -1058,7 +1069,7 @@ mod tests {
                 quote_kind: QuoteKind::Standard,
                 solver: H160([1; 20]),
                 verified: false,
-                interactions: vec![],
+                metadata: Default::default(),
             }))
             .returning(|_| Ok(1337));
 
@@ -1095,7 +1106,7 @@ mod tests {
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
                     verified: false,
-                    interactions: vec![],
+                    metadata: Default::default(),
                 },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
@@ -1284,7 +1295,7 @@ mod tests {
                 quote_kind: QuoteKind::Standard,
                 solver: H160([1; 20]),
                 verified: false,
-                interactions: vec![],
+                metadata: Default::default(),
             }))
         });
 
@@ -1318,7 +1329,7 @@ mod tests {
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
                     verified: false,
-                    interactions: vec![],
+                    metadata: Default::default(),
                 },
                 sell_amount: 85.into(),
                 // Allows for "out-of-price" buy amounts. This means that order
@@ -1366,7 +1377,7 @@ mod tests {
                 quote_kind: QuoteKind::Standard,
                 solver: H160([1; 20]),
                 verified: false,
-                interactions: vec![],
+                metadata: Default::default(),
             }))
         });
 
@@ -1400,7 +1411,7 @@ mod tests {
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
                     verified: false,
-                    interactions: vec![],
+                    metadata: Default::default(),
                 },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
@@ -1448,8 +1459,8 @@ mod tests {
                         expiration: now + chrono::Duration::seconds(10),
                         quote_kind: QuoteKind::Standard,
                         solver: H160([1; 20]),
-                        verified: true,
-                        interactions: vec![],
+                        verified: false,
+                        metadata: Default::default(),
                     },
                 )))
             });
@@ -1483,8 +1494,8 @@ mod tests {
                     expiration: now + chrono::Duration::seconds(10),
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
-                    verified: true,
-                    interactions: vec![],
+                    verified: false,
+                    metadata: Default::default(),
                 },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),

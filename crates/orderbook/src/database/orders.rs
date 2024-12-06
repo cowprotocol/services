@@ -46,7 +46,7 @@ use {
             signing_scheme_into,
         },
         fee::FeeParameters,
-        order_quoting::{Quote, QuoteMetadata},
+        order_quoting::Quote,
         order_validation::{is_order_outside_market_price, Amounts, LimitOrderCounting},
     },
     sqlx::{types::BigDecimal, Connection, PgConnection},
@@ -105,11 +105,11 @@ impl OrderWithQuote {
                         solver: ByteArray(quote.data.solver.0),
                         verified: Some(quote.data.verified),
                         metadata: Some(
-                            QuoteMetadata {
-                                interactions: quote.data.interactions.clone(),
-                            }
-                            .try_into()
-                            .map_err(|_| AddOrderError::MetadataSerializationFailed)?,
+                            quote
+                                .data
+                                .metadata
+                                .try_into()
+                                .map_err(|_| AddOrderError::MetadataSerializationFailed)?,
                         ),
                     })
                 })
@@ -249,11 +249,12 @@ async fn insert_quote(
         solver: ByteArray(quote.data.solver.0),
         verified: Some(quote.data.verified),
         metadata: Some(
-            QuoteMetadata {
-                interactions: quote.data.interactions.clone(),
-            }
-            .try_into()
-            .map_err(|_| InsertionError::MetadataSerializationFailed)?,
+            quote
+                .data
+                .metadata
+                .clone()
+                .try_into()
+                .map_err(|_| InsertionError::MetadataSerializationFailed)?,
         ),
     };
     database::orders::insert_quote(ex, &quote)
@@ -691,7 +692,7 @@ mod tests {
             signature::{Signature, SigningScheme},
         },
         primitive_types::U256,
-        shared::order_quoting::QuoteData,
+        shared::order_quoting::{QuoteData, QuoteMetadata},
         std::sync::atomic::{AtomicI64, Ordering},
     };
 
@@ -1220,18 +1221,20 @@ mod tests {
             buy_amount: U256::from(2),
             data: QuoteData {
                 verified: true,
-                interactions: vec![
-                    InteractionData {
-                        target: H160([1; 20]),
-                        value: U256::from(100),
-                        call_data: vec![1, 20],
-                    },
-                    InteractionData {
-                        target: H160([2; 20]),
-                        value: U256::from(10),
-                        call_data: vec![2, 20],
-                    },
-                ],
+                metadata: QuoteMetadata {
+                    interactions: vec![
+                        InteractionData {
+                            target: H160([1; 20]),
+                            value: U256::from(100),
+                            call_data: vec![1, 20],
+                        },
+                        InteractionData {
+                            target: H160([2; 20]),
+                            value: U256::from(10),
+                            call_data: vec![2, 20],
+                        },
+                    ],
+                },
                 ..Default::default()
             },
             ..Default::default()

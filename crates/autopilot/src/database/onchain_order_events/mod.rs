@@ -49,7 +49,7 @@ use {
             signing_scheme_into,
         },
         event_handling::EventStoring,
-        order_quoting::{OrderQuoting, Quote, QuoteMetadata, QuoteSearchParameters},
+        order_quoting::{OrderQuoting, Quote, QuoteSearchParameters},
         order_validation::{
             convert_signing_scheme_into_quote_signing_scheme,
             get_quote_and_check_fee,
@@ -488,12 +488,7 @@ async fn parse_general_onchain_order_placement_data<'a>(
                     buy_amount: u256_to_big_decimal(&quote.buy_amount),
                     solver: ByteArray(quote.data.solver.0),
                     verified: Some(quote.data.verified),
-                    metadata: Some(
-                        QuoteMetadata {
-                            interactions: quote.data.interactions.clone(),
-                        }
-                        .try_into()?,
-                    ),
+                    metadata: Some(quote.data.metadata.try_into()?),
                 }),
                 Err(err) => {
                     let err_label = err.to_metrics_label();
@@ -1195,13 +1190,7 @@ mod test {
             buy_amount: u256_to_big_decimal(&quote.buy_amount),
             solver: ByteArray(quote.data.solver.0),
             verified: Some(quote.data.verified),
-            metadata: Some(
-                QuoteMetadata {
-                    interactions: quote.data.interactions,
-                }
-                .try_into()
-                .unwrap(),
-            ),
+            metadata: Some(quote.data.metadata.try_into().unwrap()),
         };
         assert_eq!(result.1, vec![Some(expected_quote)]);
         assert_eq!(
