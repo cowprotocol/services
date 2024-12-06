@@ -267,7 +267,7 @@ impl IntoWarpReply for AddOrderError {
                     "MetadataSerializationFailed",
                     "quote metadata failed to serialize as json",
                 ),
-                StatusCode::BAD_REQUEST,
+                StatusCode::INTERNAL_SERVER_ERROR,
             ),
         }
     }
