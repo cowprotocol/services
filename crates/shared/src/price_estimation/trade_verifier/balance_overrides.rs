@@ -1,3 +1,5 @@
+mod detector;
+
 use {
     anyhow::Context as _,
     ethcontract::{Address, H256, U256},
@@ -33,9 +35,40 @@ pub struct BalanceOverrideRequest {
 #[derive(Clone, Debug, Default)]
 pub struct ConfigurationBalanceOverrides(HashMap<Address, Strategy>);
 
+/// Balance override strategy for a token.
 #[derive(Clone, Debug)]
 pub enum Strategy {
+    /// Balance override strategy for tokens whose balances are stored in a
+    /// direct Solidity mapping from token holder to balance amount in the
+    /// form `mapping(address holder => uint256 amount)`.
+    ///
+    /// The strategy is configured with the storage slot [^1] of the mapping.
+    ///
+    /// [^1]: <https://docs.soliditylang.org/en/latest/internals/layout_in_storage.html#mappings-and-dynamic-arrays>
     Mapping { slot: U256 },
+}
+
+impl Strategy {
+    /// Computes the storage slot and value to override for a particular token
+    /// holder and amount.
+    fn state_override(&self, holder: &Address, amount: &U256) -> (H256, H256) {
+        match self {
+            Self::Mapping { slot } => {
+                let key = {
+                    let mut buf = [0; 64];
+                    buf[12..32].copy_from_slice(holder.as_fixed_bytes());
+                    slot.to_big_endian(&mut buf[32..64]);
+                    H256(signing::keccak256(&buf))
+                };
+                let value = {
+                    let mut buf = [0; 32];
+                    amount.to_big_endian(&mut buf);
+                    H256(buf)
+                };
+                (key, value)
+            }
+        }
+    }
 }
 
 impl ConfigurationBalanceOverrides {
@@ -47,20 +80,11 @@ impl ConfigurationBalanceOverrides {
 impl BalanceOverriding for ConfigurationBalanceOverrides {
     fn state_override(&self, request: &BalanceOverrideRequest) -> Option<StateOverride> {
         let strategy = self.0.get(&request.token)?;
-        match strategy {
-            Strategy::Mapping { slot } => {
-                let slot = address_mapping_storage_slot(slot, &request.holder);
-                let value = {
-                    let mut value = H256::default();
-                    request.amount.to_big_endian(&mut value.0);
-                    value
-                };
-                Some(StateOverride {
-                    state_diff: Some(hashmap! { slot => value }),
-                    ..Default::default()
-                })
-            }
-        }
+        let (key, value) = strategy.state_override(&request.holder, &request.amount);
+        Some(StateOverride {
+            state_diff: Some(hashmap! { key => value }),
+            ..Default::default()
+        })
     }
 }
 
@@ -111,17 +135,6 @@ impl FromStr for ConfigurationBalanceOverrides {
             .collect::<Result<_, _>>()?;
         Ok(Self(entries))
     }
-}
-
-/// Computes the storage slot where the value is stored for Solidity mappings
-/// of the form `mapping(address => ...)`.
-///
-/// See <https://docs.soliditylang.org/en/latest/internals/layout_in_storage.html#mappings-and-dynamic-arrays>.
-fn address_mapping_storage_slot(slot: &U256, address: &Address) -> H256 {
-    let mut buf = [0; 64];
-    buf[12..32].copy_from_slice(address.as_fixed_bytes());
-    slot.to_big_endian(&mut buf[32..64]);
-    H256(signing::keccak256(&buf))
 }
 
 #[cfg(test)]
