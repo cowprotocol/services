@@ -354,7 +354,7 @@ impl TradeVerifier {
             })
             .await
         {
-            tracing::debug!(?solver_balance_override, "solver balance override enabled");
+            tracing::trace!(?solver_balance_override, "solver balance override enabled");
             overrides.insert(query.sell_token, solver_balance_override);
         }
 

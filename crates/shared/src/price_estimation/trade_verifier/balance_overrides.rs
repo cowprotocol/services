@@ -205,12 +205,12 @@ pub struct BalanceOverrides {
 impl BalanceOverrides {
     async fn cached_detection(&self, token: Address) -> Option<Strategy> {
         let (detector, cache) = self.detector.as_ref()?;
-        tracing::debug!(?token, "attempting to auto-detect");
+        tracing::trace!(?token, "attempting to auto-detect");
 
         {
             let mut cache = cache.lock().unwrap();
             if let Some(strategy) = cache.cache_get(&token) {
-                tracing::debug!(?token, "cache hit");
+                tracing::trace!(?token, "cache hit");
                 return strategy.clone();
             }
         }
@@ -221,7 +221,7 @@ impl BalanceOverrides {
         // it. Anything else is likely a temporary simulator (i.e. node) failure
         // which we don't want to cache.
         if matches!(&strategy, Ok(_) | Err(DetectionError::NotFound)) {
-            tracing::debug!(?token, ?strategy, "caching result");
+            tracing::debug!(?token, ?strategy, "caching auto-detected strategy");
             let cached_strategy = strategy.as_ref().ok().cloned();
             cache.lock().unwrap().cache_set(token, cached_strategy);
         } else {
@@ -240,14 +240,14 @@ impl BalanceOverrides {
 impl BalanceOverriding for BalanceOverrides {
     async fn state_override(&self, request: BalanceOverrideRequest) -> Option<StateOverride> {
         let strategy = if let Some(strategy) = self.hardcoded.get(&request.token) {
-            tracing::debug!(token = ?request.token, "using pre-configured balance override strategy");
+            tracing::trace!(token = ?request.token, "using pre-configured balance override strategy");
             Some(strategy.clone())
         } else {
             self.cached_detection(request.token).await
         }?;
 
         let (key, value) = strategy.state_override(&request.holder, &request.amount);
-        tracing::debug!(?strategy, ?key, ?value, "overriding token balance");
+        tracing::trace!(?strategy, ?key, ?value, "overriding token balance");
 
         Some(StateOverride {
             state_diff: Some(hashmap! { key => value }),
