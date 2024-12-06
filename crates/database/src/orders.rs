@@ -1270,11 +1270,11 @@ mod tests {
         let metadata: serde_json::Value = serde_json::from_str(
             r#"{ "interactions": [ {
             "target": "0102030405060708091011121314151617181920",
-            "value": 2.1,
+            "value": 1,
             "call_data": "0A0B0C102030"
             },{
             "target": "FF02030405060708091011121314151617181920",
-            "value": 1.2,
+            "value": 2,
             "call_data": "FF0B0C102030"
             }]
         }"#,
@@ -2195,30 +2195,10 @@ mod tests {
             metadata: None,
         };
 
-        // insert quote with verified and metadata fields set to NULL
-        sqlx::query(
-            r#"
-        INSERT INTO order_quotes (
-            order_uid,
-            gas_amount,
-            gas_price,
-            sell_token_price,
-            sell_amount,
-            buy_amount,
-            solver
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7)"#,
-        )
-        .bind(quote.order_uid)
-        .bind(quote.gas_amount)
-        .bind(quote.gas_price)
-        .bind(quote.sell_token_price)
-        .bind(&quote.sell_amount)
-        .bind(&quote.buy_amount)
-        .bind(quote.solver)
-        .execute(&mut db as &mut PgConnection)
-        .await
-        .unwrap();
+        // insert quote with verified and metadata fields stored as NULL
+        insert_quote_and_update_on_conflict(&mut db, &quote)
+            .await
+            .unwrap();
 
         let quote_ = read_quote(&mut db, &quote.order_uid)
             .await

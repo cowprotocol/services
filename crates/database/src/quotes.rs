@@ -339,7 +339,7 @@ mod tests {
         };
         assert_eq!(
             find(&mut db, &search_a).await.unwrap().unwrap(),
-            quotes_a[0]
+            quotes_a[0],
         );
         assert_eq!(
             find(
@@ -368,7 +368,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap(),
-            quotes_a[0]
+            quotes_a[0],
         );
 
         // Token A has no reading for wrong filter
@@ -399,7 +399,7 @@ mod tests {
         };
         assert_eq!(
             find(&mut db, &search_b).await.unwrap().unwrap(),
-            quotes_b[0]
+            quotes_b[0],
         );
         assert_eq!(
             find(
@@ -478,7 +478,7 @@ mod tests {
             quote_kind: quote.quote_kind.clone(),
         };
 
-        assert_eq!(find(&mut db, &search_a).await.unwrap().unwrap(), quote);
+        assert_eq!(find(&mut db, &search_a).await.unwrap().unwrap(), quote,);
         search_a.quote_kind = QuoteKind::Standard;
         assert_eq!(find(&mut db, &search_a).await.unwrap(), None,);
     }
@@ -552,39 +552,8 @@ mod tests {
             metadata: None,
         };
 
-        // store quote with verified and metadata fields set to NULL
-        const QUERY: &str = r#"
-        INSERT INTO quotes (
-            sell_token,
-            buy_token,
-            sell_amount,
-            buy_amount,
-            gas_amount,
-            gas_price,
-            sell_token_price,
-            order_kind,
-            expiration_timestamp,
-            quote_kind,
-            solver
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-        RETURNING id
-        "#;
-        let (id,) = sqlx::query_as(QUERY)
-            .bind(quote.sell_token)
-            .bind(quote.buy_token)
-            .bind(&quote.sell_amount)
-            .bind(&quote.buy_amount)
-            .bind(quote.gas_amount)
-            .bind(quote.gas_price)
-            .bind(quote.sell_token_price)
-            .bind(quote.order_kind)
-            .bind(quote.expiration_timestamp)
-            .bind(&quote.quote_kind)
-            .bind(quote.solver)
-            .fetch_one(&mut db as &mut PgConnection)
-            .await
-            .unwrap();
+        // save quote with verified and metadata fields stored as NULL
+        let id = save(&mut db, &quote).await.unwrap();
 
         // read back stored quote
         let stored_quote = get(&mut db, id).await.unwrap().unwrap();
