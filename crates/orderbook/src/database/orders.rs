@@ -235,12 +235,12 @@ async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), Insert
 }
 
 async fn insert_quote(
-    order: &Order,
+    uid: &OrderUid,
     quote: &Quote,
     ex: &mut PgConnection,
 ) -> Result<(), InsertionError> {
-    let dbquote = database::orders::Quote {
-        order_uid: ByteArray(order.metadata.uid.0),
+    let quote = database::orders::Quote {
+        order_uid: ByteArray(uid.0),
         gas_amount: quote.data.fee_parameters.gas_amount,
         gas_price: quote.data.fee_parameters.gas_price,
         sell_token_price: quote.data.fee_parameters.sell_token_price,
@@ -256,8 +256,7 @@ async fn insert_quote(
             .map_err(|_| InsertionError::MetadataSerializationFailed)?,
         ),
     };
-
-    database::orders::insert_quote(ex, &dbquote)
+    database::orders::insert_quote(ex, &quote)
         .await
         .map_err(InsertionError::DbError)
 }
@@ -280,7 +279,7 @@ impl OrderStoring for Postgres {
 
         insert_order(&order, &mut ex).await?;
         if let Some(quote) = quote {
-            insert_quote(&order, &quote, &mut ex).await?;
+            insert_quote(&order.metadata.uid, &quote, &mut ex).await?;
         }
         Self::insert_order_app_data(&order, &mut ex).await?;
 
@@ -340,7 +339,7 @@ impl OrderStoring for Postgres {
                     .await?;
                     insert_order(&new_order, ex).await?;
                     if let Some(quote) = new_quote {
-                        insert_quote(&new_order, &quote, ex).await?;
+                        insert_quote(&new_order.metadata.uid, &quote, ex).await?;
                     }
                     Self::insert_order_app_data(&new_order, ex).await?;
 

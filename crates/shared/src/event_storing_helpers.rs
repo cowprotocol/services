@@ -17,7 +17,7 @@ use {
     number::conversions::u256_to_big_decimal,
 };
 
-pub fn create_quote_row(data: &QuoteData) -> Result<DbQuote> {
+pub fn create_quote_row(data: QuoteData) -> Result<DbQuote> {
     Ok(DbQuote {
         id: Default::default(),
         sell_token: ByteArray(data.sell_token.0),
@@ -29,12 +29,12 @@ pub fn create_quote_row(data: &QuoteData) -> Result<DbQuote> {
         sell_token_price: data.fee_parameters.sell_token_price,
         order_kind: order_kind_into(data.kind),
         expiration_timestamp: data.expiration,
-        quote_kind: data.quote_kind.clone(),
+        quote_kind: data.quote_kind,
         solver: ByteArray(data.solver.0),
         verified: Some(data.verified),
         metadata: Some(
             QuoteMetadata {
-                interactions: data.interactions.clone(),
+                interactions: data.interactions,
             }
             .try_into()?,
         ),

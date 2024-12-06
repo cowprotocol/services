@@ -1,5 +1,5 @@
 use {
-    crate::{orders::OrderKind, Address, PgTransaction},
+    crate::{orders::OrderKind, Address},
     bigdecimal::BigDecimal,
     sqlx::{
         types::chrono::{DateTime, Utc},
@@ -148,52 +148,6 @@ WHERE expiration_timestamp < $1
         .execute(ex)
         .await
         .map(|_| ())
-}
-
-/// One row in the `quote_interactions` table.
-#[derive(Clone, Debug, PartialEq, sqlx::FromRow)]
-pub struct QuoteInteraction {
-    pub quote_id: QuoteId,
-    pub index: i32,
-    pub target: Address,
-    pub value: BigDecimal,
-    pub call_data: Vec<u8>,
-}
-
-/// Stores interactions provided by the solver for quote.
-pub async fn insert_quote_interaction(
-    ex: &mut PgConnection,
-    quote_interaction: &QuoteInteraction,
-) -> Result<(), sqlx::Error> {
-    const QUERY: &str = r#"
-INSERT INTO quote_interactions (
-    quote_id,
-    index,
-    target,
-    value,
-    call_data
-)
-VALUES ($1, $2, $3, $4, $5)
-    "#;
-    sqlx::query(QUERY)
-        .bind(quote_interaction.quote_id)
-        .bind(quote_interaction.index)
-        .bind(quote_interaction.target)
-        .bind(&quote_interaction.value)
-        .bind(&quote_interaction.call_data)
-        .execute(ex)
-        .await?;
-    Ok(())
-}
-
-pub async fn insert_quote_interactions(
-    ex: &mut PgTransaction<'_>,
-    quote_interactions: &[QuoteInteraction],
-) -> Result<(), sqlx::Error> {
-    for interaction in quote_interactions {
-        insert_quote_interaction(ex, interaction).await?;
-    }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -493,11 +447,11 @@ mod tests {
         let metadata: serde_json::Value = serde_json::from_str(
             r#"{ "interactions": [ {
                 "target": "0102030405060708091011121314151617181920",
-                "value": 2.1,
+                "value": 1,
                 "call_data": "0A0B0C102030"
             },{
             "target": "FF02030405060708091011121314151617181920",
-            "value": 1.2,
+            "value": 2,
             "call_data": "FF0B0C102030"
             }]
         }"#,
