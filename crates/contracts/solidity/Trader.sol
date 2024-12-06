@@ -6,6 +6,7 @@ import { Interaction, Trade, ISettlement } from "./interfaces/ISettlement.sol";
 import { Caller } from "./libraries/Caller.sol";
 import { Math } from "./libraries/Math.sol";
 import { SafeERC20 } from "./libraries/SafeERC20.sol";
+import { Spardose } from "./Spardose.sol";
 
 /// @title A contract for impersonating a trader.
 contract Trader {
@@ -62,17 +63,19 @@ contract Trader {
     receive() external payable {}
 
     /// @dev Executes needed actions on behalf of the trader to make the trade possible.
-    ///      (e.g. wrapping ETH and setting approvals)
+    ///      (e.g. wrapping ETH, setting approvals, and funding the account)
     /// @param settlementContract - pass in settlement contract because it does not have
     /// a stable address in tests.
     /// @param sellToken - token being sold by the trade
     /// @param sellAmount - expected amount to be sold according to the quote
     /// @param nativeToken - ERC20 version of the chain's native token
+    /// @param spardose - piggy bank for requesting additional funds
     function prepareSwap(
         ISettlement settlementContract,
         address sellToken,
         uint256 sellAmount,
-        address nativeToken
+        address nativeToken,
+        address spardose
     ) external {
         require(!alreadyCalled(), "prepareSwap can only be called once");
 
@@ -80,11 +83,16 @@ contract Trader {
             uint256 availableNativeToken = IERC20(sellToken).balanceOf(address(this));
             if (availableNativeToken < sellAmount) {
                 uint256 amountToWrap = sellAmount - availableNativeToken;
-                require(address(this).balance >= amountToWrap, "not enough ETH to wrap");
-                // Simulate wrapping the missing `ETH` so the user doesn't have to spend gas
-                // on that just to get a quote. If they are happy with the quote and want to
-                // create an order they will actually have to do the wrapping, though.
-                INativeERC20(nativeToken).deposit{value: amountToWrap}();
+                // If the user has sufficient balance, simulate the wrapping the missing
+                // `ETH` so the user doesn't have to spend gas on that just to get a quote.
+                // If they are happy with the quote and want to create an order they will
+                // actually have to do the wrapping, though. Note that we don't attempt to
+                // wrap if the user doesn't have sufficient `ETH` balance, since that would
+                // revert. Instead, we fall-through so that we handle insufficient sell
+                // token balances uniformly for all tokens.
+                if (address(this).balance >= amountToWrap) {
+                    INativeERC20(nativeToken).deposit{value: amountToWrap}();
+                }
             }
         }
 
@@ -98,6 +106,20 @@ contract Trader {
             // https://github.com/ethereum/EIPs/issues/20#issuecomment-263524729
             IERC20(sellToken).safeApprove(address(settlementContract.vaultRelayer()), 0);
             IERC20(sellToken).safeApprove(address(settlementContract.vaultRelayer()), type(uint256).max);
+        }
+
+        // Ensure that the user has sufficient sell token balance. If not, request some
+        // funds from the Spardose (piggy bank) which will be available if balance
+        // overrides are enabled.
+        uint256 sellBalance = IERC20(sellToken).balanceOf(address(this));
+        if (sellBalance < sellAmount) {
+            try Spardose(spardose).requestFunds(sellToken, sellAmount - sellBalance) {}
+            catch {
+                // The trader does not have sufficient sell token balance, and the
+                // piggy bank pre-fund failed, as balance overrides are not available.
+                // Revert with a helpful message.
+                revert("trader does not have enough sell token");
+            }
         }
     }
 

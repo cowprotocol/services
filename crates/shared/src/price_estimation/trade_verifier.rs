@@ -1,11 +1,7 @@
 pub mod balance_overrides;
 
 use {
-    self::balance_overrides::{
-        BalanceOverrideRequest,
-        BalanceOverriding,
-        ConfigurationBalanceOverrides,
-    },
+    self::balance_overrides::{BalanceOverrideRequest, BalanceOverriding},
     super::{Estimate, Verification},
     crate::{
         code_fetching::CodeFetching,
@@ -77,10 +73,12 @@ impl TradeVerifier {
     const SPARDOSE: H160 = addr!("0000000000000000000000000000000000020000");
     const TRADER_IMPL: H160 = addr!("0000000000000000000000000000000000010000");
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         web3: Web3,
         simulator: Arc<dyn CodeSimulating>,
         code_fetcher: Arc<dyn CodeFetching>,
+        balance_overrides: Arc<dyn BalanceOverriding>,
         block_stream: CurrentBlockWatcher,
         settlement: H160,
         native_token: H160,
@@ -92,7 +90,7 @@ impl TradeVerifier {
         Ok(Self {
             simulator,
             code_fetcher,
-            balance_overrides: Arc::new(ConfigurationBalanceOverrides::default()),
+            balance_overrides,
             block_stream,
             settlement: settlement_contract,
             native_token,
@@ -100,11 +98,6 @@ impl TradeVerifier {
             web3,
             domain_separator,
         })
-    }
-
-    pub fn with_balance_overrides(mut self, balance_overrides: Arc<dyn BalanceOverriding>) -> Self {
-        self.balance_overrides = balance_overrides;
-        self
     }
 
     async fn verify_inner(
@@ -341,23 +334,24 @@ impl TradeVerifier {
         // not alter solver balances which may be used during settlement. We use
         // a similar strategy for determining whether or not to set approvals on
         // behalf of the trader.
-        if let Some(solver_balance_override) =
-            self.balance_overrides
-                .state_override(&BalanceOverrideRequest {
-                    token: query.sell_token,
-                    holder: Self::SPARDOSE,
-                    amount: match query.kind {
-                        OrderKind::Sell => query.in_amount.get(),
-                        OrderKind::Buy => trade.out_amount(
-                            &query.buy_token,
-                            &query.sell_token,
-                            &query.in_amount.get(),
-                            &query.kind,
-                        )?,
-                    },
-                })
+        if let Some(solver_balance_override) = self
+            .balance_overrides
+            .state_override(BalanceOverrideRequest {
+                token: query.sell_token,
+                holder: Self::SPARDOSE,
+                amount: match query.kind {
+                    OrderKind::Sell => query.in_amount.get(),
+                    OrderKind::Buy => trade.out_amount(
+                        &query.buy_token,
+                        &query.sell_token,
+                        &query.in_amount.get(),
+                        &query.kind,
+                    )?,
+                },
+            })
+            .await
         {
-            tracing::debug!(?solver_balance_override, "solver balance override enabled");
+            tracing::trace!(?solver_balance_override, "solver balance override enabled");
             overrides.insert(query.sell_token, solver_balance_override);
         }
 
