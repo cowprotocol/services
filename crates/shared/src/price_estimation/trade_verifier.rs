@@ -101,22 +101,19 @@ impl TradeVerifier {
     async fn verify_inner(
         &self,
         query: &PriceQuery,
-        verification: &Verification,
+        mut verification: Verification,
         trade: &TradeKind,
         out_amount: &U256,
     ) -> Result<Estimate, Error> {
         let start = std::time::Instant::now();
 
-        // prepare state overrides which may alter the trader
-        // address to enable more verifications
-        let (overrides, verification) = {
-            let mut verification = verification.clone();
-            let overrides = self
-                .prepare_state_overrides(&mut verification, query, trade)
-                .await
-                .map_err(Error::SimulationFailed)?;
-            (overrides, verification)
-        };
+        // this may change the `verification` parameter (to make more
+        // quotes verifiable) so we do it as the first thing to ensure
+        // that all the following code uses the updated value
+        let overrides = self
+            .prepare_state_overrides(&mut verification, query, trade)
+            .await
+            .map_err(Error::SimulationFailed)?;
 
         // Use `tx_origin` if response indicates that a special address is needed for
         // the simulation to pass. Otherwise just use the solver address.
@@ -291,7 +288,7 @@ impl TradeVerifier {
         query: &PriceQuery,
         trade: &TradeKind,
     ) -> Result<HashMap<H160, StateOverride>> {
-        let mut overrides = HashMap::default();
+        let mut overrides = HashMap::with_capacity(6);
 
         // Provide mocked balances if possible to the spardose to allow it to
         // give some balances to the trader in order to verify trades even for
@@ -421,7 +418,7 @@ impl TradeVerifying for TradeVerifier {
             )
             .context("failed to compute trade out amount")?;
         match self
-            .verify_inner(query, verification, &trade, &out_amount)
+            .verify_inner(query, verification.clone(), &trade, &out_amount)
             .await
         {
             Ok(verified) => Ok(verified),
