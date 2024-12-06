@@ -113,18 +113,21 @@ impl<'a> PriceEstimatorFactory<'a> {
             None => Arc::new(web3.clone()),
         };
 
-        Ok(Some(Arc::new(
-            TradeVerifier::new(
-                web3,
-                simulator,
-                components.code_fetcher.clone(),
-                network.block_stream.clone(),
-                network.settlement,
-                network.native_token,
-                args.quote_inaccuracy_limit.clone(),
-            )
-            .await?,
-        )))
+        let balance_overrides = Arc::new(args.quote_token_balance_overrides.clone());
+
+        let verifier = TradeVerifier::new(
+            web3,
+            simulator,
+            components.code_fetcher.clone(),
+            network.block_stream.clone(),
+            network.settlement,
+            network.native_token,
+            args.quote_inaccuracy_limit.clone(),
+        )
+        .await?
+        .with_balance_overrides(balance_overrides);
+
+        Ok(Some(Arc::new(verifier)))
     }
 
     fn native_token_price_estimation_amount(&self) -> Result<NonZeroU256> {

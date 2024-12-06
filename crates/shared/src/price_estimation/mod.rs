@@ -1,4 +1,5 @@
 use {
+    self::trade_verifier::balance_overrides::ConfigurationBalanceOverrides,
     crate::{
         arguments::{display_option, display_secret_option, ExternalSolver},
         trade_finding::Interaction,
@@ -214,6 +215,17 @@ pub struct Arguments {
         value_parser = humantime::parse_duration,
     )]
     pub quote_timeout: Duration,
+
+    /// Token configuration for simulated balances on verified quotes. This
+    /// allows the quote verification system to produce verified quotes for
+    /// traders without sufficient balance for the configured token pairs.
+    ///
+    /// The expected format is a comma separated list of `${ADDR}@${SLOT}`,
+    /// where `ADDR` is the token address and `SLOT` is the Solidity storage
+    /// slot for the balances mapping. For example for WETH:
+    /// `0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2@3`.
+    #[clap(long, env, default_value_t)]
+    pub quote_token_balance_overrides: ConfigurationBalanceOverrides,
 }
 
 #[derive(clap::Parser)]
@@ -293,6 +305,7 @@ impl Display for Arguments {
             quote_inaccuracy_limit,
             quote_verification,
             quote_timeout,
+            quote_token_balance_overrides,
         } = self;
 
         display_option(
@@ -370,6 +383,11 @@ impl Display for Arguments {
         writeln!(f, "quote_inaccuracy_limit: {}", quote_inaccuracy_limit)?;
         writeln!(f, "quote_verification: {:?}", quote_verification)?;
         writeln!(f, "quote_timeout: {:?}", quote_timeout)?;
+        writeln!(
+            f,
+            "quote_token_balance_overrides: {:?}",
+            quote_token_balance_overrides
+        )?;
 
         Ok(())
     }

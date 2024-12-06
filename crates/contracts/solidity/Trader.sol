@@ -99,9 +99,6 @@ contract Trader {
             IERC20(sellToken).safeApprove(address(settlementContract.vaultRelayer()), 0);
             IERC20(sellToken).safeApprove(address(settlementContract.vaultRelayer()), type(uint256).max);
         }
-
-        uint256 availableSellToken = IERC20(sellToken).balanceOf(address(this));
-        require(availableSellToken >= sellAmount, "trader does not have enough sell_token");
     }
 
     /// @dev Validate all signature requests. This makes "signing" CoW protocol

@@ -1,4 +1,11 @@
+pub mod balance_overrides;
+
 use {
+    self::balance_overrides::{
+        BalanceOverrideRequest,
+        BalanceOverriding,
+        ConfigurationBalanceOverrides,
+    },
     super::{Estimate, Verification},
     crate::{
         code_fetching::CodeFetching,
@@ -17,7 +24,7 @@ use {
     contracts::{
         deployed_bytecode,
         dummy_contract,
-        support::{AnyoneAuthenticator, Solver, Trader},
+        support::{AnyoneAuthenticator, Solver, Spardose, Trader},
         GPv2Settlement,
         WETH9,
     },
@@ -57,6 +64,7 @@ pub struct TradeVerifier {
     web3: Web3,
     simulator: Arc<dyn CodeSimulating>,
     code_fetcher: Arc<dyn CodeFetching>,
+    balance_overrides: Arc<dyn BalanceOverriding>,
     block_stream: CurrentBlockWatcher,
     settlement: GPv2Settlement,
     native_token: H160,
@@ -66,6 +74,7 @@ pub struct TradeVerifier {
 
 impl TradeVerifier {
     const DEFAULT_GAS: u64 = 8_000_000;
+    const SPARDOSE: H160 = addr!("0000000000000000000000000000000000020000");
     const TRADER_IMPL: H160 = addr!("0000000000000000000000000000000000010000");
 
     pub async fn new(
@@ -83,6 +92,7 @@ impl TradeVerifier {
         Ok(Self {
             simulator,
             code_fetcher,
+            balance_overrides: Arc::new(ConfigurationBalanceOverrides::default()),
             block_stream,
             settlement: settlement_contract,
             native_token,
@@ -90,6 +100,11 @@ impl TradeVerifier {
             web3,
             domain_separator,
         })
+    }
+
+    pub fn with_balance_overrides(mut self, balance_overrides: Arc<dyn BalanceOverriding>) -> Self {
+        self.balance_overrides = balance_overrides;
+        self
     }
 
     async fn verify_inner(
@@ -152,6 +167,11 @@ impl TradeVerifier {
             OrderKind::Buy => *out_amount,
         };
 
+        // Only enable additional mocking (approvals, native token wrapping,
+        // balance overrides) if the user did not provide pre-interactions. If
+        // the user did provide pre-interactions, it's reasonable to assume that
+        // they will set up all the necessary details of the trade.
+        let mock_enabled = verification.pre_interactions.is_empty();
         let simulation = solver
             .methods()
             .swap(
@@ -163,11 +183,7 @@ impl TradeVerifier {
                 tokens.clone(),
                 verification.receiver,
                 Bytes(settlement.data.unwrap().0),
-                // only if the user did not provide pre-interactions is it safe
-                // to set up the trade's pre-conditions on behalf of the user.
-                // if the user provided pre-interactions it's reasonable to assume
-                // that they will set up all the necessary details for the trade.
-                verification.pre_interactions.is_empty(),
+                (mock_enabled, Self::SPARDOSE),
             )
             .tx;
 
@@ -184,7 +200,7 @@ impl TradeVerifier {
         };
 
         let overrides = self
-            .prepare_state_overrides(verification, trade)
+            .prepare_state_overrides(verification, query, trade)
             .await
             .map_err(Error::SimulationFailed)?;
 
@@ -276,6 +292,7 @@ impl TradeVerifier {
     async fn prepare_state_overrides(
         &self,
         verification: &Verification,
+        query: &PriceQuery,
         trade: &TradeKind,
     ) -> Result<HashMap<H160, StateOverride>> {
         // Set up mocked trader.
@@ -301,6 +318,47 @@ impl TradeVerifier {
                     ..Default::default()
                 },
             );
+        }
+
+        // Setup the funding contract override. Regardless of whether or not the
+        // contract has funds, it needs to exist in order to not revert
+        // simulations (Solidity reverts on attempts to call addresses without
+        // any code).
+        overrides.insert(
+            Self::SPARDOSE,
+            StateOverride {
+                code: Some(deployed_bytecode!(Spardose)),
+                ..Default::default()
+            },
+        );
+
+        // Provide mocked balances if possible to the spardose to allow it to
+        // give some balances to the trader in order to verify trades even for
+        // owners without balances. Note that we use a separate account for
+        // funding to not interfere with the settlement process. This allows the
+        // simulation to conditionally transfer the balance only when it is
+        // safe to mock the trade pre-conditions on behalf of the user and to
+        // not alter solver balances which may be used during settlement. We use
+        // a similar strategy for determining whether or not to set approvals on
+        // behalf of the trader.
+        if let Some(solver_balance_override) =
+            self.balance_overrides
+                .state_override(&BalanceOverrideRequest {
+                    token: query.sell_token,
+                    holder: Self::SPARDOSE,
+                    amount: match query.kind {
+                        OrderKind::Sell => query.in_amount.get(),
+                        OrderKind::Buy => trade.out_amount(
+                            &query.buy_token,
+                            &query.sell_token,
+                            &query.in_amount.get(),
+                            &query.kind,
+                        )?,
+                    },
+                })
+        {
+            tracing::debug!(?solver_balance_override, "solver balance override enabled");
+            overrides.insert(query.sell_token, solver_balance_override);
         }
 
         // Set up mocked solver.

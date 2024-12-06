@@ -114,6 +114,7 @@ pub mod support {
         Signatures;
         SimulateCode;
         Solver;
+        Spardose;
         Swapper;
         Trader;
     }

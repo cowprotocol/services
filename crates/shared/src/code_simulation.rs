@@ -4,7 +4,7 @@ use {
     crate::tenderly_api::{SimulationKind, SimulationRequest, StateObject, TenderlyApi},
     anyhow::{ensure, Context as _, Result},
     contracts::errors::EthcontractErrorType,
-    ethcontract::{errors::ExecutionError, H256},
+    ethcontract::errors::ExecutionError,
     ethrpc::{
         extensions::{EthExt as _, StateOverride, StateOverrides},
         Web3,
@@ -206,16 +206,7 @@ impl TryFrom<StateOverride> for StateObject {
         Ok(StateObject {
             balance: value.balance,
             code: value.code,
-            storage: value.state_diff.map(|state_diff| {
-                state_diff
-                    .into_iter()
-                    .map(|(key, uint)| {
-                        let mut value = H256::default();
-                        uint.to_big_endian(&mut value.0);
-                        (key, value)
-                    })
-                    .collect()
-            }),
+            storage: value.state_diff,
         })
     }
 }
@@ -262,6 +253,7 @@ mod tests {
     use {
         super::*,
         crate::{ethrpc::create_env_test_transport, tenderly_api::TenderlyHttpApi},
+        ethcontract::H256,
         hex_literal::hex,
         maplit::hashmap,
         std::time::Duration,
@@ -393,7 +385,8 @@ mod tests {
                 hashmap! {
                     addr!("D533a949740bb3306d119CC777fa900bA034cd52") => StateOverride {
                         state_diff: Some(hashmap! {
-                            H256(balance_slot) => 1.into()
+                            H256(balance_slot) =>
+                                H256(hex!("0000000000000000000000000000000000000000000000000000000000000001")),
                         }),
                         ..Default::default()
                     },
