@@ -1,11 +1,7 @@
 pub mod balance_overrides;
 
 use {
-    self::balance_overrides::{
-        BalanceOverrideRequest,
-        BalanceOverriding,
-        ConfigurationBalanceOverrides,
-    },
+    self::balance_overrides::{BalanceOverrideRequest, BalanceOverriding},
     super::{Estimate, Verification},
     crate::{
         code_fetching::CodeFetching,
@@ -29,7 +25,6 @@ use {
     },
     ethcontract::{tokens::Tokenize, Bytes, H160, U256},
     ethrpc::{block_stream::CurrentBlockWatcher, extensions::StateOverride, Web3},
-    maplit::hashmap,
     model::{
         order::{OrderData, OrderKind, BUY_ETH_ADDRESS},
         signature::{Signature, SigningScheme},
@@ -76,10 +71,12 @@ impl TradeVerifier {
     const SPARDOSE: H160 = addr!("0000000000000000000000000000000000020000");
     const TRADER_IMPL: H160 = addr!("0000000000000000000000000000000000010000");
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         web3: Web3,
         simulator: Arc<dyn CodeSimulating>,
         code_fetcher: Arc<dyn CodeFetching>,
+        balance_overrides: Arc<dyn BalanceOverriding>,
         block_stream: CurrentBlockWatcher,
         settlement: H160,
         native_token: H160,
@@ -91,7 +88,7 @@ impl TradeVerifier {
         Ok(Self {
             simulator,
             code_fetcher,
-            balance_overrides: Arc::new(ConfigurationBalanceOverrides::default()),
+            balance_overrides,
             block_stream,
             settlement: settlement_contract,
             native_token,
@@ -101,24 +98,22 @@ impl TradeVerifier {
         })
     }
 
-    pub fn with_balance_overrides(mut self, balance_overrides: Arc<dyn BalanceOverriding>) -> Self {
-        self.balance_overrides = balance_overrides;
-        self
-    }
-
     async fn verify_inner(
         &self,
         query: &PriceQuery,
-        verification: &Verification,
+        mut verification: Verification,
         trade: &TradeKind,
         out_amount: &U256,
     ) -> Result<Estimate, Error> {
-        if verification.from.is_zero() {
-            // Don't waste time on common simulations which will always fail.
-            return Err(anyhow::anyhow!("trader is zero address").into());
-        }
-
         let start = std::time::Instant::now();
+
+        // this may change the `verification` parameter (to make more
+        // quotes verifiable) so we do it as the first thing to ensure
+        // that all the following code uses the updated value
+        let overrides = self
+            .prepare_state_overrides(&mut verification, query, trade)
+            .await
+            .map_err(Error::SimulationFailed)?;
 
         // Use `tx_origin` if response indicates that a special address is needed for
         // the simulation to pass. Otherwise just use the solver address.
@@ -139,7 +134,7 @@ impl TradeVerifier {
 
         let settlement = encode_settlement(
             query,
-            verification,
+            &verification,
             trade,
             &tokens,
             &clearing_prices,
@@ -148,7 +143,7 @@ impl TradeVerifier {
             &self.domain_separator,
         )?;
 
-        let settlement = add_balance_queries(settlement, query, verification, &solver);
+        let settlement = add_balance_queries(settlement, query, &verification, &solver);
 
         let settlement = self
             .settlement
@@ -197,11 +192,6 @@ impl TradeVerifier {
             gas_price: Some(block.gas_price),
             ..Default::default()
         };
-
-        let overrides = self
-            .prepare_state_overrides(verification, query, trade)
-            .await
-            .map_err(Error::SimulationFailed)?;
 
         let output = self
             .simulator
@@ -294,17 +284,60 @@ impl TradeVerifier {
     /// trade.
     async fn prepare_state_overrides(
         &self,
-        verification: &Verification,
+        verification: &mut Verification,
         query: &PriceQuery,
         trade: &TradeKind,
     ) -> Result<HashMap<H160, StateOverride>> {
+        let mut overrides = HashMap::with_capacity(6);
+
+        // Provide mocked balances if possible to the spardose to allow it to
+        // give some balances to the trader in order to verify trades even for
+        // owners without balances. Note that we use a separate account for
+        // funding to not interfere with the settlement process. This allows the
+        // simulation to conditionally transfer the balance only when it is
+        // safe to mock the trade pre-conditions on behalf of the user and to
+        // not alter solver balances which may be used during settlement. We use
+        // a similar strategy for determining whether or not to set approvals on
+        // behalf of the trader.
+        if let Some(solver_balance_override) = self
+            .balance_overrides
+            .state_override(BalanceOverrideRequest {
+                token: query.sell_token,
+                holder: Self::SPARDOSE,
+                amount: match query.kind {
+                    OrderKind::Sell => query.in_amount.get(),
+                    OrderKind::Buy => trade.out_amount(
+                        &query.buy_token,
+                        &query.sell_token,
+                        &query.in_amount.get(),
+                        &query.kind,
+                    )?,
+                },
+            })
+            .await
+        {
+            tracing::trace!(?solver_balance_override, "solver balance override enabled");
+            overrides.insert(query.sell_token, solver_balance_override);
+
+            if verification.from.is_zero() {
+                verification.from = H160::random();
+                tracing::debug!(
+                    trader = ?verification.from,
+                    "use random trader address with fake balances"
+                );
+            }
+        } else if verification.from.is_zero() {
+            anyhow::bail!("trader is zero address and balances can not be faked");
+        }
+
         // Set up mocked trader.
-        let mut overrides = hashmap! {
-            verification.from => StateOverride {
+        overrides.insert(
+            verification.from,
+            StateOverride {
                 code: Some(deployed_bytecode!(Trader)),
                 ..Default::default()
             },
-        };
+        );
 
         // If the trader is a smart contract we also need to store its implementation
         // to proxy into it during the simulation.
@@ -334,35 +367,6 @@ impl TradeVerifier {
                 ..Default::default()
             },
         );
-
-        // Provide mocked balances if possible to the spardose to allow it to
-        // give some balances to the trader in order to verify trades even for
-        // owners without balances. Note that we use a separate account for
-        // funding to not interfere with the settlement process. This allows the
-        // simulation to conditionally transfer the balance only when it is
-        // safe to mock the trade pre-conditions on behalf of the user and to
-        // not alter solver balances which may be used during settlement. We use
-        // a similar strategy for determining whether or not to set approvals on
-        // behalf of the trader.
-        if let Some(solver_balance_override) =
-            self.balance_overrides
-                .state_override(&BalanceOverrideRequest {
-                    token: query.sell_token,
-                    holder: Self::SPARDOSE,
-                    amount: match query.kind {
-                        OrderKind::Sell => query.in_amount.get(),
-                        OrderKind::Buy => trade.out_amount(
-                            &query.buy_token,
-                            &query.sell_token,
-                            &query.in_amount.get(),
-                            &query.kind,
-                        )?,
-                    },
-                })
-        {
-            tracing::debug!(?solver_balance_override, "solver balance override enabled");
-            overrides.insert(query.sell_token, solver_balance_override);
-        }
 
         // Set up mocked solver.
         let mut solver_override = StateOverride {
@@ -414,7 +418,7 @@ impl TradeVerifying for TradeVerifier {
             )
             .context("failed to compute trade out amount")?;
         match self
-            .verify_inner(query, verification, &trade, &out_amount)
+            .verify_inner(query, verification.clone(), &trade, &out_amount)
             .await
         {
             Ok(verified) => Ok(verified),
@@ -796,7 +800,7 @@ enum Error {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, std::str::FromStr};
+    use {super::*, maplit::hashmap, std::str::FromStr};
 
     #[test]
     fn discards_inaccurate_quotes() {

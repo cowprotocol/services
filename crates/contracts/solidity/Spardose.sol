@@ -12,21 +12,12 @@ import { SafeERC20 } from "./libraries/SafeERC20.sol";
 contract Spardose {
     using SafeERC20 for *;
 
-    /// @dev Ensures that the trader has at least `amount` tokens. If not, it
-    /// will try and transfer the difference to the trader.
+    /// @dev Request funds from the piggy bank to be transferred to the caller.
+    /// Reverts if the transfer fails.
     ///
-    /// @param trader - the address of the trader
-    /// @param token - the token to ensure a balance for
-    /// @param amount - the amount of `token` that the `trader` must hold
-    ///
-    /// @return success - the `trader`'s `token` balance is more than `amount`
-    function ensureBalance(address trader, address token, uint256 amount) external returns (bool success) {
-        uint256 traderBalance = IERC20(token).balanceOf(trader);
-        if (traderBalance >= amount) {
-            return true;
-        }
-
-        uint256 difference = amount - traderBalance;
-        return IERC20(token).trySafeTransfer(trader, difference);
+    /// @param token - the token request funds for
+    /// @param amount - the amount of `token` to transfer
+    function requestFunds(address token, uint256 amount) external {
+        IERC20(token).safeTransfer(msg.sender, amount);
     }
 }
