@@ -5,3 +5,11 @@
 /.idea
 **/testing.*.toml
 /playground/.env
+
+# Merged files
+*.merged
+*_BACKUP_*
+*_BASE_*
+*_LOCAL_*
+*_REMOTE_*
+*.orig
