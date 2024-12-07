@@ -1,0 +1,31 @@
+chain-id = 100  # Gnosis Chain
+
+[[solver]]
+name = "zeroex"
+endpoint = "http://127.0.0.1:7872"
+account = "0x0000000000000000000000000000000000000000000000000000000000000001"  # Replace with actual solver account
+relative-slippage = "0.1"
+merge-solutions = true
+response-size-limit-max-bytes = 30000000
+
+[submission]
+gas-price-cap = "1000000000000"  # 1000 gwei
+
+[[submission.mempool]]
+mempool = "public"
+max-additional-tip = "5000000000"
+additional-tip-percentage = 0.05
+
+[contracts]
+gp-v2-settlement = "0x9008D19f58AAbD9eD0D60971565AA8510560ab41"
+weth = "0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d"  # wxDAI on Gnosis Chain
+
+[[order-priority]]
+strategy = "creation-timestamp"
+
+[[order-priority]]
+strategy = "external-price"
+
+[[order-priority]]
+strategy = "own-quotes"
+max-order-age = "1m"
