@@ -15,7 +15,6 @@ required-features = ["bin"]
 [features]
 default = []
 bin = [
-    "anyhow",
     "ethcontract-generate",
     "serde_json",
     "tracing",
@@ -27,7 +26,7 @@ ethcontract = { workspace = true }
 serde = { workspace = true }
 
 # [bin-dependencies]
-anyhow = { workspace = true, optional = true }
+anyhow = { workspace = true }
 ethcontract-generate = { workspace = true, optional = true, features = ["http"] }
 serde_json = { workspace = true, optional = true }
 tracing = { workspace = true, optional = true }

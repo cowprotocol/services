@@ -16,6 +16,7 @@ use {
     ethcontract::errors::DeployError,
     futures::{FutureExt, StreamExt},
     model::{order::BUY_ETH_ADDRESS, DomainSeparator},
+    observe::metrics::{serve_metrics, DEFAULT_METRICS_PORT},
     order_validation,
     shared::{
         account_balances,
@@ -30,7 +31,6 @@ use {
         code_fetching::CachedCodeFetcher,
         gas_price::InstrumentedGasEstimator,
         http_client::HttpClientFactory,
-        metrics::{serve_metrics, DEFAULT_METRICS_PORT},
         order_quoting::{self, OrderQuoter},
         order_validation::{OrderValidPeriodConfiguration, OrderValidator},
         price_estimation::{
@@ -273,6 +273,7 @@ pub async fn run(args: Arguments) {
             code_fetcher: code_fetcher.clone(),
         },
     )
+    .await
     .expect("failed to initialize price estimator factory");
 
     let native_price_estimator = price_estimator_factory

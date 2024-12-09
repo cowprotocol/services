@@ -73,14 +73,14 @@ pub struct Components {
 }
 
 impl<'a> PriceEstimatorFactory<'a> {
-    pub fn new(
+    pub async fn new(
         args: &'a Arguments,
         shared_args: &'a arguments::Arguments,
         network: Network,
         components: Components,
     ) -> Result<Self> {
         Ok(Self {
-            trade_verifier: Self::trade_verifier(args, shared_args, &network, &components),
+            trade_verifier: Self::trade_verifier(args, shared_args, &network, &components).await?,
             args,
             network,
             components,
@@ -88,13 +88,15 @@ impl<'a> PriceEstimatorFactory<'a> {
         })
     }
 
-    fn trade_verifier(
+    async fn trade_verifier(
         args: &'a Arguments,
         shared_args: &arguments::Arguments,
         network: &Network,
         components: &Components,
-    ) -> Option<Arc<dyn TradeVerifying>> {
-        let web3 = network.simulation_web3.clone()?;
+    ) -> Result<Option<Arc<dyn TradeVerifying>>> {
+        let Some(web3) = network.simulation_web3.clone() else {
+            return Ok(None);
+        };
         let web3 = ethrpc::instrumented::instrument_with_label(&web3, "simulator".into());
 
         let tenderly = shared_args
@@ -111,15 +113,20 @@ impl<'a> PriceEstimatorFactory<'a> {
             None => Arc::new(web3.clone()),
         };
 
-        Some(Arc::new(TradeVerifier::new(
+        let balance_overrides = args.balance_overrides.init(simulator.clone());
+
+        let verifier = TradeVerifier::new(
             web3,
             simulator,
             components.code_fetcher.clone(),
+            balance_overrides,
             network.block_stream.clone(),
             network.settlement,
             network.native_token,
-            args.quote_inaccuracy_limit,
-        )))
+            args.quote_inaccuracy_limit.clone(),
+        )
+        .await?;
+        Ok(Some(Arc::new(verifier)))
     }
 
     fn native_token_price_estimation_amount(&self) -> Result<NonZeroU256> {

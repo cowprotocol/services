@@ -1,9 +1,10 @@
 use {
     super::{compare_error, CompetitionEstimator},
     crate::price_estimation::{
-        native::{NativePriceEstimateResult, NativePriceEstimating},
+        native::{is_price_malformed, NativePriceEstimateResult, NativePriceEstimating},
         PriceEstimationError,
     },
+    anyhow::Context,
     futures::{future::BoxFuture, FutureExt},
     model::order::OrderKind,
     primitive_types::H160,
@@ -14,12 +15,22 @@ impl NativePriceEstimating for CompetitionEstimator<Arc<dyn NativePriceEstimatin
     fn estimate_native_price(&self, token: H160) -> BoxFuture<'_, NativePriceEstimateResult> {
         async move {
             let results = self
-                .produce_results(token, Result::is_ok, |e, q| e.estimate_native_price(q))
+                .produce_results(token, Result::is_ok, |e, q| {
+                    async move {
+                        let res = e.estimate_native_price(q).await;
+                        if res.as_ref().is_ok_and(|price| is_price_malformed(*price)) {
+                            let err = anyhow::anyhow!("estimator returned malformed price");
+                            return Err(PriceEstimationError::EstimatorInternal(err));
+                        }
+                        res
+                    }
+                    .boxed()
+                })
                 .await;
             let winner = results
                 .into_iter()
                 .max_by(|a, b| compare_native_result(&a.1, &b.1))
-                .expect("we get passed at least 1 result and did not filter out any of them");
+                .context("could not get any native price")?;
             self.report_winner(&token, OrderKind::Buy, winner)
         }
         .boxed()
@@ -122,5 +133,17 @@ mod tests {
         )
         .await;
         assert_eq!(best, native_price(1.));
+    }
+
+    /// Nonsensical prices like infinities, and non-positive values get ignored.
+    #[tokio::test]
+    async fn ignore_nonsensical_prices() {
+        let subnormal = f64::from_bits(1);
+        assert!(!subnormal.is_normal());
+
+        for price in [f64::NEG_INFINITY, -1., 0., f64::INFINITY, subnormal] {
+            let best = best_response(PriceRanking::MaxOutAmount, vec![native_price(price)]).await;
+            assert!(best.is_err());
+        }
     }
 }

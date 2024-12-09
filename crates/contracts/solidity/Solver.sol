@@ -16,7 +16,11 @@ import { Trader } from "./Trader.sol";
 contract Solver {
     using Caller for *;
     using Math for *;
-    using SafeERC20 for *;
+
+    struct Mock {
+        bool enabled;
+        address spardose;
+    }
 
     uint256 private _simulationOverhead;
     uint256[] private _queriedBalances;
@@ -31,14 +35,14 @@ contract Solver {
     /// @param trader - address of the order owner doing the trade
     /// @param sellToken - address of the token being sold
     /// @param sellAmount - amount being sold
-    /// @param buyToken - address of the token being bought
     /// @param nativeToken - ERC20 version of the chain's token
+    /// @param tokens - list of tokens used in the trade
     /// @param receiver - address receiving the bought tokens
     /// @param settlementCall - the calldata of the `settle()` call
-    /// @param mockPreconditions - controls whether things like ETH wrapping
-    ///            or setting allowance should be done on behalf of the
-    ///            user to support quote verification even if the user didn't
-    ///            wrap their ETH or set the necessary allowances yet.
+    /// @param mock - mocking configuration for the simulation; this controls
+    ///             whether things like ETH wrapping, setting allowance and
+    ///             pre-funding should be done on behalf of the user to support
+    ///             quote verification for users who aren't ready to swap.
     ///
     /// @return gasUsed - gas used for the `settle()` call
     /// @return queriedBalances - list of balances stored during the simulation
@@ -47,26 +51,27 @@ contract Solver {
         address payable trader,
         address sellToken,
         uint256 sellAmount,
-        address buyToken,
         address nativeToken,
+        address[] calldata tokens,
         address payable receiver,
         bytes calldata settlementCall,
-        bool mockPreconditions
+        Mock memory mock
     ) external returns (
         uint256 gasUsed,
         uint256[] memory queriedBalances
     ) {
         require(msg.sender == address(this), "only simulation logic is allowed to call 'swap' function");
 
-        // Prepare the trade in the context of the trader so we are allowed
-        // to set approvals and things like that.
-        if (mockPreconditions) {
+        if (mock.enabled) {
+            // Prepare the trade in the context of the trader so we are allowed
+            // to set approvals and things like that.
             Trader(trader)
                 .prepareSwap(
                     settlementContract,
                     sellToken,
                     sellAmount,
-                    nativeToken
+                    nativeToken,
+                    mock.spardose
                 );
         }
 
@@ -74,15 +79,19 @@ contract Solver {
         // We allow this call to revert becaues it was either unnecessary in the first place
         // or failing to send `ETH` to the `receiver` will cause a revert in the settlement
         // contract.
-        receiver.call{value: 0}("");
+        {
+            (bool success,) = receiver.call{value: 0}("");
+            success;
+        }
 
-        this.storeBalance(sellToken, address(settlementContract), false);
-        this.storeBalance(buyToken, address(settlementContract), false);
-        uint256 gasStart = gasleft();
-        address(settlementContract).doCall(settlementCall);
-        gasUsed = gasStart - gasleft() - _simulationOverhead;
-        this.storeBalance(sellToken, address(settlementContract), false);
-        this.storeBalance(buyToken, address(settlementContract), false);
+        // Store pre-settlement balances
+        _storeSettlementBalances(tokens, settlementContract);
+
+        gasUsed = _executeSettlement(address(settlementContract), settlementCall);
+
+        // Store post-settlement balances
+        _storeSettlementBalances(tokens, settlementContract);
+
         queriedBalances = _queriedBalances;
     }
 
@@ -103,5 +112,27 @@ contract Solver {
             // Account for costs of gas used outside of metered section.
             _simulationOverhead += gasStart - gasleft() + 4460;
         }
+    }
+
+    /// @dev Helper function that reads and stores the balances of the `settlementContract` for each token in `tokens`.
+    /// @param tokens - list of tokens used in the trade
+    /// @param settlementContract - the settlement contract whose balances are being read
+    function _storeSettlementBalances(address[] calldata tokens, ISettlement settlementContract) internal {
+        for (uint256 i = 0; i < tokens.length; i++) {
+            this.storeBalance(tokens[i], address(settlementContract), false);
+        }
+    }
+
+    /// @dev Executes the settlement and measures the gas used.
+    /// @param settlementContract The address of the settlement contract.
+    /// @param settlementCall The calldata for the settlement function.
+    /// @return gasUsed The amount of gas used during the settlement execution.
+    function _executeSettlement(
+        address settlementContract,
+        bytes calldata settlementCall
+    ) private returns (uint256 gasUsed) {
+        uint256 gasStart = gasleft();
+        address(settlementContract).doCall(settlementCall);
+        gasUsed = gasStart - gasleft() - _simulationOverhead;
     }
 }

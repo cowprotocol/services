@@ -33,12 +33,6 @@ pub struct Asset {
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Ether(pub U256);
 
-impl From<U256> for Ether {
-    fn from(value: U256) -> Self {
-        Self(value)
-    }
-}
-
 /// A token amount in wei, always representing the sell token of an order.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, From)]
 pub struct SellTokenAmount(pub U256);
@@ -56,14 +50,6 @@ impl From<i64> for SignedGas {
 /// Gas amount.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Gas(pub U256);
-
-impl std::ops::Add for Gas {
-    type Output = Self;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        Self(self.0 + rhs.0)
-    }
-}
 
 impl std::ops::Add<SignedGas> for Gas {
     type Output = Self;
@@ -83,18 +69,6 @@ pub type Rational = num::rational::Ratio<U256>;
 /// An address. Can be an EOA or a smart contract address.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Address(pub H160);
-
-impl From<H160> for Address {
-    fn from(value: H160) -> Self {
-        Self(value)
-    }
-}
-
-impl From<Address> for H160 {
-    fn from(value: Address) -> Self {
-        value.0
-    }
-}
 
 /// An onchain transaction.
 #[derive(Debug, Clone)]

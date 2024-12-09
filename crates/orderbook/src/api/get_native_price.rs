@@ -1,11 +1,9 @@
 use {
+    crate::api::{ApiReply, IntoWarpReply},
     anyhow::Result,
     ethcontract::H160,
     serde::Serialize,
-    shared::{
-        api::{ApiReply, IntoWarpReply},
-        price_estimation::native::NativePriceEstimating,
-    },
+    shared::price_estimation::native::NativePriceEstimating,
     std::{convert::Infallible, sync::Arc},
     warp::{hyper::StatusCode, reply::with_status, Filter, Rejection},
 };
@@ -13,12 +11,6 @@ use {
 #[derive(Serialize)]
 struct PriceResponse {
     price: f64,
-}
-
-impl From<f64> for PriceResponse {
-    fn from(price: f64) -> Self {
-        Self { price }
-    }
 }
 
 fn get_native_prices_request() -> impl Filter<Extract = (H160,), Error = Rejection> + Clone {
@@ -33,10 +25,9 @@ pub fn get_native_price(
         async move {
             let result = estimator.estimate_native_price(token).await;
             let reply = match result {
-                Ok(price) => with_status(
-                    warp::reply::json(&PriceResponse::from(price)),
-                    StatusCode::OK,
-                ),
+                Ok(price) => {
+                    with_status(warp::reply::json(&PriceResponse { price }), StatusCode::OK)
+                }
                 Err(err) => err.into_warp_reply(),
             };
             Result::<_, Infallible>::Ok(reply)

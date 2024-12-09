@@ -1,7 +1,7 @@
 use {
     self::contracts::ContractAt,
     crate::{boundary, domain::eth},
-    ethcontract::dyns::DynWeb3,
+    ethcontract::{dyns::DynWeb3, errors::ExecutionError},
     ethrpc::block_stream::CurrentBlockWatcher,
     std::{fmt, sync::Arc},
     thiserror::Error,
@@ -12,8 +12,6 @@ use {
 pub mod contracts;
 pub mod gas;
 pub mod token;
-
-use {ethcontract::errors::ExecutionError, gas_estimation::GasPriceEstimating};
 
 pub use self::{contracts::Contracts, gas::GasPriceEstimator};
 
@@ -169,10 +167,6 @@ impl Ethereum {
         Ok(access_list.into())
     }
 
-    pub fn boundary_gas_estimator(&self) -> Arc<dyn GasPriceEstimating> {
-        self.inner.gas.gas.clone()
-    }
-
     /// Estimate gas used by a transaction.
     pub async fn estimate_gas(&self, tx: &eth::Tx) -> Result<eth::Gas, Error> {
         self.web3
@@ -253,6 +247,10 @@ impl Ethereum {
             .await
             .ok()
             .map(|gas| gas.effective().0 .0)
+    }
+
+    pub fn web3(&self) -> &DynWeb3 {
+        &self.web3
     }
 }
 

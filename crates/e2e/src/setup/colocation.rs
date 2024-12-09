@@ -97,6 +97,7 @@ pub fn start_driver(
     contracts: &Contracts,
     solvers: Vec<SolverEngine>,
     liquidity: LiquidityProvider,
+    quote_using_limit_orders: bool,
 ) -> JoinHandle<()> {
     let base_tokens: HashSet<_> = solvers
         .iter()
@@ -122,6 +123,7 @@ endpoint = "{endpoint}"
 relative-slippage = "0.1"
 account = "{account}"
 merge-solutions = {merge_solutions}
+quote-using-limit-orders = {quote_using_limit_orders}
 "#
                 )
             },

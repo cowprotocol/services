@@ -54,6 +54,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
             .await,
         ],
         colocation::LiquidityProvider::UniswapV2,
+        false,
     );
     let services = Services::new(&onchain).await;
     services

@@ -387,6 +387,7 @@ pub struct Jit {
     pub buy: eth::Asset,
     pub receiver: eth::Address,
     pub valid_to: util::Timestamp,
+    pub partially_fillable: bool,
     pub app_data: AppData,
     pub side: Side,
     pub sell_token_balance: SellTokenBalance,
@@ -403,13 +404,6 @@ impl Jit {
             Side::Buy => self.buy.amount.into(),
             Side::Sell => self.sell.amount.into(),
         }
-    }
-
-    /// Returns the signed fee of the order. You can't set this field in
-    /// the API so it's enforced to be 0. This function only exists to
-    /// not have magic values scattered everywhere.
-    pub fn fee(&self) -> SellAmount {
-        SellAmount(0.into())
     }
 
     /// Returns the signed partially fillable property of the order. You can't

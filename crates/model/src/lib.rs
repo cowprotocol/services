@@ -5,7 +5,6 @@ pub mod fee_policy;
 pub mod interaction;
 pub mod order;
 pub mod quote;
-pub mod ratio_as_decimal;
 pub mod signature;
 pub mod solver_competition;
 pub mod time;

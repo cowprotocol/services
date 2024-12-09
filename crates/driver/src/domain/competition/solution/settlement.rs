@@ -252,11 +252,6 @@ impl Settlement {
         self.solution.id()
     }
 
-    /// Address of the solver which generated this settlement.
-    pub fn solver(&self) -> eth::Address {
-        self.solution.solver().address()
-    }
-
     /// The settled user orders with their in/out amounts.
     pub fn orders(&self) -> HashMap<order::Uid, competition::Amounts> {
         let log_err = |trade: &Trade, err: error::Math, kind: &str| -> eth::TokenAmount {
@@ -308,8 +303,8 @@ impl Settlement {
     pub fn prices(&self) -> HashMap<eth::TokenAddress, eth::TokenAmount> {
         self.solution
             .clearing_prices()
-            .iter()
-            .map(|asset| (asset.token, asset.amount))
+            .into_iter()
+            .map(|(token, amount)| (token, amount.into()))
             .collect()
     }
 }

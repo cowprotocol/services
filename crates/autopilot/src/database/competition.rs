@@ -9,15 +9,14 @@ use {
         surplus_capturing_jit_order_owners,
         Address,
     },
-    derivative::Derivative,
+    derive_more::Debug,
     model::solver_competition::SolverCompetitionDB,
     number::conversions::u256_to_big_decimal,
     primitive_types::{H160, U256},
     std::collections::{BTreeMap, HashSet},
 };
 
-#[derive(Clone, Default, Derivative)]
-#[derivative(Debug)]
+#[derive(Clone, Default, Debug)]
 pub struct Competition {
     pub auction_id: AuctionId,
     pub winner: H160,

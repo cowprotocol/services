@@ -22,12 +22,7 @@ pub struct SlippageContext<'a> {
     calculator: &'a SlippageCalculator,
 }
 
-impl<'a> SlippageContext<'a> {
-    /// Returns the external prices used for the slippage context.
-    pub fn prices(&self) -> &ExternalPrices {
-        self.prices
-    }
-
+impl SlippageContext<'_> {
     /// Applies slippage to the specified AMM execution.
     pub fn apply_to_amm_execution(
         &self,
@@ -178,11 +173,6 @@ impl SlippageAmount {
         let absolute = number::conversions::big_int_to_u256(absolute)?;
 
         Ok(Self { relative, absolute })
-    }
-
-    /// Reduce the specified amount by the constant slippage.
-    pub fn sub_from_amount(&self, amount: U256) -> U256 {
-        amount.saturating_sub(self.absolute)
     }
 
     /// Increase the specified amount by the constant slippage.

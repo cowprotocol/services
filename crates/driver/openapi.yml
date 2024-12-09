@@ -23,12 +23,14 @@ paths:
           required: true
         - in: query
           name: kind
-          description: |
-            - `buy`: amount is in buy_token, out_amount is in sell_token
-            - `sell`: amount is in sell_token, out_amount is in buy_token
+          description: >-
+            - `buy`: amount is in buy_token, out_amount is in sell_token -
+            `sell`: amount is in sell_token, out_amount is in buy_token
           schema:
             type: string
-            enum: ["buy", "sell"]
+            enum:
+              - buy
+              - sell
           required: true
         - in: query
           name: amount
@@ -43,34 +45,35 @@ paths:
             $ref: "#/components/schemas/DateTime"
           required: true
       responses:
-        200:
+        "200":
           description: Quote successfully created.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/QuoteResponseKind"
-        400:
+        "400":
           $ref: "#/components/responses/BadRequest"
-        429:
+        "429":
           description: The solver cannot keep up. It is too busy to handle more requests.
-        500:
+        "500":
           $ref: "#/components/responses/InternalServerError"
   /solve:
     post:
-      description: |
+      description: |-
         Solve the passed in auction.
 
-        The response contains the objective value of the solution the Solver is able to find but not
-        the calldata. This facilitates solvers that work with an RFQ system. When Autopilot decides
-        the winner of the of the auction it prompts the corresponding solver to execute its solution
+        The response contains the objective value of the solution the Solver is
+        able to find but not the calldata. This facilitates solvers that work
+        with an RFQ system. When Autopilot decides the winner of the of the
+        auction it prompts the corresponding solver to execute its solution
         through the execute endpoint.
 
-        The Solver should respond quickly enough so that the caller of the endpoint receives the
-        response within the deadline indicated in the request. This includes taking into account
-        network delay.
+        The Solver should respond quickly enough so that the caller of the
+        endpoint receives the response within the deadline indicated in the
+        request. This includes taking into account network delay.
 
-        Autopilot will call this endpoint at most once for the same auction id and the following
-        call will have a larger id.
+        Autopilot will call this endpoint at most once for the same auction id
+        and the following call will have a larger id.
       requestBody:
         required: true
         content:
@@ -78,22 +81,23 @@ paths:
             schema:
               $ref: "#/components/schemas/SolveRequest"
       responses:
-        200:
+        "200":
           description: Auction successfully solved.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/SolveResponse"
-        400:
+        "400":
           $ref: "#/components/responses/BadRequest"
-        500:
+        "500":
           $ref: "#/components/responses/InternalServerError"
   /reveal:
     post:
-      description: |
+      description: >
         Reveal the calldata of the previously solved auction.
 
-        This may be used by the autopilot for the shadow competition to verify the solution before requesting its execution it on chain.
+        This may be used by the autopilot for the shadow competition to verify
+        the solution before requesting its execution it on chain.
       requestBody:
         required: true
         content:
@@ -101,25 +105,26 @@ paths:
             schema:
               $ref: "#/components/schemas/Solution"
       responses:
-        200:
+        "200":
           description: Execution accepted.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/RevealedResponse"
-        400:
+        "400":
           $ref: "#/components/responses/BadRequest"
-        500:
+        "500":
           $ref: "#/components/responses/InternalServerError"
   /settle:
     post:
-      description: |
+      description: |-
         Execute the previously solved auction on chain.
 
-        The auction that should be executed is identified through its id and was recently returned
-        by this Solver's solve endpoint.
+        The auction that should be executed is identified through its id and was
+        recently returned by this Solver's solve endpoint. 
 
-        By accepting the execute request the Solver promises to execute the solution on chain immediately.
+        By accepting the execute request the Solver promises to execute the
+        solution on chain immediately.
       requestBody:
         required: true
         content:
@@ -127,11 +132,11 @@ paths:
             schema:
               $ref: "#/components/schemas/Solution"
       responses:
-        200:
+        "200":
           description: Execution accepted.
-        400:
+        "400":
           $ref: "#/components/responses/BadRequest"
-        500:
+        "500":
           $ref: "#/components/responses/InternalServerError"
 components:
   schemas:
@@ -163,17 +168,24 @@ components:
           nullable: true
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
-          description: |
-            The reference price denominated in native token (i.e. 1e18 represents a token that
-            trades one to one with the native token). These prices are used for solution competition
+          description: |-
+            The reference price denominated in native token (i.e. 1e18
+            represents a token that
+
+            trades one to one with the native token). These prices are used for
+            solution competition
+
             for computing surplus and converting fees to native token.
         trusted:
-          description: |
-            Whether the protocol trusts the token to be used for internalizing trades.
+          description: |-
+            Whether the protocol trusts the token to be used for internalizing
+            trades.
 
-            Solvers are allowed to internalize trades, ie. omit the interaction that executes the swap from token A to token B
-            and instead use the settlement contract balances, aka buffers, to fulfil the interaction as long as the token 
-            the contract receives (A in the example) is trusted.
+            Solvers are allowed to internalize trades, ie. omit the interaction
+            that executes the swap from token A to token B and instead use the
+            settlement contract balances, aka buffers, to fulfil the interaction
+            as long as the token the contract receives (A in the example) is
+            trusted.
           type: boolean
     Order:
       description: |
@@ -183,17 +195,21 @@ components:
         uid:
           $ref: "#/components/schemas/OrderUID"
         sellToken:
-          description: Token being sold
-          $ref: "#/components/schemas/Address"
+          allOf:
+            - description: Token being sold
+            - $ref: "#/components/schemas/Address"
         buyToken:
-          description: Token being bought
-          $ref: "#/components/schemas/Address"
+          allOf:
+            - description: Token being bought
+            - $ref: "#/components/schemas/Address"
         sellAmount:
-          description: Amount to be sold
-          $ref: "#/components/schemas/TokenAmount"
+          allOf:
+            - description: Amount to be sold
+            - $ref: "#/components/schemas/TokenAmount"
         buyAmount:
-          description: Amount to be bought
-          $ref: "#/components/schemas/TokenAmount"
+          allOf:
+            - description: Amount to be bought
+            - $ref: "#/components/schemas/TokenAmount"
         created:
           description: Creation time of the order. Denominated in epoch seconds.
           type: string
@@ -203,22 +219,28 @@ components:
           type: integer
         kind:
           type: string
-          enum: ["buy", "sell"]
+          enum:
+            - buy
+            - sell
         receiver:
-          description: The address that should receive the bought tokens.
-          $ref: "#/components/schemas/Address"
+          allOf:
+            - description: The address that should receive the bought tokens.
+            - $ref: "#/components/schemas/Address"
         owner:
-          description: The address that created the order.
-          $ref: "#/components/schemas/Address"
+          allOf:
+            - description: The address that created the order.
+            - $ref: "#/components/schemas/Address"
         partiallyFillable:
-          description: |
+          description: |-
             Whether the order can be partially filled.
 
-            If this is false then the solver must fill the entire order or not at all.
+            If this is false then the solver must fill the entire order or not
+            at all.
           type: boolean
         executed:
-          description: The amount that has already been filled.
-          $ref: "#/components/schemas/TokenAmount"
+          allOf:
+            - description: The amount that has already been filled.
+            - $ref: "#/components/schemas/TokenAmount"
         preInteractions:
           description: Interactions that must be executed before the order can be filled.
           type: array
@@ -231,34 +253,45 @@ components:
             $ref: "#/components/schemas/Interaction"
         sellTokenBalance:
           type: string
-          enum: ["erc20", "internal", "external"]
+          enum:
+            - erc20
+            - internal
+            - external
         buyTokenBalance:
           type: string
-          enum: ["erc20", "internal"]
+          enum:
+            - erc20
+            - internal
         class:
           type: string
-          enum: ["market", "limit"]
+          enum:
+            - market
+            - limit
         appData:
           description: 32 bytes encoded as hex with `0x` prefix.
           type: string
         signingScheme:
           type: string
-          enum: [ "eip712", "ethsign", "presign", "eip1271" ]
+          enum:
+            - eip712
+            - ethsign
+            - presign
+            - eip1271
         signature:
           description: Hex encoded bytes with `0x` prefix.
           type: string
         protocolFees:
-          description: |
+          description: |-
             Any protocol fee policies that apply to the order.
 
-            The solver should make sure the fee policy is applied when computing their solution.
+            The solver should make sure the fee policy is applied when computing
+            their solution.
           type: array
           items:
             $ref: "#/components/schemas/FeePolicy"
         quote:
-          description: |
-            A winning quote.
           allOf:
+            - description: A winning quote.
             - $ref: "#/components/schemas/Quote"
       required:
         - uid
@@ -286,26 +319,29 @@ components:
       type: string
       example: "1234567890"
     OrderUID:
-      description: |
-        Unique identifier for the order: 56 bytes encoded as hex with `0x` prefix.
-        Bytes 0 to 32 are the order digest, bytes 30 to 52 the owner address
-        and bytes 52..56 valid to,
+      description: |-
+        Unique identifier for the order: 56 bytes encoded as hex with `0x`
+        prefix.
+
+        Bytes 0 to 32 are the order digest, bytes 30 to 52 the owner address and
+        bytes 52..56 valid to,
       type: string
-      example: "0x30cff40d9f60caa68a37f0ee73253ad6ad72b45580c945fe3ab67596476937197854163b1b0d24e77dca702b97b5cc33e0f83dcb626122a6"
+      example: >-
+        0x30cff40d9f60caa68a37f0ee73253ad6ad72b45580c945fe3ab67596476937197854163b1b0d24e77dca702b97b5cc33e0f83dcb626122a6
     QuoteResponseKind:
       oneOf:
         - $ref: "#/components/schemas/LegacyQuoteResponse"
         - $ref: "#/components/schemas/QuoteResponse"
         - $ref: "#/components/schemas/Error"
     LegacyQuoteResponse:
-      description: |
-        Successful Quote
+      description: |-
+        Successful Quote.
 
         The Solver knows how to fill the request with these parameters.
 
-        If the request was of type `buy` then the response's buy amount has the same value as the
-        request's amount and the sell amount was filled in by the server. Vice versa for type
-        `sell`.
+        If the request was of type `buy` then the response's buy amount has the
+        same value as the request's amount and the sell amount was filled in by
+        the server. Vice versa for type `sell`.
       type: object
       properties:
         amount:
@@ -315,8 +351,9 @@ components:
           items:
             $ref: "#/components/schemas/Interaction"
         solver:
-          description: The address of the solver that quoted this order.
-          $ref: "#/components/schemas/Address"
+          allOf:
+            - description: The address of the solver that quoted this order.
+            - $ref: "#/components/schemas/Address"
         gas:
           type: integer
           description: How many units of gas this trade is estimated to cost.
@@ -329,9 +366,8 @@ components:
         - interactions
         - solver
     QuoteResponse:
-      description: |
+      description: |-
         Successful Quote with JIT orders support.
-
         The Solver knows how to fill the request with these parameters.
       type: object
       properties:
@@ -376,17 +412,17 @@ components:
       type: object
       properties:
         internalized:
-          description: |
+          description: |-
             The calldata without any internalized interactions encoded.
-
             This is the calldata that can be found on chain.
           type: string
           example: "0x1234567890"
         uninternalized:
-          description: |
+          description: |-
             The calldata with all internalized interactions encoded.
 
-            This is the calldata that should be used for simulation/verification purposes.
+            This is the calldata that should be used for simulation/verification
+            purposes.
           type: string
           example: "0x1234567890"
     SolveRequest:
@@ -415,8 +451,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Address"
-          description: |
-            List of addresses on whose surplus will count towards the objective value of their solution (unlike other orders that were created by the solver).
+          description: >
+            List of addresses on whose surplus will count towards the objective
+            value of their solution (unlike other orders that were created by
+            the solver).
     SolveResponse:
       description: |
         Response of the solve endpoint.
@@ -428,9 +466,8 @@ components:
             type: object
             properties:
               solutionId:
-                description: |
+                description: |-
                   The unique identifier of the solution.
-                  
                   This id is used to identify the solution when executing it.
                 type: integer
                 example: 1
@@ -440,24 +477,29 @@ components:
                 type: string
                 example: "100"
               submissionAddress:
-                description: |
-                  The address that will be used to submit the solution.
-                $ref: "#/components/schemas/Address"
+                allOf:
+                  - description: The address that will be used to submit the solution.
+                  - $ref: "#/components/schemas/Address"
               orders:
-                description: |
-                  Mapping of order uid to net executed amount (including all fees).
+                description: >
+                  Mapping of order uid to net executed amount (including all
+                  fees).
                 additionalProperties:
                   type: object
                   properties:
                     side:
                       type: string
-                      enum: ["buy", "sell"]
+                      enum:
+                        - buy
+                        - sell
                     sellToken:
-                      description: Token being sold
-                      $ref: "#/components/schemas/Address"
+                      allOf:
+                        - description: Token being sold
+                        - $ref: "#/components/schemas/Address"
                     buyToken:
-                      description: Token being bought
-                      $ref: "#/components/schemas/Address"
+                      allOf:
+                        - description: Token being bought
+                        - $ref: "#/components/schemas/Address"
                     limitSell:
                       type: string
                       description: Maximum amount to be sold.
@@ -466,19 +508,21 @@ components:
                       description: Minimum amount to be bought.
                     executedSell:
                       type: string
-                      description: The effective amount that left the user's wallet including all fees.
+                      description: >-
+                        The effective amount that left the user's wallet
+                        including all fees.
                     executedBuy:
                       type: string
                       description: The effective amount the user received after all fees.
               clearingPrices:
-                description: |
+                description: >
                   Mapping of hex token address to price.
-                  
-                  The prices of tokens for settled user orders as passed to the settlement contract.
+
+                  The prices of tokens for settled user orders as passed to the
+                  settlement contract.
                 type: object
                 additionalProperties:
                   $ref: "#/components/schemas/BigUint"
-
               gas:
                 type: integer
     Solution:
@@ -487,12 +531,16 @@ components:
       properties:
         solutionId:
           description: Id of the solution that should be executed.
-          type: string
-          example: "123"
+          type: integer
+          example: 123
         submissionDeadlineLatestBlock:
           description: The last block number in which the solution TX can be included.
           type: integer
           example: 12345
+        auctionId:
+          description: Auction ID in which the specified solution ID is competing.
+          type: integer
+          example: 123
     RevealedResponse:
       description: Response of the reveal endpoint.
       type: object
@@ -500,45 +548,54 @@ components:
         calldata:
           $ref: "#/components/schemas/Calldata"
     FeePolicy:
-      description: |
+      description: >
         A fee policy that applies to an order.
 
-        The solver should make sure the fee policy is applied when computing their solution.
+        The solver should make sure the fee policy is applied when computing
+        their solution.
       type: object
       oneOf:
         - $ref: "#/components/schemas/SurplusFee"
         - $ref: "#/components/schemas/PriceImprovement"
         - $ref: "#/components/schemas/VolumeFee"
     SurplusFee:
-      description: |
-        If the order receives more than limit price, pay the protocol a factor of the difference.
+      description: >
+        If the order receives more than limit price, pay the protocol a factor
+        of the difference.
       type: object
       properties:
         kind:
           type: string
-          enum: ["surplus"]
+          enum:
+            - surplus
         maxVolumeFactor:
           description: Never charge more than that percentage of the order volume.
           type: number
           example: 0.1
         factor:
-          description: The factor of the user surplus that the protocol will request from the solver after settling the order
+          description: >-
+            The factor of the user surplus that the protocol will request from
+            the solver after settling the order
           type: number
           example: 0.5
     PriceImprovement:
-      description: |
-        A cut from the price improvement over the best quote is taken as a protocol fee.
+      description: >
+        A cut from the price improvement over the best quote is taken as a
+        protocol fee.
       type: object
       properties:
         kind:
           type: string
-          enum: ["priceImprovement"]
+          enum:
+            - priceImprovement
         maxVolumeFactor:
           description: Never charge more than that percentage of the order volume.
           type: number
           example: 0.01
         factor:
-          description: The factor of the user surplus that the protocol will request from the solver after settling the order
+          description: >-
+            The factor of the user surplus that the protocol will request from
+            the solver after settling the order
           type: number
           example: 0.5
         quote:
@@ -548,9 +605,12 @@ components:
       properties:
         kind:
           type: string
-          enum: ["volume"]
+          enum:
+            - volume
         factor:
-          description: The fraction of the order's volume that the protocol will request from the solver after settling the order.
+          description: >-
+            The fraction of the order's volume that the protocol will request
+            from the solver after settling the order.
           type: number
           example: 0.5
     Quote:
@@ -583,26 +643,41 @@ components:
           type: integer
         side:
           type: string
-          enum: ["buy", "sell"]
+          enum:
+            - buy
+            - sell
         partiallyFillable:
           type: boolean
         sellTokenSource:
           type: string
-          enum: ["erc20", "internal", "external"]
+          enum:
+            - erc20
+            - internal
+            - external
         buyTokenSource:
           type: string
-          enum: ["erc20", "internal"]
+          enum:
+            - erc20
+            - internal
         appData:
           type: string
         signature:
-          description: | 
-            Hex encoded bytes with `0x` prefix. The content depends on the `signingScheme`.
-            For `presign`, this should contain the address of the owner. 
-            For `eip1271`, the signature should consist of `<owner_address><signature_bytes>`.
+          description: >-
+            Hex encoded bytes with `0x` prefix. The content depends on the
+            `signingScheme`.
+
+            For `presign`, this should contain the address of the owner.
+
+            For `eip1271`, the signature should consist of
+            `<owner_address><signature_bytes>`.
           type: string
         signingScheme:
           type: string
-          enum: ["eip712", "ethsign", "presign", "eip1271"]
+          enum:
+            - eip712
+            - ethsign
+            - presign
+            - eip1271
       required:
         - sellToken
         - buyToken
@@ -629,19 +704,19 @@ components:
           description: Text describing the error.
           type: string
   responses:
+    "200":
+      description: The request was successful.
     BadRequest:
-      description: |
+      description: |-
         There is something wrong with the request.
-
         Body potentially contains extra information.
       content:
         text/plain:
           schema:
             type: string
     InternalServerError:
-      description: |
+      description: |-
         Something went wrong when handling the request.
-
         Body potentially contains extra information.
       content:
         text/plain:

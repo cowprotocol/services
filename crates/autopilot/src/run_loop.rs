@@ -21,7 +21,7 @@ use {
     database::order_events::OrderEventLabel,
     ethcontract::U256,
     ethrpc::block_stream::BlockInfo,
-    futures::{future::BoxFuture, TryFutureExt},
+    futures::{future::BoxFuture, FutureExt, TryFutureExt},
     itertools::Itertools,
     model::solver_competition::{
         CompetitionAuction,
@@ -239,7 +239,7 @@ impl RunLoop {
         }
 
         let competition_simulation_block = self.eth.current_block().borrow().number;
-        let block_deadline = competition_simulation_block + self.config.submission_deadline;
+        let block_deadline = auction.block + self.config.submission_deadline;
 
         // Post-processing should not be executed asynchronously since it includes steps
         // of storing all the competition/auction-related data to the DB.
@@ -315,14 +315,14 @@ impl RunLoop {
         let driver_ = driver.clone();
 
         let settle_fut = async move {
-            tracing::info!(driver = %driver_.name, "settling");
+            tracing::info!(driver = %driver_.name, solution = %solution_id, "settling");
             let submission_start = Instant::now();
 
             match self_
                 .settle(
                     &driver_,
                     solution_id,
-                    solved_order_uids,
+                    solved_order_uids.clone(),
                     solver,
                     auction_id,
                     block_deadline,
@@ -330,7 +330,11 @@ impl RunLoop {
                 .await
             {
                 Ok(tx_hash) => {
-                    Metrics::settle_ok(&driver_, submission_start.elapsed());
+                    Metrics::settle_ok(
+                        &driver_,
+                        solved_order_uids.len(),
+                        submission_start.elapsed(),
+                    );
                     tracing::debug!(?tx_hash, driver = %driver_.name, ?solver, "solution settled");
                 }
                 Err(err) => {
@@ -789,23 +793,31 @@ impl RunLoop {
         auction_id: i64,
         submission_deadline_latest_block: u64,
     ) -> Result<TxId, SettleError> {
-        let request = settle::Request {
-            solution_id,
-            submission_deadline_latest_block,
-        };
+        let settle = async move {
+            let current_block = self.eth.current_block().borrow().number;
+            anyhow::ensure!(
+                current_block < submission_deadline_latest_block,
+                "submission deadline was missed while waiting for the settlement queue"
+            );
+
+            let request = settle::Request {
+                solution_id,
+                submission_deadline_latest_block,
+                auction_id: None, // Requires 2-stage release for API-break change
+            };
+            driver
+                .settle(&request, self.config.max_settlement_transaction_wait)
+                .await
+        }
+        .boxed();
+
+        let wait_for_settlement_transaction = self
+            .wait_for_settlement_transaction(auction_id, solver, submission_deadline_latest_block)
+            .boxed();
 
         // Wait for either the settlement transaction to be mined or the driver returned
         // a result.
-        let result = match futures::future::select(
-            Box::pin(self.wait_for_settlement_transaction(
-                auction_id,
-                self.config.submission_deadline,
-                solver,
-            )),
-            Box::pin(driver.settle(&request, self.config.max_settlement_transaction_wait)),
-        )
-        .await
-        {
+        let result = match futures::future::select(wait_for_settlement_transaction, settle).await {
             futures::future::Either::Left((res, _)) => res,
             futures::future::Either::Right((driver_result, wait_for_settlement_transaction)) => {
                 match driver_result {
@@ -832,12 +844,11 @@ impl RunLoop {
     async fn wait_for_settlement_transaction(
         &self,
         auction_id: i64,
-        max_blocks_wait: u64,
         solver: eth::Address,
+        submission_deadline_latest_block: u64,
     ) -> Result<eth::TxId, SettleError> {
         let current = self.eth.current_block().borrow().number;
-        let deadline = current.saturating_add(max_blocks_wait);
-        tracing::debug!(%current, %deadline, %auction_id, "waiting for tag");
+        tracing::debug!(%current, deadline=%submission_deadline_latest_block, %auction_id, "waiting for tag");
         loop {
             let block = ethrpc::block_stream::next_block(self.eth.current_block()).await;
             // Run maintenance to ensure the system processed the last available block so
@@ -860,7 +871,7 @@ impl RunLoop {
                     );
                 }
             }
-            if block.number >= deadline {
+            if block.number >= submission_deadline_latest_block {
                 break;
             }
         }
@@ -935,6 +946,11 @@ struct Metrics {
     #[metric(labels("ignored_by"))]
     matched_unsettled: prometheus::IntCounterVec,
 
+    /// Tracks the number of orders that were settled together with the
+    /// settling driver.
+    #[metric(labels("driver"))]
+    settled: prometheus::IntCounterVec,
+
     /// Tracks the number of database errors.
     #[metric(labels("error_type"))]
     db_metric_error: prometheus::IntCounterVec,
@@ -1005,11 +1021,15 @@ impl Metrics {
             .inc();
     }
 
-    fn settle_ok(driver: &infra::Driver, elapsed: Duration) {
+    fn settle_ok(driver: &infra::Driver, settled_order_count: usize, elapsed: Duration) {
         Self::get()
             .settle
             .with_label_values(&[&driver.name, "success"])
             .observe(elapsed.as_secs_f64());
+        Self::get()
+            .settled
+            .with_label_values(&[&driver.name])
+            .inc_by(settled_order_count.try_into().unwrap_or(u64::MAX));
     }
 
     fn settle_err(driver: &infra::Driver, elapsed: Duration, err: &SettleError) {

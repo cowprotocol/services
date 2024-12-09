@@ -15,7 +15,7 @@ pub fn get_order_by_uid_response(result: Result<Option<Order>>) -> super::ApiRep
         Ok(order) => order,
         Err(err) => {
             tracing::error!(?err, "get_order_by_uid_response");
-            return shared::api::internal_error_reply();
+            return crate::api::internal_error_reply();
         }
     };
     match order {
@@ -43,7 +43,7 @@ pub fn get_order_by_uid(
 mod tests {
     use {
         super::*,
-        shared::api::response_body,
+        crate::api::response_body,
         warp::{test::request, Reply},
     };
 

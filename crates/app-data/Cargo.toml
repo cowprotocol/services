@@ -6,14 +6,15 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-app-data-hash = { path = "../app-data-hash" }
 bytes-hex = { path = "../bytes-hex" }
 anyhow = { workspace = true }
+tiny-keccak = { version = "2.0.2", features = ["keccak"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
 primitive-types = { workspace = true }
 hex = { workspace = true }
+hex-literal = { workspace = true }
 
 [dev-dependencies]
 ethcontract = { workspace = true }

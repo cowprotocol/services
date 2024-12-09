@@ -1,12 +1,10 @@
 //! Abstraction for simulating calls with overrides.
 
 use {
-    crate::{
-        ethcontract_error::EthcontractErrorType,
-        tenderly_api::{SimulationKind, SimulationRequest, StateObject, TenderlyApi},
-    },
+    crate::tenderly_api::{SimulationKind, SimulationRequest, StateObject, TenderlyApi},
     anyhow::{ensure, Context as _, Result},
-    ethcontract::{errors::ExecutionError, H256},
+    contracts::errors::EthcontractErrorType,
+    ethcontract::errors::ExecutionError,
     ethrpc::{
         extensions::{EthExt as _, StateOverride, StateOverrides},
         Web3,
@@ -17,7 +15,6 @@ use {
 };
 
 /// Simulate a call with state overrides.
-#[mockall::automock]
 #[async_trait::async_trait]
 pub trait CodeSimulating: Send + Sync + 'static {
     async fn simulate(
@@ -209,16 +206,7 @@ impl TryFrom<StateOverride> for StateObject {
         Ok(StateObject {
             balance: value.balance,
             code: value.code,
-            storage: value.state_diff.map(|state_diff| {
-                state_diff
-                    .into_iter()
-                    .map(|(key, uint)| {
-                        let mut value = H256::default();
-                        uint.to_big_endian(&mut value.0);
-                        (key, value)
-                    })
-                    .collect()
-            }),
+            storage: value.state_diff,
         })
     }
 }
@@ -265,6 +253,7 @@ mod tests {
     use {
         super::*,
         crate::{ethrpc::create_env_test_transport, tenderly_api::TenderlyHttpApi},
+        ethcontract::H256,
         hex_literal::hex,
         maplit::hashmap,
         std::time::Duration,
@@ -396,7 +385,8 @@ mod tests {
                 hashmap! {
                     addr!("D533a949740bb3306d119CC777fa900bA034cd52") => StateOverride {
                         state_diff: Some(hashmap! {
-                            H256(balance_slot) => 1.into()
+                            H256(balance_slot) =>
+                                H256(hex!("0000000000000000000000000000000000000000000000000000000000000001")),
                         }),
                         ..Default::default()
                     },

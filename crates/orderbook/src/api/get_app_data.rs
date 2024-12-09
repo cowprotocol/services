@@ -34,7 +34,7 @@ pub fn get(
                 )),
                 Err(err) => {
                     tracing::error!(?err, "get_app_data_by_hash");
-                    Box::new(shared::api::internal_error_reply())
+                    Box::new(crate::api::internal_error_reply())
                 }
             })
         }

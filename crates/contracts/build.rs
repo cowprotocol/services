@@ -860,7 +860,10 @@ fn main() {
             .add_network_str(GOERLI, "0xE592427A0AEce92De3Edee1F18E0157C05861564")
             .add_network_str(SEPOLIA, "0xE592427A0AEce92De3Edee1F18E0157C05861564")
             .add_network_str(ARBITRUM_ONE, "0xE592427A0AEce92De3Edee1F18E0157C05861564")
-        // Not available on Gnosis Chain and Base
+            // For Base it is only available SwapRouter02
+            // <https://docs.uniswap.org/contracts/v3/reference/deployments/base-deployments>
+            .add_network_str(BASE, "0x2626664c2603336E57B271c5C0b26F421741e481")
+        // Not available on Gnosis Chain
     });
     generate_contract("UniswapV3Pool");
     generate_contract_with_config("WETH9", |builder| {
@@ -987,8 +990,9 @@ fn main() {
     generate_contract("CowAmmUniswapV2PriceOracle");
 
     // Support contracts used for trade and token simulations.
-    generate_contract("Trader");
     generate_contract("Solver");
+    generate_contract("Spardose");
+    generate_contract("Trader");
 
     // Support contracts used for various order simulations.
     generate_contract("Balances");

@@ -45,7 +45,7 @@ impl AsExecutionError for ExecutionError {
 pub fn testing_node_error() -> MethodError {
     MethodError {
         signature: String::new(),
-        inner: ExecutionError::Web3(web3::Error::Internal),
+        inner: ExecutionError::Web3(ethcontract::web3::Error::Internal),
     }
 }
 
