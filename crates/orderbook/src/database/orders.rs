@@ -692,7 +692,7 @@ mod tests {
             signature::{Signature, SigningScheme},
         },
         primitive_types::U256,
-        shared::order_quoting::{QuoteData, QuoteMetadata},
+        shared::order_quoting::{QuoteData, QuoteMetadataV1},
         std::sync::atomic::{AtomicI64, Ordering},
     };
 
@@ -1221,7 +1221,7 @@ mod tests {
             buy_amount: U256::from(2),
             data: QuoteData {
                 verified: true,
-                metadata: QuoteMetadata {
+                metadata: QuoteMetadataV1 {
                     interactions: vec![
                         InteractionData {
                             target: H160([1; 20]),
@@ -1234,7 +1234,8 @@ mod tests {
                             call_data: vec![2, 20],
                         },
                     ],
-                },
+                }
+                .into(),
                 ..Default::default()
             },
             ..Default::default()

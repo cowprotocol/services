@@ -445,9 +445,10 @@ impl OrderQuoter {
             quote_kind,
             solver: trade_estimate.solver,
             verified: trade_estimate.verified,
-            metadata: QuoteMetadata {
+            metadata: QuoteMetadataV1 {
                 interactions: trade_estimate.interactions,
-            },
+            }
+            .into(),
         };
 
         Ok(quote)
@@ -636,10 +637,9 @@ pub fn quote_kind_from_signing_scheme(scheme: &QuoteSigningScheme) -> QuoteKind 
 }
 
 /// Used to store in database any quote metadata.
-#[derive(Clone, Debug, Default, PartialEq, serde::Deserialize, serde::Serialize)]
-pub struct QuoteMetadata {
-    /// Data provided by the solver in response to /quote request.
-    pub interactions: Vec<InteractionData>,
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+pub enum QuoteMetadata {
+    V1(QuoteMetadataV1),
 }
 
 impl TryInto<serde_json::Value> for QuoteMetadata {
@@ -656,6 +656,24 @@ impl TryFrom<serde_json::Value> for QuoteMetadata {
     fn try_from(value: serde_json::Value) -> std::result::Result<Self, Self::Error> {
         serde_json::from_value(value)
     }
+}
+
+impl Default for QuoteMetadata {
+    fn default() -> Self {
+        Self::V1(Default::default())
+    }
+}
+
+impl From<QuoteMetadataV1> for QuoteMetadata {
+    fn from(val: QuoteMetadataV1) -> Self {
+        QuoteMetadata::V1(val)
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, serde::Deserialize, serde::Serialize)]
+pub struct QuoteMetadataV1 {
+    /// Data provided by the solver in response to /quote request.
+    pub interactions: Vec<InteractionData>,
 }
 
 #[cfg(test)]
