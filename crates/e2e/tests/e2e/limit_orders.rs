@@ -349,7 +349,7 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
             .await,
             colocation::start_baseline_solver(
                 "solver2".into(),
-                solver_b,
+                solver_b.clone(),
                 onchain.contracts().weth.address(),
                 vec![base_b.address()],
                 2,
@@ -405,8 +405,8 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
     services.start_autopilot(
         None,
         vec![
-            "--drivers=solver1|http://localhost:11088/test_solver|10000000000000000,solver2|http://localhost:11088/solver2"
-                .to_string(),
+            format!("--drivers=solver1|http://localhost:11088/test_solver|{}|10000000000000000,solver2|http://localhost:11088/solver2|{}",
+            hex::encode(solver_a.address()), hex::encode(solver_b.address())),
             "--price-estimation-drivers=solver1|http://localhost:11088/test_solver".to_string(),
             "--max-winners-per-auction=2".to_string(),
         ],
