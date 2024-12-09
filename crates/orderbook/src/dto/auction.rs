@@ -13,7 +13,6 @@ use {
 #[serde(rename_all = "camelCase")]
 pub struct Auction {
     pub block: u64,
-    pub latest_settlement_block: u64,
     pub orders: Vec<Order>,
     #[serde_as(as = "BTreeMap<_, HexOrDecimalU256>")]
     pub prices: BTreeMap<H160, U256>,

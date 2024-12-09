@@ -13,7 +13,6 @@ pub mod order;
 #[derive(Clone, Debug, PartialEq)]
 pub struct RawAuctionData {
     pub block: u64,
-    pub latest_settlement_block: u64,
     pub orders: Vec<Order>,
     pub prices: Prices,
     pub surplus_capturing_jit_order_owners: Vec<eth::Address>,

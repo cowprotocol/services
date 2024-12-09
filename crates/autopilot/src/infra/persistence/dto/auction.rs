@@ -14,7 +14,6 @@ use {
 pub fn from_domain(auction: domain::RawAuctionData) -> RawAuctionData {
     RawAuctionData {
         block: auction.block,
-        latest_settlement_block: auction.latest_settlement_block,
         orders: auction
             .orders
             .into_iter()
@@ -38,7 +37,6 @@ pub fn from_domain(auction: domain::RawAuctionData) -> RawAuctionData {
 #[serde(rename_all = "camelCase")]
 pub struct RawAuctionData {
     pub block: u64,
-    pub latest_settlement_block: u64,
     pub orders: Vec<Order>,
     #[serde_as(as = "BTreeMap<_, HexOrDecimalU256>")]
     pub prices: BTreeMap<H160, U256>,
