@@ -1,19 +1,21 @@
 use {
+    super::database::Postgres, 
     crate::{
         domain::{self, Mempools},
         infra::{
-            self,
-            config::file::OrderPriorityStrategy,
-            liquidity,
-            solver::{Solver, Timeouts},
-            tokens,
-            Ethereum,
+            self, 
+            bad_token::BadTokenMonitor, 
+            config::file::OrderPriorityStrategy, 
+            liquidity, 
+            solver::{Solver, Timeouts}, 
+            tokens, 
+            Ethereum, 
             Simulator,
         },
-    },
-    error::Error,
-    futures::Future,
-    std::{net::SocketAddr, sync::Arc},
+    }, 
+    error::Error, 
+    futures::Future, 
+    std::{net::SocketAddr, sync::Arc}, 
     tokio::sync::oneshot,
 };
 
@@ -26,6 +28,7 @@ pub struct Api {
     pub solvers: Vec<Solver>,
     pub liquidity: liquidity::Fetcher,
     pub simulator: Simulator,
+    pub db: Postgres,
     pub eth: Ethereum,
     pub mempools: Mempools,
     pub addr: SocketAddr,
@@ -57,6 +60,8 @@ impl Api {
         app = routes::metrics(app);
         app = routes::healthz(app);
 
+        let mut bad_token_monitors = BadTokenMonitor::collect_from_path("./src/infra/bad_token/configs", &solvers);
+
         // Multiplex each solver as part of the API. Multiple solvers are multiplexed
         // on the same driver so only one liquidity collector collects the liquidity
         // for all of them. This is important because liquidity collection is
@@ -70,15 +75,21 @@ impl Api {
             let router = routes::reveal(router);
             let router = routes::settle(router);
             let router = router.with_state(State(Arc::new(Inner {
+                db: self.db.clone(),
                 eth: self.eth.clone(),
                 solver: solver.clone(),
                 competition: domain::Competition {
-                    solver,
                     eth: self.eth.clone(),
                     liquidity: self.liquidity.clone(),
+                    bad_token_monitor: {
+                        let mut monitor = bad_token_monitors.remove(&solver.address()).unwrap();
+                        monitor.initialize(&self.db);
+                        monitor
+                    },
                     simulator: self.simulator.clone(),
                     mempools: self.mempools.clone(),
                     settlements: Default::default(),
+                    solver,
                 },
                 liquidity: self.liquidity.clone(),
                 tokens: tokens.clone(),
@@ -128,6 +139,10 @@ impl State {
         &self.0.tokens
     }
 
+    fn database(&self) -> &Postgres {
+        &self.0.db
+    }
+
     fn pre_processor(&self) -> &domain::competition::AuctionProcessor {
         &self.0.pre_processor
     }
@@ -138,6 +153,7 @@ impl State {
 }
 
 struct Inner {
+    db: Postgres,
     eth: Ethereum,
     solver: Solver,
     competition: domain::Competition,

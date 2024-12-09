@@ -505,6 +505,10 @@ impl Tokens {
     pub fn iter(&self) -> impl Iterator<Item = &Token> {
         self.0.values()
     }
+
+    pub fn iter_keys(&self) -> impl Iterator<Item = &eth::TokenAddress> {
+        self.0.keys()
+    }
 }
 
 #[derive(Debug, Clone)]

@@ -7,12 +7,14 @@ use {
     crate::{
         domain::{competition::solution::Settlement, eth},
         infra::{
-            self,
-            blockchain::Ethereum,
-            notify,
-            observe,
-            simulator::{RevertError, SimulatorError},
-            solver::{self, SolutionMerging, Solver},
+            self, 
+            bad_token::BadTokenMonitor, 
+            blockchain::Ethereum, 
+            database::Postgres, 
+            notify, 
+            observe, 
+            simulator::{RevertError, SimulatorError}, 
+            solver::{self, SolutionMerging, Solver}, 
             Simulator,
         },
         util::Bytes,
@@ -49,6 +51,7 @@ pub struct Competition {
     pub eth: Ethereum,
     pub liquidity: infra::liquidity::Fetcher,
     pub simulator: Simulator,
+    pub bad_token_monitor: BadTokenMonitor,
     pub mempools: Mempools,
     /// Cached solutions with the most recent solutions at the front.
     pub settlements: Mutex<VecDeque<Settlement>>,
@@ -56,7 +59,7 @@ pub struct Competition {
 
 impl Competition {
     /// Solve an auction as part of this competition.
-    pub async fn solve(&self, auction: &Auction) -> Result<Option<Solved>, Error> {
+    pub async fn solve(&self, auction: &Auction, db: &Postgres) -> Result<Option<Solved>, Error> {
         let liquidity = match self.solver.liquidity() {
             solver::Liquidity::Fetch => {
                 self.liquidity
@@ -257,6 +260,8 @@ impl Competition {
                             &infra::simulator::Error::Revert(err),
                             true,
                         );
+
+                        self.bad_token_monitor.consolidate(&db, auction.tokens().iter_keys());
                         return;
                     }
                 }
