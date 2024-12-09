@@ -79,11 +79,6 @@ pub trait OrderStoring: Send + Sync {
     async fn single_order_with_quote(&self, uid: &OrderUid) -> Result<Option<OrderWithQuote>>;
 }
 
-pub struct SolvableOrders {
-    pub orders: Vec<Order>,
-    pub latest_settlement_block: u64,
-}
-
 pub struct OrderWithQuote {
     pub order: Order,
     pub quote: Option<orders::Quote>,
