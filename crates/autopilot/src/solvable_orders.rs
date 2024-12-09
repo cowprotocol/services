@@ -267,7 +267,6 @@ impl SolvableOrdersCache {
             .collect::<Vec<_>>();
         let auction = domain::RawAuctionData {
             block,
-            latest_settlement_block: db_solvable_orders.latest_settlement_block,
             orders: orders
                 .into_iter()
                 .map(|order| {

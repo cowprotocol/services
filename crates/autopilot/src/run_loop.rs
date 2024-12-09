@@ -214,7 +214,6 @@ impl RunLoop {
         Some(domain::Auction {
             id,
             block: auction.block,
-            latest_settlement_block: auction.latest_settlement_block,
             orders: auction.orders,
             prices: auction.prices,
             surplus_capturing_jit_order_owners: auction.surplus_capturing_jit_order_owners,
