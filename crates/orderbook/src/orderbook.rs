@@ -141,8 +141,8 @@ pub enum AddOrderError {
         provided: String,
         existing: String,
     },
-    #[error("quote metadata failed to serialize as json")]
-    MetadataSerializationFailed,
+    #[error("quote metadata failed to serialize as json, error: {0}")]
+    MetadataSerializationFailed(#[source] anyhow::Error),
 }
 
 impl AddOrderError {
@@ -163,8 +163,8 @@ impl AddOrderError {
                     s.into_owned()
                 },
             },
-            InsertionError::MetadataSerializationFailed => {
-                AddOrderError::MetadataSerializationFailed
+            InsertionError::MetadataSerializationFailed(err) => {
+                AddOrderError::MetadataSerializationFailed(err.into())
             }
         }
     }

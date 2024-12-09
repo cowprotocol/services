@@ -104,13 +104,11 @@ impl OrderWithQuote {
                         buy_amount: u256_to_big_decimal(&quote.buy_amount),
                         solver: ByteArray(quote.data.solver.0),
                         verified: Some(quote.data.verified),
-                        metadata: Some(
-                            quote
-                                .data
-                                .metadata
-                                .try_into()
-                                .map_err(|_| AddOrderError::MetadataSerializationFailed)?,
-                        ),
+                        metadata: Some(quote.data.metadata.try_into().map_err(
+                            |e: serde_json::Error| {
+                                AddOrderError::MetadataSerializationFailed(e.into())
+                            },
+                        )?),
                     })
                 })
                 .transpose()?,
@@ -125,7 +123,7 @@ pub enum InsertionError {
     DbError(sqlx::Error),
     /// Full app data to be inserted doesn't match existing.
     AppDataMismatch(Vec<u8>),
-    MetadataSerializationFailed,
+    MetadataSerializationFailed(serde_json::Error),
 }
 
 impl From<sqlx::Error> for InsertionError {
@@ -254,7 +252,7 @@ async fn insert_quote(
                 .metadata
                 .clone()
                 .try_into()
-                .map_err(|_| InsertionError::MetadataSerializationFailed)?,
+                .map_err(InsertionError::MetadataSerializationFailed)?,
         ),
     };
     database::orders::insert_quote(ex, &quote)
