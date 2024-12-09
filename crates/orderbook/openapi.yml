@@ -403,7 +403,7 @@ paths:
         "200":
           description: Version
           content:
-            text/plain: {}
+            text/plain: { }
   "/api/v1/app_data/{app_data_hash}":
     get:
       summary: Get the full `appData` from contract `appDataHash`.
@@ -1661,6 +1661,9 @@ components:
                 $ref: "#/components/schemas/UID"
               executedAmount:
                 $ref: "#/components/schemas/BigUint"
+        isWinner:
+          type: boolean
+          description: whether the solution is a winner (received the right to get executed) or not
     NativePriceResponse:
       description: |
         The estimated native price for the token
