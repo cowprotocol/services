@@ -26,7 +26,6 @@ use {
     },
     ethcontract::{tokens::Tokenize, Bytes, H160, U256},
     ethrpc::{block_stream::CurrentBlockWatcher, extensions::StateOverride, Web3},
-    maplit::hashmap,
     model::{
         order::{OrderData, OrderKind, BUY_ETH_ADDRESS},
         signature::{Signature, SigningScheme},
@@ -103,16 +102,19 @@ impl TradeVerifier {
     async fn verify_inner(
         &self,
         query: &PriceQuery,
-        verification: &Verification,
+        mut verification: Verification,
         trade: &TradeKind,
         out_amount: &U256,
     ) -> Result<Estimate, Error> {
-        if verification.from.is_zero() {
-            // Don't waste time on common simulations which will always fail.
-            return Err(anyhow::anyhow!("trader is zero address").into());
-        }
-
         let start = std::time::Instant::now();
+
+        // this may change the `verification` parameter (to make more
+        // quotes verifiable) so we do it as the first thing to ensure
+        // that all the following code uses the updated value
+        let overrides = self
+            .prepare_state_overrides(&mut verification, query, trade)
+            .await
+            .map_err(Error::SimulationFailed)?;
 
         // Use `tx_origin` if response indicates that a special address is needed for
         // the simulation to pass. Otherwise just use the solver address.
@@ -133,7 +135,7 @@ impl TradeVerifier {
 
         let settlement = encode_settlement(
             query,
-            verification,
+            &verification,
             trade,
             &tokens,
             &clearing_prices,
@@ -142,7 +144,7 @@ impl TradeVerifier {
             &self.domain_separator,
         )?;
 
-        let settlement = add_balance_queries(settlement, query, verification, &solver);
+        let settlement = add_balance_queries(settlement, query, &verification, &solver);
 
         let settlement = self
             .settlement
@@ -191,11 +193,6 @@ impl TradeVerifier {
             gas_price: Some(block.gas_price),
             ..Default::default()
         };
-
-        let overrides = self
-            .prepare_state_overrides(verification, query, trade)
-            .await
-            .map_err(Error::SimulationFailed)?;
 
         let output = self
             .simulator
@@ -284,46 +281,11 @@ impl TradeVerifier {
     /// trade.
     async fn prepare_state_overrides(
         &self,
-        verification: &Verification,
+        verification: &mut Verification,
         query: &PriceQuery,
         trade: &TradeKind,
     ) -> Result<HashMap<H160, StateOverride>> {
-        // Set up mocked trader.
-        let mut overrides = hashmap! {
-            verification.from => StateOverride {
-                code: Some(deployed_bytecode!(Trader)),
-                ..Default::default()
-            },
-        };
-
-        // If the trader is a smart contract we also need to store its implementation
-        // to proxy into it during the simulation.
-        let trader_impl = self
-            .code_fetcher
-            .code(verification.from)
-            .await
-            .context("failed to fetch trader code")?;
-        if !trader_impl.0.is_empty() {
-            overrides.insert(
-                Self::TRADER_IMPL,
-                StateOverride {
-                    code: Some(trader_impl),
-                    ..Default::default()
-                },
-            );
-        }
-
-        // Setup the funding contract override. Regardless of whether or not the
-        // contract has funds, it needs to exist in order to not revert
-        // simulations (Solidity reverts on attempts to call addresses without
-        // any code).
-        overrides.insert(
-            Self::SPARDOSE,
-            StateOverride {
-                code: Some(deployed_bytecode!(Spardose)),
-                ..Default::default()
-            },
-        );
+        let mut overrides = HashMap::with_capacity(6);
 
         // Provide mocked balances if possible to the spardose to allow it to
         // give some balances to the trader in order to verify trades even for
@@ -353,7 +315,55 @@ impl TradeVerifier {
         {
             tracing::trace!(?solver_balance_override, "solver balance override enabled");
             overrides.insert(query.sell_token, solver_balance_override);
+
+            if verification.from.is_zero() {
+                verification.from = H160::random();
+                tracing::debug!(
+                    trader = ?verification.from,
+                    "use random trader address with fake balances"
+                );
+            }
+        } else if verification.from.is_zero() {
+            anyhow::bail!("trader is zero address and balances can not be faked");
         }
+
+        // Set up mocked trader.
+        overrides.insert(
+            verification.from,
+            StateOverride {
+                code: Some(deployed_bytecode!(Trader)),
+                ..Default::default()
+            },
+        );
+
+        // If the trader is a smart contract we also need to store its implementation
+        // to proxy into it during the simulation.
+        let trader_impl = self
+            .code_fetcher
+            .code(verification.from)
+            .await
+            .context("failed to fetch trader code")?;
+        if !trader_impl.0.is_empty() {
+            overrides.insert(
+                Self::TRADER_IMPL,
+                StateOverride {
+                    code: Some(trader_impl),
+                    ..Default::default()
+                },
+            );
+        }
+
+        // Setup the funding contract override. Regardless of whether or not the
+        // contract has funds, it needs to exist in order to not revert
+        // simulations (Solidity reverts on attempts to call addresses without
+        // any code).
+        overrides.insert(
+            Self::SPARDOSE,
+            StateOverride {
+                code: Some(deployed_bytecode!(Spardose)),
+                ..Default::default()
+            },
+        );
 
         // Set up mocked solver.
         let mut solver_override = StateOverride {
@@ -405,7 +415,7 @@ impl TradeVerifying for TradeVerifier {
             )
             .context("failed to compute trade out amount")?;
         match self
-            .verify_inner(query, verification, &trade, &out_amount)
+            .verify_inner(query, verification.clone(), &trade, &out_amount)
             .await
         {
             Ok(verified) => Ok(verified),
@@ -789,7 +799,7 @@ enum Error {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, std::str::FromStr};
+    use {super::*, maplit::hashmap, std::str::FromStr};
 
     #[test]
     fn discards_inaccurate_quotes() {
