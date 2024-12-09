@@ -1,7 +1,7 @@
 use {
     bigdecimal::{BigDecimal, Zero},
-    e2e::setup::*,
-    ethcontract::H160,
+    e2e::{setup::*, tx},
+    ethcontract::{H160, U256},
     ethrpc::Web3,
     model::{
         order::{BuyTokenDestination, OrderKind, SellTokenSource},
@@ -10,7 +10,12 @@ use {
     number::nonzero::U256 as NonZeroU256,
     shared::{
         price_estimation::{
-            trade_verifier::{PriceQuery, TradeVerifier, TradeVerifying},
+            trade_verifier::{
+                balance_overrides::BalanceOverrides,
+                PriceQuery,
+                TradeVerifier,
+                TradeVerifying,
+            },
             Estimate,
             Verification,
         },
@@ -18,6 +23,12 @@ use {
     },
     std::{str::FromStr, sync::Arc},
 };
+
+#[tokio::test]
+#[ignore]
+async fn local_node_standard_verified_quote() {
+    run_test(standard_verified_quote).await;
+}
 
 #[tokio::test]
 #[ignore]
@@ -33,8 +44,59 @@ async fn forked_node_bypass_verification_for_rfq_quotes() {
 
 #[tokio::test]
 #[ignore]
+async fn local_node_verified_quote_eth_balance() {
+    run_test(verified_quote_eth_balance).await;
+}
+
+#[tokio::test]
+#[ignore]
 async fn local_node_verified_quote_for_settlement_contract() {
     run_test(verified_quote_for_settlement_contract).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn local_node_verified_quote_with_simulated_balance() {
+    run_test(verified_quote_with_simulated_balance).await;
+}
+
+/// Verified quotes work as expected.
+async fn standard_verified_quote(web3: Web3) {
+    tracing::info!("Setting up chain state.");
+    let mut onchain = OnchainComponents::deploy(web3).await;
+
+    let [solver] = onchain.make_solvers(to_wei(10)).await;
+    let [trader] = onchain.make_accounts(to_wei(1)).await;
+    let [token] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
+        .await;
+
+    token.mint(trader.address(), to_wei(1)).await;
+    tx!(
+        trader.account(),
+        token.approve(onchain.contracts().allowance, to_wei(1))
+    );
+
+    tracing::info!("Starting services.");
+    let services = Services::new(&onchain).await;
+    services.start_protocol(solver).await;
+
+    // quote where the trader has sufficient balance and an approval set.
+    let response = services
+        .submit_quote(&OrderQuoteRequest {
+            from: trader.address(),
+            sell_token: token.address(),
+            buy_token: onchain.contracts().weth.address(),
+            side: OrderQuoteSide::Sell {
+                sell_amount: SellAmount::BeforeFee {
+                    value: to_wei(1).try_into().unwrap(),
+                },
+            },
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert!(response.verified);
 }
 
 /// The block number from which we will fetch state for the forked tests.
@@ -59,6 +121,7 @@ async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
         web3.clone(),
         Arc::new(web3.clone()),
         Arc::new(web3.clone()),
+        Arc::new(BalanceOverrides::default()),
         block_stream,
         onchain.contracts().gp_settlement.address(),
         onchain.contracts().weth.address(),
@@ -129,6 +192,51 @@ async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
             ..verified_quote
         }
     );
+}
+
+/// Verified quotes work as for WETH trades without wrapping or approvals.
+async fn verified_quote_eth_balance(web3: Web3) {
+    tracing::info!("Setting up chain state.");
+    let mut onchain = OnchainComponents::deploy(web3).await;
+
+    let [solver] = onchain.make_solvers(to_wei(10)).await;
+    let [trader] = onchain.make_accounts(to_wei(1)).await;
+    let [token] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
+        .await;
+    let weth = &onchain.contracts().weth;
+
+    tracing::info!("Starting services.");
+    let services = Services::new(&onchain).await;
+    services.start_protocol(solver).await;
+
+    // quote where the trader has no WETH balances or approval set, but
+    // sufficient ETH for the trade
+    assert_eq!(
+        (
+            weth.balance_of(trader.address()).call().await.unwrap(),
+            weth.allowance(trader.address(), onchain.contracts().allowance)
+                .call()
+                .await
+                .unwrap(),
+        ),
+        (U256::zero(), U256::zero()),
+    );
+    let response = services
+        .submit_quote(&OrderQuoteRequest {
+            from: trader.address(),
+            sell_token: weth.address(),
+            buy_token: token.address(),
+            side: OrderQuoteSide::Sell {
+                sell_amount: SellAmount::BeforeFee {
+                    value: to_wei(1).try_into().unwrap(),
+                },
+            },
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert!(response.verified);
 }
 
 /// Test that asserts that we can verify quotes where the settlement contract is
@@ -203,6 +311,118 @@ async fn verified_quote_for_settlement_contract(web3: Web3) {
             from: trader.address(),
             receiver: Some(onchain.contracts().gp_settlement.address()),
             ..request.clone()
+        })
+        .await
+        .unwrap();
+    assert!(response.verified);
+}
+
+/// Test that asserts that we can verify quotes for traders with simulated
+/// balances.
+async fn verified_quote_with_simulated_balance(web3: Web3) {
+    tracing::info!("Setting up chain state.");
+    let mut onchain = OnchainComponents::deploy(web3).await;
+
+    let [solver] = onchain.make_solvers(to_wei(10)).await;
+    let [trader] = onchain.make_accounts(to_wei(0)).await;
+    let [token] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
+        .await;
+    let weth = &onchain.contracts().weth;
+
+    tracing::info!("Starting services.");
+    let services = Services::new(&onchain).await;
+    services
+        .start_protocol_with_args(
+            ExtraServiceArgs {
+                api: vec![
+                    // The OpenZeppelin `ERC20Mintable` token uses a mapping in
+                    // the first (0'th) storage slot for balances.
+                    format!("--quote-token-balance-overrides={:?}@0", token.address()),
+                    // We don't configure the WETH token and instead rely on
+                    // auto-detection for balance overrides.
+                    "--quote-autodetect-token-balance-overrides=true".to_string(),
+                ],
+                ..Default::default()
+            },
+            solver,
+        )
+        .await;
+
+    // quote where the trader has no balances or approval set from TOKEN->WETH
+    assert_eq!(
+        (
+            token.balance_of(trader.address()).call().await.unwrap(),
+            token
+                .allowance(trader.address(), onchain.contracts().allowance)
+                .call()
+                .await
+                .unwrap(),
+        ),
+        (U256::zero(), U256::zero()),
+    );
+    let response = services
+        .submit_quote(&OrderQuoteRequest {
+            from: trader.address(),
+            sell_token: token.address(),
+            buy_token: weth.address(),
+            side: OrderQuoteSide::Sell {
+                sell_amount: SellAmount::BeforeFee {
+                    value: to_wei(1).try_into().unwrap(),
+                },
+            },
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert!(response.verified);
+
+    // quote where the trader has no balances or approval set from WETH->TOKEN
+    assert_eq!(
+        (
+            onchain
+                .web3()
+                .eth()
+                .balance(trader.address(), None)
+                .await
+                .unwrap(),
+            weth.balance_of(trader.address()).call().await.unwrap(),
+            weth.allowance(trader.address(), onchain.contracts().allowance)
+                .call()
+                .await
+                .unwrap(),
+        ),
+        (U256::zero(), U256::zero(), U256::zero()),
+    );
+    let response = services
+        .submit_quote(&OrderQuoteRequest {
+            from: trader.address(),
+            sell_token: weth.address(),
+            buy_token: token.address(),
+            side: OrderQuoteSide::Sell {
+                sell_amount: SellAmount::BeforeFee {
+                    value: to_wei(1).try_into().unwrap(),
+                },
+            },
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert!(response.verified);
+
+    // with balance overrides we can even verify quotes for the 0 address
+    // which is used when no wallet is connected in the frontend
+    let response = services
+        .submit_quote(&OrderQuoteRequest {
+            from: H160::zero(),
+            sell_token: weth.address(),
+            buy_token: token.address(),
+            side: OrderQuoteSide::Sell {
+                sell_amount: SellAmount::BeforeFee {
+                    value: to_wei(1).try_into().unwrap(),
+                },
+            },
+            ..Default::default()
         })
         .await
         .unwrap();
