@@ -62,7 +62,6 @@ impl Auction {
         Ok(domain::Auction {
             id: self.id,
             block: self.auction.block,
-            latest_settlement_block: self.auction.latest_settlement_block,
             orders: self
                 .auction
                 .orders
