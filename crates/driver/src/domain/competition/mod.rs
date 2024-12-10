@@ -53,12 +53,16 @@ pub struct Competition {
     pub mempools: Mempools,
     /// Cached solutions with the most recent solutions at the front.
     pub settlements: Mutex<VecDeque<Settlement>>,
+    // TODO: single type should have the feature set to simulate
     pub bad_tokens: bad_tokens::Detector,
 }
 
 impl Competition {
     /// Solve an auction as part of this competition.
     pub async fn solve(&self, auction: &Auction) -> Result<Option<Solved>, Error> {
+        // 1. simulate sell tokens
+        // 2. filter bad tokens
+
         let liquidity = match self.solver.liquidity() {
             solver::Liquidity::Fetch => {
                 self.liquidity
@@ -135,6 +139,7 @@ impl Competition {
                     // don't report on errors coming from solution merging
                     Err(_err) if id.solutions().len() > 1 => None,
                     Err(err) => {
+                        // TODO update metrics of bad token detection
                         observe::encoding_failed(self.solver.name(), &id, &err);
                         notify::encoding_failed(&self.solver, auction.id(), &id, &err);
                         None

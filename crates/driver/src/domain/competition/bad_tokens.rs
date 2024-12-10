@@ -1,6 +1,11 @@
 use {
-    crate::domain::eth,
-    dashmap::{DashMap, Entry},
+    super::Order,
+    crate::{
+        domain::{self, eth},
+        infra,
+    },
+    anyhow::Result,
+    dashmap::{DashMap, Entry, OccupiedEntry, VacantEntry},
     model::interaction::InteractionData,
     shared::bad_token::{trace_call::TraceCallDetectorRaw, TokenQuality},
     std::{
@@ -34,50 +39,110 @@ pub struct Detector {
     /// manually configured list of supported and unsupported tokens. Only
     /// tokens that get detected incorrectly by the automatic detectors get
     /// listed here and therefore have a higher precedence.
-    hardcoded: HashMap<eth::Address, Quality>,
+    hardcoded: HashMap<eth::TokenAddress, Quality>,
     /// cache which is shared and updated by multiple bad token detection
     /// mechanisms
-    dynamic: Vec<Cache>,
+    cache: Cache,
+    simulation_detector: Option<TraceCallDetectorRaw>,
+    metrics: Option<Metrics>,
 }
 
 impl Detector {
-    /// Returns which of the passed in tokens should be considered unsupported.
-    pub fn supported_tokens(&self, mut tokens: Vec<eth::Address>) -> Vec<eth::Address> {
+    pub fn with_config(mut self, config: HashMap<eth::TokenAddress, Quality>) -> Self {
+        self.hardcoded = config;
+        self
+    }
+
+    pub fn with_simulation_detector(mut self, eth: &infra::Ethereum) -> Self {
+        let detector =
+            TraceCallDetectorRaw::new(eth.web3().clone(), eth.contracts().settlement().address());
+        self.simulation_detector = Some(detector);
+        self
+    }
+
+    pub fn with_heuristic_detector(mut self) -> Self {
+        self.metrics = Some(Default::default());
+        self
+    }
+
+    pub fn filter_unsupported_orders(&self, mut orders: Vec<Order>) -> Vec<Order> {
         let now = Instant::now();
 
-        tokens.retain(|token| {
-            if let Some(entry) = self.hardcoded.get(token) {
-                return *entry == Quality::Supported;
-            }
+        // group by sell tokens?
+        // future calling `determine_sell_token_quality()` for all of orders
 
-            for cache in &self.dynamic {
-                if let Some(quality) = cache.get_quality(*token, now) {
-                    return quality == Quality::Supported;
-                }
-            }
-
-            // token quality is unknown so we assume it's good
-            true
+        orders.retain(|o| {
+            [o.sell.token, o.buy.token].iter().all(|token| {
+                self.get_token_quality(*token, now)
+                    .is_none_or(|q| q == Quality::Supported)
+            })
         });
 
-        // now it only contains good tokens
-        tokens
+        self.cache.evict_outdated_entries();
+
+        orders
     }
 
-    /// Creates a new [`Detector`] with a configured list of token
-    /// qualities.
-    pub fn new(config: HashMap<eth::Address, Quality>) -> Self {
-        Self {
-            hardcoded: config,
-            dynamic: Default::default(),
+    fn get_token_quality(&self, token: eth::TokenAddress, now: Instant) -> Option<Quality> {
+        if let Some(quality) = self.hardcoded.get(&token) {
+            return Some(*quality);
         }
+
+        if let Some(quality) = self.cache.get_quality(token, now) {
+            return Some(quality);
+        }
+
+        if let Some(metrics) = &self.metrics {
+            return metrics.get_quality(token);
+        }
+
+        None
     }
 
-    /// Registers an externally managed [`Cache`] to read the quality
-    /// of tokens from.
-    pub fn register_cache(&mut self, cache: Cache) -> &mut Self {
-        self.dynamic.push(cache);
-        self
+    pub async fn determine_sell_token_quality(
+        &self,
+        detector: &TraceCallDetectorRaw,
+        order: &Order,
+        now: Instant,
+    ) -> Option<Quality> {
+        if let Some(quality) = self.cache.get_quality(order.sell.token, now) {
+            return Some(quality);
+        }
+
+        let token = order.sell.token;
+        let pre_interactions: Vec<_> = order
+            .pre_interactions
+            .iter()
+            .map(|i| InteractionData {
+                target: i.target.0,
+                value: i.value.0,
+                call_data: i.call_data.0.clone(),
+            })
+            .collect();
+
+        match detector
+            .test_transfer(
+                order.trader().0 .0,
+                token.0 .0,
+                order.sell.amount.0,
+                &pre_interactions,
+            )
+            .await
+        {
+            Err(err) => {
+                tracing::debug!(?err, "failed to determine token quality");
+                None
+            }
+            Ok(TokenQuality::Good) => {
+                self.cache.update_quality(token, Quality::Supported, now);
+                Some(Quality::Supported)
+            }
+            Ok(TokenQuality::Bad { reason }) => {
+                tracing::debug!(reason, "cache token as unsupported");
+                self.cache.update_quality(token, Quality::Unsupported, now);
+                Some(Quality::Unsupported)
+            }
+        }
     }
 }
 
@@ -95,9 +160,8 @@ impl fmt::Debug for Detector {
 /// Stores a map instead of a set to not recompute the quality of good tokens
 /// over and over.
 /// Evicts cached value after a configurable period of time.
-#[derive(Clone)]
-struct Cache {
-    cache: Arc<DashMap<eth::Address, CacheEntry>>,
+pub struct Cache {
+    cache: DashMap<eth::TokenAddress, CacheEntry>,
     /// entries older than this get ignored and evicted
     max_age: Duration,
     /// evicts entries when the cache grows beyond this size
@@ -106,9 +170,15 @@ struct Cache {
 
 struct CacheEntry {
     /// when the decision on the token quality was made
-    timestamp: std::time::Instant,
+    timestamp: Instant,
     /// whether the token is supported or not
     quality: Quality,
+}
+
+impl Default for Cache {
+    fn default() -> Self {
+        Self::new(Duration::from_secs(60 * 10), 1000)
+    }
 }
 
 impl Cache {
@@ -123,30 +193,38 @@ impl Cache {
     }
 
     /// Updates whether or not a token should be considered supported.
-    pub fn update_tokens(&self, updates: impl IntoIterator<Item = (eth::Address, Quality)>) {
-        let now = Instant::now();
-        for (token, quality) in updates {
-            self.cache.insert(
-                token,
-                CacheEntry {
+    pub fn update_quality(&self, token: eth::TokenAddress, quality: Quality, now: Instant) {
+        match self.cache.entry(token) {
+            Entry::Occupied(mut o) => {
+                let value = o.get_mut();
+                if now.duration_since(value.timestamp) > self.max_age
+                    || quality == Quality::Unsupported
+                {
+                    // Only update the value if the cached value is outdated by now or
+                    // if the new value is "Unsupported". This means on conflicting updates
+                    // we err on the conservative side and assume a token is unsupported.
+                    value.quality = quality;
+                }
+                value.timestamp = now;
+            }
+            Entry::Vacant(v) => {
+                v.insert(CacheEntry {
                     quality,
                     timestamp: now,
-                },
-            );
+                });
+            }
         }
+    }
 
-        if self.cache.len() > self.max_size {
-            // this could still leave us with more than max_size entries but it at least
-            // guarantees that the cache does not grow beyond the actual working set which
-            // is enough for now
-            self.cache
-                .retain(|_, value| now.duration_since(value.timestamp) > self.max_age);
-        }
+    fn evict_outdated_entries(&self) {
+        let now = Instant::now();
+        self.cache
+            .retain(|_, value| now.duration_since(value.timestamp) > self.max_age);
     }
 
     /// Returns the quality of the token. If the cached value is older than the
     /// `max_age` it gets ignored and the token evicted.
-    pub fn get_quality(&self, token: eth::Address, now: Instant) -> Option<Quality> {
+    pub fn get_quality(&self, token: eth::TokenAddress, now: Instant) -> Option<Quality> {
         let Entry::Occupied(entry) = self.cache.entry(token) else {
             return None;
         };
@@ -161,60 +239,11 @@ impl Cache {
     }
 }
 
-/// Detects bad a token's quality with simulations using `trace_callMany`.
-struct SimulationDetector {
-    cache: Cache,
-    detector: Arc<TraceCallDetectorRaw>,
-}
-
-impl SimulationDetector {
-    pub fn new(detector: Arc<TraceCallDetectorRaw>) -> Self {
-        Self {
-            detector,
-            cache: Default::default(),
-        }
-    }
-
-    pub async fn determine_token_quality(
-        &self,
-        token: eth::Address,
-        holder: eth::Address,
-        amount: eth::U256,
-        pre_interactions: &[InteractionData],
-    ) {
-        if self.cache.get_quality(token, Instant::now()).is_some() {
-            return;
-        }
-
-        match self
-            .detector
-            .test_transfer(holder.0, token.0, amount, pre_interactions)
-            .await
-        {
-            Err(err) => {
-                tracing::debug!(?err, "failed to determine token quality");
-            }
-            Ok(TokenQuality::Good) => self.cache.update_tokens([(token, Quality::Supported)]),
-            Ok(TokenQuality::Bad { reason }) => {
-                tracing::debug!(reason, "cache token as unsupported");
-                self.cache.update_tokens([(token, Quality::Unsupported)]);
-            }
-        }
-    }
-}
-
-/// Keeps track of how often tokens are associated with reverting solutions
-/// to detect unsupported tokens based on heuristics. Tokens that are
-/// often part of reverting solutions are likely to be unsupported.
-struct MetricsDetector {
-    cache: Cache,
-    metrics: Arc<Metrics>,
-}
-
-impl MetricsDetector {
-    /// Updates metrics on how often each token is associated with a failing
-    /// settlement.
-    pub fn record_failed_settlement(&self, tokens: impl IntoIterator<Item = eth::Address>) {}
-}
-
+#[derive(Default)]
 struct Metrics {}
+
+impl Metrics {
+    fn get_quality(&self, token: eth::TokenAddress) -> Option<Quality> {
+        todo!()
+    }
+}

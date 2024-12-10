@@ -1,6 +1,6 @@
 use {
     crate::{
-        domain::{self, Mempools},
+        domain::{self, competition::bad_tokens, Mempools},
         infra::{
             self,
             config::file::OrderPriorityStrategy,
@@ -52,6 +52,8 @@ impl Api {
         let tokens = tokens::Fetcher::new(&self.eth);
         let pre_processor =
             domain::competition::AuctionProcessor::new(&self.eth, order_priority_strategies);
+        let trace_detector = bad_tokens::SimulationDetector::new(&self.eth);
+        let miep = bad_tokens::Detector::default().register_cache(trace_detector.cache().clone());
 
         // Add the metrics and healthz endpoints.
         app = routes::metrics(app);
@@ -70,7 +72,8 @@ impl Api {
             let router = routes::reveal(router);
             let router = routes::settle(router);
 
-            // each solver needs to get its own bad_tokens::Detector
+            let miep =
+                bad_tokens::Detector::default().register_cache(trace_detector.cache().clone());
 
             let router = router.with_state(State(Arc::new(Inner {
                 eth: self.eth.clone(),
@@ -82,6 +85,7 @@ impl Api {
                     simulator: self.simulator.clone(),
                     mempools: self.mempools.clone(),
                     settlements: Default::default(),
+                    bad_tokens: miep,
                 },
                 liquidity: self.liquidity.clone(),
                 tokens: tokens.clone(),

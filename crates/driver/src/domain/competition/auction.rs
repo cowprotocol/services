@@ -1,5 +1,5 @@
 use {
-    super::{order, Order},
+    super::{bad_tokens, order, Order},
     crate::{
         domain::{
             competition::{self, auction, sorting},
@@ -138,7 +138,6 @@ struct Inner {
     /// `order_priority_strategies` from the driver's config.
     order_sorting_strategies: Vec<Arc<dyn sorting::SortingStrategy>>,
     signature_validator: Arc<dyn SignatureValidating>,
-    bad_token_detector: TraceCallDetectorRaw,
 }
 
 type BalanceGroup = (order::Trader, eth::TokenAddress, order::SellTokenBalance);
@@ -182,7 +181,6 @@ impl AuctionProcessor {
         let mut orders = auction.orders.clone();
         let solver = *solver;
         let order_comparators = lock.order_sorting_strategies.clone();
-        let bad_tokens = lock.bad_token_detector.clone();
 
         // Use spawn_blocking() because a lot of CPU bound computations are happening
         // and we don't want to block the runtime for too long.
@@ -191,9 +189,7 @@ impl AuctionProcessor {
             let cow_amm_orders = rt.block_on(Self::cow_amm_orders(&eth, &tokens, &cow_amms, signature_validator.as_ref()));
             orders.extend(cow_amm_orders);
             sorting::sort_orders(&mut orders, &tokens, &solver, &order_comparators);
-            // TODO add fn to filter bad tokens
             let mut balances = rt.block_on(Self::fetch_balances(&eth, &orders));
-            rt.block_on(Self::filter_bad_tokens(&mut orders, &bad_tokens));
             Self::filter_orders(&mut balances, &mut orders);
             tracing::debug!(auction_id = new_id.0, time =? start.elapsed(), "auction preprocessing done");
             orders
@@ -212,12 +208,6 @@ impl AuctionProcessor {
         lock.fut = fut.clone();
 
         fut
-    }
-
-    async fn filter_bad_tokens(orders: &mut Vec<order::Order>, detector: &TraceCallDetectorRaw) {
-        // only run detection on sell tokens because we can't fake the balance
-        // for buy tokens? also this bad token detector needs to be
-        // shared acro
     }
 
     /// Removes orders that cannot be filled due to missing funds of the owner.
