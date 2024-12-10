@@ -120,7 +120,6 @@ async fn combined_protocol_fees(web3: Web3) {
     let autopilot_config = vec![
         ProtocolFeesConfig(vec![limit_surplus_policy, market_price_improvement_policy]).to_string(),
         "--fee-policy-max-partner-fee=0.02".to_string(),
-        "--enable-multiple-fees=true".to_string(),
     ];
     let services = Services::new(&onchain).await;
     services
