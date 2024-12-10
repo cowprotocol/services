@@ -372,7 +372,7 @@ impl From<BuyTokenDestination> for BuyTokenBalance {
 
 /// The address which placed the order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Into)]
-pub struct Trader(eth::Address);
+pub struct Trader(pub eth::Address);
 
 /// A just-in-time order. JIT orders are added at solving time by the solver to
 /// generate a more optimal solution for the auction. Very similar to a regular

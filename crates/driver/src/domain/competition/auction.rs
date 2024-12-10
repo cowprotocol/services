@@ -1,5 +1,5 @@
 use {
-    super::{order, Order},
+    super::{bad_tokens, order, Order},
     crate::{
         domain::{
             competition::{self, auction, sorting},
@@ -14,7 +14,10 @@ use {
     futures::future::{join_all, BoxFuture, FutureExt, Shared},
     itertools::Itertools,
     model::{order::OrderKind, signature::Signature},
-    shared::signature_validator::{Contracts, SignatureValidating},
+    shared::{
+        bad_token::trace_call::TraceCallDetectorRaw,
+        signature_validator::{Contracts, SignatureValidating},
+    },
     std::{
         collections::{HashMap, HashSet},
         sync::{Arc, Mutex},
@@ -183,10 +186,10 @@ impl AuctionProcessor {
         // and we don't want to block the runtime for too long.
         let fut = tokio::task::spawn_blocking(move || {
             let start = std::time::Instant::now();
-            orders.extend(rt.block_on(Self::cow_amm_orders(&eth, &tokens, &cow_amms, signature_validator.as_ref())));
+            let cow_amm_orders = rt.block_on(Self::cow_amm_orders(&eth, &tokens, &cow_amms, signature_validator.as_ref()));
+            orders.extend(cow_amm_orders);
             sorting::sort_orders(&mut orders, &tokens, &solver, &order_comparators);
-            let mut balances =
-                rt.block_on(async { Self::fetch_balances(&eth, &orders).await });
+            let mut balances = rt.block_on(Self::fetch_balances(&eth, &orders));
             Self::filter_orders(&mut balances, &mut orders);
             tracing::debug!(auction_id = new_id.0, time =? start.elapsed(), "auction preprocessing done");
             orders
@@ -479,6 +482,10 @@ impl AuctionProcessor {
         Self(Arc::new(Mutex::new(Inner {
             auction: Id(0),
             fut: futures::future::pending().boxed().shared(),
+            bad_token_detector: TraceCallDetectorRaw::new(
+                eth.web3().clone(),
+                eth.contracts().settlement().address(),
+            ),
             eth,
             order_sorting_strategies,
             signature_validator,
