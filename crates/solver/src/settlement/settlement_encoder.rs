@@ -72,14 +72,14 @@ enum TokenReference {
 }
 
 /// An trade that was added to the settlement encoder.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 struct EncoderTrade {
     data: Trade,
     tokens: TokenReference,
 }
 
 /// A trade with token prices.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct PricedTrade<'a> {
     pub data: &'a Trade,
     pub sell_token_price: U256,

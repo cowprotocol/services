@@ -602,6 +602,7 @@ fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
             .map(String::from_utf8)
             .transpose()
             .context("full app data isn't utf-8")?,
+        fee_policies: vec![],
     };
     let data = OrderData {
         sell_token: H160(order.sell_token.0),

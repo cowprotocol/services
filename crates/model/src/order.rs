@@ -42,7 +42,7 @@ pub struct Interactions {
 /// An order that is returned when querying the orderbook.
 ///
 /// Contains extra fields that are populated by the orderbook.
-#[derive(Eq, PartialEq, Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(PartialEq, Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Order {
     #[serde(flatten)]
@@ -656,7 +656,7 @@ pub struct OnchainOrderData {
 
 /// An order as provided to the orderbook by the frontend.
 #[serde_as]
-#[derive(Eq, PartialEq, Clone, Default, Deserialize, Serialize, DeriveDebug)]
+#[derive(PartialEq, Clone, Default, Deserialize, Serialize, DeriveDebug)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderMetadata {
     pub creation_date: DateTime<Utc>,
@@ -713,6 +713,8 @@ pub struct OrderMetadata {
     /// Full app data that `OrderData::app_data` is a hash of. Can be None if
     /// the backend doesn't know about the full app data.
     pub full_app_data: Option<String>,
+    /// Fee policies attached at the moment of creation of order
+    pub fee_policies: Vec<crate::fee_policy::FeePolicy>,
 }
 
 // uid as 56 bytes: 32 for orderDigest, 20 for ownerAddress and 4 for validTo

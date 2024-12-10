@@ -96,7 +96,6 @@ pub struct SolvableOrdersCache {
     metrics: &'static Metrics,
     weth: H160,
     limit_order_price_factor: BigDecimal,
-    protocol_fees: domain::ProtocolFees,
     cow_amm_registry: cow_amm::Registry,
     native_price_timeout: Duration,
 }
@@ -120,7 +119,6 @@ impl SolvableOrdersCache {
         signature_validator: Arc<dyn SignatureValidating>,
         weth: H160,
         limit_order_price_factor: BigDecimal,
-        protocol_fees: domain::ProtocolFees,
         cow_amm_registry: cow_amm::Registry,
         native_price_timeout: Duration,
     ) -> Arc<Self> {
@@ -136,7 +134,6 @@ impl SolvableOrdersCache {
             metrics: Metrics::instance(observe::metrics::get_storage_registry()).unwrap(),
             weth,
             limit_order_price_factor,
-            protocol_fees,
             cow_amm_registry,
             native_price_timeout,
         });
@@ -275,8 +272,7 @@ impl SolvableOrdersCache {
                         .quotes
                         .get(&order.metadata.uid.into())
                         .cloned();
-                    self.protocol_fees
-                        .apply(order, quote, &surplus_capturing_jit_order_owners)
+                    boundary::order::to_domain(order, quote)
                 })
                 .collect(),
             prices: prices

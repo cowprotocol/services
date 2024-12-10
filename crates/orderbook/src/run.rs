@@ -309,6 +309,17 @@ pub async fn run(args: Arguments) {
         max_limit: args.max_limit_order_validity_period,
     };
 
+    let archive_node_web3 = args.archive_node_url.as_ref().map_or(web3.clone(), |url| {
+        boundary::web3_client(url, &args.shared.ethrpc)
+    });
+
+    let mut cow_amm_registry = cow_amm::Registry::new(archive_node_web3);
+    for config in &args.cow_amm_configs {
+        cow_amm_registry
+            .add_listener(config.index_start, config.factory, config.helper)
+            .await;
+    }
+
     let create_quoter = |price_estimator: Arc<dyn PriceEstimating>,
                          verification: QuoteVerificationMode| {
         Arc::new(OrderQuoter::new(

@@ -15,7 +15,7 @@ use {
 
 pub use self::settlement_encoder::{PricedTrade, SettlementEncoder};
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Trade {
     pub order: Order,
     pub executed_amount: U256,

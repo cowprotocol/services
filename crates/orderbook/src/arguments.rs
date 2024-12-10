@@ -1,4 +1,6 @@
 use {
+    crate::domain::fee::FeeFactor,
+    anyhow::Context,
     primitive_types::H160,
     reqwest::Url,
     shared::{
@@ -7,7 +9,7 @@ use {
         http_client,
         price_estimation::{self, NativePriceEstimators},
     },
-    std::{net::SocketAddr, num::NonZeroUsize, time::Duration},
+    std::{net::SocketAddr, num::NonZeroUsize, str::FromStr, time::Duration},
 };
 
 #[derive(clap::Parser)]
@@ -137,6 +139,29 @@ pub struct Arguments {
     /// The maximum gas amount a single order can use for getting settled.
     #[clap(long, env, default_value = "8000000")]
     pub max_gas_per_order: u64,
+
+    /// Configurations for indexing CoW AMMs. Supplied in the form of:
+    /// "<factory1>|<helper1>|<block1>,<factory2>|<helper2>,<block2>"
+    /// - factory is contract address emmiting CoW AMM deployment events.
+    /// - helper is a contract address to interface with pools deployed by the
+    ///   factory
+    /// - block is the block at which indexing should start (should be 1 block
+    ///   before the deployment of the factory)
+    #[clap(long, env, use_value_delimiter = true)]
+    pub cow_amm_configs: Vec<CowAmmConfig>,
+
+    /// Archive node URL used to index CoW AMM
+    #[clap(long, env)]
+    pub archive_node_url: Option<Url>,
+
+    /// Describes how the protocol fees should be calculated.
+    #[clap(long, env, use_value_delimiter = true)]
+    pub fee_policies: Vec<FeePolicy>,
+    
+    /// Maximum partner fee allow. If the partner fee specified is greater than
+    /// this maximum, the partner fee will be capped
+    #[clap(long, env, default_value = "0.01")]
+    pub fee_policy_max_partner_fee: FeeFactor,
 }
 
 impl std::fmt::Display for Arguments {
@@ -167,6 +192,10 @@ impl std::fmt::Display for Arguments {
             app_data_size_limit,
             db_url,
             max_gas_per_order,
+            cow_amm_configs,
+            archive_node_url,
+            fee_policies,
+            fee_policy_max_partner_fee,
         } = self;
 
         write!(f, "{}", shared)?;
@@ -229,5 +258,161 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "max_gas_per_order: {}", max_gas_per_order)?;
 
         Ok(())
+    }
+}
+
+/// A fee policy to be used for orders base on it's class.
+/// Examples:
+/// - Surplus with a high enough cap for limit orders: surplus:0.5:0.9:limit
+///
+/// - Surplus with cap for market orders: surplus:0.5:0.06:market
+///
+/// - Price improvement with a high enough cap for any order class:
+///   price_improvement:0.5:0.9:any
+///
+/// - Price improvement with cap for limit orders:
+///   price_improvement:0.5:0.06:limit
+///
+/// - Volume based fee for any order class: volume:0.1:any
+#[derive(Debug, Clone)]
+pub struct FeePolicy {
+    pub fee_policy_kind: FeePolicyKind,
+    pub fee_policy_order_class: FeePolicyOrderClass,
+}
+
+#[derive(clap::Parser, Debug, Clone)]
+pub enum FeePolicyKind {
+    /// How much of the order's surplus should be taken as a protocol fee.
+    Surplus {
+        factor: FeeFactor,
+        max_volume_factor: FeeFactor,
+    },
+    /// How much of the order's price improvement should be taken as a protocol
+    /// fee where price improvement is a difference between the executed price
+    /// and the best quote.
+    PriceImprovement {
+        factor: FeeFactor,
+        max_volume_factor: FeeFactor,
+    },
+    /// How much of the order's volume should be taken as a protocol fee.
+    Volume { factor: FeeFactor },
+}
+
+#[derive(clap::Parser, clap::ValueEnum, Clone, Debug)]
+pub enum FeePolicyOrderClass {
+    /// If a fee policy needs to be applied to in-market orders.
+    Market,
+    /// If a fee policy needs to be applied to limit orders.
+    Limit,
+    /// If a fee policy needs to be applied regardless of the order class.
+    Any,
+}
+
+impl FromStr for FeePolicy {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut parts = s.split(':');
+        let kind = parts.next().context("missing fee policy kind")?;
+        let fee_policy_kind = match kind {
+            "surplus" => {
+                let factor = parts
+                    .next()
+                    .context("missing surplus factor")?
+                    .parse::<f64>()
+                    .map_err(|e| anyhow::anyhow!("invalid surplus factor: {}", e))?;
+                let max_volume_factor = parts
+                    .next()
+                    .context("missing max volume factor")?
+                    .parse::<f64>()
+                    .map_err(|e| anyhow::anyhow!("invalid max volume factor: {}", e))?;
+                Ok(FeePolicyKind::Surplus {
+                    factor: factor.try_into()?,
+                    max_volume_factor: max_volume_factor.try_into()?,
+                })
+            }
+            "priceImprovement" => {
+                let factor = parts
+                    .next()
+                    .context("missing price improvement factor")?
+                    .parse::<f64>()
+                    .map_err(|e| anyhow::anyhow!("invalid price improvement factor: {}", e))?;
+                let max_volume_factor = parts
+                    .next()
+                    .context("missing price improvement max volume factor")?
+                    .parse::<f64>()
+                    .map_err(|e| {
+                        anyhow::anyhow!("invalid price improvement max volume factor: {}", e)
+                    })?;
+                Ok(FeePolicyKind::PriceImprovement {
+                    factor: factor.try_into()?,
+                    max_volume_factor: max_volume_factor.try_into()?,
+                })
+            }
+            "volume" => {
+                let factor = parts
+                    .next()
+                    .context("missing volume factor")?
+                    .parse::<f64>()
+                    .map_err(|e| anyhow::anyhow!("invalid volume factor: {}", e))?;
+                Ok(FeePolicyKind::Volume {
+                    factor: factor.try_into()?,
+                })
+            }
+            _ => Err(anyhow::anyhow!("invalid fee policy kind: {}", kind)),
+        }?;
+        let fee_policy_order_class = FeePolicyOrderClass::from_str(
+            parts.next().context("missing fee policy order class")?,
+            true,
+        )
+        .map_err(|e| anyhow::anyhow!("invalid fee policy order class: {}", e))?;
+
+        Ok(FeePolicy {
+            fee_policy_kind,
+            fee_policy_order_class,
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct CowAmmConfig {
+    /// Which contract to index for CoW AMM deployment events.
+    pub factory: H160,
+    /// Which helper contract to use for interfacing with the indexed CoW AMMs.
+    pub helper: H160,
+    /// At which block indexing should start on the factory.
+    pub index_start: u64,
+}
+
+impl FromStr for CowAmmConfig {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut parts = s.split('|');
+        let factory = parts
+            .next()
+            .context("config is missing factory")?
+            .parse()
+            .context("could not parse factory as H160")?;
+        let helper = parts
+            .next()
+            .context("config is missing helper")?
+            .parse()
+            .context("could not parse helper as H160")?;
+        let index_start = parts
+            .next()
+            .context("config is missing index_start")?
+            .parse()
+            .context("could not parse index_start as u64")?;
+        anyhow::ensure!(
+            parts.next().is_none(),
+            "supplied too many arguments for cow amm config"
+        );
+
+        Ok(Self {
+            factory,
+            helper,
+            index_start,
+        })
     }
 }
