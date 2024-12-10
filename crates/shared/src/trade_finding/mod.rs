@@ -15,7 +15,7 @@ use {
     model::{interaction::InteractionData, order::OrderKind},
     num::CheckedDiv,
     number::conversions::big_rational_to_u256,
-    serde::Serialize,
+    serde::{Deserialize, Serialize},
     std::{collections::HashMap, ops::Mul},
     thiserror::Error,
 };
@@ -36,6 +36,12 @@ pub struct Quote {
     pub out_amount: U256,
     pub gas_estimate: u64,
     pub solver: H160,
+    pub execution: QuoteExecution,
+}
+
+/// Quote execution metadata.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize)]
+pub struct QuoteExecution {
     pub interactions: Vec<InteractionData>,
 }
 

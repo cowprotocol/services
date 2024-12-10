@@ -2,17 +2,14 @@ use {
     self::trade_verifier::balance_overrides,
     crate::{
         arguments::{display_option, display_secret_option, ExternalSolver},
-        trade_finding::Interaction,
+        trade_finding::{Interaction, QuoteExecution},
     },
     anyhow::Result,
     bigdecimal::BigDecimal,
     ethcontract::{H160, U256},
     futures::future::BoxFuture,
     itertools::Itertools,
-    model::{
-        interaction::InteractionData,
-        order::{BuyTokenDestination, OrderKind, SellTokenSource},
-    },
+    model::order::{BuyTokenDestination, OrderKind, SellTokenSource},
     number::nonzero::U256 as NonZeroU256,
     rate_limit::{RateLimiter, Strategy},
     reqwest::Url,
@@ -473,8 +470,8 @@ pub struct Estimate {
     pub solver: H160,
     /// Did we verify the correctness of this estimate's properties?
     pub verified: bool,
-    /// Interactions provided by the solver in response to /quote request.
-    pub interactions: Vec<InteractionData>,
+    /// Data associated with this estimation.
+    pub execution: QuoteExecution,
 }
 
 impl Estimate {

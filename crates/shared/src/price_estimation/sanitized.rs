@@ -67,7 +67,7 @@ impl PriceEstimating for SanitizedPriceEstimator {
                     gas: 0,
                     solver: Default::default(),
                     verified: true,
-                    interactions: vec![],
+                    execution: Default::default(),
                 };
                 tracing::debug!(?query, ?estimation, "generate trivial price estimation");
                 return Ok(estimation);
@@ -80,7 +80,7 @@ impl PriceEstimating for SanitizedPriceEstimator {
                     gas: GAS_PER_WETH_UNWRAP,
                     solver: Default::default(),
                     verified: true,
-                    interactions: vec![],
+                    execution: Default::default(),
                 };
                 tracing::debug!(?query, ?estimation, "generate trivial unwrap estimation");
                 return Ok(estimation);
@@ -93,7 +93,7 @@ impl PriceEstimating for SanitizedPriceEstimator {
                     gas: GAS_PER_WETH_WRAP,
                     solver: Default::default(),
                     verified: true,
-                    interactions: vec![],
+                    execution: Default::default(),
                 };
                 tracing::debug!(?query, ?estimation, "generate trivial wrap estimation");
                 return Ok(estimation);
@@ -188,7 +188,7 @@ mod tests {
                     gas: 100,
                     solver: Default::default(),
                     verified: false,
-                    interactions: vec![],
+                    execution: Default::default(),
                 }),
             ),
             // `sanitized_estimator` will replace `buy_token` with `native_token` before querying
@@ -210,7 +210,7 @@ mod tests {
                     gas: GAS_PER_WETH_UNWRAP + 100,
                     solver: Default::default(),
                     verified: false,
-                    interactions: vec![],
+                    execution: Default::default(),
                 }),
             ),
             // Will cause buffer overflow of gas price in `sanitized_estimator`.
@@ -246,7 +246,7 @@ mod tests {
                     gas: GAS_PER_WETH_WRAP + 100,
                     solver: Default::default(),
                     verified: false,
-                    interactions: vec![],
+                    execution: Default::default(),
                 }),
             ),
             // Can be estimated by `sanitized_estimator` because `buy_token` and `sell_token` are
@@ -265,7 +265,7 @@ mod tests {
                     gas: 0,
                     solver: Default::default(),
                     verified: true,
-                    interactions: vec![],
+                    execution: Default::default(),
                 }),
             ),
             // Can be estimated by `sanitized_estimator` because both tokens are the native token.
@@ -283,7 +283,7 @@ mod tests {
                     gas: 0,
                     solver: Default::default(),
                     verified: true,
-                    interactions: vec![],
+                    execution: Default::default(),
                 }),
             ),
             // Can be estimated by `sanitized_estimator` because it is a native token unwrap.
@@ -302,7 +302,7 @@ mod tests {
                     gas: GAS_PER_WETH_UNWRAP,
                     solver: Default::default(),
                     verified: true,
-                    interactions: vec![],
+                    execution: Default::default(),
                 }),
             ),
             // Can be estimated by `sanitized_estimator` because it is a native token wrap.
@@ -321,7 +321,7 @@ mod tests {
                     gas: GAS_PER_WETH_WRAP,
                     solver: Default::default(),
                     verified: true,
-                    interactions: vec![],
+                    execution: Default::default(),
                 }),
             ),
             // Will throw `UnsupportedToken` error in `sanitized_estimator`.
@@ -386,7 +386,7 @@ mod tests {
                         gas: 100,
                         solver: Default::default(),
                         verified: false,
-                        interactions: vec![],
+                        execution: Default::default(),
                     })
                 }
                 .boxed()
@@ -402,7 +402,7 @@ mod tests {
                         gas: 100,
                         solver: Default::default(),
                         verified: false,
-                        interactions: vec![],
+                        execution: Default::default(),
                     })
                 }
                 .boxed()
@@ -418,7 +418,7 @@ mod tests {
                         gas: u64::MAX,
                         solver: Default::default(),
                         verified: false,
-                        interactions: vec![],
+                        execution: Default::default(),
                     })
                 }
                 .boxed()
@@ -434,7 +434,7 @@ mod tests {
                         gas: 100,
                         solver: Default::default(),
                         verified: false,
-                        interactions: vec![],
+                        execution: Default::default(),
                     })
                 }
                 .boxed()

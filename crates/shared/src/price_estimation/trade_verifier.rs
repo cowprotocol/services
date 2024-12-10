@@ -9,9 +9,10 @@ use {
         encoded_settlement::{encode_trade, EncodedSettlement, EncodedTrade},
         interaction::EncodedInteraction,
         trade_finding::{
-            external::{dto, dto::JitOrder},
+            external::dto::{self, JitOrder},
             map_interactions_data,
             Interaction,
+            QuoteExecution,
             TradeKind,
         },
     },
@@ -217,7 +218,9 @@ impl TradeVerifier {
                     gas: trade.gas_estimate().context("no gas estimate")?,
                     solver: trade.solver(),
                     verified: true,
-                    interactions: map_interactions_data(&trade.interactions()),
+                    execution: QuoteExecution {
+                        interactions: map_interactions_data(&trade.interactions()),
+                    },
                 };
                 tracing::warn!(
                     ?estimate,
@@ -426,7 +429,9 @@ impl TradeVerifying for TradeVerifier {
                         gas,
                         solver: trade.solver(),
                         verified: false,
-                        interactions: map_interactions_data(&trade.interactions()),
+                        execution: QuoteExecution {
+                            interactions: map_interactions_data(&trade.interactions()),
+                        },
                     };
                     tracing::warn!(
                         ?err,
@@ -773,7 +778,9 @@ fn ensure_quote_accuracy(
         gas: summary.gas_used.as_u64(),
         solver: trade.solver(),
         verified: true,
-        interactions: map_interactions_data(&trade.interactions()),
+        execution: QuoteExecution {
+            interactions: map_interactions_data(&trade.interactions()),
+        },
     })
 }
 

@@ -446,7 +446,7 @@ impl OrderQuoter {
             solver: trade_estimate.solver,
             verified: trade_estimate.verified,
             metadata: QuoteMetadataV1 {
-                interactions: trade_estimate.interactions,
+                interactions: trade_estimate.execution.interactions,
             }
             .into(),
         };
@@ -774,7 +774,7 @@ mod tests {
                         gas: 3,
                         solver: H160([1; 20]),
                         verified: false,
-                        interactions: vec![],
+                        execution: Default::default(),
                     })
                 }
                 .boxed()
@@ -912,7 +912,7 @@ mod tests {
                         gas: 3,
                         solver: H160([1; 20]),
                         verified: false,
-                        interactions: vec![],
+                        execution: Default::default(),
                     })
                 }
                 .boxed()
@@ -1045,7 +1045,7 @@ mod tests {
                         gas: 3,
                         solver: H160([1; 20]),
                         verified: false,
-                        interactions: vec![],
+                        execution: Default::default(),
                     })
                 }
                 .boxed()
@@ -1164,7 +1164,7 @@ mod tests {
                     gas: 200,
                     solver: H160([1; 20]),
                     verified: false,
-                    interactions: vec![],
+                    execution: Default::default(),
                 })
             }
             .boxed()
@@ -1236,7 +1236,7 @@ mod tests {
                     gas: 200,
                     solver: H160([1; 20]),
                     verified: false,
-                    interactions: vec![],
+                    execution: Default::default(),
                 })
             }
             .boxed()

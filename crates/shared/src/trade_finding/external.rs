@@ -9,6 +9,7 @@ use {
             Interaction,
             LegacyTrade,
             Quote,
+            QuoteExecution,
             Trade,
             TradeError,
             TradeFinding,
@@ -221,7 +222,9 @@ impl TradeFinding for ExternalTradeFinder {
                 .map_err(TradeError::Other)?,
             gas_estimate,
             solver: trade.solver(),
-            interactions: map_interactions_data(&trade.interactions()),
+            execution: QuoteExecution {
+                interactions: map_interactions_data(&trade.interactions()),
+            },
         })
     }
 

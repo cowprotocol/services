@@ -89,7 +89,7 @@ impl Inner {
             gas: quote.gas_estimate,
             solver: quote.solver,
             verified: false,
-            interactions: quote.interactions,
+            execution: quote.execution,
         })
     }
 }
