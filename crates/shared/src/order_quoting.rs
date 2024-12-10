@@ -636,13 +636,23 @@ pub fn quote_kind_from_signing_scheme(scheme: &QuoteSigningScheme) -> QuoteKind 
     }
 }
 
-/// Used to store in database any quote metadata.
+/// Used to store quote metadata in the database.
+/// Versioning is used for the backward compatibility.
+/// In case new metadata needs to be associated with a quote create a new
+/// variant version and apply serde rename attribute with proper number.
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-#[serde(tag = "version")]
+#[serde(rename_all = "camelCase", tag = "version")]
 pub enum QuoteMetadata {
     #[serde(rename = "1.0")]
     V1(QuoteMetadataV1),
+}
+
+// Handles deserialization of empty json value {} in metadata column.
+#[derive(Clone, Debug, PartialEq, serde::Deserialize)]
+#[serde(untagged)]
+enum QuoteMetadataDeserializationHelper {
+    Data(QuoteMetadata),
+    Empty {},
 }
 
 impl TryInto<serde_json::Value> for QuoteMetadata {
@@ -657,7 +667,10 @@ impl TryFrom<serde_json::Value> for QuoteMetadata {
     type Error = serde_json::Error;
 
     fn try_from(value: serde_json::Value) -> std::result::Result<Self, Self::Error> {
-        serde_json::from_value(value)
+        Ok(match serde_json::from_value(value)? {
+            QuoteMetadataDeserializationHelper::Data(value) => value,
+            QuoteMetadataDeserializationHelper::Empty {} => Default::default(),
+        })
     }
 }
 
@@ -1645,5 +1658,31 @@ mod tests {
         .unwrap();
 
         assert_eq!(req, v);
+    }
+
+    #[test]
+    fn check_quote_metadata_deserialize_from_empty_json() {
+        let empty_json: serde_json::Value = serde_json::from_str("{}").unwrap();
+        let metadata: QuoteMetadata = empty_json.try_into().unwrap();
+        // Empty json is converted to QuoteMetadata default value
+        assert_eq!(metadata, QuoteMetadata::default());
+    }
+
+    #[test]
+    fn check_quote_metadata_deserialize_from_v1_json() {
+        let v1: serde_json::Value = serde_json::from_str(
+        r#"
+        {"version":"1.0",
+        "interactions":[
+        {"target":"0x0101010101010101010101010101010101010101","value":"1","callData":"0x01"},
+        {"target":"0x0202020202020202020202020202020202020202","value":"2","callData":"0x02"}
+        ]}"#,
+        )
+        .unwrap();
+        let metadata: QuoteMetadata = v1.try_into().unwrap();
+
+        match metadata {
+            QuoteMetadata::V1(v1) => assert_eq!(v1.interactions.len(), 2),
+        }
     }
 }
