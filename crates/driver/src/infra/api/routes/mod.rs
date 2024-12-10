@@ -16,7 +16,7 @@ pub(super) use {
     solve::{solve, AuctionError},
 };
 
-pub fn deserialize_solution_id<'de, D>(deserializer: D) -> Result<u64, D::Error>
+pub(crate) fn deserialize_solution_id<'de, D>(deserializer: D) -> Result<u64, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
