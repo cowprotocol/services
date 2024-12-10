@@ -1039,7 +1039,7 @@ impl Test {
     }
 
     /// Call the /reveal endpoint.
-    pub async fn reveal(&self, solution_id: &str) -> Reveal {
+    pub async fn reveal(&self, solution_id: u64) -> Reveal {
         let res = self
             .client
             .post(format!(
@@ -1089,11 +1089,11 @@ impl Test {
     }
 
     /// Call the /settle endpoint.
-    pub async fn settle(&self, solution_id: &str) -> Settle {
+    pub async fn settle(&self, solution_id: u64) -> Settle {
         self.settle_with_solver(solver::NAME, solution_id).await
     }
 
-    pub async fn settle_with_solver(&self, solver_name: &str, solution_id: &str) -> Settle {
+    pub async fn settle_with_solver(&self, solver_name: &str, solution_id: u64) -> Settle {
         /// The maximum number of blocks to wait for a settlement to appear on
         /// chain.
         const SUBMISSION_DEADLINE: u64 = 3;
@@ -1213,13 +1213,12 @@ impl SolveOk<'_> {
 
     /// Extracts the solution id from the response. Since response can contain
     /// multiple solutions, it takes the id from the first solution.
-    pub fn id(&self) -> String {
+    pub fn id(&self) -> u64 {
         let solution = self.solution();
         solution
             .get("solutionId")
             .unwrap()
             .as_u64()
-            .map(|id| id.to_string())
             .unwrap()
             .to_owned()
     }

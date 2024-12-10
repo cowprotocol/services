@@ -30,7 +30,7 @@ async fn matrix() {
                 .await;
 
             let id = test.solve().await.ok().id();
-            test.settle(&id).await.ok().await.ab_order_executed().await;
+            test.settle(id).await.ok().await.ab_order_executed().await;
         }
     }
 }
@@ -47,7 +47,7 @@ async fn solution_not_available() {
         .done()
         .await;
 
-    test.settle("99").await.err().kind("SolutionNotAvailable");
+    test.settle(99).await.err().kind("SolutionNotAvailable");
 }
 
 /// Checks that settlements with revert risk are not submitted via public
@@ -71,7 +71,7 @@ async fn private_rpc_with_high_risk_solution() {
 
     let id = test.solve().await.ok().id();
     // Public cannot be used and private RPC is not available
-    test.settle(&id).await.err().kind("FailedToSubmit");
+    test.settle(id).await.err().kind("FailedToSubmit");
 }
 
 #[tokio::test]
@@ -108,5 +108,5 @@ async fn high_gas_limit() {
         .execute("evm_setBlockGasLimit", vec![serde_json::json!(9_000_000)])
         .await
         .unwrap();
-    test.settle(&id).await.ok().await;
+    test.settle(id).await.ok().await;
 }
