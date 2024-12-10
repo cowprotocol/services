@@ -103,12 +103,12 @@ impl OrderWithQuote {
                         sell_amount: u256_to_big_decimal(&quote.sell_amount),
                         buy_amount: u256_to_big_decimal(&quote.buy_amount),
                         solver: ByteArray(quote.data.solver.0),
-                        verified: Some(quote.data.verified),
-                        metadata: Some(quote.data.metadata.try_into().map_err(
+                        verified: quote.data.verified,
+                        metadata: quote.data.metadata.try_into().map_err(
                             |e: serde_json::Error| {
                                 AddOrderError::MetadataSerializationFailed(e.into())
                             },
-                        )?),
+                        )?,
                     })
                 })
                 .transpose()?,
@@ -245,15 +245,13 @@ async fn insert_quote(
         sell_amount: u256_to_big_decimal(&quote.sell_amount),
         buy_amount: u256_to_big_decimal(&quote.buy_amount),
         solver: ByteArray(quote.data.solver.0),
-        verified: Some(quote.data.verified),
-        metadata: Some(
-            quote
-                .data
-                .metadata
-                .clone()
-                .try_into()
-                .map_err(InsertionError::MetadataSerializationFailed)?,
-        ),
+        verified: quote.data.verified,
+        metadata: quote
+            .data
+            .metadata
+            .clone()
+            .try_into()
+            .map_err(InsertionError::MetadataSerializationFailed)?,
     };
     database::orders::insert_quote(ex, &quote)
         .await
@@ -382,6 +380,8 @@ impl OrderStoring for Postgres {
                     order_with_quote.quote_gas_amount,
                     order_with_quote.quote_gas_price,
                     order_with_quote.quote_sell_token_price,
+                    order_with_quote.quote_verified,
+                    order_with_quote.quote_metadata,
                     order_with_quote.solver,
                 ) {
                     (
@@ -390,6 +390,8 @@ impl OrderStoring for Postgres {
                         Some(gas_amount),
                         Some(gas_price),
                         Some(sell_token_price),
+                        Some(verified),
+                        Some(metadata),
                         Some(solver),
                     ) => Some(orders::Quote {
                         order_uid: order_with_quote.full_order.uid,
@@ -399,8 +401,8 @@ impl OrderStoring for Postgres {
                         sell_amount,
                         buy_amount,
                         solver,
-                        verified: order_with_quote.quote_verified,
-                        metadata: order_with_quote.quote_metadata,
+                        verified,
+                        metadata,
                     }),
                     _ => None,
                 };
@@ -1242,6 +1244,6 @@ mod tests {
 
         let single_order_with_quote = db.single_order_with_quote(&uid).await.unwrap().unwrap();
         assert_eq!(single_order_with_quote.order, order);
-        assert!(single_order_with_quote.quote.unwrap().verified.unwrap());
+        assert!(single_order_with_quote.quote.unwrap().verified);
     }
 }

@@ -8,7 +8,7 @@ ALTER TABLE quotes
 -- Step 2: Update existing data with non-null values
 UPDATE quotes SET verified = false, metadata = '{}'::json;
 
--- Step 3: Add NOT NULL constraint for newly added columns
+-- Step 3: Add NOT NULL constraint to newly added columns
 ALTER TABLE quotes
     ALTER COLUMN verified SET NOT NULL,
     ALTER COLUMN metadata SET NOT NULL;
@@ -18,3 +18,12 @@ ALTER TABLE quotes
 ALTER TABLE order_quotes 
     ADD COLUMN verified boolean,
     ADD COLUMN metadata json;
+
+-- Step 5: Update existing data with non-null values
+UPDATE order_quotes SET verified = false, metadata = '{}'::json;
+
+-- Step 6: Add NOT NULL constraint to newly added columns
+ALTER TABLE order_quotes
+    ALTER COLUMN verified SET NOT NULL,
+    ALTER COLUMN metadata SET NOT NULL;
+

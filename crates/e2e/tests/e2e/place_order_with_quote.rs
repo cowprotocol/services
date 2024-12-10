@@ -16,10 +16,10 @@ use {
 #[tokio::test]
 #[ignore]
 async fn local_node_test() {
-    run_test(place_order_from_quote).await;
+    run_test(place_order_with_quote).await;
 }
 
-async fn place_order_from_quote(web3: Web3) {
+async fn place_order_with_quote(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(to_wei(10)).await;
@@ -101,6 +101,5 @@ async fn place_order_from_quote(web3: Web3) {
     .unwrap();
     assert!(order_quote.is_some());
     let order_quote_metadata = order_quote.unwrap().metadata;
-    assert!(order_quote_metadata.is_some());
-    assert_eq!(quote_metadata.unwrap().0, order_quote_metadata.unwrap());
+    assert_eq!(quote_metadata.unwrap().0, order_quote_metadata);
 }

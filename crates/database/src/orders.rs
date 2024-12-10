@@ -329,8 +329,8 @@ pub struct Quote {
     pub sell_amount: BigDecimal,
     pub buy_amount: BigDecimal,
     pub solver: Address,
-    pub verified: Option<bool>,              // Null value support
-    pub metadata: Option<serde_json::Value>, // Null value support
+    pub verified: bool,
+    pub metadata: serde_json::Value,
 }
 
 pub async fn insert_quotes(ex: &mut PgConnection, quotes: &[Quote]) -> Result<(), sqlx::Error> {
@@ -1213,8 +1213,8 @@ mod tests {
             sell_amount: 4.into(),
             buy_amount: 5.into(),
             solver: ByteArray([1; 20]),
-            verified: None,
-            metadata: None,
+            verified: false,
+            metadata: Default::default(),
         };
         insert_quote(&mut db, &quote).await.unwrap();
         insert_quote_and_update_on_conflict(&mut db, &quote)
@@ -1289,8 +1289,8 @@ mod tests {
             sell_amount: 4.into(),
             buy_amount: 5.into(),
             solver: ByteArray([1; 20]),
-            verified: Some(true),
-            metadata: Some(metadata),
+            verified: true,
+            metadata,
         };
         insert_quote(&mut db, &quote).await.unwrap();
         let quote_ = read_quote(&mut db, &quote.order_uid)
@@ -1317,8 +1317,8 @@ mod tests {
             sell_amount: 4.into(),
             buy_amount: 5.into(),
             solver: ByteArray([1; 20]),
-            verified: None,
-            metadata: None,
+            verified: false,
+            metadata: Default::default(),
         };
         insert_quote(&mut db, &quote).await.unwrap();
         let order_with_quote = single_full_order_with_quote(&mut db, &quote.order_uid)
@@ -2191,8 +2191,8 @@ mod tests {
             sell_amount: 4.into(),
             buy_amount: 5.into(),
             solver: ByteArray([1; 20]),
-            verified: None,
-            metadata: None,
+            verified: false,
+            metadata: Default::default(),
         };
 
         // insert quote with verified and metadata fields stored as NULL
