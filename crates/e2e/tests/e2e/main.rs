@@ -21,6 +21,7 @@ mod order_cancellation;
 mod partial_fill;
 mod partially_fillable_balance;
 mod partially_fillable_pool;
+mod place_order_with_quote;
 mod protocol_fee;
 mod quote_verification;
 mod quoting;

@@ -170,6 +170,8 @@ pub struct QuoteData {
     pub solver: H160,
     /// Were we able to verify that this quote is accurate?
     pub verified: bool,
+    /// Additional data associated with the quote.
+    pub metadata: QuoteMetadata,
 }
 
 impl TryFrom<QuoteRow> for QuoteData {
@@ -195,6 +197,7 @@ impl TryFrom<QuoteRow> for QuoteData {
             // Even if the quote was verified at the time of creation
             // it might no longer be accurate.
             verified: false,
+            metadata: row.metadata.try_into()?,
         })
     }
 }
@@ -442,6 +445,10 @@ impl OrderQuoter {
             quote_kind,
             solver: trade_estimate.solver,
             verified: trade_estimate.verified,
+            metadata: QuoteMetadataV1 {
+                interactions: trade_estimate.interactions,
+            }
+            .into(),
         };
 
         Ok(quote)
@@ -629,6 +636,46 @@ pub fn quote_kind_from_signing_scheme(scheme: &QuoteSigningScheme) -> QuoteKind 
     }
 }
 
+/// Used to store in database any quote metadata.
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+pub enum QuoteMetadata {
+    V1(QuoteMetadataV1),
+}
+
+impl TryInto<serde_json::Value> for QuoteMetadata {
+    type Error = serde_json::Error;
+
+    fn try_into(self) -> std::result::Result<serde_json::Value, Self::Error> {
+        serde_json::to_value(self)
+    }
+}
+
+impl TryFrom<serde_json::Value> for QuoteMetadata {
+    type Error = serde_json::Error;
+
+    fn try_from(value: serde_json::Value) -> std::result::Result<Self, Self::Error> {
+        serde_json::from_value(value)
+    }
+}
+
+impl Default for QuoteMetadata {
+    fn default() -> Self {
+        Self::V1(Default::default())
+    }
+}
+
+impl From<QuoteMetadataV1> for QuoteMetadata {
+    fn from(val: QuoteMetadataV1) -> Self {
+        QuoteMetadata::V1(val)
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, serde::Deserialize, serde::Serialize)]
+pub struct QuoteMetadataV1 {
+    /// Data provided by the solver in response to /quote request.
+    pub interactions: Vec<InteractionData>,
+}
+
 #[cfg(test)]
 mod tests {
     use {
@@ -727,6 +774,7 @@ mod tests {
                         gas: 3,
                         solver: H160([1; 20]),
                         verified: false,
+                        interactions: vec![],
                     })
                 }
                 .boxed()
@@ -768,6 +816,7 @@ mod tests {
                 quote_kind: QuoteKind::Standard,
                 solver: H160([1; 20]),
                 verified: false,
+                metadata: Default::default(),
             }))
             .returning(|_| Ok(1337));
 
@@ -804,6 +853,7 @@ mod tests {
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
                     verified: false,
+                    metadata: Default::default(),
                 },
                 sell_amount: 70.into(),
                 buy_amount: 29.into(),
@@ -862,6 +912,7 @@ mod tests {
                         gas: 3,
                         solver: H160([1; 20]),
                         verified: false,
+                        interactions: vec![],
                     })
                 }
                 .boxed()
@@ -903,6 +954,7 @@ mod tests {
                 quote_kind: QuoteKind::Standard,
                 solver: H160([1; 20]),
                 verified: false,
+                metadata: Default::default(),
             }))
             .returning(|_| Ok(1337));
 
@@ -939,6 +991,7 @@ mod tests {
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
                     verified: false,
+                    metadata: Default::default(),
                 },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
@@ -992,6 +1045,7 @@ mod tests {
                         gas: 3,
                         solver: H160([1; 20]),
                         verified: false,
+                        interactions: vec![],
                     })
                 }
                 .boxed()
@@ -1033,6 +1087,7 @@ mod tests {
                 quote_kind: QuoteKind::Standard,
                 solver: H160([1; 20]),
                 verified: false,
+                metadata: Default::default(),
             }))
             .returning(|_| Ok(1337));
 
@@ -1069,6 +1124,7 @@ mod tests {
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
                     verified: false,
+                    metadata: Default::default(),
                 },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
@@ -1108,6 +1164,7 @@ mod tests {
                     gas: 200,
                     solver: H160([1; 20]),
                     verified: false,
+                    interactions: vec![],
                 })
             }
             .boxed()
@@ -1179,6 +1236,7 @@ mod tests {
                     gas: 200,
                     solver: H160([1; 20]),
                     verified: false,
+                    interactions: vec![],
                 })
             }
             .boxed()
@@ -1255,6 +1313,7 @@ mod tests {
                 quote_kind: QuoteKind::Standard,
                 solver: H160([1; 20]),
                 verified: false,
+                metadata: Default::default(),
             }))
         });
 
@@ -1288,6 +1347,7 @@ mod tests {
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
                     verified: false,
+                    metadata: Default::default(),
                 },
                 sell_amount: 85.into(),
                 // Allows for "out-of-price" buy amounts. This means that order
@@ -1335,6 +1395,7 @@ mod tests {
                 quote_kind: QuoteKind::Standard,
                 solver: H160([1; 20]),
                 verified: false,
+                metadata: Default::default(),
             }))
         });
 
@@ -1368,6 +1429,7 @@ mod tests {
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
                     verified: false,
+                    metadata: Default::default(),
                 },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
@@ -1416,6 +1478,7 @@ mod tests {
                         quote_kind: QuoteKind::Standard,
                         solver: H160([1; 20]),
                         verified: false,
+                        metadata: Default::default(),
                     },
                 )))
             });
@@ -1450,6 +1513,7 @@ mod tests {
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
                     verified: false,
+                    metadata: Default::default(),
                 },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
