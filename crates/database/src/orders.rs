@@ -1268,14 +1268,14 @@ mod tests {
         crate::clear_DANGER_(&mut db).await.unwrap();
 
         let metadata: serde_json::Value = serde_json::from_str(
-            r#"{ "interactions": [ {
-            "target": "0102030405060708091011121314151617181920",
-            "value": 1,
-            "call_data": "0A0B0C102030"
+            r#"{ "version":"1.0", "interactions": [ {
+            "target": "0x0102030405060708091011121314151617181920",
+            "value": "1",
+            "callData": "0x0A0B0C102030"
             },{
-            "target": "FF02030405060708091011121314151617181920",
-            "value": 2,
-            "call_data": "FF0B0C102030"
+            "target": "0xFF02030405060708091011121314151617181920",
+            "value": "2",
+            "callData": "0xFF0B0C102030"
             }]
         }"#,
         )

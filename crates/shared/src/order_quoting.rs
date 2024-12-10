@@ -638,7 +638,10 @@ pub fn quote_kind_from_signing_scheme(scheme: &QuoteSigningScheme) -> QuoteKind 
 
 /// Used to store in database any quote metadata.
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+#[serde(tag = "version")]
 pub enum QuoteMetadata {
+    #[serde(rename = "1.0")]
     V1(QuoteMetadataV1),
 }
 
@@ -1610,5 +1613,37 @@ mod tests {
                 .unwrap_err(),
             FindQuoteError::NotFound(None),
         ));
+    }
+
+    #[test]
+    fn check_quote_metadata_format() {
+        let q: QuoteMetadata = QuoteMetadataV1 {
+            interactions: vec![
+                InteractionData {
+                    target: H160::from([1; 20]),
+                    value: U256::one(),
+                    call_data: vec![1],
+                },
+                InteractionData {
+                    target: H160::from([2; 20]),
+                    value: U256::from(2),
+                    call_data: vec![2],
+                },
+            ],
+        }
+        .into();
+        let v = serde_json::to_value(q).unwrap();
+
+        let req: serde_json::Value = serde_json::from_str(
+            r#"
+        {"version":"1.0",
+         "interactions":[
+         {"target":"0x0101010101010101010101010101010101010101","value":"1","callData":"0x01"}
+         {"target":"0x0202020202020202020202020202020202020202","value":"2","callData":"0x02"}
+         ]}"#,
+        )
+        .unwrap();
+
+        assert_eq!(req, v);
     }
 }
