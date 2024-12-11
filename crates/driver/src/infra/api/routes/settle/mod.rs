@@ -43,7 +43,7 @@ async fn route(
     // This can happen due do connection issues or when the autopilot aborts
     // the `/settle` call when we reach the submission deadline.
     Ok(
-        ::observe::request_id::spawn_task_with_request_id(handle_request)
+        ::observe::request_id::spawn_task_with_current_request_id(handle_request)
             .await
             .unwrap_or_else(|_| Err(competition::Error::SubmissionError))?,
     )

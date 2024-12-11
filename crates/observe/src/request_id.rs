@@ -40,10 +40,9 @@ where
     REQUEST_ID.scope(id, scope).await
 }
 
-/// Spawns a new task. If the current task has a request_id it gets copied
-/// over into the spawned task to allow for tracing requests across task
-/// boundaries.
-pub fn spawn_task_with_request_id<F>(future: F) -> JoinHandle<F::Output>
+/// Spawns a new task and ensures it uses the same request id as the current
+/// task (if present). This allows for tracing requests across task boundaries.
+pub fn spawn_task_with_current_request_id<F>(future: F) -> JoinHandle<F::Output>
 where
     F: Future + Send + 'static,
     F::Output: Send + 'static,
