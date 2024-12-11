@@ -86,6 +86,7 @@ include_contracts! {
     GnosisSafeCompatibilityFallbackHandler;
     GnosisSafeProxy;
     GnosisSafeProxyFactory;
+    Hub;
     Roles;
     HoneyswapRouter;
     HooksTrampoline;

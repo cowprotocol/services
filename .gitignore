@@ -13,3 +13,6 @@
 *_LOCAL_*
 *_REMOTE_*
 *.orig
+*.merge
+*_merge.txt
+*_files.txt

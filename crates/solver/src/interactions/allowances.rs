@@ -148,6 +148,12 @@ impl AllowanceManager {
 
         Self { web3, owner, erc20 }
     }
+
+    /// Checks if circle ubi is supported.
+    /// For now, this always returns false. We can expand this logic later.
+    pub async fn supports_circle_ubi(&self) -> bool {
+        false
+    }
 }
 
 #[async_trait::async_trait]

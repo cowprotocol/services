@@ -1011,6 +1011,9 @@ fn main() {
 
     // Test Contract for using up a specified amount of gas.
     generate_contract("GasHog");
+
+    // Circle UBI Hub contract
+    generate_contract("Hub");
 }
 
 fn generate_contract(name: &str) {

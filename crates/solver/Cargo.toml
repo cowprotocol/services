@@ -32,6 +32,7 @@ once_cell = { workspace = true }
 primitive-types = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
+reqwest = { version = "0.11", features = ["json"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 shared = { path = "../shared" }
@@ -44,6 +45,7 @@ web3 = { workspace = true }
 derivative = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 testlib = { path = "../testlib" }
+httpmock = "0.6"
 
 [lints]
 workspace = true
