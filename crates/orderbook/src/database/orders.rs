@@ -104,11 +104,11 @@ impl OrderWithQuote {
                         buy_amount: u256_to_big_decimal(&quote.buy_amount),
                         solver: ByteArray(quote.data.solver.0),
                         verified: quote.data.verified,
-                        metadata: quote.data.metadata.try_into().map_err(
-                            |e: serde_json::Error| {
-                                AddOrderError::MetadataSerializationFailed(e.into())
-                            },
-                        )?,
+                        metadata: quote
+                            .data
+                            .metadata
+                            .try_into()
+                            .map_err(AddOrderError::MetadataSerializationFailed)?,
                     })
                 })
                 .transpose()?,
