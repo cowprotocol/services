@@ -3,7 +3,7 @@
 use {
     crate::{
         boundary,
-        domain::{eth, liquidity, order, solver::baseline},
+        domain::{eth, liquidity, order, solver},
     },
     ethereum_types::{H160, U256},
     model::TokenPair,
@@ -33,11 +33,7 @@ impl<'a> Solver<'a> {
         }
     }
 
-    pub fn route(
-        &self,
-        request: baseline::Request,
-        max_hops: usize,
-    ) -> Option<baseline::Route<'a>> {
+    pub fn route(&self, request: solver::Request, max_hops: usize) -> Option<solver::Route<'a>> {
         let candidates = self.base_tokens.path_candidates_with_hops(
             request.sell.token.0,
             request.buy.token.0,
@@ -95,7 +91,7 @@ impl<'a> Solver<'a> {
                 .max_by_key(|(_, buy)| buy.value)?,
         };
 
-        baseline::Route::new(segments)
+        solver::Route::new(segments)
     }
 
     fn traverse_path(
@@ -103,7 +99,7 @@ impl<'a> Solver<'a> {
         path: &[&OnchainLiquidity],
         mut sell_token: H160,
         mut sell_amount: U256,
-    ) -> Option<Vec<baseline::Segment<'a>>> {
+    ) -> Option<Vec<solver::Segment<'a>>> {
         let mut segments = Vec::new();
         for liquidity in path {
             let reference_liquidity = self
@@ -117,7 +113,7 @@ impl<'a> Solver<'a> {
                 .expect("Inconsistent path");
             let buy_amount = liquidity.get_amount_out(buy_token, (sell_amount, sell_token))?;
 
-            segments.push(baseline::Segment {
+            segments.push(solver::Segment {
                 liquidity: reference_liquidity,
                 input: eth::Asset {
                     token: eth::TokenAddress(sell_token),
