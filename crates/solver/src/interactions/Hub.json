@@ -1,0 +1,28 @@
+[{
+    "inputs": [
+        {
+            "internalType": "address[]",
+            "name": "tokenOwners",
+            "type": "address[]"
+        },
+        {
+            "internalType": "address[]",
+            "name": "srcs",
+            "type": "address[]"
+        },
+        {
+            "internalType": "address[]",
+            "name": "dests",
+            "type": "address[]"
+        },
+        {
+            "internalType": "uint256[]",
+            "name": "wads",
+            "type": "uint256[]"
+        }
+    ],
+    "name": "transferThrough",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+}] 
