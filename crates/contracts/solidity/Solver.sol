@@ -17,11 +17,6 @@ contract Solver {
     using Caller for *;
     using Math for *;
 
-    struct Mock {
-        bool enabled;
-        address spardose;
-    }
-
     uint256 private _simulationOverhead;
     uint256[] private _queriedBalances;
 
@@ -39,10 +34,7 @@ contract Solver {
     /// @param tokens - list of tokens used in the trade
     /// @param receiver - address receiving the bought tokens
     /// @param settlementCall - the calldata of the `settle()` call
-    /// @param mock - mocking configuration for the simulation; this controls
-    ///             whether things like ETH wrapping, setting allowance and
-    ///             pre-funding should be done on behalf of the user to support
-    ///             quote verification for users who aren't ready to swap.
+    /// @param spardose - contract to provide missing funds with
     ///
     /// @return gasUsed - gas used for the `settle()` call
     /// @return queriedBalances - list of balances stored during the simulation
@@ -55,25 +47,23 @@ contract Solver {
         address[] calldata tokens,
         address payable receiver,
         bytes calldata settlementCall,
-        Mock memory mock
+        address spardose
     ) external returns (
         uint256 gasUsed,
         uint256[] memory queriedBalances
     ) {
         require(msg.sender == address(this), "only simulation logic is allowed to call 'swap' function");
 
-        if (mock.enabled) {
-            // Prepare the trade in the context of the trader so we are allowed
-            // to set approvals and things like that.
-            Trader(trader)
-                .prepareSwap(
-                    settlementContract,
-                    sellToken,
-                    sellAmount,
-                    nativeToken,
-                    mock.spardose
-                );
-        }
+        // Prepare the trade in the context of the trader so we are allowed
+        // to set approvals and things like that.
+        Trader(trader)
+            .prepareSwap(
+                settlementContract,
+                sellToken,
+                sellAmount,
+                nativeToken,
+                spardose
+            );
 
         // Warm the storage for sending ETH to smart contract addresses.
         // We allow this call to revert becaues it was either unnecessary in the first place

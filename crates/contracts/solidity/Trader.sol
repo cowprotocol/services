@@ -64,6 +64,12 @@ contract Trader {
 
     /// @dev Executes needed actions on behalf of the trader to make the trade possible.
     ///      (e.g. wrapping ETH, setting approvals, and funding the account)
+    ///      To support cases where the user's pre-interactions set up the trade
+    ///      themselves (e.g. get tokens by unstaking) AND cases where we need to
+    ///      set up everything for the trade we catch all relevant reverts here.
+    ///      At the end of the function we can assume that all necessary pre-conditions
+    ///      are met. If that is not the case the simulation will simply fail at a later
+    ///      point in time anyway.
     /// @param settlementContract - pass in settlement contract because it does not have
     /// a stable address in tests.
     /// @param sellToken - token being sold by the trade
@@ -91,7 +97,8 @@ contract Trader {
                 // revert. Instead, we fall-through so that we handle insufficient sell
                 // token balances uniformly for all tokens.
                 if (address(this).balance >= amountToWrap) {
-                    INativeERC20(nativeToken).deposit{value: amountToWrap}();
+                    try INativeERC20(nativeToken).deposit{value: amountToWrap}() {}
+                    catch {}
                 }
             }
         }
@@ -104,8 +111,10 @@ contract Trader {
             // We first reset the allowance to 0 since some ERC20 tokens (e.g. USDT)
             // require that due to this attack:
             // https://github.com/ethereum/EIPs/issues/20#issuecomment-263524729
-            IERC20(sellToken).safeApprove(address(settlementContract.vaultRelayer()), 0);
-            IERC20(sellToken).safeApprove(address(settlementContract.vaultRelayer()), type(uint256).max);
+            try IERC20(sellToken).approve(address(settlementContract.vaultRelayer()), 0) {}
+            catch {}
+            try IERC20(sellToken).approve(address(settlementContract.vaultRelayer()), type(uint256).max) {}
+            catch {}
         }
 
         // Ensure that the user has sufficient sell token balance. If not, request some
@@ -114,12 +123,7 @@ contract Trader {
         uint256 sellBalance = IERC20(sellToken).balanceOf(address(this));
         if (sellBalance < sellAmount) {
             try Spardose(spardose).requestFunds(sellToken, sellAmount - sellBalance) {}
-            catch {
-                // The trader does not have sufficient sell token balance, and the
-                // piggy bank pre-fund failed, as balance overrides are not available.
-                // Revert with a helpful message.
-                revert("trader does not have enough sell token");
-            }
+            catch {}
         }
     }
 

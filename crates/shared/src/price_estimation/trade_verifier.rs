@@ -161,11 +161,6 @@ impl TradeVerifier {
             OrderKind::Buy => *out_amount,
         };
 
-        // Only enable additional mocking (approvals, native token wrapping,
-        // balance overrides) if the user did not provide pre-interactions. If
-        // the user did provide pre-interactions, it's reasonable to assume that
-        // they will set up all the necessary details of the trade.
-        let mock_enabled = verification.pre_interactions.is_empty();
         let simulation = solver
             .methods()
             .swap(
@@ -177,7 +172,7 @@ impl TradeVerifier {
                 tokens.clone(),
                 verification.receiver,
                 Bytes(settlement.data.unwrap().0),
-                (mock_enabled, Self::SPARDOSE),
+                Self::SPARDOSE,
             )
             .tx;
 
