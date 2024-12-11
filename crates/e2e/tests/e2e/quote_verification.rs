@@ -1,8 +1,15 @@
 use {
-    bigdecimal::{BigDecimal, Zero}, e2e::{setup::*, tx}, ethcontract::{H160, U256}, ethrpc::Web3, model::{
+    bigdecimal::{BigDecimal, Zero},
+    e2e::{setup::*, tx},
+    ethcontract::{H160, U256},
+    ethrpc::Web3,
+    model::{
         order::{BuyTokenDestination, OrderKind, SellTokenSource},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
-    }, number::nonzero::U256 as NonZeroU256, serde_json::json, shared::{
+    },
+    number::nonzero::U256 as NonZeroU256,
+    serde_json::json,
+    shared::{
         price_estimation::{
             trade_verifier::{
                 balance_overrides::BalanceOverrides,
@@ -14,7 +21,8 @@ use {
             Verification,
         },
         trade_finding::{Interaction, LegacyTrade, TradeKind},
-    }, std::{str::FromStr, sync::Arc}
+    },
+    std::{str::FromStr, sync::Arc},
 };
 
 #[tokio::test]
@@ -446,7 +454,8 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
                             ]
                         }
                     }
-                }).to_string()
+                })
+                .to_string(),
             },
             ..Default::default()
         })
