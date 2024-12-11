@@ -1,6 +1,7 @@
 use {
     crate::domain::fee::FeeFactor,
     anyhow::Context,
+    clap::ValueEnum,
     primitive_types::H160,
     reqwest::Url,
     shared::{
@@ -157,7 +158,7 @@ pub struct Arguments {
     /// Describes how the protocol fees should be calculated.
     #[clap(long, env, use_value_delimiter = true)]
     pub fee_policies: Vec<FeePolicy>,
-    
+
     /// Maximum partner fee allow. If the partner fee specified is greater than
     /// this maximum, the partner fee will be capped
     #[clap(long, env, default_value = "0.01")]
@@ -256,6 +257,14 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(f, "app_data_size_limit: {}", app_data_size_limit)?;
         writeln!(f, "max_gas_per_order: {}", max_gas_per_order)?;
+        writeln!(f, "cow_amm_configs: {:?}", cow_amm_configs)?;
+        display_option(f, "archive_node_url", archive_node_url)?;
+        writeln!(f, "fee_policies: {:?}", fee_policies)?;
+        writeln!(
+            f,
+            "fee_policy_max_partner_fee: {:?}",
+            fee_policy_max_partner_fee
+        )?;
 
         Ok(())
     }

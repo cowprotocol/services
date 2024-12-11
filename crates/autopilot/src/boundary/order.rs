@@ -67,18 +67,16 @@ impl From<model::fee_policy::FeePolicy> for domain::fee::Policy {
                 factor,
                 max_volume_factor,
                 quote,
-            } => {
-                domain::fee::Policy::PriceImprovement {
-                    factor: FeeFactor::try_from(factor).unwrap(),
-                    max_volume_factor: FeeFactor::try_from(max_volume_factor).unwrap(),
-                    quote: domain::fee::Quote {
-                        sell_amount: quote.sell_amount,
-                        buy_amount: quote.buy_amount,
-                        fee: quote.fee,
-                        solver: todo!(), // add solver to crate::model::fee_policy::Quote
-                    },
-                }
-            }
+            } => domain::fee::Policy::PriceImprovement {
+                factor: FeeFactor::try_from(factor).unwrap(),
+                max_volume_factor: FeeFactor::try_from(max_volume_factor).unwrap(),
+                quote: domain::fee::Quote {
+                    sell_amount: quote.sell_amount,
+                    buy_amount: quote.buy_amount,
+                    fee: quote.fee,
+                    solver: quote.solver,
+                },
+            },
         }
     }
 }

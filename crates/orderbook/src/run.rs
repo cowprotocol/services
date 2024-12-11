@@ -309,9 +309,12 @@ pub async fn run(args: Arguments) {
         max_limit: args.max_limit_order_validity_period,
     };
 
-    let archive_node_web3 = args.archive_node_url.as_ref().map_or(web3.clone(), |url| {
-        boundary::web3_client(url, &args.shared.ethrpc)
-    });
+    let archive_node_web3 = args
+        .archive_node_url
+        .as_ref()
+        .map_or(web3.clone(), |node_url| {
+            shared::ethrpc::web3(&args.shared.ethrpc, &http_factory, node_url, "archive")
+        });
 
     let mut cow_amm_registry = cow_amm::Registry::new(archive_node_web3);
     for config in &args.cow_amm_configs {

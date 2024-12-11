@@ -11,6 +11,5 @@ pub use {
         Auction,
         RawAuctionData,
     },
-    fee::ProtocolFees,
     quote::Quote,
 };

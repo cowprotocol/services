@@ -15,7 +15,6 @@ use {
             },
             Postgres,
         },
-        domain,
         event_updater::EventUpdater,
         infra,
         maintenance::Maintenance,
@@ -439,7 +438,6 @@ pub async fn run(args: Arguments) {
         args.limit_order_price_factor
             .try_into()
             .expect("limit order price factor can't be converted to BigDecimal"),
-        domain::ProtocolFees::new(&args.fee_policies, args.fee_policy_max_partner_fee),
         cow_amm_registry.clone(),
         args.run_loop_native_price_timeout,
     );

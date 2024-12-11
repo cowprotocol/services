@@ -138,6 +138,7 @@ fn fee_policy_from(
                     buy_amount: big_decimal_to_u256(&quote.buy_amount)
                         .context("invalid price improvement quote buy amount value")?,
                     fee,
+                    solver: primitive_types::H160(quote.solver.0),
                 },
             }
         }

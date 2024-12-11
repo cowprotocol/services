@@ -1,10 +1,12 @@
-use crate::{
-    arguments,
-    boundary,
-    domain::{
-        self,
-        fee::{FeeFactor, Quote},
+use {
+    crate::{
+        arguments,
+        domain::{
+            self,
+            fee::{FeeFactor, Quote},
+        },
     },
+    model::order::OrderClass,
 };
 
 pub enum Policy {
@@ -50,11 +52,11 @@ impl From<arguments::FeePolicyKind> for Policy {
 }
 
 impl Surplus {
-    pub fn apply(&self, order: &boundary::Order) -> Option<domain::fee::Policy> {
+    pub fn apply(&self, order: &model::order::Order) -> Option<domain::fee::Policy> {
         match order.metadata.class {
-            boundary::OrderClass::Market => None,
-            boundary::OrderClass::Liquidity => None,
-            boundary::OrderClass::Limit => {
+            OrderClass::Market => None,
+            OrderClass::Liquidity => None,
+            OrderClass::Limit => {
                 let policy = domain::fee::Policy::Surplus {
                     factor: self.factor,
                     max_volume_factor: self.max_volume_factor,
@@ -66,29 +68,25 @@ impl Surplus {
 }
 
 impl PriceImprovement {
-    pub fn apply(
-        &self,
-        order: &boundary::Order,
-        quote: &domain::Quote,
-    ) -> Option<domain::fee::Policy> {
+    pub fn apply(&self, order: &model::order::Order, quote: &Quote) -> Option<domain::fee::Policy> {
         match order.metadata.class {
-            boundary::OrderClass::Market => None,
-            boundary::OrderClass::Liquidity => None,
-            boundary::OrderClass::Limit => Some(domain::fee::Policy::PriceImprovement {
+            OrderClass::Market => None,
+            OrderClass::Liquidity => None,
+            OrderClass::Limit => Some(domain::fee::Policy::PriceImprovement {
                 factor: self.factor,
                 max_volume_factor: self.max_volume_factor,
-                quote: Quote::from_domain(quote),
+                quote: *quote,
             }),
         }
     }
 }
 
 impl Volume {
-    pub fn apply(&self, order: &boundary::Order) -> Option<domain::fee::Policy> {
+    pub fn apply(&self, order: &model::order::Order) -> Option<domain::fee::Policy> {
         match order.metadata.class {
-            boundary::OrderClass::Market => None,
-            boundary::OrderClass::Liquidity => None,
-            boundary::OrderClass::Limit => Some(domain::fee::Policy::Volume {
+            OrderClass::Market => None,
+            OrderClass::Liquidity => None,
+            OrderClass::Limit => Some(domain::fee::Policy::Volume {
                 factor: self.factor,
             }),
         }

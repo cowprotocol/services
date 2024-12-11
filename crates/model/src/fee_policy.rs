@@ -33,6 +33,7 @@ pub struct Quote {
     pub buy_amount: U256,
     #[serde_as(as = "HexOrDecimalU256")]
     pub fee: U256,
+    pub solver: H160,
 }
 
 #[serde_as]
