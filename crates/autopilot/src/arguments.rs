@@ -181,10 +181,6 @@ pub struct Arguments {
     #[clap(long, env, use_value_delimiter = true)]
     pub fee_policies: Vec<FeePolicy>,
 
-    /// Enables multiple fees
-    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
-    pub enable_multiple_fees: bool,
-
     /// Maximum partner fee allow. If the partner fee specified is greater than
     /// this maximum, the partner fee will be capped
     #[clap(long, env, default_value = "0.01")]
@@ -269,7 +265,6 @@ impl std::fmt::Display for Arguments {
             shadow,
             solve_deadline,
             fee_policies,
-            enable_multiple_fees,
             fee_policy_max_partner_fee,
             order_events_cleanup_interval,
             order_events_cleanup_threshold,
@@ -326,7 +321,6 @@ impl std::fmt::Display for Arguments {
         display_option(f, "shadow", shadow)?;
         writeln!(f, "solve_deadline: {:?}", solve_deadline)?;
         writeln!(f, "fee_policies: {:?}", fee_policies)?;
-        writeln!(f, "enable_multiple_fees: {:?}", enable_multiple_fees)?;
         writeln!(
             f,
             "fee_policy_max_partner_fee: {:?}",
