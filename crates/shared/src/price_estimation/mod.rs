@@ -1,9 +1,8 @@
 use {
     self::trade_verifier::balance_overrides,
     crate::{
-        arguments,
-        arguments::{display_option, display_secret_option, ExternalSolver},
-        trade_finding::Interaction,
+        arguments::{self, display_option, display_secret_option},
+        trade_finding::{Interaction, QuoteExecution},
     },
     anyhow::{ensure, Result},
     bigdecimal::BigDecimal,
