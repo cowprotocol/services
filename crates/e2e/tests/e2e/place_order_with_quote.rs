@@ -52,13 +52,14 @@ async fn place_order_with_quote(web3: Web3) {
         .expect("Must be able to disable automine");
 
     tracing::info!("Quoting");
+    let quote_sell_amount = to_wei(1);
     let quote_request = OrderQuoteRequest {
         from: trader.address(),
         sell_token: onchain.contracts().weth.address(),
         buy_token: token.address(),
         side: OrderQuoteSide::Sell {
             sell_amount: SellAmount::BeforeFee {
-                value: NonZeroU256::try_from(to_wei(1)).unwrap(),
+                value: NonZeroU256::try_from(quote_sell_amount).unwrap(),
             },
         },
         ..Default::default()
@@ -78,7 +79,7 @@ async fn place_order_with_quote(web3: Web3) {
     let order = OrderCreation {
         quote_id: quote_response.id,
         sell_token: onchain.contracts().weth.address(),
-        sell_amount: quote_response.quote.sell_amount,
+        sell_amount: quote_sell_amount,
         buy_token: token.address(),
         buy_amount: quote_response.quote.buy_amount,
         valid_to: model::time::now_in_epoch_seconds() + 300,
@@ -100,6 +101,7 @@ async fn place_order_with_quote(web3: Web3) {
     .await
     .unwrap();
     assert!(order_quote.is_some());
+    // compare quote metadata and order quote metadata
     let order_quote_metadata = order_quote.unwrap().metadata;
     assert_eq!(quote_metadata.unwrap().0, order_quote_metadata);
 }

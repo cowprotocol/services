@@ -1671,7 +1671,7 @@ mod tests {
     #[test]
     fn check_quote_metadata_deserialize_from_v1_json() {
         let v1: serde_json::Value = serde_json::from_str(
-        r#"
+            r#"
         {"version":"1.0",
         "interactions":[
         {"target":"0x0101010101010101010101010101010101010101","value":"1","callData":"0x01"},
