@@ -9,8 +9,10 @@ use {
         encoded_settlement::{encode_trade, EncodedSettlement, EncodedTrade},
         interaction::EncodedInteraction,
         trade_finding::{
-            external::{dto, dto::JitOrder},
+            external::dto::{self, JitOrder},
+            map_interactions_data,
             Interaction,
+            QuoteExecution,
             TradeKind,
         },
     },
@@ -211,6 +213,9 @@ impl TradeVerifier {
                     gas: trade.gas_estimate().context("no gas estimate")?,
                     solver: trade.solver(),
                     verified: true,
+                    execution: QuoteExecution {
+                        interactions: map_interactions_data(&trade.interactions()),
+                    },
                 };
                 tracing::warn!(
                     ?estimate,
@@ -267,12 +272,7 @@ impl TradeVerifier {
             "verified quote",
         );
 
-        ensure_quote_accuracy(
-            &self.quote_inaccuracy_limit,
-            query,
-            trade.solver(),
-            &summary,
-        )
+        ensure_quote_accuracy(&self.quote_inaccuracy_limit, query, trade, &summary)
     }
 
     /// Configures all the state overrides that are needed to mock the given
@@ -424,6 +424,9 @@ impl TradeVerifying for TradeVerifier {
                         gas,
                         solver: trade.solver(),
                         verified: false,
+                        execution: QuoteExecution {
+                            interactions: map_interactions_data(&trade.interactions()),
+                        },
                     };
                     tracing::warn!(
                         ?err,
@@ -737,7 +740,7 @@ impl SettleOutput {
 fn ensure_quote_accuracy(
     inaccuracy_limit: &BigRational,
     query: &PriceQuery,
-    solver: H160,
+    trade: &TradeKind,
     summary: &SettleOutput,
 ) -> std::result::Result<Estimate, Error> {
     // amounts verified by the simulation
@@ -768,8 +771,11 @@ fn ensure_quote_accuracy(
     Ok(Estimate {
         out_amount: summary.out_amount,
         gas: summary.gas_used.as_u64(),
-        solver,
+        solver: trade.solver(),
         verified: true,
+        execution: QuoteExecution {
+            interactions: map_interactions_data(&trade.interactions()),
+        },
     })
 }
 
@@ -823,7 +829,8 @@ mod tests {
             out_amount: 2_000.into(),
             tokens_lost,
         };
-        let estimate = ensure_quote_accuracy(&low_threshold, &query, H160::zero(), &summary);
+        let estimate =
+            ensure_quote_accuracy(&low_threshold, &query, &TradeKind::default(), &summary);
         assert!(matches!(estimate, Err(Error::SimulationFailed(_))));
 
         // sell token is lost
@@ -835,7 +842,9 @@ mod tests {
             out_amount: 2_000.into(),
             tokens_lost,
         };
-        let estimate = ensure_quote_accuracy(&low_threshold, &query, H160::zero(), &summary);
+
+        let estimate =
+            ensure_quote_accuracy(&low_threshold, &query, &TradeKind::default(), &summary);
         assert!(matches!(estimate, Err(Error::SimulationFailed(_))));
 
         // everything is in-place
@@ -848,7 +857,8 @@ mod tests {
             out_amount: 2_000.into(),
             tokens_lost,
         };
-        let estimate = ensure_quote_accuracy(&low_threshold, &query, H160::zero(), &summary);
+        let estimate =
+            ensure_quote_accuracy(&low_threshold, &query, &TradeKind::default(), &summary);
         assert!(estimate.is_ok());
 
         let tokens_lost = hashmap! {
@@ -862,11 +872,13 @@ mod tests {
             tokens_lost,
         };
 
-        let estimate = ensure_quote_accuracy(&low_threshold, &query, H160::zero(), &sell_more);
+        let estimate =
+            ensure_quote_accuracy(&low_threshold, &query, &Default::default(), &sell_more);
         assert!(matches!(estimate, Err(Error::TooInaccurate)));
 
         // passes with slightly higher tolerance
-        let estimate = ensure_quote_accuracy(&high_threshold, &query, H160::zero(), &sell_more);
+        let estimate =
+            ensure_quote_accuracy(&high_threshold, &query, &Default::default(), &sell_more);
         assert!(estimate.is_ok());
 
         let tokens_lost = hashmap! {
@@ -880,11 +892,13 @@ mod tests {
             tokens_lost,
         };
 
-        let estimate = ensure_quote_accuracy(&low_threshold, &query, H160::zero(), &pay_out_more);
+        let estimate =
+            ensure_quote_accuracy(&low_threshold, &query, &Default::default(), &pay_out_more);
         assert!(matches!(estimate, Err(Error::TooInaccurate)));
 
         // passes with slightly higher tolerance
-        let estimate = ensure_quote_accuracy(&high_threshold, &query, H160::zero(), &pay_out_more);
+        let estimate =
+            ensure_quote_accuracy(&high_threshold, &query, &Default::default(), &pay_out_more);
         assert!(estimate.is_ok());
 
         let tokens_lost = hashmap! {
@@ -898,7 +912,8 @@ mod tests {
             tokens_lost,
         };
         // Ending up with surplus in the buffers is always fine
-        let estimate = ensure_quote_accuracy(&low_threshold, &query, H160::zero(), &sell_less);
+        let estimate =
+            ensure_quote_accuracy(&low_threshold, &query, &Default::default(), &sell_less);
         assert!(estimate.is_ok());
 
         let tokens_lost = hashmap! {
@@ -912,7 +927,8 @@ mod tests {
             tokens_lost,
         };
         // Ending up with surplus in the buffers is always fine
-        let estimate = ensure_quote_accuracy(&low_threshold, &query, H160::zero(), &pay_out_less);
+        let estimate =
+            ensure_quote_accuracy(&low_threshold, &query, &Default::default(), &pay_out_less);
         assert!(estimate.is_ok());
     }
 }
