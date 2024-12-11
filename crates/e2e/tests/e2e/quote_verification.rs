@@ -1,14 +1,8 @@
 use {
-    bigdecimal::{BigDecimal, Zero},
-    e2e::{setup::*, tx},
-    ethcontract::{H160, U256},
-    ethrpc::Web3,
-    model::{
+    bigdecimal::{BigDecimal, Zero}, e2e::{setup::*, tx}, ethcontract::{H160, U256}, ethrpc::Web3, model::{
         order::{BuyTokenDestination, OrderKind, SellTokenSource},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
-    },
-    number::nonzero::U256 as NonZeroU256,
-    shared::{
+    }, number::nonzero::U256 as NonZeroU256, serde_json::json, shared::{
         price_estimation::{
             trade_verifier::{
                 balance_overrides::BalanceOverrides,
@@ -20,8 +14,7 @@ use {
             Verification,
         },
         trade_finding::{Interaction, LegacyTrade, TradeKind},
-    },
-    std::{str::FromStr, sync::Arc},
+    }, std::{str::FromStr, sync::Arc}
 };
 
 #[tokio::test]
@@ -421,6 +414,39 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
                 sell_amount: SellAmount::BeforeFee {
                     value: to_wei(1).try_into().unwrap(),
                 },
+            },
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert!(response.verified);
+
+    // Previously quote verification did not set up the trade correctly
+    // if the user provided pre-interactions. This works now.
+    let response = services
+        .submit_quote(&OrderQuoteRequest {
+            from: H160::zero(),
+            sell_token: weth.address(),
+            buy_token: token.address(),
+            side: OrderQuoteSide::Sell {
+                sell_amount: SellAmount::BeforeFee {
+                    value: to_wei(1).try_into().unwrap(),
+                },
+            },
+            app_data: model::order::OrderCreationAppData::Full {
+                full: json!({
+                    "metadata": {
+                        "hooks": {
+                            "pre": [
+                                {
+                                    "target": "0x0000000000000000000000000000000000000000",
+                                    "callData": "0x",
+                                    "gasLimit": "0"
+                                }
+                            ]
+                        }
+                    }
+                }).to_string()
             },
             ..Default::default()
         })
