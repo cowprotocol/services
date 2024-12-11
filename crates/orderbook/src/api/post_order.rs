@@ -262,6 +262,10 @@ impl IntoWarpReply for AddOrderError {
                 super::error("InvalidReplacement", err.to_string()),
                 StatusCode::UNAUTHORIZED,
             ),
+            AddOrderError::MetadataSerializationFailed(err) => reply::with_status(
+                super::error("MetadataSerializationFailed", err.to_string()),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ),
         }
     }
 }

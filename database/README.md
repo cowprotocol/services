@@ -229,7 +229,7 @@ Indexes:
 
 Quotes that an order was created with. These quotes get stored persistently and can be used to evaluate how accurate the quoted fee predicted the execution cost that actually happened on-chain.
 
- Colmun             | Type    | Nullable | Details
+ Column             | Type    | Nullable | Details
 --------------------|---------|----------|--------
  order\_uid         | bytea   | not null | order that this quote belongs to
  gas\_amount        | double  | not null | estimated gas used by the quote used to create this order with
@@ -238,6 +238,8 @@ Quotes that an order was created with. These quotes get stored persistently and 
  sell\_amount       | numeric | not null | sell\_amount of the quote used to create the order with
  buy\_amount        | numeric | not null | buy\_amount of the quote used to create the order with
  solver             | bytea   | not null | public address of the solver that provided this quote
+ verified           | boolean | not null | information if quote was verified
+ metadata           | json    | not null | additional data associated with the quote in json format
 
 Indexes:
 - PRIMARY KEY: btree(`order_uid`)
@@ -339,6 +341,8 @@ Stores quotes in order to determine whether it makes sense to allow a user to cr
  id                    | bigint             | not null | unique identifier of this quote
  quote\_kind           | [enum](#quotekind) | not null | quotekind for which this quote is considered valid
  solver                | bytea              | not null | public address of the solver that provided this quote
+ verified              | boolean            | not null | information if quote was verified
+ metadata              | json               | not null | additional data associated with the quote in json format
 
 Indexes:
 - PRIMARY KEY: btree(`id`)

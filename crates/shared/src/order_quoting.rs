@@ -170,6 +170,8 @@ pub struct QuoteData {
     pub solver: H160,
     /// Were we able to verify that this quote is accurate?
     pub verified: bool,
+    /// Additional data associated with the quote.
+    pub metadata: QuoteMetadata,
 }
 
 impl TryFrom<QuoteRow> for QuoteData {
@@ -195,6 +197,7 @@ impl TryFrom<QuoteRow> for QuoteData {
             // Even if the quote was verified at the time of creation
             // it might no longer be accurate.
             verified: false,
+            metadata: row.metadata.try_into()?,
         })
     }
 }
@@ -442,6 +445,10 @@ impl OrderQuoter {
             quote_kind,
             solver: trade_estimate.solver,
             verified: trade_estimate.verified,
+            metadata: QuoteMetadataV1 {
+                interactions: trade_estimate.execution.interactions,
+            }
+            .into(),
         };
 
         Ok(quote)
@@ -629,6 +636,62 @@ pub fn quote_kind_from_signing_scheme(scheme: &QuoteSigningScheme) -> QuoteKind 
     }
 }
 
+/// Used to store quote metadata in the database.
+/// Versioning is used for the backward compatibility.
+/// In case new metadata needs to be associated with a quote create a new
+/// variant version and apply serde rename attribute with proper number.
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase", tag = "version")]
+pub enum QuoteMetadata {
+    #[serde(rename = "1.0")]
+    V1(QuoteMetadataV1),
+}
+
+// Handles deserialization of empty json value {} in metadata column.
+#[derive(Clone, Debug, PartialEq, serde::Deserialize)]
+#[serde(untagged)]
+enum QuoteMetadataDeserializationHelper {
+    Data(QuoteMetadata),
+    Empty {},
+}
+
+impl TryInto<serde_json::Value> for QuoteMetadata {
+    type Error = serde_json::Error;
+
+    fn try_into(self) -> std::result::Result<serde_json::Value, Self::Error> {
+        serde_json::to_value(self)
+    }
+}
+
+impl TryFrom<serde_json::Value> for QuoteMetadata {
+    type Error = serde_json::Error;
+
+    fn try_from(value: serde_json::Value) -> std::result::Result<Self, Self::Error> {
+        Ok(match serde_json::from_value(value)? {
+            QuoteMetadataDeserializationHelper::Data(value) => value,
+            QuoteMetadataDeserializationHelper::Empty {} => Default::default(),
+        })
+    }
+}
+
+impl Default for QuoteMetadata {
+    fn default() -> Self {
+        Self::V1(Default::default())
+    }
+}
+
+impl From<QuoteMetadataV1> for QuoteMetadata {
+    fn from(val: QuoteMetadataV1) -> Self {
+        QuoteMetadata::V1(val)
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, serde::Deserialize, serde::Serialize)]
+pub struct QuoteMetadataV1 {
+    /// Data provided by the solver in response to /quote request.
+    pub interactions: Vec<InteractionData>,
+}
+
 #[cfg(test)]
 mod tests {
     use {
@@ -727,6 +790,7 @@ mod tests {
                         gas: 3,
                         solver: H160([1; 20]),
                         verified: false,
+                        execution: Default::default(),
                     })
                 }
                 .boxed()
@@ -768,6 +832,7 @@ mod tests {
                 quote_kind: QuoteKind::Standard,
                 solver: H160([1; 20]),
                 verified: false,
+                metadata: Default::default(),
             }))
             .returning(|_| Ok(1337));
 
@@ -804,6 +869,7 @@ mod tests {
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
                     verified: false,
+                    metadata: Default::default(),
                 },
                 sell_amount: 70.into(),
                 buy_amount: 29.into(),
@@ -862,6 +928,7 @@ mod tests {
                         gas: 3,
                         solver: H160([1; 20]),
                         verified: false,
+                        execution: Default::default(),
                     })
                 }
                 .boxed()
@@ -903,6 +970,7 @@ mod tests {
                 quote_kind: QuoteKind::Standard,
                 solver: H160([1; 20]),
                 verified: false,
+                metadata: Default::default(),
             }))
             .returning(|_| Ok(1337));
 
@@ -939,6 +1007,7 @@ mod tests {
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
                     verified: false,
+                    metadata: Default::default(),
                 },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
@@ -992,6 +1061,7 @@ mod tests {
                         gas: 3,
                         solver: H160([1; 20]),
                         verified: false,
+                        execution: Default::default(),
                     })
                 }
                 .boxed()
@@ -1033,6 +1103,7 @@ mod tests {
                 quote_kind: QuoteKind::Standard,
                 solver: H160([1; 20]),
                 verified: false,
+                metadata: Default::default(),
             }))
             .returning(|_| Ok(1337));
 
@@ -1069,6 +1140,7 @@ mod tests {
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
                     verified: false,
+                    metadata: Default::default(),
                 },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
@@ -1108,6 +1180,7 @@ mod tests {
                     gas: 200,
                     solver: H160([1; 20]),
                     verified: false,
+                    execution: Default::default(),
                 })
             }
             .boxed()
@@ -1179,6 +1252,7 @@ mod tests {
                     gas: 200,
                     solver: H160([1; 20]),
                     verified: false,
+                    execution: Default::default(),
                 })
             }
             .boxed()
@@ -1255,6 +1329,7 @@ mod tests {
                 quote_kind: QuoteKind::Standard,
                 solver: H160([1; 20]),
                 verified: false,
+                metadata: Default::default(),
             }))
         });
 
@@ -1288,6 +1363,7 @@ mod tests {
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
                     verified: false,
+                    metadata: Default::default(),
                 },
                 sell_amount: 85.into(),
                 // Allows for "out-of-price" buy amounts. This means that order
@@ -1335,6 +1411,7 @@ mod tests {
                 quote_kind: QuoteKind::Standard,
                 solver: H160([1; 20]),
                 verified: false,
+                metadata: Default::default(),
             }))
         });
 
@@ -1368,6 +1445,7 @@ mod tests {
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
                     verified: false,
+                    metadata: Default::default(),
                 },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
@@ -1416,6 +1494,7 @@ mod tests {
                         quote_kind: QuoteKind::Standard,
                         solver: H160([1; 20]),
                         verified: false,
+                        metadata: Default::default(),
                     },
                 )))
             });
@@ -1450,6 +1529,7 @@ mod tests {
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
                     verified: false,
+                    metadata: Default::default(),
                 },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
@@ -1546,5 +1626,63 @@ mod tests {
                 .unwrap_err(),
             FindQuoteError::NotFound(None),
         ));
+    }
+
+    #[test]
+    fn check_quote_metadata_format() {
+        let q: QuoteMetadata = QuoteMetadataV1 {
+            interactions: vec![
+                InteractionData {
+                    target: H160::from([1; 20]),
+                    value: U256::one(),
+                    call_data: vec![1],
+                },
+                InteractionData {
+                    target: H160::from([2; 20]),
+                    value: U256::from(2),
+                    call_data: vec![2],
+                },
+            ],
+        }
+        .into();
+        let v = serde_json::to_value(q).unwrap();
+
+        let req: serde_json::Value = serde_json::from_str(
+            r#"
+        {"version":"1.0",
+         "interactions":[
+         {"target":"0x0101010101010101010101010101010101010101","value":"1","callData":"0x01"},
+         {"target":"0x0202020202020202020202020202020202020202","value":"2","callData":"0x02"}
+         ]}"#,
+        )
+        .unwrap();
+
+        assert_eq!(req, v);
+    }
+
+    #[test]
+    fn check_quote_metadata_deserialize_from_empty_json() {
+        let empty_json: serde_json::Value = serde_json::from_str("{}").unwrap();
+        let metadata: QuoteMetadata = empty_json.try_into().unwrap();
+        // Empty json is converted to QuoteMetadata default value
+        assert_eq!(metadata, QuoteMetadata::default());
+    }
+
+    #[test]
+    fn check_quote_metadata_deserialize_from_v1_json() {
+        let v1: serde_json::Value = serde_json::from_str(
+            r#"
+        {"version":"1.0",
+        "interactions":[
+        {"target":"0x0101010101010101010101010101010101010101","value":"1","callData":"0x01"},
+        {"target":"0x0202020202020202020202020202020202020202","value":"2","callData":"0x02"}
+        ]}"#,
+        )
+        .unwrap();
+        let metadata: QuoteMetadata = v1.try_into().unwrap();
+
+        match metadata {
+            QuoteMetadata::V1(v1) => assert_eq!(v1.interactions.len(), 2),
+        }
     }
 }

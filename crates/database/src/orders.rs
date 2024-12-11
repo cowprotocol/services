@@ -329,6 +329,8 @@ pub struct Quote {
     pub sell_amount: BigDecimal,
     pub buy_amount: BigDecimal,
     pub solver: Address,
+    pub verified: bool,
+    pub metadata: serde_json::Value,
 }
 
 pub async fn insert_quotes(ex: &mut PgConnection, quotes: &[Quote]) -> Result<(), sqlx::Error> {
@@ -346,9 +348,11 @@ INSERT INTO order_quotes (
     sell_token_price,
     sell_amount,
     buy_amount,
-    solver
+    solver,
+    verified,
+    metadata
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7)"#;
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"#;
 
 pub async fn insert_quote_and_update_on_conflict(
     ex: &mut PgConnection,
@@ -362,7 +366,7 @@ pub async fn insert_quote_and_update_on_conflict(
         " ON CONFLICT (order_uid) DO UPDATE
 SET gas_amount = $2, gas_price = $3,
 sell_token_price = $4, sell_amount = $5,
-buy_amount = $6
+buy_amount = $6, verified = $8, metadata = $9
     "
     );
     sqlx::query(QUERY)
@@ -373,6 +377,8 @@ buy_amount = $6
         .bind(&quote.sell_amount)
         .bind(&quote.buy_amount)
         .bind(quote.solver)
+        .bind(quote.verified)
+        .bind(&quote.metadata)
         .execute(ex)
         .await?;
     Ok(())
@@ -387,6 +393,8 @@ pub async fn insert_quote(ex: &mut PgConnection, quote: &Quote) -> Result<(), sq
         .bind(&quote.sell_amount)
         .bind(&quote.buy_amount)
         .bind(quote.solver)
+        .bind(quote.verified)
+        .bind(&quote.metadata)
         .execute(ex)
         .await?;
     Ok(())
@@ -498,6 +506,8 @@ pub struct FullOrderWithQuote {
     pub quote_gas_amount: Option<f64>,
     pub quote_gas_price: Option<f64>,
     pub quote_sell_token_price: Option<f64>,
+    pub quote_verified: Option<bool>,
+    pub quote_metadata: Option<serde_json::Value>,
     pub solver: Option<Address>,
 }
 
@@ -591,6 +601,8 @@ pub async fn single_full_order_with_quote(
         ", o_quotes.gas_amount as quote_gas_amount",
         ", o_quotes.gas_price as quote_gas_price",
         ", o_quotes.sell_token_price as quote_sell_token_price",
+        ", o_quotes.verified as quote_verified",
+        ", o_quotes.metadata as quote_metadata",
         ", o_quotes.solver as solver",
         " FROM ", FROM,
         " LEFT JOIN order_quotes o_quotes ON o.uid = o_quotes.order_uid",
@@ -1201,6 +1213,8 @@ mod tests {
             sell_amount: 4.into(),
             buy_amount: 5.into(),
             solver: ByteArray([1; 20]),
+            verified: false,
+            metadata: Default::default(),
         };
         insert_quote(&mut db, &quote).await.unwrap();
         insert_quote_and_update_on_conflict(&mut db, &quote)
@@ -1253,6 +1267,20 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
+        let metadata: serde_json::Value = serde_json::from_str(
+            r#"{ "version":"1.0", "interactions": [ {
+            "target": "0x0102030405060708091011121314151617181920",
+            "value": "1",
+            "callData": "0x0A0B0C102030"
+            },{
+            "target": "0xFF02030405060708091011121314151617181920",
+            "value": "2",
+            "callData": "0xFF0B0C102030"
+            }]
+        }"#,
+        )
+        .unwrap();
+
         let quote = Quote {
             order_uid: Default::default(),
             gas_amount: 1.,
@@ -1261,6 +1289,8 @@ mod tests {
             sell_amount: 4.into(),
             buy_amount: 5.into(),
             solver: ByteArray([1; 20]),
+            verified: true,
+            metadata,
         };
         insert_quote(&mut db, &quote).await.unwrap();
         let quote_ = read_quote(&mut db, &quote.order_uid)
@@ -1287,6 +1317,8 @@ mod tests {
             sell_amount: 4.into(),
             buy_amount: 5.into(),
             solver: ByteArray([1; 20]),
+            verified: false,
+            metadata: Default::default(),
         };
         insert_quote(&mut db, &quote).await.unwrap();
         let order_with_quote = single_full_order_with_quote(&mut db, &quote.order_uid)
@@ -2141,5 +2173,37 @@ mod tests {
                 ByteArray([5u8; 56])
             ]
         );
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_get_quote_with_no_metadata_and_validity() {
+        // This test checks backward compatibility
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let quote = Quote {
+            order_uid: Default::default(),
+            gas_amount: 1.,
+            gas_price: 2.,
+            sell_token_price: 3.,
+            sell_amount: 4.into(),
+            buy_amount: 5.into(),
+            solver: ByteArray([1; 20]),
+            verified: false,
+            metadata: Default::default(),
+        };
+
+        // insert quote with verified and metadata fields stored as NULL
+        insert_quote_and_update_on_conflict(&mut db, &quote)
+            .await
+            .unwrap();
+
+        let quote_ = read_quote(&mut db, &quote.order_uid)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(quote, quote_);
     }
 }
