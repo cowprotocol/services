@@ -103,6 +103,7 @@ impl Mempools {
         block_stream.next().await;
 
         let hash = mempool.submit(tx.clone(), settlement.gas, solver).await?;
+        tracing::debug!(?hash, "submitted tx to the mempool");
 
         // Wait for the transaction to be mined, expired or failing.
         let result = async {
