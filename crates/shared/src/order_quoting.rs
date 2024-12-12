@@ -690,6 +690,7 @@ impl From<QuoteMetadataV1> for QuoteMetadata {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct QuoteMetadataV1 {
     /// Data provided by the solver in response to /quote request.
     pub interactions: Vec<InteractionData>,
@@ -1674,10 +1675,11 @@ mod tests {
          "interactions":[
          {"target":"0x0101010101010101010101010101010101010101","value":"1","callData":"0x01"},
          {"target":"0x0202020202020202020202020202020202020202","value":"2","callData":"0x02"}],
-         "preExecutions":
+         "preInteractions":[
          {"target":"0x0303030303030303030303030303030303030303","value":"3","callData":"0x03"},
-         {"target":"0x0404040404040404040404040404040404040404","value":"4","callData":"0x04"}
-         ]}"#,
+         {"target":"0x0404040404040404040404040404040404040404","value":"4","callData":"0x04"}],
+         "jitOrders":[]
+        }"#,
         )
         .unwrap();
 
@@ -1700,10 +1702,11 @@ mod tests {
         "interactions":[
         {"target":"0x0101010101010101010101010101010101010101","value":"1","callData":"0x01"},
         {"target":"0x0202020202020202020202020202020202020202","value":"2","callData":"0x02"}],
-        "preExecutions":
+        "preInteractions":[
         {"target":"0x0303030303030303030303030303030303030303","value":"3","callData":"0x03"},
-        {"target":"0x0404040404040404040404040404040404040404","value":"4","callData":"0x04"}
-        ]}"#,
+        {"target":"0x0404040404040404040404040404040404040404","value":"4","callData":"0x04"}],
+        "jitOrders":[]
+        }"#,
         )
         .unwrap();
         let metadata: QuoteMetadata = v1.try_into().unwrap();
@@ -1712,6 +1715,7 @@ mod tests {
             QuoteMetadata::V1(v1) => {
                 assert_eq!(v1.interactions.len(), 2);
                 assert_eq!(v1.pre_interactions.len(), 2);
+                assert!(v1.jit_orders.is_empty());
             }
         }
     }
