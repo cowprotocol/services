@@ -1,11 +1,11 @@
 use {
     super::Order,
     crate::{
-        domain::{self, eth},
-        infra,
+        domain::{competition::Auction, eth},
+        infra::{self, config::file::BadTokenDetectionCache},
     },
-    anyhow::Result,
-    dashmap::{DashMap, Entry, OccupiedEntry, VacantEntry},
+    dashmap::{DashMap, Entry},
+    futures::FutureExt,
     model::interaction::InteractionData,
     shared::bad_token::{trace_call::TraceCallDetectorRaw, TokenQuality},
     std::{
@@ -42,7 +42,7 @@ pub struct Detector {
     hardcoded: HashMap<eth::TokenAddress, Quality>,
     /// cache which is shared and updated by multiple bad token detection
     /// mechanisms
-    cache: Cache,
+    cache: Arc<Cache>,
     simulation_detector: Option<TraceCallDetectorRaw>,
     metrics: Option<Metrics>,
 }
@@ -65,22 +65,73 @@ impl Detector {
         self
     }
 
-    pub fn filter_unsupported_orders(&self, mut orders: Vec<Order>) -> Vec<Order> {
+    pub fn with_cache(mut self, cache: Arc<Cache>) -> Self {
+        self.cache = cache;
+        self
+    }
+
+    /// Filter all unsupported orders within an Auction
+    pub async fn filter_unsupported_orders_in_auction(
+        self: Arc<Self>,
+        mut auction: Auction,
+    ) -> Auction {
         let now = Instant::now();
 
-        // group by sell tokens?
-        // future calling `determine_sell_token_quality()` for all of orders
+        let self_clone = self.clone();
 
-        orders.retain(|o| {
-            [o.sell.token, o.buy.token].iter().all(|token| {
-                self.get_token_quality(*token, now)
-                    .is_none_or(|q| q == Quality::Supported)
+        auction
+            .filter_orders(move |order| {
+                {
+                    let self_clone = self_clone.clone();
+                    async move {
+                        // We first check the token quality:
+                        // - If both tokens are supported, the order does is not filtered
+                        // - If any of the order tokens is unsupported, the order is filtered
+                        // - If the token quality cannot be determined: call
+                        //   `determine_sell_token_quality()` to execute the simulation
+                        // All of these operations are done within the same `.map()` in order to
+                        // avoid iterating twice over the orders vector
+                        let tokens_quality = [order.sell.token, order.buy.token]
+                            .iter()
+                            .map(|token| self_clone.get_token_quality(*token, now))
+                            .collect::<Vec<_>>();
+                        let both_tokens_supported = tokens_quality
+                            .iter()
+                            .all(|token_quality| *token_quality == Some(Quality::Supported));
+                        let any_token_unsupported = tokens_quality
+                            .iter()
+                            .any(|token_quality| *token_quality == Some(Quality::Unsupported));
+
+                        // @TODO: remove the bad tokens from the tokens field?
+
+                        // If both tokens are supported, the order does is not filtered
+                        if both_tokens_supported {
+                            return Some(order);
+                        }
+
+                        // If any of the order tokens is unsupported, the order is filtered
+                        if any_token_unsupported {
+                            return None;
+                        }
+
+                        // If the token quality cannot be determined: call
+                        // `determine_sell_token_quality()` to execute the simulation
+                        if self_clone.determine_sell_token_quality(&order, now).await
+                            == Some(Quality::Supported)
+                        {
+                            return Some(order);
+                        }
+
+                        None
+                    }
+                }
+                .boxed()
             })
-        });
+            .await;
 
         self.cache.evict_outdated_entries();
 
-        orders
+        auction
     }
 
     fn get_token_quality(&self, token: eth::TokenAddress, now: Instant) -> Option<Quality> {
@@ -99,12 +150,11 @@ impl Detector {
         None
     }
 
-    pub async fn determine_sell_token_quality(
-        &self,
-        detector: &TraceCallDetectorRaw,
-        order: &Order,
-        now: Instant,
-    ) -> Option<Quality> {
+    async fn determine_sell_token_quality(&self, order: &Order, now: Instant) -> Option<Quality> {
+        let Some(detector) = self.simulation_detector.as_ref() else {
+            return None;
+        };
+
         if let Some(quality) = self.cache.get_quality(order.sell.token, now) {
             return Some(quality);
         }
@@ -122,7 +172,7 @@ impl Detector {
 
         match detector
             .test_transfer(
-                order.trader().0 .0,
+                eth::Address::from(order.trader()).0,
                 token.0 .0,
                 order.sell.amount.0,
                 &pre_interactions,
@@ -164,8 +214,6 @@ pub struct Cache {
     cache: DashMap<eth::TokenAddress, CacheEntry>,
     /// entries older than this get ignored and evicted
     max_age: Duration,
-    /// evicts entries when the cache grows beyond this size
-    max_size: usize,
 }
 
 struct CacheEntry {
@@ -177,18 +225,17 @@ struct CacheEntry {
 
 impl Default for Cache {
     fn default() -> Self {
-        Self::new(Duration::from_secs(60 * 10), 1000)
+        Self::new(&BadTokenDetectionCache::default())
     }
 }
 
 impl Cache {
     /// Creates a new instance which evicts cached values after a period of
     /// time.
-    pub fn new(max_age: Duration, max_size: usize) -> Self {
+    pub fn new(bad_token_detection_cache: &BadTokenDetectionCache) -> Self {
         Self {
-            max_age,
-            max_size,
-            cache: Default::default(),
+            max_age: bad_token_detection_cache.max_age,
+            cache: DashMap::with_capacity(bad_token_detection_cache.max_size),
         }
     }
 
@@ -243,7 +290,7 @@ impl Cache {
 struct Metrics {}
 
 impl Metrics {
-    fn get_quality(&self, token: eth::TokenAddress) -> Option<Quality> {
+    fn get_quality(&self, _token: eth::TokenAddress) -> Option<Quality> {
         todo!()
     }
 }

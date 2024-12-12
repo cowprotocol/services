@@ -94,6 +94,10 @@ pub async fn load(chain: chain::Id, path: &Path) -> infra::Config {
                 solver_native_token: config.manage_native_token.to_domain(),
                 quote_tx_origin: config.quote_tx_origin.map(eth::Address),
                 response_size_limit_max_bytes: config.response_size_limit_max_bytes,
+                bad_token_detector: config
+                    .bad_token_detector
+                    .filter(|bad_token_detector| bad_token_detector.enabled)
+                    .map(Into::into),
             }
         }))
         .await,
@@ -340,5 +344,6 @@ pub async fn load(chain: chain::Id, path: &Path) -> infra::Config {
         gas_estimator: config.gas_estimator,
         order_priority_strategies: config.order_priority_strategies,
         archive_node_url: config.archive_node_url,
+        bad_token_detection_cache: config.bad_token_detection_cache,
     }
 }

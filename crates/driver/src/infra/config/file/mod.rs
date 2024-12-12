@@ -5,7 +5,10 @@ use {
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
     solver::solver::Arn,
-    std::{collections::HashMap, time::Duration},
+    std::{
+        collections::{HashMap, HashSet},
+        time::Duration,
+    },
 };
 
 mod load;
@@ -65,6 +68,9 @@ struct Config {
 
     /// Archive node URL used to index CoW AMM
     archive_node_url: Option<Url>,
+
+    /// Cache configuration for the bad tokend detection
+    bad_token_detection_cache: BadTokenDetectionCache,
 }
 
 #[serde_as]
@@ -260,6 +266,10 @@ struct SolverConfig {
     /// Maximum HTTP response size the driver will accept in bytes.
     #[serde(default = "default_response_size_limit_max_bytes")]
     response_size_limit_max_bytes: usize,
+
+    /// Bad token detector configuration
+    #[serde(default)]
+    bad_token_detector: Option<BadTokenDetector>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
@@ -651,6 +661,54 @@ fn default_order_priority_strategies() -> Vec<OrderPriorityStrategy> {
     ]
 }
 
+/// Bad token detector configuration
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct BadTokenDetector {
+    /// Whether or not the bad token detector is enabled
+    #[serde(default = "bool::default")]
+    pub enabled: bool,
+    /// List of tokens which will be directly allowed, no detection will be run
+    /// on them
+    #[serde(default = "HashSet::new")]
+    pub allowed_tokens: HashSet<eth::H160>,
+    /// List of tokens which will be directly unsupported
+    #[serde(default = "HashSet::new")]
+    pub unsupported_tokens_tokens: HashSet<eth::H160>,
+}
+
 fn default_max_order_age() -> Option<Duration> {
     Some(Duration::from_secs(300))
+}
+
+/// Cache configuration for the bad token detection
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct BadTokenDetectionCache {
+    /// Entries older than `max_age` will get ignored and evicted
+    #[serde(
+        with = "humantime_serde",
+        default = "default_bad_token_detection_cache_max_age"
+    )]
+    pub max_age: Duration,
+    /// Maximum number of tokens the cache can have
+    #[serde(default = "default_bad_token_detection_cache_max_size")]
+    pub max_size: usize,
+}
+
+impl Default for BadTokenDetectionCache {
+    fn default() -> Self {
+        Self {
+            max_age: default_bad_token_detection_cache_max_age(),
+            max_size: default_bad_token_detection_cache_max_size(),
+        }
+    }
+}
+
+fn default_bad_token_detection_cache_max_age() -> Duration {
+    Duration::from_secs(600)
+}
+
+fn default_bad_token_detection_cache_max_size() -> usize {
+    1000
 }

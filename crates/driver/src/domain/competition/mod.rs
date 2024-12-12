@@ -22,7 +22,7 @@ use {
     std::{
         cmp::Reverse,
         collections::{HashMap, HashSet, VecDeque},
-        sync::Mutex,
+        sync::{Arc, Mutex},
     },
     tap::TapFallible,
 };
@@ -53,15 +53,22 @@ pub struct Competition {
     pub mempools: Mempools,
     /// Cached solutions with the most recent solutions at the front.
     pub settlements: Mutex<VecDeque<Settlement>>,
-    // TODO: single type should have the feature set to simulate
-    pub bad_tokens: bad_tokens::Detector,
+    pub bad_tokens: Option<Arc<bad_tokens::Detector>>,
 }
 
 impl Competition {
     /// Solve an auction as part of this competition.
-    pub async fn solve(&self, auction: &Auction) -> Result<Option<Solved>, Error> {
-        // 1. simulate sell tokens
-        // 2. filter bad tokens
+    pub async fn solve(&self, mut auction: Auction) -> Result<Option<Solved>, Error> {
+        // filter orders in auction which contain a bad tokens if the bad token
+        // detection is configured
+        if let Some(bad_tokens) = self.bad_tokens.as_ref() {
+            auction = bad_tokens
+                .clone()
+                .filter_unsupported_orders_in_auction(auction)
+                .await;
+        }
+        // Enforces Auction not to be consumed by making it as a shared reference
+        let auction = &auction;
 
         let liquidity = match self.solver.liquidity() {
             solver::Liquidity::Fetch => {

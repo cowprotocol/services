@@ -3,7 +3,7 @@ use {
         domain::eth,
         infra::{
             blockchain,
-            config::file::{GasEstimatorType, OrderPriorityStrategy},
+            config::file::{BadTokenDetectionCache, GasEstimatorType, OrderPriorityStrategy},
             liquidity,
             mempool,
             simulator,
@@ -28,4 +28,5 @@ pub struct Config {
     pub contracts: blockchain::contracts::Addresses,
     pub order_priority_strategies: Vec<OrderPriorityStrategy>,
     pub archive_node_url: Option<Url>,
+    pub bad_token_detection_cache: BadTokenDetectionCache,
 }
