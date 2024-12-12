@@ -447,6 +447,7 @@ impl OrderQuoter {
             verified: trade_estimate.verified,
             metadata: QuoteMetadataV1 {
                 interactions: trade_estimate.execution.interactions,
+                pre_interactions: trade_estimate.execution.pre_interactions,
             }
             .into(),
         };
@@ -690,6 +691,9 @@ impl From<QuoteMetadataV1> for QuoteMetadata {
 pub struct QuoteMetadataV1 {
     /// Data provided by the solver in response to /quote request.
     pub interactions: Vec<InteractionData>,
+    /// The onchain calls to run before sending user funds to the settlement
+    /// contract.
+    pub pre_interactions: Vec<InteractionData>,
 }
 
 #[cfg(test)]
@@ -1643,6 +1647,18 @@ mod tests {
                     call_data: vec![2],
                 },
             ],
+            pre_interactions: vec![
+                InteractionData {
+                    target: H160::from([3; 20]),
+                    value: U256::from(3),
+                    call_data: vec![3],
+                },
+                InteractionData {
+                    target: H160::from([4; 20]),
+                    value: U256::from(4),
+                    call_data: vec![4],
+                },
+            ],
         }
         .into();
         let v = serde_json::to_value(q).unwrap();
@@ -1652,7 +1668,10 @@ mod tests {
         {"version":"1.0",
          "interactions":[
          {"target":"0x0101010101010101010101010101010101010101","value":"1","callData":"0x01"},
-         {"target":"0x0202020202020202020202020202020202020202","value":"2","callData":"0x02"}
+         {"target":"0x0202020202020202020202020202020202020202","value":"2","callData":"0x02"}],
+         "preExecutions":
+         {"target":"0x0303030303030303030303030303030303030303","value":"3","callData":"0x03"},
+         {"target":"0x0404040404040404040404040404040404040404","value":"4","callData":"0x04"}
          ]}"#,
         )
         .unwrap();
@@ -1675,14 +1694,20 @@ mod tests {
         {"version":"1.0",
         "interactions":[
         {"target":"0x0101010101010101010101010101010101010101","value":"1","callData":"0x01"},
-        {"target":"0x0202020202020202020202020202020202020202","value":"2","callData":"0x02"}
+        {"target":"0x0202020202020202020202020202020202020202","value":"2","callData":"0x02"}],
+        "preExecutions":
+        {"target":"0x0303030303030303030303030303030303030303","value":"3","callData":"0x03"},
+        {"target":"0x0404040404040404040404040404040404040404","value":"4","callData":"0x04"}
         ]}"#,
         )
         .unwrap();
         let metadata: QuoteMetadata = v1.try_into().unwrap();
 
         match metadata {
-            QuoteMetadata::V1(v1) => assert_eq!(v1.interactions.len(), 2),
+            QuoteMetadata::V1(v1) => {
+                assert_eq!(v1.interactions.len(), 2);
+                assert_eq!(v1.pre_interactions.len(), 2);
+            }
         }
     }
 }

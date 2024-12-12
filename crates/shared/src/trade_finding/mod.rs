@@ -43,6 +43,7 @@ pub struct Quote {
 #[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize)]
 pub struct QuoteExecution {
     pub interactions: Vec<InteractionData>,
+    pub pre_interactions: Vec<InteractionData>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

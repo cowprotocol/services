@@ -224,6 +224,7 @@ impl TradeFinding for ExternalTradeFinder {
             solver: trade.solver(),
             execution: QuoteExecution {
                 interactions: map_interactions_data(&trade.interactions()),
+                pre_interactions: map_interactions_data(&trade.pre_interactions()),
             },
         })
     }
