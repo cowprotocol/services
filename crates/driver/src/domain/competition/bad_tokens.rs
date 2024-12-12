@@ -151,9 +151,7 @@ impl Detector {
     }
 
     async fn determine_sell_token_quality(&self, order: &Order, now: Instant) -> Option<Quality> {
-        let Some(detector) = self.simulation_detector.as_ref() else {
-            return None;
-        };
+        let detector = self.simulation_detector.as_ref()?;
 
         if let Some(quality) = self.cache.get_quality(order.sell.token, now) {
             return Some(quality);

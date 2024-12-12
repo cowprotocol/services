@@ -82,7 +82,7 @@ impl Api {
             let router = routes::reveal(router);
             let router = routes::settle(router);
 
-            let bad_tokens = solver.bad_token_detector().and_then(|bad_token_detector| {
+            let bad_tokens = solver.bad_token_detector().map(|bad_token_detector| {
                 // maybe make this as part of the bad token builder?
                 let config = bad_token_detector
                     .unsupported_tokens
@@ -96,13 +96,13 @@ impl Api {
                     )
                     .collect::<HashMap<_, _>>();
 
-                Some(Arc::new(
+                Arc::new(
                     // maybe do proper builder pattern here?
                     bad_tokens::Detector::default()
                         .with_simulation_detector(&self.eth.clone())
                         .with_config(config)
                         .with_cache(trace_detector.clone()),
-                ))
+                )
             });
 
             let router = router.with_state(State(Arc::new(Inner {

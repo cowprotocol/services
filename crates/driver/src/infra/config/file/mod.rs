@@ -70,6 +70,7 @@ struct Config {
     archive_node_url: Option<Url>,
 
     /// Cache configuration for the bad tokend detection
+    #[serde(default)]
     bad_token_detection_cache: BadTokenDetectionCache,
 }
 
