@@ -245,7 +245,7 @@ pub enum FindQuoteError {
     NotFound(Option<QuoteId>),
 
     #[error("quote does not match parameters")]
-    ParameterMismatch(QuoteData),
+    ParameterMismatch(Box<QuoteData>),
 
     #[error("quote expired")]
     Expired(DateTime<Utc>),
@@ -579,7 +579,7 @@ impl OrderQuoting for OrderQuoter {
                         .ok_or(FindQuoteError::NotFound(Some(id)))?;
 
                     if !parameters.matches(&data) {
-                        return Err(FindQuoteError::ParameterMismatch(data));
+                        return Err(FindQuoteError::ParameterMismatch(Box::new(data)));
                     }
                     if data.expiration < now {
                         return Err(FindQuoteError::Expired(data.expiration));
