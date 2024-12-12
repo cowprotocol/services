@@ -552,17 +552,15 @@ pub async fn run(args: Arguments) {
         .drivers
         .into_iter()
         .map(|driver| async move {
-            match infra::Driver::new(
+            infra::Driver::new(
                 driver.url,
                 driver.name.clone(),
                 driver.fairness_threshold.map(Into::into),
                 driver.submission_account,
             )
             .await
-            {
-                Ok(driver) => Some(Arc::new(driver)),
-                Err(_) => None,
-            }
+            .ok()
+            .map(Arc::new)
         })
         .collect::<Vec<_>>();
 
@@ -597,17 +595,15 @@ async fn shadow_mode(args: Arguments) -> ! {
         .drivers
         .into_iter()
         .map(|driver| async move {
-            match infra::Driver::new(
+            infra::Driver::new(
                 driver.url,
                 driver.name.clone(),
                 driver.fairness_threshold.map(Into::into),
                 driver.submission_account,
             )
             .await
-            {
-                Ok(driver) => Some(Arc::new(driver)),
-                Err(_) => None,
-            }
+            .ok()
+            .map(Arc::new)
         })
         .collect::<Vec<_>>();
 
