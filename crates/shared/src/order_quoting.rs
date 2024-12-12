@@ -11,6 +11,7 @@ use {
         fee::FeeParameters,
         order_validation::PreOrderData,
         price_estimation::{Estimate, QuoteVerificationMode, Verification},
+        trade_finding::external::dto,
     },
     anyhow::{Context, Result},
     chrono::{DateTime, Duration, Utc},
@@ -448,6 +449,7 @@ impl OrderQuoter {
             metadata: QuoteMetadataV1 {
                 interactions: trade_estimate.execution.interactions,
                 pre_interactions: trade_estimate.execution.pre_interactions,
+                jit_orders: trade_estimate.execution.jit_orders,
             }
             .into(),
         };
@@ -694,6 +696,8 @@ pub struct QuoteMetadataV1 {
     /// The onchain calls to run before sending user funds to the settlement
     /// contract.
     pub pre_interactions: Vec<InteractionData>,
+    /// Orders that were settled outside of the auction.
+    pub jit_orders: Vec<dto::JitOrder>,
 }
 
 #[cfg(test)]
@@ -1659,6 +1663,7 @@ mod tests {
                     call_data: vec![4],
                 },
             ],
+            jit_orders: vec![],
         }
         .into();
         let v = serde_json::to_value(q).unwrap();

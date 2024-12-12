@@ -1239,6 +1239,7 @@ mod tests {
                         value: U256::from(30),
                         call_data: vec![3, 20],
                     }],
+                    jit_orders: vec![],
                 }
                 .into(),
                 ..Default::default()
