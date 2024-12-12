@@ -3,7 +3,7 @@ use ethcontract::{H160, U256};
 use serde::Deserialize;
 use std::str::FromStr;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct TransferStep {
     pub from: H160,
     pub to: H160,
