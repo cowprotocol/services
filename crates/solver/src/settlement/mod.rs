@@ -131,14 +131,6 @@ impl Settlement {
         self.encoder.clearing_prices()
     }
 
-    /// Returns the clearing price for the specified token.
-    ///
-    /// Returns `None` if the token is not part of the settlement.
-    #[cfg(test)]
-    pub(crate) fn clearing_price(&self, token: H160) -> Option<U256> {
-        self.clearing_prices().get(&token).copied()
-    }
-
     /// Returns all orders included in the settlement.
     pub fn traded_orders(&self) -> impl Iterator<Item = &Order> + '_ {
         self.encoder.all_trades().map(|trade| &trade.data.order)

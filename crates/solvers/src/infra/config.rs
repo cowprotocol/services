@@ -1,7 +1,7 @@
 use {
     crate::{
-        domain::{eth, solver::baseline},
-        infra::{config::unwrap_or_log, contracts},
+        domain::{eth, solver},
+        infra::contracts,
         util::serialize,
     },
     chain::Chain,
@@ -9,7 +9,7 @@ use {
     serde::Deserialize,
     serde_with::serde_as,
     shared::price_estimation::gas::SETTLEMENT_OVERHEAD,
-    std::path::Path,
+    std::{fmt::Debug, path::Path},
     tokio::fs,
 };
 
@@ -55,7 +55,7 @@ struct Config {
 /// # Panics
 ///
 /// This method panics if the config is invalid or on I/O errors.
-pub async fn load(path: &Path) -> baseline::Config {
+pub async fn load(path: &Path) -> solver::Config {
     let data = fs::read_to_string(path)
         .await
         .unwrap_or_else(|e| panic!("I/O error while reading {path:?}: {e:?}"));
@@ -73,7 +73,7 @@ pub async fn load(path: &Path) -> baseline::Config {
         ),
     };
 
-    baseline::Config {
+    solver::Config {
         weth,
         base_tokens: config
             .base_tokens
@@ -85,6 +85,24 @@ pub async fn load(path: &Path) -> baseline::Config {
         solution_gas_offset: config.solution_gas_offset.into(),
         native_token_price_estimation_amount: config.native_token_price_estimation_amount,
     }
+}
+
+/// Unwraps result or logs a `TOML` parsing error.
+fn unwrap_or_log<T, E, P>(result: Result<T, E>, path: &P) -> T
+where
+    E: Debug,
+    P: Debug,
+{
+    result.unwrap_or_else(|err| {
+        if std::env::var("TOML_TRACE_ERROR").is_ok_and(|v| v == "1") {
+            panic!("failed to parse TOML config at {path:?}: {err:#?}")
+        } else {
+            panic!(
+                "failed to parse TOML config at: {path:?}. Set TOML_TRACE_ERROR=1 to print \
+                 parsing error but this may leak secrets."
+            )
+        }
+    })
 }
 
 /// Returns minimum gas used for settling a single order.
