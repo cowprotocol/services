@@ -206,6 +206,8 @@ impl TradeVerifier {
                     verified: true,
                     execution: QuoteExecution {
                         interactions: map_interactions_data(&trade.interactions()),
+                        pre_interactions: map_interactions_data(&trade.pre_interactions()),
+                        jit_orders: trade.jit_orders(),
                     },
                 };
                 tracing::warn!(
@@ -417,6 +419,8 @@ impl TradeVerifying for TradeVerifier {
                         verified: false,
                         execution: QuoteExecution {
                             interactions: map_interactions_data(&trade.interactions()),
+                            pre_interactions: map_interactions_data(&trade.pre_interactions()),
+                            jit_orders: trade.jit_orders(),
                         },
                     };
                     tracing::warn!(
@@ -809,6 +813,8 @@ fn ensure_quote_accuracy(
         verified: true,
         execution: QuoteExecution {
             interactions: map_interactions_data(&trade.interactions()),
+            pre_interactions: map_interactions_data(&trade.pre_interactions()),
+            jit_orders: trade.jit_orders(),
         },
     })
 }
