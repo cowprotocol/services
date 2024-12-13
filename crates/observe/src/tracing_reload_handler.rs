@@ -22,11 +22,13 @@ pub(crate) fn spawn_reload_handler<T: 'static>(
         let socket_path = format!("/tmp/log_filter_override_{name}_{id}.sock");
         tracing::warn!(file = socket_path, "open log filter reload socket");
         let _ = tokio::fs::remove_file(&socket_path).await;
+        tracing::warn!("finished removing the old file");
         let handle = SocketHandle {
             listener: UnixListener::bind(&socket_path).expect("socket handle is unique"),
             socket_path,
         };
 
+        tracing::warn!("opened socket for reload handler");
         loop {
             handle_connection(&handle.listener, &initial_filter, &reload_handle).await;
         }
