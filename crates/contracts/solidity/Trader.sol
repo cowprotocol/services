@@ -64,19 +64,13 @@ contract Trader {
 
     /// @dev Executes needed actions on behalf of the trader to make the trade possible.
     ///      (e.g. wrapping ETH, setting approvals, and funding the account)
-    ///      To support cases where the user's pre-interactions set up the trade
-    ///      themselves (e.g. get tokens by unstaking) AND cases where we need to
-    ///      set up everything for the trade we catch all relevant reverts here.
-    ///      At the end of the function we can assume that all necessary pre-conditions
-    ///      are met. If that is not the case the simulation will simply fail at a later
-    ///      point in time anyway.
     /// @param settlementContract - pass in settlement contract because it does not have
     /// a stable address in tests.
     /// @param sellToken - token being sold by the trade
     /// @param sellAmount - expected amount to be sold according to the quote
     /// @param nativeToken - ERC20 version of the chain's native token
     /// @param spardose - piggy bank for requesting additional funds
-    function prepareSwap(
+    function ensureTradePreconditions(
         ISettlement settlementContract,
         address sellToken,
         uint256 sellAmount,
@@ -115,6 +109,8 @@ contract Trader {
             catch {}
             try IERC20(sellToken).approve(address(settlementContract.vaultRelayer()), type(uint256).max) {}
             catch {}
+            uint256 allowance = IERC20(sellToken).allowance(address(this), address(settlementContract.vaultRelayer()));
+            require(allowance >= sellAmount, "trader did not give the required approvals");
         }
 
         // Ensure that the user has sufficient sell token balance. If not, request some
@@ -123,7 +119,12 @@ contract Trader {
         uint256 sellBalance = IERC20(sellToken).balanceOf(address(this));
         if (sellBalance < sellAmount) {
             try Spardose(spardose).requestFunds(sellToken, sellAmount - sellBalance) {}
-            catch {}
+            catch {
+                // The trader does not have sufficient sell token balance, and the
+                // piggy bank pre-fund failed, as balance overrides are not available.
+                // Revert with a helpful message.
+                revert("trader does not have enough sell token");
+            }
         }
     }
 
