@@ -70,7 +70,7 @@ contract Trader {
     /// @param sellAmount - expected amount to be sold according to the quote
     /// @param nativeToken - ERC20 version of the chain's native token
     /// @param spardose - piggy bank for requesting additional funds
-    function prepareSwap(
+    function ensureTradePreconditions(
         ISettlement settlementContract,
         address sellToken,
         uint256 sellAmount,
@@ -104,8 +104,13 @@ contract Trader {
             // We first reset the allowance to 0 since some ERC20 tokens (e.g. USDT)
             // require that due to this attack:
             // https://github.com/ethereum/EIPs/issues/20#issuecomment-263524729
-            IERC20(sellToken).safeApprove(address(settlementContract.vaultRelayer()), 0);
-            IERC20(sellToken).safeApprove(address(settlementContract.vaultRelayer()), type(uint256).max);
+            // We catch reverts because we'll later assert the correct approval got set anyway.
+            try IERC20(sellToken).approve(address(settlementContract.vaultRelayer()), 0) {}
+            catch {}
+            try IERC20(sellToken).approve(address(settlementContract.vaultRelayer()), type(uint256).max) {}
+            catch {}
+            uint256 allowance = IERC20(sellToken).allowance(address(this), address(settlementContract.vaultRelayer()));
+            require(allowance >= sellAmount, "trader did not give the required approvals");
         }
 
         // Ensure that the user has sufficient sell token balance. If not, request some
