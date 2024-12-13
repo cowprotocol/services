@@ -1128,7 +1128,6 @@ impl Test {
         Settle {
             old_balances,
             status: settle_status,
-            test: self,
         }
     }
 
@@ -1515,10 +1514,9 @@ pub enum Balance {
 }
 
 /// A /settle response.
-pub struct Settle<'a> {
+pub struct Settle {
     old_balances: HashMap<&'static str, eth::U256>,
     status: SettleStatus,
-    test: &'a Test,
 }
 
 #[derive(Debug, PartialEq)]
@@ -1530,8 +1528,7 @@ pub enum SettleStatus {
     },
 }
 
-pub struct SettleOk<'a> {
-    test: &'a Test,
+pub struct SettleOk {
     old_balances: HashMap<&'static str, eth::U256>,
 }
 
@@ -1539,14 +1536,13 @@ pub struct SettleErr {
     body: String,
 }
 
-impl<'a> Settle<'a> {
+impl Settle {
     /// Expect the /settle endpoint to have returned a 200 OK response.
-    pub async fn ok(self) -> SettleOk<'a> {
+    pub async fn ok(self) -> SettleOk {
         // Ensure that the response is OK.
         assert_eq!(self.status, SettleStatus::Ok);
 
         SettleOk {
-            test: self.test,
             old_balances: self.old_balances,
         }
     }
@@ -1563,10 +1559,10 @@ impl<'a> Settle<'a> {
     }
 }
 
-impl<'a> SettleOk<'a> {
+impl SettleOk {
     /// Check that the user balance changed.
-    pub async fn balance(self, token: &'static str, balance: Balance) -> SettleOk<'a> {
-        let new_balances = self.test.balances().await;
+    pub async fn balance(self, test: &Test, token: &'static str, balance: Balance) -> SettleOk {
+        let new_balances = test.balances().await;
         let new_balance = new_balances.get(token).unwrap();
         let old_balance = self.old_balances.get(token).unwrap();
         match balance {
@@ -1578,29 +1574,41 @@ impl<'a> SettleOk<'a> {
 
     /// Ensure that the onchain balances changed in accordance with the
     /// [`ab_order`].
-    pub async fn ab_order_executed(self) -> SettleOk<'a> {
-        self.balance("A", Balance::SmallerBy(AB_ORDER_AMOUNT.ether().into_wei()))
-            .await
-            .balance("B", Balance::Greater)
-            .await
+    pub async fn ab_order_executed(self, test: &Test) -> SettleOk {
+        self.balance(
+            test,
+            "A",
+            Balance::SmallerBy(AB_ORDER_AMOUNT.ether().into_wei()),
+        )
+        .await
+        .balance(test, "B", Balance::Greater)
+        .await
     }
 
     /// Ensure that the onchain balances changed in accordance with the
     /// [`cd_order`].
-    pub async fn cd_order_executed(self) -> SettleOk<'a> {
-        self.balance("C", Balance::SmallerBy(CD_ORDER_AMOUNT.ether().into_wei()))
-            .await
-            .balance("D", Balance::Greater)
-            .await
+    pub async fn cd_order_executed(self, test: &Test) -> SettleOk {
+        self.balance(
+            test,
+            "C",
+            Balance::SmallerBy(CD_ORDER_AMOUNT.ether().into_wei()),
+        )
+        .await
+        .balance(test, "D", Balance::Greater)
+        .await
     }
 
     /// Ensure that the onchain balances changed in accordance with the
     /// [`eth_order`].
-    pub async fn eth_order_executed(self) -> SettleOk<'a> {
-        self.balance("A", Balance::SmallerBy(ETH_ORDER_AMOUNT.ether().into_wei()))
-            .await
-            .balance("ETH", Balance::Greater)
-            .await
+    pub async fn eth_order_executed(self, test: &Test) -> SettleOk {
+        self.balance(
+            test,
+            "A",
+            Balance::SmallerBy(ETH_ORDER_AMOUNT.ether().into_wei()),
+        )
+        .await
+        .balance(test, "ETH", Balance::Greater)
+        .await
     }
 }
 

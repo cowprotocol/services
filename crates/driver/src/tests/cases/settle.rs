@@ -10,7 +10,7 @@ use {
     },
     futures::future::join_all,
     itertools::Itertools,
-    std::{collections::HashSet, sync::Arc},
+    std::{collections::HashSet, sync::Arc, time::Duration},
     web3::Transport,
 };
 
@@ -34,7 +34,12 @@ async fn matrix() {
                 .await;
 
             let id = test.solve().await.ok().id();
-            test.settle(&id).await.ok().await.ab_order_executed().await;
+            test.settle(&id)
+                .await
+                .ok()
+                .await
+                .ab_order_executed(&test)
+                .await;
         }
     }
 }
@@ -174,7 +179,7 @@ async fn discards_excess_settle_requests() {
         match index {
             // The first must be settled.
             0 => {
-                result.ok().await.ab_order_executed().await;
+                result.ok().await.ab_order_executed(&test).await;
             }
             // We don't really care about the intermediate settlements. They are processed but due
             // to the test framework limitation, the same solution settlements fail. We
@@ -248,7 +253,7 @@ async fn accepts_new_settle_requests_after_timeout() {
         match index {
             // The first must be settled.
             0 => {
-                result.ok().await.ab_order_executed().await;
+                result.ok().await.ab_order_executed(&test).await;
             }
             // We don't really care about the intermediate settlements. They are processed but due
             // to the test framework limitation, the same solution settlements fail. We

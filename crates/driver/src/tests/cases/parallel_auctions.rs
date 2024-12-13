@@ -47,7 +47,7 @@ async fn driver_handles_solutions_based_on_id() {
         .await
         .ok()
         .await
-        .eth_order_executed()
+        .eth_order_executed(&test)
         .await;
 
     // calling `/reveal` or `/settle` with for a legit solution that
@@ -93,7 +93,7 @@ async fn driver_can_settle_old_solutions() {
         .await
         .ok()
         .await
-        .eth_order_executed()
+        .eth_order_executed(&test)
         .await;
 }
 
