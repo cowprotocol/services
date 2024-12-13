@@ -1724,7 +1724,16 @@ mod tests {
         "preInteractions":[
         {"target":"0x0303030303030303030303030303030303030303","value":"3","callData":"0x03"},
         {"target":"0x0404040404040404040404040404040404040404","value":"4","callData":"0x04"}],
-        "jitOrders":[]
+        "jitOrders":[{"appData": "0x0000000000000000000000000000000000000000000000000000000000000000", 
+            "buyAmount": "20", "buyToken": "0x0404040404040404040404040404040404040404", "buyTokenDestination": "internal", 
+            "executedAmount": "11", "partiallyFillable": false, "receiver": "0x0606060606060606060606060606060606060606",
+            "sellAmount": "10", "sellToken": "0x0505050505050505050505050505050505050505", "sellTokenSource": "external",
+            "side": "sell", "signature": "0x01010101010101010101010101010101", "signingScheme": "eip712", "validTo": 1734084318},
+            {"appData": "0x0ddeb6e4a814908832cc25d11311c514e7efe6af3c9bafeb0d241129cf7f4d83", 
+            "buyAmount": "100", "buyToken": "0x0606060606060606060606060606060606060606", "buyTokenDestination": "erc20", 
+            "executedAmount": "99", "partiallyFillable": true, "receiver": "0x0303030303030303030303030303030303030303",
+            "sellAmount": "10", "sellToken": "0x0101010101010101010101010101010101010101", "sellTokenSource": "erc20",
+            "side": "buy", "signature": "0x01010101010101010101010101010101", "signingScheme": "eip1271", "validTo": 1734085109}]
         }"#,
         )
         .unwrap();
@@ -1734,7 +1743,7 @@ mod tests {
             QuoteMetadata::V1(v1) => {
                 assert_eq!(v1.interactions.len(), 2);
                 assert_eq!(v1.pre_interactions.len(), 2);
-                assert!(v1.jit_orders.is_empty());
+                assert_eq!(v1.jit_orders.len(), 2);
             }
         }
     }
