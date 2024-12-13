@@ -130,7 +130,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/Solution"
+              $ref: "#/components/schemas/SolutionWithDeadline"
       responses:
         "200":
           description: Execution accepted.
@@ -526,7 +526,19 @@ components:
               gas:
                 type: integer
     Solution:
-      description: Request to the settle and reveal endpoint.
+      description: Request to the reveal endpoint.
+      type: object
+      properties:
+        solutionId:
+          description: Id of the solution that should be executed.
+          type: integer
+          example: 123
+        auctionId:
+          description: Auction ID in which the specified solution ID is competing.
+          type: integer
+          example: 123
+    SolutionWithDeadline:
+      description: Request to the settle endpoint.
       type: object
       properties:
         solutionId:
