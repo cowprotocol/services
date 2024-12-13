@@ -105,6 +105,7 @@ contract Trader {
             // We first reset the allowance to 0 since some ERC20 tokens (e.g. USDT)
             // require that due to this attack:
             // https://github.com/ethereum/EIPs/issues/20#issuecomment-263524729
+            // We catch reverts because we'll later assert the correct approval got set anyway.
             try IERC20(sellToken).approve(address(settlementContract.vaultRelayer()), 0) {}
             catch {}
             try IERC20(sellToken).approve(address(settlementContract.vaultRelayer()), type(uint256).max) {}

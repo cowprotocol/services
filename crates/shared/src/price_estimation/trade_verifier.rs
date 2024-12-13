@@ -470,7 +470,13 @@ fn encode_settlement(
             OrderKind::Buy => query.in_amount.get(),
         };
         let weth = dummy_contract!(WETH9, native_token);
-        let calldata = weth.methods().withdraw(buy_amount).tx.data.unwrap().0;
+        let calldata = weth
+            .methods()
+            .withdraw(buy_amount)
+            .tx
+            .data
+            .expect("data gets populated by function call above")
+            .0;
         trade_interactions.push((native_token, 0.into(), Bytes(calldata)));
         tracing::trace!("adding unwrap interaction for paying out ETH");
     }
@@ -496,18 +502,23 @@ fn encode_settlement(
             OrderKind::Buy => *out_amount,
         };
         let solver = dummy_contract!(Solver, trade.solver());
-        let setup_step = solver.ensure_trade_preconditions(
-            verification.from,
-            settlement,
-            query.sell_token,
-            sell_amount,
-            native_token,
-            TradeVerifier::SPARDOSE,
-        );
+        let setup_call = solver
+            .ensure_trade_preconditions(
+                verification.from,
+                settlement,
+                query.sell_token,
+                sell_amount,
+                native_token,
+                TradeVerifier::SPARDOSE,
+            )
+            .tx
+            .data
+            .expect("data gets populated by function call above")
+            .0;
         Interaction {
             target: solver.address(),
             value: 0.into(),
-            data: setup_step.tx.data.unwrap().0,
+            data: setup_call,
         }
     };
 
@@ -681,9 +692,14 @@ fn add_balance_queries(
         // track how much `sell_token` the `from` address actually spent
         OrderKind::Buy => (query.sell_token, verification.from),
     };
-    let query_balance = solver.methods().store_balance(token, owner, true);
-    let query_balance = Bytes(query_balance.tx.data.unwrap().0);
-    let interaction = (solver.address(), 0.into(), query_balance);
+    let query_balance_call = solver
+        .methods()
+        .store_balance(token, owner, true)
+        .tx
+        .data
+        .expect("data gets populated by function call above")
+        .0;
+    let interaction = (solver.address(), 0.into(), Bytes(query_balance_call));
     // query balance query at the end of pre-interactions
     settlement.interactions[0].push(interaction.clone());
     // query balance right after we payed out all `buy_token`
