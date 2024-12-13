@@ -215,7 +215,7 @@ jobs:
           attempt=1
           while true; do
             echo "Running test attempt #$attempt"
-            if ! cargo nextest run -p driver --run-ignored ignored-only --no-capture -j 1; then
+            if ! cargo nextest run -p driver --run-ignored ignored-only --no-capture; then
               exit 1
             fi
             attempt=$((attempt+1))
