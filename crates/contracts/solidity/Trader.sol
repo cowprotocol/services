@@ -91,8 +91,7 @@ contract Trader {
                 // revert. Instead, we fall-through so that we handle insufficient sell
                 // token balances uniformly for all tokens.
                 if (address(this).balance >= amountToWrap) {
-                    try INativeERC20(nativeToken).deposit{value: amountToWrap}() {}
-                    catch {}
+                    INativeERC20(nativeToken).deposit{value: amountToWrap}();
                 }
             }
         }

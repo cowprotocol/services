@@ -125,6 +125,7 @@ contract Solver {
             nativeToken,
             spardose
         );
-        _simulationOverhead += gasStart - gasleft();
+        // Account for costs of gas used outside of metered section.
+        _simulationOverhead += gasStart - gasleft() + 4460;
     }
 }
