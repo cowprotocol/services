@@ -1664,7 +1664,22 @@ mod tests {
                     call_data: vec![4],
                 },
             ],
-            jit_orders: vec![],
+            jit_orders: vec![dto::JitOrder {
+                buy_token: H160([4; 20]),
+                sell_token: H160([5; 20]),
+                sell_amount: U256::from(10),
+                buy_amount: U256::from(20),
+                executed_amount: U256::from(11),
+                receiver: H160([6; 20]),
+                valid_to: 1734084318,
+                app_data: Default::default(),
+                side: dto::Side::Sell,
+                partially_fillable: false,
+                sell_token_source: model::order::SellTokenSource::External,
+                buy_token_destination: model::order::BuyTokenDestination::Internal,
+                signature: vec![1; 16],
+                signing_scheme: model::signature::SigningScheme::Eip712,
+            }],
         }
         .into();
         let v = serde_json::to_value(q).unwrap();
@@ -1678,7 +1693,11 @@ mod tests {
          "preInteractions":[
          {"target":"0x0303030303030303030303030303030303030303","value":"3","callData":"0x03"},
          {"target":"0x0404040404040404040404040404040404040404","value":"4","callData":"0x04"}],
-         "jitOrders":[]
+         "jitOrders":[{"appData": "0x0000000000000000000000000000000000000000000000000000000000000000", 
+            "buyAmount": "20", "buyToken": "0x0404040404040404040404040404040404040404", "buyTokenDestination": "internal", 
+            "executedAmount": "11", "partiallyFillable": false, "receiver": "0x0606060606060606060606060606060606060606",
+            "sellAmount": "10", "sellToken": "0x0505050505050505050505050505050505050505", "sellTokenSource": "external",
+            "side": "sell", "signature": "0x01010101010101010101010101010101", "signingScheme": "eip712", "validTo": 1734084318}]
         }"#,
         )
         .unwrap();
