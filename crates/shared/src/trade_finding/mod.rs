@@ -43,6 +43,8 @@ pub struct Quote {
 #[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize)]
 pub struct QuoteExecution {
     pub interactions: Vec<InteractionData>,
+    pub pre_interactions: Vec<InteractionData>,
+    pub jit_orders: Vec<dto::JitOrder>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -105,6 +107,13 @@ impl TradeKind {
         match self {
             TradeKind::Legacy(_) => Vec::new(),
             TradeKind::Regular(trade) => trade.pre_interactions.clone(),
+        }
+    }
+
+    pub fn jit_orders(&self) -> Vec<dto::JitOrder> {
+        match self {
+            TradeKind::Legacy(_) => Vec::new(),
+            TradeKind::Regular(trade) => trade.jit_orders.clone(),
         }
     }
 }

@@ -9,6 +9,7 @@ use {
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
     },
     number::nonzero::U256 as NonZeroU256,
+    serde_json::json,
     shared::{
         price_estimation::{
             trade_verifier::{
@@ -182,6 +183,8 @@ async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
                 value: 0.into(),
                 call_data: hex::decode("aa77476c000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc20000000000000000000000002260fac5e5542a773aa44fbcfedf7c193bc2c599000000000000000000000000000000000000000000000000e357b42c3a9d8ccf0000000000000000000000000000000000000000000000000000000004d0e79e000000000000000000000000a69babef1ca67a37ffaf7a485dfff3382056e78c0000000000000000000000009008d19f58aabd9ed0d60971565aa8510560ab41000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000066360af101ffffffffffffffffffffffffffffffffffffff0f3f47f166360a8d0000003f0000000000000000000000000000000000000000000000000000000000000003000000000000000000000000000000000000000000000000000000000000001c66b3383f287dd9c85ad90e7c5a576ea4ba1bdf5a001d794a9afa379e6b2517b47e487a1aef32e75af432cbdbd301ada42754eaeac21ec4ca744afd92732f47540000000000000000000000000000000000000000000000000000000004d0c80f").unwrap() 
             }],
+            pre_interactions: vec![],
+            jit_orders: vec![],
         },
     };
 
@@ -429,6 +432,40 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
                 sell_amount: SellAmount::BeforeFee {
                     value: to_wei(1).try_into().unwrap(),
                 },
+            },
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert!(response.verified);
+
+    // Previously quote verification did not set up the trade correctly
+    // if the user provided pre-interactions. This works now.
+    let response = services
+        .submit_quote(&OrderQuoteRequest {
+            from: H160::zero(),
+            sell_token: weth.address(),
+            buy_token: token.address(),
+            side: OrderQuoteSide::Sell {
+                sell_amount: SellAmount::BeforeFee {
+                    value: to_wei(1).try_into().unwrap(),
+                },
+            },
+            app_data: model::order::OrderCreationAppData::Full {
+                full: json!({
+                    "metadata": {
+                        "hooks": {
+                            "pre": [
+                                {
+                                    "target": "0x0000000000000000000000000000000000000000",
+                                    "callData": "0x",
+                                    "gasLimit": "0"
+                                }
+                            ]
+                        }
+                    }
+                })
+                .to_string(),
             },
             ..Default::default()
         })

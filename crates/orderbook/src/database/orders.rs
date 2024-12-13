@@ -1234,6 +1234,12 @@ mod tests {
                             call_data: vec![2, 20],
                         },
                     ],
+                    pre_interactions: vec![InteractionData {
+                        target: H160([3; 20]),
+                        value: U256::from(30),
+                        call_data: vec![3, 20],
+                    }],
+                    jit_orders: vec![],
                 }
                 .into(),
                 ..Default::default()
