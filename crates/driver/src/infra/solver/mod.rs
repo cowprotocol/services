@@ -124,7 +124,7 @@ pub struct Config {
     /// Which `tx.origin` is required to make quote verification pass.
     pub quote_tx_origin: Option<eth::Address>,
     pub response_size_limit_max_bytes: usize,
-    /// Whether a token is explicitly allow- or deny-listed.
+    /// Tokens that are explicitly allow- or deny-listed.
     pub tokens_supported: HashMap<eth::TokenAddress, bad_tokens::Quality>,
 }
 
