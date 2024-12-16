@@ -147,11 +147,7 @@ async fn discards_excess_settle_and_solve_requests() {
     .map(|res| res.ok().id())
     .collect::<Vec<_>>();
 
-    let unique_solutions_count = solution_ids
-        .clone()
-        .into_iter()
-        .collect::<HashSet<_>>()
-        .len();
+    let unique_solutions_count = solution_ids.iter().unique().count();
     assert_eq!(unique_solutions_count, solution_ids.len());
 
     // Disable auto mining to accumulate all the settlement requests.
@@ -227,11 +223,7 @@ async fn accepts_new_settle_requests_after_timeout() {
     .map(|res| res.ok().id())
     .collect::<Vec<_>>();
 
-    let unique_solutions_count = solution_ids
-        .clone()
-        .into_iter()
-        .collect::<HashSet<_>>()
-        .len();
+    let unique_solutions_count = solution_ids.iter().unique().count();
     assert_eq!(unique_solutions_count, solution_ids.len());
 
     // Disable auto mining to accumulate all the settlement requests.
