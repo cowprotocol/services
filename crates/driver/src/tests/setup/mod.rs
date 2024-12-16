@@ -46,7 +46,6 @@ use {
         path::PathBuf,
         str::FromStr,
     },
-    web3::Error,
 };
 
 mod blockchain;
@@ -500,7 +499,7 @@ pub fn setup() -> Setup {
         rpc_args: vec!["--gas-limit".into(), "10000000".into()],
         allow_multiple_solve_requests: false,
         auction_id: 1,
-        solve_deadline_timeout: chrono::Duration::seconds(2),
+        settle_submission_deadline: 3,
         ..Default::default()
     }
 }
@@ -534,8 +533,9 @@ pub struct Setup {
     allow_multiple_solve_requests: bool,
     /// Auction ID used during tests
     auction_id: i64,
-    /// Auction solving deadline timeout
-    solve_deadline_timeout: chrono::Duration,
+    /// The maximum number of blocks to wait for a settlement to appear on
+    /// chain.
+    settle_submission_deadline: u64,
 }
 
 /// The validity of a solution.
@@ -846,6 +846,11 @@ impl Setup {
         self
     }
 
+    pub fn settle_submission_deadline(mut self, settle_submission_deadline: u64) -> Self {
+        self.settle_submission_deadline = settle_submission_deadline;
+        self
+    }
+
     /// Create the test: set up onchain contracts and pools, start a mock HTTP
     /// server for the solver and start the HTTP server for the driver.
     pub async fn done(self) -> Test {
@@ -963,6 +968,7 @@ impl Setup {
             trades: solutions.into_iter().flat_map(|s| s.trades).collect(),
             trusted,
             deadline,
+            settle_submission_deadline: self.settle_submission_deadline,
             quoted_orders: quotes,
             quote: self.quote,
             surplus_capturing_jit_order_owners,
@@ -985,12 +991,7 @@ impl Setup {
     }
 
     fn deadline(&self) -> chrono::DateTime<chrono::Utc> {
-        crate::infra::time::now() + self.solve_deadline_timeout
-    }
-
-    pub fn solve_deadline_timeout(mut self, timeout: chrono::Duration) -> Self {
-        self.solve_deadline_timeout = timeout;
-        self
+        crate::infra::time::now() + chrono::Duration::seconds(2)
     }
 
     pub fn allow_multiple_solve_requests(mut self) -> Self {
@@ -1008,6 +1009,7 @@ pub struct Test {
     trades: Vec<Trade>,
     trusted: HashSet<&'static str>,
     deadline: chrono::DateTime<chrono::Utc>,
+    settle_submission_deadline: u64,
     /// Is this testing the /quote endpoint?
     quote: bool,
     /// List of surplus capturing JIT-order owners
@@ -1095,12 +1097,9 @@ impl Test {
     }
 
     pub async fn settle_with_solver(&self, solver_name: &str, solution_id: &str) -> Settle {
-        /// The maximum number of blocks to wait for a settlement to appear on
-        /// chain.
-        const SUBMISSION_DEADLINE: u64 = 3;
         let submission_deadline_latest_block: u64 =
             u64::try_from(self.web3().eth().block_number().await.unwrap()).unwrap()
-                + SUBMISSION_DEADLINE;
+                + self.settle_submission_deadline;
         let old_balances = self.balances().await;
         let res = self
             .client
@@ -1175,8 +1174,12 @@ impl Test {
         self.auction_id = auction_id;
     }
 
-    pub async fn mint_block(&self) -> Result<(), Error> {
-        self.blockchain.mint_block().await
+    pub async fn disable_auto_mining(&self) {
+        self.blockchain.set_auto_mining(false).await
+    }
+
+    pub async fn enable_auto_mining(&self) {
+        self.blockchain.set_auto_mining(true).await
     }
 }
 
@@ -1514,12 +1517,13 @@ pub enum Balance {
 }
 
 /// A /settle response.
+#[derive(Clone)]
 pub struct Settle {
     old_balances: HashMap<&'static str, eth::U256>,
     status: SettleStatus,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum SettleStatus {
     Ok,
     Err {
@@ -1614,13 +1618,16 @@ impl SettleOk {
 
 impl SettleErr {
     /// Check the kind field in the error response.
-    pub fn kind(self, expected_kind: &str) {
+    pub fn kind_eq(&self, expected_kind: &str) {
+        assert_eq!(self.get_kind(), expected_kind);
+    }
+
+    pub fn get_kind(&self) -> String {
         let result: serde_json::Value = serde_json::from_str(&self.body).unwrap();
         assert!(result.is_object());
         assert_eq!(result.as_object().unwrap().len(), 2);
         assert!(result.get("kind").is_some());
         assert!(result.get("description").is_some());
-        let kind = result.get("kind").unwrap().as_str().unwrap();
-        assert_eq!(kind, expected_kind);
+        result.get("kind").unwrap().as_str().unwrap().to_string()
     }
 }

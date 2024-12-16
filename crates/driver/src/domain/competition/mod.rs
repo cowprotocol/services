@@ -89,7 +89,7 @@ impl Competition {
     pub async fn solve(&self, auction: &Auction) -> Result<Option<Solved>, Error> {
         if self.settle_queue.capacity() == 0 {
             tracing::warn!("settlement queue is full; auction is rejected");
-            return Err(Error::SettlementQueueIsFull);
+            return Err(Error::TooManyPendingSettlements);
         }
 
         let liquidity = match self.solver.liquidity() {
@@ -349,7 +349,7 @@ impl Competition {
 
         self.settle_queue.try_send(request).map_err(|err| {
             tracing::error!(?err, "Failed to enqueue /settle request");
-            Error::SubmissionError
+            Error::TooManyPendingSettlements
         })?;
 
         response_rx.await.map_err(|err| {
@@ -587,5 +587,5 @@ pub enum Error {
     #[error("failed to submit the solution")]
     SubmissionError,
     #[error("too many pending settlements for the same solver")]
-    SettlementQueueIsFull,
+    TooManyPendingSettlements,
 }

@@ -1,4 +1,3 @@
-use std::time::Duration;
 use {
     crate::{
         domain::competition::order,
@@ -56,7 +55,10 @@ async fn solution_not_available() {
         .done()
         .await;
 
-    test.settle("99").await.err().kind("SolutionNotAvailable");
+    test.settle("99")
+        .await
+        .err()
+        .kind_eq("SolutionNotAvailable");
 }
 
 /// Checks that settlements with revert risk are not submitted via public
@@ -80,7 +82,7 @@ async fn private_rpc_with_high_risk_solution() {
 
     let id = test.solve().await.ok().id();
     // Public cannot be used and private RPC is not available
-    test.settle(&id).await.err().kind("FailedToSubmit");
+    test.settle(&id).await.err().kind_eq("FailedToSubmit");
 }
 
 #[tokio::test]
@@ -129,13 +131,10 @@ async fn discards_excess_settle_requests() {
             .pool(ab_pool())
             .order(ab_order())
             .solution(ab_solution())
-            .rpc_args(vec!["--no-mining".to_string()])
-            .solve_deadline_timeout(chrono::Duration::seconds(4))
+            .settle_submission_deadline(6)
             .done()
             .await,
     );
-
-    test.mint_block().await.unwrap();
 
     // MAX_SOLUTION_STORAGE = 5. Since this is hardcoded, no more solutions can be
     // stored.
@@ -158,6 +157,9 @@ async fn discards_excess_settle_requests() {
         .len();
     assert_eq!(unique_solutions_count, solution_ids.len());
 
+    // Disable auto mining to accumulate all the settlement requests.
+    test.disable_auto_mining().await;
+
     // `collect_vec` is required to receive results in the same order.
     let settlements = {
         let test_clone = Arc::clone(&test);
@@ -173,24 +175,25 @@ async fn discards_excess_settle_requests() {
     let results_fut = tokio::spawn(join_all(settlements));
 
     tokio::time::sleep(Duration::from_secs(2)).await;
-    test.mint_block().await.unwrap();
+    // Enable auto mining to process all the settlement requests.
+    test.enable_auto_mining().await;
 
-    for (index, result) in results_fut.await.unwrap().into_iter().enumerate() {
-        match index {
-            // The first must be settled.
-            0 => {
-                result.ok().await.ab_order_executed(&test).await;
-            }
-            // We don't really care about the intermediate settlements. They are processed but due
-            // to the test framework limitation, the same solution settlements fail. We
-            // are fine with that to avoid huge changes in the framework.
-            1 | 2 => result.err().kind("FailedToSubmit"),
-            // Driver's settlement queue max size is 3. Next requests should be discarded.
-            3 => result.err().kind("DeadlineExceeded"),
-            4 => result.err().kind("DeadlineExceeded"),
-            _ => unreachable!(),
-        }
-    }
+    let results = results_fut.await.unwrap();
+    assert_eq!(results.len(), 5);
+
+    // The first settlement must be successful.
+    results[0].clone().ok().await.ab_order_executed(&test).await;
+
+    let err_kinds = results[1..]
+        .iter()
+        .cloned()
+        .counts_by(|settle| settle.err().get_kind());
+    let queue_is_full_err_count = *err_kinds.get("TooManyPendingSettlements").unwrap();
+    let failed_to_submit_err_count = *err_kinds.get("FailedToSubmit").unwrap();
+    // There is a high possibility of a race condition where the first settlement
+    // request is dequeued at an unpredictable time. Therefore, we can't guarantee
+    // the order of the errors received, but their count must be persistent.
+    assert!(queue_is_full_err_count == 2 && failed_to_submit_err_count == 2);
 }
 
 #[tokio::test]
@@ -202,13 +205,10 @@ async fn accepts_new_settle_requests_after_timeout() {
             .pool(ab_pool())
             .order(ab_order())
             .solution(ab_solution())
-            .rpc_args(vec!["--no-mining".to_string()])
-            .solve_deadline_timeout(chrono::Duration::seconds(4))
+            .settle_submission_deadline(6)
             .done()
             .await,
     );
-
-    test.mint_block().await.unwrap();
 
     // MAX_SOLUTION_STORAGE = 5. Since this is hardcoded, no more solutions can be
     // stored.
@@ -246,32 +246,33 @@ async fn accepts_new_settle_requests_after_timeout() {
     };
     let results_fut = tokio::spawn(join_all(first_solutions));
 
-    tokio::time::sleep(Duration::from_secs(2)).await;
-    test.mint_block().await.unwrap();
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    test.enable_auto_mining().await;
 
-    for (index, result) in results_fut.await.unwrap().into_iter().enumerate() {
-        match index {
-            // The first must be settled.
-            0 => {
-                result.ok().await.ab_order_executed(&test).await;
-            }
-            // We don't really care about the intermediate settlements. They are processed but due
-            // to the test framework limitation, the same solution settlements fail. We
-            // are fine with that to avoid huge changes in the framework.
-            1 | 2 => result.err().kind("FailedToSubmit"),
-            // Driver's settlement queue max size is 3. Next requests should be discarded.
-            3 => result.err().kind("DeadlineExceeded"),
-            _ => unreachable!(),
-        }
-    }
+    let results = results_fut.await.unwrap();
+    assert_eq!(results.len(), 4);
 
-    // Wait for the timeout to expire, so all the settle requests are processed.
-    // Must a bit higher than `ethrpc_batch_delay`.
-    tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
+    // The first settlement must be successful.
+    results[0].clone().ok().await.ab_order_executed(&test).await;
 
-    // Now we send the last settlement request.
+    let err_kinds = results[1..]
+        .iter()
+        .cloned()
+        .counts_by(|settle| settle.err().get_kind());
+    let queue_is_full_err_count = *err_kinds.get("TooManyPendingSettlements").unwrap();
+    let failed_to_submit_err_count = *err_kinds.get("FailedToSubmit").unwrap();
+    // There is a high possibility of a race condition where the first settlement
+    // request is dequeued at an unpredictable time. The expected count of these
+    // errors as follows.
+    assert!(
+        (queue_is_full_err_count == 1 && failed_to_submit_err_count == 2)
+            || (queue_is_full_err_count == 2 && failed_to_submit_err_count == 1)
+    );
+
+    // Now we send the last settlement request. It fails because with the current
+    // framework setup it is impossible to settle the same solution twice.
     test.settle(&solution_ids[4])
         .await
         .err()
-        .kind("FailedToSubmit");
+        .kind_eq("FailedToSubmit");
 }
