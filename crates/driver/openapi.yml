@@ -526,7 +526,7 @@ components:
               gas:
                 type: integer
     Solution:
-      description: Request to the reveal endpoint.
+      description: Request to the `/reveal` endpoint.
       type: object
       properties:
         solutionId:
