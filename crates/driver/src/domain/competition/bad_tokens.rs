@@ -42,7 +42,7 @@ pub struct Detector {
     hardcoded: HashMap<eth::TokenAddress, Quality>,
     /// cache which is shared and updated by multiple bad token detection
     /// mechanisms
-    cache: Arc<Cache>,
+    cache: Cache,
     simulation_detector: Option<TraceCallDetectorRaw>,
     metrics: Option<Metrics>,
 }
@@ -65,7 +65,7 @@ impl Detector {
         self
     }
 
-    pub fn with_cache(mut self, cache: Arc<Cache>) -> Self {
+    pub fn with_cache(mut self, cache: Cache) -> Self {
         self.cache = cache;
         self
     }
@@ -184,7 +184,10 @@ impl fmt::Debug for Detector {
 /// Stores a map instead of a set to not recompute the quality of good tokens
 /// over and over.
 /// Evicts cached value after a configurable period of time.
-pub struct Cache {
+#[derive(Clone)]
+pub struct Cache(Arc<Inner>);
+
+struct Inner {
     cache: DashMap<eth::TokenAddress, CacheEntry>,
     /// entries older than this get ignored and evicted
     max_age: Duration,
@@ -207,18 +210,18 @@ impl Cache {
     /// Creates a new instance which evicts cached values after a period of
     /// time.
     pub fn new(bad_token_detection_cache: &BadTokenDetectionCache) -> Self {
-        Self {
+        Self(Arc::new(Inner {
             max_age: bad_token_detection_cache.max_age,
             cache: DashMap::with_capacity(bad_token_detection_cache.max_size),
-        }
+        }))
     }
 
     /// Updates whether or not a token should be considered supported.
     pub fn update_quality(&self, token: eth::TokenAddress, quality: Quality, now: Instant) {
-        match self.cache.entry(token) {
+        match self.0.cache.entry(token) {
             Entry::Occupied(mut o) => {
                 let value = o.get_mut();
-                if now.duration_since(value.timestamp) > self.max_age
+                if now.duration_since(value.timestamp) > self.0.max_age
                     || quality == Quality::Unsupported
                 {
                     // Only update the value if the cached value is outdated by now or
@@ -239,19 +242,20 @@ impl Cache {
 
     fn evict_outdated_entries(&self) {
         let now = Instant::now();
-        self.cache
-            .retain(|_, value| now.duration_since(value.timestamp) > self.max_age);
+        self.0
+            .cache
+            .retain(|_, value| now.duration_since(value.timestamp) > self.0.max_age);
     }
 
     /// Returns the quality of the token. If the cached value is older than the
     /// `max_age` it gets ignored and the token evicted.
     pub fn get_quality(&self, token: eth::TokenAddress, now: Instant) -> Option<Quality> {
-        let Entry::Occupied(entry) = self.cache.entry(token) else {
+        let Entry::Occupied(entry) = self.0.cache.entry(token) else {
             return None;
         };
 
         let value = entry.get();
-        if now.duration_since(value.timestamp) > self.max_age {
+        if now.duration_since(value.timestamp) > self.0.max_age {
             entry.remove();
             return None;
         }

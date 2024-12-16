@@ -63,7 +63,7 @@ impl Api {
             domain::competition::AuctionProcessor::new(&self.eth, order_priority_strategies);
 
         // TODO: create a struct wrapper to handle this under the hood
-        let trace_detector = Arc::new(Cache::new(&self.bad_token_detection_cache));
+        let trace_detector = Cache::new(&self.bad_token_detection_cache);
 
         // Add the metrics and healthz endpoints.
         app = routes::metrics(app);
