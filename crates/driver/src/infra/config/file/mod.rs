@@ -5,10 +5,7 @@ use {
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
     solver::solver::Arn,
-    std::{
-        collections::{HashMap, HashSet},
-        time::Duration,
-    },
+    std::{collections::HashMap, time::Duration},
 };
 
 mod load;
@@ -268,9 +265,8 @@ struct SolverConfig {
     #[serde(default = "default_response_size_limit_max_bytes")]
     response_size_limit_max_bytes: usize,
 
-    /// Bad token detector configuration
     #[serde(default)]
-    bad_token_detector: Option<BadTokenDetector>,
+    token_supported: HashMap<eth::H160, bool>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
@@ -660,22 +656,6 @@ fn default_order_priority_strategies() -> Vec<OrderPriorityStrategy> {
         },
         OrderPriorityStrategy::ExternalPrice,
     ]
-}
-
-/// Bad token detector configuration
-#[derive(Clone, Debug, Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct BadTokenDetector {
-    /// Whether or not the bad token detector is enabled
-    #[serde(default = "bool::default")]
-    pub enabled: bool,
-    /// List of tokens which will be directly allowed, no detection will be run
-    /// on them
-    #[serde(default = "HashSet::new")]
-    pub allowed_tokens: HashSet<eth::H160>,
-    /// List of tokens which will be directly unsupported
-    #[serde(default = "HashSet::new")]
-    pub unsupported_tokens_tokens: HashSet<eth::H160>,
 }
 
 fn default_max_order_age() -> Option<Duration> {

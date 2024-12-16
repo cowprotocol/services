@@ -53,21 +53,16 @@ pub struct Competition {
     pub mempools: Mempools,
     /// Cached solutions with the most recent solutions at the front.
     pub settlements: Mutex<VecDeque<Settlement>>,
-    pub bad_tokens: Option<Arc<bad_tokens::Detector>>,
+    pub bad_tokens: Arc<bad_tokens::Detector>,
 }
 
 impl Competition {
     /// Solve an auction as part of this competition.
-    pub async fn solve(&self, mut auction: Auction) -> Result<Option<Solved>, Error> {
-        // filter orders in auction which contain a bad tokens if the bad token
-        // detection is configured
-        if let Some(bad_tokens) = self.bad_tokens.as_ref() {
-            auction = bad_tokens
-                .clone()
-                .filter_unsupported_orders_in_auction(auction)
-                .await;
-        }
-        // Enforces Auction not to be consumed by making it as a shared reference
+    pub async fn solve(&self, auction: Auction) -> Result<Option<Solved>, Error> {
+        let auction = self
+            .bad_tokens
+            .filter_unsupported_orders_in_auction(auction)
+            .await;
         let auction = &auction;
 
         let liquidity = match self.solver.liquidity() {

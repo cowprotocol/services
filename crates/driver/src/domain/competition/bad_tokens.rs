@@ -70,39 +70,31 @@ impl Detector {
         self
     }
 
-    /// Filter all unsupported orders within an Auction
-    pub async fn filter_unsupported_orders_in_auction(
-        self: Arc<Self>,
-        mut auction: Auction,
-    ) -> Auction {
+    /// Removes all unsupported orders from the auction.
+    pub async fn filter_unsupported_orders_in_auction(&self, mut auction: Auction) -> Auction {
         let now = Instant::now();
 
-        let filtered_orders = futures::stream::iter(
-            auction
-                .orders
-                .into_iter()
-                .zip(std::iter::repeat(self.clone())),
-        )
-        .filter_map(move |(order, _self)| async move {
-            let sell = _self.get_token_quality(order.sell.token, now);
-            let buy = _self.get_token_quality(order.sell.token, now);
-            match (sell, buy) {
-                // both tokens supported => keep order
-                (Some(Quality::Supported), Some(Quality::Supported)) => Some(order),
-                // at least 1 token unsupported => drop order
-                (Some(Quality::Unsupported), _) | (_, Some(Quality::Unsupported)) => None,
-                // sell token quality is unknown => keep order if token is supported
-                (None, _) => {
-                    let quality = _self.determine_sell_token_quality(&order, now).await;
-                    (quality == Some(Quality::Supported)).then_some(order)
+        let filtered_orders = futures::stream::iter(auction.orders.into_iter())
+            .filter_map(move |order| async move {
+                let sell = self.get_token_quality(order.sell.token, now);
+                let buy = self.get_token_quality(order.sell.token, now);
+                match (sell, buy) {
+                    // both tokens supported => keep order
+                    (Some(Quality::Supported), Some(Quality::Supported)) => Some(order),
+                    // at least 1 token unsupported => drop order
+                    (Some(Quality::Unsupported), _) | (_, Some(Quality::Unsupported)) => None,
+                    // sell token quality is unknown => keep order if token is supported
+                    (None, _) => {
+                        let quality = self.determine_sell_token_quality(&order, now).await;
+                        (quality == Some(Quality::Supported)).then_some(order)
+                    }
+                    // buy token quality is unknown => keep order (because we can't
+                    // determine quality and assume it's good)
+                    (_, None) => Some(order),
                 }
-                // buy token quality is unknown => keep order (because we can't
-                // determine quality and assume it's good)
-                (_, None) => Some(order),
-            }
-        })
-        .collect::<Vec<_>>()
-        .await;
+            })
+            .collect::<Vec<_>>()
+            .await;
         auction.orders = filtered_orders;
 
         self.cache.evict_outdated_entries();

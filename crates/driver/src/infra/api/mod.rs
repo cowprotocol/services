@@ -1,14 +1,6 @@
 use {
     crate::{
-        domain::{
-            self,
-            competition::{
-                bad_tokens,
-                bad_tokens::{Cache, Quality},
-            },
-            eth,
-            Mempools,
-        },
+        domain::{self, competition::bad_tokens, Mempools},
         infra::{
             self,
             config::file::{BadTokenDetectionCache, OrderPriorityStrategy},
@@ -21,7 +13,7 @@ use {
     },
     error::Error,
     futures::Future,
-    std::{collections::HashMap, net::SocketAddr, sync::Arc},
+    std::{net::SocketAddr, sync::Arc},
     tokio::sync::oneshot,
 };
 
@@ -63,7 +55,7 @@ impl Api {
             domain::competition::AuctionProcessor::new(&self.eth, order_priority_strategies);
 
         // TODO: create a struct wrapper to handle this under the hood
-        let trace_detector = Cache::new(&self.bad_token_detection_cache);
+        let trace_detector = bad_tokens::Cache::new(&self.bad_token_detection_cache);
 
         // Add the metrics and healthz endpoints.
         app = routes::metrics(app);
@@ -82,28 +74,12 @@ impl Api {
             let router = routes::reveal(router);
             let router = routes::settle(router);
 
-            let bad_tokens = solver.bad_token_detector().map(|bad_token_detector| {
-                // maybe make this as part of the bad token builder?
-                let config = bad_token_detector
-                    .unsupported_tokens
-                    .iter()
-                    .map(|token| (eth::TokenAddress::from(*token), Quality::Unsupported))
-                    .chain(
-                        bad_token_detector
-                            .allowed_tokens
-                            .iter()
-                            .map(|token| (eth::TokenAddress::from(*token), Quality::Supported)),
-                    )
-                    .collect::<HashMap<_, _>>();
-
-                Arc::new(
-                    // maybe do proper builder pattern here?
-                    bad_tokens::Detector::default()
-                        .with_simulation_detector(&self.eth.clone())
-                        .with_config(config)
-                        .with_cache(trace_detector.clone()),
-                )
-            });
+            let bad_tokens = Arc::new(
+                bad_tokens::Detector::default()
+                    .with_simulation_detector(&self.eth.clone())
+                    .with_config(solver.tokens_supported().clone())
+                    .with_cache(trace_detector.clone()),
+            );
 
             let router = router.with_state(State(Arc::new(Inner {
                 eth: self.eth.clone(),

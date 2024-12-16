@@ -1,6 +1,6 @@
 use {
     crate::{
-        domain::eth,
+        domain::{competition::bad_tokens, eth},
         infra::{
             self,
             blockchain,
@@ -94,10 +94,19 @@ pub async fn load(chain: chain::Id, path: &Path) -> infra::Config {
                 solver_native_token: config.manage_native_token.to_domain(),
                 quote_tx_origin: config.quote_tx_origin.map(eth::Address),
                 response_size_limit_max_bytes: config.response_size_limit_max_bytes,
-                bad_token_detector: config
-                    .bad_token_detector
-                    .filter(|bad_token_detector| bad_token_detector.enabled)
-                    .map(Into::into),
+                tokens_supported: config
+                    .token_supported
+                    .iter()
+                    .map(|(token, supported)| {
+                        (
+                            eth::TokenAddress(eth::ContractAddress(*token)),
+                            match supported {
+                                true => bad_tokens::Quality::Supported,
+                                false => bad_tokens::Quality::Unsupported,
+                            },
+                        )
+                    })
+                    .collect(),
             }
         }))
         .await,

@@ -4,6 +4,7 @@ use {
         domain::{
             competition::{
                 auction::{self, Auction},
+                bad_tokens,
                 solution::{self, Solution},
             },
             eth,
@@ -12,7 +13,7 @@ use {
         },
         infra::{
             blockchain::Ethereum,
-            config::{self, file::FeeHandler},
+            config::file::FeeHandler,
             persistence::{Persistence, S3},
         },
         util,
@@ -21,7 +22,7 @@ use {
     derive_more::{From, Into},
     num::BigRational,
     reqwest::header::HeaderName,
-    std::collections::{HashMap, HashSet},
+    std::collections::HashMap,
     tap::TapFallible,
     thiserror::Error,
     tracing::Instrument,
@@ -123,7 +124,8 @@ pub struct Config {
     /// Which `tx.origin` is required to make quote verification pass.
     pub quote_tx_origin: Option<eth::Address>,
     pub response_size_limit_max_bytes: usize,
-    pub bad_token_detector: Option<BadTokenDetector>,
+    /// Whether a token is explicitly allow- or deny-listed.
+    pub tokens_supported: HashMap<eth::TokenAddress, bad_tokens::Quality>,
 }
 
 impl Solver {
@@ -152,8 +154,8 @@ impl Solver {
         })
     }
 
-    pub fn bad_token_detector(&self) -> Option<&BadTokenDetector> {
-        self.config.bad_token_detector.as_ref()
+    pub fn tokens_supported(&self) -> &HashMap<eth::TokenAddress, bad_tokens::Quality> {
+        &self.config.tokens_supported
     }
 
     pub fn persistence(&self) -> Persistence {
@@ -280,21 +282,6 @@ impl Solver {
 pub enum SolutionMerging {
     Allowed,
     Forbidden,
-}
-
-#[derive(Debug, Clone)]
-pub struct BadTokenDetector {
-    pub allowed_tokens: HashSet<eth::H160>,
-    pub unsupported_tokens: HashSet<eth::H160>,
-}
-
-impl From<config::file::BadTokenDetector> for BadTokenDetector {
-    fn from(value: config::file::BadTokenDetector) -> Self {
-        Self {
-            allowed_tokens: value.allowed_tokens,
-            unsupported_tokens: value.unsupported_tokens_tokens,
-        }
-    }
 }
 
 #[derive(Debug, Error)]
