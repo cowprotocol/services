@@ -1,7 +1,8 @@
 use {
+    self::trade_verifier::balance_overrides,
     crate::{
         arguments::{display_option, display_secret_option, ExternalSolver},
-        trade_finding::Interaction,
+        trade_finding::{Interaction, QuoteExecution},
     },
     anyhow::Result,
     bigdecimal::BigDecimal,
@@ -211,6 +212,9 @@ pub struct Arguments {
         value_parser = humantime::parse_duration,
     )]
     pub quote_timeout: Duration,
+
+    #[clap(flatten)]
+    pub balance_overrides: balance_overrides::Arguments,
 }
 
 #[derive(clap::Parser)]
@@ -290,6 +294,7 @@ impl Display for Arguments {
             quote_inaccuracy_limit,
             quote_verification,
             quote_timeout,
+            balance_overrides,
         } = self;
 
         display_option(
@@ -367,6 +372,7 @@ impl Display for Arguments {
         writeln!(f, "quote_inaccuracy_limit: {}", quote_inaccuracy_limit)?;
         writeln!(f, "quote_verification: {:?}", quote_verification)?;
         writeln!(f, "quote_timeout: {:?}", quote_timeout)?;
+        write!(f, "{}", balance_overrides)?;
 
         Ok(())
     }
@@ -455,7 +461,7 @@ pub struct Verification {
     pub buy_token_destination: BuyTokenDestination,
 }
 
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Deserialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize)]
 pub struct Estimate {
     pub out_amount: U256,
     /// full gas cost when settling this order alone on gp
@@ -464,6 +470,8 @@ pub struct Estimate {
     pub solver: H160,
     /// Did we verify the correctness of this estimate's properties?
     pub verified: bool,
+    /// Data associated with this estimation.
+    pub execution: QuoteExecution,
 }
 
 impl Estimate {
@@ -524,7 +532,7 @@ pub mod mocks {
     pub struct FakePriceEstimator(pub Estimate);
     impl PriceEstimating for FakePriceEstimator {
         fn estimate(&self, _query: Arc<Query>) -> BoxFuture<'_, PriceEstimateResult> {
-            async { Ok(self.0) }.boxed()
+            async { Ok(self.0.clone()) }.boxed()
         }
     }
 

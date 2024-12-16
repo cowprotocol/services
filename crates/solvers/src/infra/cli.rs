@@ -35,6 +35,4 @@ pub enum Command {
         #[clap(long, env)]
         config: PathBuf,
     },
-    /// optimistically batch similar orders and get difference from AMMs
-    Naive,
 }

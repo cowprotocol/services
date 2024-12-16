@@ -5,9 +5,11 @@ use {
         price_estimation::{PriceEstimationError, Query},
         request_sharing::{BoxRequestSharing, RequestSharing},
         trade_finding::{
+            map_interactions_data,
             Interaction,
             LegacyTrade,
             Quote,
+            QuoteExecution,
             Trade,
             TradeError,
             TradeFinding,
@@ -220,6 +222,11 @@ impl TradeFinding for ExternalTradeFinder {
                 .map_err(TradeError::Other)?,
             gas_estimate,
             solver: trade.solver(),
+            execution: QuoteExecution {
+                interactions: map_interactions_data(&trade.interactions()),
+                pre_interactions: map_interactions_data(&trade.pre_interactions()),
+                jit_orders: trade.jit_orders(),
+            },
         })
     }
 
@@ -307,7 +314,7 @@ pub(crate) mod dto {
     }
 
     #[serde_as]
-    #[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
+    #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
     #[serde(rename_all = "camelCase")]
     #[allow(unused)]
     pub struct JitOrder {
@@ -340,7 +347,7 @@ pub(crate) mod dto {
     }
 
     #[serde_as]
-    #[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
+    #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
     #[serde(rename_all = "camelCase")]
     pub enum Side {
         Buy,
