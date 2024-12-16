@@ -121,7 +121,7 @@ async fn high_gas_limit() {
 
 #[tokio::test]
 #[ignore]
-async fn discards_excess_settle_requests() {
+async fn discards_excess_settle_and_solve_requests() {
     let test = Arc::new(
         tests::setup()
             .allow_multiple_solve_requests()
