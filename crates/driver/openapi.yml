@@ -103,14 +103,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/Solution"
+              $ref: "#/components/schemas/RevealRequest"
       responses:
         "200":
           description: Execution accepted.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/RevealedResponse"
+                $ref: "#/components/schemas/RevealResponse"
         "400":
           $ref: "#/components/responses/BadRequest"
         "500":
@@ -130,7 +130,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/SolutionWithDeadline"
+              $ref: "#/components/schemas/SettleRequest"
       responses:
         "200":
           description: Execution accepted.
@@ -525,19 +525,7 @@ components:
                   $ref: "#/components/schemas/BigUint"
               gas:
                 type: integer
-    Solution:
-      description: Request to the `/reveal` endpoint.
-      type: object
-      properties:
-        solutionId:
-          description: Id of the solution that should be executed.
-          type: integer
-          example: 123
-        auctionId:
-          description: Auction ID in which the specified solution ID is competing.
-          type: integer
-          example: 123
-    SolutionWithDeadline:
+    SettleRequest:
       description: Request to the `/settle` endpoint.
       type: object
       properties:
@@ -553,7 +541,19 @@ components:
           description: Auction ID in which the specified solution ID is competing.
           type: integer
           example: 123
-    RevealedResponse:
+    RevealRequest:
+      description: Request to the `/reveal` endpoint.
+      type: object
+      properties:
+        solutionId:
+          description: Id of the solution that should be executed.
+          type: integer
+          example: 123
+        auctionId:
+          description: Auction ID in which the specified solution ID is competing.
+          type: integer
+          example: 123
+    RevealResponse:
       description: Response of the reveal endpoint.
       type: object
       properties:
