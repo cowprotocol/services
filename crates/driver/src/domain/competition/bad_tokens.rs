@@ -76,7 +76,6 @@ impl Detector {
         mut auction: Auction,
     ) -> Auction {
         let now = Instant::now();
-
         let self_clone = self.clone();
 
         auction
@@ -84,45 +83,24 @@ impl Detector {
                 {
                     let self_clone = self_clone.clone();
                     async move {
-                        // We first check the token quality:
-                        // - If both tokens are supported, the order does is not filtered
-                        // - If any of the order tokens is unsupported, the order is filtered
-                        // - If the token quality cannot be determined: call
-                        //   `determine_sell_token_quality()` to execute the simulation
-                        // All of these operations are done within the same `.map()` in order to
-                        // avoid iterating twice over the orders vector
-                        let tokens_quality = [order.sell.token, order.buy.token]
-                            .iter()
-                            .map(|token| self_clone.get_token_quality(*token, now))
-                            .collect::<Vec<_>>();
-                        let both_tokens_supported = tokens_quality
-                            .iter()
-                            .all(|token_quality| *token_quality == Some(Quality::Supported));
-                        let any_token_unsupported = tokens_quality
-                            .iter()
-                            .any(|token_quality| *token_quality == Some(Quality::Unsupported));
-
-                        // @TODO: remove the bad tokens from the tokens field?
-
-                        // If both tokens are supported, the order does is not filtered
-                        if both_tokens_supported {
-                            return Some(order);
+                        let sell = self_clone.get_token_quality(order.sell.token, now);
+                        let buy = self_clone.get_token_quality(order.sell.token, now);
+                        match (sell, buy) {
+                            // both tokens supported => keep order
+                            (Some(Quality::Supported), Some(Quality::Supported)) => Some(order),
+                            // at least 1 token unsupported => drop order
+                            (Some(Quality::Unsupported), _) | (_, Some(Quality::Unsupported)) => {
+                                None
+                            }
+                            // sell token quality is unknown => keep order if token is supported
+                            (None, _) => {
+                                let quality = self_clone.determine_sell_token_quality(&order, now).await;
+                                (quality == Some(Quality::Supported)).then_some(order)
+                            },
+                            // buy token quality is unknown => keep order (because we can't
+                            // determine quality and assume it's good)
+                            (_, None) => Some(order)
                         }
-
-                        // If any of the order tokens is unsupported, the order is filtered
-                        if any_token_unsupported {
-                            return None;
-                        }
-
-                        // If the token quality cannot be determined: call
-                        // `determine_sell_token_quality()` to execute the simulation
-                        if self_clone.determine_sell_token_quality(&order, now).await
-                            == Some(Quality::Supported)
-                        {
-                            return Some(order);
-                        }
-
-                        None
                     }
                 }
                 .boxed()
