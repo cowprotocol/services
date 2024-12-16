@@ -1176,12 +1176,8 @@ impl Test {
         self.auction_id = auction_id;
     }
 
-    pub async fn disable_auto_mining(&self) {
-        self.blockchain.set_auto_mining(false).await
-    }
-
-    pub async fn enable_auto_mining(&self) {
-        self.blockchain.set_auto_mining(true).await
+    pub async fn set_auto_mining(&self, enabled: bool) {
+        self.blockchain.set_auto_mining(enabled).await
     }
 }
 

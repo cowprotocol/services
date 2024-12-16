@@ -155,7 +155,7 @@ async fn discards_excess_settle_and_solve_requests() {
     assert_eq!(unique_solutions_count, solution_ids.len());
 
     // Disable auto mining to accumulate all the settlement requests.
-    test.disable_auto_mining().await;
+    test.set_auto_mining(false).await;
 
     // `collect_vec` is required to receive results in the same order.
     let settlements = {
@@ -176,7 +176,7 @@ async fn discards_excess_settle_and_solve_requests() {
     test.solve().await.err().kind("TooManyPendingSettlements");
 
     // Enable auto mining to process all the settlement requests.
-    test.enable_auto_mining().await;
+    test.set_auto_mining(true).await;
 
     let results = results_fut.await.unwrap();
     assert_eq!(results.len(), 5);
@@ -234,6 +234,9 @@ async fn accepts_new_settle_requests_after_timeout() {
         .len();
     assert_eq!(unique_solutions_count, solution_ids.len());
 
+    // Disable auto mining to accumulate all the settlement requests.
+    test.set_auto_mining(false).await;
+
     // Send only first 4 settle requests. `collect_vec` is required to receive
     // results in the same order.
     let first_solutions = {
@@ -250,7 +253,7 @@ async fn accepts_new_settle_requests_after_timeout() {
     let results_fut = tokio::spawn(join_all(first_solutions));
 
     tokio::time::sleep(Duration::from_secs(1)).await;
-    test.enable_auto_mining().await;
+    test.set_auto_mining(true).await;
 
     let results = results_fut.await.unwrap();
     assert_eq!(results.len(), 4);
