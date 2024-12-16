@@ -166,7 +166,7 @@ async fn discards_excess_settle_and_solve_requests() {
     };
     let results_fut = tokio::spawn(join_all(settlements));
 
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    tokio::time::sleep(Duration::from_secs(1)).await;
     // While there is no room in the settlement queue, `/solve` requests must be
     // rejected.
     test.solve().await.err().kind("TooManyPendingSettlements");
