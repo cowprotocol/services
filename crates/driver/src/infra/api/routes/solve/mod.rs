@@ -19,11 +19,11 @@ async fn route(
     state: axum::extract::State<State>,
     req: axum::Json<dto::SolveRequest>,
 ) -> Result<axum::Json<dto::SolveResponse>, (hyper::StatusCode, axum::Json<Error>)> {
-    let auction_id = auction.id();
+    let auction_id = req.id();
     let handle_request = async {
         observe::auction(auction_id);
         let start = Instant::now();
-        let auction = auction
+        let auction = req
             .0
             .into_domain(state.eth(), state.tokens(), state.timeouts())
             .await
