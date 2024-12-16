@@ -661,5 +661,5 @@ fn default_max_order_age() -> Option<Duration> {
 }
 
 fn default_settle_queue_size() -> usize {
-    3
+    2
 }
