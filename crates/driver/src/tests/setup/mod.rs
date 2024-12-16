@@ -1537,13 +1537,12 @@ pub enum Balance {
 }
 
 /// A /settle response.
-#[derive(Clone)]
 pub struct Settle {
     old_balances: HashMap<&'static str, eth::U256>,
     status: SettleStatus,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum SettleStatus {
     Ok,
     Err {
