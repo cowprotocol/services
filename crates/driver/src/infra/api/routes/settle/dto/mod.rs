@@ -1,3 +1,3 @@
-mod solution;
+mod settle_request;
 
-pub use solution::Solution;
+pub use settle_request::SettleRequest;
