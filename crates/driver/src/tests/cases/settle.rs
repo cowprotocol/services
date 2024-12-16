@@ -9,7 +9,7 @@ use {
     },
     futures::future::join_all,
     itertools::Itertools,
-    std::{collections::HashSet, sync::Arc, time::Duration},
+    std::{sync::Arc, time::Duration},
     web3::Transport,
 };
 
@@ -156,13 +156,10 @@ async fn discards_excess_settle_and_solve_requests() {
     // `collect_vec` is required to receive results in the same order.
     let settlements = {
         let test_clone = Arc::clone(&test);
-        solution_ids
-            .into_iter()
-            .map(|id| {
-                let test_clone = Arc::clone(&test_clone);
-                async move { test_clone.settle(&id).await }
-            })
-            .collect_vec()
+        solution_ids.into_iter().map(move |id| {
+            let test_clone = Arc::clone(&test_clone);
+            async move { test_clone.settle(&id).await }
+        })
     };
     let results_fut = tokio::spawn(join_all(settlements));
 
@@ -229,18 +226,13 @@ async fn accepts_new_settle_requests_after_timeout() {
     // Disable auto mining to accumulate all the settlement requests.
     test.set_auto_mining(false).await;
 
-    // Send only first 4 settle requests. `collect_vec` is required to receive
-    // results in the same order.
+    // Send only first 4 settle requests.
     let first_solutions = {
         let test_clone = Arc::clone(&test);
-        solution_ids[..4]
-            .iter()
-            .cloned()
-            .map(|id| {
-                let test_clone = Arc::clone(&test_clone);
-                async move { test_clone.settle(&id).await }
-            })
-            .collect_vec()
+        solution_ids[..4].iter().cloned().map(move |id| {
+            let test_clone = Arc::clone(&test_clone);
+            async move { test_clone.settle(&id).await }
+        })
     };
     let results_fut = tokio::spawn(join_all(first_solutions));
 
