@@ -17,7 +17,7 @@ pub(in crate::infra::api) fn solve(router: axum::Router<State>) -> axum::Router<
 
 async fn route(
     state: axum::extract::State<State>,
-    auction: axum::Json<dto::SolveRequest>,
+    req: axum::Json<dto::SolveRequest>,
 ) -> Result<axum::Json<dto::SolveResponse>, (hyper::StatusCode, axum::Json<Error>)> {
     let auction_id = auction.id();
     let handle_request = async {
