@@ -17,8 +17,6 @@ use {
     shared::signature_validator::{Contracts, SignatureValidating},
     std::{
         collections::{HashMap, HashSet},
-        future::Future,
-        pin::Pin,
         sync::{Arc, Mutex},
     },
     thiserror::Error,
@@ -32,7 +30,7 @@ pub struct Auction {
     /// See the [`Self::id`] method.
     id: Option<Id>,
     /// See the [`Self::orders`] method.
-    orders: Vec<competition::Order>,
+    pub(crate) orders: Vec<competition::Order>,
     /// The tokens that are used in the orders of this auction.
     tokens: Tokens,
     gas_price: eth::GasPrice,
@@ -73,32 +71,6 @@ impl Auction {
             deadline,
             surplus_capturing_jit_order_owners,
         })
-    }
-
-    /// Filter the orders according to the funcion `filter_fn` provided.
-    /// The function `filter_fn` must return an `Option<Order>`, with `None`
-    /// indicating that the order has to be filtered.
-    /// This is needed due to the lack of `filter()` async closure support.
-    pub async fn filter_orders<F>(&mut self, filter_fn: F)
-    where
-        F: Fn(
-                competition::Order,
-            ) -> Pin<Box<dyn Future<Output = Option<competition::Order>> + Send>>
-            + Send,
-    {
-        let futures = self
-            .orders
-            .drain(..)
-            .map(|order| {
-                let filter_fn = &filter_fn;
-                async move { filter_fn(order).await }
-            })
-            .collect::<Vec<_>>();
-        self.orders = futures::future::join_all(futures)
-            .await
-            .into_iter()
-            .flatten()
-            .collect();
     }
 
     /// [`None`] if this auction applies to a quote. See
