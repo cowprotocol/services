@@ -846,6 +846,8 @@ impl Setup {
         self
     }
 
+    /// Set the maximum number of blocks to wait for a settlement to appear on
+    /// chain.
     pub fn settle_submission_deadline(mut self, settle_submission_deadline: u64) -> Self {
         self.settle_submission_deadline = settle_submission_deadline;
         self
@@ -1207,6 +1209,11 @@ impl<'a> Solve<'a> {
             blockchain: self.blockchain,
         }
     }
+
+    pub fn err(self) -> SolveErr {
+        assert_ne!(self.status, hyper::StatusCode::OK);
+        SolveErr { body: self.body }
+    }
 }
 
 impl SolveOk<'_> {
@@ -1344,6 +1351,23 @@ impl SolveOk<'_> {
             ));
         }
         self
+    }
+}
+
+pub struct SolveErr {
+    body: String,
+}
+
+impl SolveErr {
+    /// Check the kind field in the error response.
+    pub fn kind(self, expected_kind: &str) {
+        let result: serde_json::Value = serde_json::from_str(&self.body).unwrap();
+        assert!(result.is_object());
+        assert_eq!(result.as_object().unwrap().len(), 2);
+        assert!(result.get("kind").is_some());
+        assert!(result.get("description").is_some());
+        let kind = result.get("kind").unwrap().as_str().unwrap();
+        assert_eq!(kind, expected_kind);
     }
 }
 
@@ -1618,10 +1642,11 @@ impl SettleOk {
 
 impl SettleErr {
     /// Check the kind field in the error response.
-    pub fn kind_eq(&self, expected_kind: &str) {
+    pub fn kind(&self, expected_kind: &str) {
         assert_eq!(self.get_kind(), expected_kind);
     }
 
+    /// Extract the kind field from the error response.
     pub fn get_kind(&self) -> String {
         let result: serde_json::Value = serde_json::from_str(&self.body).unwrap();
         assert!(result.is_object());

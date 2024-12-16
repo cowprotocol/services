@@ -25,10 +25,7 @@ async fn driver_handles_solutions_based_on_id() {
 
     // calling `/reveal` or `/settle` with incorrect solution ids
     // results in an error.
-    test.settle("99")
-        .await
-        .err()
-        .kind_eq("SolutionNotAvailable");
+    test.settle("99").await.err().kind("SolutionNotAvailable");
     test.reveal("99").await.err().kind("SolutionNotAvailable");
 
     // calling `/reveal` or `/settle` with a reasonable id works
@@ -41,7 +38,7 @@ async fn driver_handles_solutions_based_on_id() {
     test.settle(&solution_id)
         .await
         .err()
-        .kind_eq("SolutionNotAvailable");
+        .kind("SolutionNotAvailable");
 
     // calling `/reveal` or `/settle` with a reasonable id works.
     test.set_auction_id(1);
@@ -58,7 +55,7 @@ async fn driver_handles_solutions_based_on_id() {
     test.settle(&solution_id)
         .await
         .err()
-        .kind_eq("SolutionNotAvailable");
+        .kind("SolutionNotAvailable");
     test.reveal(&solution_id)
         .await
         .err()

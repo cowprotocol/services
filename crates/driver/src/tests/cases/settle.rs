@@ -55,10 +55,7 @@ async fn solution_not_available() {
         .done()
         .await;
 
-    test.settle("99")
-        .await
-        .err()
-        .kind_eq("SolutionNotAvailable");
+    test.settle("99").await.err().kind("SolutionNotAvailable");
 }
 
 /// Checks that settlements with revert risk are not submitted via public
@@ -82,7 +79,7 @@ async fn private_rpc_with_high_risk_solution() {
 
     let id = test.solve().await.ok().id();
     // Public cannot be used and private RPC is not available
-    test.settle(&id).await.err().kind_eq("FailedToSubmit");
+    test.settle(&id).await.err().kind("FailedToSubmit");
 }
 
 #[tokio::test]
@@ -175,6 +172,10 @@ async fn discards_excess_settle_requests() {
     let results_fut = tokio::spawn(join_all(settlements));
 
     tokio::time::sleep(Duration::from_secs(2)).await;
+    // While there is no room in the settlement queue, `/solve` requests must be
+    // rejected.
+    test.solve().await.err().kind("TooManyPendingSettlements");
+
     // Enable auto mining to process all the settlement requests.
     test.enable_auto_mining().await;
 
@@ -194,6 +195,9 @@ async fn discards_excess_settle_requests() {
     // request is dequeued at an unpredictable time. Therefore, we can't guarantee
     // the order of the errors received, but their count must be persistent.
     assert!(queue_is_full_err_count == 2 && failed_to_submit_err_count == 2);
+
+    // `/solve` works again.
+    test.solve().await.ok();
 }
 
 #[tokio::test]
@@ -274,5 +278,5 @@ async fn accepts_new_settle_requests_after_timeout() {
     test.settle(&solution_ids[4])
         .await
         .err()
-        .kind_eq("FailedToSubmit");
+        .kind("FailedToSubmit");
 }
