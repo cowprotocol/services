@@ -217,7 +217,7 @@ impl Cache {
     }
 
     /// Updates whether or not a token should be considered supported.
-    pub fn update_quality(&self, token: eth::TokenAddress, quality: Quality, now: Instant) {
+    fn update_quality(&self, token: eth::TokenAddress, quality: Quality, now: Instant) {
         match self.0.cache.entry(token) {
             Entry::Occupied(mut o) => {
                 let value = o.get_mut();
@@ -249,7 +249,7 @@ impl Cache {
 
     /// Returns the quality of the token. If the cached value is older than the
     /// `max_age` it gets ignored and the token evicted.
-    pub fn get_quality(&self, token: eth::TokenAddress, now: Instant) -> Option<Quality> {
+    fn get_quality(&self, token: eth::TokenAddress, now: Instant) -> Option<Quality> {
         let Entry::Occupied(entry) = self.0.cache.entry(token) else {
             return None;
         };
