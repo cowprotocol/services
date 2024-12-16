@@ -4,9 +4,14 @@ use {
         eth,
     },
     crate::{
-        domain::{competition::solution::Settlement, eth::TxStatus, BlockNo},
+        domain::{
+            competition::solution::Settlement,
+            eth::{TxId, TxStatus},
+            BlockNo,
+        },
         infra::{self, observe, solver::Solver, Ethereum},
     },
+    anyhow::Context,
     ethrpc::block_stream::into_stream,
     futures::{future::select_ok, FutureExt, StreamExt},
     thiserror::Error,
@@ -123,24 +128,32 @@ impl Mempools {
                     TxStatus::Pending => {
                         // Check if the current block reached the submission deadline block number
                         if block.number >= submission_deadline {
+                            let cancellation_hash = self
+                                .cancel(mempool, settlement.gas.price, solver)
+                                .await
+                                .context("cancellation tx failed")?;
                             tracing::info!(
                                 ?hash,
                                 deadline = submission_deadline,
                                 current_block = block.number,
+                                ?cancellation_hash,
                                 "tx not confirmed in time, cancelling",
                             );
-                            self.cancel(mempool, settlement.gas.price, solver).await?;
                             return Err(Error::Expired);
                         }
                         // Check if transaction still simulates
                         if let Err(err) = self.ethereum.estimate_gas(tx).await {
                             if err.is_revert() {
+                                let cancellation_hash = self
+                                    .cancel(mempool, settlement.gas.price, solver)
+                                    .await
+                                    .context("cancellation tx failed")?;
                                 tracing::info!(
                                     ?hash,
+                                    ?cancellation_hash,
                                     ?err,
                                     "tx started failing in mempool, cancelling"
                                 );
-                                self.cancel(mempool, settlement.gas.price, solver).await?;
                                 return Err(Error::SimulationRevert);
                             } else {
                                 tracing::warn!(?hash, ?err, "couldn't re-simulate tx");
@@ -173,7 +186,7 @@ impl Mempools {
         mempool: &infra::mempool::Mempool,
         pending: eth::GasPrice,
         solver: &Solver,
-    ) -> Result<(), Error> {
+    ) -> Result<TxId, Error> {
         let cancellation = eth::Tx {
             from: solver.address(),
             to: solver.address(),
@@ -186,8 +199,7 @@ impl Mempools {
             limit: CANCELLATION_GAS_AMOUNT.into(),
             price: pending * GAS_PRICE_BUMP,
         };
-        mempool.submit(cancellation, gas, solver).await?;
-        Ok(())
+        mempool.submit(cancellation, gas, solver).await
     }
 }
 
