@@ -173,7 +173,7 @@ async fn discards_excess_settle_and_solve_requests() {
     };
     let remaining_settlements_fut = tokio::spawn(join_all(remaining_settlements));
 
-    tokio::time::sleep(Duration::from_secs(1)).await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
     // While there is no room in the settlement queue, `/solve` requests must be
     // rejected.
     test.solve().await.err().kind("TooManyPendingSettlements");
@@ -258,7 +258,7 @@ async fn accepts_new_settle_requests_after_timeout() {
     };
     let additional_settlements_fut = tokio::spawn(join_all(additional_settlements));
 
-    tokio::time::sleep(Duration::from_secs(1)).await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
     test.set_auto_mining(true).await;
 
     let first_settlement = first_settlement_fut.await.unwrap();
