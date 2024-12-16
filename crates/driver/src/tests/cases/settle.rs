@@ -161,9 +161,8 @@ async fn discards_excess_settle_requests() {
     let settlements = {
         let test_clone = Arc::clone(&test);
         solution_ids
-            .iter()
-            .cloned()
-            .map(move |id| {
+            .into_iter()
+            .map(|id| {
                 let test_clone = Arc::clone(&test_clone);
                 async move { test_clone.settle(&id).await }
             })
@@ -242,7 +241,7 @@ async fn accepts_new_settle_requests_after_timeout() {
         solution_ids[..4]
             .iter()
             .cloned()
-            .map(move |id| {
+            .map(|id| {
                 let test_clone = Arc::clone(&test_clone);
                 async move { test_clone.settle(&id).await }
             })
