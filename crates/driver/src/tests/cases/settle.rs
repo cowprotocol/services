@@ -153,15 +153,25 @@ async fn discards_excess_settle_and_solve_requests() {
     // Disable auto mining to accumulate all the settlement requests.
     test.set_auto_mining(false).await;
 
-    // `collect_vec` is required to receive results in the same order.
-    let settlements = {
+    // To avoid race conditions with the settlement queue processing, a
+    // `/settle` request needs to be sent first, so it is dequeued, and it's
+    // execution is paused before any subsequent request is received.
+    let test_clone = Arc::clone(&test);
+    let first_solution_id = solution_ids[0].clone();
+    let first_settlement_fut =
+        tokio::spawn(async move { test_clone.settle(&first_solution_id).await });
+    // Make sure the first settlement gets dequeued before sending the remaining
+    // requests.
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let remaining_solutions = solution_ids[1..].to_vec();
+    let remaining_settlements = {
         let test_clone = Arc::clone(&test);
-        solution_ids.into_iter().map(move |id| {
+        remaining_solutions.into_iter().map(move |id| {
             let test_clone = Arc::clone(&test_clone);
             async move { test_clone.settle(&id).await }
         })
     };
-    let results_fut = tokio::spawn(join_all(settlements));
+    let remaining_settlements_fut = tokio::spawn(join_all(remaining_settlements));
 
     tokio::time::sleep(Duration::from_secs(1)).await;
     // While there is no room in the settlement queue, `/solve` requests must be
@@ -171,22 +181,23 @@ async fn discards_excess_settle_and_solve_requests() {
     // Enable auto mining to process all the settlement requests.
     test.set_auto_mining(true).await;
 
-    let results = results_fut.await.unwrap();
-    assert_eq!(results.len(), 5);
-
     // The first settlement must be successful.
-    results[0].clone().ok().await.ab_order_executed(&test).await;
+    let first_settlement = first_settlement_fut.await.unwrap();
+    first_settlement.ok().await.ab_order_executed(&test).await;
 
-    let err_kinds = results[1..]
-        .iter()
-        .cloned()
-        .counts_by(|settle| settle.err().get_kind());
-    let queue_is_full_err_count = *err_kinds.get("TooManyPendingSettlements").unwrap();
-    let failed_to_submit_err_count = *err_kinds.get("FailedToSubmit").unwrap();
-    // There is a high possibility of a race condition where the first settlement
-    // request is dequeued at an unpredictable time. Therefore, we can't guarantee
-    // the order of the errors received, but their count must be persistent.
-    assert!(queue_is_full_err_count == 2 && failed_to_submit_err_count == 2);
+    let remaining_settlements = remaining_settlements_fut.await.unwrap();
+    assert_eq!(remaining_settlements.len(), 4);
+
+    for (idx, result) in remaining_settlements.into_iter().enumerate() {
+        match idx {
+            // The next 2 settlements failed to submit due to the framework's limitation(unable to
+            // fulfill the same order again).
+            0 | 1 => result.err().kind("FailedToSubmit"),
+            // All the subsequent settlements rejected due to the settlement queue being full.
+            2 | 3 => result.err().kind("TooManyPendingSettlements"),
+            _ => unreachable!(),
+        }
+    }
 
     // `/solve` works again.
     test.solve().await.ok();
@@ -226,41 +237,50 @@ async fn accepts_new_settle_requests_after_timeout() {
     // Disable auto mining to accumulate all the settlement requests.
     test.set_auto_mining(false).await;
 
-    // Send only first 4 settle requests.
-    let first_solutions = {
+    // To avoid race conditions with the settlement queue processing, a
+    // `/settle` request needs to be sent first, so it is dequeued, and it's
+    // execution is paused before any subsequent request is received.
+    let test_clone = Arc::clone(&test);
+    let first_solution_id = solution_ids[0].clone();
+    let first_settlement_fut =
+        tokio::spawn(async move { test_clone.settle(&first_solution_id).await });
+    // Make sure the first settlement gets dequeued before sending the remaining
+    // requests.
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    // Send only 3 more settle requests.
+    let additional_solutions = solution_ids[1..4].to_vec();
+    let additional_settlements = {
         let test_clone = Arc::clone(&test);
-        solution_ids[..4].iter().cloned().map(move |id| {
+        additional_solutions.into_iter().map(move |id| {
             let test_clone = Arc::clone(&test_clone);
             async move { test_clone.settle(&id).await }
         })
     };
-    let results_fut = tokio::spawn(join_all(first_solutions));
+    let additional_settlements_fut = tokio::spawn(join_all(additional_settlements));
 
     tokio::time::sleep(Duration::from_secs(1)).await;
     test.set_auto_mining(true).await;
 
-    let results = results_fut.await.unwrap();
-    assert_eq!(results.len(), 4);
-
+    let first_settlement = first_settlement_fut.await.unwrap();
     // The first settlement must be successful.
-    results[0].clone().ok().await.ab_order_executed(&test).await;
+    first_settlement.ok().await.ab_order_executed(&test).await;
 
-    let err_kinds = results[1..]
-        .iter()
-        .cloned()
-        .counts_by(|settle| settle.err().get_kind());
-    let queue_is_full_err_count = *err_kinds.get("TooManyPendingSettlements").unwrap();
-    let failed_to_submit_err_count = *err_kinds.get("FailedToSubmit").unwrap();
-    // There is a high possibility of a race condition where the first settlement
-    // request is dequeued at an unpredictable time. The expected count of these
-    // errors as follows.
-    assert!(
-        (queue_is_full_err_count == 1 && failed_to_submit_err_count == 2)
-            || (queue_is_full_err_count == 2 && failed_to_submit_err_count == 1)
-    );
+    let additional_settlements = additional_settlements_fut.await.unwrap();
+    assert_eq!(additional_settlements.len(), 3);
 
-    // Now we send the last settlement request. It fails because with the current
-    // framework setup it is impossible to settle the same solution twice.
+    for (idx, result) in additional_settlements.into_iter().enumerate() {
+        match idx {
+            // The next 2 settlements failed to submit due to the framework's limitation(unable to
+            // fulfill the same order again).
+            0 | 1 => result.err().kind("FailedToSubmit"),
+            // The next request gets rejected due to the settlement queue being full.
+            2 => result.err().kind("TooManyPendingSettlements"),
+            _ => unreachable!(),
+        }
+    }
+
+    // Now we send the last settlement request. It fails due to the framework's
+    // limitation(unable to fulfill the same order again).
     test.settle(&solution_ids[4])
         .await
         .err()
