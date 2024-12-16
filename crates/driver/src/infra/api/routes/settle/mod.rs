@@ -17,7 +17,7 @@ pub(in crate::infra::api) fn settle(router: axum::Router<State>) -> axum::Router
 
 async fn route(
     state: axum::extract::State<State>,
-    req: axum::Json<dto::SolutionWithDeadline>,
+    req: axum::Json<dto::SettleRequest>,
 ) -> Result<(), (hyper::StatusCode, axum::Json<Error>)> {
     let auction_id = req.auction_id;
     let solver = state.solver().name().to_string();

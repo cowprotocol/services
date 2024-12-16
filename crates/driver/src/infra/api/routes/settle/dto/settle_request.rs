@@ -3,7 +3,7 @@ use {super::super::super::deserialize_solution_id, serde::Deserialize, serde_wit
 #[serde_as]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SolutionWithDeadline {
+pub struct SettleRequest {
     /// Unique ID of the solution (per driver competition), to settle.
     #[serde(deserialize_with = "deserialize_solution_id")]
     pub solution_id: u64,

@@ -1,3 +1,3 @@
-mod solution_with_deadline;
+mod settle_request;
 
-pub use solution_with_deadline::SolutionWithDeadline;
+pub use settle_request::SettleRequest;
