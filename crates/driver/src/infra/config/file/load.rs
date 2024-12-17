@@ -353,6 +353,6 @@ pub async fn load(chain: chain::Id, path: &Path) -> infra::Config {
         gas_estimator: config.gas_estimator,
         order_priority_strategies: config.order_priority_strategies,
         archive_node_url: config.archive_node_url,
-        bad_token_detection_cache: config.bad_token_detection_cache,
+        bad_token_detection: config.bad_token_detection,
     }
 }

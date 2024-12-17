@@ -3,7 +3,7 @@ use {
         domain::{self, competition::bad_tokens, Mempools},
         infra::{
             self,
-            config::file::{BadTokenDetectionCache, OrderPriorityStrategy},
+            config::file::{BadTokenDetection, OrderPriorityStrategy},
             liquidity,
             solver::{Solver, Timeouts},
             tokens,
@@ -32,7 +32,7 @@ pub struct Api {
     /// If this channel is specified, the bound address will be sent to it. This
     /// allows the driver to bind to 0.0.0.0:0 during testing.
     pub addr_sender: Option<oneshot::Sender<SocketAddr>>,
-    pub bad_token_detection_cache: BadTokenDetectionCache,
+    pub bad_token_detection: BadTokenDetection,
 }
 
 impl Api {
@@ -54,8 +54,7 @@ impl Api {
         let pre_processor =
             domain::competition::AuctionProcessor::new(&self.eth, order_priority_strategies);
 
-        // TODO: create a struct wrapper to handle this under the hood
-        let trace_detector = bad_tokens::Cache::new(&self.bad_token_detection_cache);
+        let trace_detector = bad_tokens::Cache::new(self.bad_token_detection.max_age);
 
         // Add the metrics and healthz endpoints.
         app = routes::metrics(app);

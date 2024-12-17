@@ -69,7 +69,7 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
         eth,
         addr: args.addr,
         addr_sender,
-        bad_token_detection_cache: config.bad_token_detection_cache,
+        bad_token_detection: config.bad_token_detection,
     }
     .serve(
         async {

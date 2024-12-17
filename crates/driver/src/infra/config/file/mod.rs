@@ -66,9 +66,10 @@ struct Config {
     /// Archive node URL used to index CoW AMM
     archive_node_url: Option<Url>,
 
-    /// Cache configuration for the bad tokend detection
+    /// Configuration options for automatically detecting unsupported
+    /// tokens.
     #[serde(default)]
-    bad_token_detection_cache: BadTokenDetectionCache,
+    bad_token_detection: BadTokenDetection,
 }
 
 #[serde_as]
@@ -665,31 +666,28 @@ fn default_max_order_age() -> Option<Duration> {
 /// Cache configuration for the bad token detection
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct BadTokenDetectionCache {
+pub struct BadTokenDetection {
     /// Entries older than `max_age` will get ignored and evicted
     #[serde(
         with = "humantime_serde",
         default = "default_bad_token_detection_cache_max_age"
     )]
     pub max_age: Duration,
-    /// Maximum number of tokens the cache can have
-    #[serde(default = "default_bad_token_detection_cache_max_size")]
-    pub max_size: usize,
+
+    /// RPC URL to be used for detecting unsupported tokens via simulations.
+    /// Requires support for `trace_callMany`.
+    pub simulation_detection_rpc: Option<Url>,
 }
 
-impl Default for BadTokenDetectionCache {
+impl Default for BadTokenDetection {
     fn default() -> Self {
         Self {
             max_age: default_bad_token_detection_cache_max_age(),
-            max_size: default_bad_token_detection_cache_max_size(),
+            simulation_detection_rpc: None,
         }
     }
 }
 
 fn default_bad_token_detection_cache_max_age() -> Duration {
     Duration::from_secs(600)
-}
-
-fn default_bad_token_detection_cache_max_size() -> usize {
-    1000
 }

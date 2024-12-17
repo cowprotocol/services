@@ -2,7 +2,7 @@ use {
     super::Order,
     crate::{
         domain::{competition::Auction, eth},
-        infra::{self, config::file::BadTokenDetectionCache},
+        infra::{self, config::file::BadTokenDetection},
     },
     dashmap::{DashMap, Entry},
     futures::StreamExt,
@@ -194,17 +194,17 @@ struct CacheEntry {
 
 impl Default for Cache {
     fn default() -> Self {
-        Self::new(&BadTokenDetectionCache::default())
+        Self::new(BadTokenDetection::default().max_age)
     }
 }
 
 impl Cache {
     /// Creates a new instance which evicts cached values after a period of
     /// time.
-    pub fn new(bad_token_detection_cache: &BadTokenDetectionCache) -> Self {
+    pub fn new(max_age: Duration) -> Self {
         Self(Arc::new(Inner {
-            max_age: bad_token_detection_cache.max_age,
-            cache: DashMap::with_capacity(bad_token_detection_cache.max_size),
+            max_age,
+            cache: DashMap::default(),
         }))
     }
 
