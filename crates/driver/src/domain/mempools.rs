@@ -107,6 +107,24 @@ impl Mempools {
         let mut block_stream = into_stream(self.ethereum.current_block().clone());
         block_stream.next().await;
 
+        // The tx is simulated before submitting the solution to the competition, but a
+        // delay between that and the actual execution can cause the simulation to be
+        // invalid which doesn't make sense to submit to the mempool anymore.
+        if let Err(err) = self.ethereum.estimate_gas(tx).await {
+            if err.is_revert() {
+                tracing::info!(
+                    ?err,
+                    "settlement tx simulation reverted before submitting to the mempool"
+                );
+                return Err(Error::SimulationRevert);
+            } else {
+                tracing::warn!(
+                    ?err,
+                    "couldn't simulate tx before submitting to the mempool"
+                );
+            }
+        }
+
         let hash = mempool.submit(tx.clone(), settlement.gas, solver).await?;
         tracing::debug!(?hash, "submitted tx to the mempool");
 
