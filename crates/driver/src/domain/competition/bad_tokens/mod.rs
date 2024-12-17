@@ -25,7 +25,6 @@ pub enum Quality {
     Unsupported,
 }
 
-// TODO: better name (it only looks up stuff)
 #[derive(Default)]
 pub struct Detector {
     /// manually configured list of supported and unsupported tokens. Only
@@ -37,11 +36,6 @@ pub struct Detector {
 }
 
 impl Detector {
-    pub fn with_config(mut self, config: HashMap<eth::TokenAddress, Quality>) -> Self {
-        self.hardcoded = config;
-        self
-    }
-
     /// Enables detection of unsupported tokens via simulation based detection
     /// methods.
     pub fn with_simulation_detector(&mut self, detector: simulation::Detector) -> &mut Self {
@@ -50,7 +44,7 @@ impl Detector {
     }
 
     /// Enables detection of unsupported tokens based on heuristics.
-    pub fn with_heuristic_detector(mut self) -> Self {
+    pub fn with_heuristic_detector(&mut self) -> &mut Self {
         self.metrics = Some(metrics::Detector);
         self
     }
