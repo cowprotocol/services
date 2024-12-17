@@ -40,7 +40,7 @@ strum = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
 thiserror = "1.0"
 tracing = { workspace = true }
-web3 = { workspace = true }
+web3 = { workspace = true, features = ["http"] }
 
 [dev-dependencies]
 derivative = { workspace = true }

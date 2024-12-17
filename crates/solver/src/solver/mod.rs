@@ -5,6 +5,8 @@ use {
 
 mod baseline_solver;
 pub mod naive_solver;
+pub mod circles_detection;
+pub mod web3_provider;
 
 // Wrapper type for AWS ARN identifiers
 #[derive(Debug, Clone)]
