@@ -502,9 +502,7 @@ async fn usdt_quote_verification(web3: Web3) {
     services
         .start_protocol_with_args(
             ExtraServiceArgs {
-                api: vec![
-                    "--quote-autodetect-token-balance-overrides=true".to_string(),
-                ],
+                api: vec!["--quote-autodetect-token-balance-overrides=true".to_string()],
                 ..Default::default()
             },
             solver,
