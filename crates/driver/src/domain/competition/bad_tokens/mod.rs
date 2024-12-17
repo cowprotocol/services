@@ -116,7 +116,6 @@ impl fmt::Debug for Detector {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Detector")
             .field("hardcoded", &self.hardcoded)
-            .field("dynamic", &format_args!("Vec<Cache>"))
             .finish()
     }
 }

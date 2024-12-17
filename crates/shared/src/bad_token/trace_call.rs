@@ -85,6 +85,8 @@ impl TraceCallDetector {
     }
 }
 
+/// Detects whether a token is "bad" (works in unexpected ways that are
+/// problematic for solving) by simulating several transfers of a token.
 #[derive(Debug, Clone)]
 pub struct TraceCallDetectorRaw {
     pub web3: Web3,
