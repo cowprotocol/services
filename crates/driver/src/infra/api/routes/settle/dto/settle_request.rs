@@ -3,11 +3,13 @@ use {super::super::super::deserialize_solution_id, serde::Deserialize, serde_wit
 #[serde_as]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Solution {
-    /// Unique ID of the solution (per driver competition), to reveal.
+pub struct SettleRequest {
+    /// Unique ID of the solution (per driver competition), to settle.
     #[serde(deserialize_with = "deserialize_solution_id")]
     pub solution_id: u64,
-    /// Auction ID in which the specified solution ID is competing.
+    /// The last block number in which the solution TX can be included
+    pub submission_deadline_latest_block: u64,
+    /// Auction ID in which this solution is competing.
     #[serde_as(as = "Option<serde_with::DisplayFromStr>")]
     pub auction_id: Option<i64>,
 }

@@ -13,7 +13,7 @@ use {
     std::collections::HashSet,
 };
 
-impl Auction {
+impl SolveRequest {
     pub async fn into_domain(
         self,
         eth: &Ethereum,
@@ -198,7 +198,7 @@ impl From<auction::Error> for Error {
 #[serde_as]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Auction {
+pub struct SolveRequest {
     #[serde_as(as = "serde_with::DisplayFromStr")]
     id: i64,
     tokens: Vec<Token>,
@@ -208,7 +208,7 @@ pub struct Auction {
     surplus_capturing_jit_order_owners: Vec<eth::H160>,
 }
 
-impl Auction {
+impl SolveRequest {
     pub fn id(&self) -> i64 {
         self.id
     }
