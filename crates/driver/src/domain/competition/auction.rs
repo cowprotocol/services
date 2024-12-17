@@ -183,10 +183,10 @@ impl AuctionProcessor {
         // and we don't want to block the runtime for too long.
         let fut = tokio::task::spawn_blocking(move || {
             let start = std::time::Instant::now();
-            let cow_amm_orders = rt.block_on(Self::cow_amm_orders(&eth, &tokens, &cow_amms, signature_validator.as_ref()));
-            orders.extend(cow_amm_orders);
+            orders.extend(rt.block_on(Self::cow_amm_orders(&eth, &tokens, &cow_amms, signature_validator.as_ref())));
             sorting::sort_orders(&mut orders, &tokens, &solver, &order_comparators);
-            let mut balances = rt.block_on(Self::fetch_balances(&eth, &orders));
+            let mut balances =
+                rt.block_on(async { Self::fetch_balances(&eth, &orders).await });
             Self::filter_orders(&mut balances, &mut orders);
             tracing::debug!(auction_id = new_id.0, time =? start.elapsed(), "auction preprocessing done");
             orders
