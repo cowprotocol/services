@@ -66,10 +66,13 @@ struct Config {
     /// Archive node URL used to index CoW AMM
     archive_node_url: Option<Url>,
 
-    /// Configuration options for automatically detecting unsupported
-    /// tokens.
-    #[serde(default)]
-    bad_token_detection: BadTokenDetection,
+    /// How long should the token quality computed by the simulation
+    /// based logic be cached.
+    #[serde(
+        with = "humantime_serde",
+        default = "default_simulation_bad_token_max_age"
+    )]
+    simulation_bad_token_max_age: Duration,
 }
 
 #[serde_as]
@@ -266,8 +269,14 @@ struct SolverConfig {
     #[serde(default = "default_response_size_limit_max_bytes")]
     response_size_limit_max_bytes: usize,
 
+    /// Which tokens are explicitly supported or unsupported by the solver.
     #[serde(default)]
     token_supported: HashMap<eth::H160, bool>,
+
+    /// Whether or not the solver opted into detecting unsupported
+    /// tokens with `trace_callMany` based simulation.
+    #[serde(default)]
+    enable_simulation_bad_token_detection: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
@@ -663,31 +672,6 @@ fn default_max_order_age() -> Option<Duration> {
     Some(Duration::from_secs(300))
 }
 
-/// Cache configuration for the bad token detection
-#[derive(Clone, Debug, Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct BadTokenDetection {
-    /// Entries older than `max_age` will get ignored and evicted
-    #[serde(
-        with = "humantime_serde",
-        default = "default_bad_token_detection_cache_max_age"
-    )]
-    pub max_age: Duration,
-
-    /// RPC URL to be used for detecting unsupported tokens via simulations.
-    /// Requires support for `trace_callMany`.
-    pub simulation_detection_rpc: Option<Url>,
-}
-
-impl Default for BadTokenDetection {
-    fn default() -> Self {
-        Self {
-            max_age: default_bad_token_detection_cache_max_age(),
-            simulation_detection_rpc: None,
-        }
-    }
-}
-
-fn default_bad_token_detection_cache_max_age() -> Duration {
+fn default_simulation_bad_token_max_age() -> Duration {
     Duration::from_secs(600)
 }

@@ -3,7 +3,7 @@ use {
         domain::{self, competition::bad_tokens, Mempools},
         infra::{
             self,
-            config::file::{BadTokenDetection, OrderPriorityStrategy},
+            config::file::OrderPriorityStrategy,
             liquidity,
             solver::{Solver, Timeouts},
             tokens,
@@ -29,10 +29,10 @@ pub struct Api {
     pub eth: Ethereum,
     pub mempools: Mempools,
     pub addr: SocketAddr,
+    pub bad_token_detector: bad_tokens::simulation::Detector,
     /// If this channel is specified, the bound address will be sent to it. This
     /// allows the driver to bind to 0.0.0.0:0 during testing.
     pub addr_sender: Option<oneshot::Sender<SocketAddr>>,
-    pub bad_token_detection: BadTokenDetection,
 }
 
 impl Api {
@@ -54,8 +54,6 @@ impl Api {
         let pre_processor =
             domain::competition::AuctionProcessor::new(&self.eth, order_priority_strategies);
 
-        let trace_detector = bad_tokens::Cache::new(self.bad_token_detection.max_age);
-
         // Add the metrics and healthz endpoints.
         app = routes::metrics(app);
         app = routes::healthz(app);
@@ -73,12 +71,13 @@ impl Api {
             let router = routes::reveal(router);
             let router = routes::settle(router);
 
-            let bad_tokens = Arc::new(
-                bad_tokens::Detector::default()
-                    .with_simulation_detector(&self.eth.clone())
-                    .with_config(solver.tokens_supported().clone())
-                    .with_cache(trace_detector.clone()),
-            );
+            let mut bad_tokens = bad_tokens::Detector::default();
+            if solver
+                .bad_token_detection()
+                .enable_simulation_based_bad_token_detection
+            {
+                bad_tokens.with_simulation_detector(self.bad_token_detector.clone());
+            }
 
             let router = router.with_state(State(Arc::new(Inner {
                 eth: self.eth.clone(),
@@ -90,7 +89,7 @@ impl Api {
                     simulator: self.simulator.clone(),
                     mempools: self.mempools.clone(),
                     settlements: Default::default(),
-                    bad_tokens,
+                    bad_tokens: Arc::new(bad_tokens),
                 },
                 liquidity: self.liquidity.clone(),
                 tokens: tokens.clone(),

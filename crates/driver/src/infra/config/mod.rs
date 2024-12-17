@@ -3,13 +3,14 @@ use {
         domain::eth,
         infra::{
             blockchain,
-            config::file::{BadTokenDetection, GasEstimatorType, OrderPriorityStrategy},
+            config::file::{GasEstimatorType, OrderPriorityStrategy},
             liquidity,
             mempool,
             simulator,
             solver,
         },
     },
+    std::time::Duration,
     url::Url,
 };
 
@@ -28,5 +29,5 @@ pub struct Config {
     pub contracts: blockchain::contracts::Addresses,
     pub order_priority_strategies: Vec<OrderPriorityStrategy>,
     pub archive_node_url: Option<Url>,
-    pub bad_token_detection: BadTokenDetection,
+    pub simulation_bad_token_max_age: Duration,
 }
