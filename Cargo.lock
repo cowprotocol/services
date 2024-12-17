@@ -5211,6 +5211,7 @@ dependencies = [
  "shared",
  "strum",
  "testlib",
+ "thiserror",
  "tokio",
  "tracing",
  "web3",

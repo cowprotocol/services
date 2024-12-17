@@ -16,3 +16,4 @@
 *.merge
 *_merge.txt
 *_files.txt
+**/.repo_ignore
