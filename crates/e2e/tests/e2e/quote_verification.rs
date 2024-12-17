@@ -11,6 +11,7 @@ use {
     number::nonzero::U256 as NonZeroU256,
     serde_json::json,
     shared::{
+        addr,
         price_estimation::{
             trade_verifier::{
                 balance_overrides::BalanceOverrides,
@@ -60,6 +61,18 @@ async fn local_node_verified_quote_for_settlement_contract() {
 #[ignore]
 async fn local_node_verified_quote_with_simulated_balance() {
     run_test(verified_quote_with_simulated_balance).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn forked_node_mainnet_usdt_quote() {
+    run_forked_test_with_block_number(
+        usdt_quote_verification,
+        std::env::var("FORK_URL_MAINNET")
+            .expect("FORK_URL_MAINNET must be set to run forked tests"),
+        21422760,
+    )
+    .await;
 }
 
 /// Verified quotes work as expected.
@@ -472,4 +485,46 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
         .await
         .unwrap();
     assert!(response.verified);
+}
+
+/// Ensures that quotes can even be verified with tokens like `USDT`
+/// which are not completely ERC20 compliant.
+async fn usdt_quote_verification(web3: Web3) {
+    let mut onchain = OnchainComponents::deployed(web3.clone()).await;
+
+    let [solver] = onchain.make_solvers_forked(to_wei(1)).await;
+
+    let usdc = addr!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48");
+    let usdt = addr!("dac17f958d2ee523a2206206994597c13d831ec7");
+
+    // Place Orders
+    let services = Services::new(&onchain).await;
+    services
+        .start_protocol_with_args(
+            ExtraServiceArgs {
+                api: vec![
+                    // We don't configure the WETH token and instead rely on
+                    // auto-detection for balance overrides.
+                    "--quote-autodetect-token-balance-overrides=true".to_string(),
+                ],
+                ..Default::default()
+            },
+            solver,
+        )
+        .await;
+
+    let quote = services
+        .submit_quote(&OrderQuoteRequest {
+            sell_token: usdt,
+            buy_token: usdc,
+            side: OrderQuoteSide::Sell {
+                sell_amount: SellAmount::BeforeFee {
+                    value: to_wei_with_exp(1000, 18).try_into().unwrap(),
+                },
+            },
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert!(quote.verified);
 }
