@@ -128,15 +128,15 @@ impl Mempools {
                     TxStatus::Pending => {
                         // Check if the current block reached the submission deadline block number
                         if block.number >= submission_deadline {
-                            let cancellation_hash = self
+                            let cancellation_tx_hash = self
                                 .cancel(mempool, settlement.gas.price, solver)
                                 .await
-                                .context("cancellation tx failed")?;
+                                .context("cancellation tx due to deadline failed")?;
                             tracing::info!(
-                                ?hash,
+                                settle_tx_hash = ?hash,
                                 deadline = submission_deadline,
                                 current_block = block.number,
-                                ?cancellation_hash,
+                                ?cancellation_tx_hash,
                                 "tx not confirmed in time, cancelling",
                             );
                             return Err(Error::Expired);
@@ -144,13 +144,13 @@ impl Mempools {
                         // Check if transaction still simulates
                         if let Err(err) = self.ethereum.estimate_gas(tx).await {
                             if err.is_revert() {
-                                let cancellation_hash = self
+                                let cancellation_tx_hash = self
                                     .cancel(mempool, settlement.gas.price, solver)
                                     .await
-                                    .context("cancellation tx failed")?;
+                                    .context("cancellation tx due to revert failed")?;
                                 tracing::info!(
-                                    ?hash,
-                                    ?cancellation_hash,
+                                    settle_tx_hash = ?hash,
+                                    ?cancellation_tx_hash,
                                     ?err,
                                     "tx started failing in mempool, cancelling"
                                 );
