@@ -5,6 +5,7 @@ pub struct Detector;
 
 impl Detector {
     pub fn get_quality(&self, _token: eth::TokenAddress) -> Option<Quality> {
+        // TODO implement a reasonable heuristic
         None
     }
 }

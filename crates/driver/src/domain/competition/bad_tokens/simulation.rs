@@ -22,6 +22,10 @@ use {
     },
 };
 
+/// Component to detect tokens which show unusual behavior during
+/// transfers. These tokens are likely not supported by less advanced
+/// solvers. Checks the behavior on transfer using a `trace_callMany`
+/// based simulation.
 #[derive(Clone)]
 pub struct Detector(Arc<Inner>);
 
@@ -42,6 +46,9 @@ impl Detector {
         }))
     }
 
+    /// Simulates how the sell token behaves during transfers. Assumes that
+    /// the order owner has the required sell token balance and approvals
+    /// set.
     pub async fn determine_sell_token_quality(
         &self,
         order: &Order,

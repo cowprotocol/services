@@ -8,7 +8,6 @@ pub mod cache;
 pub mod metrics;
 pub mod simulation;
 
-// TODO better comments
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Quality {
     /// Solver is likely to produce working solutions when computing
@@ -36,6 +35,13 @@ pub struct Detector {
 }
 
 impl Detector {
+    /// Hardcodes tokens as (un)supported based on the provided config. This has
+    /// the highest priority when looking up a token's quality.
+    pub fn with_config(mut self, config: HashMap<eth::TokenAddress, Quality>) -> Self {
+        self.hardcoded = config;
+        self
+    }
+
     /// Enables detection of unsupported tokens via simulation based detection
     /// methods.
     pub fn with_simulation_detector(&mut self, detector: simulation::Detector) -> &mut Self {
