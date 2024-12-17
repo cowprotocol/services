@@ -503,8 +503,6 @@ async fn usdt_quote_verification(web3: Web3) {
         .start_protocol_with_args(
             ExtraServiceArgs {
                 api: vec![
-                    // We don't configure the WETH token and instead rely on
-                    // auto-detection for balance overrides.
                     "--quote-autodetect-token-balance-overrides=true".to_string(),
                 ],
                 ..Default::default()

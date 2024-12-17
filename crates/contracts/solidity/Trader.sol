@@ -105,6 +105,8 @@ contract Trader {
             // We first reset the allowance to 0 since some ERC20 tokens (e.g. USDT)
             // require that due to this attack:
             // https://github.com/ethereum/EIPs/issues/20#issuecomment-263524729
+            // In order to handle tokens which are not ERC20 compliant (like USDT) we have
+            // to use `safeApprove()` instead of the regular `approve()` here.
             IERC20(sellToken).safeApprove(vaultRelayer, 0);
             IERC20(sellToken).safeApprove(vaultRelayer, type(uint256).max);
             uint256 allowance = IERC20(sellToken).allowance(address(this), vaultRelayer);
