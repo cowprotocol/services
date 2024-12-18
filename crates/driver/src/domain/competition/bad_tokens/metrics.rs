@@ -15,13 +15,13 @@ pub struct Detector(Arc<Inner>);
 
 #[derive(Default)]
 struct Inner {
-    counter: DashMap<eth::TokenAddress, u64>,
+    counter: DashMap<eth::TokenAddress, u8>,
 }
 
 impl Detector {
     /// Defines the threshold for the number of consecutive unsupported
     /// quality detections before a token is considered unsupported.
-    const UNSUPPORTED_THRESHOLD: u64 = 5;
+    const UNSUPPORTED_THRESHOLD: u8 = 5;
 
     pub fn get_quality(&self, token: eth::TokenAddress) -> Option<Quality> {
         self.0
@@ -37,7 +37,7 @@ impl Detector {
             self.0
                 .counter
                 .entry(token)
-                .and_modify(|c| *c += 1)
+                .and_modify(|counter| *counter = Self::UNSUPPORTED_THRESHOLD.min(*counter + 1))
                 .or_insert(1);
         }
     }
