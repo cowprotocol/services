@@ -37,9 +37,11 @@ pub struct Detector {
 impl Detector {
     /// Hardcodes tokens as (un)supported based on the provided config. This has
     /// the highest priority when looking up a token's quality.
-    pub fn with_config(mut self, config: HashMap<eth::TokenAddress, Quality>) -> Self {
-        self.hardcoded = config;
-        self
+    pub fn new(config: HashMap<eth::TokenAddress, Quality>) -> Self {
+        Self {
+            hardcoded: config,
+            ..Default::default()
+        }
     }
 
     /// Enables detection of unsupported tokens via simulation based detection

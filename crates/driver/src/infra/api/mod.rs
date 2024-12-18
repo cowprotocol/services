@@ -71,8 +71,8 @@ impl Api {
             let router = routes::reveal(router);
             let router = routes::settle(router);
 
-            let mut bad_tokens = bad_tokens::Detector::default()
-                .with_config(solver.bad_token_detection().tokens_supported.clone());
+            let mut bad_tokens =
+                bad_tokens::Detector::new(solver.bad_token_detection().tokens_supported.clone());
             if solver
                 .bad_token_detection()
                 .enable_simulation_based_bad_token_detection
