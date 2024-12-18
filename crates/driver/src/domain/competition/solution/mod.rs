@@ -169,6 +169,11 @@ impl Solution {
         &self.trades
     }
 
+    /// Returns all the tokens involved in the solution.
+    pub fn tokens(&self) -> HashSet<TokenAddress> {
+        self.prices.keys().cloned().collect()
+    }
+
     /// Interactions executed by this solution.
     pub fn interactions(&self) -> &[Interaction] {
         &self.interactions
