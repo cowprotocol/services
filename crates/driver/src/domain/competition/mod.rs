@@ -123,6 +123,7 @@ impl Competition {
             .into_iter()
             .map(|solution| async move {
                 let id = solution.id().clone();
+                let tokens = solution.tokens();
                 observe::encoding(&id);
                 let settlement = solution
                     .encode(
@@ -132,16 +133,22 @@ impl Competition {
                         self.solver.solver_native_token(),
                     )
                     .await;
-                (id, settlement)
+                (id, tokens, settlement)
             })
             .collect::<FuturesUnordered<_>>()
-            .filter_map(|(id, result)| async move {
+            .filter_map(|(id, tokens, result)| async move {
                 match result {
-                    Ok(solution) => Some(solution),
+                    Ok(solution) => {
+                        self.bad_tokens.encoding_succeeded(tokens);
+                        Some(solution)
+                    }
                     // don't report on errors coming from solution merging
-                    Err(_err) if id.solutions().len() > 1 => None,
+                    Err(_err) if id.solutions().len() > 1 => {
+                        self.bad_tokens.encoding_failed(tokens);
+                        None
+                    }
                     Err(err) => {
-                        // TODO update metrics of bad token detection
+                        self.bad_tokens.encoding_failed(tokens);
                         observe::encoding_failed(self.solver.name(), &id, &err);
                         notify::encoding_failed(&self.solver, auction.id(), &id, &err);
                         None

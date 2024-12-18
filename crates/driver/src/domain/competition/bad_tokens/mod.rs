@@ -1,7 +1,11 @@
 use {
     crate::domain::{competition::Auction, eth},
     futures::StreamExt,
-    std::{collections::HashMap, fmt, time::Instant},
+    std::{
+        collections::{HashMap, HashSet},
+        fmt,
+        time::Instant,
+    },
 };
 
 pub mod cache;
@@ -53,7 +57,7 @@ impl Detector {
 
     /// Enables detection of unsupported tokens based on heuristics.
     pub fn with_heuristic_detector(&mut self) -> &mut Self {
-        self.metrics = Some(metrics::Detector);
+        self.metrics = Some(metrics::Detector::default());
         self
     }
 
@@ -93,6 +97,20 @@ impl Detector {
         }
 
         auction
+    }
+
+    /// Updates the tokens quality metric for successful operation.
+    pub fn encoding_succeeded(&self, tokens: HashSet<eth::TokenAddress>) {
+        if let Some(metrics) = &self.metrics {
+            metrics.update_successful_tokens(tokens);
+        }
+    }
+
+    /// Updates the tokens quality metric for failures.
+    pub fn encoding_failed(&self, tokens: HashSet<eth::TokenAddress>) {
+        if let Some(metrics) = &self.metrics {
+            metrics.update_failing_tokens(tokens);
+        }
     }
 
     fn get_token_quality(&self, token: eth::TokenAddress, now: Instant) -> Option<Quality> {
