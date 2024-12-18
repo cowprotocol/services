@@ -66,7 +66,7 @@ impl Cache {
         let now = Instant::now();
         self.0
             .cache
-            .retain(|_, value| now.duration_since(value.timestamp) > self.0.max_age);
+            .retain(|_, value| now.duration_since(value.timestamp) < self.0.max_age);
     }
 
     /// Returns the quality of the token. If the cached value is older than the
