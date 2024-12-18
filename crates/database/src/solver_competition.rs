@@ -38,10 +38,14 @@ pub async fn load_by_id(
     id: AuctionId,
 ) -> Result<Option<LoadCompetition>, sqlx::Error> {
     const QUERY: &str = r#"
-SELECT sc.json, sc.id, COALESCE(ARRAY_AGG(s.tx_hash) FILTER (WHERE s.tx_hash IS NOT NULL), '{}') AS tx_hashes
+SELECT sc.json, sc.id, COALESCE(ARRAY_AGG(s.tx_hash) FILTER (WHERE so.block_number IS NOT NULL), '{}') AS tx_hashes
 FROM solver_competitions sc
 -- outer joins because the data might not have been indexed yet
 LEFT OUTER JOIN settlements s ON sc.id = s.auction_id
+-- exclude settlements from another environment for which observation is guaranteed to not exist
+LEFT OUTER JOIN settlement_observations so 
+    ON s.block_number = so.block_number 
+    AND s.log_index = so.log_index
 WHERE sc.id = $1
 GROUP BY sc.id
     ;"#;
@@ -52,10 +56,14 @@ pub async fn load_latest_competition(
     ex: &mut PgConnection,
 ) -> Result<Option<LoadCompetition>, sqlx::Error> {
     const QUERY: &str = r#"
-SELECT sc.json, sc.id, COALESCE(ARRAY_AGG(s.tx_hash) FILTER (WHERE s.tx_hash IS NOT NULL), '{}') AS tx_hashes
+SELECT sc.json, sc.id, COALESCE(ARRAY_AGG(s.tx_hash) FILTER (WHERE so.block_number IS NOT NULL), '{}') AS tx_hashes
 FROM solver_competitions sc
 -- outer joins because the data might not have been indexed yet
 LEFT OUTER JOIN settlements s ON sc.id = s.auction_id
+-- exclude settlements from another environment for which observation is guaranteed to not exist
+LEFT OUTER JOIN settlement_observations so 
+    ON s.block_number = so.block_number 
+    AND s.log_index = so.log_index
 GROUP BY sc.id
 ORDER BY sc.id DESC
 LIMIT 1
@@ -72,11 +80,17 @@ WITH competition AS (
     SELECT sc.id
     FROM solver_competitions sc
     JOIN settlements s ON sc.id = s.auction_id
+    JOIN settlement_observations so 
+        ON s.block_number = so.block_number 
+        AND s.log_index = so.log_index
     WHERE s.tx_hash = $1
 )
-SELECT sc.json, sc.id, COALESCE(ARRAY_AGG(s.tx_hash) FILTER (WHERE s.tx_hash IS NOT NULL), '{}') AS tx_hashes
+SELECT sc.json, sc.id, COALESCE(ARRAY_AGG(s.tx_hash) FILTER (WHERE so.block_number IS NOT NULL), '{}') AS tx_hashes
 FROM solver_competitions sc
 JOIN settlements s ON sc.id = s.auction_id
+JOIN settlement_observations so 
+    ON s.block_number = so.block_number 
+    AND s.log_index = so.log_index
 WHERE sc.id = (SELECT id FROM competition)
 GROUP BY sc.id
     ;"#;
@@ -336,7 +350,9 @@ mod tests {
         // non-existent auction returns none
         assert!(load_by_id(&mut db, 1).await.unwrap().is_none());
 
-        // insert two settlement events for the same auction id
+        // insert three settlement events for the same auction id, with one of them not
+        // having observation (in practice usually meaning it's from different
+        // environment)
         crate::events::insert_settlement(
             &mut db,
             &EventIndex {
@@ -346,6 +362,16 @@ mod tests {
             &Settlement {
                 solver: Default::default(),
                 transaction_hash: ByteArray([0u8; 32]),
+            },
+        )
+        .await
+        .unwrap();
+        crate::settlement_observations::upsert(
+            &mut db,
+            crate::settlement_observations::Observation {
+                block_number: 0,
+                log_index: 0,
+                ..Default::default()
             },
         )
         .await
@@ -363,10 +389,36 @@ mod tests {
         )
         .await
         .unwrap();
+        crate::settlement_observations::upsert(
+            &mut db,
+            crate::settlement_observations::Observation {
+                block_number: 0,
+                log_index: 1,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        crate::events::insert_settlement(
+            &mut db,
+            &EventIndex {
+                block_number: 0,
+                log_index: 2,
+            },
+            &Settlement {
+                solver: Default::default(),
+                transaction_hash: ByteArray([2u8; 32]),
+            },
+        )
+        .await
+        .unwrap();
         crate::settlements::update_settlement_auction(&mut db, 0, 0, 0)
             .await
             .unwrap();
         crate::settlements::update_settlement_auction(&mut db, 0, 1, 0)
+            .await
+            .unwrap();
+        crate::settlements::update_settlement_auction(&mut db, 0, 2, 0)
             .await
             .unwrap();
 
@@ -389,6 +441,11 @@ mod tests {
             .unwrap()
             .unwrap();
         assert!(value_.tx_hashes.len() == 2);
+        // this one should not find any hashes since it's from another environment
+        let value_ = load_by_tx_hash(&mut db, &ByteArray([2u8; 32]))
+            .await
+            .unwrap();
+        assert!(value_.is_none());
     }
 
     #[tokio::test]
