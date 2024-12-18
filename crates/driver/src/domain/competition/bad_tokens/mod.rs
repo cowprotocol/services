@@ -99,12 +99,14 @@ impl Detector {
         auction
     }
 
+    /// Updates the tokens quality metric for successful operation.
     pub fn encoding_succeeded(&self, tokens: HashSet<eth::TokenAddress>) {
         if let Some(metrics) = &self.metrics {
             metrics.update_successful_tokens(tokens);
         }
     }
 
+    /// Updates the tokens quality metric for failures.
     pub fn encoding_failed(&self, tokens: HashSet<eth::TokenAddress>) {
         if let Some(metrics) = &self.metrics {
             metrics.update_failing_tokens(tokens);
