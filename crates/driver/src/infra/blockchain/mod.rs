@@ -149,7 +149,7 @@ impl Ethereum {
             access_list: Some(tx.access_list.into()),
             // Specifically set high gas because some nodes don't pick a sensible value if omitted.
             // And since we are only interested in access lists a very high value is fine.
-            gas: match self.chain() {
+            gas: match self.inner.chain {
                 // Arbitrum has an exceptionally high block gas limit (1,125,899,906,842,624),
                 // making it unsuitable for this use case. To address this, we use a
                 // fixed gas limit of 100,000,000, which is sufficient
