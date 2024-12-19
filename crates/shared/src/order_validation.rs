@@ -5,7 +5,6 @@ use {
         code_fetching::CodeFetching,
         order_quoting::{
             CalculateQuoteError,
-            FindQuoteError,
             OrderQuoting,
             Quote,
             QuoteParameters,
@@ -19,7 +18,6 @@ use {
     app_data::{AppDataHash, Hook, Hooks, ValidatedAppData, Validator},
     async_trait::async_trait,
     contracts::{HooksTrampoline, WETH9},
-    database::onchain_broadcasted_orders::OnchainOrderPlacementError,
     ethcontract::{Bytes, H160, H256, U256},
     model::{
         interaction::InteractionData,
@@ -131,11 +129,6 @@ pub enum AppDataValidationError {
 pub enum ValidationError {
     Partial(PartialValidationError),
     AppData(AppDataValidationError),
-    /// The quote ID specified with the order could not be found.
-    QuoteNotFound,
-    /// The quote specified by ID is invalid. Either it doesn't match the order
-    /// or it has already expired.
-    InvalidQuote,
     /// Unable to compute quote because of a price estimation error.
     PriceForQuote(PriceEstimationError),
     /// Orders with positive signed fee amount are deprecated
@@ -170,16 +163,6 @@ impl From<AppDataValidationError> for ValidationError {
     }
 }
 
-pub fn onchain_order_placement_error_from(error: ValidationError) -> OnchainOrderPlacementError {
-    match error {
-        ValidationError::QuoteNotFound => OnchainOrderPlacementError::QuoteNotFound,
-        ValidationError::Partial(_) => OnchainOrderPlacementError::PreValidationError,
-        ValidationError::InvalidQuote => OnchainOrderPlacementError::InvalidQuote,
-        ValidationError::NonZeroFee => OnchainOrderPlacementError::NonZeroFee,
-        _ => OnchainOrderPlacementError::Other,
-    }
-}
-
 impl From<VerificationError> for ValidationError {
     fn from(err: VerificationError) -> Self {
         match err {
@@ -187,16 +170,6 @@ impl From<VerificationError> for ValidationError {
             VerificationError::UnexpectedSigner(recovered) => Self::WrongOwner(recovered),
             VerificationError::MissingFrom => Self::MissingFrom,
             VerificationError::AppdataFromMismatch(mismatch) => Self::AppdataFromMismatch(mismatch),
-        }
-    }
-}
-
-impl From<FindQuoteError> for ValidationError {
-    fn from(err: FindQuoteError) -> Self {
-        match err {
-            FindQuoteError::NotFound(_) => Self::QuoteNotFound,
-            FindQuoteError::ParameterMismatch(_) | FindQuoteError::Expired(_) => Self::InvalidQuote,
-            FindQuoteError::Other(err) => Self::Other(err),
         }
     }
 }
@@ -575,7 +548,8 @@ impl OrderValidating for OrderValidator {
                 order.signature.scheme(),
                 true,
                 verification_gas_limit,
-            )?,
+            )
+            .map_err(|_| ValidationError::InvalidSignature)?,
             additional_gas: app_data.inner.protocol.hooks.gas_limit(),
             verification,
         };
@@ -848,8 +822,7 @@ pub async fn get_quote_and_check_fee(
 /// Retrieves the quote for an order that is being created
 ///
 /// This works by first trying to find an existing quote, and then falling back
-/// to calculating a brand new one if none can be found and a quote ID was not
-/// specified.
+/// to calculating a brand new one if none can be found.
 async fn get_or_create_quote(
     quoter: &dyn OrderQuoting,
     quote_search_parameters: &QuoteSearchParameters,
@@ -863,9 +836,9 @@ async fn get_or_create_quote(
             tracing::debug!(quote_id =? quote.id, "found quote for order creation");
             quote
         }
-        // We couldn't find a quote, and no ID was specified. Try computing a
-        // fresh quote to use instead.
-        Err(FindQuoteError::NotFound(_)) if quote_id.is_none() => {
+        // We couldn't find a quote, so try computing a fresh quote to use instead.
+        Err(err) => {
+            tracing::debug!(?err, "failed to find quote for order creation");
             let parameters = QuoteParameters {
                 sell_token: quote_search_parameters.sell_token,
                 buy_token: quote_search_parameters.buy_token,
@@ -899,7 +872,6 @@ async fn get_or_create_quote(
             tracing::debug!(quote_id =? quote.id, "computed fresh quote for order creation");
             quote
         }
-        Err(err) => return Err(err.into()),
     };
 
     Ok(quote)
@@ -942,16 +914,18 @@ pub fn is_order_outside_market_price(
     })
 }
 
+pub struct InvalidSigningScheme;
+
 pub fn convert_signing_scheme_into_quote_signing_scheme(
     scheme: SigningScheme,
     order_placement_via_api: bool,
     verification_gas_limit: u64,
-) -> Result<QuoteSigningScheme, ValidationError> {
+) -> Result<QuoteSigningScheme, InvalidSigningScheme> {
     match (order_placement_via_api, scheme) {
         (true, SigningScheme::Eip712) => Ok(QuoteSigningScheme::Eip712),
         (true, SigningScheme::EthSign) => Ok(QuoteSigningScheme::EthSign),
-        (false, SigningScheme::Eip712) => Err(ValidationError::IncompatibleSigningScheme),
-        (false, SigningScheme::EthSign) => Err(ValidationError::IncompatibleSigningScheme),
+        (false, SigningScheme::Eip712) => Err(InvalidSigningScheme),
+        (false, SigningScheme::EthSign) => Err(InvalidSigningScheme),
         (order_placement_via_api, SigningScheme::PreSign) => Ok(QuoteSigningScheme::PreSign {
             onchain_order: !order_placement_via_api,
         }),
@@ -970,11 +944,9 @@ mod tests {
             account_balances::MockBalanceFetching,
             bad_token::{MockBadTokenDetecting, TokenQuality},
             code_fetching::MockCodeFetching,
-            order_quoting::MockOrderQuoting,
+            order_quoting::{FindQuoteError, MockOrderQuoting},
             signature_validator::MockSignatureValidating,
         },
-        anyhow::anyhow,
-        chrono::Utc,
         contracts::dummy_contract,
         ethcontract::web3::signing::SecretKeyRef,
         futures::FutureExt,
@@ -1696,58 +1668,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn post_validate_err_getting_quote() {
-        let mut order_quoter = MockOrderQuoting::new();
-        let mut bad_token_detector = MockBadTokenDetecting::new();
-        let mut balance_fetcher = MockBalanceFetching::new();
-        order_quoter
-            .expect_find_quote()
-            .returning(|_, _| Err(FindQuoteError::Other(anyhow!("err"))));
-        bad_token_detector
-            .expect_detect()
-            .returning(|_| Ok(TokenQuality::Good));
-        balance_fetcher
-            .expect_can_transfer()
-            .returning(|_, _| Ok(()));
-        let mut limit_order_counter = MockLimitOrderCounting::new();
-        limit_order_counter.expect_count().returning(|_| Ok(0u64));
-        let validator = OrderValidator::new(
-            dummy_contract!(WETH9, [0xef; 20]),
-            Arc::new(order_validation::banned::Users::none()),
-            OrderValidPeriodConfiguration::any(),
-            false,
-            Arc::new(bad_token_detector),
-            dummy_contract!(HooksTrampoline, [0xcf; 20]),
-            Arc::new(order_quoter),
-            Arc::new(balance_fetcher),
-            Arc::new(MockSignatureValidating::new()),
-            Arc::new(limit_order_counter),
-            0,
-            Arc::new(MockCodeFetching::new()),
-            Default::default(),
-            u64::MAX,
-        );
-        let order = OrderCreation {
-            valid_to: time::now_in_epoch_seconds() + 2,
-            sell_token: H160::from_low_u64_be(1),
-            buy_token: H160::from_low_u64_be(2),
-            buy_amount: U256::from(1),
-            sell_amount: U256::from(1),
-            fee_amount: U256::from(1),
-            signature: Signature::Eip712(EcdsaSignature::non_zero()),
-            app_data: OrderCreationAppData::Full {
-                full: "{}".to_string(),
-            },
-            ..Default::default()
-        };
-        let result = validator
-            .validate_and_construct_order(order, &Default::default(), Default::default(), None)
-            .await;
-        dbg!(&result);
-        assert!(matches!(result, Err(ValidationError::Other(_))));
-    }
-
-    #[tokio::test]
     async fn post_validate_err_unsupported_token() {
         let mut order_quoter = MockOrderQuoting::new();
         let mut bad_token_detector = MockBadTokenDetecting::new();
@@ -2128,117 +2048,6 @@ mod tests {
                 fee_amount: 6.into(),
                 ..Default::default()
             }
-        );
-    }
-
-    #[tokio::test]
-    async fn get_quote_errors_when_not_found_by_id() {
-        let quote_search_parameters = QuoteSearchParameters {
-            ..Default::default()
-        };
-
-        let mut order_quoter = MockOrderQuoting::new();
-        order_quoter
-            .expect_find_quote()
-            .returning(|_, _| Err(FindQuoteError::NotFound(Some(0))));
-
-        let err = get_quote_and_check_fee(
-            &order_quoter,
-            &quote_search_parameters,
-            Some(0),
-            Some(U256::zero()),
-        )
-        .await
-        .unwrap_err();
-
-        assert!(matches!(err, ValidationError::QuoteNotFound));
-    }
-
-    #[tokio::test]
-    async fn get_quote_bubbles_errors() {
-        macro_rules! assert_find_error_matches {
-            ($find_err:expr, $validation_err:pat) => {{
-                let mut order_quoter = MockOrderQuoting::new();
-                order_quoter
-                    .expect_find_quote()
-                    .returning(|_, _| Err($find_err));
-                let err = get_quote_and_check_fee(
-                    &order_quoter,
-                    &QuoteSearchParameters {
-                        sell_amount: 1.into(),
-                        kind: OrderKind::Sell,
-                        ..Default::default()
-                    },
-                    Default::default(),
-                    Default::default(),
-                )
-                .await
-                .unwrap_err();
-
-                assert!(matches!(err, $validation_err));
-            }};
-        }
-
-        assert_find_error_matches!(
-            FindQuoteError::Expired(Utc::now()),
-            ValidationError::InvalidQuote
-        );
-        assert_find_error_matches!(
-            FindQuoteError::ParameterMismatch(Default::default()),
-            ValidationError::InvalidQuote
-        );
-
-        macro_rules! assert_calc_error_matches {
-            ($calc_err:expr, $validation_err:pat) => {{
-                let mut order_quoter = MockOrderQuoting::new();
-                order_quoter
-                    .expect_find_quote()
-                    .returning(|_, _| Err(FindQuoteError::NotFound(None)));
-                order_quoter
-                    .expect_calculate_quote()
-                    .returning(|_| Err($calc_err));
-
-                let err = get_quote_and_check_fee(
-                    &order_quoter,
-                    &QuoteSearchParameters {
-                        sell_amount: 1.into(),
-                        kind: OrderKind::Sell,
-                        ..Default::default()
-                    },
-                    Default::default(),
-                    Some(U256::zero()),
-                )
-                .await
-                .unwrap_err();
-
-                assert!(matches!(err, $validation_err));
-            }};
-        }
-
-        assert_calc_error_matches!(
-            CalculateQuoteError::SellAmountDoesNotCoverFee {
-                fee_amount: Default::default()
-            },
-            ValidationError::Other(_)
-        );
-        assert_calc_error_matches!(
-            CalculateQuoteError::Price(PriceEstimationError::UnsupportedToken {
-                token: Default::default(),
-                reason: Default::default()
-            }),
-            ValidationError::Partial(PartialValidationError::UnsupportedToken { .. })
-        );
-        assert_calc_error_matches!(
-            CalculateQuoteError::Price(PriceEstimationError::NoLiquidity),
-            ValidationError::PriceForQuote(_)
-        );
-        assert_calc_error_matches!(
-            CalculateQuoteError::Price(PriceEstimationError::UnsupportedOrderType("test".into())),
-            ValidationError::PriceForQuote(_)
-        );
-        assert_calc_error_matches!(
-            CalculateQuoteError::Price(PriceEstimationError::RateLimited),
-            ValidationError::PriceForQuote(_)
         );
     }
 

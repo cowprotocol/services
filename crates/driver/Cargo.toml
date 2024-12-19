@@ -17,13 +17,13 @@ path = "src/main.rs"
 [dependencies]
 app-data = { path = "../app-data" }
 bytes-hex = { path = "../bytes-hex" }
+chain = { path = "../chain" }
 s3 = { path = "../s3" }
 async-trait = { workspace = true }
 axum = { workspace = true }
 bigdecimal = { workspace = true }
 chrono = { workspace = true, features = ["clock"], default-features = false }
 cow-amm = { path = "../cow-amm" }
-derivative = { workspace = true }
 derive_more = { workspace = true }
 ethabi = "18.0"
 ethereum-types = { workspace = true }
@@ -37,6 +37,7 @@ hyper = { workspace = true }
 lazy_static = { workspace = true }
 indexmap = { workspace = true, features = ["serde"] }
 itertools = { workspace = true }
+mimalloc = { workspace = true }
 num = { workspace = true }
 number = { path = "../number" }
 prometheus = { workspace = true }

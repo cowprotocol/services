@@ -1,5 +1,15 @@
-use derive_more::{Display, From, Into};
 pub use primitive_types::{H160, H256, U256};
+use {
+    crate::domain,
+    derive_more::{Display, From, Into},
+};
+
+/// ERC20 token address for ETH. In reality, ETH is not an ERC20 token because
+/// it does not implement the ERC20 interface, but this address is used by
+/// convention across the Ethereum ecosystem whenever ETH is treated like an
+/// ERC20 token.
+/// Same address is also used for XDAI on Gnosis Chain.
+pub const NATIVE_TOKEN: TokenAddress = TokenAddress(H160([0xee; 20]));
 
 /// An address. Can be an EOA or a smart contract address.
 #[derive(
@@ -11,6 +21,15 @@ pub struct Address(pub H160);
 #[derive(Debug, Copy, Clone, From, PartialEq, PartialOrd, Default)]
 pub struct BlockNo(pub u64);
 
+/// Adding blocks to a block number.
+impl std::ops::Add<u64> for BlockNo {
+    type Output = BlockNo;
+
+    fn add(self, rhs: u64) -> Self::Output {
+        Self(self.0 + rhs)
+    }
+}
+
 /// A transaction ID, AKA transaction hash.
 #[derive(Debug, Copy, Clone, From, Default)]
 pub struct TxId(pub H256);
@@ -20,6 +39,29 @@ pub struct TxId(pub H256);
 /// https://eips.ethereum.org/EIPS/eip-20
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, From, Into)]
 pub struct TokenAddress(pub H160);
+
+impl TokenAddress {
+    /// If the token is ETH/XDAI, return WETH/WXDAI, thereby converting it to
+    /// erc20.
+    pub fn as_erc20(self, wrapped: WrappedNativeToken) -> Self {
+        if self == NATIVE_TOKEN {
+            wrapped.into()
+        } else {
+            self
+        }
+    }
+}
+
+/// ERC20 representation of the chain's native token (e.g. WETH on mainnet,
+/// WXDAI on Gnosis Chain).
+#[derive(Debug, Clone, Copy, From, Into)]
+pub struct WrappedNativeToken(TokenAddress);
+
+impl From<H160> for WrappedNativeToken {
+    fn from(value: H160) -> Self {
+        WrappedNativeToken(value.into())
+    }
+}
 
 /// An ERC20 token amount.
 ///
@@ -254,12 +296,20 @@ pub struct DomainSeparator(pub [u8; 32]);
 /// Originated from the blockchain transaction input data.
 pub type Calldata = crate::util::Bytes<Vec<u8>>;
 
-/// An event emitted by a settlement smart contract.
+/// A settlement event emitted by a settlement smart contract.
 #[derive(Debug, Clone, Copy)]
-pub struct Event {
+pub struct SettlementEvent {
     pub block: BlockNo,
     pub log_index: u64,
     pub transaction: TxId,
+}
+
+/// A trade event emitted by a settlement smart contract.
+#[derive(Debug, Clone, Copy)]
+pub struct TradeEvent {
+    pub block: BlockNo,
+    pub log_index: u64,
+    pub order_uid: domain::OrderUid,
 }
 
 /// Any type of on-chain transaction.

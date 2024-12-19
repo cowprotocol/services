@@ -17,8 +17,8 @@ async fn valid() {
         .done()
         .await;
 
-    test.solve().await.ok().orders(&[order]);
-    test.reveal().await.ok().calldata();
+    let id = test.solve().await.ok().orders(&[order]).id();
+    test.reveal(&id).await.ok().calldata();
 }
 
 /// Test that the invalid solution is discarded when the /solve endpoint
@@ -35,6 +35,6 @@ async fn invalid() {
         .done()
         .await;
 
-    test.solve().await.ok().orders(&[order]);
-    test.reveal().await.ok().calldata();
+    let id = test.solve().await.ok().orders(&[order]).id();
+    test.reveal(&id).await.ok().calldata();
 }

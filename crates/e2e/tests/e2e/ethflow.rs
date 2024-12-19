@@ -51,6 +51,12 @@ async fn local_node_eth_flow_tx() {
 
 #[tokio::test]
 #[ignore]
+async fn local_node_eth_flow_without_quote() {
+    run_test(eth_flow_without_quote).await;
+}
+
+#[tokio::test]
+#[ignore]
 async fn local_node_eth_flow_indexing_after_refund() {
     run_test(eth_flow_indexing_after_refund).await;
 }
@@ -76,7 +82,7 @@ async fn eth_flow_tx(web3: Web3) {
         receiver,
     };
 
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
     let quote: OrderQuoteResponse = test_submit_quote(
@@ -125,6 +131,49 @@ async fn eth_flow_tx(web3: Web3) {
     .await;
 }
 
+async fn eth_flow_without_quote(web3: Web3) {
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+
+    let [solver] = onchain.make_solvers(to_wei(2)).await;
+    let [trader] = onchain.make_accounts(to_wei(2)).await;
+
+    // Create token with Uniswap pool for price estimation
+    let [dai] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(to_wei(DAI_PER_ETH * 1_000), to_wei(1_000))
+        .await;
+
+    let services = Services::new(&onchain).await;
+    services.start_protocol(solver).await;
+
+    let valid_to = chrono::offset::Utc::now().timestamp() as u32
+        + timestamp_of_current_block_in_seconds(&web3).await.unwrap()
+        + 3600;
+    let ethflow_order = ExtendedEthFlowOrder(EthflowOrder {
+        buy_token: dai.address(),
+        sell_amount: to_wei(1),
+        buy_amount: 1.into(),
+        valid_to,
+        partially_fillable: false,
+        quote_id: 0,
+        fee_amount: 0.into(),
+        receiver: H160([0x42; 20]),
+        app_data: Default::default(),
+    });
+
+    submit_order(&ethflow_order, trader.account(), onchain.contracts()).await;
+
+    test_order_availability_in_api(
+        &services,
+        &ethflow_order,
+        &trader.address(),
+        onchain.contracts(),
+    )
+    .await;
+
+    tracing::info!("waiting for trade");
+    test_order_was_settled(&ethflow_order, &web3).await;
+}
+
 async fn eth_flow_indexing_after_refund(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
@@ -134,7 +183,7 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(DAI_PER_ETH * 1000), to_wei(1000))
         .await;
 
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
     // Create an order that only exists to be cancelled.

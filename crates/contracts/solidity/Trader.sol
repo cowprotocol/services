@@ -6,6 +6,7 @@ import { Interaction, Trade, ISettlement } from "./interfaces/ISettlement.sol";
 import { Caller } from "./libraries/Caller.sol";
 import { Math } from "./libraries/Math.sol";
 import { SafeERC20 } from "./libraries/SafeERC20.sol";
+import { Spardose } from "./Spardose.sol";
 
 /// @title A contract for impersonating a trader.
 contract Trader {
@@ -61,21 +62,20 @@ contract Trader {
     // settlement contract anyway.
     receive() external payable {}
 
-    /// @dev Prepares everything needed by the trader for successfully executing the swap.
-    /// This includes giving the required approval, wrapping the required ETH (if needed)
-    /// and warming the needed storage for sending native ETH to smart contracts.
+    /// @dev Executes needed actions on behalf of the trader to make the trade possible.
+    ///      (e.g. wrapping ETH, setting approvals, and funding the account)
     /// @param settlementContract - pass in settlement contract because it does not have
     /// a stable address in tests.
     /// @param sellToken - token being sold by the trade
     /// @param sellAmount - expected amount to be sold according to the quote
     /// @param nativeToken - ERC20 version of the chain's native token
-    /// @param receiver - address that will receive the bought tokens
-    function prepareSwap(
+    /// @param spardose - piggy bank for requesting additional funds
+    function ensureTradePreconditions(
         ISettlement settlementContract,
         address sellToken,
         uint256 sellAmount,
         address nativeToken,
-        address payable receiver
+        address spardose
     ) external {
         require(!alreadyCalled(), "prepareSwap can only be called once");
 
@@ -83,15 +83,21 @@ contract Trader {
             uint256 availableNativeToken = IERC20(sellToken).balanceOf(address(this));
             if (availableNativeToken < sellAmount) {
                 uint256 amountToWrap = sellAmount - availableNativeToken;
-                require(address(this).balance >= amountToWrap, "not enough ETH to wrap");
-                // Simulate wrapping the missing `ETH` so the user doesn't have to spend gas
-                // on that just to get a quote. If they are happy with the quote and want to
-                // create an order they will actually have to do the wrapping, though.
-                INativeERC20(nativeToken).deposit{value: amountToWrap}();
+                // If the user has sufficient balance, simulate the wrapping the missing
+                // `ETH` so the user doesn't have to spend gas on that just to get a quote.
+                // If they are happy with the quote and want to create an order they will
+                // actually have to do the wrapping, though. Note that we don't attempt to
+                // wrap if the user doesn't have sufficient `ETH` balance, since that would
+                // revert. Instead, we fall-through so that we handle insufficient sell
+                // token balances uniformly for all tokens.
+                if (address(this).balance >= amountToWrap) {
+                    INativeERC20(nativeToken).deposit{value: amountToWrap}();
+                }
             }
         }
 
-        uint256 currentAllowance = IERC20(sellToken).allowance(address(this), address(settlementContract.vaultRelayer()));
+        address vaultRelayer = settlementContract.vaultRelayer();
+        uint256 currentAllowance = IERC20(sellToken).allowance(address(this), vaultRelayer);
         if (currentAllowance < sellAmount) {
             // Simulate an approval to the settlement contract so the user doesn't have to
             // spend gas on that just to get a quote. If they are happy with the quote and
@@ -99,17 +105,27 @@ contract Trader {
             // We first reset the allowance to 0 since some ERC20 tokens (e.g. USDT)
             // require that due to this attack:
             // https://github.com/ethereum/EIPs/issues/20#issuecomment-263524729
-            IERC20(sellToken).safeApprove(address(settlementContract.vaultRelayer()), 0);
-            IERC20(sellToken).safeApprove(address(settlementContract.vaultRelayer()), type(uint256).max);
+            // In order to handle tokens which are not ERC20 compliant (like USDT) we have
+            // to use `safeApprove()` instead of the regular `approve()` here.
+            IERC20(sellToken).safeApprove(vaultRelayer, 0);
+            IERC20(sellToken).safeApprove(vaultRelayer, type(uint256).max);
+            uint256 allowance = IERC20(sellToken).allowance(address(this), vaultRelayer);
+            require(allowance >= sellAmount, "trader did not give the required approvals");
         }
 
-        uint256 availableSellToken = IERC20(sellToken).balanceOf(address(this));
-        require(availableSellToken >= sellAmount, "trader does not have enough sell_token");
-        // Warm the storage for sending ETH to smart contract addresses.
-        // We allow this call to revert becaues it was either unnecessary in the first place
-        // or failing to send `ETH` to the `receiver` will cause a revert in the settlement
-        // contract.
-        receiver.call{value: 0}("");
+        // Ensure that the user has sufficient sell token balance. If not, request some
+        // funds from the Spardose (piggy bank) which will be available if balance
+        // overrides are enabled.
+        uint256 sellBalance = IERC20(sellToken).balanceOf(address(this));
+        if (sellBalance < sellAmount) {
+            try Spardose(spardose).requestFunds(sellToken, sellAmount - sellBalance) {}
+            catch {
+                // The trader does not have sufficient sell token balance, and the
+                // piggy bank pre-fund failed, as balance overrides are not available.
+                // Revert with a helpful message.
+                revert("trader does not have enough sell token");
+            }
+        }
     }
 
     /// @dev Validate all signature requests. This makes "signing" CoW protocol

@@ -188,9 +188,6 @@ pub fn onchain_order_placement_error_from(
         Some(DbOnchainOrderPlacementError::InvalidOrderData) => {
             Some(OnchainOrderPlacementError::InvalidOrderData)
         }
-        Some(DbOnchainOrderPlacementError::QuoteNotFound) => {
-            Some(OnchainOrderPlacementError::QuoteNotFound)
-        }
         Some(DbOnchainOrderPlacementError::PreValidationError) => {
             Some(OnchainOrderPlacementError::PreValidationError)
         }
@@ -200,17 +197,16 @@ pub fn onchain_order_placement_error_from(
         Some(DbOnchainOrderPlacementError::ValidToTooFarInFuture) => {
             Some(OnchainOrderPlacementError::ValidToTooFarInTheFuture)
         }
-        Some(DbOnchainOrderPlacementError::InvalidQuote) => {
-            Some(OnchainOrderPlacementError::InvalidQuote)
-        }
-        Some(DbOnchainOrderPlacementError::InsufficientFee) => {
-            Some(OnchainOrderPlacementError::InsufficientFee)
-        }
         Some(DbOnchainOrderPlacementError::NonZeroFee) => {
             Some(OnchainOrderPlacementError::NonZeroFee)
         }
         Some(DbOnchainOrderPlacementError::Other) => Some(OnchainOrderPlacementError::Other),
-        None => None,
+        Some(
+            database::onchain_broadcasted_orders::OnchainOrderPlacementError::QuoteNotFound
+            | database::onchain_broadcasted_orders::OnchainOrderPlacementError::InvalidQuote
+            | database::onchain_broadcasted_orders::OnchainOrderPlacementError::InsufficientFee,
+        )
+        | None => None,
     }
 }
 

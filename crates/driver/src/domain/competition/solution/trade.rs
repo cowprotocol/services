@@ -2,7 +2,7 @@ use crate::{
     domain::{
         competition::{
             self,
-            order::{self, FeePolicy, SellAmount, Side, TargetAmount},
+            order::{self, FeePolicy, SellAmount, Side, TargetAmount, Uid},
             solution::error::{self, Math},
         },
         eth::{self, Asset},
@@ -19,6 +19,13 @@ pub enum Trade {
 }
 
 impl Trade {
+    pub fn uid(&self) -> Uid {
+        match self {
+            Trade::Fulfillment(fulfillment) => fulfillment.order().uid,
+            Trade::Jit(jit) => jit.order().uid,
+        }
+    }
+
     pub fn side(&self) -> Side {
         match self {
             Trade::Fulfillment(fulfillment) => fulfillment.order().side,
@@ -62,7 +69,10 @@ impl Trade {
     }
 
     /// The effective amount that left the user's wallet including all fees.
-    fn sell_amount(&self, prices: &ClearingPrices) -> Result<eth::TokenAmount, error::Math> {
+    pub(crate) fn sell_amount(
+        &self,
+        prices: &ClearingPrices,
+    ) -> Result<eth::TokenAmount, error::Math> {
         let before_fee = match self.side() {
             order::Side::Sell => self.executed().0,
             order::Side::Buy => self
@@ -81,7 +91,10 @@ impl Trade {
     /// The effective amount the user received after all fees.
     ///
     /// Settlement contract uses `ceil` division for buy amount calculation.
-    fn buy_amount(&self, prices: &ClearingPrices) -> Result<eth::TokenAmount, error::Math> {
+    pub(crate) fn buy_amount(
+        &self,
+        prices: &ClearingPrices,
+    ) -> Result<eth::TokenAmount, error::Math> {
         let amount = match self.side() {
             order::Side::Buy => self.executed().0,
             order::Side::Sell => self
@@ -167,10 +180,6 @@ impl Fulfillment {
 
     pub fn order(&self) -> &competition::Order {
         &self.order
-    }
-
-    pub fn side(&self) -> Side {
-        self.order.side
     }
 
     pub fn executed(&self) -> order::TargetAmount {
@@ -407,6 +416,41 @@ impl Jit {
 
     pub fn executed(&self) -> order::TargetAmount {
         self.executed
+    }
+
+    pub fn executed_buy(&self) -> Result<eth::TokenAmount, Math> {
+        Ok(match self.order().side {
+            Side::Buy => self.executed().into(),
+            Side::Sell => (self
+                .executed()
+                .0
+                .checked_add(self.fee().0)
+                .ok_or(Math::Overflow)?)
+            .checked_mul(self.order.buy.amount.0)
+            .ok_or(Math::Overflow)?
+            .checked_ceil_div(&self.order.sell.amount.0)
+            .ok_or(Math::DivisionByZero)?
+            .into(),
+        })
+    }
+
+    pub fn executed_sell(&self) -> Result<eth::TokenAmount, Math> {
+        Ok(match self.order().side {
+            Side::Buy => self
+                .executed()
+                .0
+                .checked_mul(self.order.sell.amount.0)
+                .ok_or(Math::Overflow)?
+                .checked_div(self.order.buy.amount.0)
+                .ok_or(Math::DivisionByZero)?
+                .into(),
+            Side::Sell => self
+                .executed()
+                .0
+                .checked_add(self.fee().0)
+                .ok_or(Math::Overflow)?
+                .into(),
+        })
     }
 
     pub fn fee(&self) -> order::SellAmount {

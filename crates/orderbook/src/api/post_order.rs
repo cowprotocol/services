@@ -1,19 +1,19 @@
 use {
-    crate::orderbook::{AddOrderError, Orderbook},
+    crate::{
+        api::{error, extract_payload, ApiReply, IntoWarpReply},
+        orderbook::{AddOrderError, Orderbook},
+    },
     anyhow::Result,
     model::{
         order::{AppdataFromMismatch, OrderCreation, OrderUid},
         quote::QuoteId,
         signature,
     },
-    shared::{
-        api::{error, extract_payload, ApiReply, IntoWarpReply},
-        order_validation::{
-            AppDataValidationError,
-            OrderValidToError,
-            PartialValidationError,
-            ValidationError,
-        },
+    shared::order_validation::{
+        AppDataValidationError,
+        OrderValidToError,
+        PartialValidationError,
+        ValidationError,
     },
     std::{convert::Infallible, sync::Arc},
     warp::{
@@ -88,7 +88,7 @@ impl IntoWarpReply for PartialValidationErrorWrapper {
             ),
             PartialValidationError::Other(err) => {
                 tracing::error!(?err, "PartialValidatonError");
-                shared::api::internal_error_reply()
+                crate::api::internal_error_reply()
             }
         }
     }
@@ -122,20 +122,6 @@ impl IntoWarpReply for ValidationErrorWrapper {
         match self.0 {
             ValidationError::Partial(pre) => PartialValidationErrorWrapper(pre).into_warp_reply(),
             ValidationError::AppData(err) => AppDataValidationErrorWrapper(err).into_warp_reply(),
-            ValidationError::QuoteNotFound => with_status(
-                error(
-                    "QuoteNotFound",
-                    "could not find quote with the specified ID",
-                ),
-                StatusCode::BAD_REQUEST,
-            ),
-            ValidationError::InvalidQuote => with_status(
-                error(
-                    "InvalidQuote",
-                    "the quote with the specified ID does not match the order",
-                ),
-                StatusCode::BAD_REQUEST,
-            ),
             ValidationError::PriceForQuote(err) => err.into_warp_reply(),
             ValidationError::MissingFrom => with_status(
                 error(
@@ -240,7 +226,7 @@ impl IntoWarpReply for ValidationErrorWrapper {
 
             ValidationError::Other(err) => {
                 tracing::error!(?err, "ValidationErrorWrapper");
-                shared::api::internal_error_reply()
+                crate::api::internal_error_reply()
             }
         }
     }
@@ -256,7 +242,7 @@ impl IntoWarpReply for AddOrderError {
             ),
             Self::Database(err) => {
                 tracing::error!(?err, "AddOrderError");
-                shared::api::internal_error_reply()
+                crate::api::internal_error_reply()
             }
             err @ AddOrderError::AppDataMismatch { .. } => {
                 tracing::error!(
@@ -265,7 +251,7 @@ impl IntoWarpReply for AddOrderError {
                      because we already stored different full app data for the same contract app \
                      data. This should be impossible."
                 );
-                shared::api::internal_error_reply()
+                crate::api::internal_error_reply()
             }
             AddOrderError::OrderNotFound(err) => err.into_warp_reply(),
             AddOrderError::InvalidAppData(err) => reply::with_status(
@@ -275,6 +261,10 @@ impl IntoWarpReply for AddOrderError {
             err @ AddOrderError::InvalidReplacement => reply::with_status(
                 super::error("InvalidReplacement", err.to_string()),
                 StatusCode::UNAUTHORIZED,
+            ),
+            AddOrderError::MetadataSerializationFailed(err) => reply::with_status(
+                super::error("MetadataSerializationFailed", err.to_string()),
+                StatusCode::INTERNAL_SERVER_ERROR,
             ),
         }
     }
@@ -312,9 +302,9 @@ pub fn post_order(
 mod tests {
     use {
         super::*,
+        crate::api::response_body,
         model::order::{OrderCreation, OrderUid},
         serde_json::json,
-        shared::api::response_body,
         warp::{test::request, Reply},
     };
 

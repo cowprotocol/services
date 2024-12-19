@@ -21,16 +21,3 @@ macro_rules! deployed_bytecode {
             .unwrap()
     };
 }
-
-#[macro_export]
-macro_rules! deployment_block {
-    ($contract:ident) => {
-        match $contract.deployment_information() {
-            Some(ethcontract::common::DeploymentInformation::TransactionHash(_)) => {
-                panic!("no block number in deployment info")
-            }
-            Some(ethcontract::common::DeploymentInformation::BlockNumber(block)) => Some(block),
-            None => None,
-        }
-    };
-}

@@ -42,6 +42,7 @@ pub struct Config<'a> {
     pub fee_handler: FeeHandler,
     pub private_key: ethcontract::PrivateKey,
     pub expected_surplus_capturing_jit_order_owners: Vec<H160>,
+    pub allow_multiple_solve_requests: bool,
 }
 
 impl Solver {
@@ -139,7 +140,6 @@ impl Solver {
                 "class": match quote.order.kind {
                     _ if config.quote => "market",
                     order::Kind::Market => "market",
-                    order::Kind::Liquidity => "liquidity",
                     order::Kind::Limit { .. } => "limit",
                 },
                 "appData": quote.order.app_data,
@@ -152,7 +152,6 @@ impl Solver {
                     match quote.order.kind {
                         _ if config.quote => json!([]),
                         order::Kind::Market => json!([]),
-                        order::Kind::Liquidity => json!([]),
                         order::Kind::Limit { .. } => {
                             let fee_policies_json: Vec<serde_json::Value> = quote
                                 .order
@@ -168,6 +167,7 @@ impl Solver {
             orders_json.push(order);
         }
         for (i, solution) in config.solutions.iter().enumerate() {
+            let mut pre_interactions_json = Vec::new();
             let mut interactions_json = Vec::new();
             let mut prices_json = HashMap::new();
             let mut trades_json = Vec::new();
@@ -198,13 +198,14 @@ impl Solver {
                                 })
                             },
                         ));
-                        prices_json.insert(
+                        let previous_value = prices_json.insert(
                             config
                                 .blockchain
                                 .get_token_wrapped(fulfillment.quoted_order.order.sell_token),
                             fulfillment.execution.buy.to_string(),
                         );
-                        prices_json.insert(
+                        assert_eq!(previous_value, None, "existing price overwritten");
+                        let previous_value = prices_json.insert(
                             config
                                 .blockchain
                                 .get_token_wrapped(fulfillment.quoted_order.order.buy_token),
@@ -212,6 +213,7 @@ impl Solver {
                                 - fulfillment.quoted_order.order.surplus_fee())
                             .to_string(),
                         );
+                        assert_eq!(previous_value, None, "existing price overwritten");
                         {
                             // trades have optional field `fee`
                             let order = if config.quote {
@@ -249,6 +251,31 @@ impl Solver {
                         }
                     }
                     Trade::Jit(jit) => {
+                        pre_interactions_json
+                            .extend(jit.quoted_order.order.pre_interactions.iter().map(
+                            |interaction| {
+                                json!({
+                                    "kind": "custom",
+                                    "internalize": interaction.internalize,
+                                    "target": hex_address(interaction.address),
+                                    "value": "0",
+                                    "callData": format!("0x{}", hex::encode(&interaction.calldata)),
+                                    "allowances": [],
+                                    "inputs": interaction.inputs.iter().map(|input| {
+                                        json!({
+                                            "token": hex_address(input.token.into()),
+                                            "amount": input.amount.to_string(),
+                                        })
+                                    }).collect_vec(),
+                                    "outputs": interaction.outputs.iter().map(|output| {
+                                        json!({
+                                            "token": hex_address(output.token.into()),
+                                            "amount": output.amount.to_string(),
+                                        })
+                                    }).collect_vec(),
+                                })
+                            },
+                        ));
                         interactions_json.extend(jit.interactions.iter().map(|interaction| {
                             json!({
                                 "kind": "custom",
@@ -271,18 +298,27 @@ impl Solver {
                                 }).collect_vec(),
                             })
                         }));
-                        prices_json.insert(
-                            config
-                                .blockchain
-                                .get_token_wrapped(jit.quoted_order.order.sell_token),
-                            jit.execution.buy.to_string(),
-                        );
-                        prices_json.insert(
-                            config
-                                .blockchain
-                                .get_token_wrapped(jit.quoted_order.order.buy_token),
-                            (jit.execution.sell - jit.quoted_order.order.surplus_fee()).to_string(),
-                        );
+                        // Skipping the prices for JIT orders (non-surplus-capturing)
+                        if config
+                            .expected_surplus_capturing_jit_order_owners
+                            .contains(&jit.quoted_order.order.owner)
+                        {
+                            let previous_value = prices_json.insert(
+                                config
+                                    .blockchain
+                                    .get_token_wrapped(jit.quoted_order.order.sell_token),
+                                jit.execution.buy.to_string(),
+                            );
+                            assert_eq!(previous_value, None, "existing price overwritten");
+                            let previous_value = prices_json.insert(
+                                config
+                                    .blockchain
+                                    .get_token_wrapped(jit.quoted_order.order.buy_token),
+                                (jit.execution.sell - jit.quoted_order.order.surplus_fee())
+                                    .to_string(),
+                            );
+                            assert_eq!(previous_value, None, "existing price overwritten");
+                        }
                         {
                             let executed_amount = match jit.quoted_order.order.executed {
                                 Some(executed) => executed.to_string(),
@@ -313,7 +349,7 @@ impl Solver {
                                 },
                                 "sellTokenBalance": jit.quoted_order.order.sell_token_source,
                                 "buyTokenBalance": jit.quoted_order.order.buy_token_destination,
-                                "signature": if config.quote { "0x".to_string() } else { format!("0x{}", hex::encode(jit.quoted_order.order_signature_with_private_key(config.blockchain, &config.private_key))) },
+                                "signature": format!("0x{}", hex::encode(jit.quoted_order.order_signature_with_private_key(config.blockchain, &config.private_key))),
                                 "signingScheme": if config.quote { "eip1271" } else { "eip712" },
                             });
                             trades_json.push(json!({
@@ -331,6 +367,7 @@ impl Solver {
                 "prices": prices_json,
                 "trades": trades_json,
                 "interactions": interactions_json,
+                "preInteractions": pre_interactions_json,
             }));
         }
 
@@ -381,7 +418,11 @@ impl Solver {
                     gas_price_cap: eth::U256::MAX,
                     target_confirm_time: Default::default(),
                     retry_interval: Default::default(),
-                    kind: infra::mempool::Kind::Public(infra::mempool::RevertProtection::Disabled),
+                    kind: infra::mempool::Kind::Public {
+                        max_additional_tip: 0.into(),
+                        additional_tip_percentage: 0.,
+                        revert_protection: infra::mempool::RevertProtection::Disabled,
+                    },
                 }],
             )
             .await
@@ -395,10 +436,14 @@ impl Solver {
                 cow_amms: vec![],
             },
             gas,
+            None,
         )
         .await;
 
-        let state = Arc::new(Mutex::new(StateInner { called: false }));
+        let state = Arc::new(Mutex::new(StateInner {
+            called: false,
+            allow_multiple_solve_requests: config.allow_multiple_solve_requests,
+        }));
         let app = axum::Router::new()
         .route(
             "/solve",
@@ -414,7 +459,7 @@ impl Solver {
                         .0
                         .to_string();
                     let expected = json!({
-                        "id": if config.quote { None } else { Some("1") },
+                        "id": (!config.quote).then_some("1" ),
                         "tokens": tokens_json,
                         "orders": orders_json,
                         "liquidity": [],
@@ -424,7 +469,10 @@ impl Solver {
                     });
                     assert_eq!(req, expected, "unexpected /solve request");
                     let mut state = state.0.lock().unwrap();
-                    assert!(!state.called, "solve was already called");
+                    assert!(
+                        !state.called || state.allow_multiple_solve_requests,
+                        "can't call /solve multiple times"
+                    );
                     state.called = true;
                     axum::response::Json(json!({
                         "solutions": solutions_json,
@@ -446,6 +494,8 @@ struct StateInner {
     /// Has this solver been called yet? If so, attempting to make another call
     /// will result in a failed test.
     called: bool,
+    /// In case you want to allow calling a solver multiple times.
+    allow_multiple_solve_requests: bool,
 }
 
 #[derive(Debug, Clone)]

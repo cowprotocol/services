@@ -16,7 +16,8 @@
 //! And when we issue requests to another process we can simply fetch the
 //! current identifier specific to our task and send that along with the
 //! request.
-use std::future::Future;
+use {std::future::Future, tokio::task::JoinHandle};
+
 tokio::task_local! {
     pub static REQUEST_ID: String;
 }
@@ -37,6 +38,20 @@ where
     F: Future<Output = R>,
 {
     REQUEST_ID.scope(id, scope).await
+}
+
+/// Spawns a new task and ensures it uses the same request id as the current
+/// task (if present). This allows for tracing requests across task boundaries.
+pub fn spawn_task_with_current_request_id<F>(future: F) -> JoinHandle<F::Output>
+where
+    F: Future + Send + 'static,
+    F::Output: Send + 'static,
+{
+    if let Some(id) = get_task_local_storage() {
+        tokio::task::spawn(REQUEST_ID.scope(id, future))
+    } else {
+        tokio::task::spawn(future)
+    }
 }
 
 /// Takes a `tower::Service` and embeds it in a `make_service` function that

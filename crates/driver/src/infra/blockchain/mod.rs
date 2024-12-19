@@ -1,7 +1,7 @@
 use {
     self::contracts::ContractAt,
     crate::{boundary, domain::eth},
-    ethcontract::dyns::DynWeb3,
+    ethcontract::{dyns::DynWeb3, errors::ExecutionError},
     ethrpc::block_stream::CurrentBlockWatcher,
     std::{fmt, sync::Arc},
     thiserror::Error,
@@ -13,14 +13,12 @@ pub mod contracts;
 pub mod gas;
 pub mod token;
 
-use {ethcontract::errors::ExecutionError, gas_estimation::GasPriceEstimating};
-
 pub use self::{contracts::Contracts, gas::GasPriceEstimator};
 
 /// An Ethereum RPC connection.
 pub struct Rpc {
     web3: DynWeb3,
-    chain: eth::ChainId,
+    chain: chain::Id,
     url: Url,
 }
 
@@ -39,7 +37,7 @@ impl Rpc {
     }
 
     /// Returns the chain id for the RPC connection.
-    pub fn chain(&self) -> eth::ChainId {
+    pub fn chain(&self) -> chain::Id {
         self.chain
     }
 
@@ -57,7 +55,7 @@ pub struct Ethereum {
 }
 
 struct Inner {
-    chain: eth::ChainId,
+    chain: chain::Id,
     contracts: Contracts,
     gas: Arc<GasPriceEstimator>,
     current_block: CurrentBlockWatcher,
@@ -74,6 +72,7 @@ impl Ethereum {
         rpc: Rpc,
         addresses: contracts::Addresses,
         gas: Arc<GasPriceEstimator>,
+        archive_node_url: Option<&Url>,
     ) -> Self {
         let Rpc { web3, chain, url } = rpc;
 
@@ -82,9 +81,15 @@ impl Ethereum {
                 .await
                 .expect("couldn't initialize current block stream");
 
-        let contracts = Contracts::new(&web3, chain, addresses, current_block_stream.clone())
-            .await
-            .expect("could not initialize important smart contracts");
+        let contracts = Contracts::new(
+            &web3,
+            chain,
+            addresses,
+            current_block_stream.clone(),
+            archive_node_url,
+        )
+        .await
+        .expect("could not initialize important smart contracts");
 
         Self {
             inner: Arc::new(Inner {
@@ -97,7 +102,7 @@ impl Ethereum {
         }
     }
 
-    pub fn network(&self) -> eth::ChainId {
+    pub fn network(&self) -> chain::Id {
         self.inner.chain
     }
 
@@ -160,10 +165,6 @@ impl Ethereum {
         let access_list: web3::types::AccessList =
             serde_json::from_value(json.get("accessList").unwrap().to_owned()).unwrap();
         Ok(access_list.into())
-    }
-
-    pub fn boundary_gas_estimator(&self) -> Arc<dyn GasPriceEstimating> {
-        self.inner.gas.gas.clone()
     }
 
     /// Estimate gas used by a transaction.
@@ -246,6 +247,10 @@ impl Ethereum {
             .await
             .ok()
             .map(|gas| gas.effective().0 .0)
+    }
+
+    pub fn web3(&self) -> &DynWeb3 {
+        &self.web3
     }
 }
 

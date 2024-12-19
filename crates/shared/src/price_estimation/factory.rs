@@ -56,8 +56,7 @@ struct EstimatorEntry {
 pub struct Network {
     pub web3: Web3,
     pub simulation_web3: Option<Web3>,
-    pub name: String,
-    pub chain_id: u64,
+    pub chain: chain::Chain,
     pub native_token: H160,
     pub settlement: H160,
     pub authenticator: H160,
@@ -74,14 +73,14 @@ pub struct Components {
 }
 
 impl<'a> PriceEstimatorFactory<'a> {
-    pub fn new(
+    pub async fn new(
         args: &'a Arguments,
         shared_args: &'a arguments::Arguments,
         network: Network,
         components: Components,
     ) -> Result<Self> {
         Ok(Self {
-            trade_verifier: Self::trade_verifier(args, shared_args, &network, &components),
+            trade_verifier: Self::trade_verifier(args, shared_args, &network, &components).await?,
             args,
             network,
             components,
@@ -89,20 +88,22 @@ impl<'a> PriceEstimatorFactory<'a> {
         })
     }
 
-    fn trade_verifier(
+    async fn trade_verifier(
         args: &'a Arguments,
         shared_args: &arguments::Arguments,
         network: &Network,
         components: &Components,
-    ) -> Option<Arc<dyn TradeVerifying>> {
-        let web3 = network.simulation_web3.clone()?;
+    ) -> Result<Option<Arc<dyn TradeVerifying>>> {
+        let Some(web3) = network.simulation_web3.clone() else {
+            return Ok(None);
+        };
         let web3 = ethrpc::instrumented::instrument_with_label(&web3, "simulator".into());
 
         let tenderly = shared_args
             .tenderly
             .get_api_instance(&components.http_factory, "price_estimation".to_owned())
             .unwrap()
-            .map(|t| TenderlyCodeSimulator::new(t, network.chain_id));
+            .map(|t| TenderlyCodeSimulator::new(t, network.chain.id()));
 
         let simulator: Arc<dyn CodeSimulating> = match tenderly {
             Some(tenderly) => Arc::new(code_simulation::Web3ThenTenderly::new(
@@ -112,15 +113,20 @@ impl<'a> PriceEstimatorFactory<'a> {
             None => Arc::new(web3.clone()),
         };
 
-        Some(Arc::new(TradeVerifier::new(
+        let balance_overrides = args.balance_overrides.init(simulator.clone());
+
+        let verifier = TradeVerifier::new(
             web3,
             simulator,
             components.code_fetcher.clone(),
+            balance_overrides,
             network.block_stream.clone(),
             network.settlement,
             network.native_token,
-            args.quote_inaccuracy_limit,
-        )))
+            args.quote_inaccuracy_limit.clone(),
+        )
+        .await?;
+        Ok(Some(Arc::new(verifier)))
     }
 
     fn native_token_price_estimation_amount(&self) -> Result<NonZeroU256> {
@@ -128,7 +134,11 @@ impl<'a> PriceEstimatorFactory<'a> {
             self.args
                 .amount_to_estimate_prices_with
                 .or_else(|| {
-                    native::default_amount_to_estimate_native_prices_with(self.network.chain_id)
+                    Some(
+                        self.network
+                            .chain
+                            .default_amount_to_estimate_native_prices_with(),
+                    )
                 })
                 .context("No amount to estimate prices with set.")?,
         )
@@ -189,30 +199,40 @@ impl<'a> PriceEstimatorFactory<'a> {
                 let estimator = self.get_estimator(driver)?.native.clone();
                 Ok((
                     driver.name.clone(),
-                    Arc::new(NativePriceEstimator::new(
-                        Arc::new(self.sanitized(estimator)),
-                        self.network.native_token,
-                        native_token_price_estimation_amount,
+                    Arc::new(InstrumentedPriceEstimator::new(
+                        NativePriceEstimator::new(
+                            Arc::new(self.sanitized(estimator)),
+                            self.network.native_token,
+                            native_token_price_estimation_amount,
+                        ),
+                        driver.name.to_string(),
                     )),
                 ))
             }
-            NativePriceEstimatorSource::OneInchSpotPriceApi => Ok((
-                "OneInchSpotPriceApi".into(),
-                Arc::new(native::OneInch::new(
-                    self.components.http_factory.create(),
-                    self.args.one_inch_url.clone(),
-                    self.args.one_inch_api_key.clone(),
-                    self.network.chain_id,
-                    self.network.block_stream.clone(),
-                    self.components.tokens.clone(),
-                )),
-            )),
+            NativePriceEstimatorSource::OneInchSpotPriceApi => {
+                let name = "OneInchSpotPriceApi".to_string();
+                Ok((
+                    name.clone(),
+                    Arc::new(InstrumentedPriceEstimator::new(
+                        native::OneInch::new(
+                            self.components.http_factory.create(),
+                            self.args.one_inch_url.clone(),
+                            self.args.one_inch_api_key.clone(),
+                            self.network.chain.id().into(),
+                            self.network.block_stream.clone(),
+                            self.components.tokens.clone(),
+                        ),
+                        name,
+                    )),
+                ))
+            }
             NativePriceEstimatorSource::CoinGecko => {
+                let name = "CoinGecko".to_string();
                 let coin_gecko = native::CoinGecko::new(
                     self.components.http_factory.create(),
                     self.args.coin_gecko.coin_gecko_url.clone(),
                     self.args.coin_gecko.coin_gecko_api_key.clone(),
-                    self.network.chain_id,
+                    &self.network.chain,
                     weth.address(),
                     self.components.tokens.clone(),
                 )
@@ -240,12 +260,15 @@ impl<'a> PriceEstimatorFactory<'a> {
                                 .unwrap(),
                         };
 
-                        Arc::new(BufferedRequest::with_config(coin_gecko, configuration))
+                        Arc::new(InstrumentedPriceEstimator::new(
+                            BufferedRequest::with_config(coin_gecko, configuration),
+                            name.clone() + "Buffered",
+                        ))
                     } else {
-                        Arc::new(coin_gecko)
+                        Arc::new(InstrumentedPriceEstimator::new(coin_gecko, name.clone()))
                     };
 
-                Ok(("CoinGecko".into(), coin_gecko))
+                Ok((name, coin_gecko))
             }
         }
     }
@@ -395,12 +418,9 @@ impl PriceEstimatorCreating for ExternalPriceEstimator {
     }
 }
 
-fn instrument(
-    estimator: impl PriceEstimating,
+fn instrument<T: PriceEstimating>(
+    estimator: T,
     name: impl Into<String>,
-) -> Arc<InstrumentedPriceEstimator> {
-    Arc::new(InstrumentedPriceEstimator::new(
-        Box::new(estimator),
-        name.into(),
-    ))
+) -> Arc<InstrumentedPriceEstimator<T>> {
+    Arc::new(InstrumentedPriceEstimator::new(estimator, name.into()))
 }

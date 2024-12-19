@@ -118,10 +118,6 @@ pub struct Arguments {
     #[clap(long, env, default_value = "0")]
     pub limit_order_price_factor: f64,
 
-    /// The time between auction updates.
-    #[clap(long, env, default_value = "10s", value_parser = humantime::parse_duration)]
-    pub auction_update_interval: Duration,
-
     /// The URL of a list of tokens our settlement contract is willing to
     /// internalize.
     #[clap(long, env)]
@@ -185,10 +181,6 @@ pub struct Arguments {
     #[clap(long, env, use_value_delimiter = true)]
     pub fee_policies: Vec<FeePolicy>,
 
-    /// Enables multiple fees
-    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
-    pub enable_multiple_fees: bool,
-
     /// Maximum partner fee allow. If the partner fee specified is greater than
     /// this maximum, the partner fee will be capped
     #[clap(long, env, default_value = "0.01")]
@@ -218,15 +210,30 @@ pub struct Arguments {
     #[clap(long, env, use_value_delimiter = true)]
     pub cow_amm_configs: Vec<CowAmmConfig>,
 
-    /// Controls start of the run loop.
-    #[clap(long, env, default_value = "unsynchronized")]
-    pub run_loop_mode: RunLoopMode,
-
     /// If a new run loop would start more than this amount of time after the
     /// system noticed the latest block, wait for the next block to appear
     /// before continuing the run loop.
     #[clap(long, env, default_value = "2s", value_parser = humantime::parse_duration)]
     pub max_run_loop_delay: Duration,
+
+    /// Maximum timeout for fetching the native prices in the run loop
+    /// If the value is 0, the native prices are fetched from the cache
+    #[clap(long, env, default_value = "0s", value_parser = humantime::parse_duration)]
+    pub run_loop_native_price_timeout: Duration,
+
+    #[clap(long, env, default_value = "1")]
+    /// The maximum number of winners per auction. Each winner will be allowed
+    /// to settle their winning orders at the same time.
+    pub max_winners_per_auction: usize,
+
+    #[clap(long, env, default_value = "3")]
+    /// The maximum allowed number of solutions to be proposed from a single
+    /// solver, per auction.
+    pub max_solutions_per_solver: usize,
+
+    /// Archive node URL used to index CoW AMM
+    #[clap(long, env)]
+    pub archive_node_url: Option<Url>,
 }
 
 impl std::fmt::Display for Arguments {
@@ -258,19 +265,20 @@ impl std::fmt::Display for Arguments {
             shadow,
             solve_deadline,
             fee_policies,
-            enable_multiple_fees,
             fee_policy_max_partner_fee,
             order_events_cleanup_interval,
             order_events_cleanup_threshold,
             db_url,
             insert_batch_size,
             native_price_estimation_results_required,
-            auction_update_interval,
             max_settlement_transaction_wait,
             s3,
             cow_amm_configs,
-            run_loop_mode,
             max_run_loop_delay,
+            run_loop_native_price_timeout,
+            max_winners_per_auction,
+            archive_node_url,
+            max_solutions_per_solver,
         } = self;
 
         write!(f, "{}", shared)?;
@@ -313,7 +321,6 @@ impl std::fmt::Display for Arguments {
         display_option(f, "shadow", shadow)?;
         writeln!(f, "solve_deadline: {:?}", solve_deadline)?;
         writeln!(f, "fee_policies: {:?}", fee_policies)?;
-        writeln!(f, "enable_multiple_fees: {:?}", enable_multiple_fees)?;
         writeln!(
             f,
             "fee_policy_max_partner_fee: {:?}",
@@ -335,7 +342,6 @@ impl std::fmt::Display for Arguments {
             "native_price_estimation_results_required: {}",
             native_price_estimation_results_required
         )?;
-        writeln!(f, "auction_update_interval: {:?}", auction_update_interval)?;
         writeln!(
             f,
             "max_settlement_transaction_wait: {:?}",
@@ -343,8 +349,19 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(f, "s3: {:?}", s3)?;
         writeln!(f, "cow_amm_configs: {:?}", cow_amm_configs)?;
-        writeln!(f, "run_loop_mode: {:?}", run_loop_mode)?;
         writeln!(f, "max_run_loop_delay: {:?}", max_run_loop_delay)?;
+        writeln!(
+            f,
+            "run_loop_native_price_timeout: {:?}",
+            run_loop_native_price_timeout
+        )?;
+        writeln!(f, "max_winners_per_auction: {:?}", max_winners_per_auction)?;
+        writeln!(f, "archive_node_url: {:?}", archive_node_url)?;
+        writeln!(
+            f,
+            "max_solutions_per_solver: {:?}",
+            max_solutions_per_solver
+        )?;
         Ok(())
     }
 }
@@ -503,16 +520,6 @@ impl FromStr for CowAmmConfig {
             index_start,
         })
     }
-}
-
-/// Controls the timing of the run loop.
-#[derive(clap::Parser, clap::ValueEnum, Clone, Debug, Default, Copy)]
-pub enum RunLoopMode {
-    /// The run loop starts with the next mined block.
-    SyncToBlockchain,
-    /// The run loop starts whenever the previous loop ends.
-    #[default]
-    Unsynchronized,
 }
 
 #[cfg(test)]

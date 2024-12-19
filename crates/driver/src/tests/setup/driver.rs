@@ -75,7 +75,6 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
             "buyAmount": quote.buy_amount().to_string(),
             "protocolFees": match quote.order.kind {
                 order::Kind::Market => json!([]),
-                order::Kind::Liquidity => json!([]),
                         order::Kind::Limit { .. } => {
                             let fee_policies_json: Vec<serde_json::Value> = quote
                                 .order
@@ -102,7 +101,6 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
             "postInteractions": [],
             "class": match quote.order.kind {
                 order::Kind::Market => "market",
-                order::Kind::Liquidity => "liquidity",
                 order::Kind::Limit { .. } => "limit",
             },
             "appData": "0x0000000000000000000000000000000000000000000000000000000000000000",
@@ -140,7 +138,7 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
         }
     }
     json!({
-        "id": "1",
+        "id": test.auction_id.to_string(),
         "tokens": tokens_json,
         "orders": orders_json,
         "deadline": test.deadline,
@@ -149,17 +147,23 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
 }
 
 /// Create a request for the driver /reveal endpoint.
-pub fn reveal_req() -> serde_json::Value {
+pub fn reveal_req(solution_id: &str, auction_id: &str) -> serde_json::Value {
     json!({
-        "solutionId": "0",
+        "solutionId": solution_id,
+        "auctionId": auction_id,
     })
 }
 
 /// Create a request for the driver /settle endpoint.
-pub fn settle_req(submission_deadline_latest_block: u64) -> serde_json::Value {
+pub fn settle_req(
+    submission_deadline_latest_block: u64,
+    solution_id: &str,
+    auction_id: &str,
+) -> serde_json::Value {
     json!({
-        "solutionId": "0",
+        "solutionId": solution_id,
         "submissionDeadlineLatestBlock": submission_deadline_latest_block,
+        "auctionId": auction_id,
     })
 }
 
@@ -221,6 +225,7 @@ async fn create_config_file(
                     file,
                     r#"[[submission.mempool]]
                     mempool = "public"
+                    additional-tip-percentage = 0.0
                     "#,
                 )
                 .unwrap();

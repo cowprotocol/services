@@ -18,13 +18,6 @@ pub struct Order {
 }
 
 impl Order {
-    /// Returns the order's owner address.
-    pub fn owner(&self) -> Address {
-        let mut bytes = [0_u8; 20];
-        bytes.copy_from_slice(&self.uid.0[32..52]);
-        bytes.into()
-    }
-
     /// Returns `true` if the order expects a solver-computed fee.
     pub fn solver_determines_fee(&self) -> bool {
         self.class == Class::Limit
@@ -63,48 +56,6 @@ pub enum Side {
 pub enum Class {
     Market,
     Limit,
-    Liquidity,
-}
-
-/// A user order, guaranteed to not be a liquidity order.
-///
-/// Note that the concept of a user order is important enough to merit its own
-/// type. The reason for this is that these orders and liquidity orders differ
-/// in fundamental ways and we do not want to confuse them and accidentally use
-/// a liquidity order where it shouldn't be used. Some of the notable
-/// differences between the order types are:
-///
-/// - Liquidity orders can't be settled directly against on-chain liquidity.
-///   They are meant to only be used in CoWs to facilitate the trading of other
-///   non-liquidity orders.
-/// - Liquidity orders do not provide any solver rewards.
-///
-/// As their name suggests, they are meant as a mechanism for providing
-/// liquidity on CoW Protocol to other non-liquidity orders: they provide a
-/// mechanism for turning one token into another. In this regard, a liquidity
-/// order is conceptually similar to `liquidity::Liquidity`. One notable
-/// difference between the two is in how they are executed. General liquidity
-/// requires tokens up-front in order to exchange them for something else. On
-/// the other hand, liquidity orders are CoW Protocol orders, meaning that they
-/// first provide the tokens being swapped to and only get paid at the end of
-/// the settlement.
-#[derive(Clone, Copy, Debug)]
-pub struct UserOrder<'a>(&'a Order);
-
-impl<'a> UserOrder<'a> {
-    /// Wraps an order as a user order, returns `None` if the specified order is
-    /// not a user order.
-    pub fn new(order: &'a Order) -> Option<Self> {
-        match order.class {
-            Class::Market | Class::Limit => Some(Self(order)),
-            Class::Liquidity => None,
-        }
-    }
-
-    /// Returns a reference to the underlying CoW Protocol order.
-    pub fn get(&self) -> &'a Order {
-        self.0
-    }
 }
 
 /// An order that can be used to provide just-in-time liquidity in form of a CoW
@@ -150,16 +101,6 @@ pub enum Signature {
     /// onchain transaction is also signed, it proves that the user indeed
     /// signed the order.
     PreSign,
-}
-
-impl Signature {
-    pub fn to_bytes(&self) -> Vec<u8> {
-        match self {
-            Self::Eip712(signature) | Self::EthSign(signature) => signature.to_bytes().to_vec(),
-            Self::Eip1271(signature) => signature.clone(),
-            Self::PreSign => Vec::new(),
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug, Default)]

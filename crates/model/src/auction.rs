@@ -34,15 +34,6 @@ pub struct Auction {
     /// The block number for the auction. Orders and prices are guaranteed to be
     /// valid on this block.
     pub block: u64,
-
-    /// The latest block on which a settlement has been processed. This field is
-    /// used to tell which orders are still in-flight. See
-    /// [`InFlightOrders`].
-    ///
-    /// Note that under certain conditions it is possible for a settlement to
-    /// have been mined as part of [`block`] but not have yet been processed.
-    pub latest_settlement_block: u64,
-
     /// The solvable orders included in the auction.
     pub orders: Vec<Order>,
 
@@ -58,7 +49,7 @@ mod tests {
         crate::order::{OrderMetadata, OrderUid},
         maplit::btreemap,
         serde_json::json,
-        shared::assert_json_matches,
+        testlib::assert_json_matches,
     };
 
     #[test]
@@ -72,7 +63,6 @@ mod tests {
         };
         let auction = Auction {
             block: 42,
-            latest_settlement_block: 40,
             orders: vec![order(1), order(2)],
             prices: btreemap! {
                 H160([2; 20]) => U256::from(2),
@@ -86,7 +76,6 @@ mod tests {
             json!({
                 "id": 0,
                 "block": 42,
-                "latestSettlementBlock": 40,
                 "orders": [
                     order(1),
                     order(2),

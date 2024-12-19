@@ -7,13 +7,13 @@ use {
 #[derive(Clone, Debug, Eq, PartialEq, sqlx::Type, strum::EnumIter)]
 #[sqlx(type_name = "OnchainOrderPlacementError", rename_all = "snake_case")]
 pub enum OnchainOrderPlacementError {
-    QuoteNotFound,
-    InvalidQuote,
+    QuoteNotFound, //No longer used (kept for backwards compatibility)
+    InvalidQuote,  //No longer used (kept for backwards compatibility)
     PreValidationError,
     DisabledOrderClass,
     ValidToTooFarInFuture,
     InvalidOrderData,
-    InsufficientFee,
+    InsufficientFee, //No longer used (kept for backwards compatibility)
     NonZeroFee,
     Other,
 }

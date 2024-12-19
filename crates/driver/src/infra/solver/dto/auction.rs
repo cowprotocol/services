@@ -83,7 +83,7 @@ impl Auction {
                     let mut available = order.available();
 
                     if solver_native_token.wrap_address {
-                        available.buy.token = available.buy.token.wrap(weth)
+                        available.buy.token = available.buy.token.as_erc20(weth)
                     }
                     // In case of volume based fees, fee withheld by driver might be higher than the
                     // surplus of the solution. This would lead to violating limit prices when
@@ -135,7 +135,6 @@ impl Auction {
                         class: match order.kind {
                             order::Kind::Market => Class::Market,
                             order::Kind::Limit { .. } => Class::Limit,
-                            order::Kind::Liquidity => Class::Liquidity,
                         },
                         pre_interactions: order
                             .pre_interactions
@@ -156,7 +155,7 @@ impl Auction {
                                 .protocol_fees
                                 .iter()
                                 .cloned()
-                                .map(Into::into)
+                                .map(FeePolicy::from_domain)
                                 .collect(),
                         ),
                         app_data: AppDataHash(order.app_data.0.into()),
@@ -390,7 +389,6 @@ enum Kind {
 enum Class {
     Market,
     Limit,
-    Liquidity,
 }
 
 #[serde_as]
@@ -409,8 +407,8 @@ pub enum FeePolicy {
     Volume { factor: f64 },
 }
 
-impl From<fees::FeePolicy> for FeePolicy {
-    fn from(value: order::FeePolicy) -> Self {
+impl FeePolicy {
+    pub fn from_domain(value: fees::FeePolicy) -> FeePolicy {
         match value {
             order::FeePolicy::Surplus {
                 factor,

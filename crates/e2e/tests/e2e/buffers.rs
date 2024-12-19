@@ -48,12 +48,15 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
                 solver,
                 onchain.contracts().weth.address(),
                 vec![],
+                1,
+                true,
             )
             .await,
         ],
         colocation::LiquidityProvider::UniswapV2,
+        false,
     );
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     services
         .start_autopilot(
             None,
@@ -94,6 +97,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
     services.create_order(&order).await.unwrap();
 
     tracing::info!("waiting for first trade");
+    onchain.mint_block().await;
     let trade_happened =
         || async { token_b.balance_of(trader.address()).call().await.unwrap() == order.buy_amount };
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();

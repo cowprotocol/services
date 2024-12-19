@@ -50,6 +50,8 @@ async fn solver_competition(web3: Web3) {
                 solver.clone(),
                 onchain.contracts().weth.address(),
                 vec![],
+                1,
+                true,
             )
             .await,
             colocation::start_baseline_solver(
@@ -57,13 +59,16 @@ async fn solver_competition(web3: Web3) {
                 solver,
                 onchain.contracts().weth.address(),
                 vec![],
+                1,
+                true,
             )
             .await,
         ],
         colocation::LiquidityProvider::UniswapV2,
+        false,
     );
 
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     services.start_autopilot(
         None,
         vec![
@@ -92,6 +97,7 @@ async fn solver_competition(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
     let uid = services.create_order(&order).await.unwrap();
+    onchain.mint_block().await;
 
     tracing::info!("waiting for trade");
     let trade_happened =
@@ -120,8 +126,10 @@ async fn solver_competition(web3: Web3) {
 
     // Non winning candidate
     assert!(competition.common.solutions[0].ranking == 2);
+    assert!(!competition.common.solutions[0].is_winner);
     // Winning candidate
     assert!(competition.common.solutions[1].ranking == 1);
+    assert!(competition.common.solutions[1].is_winner);
 }
 
 async fn fairness_check(web3: Web3) {
@@ -138,7 +146,7 @@ async fn fairness_check(web3: Web3) {
     token_b.mint(trader_b.address(), to_wei(10)).await;
 
     // Create more liquid routes between token_a (token_b) and weth via base_a
-    // (base_b). base_a has more liquidity then base_b, leading to the solver that
+    // (base_b). base_a has more liquidity than base_b, leading to the solver that
     // knows about base_a to win
     let [base_a, base_b] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(10_000), to_wei(10_000))
@@ -170,6 +178,8 @@ async fn fairness_check(web3: Web3) {
                 solver.clone(),
                 onchain.contracts().weth.address(),
                 vec![base_a.address()],
+                1,
+                true,
             )
             .await,
             colocation::start_baseline_solver(
@@ -177,13 +187,16 @@ async fn fairness_check(web3: Web3) {
                 solver,
                 onchain.contracts().weth.address(),
                 vec![base_b.address()],
+                1,
+                true,
             )
             .await,
         ],
         colocation::LiquidityProvider::UniswapV2,
+        false,
     );
 
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     services.start_autopilot(
         None,
         // Solver 1 has a fairness threshold of 0.01 ETH, which should be triggered by sub-optimally settling order_b
@@ -215,6 +228,8 @@ async fn fairness_check(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
     );
     let uid_a = services.create_order(&order_a).await.unwrap();
+
+    onchain.mint_block().await;
 
     let order_b = OrderCreation {
         sell_token: token_b.address(),

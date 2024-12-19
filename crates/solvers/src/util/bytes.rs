@@ -10,21 +10,3 @@ where
         write!(f, "0x{}", hex::encode(&self.0))
     }
 }
-
-impl<T> From<T> for Bytes<T> {
-    fn from(value: T) -> Self {
-        Self(value)
-    }
-}
-
-impl From<Bytes<Vec<u8>>> for Vec<u8> {
-    fn from(value: Bytes<Vec<u8>>) -> Self {
-        value.0
-    }
-}
-
-impl<const N: usize> From<Bytes<[u8; N]>> for [u8; N] {
-    fn from(value: Bytes<[u8; N]>) -> Self {
-        value.0
-    }
-}

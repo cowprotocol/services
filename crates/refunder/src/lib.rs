@@ -8,8 +8,9 @@ use {
     clap::Parser,
     contracts::CoWSwapEthFlow,
     ethcontract::{Account, PrivateKey},
+    observe::metrics::LivenessChecking,
     refund_service::RefundService,
-    shared::{http_client::HttpClientFactory, metrics::LivenessChecking},
+    shared::http_client::HttpClientFactory,
     sqlx::PgPool,
     std::{
         sync::{Arc, RwLock},
@@ -54,7 +55,7 @@ pub async fn run(args: arguments::Arguments) {
         // Program will be healthy at the start even if no loop was ran yet.
         last_successful_loop: RwLock::new(Instant::now()),
     });
-    shared::metrics::serve_metrics(liveness.clone(), ([0, 0, 0, 0], args.metrics_port).into());
+    observe::metrics::serve_metrics(liveness.clone(), ([0, 0, 0, 0], args.metrics_port).into());
 
     let ethflow_contract = CoWSwapEthFlow::at(&web3, args.ethflow_contract);
     let refunder_account = Account::Offline(args.refunder_pk.parse::<PrivateKey>().unwrap(), None);

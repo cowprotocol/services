@@ -1,6 +1,5 @@
 use {
     crate::{auction::AuctionId, order::OrderUid},
-    derivative::Derivative,
     number::serialization::HexOrDecimalU256,
     primitive_types::{H160, H256, U256},
     serde::{Deserialize, Serialize},
@@ -25,7 +24,7 @@ pub struct SolverCompetitionDB {
 pub struct SolverCompetitionAPI {
     #[serde(default)]
     pub auction_id: AuctionId,
-    pub transaction_hash: Option<H256>,
+    pub transaction_hashes: Vec<H256>,
     #[serde(flatten)]
     pub common: SolverCompetitionDB,
 }
@@ -40,8 +39,7 @@ pub struct CompetitionAuction {
 }
 
 #[serde_as]
-#[derive(Clone, Default, Deserialize, Serialize, PartialEq, Derivative)]
-#[derivative(Debug)]
+#[derive(Clone, Default, Deserialize, Serialize, PartialEq, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct SolverSettlement {
     pub solver: String,
@@ -54,6 +52,8 @@ pub struct SolverSettlement {
     #[serde_as(as = "BTreeMap<_, HexOrDecimalU256>")]
     pub clearing_prices: BTreeMap<H160, U256>,
     pub orders: Vec<Order>,
+    #[serde(default)]
+    pub is_winner: bool,
 }
 
 #[serde_as]
@@ -118,7 +118,7 @@ pub enum Order {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, maplit::btreemap, shared::assert_json_matches};
+    use {super::*, maplit::btreemap, testlib::assert_json_matches};
 
     #[test]
     fn serialize() {
@@ -126,7 +126,7 @@ mod tests {
             "auctionId": 0,
             "auctionStartBlock": 13u64,
             "competitionSimulationBlock": 15u64,
-            "transactionHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+            "transactionHashes": ["0x1111111111111111111111111111111111111111111111111111111111111111"],
             "auction": {
                 "orders": [
                     "0x1111111111111111111111111111111111111111111111111111111111111111\
@@ -167,13 +167,14 @@ mod tests {
                             "executedAmount": "14",
                         }
                     ],
+                    "isWinner": true,
                 },
             ],
         });
 
         let orig = SolverCompetitionAPI {
             auction_id: 0,
-            transaction_hash: Some(H256([0x11; 32])),
+            transaction_hashes: vec![H256([0x11; 32])],
             common: SolverCompetitionDB {
                 auction_start_block: 13,
                 competition_simulation_block: 15,
@@ -208,6 +209,7 @@ mod tests {
                             executed_amount: 14.into(),
                         },
                     ],
+                    is_winner: true,
                 }],
             },
         };
@@ -273,7 +275,8 @@ mod tests {
               "clearingPrices": {
                 "0x9d409a0a012cfba9b15f6d4b36ac57a46966ab9a": "32666943622",
                 "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": "19827747502258423744093"
-              }
+              },
+              "isWinner": true,
             },
             {
               "orders": [
@@ -294,7 +297,8 @@ mod tests {
               "clearingPrices": {
                 "0x9d409a0a012cfba9b15f6d4b36ac57a46966ab9a": "32652483021",
                 "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": "19827747502258423744093"
-              }
+              },
+              "isWinner": false,
             },
             {
               "orders": [
@@ -315,7 +319,8 @@ mod tests {
               "clearingPrices": {
                 "0x9d409a0a012cfba9b15f6d4b36ac57a46966ab9a": "100000",
                 "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": "60721701581190944"
-              }
+              },
+              "isWinner": false,
             },
             {
               "orders": [
@@ -336,7 +341,8 @@ mod tests {
               "clearingPrices": {
                 "0x9d409a0a012cfba9b15f6d4b36ac57a46966ab9a": "32725026283",
                 "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": "19827747502258423744093"
-              }
+              },
+              "isWinner": false,
             },
             {
               "orders": [
@@ -357,10 +363,11 @@ mod tests {
               "clearingPrices": {
                 "0x9d409a0a012cfba9b15f6d4b36ac57a46966ab9a": "32752835446",
                 "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": "19827747502258423744093"
-              }
+              },
+              "isWinner": false,
             }
           ],
-          "transactionHash": "0x044499c2a830890cb0a8ecf9aec6c5621e8310092a58d369cdef726254d3d108",
+          "transactionHashes": ["0x044499c2a830890cb0a8ecf9aec6c5621e8310092a58d369cdef726254d3d108"],
           "auctionStartBlock": 15173535,
           "liquidityCollectedBlock": 15173535,
           "competitionSimulationBlock": 15173535

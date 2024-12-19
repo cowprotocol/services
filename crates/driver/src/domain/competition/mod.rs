@@ -21,7 +21,7 @@ use {
     itertools::Itertools,
     std::{
         cmp::Reverse,
-        collections::{HashMap, HashSet},
+        collections::{HashMap, HashSet, VecDeque},
         sync::Mutex,
     },
     tap::TapFallible,
@@ -50,7 +50,8 @@ pub struct Competition {
     pub liquidity: infra::liquidity::Fetcher,
     pub simulator: Simulator,
     pub mempools: Mempools,
-    pub settlement: Mutex<Option<Settlement>>,
+    /// Cached solutions with the most recent solutions at the front.
+    pub settlements: Mutex<VecDeque<Settlement>>,
 }
 
 impl Competition {
@@ -127,12 +128,16 @@ impl Competition {
             })
             .collect::<FuturesUnordered<_>>()
             .filter_map(|(id, result)| async move {
-                result
-                    .tap_err(|err| {
-                        observe::encoding_failed(self.solver.name(), &id, err);
-                        notify::encoding_failed(&self.solver, auction.id(), &id, err);
-                    })
-                    .ok()
+                match result {
+                    Ok(solution) => Some(solution),
+                    // don't report on errors coming from solution merging
+                    Err(_err) if id.solutions().len() > 1 => None,
+                    Err(err) => {
+                        observe::encoding_failed(self.solver.name(), &id, &err);
+                        notify::encoding_failed(&self.solver, auction.id(), &id, &err);
+                        None
+                    }
+                }
             });
 
         // Encode settlements as they arrive until there are no more new settlements or
@@ -201,6 +206,7 @@ impl Competition {
             .map(|(score, settlement)| {
                 (
                     Solved {
+                        id: settlement.solution().clone(),
                         score,
                         trades: settlement.orders(),
                         prices: settlement.prices(),
@@ -211,13 +217,20 @@ impl Competition {
             })
             .unzip();
 
-        self.settlement.lock().unwrap().clone_from(&settlement);
-
-        let settlement = match settlement {
-            Some(settlement) => settlement,
+        let Some(settlement) = settlement else {
             // Don't wait for the deadline because we can't produce a solution anyway.
-            None => return Ok(score),
+            return Ok(score);
         };
+        let solution_id = settlement.solution().get();
+
+        {
+            let mut lock = self.settlements.lock().unwrap();
+            lock.push_front(settlement.clone());
+
+            /// Number of solutions that may be cached at most.
+            const MAX_SOLUTION_STORAGE: usize = 5;
+            lock.truncate(MAX_SOLUTION_STORAGE);
+        }
 
         // Re-simulate the solution on every new block until the deadline ends to make
         // sure we actually submit a working solution close to when the winner
@@ -233,7 +246,10 @@ impl Competition {
                     {
                         observe::winner_voided(block, &err);
                         *score_ref = None;
-                        *self.settlement.lock().unwrap() = None;
+                        self.settlements
+                            .lock()
+                            .unwrap()
+                            .retain(|s| s.solution().get() != solution_id);
                         notify::simulation_failed(
                             &self.solver,
                             auction.id(),
@@ -251,12 +267,20 @@ impl Competition {
         Ok(score)
     }
 
-    pub async fn reveal(&self) -> Result<Revealed, Error> {
+    pub async fn reveal(
+        &self,
+        solution_id: u64,
+        auction_id: Option<i64>,
+    ) -> Result<Revealed, Error> {
         let settlement = self
-            .settlement
+            .settlements
             .lock()
             .unwrap()
-            .as_ref()
+            .iter()
+            .find(|s| {
+                s.solution().get() == solution_id
+                    && auction_id.is_none_or(|id| s.auction_id.0 == id)
+            })
             .cloned()
             .ok_or(Error::SolutionNotAvailable)?;
         Ok(Revealed {
@@ -273,13 +297,25 @@ impl Competition {
 
     /// Execute the solution generated as part of this competition. Use
     /// [`Competition::solve`] to generate the solution.
-    pub async fn settle(&self, submission_deadline: u64) -> Result<Settled, Error> {
-        let settlement = self
-            .settlement
-            .lock()
-            .unwrap()
-            .take()
-            .ok_or(Error::SolutionNotAvailable)?;
+    pub async fn settle(
+        &self,
+        auction_id: Option<i64>,
+        solution_id: u64,
+        submission_deadline: u64,
+    ) -> Result<Settled, Error> {
+        let settlement = {
+            let mut lock = self.settlements.lock().unwrap();
+            let index = lock
+                .iter()
+                .position(|s| {
+                    s.solution().get() == solution_id
+                        && auction_id.is_none_or(|id| s.auction_id.0 == id)
+                })
+                .ok_or(Error::SolutionNotAvailable)?;
+            // remove settlement to ensure we can't settle it twice by accident
+            lock.swap_remove_front(index)
+                .ok_or(Error::SolutionNotAvailable)?
+        };
 
         let executed = self
             .mempools
@@ -309,11 +345,12 @@ impl Competition {
     }
 
     /// The ID of the auction being competed on.
-    pub fn auction_id(&self) -> Option<auction::Id> {
-        self.settlement
+    pub fn auction_id(&self, solution_id: u64) -> Option<auction::Id> {
+        self.settlements
             .lock()
             .unwrap()
-            .as_ref()
+            .iter()
+            .find(|s| s.solution().get() == solution_id)
             .map(|s| s.auction_id)
     }
 
@@ -380,16 +417,24 @@ fn merge(solutions: impl Iterator<Item = Solution>, auction: &Auction) -> Vec<So
 /// ranking happens.
 #[derive(Debug)]
 pub struct Solved {
+    pub id: solution::Id,
     pub score: eth::Ether,
     pub trades: HashMap<order::Uid, Amounts>,
     pub prices: HashMap<eth::TokenAddress, eth::TokenAmount>,
     pub gas: Option<eth::Gas>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Amounts {
-    pub sell: eth::TokenAmount,
-    pub buy: eth::TokenAmount,
+    pub side: order::Side,
+    /// The sell token and limit sell amount of sell token.
+    pub sell: eth::Asset,
+    /// The buy token and limit buy amount of buy token.
+    pub buy: eth::Asset,
+    /// The effective amount that left the user's wallet including all fees.
+    pub executed_sell: eth::TokenAmount,
+    /// The effective amount the user received after all fees.
+    pub executed_buy: eth::TokenAmount,
 }
 
 #[derive(Clone, Debug)]

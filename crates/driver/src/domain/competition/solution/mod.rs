@@ -19,7 +19,10 @@ use {
     futures::future::try_join_all,
     itertools::Itertools,
     num::{BigRational, One},
-    std::collections::{hash_map::Entry, BTreeSet, HashMap, HashSet},
+    std::{
+        collections::{hash_map::Entry, BTreeSet, HashMap, HashSet},
+        sync::atomic::{AtomicU64, Ordering},
+    },
     thiserror::Error,
 };
 
@@ -140,21 +143,16 @@ impl Solution {
         let mut trades = Vec::with_capacity(solution.trades.len());
         for trade in solution.trades {
             match &trade {
-                Trade::Fulfillment(fulfillment) => match fulfillment.order().kind {
-                    order::Kind::Market | order::Kind::Limit { .. } => {
-                        let prices = ClearingPrices {
-                            sell: solution.prices
-                                [&fulfillment.order().sell.token.wrap(solution.weth)],
-                            buy: solution.prices
-                                [&fulfillment.order().buy.token.wrap(solution.weth)],
-                        };
-                        let fulfillment = fulfillment.with_protocol_fees(prices)?;
-                        trades.push(Trade::Fulfillment(fulfillment))
-                    }
-                    order::Kind::Liquidity => {
-                        trades.push(trade);
-                    }
-                },
+                Trade::Fulfillment(fulfillment) => {
+                    let prices = ClearingPrices {
+                        sell: solution.prices
+                            [&fulfillment.order().sell.token.as_erc20(solution.weth)],
+                        buy: solution.prices
+                            [&fulfillment.order().buy.token.as_erc20(solution.weth)],
+                    };
+                    let fulfillment = fulfillment.with_protocol_fees(prices)?;
+                    trades.push(Trade::Fulfillment(fulfillment))
+                }
                 Trade::Jit(_) => trades.push(trade),
             }
         }
@@ -176,6 +174,10 @@ impl Solution {
         &self.interactions
     }
 
+    pub fn pre_interactions(&self) -> &[eth::Interaction] {
+        &self.pre_interactions
+    }
+
     /// The solver which generated this solution.
     pub fn solver(&self) -> &Solver {
         &self.solver
@@ -191,10 +193,7 @@ impl Solution {
         surplus_capturing_jit_order_owners: &HashSet<eth::Address>,
     ) -> bool {
         match trade {
-            Trade::Fulfillment(fulfillment) => match fulfillment.order().kind {
-                order::Kind::Market | order::Kind::Limit { .. } => true,
-                order::Kind::Liquidity => false,
-            },
+            Trade::Fulfillment(_) => true,
             Trade::Jit(jit) => {
                 surplus_capturing_jit_order_owners.contains(&jit.order().signature.signer)
             }
@@ -317,7 +316,7 @@ impl Solution {
 
         // Merge remaining fields
         Ok(Solution {
-            id: Id::Merged([self.id.ids(), other.id.ids()].concat()),
+            id: Id::new_merged(&self.id, &other.id),
             trades: [self.trades.clone(), other.trades.clone()].concat(),
             prices,
             pre_interactions: [
@@ -347,10 +346,7 @@ impl Solution {
     /// the orders placed by end users.
     fn user_trades(&self) -> impl Iterator<Item = &trade::Fulfillment> {
         self.trades.iter().filter_map(|trade| match trade {
-            Trade::Fulfillment(fulfillment) => match fulfillment.order().kind {
-                order::Kind::Market | order::Kind::Limit { .. } => Some(fulfillment),
-                order::Kind::Liquidity => None,
-            },
+            Trade::Fulfillment(fulfillment) => Some(fulfillment),
             Trade::Jit(_) => None,
         })
     }
@@ -409,11 +405,8 @@ impl Solution {
     ///
     /// The rule which relates two prices for tokens X and Y is:
     /// amount_x * price_x = amount_y * price_y
-    pub fn clearing_prices(&self) -> Vec<eth::Asset> {
-        let prices = self.prices.iter().map(|(&token, &amount)| eth::Asset {
-            token,
-            amount: amount.into(),
-        });
+    pub fn clearing_prices(&self) -> Prices {
+        let prices = self.prices.clone();
 
         if self.user_trades().any(|trade| trade.order().buys_eth()) {
             // The solution contains an order which buys ETH. Solvers only produce solutions
@@ -426,34 +419,32 @@ impl Solution {
             // If no order trades WETH, the WETH price is not necessary, only the ETH
             // price is needed. Remove the unneeded WETH price, which slightly reduces
             // gas used by the settlement.
-            let mut prices = if self.user_trades().all(|trade| {
+            let mut prices: Prices = if self.user_trades().all(|trade| {
                 trade.order().sell.token != self.weth.0 && trade.order().buy.token != self.weth.0
             }) {
                 prices
-                    .filter(|price| price.token != self.weth.0)
-                    .collect_vec()
+                    .into_iter()
+                    .filter(|(token, _price)| *token != self.weth.0)
+                    .collect()
             } else {
-                prices.collect_vec()
+                prices
             };
 
             // Add a clearing price for ETH equal to WETH.
-            prices.push(eth::Asset {
-                token: eth::ETH_TOKEN,
-                amount: self.prices[&self.weth.into()].to_owned().into(),
-            });
+            prices.insert(eth::ETH_TOKEN, self.prices[&self.weth.into()].to_owned());
 
             return prices;
         }
 
         // TODO: We should probably filter out all unused prices to save gas.
 
-        prices.collect_vec()
+        prices
     }
 
     /// Clearing price for the given token.
     pub fn clearing_price(&self, token: eth::TokenAddress) -> Option<eth::U256> {
         // The clearing price of ETH is equal to WETH.
-        let token = token.wrap(self.weth);
+        let token = token.as_erc20(self.weth);
         self.prices.get(&token).map(ToOwned::to_owned)
     }
 
@@ -512,35 +503,55 @@ fn scaling_factor(first: &Prices, second: &Prices) -> Option<BigRational> {
     }
 }
 
-/// A unique reference to a specific solution. Sings IDs are generated by the
-/// solver and need to be unique within a single round of competition. If the
-/// driver merges solutions it combines individual IDs. This reference is only
-/// important in the communication between the driver and the solver, and it is
-/// not used by the protocol.
+/// A unique reference to a specific solution which consists of 2 parts:
+/// 1. Globally unique (until driver restarts) ID used to communicate with the
+///    protocol. Global uniquenes is enforced by the constructors.
+/// 2. List of merged sub ids. Each sub id was generated by the solver and only
+///    has to be unique within an auction run loop. If this list contains only a
+///    single id it means this Id belongs to an unmodified solution provided as
+///    is by the solver. If it contains multiple sub ids multiple base solutions
+///    have been merged into a bigger one.
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub enum Id {
-    Single(u64),
-    Merged(Vec<u64>),
-}
-
-impl From<u64> for Id {
-    fn from(value: u64) -> Self {
-        Id::Single(value)
-    }
+pub struct Id {
+    id: u64,
+    merged_solutions: Vec<u64>,
 }
 
 impl Id {
-    /// Returns the number of solutions that has gone into merging this
-    /// solution.
-    pub fn count_merges(&self) -> usize {
-        self.ids().len()
+    fn next_global_id() -> u64 {
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        COUNTER.fetch_add(1, Ordering::Relaxed)
     }
 
-    pub fn ids(&self) -> Vec<u64> {
-        match self {
-            Id::Single(id) => vec![*id],
-            Id::Merged(ids) => ids.clone(),
+    pub fn new(solution: u64) -> Self {
+        Self {
+            id: Self::next_global_id(),
+            merged_solutions: vec![solution],
         }
+    }
+
+    pub fn new_merged(first: &Self, second: &Self) -> Self {
+        let merged_solutions = first
+            .solutions()
+            .iter()
+            .chain(second.solutions().iter())
+            .copied()
+            .collect();
+        Self {
+            id: Self::next_global_id(),
+            merged_solutions,
+        }
+    }
+
+    /// Globally unique id communicated to the protocol.
+    pub fn get(&self) -> u64 {
+        self.id
+    }
+
+    /// Which base solutions have been merged into this complete solution.
+    /// Ids in this list are only unique within one auction run loop.
+    pub fn solutions(&self) -> &[u64] {
+        &self.merged_solutions
     }
 }
 
@@ -634,5 +645,30 @@ pub mod error {
         InvalidExecutedAmount,
         #[error(transparent)]
         Math(#[from] Math),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Tests that constructor ensures unique ids.
+    #[test]
+    fn solution_id_unique() {
+        let first = Id::new(111);
+        assert_eq!(first.get(), 0);
+        assert_eq!(first.solutions(), &[111]);
+
+        let second = Id::new(222);
+        assert_eq!(second.get(), 1);
+        assert_eq!(second.solutions(), &[222]);
+
+        let third = Id::new_merged(&first, &second);
+        assert_eq!(third.get(), 2);
+        assert_eq!(third.solutions(), &[111, 222]);
+
+        let fourth = Id::new_merged(&second, &first);
+        assert_eq!(fourth.get(), 3);
+        assert_eq!(fourth.solutions(), &[222, 111]);
     }
 }

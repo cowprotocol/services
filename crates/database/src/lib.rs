@@ -8,6 +8,7 @@ pub mod ethflow_orders;
 pub mod events;
 pub mod fee_policies;
 pub mod jit_orders;
+pub mod last_indexed_blocks;
 pub mod onchain_broadcasted_orders;
 pub mod onchain_invalidations;
 pub mod order_events;
@@ -52,12 +53,14 @@ pub const TABLES: &[&str] = &[
     "orders",
     "trades",
     "invalidations",
+    "last_indexed_blocks",
     "quotes",
     "settlements",
     "presignature_events",
     "order_quotes",
     "solver_competitions",
     "auctions",
+    "competition_auctions",
     "onchain_placed_orders",
     "ethflow_orders",
     "order_execution",

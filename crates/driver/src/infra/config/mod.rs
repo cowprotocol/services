@@ -1,13 +1,16 @@
-use crate::{
-    domain::eth,
-    infra::{
-        blockchain,
-        config::file::{GasEstimatorType, OrderPriorityStrategy},
-        liquidity,
-        mempool,
-        simulator,
-        solver,
+use {
+    crate::{
+        domain::eth,
+        infra::{
+            blockchain,
+            config::file::{GasEstimatorType, OrderPriorityStrategy},
+            liquidity,
+            mempool,
+            simulator,
+            solver,
+        },
     },
+    url::Url,
 };
 
 pub mod file;
@@ -24,4 +27,5 @@ pub struct Config {
     pub mempools: Vec<mempool::Config>,
     pub contracts: blockchain::contracts::Addresses,
     pub order_priority_strategies: Vec<OrderPriorityStrategy>,
+    pub archive_node_url: Option<Url>,
 }

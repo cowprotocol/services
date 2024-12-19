@@ -23,7 +23,7 @@ use {
 /// # Panics
 ///
 /// This method panics if the config is invalid or on I/O errors.
-pub async fn load(chain: eth::ChainId, path: &Path) -> infra::Config {
+pub async fn load(chain: chain::Id, path: &Path) -> infra::Config {
     let data = fs::read_to_string(path)
         .await
         .unwrap_or_else(|e| panic!("I/O error while reading {path:?}: {e:?}"));
@@ -40,7 +40,7 @@ pub async fn load(chain: eth::ChainId, path: &Path) -> infra::Config {
     });
 
     assert_eq!(
-        config.chain_id.map(eth::ChainId).unwrap_or(chain),
+        config.chain_id.map(chain::Id::from).unwrap_or(chain),
         chain,
         "The configured chain ID does not match connected Ethereum node"
     );
@@ -93,6 +93,7 @@ pub async fn load(chain: eth::ChainId, path: &Path) -> infra::Config {
                 s3: config.s3.map(Into::into),
                 solver_native_token: config.manage_native_token.to_domain(),
                 quote_tx_origin: config.quote_tx_origin.map(eth::Address),
+                response_size_limit_max_bytes: config.response_size_limit_max_bytes,
             }
         }))
         .await,
@@ -264,22 +265,29 @@ pub async fn load(chain: eth::ChainId, path: &Path) -> infra::Config {
                 target_confirm_time: config.submission.target_confirm_time,
                 retry_interval: config.submission.retry_interval,
                 kind: match mempool {
-                    file::Mempool::Public => {
+                    file::Mempool::Public {
+                        max_additional_tip,
+                        additional_tip_percentage,
+                    } => {
                         // If there is no private mempool, revert protection is
                         // disabled, otherwise driver would not even try to settle revertable
                         // settlements
-                        mempool::Kind::Public(
-                            if config
-                                .submission
-                                .mempools
-                                .iter()
-                                .any(|pool| matches!(pool, file::Mempool::MevBlocker { .. }))
-                            {
-                                mempool::RevertProtection::Enabled
-                            } else {
-                                mempool::RevertProtection::Disabled
-                            },
-                        )
+                        let revert_protection = if config
+                            .submission
+                            .mempools
+                            .iter()
+                            .any(|pool| matches!(pool, file::Mempool::MevBlocker { .. }))
+                        {
+                            mempool::RevertProtection::Enabled
+                        } else {
+                            mempool::RevertProtection::Disabled
+                        };
+
+                        mempool::Kind::Public {
+                            max_additional_tip: *max_additional_tip,
+                            additional_tip_percentage: *additional_tip_percentage,
+                            revert_protection,
+                        }
                     }
                     file::Mempool::MevBlocker {
                         url,
@@ -331,5 +339,6 @@ pub async fn load(chain: eth::ChainId, path: &Path) -> infra::Config {
         disable_gas_simulation: config.disable_gas_simulation.map(Into::into),
         gas_estimator: config.gas_estimator,
         order_priority_strategies: config.order_priority_strategies,
+        archive_node_url: config.archive_node_url,
     }
 }

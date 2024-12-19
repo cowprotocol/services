@@ -3,12 +3,22 @@
 use {
     crate::{
         price_estimation::{PriceEstimationError, Query},
-        request_sharing::RequestSharing,
-        trade_finding::{Interaction, Quote, Trade, TradeError, TradeFinding},
+        request_sharing::{BoxRequestSharing, RequestSharing},
+        trade_finding::{
+            map_interactions_data,
+            Interaction,
+            LegacyTrade,
+            Quote,
+            QuoteExecution,
+            Trade,
+            TradeError,
+            TradeFinding,
+            TradeKind,
+        },
     },
     anyhow::{anyhow, Context},
     ethrpc::block_stream::CurrentBlockWatcher,
-    futures::{future::BoxFuture, FutureExt},
+    futures::FutureExt,
     reqwest::{header, Client},
     url::Url,
 };
@@ -20,7 +30,7 @@ pub struct ExternalTradeFinder {
     /// Utility to make sure no 2 identical requests are in-flight at the same
     /// time. Instead of issuing a duplicated request this awaits the
     /// response of the in-flight request.
-    sharing: RequestSharing<Query, BoxFuture<'static, Result<Trade, PriceEstimationError>>>,
+    sharing: BoxRequestSharing<Query, Result<TradeKind, PriceEstimationError>>,
 
     /// Client to issue http requests with.
     client: Client,
@@ -50,7 +60,7 @@ impl ExternalTradeFinder {
 
     /// Queries the `/quote` endpoint of the configured driver and deserializes
     /// the result into a Quote or Trade.
-    async fn shared_query(&self, query: &Query) -> Result<Trade, TradeError> {
+    async fn shared_query(&self, query: &Query) -> Result<TradeKind, TradeError> {
         let fut = move |query: &Query| {
             let order = dto::Order {
                 sell_token: query.sell_token,
@@ -93,8 +103,8 @@ impl ExternalTradeFinder {
                     .text()
                     .await
                     .map_err(|err| PriceEstimationError::EstimatorInternal(anyhow!(err)))?;
-                serde_json::from_str::<dto::Quote>(&text)
-                    .map(Trade::from)
+                serde_json::from_str::<dto::QuoteKind>(&text)
+                    .map(TradeKind::from)
                     .map_err(|err| {
                         if let Ok(err) = serde_json::from_str::<dto::Error>(&text) {
                             PriceEstimationError::from(err)
@@ -113,8 +123,17 @@ impl ExternalTradeFinder {
     }
 }
 
-impl From<dto::Quote> for Trade {
-    fn from(quote: dto::Quote) -> Self {
+impl From<dto::QuoteKind> for TradeKind {
+    fn from(quote: dto::QuoteKind) -> Self {
+        match quote {
+            dto::QuoteKind::Legacy(quote) => TradeKind::Legacy(quote.into()),
+            dto::QuoteKind::Regular(quote) => TradeKind::Regular(quote.into()),
+        }
+    }
+}
+
+impl From<dto::LegacyQuote> for LegacyTrade {
+    fn from(quote: dto::LegacyQuote) -> Self {
         Self {
             out_amount: quote.amount,
             gas_estimate: quote.gas,
@@ -133,11 +152,51 @@ impl From<dto::Quote> for Trade {
     }
 }
 
+impl From<dto::Quote> for Trade {
+    fn from(quote: dto::Quote) -> Self {
+        Self {
+            clearing_prices: quote.clearing_prices,
+            gas_estimate: quote.gas,
+            pre_interactions: quote
+                .pre_interactions
+                .into_iter()
+                .map(|interaction| Interaction {
+                    target: interaction.target,
+                    value: interaction.value,
+                    data: interaction.call_data,
+                })
+                .collect(),
+            interactions: quote
+                .interactions
+                .into_iter()
+                .map(|interaction| Interaction {
+                    target: interaction.target,
+                    value: interaction.value,
+                    data: interaction.call_data,
+                })
+                .collect(),
+            solver: quote.solver,
+            tx_origin: quote.tx_origin,
+            jit_orders: quote.jit_orders,
+        }
+    }
+}
+
 impl From<dto::Error> for PriceEstimationError {
     fn from(value: dto::Error) -> Self {
         match value.kind.as_str() {
             "QuotingFailed" => Self::NoLiquidity,
             _ => Self::EstimatorInternal(anyhow!("{}", value.description)),
+        }
+    }
+}
+
+impl From<dto::Interaction> for Interaction {
+    fn from(interaction: dto::Interaction) -> Self {
+        Self {
+            target: interaction.target,
+            value: interaction.value,
+            data: interaction.call_data,
         }
     }
 }
@@ -149,29 +208,46 @@ impl TradeFinding for ExternalTradeFinder {
         // reuse the same logic here.
         let trade = self.get_trade(query).await?;
         let gas_estimate = trade
-            .gas_estimate
+            .gas_estimate()
             .context("no gas estimate")
             .map_err(TradeError::Other)?;
         Ok(Quote {
-            out_amount: trade.out_amount,
+            out_amount: trade
+                .out_amount(
+                    &query.buy_token,
+                    &query.sell_token,
+                    &query.in_amount.get(),
+                    &query.kind,
+                )
+                .map_err(TradeError::Other)?,
             gas_estimate,
-            solver: trade.solver,
+            solver: trade.solver(),
+            execution: QuoteExecution {
+                interactions: map_interactions_data(&trade.interactions()),
+                pre_interactions: map_interactions_data(&trade.pre_interactions()),
+                jit_orders: trade.jit_orders(),
+            },
         })
     }
 
-    async fn get_trade(&self, query: &Query) -> Result<Trade, TradeError> {
+    async fn get_trade(&self, query: &Query) -> Result<TradeKind, TradeError> {
         self.shared_query(query).await
     }
 }
 
-mod dto {
+pub(crate) mod dto {
     use {
+        app_data::AppDataHash,
         bytes_hex::BytesHex,
         ethcontract::{H160, U256},
-        model::order::OrderKind,
+        model::{
+            order::{BuyTokenDestination, OrderKind, SellTokenSource},
+            signature::SigningScheme,
+        },
         number::serialization::HexOrDecimalU256,
         serde::{Deserialize, Serialize},
         serde_with::serde_as,
+        std::collections::HashMap,
     };
 
     #[serde_as]
@@ -188,8 +264,17 @@ mod dto {
 
     #[serde_as]
     #[derive(Clone, Debug, Deserialize)]
+    #[serde(untagged)]
+    pub enum QuoteKind {
+        Legacy(LegacyQuote),
+        #[allow(unused)]
+        Regular(Quote),
+    }
+
+    #[serde_as]
+    #[derive(Clone, Debug, Deserialize)]
     #[serde(rename_all = "camelCase")]
-    pub struct Quote {
+    pub struct LegacyQuote {
         #[serde_as(as = "HexOrDecimalU256")]
         pub amount: U256,
         pub interactions: Vec<Interaction>,
@@ -197,6 +282,24 @@ mod dto {
         pub gas: Option<u64>,
         #[serde(default)]
         pub tx_origin: Option<H160>,
+    }
+
+    #[serde_as]
+    #[derive(Clone, Debug, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    #[allow(unused)]
+    pub struct Quote {
+        #[serde_as(as = "HashMap<_, HexOrDecimalU256>")]
+        pub clearing_prices: HashMap<H160, U256>,
+        #[serde(default)]
+        pub pre_interactions: Vec<Interaction>,
+        #[serde(default)]
+        pub interactions: Vec<Interaction>,
+        pub solver: H160,
+        pub gas: Option<u64>,
+        pub tx_origin: Option<H160>,
+        #[serde(default)]
+        pub jit_orders: Vec<JitOrder>,
     }
 
     #[serde_as]
@@ -211,10 +314,43 @@ mod dto {
     }
 
     #[serde_as]
+    #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
+    #[serde(rename_all = "camelCase")]
+    #[allow(unused)]
+    pub struct JitOrder {
+        pub buy_token: H160,
+        pub sell_token: H160,
+        #[serde_as(as = "HexOrDecimalU256")]
+        pub sell_amount: U256,
+        #[serde_as(as = "HexOrDecimalU256")]
+        pub buy_amount: U256,
+        #[serde_as(as = "HexOrDecimalU256")]
+        pub executed_amount: U256,
+        pub receiver: H160,
+        pub valid_to: u32,
+        pub app_data: AppDataHash,
+        pub side: Side,
+        pub partially_fillable: bool,
+        pub sell_token_source: SellTokenSource,
+        pub buy_token_destination: BuyTokenDestination,
+        #[serde_as(as = "BytesHex")]
+        pub signature: Vec<u8>,
+        pub signing_scheme: SigningScheme,
+    }
+
+    #[serde_as]
     #[derive(Clone, Debug, Deserialize)]
     #[serde(rename_all = "camelCase")]
     pub struct Error {
         pub kind: String,
         pub description: String,
+    }
+
+    #[serde_as]
+    #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub enum Side {
+        Buy,
+        Sell,
     }
 }

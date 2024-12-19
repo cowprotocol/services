@@ -14,7 +14,6 @@ use {
     },
     app_data::Validator,
     derive_more::Into,
-    itertools::Itertools,
     primitive_types::{H160, U256},
     prometheus::core::Number,
     std::{collections::HashSet, str::FromStr},
@@ -57,14 +56,12 @@ pub type ProtocolFeeExemptAddresses = HashSet<H160>;
 pub struct ProtocolFees {
     fee_policies: Vec<ProtocolFee>,
     max_partner_fee: FeeFactor,
-    enable_protocol_fees: bool,
 }
 
 impl ProtocolFees {
     pub fn new(
         fee_policies: &[arguments::FeePolicy],
         fee_policy_max_partner_fee: FeeFactor,
-        enable_protocol_fees: bool,
     ) -> Self {
         Self {
             fee_policies: fee_policies
@@ -73,7 +70,6 @@ impl ProtocolFees {
                 .map(ProtocolFee::from)
                 .collect(),
             max_partner_fee: fee_policy_max_partner_fee,
-            enable_protocol_fees,
         }
     }
 
@@ -132,37 +128,10 @@ impl ProtocolFees {
             fee: quote.fee.into(),
         };
 
-        if self.enable_protocol_fees {
-            self.apply_multiple_policies(order, quote, order_, quote_, partner_fee)
-        } else {
-            self.apply_single_policy(order, quote, order_, quote_, partner_fee)
-        }
+        self.apply_policies(order, quote, order_, quote_, partner_fee)
     }
 
-    fn apply_single_policy(
-        &self,
-        order: boundary::Order,
-        quote: domain::Quote,
-        order_: boundary::Amounts,
-        quote_: boundary::Amounts,
-        partner_fees: Vec<Policy>,
-    ) -> domain::Order {
-        if let Some(partner_fee) = partner_fees.first() {
-            return boundary::order::to_domain(order, vec![*partner_fee], Some(quote));
-        }
-        let protocol_fees = self
-            .fee_policies
-            .iter()
-            .find_map(|fee_policy| {
-                Self::protocol_fee_into_policy(&order, &order_, &quote_, fee_policy)
-            })
-            .and_then(|policy| Self::variant_fee_apply(&order, &quote, policy))
-            .into_iter()
-            .collect_vec();
-        boundary::order::to_domain(order, protocol_fees, Some(quote))
-    }
-
-    fn apply_multiple_policies(
+    fn apply_policies(
         &self,
         order: boundary::Order,
         quote: domain::Quote,
@@ -288,8 +257,8 @@ pub struct Quote {
     pub solver: H160,
 }
 
-impl From<domain::Quote> for Quote {
-    fn from(value: domain::Quote) -> Self {
+impl Quote {
+    fn from_domain(value: &domain::Quote) -> Self {
         Self {
             sell_amount: value.sell_amount.into(),
             buy_amount: value.buy_amount.into(),

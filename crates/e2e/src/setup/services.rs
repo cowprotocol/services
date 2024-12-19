@@ -4,6 +4,7 @@ use {
         colocation::{self, SolverEngine},
         wait_for_condition,
         Contracts,
+        OnchainComponents,
         TIMEOUT,
     },
     app_data::{AppDataDocument, AppDataHash},
@@ -17,8 +18,10 @@ use {
         trade::Trade,
     },
     reqwest::{Client, StatusCode, Url},
+    shared::ethrpc::Web3,
     sqlx::Connection,
     std::{ops::DerefMut, time::Duration},
+    web3::Transport,
 };
 
 pub const API_HOST: &str = "http://127.0.0.1:8080";
@@ -65,11 +68,12 @@ impl ServicesBuilder {
         self
     }
 
-    pub async fn build(self, contracts: &Contracts) -> Services {
+    pub async fn build(self, onchain_components: &OnchainComponents) -> Services {
         Services {
-            contracts,
+            contracts: onchain_components.contracts(),
             http: Client::builder().timeout(self.timeout).build().unwrap(),
             db: sqlx::PgPool::connect(LOCAL_DB_URL).await.unwrap(),
+            web3: onchain_components.web3(),
         }
     }
 }
@@ -86,17 +90,19 @@ pub struct Services<'a> {
     contracts: &'a Contracts,
     http: Client,
     db: Db,
+    web3: &'a Web3,
 }
 
 impl<'a> Services<'a> {
-    pub async fn new(contracts: &'a Contracts) -> Services<'a> {
+    pub async fn new(onchain_components: &'a OnchainComponents) -> Services<'a> {
         Self {
-            contracts,
+            contracts: onchain_components.contracts(),
             http: Client::builder()
                 .timeout(Duration::from_secs(10))
                 .build()
                 .unwrap(),
             db: sqlx::PgPool::connect(LOCAL_DB_URL).await.unwrap(),
+            web3: onchain_components.web3(),
         }
     }
 
@@ -144,7 +150,8 @@ impl<'a> Services<'a> {
 
         let args = [
             "autopilot".to_string(),
-            "--auction-update-interval=1s".to_string(),
+            "--max-run-loop-delay=100ms".to_string(),
+            "--run-loop-native-price-timeout=500ms".to_string(),
             format!("--ethflow-contract={:?}", self.contracts.ethflow.address()),
             "--skip-event-sync=true".to_string(),
             format!("--solve-deadline={solve_deadline:?}"),
@@ -197,10 +204,13 @@ impl<'a> Services<'a> {
                     solver,
                     self.contracts.weth.address(),
                     vec![],
+                    1,
+                    true,
                 )
                 .await,
             ],
             colocation::LiquidityProvider::UniswapV2,
+            false,
         );
         self.start_autopilot(
             None,
@@ -244,6 +254,7 @@ impl<'a> Services<'a> {
             account: solver.clone(),
             endpoint: external_solver_endpoint,
             base_tokens: vec![],
+            merge_solutions: true,
         }];
 
         let (autopilot_args, api_args) = if run_baseline {
@@ -253,6 +264,8 @@ impl<'a> Services<'a> {
                     solver,
                     self.contracts.weth.address(),
                     vec![],
+                    1,
+                    true,
                 )
                 .await,
             );
@@ -291,6 +304,7 @@ impl<'a> Services<'a> {
             self.contracts,
             solvers,
             colocation::LiquidityProvider::UniswapV2,
+            false,
         );
 
         self.start_autopilot(Some(Duration::from_secs(11)), autopilot_args)
@@ -319,6 +333,7 @@ impl<'a> Services<'a> {
                 .fetch_one(db.deref_mut())
                 .await
                 .unwrap();
+            self.mint_block().await;
             count > 0
         };
         wait_for_condition(TIMEOUT, is_up)
@@ -329,7 +344,7 @@ impl<'a> Services<'a> {
     /// Fetches the current auction. Don't use this as a synchronization
     /// mechanism in tests because that is prone to race conditions
     /// which would make tests flaky.
-    pub async fn get_auction(&self) -> dto::AuctionWithId {
+    pub async fn get_auction(&self) -> dto::Auction {
         let response = self
             .http
             .get(format!("{API_HOST}{AUCTION_ENDPOINT}"))
@@ -601,6 +616,15 @@ impl<'a> Services<'a> {
     /// execute raw SQL queries.
     pub fn db(&self) -> &Db {
         &self.db
+    }
+
+    async fn mint_block(&self) {
+        tracing::info!("mining block");
+        self.web3
+            .transport()
+            .execute("evm_mine", vec![])
+            .await
+            .unwrap();
     }
 }
 

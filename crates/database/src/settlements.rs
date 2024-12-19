@@ -1,37 +1,24 @@
 use {
-    crate::{events::EventIndex, PgTransaction, TransactionHash},
+    crate::{Address, PgTransaction, TransactionHash},
     sqlx::{Executor, PgConnection},
 };
 
-pub async fn get_hash_by_event(
-    ex: &mut PgConnection,
-    event: &EventIndex,
-) -> Result<TransactionHash, sqlx::Error> {
-    const QUERY: &str = r#"
-SELECT tx_hash
-FROM settlements
-WHERE
-    block_number = $1 AND
-    log_index = $2
-    "#;
-    sqlx::query_scalar::<_, TransactionHash>(QUERY)
-        .bind(event.block_number)
-        .bind(event.log_index)
-        .fetch_one(ex)
-        .await
-}
-
-pub async fn get_hashes_by_auction_id(
+pub async fn find_settlement_transaction(
     ex: &mut PgConnection,
     auction_id: i64,
-) -> Result<Vec<TransactionHash>, sqlx::Error> {
+    solver: Address,
+) -> Result<Option<TransactionHash>, sqlx::Error> {
     const QUERY: &str = r#"
 SELECT tx_hash
 FROM settlements
 WHERE
-    auction_id = $1
+    auction_id = $1 AND solver = $2
     "#;
-    sqlx::query_as(QUERY).bind(auction_id).fetch_all(ex).await
+    sqlx::query_as(QUERY)
+        .bind(auction_id)
+        .bind(solver)
+        .fetch_optional(ex)
+        .await
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -54,18 +41,6 @@ LIMIT 1
     sqlx::query_as(QUERY).fetch_optional(ex).await
 }
 
-pub async fn already_processed(
-    ex: &mut PgConnection,
-    auction_id: i64,
-) -> Result<bool, sqlx::Error> {
-    const QUERY: &str = r#"SELECT COUNT(*) FROM settlements WHERE auction_id = $1;"#;
-    let count: i64 = sqlx::query_scalar(QUERY)
-        .bind(auction_id)
-        .fetch_one(ex)
-        .await?;
-    Ok(count >= 1)
-}
-
 pub async fn update_settlement_auction(
     ex: &mut PgConnection,
     block_number: i64,
@@ -86,6 +61,7 @@ WHERE block_number = $2 AND log_index = $3
         .map(|_| ())
 }
 
+/// Deletes all database data that referenced the deleted settlement events.
 pub async fn delete(
     ex: &mut PgTransaction<'_>,
     delete_from_block_number: u64,

@@ -1,6 +1,5 @@
 use {
     crate::{
-        arguments::RunLoopMode,
         boundary::events::settlement::{GPv2SettlementContract, Indexer},
         database::{
             onchain_order_events::{
@@ -11,26 +10,23 @@ use {
             Postgres,
         },
         event_updater::EventUpdater,
-        solvable_orders::SolvableOrdersCache,
     },
     anyhow::Result,
     ethrpc::block_stream::{into_stream, BlockInfo, CurrentBlockWatcher},
     futures::StreamExt,
     prometheus::{
         core::{AtomicU64, GenericGauge},
-        Histogram,
+        HistogramVec,
         IntCounterVec,
     },
     shared::maintenance::Maintaining,
-    std::{sync::Arc, time::Duration},
-    tokio::{sync::Mutex, time::timeout},
+    std::{future::Future, sync::Arc},
+    tokio::sync::Mutex,
 };
 
 /// Coordinates all the updates that need to run a new block
 /// to ensure a consistent view of the system.
 pub struct Maintenance {
-    /// Set of orders that make up the current auction.
-    orders_cache: Arc<SolvableOrdersCache>,
     /// Indexes and persists all events emited by the settlement contract.
     settlement_indexer: EventUpdater<Indexer, GPv2SettlementContract>,
     /// Indexes ethflow orders (orders selling native ETH).
@@ -46,12 +42,10 @@ pub struct Maintenance {
 
 impl Maintenance {
     pub fn new(
-        orders_cache: Arc<SolvableOrdersCache>,
         settlement_indexer: EventUpdater<Indexer, GPv2SettlementContract>,
         db_cleanup: Postgres,
     ) -> Self {
         Self {
-            orders_cache,
             settlement_indexer,
             db_cleanup,
             cow_amm_indexer: Default::default(),
@@ -64,6 +58,7 @@ impl Maintenance {
     /// has a consistent state.
     pub async fn update(&self, new_block: &BlockInfo) {
         let mut last_block = self.last_processed.lock().await;
+        metrics().last_seen_block.set(new_block.number);
         if last_block.number > new_block.number || last_block.hash == new_block.hash {
             // `new_block` is neither newer than `last_block` nor a reorg
             return;
@@ -81,9 +76,6 @@ impl Maintenance {
             "successfully ran maintenance task"
         );
 
-        metrics()
-            .update_duration
-            .observe(start.elapsed().as_secs_f64());
         metrics().updates.with_label_values(&["success"]).inc();
         metrics().last_updated_block.set(new_block.number);
         *last_block = *new_block;
@@ -92,15 +84,12 @@ impl Maintenance {
     async fn update_inner(&self) -> Result<()> {
         // All these can run independently of each other.
         tokio::try_join!(
-            self.settlement_indexer.run_maintenance(),
-            self.db_cleanup.run_maintenance(),
-            self.index_ethflow_orders(),
-            futures::future::try_join_all(
-                self.cow_amm_indexer
-                    .iter()
-                    .cloned()
-                    .map(|indexer| async move { indexer.run_maintenance().await })
-            )
+            Self::timed_future(
+                "settlement_indexer",
+                self.settlement_indexer.run_maintenance()
+            ),
+            Self::timed_future("db_cleanup", self.db_cleanup.run_maintenance()),
+            Self::timed_future("ethflow_indexer", self.index_ethflow_orders()),
         )?;
 
         Ok(())
@@ -123,54 +112,42 @@ impl Maintenance {
         Ok(())
     }
 
+    /// Runs the future and collects runtime metrics.
+    async fn timed_future<T>(label: &str, fut: impl Future<Output = T>) -> T {
+        let _timer = metrics()
+            .maintenance_stage_time
+            .with_label_values(&[label])
+            .start_timer();
+        fut.await
+    }
+
     /// Spawns a background task that runs on every new block but also
     /// at least after every `update_interval`.
-    pub fn spawn_background_task(
-        self_: Arc<Self>,
-        run_loop_mode: RunLoopMode,
-        current_block: CurrentBlockWatcher,
-        update_interval: Duration,
-    ) {
+    pub fn spawn_cow_amm_indexing_task(self_: Arc<Self>, current_block: CurrentBlockWatcher) {
         tokio::task::spawn(async move {
-            match run_loop_mode {
-                RunLoopMode::SyncToBlockchain => {
-                    // Update last seen block metric only since everything else will be updated
-                    // inside the runloop.
-                    let mut stream = into_stream(current_block);
-                    loop {
-                        let next_update = timeout(update_interval, stream.next());
-                        match next_update.await {
-                            Ok(Some(block)) => {
-                                metrics().last_seen_block.set(block.number);
-                            }
-                            Ok(None) => break,
-                            Err(_timeout) => {}
-                        };
+            let mut stream = into_stream(current_block);
+            loop {
+                let _ = match stream.next().await {
+                    Some(block) => {
+                        metrics().last_seen_block.set(block.number);
+                        block
                     }
-                }
-                RunLoopMode::Unsynchronized => {
-                    let mut latest_block = *current_block.borrow();
-                    let mut stream = into_stream(current_block);
-                    loop {
-                        let next_update = timeout(update_interval, stream.next());
-                        let current_block = match next_update.await {
-                            Ok(Some(block)) => {
-                                metrics().last_seen_block.set(block.number);
-                                block
-                            }
-                            Ok(None) => break,
-                            Err(_timeout) => latest_block,
-                        };
-                        if let Err(err) = self_.update_inner().await {
-                            tracing::warn!(?err, "failed to run background task successfully");
-                        }
-                        if let Err(err) = self_.orders_cache.update(current_block.number).await {
-                            tracing::warn!(?err, "failed to update auction successfully");
-                        }
-                        latest_block = current_block;
-                    }
-                    panic!("block stream terminated unexpectedly");
-                }
+                    None => panic!("block stream terminated unexpectedly"),
+                };
+
+                // TODO: move this back into `Self::update_inner()` once we
+                // store cow amms in the DB to avoid incredibly slow restarts.
+                let _ = Self::timed_future(
+                    "cow_amm_indexer",
+                    futures::future::try_join_all(
+                        self_
+                            .cow_amm_indexer
+                            .iter()
+                            .cloned()
+                            .map(|indexer| async move { indexer.run_maintenance().await }),
+                    ),
+                )
+                .await;
             }
         });
     }
@@ -192,9 +169,12 @@ struct Metrics {
     #[metric(labels("result"))]
     updates: IntCounterVec,
 
-    /// Execution time for updates
-    #[metric(buckets(0.01, 0.05, 0.1, 0.2, 0.5, 1, 1.5, 2, 2.5, 5))]
-    update_duration: Histogram,
+    /// Autopilot maintenance stage time
+    #[metric(
+        labels("stage"),
+        buckets(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 1, 1.5, 2.0, 2.5, 3, 3.5, 4)
+    )]
+    maintenance_stage_time: HistogramVec,
 }
 
 fn metrics() -> &'static Metrics {

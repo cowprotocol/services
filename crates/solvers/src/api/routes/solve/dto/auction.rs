@@ -56,7 +56,6 @@ pub fn to_domain(auction: &Auction) -> Result<auction::Auction, Error> {
                 class: match order.class {
                     Class::Market => order::Class::Market,
                     Class::Limit => order::Class::Limit,
-                    Class::Liquidity => order::Class::Liquidity,
                 },
                 partially_fillable: order.partially_fillable,
             })

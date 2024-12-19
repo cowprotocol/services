@@ -46,7 +46,7 @@ async fn order_cancellation(web3: Web3) {
         token.approve(onchain.contracts().allowance, to_wei(10))
     );
 
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     colocation::start_driver(
         onchain.contracts(),
         vec![
@@ -55,10 +55,13 @@ async fn order_cancellation(web3: Web3) {
                 solver,
                 onchain.contracts().weth.address(),
                 vec![],
+                1,
+                true,
             )
             .await,
         ],
         colocation::LiquidityProvider::UniswapV2,
+        false,
     );
     services
         .start_autopilot(
@@ -74,6 +77,8 @@ async fn order_cancellation(web3: Web3) {
             "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
         ])
         .await;
+
+    onchain.mint_block().await;
 
     let place_order = |salt: u8| {
         let services = &services;
@@ -175,6 +180,7 @@ async fn order_cancellation(web3: Web3) {
         place_order(1).await,
         place_order(2).await,
     ];
+    onchain.mint_block().await;
     wait_for_condition(TIMEOUT, || async {
         services.get_auction().await.auction.orders.len() == 3
     })
@@ -200,6 +206,7 @@ async fn order_cancellation(web3: Web3) {
 
     // Cancel one of them.
     cancel_order(order_uids[0]).await;
+    onchain.mint_block().await;
     wait_for_condition(TIMEOUT, || async {
         services.get_auction().await.auction.orders.len() == 2
     })
@@ -221,6 +228,7 @@ async fn order_cancellation(web3: Web3) {
 
     // Cancel the other two.
     cancel_orders(vec![order_uids[1], order_uids[2]]).await;
+    onchain.mint_block().await;
     wait_for_condition(TIMEOUT, || async {
         services.get_auction().await.auction.orders.is_empty()
     })

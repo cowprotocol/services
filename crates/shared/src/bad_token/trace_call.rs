@@ -3,10 +3,16 @@ use {
     crate::{ethrpc::Web3, trace_many},
     anyhow::{bail, ensure, Context, Result},
     contracts::ERC20,
-    ethcontract::{dyns::DynTransport, transaction::TransactionBuilder, PrivateKey},
+    ethcontract::{
+        dyns::DynTransport,
+        jsonrpc::ErrorCode,
+        transaction::TransactionBuilder,
+        PrivateKey,
+    },
     primitive_types::{H160, U256},
     std::{cmp, sync::Arc},
     web3::{
+        error::TransportError,
         signing::keccak256,
         types::{BlockTrace, CallRequest, Res},
     },
@@ -73,9 +79,31 @@ impl TraceCallDetector {
         // implementation sending to an address that does not have any balance
         // yet (implicitly 0) causes an allocation.
         let request = self.create_trace_request(token, amount, take_from);
-        let traces = trace_many::trace_many(request, &self.web3)
-            .await
-            .context("trace_many")?;
+        let traces = match trace_many::trace_many(request, &self.web3).await {
+            Ok(result) => result,
+            Err(e) => {
+                // If the node doesn't support trace calls, consider the token as good to not
+                // block the system
+                if matches!(
+                    e,
+                    web3::Error::Rpc(ethcontract::jsonrpc::Error {
+                        code: ErrorCode::MethodNotFound,
+                        ..
+                    })
+                ) || matches!(
+                    e,
+                    // Alchemy specific error
+                    web3::Error::Transport(TransportError::Message(ref msg)) if msg == "HTTP error 400 Bad Request"
+                ) {
+                    tracing::warn!(
+                        error=?e,
+                        "unable to perform trace call with configured node, assume good quality"
+                    );
+                    return Ok(TokenQuality::Good);
+                }
+                return Err(e).context("trace_many");
+            }
+        };
         Self::handle_response(&traces, amount, take_from)
     }
 
@@ -303,6 +331,7 @@ mod tests {
             ethrpc::create_env_test_transport,
             sources::{uniswap_v2, BaselineSource},
         },
+        chain::Chain,
         contracts::{BalancerV2Vault, IUniswapV3Factory},
         hex_literal::hex,
         std::{env, time::Duration},
@@ -663,14 +692,17 @@ mod tests {
                     UniswapV3Finder::new(
                         IUniswapV3Factory::deployed(&web3).await.unwrap(),
                         base_tokens.to_vec(),
-                        FeeValues::Dynamic,
+                        FeeValues::Static,
                     )
                     .await
                     .unwrap(),
                 ),
                 Arc::new(
-                    BlockscoutTokenOwnerFinder::try_with_network(reqwest::Client::new(), 1)
-                        .unwrap(),
+                    BlockscoutTokenOwnerFinder::with_network(
+                        reqwest::Client::new(),
+                        &Chain::Mainnet,
+                    )
+                    .unwrap(),
                 ),
             ],
         });

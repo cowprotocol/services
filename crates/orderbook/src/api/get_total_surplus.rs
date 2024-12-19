@@ -22,7 +22,7 @@ pub fn get(db: Postgres) -> impl Filter<Extract = (super::ApiReply,), Error = Re
                     ),
                     Err(err) => {
                         tracing::error!(?err, ?user, "failed to compute total surplus");
-                        shared::api::internal_error_reply()
+                        crate::api::internal_error_reply()
                     }
                 })
             }

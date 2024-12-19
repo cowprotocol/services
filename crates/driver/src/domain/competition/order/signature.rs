@@ -42,16 +42,13 @@ pub enum Scheme {
     PreSign,
 }
 
-pub fn domain_separator(
-    chain_id: eth::ChainId,
-    verifying_contract: eth::ContractAddress,
-) -> eth::DomainSeparator {
-    eth::DomainSeparator::new(&eth::DomainFields {
-        type_hash:
-            b"EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)",
-        name: b"Gnosis Protocol",
-        version: b"v2",
-        chain_id,
-        verifying_contract,
-    })
+impl Scheme {
+    pub fn to_boundary_scheme(&self) -> model::signature::SigningScheme {
+        match self {
+            Scheme::Eip712 => model::signature::SigningScheme::Eip712,
+            Scheme::EthSign => model::signature::SigningScheme::EthSign,
+            Scheme::Eip1271 => model::signature::SigningScheme::Eip1271,
+            Scheme::PreSign => model::signature::SigningScheme::PreSign,
+        }
+    }
 }

@@ -2,7 +2,12 @@ use {
     super::{encoding, trade::ClearingPrices, Error, Solution},
     crate::{
         domain::{
-            competition::{self, auction, order, solution},
+            competition::{
+                self,
+                auction,
+                order::{self},
+                solution::{self, error, Trade},
+            },
             eth,
         },
         infra::{blockchain::Ethereum, observe, solver::ManageNativeToken, Simulator},
@@ -247,32 +252,49 @@ impl Settlement {
         self.solution.id()
     }
 
-    /// Address of the solver which generated this settlement.
-    pub fn solver(&self) -> eth::Address {
-        self.solution.solver().address()
-    }
-
     /// The settled user orders with their in/out amounts.
     pub fn orders(&self) -> HashMap<order::Uid, competition::Amounts> {
+        let log_err = |trade: &Trade, err: error::Math, kind: &str| -> eth::TokenAmount {
+            // This should never happen, returning 0 is better than panicking, but we
+            // should still alert.
+            let msg = format!("could not compute {kind}");
+            tracing::error!(?trade, prices=?self.solution.prices, ?err, msg);
+            0.into()
+        };
         let mut acc: HashMap<order::Uid, competition::Amounts> = HashMap::new();
-        for trade in self.solution.user_trades() {
-            let order = acc.entry(trade.order().uid).or_default();
-            let prices = ClearingPrices {
-                sell: self.solution.prices[&trade.order().sell.token.wrap(self.solution.weth)],
-                buy: self.solution.prices[&trade.order().buy.token.wrap(self.solution.weth)],
+        for trade in &self.solution.trades {
+            let order = match trade {
+                Trade::Fulfillment(_) => {
+                    let prices = ClearingPrices {
+                        sell: self.solution.prices
+                            [&trade.sell().token.as_erc20(self.solution.weth)],
+                        buy: self.solution.prices[&trade.buy().token.as_erc20(self.solution.weth)],
+                    };
+                    competition::Amounts {
+                        side: trade.side(),
+                        sell: trade.sell(),
+                        buy: trade.buy(),
+                        executed_sell: trade
+                            .sell_amount(&prices)
+                            .unwrap_or_else(|err| log_err(trade, err, "executed_sell")),
+                        executed_buy: trade
+                            .buy_amount(&prices)
+                            .unwrap_or_else(|err| log_err(trade, err, "executed_buy")),
+                    }
+                }
+                Trade::Jit(jit) => competition::Amounts {
+                    side: trade.side(),
+                    sell: trade.sell(),
+                    buy: trade.buy(),
+                    executed_sell: jit
+                        .executed_sell()
+                        .unwrap_or_else(|err| log_err(trade, err, "executed_sell")),
+                    executed_buy: jit
+                        .executed_buy()
+                        .unwrap_or_else(|err| log_err(trade, err, "executed_buy")),
+                },
             };
-            order.sell = trade.sell_amount(&prices).unwrap_or_else(|err| {
-                        // This should never happen, returning 0 is better than panicking, but we
-                        // should still alert.
-                        tracing::error!(?trade, prices=?self.solution.prices, ?err, "could not compute sell_amount");
-                        0.into()
-                    });
-            order.buy = trade.buy_amount(&prices).unwrap_or_else(|err| {
-                        // This should never happen, returning 0 is better than panicking, but we
-                        // should still alert.
-                        tracing::error!(?trade, prices=?self.solution.prices, ?err, "could not compute buy_amount");
-                        0.into()
-                    });
+            acc.insert(trade.uid(), order);
         }
         acc
     }
@@ -281,8 +303,8 @@ impl Settlement {
     pub fn prices(&self) -> HashMap<eth::TokenAddress, eth::TokenAmount> {
         self.solution
             .clearing_prices()
-            .iter()
-            .map(|asset| (asset.token, asset.amount))
+            .into_iter()
+            .map(|(token, amount)| (token, amount.into()))
             .collect()
     }
 }

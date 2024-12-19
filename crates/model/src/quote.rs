@@ -61,13 +61,6 @@ impl QuoteSigningScheme {
             _ => 0u64,
         }
     }
-
-    pub fn new_eip1271_with_default_gas(onchain_order: bool) -> Self {
-        QuoteSigningScheme::Eip1271 {
-            onchain_order,
-            verification_gas_limit: default_verification_gas_limit(),
-        }
-    }
 }
 
 #[serde_as]
@@ -184,7 +177,6 @@ impl Default for Validity {
 }
 
 /// Helper struct for `Validity` serialization.
-
 impl<'de> Deserialize<'de> for Validity {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -303,22 +295,9 @@ pub struct OrderQuoteResponse {
     pub verified: bool,
 }
 
-impl OrderQuoteRequest {
-    /// This method is used by the old, deprecated, fee endpoint to convert
-    /// {Buy, Sell}Requests
-    pub fn new(sell_token: H160, buy_token: H160, side: OrderQuoteSide) -> Self {
-        Self {
-            sell_token,
-            buy_token,
-            side,
-            ..Default::default()
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use {super::*, serde_json::json, shared::assert_json_matches};
+    use {super::*, serde_json::json, testlib::assert_json_matches};
 
     #[test]
     fn serialize_defaults() {

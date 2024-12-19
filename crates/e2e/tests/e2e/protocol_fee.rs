@@ -120,9 +120,8 @@ async fn combined_protocol_fees(web3: Web3) {
     let autopilot_config = vec![
         ProtocolFeesConfig(vec![limit_surplus_policy, market_price_improvement_policy]).to_string(),
         "--fee-policy-max-partner-fee=0.02".to_string(),
-        "--enable-multiple-fees=true".to_string(),
     ];
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     services
         .start_protocol_with_args(
             ExtraServiceArgs {
@@ -263,6 +262,8 @@ async fn combined_protocol_fees(web3: Web3) {
         .unwrap()
         .try_into()
         .expect("Expected exactly four elements");
+
+    onchain.mint_block().await;
 
     tracing::info!("Waiting for orders to trade.");
     let metadata_updated = || async {
@@ -465,7 +466,7 @@ async fn volume_fee_buy_order_test(web3: Web3) {
     );
 
     // Place Orders
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     services
         .start_protocol_with_args(
             ExtraServiceArgs {

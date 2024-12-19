@@ -1,5 +1,5 @@
 use {
-    crate::{database::Postgres, on_settlement_event_updater::OnSettlementEventUpdater},
+    crate::{database::Postgres, domain::settlement},
     anyhow::Result,
     ethrpc::block_stream::RangeInclusive,
     shared::{event_handling::EventStoring, impl_event_retrieving},
@@ -11,23 +11,33 @@ impl_event_retrieving! {
 
 pub struct Indexer {
     db: Postgres,
-    settlement_updater: OnSettlementEventUpdater,
+    start_index: u64,
+    settlement_observer: settlement::Observer,
 }
 
 impl Indexer {
-    pub fn new(db: Postgres, settlement_updater: OnSettlementEventUpdater) -> Self {
+    pub fn new(db: Postgres, settlement_observer: settlement::Observer, start_index: u64) -> Self {
         Self {
             db,
-            settlement_updater,
+            settlement_observer,
+            start_index,
         }
     }
 }
 
+/// This name is used to store the latest indexed block in the db.
+const INDEX_NAME: &str = "settlements";
+
 #[async_trait::async_trait]
 impl EventStoring<contracts::gpv2_settlement::Event> for Indexer {
     async fn last_event_block(&self) -> Result<u64> {
-        let mut con = self.db.pool.acquire().await?;
-        crate::database::events::last_event_block(&mut con).await
+        super::read_last_block_from_db(&self.db.pool, INDEX_NAME)
+            .await
+            .map(|last_block| last_block.max(self.start_index))
+    }
+
+    async fn persist_last_indexed_block(&mut self, latest_block: u64) -> Result<()> {
+        super::write_last_block_to_db(&self.db.pool, latest_block, INDEX_NAME).await
     }
 
     async fn replace_events(
@@ -38,10 +48,10 @@ impl EventStoring<contracts::gpv2_settlement::Event> for Indexer {
         let mut transaction = self.db.pool.begin().await?;
         let from_block = *range.start();
         crate::database::events::replace_events(&mut transaction, events, from_block).await?;
-        OnSettlementEventUpdater::delete_observations(&mut transaction, from_block).await?;
+        database::settlements::delete(&mut transaction, from_block).await?;
         transaction.commit().await?;
 
-        self.settlement_updater.update().await;
+        self.settlement_observer.update().await;
         Ok(())
     }
 
@@ -53,7 +63,7 @@ impl EventStoring<contracts::gpv2_settlement::Event> for Indexer {
         crate::database::events::append_events(&mut transaction, events).await?;
         transaction.commit().await?;
 
-        self.settlement_updater.update().await;
+        self.settlement_observer.update().await;
         Ok(())
     }
 }

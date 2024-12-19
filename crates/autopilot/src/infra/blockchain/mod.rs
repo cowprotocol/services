@@ -1,6 +1,7 @@
 use {
     self::contracts::Contracts,
     crate::{boundary, domain::eth},
+    chain::Chain,
     ethcontract::dyns::DynWeb3,
     ethrpc::block_stream::CurrentBlockWatcher,
     primitive_types::U256,
@@ -9,31 +10,12 @@ use {
     url::Url,
 };
 
-pub mod authenticator;
 pub mod contracts;
-
-/// Chain ID as defined by EIP-155.
-///
-/// https://eips.ethereum.org/EIPS/eip-155
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ChainId(pub U256);
-
-impl std::fmt::Display for ChainId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl From<U256> for ChainId {
-    fn from(value: U256) -> Self {
-        Self(value)
-    }
-}
 
 /// An Ethereum RPC connection.
 pub struct Rpc {
     web3: DynWeb3,
-    chain: ChainId,
+    chain: Chain,
     url: Url,
 }
 
@@ -45,7 +27,8 @@ impl Rpc {
         ethrpc_args: &shared::ethrpc::Arguments,
     ) -> Result<Self, Error> {
         let web3 = boundary::web3_client(url, ethrpc_args);
-        let chain = web3.eth().chain_id().await?.into();
+        let chain =
+            Chain::try_from(web3.eth().chain_id().await?).map_err(|_| Error::UnsupportedChain)?;
 
         Ok(Self {
             web3,
@@ -54,8 +37,8 @@ impl Rpc {
         })
     }
 
-    /// Returns the chain id for the RPC connection.
-    pub fn chain(&self) -> ChainId {
+    /// Returns the chain for the RPC connection.
+    pub fn chain(&self) -> Chain {
         self.chain
     }
 
@@ -74,7 +57,7 @@ impl Rpc {
 #[derive(Clone)]
 pub struct Ethereum {
     web3: DynWeb3,
-    chain: ChainId,
+    chain: Chain,
     current_block: CurrentBlockWatcher,
     contracts: Contracts,
 }
@@ -88,24 +71,24 @@ impl Ethereum {
     /// any initialization error.
     pub async fn new(
         web3: DynWeb3,
-        chain: ChainId,
+        chain: &Chain,
         url: Url,
         addresses: contracts::Addresses,
         poll_interval: Duration,
     ) -> Self {
-        let contracts = Contracts::new(&web3, &chain, addresses).await;
+        let contracts = Contracts::new(&web3, chain, addresses).await;
 
         Self {
             current_block: ethrpc::block_stream::current_block_stream(url, poll_interval)
                 .await
                 .expect("couldn't initialize current block stream"),
             web3,
-            chain,
+            chain: *chain,
             contracts,
         }
     }
 
-    pub fn network(&self) -> &ChainId {
+    pub fn chain(&self) -> &Chain {
         &self.chain
     }
 
@@ -179,4 +162,6 @@ pub enum Error {
     IncompleteTransactionData(anyhow::Error),
     #[error("transaction not found")]
     TransactionNotFound,
+    #[error("unsupported chain")]
+    UnsupportedChain,
 }

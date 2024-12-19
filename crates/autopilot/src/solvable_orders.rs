@@ -7,7 +7,6 @@ use {
     anyhow::{Context, Result},
     bigdecimal::BigDecimal,
     database::order_events::OrderEventLabel,
-    ethrpc::block_stream::CurrentBlockWatcher,
     futures::{future::join_all, FutureExt},
     indexmap::IndexSet,
     itertools::{Either, Itertools},
@@ -18,20 +17,12 @@ use {
     },
     number::conversions::u256_to_big_decimal,
     primitive_types::{H160, H256, U256},
-    prometheus::{
-        Histogram,
-        HistogramTimer,
-        HistogramVec,
-        IntCounter,
-        IntCounterVec,
-        IntGauge,
-        IntGaugeVec,
-    },
+    prometheus::{Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec},
     shared::{
         account_balances::{BalanceFetching, Query},
         bad_token::BadTokenDetecting,
         price_estimation::{
-            native::NativePriceEstimating,
+            native::{to_normalized_price, NativePriceEstimating},
             native_price_cache::CachingNativePriceEstimator,
         },
         remaining_amounts,
@@ -39,12 +30,12 @@ use {
     },
     std::{
         collections::{btree_map::Entry, BTreeMap, HashMap, HashSet},
-        sync::{Arc, Weak},
+        future::Future,
+        sync::Arc,
         time::Duration,
     },
     strum::VariantNames,
     tokio::{sync::Mutex, time::Instant},
-    tracing::Instrument,
 };
 
 #[derive(prometheus_metric_storage::MetricStorage)]
@@ -54,11 +45,18 @@ pub struct Metrics {
     auction_update: IntCounterVec,
 
     /// Time taken to update the solvable orders cache.
-    #[metric(buckets(0.1, 0.2, 0.5, 1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10))]
+    #[metric(buckets(
+        0.1, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0, 3.5, 4, 5
+    ))]
     auction_update_total_time: Histogram,
 
     /// Time spent on auction update individual stage.
-    #[metric(labels("stage"))]
+    #[metric(
+        labels("stage"),
+        buckets(
+            0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0
+        )
+    )]
     auction_update_stage_time: HistogramVec,
 
     /// Auction creations.
@@ -100,12 +98,13 @@ pub struct SolvableOrdersCache {
     limit_order_price_factor: BigDecimal,
     protocol_fees: domain::ProtocolFees,
     cow_amm_registry: cow_amm::Registry,
+    native_price_timeout: Duration,
 }
 
 type Balances = HashMap<Query, U256>;
 
 struct Inner {
-    auction: domain::Auction,
+    auction: domain::RawAuctionData,
     solvable_orders: boundary::SolvableOrders,
 }
 
@@ -123,6 +122,7 @@ impl SolvableOrdersCache {
         limit_order_price_factor: BigDecimal,
         protocol_fees: domain::ProtocolFees,
         cow_amm_registry: cow_amm::Registry,
+        native_price_timeout: Duration,
     ) -> Arc<Self> {
         let self_ = Arc::new(Self {
             min_order_validity_period,
@@ -138,24 +138,12 @@ impl SolvableOrdersCache {
             limit_order_price_factor,
             protocol_fees,
             cow_amm_registry,
+            native_price_timeout,
         });
         self_
     }
 
-    /// Spawns a task that periodically updates the set of open orders
-    /// and builds a new auction with them.
-    pub fn spawn_background_task(
-        cache: &Arc<Self>,
-        block_stream: CurrentBlockWatcher,
-        update_interval: Duration,
-    ) {
-        tokio::task::spawn(
-            update_task(Arc::downgrade(cache), update_interval, block_stream)
-                .instrument(tracing::info_span!("solvable_orders_cache")),
-        );
-    }
-
-    pub async fn current_auction(&self) -> Option<domain::Auction> {
+    pub async fn current_auction(&self) -> Option<domain::RawAuctionData> {
         self.cache
             .lock()
             .await
@@ -186,14 +174,10 @@ impl SolvableOrdersCache {
 
         let (balances, orders, cow_amms) = {
             let queries = orders.iter().map(Query::from_order).collect::<Vec<_>>();
-            let cow_amms_fut = async {
-                let _timer = self.stage_timer("cow_amm_registry");
-                self.cow_amm_registry.amms().await
-            };
             tokio::join!(
                 self.fetch_balances(queries),
                 self.filter_invalid_orders(orders, &mut counter, &mut invalid_order_uids,),
-                cow_amms_fut
+                self.timed_future("cow_amm_registry", self.cow_amm_registry.amms()),
             )
         };
 
@@ -205,15 +189,32 @@ impl SolvableOrdersCache {
         let removed = counter.checkpoint("dust_order", &orders);
         filtered_order_events.extend(removed);
 
+        let cow_amm_tokens = cow_amms
+            .iter()
+            .flat_map(|cow_amm| cow_amm.traded_tokens())
+            .cloned()
+            .collect::<Vec<_>>();
+
         // create auction
-        let (orders, mut prices) =
-            get_orders_with_native_prices(orders, &self.native_price_estimator, self.metrics);
+        let (orders, mut prices) = self
+            .timed_future(
+                "get_orders_with_native_prices",
+                get_orders_with_native_prices(
+                    orders,
+                    &self.native_price_estimator,
+                    self.metrics,
+                    cow_amm_tokens,
+                    self.native_price_timeout,
+                ),
+            )
+            .await;
         // Add WETH price if it's not already there to support ETH wrap when required.
         if let Entry::Vacant(entry) = prices.entry(self.weth) {
-            let _timer = self.stage_timer("weth_price_fetch");
             let weth_price = self
-                .native_price_estimator
-                .estimate_native_price(self.weth)
+                .timed_future(
+                    "weth_price_fetch",
+                    self.native_price_estimator.estimate_native_price(self.weth),
+                )
                 .await
                 .expect("weth price fetching can never fail");
             let weth_price = to_normalized_price(weth_price)
@@ -221,17 +222,6 @@ impl SolvableOrdersCache {
 
             entry.insert(weth_price);
         }
-
-        let cow_amm_tokens = cow_amms
-            .iter()
-            .flat_map(|cow_amm| cow_amm.traded_tokens())
-            .unique()
-            .filter(|token| !prices.contains_key(token))
-            .cloned()
-            .collect::<Vec<_>>();
-        let cow_amm_prices =
-            get_native_prices(cow_amm_tokens.as_slice(), &self.native_price_estimator);
-        prices.extend(cow_amm_prices);
 
         let removed = counter.checkpoint("missing_price", &orders);
         filtered_order_events.extend(removed);
@@ -275,9 +265,8 @@ impl SolvableOrdersCache {
             .cloned()
             .map(eth::Address::from)
             .collect::<Vec<_>>();
-        let auction = domain::Auction {
+        let auction = domain::RawAuctionData {
             block,
-            latest_settlement_block: db_solvable_orders.latest_settlement_block,
             orders: orders
                 .into_iter()
                 .map(|order| {
@@ -311,10 +300,12 @@ impl SolvableOrdersCache {
     }
 
     async fn fetch_balances(&self, queries: Vec<Query>) -> HashMap<Query, U256> {
-        let fetched_balances = {
-            let _timer = self.stage_timer("balance_fetch");
-            self.balance_fetcher.get_balances(&queries).await
-        };
+        let fetched_balances = self
+            .timed_future(
+                "balance_filtering",
+                self.balance_fetcher.get_balances(&queries),
+            )
+            .await;
         queries
             .into_iter()
             .zip(fetched_balances)
@@ -376,22 +367,19 @@ impl SolvableOrdersCache {
         counter: &mut OrderFilterCounter,
         invalid_order_uids: &mut HashSet<OrderUid>,
     ) -> Vec<Order> {
-        let banned_user_orders_fut = async {
-            let _timer = self.stage_timer("banned_user_filtering");
-            find_banned_user_orders(&orders, &self.banned_users).await
-        };
-        let invalid_signature_orders_fut = async {
-            let _timer = self.stage_timer("invalid_signature_filtering");
-            find_invalid_signature_orders(&orders, self.signature_validator.as_ref()).await
-        };
-        let unsupported_token_orders_fut = async {
-            let _timer = self.stage_timer("unsupported_token_filtering");
-            find_unsupported_tokens(&orders, self.bad_token_detector.clone()).await
-        };
         let (banned_user_orders, invalid_signature_orders, unsupported_token_orders) = tokio::join!(
-            banned_user_orders_fut,
-            invalid_signature_orders_fut,
-            unsupported_token_orders_fut,
+            self.timed_future(
+                "banned_user_filtering",
+                find_banned_user_orders(&orders, &self.banned_users)
+            ),
+            self.timed_future(
+                "invalid_signature_filtering",
+                find_invalid_signature_orders(&orders, self.signature_validator.as_ref())
+            ),
+            self.timed_future(
+                "unsupported_token_filtering",
+                find_unsupported_tokens(&orders, self.bad_token_detector.clone())
+            ),
         );
 
         counter.checkpoint_by_invalid_orders("banned_user", &banned_user_orders);
@@ -412,11 +400,14 @@ impl SolvableOrdersCache {
             .inc();
     }
 
-    fn stage_timer(&self, stage: &str) -> HistogramTimer {
-        self.metrics
+    /// Runs the future and collects runtime metrics.
+    async fn timed_future<T>(&self, label: &str, fut: impl Future<Output = T>) -> T {
+        let _timer = self
+            .metrics
             .auction_update_stage_time
-            .with_label_values(&[stage])
-            .start_timer()
+            .with_label_values(&[label])
+            .start_timer();
+        fut.await
     }
 }
 
@@ -441,12 +432,14 @@ async fn find_banned_user_orders(orders: &[Order], banned_users: &banned::Users)
         .collect()
 }
 
-fn get_native_prices(
+async fn get_native_prices(
     tokens: &[H160],
     native_price_estimator: &CachingNativePriceEstimator,
-) -> HashMap<H160, U256> {
+    timeout: Duration,
+) -> BTreeMap<H160, U256> {
     native_price_estimator
-        .get_cached_prices(tokens)
+        .estimate_native_prices_with_timeout(tokens, timeout)
+        .await
         .into_iter()
         .flat_map(|(token, result)| {
             let price = to_normalized_price(result.ok()?)?;
@@ -568,84 +561,38 @@ fn filter_dust_orders(mut orders: Vec<Order>, balances: &Balances) -> Vec<Order>
     orders
 }
 
-/// Keep updating the cache every N seconds or when an update notification
-/// happens. Exits when this becomes the only reference to the cache.
-async fn update_task(
-    cache: Weak<SolvableOrdersCache>,
-    update_interval: Duration,
-    current_block: CurrentBlockWatcher,
-) {
-    loop {
-        // We are not updating on block changes because
-        // - the state of orders could change even when the block does not like when an
-        //   order gets cancelled off chain
-        // - the event updater takes some time to run and if we go first we would not
-        //   update the orders with the most recent events.
-        let start = Instant::now();
-        let cache = match cache.upgrade() {
-            Some(self_) => self_,
-            None => {
-                tracing::debug!("exiting solvable orders update task");
-                break;
-            }
-        };
-        let block = current_block.borrow().number;
-        match cache.update(block).await {
-            Ok(()) => {
-                cache.track_auction_update("success");
-                tracing::debug!(
-                    %block,
-                    "updated solvable orders in {}s",
-                    start.elapsed().as_secs_f32()
-                )
-            }
-            Err(err) => {
-                cache.track_auction_update("failure");
-                tracing::warn!(
-                    ?err,
-                    %block,
-                    "failed to update solvable orders in {}s",
-                    start.elapsed().as_secs_f32()
-                )
-            }
-        }
-        tokio::time::sleep_until(start + update_interval).await;
-    }
-}
-
-fn get_orders_with_native_prices(
+async fn get_orders_with_native_prices(
     orders: Vec<Order>,
     native_price_estimator: &CachingNativePriceEstimator,
     metrics: &Metrics,
+    additional_tokens: impl IntoIterator<Item = H160>,
+    timeout: Duration,
 ) -> (Vec<Order>, BTreeMap<H160, U256>) {
     let traded_tokens = orders
         .iter()
         .flat_map(|order| [order.data.sell_token, order.data.buy_token])
-        .collect::<HashSet<_>>()
-        .into_iter()
-        .collect::<Vec<_>>();
+        .chain(additional_tokens)
+        .collect::<HashSet<_>>();
 
-    let prices = get_native_prices(&traded_tokens, native_price_estimator);
+    let prices = get_native_prices(
+        &traded_tokens.into_iter().collect::<Vec<_>>(),
+        native_price_estimator,
+        timeout,
+    )
+    .await;
 
-    // Filter both orders and prices so that we only return orders that have prices
-    // and prices that have orders.
+    // Filter orders so that we only return orders that have prices
     let mut filtered_market_orders = 0_i64;
-    let mut used_prices = BTreeMap::new();
     let (usable, filtered): (Vec<_>, Vec<_>) = orders.into_iter().partition(|order| {
         let (t0, t1) = (&order.data.sell_token, &order.data.buy_token);
         match (prices.get(t0), prices.get(t1)) {
-            (Some(p0), Some(p1)) => {
-                used_prices.insert(*t0, *p0);
-                used_prices.insert(*t1, *p1);
-                true
-            }
+            (Some(_), Some(_)) => true,
             _ => {
                 filtered_market_orders += i64::from(order.metadata.class == OrderClass::Market);
                 false
             }
         }
     });
-
     let tokens_by_priority = prioritize_missing_prices(filtered);
     native_price_estimator.replace_high_priority(tokens_by_priority);
 
@@ -655,7 +602,7 @@ fn get_orders_with_native_prices(
         .auction_market_order_missing_price
         .set(filtered_market_orders);
 
-    (usable, used_prices)
+    (usable, prices)
 }
 
 /// Computes which missing native prices are the most urgent to fetch.
@@ -700,17 +647,6 @@ fn prioritize_missing_prices(mut orders: Vec<Order>) -> IndexSet<H160> {
     high_priority_tokens
 }
 
-fn to_normalized_price(price: f64) -> Option<U256> {
-    let uint_max = 2.0_f64.powi(256);
-
-    let price_in_eth = 1e18 * price;
-    if price_in_eth.is_normal() && price_in_eth >= 1. && price_in_eth < uint_max {
-        Some(U256::from_f64_lossy(price_in_eth))
-    } else {
-        None
-    }
-}
-
 async fn find_unsupported_tokens(
     orders: &[Order],
     bad_token: Arc<dyn BadTokenDetecting>,
@@ -726,7 +662,11 @@ async fn find_unsupported_tokens(
                     match bad_token.detect(token).await {
                         Ok(quality) => (!quality.is_good()).then_some(token),
                         Err(err) => {
-                            tracing::warn!(?token, ?err, "unable to determine token quality");
+                            tracing::warn!(
+                                ?token,
+                                ?err,
+                                "unable to determine token quality, assume good"
+                            );
                             Some(token)
                         }
                     }
@@ -923,36 +863,78 @@ mod tests {
         },
     };
 
-    #[test]
-    fn computes_u256_prices_normalized_to_1e18() {
+    #[tokio::test]
+    async fn get_orders_with_native_prices_with_timeout() {
+        let token1 = H160([1; 20]);
+        let token2 = H160([2; 20]);
+        let token3 = H160([3; 20]);
+
+        let orders = vec![
+            OrderBuilder::default()
+                .with_sell_token(token1)
+                .with_buy_token(token2)
+                .with_buy_amount(1.into())
+                .with_sell_amount(1.into())
+                .build(),
+            OrderBuilder::default()
+                .with_sell_token(token1)
+                .with_buy_token(token3)
+                .with_buy_amount(1.into())
+                .with_sell_amount(1.into())
+                .build(),
+        ];
+
+        let mut native_price_estimator = MockNativePriceEstimating::new();
+        native_price_estimator
+            .expect_estimate_native_price()
+            .withf(move |token| *token == token1)
+            .returning(|_| async { Ok(2.) }.boxed());
+        native_price_estimator
+            .expect_estimate_native_price()
+            .times(1)
+            .withf(move |token| *token == token2)
+            .returning(|_| async { Err(PriceEstimationError::NoLiquidity) }.boxed());
+        native_price_estimator
+            .expect_estimate_native_price()
+            .times(1)
+            .withf(move |token| *token == token3)
+            .returning(|_| async { Ok(0.25) }.boxed());
+
+        let native_price_estimator = CachingNativePriceEstimator::new(
+            Box::new(native_price_estimator),
+            Duration::from_secs(10),
+            Duration::MAX,
+            None,
+            Default::default(),
+            3,
+        );
+        let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
+
+        let (filtered_orders, prices) = get_orders_with_native_prices(
+            orders.clone(),
+            &native_price_estimator,
+            metrics,
+            vec![],
+            Duration::from_millis(100),
+        )
+        .await;
+        assert_eq!(filtered_orders, [orders[1].clone()]);
         assert_eq!(
-            to_normalized_price(0.5).unwrap(),
-            U256::from(500_000_000_000_000_000_u128),
+            prices,
+            btreemap! {
+                token1 => U256::from(2_000_000_000_000_000_000_u128),
+                token3 => U256::from(250_000_000_000_000_000_u128),
+            }
         );
     }
 
-    #[test]
-    fn normalize_prices_fail_when_outside_valid_input_range() {
-        assert!(to_normalized_price(0.).is_none());
-        assert!(to_normalized_price(-1.).is_none());
-        assert!(to_normalized_price(f64::INFINITY).is_none());
-
-        let min_price = 1. / 1e18;
-        assert!(to_normalized_price(min_price).is_some());
-        assert!(to_normalized_price(min_price * (1. - f64::EPSILON)).is_none());
-
-        let uint_max = 2.0_f64.powi(256);
-        let max_price = uint_max / 1e18;
-        assert!(to_normalized_price(max_price).is_none());
-        assert!(to_normalized_price(max_price * (1. - f64::EPSILON)).is_some());
-    }
-
     #[tokio::test]
-    async fn filters_tokens_without_native_prices() {
+    async fn filters_orders_with_tokens_without_native_prices() {
         let token1 = H160([1; 20]);
         let token2 = H160([2; 20]);
         let token3 = H160([3; 20]);
         let token4 = H160([4; 20]);
+        let token5 = H160([5; 20]);
 
         let orders = vec![
             OrderBuilder::default()
@@ -1001,6 +983,11 @@ mod tests {
             .times(1)
             .withf(move |token| *token == token4)
             .returning(|_| async { Ok(0.) }.boxed());
+        native_price_estimator
+            .expect_estimate_native_price()
+            .times(1)
+            .withf(move |token| *token == token5)
+            .returning(|_| async { Ok(5.) }.boxed());
 
         let native_price_estimator = CachingNativePriceEstimator::new(
             Box::new(native_price_estimator),
@@ -1015,8 +1002,14 @@ mod tests {
         // We'll have no native prices in this call. But this call will cause a
         // background task to fetch the missing prices so we'll have them in the
         // next call.
-        let (filtered_orders, prices) =
-            get_orders_with_native_prices(orders.clone(), &native_price_estimator, metrics);
+        let (filtered_orders, prices) = get_orders_with_native_prices(
+            orders.clone(),
+            &native_price_estimator,
+            metrics,
+            vec![token5],
+            Duration::ZERO,
+        )
+        .await;
         assert!(filtered_orders.is_empty());
         assert!(prices.is_empty());
 
@@ -1024,8 +1017,14 @@ mod tests {
         tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
 
         // Now we have all the native prices we want.
-        let (filtered_orders, prices) =
-            get_orders_with_native_prices(orders.clone(), &native_price_estimator, metrics);
+        let (filtered_orders, prices) = get_orders_with_native_prices(
+            orders.clone(),
+            &native_price_estimator,
+            metrics,
+            vec![token5],
+            Duration::ZERO,
+        )
+        .await;
 
         assert_eq!(filtered_orders, [orders[2].clone()]);
         assert_eq!(
@@ -1033,6 +1032,7 @@ mod tests {
             btreemap! {
                 token1 => U256::from(2_000_000_000_000_000_000_u128),
                 token3 => U256::from(250_000_000_000_000_000_u128),
+                token5 => U256::from(5_000_000_000_000_000_000_u128),
             }
         );
     }

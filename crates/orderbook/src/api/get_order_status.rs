@@ -1,8 +1,7 @@
 use {
-    crate::orderbook::Orderbook,
+    crate::{api::ApiReply, orderbook::Orderbook},
     anyhow::Result,
     model::order::OrderUid,
-    shared::api::ApiReply,
     std::{convert::Infallible, sync::Arc},
     warp::{hyper::StatusCode, Filter, Rejection},
 };
@@ -28,7 +27,7 @@ pub fn get_status(
                 ),
                 Err(err) => {
                     tracing::error!(?err, "get_order_status");
-                    *Box::new(shared::api::internal_error_reply())
+                    *Box::new(crate::api::internal_error_reply())
                 }
             })
         }

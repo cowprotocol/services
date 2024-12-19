@@ -12,6 +12,7 @@ use {
     futures::{future, Stream, StreamExt, TryStreamExt},
     std::sync::Arc,
     tokio::sync::Mutex,
+    tracing::Instrument,
 };
 
 // We expect that there is never a reorg that changes more than the last n
@@ -76,7 +77,13 @@ pub trait EventStoring<T>: Send + Sync {
     /// * `events` the contract events to be appended by the implementer
     async fn append_events(&mut self, events: Vec<EthcontractEvent<T>>) -> Result<()>;
 
+    /// Fetches the last processed block to know where to resume indexing after
+    /// a restart.
     async fn last_event_block(&self) -> Result<u64>;
+
+    /// Stores the last processed block to know where to resume indexing after a
+    /// restart.
+    async fn persist_last_indexed_block(&mut self, last_block: u64) -> Result<()>;
 }
 
 pub trait EventRetrieving {
@@ -204,6 +211,31 @@ where
             });
         }
 
+        // Special case where multiple new blocks were added and no reorg happened.
+        // Because we need to fetch the full block range we only do this if the number
+        // of new blocks is sufficiently small.
+        if let Ok(block_range) =
+            RangeInclusive::try_new(last_handled_block_number, current_block_number)
+        {
+            if block_range.end() - block_range.start() <= MAX_REORG_BLOCK_COUNT {
+                let mut new_blocks = self.block_retriever.blocks(block_range).await?;
+                if new_blocks.first().map(|b| b.1) == Some(last_handled_block_hash) {
+                    // first block is not actually new and was only fetched to detect a reorg
+                    new_blocks.remove(0);
+                    tracing::debug!(
+                        first_new=?new_blocks.first(),
+                        last_new=?new_blocks.last(),
+                        "multiple new blocks without reorg"
+                    );
+                    return Ok(EventRange {
+                        history_range: None,
+                        latest_blocks: new_blocks,
+                        is_reorg: false,
+                    });
+                }
+            }
+        }
+
         // full range of blocks which are considered for event update
         let block_range = RangeInclusive::try_new(
             last_handled_block_number.saturating_sub(MAX_REORG_BLOCK_COUNT),
@@ -257,8 +289,11 @@ where
         if let Some(range) = event_range.history_range {
             self.update_events_from_old_blocks(range).await?;
         }
-        if !event_range.latest_blocks.is_empty() {
+        if let Some(last_block) = event_range.latest_blocks.last() {
             self.update_events_from_latest_blocks(&event_range.latest_blocks, event_range.is_reorg)
+                .await?;
+            self.store_mut()
+                .persist_last_indexed_block(last_block.0)
                 .await?;
         }
         Ok(())
@@ -503,7 +538,12 @@ where
     S: EventStoring<C::Event> + Send + Sync,
 {
     async fn run_maintenance(&self) -> Result<()> {
-        self.lock().await.update_events().await
+        let mut inner = self.lock().await;
+        let address = inner.contract.get_events().filter.address;
+        inner
+            .update_events()
+            .instrument(tracing::info_span!("address", ?address))
+            .await
     }
 
     fn name(&self) -> &str {
@@ -626,6 +666,11 @@ mod tests {
                 .last()
                 .map(|event| event.meta.clone().unwrap().block_number)
                 .unwrap_or_default())
+        }
+
+        async fn persist_last_indexed_block(&mut self, _last_block: u64) -> Result<()> {
+            // Nothing to do here since `last_event_block` looks up last stored event.
+            Ok(())
         }
     }
 
@@ -809,6 +854,40 @@ mod tests {
         );
         let _result = event_handler.update_events().await;
         // add logs to event handler and observe
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn multiple_new_blocks_but_no_reorg_test() {
+        tracing_subscriber::fmt::init();
+        let transport = create_env_test_transport();
+        let web3 = Web3::new(transport);
+        let contract = GPv2Settlement::deployed(&web3).await.unwrap();
+        let storage = EventStorage { events: vec![] };
+        let current_block = web3.eth().block_number().await.unwrap();
+
+        const NUMBER_OF_BLOCKS: u64 = 300;
+
+        //get block in history (current_block - NUMBER_OF_BLOCKS)
+        let block = web3
+            .eth()
+            .block(
+                BlockNumber::Number(current_block.saturating_sub(NUMBER_OF_BLOCKS.into())).into(),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        let block = (block.number.unwrap().as_u64(), block.hash.unwrap());
+        let mut event_handler = EventHandler::new(
+            Arc::new(web3),
+            GPv2SettlementContract(contract),
+            storage,
+            Some(block),
+        );
+        let _result = event_handler.update_events().await;
+        tracing::info!("wait for at least 2 blocks to see if we hit the new code path");
+        tokio::time::sleep(tokio::time::Duration::from_millis(26_000)).await;
+        let _result = event_handler.update_events().await;
     }
 
     #[tokio::test]

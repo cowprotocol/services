@@ -1,8 +1,9 @@
 use {
-    crate::{domain::eth, infra::blockchain::Ethereum},
+    crate::{boundary, domain::eth, infra::blockchain::Ethereum},
     ethcontract::dyns::DynWeb3,
     ethrpc::block_stream::CurrentBlockWatcher,
     thiserror::Error,
+    url::Url,
 };
 
 #[derive(Debug, Clone)]
@@ -27,9 +28,10 @@ pub struct Addresses {
 impl Contracts {
     pub(super) async fn new(
         web3: &DynWeb3,
-        chain: eth::ChainId,
+        chain: chain::Id,
         addresses: Addresses,
         block_stream: CurrentBlockWatcher,
+        archive_node_url: Option<&Url>,
     ) -> Result<Self, Error> {
         let address_for = |contract: &ethcontract::Contract,
                            address: Option<eth::ContractAddress>| {
@@ -64,7 +66,10 @@ impl Contracts {
                 .0,
         );
 
-        let mut cow_amm_registry = cow_amm::Registry::new(web3.clone());
+        let archive_node_web3 = archive_node_url
+            .as_ref()
+            .map_or(web3.clone(), |url| boundary::buffered_web3_client(url));
+        let mut cow_amm_registry = cow_amm::Registry::new(archive_node_web3);
         for config in addresses.cow_amms {
             cow_amm_registry
                 .add_listener(config.index_start, config.factory, config.helper)
@@ -125,7 +130,7 @@ pub struct CowAmmConfig {
 /// there is no known deployment for the contract on that network.
 pub fn deployment_address(
     contract: &ethcontract::Contract,
-    network_id: eth::ChainId,
+    network_id: chain::Id,
 ) -> Option<eth::ContractAddress> {
     Some(
         contract

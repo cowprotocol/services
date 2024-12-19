@@ -10,11 +10,13 @@ use {
     },
     anyhow::{anyhow, Context, Result},
     app_data::Validator,
+    chain::Chain,
     clap::Parser,
     contracts::{BalancerV2Vault, GPv2Settlement, HooksTrampoline, IUniswapV3Factory, WETH9},
     ethcontract::errors::DeployError,
     futures::{FutureExt, StreamExt},
     model::{order::BUY_ETH_ADDRESS, DomainSeparator},
+    observe::metrics::{serve_metrics, DEFAULT_METRICS_PORT},
     order_validation,
     shared::{
         account_balances,
@@ -29,8 +31,6 @@ use {
         code_fetching::CachedCodeFetcher,
         gas_price::InstrumentedGasEstimator,
         http_client::HttpClientFactory,
-        metrics::{serve_metrics, DEFAULT_METRICS_PORT},
-        network::network_name,
         order_quoting::{self, OrderQuoter},
         order_validation::{OrderValidPeriodConfiguration, OrderValidator},
         price_estimation::{
@@ -104,12 +104,11 @@ pub async fn run(args: Arguments) {
             .expect("load native token contract"),
     };
 
-    let network_name = network_name(chain_id);
+    let chain = Chain::try_from(chain_id).expect("incorrect chain ID");
 
     let signature_validator = signature_validator::validator(
         &web3,
         signature_validator::Contracts {
-            chain_id,
             settlement: settlement_contract.address(),
             vault_relayer,
         },
@@ -145,7 +144,6 @@ pub async fn run(args: Arguments) {
     let balance_fetcher = account_balances::fetcher(
         &web3,
         account_balances::Contracts {
-            chain_id,
             settlement: settlement_contract.address(),
             vault_relayer,
             vault: vault.as_ref().map(|contract| contract.address()),
@@ -163,9 +161,11 @@ pub async fn run(args: Arguments) {
         .expect("failed to create gas price estimator"),
     ));
 
-    let baseline_sources = args.shared.baseline_sources.clone().unwrap_or_else(|| {
-        sources::defaults_for_chain(chain_id).expect("failed to get default baseline sources")
-    });
+    let baseline_sources = args
+        .shared
+        .baseline_sources
+        .clone()
+        .unwrap_or_else(|| sources::defaults_for_network(&chain));
     tracing::info!(?baseline_sources, "using baseline sources");
     let univ2_sources = baseline_sources
         .iter()
@@ -198,7 +198,7 @@ pub async fn run(args: Arguments) {
     let finder = token_owner_finder::init(
         &args.token_owner_finder,
         web3.clone(),
-        chain_id,
+        &chain,
         &http_factory,
         &pair_providers,
         vault.as_ref(),
@@ -255,8 +255,7 @@ pub async fn run(args: Arguments) {
         factory::Network {
             web3: web3.clone(),
             simulation_web3,
-            name: network_name.to_string(),
-            chain_id,
+            chain,
             native_token: native_token.address(),
             settlement: settlement_contract.address(),
             authenticator: settlement_contract
@@ -274,6 +273,7 @@ pub async fn run(args: Arguments) {
             code_fetcher: code_fetcher.clone(),
         },
     )
+    .await
     .expect("failed to initialize price estimator factory");
 
     let native_price_estimator = price_estimator_factory
@@ -284,6 +284,9 @@ pub async fn run(args: Arguments) {
         )
         .await
         .unwrap();
+    let prices = postgres.fetch_latest_prices().await.unwrap();
+    native_price_estimator.initialize_cache(prices).await;
+
     let price_estimator = price_estimator_factory
         .price_estimator(
             &args.order_quoting.price_estimation_drivers,

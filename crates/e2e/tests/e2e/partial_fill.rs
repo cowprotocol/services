@@ -5,6 +5,7 @@ use {
         order::{OrderCreation, OrderKind},
         signature::{EcdsaSigningScheme, Signature, SigningScheme},
     },
+    orderbook::dto::order::Status,
     secp256k1::SecretKey,
     shared::ethrpc::Web3,
     web3::signing::SecretKeyRef,
@@ -41,7 +42,7 @@ async fn test(web3: Web3) {
     );
 
     tracing::info!("Starting services.");
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     services.start_protocol(solver.clone()).await;
 
     tracing::info!("Placing order");
@@ -64,6 +65,8 @@ async fn test(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
     let uid = services.create_order(&order).await.unwrap();
+
+    onchain.mint_block().await;
 
     tracing::info!("Waiting for trade.");
     let trade_happened =
@@ -104,15 +107,11 @@ async fn test(web3: Web3) {
     assert!(competition.common.auction.orders.contains(&uid));
     let latest_competition = services.get_latest_solver_competition().await.unwrap();
     assert_eq!(latest_competition, competition);
-    assert!(matches!(
-        services.get_order_status(&uid).await.unwrap(),
-        orderbook::dto::order::Status::Traded(ref solutions)
-        if solutions.len() == 1 && matches!(
-            &solutions[0],
-            orderbook::dto::order::SolutionInclusion {
-                solver: ref s,
-                executed_amounts: Some(_),
-            } if s == "test_solver"
-        )
-    ));
+
+    let Status::Traded(solutions) = services.get_order_status(&uid).await.unwrap() else {
+        panic!("last status of order was not traded");
+    };
+    assert_eq!(solutions.len(), 1);
+    assert_eq!(solutions[0].solver, "test_solver");
+    assert!(solutions[0].executed_amounts.is_some());
 }

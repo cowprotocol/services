@@ -9,16 +9,14 @@ use {
         surplus_capturing_jit_order_owners,
         Address,
     },
-    derivative::Derivative,
-    model::solver_competition::{SolverCompetitionAPI, SolverCompetitionDB},
+    derive_more::Debug,
+    model::solver_competition::SolverCompetitionDB,
     number::conversions::u256_to_big_decimal,
-    primitive_types::{H160, H256, U256},
-    sqlx::{types::JsonValue, PgConnection},
+    primitive_types::{H160, U256},
     std::collections::{BTreeMap, HashSet},
 };
 
-#[derive(Clone, Default, Derivative)]
-#[derivative(Debug)]
+#[derive(Clone, Default, Debug)]
 pub struct Competition {
     pub auction_id: AuctionId,
     pub winner: H160,
@@ -47,9 +45,13 @@ impl super::Postgres {
 
         let mut ex = self.pool.begin().await.context("begin")?;
 
-        database::solver_competition::save(&mut ex, competition.auction_id, json)
-            .await
-            .context("solver_competition::save")?;
+        database::solver_competition::save_solver_competition(
+            &mut ex,
+            competition.auction_id,
+            json,
+        )
+        .await
+        .context("solver_competition::save_solver_competition")?;
 
         database::settlement_scores::insert(
             &mut ex,
@@ -121,7 +123,7 @@ impl super::Postgres {
     }
 
     /// Saves the surplus capturing jit order owners to the DB
-    pub async fn save_surplus_capturing_jit_orders_orders(
+    pub async fn save_surplus_capturing_jit_order_owners(
         &self,
         auction_id: AuctionId,
         surplus_capturing_jit_order_owners: &[Address],
@@ -137,35 +139,4 @@ impl super::Postgres {
 
         Ok(())
     }
-
-    pub async fn find_competition(
-        auction_id: AuctionId,
-        ex: &mut PgConnection,
-    ) -> anyhow::Result<Option<SolverCompetitionAPI>> {
-        database::solver_competition::load_by_id(ex, auction_id)
-            .await
-            .context("solver_competition::load_by_id")?
-            .map(|row| {
-                deserialize_solver_competition(
-                    row.json,
-                    row.id,
-                    row.tx_hash.map(|hash| H256(hash.0)),
-                )
-            })
-            .transpose()
-    }
-}
-
-fn deserialize_solver_competition(
-    json: JsonValue,
-    auction_id: model::auction::AuctionId,
-    transaction_hash: Option<H256>,
-) -> anyhow::Result<SolverCompetitionAPI> {
-    let common: SolverCompetitionDB =
-        serde_json::from_value(json).context("deserialize SolverCompetitionDB")?;
-    Ok(SolverCompetitionAPI {
-        auction_id,
-        transaction_hash,
-        common,
-    })
 }

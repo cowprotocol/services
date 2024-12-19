@@ -112,7 +112,6 @@ pub enum Kind {
 pub enum Class {
     Market,
     Limit,
-    Liquidity,
 }
 
 #[derive(Debug, Deserialize)]

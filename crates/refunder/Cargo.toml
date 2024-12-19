@@ -8,27 +8,23 @@ license = "MIT OR Apache-2.0"
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
-chrono = { workspace = true }
 clap = { workspace = true }
-contracts  = { path = "../contracts" }
+contracts = { path = "../contracts" }
 database = { path = "../database" }
 ethcontract = { workspace = true }
 ethrpc = { path = "../ethrpc" }
-futures = {workspace = true}
+futures = { workspace = true }
 gas-estimation = { workspace = true }
 humantime = { workspace = true }
-lazy_static = { workspace = true }
-model = { path = "../model" }
+mimalloc = "0.1.43"
 number = { path = "../number" }
 observe = { path = "../observe" }
-primitive-types = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 shared = { path = "../shared" }
 sqlx = { workspace = true }
 tokio = { workspace = true, features = ["macros", "time", "rt-multi-thread"] }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
 url = { workspace = true }
 
 [lints]

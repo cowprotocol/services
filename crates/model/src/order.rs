@@ -10,9 +10,9 @@ use {
         TokenPair,
     },
     anyhow::{anyhow, Result},
-    app_data::AppDataHash,
+    app_data::{hash_full_app_data, AppDataHash},
     chrono::{offset::Utc, DateTime},
-    derivative::Derivative,
+    derive_more::Debug as DeriveDebug,
     hex_literal::hex,
     num::BigUint,
     number::serialization::HexOrDecimalU256,
@@ -81,12 +81,6 @@ impl Order {
     pub fn is_limit_order(&self) -> bool {
         matches!(self.metadata.class, OrderClass::Limit)
     }
-
-    /// For some orders the protocol doesn't precompute a fee. Instead solvers
-    /// are supposed to compute a reasonable fee themselves.
-    pub fn solver_determines_fee(&self) -> bool {
-        self.is_limit_order()
-    }
 }
 
 #[derive(Clone, Default, Debug)]
@@ -130,11 +124,6 @@ impl OrderBuilder {
 
     pub fn with_fee_amount(mut self, fee_amount: U256) -> Self {
         self.0.data.fee_amount = fee_amount;
-        self
-    }
-
-    pub fn with_full_fee_amount(mut self, full_fee_amount: U256) -> Self {
-        self.0.metadata.full_fee_amount = full_fee_amount;
         self
     }
 
@@ -192,16 +181,6 @@ impl OrderBuilder {
 
     pub fn with_class(mut self, class: OrderClass) -> Self {
         self.0.metadata.class = class;
-        self
-    }
-
-    pub fn with_solver_fee(mut self, fee: U256) -> Self {
-        self.0.metadata.solver_fee = fee;
-        self
-    }
-
-    pub fn with_full_app_data(mut self, full_app_data: String) -> Self {
-        self.0.metadata.full_app_data = Some(full_app_data);
         self
     }
 
@@ -465,7 +444,7 @@ impl OrderCreationAppData {
         match self {
             Self::Hash { hash } => *hash,
             Self::Full { full } | Self::Both { full, .. } => {
-                AppDataHash(app_data_hash::hash_full_app_data(full.as_bytes()))
+                AppDataHash(hash_full_app_data(full.as_bytes()))
             }
         }
     }
@@ -641,10 +620,9 @@ impl ::serde::Serialize for EthflowData {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Clone, Derivative, Deserialize, Serialize)]
+#[derive(Debug, Eq, PartialEq, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum OnchainOrderPlacementError {
-    QuoteNotFound,
     ValidToTooFarInTheFuture,
     // If limit orders are created from on-chain events
     // but limit orders are disabled at the API level, then this
@@ -669,8 +647,7 @@ pub enum OnchainOrderPlacementError {
 
 // stores all data related to onchain order palcement
 #[serde_as]
-#[derive(Eq, PartialEq, Clone, Default, Derivative, Deserialize, Serialize)]
-#[derivative(Debug)]
+#[derive(Eq, PartialEq, Clone, Default, Deserialize, Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct OnchainOrderData {
     pub sender: H160,
@@ -679,8 +656,7 @@ pub struct OnchainOrderData {
 
 /// An order as provided to the orderbook by the frontend.
 #[serde_as]
-#[derive(Eq, PartialEq, Clone, Default, Derivative, Deserialize, Serialize)]
-#[derivative(Debug)]
+#[derive(Eq, PartialEq, Clone, Default, Deserialize, Serialize, DeriveDebug)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderMetadata {
     pub creation_date: DateTime<Utc>,
@@ -689,10 +665,10 @@ pub struct OrderMetadata {
     /// deprecated, always set to null
     #[serde_as(as = "Option<HexOrDecimalU256>")]
     pub available_balance: Option<U256>,
-    #[derivative(Debug(format_with = "debug_biguint_to_string"))]
+    #[debug("{}", format_args!("{executed_buy_amount}"))]
     #[serde_as(as = "DisplayFromStr")]
     pub executed_buy_amount: BigUint,
-    #[derivative(Debug(format_with = "debug_biguint_to_string"))]
+    #[debug("{}", format_args!("{executed_sell_amount}"))]
     #[serde_as(as = "DisplayFromStr")]
     pub executed_sell_amount: BigUint,
     #[serde_as(as = "HexOrDecimalU256")]
@@ -823,7 +799,7 @@ impl<'de> Deserialize<'de> for OrderUid {
         D: Deserializer<'de>,
     {
         struct Visitor {}
-        impl<'de> de::Visitor<'de> for Visitor {
+        impl de::Visitor<'_> for Visitor {
             type Value = OrderUid;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
@@ -1013,20 +989,6 @@ impl BuyTokenDestination {
     }
 }
 
-pub fn debug_app_data(
-    app_data: &[u8; 32],
-    formatter: &mut std::fmt::Formatter,
-) -> Result<(), std::fmt::Error> {
-    formatter.write_fmt(format_args!("{:?}", H256(*app_data)))
-}
-
-pub fn debug_biguint_to_string(
-    value: &BigUint,
-    formatter: &mut std::fmt::Formatter,
-) -> Result<(), std::fmt::Error> {
-    formatter.write_fmt(format_args!("{value}"))
-}
-
 #[cfg(test)]
 mod tests {
     use {
@@ -1038,7 +1000,7 @@ mod tests {
         primitive_types::H256,
         secp256k1::{PublicKey, Secp256k1, SecretKey},
         serde_json::json,
-        shared::assert_json_matches,
+        testlib::assert_json_matches,
         web3::signing::keccak256,
     };
 

@@ -11,10 +11,9 @@ use {
     std::collections::BTreeMap,
 };
 
-pub fn from_domain(auction: domain::Auction) -> Auction {
-    Auction {
+pub fn from_domain(auction: domain::RawAuctionData) -> RawAuctionData {
+    RawAuctionData {
         block: auction.block,
-        latest_settlement_block: auction.latest_settlement_block,
         orders: auction
             .orders
             .into_iter()
@@ -33,36 +32,11 @@ pub fn from_domain(auction: domain::Auction) -> Auction {
     }
 }
 
-pub fn try_to_domain(auction: Auction) -> anyhow::Result<domain::Auction> {
-    Ok(domain::Auction {
-        block: auction.block,
-        latest_settlement_block: auction.latest_settlement_block,
-        orders: auction
-            .orders
-            .into_iter()
-            .map(super::order::to_domain)
-            .collect(),
-        prices: auction
-            .prices
-            .into_iter()
-            .map(|(key, value)| {
-                Price::new(value.into()).map(|price| (eth::TokenAddress(key), price))
-            })
-            .collect::<Result<_, _>>()?,
-        surplus_capturing_jit_order_owners: auction
-            .surplus_capturing_jit_order_owners
-            .into_iter()
-            .map(Into::into)
-            .collect(),
-    })
-}
-
 #[serde_as]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Auction {
+pub struct RawAuctionData {
     pub block: u64,
-    pub latest_settlement_block: u64,
     pub orders: Vec<Order>,
     #[serde_as(as = "BTreeMap<_, HexOrDecimalU256>")]
     pub prices: BTreeMap<H160, U256>,
@@ -72,22 +46,40 @@ pub struct Auction {
 
 pub type AuctionId = i64;
 
-impl TryFrom<AuctionWithId> for domain::AuctionWithId {
-    type Error = anyhow::Error;
-
-    fn try_from(dto: AuctionWithId) -> anyhow::Result<Self> {
-        Ok(domain::AuctionWithId {
-            id: dto.id,
-            auction: try_to_domain(dto.auction)?,
-        })
-    }
-}
-
 #[serde_as]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AuctionWithId {
+pub struct Auction {
     pub id: AuctionId,
     #[serde(flatten)]
-    pub auction: Auction,
+    pub auction: RawAuctionData,
+}
+
+impl Auction {
+    pub fn try_into_domain(self) -> anyhow::Result<domain::Auction> {
+        Ok(domain::Auction {
+            id: self.id,
+            block: self.auction.block,
+            orders: self
+                .auction
+                .orders
+                .into_iter()
+                .map(super::order::to_domain)
+                .collect(),
+            prices: self
+                .auction
+                .prices
+                .into_iter()
+                .map(|(key, value)| {
+                    Price::new(value.into()).map(|price| (eth::TokenAddress(key), price))
+                })
+                .collect::<Result<_, _>>()?,
+            surplus_capturing_jit_order_owners: self
+                .auction
+                .surplus_capturing_jit_order_owners
+                .into_iter()
+                .map(Into::into)
+                .collect(),
+        })
+    }
 }

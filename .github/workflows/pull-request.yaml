@@ -4,13 +4,13 @@ on:
   # We require PRs to be up to date before merging so technically it is not needed run the rust job
   # on main. However for the cache to be usable in PRs we do need the job on main.
   push:
-    branches: [main]
+    branches: [ main ]
 jobs:
   lint:
     timeout-minutes: 60
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
       - run: rustup toolchain install stable --profile minimal
@@ -32,7 +32,7 @@ jobs:
   nitpicker:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
       - uses: ethanis/nitpicker@v1
@@ -44,7 +44,7 @@ jobs:
     timeout-minutes: 60
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
       - run: rustup toolchain install stable --profile minimal
@@ -60,7 +60,7 @@ jobs:
       CARGO_PROFILE_TEST_DEBUG: 0
       CARGO_TERM_COLOR: always
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
       - run: rustup toolchain install stable --profile minimal
@@ -78,7 +78,7 @@ jobs:
       CARGO_PROFILE_TEST_DEBUG: 0
       CARGO_TERM_COLOR: always
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
       - run: rustup toolchain install stable --profile minimal
@@ -101,9 +101,9 @@ jobs:
       CARGO_PROFILE_DEV_DEBUG: 0
       CARGO_PROFILE_TEST_DEBUG: 0
       CARGO_TERM_COLOR: always
-      TOML_TRACE_ERROR: 1      
+      TOML_TRACE_ERROR: 1
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
       - run: rustup toolchain install stable --profile minimal
@@ -131,7 +131,7 @@ jobs:
       FORK_URL_GNOSIS: ${{ secrets.FORK_URL_GNOSIS }}
       TOML_TRACE_ERROR: 1
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
       - run: rustup toolchain install stable --profile minimal
@@ -155,9 +155,9 @@ jobs:
       CARGO_PROFILE_DEV_DEBUG: 0
       CARGO_PROFILE_TEST_DEBUG: 0
       CARGO_TERM_COLOR: always
-      TOML_TRACE_ERROR: 1      
+      TOML_TRACE_ERROR: 1
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
       - run: rustup toolchain install stable --profile minimal
@@ -173,13 +173,16 @@ jobs:
     timeout-minutes: 60
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
-      - run: npm install @apidevtools/swagger-cli
+      - run: npm install @apidevtools/swagger-cli @stoplight/spectral-cli
       - run: node_modules/.bin/swagger-cli validate crates/orderbook/openapi.yml
       - run: node_modules/.bin/swagger-cli validate crates/driver/openapi.yml
       - run: node_modules/.bin/swagger-cli validate crates/solvers/openapi.yml
+      - run: node_modules/.bin/spectral lint crates/orderbook/openapi.yml
+      - run: node_modules/.bin/spectral lint crates/driver/openapi.yml
+      - run: node_modules/.bin/spectral lint crates/solvers/openapi.yml
 
   run-flaky-test:
     # to debug a flaky test set `if` to true and configure the flaky test in the `run` step
@@ -193,7 +196,7 @@ jobs:
       CARGO_TERM_COLOR: always
       TOML_TRACE_ERROR: 1
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
       - run: rustup toolchain install stable --profile minimal

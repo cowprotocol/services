@@ -132,7 +132,7 @@ async fn zero_ex_liquidity(web3: Web3) {
     let zeroex_api_port = ZeroExApi::new(zeroex_liquidity_orders.to_vec()).run().await;
 
     // Place Orders
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     colocation::start_driver(
         onchain.contracts(),
         vec![
@@ -141,12 +141,15 @@ async fn zero_ex_liquidity(web3: Web3) {
                 solver.clone(),
                 onchain.contracts().weth.address(),
                 vec![],
+                1,
+                true,
             )
             .await,
         ],
         colocation::LiquidityProvider::ZeroEx {
             api_port: zeroex_api_port,
         },
+        false,
     );
     services
         .start_autopilot(
@@ -177,6 +180,7 @@ async fn zero_ex_liquidity(web3: Web3) {
         .unwrap();
 
     services.create_order(&order).await.unwrap();
+    onchain.mint_block().await;
 
     tracing::info!("Waiting for trade.");
     wait_for_condition(TIMEOUT, || async {

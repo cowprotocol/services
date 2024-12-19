@@ -10,12 +10,6 @@ use {
 #[derive(Debug, Default, Copy, Clone)]
 pub struct Id(pub u64);
 
-impl From<u64> for Id {
-    fn from(id: u64) -> Self {
-        Self(id)
-    }
-}
-
 /// A solution to an auction.
 #[derive(Debug, Default)]
 pub struct Solution {
@@ -104,10 +98,6 @@ impl Solution {
         }
 
         self
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.prices.0.is_empty() && self.trades.is_empty() && self.interactions.is_empty()
     }
 }
 

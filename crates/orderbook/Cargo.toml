@@ -18,22 +18,21 @@ path = "src/main.rs"
 [dependencies]
 anyhow = { workspace = true }
 app-data = { path = "../app-data" }
-app-data-hash = { path = "../app-data-hash" }
 async-trait = { workspace = true }
 bigdecimal = { workspace = true }
 cached = { workspace = true }
+chain = { path = "../chain" }
 chrono = { workspace = true, features = ["clock"] }
 clap = { workspace = true }
 contracts = { path = "../contracts" }
 database = { path = "../database" }
 ethcontract = { workspace = true }
 futures = { workspace = true }
-gas-estimation = { workspace = true }
 hex = { workspace = true }
 hex-literal = { workspace = true }
 humantime = { workspace = true }
 hyper = { workspace = true }
-maplit = { workspace = true }
+mimalloc = { workspace = true }
 model = { path = "../model" }
 multibase = "0.9"
 num = { workspace = true }
@@ -55,12 +54,9 @@ tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "
 tracing = { workspace = true }
 url = { workspace = true }
 warp = { workspace = true }
-web3 = { workspace = true }
 
 [dev-dependencies]
 mockall = { workspace = true }
-secp256k1 = { workspace = true }
-testlib = { path = "../testlib" }
 tokio = { workspace = true, features = ["test-util"] }
 
 [build-dependencies]

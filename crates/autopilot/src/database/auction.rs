@@ -23,7 +23,7 @@ impl QuoteStoring for Postgres {
             .start_timer();
 
         let mut ex = self.pool.acquire().await?;
-        let row = create_quote_row(data);
+        let row = create_quote_row(data)?;
         let id = database::quotes::save(&mut ex, &row).await?;
         Ok(id)
     }
@@ -97,7 +97,10 @@ impl Postgres {
         })
     }
 
-    pub async fn replace_current_auction(&self, auction: &dto::Auction) -> Result<dto::AuctionId> {
+    pub async fn replace_current_auction(
+        &self,
+        auction: &dto::RawAuctionData,
+    ) -> Result<dto::AuctionId> {
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["replace_current_auction"])

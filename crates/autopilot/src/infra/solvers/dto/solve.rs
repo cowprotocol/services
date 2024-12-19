@@ -1,7 +1,7 @@
 use {
     crate::{
         boundary,
-        domain,
+        domain::{self, eth},
         infra::persistence::{dto, dto::order::Order},
     },
     chrono::{DateTime, Utc},
@@ -18,13 +18,12 @@ use {
 
 impl Request {
     pub fn new(
-        id: domain::auction::Id,
         auction: &domain::Auction,
         trusted_tokens: &HashSet<H160>,
         time_limit: Duration,
     ) -> Self {
         Self {
-            id,
+            id: auction.id,
             orders: auction
                 .orders
                 .clone()
@@ -59,7 +58,7 @@ impl Request {
 impl Response {
     pub fn into_domain(
         self,
-    ) -> Vec<Result<domain::competition::SolutionWithId, domain::competition::SolutionError>> {
+    ) -> Vec<Result<domain::competition::Solution, domain::competition::SolutionError>> {
         self.solutions
             .into_iter()
             .map(Solution::into_domain)
@@ -89,37 +88,17 @@ pub struct Token {
     pub trusted: bool,
 }
 
-#[serde_as]
-#[derive(Clone, Debug, Default, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct TradedAmounts {
-    /// The effective amount that left the user's wallet including all fees.
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub sell_amount: U256,
-    /// The effective amount the user received after all fees.
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub buy_amount: U256,
-}
-
 impl Solution {
     pub fn into_domain(
         self,
-    ) -> Result<domain::competition::SolutionWithId, domain::competition::SolutionError> {
-        Ok(domain::competition::SolutionWithId::new(
+    ) -> Result<domain::competition::Solution, domain::competition::SolutionError> {
+        Ok(domain::competition::Solution::new(
             self.solution_id,
             self.submission_address.into(),
             domain::competition::Score::new(self.score.into())?,
             self.orders
                 .into_iter()
-                .map(|(o, amounts)| {
-                    (
-                        o.into(),
-                        domain::competition::TradedAmounts {
-                            sell: amounts.sell_amount.into(),
-                            buy: amounts.buy_amount.into(),
-                        },
-                    )
-                })
+                .map(|(o, amounts)| (o.into(), amounts.into_domain()))
                 .collect(),
             self.clearing_prices
                 .into_iter()
@@ -131,26 +110,111 @@ impl Solution {
     }
 }
 
+/// Contains basic order information and the executed amounts. Basic order
+/// information are required because of JIT orders which are not part of an
+/// auction, so autopilot can be aware of them before the solution is
+/// settled on-chain.
 #[serde_as]
-#[derive(Clone, Debug, Default, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TradedOrder {
+    side: Side,
+    sell_token: H160,
+    buy_token: H160,
+    #[serde_as(as = "HexOrDecimalU256")]
+    /// Sell limit order amount.
+    limit_sell: U256,
+    #[serde_as(as = "HexOrDecimalU256")]
+    /// Buy limit order amount.
+    limit_buy: U256,
+    /// The effective amount that left the user's wallet including all fees.
+    #[serde_as(as = "HexOrDecimalU256")]
+    executed_sell: U256,
+    /// The effective amount the user received after all fees.
+    #[serde_as(as = "HexOrDecimalU256")]
+    executed_buy: U256,
+}
+
+impl TradedOrder {
+    pub fn into_domain(self) -> domain::competition::TradedOrder {
+        domain::competition::TradedOrder {
+            sell: eth::Asset {
+                token: self.sell_token.into(),
+                amount: self.limit_sell.into(),
+            },
+            buy: eth::Asset {
+                token: self.buy_token.into(),
+                amount: self.limit_buy.into(),
+            },
+            side: match self.side {
+                Side::Buy => domain::auction::order::Side::Buy,
+                Side::Sell => domain::auction::order::Side::Sell,
+            },
+            executed_sell: self.executed_sell.into(),
+            executed_buy: self.executed_buy.into(),
+        }
+    }
+}
+
+#[serde_as]
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Side {
+    Buy,
+    Sell,
+}
+
+#[serde_as]
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Solution {
     /// Unique ID of the solution (per driver competition), used to identify
     /// it in subsequent requests (reveal, settle).
-    #[serde_as(as = "serde_with::DisplayFromStr")]
+    #[serde(deserialize_with = "deserialize_solution_id")]
     pub solution_id: u64,
     #[serde_as(as = "HexOrDecimalU256")]
     pub score: U256,
     /// Address used by the driver to submit the settlement onchain.
     pub submission_address: H160,
-    pub orders: HashMap<boundary::OrderUid, TradedAmounts>,
+    pub orders: HashMap<boundary::OrderUid, TradedOrder>,
     #[serde_as(as = "HashMap<_, HexOrDecimalU256>")]
     pub clearing_prices: HashMap<H160, U256>,
     pub gas: Option<u64>,
 }
 
-#[derive(Clone, Debug, Default, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+fn deserialize_solution_id<'de, D>(deserializer: D) -> Result<u64, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    struct SolutionIdVisitor;
+
+    impl serde::de::Visitor<'_> for SolutionIdVisitor {
+        type Value = u64;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("a string or integer representing a solution ID")
+        }
+
+        fn visit_u64<E>(self, value: u64) -> Result<u64, E>
+        where
+            E: serde::de::Error,
+        {
+            Ok(value)
+        }
+
+        fn visit_str<E>(self, value: &str) -> Result<u64, E>
+        where
+            E: serde::de::Error,
+        {
+            value.parse::<u64>().map_err(serde::de::Error::custom)
+        }
+    }
+
+    deserializer.deserialize_any(SolutionIdVisitor)
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Response {
     pub solutions: Vec<Solution>,
 }

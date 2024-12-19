@@ -17,18 +17,20 @@ use {
         },
         domain,
         event_updater::EventUpdater,
-        infra::{self, blockchain::ChainId},
+        infra,
         maintenance::Maintenance,
-        run_loop::RunLoop,
+        run_loop::{self, RunLoop},
         shadow,
         solvable_orders::SolvableOrdersCache,
     },
+    chain::Chain,
     clap::Parser,
     contracts::{BalancerV2Vault, IUniswapV3Factory},
-    ethcontract::{dyns::DynWeb3, errors::DeployError, BlockNumber},
+    ethcontract::{common::DeploymentInformation, dyns::DynWeb3, errors::DeployError, BlockNumber},
     ethrpc::block_stream::block_number_to_block_number_hash,
     futures::StreamExt,
     model::DomainSeparator,
+    observe::metrics::LivenessChecking,
     shared::{
         account_balances,
         bad_token::{
@@ -42,7 +44,6 @@ use {
         code_fetching::CachedCodeFetcher,
         http_client::HttpClientFactory,
         maintenance::ServiceMaintenance,
-        metrics::LivenessChecking,
         order_quoting::{self, OrderQuoter},
         price_estimation::factory::{self, PriceEstimatorFactory},
         signature_validator,
@@ -93,7 +94,7 @@ async fn ethrpc(url: &Url, ethrpc_args: &shared::ethrpc::Arguments) -> infra::bl
 
 async fn ethereum(
     web3: DynWeb3,
-    chain: ChainId,
+    chain: &Chain,
     url: Url,
     contracts: infra::blockchain::contracts::Addresses,
     poll_interval: Duration,
@@ -165,7 +166,7 @@ pub async fn run(args: Arguments) {
     };
     let eth = ethereum(
         web3.clone(),
-        chain,
+        &chain,
         url,
         contracts.clone(),
         args.shared.current_block.block_stream_poll_interval,
@@ -197,12 +198,11 @@ pub async fn run(args: Arguments) {
         other => Some(other.unwrap()),
     };
 
-    let network_name = shared::network::network_name(chain_id);
+    let chain = Chain::try_from(chain_id).expect("incorrect chain ID");
 
     let signature_validator = signature_validator::validator(
         &web3,
         signature_validator::Contracts {
-            chain_id,
             settlement: eth.contracts().settlement().address(),
             vault_relayer,
         },
@@ -211,7 +211,6 @@ pub async fn run(args: Arguments) {
     let balance_fetcher = account_balances::cached(
         &web3,
         account_balances::Contracts {
-            chain_id,
             settlement: eth.contracts().settlement().address(),
             vault_relayer,
             vault: vault.as_ref().map(|contract| contract.address()),
@@ -230,10 +229,11 @@ pub async fn run(args: Arguments) {
         .expect("failed to create gas price estimator"),
     );
 
-    let baseline_sources = args.shared.baseline_sources.clone().unwrap_or_else(|| {
-        shared::sources::defaults_for_chain(chain_id)
-            .expect("failed to get default baseline sources")
-    });
+    let baseline_sources = args
+        .shared
+        .baseline_sources
+        .clone()
+        .unwrap_or_else(|| shared::sources::defaults_for_network(&chain));
     tracing::info!(?baseline_sources, "using baseline sources");
     let univ2_sources = baseline_sources
         .iter()
@@ -261,7 +261,7 @@ pub async fn run(args: Arguments) {
     let finder = token_owner_finder::init(
         &args.token_owner_finder,
         web3.clone(),
-        chain_id,
+        &chain,
         &http_factory,
         &pair_providers,
         vault.as_ref(),
@@ -312,8 +312,7 @@ pub async fn run(args: Arguments) {
         factory::Network {
             web3: web3.clone(),
             simulation_web3,
-            name: network_name.to_string(),
-            chain_id,
+            chain,
             native_token: eth.contracts().weth().address(),
             settlement: eth.contracts().settlement().address(),
             authenticator: eth
@@ -333,6 +332,7 @@ pub async fn run(args: Arguments) {
             code_fetcher: code_fetcher.clone(),
         },
     )
+    .await
     .expect("failed to initialize price estimator factory");
 
     let native_price_estimator = price_estimator_factory
@@ -343,6 +343,9 @@ pub async fn run(args: Arguments) {
         )
         .await
         .unwrap();
+    let prices = db.fetch_latest_prices().await.unwrap();
+    native_price_estimator.initialize_cache(prices).await;
+
     let price_estimator = price_estimator_factory
         .price_estimator(
             &args.order_quoting.price_estimation_drivers,
@@ -359,21 +362,39 @@ pub async fn run(args: Arguments) {
 
     let persistence =
         infra::persistence::Persistence::new(args.s3.into().unwrap(), Arc::new(db.clone())).await;
-    let on_settlement_event_updater =
-        crate::on_settlement_event_updater::OnSettlementEventUpdater::new(
-            eth.clone(),
-            persistence.clone(),
-        );
+    let settlement_observer =
+        crate::domain::settlement::Observer::new(eth.clone(), persistence.clone());
+    let settlement_contract_start_index =
+        if let Some(DeploymentInformation::BlockNumber(settlement_contract_start_index)) =
+            eth.contracts().settlement().deployment_information()
+        {
+            settlement_contract_start_index
+        } else {
+            // If the deployment information can't be found, start from 0 (default
+            // behaviour). For real contracts, the deployment information is specified
+            // for all the networks, but it isn't specified for the e2e tests which deploy
+            // the contracts from scratch
+            tracing::warn!("Settlement contract deployment information not found");
+            0
+        };
     let settlement_event_indexer = EventUpdater::new(
         boundary::events::settlement::GPv2SettlementContract::new(
             eth.contracts().settlement().clone(),
         ),
-        boundary::events::settlement::Indexer::new(db.clone(), on_settlement_event_updater),
+        boundary::events::settlement::Indexer::new(
+            db.clone(),
+            settlement_observer,
+            settlement_contract_start_index,
+        ),
         block_retriever.clone(),
         skip_event_sync_start,
     );
 
-    let mut cow_amm_registry = cow_amm::Registry::new(web3.clone());
+    let archive_node_web3 = args.archive_node_url.as_ref().map_or(web3.clone(), |url| {
+        boundary::web3_client(url, &args.shared.ethrpc)
+    });
+
+    let mut cow_amm_registry = cow_amm::Registry::new(archive_node_web3);
     for config in &args.cow_amm_configs {
         cow_amm_registry
             .add_listener(config.index_start, config.factory, config.helper)
@@ -418,16 +439,13 @@ pub async fn run(args: Arguments) {
         args.limit_order_price_factor
             .try_into()
             .expect("limit order price factor can't be converted to BigDecimal"),
-        domain::ProtocolFees::new(
-            &args.fee_policies,
-            args.fee_policy_max_partner_fee,
-            args.enable_multiple_fees,
-        ),
+        domain::ProtocolFees::new(&args.fee_policies, args.fee_policy_max_partner_fee),
         cow_amm_registry.clone(),
+        args.run_loop_native_price_timeout,
     );
 
     let liveness = Arc::new(Liveness::new(args.max_auction_age));
-    shared::metrics::serve_metrics(liveness.clone(), args.metrics_address);
+    observe::metrics::serve_metrics(liveness.clone(), args.metrics_address);
 
     let order_events_cleaner_config = crate::periodic_db_cleanup::OrderEventsCleanerConfig::new(
         args.order_events_cleanup_interval,
@@ -452,14 +470,10 @@ pub async fn run(args: Arguments) {
         hardcoded: args.trusted_tokens.unwrap_or_default(),
     };
     // updated in background task
-    let market_makable_token_list =
+    let trusted_tokens =
         AutoUpdatingTokenList::from_configuration(market_makable_token_list_configuration).await;
 
-    let mut maintenance = Maintenance::new(
-        solvable_orders_cache.clone(),
-        settlement_event_indexer,
-        db.clone(),
-    );
+    let mut maintenance = Maintenance::new(settlement_event_indexer, db.clone());
     maintenance.with_cow_amms(&cow_amm_registry);
 
     if let Some(ethflow_contract) = args.ethflow_contract {
@@ -521,32 +535,35 @@ pub async fn run(args: Arguments) {
         );
     }
 
-    let run = RunLoop {
-        eth,
-        solvable_orders_cache,
-        drivers: args
-            .drivers
-            .into_iter()
-            .map(|driver| {
-                infra::Driver::new(
-                    driver.url,
-                    driver.name,
-                    driver.fairness_threshold.map(Into::into),
-                )
-            })
-            .collect(),
-        market_makable_token_list,
+    let run_loop_config = run_loop::Config {
         submission_deadline: args.submission_deadline as u64,
         max_settlement_transaction_wait: args.max_settlement_transaction_wait,
         solve_deadline: args.solve_deadline,
-        persistence: persistence.clone(),
-        liveness: liveness.clone(),
-        synchronization: args.run_loop_mode,
         max_run_loop_delay: args.max_run_loop_delay,
-        maintenance: Arc::new(maintenance),
+        max_winners_per_auction: args.max_winners_per_auction,
+        max_solutions_per_solver: args.max_solutions_per_solver,
     };
-    run.run_forever(args.auction_update_interval).await;
-    unreachable!("run loop exited");
+
+    let run = RunLoop::new(
+        run_loop_config,
+        eth,
+        persistence.clone(),
+        args.drivers
+            .into_iter()
+            .map(|driver| {
+                Arc::new(infra::Driver::new(
+                    driver.url,
+                    driver.name,
+                    driver.fairness_threshold.map(Into::into),
+                ))
+            })
+            .collect(),
+        solvable_orders_cache,
+        trusted_tokens,
+        liveness.clone(),
+        Arc::new(maintenance),
+    );
+    run.run_forever().await;
 }
 
 async fn shadow_mode(args: Arguments) -> ! {
@@ -561,11 +578,11 @@ async fn shadow_mode(args: Arguments) -> ! {
         .drivers
         .into_iter()
         .map(|driver| {
-            infra::Driver::new(
+            Arc::new(infra::Driver::new(
                 driver.url,
                 driver.name,
                 driver.fairness_threshold.map(Into::into),
-            )
+            ))
         })
         .collect();
 
@@ -601,7 +618,7 @@ async fn shadow_mode(args: Arguments) -> ! {
     };
 
     let liveness = Arc::new(Liveness::new(args.max_auction_age));
-    shared::metrics::serve_metrics(liveness.clone(), args.metrics_address);
+    observe::metrics::serve_metrics(liveness.clone(), args.metrics_address);
 
     let current_block = ethrpc::block_stream::current_block_stream(
         args.shared.node_url,
@@ -616,10 +633,8 @@ async fn shadow_mode(args: Arguments) -> ! {
         trusted_tokens,
         args.solve_deadline,
         liveness.clone(),
-        args.run_loop_mode,
         current_block,
+        args.max_winners_per_auction,
     );
     shadow.run_forever().await;
-
-    unreachable!("shadow run loop exited");
 }

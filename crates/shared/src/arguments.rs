@@ -13,7 +13,7 @@ use {
     },
     anyhow::{ensure, Context, Result},
     bigdecimal::BigDecimal,
-    ethcontract::{H160, H256, U256},
+    ethcontract::{H160, U256},
     std::{
         fmt::{self, Display, Formatter},
         num::NonZeroU64,
@@ -199,10 +199,6 @@ pub struct Arguments {
     #[clap(long, env, value_enum, ignore_case = true, use_value_delimiter = true)]
     pub balancer_factories: Option<Vec<BalancerFactoryKind>>,
 
-    /// Deny list of balancer pool ids.
-    #[clap(long, env, use_value_delimiter = true)]
-    pub balancer_pool_deny_list: Vec<H256>,
-
     /// Value of the authorization header for the solver competition post api.
     #[clap(long, env)]
     pub solver_competition_auth: Option<String>,
@@ -352,7 +348,6 @@ impl Display for Arguments {
             pool_cache_delay_between_retries,
             use_internal_buffers,
             balancer_factories,
-            balancer_pool_deny_list,
             solver_competition_auth,
             network_block_interval,
             settlement_contract_address,
@@ -394,7 +389,6 @@ impl Display for Arguments {
         )?;
         writeln!(f, "use_internal_buffers: {}", use_internal_buffers)?;
         writeln!(f, "balancer_factories: {:?}", balancer_factories)?;
-        writeln!(f, "balancer_pool_deny_list: {:?}", balancer_pool_deny_list)?;
         display_secret_option(
             f,
             "solver_competition_auth",

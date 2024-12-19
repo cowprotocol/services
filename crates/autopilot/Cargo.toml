@@ -20,17 +20,16 @@ bytes-hex = { path = "../bytes-hex" }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 bigdecimal = { workspace = true }
+chain = { path = "../chain" }
 chrono = { workspace = true }
 clap = { workspace = true }
 contracts = { path = "../contracts" }
 cow-amm = { path = "../cow-amm" }
 database = { path = "../database" }
-derivative = { workspace = true }
 derive_more = { workspace = true }
 ethcontract = { workspace = true }
 ethrpc = { path = "../ethrpc" }
 futures = { workspace = true }
-gas-estimation = { workspace = true }
 observe = { path = "../observe" }
 hex = { workspace = true }
 hex-literal = { workspace = true }
@@ -38,6 +37,7 @@ humantime = { workspace = true }
 indexmap = { workspace = true }
 itertools = { workspace = true }
 maplit = { workspace = true }
+mimalloc = { workspace = true }
 model = { path = "../model" }
 num = { workspace = true }
 number = { path = "../number" }
@@ -62,7 +62,6 @@ web3 = { workspace = true }
 
 [dev-dependencies]
 mockall = { workspace = true }
-testlib = { path = "../testlib" }
 tokio = { workspace = true, features = ["test-util"] }
 
 [lints]

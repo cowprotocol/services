@@ -1,8 +1,7 @@
 use {
-    crate::orderbook::Orderbook,
+    crate::{api::ApiReply, orderbook::Orderbook},
     anyhow::Result,
     reqwest::StatusCode,
-    shared::api::ApiReply,
     std::{convert::Infallible, sync::Arc},
     warp::{reply::with_status, Filter, Rejection},
 };
@@ -26,7 +25,7 @@ pub fn get_auction(
                 ),
                 Err(err) => {
                     tracing::error!(?err, "/api/v1/get_auction");
-                    shared::api::internal_error_reply()
+                    crate::api::internal_error_reply()
                 }
             };
             Result::<_, Infallible>::Ok(reply)

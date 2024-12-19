@@ -5,6 +5,7 @@ use {
         token_info::{TokenInfo, TokenInfoFetching},
     },
     anyhow::{anyhow, Context, Result},
+    chain::Chain,
     futures::{future::BoxFuture, FutureExt},
     primitive_types::H160,
     reqwest::{Client, StatusCode},
@@ -53,7 +54,7 @@ impl CoinGecko {
         client: Client,
         base_url: Url,
         api_key: Option<String>,
-        chain_id: u64,
+        chain: &Chain,
         native_token: H160,
         token_infos: Arc<dyn TokenInfoFetching>,
     ) -> Result<Self> {
@@ -68,11 +69,14 @@ impl CoinGecko {
             decimals: denominator_decimals,
         };
 
-        let chain = match chain_id {
-            1 => "ethereum".to_string(),
-            100 => "xdai".to_string(),
-            42161 => "arbitrum-one".to_string(),
-            n => anyhow::bail!("unsupported network {n}"),
+        let chain = match chain {
+            Chain::Mainnet => "ethereum".to_string(),
+            Chain::Gnosis => "xdai".to_string(),
+            Chain::ArbitrumOne => "arbitrum-one".to_string(),
+            Chain::Base => "base".to_string(),
+            Chain::Sepolia | Chain::Goerli => {
+                anyhow::bail!("unsupported network {}", chain.name())
+            }
         };
         Ok(Self {
             client,
@@ -89,6 +93,7 @@ impl CoinGecko {
         tokens: &HashSet<Token>,
     ) -> Result<HashMap<Token, f64>, PriceEstimationError> {
         let mut url = crate::url::join(&self.base_url, &self.chain);
+        metrics::batch_size(tokens.len());
         url.query_pairs_mut()
             .append_pair(
                 "contract_addresses",
@@ -269,6 +274,27 @@ mod observe {
     }
 }
 
+mod metrics {
+    use {observe::metrics, prometheus::Histogram};
+
+    #[derive(prometheus_metric_storage::MetricStorage)]
+    struct Metrics {
+        /// Tracks the CoinGecko batch size
+        #[metric(buckets(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20))]
+        coin_gecko_batch_size: Histogram,
+    }
+
+    impl Metrics {
+        fn get() -> &'static Self {
+            Metrics::instance(metrics::get_storage_registry()).unwrap()
+        }
+    }
+
+    pub(super) fn batch_size(size: usize) {
+        Metrics::get().coin_gecko_batch_size.observe(size as _);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use {
@@ -282,32 +308,32 @@ mod tests {
             client: Client,
             base_url: Url,
             api_key: Option<String>,
-            chain_id: u64,
+            chain: &Chain,
             token_infos: Arc<dyn TokenInfoFetching>,
         ) -> Result<Self> {
-            let (chain, denominator) = match chain_id {
-                1 => (
+            let (chain, denominator) = match chain {
+                Chain::Mainnet => (
                     "ethereum".to_string(),
                     Denominator {
                         address: addr!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
                         decimals: 18,
                     },
                 ),
-                100 => (
+                Chain::Gnosis => (
                     "xdai".to_string(),
                     Denominator {
                         address: addr!("e91d153e0b41518a2ce8dd3d7944fa863463a97d"),
                         decimals: 18,
                     },
                 ),
-                42161 => (
+                Chain::ArbitrumOne => (
                     "arbitrum-one".to_string(),
                     Denominator {
                         address: addr!("82af49447d8a07e3bd95bd0d56f35241523fbab1"),
                         decimals: 18,
                     },
                 ),
-                n => anyhow::bail!("unsupported network {n}"),
+                n => anyhow::bail!("unsupported network {}", n.name()),
             };
             Ok(Self {
                 client,
@@ -357,7 +383,7 @@ mod tests {
             Client::default(),
             Url::parse(BASE_API_URL).unwrap(),
             None,
-            1,
+            &Chain::Mainnet,
             default_token_info_fetcher(),
         )
         .unwrap();
@@ -377,7 +403,7 @@ mod tests {
             Client::default(),
             Url::parse(BASE_API_PRO_URL).unwrap(),
             env::var("COIN_GECKO_API_KEY").ok(),
-            100,
+            &Chain::Gnosis,
             default_token_info_fetcher(),
         )
         .unwrap();
@@ -397,7 +423,7 @@ mod tests {
             Client::default(),
             Url::parse(BASE_API_PRO_URL).unwrap(),
             env::var("COIN_GECKO_API_KEY").ok(),
-            100,
+            &Chain::Gnosis,
             default_token_info_fetcher(),
         )
         .unwrap();
@@ -423,7 +449,7 @@ mod tests {
             Client::default(),
             Url::parse(BASE_API_PRO_URL).unwrap(),
             env::var("COIN_GECKO_API_KEY").ok(),
-            100,
+            &Chain::Gnosis,
             default_token_info_fetcher(),
         )
         .unwrap();
@@ -464,7 +490,7 @@ mod tests {
             Client::default(),
             Url::parse(BASE_API_PRO_URL).unwrap(),
             env::var("COIN_GECKO_API_KEY").ok(),
-            100,
+            &Chain::Gnosis,
             Arc::new(mock),
         )
         .unwrap();
@@ -512,7 +538,7 @@ mod tests {
             Client::default(),
             Url::parse(BASE_API_PRO_URL).unwrap(),
             env::var("COIN_GECKO_API_KEY").ok(),
-            100,
+            &Chain::Gnosis,
             Arc::new(mock),
         )
         .unwrap();

@@ -12,7 +12,7 @@ impl<'de> DeserializeAs<'de, eth::U256> for U256 {
     fn deserialize_as<D: Deserializer<'de>>(deserializer: D) -> Result<eth::U256, D::Error> {
         struct Visitor;
 
-        impl<'de> de::Visitor<'de> for Visitor {
+        impl de::Visitor<'_> for Visitor {
             type Value = eth::U256;
 
             fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {

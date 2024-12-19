@@ -19,6 +19,17 @@ pub async fn events_of_order(db: &Db, uid: &OrderUid) -> Vec<order_events::Order
         .unwrap()
 }
 
+/// Returns quote.
+pub async fn quote_metadata(db: &Db, quote_id: i64) -> Option<(serde_json::Value,)> {
+    const QUERY: &str = "SELECT metadata FROM quotes WHERE id = $1";
+    let mut db = db.acquire().await.unwrap();
+    sqlx::query_as(QUERY)
+        .bind(quote_id)
+        .fetch_optional(db.deref_mut())
+        .await
+        .unwrap()
+}
+
 #[allow(dead_code)]
 #[derive(Clone, Debug, sqlx::FromRow)]
 pub struct AuctionTransaction {
@@ -32,8 +43,8 @@ pub struct AuctionTransaction {
 #[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub struct Cip20Data {
-    pub observation: database::settlement_observations::Observation,
-    pub tx: AuctionTransaction,
+    pub observations: Vec<database::settlement_observations::Observation>,
+    pub txs: Vec<AuctionTransaction>,
     pub participants: Vec<database::auction_participants::Participant>,
     pub prices: Vec<database::auction_prices::AuctionPrice>,
     pub score: database::settlement_scores::Score,
@@ -55,15 +66,18 @@ pub async fn most_recent_cip_20_data(db: &Db) -> Option<Cip20Data> {
     const TX_QUERY: &str = r"
 SELECT * FROM settlements WHERE auction_id = $1";
 
-    let tx: AuctionTransaction = sqlx::query_as(TX_QUERY)
+    let txs: Vec<AuctionTransaction> = sqlx::query_as(TX_QUERY)
         .bind(auction_id)
-        .fetch_optional(db.deref_mut())
+        .fetch_all(db.deref_mut())
         .await
-        .unwrap()?;
+        .ok()?;
 
-    let observation = database::settlement_observations::fetch(&mut db, &tx.tx_hash)
-        .await
-        .unwrap()?;
+    let observations = database::settlement_observations::fetch(
+        &mut db,
+        &txs.iter().map(|tx| tx.tx_hash).collect::<Vec<_>>(),
+    )
+    .await
+    .ok()?;
     let participants = database::auction_participants::fetch(&mut db, auction_id)
         .await
         .unwrap();
@@ -79,8 +93,8 @@ SELECT * FROM settlements WHERE auction_id = $1";
         .json;
 
     Some(Cip20Data {
-        observation,
-        tx,
+        observations,
+        txs,
         participants,
         prices,
         score,
