@@ -141,6 +141,8 @@ pub enum AddOrderError {
         provided: String,
         existing: String,
     },
+    #[error("quote metadata failed to serialize as json, error: {0}")]
+    MetadataSerializationFailed(serde_json::Error),
 }
 
 impl AddOrderError {
@@ -161,6 +163,9 @@ impl AddOrderError {
                     s.into_owned()
                 },
             },
+            InsertionError::MetadataSerializationFailed(err) => {
+                AddOrderError::MetadataSerializationFailed(err)
+            }
         }
     }
 }
@@ -249,17 +254,18 @@ impl Orderbook {
             self.replace_order(order, old_order, quote).await
         } else {
             let quote_id = quote.as_ref().and_then(|quote| quote.id);
+            let order_uid = order.metadata.uid;
 
             self.database
                 .insert_order(&order, quote.clone())
                 .await
                 .map_err(|err| AddOrderError::from_insertion(err, &order))?;
             Metrics::on_order_operation(
-                &OrderWithQuote::new(order.clone(), quote),
+                &OrderWithQuote::try_new(order, quote)?,
                 OrderOperation::Created,
             );
 
-            Ok((order.metadata.uid, quote_id))
+            Ok((order_uid, quote_id))
         }
     }
 
@@ -402,6 +408,7 @@ impl Orderbook {
         }
 
         let quote_id = quote.as_ref().and_then(|quote| quote.id);
+        let order_uid = validated_new_order.metadata.uid;
 
         self.database
             .replace_order(
@@ -413,11 +420,11 @@ impl Orderbook {
             .map_err(|err| AddOrderError::from_insertion(err, &validated_new_order))?;
         Metrics::on_order_operation(&old_order, OrderOperation::Cancelled);
         Metrics::on_order_operation(
-            &OrderWithQuote::new(validated_new_order.clone(), quote),
+            &OrderWithQuote::try_new(validated_new_order, quote)?,
             OrderOperation::Created,
         );
 
-        Ok((validated_new_order.metadata.uid, quote_id))
+        Ok((order_uid, quote_id))
     }
 
     pub async fn get_order(&self, uid: &OrderUid) -> Result<Option<Order>> {

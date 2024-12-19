@@ -9,7 +9,7 @@ use {
     std::collections::HashMap,
 };
 
-impl Solved {
+impl SolveResponse {
     pub fn new(solved: Option<competition::Solved>, solver: &Solver) -> Self {
         let solutions = solved
             .into_iter()
@@ -22,7 +22,7 @@ impl Solved {
 #[serde_as]
 #[derive(Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Solved {
+pub struct SolveResponse {
     solutions: Vec<Solution>,
 }
 

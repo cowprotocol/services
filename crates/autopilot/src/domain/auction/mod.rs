@@ -13,7 +13,6 @@ pub mod order;
 #[derive(Clone, Debug, PartialEq)]
 pub struct RawAuctionData {
     pub block: u64,
-    pub latest_settlement_block: u64,
     pub orders: Vec<Order>,
     pub prices: Prices,
     pub surplus_capturing_jit_order_owners: Vec<eth::Address>,
@@ -25,7 +24,6 @@ pub type Id = i64;
 pub struct Auction {
     pub id: Id,
     pub block: u64,
-    pub latest_settlement_block: u64,
     pub orders: Vec<Order>,
     pub prices: Prices,
     pub surplus_capturing_jit_order_owners: Vec<eth::Address>,
@@ -34,7 +32,6 @@ pub struct Auction {
 impl PartialEq for Auction {
     fn eq(&self, other: &Self) -> bool {
         self.block == other.block
-            && self.latest_settlement_block == other.latest_settlement_block
             && self.orders == other.orders
             && self.prices == other.prices
             && self.surplus_capturing_jit_order_owners == other.surplus_capturing_jit_order_owners
