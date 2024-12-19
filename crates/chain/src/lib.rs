@@ -18,6 +18,7 @@ pub enum Chain {
     Sepolia = 11155111,
     ArbitrumOne = 42161,
     Base = 8453,
+    Hardhat = 31337,
 }
 
 impl Chain {
@@ -37,15 +38,19 @@ impl Chain {
             Self::Sepolia => "Ethereum / Sepolia",
             Self::ArbitrumOne => "Arbitrum One",
             Self::Base => "Base",
+            Self::Hardhat => "Hardhat",
         }
     }
 
     /// The default amount in native tokens atoms to use for price estimation
     pub fn default_amount_to_estimate_native_prices_with(&self) -> U256 {
         match &self {
-            Self::Mainnet | Self::Goerli | Self::Sepolia | Self::ArbitrumOne | Self::Base => {
-                10u128.pow(17).into()
-            }
+            Self::Mainnet
+            | Self::Goerli
+            | Self::Sepolia
+            | Self::ArbitrumOne
+            | Self::Base
+            | Self::Hardhat => 10u128.pow(17).into(),
             Self::Gnosis => 10u128.pow(18).into(),
         }
     }
@@ -59,6 +64,8 @@ impl Chain {
             Self::Sepolia => Duration::from_millis(12_000),
             Self::ArbitrumOne => Duration::from_millis(250),
             Self::Base => Duration::from_millis(2_000),
+            // dummy value as hardhat chain doesn't have a fixed block time
+            Self::Hardhat => Duration::from_millis(1_337),
         }
     }
 
@@ -82,6 +89,7 @@ impl TryFrom<u64> for Chain {
             x if x == Self::Sepolia as u64 => Self::Sepolia,
             x if x == Self::ArbitrumOne as u64 => Self::ArbitrumOne,
             x if x == Self::Base as u64 => Self::Base,
+            x if x == Self::Hardhat as u64 => Self::Hardhat,
             _ => Err(ChainIdNotSupported)?,
         };
         Ok(network)
