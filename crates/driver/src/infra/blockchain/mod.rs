@@ -149,7 +149,24 @@ impl Ethereum {
             access_list: Some(tx.access_list.into()),
             // Specifically set high gas because some nodes don't pick a sensible value if omitted.
             // And since we are only interested in access lists a very high value is fine.
-            gas: Some(self.block_gas_limit().0),
+            gas: match self.chain() {
+                // Arbitrum has an exceptionally high block gas limit (1,125,899,906,842,624),
+                // making it unsuitable for this use case. To address this, we use a
+                // fixed gas limit of 100,000,000, which is sufficient
+                // for all solution types, while avoiding the "insufficient funds for gas * price +
+                // value" error that could occur when a large amount of ETH is
+                // needed to simulate the transaction, due to high transaction gas limit.
+                //
+                // If a new network is added, ensure its block gas limit is checked and handled
+                // appropriately to maintain compatibility with this logic.
+                Chain::ArbitrumOne => Some(100_000_000.into()),
+                Chain::Mainnet => Some(self.block_gas_limit().0),
+                Chain::Goerli => Some(self.block_gas_limit().0),
+                Chain::Gnosis => Some(self.block_gas_limit().0),
+                Chain::Sepolia => Some(self.block_gas_limit().0),
+                Chain::Base => Some(self.block_gas_limit().0),
+                Chain::Hardhat => Some(self.block_gas_limit().0),
+            },
             gas_price: self.simulation_gas_price().await,
             ..Default::default()
         };
