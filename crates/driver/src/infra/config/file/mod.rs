@@ -660,6 +660,9 @@ fn default_max_order_age() -> Option<Duration> {
     Some(Duration::from_secs(300))
 }
 
+/// Keeps 2 requests in the queue plus 1 ongoing request making a total of 3
+/// pending settlements, which is considered big enough to avoid potential price
+/// moves or any other conflicts due to the extended settlement idle time.
 fn default_settle_queue_size() -> usize {
-    3
+    2
 }
