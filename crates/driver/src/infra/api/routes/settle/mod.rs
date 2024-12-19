@@ -2,9 +2,12 @@ mod dto;
 
 use {
     crate::{
-        domain::{competition, competition::solution},
+        domain::{
+            competition,
+            competition::{auction, solution},
+        },
         infra::{
-            api::{Error, State},
+            api::{self, Error, State},
             observe,
         },
     },
@@ -19,7 +22,11 @@ async fn route(
     state: axum::extract::State<State>,
     req: axum::Json<dto::Solution>,
 ) -> Result<(), (hyper::StatusCode, axum::Json<Error>)> {
-    let auction_id = req.auction_id;
+    let auction_id = req
+        .auction_id
+        .map(auction::Id::try_from)
+        .transpose()
+        .map_err(Into::<api::routes::AuctionError>::into)?;
     let solver = state.solver().name().to_string();
 
     let handle_request = async move {
@@ -27,7 +34,7 @@ async fn route(
         let result = state
             .competition()
             .settle(
-                req.auction_id,
+                auction_id,
                 solution::Id::new(req.solution_id),
                 req.submission_deadline_latest_block,
             )
@@ -35,7 +42,7 @@ async fn route(
         observe::settled(state.solver().name(), &result);
         result.map(|_| ()).map_err(Into::into)
     }
-    .instrument(tracing::info_span!("/settle", solver, auction_id));
+    .instrument(tracing::info_span!("/settle", solver, auction_id = ?auction_id.map(|id| id.0)));
 
     // Handle `/settle` call in a background task to ensure that we correctly
     // submit the settlement (or cancellation) on-chain even if the server

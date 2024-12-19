@@ -340,7 +340,7 @@ impl Competition {
     /// [`Competition::solve`] to generate the solution.
     pub async fn settle(
         &self,
-        auction_id: Option<i64>,
+        auction_id: Option<auction::Id>,
         solution_id: solution::Id,
         submission_deadline: BlockNo,
     ) -> Result<Settled, Error> {
@@ -397,14 +397,16 @@ impl Competition {
                     tracing::error!(?err, "Failed to send /settle response");
                 }
             }
-            .instrument(tracing::info_span!("/settle", solver, auction_id))
+            .instrument(
+                tracing::info_span!("/settle", solver, auction_id = ?auction_id.map(|id| id.0)),
+            )
             .await
         }
     }
 
     async fn process_settle_request(
         &self,
-        auction_id: Option<i64>,
+        auction_id: Option<auction::Id>,
         solution_id: solution::Id,
         submission_deadline: BlockNo,
     ) -> Result<Settled, Error> {
@@ -414,7 +416,7 @@ impl Competition {
                 .iter()
                 .position(|s| {
                     s.solution().get() == solution_id.get()
-                        && auction_id.is_none_or(|id| s.auction_id.0 == id)
+                        && auction_id.is_none_or(|id| s.auction_id == id)
                 })
                 .ok_or(Error::SolutionNotAvailable)?;
             // remove settlement to ensure we can't settle it twice by accident
@@ -519,7 +521,7 @@ fn merge(solutions: impl Iterator<Item = Solution>, auction: &Auction) -> Vec<So
 }
 
 struct SettleRequest {
-    auction_id: Option<i64>,
+    auction_id: Option<auction::Id>,
     solution_id: solution::Id,
     submission_deadline: BlockNo,
     response_sender: oneshot::Sender<Result<Settled, Error>>,
