@@ -54,7 +54,7 @@ impl Detector {
 
     /// Enables detection of unsupported tokens based on heuristics.
     pub fn with_heuristic_detector(&mut self) -> &mut Self {
-        self.metrics = Some(metrics::Detector);
+        self.metrics = Some(metrics::Detector::default());
         self
     }
 
@@ -104,6 +104,20 @@ impl Detector {
         }
 
         auction
+    }
+
+    /// Updates the tokens quality metric for successful operation.
+    pub fn encoding_succeeded(&self, token_pairs: Vec<(eth::TokenAddress, eth::TokenAddress)>) {
+        if let Some(metrics) = &self.metrics {
+            metrics.update_tokens(token_pairs, false);
+        }
+    }
+
+    /// Updates the tokens quality metric for failures.
+    pub fn encoding_failed(&self, token_pairs: Vec<(eth::TokenAddress, eth::TokenAddress)>) {
+        if let Some(metrics) = &self.metrics {
+            metrics.update_tokens(token_pairs, true);
+        }
     }
 
     fn get_token_quality(&self, token: eth::TokenAddress, now: Instant) -> Option<Quality> {
