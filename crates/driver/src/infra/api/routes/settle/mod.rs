@@ -2,10 +2,7 @@ mod dto;
 
 use {
     crate::{
-        domain::{
-            competition,
-            competition::{auction, solution},
-        },
+        domain::{competition, competition::auction},
         infra::{
             api::{self, Error, State},
             observe,
@@ -35,7 +32,7 @@ async fn route(
             .competition()
             .settle(
                 auction_id,
-                solution::Id::new(req.solution_id),
+                req.solution_id,
                 req.submission_deadline_latest_block,
             )
             .await;

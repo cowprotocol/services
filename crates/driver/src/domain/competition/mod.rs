@@ -341,7 +341,7 @@ impl Competition {
     pub async fn settle(
         &self,
         auction_id: Option<auction::Id>,
-        solution_id: solution::Id,
+        solution_id: u64,
         submission_deadline: BlockNo,
     ) -> Result<Settled, Error> {
         let (response_sender, response_receiver) = oneshot::channel();
@@ -407,7 +407,7 @@ impl Competition {
     async fn process_settle_request(
         &self,
         auction_id: Option<auction::Id>,
-        solution_id: solution::Id,
+        solution_id: u64,
         submission_deadline: BlockNo,
     ) -> Result<Settled, Error> {
         let settlement = {
@@ -415,7 +415,7 @@ impl Competition {
             let index = lock
                 .iter()
                 .position(|s| {
-                    s.solution().get() == solution_id.get()
+                    s.solution().get() == solution_id
                         && auction_id.is_none_or(|id| s.auction_id == id)
                 })
                 .ok_or(Error::SolutionNotAvailable)?;
@@ -522,7 +522,7 @@ fn merge(solutions: impl Iterator<Item = Solution>, auction: &Auction) -> Vec<So
 
 struct SettleRequest {
     auction_id: Option<auction::Id>,
-    solution_id: solution::Id,
+    solution_id: u64,
     submission_deadline: BlockNo,
     response_sender: oneshot::Sender<Result<Settled, Error>>,
 }
