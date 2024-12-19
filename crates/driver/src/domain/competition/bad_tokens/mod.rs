@@ -1,11 +1,7 @@
 use {
     crate::domain::{competition::Auction, eth},
     futures::StreamExt,
-    std::{
-        collections::{HashMap, HashSet},
-        fmt,
-        time::Instant,
-    },
+    std::{collections::HashMap, fmt, time::Instant},
 };
 
 pub mod cache;
@@ -100,16 +96,16 @@ impl Detector {
     }
 
     /// Updates the tokens quality metric for successful operation.
-    pub fn encoding_succeeded(&self, tokens: HashSet<eth::TokenAddress>) {
+    pub fn encoding_succeeded(&self, token_pairs: Vec<(eth::TokenAddress, eth::TokenAddress)>) {
         if let Some(metrics) = &self.metrics {
-            metrics.update_successful_tokens(tokens);
+            metrics.update_tokens(token_pairs, false);
         }
     }
 
     /// Updates the tokens quality metric for failures.
-    pub fn encoding_failed(&self, tokens: HashSet<eth::TokenAddress>) {
+    pub fn encoding_failed(&self, token_pairs: Vec<(eth::TokenAddress, eth::TokenAddress)>) {
         if let Some(metrics) = &self.metrics {
-            metrics.update_failing_tokens(tokens);
+            metrics.update_tokens(token_pairs, true);
         }
     }
 

@@ -1,9 +1,4 @@
-use {
-    super::Quality,
-    crate::domain::eth,
-    dashmap::DashMap,
-    std::{collections::HashSet, sync::Arc},
-};
+use {super::Quality, crate::domain::eth, dashmap::DashMap, std::sync::Arc};
 
 /// Monitors tokens to determine whether they are considered "unsupported" based
 /// on the ratio of failing to total settlement encoding attempts. A token must
@@ -42,37 +37,31 @@ impl Detector {
         }
     }
 
-    /// Updates the tokens that participated in failing settlements by
-    /// incrementing both their attempt count and their failure count.
-    /// If a token doesn't exist in the cache yet, it gets added.
-    pub fn update_failing_tokens(&self, tokens: HashSet<eth::TokenAddress>) {
-        for token in tokens {
-            self.update_token(token, true);
-        }
-    }
-
-    /// Updates the tokens that participated in successful settlements by
-    /// incrementing their attempt count without increasing the failure
-    /// count.
-    pub fn update_successful_tokens(&self, tokens: HashSet<eth::TokenAddress>) {
-        for token in tokens {
-            self.update_token(token, false);
-        }
-    }
-
-    fn update_token(&self, token: eth::TokenAddress, failure: bool) {
-        self.0
-            .counter
-            .entry(token)
-            .and_modify(|counter| {
-                counter.attempts += 1;
-                if failure {
-                    counter.fails += 1;
-                }
-            })
-            .or_insert_with(|| TokenStatistics {
-                attempts: 1,
-                fails: failure as u32,
+    /// Updates the tokens that participated in settlements by
+    /// incrementing their attempt count.
+    /// `failure` indicates whether the settlement was successful or not.
+    pub fn update_tokens(
+        &self,
+        token_pairs: Vec<(eth::TokenAddress, eth::TokenAddress)>,
+        failure: bool,
+    ) {
+        token_pairs
+            .into_iter()
+            .flat_map(|(token_a, token_b)| vec![token_a, token_b])
+            .for_each(|token| {
+                self.0
+                    .counter
+                    .entry(token)
+                    .and_modify(|counter| {
+                        counter.attempts += 1;
+                        if failure {
+                            counter.fails += 1;
+                        }
+                    })
+                    .or_insert_with(|| TokenStatistics {
+                        attempts: 1,
+                        fails: failure as u32,
+                    });
             });
     }
 }
