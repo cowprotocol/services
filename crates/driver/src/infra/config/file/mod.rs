@@ -260,6 +260,11 @@ struct SolverConfig {
     /// Maximum HTTP response size the driver will accept in bytes.
     #[serde(default = "default_response_size_limit_max_bytes")]
     response_size_limit_max_bytes: usize,
+
+    /// The maximum number of `/settle` requests that can be queued up
+    /// before the driver starts dropping new `/solve` requests.
+    #[serde(default = "default_settle_queue_size")]
+    settle_queue_size: usize,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
@@ -653,4 +658,11 @@ fn default_order_priority_strategies() -> Vec<OrderPriorityStrategy> {
 
 fn default_max_order_age() -> Option<Duration> {
     Some(Duration::from_secs(300))
+}
+
+/// Keeps 2 requests in the queue plus 1 ongoing request making a total of 3
+/// pending settlements, which is considered big enough to avoid potential price
+/// moves or any other conflicts due to the extended settlement idle time.
+fn default_settle_queue_size() -> usize {
+    2
 }
