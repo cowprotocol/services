@@ -64,8 +64,7 @@ impl Chain {
             Self::Sepolia => Duration::from_millis(12_000),
             Self::ArbitrumOne => Duration::from_millis(250),
             Self::Base => Duration::from_millis(2_000),
-            // dummy value as hardhat chain doesn't have a fixed block time
-            Self::Hardhat => Duration::from_millis(1_337),
+            Self::Hardhat => panic!("unsupported block time for Hardhat chain"),
         }
     }
 
