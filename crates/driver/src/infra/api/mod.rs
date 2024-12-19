@@ -1,6 +1,6 @@
 use {
     crate::{
-        domain::{self, Mempools},
+        domain::{self, competition::bad_tokens, Mempools},
         infra::{
             self,
             config::file::OrderPriorityStrategy,
@@ -29,6 +29,7 @@ pub struct Api {
     pub eth: Ethereum,
     pub mempools: Mempools,
     pub addr: SocketAddr,
+    pub bad_token_detector: bad_tokens::simulation::Detector,
     /// If this channel is specified, the bound address will be sent to it. This
     /// allows the driver to bind to 0.0.0.0:0 during testing.
     pub addr_sender: Option<oneshot::Sender<SocketAddr>>,
@@ -69,6 +70,16 @@ impl Api {
             let router = routes::solve(router);
             let router = routes::reveal(router);
             let router = routes::settle(router);
+
+            let mut bad_tokens =
+                bad_tokens::Detector::new(solver.bad_token_detection().tokens_supported.clone());
+            if solver
+                .bad_token_detection()
+                .enable_simulation_based_bad_token_detection
+            {
+                bad_tokens.with_simulation_detector(self.bad_token_detector.clone());
+            }
+
             let router = router.with_state(State(Arc::new(Inner {
                 eth: self.eth.clone(),
                 solver: solver.clone(),
@@ -79,6 +90,7 @@ impl Api {
                     simulator: self.simulator.clone(),
                     mempools: self.mempools.clone(),
                     settlements: Default::default(),
+                    bad_tokens: Arc::new(bad_tokens),
                 },
                 liquidity: self.liquidity.clone(),
                 tokens: tokens.clone(),

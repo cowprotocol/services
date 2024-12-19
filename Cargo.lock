@@ -1801,6 +1801,7 @@ dependencies = [
  "clap",
  "contracts",
  "cow-amm",
+ "dashmap",
  "derive_more 1.0.0",
  "ethabi",
  "ethcontract",

@@ -30,7 +30,7 @@ pub struct Auction {
     /// See the [`Self::id`] method.
     id: Option<Id>,
     /// See the [`Self::orders`] method.
-    orders: Vec<competition::Order>,
+    pub(crate) orders: Vec<competition::Order>,
     /// The tokens that are used in the orders of this auction.
     tokens: Tokens,
     gas_price: eth::GasPrice,

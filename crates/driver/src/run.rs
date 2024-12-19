@@ -1,6 +1,6 @@
 use {
     crate::{
-        domain::Mempools,
+        domain::{competition::bad_tokens, Mempools},
         infra::{
             self,
             blockchain::{self, Ethereum},
@@ -66,6 +66,10 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
             eth.clone(),
         )
         .unwrap(),
+        bad_token_detector: bad_tokens::simulation::Detector::new(
+            config.simulation_bad_token_max_age,
+            &eth,
+        ),
         eth,
         addr: args.addr,
         addr_sender,
