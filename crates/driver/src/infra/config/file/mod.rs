@@ -279,7 +279,7 @@ struct SolverConfig {
     enable_simulation_bad_token_detection: bool,
 
     /// Whether or not the solver opted into detecting unsupported
-    /// tokens with heuristic based simulation.
+    /// tokens with heuristic based detection.
     #[serde(default)]
     enable_heuristic_based_bad_token_detection: bool,
 }
