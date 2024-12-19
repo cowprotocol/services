@@ -22,8 +22,8 @@ pub enum Chain {
 
 impl Chain {
     /// Returns the chain's chain ID
-    pub fn id(&self) -> Id {
-        Id(*self as u64)
+    pub fn id(&self) -> u64 {
+        *self as u64
     }
 
     /// Returns the canonical name of the chain on CoW Protocol.
@@ -85,24 +85,6 @@ impl TryFrom<u64> for Chain {
             _ => Err(ChainIdNotSupported)?,
         };
         Ok(network)
-    }
-}
-
-/// Chain ID as defined by EIP-155.
-///
-/// https://eips.ethereum.org/EIPS/eip-155
-#[derive(Clone, Copy, Debug, Eq, PartialEq, From, Into)]
-pub struct Id(u64);
-
-impl From<U256> for Id {
-    fn from(value: U256) -> Self {
-        Self(value.as_u64())
-    }
-}
-
-impl std::fmt::Display for Id {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
     }
 }
 

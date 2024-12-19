@@ -13,7 +13,7 @@ const GAS_LIMIT: u64 = 30_000_000;
 #[derive(Debug, Clone)]
 pub(super) struct Enso {
     url: reqwest::Url,
-    chain_id: chain::Id,
+    chain: chain::Chain,
     current_block: CurrentBlockWatcher,
     network_block_interval: Option<Duration>,
 }
@@ -29,12 +29,12 @@ pub struct Config {
 impl Enso {
     pub(super) fn new(
         config: Config,
-        chain_id: chain::Id,
+        chain: chain::Chain,
         current_block: CurrentBlockWatcher,
     ) -> Self {
         Self {
             url: reqwest::Url::parse(&format!("{}api/v1/simulate", config.url)).unwrap(),
-            chain_id,
+            chain,
             current_block,
             network_block_interval: config.network_block_interval,
         }
@@ -61,7 +61,7 @@ impl Enso {
             .unwrap()
             .post(self.url.clone())
             .json(&dto::Request {
-                chain_id: self.chain_id.into(),
+                chain_id: self.chain.id(),
                 from: tx.from.into(),
                 to: tx.to.into(),
                 data: tx.input.into(),
