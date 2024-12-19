@@ -298,13 +298,6 @@ impl Competition {
             let _ = tokio::time::timeout(remaining, simulate_on_new_blocks).await;
         }
 
-        // Check the settlement queue only here since its capacity can change while
-        // processing solutions.
-        if self.settle_queue.capacity() == 0 {
-            tracing::warn!("settlement queue is full; auction is rejected");
-            return Err(Error::SettlementQueueIsFull);
-        }
-
         Ok(score)
     }
 
@@ -362,6 +355,15 @@ impl Competition {
             tracing::error!(?err, "Failed to dequeue /settle response");
             Error::SubmissionError
         })?
+    }
+
+    pub fn ensure_settle_queue_capacity(&self) -> Result<(), Error> {
+        if self.settle_queue.capacity() == 0 {
+            tracing::warn!("settlement queue is full; auction is rejected");
+            Err(Error::SettlementQueueIsFull)
+        } else {
+            Ok(())
+        }
     }
 
     async fn process_settle_requests(
