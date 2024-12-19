@@ -6,47 +6,73 @@ use {
 };
 
 /// Monitors tokens to determine whether they are considered "unsupported" based
-/// on the number of consecutive participation in failing settlement encoding.
-/// Tokens that consistently participate in failures beyond a predefined
-/// threshold are marked as unsupported. Once token participates in a successful
-/// settlement encoding, it is removed from the cache.
+/// on the ratio of failing to total settlement encoding attempts. A token must
+/// have participated in at least `REQUIRED_MEASUREMENTS` attempts to be
+/// evaluated. If, at that point, the ratio of failures is greater than or equal
+/// to `FAILURE_RATIO`, the token is considered unsupported.
 #[derive(Default)]
 pub struct Detector(Arc<Inner>);
 
 #[derive(Default)]
 struct Inner {
-    counter: DashMap<eth::TokenAddress, u8>,
+    counter: DashMap<eth::TokenAddress, TokenStatistics>,
+}
+
+#[derive(Default)]
+struct TokenStatistics {
+    attempts: u32,
+    fails: u32,
 }
 
 impl Detector {
-    /// Defines the threshold for the number of consecutive unsupported
-    /// quality detections before a token is considered unsupported.
-    const UNSUPPORTED_THRESHOLD: u8 = 5;
+    /// The ratio of failures to attempts that qualifies a token as unsupported.
+    const FAILURE_RATIO: f64 = 0.9;
+    /// The minimum number of attempts required before evaluating a token’s
+    /// quality.
+    const REQUIRED_MEASUREMENTS: u32 = 20;
 
     pub fn get_quality(&self, token: eth::TokenAddress) -> Option<Quality> {
-        self.0
-            .counter
-            .get(&token)
-            .filter(|counter| **counter >= Self::UNSUPPORTED_THRESHOLD)
-            .map(|_| Quality::Unsupported)
+        let measurements = self.0.counter.get(&token)?;
+        if measurements.attempts >= Self::REQUIRED_MEASUREMENTS
+            && (measurements.fails as f64 / measurements.attempts as f64) >= Self::FAILURE_RATIO
+        {
+            Some(Quality::Unsupported)
+        } else {
+            None
+        }
     }
 
-    /// Increments the counter of failures for each token.
+    /// Updates the tokens that participated in failing settlements by
+    /// incrementing both their attempt count and their failure count.
+    /// If a token doesn't exist in the cache yet, it gets added.
     pub fn update_failing_tokens(&self, tokens: HashSet<eth::TokenAddress>) {
         for token in tokens {
-            self.0
-                .counter
-                .entry(token)
-                .and_modify(|counter| *counter = Self::UNSUPPORTED_THRESHOLD.min(*counter + 1))
-                .or_insert(1);
+            self.update_token(token, true);
         }
     }
 
-    /// Removes tokens from the cache since they all participated in a
-    /// successful settlement encoding.
+    /// Updates the tokens that participated in successful settlements by
+    /// incrementing their attempt count without increasing the failure
+    /// count.
     pub fn update_successful_tokens(&self, tokens: HashSet<eth::TokenAddress>) {
         for token in tokens {
-            self.0.counter.remove(&token);
+            self.update_token(token, false);
         }
+    }
+
+    fn update_token(&self, token: eth::TokenAddress, failure: bool) {
+        self.0
+            .counter
+            .entry(token)
+            .and_modify(|counter| {
+                counter.attempts += 1;
+                if failure {
+                    counter.fails += 1;
+                }
+            })
+            .or_insert_with(|| TokenStatistics {
+                attempts: 1,
+                fails: failure as u32,
+            });
     }
 }
