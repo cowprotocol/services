@@ -11,6 +11,7 @@ use {
             solver::{self, SolutionMerging},
         },
     },
+    chain::Chain,
     futures::future::join_all,
     number::conversions::big_decimal_to_big_rational,
     std::path::Path,
@@ -23,7 +24,7 @@ use {
 /// # Panics
 ///
 /// This method panics if the config is invalid or on I/O errors.
-pub async fn load(chain: chain::Chain, path: &Path) -> infra::Config {
+pub async fn load(chain: Chain, path: &Path) -> infra::Config {
     let data = fs::read_to_string(path)
         .await
         .unwrap_or_else(|e| panic!("I/O error while reading {path:?}: {e:?}"));
@@ -42,7 +43,7 @@ pub async fn load(chain: chain::Chain, path: &Path) -> infra::Config {
     assert_eq!(
         config
             .chain_id
-            .and_then(|id| chain::Chain::try_from(id).ok())
+            .and_then(|id| Chain::try_from(id).ok())
             .unwrap_or(chain),
         chain,
         "The configured chain ID does not match the connected Ethereum node"
