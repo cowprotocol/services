@@ -2,13 +2,14 @@ use {
     crate::{
         domain::Mempools,
         infra::{
-            self,
-            blockchain::{self, Ethereum},
-            cli,
-            config,
-            liquidity,
-            simulator::{self, Simulator},
-            solver::Solver,
+            self, 
+            blockchain::{self, Ethereum}, 
+            cli, 
+            config, 
+            database::Postgres, 
+            liquidity, 
+            simulator::{self, Simulator}, 
+            solver::Solver, 
             Api,
         },
     },
@@ -49,6 +50,10 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
     let config = config::file::load(ethrpc.chain(), &args.config).await;
     tracing::info!("running driver with {config:#?}");
 
+    let db = Postgres::new(args.db_url.as_str())
+        .await
+        .unwrap();
+
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let eth = ethereum(&config, ethrpc).await;
     let serve = Api {
@@ -67,6 +72,7 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
         )
         .unwrap(),
         eth,
+        db,
         addr: args.addr,
         addr_sender,
     }

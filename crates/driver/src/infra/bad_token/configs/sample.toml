@@ -1,0 +1,20 @@
+solver = "0x1234567890abcdef1234567890abcdef12345678"
+timespan = 3
+
+
+[[tokens.supported]]
+address = "0xabcdefabcdefabcdefabcdefabcdefabcd"
+
+[[tokens.supported]]
+address = "0x1234123412341234123412341234123412341234"
+
+[[tokens.unsupported]]
+address = "0x5678567856785678567856785678567856785678"
+
+[[tokens.unsupported]]
+address = "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+
+[heuristic.ThresholdBased]
+threshold = 10
+
+mode = "LogOnly"
