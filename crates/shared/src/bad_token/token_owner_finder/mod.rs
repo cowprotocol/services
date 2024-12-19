@@ -194,7 +194,9 @@ impl TokenOwnerFindingStrategy {
         match chain {
             Chain::Mainnet => &[Self::Liquidity, Self::Blockscout, Self::Ethplorer],
             Chain::Gnosis => &[Self::Liquidity, Self::Blockscout],
-            Chain::Sepolia | Chain::Goerli | Chain::ArbitrumOne | Chain::Base => &[Self::Liquidity],
+            Chain::Sepolia | Chain::Goerli | Chain::ArbitrumOne | Chain::Base | Chain::Hardhat => {
+                &[Self::Liquidity]
+            }
         }
     }
 }

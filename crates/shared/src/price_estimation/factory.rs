@@ -218,7 +218,7 @@ impl<'a> PriceEstimatorFactory<'a> {
                             self.components.http_factory.create(),
                             self.args.one_inch_url.clone(),
                             self.args.one_inch_api_key.clone(),
-                            self.network.chain.id().into(),
+                            self.network.chain.id(),
                             self.network.block_stream.clone(),
                             self.components.tokens.clone(),
                         ),
