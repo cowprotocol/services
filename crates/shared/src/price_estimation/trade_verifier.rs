@@ -9,8 +9,10 @@ use {
         encoded_settlement::{encode_trade, EncodedSettlement, EncodedTrade},
         interaction::EncodedInteraction,
         trade_finding::{
-            external::{dto, dto::JitOrder},
+            external::dto::{self, JitOrder},
+            map_interactions_data,
             Interaction,
+            QuoteExecution,
             TradeKind,
         },
     },
@@ -141,6 +143,7 @@ impl TradeVerifier {
             out_amount,
             self.native_token,
             &self.domain_separator,
+            self.settlement.address(),
         )?;
 
         let settlement = add_balance_queries(settlement, query, &verification, &solver);
@@ -156,28 +159,13 @@ impl TradeVerifier {
             )
             .tx;
 
-        let sell_amount = match query.kind {
-            OrderKind::Sell => query.in_amount.get(),
-            OrderKind::Buy => *out_amount,
-        };
-
-        // Only enable additional mocking (approvals, native token wrapping,
-        // balance overrides) if the user did not provide pre-interactions. If
-        // the user did provide pre-interactions, it's reasonable to assume that
-        // they will set up all the necessary details of the trade.
-        let mock_enabled = verification.pre_interactions.is_empty();
         let simulation = solver
             .methods()
             .swap(
                 self.settlement.address(),
-                verification.from,
-                query.sell_token,
-                sell_amount,
-                self.native_token,
                 tokens.clone(),
                 verification.receiver,
                 Bytes(settlement.data.unwrap().0),
-                (mock_enabled, Self::SPARDOSE),
             )
             .tx;
 
@@ -216,6 +204,11 @@ impl TradeVerifier {
                     gas: trade.gas_estimate().context("no gas estimate")?,
                     solver: trade.solver(),
                     verified: true,
+                    execution: QuoteExecution {
+                        interactions: map_interactions_data(&trade.interactions()),
+                        pre_interactions: map_interactions_data(&trade.pre_interactions()),
+                        jit_orders: trade.jit_orders(),
+                    },
                 };
                 tracing::warn!(
                     ?estimate,
@@ -272,12 +265,7 @@ impl TradeVerifier {
             "verified quote",
         );
 
-        ensure_quote_accuracy(
-            &self.quote_inaccuracy_limit,
-            query,
-            trade.solver(),
-            &summary,
-        )
+        ensure_quote_accuracy(&self.quote_inaccuracy_limit, query, trade, &summary)
     }
 
     /// Configures all the state overrides that are needed to mock the given
@@ -429,6 +417,11 @@ impl TradeVerifying for TradeVerifier {
                         gas,
                         solver: trade.solver(),
                         verified: false,
+                        execution: QuoteExecution {
+                            interactions: map_interactions_data(&trade.interactions()),
+                            pre_interactions: map_interactions_data(&trade.pre_interactions()),
+                            jit_orders: trade.jit_orders(),
+                        },
                     };
                     tracing::warn!(
                         ?err,
@@ -468,6 +461,7 @@ fn encode_settlement(
     out_amount: &U256,
     native_token: H160,
     domain_separator: &DomainSeparator,
+    settlement: H160,
 ) -> Result<EncodedSettlement> {
     let mut trade_interactions = encode_interactions(&trade.interactions());
     if query.buy_token == BUY_ETH_ADDRESS {
@@ -480,7 +474,13 @@ fn encode_settlement(
             OrderKind::Buy => query.in_amount.get(),
         };
         let weth = dummy_contract!(WETH9, native_token);
-        let calldata = weth.methods().withdraw(buy_amount).tx.data.unwrap().0;
+        let calldata = weth
+            .methods()
+            .withdraw(buy_amount)
+            .tx
+            .data
+            .expect("data gets populated by function call above")
+            .0;
         trade_interactions.push((native_token, 0.into(), Bytes(calldata)));
         tracing::trace!("adding unwrap interaction for paying out ETH");
     }
@@ -495,11 +495,42 @@ fn encode_settlement(
         )?);
     }
 
-    let pre_interactions = [
-        verification.pre_interactions.clone(),
-        trade.pre_interactions(),
-    ]
-    .concat();
+    // Execute interaction to set up trade right before transfering funds.
+    // This interaction does nothing if the user-provided pre-interactions
+    // already set everything up (e.g. approvals, balances). That way we can
+    // correctly verify quotes with or without these user pre-interactions
+    // with helpful error messages.
+    let trade_setup_interaction = {
+        let sell_amount = match query.kind {
+            OrderKind::Sell => query.in_amount.get(),
+            OrderKind::Buy => *out_amount,
+        };
+        let solver = dummy_contract!(Solver, trade.solver());
+        let setup_call = solver
+            .ensure_trade_preconditions(
+                verification.from,
+                settlement,
+                query.sell_token,
+                sell_amount,
+                native_token,
+                TradeVerifier::SPARDOSE,
+            )
+            .tx
+            .data
+            .expect("data gets populated by function call above")
+            .0;
+        Interaction {
+            target: solver.address(),
+            value: 0.into(),
+            data: setup_call,
+        }
+    };
+
+    let user_interactions = verification.pre_interactions.iter().cloned();
+    let pre_interactions: Vec<_> = user_interactions
+        .chain(trade.pre_interactions())
+        .chain([trade_setup_interaction])
+        .collect();
 
     Ok(EncodedSettlement {
         tokens: tokens.to_vec(),
@@ -665,9 +696,14 @@ fn add_balance_queries(
         // track how much `sell_token` the `from` address actually spent
         OrderKind::Buy => (query.sell_token, verification.from),
     };
-    let query_balance = solver.methods().store_balance(token, owner, true);
-    let query_balance = Bytes(query_balance.tx.data.unwrap().0);
-    let interaction = (solver.address(), 0.into(), query_balance);
+    let query_balance_call = solver
+        .methods()
+        .store_balance(token, owner, true)
+        .tx
+        .data
+        .expect("data gets populated by function call above")
+        .0;
+    let interaction = (solver.address(), 0.into(), Bytes(query_balance_call));
     // query balance query at the end of pre-interactions
     settlement.interactions[0].push(interaction.clone());
     // query balance right after we payed out all `buy_token`
@@ -742,7 +778,7 @@ impl SettleOutput {
 fn ensure_quote_accuracy(
     inaccuracy_limit: &BigRational,
     query: &PriceQuery,
-    solver: H160,
+    trade: &TradeKind,
     summary: &SettleOutput,
 ) -> std::result::Result<Estimate, Error> {
     // amounts verified by the simulation
@@ -773,8 +809,13 @@ fn ensure_quote_accuracy(
     Ok(Estimate {
         out_amount: summary.out_amount,
         gas: summary.gas_used.as_u64(),
-        solver,
+        solver: trade.solver(),
         verified: true,
+        execution: QuoteExecution {
+            interactions: map_interactions_data(&trade.interactions()),
+            pre_interactions: map_interactions_data(&trade.pre_interactions()),
+            jit_orders: trade.jit_orders(),
+        },
     })
 }
 
@@ -828,7 +869,8 @@ mod tests {
             out_amount: 2_000.into(),
             tokens_lost,
         };
-        let estimate = ensure_quote_accuracy(&low_threshold, &query, H160::zero(), &summary);
+        let estimate =
+            ensure_quote_accuracy(&low_threshold, &query, &TradeKind::default(), &summary);
         assert!(matches!(estimate, Err(Error::SimulationFailed(_))));
 
         // sell token is lost
@@ -840,7 +882,9 @@ mod tests {
             out_amount: 2_000.into(),
             tokens_lost,
         };
-        let estimate = ensure_quote_accuracy(&low_threshold, &query, H160::zero(), &summary);
+
+        let estimate =
+            ensure_quote_accuracy(&low_threshold, &query, &TradeKind::default(), &summary);
         assert!(matches!(estimate, Err(Error::SimulationFailed(_))));
 
         // everything is in-place
@@ -853,7 +897,8 @@ mod tests {
             out_amount: 2_000.into(),
             tokens_lost,
         };
-        let estimate = ensure_quote_accuracy(&low_threshold, &query, H160::zero(), &summary);
+        let estimate =
+            ensure_quote_accuracy(&low_threshold, &query, &TradeKind::default(), &summary);
         assert!(estimate.is_ok());
 
         let tokens_lost = hashmap! {
@@ -867,11 +912,13 @@ mod tests {
             tokens_lost,
         };
 
-        let estimate = ensure_quote_accuracy(&low_threshold, &query, H160::zero(), &sell_more);
+        let estimate =
+            ensure_quote_accuracy(&low_threshold, &query, &Default::default(), &sell_more);
         assert!(matches!(estimate, Err(Error::TooInaccurate)));
 
         // passes with slightly higher tolerance
-        let estimate = ensure_quote_accuracy(&high_threshold, &query, H160::zero(), &sell_more);
+        let estimate =
+            ensure_quote_accuracy(&high_threshold, &query, &Default::default(), &sell_more);
         assert!(estimate.is_ok());
 
         let tokens_lost = hashmap! {
@@ -885,11 +932,13 @@ mod tests {
             tokens_lost,
         };
 
-        let estimate = ensure_quote_accuracy(&low_threshold, &query, H160::zero(), &pay_out_more);
+        let estimate =
+            ensure_quote_accuracy(&low_threshold, &query, &Default::default(), &pay_out_more);
         assert!(matches!(estimate, Err(Error::TooInaccurate)));
 
         // passes with slightly higher tolerance
-        let estimate = ensure_quote_accuracy(&high_threshold, &query, H160::zero(), &pay_out_more);
+        let estimate =
+            ensure_quote_accuracy(&high_threshold, &query, &Default::default(), &pay_out_more);
         assert!(estimate.is_ok());
 
         let tokens_lost = hashmap! {
@@ -903,7 +952,8 @@ mod tests {
             tokens_lost,
         };
         // Ending up with surplus in the buffers is always fine
-        let estimate = ensure_quote_accuracy(&low_threshold, &query, H160::zero(), &sell_less);
+        let estimate =
+            ensure_quote_accuracy(&low_threshold, &query, &Default::default(), &sell_less);
         assert!(estimate.is_ok());
 
         let tokens_lost = hashmap! {
@@ -917,7 +967,8 @@ mod tests {
             tokens_lost,
         };
         // Ending up with surplus in the buffers is always fine
-        let estimate = ensure_quote_accuracy(&low_threshold, &query, H160::zero(), &pay_out_less);
+        let estimate =
+            ensure_quote_accuracy(&low_threshold, &query, &Default::default(), &pay_out_less);
         assert!(estimate.is_ok());
     }
 }

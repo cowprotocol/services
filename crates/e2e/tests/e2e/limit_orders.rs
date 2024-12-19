@@ -901,7 +901,6 @@ async fn no_liquidity_limit_order(web3: Web3) {
             ExtraServiceArgs {
                 autopilot: vec![
                     protocol_fees_config,
-                    "--enable-multiple-fees=true".to_string(),
                     format!("--unsupported-tokens={:#x}", unsupported.address()),
                 ],
                 ..Default::default()

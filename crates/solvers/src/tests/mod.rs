@@ -10,8 +10,7 @@ use {
     tokio::{sync::oneshot, task::JoinHandle},
 };
 
-mod baseline;
-mod naive;
+mod cases;
 
 /// A solver engine handle for E2E testing.
 pub struct SolverEngine {

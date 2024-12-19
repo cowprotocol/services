@@ -15,7 +15,7 @@ use {
     model::{interaction::InteractionData, order::OrderKind},
     num::CheckedDiv,
     number::conversions::big_rational_to_u256,
-    serde::Serialize,
+    serde::{Deserialize, Serialize},
     std::{collections::HashMap, ops::Mul},
     thiserror::Error,
 };
@@ -36,12 +36,27 @@ pub struct Quote {
     pub out_amount: U256,
     pub gas_estimate: u64,
     pub solver: H160,
+    pub execution: QuoteExecution,
+}
+
+/// Quote execution metadata.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize)]
+pub struct QuoteExecution {
+    pub interactions: Vec<InteractionData>,
+    pub pre_interactions: Vec<InteractionData>,
+    pub jit_orders: Vec<dto::JitOrder>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TradeKind {
     Legacy(LegacyTrade),
     Regular(Trade),
+}
+
+impl Default for TradeKind {
+    fn default() -> Self {
+        Self::Legacy(LegacyTrade::default())
+    }
 }
 
 impl TradeKind {
@@ -92,6 +107,13 @@ impl TradeKind {
         match self {
             TradeKind::Legacy(_) => Vec::new(),
             TradeKind::Regular(trade) => trade.pre_interactions.clone(),
+        }
+    }
+
+    pub fn jit_orders(&self) -> Vec<dto::JitOrder> {
+        match self {
+            TradeKind::Legacy(_) => Vec::new(),
+            TradeKind::Regular(trade) => trade.jit_orders.clone(),
         }
     }
 }
@@ -181,6 +203,14 @@ impl Interaction {
     pub fn encode(&self) -> EncodedInteraction {
         (self.target, self.value, Bytes(self.data.clone()))
     }
+
+    pub fn to_interaction_data(&self) -> InteractionData {
+        InteractionData {
+            target: self.target,
+            value: self.value,
+            call_data: self.data.clone(),
+        }
+    }
 }
 
 impl From<InteractionData> for Interaction {
@@ -248,6 +278,14 @@ pub fn map_interactions(interactions: &[InteractionData]) -> Vec<Interaction> {
     interactions.iter().cloned().map(Into::into).collect()
 }
 
+pub fn map_interactions_data(interactions: &[Interaction]) -> Vec<InteractionData> {
+    interactions
+        .iter()
+        .cloned()
+        .map(|i| i.to_interaction_data())
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -266,6 +304,6 @@ mod tests {
             interaction_debug,
             "Interaction { target: 0x0000000000000000000000000000000000000000, value: 1, data: \
              0x010203040506 }"
-        );
+        )
     }
 }

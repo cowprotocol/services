@@ -475,6 +475,7 @@ impl RunLoop {
                         .iter()
                         .map(|(token, price)| (token.0, price.get().into()))
                         .collect(),
+                    is_winner: participant.is_winner(),
                 })
                 .collect(),
         };

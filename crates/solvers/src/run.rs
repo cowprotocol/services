@@ -2,7 +2,7 @@
 use tokio::signal::unix::{self, SignalKind};
 use {
     crate::{
-        domain::solver::{self, Solver},
+        domain::solver,
         infra::{cli, config},
     },
     clap::Parser,
@@ -30,10 +30,9 @@ async fn run_with(args: cli::Args, bind: Option<oneshot::Sender<SocketAddr>>) {
 
     let solver = match args.command {
         cli::Command::Baseline { config } => {
-            let config = config::baseline::load(&config).await;
-            Solver::Baseline(solver::Baseline::new(config))
+            let config = config::load(&config).await;
+            solver::Solver::new(config)
         }
-        cli::Command::Naive => Solver::Naive(solver::Naive),
     };
 
     crate::api::Api {
