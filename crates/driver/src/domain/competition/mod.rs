@@ -68,6 +68,7 @@ impl Competition {
         liquidity: infra::liquidity::Fetcher,
         simulator: Simulator,
         mempools: Mempools,
+        bad_tokens: Arc<bad_tokens::Detector>,
     ) -> Arc<Self> {
         let (settle_sender, settle_receiver) = mpsc::channel(solver.settle_queue_size());
 
@@ -79,6 +80,7 @@ impl Competition {
             mempools,
             settlements: Default::default(),
             settle_queue: settle_sender,
+            bad_tokens,
         });
 
         let competition_clone = Arc::clone(&competition);
