@@ -139,13 +139,13 @@ impl Competition {
             .filter_map(|(id, token_pairs, result)| async move {
                 match result {
                     Ok(solution) => {
-                        self.bad_tokens.encoding_succeeded(token_pairs);
+                        self.bad_tokens.encoding_succeeded(&token_pairs);
                         Some(solution)
                     }
                     // don't report on errors coming from solution merging
                     Err(_err) if id.solutions().len() > 1 => None,
                     Err(err) => {
-                        self.bad_tokens.encoding_failed(token_pairs);
+                        self.bad_tokens.encoding_failed(&token_pairs);
                         observe::encoding_failed(self.solver.name(), &id, &err);
                         notify::encoding_failed(&self.solver, auction.id(), &id, &err);
                         None

@@ -84,7 +84,7 @@ impl Api {
                 .bad_token_detection()
                 .enable_heuristic_based_bad_token_detection
             {
-                bad_tokens.with_heuristic_detector();
+                bad_tokens.enable_heuristic_detector();
             }
 
             let router = router.with_state(State(Arc::new(Inner {

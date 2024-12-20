@@ -26,15 +26,12 @@ impl Detector {
     /// quality.
     const REQUIRED_MEASUREMENTS: u32 = 20;
 
-    pub fn get_quality(&self, token: eth::TokenAddress) -> Option<Quality> {
-        let measurements = self.0.counter.get(&token)?;
-        if measurements.attempts >= Self::REQUIRED_MEASUREMENTS
-            && (measurements.fails as f64 / measurements.attempts as f64) >= Self::FAILURE_RATIO
-        {
-            Some(Quality::Unsupported)
-        } else {
-            None
-        }
+    pub fn get_quality(&self, token: &eth::TokenAddress) -> Option<Quality> {
+        let measurements = self.0.counter.get(token)?;
+        let is_unsupported = measurements.attempts >= Self::REQUIRED_MEASUREMENTS
+            && (measurements.fails as f64 / measurements.attempts as f64) >= Self::FAILURE_RATIO;
+
+        is_unsupported.then_some(Quality::Unsupported)
     }
 
     /// Updates the tokens that participated in settlements by
@@ -42,25 +39,23 @@ impl Detector {
     /// `failure` indicates whether the settlement was successful or not.
     pub fn update_tokens(
         &self,
-        token_pairs: Vec<(eth::TokenAddress, eth::TokenAddress)>,
+        token_pairs: &[(eth::TokenAddress, eth::TokenAddress)],
         failure: bool,
     ) {
         token_pairs
-            .into_iter()
-            .flat_map(|(token_a, token_b)| vec![token_a, token_b])
+            .iter()
+            .flat_map(|(token_a, token_b)| [token_a, token_b])
             .for_each(|token| {
                 self.0
                     .counter
-                    .entry(token)
+                    .entry(*token)
                     .and_modify(|counter| {
                         counter.attempts += 1;
-                        if failure {
-                            counter.fails += 1;
-                        }
+                        counter.fails += u32::from(failure)
                     })
                     .or_insert_with(|| TokenStatistics {
                         attempts: 1,
-                        fails: failure as u32,
+                        fails: u32::from(failure),
                     });
             });
     }
