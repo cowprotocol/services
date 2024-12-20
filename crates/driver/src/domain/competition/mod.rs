@@ -59,11 +59,10 @@ pub struct Competition {
 impl Competition {
     /// Solve an auction as part of this competition.
     pub async fn solve(&self, auction: Auction) -> Result<Option<Solved>, Error> {
-        let auction = self
+        let auction = &self
             .bad_tokens
             .filter_unsupported_orders_in_auction(auction)
             .await;
-        let auction = &auction;
 
         let liquidity = match self.solver.liquidity() {
             solver::Liquidity::Fetch => {

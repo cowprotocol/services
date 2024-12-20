@@ -96,7 +96,8 @@ contract Trader {
             }
         }
 
-        uint256 currentAllowance = IERC20(sellToken).allowance(address(this), address(settlementContract.vaultRelayer()));
+        address vaultRelayer = settlementContract.vaultRelayer();
+        uint256 currentAllowance = IERC20(sellToken).allowance(address(this), vaultRelayer);
         if (currentAllowance < sellAmount) {
             // Simulate an approval to the settlement contract so the user doesn't have to
             // spend gas on that just to get a quote. If they are happy with the quote and
@@ -104,12 +105,11 @@ contract Trader {
             // We first reset the allowance to 0 since some ERC20 tokens (e.g. USDT)
             // require that due to this attack:
             // https://github.com/ethereum/EIPs/issues/20#issuecomment-263524729
-            // We catch reverts because we'll later assert the correct approval got set anyway.
-            try IERC20(sellToken).approve(address(settlementContract.vaultRelayer()), 0) {}
-            catch {}
-            try IERC20(sellToken).approve(address(settlementContract.vaultRelayer()), type(uint256).max) {}
-            catch {}
-            uint256 allowance = IERC20(sellToken).allowance(address(this), address(settlementContract.vaultRelayer()));
+            // In order to handle tokens which are not ERC20 compliant (like USDT) we have
+            // to use `safeApprove()` instead of the regular `approve()` here.
+            IERC20(sellToken).safeApprove(vaultRelayer, 0);
+            IERC20(sellToken).safeApprove(vaultRelayer, type(uint256).max);
+            uint256 allowance = IERC20(sellToken).allowance(address(this), vaultRelayer);
             require(allowance >= sellAmount, "trader did not give the required approvals");
         }
 
