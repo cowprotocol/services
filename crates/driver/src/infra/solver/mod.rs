@@ -4,6 +4,7 @@ use {
         domain::{
             competition::{
                 auction::{self, Auction},
+                bad_tokens,
                 solution::{self, Solution},
             },
             eth,
@@ -123,6 +124,7 @@ pub struct Config {
     /// Which `tx.origin` is required to make quote verification pass.
     pub quote_tx_origin: Option<eth::Address>,
     pub response_size_limit_max_bytes: usize,
+    pub bad_token_detection: BadTokenDetection,
     /// Max size of the pending settlements queue.
     pub settle_queue_size: usize,
 }
@@ -151,6 +153,10 @@ impl Solver {
             eth,
             persistence,
         })
+    }
+
+    pub fn bad_token_detection(&self) -> &BadTokenDetection {
+        &self.config.bad_token_detection
     }
 
     pub fn persistence(&self) -> Persistence {
@@ -300,4 +306,11 @@ impl Error {
             _ => false,
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct BadTokenDetection {
+    /// Tokens that are explicitly allow- or deny-listed.
+    pub tokens_supported: HashMap<eth::TokenAddress, bad_tokens::Quality>,
+    pub enable_simulation_based_bad_token_detection: bool,
 }
