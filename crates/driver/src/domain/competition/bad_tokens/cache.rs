@@ -43,8 +43,8 @@ impl Cache {
         match self.0.cache.entry(token) {
             Entry::Occupied(mut o) => {
                 let value = o.get_mut();
-                if now.duration_since(value.timestamp) > self.0.max_age
-                    || quality == Quality::Unsupported
+                if quality == Quality::Unsupported
+                    || now.duration_since(value.timestamp) > self.0.max_age
                 {
                     // Only update the value if the cached value is outdated by now or
                     // if the new value is "Unsupported". This means on conflicting updates
