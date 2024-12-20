@@ -11,6 +11,7 @@ use {
     crate::recent_block_cache::Block,
     anyhow::Result,
     chain::Chain,
+    core::panic,
     model::TokenPair,
     std::{collections::HashSet, sync::Arc},
 };
@@ -68,7 +69,7 @@ pub fn defaults_for_network(chain: &Chain) -> Vec<BaselineSource> {
             BaselineSource::UniswapV3,
         ],
         Chain::Sepolia => vec![BaselineSource::TestnetUniswapV2],
-        Chain::Hardhat => vec![],
+        Chain::Hardhat => panic!("unsupported baseline sources for Hardhat"),
     }
 }
 
