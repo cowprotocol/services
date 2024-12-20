@@ -40,9 +40,10 @@ impl Cache {
 
     /// Updates whether or not a token should be considered supported.
     pub fn update_quality(&self, token: eth::TokenAddress, quality: Quality, now: Instant) {
-        match self.0.cache.entry(token) {
-            Entry::Occupied(mut o) => {
-                let value = o.get_mut();
+        self.0
+            .cache
+            .entry(token)
+            .and_modify(|value| {
                 if quality == Quality::Unsupported
                     || now.duration_since(value.timestamp) > self.0.max_age
                 {
@@ -52,14 +53,11 @@ impl Cache {
                     value.quality = quality;
                 }
                 value.timestamp = now;
-            }
-            Entry::Vacant(v) => {
-                v.insert(CacheEntry {
-                    quality,
-                    timestamp: now,
-                });
-            }
-        }
+            })
+            .or_insert_with(|| CacheEntry {
+                quality,
+                timestamp: now,
+            });
     }
 
     pub fn evict_outdated_entries(&self) {
