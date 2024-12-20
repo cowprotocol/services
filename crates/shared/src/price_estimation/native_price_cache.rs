@@ -70,6 +70,38 @@ struct CachedResult {
     result: CacheEntry,
     updated_at: Instant,
     requested_at: Instant,
+    estimator_internal_errors_count: u32,
+}
+
+impl CachedResult {
+    const ESTIMATOR_INTERNAL_ERROR_THRESHOLD: u32 = 5;
+
+    pub fn new(
+        result: CacheEntry,
+        updated_at: Instant,
+        requested_at: Instant,
+        current_estimator_internal_errors_count: u32,
+    ) -> Self {
+        let estimator_internal_errors_count =
+            matches!(result, Err(PriceEstimationError::EstimatorInternal(_)))
+                .then_some(current_estimator_internal_errors_count + 1)
+                .unwrap_or_default();
+
+        Self {
+            result,
+            updated_at,
+            requested_at,
+            estimator_internal_errors_count,
+        }
+    }
+
+    /// The result is not ready if the estimator has returned an internal error
+    /// and consecutive errors are less than
+    /// `ESTIMATOR_INTERNAL_ERROR_THRESHOLD`.
+    pub fn is_ready(&self) -> bool {
+        !matches!(self.result, Err(PriceEstimationError::EstimatorInternal(_)))
+            || self.estimator_internal_errors_count >= Self::ESTIMATOR_INTERNAL_ERROR_THRESHOLD
+    }
 }
 
 impl Inner {
@@ -80,13 +112,13 @@ impl Inner {
         cache: &mut MutexGuard<HashMap<H160, CachedResult>>,
         max_age: &Duration,
         create_missing_entry: bool,
-    ) -> Option<CacheEntry> {
+    ) -> Option<CachedResult> {
         match cache.entry(token) {
             Entry::Occupied(mut entry) => {
                 let entry = entry.get_mut();
                 entry.requested_at = now;
                 let is_recent = now.saturating_duration_since(entry.updated_at) < *max_age;
-                is_recent.then_some(entry.result.clone())
+                is_recent.then_some(entry.clone())
             }
             Entry::Vacant(entry) => {
                 if create_missing_entry {
@@ -95,15 +127,27 @@ impl Inner {
                     // This should happen only for prices missing while building the auction.
                     // Otherwise malicious actors could easily cause the cache size to blow up.
                     let outdated_timestamp = now.checked_sub(*max_age).unwrap();
-                    entry.insert(CachedResult {
-                        result: Ok(0.),
-                        updated_at: outdated_timestamp,
-                        requested_at: now,
-                    });
+                    entry.insert(CachedResult::new(
+                        Ok(0.),
+                        outdated_timestamp,
+                        now,
+                        Default::default(),
+                    ));
                 }
                 None
             }
         }
+    }
+
+    fn get_ready_to_use_cached_price(
+        token: H160,
+        now: Instant,
+        cache: &mut MutexGuard<HashMap<H160, CachedResult>>,
+        max_age: &Duration,
+        create_missing_entry: bool,
+    ) -> Option<CachedResult> {
+        Self::get_cached_price(token, now, cache, max_age, create_missing_entry)
+            .filter(|cached| cached.is_ready())
     }
 
     /// Checks cache for the given tokens one by one. If the price is already
@@ -117,15 +161,22 @@ impl Inner {
         max_age: Duration,
     ) -> futures::stream::BoxStream<'a, (H160, NativePriceEstimateResult)> {
         let estimates = tokens.iter().map(move |token| async move {
-            {
+            let current_estimator_internal_errors_count = {
                 // check if price is cached by now
                 let now = Instant::now();
                 let mut cache = self.cache.lock().unwrap();
-                let price = Self::get_cached_price(*token, now, &mut cache, &max_age, false);
-                if let Some(price) = price {
-                    return (*token, price);
+
+                match Self::get_cached_price(*token, now, &mut cache, &max_age, false) {
+                    Some(cached) => {
+                        if cached.is_ready() {
+                            return (*token, cached.result);
+                        } else {
+                            cached.estimator_internal_errors_count
+                        }
+                    }
+                    None => Default::default(),
                 }
-            }
+            };
 
             let result = self.estimator.estimate_native_price(*token).await;
 
@@ -133,13 +184,15 @@ impl Inner {
             if should_cache(&result) {
                 let now = Instant::now();
                 let mut cache = self.cache.lock().unwrap();
+
                 cache.insert(
                     *token,
-                    CachedResult {
-                        result: result.clone(),
-                        updated_at: now,
-                        requested_at: now,
-                    },
+                    CachedResult::new(
+                        result.clone(),
+                        now,
+                        now,
+                        current_estimator_internal_errors_count,
+                    ),
                 );
             };
 
@@ -178,10 +231,11 @@ fn should_cache(result: &Result<f64, PriceEstimationError>) -> bool {
     match result {
         Ok(_)
         | Err(PriceEstimationError::NoLiquidity { .. })
-        | Err(PriceEstimationError::UnsupportedToken { .. }) => true,
-        Err(PriceEstimationError::EstimatorInternal(_))
-        | Err(PriceEstimationError::ProtocolInternal(_))
-        | Err(PriceEstimationError::RateLimited) => false,
+        | Err(PriceEstimationError::UnsupportedToken { .. })
+        | Err(PriceEstimationError::EstimatorInternal(_)) => true,
+        Err(PriceEstimationError::ProtocolInternal(_)) | Err(PriceEstimationError::RateLimited) => {
+            false
+        }
         Err(PriceEstimationError::UnsupportedOrderType(_)) => {
             tracing::error!(?result, "Unexpected error in native price cache");
             false
@@ -241,11 +295,12 @@ impl CachingNativePriceEstimator {
 
                 Some((
                     token,
-                    CachedResult {
-                        result: Ok(from_normalized_price(price)?),
+                    CachedResult::new(
+                        Ok(from_normalized_price(price)?),
                         updated_at,
-                        requested_at: now,
-                    },
+                        now,
+                        Default::default(),
+                    ),
                 ))
             })
             .collect::<HashMap<_, _>>();
@@ -300,14 +355,20 @@ impl CachingNativePriceEstimator {
         let mut cache = self.0.cache.lock().unwrap();
         let mut results = HashMap::default();
         for token in tokens {
-            let cached = Inner::get_cached_price(*token, now, &mut cache, &self.0.max_age, true);
+            let cached = Inner::get_ready_to_use_cached_price(
+                *token,
+                now,
+                &mut cache,
+                &self.0.max_age,
+                true,
+            );
             let label = if cached.is_some() { "hits" } else { "misses" };
             Metrics::get()
                 .native_price_cache_access
                 .with_label_values(&[label])
                 .inc_by(1);
             if let Some(result) = cached {
-                results.insert(*token, result);
+                results.insert(*token, result.result);
             }
         }
         results
@@ -359,7 +420,7 @@ impl NativePriceEstimating for CachingNativePriceEstimator {
             let cached = {
                 let now = Instant::now();
                 let mut cache = self.0.cache.lock().unwrap();
-                Inner::get_cached_price(token, now, &mut cache, &self.0.max_age, false)
+                Inner::get_ready_to_use_cached_price(token, now, &mut cache, &self.0.max_age, false)
             };
 
             let label = if cached.is_some() { "hits" } else { "misses" };
@@ -368,8 +429,8 @@ impl NativePriceEstimating for CachingNativePriceEstimator {
                 .with_label_values(&[label])
                 .inc_by(1);
 
-            if let Some(price) = cached {
-                return price;
+            if let Some(cached) = cached {
+                return cached.result;
             }
 
             self.0
@@ -665,22 +726,8 @@ mod tests {
         let inner = Inner {
             cache: Mutex::new(
                 [
-                    (
-                        t0,
-                        CachedResult {
-                            result: Ok(0.),
-                            updated_at: now,
-                            requested_at: now,
-                        },
-                    ),
-                    (
-                        t1,
-                        CachedResult {
-                            result: Ok(0.),
-                            updated_at: now,
-                            requested_at: now,
-                        },
-                    ),
+                    (t0, CachedResult::new(Ok(0.), now, now, Default::default())),
+                    (t1, CachedResult::new(Ok(0.), now, now, Default::default())),
                 ]
                 .into_iter()
                 .collect(),
