@@ -307,5 +307,5 @@ pub struct BadTokenDetection {
     /// Tokens that are explicitly allow- or deny-listed.
     pub tokens_supported: HashMap<eth::TokenAddress, bad_tokens::Quality>,
     pub enable_simulation_based_bad_token_detection: bool,
-    pub enable_heuristic_based_bad_token_detection: bool,
+    pub enable_metrics_based_bad_token_detection: bool,
 }

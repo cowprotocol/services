@@ -5,7 +5,7 @@ use {super::Quality, crate::domain::eth, dashmap::DashMap, std::sync::Arc};
 /// have participated in at least `REQUIRED_MEASUREMENTS` attempts to be
 /// evaluated. If, at that point, the ratio of failures is greater than or equal
 /// to `FAILURE_RATIO`, the token is considered unsupported.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Detector(Arc<Inner>);
 
 #[derive(Default)]

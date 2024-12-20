@@ -52,8 +52,8 @@ impl Detector {
     }
 
     /// Enables detection of unsupported tokens based on heuristics.
-    pub fn enable_heuristic_detector(&mut self) -> &mut Self {
-        self.metrics = Some(metrics::Detector::default());
+    pub fn with_metrics_detector(&mut self, detector: metrics::Detector) -> &mut Self {
+        self.metrics = Some(detector);
         self
     }
 
