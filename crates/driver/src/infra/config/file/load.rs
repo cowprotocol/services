@@ -96,6 +96,7 @@ pub async fn load(chain: chain::Id, path: &Path) -> infra::Config {
                 response_size_limit_max_bytes: config.response_size_limit_max_bytes,
                 bad_token_detection: BadTokenDetection {
                     tokens_supported: config
+                        .bad_token_detection
                         .token_supported
                         .iter()
                         .map(|(token, supported)| {
@@ -108,10 +109,16 @@ pub async fn load(chain: chain::Id, path: &Path) -> infra::Config {
                             )
                         })
                         .collect(),
-                    enable_simulation_based_bad_token_detection: config
-                        .enable_simulation_bad_token_detection,
-                    enable_metrics_based_bad_token_detection: config
-                        .enable_metrics_bad_token_detection,
+                    enable_simulation_strategy: config
+                        .bad_token_detection
+                        .enable_simulation_strategy,
+                    enable_metrics_strategy: config.bad_token_detection.enable_metrics_strategy,
+                    metrics_strategy_failure_ratio: config
+                        .bad_token_detection
+                        .metrics_strategy_failure_ratio,
+                    metrics_strategy_required_measurements: config
+                        .bad_token_detection
+                        .metrics_strategy_required_measurements,
                 },
             }
         }))

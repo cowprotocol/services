@@ -58,7 +58,7 @@ impl Api {
         app = routes::metrics(app);
         app = routes::healthz(app);
 
-        let metrics_bad_token_detector = bad_tokens::metrics::Detector::default();
+        let metrics_bad_token_detector_builder = bad_tokens::metrics::DetectorBuilder::default();
 
         // Multiplex each solver as part of the API. Multiple solvers are multiplexed
         // on the same driver so only one liquidity collector collects the liquidity
@@ -75,18 +75,19 @@ impl Api {
 
             let mut bad_tokens =
                 bad_tokens::Detector::new(solver.bad_token_detection().tokens_supported.clone());
-            if solver
-                .bad_token_detection()
-                .enable_simulation_based_bad_token_detection
-            {
+            if solver.bad_token_detection().enable_simulation_strategy {
                 bad_tokens.with_simulation_detector(self.bad_token_detector.clone());
             }
 
-            if solver
-                .bad_token_detection()
-                .enable_metrics_based_bad_token_detection
-            {
-                bad_tokens.with_metrics_detector(metrics_bad_token_detector.clone());
+            if solver.bad_token_detection().enable_metrics_strategy {
+                bad_tokens.with_metrics_detector(
+                    metrics_bad_token_detector_builder.clone().build(
+                        solver.bad_token_detection().metrics_strategy_failure_ratio,
+                        solver
+                            .bad_token_detection()
+                            .metrics_strategy_required_measurements,
+                    ),
+                );
             }
 
             let router = router.with_state(State(Arc::new(Inner {

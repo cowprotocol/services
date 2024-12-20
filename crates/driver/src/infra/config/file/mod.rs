@@ -269,19 +269,9 @@ struct SolverConfig {
     #[serde(default = "default_response_size_limit_max_bytes")]
     response_size_limit_max_bytes: usize,
 
-    /// Which tokens are explicitly supported or unsupported by the solver.
-    #[serde(default)]
-    token_supported: HashMap<eth::H160, bool>,
-
-    /// Whether or not the solver opted into detecting unsupported
-    /// tokens with `trace_callMany` based simulation.
-    #[serde(default)]
-    enable_simulation_bad_token_detection: bool,
-
-    /// Whether or not the solver opted into detecting unsupported
-    /// tokens with metrics-based detection.
-    #[serde(default)]
-    enable_metrics_bad_token_detection: bool,
+    /// Configuration for bad token detection.
+    #[serde(default, flatten)]
+    bad_token_detection: BadTokenDetectionConfig,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
@@ -679,4 +669,52 @@ fn default_max_order_age() -> Option<Duration> {
 
 fn default_simulation_bad_token_max_age() -> Duration {
     Duration::from_secs(600)
+}
+
+#[serde_as]
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct BadTokenDetectionConfig {
+    /// Which tokens are explicitly supported or unsupported by the solver.
+    #[serde(default)]
+    pub token_supported: HashMap<eth::H160, bool>,
+
+    /// Whether the solver opted into detecting unsupported
+    /// tokens with `trace_callMany` based simulation.
+    #[serde(default, rename = "enable-simulation-bad-token-detection")]
+    pub enable_simulation_strategy: bool,
+
+    /// Whether the solver opted into detecting unsupported
+    /// tokens with metrics-based detection.
+    #[serde(default, rename = "enable-metrics-bad-token-detection")]
+    pub enable_metrics_strategy: bool,
+
+    /// The ratio of failures to attempts that qualifies a token as unsupported.
+    #[serde(
+        default = "default_metrics_bad_token_detector_failure_ratio",
+        rename = "metrics-bad-token-detection-failure-ratio"
+    )]
+    pub metrics_strategy_failure_ratio: f64,
+
+    /// The minimum number of attempts required before evaluating a token’s
+    /// quality.
+    #[serde(
+        default = "default_metrics_bad_token_detector_required_measurements",
+        rename = "metrics-bad-token-detection-required-measurements"
+    )]
+    pub metrics_strategy_required_measurements: u32,
+}
+
+impl Default for BadTokenDetectionConfig {
+    fn default() -> Self {
+        serde_json::from_str("{}").expect("MetricsBadTokenDetectorConfig uses default values")
+    }
+}
+
+fn default_metrics_bad_token_detector_failure_ratio() -> f64 {
+    0.9
+}
+
+fn default_metrics_bad_token_detector_required_measurements() -> u32 {
+    20
 }
