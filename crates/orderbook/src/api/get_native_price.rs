@@ -13,12 +13,6 @@ struct PriceResponse {
     price: f64,
 }
 
-impl From<f64> for PriceResponse {
-    fn from(price: f64) -> Self {
-        Self { price }
-    }
-}
-
 fn get_native_prices_request() -> impl Filter<Extract = (H160,), Error = Rejection> + Clone {
     warp::path!("v1" / "token" / H160 / "native_price").and(warp::get())
 }
@@ -31,10 +25,9 @@ pub fn get_native_price(
         async move {
             let result = estimator.estimate_native_price(token).await;
             let reply = match result {
-                Ok(price) => with_status(
-                    warp::reply::json(&PriceResponse::from(price)),
-                    StatusCode::OK,
-                ),
+                Ok(price) => {
+                    with_status(warp::reply::json(&PriceResponse { price }), StatusCode::OK)
+                }
                 Err(err) => err.into_warp_reply(),
             };
             Result::<_, Infallible>::Ok(reply)

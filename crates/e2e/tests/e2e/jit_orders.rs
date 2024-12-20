@@ -76,6 +76,7 @@ async fn single_limit_order_test(web3: Web3) {
             },
         ],
         colocation::LiquidityProvider::UniswapV2,
+        false,
     );
 
     // We start the quoter as the baseline solver, and the mock solver as the one

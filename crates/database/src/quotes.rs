@@ -34,6 +34,8 @@ pub struct Quote {
     pub expiration_timestamp: DateTime<Utc>,
     pub quote_kind: QuoteKind,
     pub solver: Address,
+    pub verified: bool,
+    pub metadata: serde_json::Value,
 }
 
 /// Stores the quote and returns the id. The id of the quote parameter is not
@@ -51,9 +53,11 @@ INSERT INTO quotes (
     order_kind,
     expiration_timestamp,
     quote_kind,
-    solver
+    solver,
+    verified,
+    metadata
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 RETURNING id
     "#;
     let (id,) = sqlx::query_as(QUERY)
@@ -68,6 +72,8 @@ RETURNING id
         .bind(quote.expiration_timestamp)
         .bind(&quote.quote_kind)
         .bind(quote.solver)
+        .bind(quote.verified)
+        .bind(&quote.metadata)
         .fetch_one(ex)
         .await?;
     Ok(id)
@@ -181,6 +187,8 @@ mod tests {
             expiration_timestamp: now,
             quote_kind: QuoteKind::Standard,
             solver: ByteArray([1; 20]),
+            verified: false,
+            metadata: Default::default(),
         };
         let id = save(&mut db, &quote).await.unwrap();
         quote.id = id;
@@ -214,6 +222,8 @@ mod tests {
             expiration_timestamp: now,
             quote_kind: QuoteKind::Standard,
             solver: ByteArray([1; 20]),
+            verified: false,
+            metadata: Default::default(),
         };
 
         let token_b = ByteArray([2; 20]);
@@ -230,6 +240,8 @@ mod tests {
             expiration_timestamp: now,
             quote_kind: QuoteKind::Standard,
             solver: ByteArray([2; 20]),
+            verified: false,
+            metadata: Default::default(),
         };
 
         // Save two measurements for token_a
@@ -401,6 +413,8 @@ mod tests {
                 expiration_timestamp: now,
                 quote_kind: QuoteKind::Eip1271OnchainOrder,
                 solver: ByteArray([1; 20]),
+                verified: false,
+                metadata: Default::default(),
             };
             let id = save(&mut db, &quote).await.unwrap();
             quote.id = id;
@@ -421,5 +435,49 @@ mod tests {
         assert_eq!(find(&mut db, &search_a).await.unwrap().unwrap(), quote,);
         search_a.quote_kind = QuoteKind::Standard;
         assert_eq!(find(&mut db, &search_a).await.unwrap(), None,);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_insert_quote_metadata() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let metadata: serde_json::Value = serde_json::from_str(
+            r#"{ "version":"1.0", "interactions": [ {
+                "target": "0x0102030405060708091011121314151617181920",
+                "value": "1",
+                "callData": "0x0A0B0C102030"
+            },{
+            "target": "0xFF02030405060708091011121314151617181920",
+            "value": "2",
+            "callData": "0xFF0B0C102030"
+            }]
+        }"#,
+        )
+        .unwrap();
+
+        let quote = Quote {
+            id: Default::default(),
+            sell_token: ByteArray([1; 20]),
+            buy_token: ByteArray([2; 20]),
+            sell_amount: 3.into(),
+            buy_amount: 4.into(),
+            gas_amount: 5.,
+            gas_price: 6.,
+            sell_token_price: 7.,
+            order_kind: OrderKind::Sell,
+            expiration_timestamp: low_precision_now(),
+            quote_kind: QuoteKind::Standard,
+            solver: ByteArray([1; 20]),
+            verified: false,
+            metadata: metadata.clone(),
+        };
+        // store quote in database
+        let id = save(&mut db, &quote).await.unwrap();
+
+        let stored_quote = get(&mut db, id).await.unwrap().unwrap();
+        assert_eq!(stored_quote.metadata, metadata);
     }
 }

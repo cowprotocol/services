@@ -16,7 +16,7 @@ async fn test() {
         .await;
 
     let id = test.solve().await.ok().orders(&[order]).id();
-    test.settle(&id)
+    test.settle(id)
         .await
         .ok()
         .await

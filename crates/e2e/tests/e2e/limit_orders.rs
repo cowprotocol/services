@@ -358,6 +358,7 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
             .await,
         ],
         colocation::LiquidityProvider::UniswapV2,
+        false,
     );
 
     let services = Services::new(&onchain).await;
@@ -481,6 +482,7 @@ async fn too_many_limit_orders_test(web3: Web3) {
             .await,
         ],
         colocation::LiquidityProvider::UniswapV2,
+        false,
     );
     services
         .start_api(vec![
@@ -559,6 +561,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
             .await,
         ],
         colocation::LiquidityProvider::UniswapV2,
+        false,
     );
     services
         .start_api(vec![
@@ -898,7 +901,6 @@ async fn no_liquidity_limit_order(web3: Web3) {
             ExtraServiceArgs {
                 autopilot: vec![
                     protocol_fees_config,
-                    "--enable-multiple-fees=true".to_string(),
                     format!("--unsupported-tokens={:#x}", unsupported.address()),
                 ],
                 ..Default::default()

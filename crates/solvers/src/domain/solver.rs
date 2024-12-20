@@ -15,12 +15,13 @@ use {
             order::{self, Order},
             solution,
         },
+        infra::metrics,
     },
     ethereum_types::U256,
     std::{cmp, collections::HashSet, sync::Arc},
 };
 
-pub struct Baseline(Arc<Inner>);
+pub struct Solver(Arc<Inner>);
 
 /// The amount of time we aim the solver to finish before the final deadline is
 /// reached.
@@ -66,7 +67,7 @@ struct Inner {
     native_token_price_estimation_amount: eth::U256,
 }
 
-impl Baseline {
+impl Solver {
     /// Creates a new baseline solver for the specified configuration.
     pub fn new(config: Config) -> Self {
         Self(Arc::new(Inner {
@@ -82,12 +83,14 @@ impl Baseline {
     /// Solves the specified auction, returning a vector of all possible
     /// solutions.
     pub async fn solve(&self, auction: auction::Auction) -> Vec<solution::Solution> {
+        metrics::solve(&auction);
+        let deadline = auction.deadline.clone();
         // Make sure to push the CPU-heavy code to a separate thread in order to
         // not lock up the [`tokio`] runtime and cause it to slow down handling
         // the real async things. For larger settlements, this can block in the
         // 100s of ms.
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
-        let deadline = auction
+        let remaining = auction
             .deadline
             .clone()
             .reduce(DEADLINE_SLACK)
@@ -101,7 +104,7 @@ impl Baseline {
             inner.solve(auction, sender);
         };
 
-        if tokio::time::timeout(deadline, tokio::spawn(background_work))
+        if tokio::time::timeout(remaining, tokio::spawn(background_work))
             .await
             .is_err()
         {
@@ -112,6 +115,7 @@ impl Baseline {
         while let Ok(solution) = receiver.try_recv() {
             solutions.push(solution);
         }
+        metrics::solved(&deadline, &solutions);
         solutions
     }
 }

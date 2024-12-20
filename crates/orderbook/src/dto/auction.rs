@@ -13,7 +13,6 @@ use {
 #[serde(rename_all = "camelCase")]
 pub struct Auction {
     pub block: u64,
-    pub latest_settlement_block: u64,
     pub orders: Vec<Order>,
     #[serde_as(as = "BTreeMap<_, HexOrDecimalU256>")]
     pub prices: BTreeMap<H160, U256>,
@@ -24,7 +23,7 @@ pub struct Auction {
 pub type AuctionId = i64;
 
 #[serde_as]
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AuctionWithId {
     /// Increments whenever the backend updates the auction.

@@ -710,6 +710,8 @@ components:
           $ref: "#/components/schemas/AppData"
         kind:
           $ref: "#/components/schemas/OrderKind"
+        partiallyFillable:
+          type: boolean
         sellTokenBalance:
           $ref: "#/components/schemas/SellTokenBalance"
         buyTokenBalance:

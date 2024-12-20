@@ -19,6 +19,17 @@ pub async fn events_of_order(db: &Db, uid: &OrderUid) -> Vec<order_events::Order
         .unwrap()
 }
 
+/// Returns quote.
+pub async fn quote_metadata(db: &Db, quote_id: i64) -> Option<(serde_json::Value,)> {
+    const QUERY: &str = "SELECT metadata FROM quotes WHERE id = $1";
+    let mut db = db.acquire().await.unwrap();
+    sqlx::query_as(QUERY)
+        .bind(quote_id)
+        .fetch_optional(db.deref_mut())
+        .await
+        .unwrap()
+}
+
 #[allow(dead_code)]
 #[derive(Clone, Debug, sqlx::FromRow)]
 pub struct AuctionTransaction {

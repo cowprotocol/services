@@ -17,7 +17,7 @@ pub(in crate::infra::api) fn settle(router: axum::Router<State>) -> axum::Router
 
 async fn route(
     state: axum::extract::State<State>,
-    req: axum::Json<dto::Solution>,
+    req: axum::Json<dto::SettleRequest>,
 ) -> Result<(), (hyper::StatusCode, axum::Json<Error>)> {
     let auction_id = req
         .auction_id
@@ -46,7 +46,9 @@ async fn route(
     // aborts the endpoint handler code.
     // This can happen due do connection issues or when the autopilot aborts
     // the `/settle` call when we reach the submission deadline.
-    Ok(tokio::task::spawn(handle_request)
-        .await
-        .unwrap_or_else(|_| Err(competition::Error::SubmissionError))?)
+    Ok(
+        ::observe::request_id::spawn_task_with_current_request_id(handle_request)
+            .await
+            .unwrap_or_else(|_| Err(competition::Error::SubmissionError))?,
+    )
 }

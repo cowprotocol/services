@@ -174,6 +174,10 @@ impl Solution {
         &self.interactions
     }
 
+    pub fn pre_interactions(&self) -> &[eth::Interaction] {
+        &self.pre_interactions
+    }
+
     /// The solver which generated this solution.
     pub fn solver(&self) -> &Solver {
         &self.solver
@@ -401,11 +405,8 @@ impl Solution {
     ///
     /// The rule which relates two prices for tokens X and Y is:
     /// amount_x * price_x = amount_y * price_y
-    pub fn clearing_prices(&self) -> Vec<eth::Asset> {
-        let prices = self.prices.iter().map(|(&token, &amount)| eth::Asset {
-            token,
-            amount: amount.into(),
-        });
+    pub fn clearing_prices(&self) -> Prices {
+        let prices = self.prices.clone();
 
         if self.user_trades().any(|trade| trade.order().buys_eth()) {
             // The solution contains an order which buys ETH. Solvers only produce solutions
@@ -418,28 +419,26 @@ impl Solution {
             // If no order trades WETH, the WETH price is not necessary, only the ETH
             // price is needed. Remove the unneeded WETH price, which slightly reduces
             // gas used by the settlement.
-            let mut prices = if self.user_trades().all(|trade| {
+            let mut prices: Prices = if self.user_trades().all(|trade| {
                 trade.order().sell.token != self.weth.0 && trade.order().buy.token != self.weth.0
             }) {
                 prices
-                    .filter(|price| price.token != self.weth.0)
-                    .collect_vec()
+                    .into_iter()
+                    .filter(|(token, _price)| *token != self.weth.0)
+                    .collect()
             } else {
-                prices.collect_vec()
+                prices
             };
 
             // Add a clearing price for ETH equal to WETH.
-            prices.push(eth::Asset {
-                token: eth::ETH_TOKEN,
-                amount: self.prices[&self.weth.into()].to_owned().into(),
-            });
+            prices.insert(eth::ETH_TOKEN, self.prices[&self.weth.into()].to_owned());
 
             return prices;
         }
 
         // TODO: We should probably filter out all unused prices to save gas.
 
-        prices.collect_vec()
+        prices
     }
 
     /// Clearing price for the given token.

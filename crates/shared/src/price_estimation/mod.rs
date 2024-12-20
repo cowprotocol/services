@@ -1,15 +1,15 @@
 use {
+    self::trade_verifier::balance_overrides,
     crate::{
         arguments::{display_option, display_secret_option, ExternalSolver},
-        conversions::U256Ext,
-        trade_finding::Interaction,
+        trade_finding::{Interaction, QuoteExecution},
     },
     anyhow::Result,
+    bigdecimal::BigDecimal,
     ethcontract::{H160, U256},
     futures::future::BoxFuture,
     itertools::Itertools,
     model::order::{BuyTokenDestination, OrderKind, SellTokenSource},
-    num::BigRational,
     number::nonzero::U256 as NonZeroU256,
     rate_limit::{RateLimiter, Strategy},
     reqwest::Url,
@@ -192,7 +192,7 @@ pub struct Arguments {
     /// E.g. a value of `0.01` means at most 1 percent of the sell or buy tokens
     /// can be paid out of the settlement contract buffers.
     #[clap(long, env, default_value = "1.")]
-    pub quote_inaccuracy_limit: f64,
+    pub quote_inaccuracy_limit: BigDecimal,
 
     /// How strict quote verification should be.
     #[clap(
@@ -212,6 +212,9 @@ pub struct Arguments {
         value_parser = humantime::parse_duration,
     )]
     pub quote_timeout: Duration,
+
+    #[clap(flatten)]
+    pub balance_overrides: balance_overrides::Arguments,
 }
 
 #[derive(clap::Parser)]
@@ -291,6 +294,7 @@ impl Display for Arguments {
             quote_inaccuracy_limit,
             quote_verification,
             quote_timeout,
+            balance_overrides,
         } = self;
 
         display_option(
@@ -368,6 +372,7 @@ impl Display for Arguments {
         writeln!(f, "quote_inaccuracy_limit: {}", quote_inaccuracy_limit)?;
         writeln!(f, "quote_verification: {:?}", quote_verification)?;
         writeln!(f, "quote_timeout: {:?}", quote_timeout)?;
+        write!(f, "{}", balance_overrides)?;
 
         Ok(())
     }
@@ -456,7 +461,7 @@ pub struct Verification {
     pub buy_token_destination: BuyTokenDestination,
 }
 
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Deserialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize)]
 pub struct Estimate {
     pub out_amount: U256,
     /// full gas cost when settling this order alone on gp
@@ -465,6 +470,8 @@ pub struct Estimate {
     pub solver: H160,
     /// Did we verify the correctness of this estimate's properties?
     pub verified: bool,
+    /// Data associated with this estimation.
+    pub execution: QuoteExecution,
 }
 
 impl Estimate {
@@ -474,22 +481,6 @@ impl Estimate {
             OrderKind::Buy => (self.out_amount, query.in_amount.get()),
             OrderKind::Sell => (query.in_amount.get(), self.out_amount),
         }
-    }
-
-    /// The resulting price is how many units of sell_token needs to be sold for
-    /// one unit of buy_token (sell_amount / buy_amount).
-    pub fn price_in_sell_token_rational(&self, query: &Query) -> Option<BigRational> {
-        let (sell_amount, buy_amount) = self.amounts(query);
-        amounts_to_price(sell_amount, buy_amount)
-    }
-
-    /// The price for the estimate denominated in sell token.
-    ///
-    /// The resulting price is how many units of sell_token needs to be sold for
-    /// one unit of buy_token (sell_amount / buy_amount).
-    pub fn price_in_sell_token_f64(&self, query: &Query) -> f64 {
-        let (sell_amount, buy_amount) = self.amounts(query);
-        sell_amount.to_f64_lossy() / buy_amount.to_f64_lossy()
     }
 
     /// The price of the estimate denominated in buy token.
@@ -507,16 +498,6 @@ pub type PriceEstimateResult = Result<Estimate, PriceEstimationError>;
 #[mockall::automock]
 pub trait PriceEstimating: Send + Sync + 'static {
     fn estimate(&self, query: Arc<Query>) -> BoxFuture<'_, PriceEstimateResult>;
-}
-
-pub fn amounts_to_price(sell_amount: U256, buy_amount: U256) -> Option<BigRational> {
-    if buy_amount.is_zero() {
-        return None;
-    }
-    Some(BigRational::new(
-        sell_amount.to_big_int(),
-        buy_amount.to_big_int(),
-    ))
 }
 
 pub const HEALTHY_PRICE_ESTIMATION_TIME: Duration = Duration::from_millis(5_000);
@@ -551,7 +532,7 @@ pub mod mocks {
     pub struct FakePriceEstimator(pub Estimate);
     impl PriceEstimating for FakePriceEstimator {
         fn estimate(&self, _query: Arc<Query>) -> BoxFuture<'_, PriceEstimateResult> {
-            async { Ok(self.0) }.boxed()
+            async { Ok(self.0.clone()) }.boxed()
         }
     }
 

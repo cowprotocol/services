@@ -11,6 +11,7 @@ use {
         fee::FeeParameters,
         order_validation::PreOrderData,
         price_estimation::{Estimate, QuoteVerificationMode, Verification},
+        trade_finding::external::dto,
     },
     anyhow::{Context, Result},
     chrono::{DateTime, Duration, Utc},
@@ -170,6 +171,8 @@ pub struct QuoteData {
     pub solver: H160,
     /// Were we able to verify that this quote is accurate?
     pub verified: bool,
+    /// Additional data associated with the quote.
+    pub metadata: QuoteMetadata,
 }
 
 impl TryFrom<QuoteRow> for QuoteData {
@@ -195,6 +198,7 @@ impl TryFrom<QuoteRow> for QuoteData {
             // Even if the quote was verified at the time of creation
             // it might no longer be accurate.
             verified: false,
+            metadata: row.metadata.try_into()?,
         })
     }
 }
@@ -241,7 +245,7 @@ pub enum FindQuoteError {
     NotFound(Option<QuoteId>),
 
     #[error("quote does not match parameters")]
-    ParameterMismatch(QuoteData),
+    ParameterMismatch(Box<QuoteData>),
 
     #[error("quote expired")]
     Expired(DateTime<Utc>),
@@ -442,6 +446,12 @@ impl OrderQuoter {
             quote_kind,
             solver: trade_estimate.solver,
             verified: trade_estimate.verified,
+            metadata: QuoteMetadataV1 {
+                interactions: trade_estimate.execution.interactions,
+                pre_interactions: trade_estimate.execution.pre_interactions,
+                jit_orders: trade_estimate.execution.jit_orders,
+            }
+            .into(),
         };
 
         Ok(quote)
@@ -569,7 +579,7 @@ impl OrderQuoting for OrderQuoter {
                         .ok_or(FindQuoteError::NotFound(Some(id)))?;
 
                     if !parameters.matches(&data) {
-                        return Err(FindQuoteError::ParameterMismatch(data));
+                        return Err(FindQuoteError::ParameterMismatch(Box::new(data)));
                     }
                     if data.expiration < now {
                         return Err(FindQuoteError::Expired(data.expiration));
@@ -627,6 +637,68 @@ pub fn quote_kind_from_signing_scheme(scheme: &QuoteSigningScheme) -> QuoteKind 
         } => QuoteKind::PreSignOnchainOrder,
         _ => QuoteKind::Standard,
     }
+}
+
+/// Used to store quote metadata in the database.
+/// Versioning is used for the backward compatibility.
+/// In case new metadata needs to be associated with a quote create a new
+/// variant version and apply serde rename attribute with proper number.
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase", tag = "version")]
+pub enum QuoteMetadata {
+    #[serde(rename = "1.0")]
+    V1(QuoteMetadataV1),
+}
+
+// Handles deserialization of empty json value {} in metadata column.
+#[derive(Clone, Debug, PartialEq, serde::Deserialize)]
+#[serde(untagged)]
+enum QuoteMetadataDeserializationHelper {
+    Data(QuoteMetadata),
+    Empty {},
+}
+
+impl TryInto<serde_json::Value> for QuoteMetadata {
+    type Error = serde_json::Error;
+
+    fn try_into(self) -> std::result::Result<serde_json::Value, Self::Error> {
+        serde_json::to_value(self)
+    }
+}
+
+impl TryFrom<serde_json::Value> for QuoteMetadata {
+    type Error = serde_json::Error;
+
+    fn try_from(value: serde_json::Value) -> std::result::Result<Self, Self::Error> {
+        Ok(match serde_json::from_value(value)? {
+            QuoteMetadataDeserializationHelper::Data(value) => value,
+            QuoteMetadataDeserializationHelper::Empty {} => Default::default(),
+        })
+    }
+}
+
+impl Default for QuoteMetadata {
+    fn default() -> Self {
+        Self::V1(Default::default())
+    }
+}
+
+impl From<QuoteMetadataV1> for QuoteMetadata {
+    fn from(val: QuoteMetadataV1) -> Self {
+        QuoteMetadata::V1(val)
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuoteMetadataV1 {
+    /// Data provided by the solver in response to /quote request.
+    pub interactions: Vec<InteractionData>,
+    /// The onchain calls to run before sending user funds to the settlement
+    /// contract.
+    pub pre_interactions: Vec<InteractionData>,
+    /// Orders that were settled outside of the auction.
+    pub jit_orders: Vec<dto::JitOrder>,
 }
 
 #[cfg(test)]
@@ -727,6 +799,7 @@ mod tests {
                         gas: 3,
                         solver: H160([1; 20]),
                         verified: false,
+                        execution: Default::default(),
                     })
                 }
                 .boxed()
@@ -768,6 +841,7 @@ mod tests {
                 quote_kind: QuoteKind::Standard,
                 solver: H160([1; 20]),
                 verified: false,
+                metadata: Default::default(),
             }))
             .returning(|_| Ok(1337));
 
@@ -804,6 +878,7 @@ mod tests {
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
                     verified: false,
+                    metadata: Default::default(),
                 },
                 sell_amount: 70.into(),
                 buy_amount: 29.into(),
@@ -862,6 +937,7 @@ mod tests {
                         gas: 3,
                         solver: H160([1; 20]),
                         verified: false,
+                        execution: Default::default(),
                     })
                 }
                 .boxed()
@@ -903,6 +979,7 @@ mod tests {
                 quote_kind: QuoteKind::Standard,
                 solver: H160([1; 20]),
                 verified: false,
+                metadata: Default::default(),
             }))
             .returning(|_| Ok(1337));
 
@@ -939,6 +1016,7 @@ mod tests {
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
                     verified: false,
+                    metadata: Default::default(),
                 },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
@@ -992,6 +1070,7 @@ mod tests {
                         gas: 3,
                         solver: H160([1; 20]),
                         verified: false,
+                        execution: Default::default(),
                     })
                 }
                 .boxed()
@@ -1033,6 +1112,7 @@ mod tests {
                 quote_kind: QuoteKind::Standard,
                 solver: H160([1; 20]),
                 verified: false,
+                metadata: Default::default(),
             }))
             .returning(|_| Ok(1337));
 
@@ -1069,6 +1149,7 @@ mod tests {
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
                     verified: false,
+                    metadata: Default::default(),
                 },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
@@ -1108,6 +1189,7 @@ mod tests {
                     gas: 200,
                     solver: H160([1; 20]),
                     verified: false,
+                    execution: Default::default(),
                 })
             }
             .boxed()
@@ -1179,6 +1261,7 @@ mod tests {
                     gas: 200,
                     solver: H160([1; 20]),
                     verified: false,
+                    execution: Default::default(),
                 })
             }
             .boxed()
@@ -1255,6 +1338,7 @@ mod tests {
                 quote_kind: QuoteKind::Standard,
                 solver: H160([1; 20]),
                 verified: false,
+                metadata: Default::default(),
             }))
         });
 
@@ -1288,6 +1372,7 @@ mod tests {
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
                     verified: false,
+                    metadata: Default::default(),
                 },
                 sell_amount: 85.into(),
                 // Allows for "out-of-price" buy amounts. This means that order
@@ -1335,6 +1420,7 @@ mod tests {
                 quote_kind: QuoteKind::Standard,
                 solver: H160([1; 20]),
                 verified: false,
+                metadata: Default::default(),
             }))
         });
 
@@ -1368,6 +1454,7 @@ mod tests {
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
                     verified: false,
+                    metadata: Default::default(),
                 },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
@@ -1416,6 +1503,7 @@ mod tests {
                         quote_kind: QuoteKind::Standard,
                         solver: H160([1; 20]),
                         verified: false,
+                        metadata: Default::default(),
                     },
                 )))
             });
@@ -1450,6 +1538,7 @@ mod tests {
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
                     verified: false,
+                    metadata: Default::default(),
                 },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
@@ -1546,5 +1635,116 @@ mod tests {
                 .unwrap_err(),
             FindQuoteError::NotFound(None),
         ));
+    }
+
+    #[test]
+    fn check_quote_metadata_format() {
+        let q: QuoteMetadata = QuoteMetadataV1 {
+            interactions: vec![
+                InteractionData {
+                    target: H160::from([1; 20]),
+                    value: U256::one(),
+                    call_data: vec![1],
+                },
+                InteractionData {
+                    target: H160::from([2; 20]),
+                    value: U256::from(2),
+                    call_data: vec![2],
+                },
+            ],
+            pre_interactions: vec![
+                InteractionData {
+                    target: H160::from([3; 20]),
+                    value: U256::from(3),
+                    call_data: vec![3],
+                },
+                InteractionData {
+                    target: H160::from([4; 20]),
+                    value: U256::from(4),
+                    call_data: vec![4],
+                },
+            ],
+            jit_orders: vec![dto::JitOrder {
+                buy_token: H160([4; 20]),
+                sell_token: H160([5; 20]),
+                sell_amount: U256::from(10),
+                buy_amount: U256::from(20),
+                executed_amount: U256::from(11),
+                receiver: H160([6; 20]),
+                valid_to: 1734084318,
+                app_data: Default::default(),
+                side: dto::Side::Sell,
+                partially_fillable: false,
+                sell_token_source: model::order::SellTokenSource::External,
+                buy_token_destination: model::order::BuyTokenDestination::Internal,
+                signature: vec![1; 16],
+                signing_scheme: model::signature::SigningScheme::Eip712,
+            }],
+        }
+        .into();
+        let v = serde_json::to_value(q).unwrap();
+
+        let req: serde_json::Value = serde_json::from_str(
+            r#"
+        {"version":"1.0",
+         "interactions":[
+         {"target":"0x0101010101010101010101010101010101010101","value":"1","callData":"0x01"},
+         {"target":"0x0202020202020202020202020202020202020202","value":"2","callData":"0x02"}],
+         "preInteractions":[
+         {"target":"0x0303030303030303030303030303030303030303","value":"3","callData":"0x03"},
+         {"target":"0x0404040404040404040404040404040404040404","value":"4","callData":"0x04"}],
+         "jitOrders":[{"appData": "0x0000000000000000000000000000000000000000000000000000000000000000", 
+            "buyAmount": "20", "buyToken": "0x0404040404040404040404040404040404040404", "buyTokenDestination": "internal", 
+            "executedAmount": "11", "partiallyFillable": false, "receiver": "0x0606060606060606060606060606060606060606",
+            "sellAmount": "10", "sellToken": "0x0505050505050505050505050505050505050505", "sellTokenSource": "external",
+            "side": "sell", "signature": "0x01010101010101010101010101010101", "signingScheme": "eip712", "validTo": 1734084318}]
+        }"#,
+        )
+        .unwrap();
+
+        assert_eq!(req, v);
+    }
+
+    #[test]
+    fn check_quote_metadata_deserialize_from_empty_json() {
+        let empty_json: serde_json::Value = serde_json::from_str("{}").unwrap();
+        let metadata: QuoteMetadata = empty_json.try_into().unwrap();
+        // Empty json is converted to QuoteMetadata default value
+        assert_eq!(metadata, QuoteMetadata::default());
+    }
+
+    #[test]
+    fn check_quote_metadata_deserialize_from_v1_json() {
+        let v1: serde_json::Value = serde_json::from_str(
+            r#"
+        {"version":"1.0",
+        "interactions":[
+        {"target":"0x0101010101010101010101010101010101010101","value":"1","callData":"0x01"},
+        {"target":"0x0202020202020202020202020202020202020202","value":"2","callData":"0x02"}],
+        "preInteractions":[
+        {"target":"0x0303030303030303030303030303030303030303","value":"3","callData":"0x03"},
+        {"target":"0x0404040404040404040404040404040404040404","value":"4","callData":"0x04"}],
+        "jitOrders":[{"appData": "0x0000000000000000000000000000000000000000000000000000000000000000", 
+            "buyAmount": "20", "buyToken": "0x0404040404040404040404040404040404040404", "buyTokenDestination": "internal", 
+            "executedAmount": "11", "partiallyFillable": false, "receiver": "0x0606060606060606060606060606060606060606",
+            "sellAmount": "10", "sellToken": "0x0505050505050505050505050505050505050505", "sellTokenSource": "external",
+            "side": "sell", "signature": "0x01010101010101010101010101010101", "signingScheme": "eip712", "validTo": 1734084318},
+            {"appData": "0x0ddeb6e4a814908832cc25d11311c514e7efe6af3c9bafeb0d241129cf7f4d83", 
+            "buyAmount": "100", "buyToken": "0x0606060606060606060606060606060606060606", "buyTokenDestination": "erc20", 
+            "executedAmount": "99", "partiallyFillable": true, "receiver": "0x0303030303030303030303030303030303030303",
+            "sellAmount": "10", "sellToken": "0x0101010101010101010101010101010101010101", "sellTokenSource": "erc20",
+            "side": "buy", "signature": "0x01010101010101010101010101010101", "signingScheme": "eip1271", "validTo": 1734085109}]
+        }"#,
+        )
+        .unwrap();
+        let metadata: QuoteMetadata = v1.try_into().unwrap();
+
+        match metadata {
+            QuoteMetadata::V1(v1) => {
+                assert_eq!(v1.interactions.len(), 2);
+                assert_eq!(v1.pre_interactions.len(), 2);
+                assert_eq!(v1.jit_orders.len(), 2);
+            }
+        }
     }
 }

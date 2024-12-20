@@ -1,41 +1,55 @@
+pub mod balance_overrides;
+
 use {
+    self::balance_overrides::{BalanceOverrideRequest, BalanceOverriding},
     super::{Estimate, Verification},
     crate::{
         code_fetching::CodeFetching,
         code_simulation::CodeSimulating,
-        encoded_settlement::{encode_trade, EncodedSettlement},
+        encoded_settlement::{encode_trade, EncodedSettlement, EncodedTrade},
         interaction::EncodedInteraction,
-        trade_finding::{Interaction, Trade},
+        trade_finding::{
+            external::dto::{self, JitOrder},
+            map_interactions_data,
+            Interaction,
+            QuoteExecution,
+            TradeKind,
+        },
     },
     anyhow::{Context, Result},
+    bigdecimal::BigDecimal,
     contracts::{
         deployed_bytecode,
         dummy_contract,
-        support::{AnyoneAuthenticator, Solver, Trader},
+        support::{AnyoneAuthenticator, Solver, Spardose, Trader},
         GPv2Settlement,
         WETH9,
     },
     ethcontract::{tokens::Tokenize, Bytes, H160, U256},
     ethrpc::{block_stream::CurrentBlockWatcher, extensions::StateOverride, Web3},
-    maplit::hashmap,
     model::{
         order::{OrderData, OrderKind, BUY_ETH_ADDRESS},
         signature::{Signature, SigningScheme},
+        DomainSeparator,
     },
     num::BigRational,
-    number::{conversions::u256_to_big_rational, nonzero::U256 as NonZeroU256},
+    number::{
+        conversions::{big_decimal_to_big_rational, u256_to_big_rational},
+        nonzero::U256 as NonZeroU256,
+    },
     std::{collections::HashMap, sync::Arc},
     web3::{ethabi::Token, types::CallRequest},
 };
 
 #[async_trait::async_trait]
 pub trait TradeVerifying: Send + Sync + 'static {
-    /// Verifies if the proposed [`Trade`] actually fulfills the [`PriceQuery`].
+    /// Verifies if the proposed [`TradeKind`] actually fulfills the
+    /// [`PriceQuery`].
     async fn verify(
         &self,
         query: &PriceQuery,
         verification: &Verification,
-        trade: Trade,
+        trade: TradeKind,
     ) -> Result<Estimate>;
 }
 
@@ -46,63 +60,93 @@ pub struct TradeVerifier {
     web3: Web3,
     simulator: Arc<dyn CodeSimulating>,
     code_fetcher: Arc<dyn CodeFetching>,
+    balance_overrides: Arc<dyn BalanceOverriding>,
     block_stream: CurrentBlockWatcher,
     settlement: GPv2Settlement,
     native_token: H160,
     quote_inaccuracy_limit: BigRational,
+    domain_separator: DomainSeparator,
 }
 
 impl TradeVerifier {
     const DEFAULT_GAS: u64 = 8_000_000;
+    const SPARDOSE: H160 = addr!("0000000000000000000000000000000000020000");
     const TRADER_IMPL: H160 = addr!("0000000000000000000000000000000000010000");
 
-    pub fn new(
+    #[allow(clippy::too_many_arguments)]
+    pub async fn new(
         web3: Web3,
         simulator: Arc<dyn CodeSimulating>,
         code_fetcher: Arc<dyn CodeFetching>,
+        balance_overrides: Arc<dyn BalanceOverriding>,
         block_stream: CurrentBlockWatcher,
         settlement: H160,
         native_token: H160,
-        quote_inaccuracy_limit: f64,
-    ) -> Self {
-        Self {
+        quote_inaccuracy_limit: BigDecimal,
+    ) -> Result<Self> {
+        let settlement_contract = GPv2Settlement::at(&web3, settlement);
+        let domain_separator =
+            DomainSeparator(settlement_contract.domain_separator().call().await?.0);
+        Ok(Self {
             simulator,
             code_fetcher,
+            balance_overrides,
             block_stream,
-            settlement: GPv2Settlement::at(&web3, settlement),
+            settlement: settlement_contract,
             native_token,
-            quote_inaccuracy_limit: BigRational::from_float(quote_inaccuracy_limit)
-                .expect("can represent all finite values"),
+            quote_inaccuracy_limit: big_decimal_to_big_rational(&quote_inaccuracy_limit),
             web3,
-        }
+            domain_separator,
+        })
     }
 
     async fn verify_inner(
         &self,
         query: &PriceQuery,
-        verification: &Verification,
-        trade: &Trade,
+        mut verification: Verification,
+        trade: &TradeKind,
+        out_amount: &U256,
     ) -> Result<Estimate, Error> {
-        if verification.from.is_zero() {
-            // Don't waste time on common simulations which will always fail.
-            return Err(anyhow::anyhow!("trader is zero address").into());
-        }
-
         let start = std::time::Instant::now();
+
+        // this may change the `verification` parameter (to make more
+        // quotes verifiable) so we do it as the first thing to ensure
+        // that all the following code uses the updated value
+        let overrides = self
+            .prepare_state_overrides(&mut verification, query, trade)
+            .await
+            .map_err(Error::SimulationFailed)?;
 
         // Use `tx_origin` if response indicates that a special address is needed for
         // the simulation to pass. Otherwise just use the solver address.
-        let solver = trade.tx_origin.unwrap_or(trade.solver);
+        let solver = trade.tx_origin().unwrap_or(trade.solver());
         let solver = dummy_contract!(Solver, solver);
 
-        let settlement = encode_settlement(query, verification, trade, self.native_token);
-        let settlement = add_balance_queries(
-            settlement,
+        let (tokens, clearing_prices) = match trade {
+            TradeKind::Legacy(_) => {
+                let tokens = vec![query.sell_token, query.buy_token];
+                let prices = match query.kind {
+                    OrderKind::Sell => vec![*out_amount, query.in_amount.get()],
+                    OrderKind::Buy => vec![query.in_amount.get(), *out_amount],
+                };
+                (tokens, prices)
+            }
+            TradeKind::Regular(trade) => trade.clearing_prices.iter().map(|e| e.to_owned()).unzip(),
+        };
+
+        let settlement = encode_settlement(
             query,
-            verification,
+            &verification,
+            trade,
+            &tokens,
+            &clearing_prices,
+            out_amount,
+            self.native_token,
+            &self.domain_separator,
             self.settlement.address(),
-            &solver,
-        );
+        )?;
+
+        let settlement = add_balance_queries(settlement, query, &verification, &solver);
 
         let settlement = self
             .settlement
@@ -115,27 +159,13 @@ impl TradeVerifier {
             )
             .tx;
 
-        let sell_amount = match query.kind {
-            OrderKind::Sell => query.in_amount.get(),
-            OrderKind::Buy => trade.out_amount,
-        };
-
         let simulation = solver
             .methods()
             .swap(
                 self.settlement.address(),
-                verification.from,
-                query.sell_token,
-                sell_amount,
-                query.buy_token,
-                self.native_token,
+                tokens.clone(),
                 verification.receiver,
                 Bytes(settlement.data.unwrap().0),
-                // only if the user did not provide pre-interactions is it safe
-                // to set up the trade's pre-conditions on behalf of the user.
-                // if the user provided pre-interactions it's reasonable to assume
-                // that they will set up all the necessary details for the trade.
-                verification.pre_interactions.is_empty(),
             )
             .tx;
 
@@ -150,11 +180,6 @@ impl TradeVerifier {
             gas_price: Some(block.gas_price),
             ..Default::default()
         };
-
-        let overrides = self
-            .prepare_state_overrides(verification, trade)
-            .await
-            .map_err(Error::SimulationFailed)?;
 
         let output = self
             .simulator
@@ -173,12 +198,17 @@ impl TradeVerifier {
             // for a different `tx.origin` we need to pretend these
             // quotes actually simulated successfully to not lose these competitive quotes
             // when we enable quote verification in prod.
-            if trade.tx_origin == Some(H160::zero()) {
+            if trade.tx_origin() == Some(H160::zero()) {
                 let estimate = Estimate {
-                    out_amount: trade.out_amount,
-                    gas: trade.gas_estimate.context("no gas estimate")?,
-                    solver: trade.solver,
+                    out_amount: *out_amount,
+                    gas: trade.gas_estimate().context("no gas estimate")?,
+                    solver: trade.solver(),
                     verified: true,
+                    execution: QuoteExecution {
+                        interactions: map_interactions_data(&trade.interactions()),
+                        pre_interactions: map_interactions_data(&trade.pre_interactions()),
+                        jit_orders: trade.jit_orders(),
+                    },
                 };
                 tracing::warn!(
                     ?estimate,
@@ -189,7 +219,7 @@ impl TradeVerifier {
             }
         };
 
-        let mut summary = SettleOutput::decode(&output?, query.kind)
+        let mut summary = SettleOutput::decode(&output?, query.kind, &tokens)
             .context("could not decode simulation output")
             .map_err(Error::SimulationFailed)?;
 
@@ -205,48 +235,97 @@ impl TradeVerifier {
             // It looks like the contract lost a lot of sell tokens but only because it was
             // the trader and had to pay for the trade. Adjust tokens lost downward.
             if verification.from == self.settlement.address() {
-                summary.sell_tokens_lost -= u256_to_big_rational(&sell_amount);
+                summary
+                    .tokens_lost
+                    .entry(query.sell_token)
+                    .and_modify(|balance| *balance -= u256_to_big_rational(&sell_amount));
             }
             // It looks like the contract gained a lot of buy tokens (negative loss) but
             // only because it was the receiver and got the payout. Adjust the tokens lost
             // upward.
             if verification.receiver == self.settlement.address() {
-                summary.buy_tokens_lost += u256_to_big_rational(&buy_amount);
+                summary
+                    .tokens_lost
+                    .entry(query.buy_token)
+                    .and_modify(|balance| *balance += u256_to_big_rational(&buy_amount));
             }
         }
 
         tracing::debug!(
-            lost_buy_amount = %summary.buy_tokens_lost,
-            lost_sell_amount = %summary.sell_tokens_lost,
-            gas_diff = ?trade.gas_estimate.unwrap_or_default().abs_diff(summary.gas_used.as_u64()),
+            tokens_lost = ?summary.tokens_lost,
+            gas_diff = ?trade.gas_estimate().unwrap_or_default().abs_diff(summary.gas_used.as_u64()),
             time = ?start.elapsed(),
-            promised_out_amount = ?trade.out_amount,
+            promised_out_amount = ?out_amount,
             verified_out_amount = ?summary.out_amount,
-            promised_gas = trade.gas_estimate,
+            promised_gas = trade.gas_estimate(),
             verified_gas = ?summary.gas_used,
-            out_diff = ?trade.out_amount.abs_diff(summary.out_amount),
+            out_diff = ?out_amount.abs_diff(summary.out_amount),
             ?query,
             ?verification,
             "verified quote",
         );
 
-        ensure_quote_accuracy(&self.quote_inaccuracy_limit, query, trade.solver, &summary)
+        ensure_quote_accuracy(&self.quote_inaccuracy_limit, query, trade, &summary)
     }
 
     /// Configures all the state overrides that are needed to mock the given
     /// trade.
     async fn prepare_state_overrides(
         &self,
-        verification: &Verification,
-        trade: &Trade,
+        verification: &mut Verification,
+        query: &PriceQuery,
+        trade: &TradeKind,
     ) -> Result<HashMap<H160, StateOverride>> {
+        let mut overrides = HashMap::with_capacity(6);
+
+        // Provide mocked balances if possible to the spardose to allow it to
+        // give some balances to the trader in order to verify trades even for
+        // owners without balances. Note that we use a separate account for
+        // funding to not interfere with the settlement process. This allows the
+        // simulation to conditionally transfer the balance only when it is
+        // safe to mock the trade pre-conditions on behalf of the user and to
+        // not alter solver balances which may be used during settlement. We use
+        // a similar strategy for determining whether or not to set approvals on
+        // behalf of the trader.
+        if let Some(solver_balance_override) = self
+            .balance_overrides
+            .state_override(BalanceOverrideRequest {
+                token: query.sell_token,
+                holder: Self::SPARDOSE,
+                amount: match query.kind {
+                    OrderKind::Sell => query.in_amount.get(),
+                    OrderKind::Buy => trade.out_amount(
+                        &query.buy_token,
+                        &query.sell_token,
+                        &query.in_amount.get(),
+                        &query.kind,
+                    )?,
+                },
+            })
+            .await
+        {
+            tracing::trace!(?solver_balance_override, "solver balance override enabled");
+            overrides.insert(query.sell_token, solver_balance_override);
+
+            if verification.from.is_zero() {
+                verification.from = H160::random();
+                tracing::debug!(
+                    trader = ?verification.from,
+                    "use random trader address with fake balances"
+                );
+            }
+        } else if verification.from.is_zero() {
+            anyhow::bail!("trader is zero address and balances can not be faked");
+        }
+
         // Set up mocked trader.
-        let mut overrides = hashmap! {
-            verification.from => StateOverride {
+        overrides.insert(
+            verification.from,
+            StateOverride {
                 code: Some(deployed_bytecode!(Trader)),
                 ..Default::default()
             },
-        };
+        );
 
         // If the trader is a smart contract we also need to store its implementation
         // to proxy into it during the simulation.
@@ -265,6 +344,18 @@ impl TradeVerifier {
             );
         }
 
+        // Setup the funding contract override. Regardless of whether or not the
+        // contract has funds, it needs to exist in order to not revert
+        // simulations (Solidity reverts on attempts to call addresses without
+        // any code).
+        overrides.insert(
+            Self::SPARDOSE,
+            StateOverride {
+                code: Some(deployed_bytecode!(Spardose)),
+                ..Default::default()
+            },
+        );
+
         // Set up mocked solver.
         let mut solver_override = StateOverride {
             code: Some(deployed_bytecode!(Solver)),
@@ -273,10 +364,13 @@ impl TradeVerifier {
 
         // If the trade requires a special tx.origin we also need to fake the
         // authenticator and tx origin balance.
-        if trade.tx_origin.is_some_and(|origin| origin != trade.solver) {
+        if trade
+            .tx_origin()
+            .is_some_and(|origin| origin != trade.solver())
+        {
             let (authenticator, balance) = futures::join!(
                 self.settlement.authenticator().call(),
-                self.web3.eth().balance(trade.solver, None)
+                self.web3.eth().balance(trade.solver(), None)
             );
             let authenticator = authenticator.context("could not fetch authenticator")?;
             overrides.insert(
@@ -289,7 +383,7 @@ impl TradeVerifier {
             let balance = balance.context("could not fetch balance")?;
             solver_override.balance = Some(balance);
         }
-        overrides.insert(trade.tx_origin.unwrap_or(trade.solver), solver_override);
+        overrides.insert(trade.tx_origin().unwrap_or(trade.solver()), solver_override);
 
         Ok(overrides)
     }
@@ -301,17 +395,33 @@ impl TradeVerifying for TradeVerifier {
         &self,
         query: &PriceQuery,
         verification: &Verification,
-        trade: Trade,
+        trade: TradeKind,
     ) -> Result<Estimate> {
-        match self.verify_inner(query, verification, &trade).await {
+        let out_amount = trade
+            .out_amount(
+                &query.buy_token,
+                &query.sell_token,
+                &query.in_amount.get(),
+                &query.kind,
+            )
+            .context("failed to compute trade out amount")?;
+        match self
+            .verify_inner(query, verification.clone(), &trade, &out_amount)
+            .await
+        {
             Ok(verified) => Ok(verified),
-            Err(Error::SimulationFailed(err)) => match trade.gas_estimate {
+            Err(Error::SimulationFailed(err)) => match trade.gas_estimate() {
                 Some(gas) => {
                     let estimate = Estimate {
-                        out_amount: trade.out_amount,
+                        out_amount,
                         gas,
-                        solver: trade.solver,
+                        solver: trade.solver(),
                         verified: false,
+                        execution: QuoteExecution {
+                            interactions: map_interactions_data(&trade.interactions()),
+                            pre_interactions: map_interactions_data(&trade.pre_interactions()),
+                            jit_orders: trade.jit_orders(),
+                        },
                     };
                     tracing::warn!(
                         ?err,
@@ -341,34 +451,105 @@ fn encode_interactions(interactions: &[Interaction]) -> Vec<EncodedInteraction> 
     interactions.iter().map(|i| i.encode()).collect()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn encode_settlement(
     query: &PriceQuery,
     verification: &Verification,
-    trade: &Trade,
+    trade: &TradeKind,
+    tokens: &[H160],
+    clearing_prices: &[U256],
+    out_amount: &U256,
     native_token: H160,
-) -> EncodedSettlement {
-    let mut trade_interactions = encode_interactions(&trade.interactions);
+    domain_separator: &DomainSeparator,
+    settlement: H160,
+) -> Result<EncodedSettlement> {
+    let mut trade_interactions = encode_interactions(&trade.interactions());
     if query.buy_token == BUY_ETH_ADDRESS {
         // Because the `driver` manages `WETH` unwraps under the hood the `TradeFinder`
         // does not have to emit unwraps to pay out `ETH` in a trade.
         // However, for the simulation to be successful this has to happen so we do it
         // ourselves here.
         let buy_amount = match query.kind {
-            OrderKind::Sell => trade.out_amount,
+            OrderKind::Sell => *out_amount,
             OrderKind::Buy => query.in_amount.get(),
         };
         let weth = dummy_contract!(WETH9, native_token);
-        let calldata = weth.methods().withdraw(buy_amount).tx.data.unwrap().0;
+        let calldata = weth
+            .methods()
+            .withdraw(buy_amount)
+            .tx
+            .data
+            .expect("data gets populated by function call above")
+            .0;
         trade_interactions.push((native_token, 0.into(), Bytes(calldata)));
         tracing::trace!("adding unwrap interaction for paying out ETH");
     }
 
-    let tokens = vec![query.sell_token, query.buy_token];
-    let clearing_prices = match query.kind {
-        OrderKind::Sell => vec![trade.out_amount, query.in_amount.get()],
-        OrderKind::Buy => vec![query.in_amount.get(), trade.out_amount],
+    let fake_trade = encode_fake_trade(query, verification, out_amount, tokens)?;
+    let mut trades = vec![fake_trade];
+    if let TradeKind::Regular(trade) = trade {
+        trades.extend(encode_jit_orders(
+            &trade.jit_orders,
+            tokens,
+            domain_separator,
+        )?);
+    }
+
+    // Execute interaction to set up trade right before transfering funds.
+    // This interaction does nothing if the user-provided pre-interactions
+    // already set everything up (e.g. approvals, balances). That way we can
+    // correctly verify quotes with or without these user pre-interactions
+    // with helpful error messages.
+    let trade_setup_interaction = {
+        let sell_amount = match query.kind {
+            OrderKind::Sell => query.in_amount.get(),
+            OrderKind::Buy => *out_amount,
+        };
+        let solver = dummy_contract!(Solver, trade.solver());
+        let setup_call = solver
+            .ensure_trade_preconditions(
+                verification.from,
+                settlement,
+                query.sell_token,
+                sell_amount,
+                native_token,
+                TradeVerifier::SPARDOSE,
+            )
+            .tx
+            .data
+            .expect("data gets populated by function call above")
+            .0;
+        Interaction {
+            target: solver.address(),
+            value: 0.into(),
+            data: setup_call,
+        }
     };
 
+    let user_interactions = verification.pre_interactions.iter().cloned();
+    let pre_interactions: Vec<_> = user_interactions
+        .chain(trade.pre_interactions())
+        .chain([trade_setup_interaction])
+        .collect();
+
+    Ok(EncodedSettlement {
+        tokens: tokens.to_vec(),
+        clearing_prices: clearing_prices.to_vec(),
+        trades,
+        interactions: [
+            encode_interactions(&pre_interactions),
+            trade_interactions,
+            encode_interactions(&verification.post_interactions),
+        ],
+    })
+}
+
+fn encode_fake_trade(
+    query: &PriceQuery,
+    verification: &Verification,
+    out_amount: &U256,
+    tokens: &[H160],
+) -> Result<EncodedTrade, Error> {
     // Configure the most disadvantageous trade possible (while taking possible
     // overflows into account). Should the trader not receive the amount promised by
     // the [`Trade`] the simulation will still work and we can compute the actual
@@ -376,7 +557,7 @@ fn encode_settlement(
     let (sell_amount, buy_amount) = match query.kind {
         OrderKind::Sell => (query.in_amount.get(), 0.into()),
         OrderKind::Buy => (
-            trade.out_amount.max(U256::from(u128::MAX)),
+            (*out_amount).max(U256::from(u128::MAX)),
             query.in_amount.get(),
         ),
     };
@@ -400,21 +581,96 @@ fn encode_settlement(
         &fake_order,
         &fake_signature,
         verification.from,
-        0,
-        1,
+        // the tokens set length is small so the linear search is acceptable
+        tokens
+            .iter()
+            .position(|token| token == &query.sell_token)
+            .context("missing sell token index")?,
+        tokens
+            .iter()
+            .position(|token| token == &query.buy_token)
+            .context("missing buy token index")?,
         &query.in_amount.get(),
     );
 
-    EncodedSettlement {
-        tokens,
-        clearing_prices,
-        trades: vec![encoded_trade],
-        interactions: [
-            encode_interactions(&verification.pre_interactions),
-            trade_interactions,
-            encode_interactions(&verification.post_interactions),
-        ],
-    }
+    Ok(encoded_trade)
+}
+
+fn encode_jit_orders(
+    jit_orders: &[dto::JitOrder],
+    tokens: &[H160],
+    domain_separator: &DomainSeparator,
+) -> Result<Vec<EncodedTrade>, Error> {
+    jit_orders
+        .iter()
+        .map(|jit_order| {
+            let order_data = OrderData {
+                sell_token: jit_order.sell_token,
+                buy_token: jit_order.buy_token,
+                receiver: Some(jit_order.receiver),
+                sell_amount: jit_order.sell_amount,
+                buy_amount: jit_order.buy_amount,
+                valid_to: jit_order.valid_to,
+                app_data: jit_order.app_data,
+                fee_amount: 0.into(),
+                kind: match &jit_order.side {
+                    dto::Side::Buy => OrderKind::Buy,
+                    dto::Side::Sell => OrderKind::Sell,
+                },
+                partially_fillable: jit_order.partially_fillable,
+                sell_token_balance: jit_order.sell_token_source,
+                buy_token_balance: jit_order.buy_token_destination,
+            };
+            let (owner, signature) =
+                recover_jit_order_owner(jit_order, &order_data, domain_separator)?;
+
+            Ok(encode_trade(
+                &order_data,
+                &signature,
+                owner,
+                // the tokens set length is small so the linear search is acceptable
+                tokens
+                    .iter()
+                    .position(|token| token == &jit_order.sell_token)
+                    .context("missing jit order sell token index")?,
+                tokens
+                    .iter()
+                    .position(|token| token == &jit_order.buy_token)
+                    .context("missing jit order buy token index")?,
+                &jit_order.executed_amount,
+            ))
+        })
+        .collect::<Result<Vec<EncodedTrade>, Error>>()
+}
+
+/// Recovers the owner and signature from a `JitOrder`.
+fn recover_jit_order_owner(
+    jit_order: &JitOrder,
+    order_data: &OrderData,
+    domain_separator: &DomainSeparator,
+) -> Result<(H160, Signature), Error> {
+    let (owner, signature) = match jit_order.signing_scheme {
+        SigningScheme::Eip1271 => {
+            let (owner, signature) = jit_order.signature.split_at(20);
+            let owner = H160::from_slice(owner);
+            let signature = Signature::from_bytes(jit_order.signing_scheme, signature)?;
+            (owner, signature)
+        }
+        SigningScheme::PreSign => {
+            let owner = H160::from_slice(&jit_order.signature);
+            let signature = Signature::from_bytes(jit_order.signing_scheme, Vec::new().as_slice())?;
+            (owner, signature)
+        }
+        _ => {
+            let signature = Signature::from_bytes(jit_order.signing_scheme, &jit_order.signature)?;
+            let owner = signature
+                .recover(domain_separator, &order_data.hash_struct())?
+                .context("could not recover the owner")?
+                .signer;
+            (owner, signature)
+        }
+    };
+    Ok((owner, signature))
 }
 
 /// Adds the interactions that are only needed to query important balances
@@ -424,7 +680,6 @@ fn add_balance_queries(
     mut settlement: EncodedSettlement,
     query: &PriceQuery,
     verification: &Verification,
-    settlement_contract: H160,
     solver: &Solver,
 ) -> EncodedSettlement {
     let (token, owner) = match query.kind {
@@ -438,14 +693,19 @@ fn add_balance_queries(
 
             (query.buy_token, receiver)
         }
-        // track how much `sell_token` the settlement contract actually spent
-        OrderKind::Buy => (query.sell_token, settlement_contract),
+        // track how much `sell_token` the `from` address actually spent
+        OrderKind::Buy => (query.sell_token, verification.from),
     };
-    let query_balance = solver.methods().store_balance(token, owner, true);
-    let query_balance = Bytes(query_balance.tx.data.unwrap().0);
-    let interaction = (solver.address(), 0.into(), query_balance);
-    // query balance right after we receive all `sell_token`
-    settlement.interactions[1].insert(0, interaction.clone());
+    let query_balance_call = solver
+        .methods()
+        .store_balance(token, owner, true)
+        .tx
+        .data
+        .expect("data gets populated by function call above")
+        .0;
+    let interaction = (solver.address(), 0.into(), Bytes(query_balance_call));
+    // query balance query at the end of pre-interactions
+    settlement.interactions[0].push(interaction.clone());
     // query balance right after we payed out all `buy_token`
     settlement.interactions[2].insert(0, interaction);
     settlement
@@ -459,16 +719,12 @@ struct SettleOutput {
     /// `out_amount` perceived by the trader (sell token for buy orders or buy
     /// token for sell order)
     out_amount: U256,
-    /// Difference in buy tokens of the settlement contract before and after the
-    /// trade.
-    buy_tokens_lost: BigRational,
-    /// Difference in sell tokens of the settlement contract before and after
-    /// the trade.
-    sell_tokens_lost: BigRational,
+    /// Tokens difference of the settlement contract before and after the trade.
+    tokens_lost: HashMap<H160, BigRational>,
 }
 
 impl SettleOutput {
-    fn decode(output: &[u8], kind: OrderKind) -> Result<Self> {
+    fn decode(output: &[u8], kind: OrderKind, tokens_vec: &[H160]) -> Result<Self> {
         let function = Solver::raw_contract()
             .interface
             .abi
@@ -477,14 +733,29 @@ impl SettleOutput {
         let tokens = function.decode_output(output).context("decode")?;
         let (gas_used, balances): (U256, Vec<U256>) = Tokenize::from_token(Token::Tuple(tokens))?;
 
-        let settlement_sell_balance_before = u256_to_big_rational(&balances[0]);
-        let settlement_buy_balance_before = u256_to_big_rational(&balances[1]);
+        // The balances are stored in the following order:
+        // [...tokens_before, user_balance_before, user_balance_after, ...tokens_after]
+        let mut i = 0;
+        let mut tokens_lost = HashMap::new();
+        // Get settlement contract balances before the trade
+        for token in tokens_vec.iter() {
+            let balance_before = u256_to_big_rational(&balances[i]);
+            tokens_lost.insert(*token, balance_before);
+            i += 1;
+        }
 
-        let trader_balance_before = balances[2];
-        let trader_balance_after = balances[3];
+        let trader_balance_before = balances[i];
+        let trader_balance_after = balances[i + 1];
+        i += 2;
 
-        let settlement_sell_balance_after = u256_to_big_rational(&balances[4]);
-        let settlement_buy_balance_after = u256_to_big_rational(&balances[5]);
+        // Get settlement contract balances after the trade
+        for token in tokens_vec.iter() {
+            let balance_after = u256_to_big_rational(&balances[i]);
+            tokens_lost
+                .entry(*token)
+                .and_modify(|balance_before| *balance_before -= balance_after);
+            i += 1;
+        }
 
         let out_amount = match kind {
             // for sell orders we track the buy_token amount which increases during the settlement
@@ -497,8 +768,7 @@ impl SettleOutput {
         Ok(SettleOutput {
             gas_used,
             out_amount,
-            buy_tokens_lost: settlement_buy_balance_before - settlement_buy_balance_after,
-            sell_tokens_lost: settlement_sell_balance_before - settlement_sell_balance_after,
+            tokens_lost,
         })
     }
 }
@@ -508,26 +778,44 @@ impl SettleOutput {
 fn ensure_quote_accuracy(
     inaccuracy_limit: &BigRational,
     query: &PriceQuery,
-    solver: H160,
+    trade: &TradeKind,
     summary: &SettleOutput,
-) -> Result<Estimate, Error> {
+) -> std::result::Result<Estimate, Error> {
     // amounts verified by the simulation
     let (sell_amount, buy_amount) = match query.kind {
         OrderKind::Buy => (summary.out_amount, query.in_amount.get()),
         OrderKind::Sell => (query.in_amount.get(), summary.out_amount),
     };
+    let (sell_amount, buy_amount) = (
+        u256_to_big_rational(&sell_amount),
+        u256_to_big_rational(&buy_amount),
+    );
+    let sell_token_lost_limit = inaccuracy_limit * &sell_amount;
+    let buy_token_lost_limit = inaccuracy_limit * &buy_amount;
 
-    if summary.sell_tokens_lost >= inaccuracy_limit * u256_to_big_rational(&sell_amount)
-        || summary.buy_tokens_lost >= inaccuracy_limit * u256_to_big_rational(&buy_amount)
-    {
+    let sell_token_lost = summary
+        .tokens_lost
+        .get(&query.sell_token)
+        .context("summary sell token is missing")?;
+    let buy_token_lost = summary
+        .tokens_lost
+        .get(&query.buy_token)
+        .context("summary buy token is missing")?;
+
+    if *sell_token_lost >= sell_token_lost_limit || *buy_token_lost >= buy_token_lost_limit {
         return Err(Error::TooInaccurate);
     }
 
     Ok(Estimate {
         out_amount: summary.out_amount,
         gas: summary.gas_used.as_u64(),
-        solver,
+        solver: trade.solver(),
         verified: true,
+        execution: QuoteExecution {
+            interactions: map_interactions_data(&trade.interactions()),
+            pre_interactions: map_interactions_data(&trade.pre_interactions()),
+            jit_orders: trade.jit_orders(),
+        },
     })
 }
 
@@ -553,68 +841,134 @@ enum Error {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use {super::*, maplit::hashmap, std::str::FromStr};
 
     #[test]
     fn discards_inaccurate_quotes() {
         // let's use 0.5 as the base case to avoid rounding issues introduced by float
         // conversion
-        let low_threshold = BigRational::from_float(0.5).unwrap();
-        let high_threshold = BigRational::from_float(0.51).unwrap();
+        let low_threshold = big_decimal_to_big_rational(&BigDecimal::from_str("0.5").unwrap());
+        let high_threshold = big_decimal_to_big_rational(&BigDecimal::from_str("0.51").unwrap());
+
+        let sell_token = H160([1u8; 20]);
+        let buy_token = H160([2u8; 20]);
 
         let query = PriceQuery {
             in_amount: 1_000.try_into().unwrap(),
             kind: OrderKind::Sell,
-            sell_token: H160::zero(),
-            buy_token: H160::zero(),
+            sell_token,
+            buy_token,
+        };
+
+        // buy token is lost
+        let tokens_lost = hashmap! {
+            sell_token => BigRational::from_integer(500.into()),
+        };
+        let summary = SettleOutput {
+            gas_used: 0.into(),
+            out_amount: 2_000.into(),
+            tokens_lost,
+        };
+        let estimate =
+            ensure_quote_accuracy(&low_threshold, &query, &TradeKind::default(), &summary);
+        assert!(matches!(estimate, Err(Error::SimulationFailed(_))));
+
+        // sell token is lost
+        let tokens_lost = hashmap! {
+            buy_token => BigRational::from_integer(0.into()),
+        };
+        let summary = SettleOutput {
+            gas_used: 0.into(),
+            out_amount: 2_000.into(),
+            tokens_lost,
+        };
+
+        let estimate =
+            ensure_quote_accuracy(&low_threshold, &query, &TradeKind::default(), &summary);
+        assert!(matches!(estimate, Err(Error::SimulationFailed(_))));
+
+        // everything is in-place
+        let tokens_lost = hashmap! {
+            sell_token => BigRational::from_integer(400.into()),
+            buy_token => BigRational::from_integer(0.into()),
+        };
+        let summary = SettleOutput {
+            gas_used: 0.into(),
+            out_amount: 2_000.into(),
+            tokens_lost,
+        };
+        let estimate =
+            ensure_quote_accuracy(&low_threshold, &query, &TradeKind::default(), &summary);
+        assert!(estimate.is_ok());
+
+        let tokens_lost = hashmap! {
+            sell_token => BigRational::from_integer(500.into()),
+            buy_token => BigRational::from_integer(0.into()),
         };
 
         let sell_more = SettleOutput {
             gas_used: 0.into(),
             out_amount: 2_000.into(),
-            buy_tokens_lost: BigRational::from_integer(0.into()),
-            sell_tokens_lost: BigRational::from_integer(500.into()),
+            tokens_lost,
         };
 
-        let estimate = ensure_quote_accuracy(&low_threshold, &query, H160::zero(), &sell_more);
+        let estimate =
+            ensure_quote_accuracy(&low_threshold, &query, &Default::default(), &sell_more);
         assert!(matches!(estimate, Err(Error::TooInaccurate)));
 
         // passes with slightly higher tolerance
-        let estimate = ensure_quote_accuracy(&high_threshold, &query, H160::zero(), &sell_more);
+        let estimate =
+            ensure_quote_accuracy(&high_threshold, &query, &Default::default(), &sell_more);
         assert!(estimate.is_ok());
+
+        let tokens_lost = hashmap! {
+            sell_token => BigRational::from_integer(0.into()),
+            buy_token => BigRational::from_integer(1_000.into()),
+        };
 
         let pay_out_more = SettleOutput {
             gas_used: 0.into(),
             out_amount: 2_000.into(),
-            buy_tokens_lost: BigRational::from_integer(1_000.into()),
-            sell_tokens_lost: BigRational::from_integer(0.into()),
+            tokens_lost,
         };
 
-        let estimate = ensure_quote_accuracy(&low_threshold, &query, H160::zero(), &pay_out_more);
+        let estimate =
+            ensure_quote_accuracy(&low_threshold, &query, &Default::default(), &pay_out_more);
         assert!(matches!(estimate, Err(Error::TooInaccurate)));
 
         // passes with slightly higher tolerance
-        let estimate = ensure_quote_accuracy(&high_threshold, &query, H160::zero(), &pay_out_more);
+        let estimate =
+            ensure_quote_accuracy(&high_threshold, &query, &Default::default(), &pay_out_more);
         assert!(estimate.is_ok());
+
+        let tokens_lost = hashmap! {
+            sell_token => BigRational::from_integer((-500).into()),
+            buy_token => BigRational::from_integer(0.into()),
+        };
 
         let sell_less = SettleOutput {
             gas_used: 0.into(),
             out_amount: 2_000.into(),
-            buy_tokens_lost: BigRational::from_integer(0.into()),
-            sell_tokens_lost: BigRational::from_integer((-500).into()),
+            tokens_lost,
         };
         // Ending up with surplus in the buffers is always fine
-        let estimate = ensure_quote_accuracy(&low_threshold, &query, H160::zero(), &sell_less);
+        let estimate =
+            ensure_quote_accuracy(&low_threshold, &query, &Default::default(), &sell_less);
         assert!(estimate.is_ok());
+
+        let tokens_lost = hashmap! {
+            sell_token => BigRational::from_integer(0.into()),
+            buy_token => BigRational::from_integer((-1_000).into()),
+        };
 
         let pay_out_less = SettleOutput {
             gas_used: 0.into(),
             out_amount: 2_000.into(),
-            buy_tokens_lost: BigRational::from_integer((-1_000).into()),
-            sell_tokens_lost: BigRational::from_integer(0.into()),
+            tokens_lost,
         };
         // Ending up with surplus in the buffers is always fine
-        let estimate = ensure_quote_accuracy(&low_threshold, &query, H160::zero(), &pay_out_less);
+        let estimate =
+            ensure_quote_accuracy(&low_threshold, &query, &Default::default(), &pay_out_less);
         assert!(estimate.is_ok());
     }
 }
