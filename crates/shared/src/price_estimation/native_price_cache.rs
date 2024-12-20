@@ -74,7 +74,7 @@ struct CachedResult {
 }
 
 impl CachedResult {
-    const ESTIMATOR_INTERNAL_ERROR_THRESHOLD: u32 = 5;
+    const ESTIMATOR_INTERNAL_ERRORS_THRESHOLD: u32 = 5;
 
     pub fn new(
         result: CacheEntry,
@@ -97,10 +97,10 @@ impl CachedResult {
 
     /// The result is not ready if the estimator has returned an internal error
     /// and consecutive errors are less than
-    /// `ESTIMATOR_INTERNAL_ERROR_THRESHOLD`.
+    /// `ESTIMATOR_INTERNAL_ERRORS_THRESHOLD`.
     pub fn is_ready(&self) -> bool {
         !matches!(self.result, Err(PriceEstimationError::EstimatorInternal(_)))
-            || self.estimator_internal_errors_count >= Self::ESTIMATOR_INTERNAL_ERROR_THRESHOLD
+            || self.estimator_internal_errors_count >= Self::ESTIMATOR_INTERNAL_ERRORS_THRESHOLD
     }
 }
 
