@@ -270,7 +270,7 @@ struct SolverConfig {
     response_size_limit_max_bytes: usize,
 
     /// Configuration for bad token detection.
-    #[serde(default)]
+    #[serde(default, flatten)]
     bad_token_detection: BadTokenDetectionConfig,
 }
 
@@ -671,6 +671,7 @@ fn default_simulation_bad_token_max_age() -> Duration {
     Duration::from_secs(600)
 }
 
+#[serde_as]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct BadTokenDetectionConfig {
@@ -678,23 +679,29 @@ pub struct BadTokenDetectionConfig {
     #[serde(default)]
     pub token_supported: HashMap<eth::H160, bool>,
 
-    /// Whether or not the solver opted into detecting unsupported
+    /// Whether the solver opted into detecting unsupported
     /// tokens with `trace_callMany` based simulation.
-    #[serde(default)]
+    #[serde(default, rename = "enable-simulation-bad-token-detection")]
     pub enable_simulation_strategy: bool,
 
-    /// Whether or not the solver opted into detecting unsupported
+    /// Whether the solver opted into detecting unsupported
     /// tokens with metrics-based detection.
-    #[serde(default)]
+    #[serde(default, rename = "enable-metrics-bad-token-detection")]
     pub enable_metrics_strategy: bool,
 
     /// The ratio of failures to attempts that qualifies a token as unsupported.
-    #[serde(default = "default_metrics_bad_token_detector_failure_ratio")]
+    #[serde(
+        default = "default_metrics_bad_token_detector_failure_ratio",
+        rename = "metrics-bad-token-detection-failure-ratio"
+    )]
     pub metrics_strategy_failure_ratio: f64,
 
     /// The minimum number of attempts required before evaluating a token’s
     /// quality.
-    #[serde(default = "default_metrics_bad_token_detector_required_measurements")]
+    #[serde(
+        default = "default_metrics_bad_token_detector_required_measurements",
+        rename = "metrics-bad-token-detection-required-measurements"
+    )]
     pub metrics_strategy_required_measurements: u32,
 }
 
