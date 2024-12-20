@@ -1,6 +1,6 @@
 use {
     crate::{
-        domain::eth,
+        domain::{competition::bad_tokens, eth},
         infra::{
             self,
             blockchain,
@@ -8,7 +8,7 @@ use {
             liquidity,
             mempool,
             simulator,
-            solver::{self, SolutionMerging},
+            solver::{self, BadTokenDetection, SolutionMerging},
         },
     },
     futures::future::join_all,
@@ -94,6 +94,23 @@ pub async fn load(chain: chain::Id, path: &Path) -> infra::Config {
                 solver_native_token: config.manage_native_token.to_domain(),
                 quote_tx_origin: config.quote_tx_origin.map(eth::Address),
                 response_size_limit_max_bytes: config.response_size_limit_max_bytes,
+                bad_token_detection: BadTokenDetection {
+                    tokens_supported: config
+                        .token_supported
+                        .iter()
+                        .map(|(token, supported)| {
+                            (
+                                eth::TokenAddress(eth::ContractAddress(*token)),
+                                match supported {
+                                    true => bad_tokens::Quality::Supported,
+                                    false => bad_tokens::Quality::Unsupported,
+                                },
+                            )
+                        })
+                        .collect(),
+                    enable_simulation_based_bad_token_detection: config
+                        .enable_simulation_bad_token_detection,
+                },
                 settle_queue_size: config.settle_queue_size,
             }
         }))
@@ -341,5 +358,6 @@ pub async fn load(chain: chain::Id, path: &Path) -> infra::Config {
         gas_estimator: config.gas_estimator,
         order_priority_strategies: config.order_priority_strategies,
         archive_node_url: config.archive_node_url,
+        simulation_bad_token_max_age: config.simulation_bad_token_max_age,
     }
 }

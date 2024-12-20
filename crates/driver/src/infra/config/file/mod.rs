@@ -65,6 +65,14 @@ struct Config {
 
     /// Archive node URL used to index CoW AMM
     archive_node_url: Option<Url>,
+
+    /// How long should the token quality computed by the simulation
+    /// based logic be cached.
+    #[serde(
+        with = "humantime_serde",
+        default = "default_simulation_bad_token_max_age"
+    )]
+    simulation_bad_token_max_age: Duration,
 }
 
 #[serde_as]
@@ -260,6 +268,15 @@ struct SolverConfig {
     /// Maximum HTTP response size the driver will accept in bytes.
     #[serde(default = "default_response_size_limit_max_bytes")]
     response_size_limit_max_bytes: usize,
+
+    /// Which tokens are explicitly supported or unsupported by the solver.
+    #[serde(default)]
+    token_supported: HashMap<eth::H160, bool>,
+
+    /// Whether or not the solver opted into detecting unsupported
+    /// tokens with `trace_callMany` based simulation.
+    #[serde(default)]
+    enable_simulation_bad_token_detection: bool,
 
     /// The maximum number of `/settle` requests that can be queued up
     /// before the driver starts dropping new `/solve` requests.
@@ -658,6 +675,10 @@ fn default_order_priority_strategies() -> Vec<OrderPriorityStrategy> {
 
 fn default_max_order_age() -> Option<Duration> {
     Some(Duration::from_secs(300))
+}
+
+fn default_simulation_bad_token_max_age() -> Duration {
+    Duration::from_secs(600)
 }
 
 /// Keeps 2 requests in the queue plus 1 ongoing request making a total of 3

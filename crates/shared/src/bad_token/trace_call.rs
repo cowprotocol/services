@@ -9,12 +9,13 @@ use {
         transaction::TransactionBuilder,
         PrivateKey,
     },
+    model::interaction::InteractionData,
     primitive_types::{H160, U256},
     std::{cmp, sync::Arc},
     web3::{
         error::TransportError,
         signing::keccak256,
-        types::{BlockTrace, CallRequest, Res},
+        types::{BlockTrace, Bytes, CallRequest, Res},
     },
 };
 
@@ -26,9 +27,8 @@ use {
 /// - transfer into the settlement contract or back out fails
 /// - a transfer loses total balance
 pub struct TraceCallDetector {
-    pub web3: Web3,
-    pub finder: Arc<dyn TokenOwnerFinding>,
-    pub settlement_contract: H160,
+    inner: TraceCallDetectorRaw,
+    finder: Arc<dyn TokenOwnerFinding>,
 }
 
 #[async_trait::async_trait]
@@ -41,7 +41,14 @@ impl BadTokenDetecting for TraceCallDetector {
 }
 
 impl TraceCallDetector {
-    pub async fn detect_impl(&self, token: H160) -> Result<TokenQuality> {
+    pub fn new(web3: Web3, settlement: H160, finder: Arc<dyn TokenOwnerFinding>) -> Self {
+        Self {
+            inner: TraceCallDetectorRaw::new(web3, settlement),
+            finder,
+        }
+    }
+
+    async fn detect_impl(&self, token: H160) -> Result<TokenQuality> {
         // Arbitrary amount that is large enough that small relative fees should be
         // visible.
         const MIN_AMOUNT: u64 = 100_000;
@@ -72,13 +79,50 @@ impl TraceCallDetector {
                 )))
             }
         };
+        self.inner
+            .test_transfer(take_from, token, amount, &[])
+            .await
+    }
+}
 
+/// Detects whether a token is "bad" (works in unexpected ways that are
+/// problematic for solving) by simulating several transfers of a token.
+#[derive(Debug, Clone)]
+pub struct TraceCallDetectorRaw {
+    pub web3: Web3,
+    pub settlement_contract: H160,
+}
+
+impl TraceCallDetectorRaw {
+    pub fn new(web3: Web3, settlement: H160) -> Self {
+        Self {
+            web3,
+            settlement_contract: settlement,
+        }
+    }
+
+    pub async fn test_transfer(
+        &self,
+        take_from: H160,
+        token: H160,
+        amount: U256,
+        pre_interactions: &[InteractionData],
+    ) -> Result<TokenQuality> {
+        let mut request: Vec<_> = pre_interactions
+            .iter()
+            .map(|i| CallRequest {
+                to: Some(i.target),
+                value: Some(i.value),
+                data: Some(Bytes(i.call_data.clone())),
+                ..Default::default()
+            })
+            .collect();
         // We transfer the full available amount of the token from the amm pool into the
         // settlement contract and then to an arbitrary address.
         // Note that gas use can depend on the recipient because for the standard
         // implementation sending to an address that does not have any balance
         // yet (implicitly 0) causes an allocation.
-        let request = self.create_trace_request(token, amount, take_from);
+        request.append(&mut self.create_trace_request(token, amount, take_from));
         let traces = match trace_many::trace_many(request, &self.web3).await {
             Ok(result) => result,
             Err(e) => {
@@ -104,7 +148,8 @@ impl TraceCallDetector {
                 return Err(e).context("trace_many");
             }
         };
-        Self::handle_response(&traces, amount, take_from)
+        let relevant_traces = &traces[pre_interactions.len()..];
+        Self::handle_response(relevant_traces, amount, take_from)
     }
 
     // For the out transfer we use an arbitrary address without balance to detect
@@ -465,14 +510,14 @@ mod tests {
             },
         ];
 
-        let result = TraceCallDetector::handle_response(traces, 1.into(), H160::zero()).unwrap();
+        let result = TraceCallDetectorRaw::handle_response(traces, 1.into(), H160::zero()).unwrap();
         let expected = TokenQuality::Good;
         assert_eq!(result, expected);
     }
 
     #[test]
     fn arbitrary_recipient_() {
-        println!("{:?}", TraceCallDetector::arbitrary_recipient());
+        println!("{:?}", TraceCallDetectorRaw::arbitrary_recipient());
     }
 
     // cargo test -p shared mainnet_tokens -- --nocapture --ignored
@@ -706,11 +751,7 @@ mod tests {
                 ),
             ],
         });
-        let token_cache = TraceCallDetector {
-            web3,
-            finder,
-            settlement_contract: settlement.address(),
-        };
+        let token_cache = TraceCallDetector::new(web3, settlement.address(), finder);
 
         println!("testing good tokens");
         for &token in base_tokens {
@@ -744,11 +785,7 @@ mod tests {
             settlement_contract: settlement.address(),
             proposers: vec![univ3],
         });
-        let token_cache = super::TraceCallDetector {
-            web3,
-            finder,
-            settlement_contract: settlement.address(),
-        };
+        let token_cache = TraceCallDetector::new(web3, settlement.address(), finder);
 
         let result = token_cache.detect(testlib::tokens::USDC).await;
         dbg!(&result);
@@ -870,11 +907,7 @@ mod tests {
             proposers: vec![solver_token_finder],
             settlement_contract: settlement.address(),
         });
-        let token_cache = TraceCallDetector {
-            web3,
-            finder,
-            settlement_contract: settlement.address(),
-        };
+        let token_cache = TraceCallDetector::new(web3, settlement.address(), finder);
 
         for token in tokens {
             let result = token_cache.detect(token).await;

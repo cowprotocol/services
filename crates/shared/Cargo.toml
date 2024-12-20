@@ -19,7 +19,7 @@ chain = { path = "../chain" }
 chrono = { workspace = true, features = ["clock"] }
 clap = { workspace = true }
 contracts = { path = "../contracts" }
-dashmap = "6.1.0"
+dashmap = { workspace = true }
 database = { path = "../database" }
 derive_more = { workspace = true }
 ttl_cache = "0.5"
