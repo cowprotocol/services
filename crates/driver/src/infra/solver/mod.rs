@@ -125,6 +125,8 @@ pub struct Config {
     pub quote_tx_origin: Option<eth::Address>,
     pub response_size_limit_max_bytes: usize,
     pub bad_token_detection: BadTokenDetection,
+    /// Max size of the pending settlements queue.
+    pub settle_queue_size: usize,
 }
 
 impl Solver {
@@ -205,6 +207,10 @@ impl Solver {
 
     pub fn quote_tx_origin(&self) -> &Option<eth::Address> {
         &self.config.quote_tx_origin
+    }
+
+    pub fn settle_queue_size(&self) -> usize {
+        self.config.settle_queue_size
     }
 
     /// Make a POST request instructing the solver to solve an auction.

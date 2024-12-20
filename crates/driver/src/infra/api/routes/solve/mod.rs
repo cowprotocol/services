@@ -37,6 +37,7 @@ async fn route(
             .prioritize(auction, &competition.solver.account().address())
             .await;
         let result = competition.solve(auction).await;
+        competition.ensure_settle_queue_capacity()?;
         observe::solved(state.solver().name(), &result);
         Ok(axum::Json(dto::SolveResponse::new(
             result?,

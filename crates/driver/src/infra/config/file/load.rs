@@ -111,6 +111,7 @@ pub async fn load(chain: chain::Id, path: &Path) -> infra::Config {
                     enable_simulation_based_bad_token_detection: config
                         .enable_simulation_bad_token_detection,
                 },
+                settle_queue_size: config.settle_queue_size,
             }
         }))
         .await,
