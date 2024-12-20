@@ -110,6 +110,8 @@ pub async fn load(chain: chain::Id, path: &Path) -> infra::Config {
                         .collect(),
                     enable_simulation_based_bad_token_detection: config
                         .enable_simulation_bad_token_detection,
+                    enable_metrics_based_bad_token_detection: config
+                        .enable_metrics_bad_token_detection,
                 },
             }
         }))
