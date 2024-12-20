@@ -64,7 +64,7 @@ impl Detector {
 
         let token_quality_checks = auction.orders.into_iter().map(|order| async move {
             let sell = self.get_token_quality(order.sell.token, now);
-            let buy = self.get_token_quality(order.sell.token, now);
+            let buy = self.get_token_quality(order.buy.token, now);
             match (sell, buy) {
                 // both tokens supported => keep order
                 (Some(Quality::Supported), Some(Quality::Supported)) => Either::Left(order),
