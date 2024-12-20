@@ -157,9 +157,9 @@ async fn discards_excess_settle_and_solve_requests() {
     // `/settle` request needs to be sent first, so it is dequeued, and it's
     // execution is paused before any subsequent request is received.
     let test_clone = Arc::clone(&test);
-    let first_solution_id = solution_ids[0].clone();
+    let first_solution_id = solution_ids[0];
     let first_settlement_fut =
-        tokio::spawn(async move { test_clone.settle(&first_solution_id).await });
+        tokio::spawn(async move { test_clone.settle(first_solution_id).await });
     // Make sure the first settlement gets dequeued before sending the remaining
     // requests.
     tokio::time::sleep(Duration::from_millis(100)).await;
@@ -168,7 +168,7 @@ async fn discards_excess_settle_and_solve_requests() {
         let test_clone = Arc::clone(&test);
         remaining_solutions.into_iter().map(move |id| {
             let test_clone = Arc::clone(&test_clone);
-            async move { test_clone.settle(&id).await }
+            async move { test_clone.settle(id).await }
         })
     };
     let remaining_settlements_fut = tokio::spawn(join_all(remaining_settlements));
@@ -243,9 +243,9 @@ async fn accepts_new_settle_requests_after_timeout() {
     // `/settle` request needs to be sent first, so it is dequeued, and it's
     // execution is paused before any subsequent request is received.
     let test_clone = Arc::clone(&test);
-    let first_solution_id = solution_ids[0].clone();
+    let first_solution_id = solution_ids[0];
     let first_settlement_fut =
-        tokio::spawn(async move { test_clone.settle(&first_solution_id).await });
+        tokio::spawn(async move { test_clone.settle(first_solution_id).await });
     // Make sure the first settlement gets dequeued before sending the remaining
     // requests.
     tokio::time::sleep(Duration::from_millis(100)).await;
@@ -255,7 +255,7 @@ async fn accepts_new_settle_requests_after_timeout() {
         let test_clone = Arc::clone(&test);
         additional_solutions.into_iter().map(move |id| {
             let test_clone = Arc::clone(&test_clone);
-            async move { test_clone.settle(&id).await }
+            async move { test_clone.settle(id).await }
         })
     };
     let additional_settlements_fut = tokio::spawn(join_all(additional_settlements));
@@ -284,7 +284,7 @@ async fn accepts_new_settle_requests_after_timeout() {
 
     // Now we send the last settlement request. It fails due to the framework's
     // limitation(unable to fulfill the same order again).
-    test.settle(&solution_ids[4])
+    test.settle(solution_ids[4])
         .await
         .err()
         .kind("FailedToSubmit");
