@@ -306,6 +306,8 @@ impl Error {
 pub struct BadTokenDetection {
     /// Tokens that are explicitly allow- or deny-listed.
     pub tokens_supported: HashMap<eth::TokenAddress, bad_tokens::Quality>,
-    pub enable_simulation_based_bad_token_detection: bool,
-    pub enable_metrics_based_bad_token_detection: bool,
+    pub enable_simulation_strategy: bool,
+    pub enable_metrics_strategy: bool,
+    pub metrics_strategy_failure_ratio: f64,
+    pub metrics_strategy_required_measurements: u32,
 }
