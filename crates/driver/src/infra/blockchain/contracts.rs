@@ -1,5 +1,6 @@
 use {
     crate::{boundary, domain::eth, infra::blockchain::Ethereum},
+    chain::Chain,
     ethcontract::dyns::DynWeb3,
     ethrpc::block_stream::CurrentBlockWatcher,
     thiserror::Error,
@@ -28,7 +29,7 @@ pub struct Addresses {
 impl Contracts {
     pub(super) async fn new(
         web3: &DynWeb3,
-        chain: chain::Id,
+        chain: Chain,
         addresses: Addresses,
         block_stream: CurrentBlockWatcher,
         archive_node_url: Option<&Url>,
@@ -130,12 +131,12 @@ pub struct CowAmmConfig {
 /// there is no known deployment for the contract on that network.
 pub fn deployment_address(
     contract: &ethcontract::Contract,
-    network_id: chain::Id,
+    chain: Chain,
 ) -> Option<eth::ContractAddress> {
     Some(
         contract
             .networks
-            .get(&network_id.to_string())?
+            .get(&chain.id().to_string())?
             .address
             .into(),
     )

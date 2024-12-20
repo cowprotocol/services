@@ -18,12 +18,13 @@ pub enum Chain {
     Sepolia = 11155111,
     ArbitrumOne = 42161,
     Base = 8453,
+    Hardhat = 31337,
 }
 
 impl Chain {
     /// Returns the chain's chain ID
-    pub fn id(&self) -> Id {
-        Id(*self as u64)
+    pub fn id(&self) -> u64 {
+        *self as u64
     }
 
     /// Returns the canonical name of the chain on CoW Protocol.
@@ -37,6 +38,7 @@ impl Chain {
             Self::Sepolia => "Ethereum / Sepolia",
             Self::ArbitrumOne => "Arbitrum One",
             Self::Base => "Base",
+            Self::Hardhat => "Hardhat",
         }
     }
 
@@ -47,6 +49,9 @@ impl Chain {
                 10u128.pow(17).into()
             }
             Self::Gnosis => 10u128.pow(18).into(),
+            Self::Hardhat => {
+                panic!("unsupported chain for default amount to estimate native prices with")
+            }
         }
     }
 
@@ -59,6 +64,7 @@ impl Chain {
             Self::Sepolia => Duration::from_millis(12_000),
             Self::ArbitrumOne => Duration::from_millis(250),
             Self::Base => Duration::from_millis(2_000),
+            Self::Hardhat => panic!("unsupported block time for Hardhat chain"),
         }
     }
 
@@ -82,27 +88,10 @@ impl TryFrom<u64> for Chain {
             x if x == Self::Sepolia as u64 => Self::Sepolia,
             x if x == Self::ArbitrumOne as u64 => Self::ArbitrumOne,
             x if x == Self::Base as u64 => Self::Base,
+            x if x == Self::Hardhat as u64 => Self::Hardhat,
             _ => Err(ChainIdNotSupported)?,
         };
         Ok(network)
-    }
-}
-
-/// Chain ID as defined by EIP-155.
-///
-/// https://eips.ethereum.org/EIPS/eip-155
-#[derive(Clone, Copy, Debug, Eq, PartialEq, From, Into)]
-pub struct Id(u64);
-
-impl From<U256> for Id {
-    fn from(value: U256) -> Self {
-        Self(value.as_u64())
-    }
-}
-
-impl std::fmt::Display for Id {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
     }
 }
 
