@@ -23,7 +23,7 @@ struct Inner {
 
 struct CacheEntry {
     /// when the decision on the token quality was made
-    timestamp: Instant,
+    last_updated: Instant,
     /// whether the token is supported or not
     quality: Quality,
 }
@@ -45,18 +45,18 @@ impl Cache {
             .entry(token)
             .and_modify(|value| {
                 if quality == Quality::Unsupported
-                    || now.duration_since(value.timestamp) > self.0.max_age
+                    || now.duration_since(value.last_updated) > self.0.max_age
                 {
                     // Only update the value if the cached value is outdated by now or
                     // if the new value is "Unsupported". This means on conflicting updates
                     // we err on the conservative side and assume a token is unsupported.
                     value.quality = quality;
                 }
-                value.timestamp = now;
+                value.last_updated = now;
             })
             .or_insert_with(|| CacheEntry {
                 quality,
-                timestamp: now,
+                last_updated: now,
             });
     }
 
@@ -64,7 +64,7 @@ impl Cache {
         let now = Instant::now();
         self.0
             .cache
-            .retain(|_, value| now.duration_since(value.timestamp) < self.0.max_age);
+            .retain(|_, value| now.duration_since(value.last_updated) < self.0.max_age);
     }
 
     /// Returns the quality of the token. If the cached value is older than the
@@ -75,7 +75,7 @@ impl Cache {
         };
 
         let value = entry.get();
-        if now.duration_since(value.timestamp) > self.0.max_age {
+        if now.duration_since(value.last_updated) > self.0.max_age {
             entry.remove();
             return None;
         }
