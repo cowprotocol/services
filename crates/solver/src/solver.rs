@@ -1,11 +1,31 @@
 use {
     crate::liquidity::{ConstantProductOrder, WeightedProductOrder},
+    anyhow::anyhow,
     ethcontract::{H160, U256},
     shared::{
         baseline_solver::BaselineSolvable,
         sources::{balancer_v2::swap::WeightedPoolRef, uniswap_v2::pool_fetching::Pool},
     },
+    std::{fmt::Debug, str::FromStr},
 };
+
+// Wrapper type for AWS ARN identifiers
+#[derive(Debug, Clone)]
+pub struct Arn(pub String);
+
+impl FromStr for Arn {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        // Could be more strict here, but this should suffice to catch unintended
+        // configuration mistakes
+        if s.starts_with("arn:aws:kms:") {
+            Ok(Self(s.to_string()))
+        } else {
+            Err(anyhow!("Invalid ARN identifier: {}", s))
+        }
+    }
+}
 
 impl BaselineSolvable for ConstantProductOrder {
     fn get_amount_out(&self, out_token: H160, input: (U256, H160)) -> Option<U256> {

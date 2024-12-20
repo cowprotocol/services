@@ -3,6 +3,7 @@ use {
         db_order_conversions::order_kind_into,
         order_quoting::{quote_kind_from_signing_scheme, QuoteData, QuoteSearchParameters},
     },
+    anyhow::Result,
     chrono::{DateTime, Utc},
     database::{
         byte_array::ByteArray,
@@ -11,8 +12,8 @@ use {
     number::conversions::u256_to_big_decimal,
 };
 
-pub fn create_quote_row(data: QuoteData) -> DbQuote {
-    DbQuote {
+pub fn create_quote_row(data: QuoteData) -> Result<DbQuote> {
+    Ok(DbQuote {
         id: Default::default(),
         sell_token: ByteArray(data.sell_token.0),
         buy_token: ByteArray(data.buy_token.0),
@@ -25,7 +26,9 @@ pub fn create_quote_row(data: QuoteData) -> DbQuote {
         expiration_timestamp: data.expiration,
         quote_kind: data.quote_kind,
         solver: ByteArray(data.solver.0),
-    }
+        verified: data.verified,
+        metadata: data.metadata.try_into()?,
+    })
 }
 
 pub fn create_db_search_parameters(

@@ -332,6 +332,7 @@ pub async fn run(args: Arguments) {
             code_fetcher: code_fetcher.clone(),
         },
     )
+    .await
     .expect("failed to initialize price estimator factory");
 
     let native_price_estimator = price_estimator_factory
@@ -438,11 +439,7 @@ pub async fn run(args: Arguments) {
         args.limit_order_price_factor
             .try_into()
             .expect("limit order price factor can't be converted to BigDecimal"),
-        domain::ProtocolFees::new(
-            &args.fee_policies,
-            args.fee_policy_max_partner_fee,
-            args.enable_multiple_fees,
-        ),
+        domain::ProtocolFees::new(&args.fee_policies, args.fee_policy_max_partner_fee),
         cow_amm_registry.clone(),
         args.run_loop_native_price_timeout,
     );

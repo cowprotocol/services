@@ -167,6 +167,7 @@ impl Solver {
             orders_json.push(order);
         }
         for (i, solution) in config.solutions.iter().enumerate() {
+            let mut pre_interactions_json = Vec::new();
             let mut interactions_json = Vec::new();
             let mut prices_json = HashMap::new();
             let mut trades_json = Vec::new();
@@ -250,6 +251,31 @@ impl Solver {
                         }
                     }
                     Trade::Jit(jit) => {
+                        pre_interactions_json
+                            .extend(jit.quoted_order.order.pre_interactions.iter().map(
+                            |interaction| {
+                                json!({
+                                    "kind": "custom",
+                                    "internalize": interaction.internalize,
+                                    "target": hex_address(interaction.address),
+                                    "value": "0",
+                                    "callData": format!("0x{}", hex::encode(&interaction.calldata)),
+                                    "allowances": [],
+                                    "inputs": interaction.inputs.iter().map(|input| {
+                                        json!({
+                                            "token": hex_address(input.token.into()),
+                                            "amount": input.amount.to_string(),
+                                        })
+                                    }).collect_vec(),
+                                    "outputs": interaction.outputs.iter().map(|output| {
+                                        json!({
+                                            "token": hex_address(output.token.into()),
+                                            "amount": output.amount.to_string(),
+                                        })
+                                    }).collect_vec(),
+                                })
+                            },
+                        ));
                         interactions_json.extend(jit.interactions.iter().map(|interaction| {
                             json!({
                                 "kind": "custom",
@@ -323,7 +349,7 @@ impl Solver {
                                 },
                                 "sellTokenBalance": jit.quoted_order.order.sell_token_source,
                                 "buyTokenBalance": jit.quoted_order.order.buy_token_destination,
-                                "signature": if config.quote { "0x".to_string() } else { format!("0x{}", hex::encode(jit.quoted_order.order_signature_with_private_key(config.blockchain, &config.private_key))) },
+                                "signature": format!("0x{}", hex::encode(jit.quoted_order.order_signature_with_private_key(config.blockchain, &config.private_key))),
                                 "signingScheme": if config.quote { "eip1271" } else { "eip712" },
                             });
                             trades_json.push(json!({
@@ -341,6 +367,7 @@ impl Solver {
                 "prices": prices_json,
                 "trades": trades_json,
                 "interactions": interactions_json,
+                "preInteractions": pre_interactions_json,
             }));
         }
 

@@ -16,15 +16,3 @@ impl<T> From<T> for Bytes<T> {
         Self(value)
     }
 }
-
-impl From<Bytes<Vec<u8>>> for Vec<u8> {
-    fn from(value: Bytes<Vec<u8>>) -> Self {
-        value.0
-    }
-}
-
-impl<const N: usize> From<Bytes<[u8; N]>> for [u8; N] {
-    fn from(value: Bytes<[u8; N]>) -> Self {
-        value.0
-    }
-}

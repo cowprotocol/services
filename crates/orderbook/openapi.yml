@@ -15,6 +15,10 @@ servers:
     url: "https://api.cow.fi/arbitrum_one"
   - description: Arbitrum One (Staging)
     url: "https://barn.api.cow.fi/arbitrum_one"
+  - description: Base (Prod)
+    url: "https://api.cow.fi/base"
+  - description: Base (Staging)
+    url: "https://barn.api.cow.fi/base"
   - description: Sepolia (Prod)
     url: "https://api.cow.fi/sepolia"
   - description: Sepolia (Staging)
@@ -403,7 +407,7 @@ paths:
         "200":
           description: Version
           content:
-            text/plain: {}
+            text/plain: { }
   "/api/v1/app_data/{app_data_hash}":
     get:
       summary: Get the full `appData` from contract `appDataHash`.
@@ -1099,14 +1103,6 @@ components:
             The block number for the auction. Orders and prices are guaranteed
             to be valid on this block. Proposed settlements should be valid for
             this block as well.
-        latestSettlementBlock:
-          type: integer
-          description: >
-            The latest block on which a settlement has been processed.
-
-            **NOTE**: Under certain conditions it is possible for a settlement
-            to have been mined as part of `block` but not have yet been
-            processed.
         orders:
           type: array
           items:
@@ -1661,6 +1657,9 @@ components:
                 $ref: "#/components/schemas/UID"
               executedAmount:
                 $ref: "#/components/schemas/BigUint"
+        isWinner:
+          type: boolean
+          description: whether the solution is a winner (received the right to get executed) or not
     NativePriceResponse:
       description: |
         The estimated native price for the token

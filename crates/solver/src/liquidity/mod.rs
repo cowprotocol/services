@@ -47,32 +47,6 @@ pub enum Liquidity {
     Concentrated(ConcentratedLiquidity),
 }
 
-impl Liquidity {
-    /// Returns an iterator over all token pairs for the given liquidity.
-    pub fn all_token_pairs(&self) -> Vec<TokenPair> {
-        match self {
-            Liquidity::ConstantProduct(amm) => vec![amm.tokens],
-            Liquidity::BalancerWeighted(amm) => token_pairs(&amm.reserves),
-            Liquidity::BalancerStable(amm) => token_pairs(&amm.reserves),
-            Liquidity::LimitOrder(order) => TokenPair::new(order.sell_token, order.buy_token)
-                .map(|pair| vec![pair])
-                .unwrap_or_default(),
-            Liquidity::Concentrated(amm) => vec![amm.tokens],
-        }
-    }
-
-    /// Returns the pool address on the blockchain containing this liquidity
-    pub fn address(&self) -> Option<H160> {
-        match self {
-            Liquidity::ConstantProduct(amm) => Some(amm.address),
-            Liquidity::BalancerWeighted(amm) => Some(amm.address),
-            Liquidity::BalancerStable(amm) => Some(amm.address),
-            Liquidity::LimitOrder(_) => None,
-            Liquidity::Concentrated(amm) => Some(amm.pool.address),
-        }
-    }
-}
-
 /// A trait associating some liquidity model to how it is executed and encoded
 /// in a settlement (through a `SettlementHandling` reference). This allows
 /// different liquidity types to be modeled the same way.
@@ -148,19 +122,6 @@ impl Default for LimitOrderId {
     }
 }
 
-impl LimitOrderId {
-    pub fn order_uid(&self) -> Option<OrderUid> {
-        match self {
-            LimitOrderId::Market(uid) => Some(*uid),
-            LimitOrderId::Limit(uid) => Some(*uid),
-            LimitOrderId::Liquidity(order) => match order {
-                LiquidityOrderId::Protocol(uid) => Some(*uid),
-                LiquidityOrderId::ZeroEx(_) => None,
-            },
-        }
-    }
-}
-
 #[cfg(test)]
 impl From<u32> for LimitOrderId {
     fn from(uid: u32) -> Self {
@@ -190,16 +151,6 @@ pub struct LimitOrder {
 }
 
 impl LimitOrder {
-    pub fn is_liquidity_order(&self) -> bool {
-        matches!(self.id, LimitOrderId::Liquidity(_))
-    }
-
-    /// For some orders the protocol doesn't precompute a fee. Instead solvers
-    /// are supposed to compute a reasonable fee themselves.
-    pub fn solver_determines_fee(&self) -> bool {
-        matches!(self.id, LimitOrderId::Limit(_))
-    }
-
     /// Returns the full execution amount for the specified limit order.
     pub fn full_execution_amount(&self) -> U256 {
         match self.kind {
@@ -368,19 +319,6 @@ pub struct StablePoolOrder {
     pub settlement_handling: Arc<dyn SettlementHandling<Self>>,
 }
 
-impl StablePoolOrder {
-    /// See [`shared::sources::balancer_v2::swap::StablePoolRef::reserves_without_bpt`].
-    pub fn reserves_without_bpt(&self) -> impl Iterator<Item = (H160, TokenState)> + '_ {
-        shared::sources::balancer_v2::swap::StablePoolRef {
-            address: self.address,
-            reserves: &self.reserves,
-            swap_fee: self.fee,
-            amplification_parameter: self.amplification_parameter,
-        }
-        .reserves_without_bpt()
-    }
-}
-
 impl std::fmt::Debug for StablePoolOrder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Stable Pool AMM {:?}", self.reserves.keys())
@@ -404,12 +342,6 @@ pub struct AmmOrderExecution {
     pub input_max: TokenAmount,
     pub output: TokenAmount,
     pub internalizable: bool,
-}
-
-impl ConstantProductOrder {
-    pub fn constant_product(&self) -> U256 {
-        U256::from(self.reserves.0) * U256::from(self.reserves.1)
-    }
 }
 
 impl Settleable for ConstantProductOrder {
@@ -458,45 +390,6 @@ impl Settleable for ConcentratedLiquidity {
 
     fn settlement_handling(&self) -> &dyn SettlementHandling<Self> {
         &*self.settlement_handling
-    }
-}
-
-#[cfg(test)]
-impl Default for ConstantProductOrder {
-    fn default() -> Self {
-        ConstantProductOrder {
-            address: Default::default(),
-            tokens: Default::default(),
-            reserves: Default::default(),
-            fee: num::Zero::zero(),
-            settlement_handling: tests::CapturingSettlementHandler::arc(),
-        }
-    }
-}
-
-#[cfg(test)]
-impl Default for WeightedProductOrder {
-    fn default() -> Self {
-        WeightedProductOrder {
-            address: Default::default(),
-            reserves: Default::default(),
-            fee: Bfp::zero(),
-            version: Default::default(),
-            settlement_handling: tests::CapturingSettlementHandler::arc(),
-        }
-    }
-}
-
-#[cfg(test)]
-impl Default for StablePoolOrder {
-    fn default() -> Self {
-        StablePoolOrder {
-            address: Default::default(),
-            reserves: Default::default(),
-            fee: Default::default(),
-            amplification_parameter: AmplificationParameter::new(1.into(), 1.into()).unwrap(),
-            settlement_handling: tests::CapturingSettlementHandler::arc(),
-        }
     }
 }
 

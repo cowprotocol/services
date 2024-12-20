@@ -47,13 +47,13 @@ pub fn tx(
     let mut native_unwrap = eth::TokenAmount(eth::U256::zero());
 
     // Encode uniform clearing price vector
-    for asset in solution
+    for (token, amount) in solution
         .clearing_prices()
-        .iter()
-        .sorted_by_cached_key(|asset| asset.token)
+        .into_iter()
+        .sorted_by_cached_key(|(token, _amount)| *token)
     {
-        tokens.push(asset.token.into());
-        clearing_prices.push(asset.amount.into());
+        tokens.push(token.into());
+        clearing_prices.push(amount);
     }
 
     // Encode trades with custom clearing prices
@@ -312,7 +312,7 @@ struct Flags {
     buy_token_balance: order::BuyTokenBalance,
 }
 
-mod codec {
+pub mod codec {
     use crate::domain::{competition::order, eth};
 
     // cf. https://github.com/cowprotocol/contracts/blob/v1.5.0/src/contracts/libraries/GPv2Trade.sol#L16
@@ -392,7 +392,7 @@ mod codec {
         )
     }
 
-    pub(super) fn signature(signature: &order::Signature) -> super::Bytes<Vec<u8>> {
+    pub fn signature(signature: &order::Signature) -> super::Bytes<Vec<u8>> {
         match signature.scheme {
             order::signature::Scheme::Eip712 | order::signature::Scheme::EthSign => {
                 signature.data.clone()

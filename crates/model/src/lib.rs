@@ -5,7 +5,6 @@ pub mod fee_policy;
 pub mod interaction;
 pub mod order;
 pub mod quote;
-pub mod ratio_as_decimal;
 pub mod signature;
 pub mod solver_competition;
 pub mod time;
@@ -138,13 +137,6 @@ impl DomainSeparator {
 
         DomainSeparator(signing::keccak256(abi_encode_string.as_slice()))
     }
-}
-
-#[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SolvableOrders {
-    pub orders: Vec<order::Order>,
-    pub latest_settlement_block: u64,
 }
 
 #[cfg(test)]

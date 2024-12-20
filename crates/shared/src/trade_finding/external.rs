@@ -4,7 +4,17 @@ use {
     crate::{
         price_estimation::{PriceEstimationError, Query},
         request_sharing::{BoxRequestSharing, RequestSharing},
-        trade_finding::{Interaction, Quote, Trade, TradeError, TradeFinding},
+        trade_finding::{
+            map_interactions_data,
+            Interaction,
+            LegacyTrade,
+            Quote,
+            QuoteExecution,
+            Trade,
+            TradeError,
+            TradeFinding,
+            TradeKind,
+        },
     },
     anyhow::{anyhow, Context},
     ethrpc::block_stream::CurrentBlockWatcher,
@@ -20,7 +30,7 @@ pub struct ExternalTradeFinder {
     /// Utility to make sure no 2 identical requests are in-flight at the same
     /// time. Instead of issuing a duplicated request this awaits the
     /// response of the in-flight request.
-    sharing: BoxRequestSharing<Query, Result<Trade, PriceEstimationError>>,
+    sharing: BoxRequestSharing<Query, Result<TradeKind, PriceEstimationError>>,
 
     /// Client to issue http requests with.
     client: Client,
@@ -50,7 +60,7 @@ impl ExternalTradeFinder {
 
     /// Queries the `/quote` endpoint of the configured driver and deserializes
     /// the result into a Quote or Trade.
-    async fn shared_query(&self, query: &Query) -> Result<Trade, TradeError> {
+    async fn shared_query(&self, query: &Query) -> Result<TradeKind, TradeError> {
         let fut = move |query: &Query| {
             let order = dto::Order {
                 sell_token: query.sell_token,
@@ -93,19 +103,15 @@ impl ExternalTradeFinder {
                     .text()
                     .await
                     .map_err(|err| PriceEstimationError::EstimatorInternal(anyhow!(err)))?;
-                let quote = serde_json::from_str::<dto::QuoteKind>(&text).map_err(|err| {
-                    if let Ok(err) = serde_json::from_str::<dto::Error>(&text) {
-                        PriceEstimationError::from(err)
-                    } else {
-                        PriceEstimationError::EstimatorInternal(anyhow!(err))
-                    }
-                })?;
-                match quote {
-                    dto::QuoteKind::Legacy(quote) => Ok(Trade::from(quote)),
-                    dto::QuoteKind::Regular(_) => Err(PriceEstimationError::EstimatorInternal(
-                        anyhow!("Quote with JIT orders is not currently supported"),
-                    )),
-                }
+                serde_json::from_str::<dto::QuoteKind>(&text)
+                    .map(TradeKind::from)
+                    .map_err(|err| {
+                        if let Ok(err) = serde_json::from_str::<dto::Error>(&text) {
+                            PriceEstimationError::from(err)
+                        } else {
+                            PriceEstimationError::EstimatorInternal(anyhow!(err))
+                        }
+                    })
             }
             .boxed()
         };
@@ -117,7 +123,16 @@ impl ExternalTradeFinder {
     }
 }
 
-impl From<dto::LegacyQuote> for Trade {
+impl From<dto::QuoteKind> for TradeKind {
+    fn from(quote: dto::QuoteKind) -> Self {
+        match quote {
+            dto::QuoteKind::Legacy(quote) => TradeKind::Legacy(quote.into()),
+            dto::QuoteKind::Regular(quote) => TradeKind::Regular(quote.into()),
+        }
+    }
+}
+
+impl From<dto::LegacyQuote> for LegacyTrade {
     fn from(quote: dto::LegacyQuote) -> Self {
         Self {
             out_amount: quote.amount,
@@ -133,6 +148,36 @@ impl From<dto::LegacyQuote> for Trade {
                 .collect(),
             solver: quote.solver,
             tx_origin: quote.tx_origin,
+        }
+    }
+}
+
+impl From<dto::Quote> for Trade {
+    fn from(quote: dto::Quote) -> Self {
+        Self {
+            clearing_prices: quote.clearing_prices,
+            gas_estimate: quote.gas,
+            pre_interactions: quote
+                .pre_interactions
+                .into_iter()
+                .map(|interaction| Interaction {
+                    target: interaction.target,
+                    value: interaction.value,
+                    data: interaction.call_data,
+                })
+                .collect(),
+            interactions: quote
+                .interactions
+                .into_iter()
+                .map(|interaction| Interaction {
+                    target: interaction.target,
+                    value: interaction.value,
+                    data: interaction.call_data,
+                })
+                .collect(),
+            solver: quote.solver,
+            tx_origin: quote.tx_origin,
+            jit_orders: quote.jit_orders,
         }
     }
 }
@@ -163,22 +208,34 @@ impl TradeFinding for ExternalTradeFinder {
         // reuse the same logic here.
         let trade = self.get_trade(query).await?;
         let gas_estimate = trade
-            .gas_estimate
+            .gas_estimate()
             .context("no gas estimate")
             .map_err(TradeError::Other)?;
         Ok(Quote {
-            out_amount: trade.out_amount,
+            out_amount: trade
+                .out_amount(
+                    &query.buy_token,
+                    &query.sell_token,
+                    &query.in_amount.get(),
+                    &query.kind,
+                )
+                .map_err(TradeError::Other)?,
             gas_estimate,
-            solver: trade.solver,
+            solver: trade.solver(),
+            execution: QuoteExecution {
+                interactions: map_interactions_data(&trade.interactions()),
+                pre_interactions: map_interactions_data(&trade.pre_interactions()),
+                jit_orders: trade.jit_orders(),
+            },
         })
     }
 
-    async fn get_trade(&self, query: &Query) -> Result<Trade, TradeError> {
+    async fn get_trade(&self, query: &Query) -> Result<TradeKind, TradeError> {
         self.shared_query(query).await
     }
 }
 
-mod dto {
+pub(crate) mod dto {
     use {
         app_data::AppDataHash,
         bytes_hex::BytesHex,
@@ -257,7 +314,7 @@ mod dto {
     }
 
     #[serde_as]
-    #[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
+    #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
     #[serde(rename_all = "camelCase")]
     #[allow(unused)]
     pub struct JitOrder {
@@ -290,7 +347,7 @@ mod dto {
     }
 
     #[serde_as]
-    #[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
+    #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
     #[serde(rename_all = "camelCase")]
     pub enum Side {
         Buy,

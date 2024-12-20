@@ -31,10 +31,6 @@ impl Tokens {
     pub fn reference_price(&self, token: &eth::TokenAddress) -> Option<Price> {
         self.get(token)?.reference_price
     }
-
-    pub fn decimals(&self, token: &eth::TokenAddress) -> Option<u8> {
-        self.get(token)?.decimals
-    }
 }
 
 /// The ID of an auction.

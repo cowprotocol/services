@@ -1,7 +1,7 @@
 use {
     self::contracts::ContractAt,
     crate::{boundary, domain::eth},
-    ethcontract::dyns::DynWeb3,
+    ethcontract::{dyns::DynWeb3, errors::ExecutionError},
     ethrpc::block_stream::CurrentBlockWatcher,
     std::{fmt, sync::Arc},
     thiserror::Error,
@@ -12,8 +12,6 @@ use {
 pub mod contracts;
 pub mod gas;
 pub mod token;
-
-use {ethcontract::errors::ExecutionError, gas_estimation::GasPriceEstimating};
 
 pub use self::{contracts::Contracts, gas::GasPriceEstimator};
 
@@ -167,10 +165,6 @@ impl Ethereum {
         let access_list: web3::types::AccessList =
             serde_json::from_value(json.get("accessList").unwrap().to_owned()).unwrap();
         Ok(access_list.into())
-    }
-
-    pub fn boundary_gas_estimator(&self) -> Arc<dyn GasPriceEstimating> {
-        self.inner.gas.gas.clone()
     }
 
     /// Estimate gas used by a transaction.

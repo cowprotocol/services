@@ -4,7 +4,7 @@ use {
     serde_with::serde_as,
 };
 
-impl Revealed {
+impl RevealResponse {
     pub fn new(reveal: competition::Revealed) -> Self {
         Self {
             calldata: Calldata {
@@ -18,7 +18,7 @@ impl Revealed {
 #[serde_as]
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Revealed {
+pub struct RevealResponse {
     calldata: Calldata,
 }
 

@@ -25,10 +25,6 @@ impl ServiceMaintenance {
         }
     }
 
-    pub fn spawn_background_task(self, block_stream: CurrentBlockWatcher) {
-        tokio::task::spawn(self.run_maintenance_on_new_block(block_stream));
-    }
-
     async fn run_maintenance_for_blocks(self, blocks: impl Stream<Item = BlockInfo>) {
         self.metrics
             .runs

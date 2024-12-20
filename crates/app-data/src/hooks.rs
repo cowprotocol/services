@@ -20,10 +20,6 @@ pub struct Hooks {
 }
 
 impl Hooks {
-    pub fn is_empty(&self) -> bool {
-        self.pre.is_empty() && self.post.is_empty()
-    }
-
     pub fn gas_limit(&self) -> u64 {
         std::iter::empty()
             .chain(&self.pre)

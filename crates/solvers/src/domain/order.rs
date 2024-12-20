@@ -18,13 +18,6 @@ pub struct Order {
 }
 
 impl Order {
-    /// Returns the order's owner address.
-    pub fn owner(&self) -> Address {
-        let mut bytes = [0_u8; 20];
-        bytes.copy_from_slice(&self.uid.0[32..52]);
-        bytes.into()
-    }
-
     /// Returns `true` if the order expects a solver-computed fee.
     pub fn solver_determines_fee(&self) -> bool {
         self.class == Class::Limit
@@ -108,16 +101,6 @@ pub enum Signature {
     /// onchain transaction is also signed, it proves that the user indeed
     /// signed the order.
     PreSign,
-}
-
-impl Signature {
-    pub fn to_bytes(&self) -> Vec<u8> {
-        match self {
-            Self::Eip712(signature) | Self::EthSign(signature) => signature.to_bytes().to_vec(),
-            Self::Eip1271(signature) => signature.clone(),
-            Self::PreSign => Vec::new(),
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
