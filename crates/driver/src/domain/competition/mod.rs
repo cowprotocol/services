@@ -22,12 +22,13 @@ use {
     std::{
         cmp::Reverse,
         collections::{HashMap, HashSet, VecDeque},
-        sync::Mutex,
+        sync::{Arc, Mutex},
     },
     tap::TapFallible,
 };
 
 pub mod auction;
+pub mod bad_tokens;
 pub mod order;
 pub mod solution;
 mod sorting;
@@ -52,11 +53,17 @@ pub struct Competition {
     pub mempools: Mempools,
     /// Cached solutions with the most recent solutions at the front.
     pub settlements: Mutex<VecDeque<Settlement>>,
+    pub bad_tokens: Arc<bad_tokens::Detector>,
 }
 
 impl Competition {
     /// Solve an auction as part of this competition.
-    pub async fn solve(&self, auction: &Auction) -> Result<Option<Solved>, Error> {
+    pub async fn solve(&self, auction: Auction) -> Result<Option<Solved>, Error> {
+        let auction = &self
+            .bad_tokens
+            .filter_unsupported_orders_in_auction(auction)
+            .await;
+
         let liquidity = match self.solver.liquidity() {
             solver::Liquidity::Fetch => {
                 self.liquidity
@@ -133,6 +140,7 @@ impl Competition {
                     // don't report on errors coming from solution merging
                     Err(_err) if id.solutions().len() > 1 => None,
                     Err(err) => {
+                        // TODO update metrics of bad token detection
                         observe::encoding_failed(self.solver.name(), &id, &err);
                         notify::encoding_failed(&self.solver, auction.id(), &id, &err);
                         None
