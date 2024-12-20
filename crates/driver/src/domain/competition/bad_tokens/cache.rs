@@ -1,6 +1,6 @@
 use {
     crate::domain::{competition::bad_tokens::Quality, eth},
-    dashmap::{DashMap, Entry},
+    dashmap::DashMap,
     std::{
         sync::Arc,
         time::{Duration, Instant},
@@ -67,19 +67,11 @@ impl Cache {
             .retain(|_, value| now.duration_since(value.last_updated) < self.0.max_age);
     }
 
-    /// Returns the quality of the token. If the cached value is older than the
-    /// `max_age` it gets ignored and the token evicted.
-    pub fn get_quality(&self, token: eth::TokenAddress, now: Instant) -> Option<Quality> {
-        let Entry::Occupied(entry) = self.0.cache.entry(token) else {
-            return None;
-        };
-
-        let value = entry.get();
-        if now.duration_since(value.last_updated) > self.0.max_age {
-            entry.remove();
-            return None;
-        }
-
-        Some(value.quality)
+    /// Returns the quality of the token if the cached value has not expired
+    /// yet.
+    pub fn get_quality(&self, token: &eth::TokenAddress, now: Instant) -> Option<Quality> {
+        let token = self.0.cache.get(token)?;
+        let still_valid = now.duration_since(token.last_updated) > self.0.max_age;
+        still_valid.then_some(token.quality)
     }
 }

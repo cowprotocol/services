@@ -55,7 +55,7 @@ impl Detector {
         now: Instant,
     ) -> Option<Quality> {
         let cache = &self.0.cache;
-        if let Some(quality) = cache.get_quality(order.sell.token, now) {
+        if let Some(quality) = cache.get_quality(&order.sell.token, now) {
             return Some(quality);
         }
 

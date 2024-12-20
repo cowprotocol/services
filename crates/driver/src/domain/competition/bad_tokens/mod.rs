@@ -112,7 +112,7 @@ impl Detector {
         }
 
         if let Some(detector) = &self.simulation_detector {
-            if let Some(quality) = detector.get_quality(token, now) {
+            if let Some(quality) = detector.get_quality(&token, now) {
                 return Some(quality);
             }
         }
