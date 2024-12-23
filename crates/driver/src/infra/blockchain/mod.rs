@@ -1,6 +1,7 @@
 use {
     self::contracts::ContractAt,
     crate::{boundary, domain::eth},
+    chain::Chain,
     ethcontract::{dyns::DynWeb3, errors::ExecutionError},
     ethrpc::block_stream::CurrentBlockWatcher,
     std::{fmt, sync::Arc},
@@ -18,16 +19,16 @@ pub use self::{contracts::Contracts, gas::GasPriceEstimator};
 /// An Ethereum RPC connection.
 pub struct Rpc {
     web3: DynWeb3,
-    chain: chain::Id,
+    chain: Chain,
     url: Url,
 }
 
 impl Rpc {
     /// Instantiate an RPC client to an Ethereum (or Ethereum-compatible) node
     /// at the specifed URL.
-    pub async fn new(url: &url::Url) -> Result<Self, Error> {
+    pub async fn new(url: &url::Url) -> Result<Self, RpcError> {
         let web3 = boundary::buffered_web3_client(url);
-        let chain = web3.eth().chain_id().await?.into();
+        let chain = Chain::try_from(web3.eth().chain_id().await?)?;
 
         Ok(Self {
             web3,
@@ -36,8 +37,8 @@ impl Rpc {
         })
     }
 
-    /// Returns the chain id for the RPC connection.
-    pub fn chain(&self) -> chain::Id {
+    /// Returns the chain for the RPC connection.
+    pub fn chain(&self) -> Chain {
         self.chain
     }
 
@@ -45,6 +46,14 @@ impl Rpc {
     pub fn web3(&self) -> &DynWeb3 {
         &self.web3
     }
+}
+
+#[derive(Debug, Error)]
+pub enum RpcError {
+    #[error("web3 error: {0:?}")]
+    Web3(#[from] web3::error::Error),
+    #[error("unsupported chain")]
+    UnsupportedChain(#[from] chain::ChainIdNotSupported),
 }
 
 /// The Ethereum blockchain.
@@ -55,7 +64,7 @@ pub struct Ethereum {
 }
 
 struct Inner {
-    chain: chain::Id,
+    chain: Chain,
     contracts: Contracts,
     gas: Arc<GasPriceEstimator>,
     current_block: CurrentBlockWatcher,
@@ -102,7 +111,7 @@ impl Ethereum {
         }
     }
 
-    pub fn network(&self) -> chain::Id {
+    pub fn chain(&self) -> Chain {
         self.inner.chain
     }
 
