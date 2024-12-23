@@ -506,6 +506,7 @@ pub fn setup() -> Setup {
         rpc_args: vec!["--gas-limit".into(), "10000000".into()],
         allow_multiple_solve_requests: false,
         auction_id: 1,
+        settle_submission_deadline: 3,
         ..Default::default()
     }
 }
@@ -539,6 +540,9 @@ pub struct Setup {
     allow_multiple_solve_requests: bool,
     /// Auction ID used during tests
     auction_id: i64,
+    /// The maximum number of blocks to wait for a settlement to appear on
+    /// chain.
+    settle_submission_deadline: u64,
 }
 
 /// The validity of a solution.
@@ -849,6 +853,13 @@ impl Setup {
         self
     }
 
+    /// Set the maximum number of blocks to wait for a settlement to appear on
+    /// chain.
+    pub fn settle_submission_deadline(mut self, settle_submission_deadline: u64) -> Self {
+        self.settle_submission_deadline = settle_submission_deadline;
+        self
+    }
+
     /// Create the test: set up onchain contracts and pools, start a mock HTTP
     /// server for the solver and start the HTTP server for the driver.
     pub async fn done(self) -> Test {
@@ -966,6 +977,7 @@ impl Setup {
             trades: solutions.into_iter().flat_map(|s| s.trades).collect(),
             trusted,
             deadline,
+            settle_submission_deadline: self.settle_submission_deadline,
             quoted_orders: quotes,
             quote: self.quote,
             surplus_capturing_jit_order_owners,
@@ -1006,6 +1018,7 @@ pub struct Test {
     trades: Vec<Trade>,
     trusted: HashSet<&'static str>,
     deadline: chrono::DateTime<chrono::Utc>,
+    settle_submission_deadline: u64,
     /// Is this testing the /quote endpoint?
     quote: bool,
     /// List of surplus capturing JIT-order owners
@@ -1094,12 +1107,9 @@ impl Test {
     }
 
     pub async fn settle_with_solver(&self, solver_name: &str, solution_id: u64) -> Settle {
-        /// The maximum number of blocks to wait for a settlement to appear on
-        /// chain.
-        const SUBMISSION_DEADLINE: u64 = 3;
         let submission_deadline_latest_block: u64 =
             u64::try_from(self.web3().eth().block_number().await.unwrap()).unwrap()
-                + SUBMISSION_DEADLINE;
+                + self.settle_submission_deadline;
         let old_balances = self.balances().await;
         let res = self
             .client
@@ -1127,7 +1137,6 @@ impl Test {
         Settle {
             old_balances,
             status: settle_status,
-            test: self,
         }
     }
 
@@ -1174,6 +1183,10 @@ impl Test {
     pub fn set_auction_id(&mut self, auction_id: i64) {
         self.auction_id = auction_id;
     }
+
+    pub async fn set_auto_mining(&self, enabled: bool) {
+        self.blockchain.set_auto_mining(enabled).await
+    }
 }
 
 /// A /solve response.
@@ -1199,6 +1212,11 @@ impl<'a> Solve<'a> {
             trades: self.trades,
             blockchain: self.blockchain,
         }
+    }
+
+    pub fn err(self) -> SolveErr {
+        assert_ne!(self.status, hyper::StatusCode::OK);
+        SolveErr { body: self.body }
     }
 }
 
@@ -1336,6 +1354,23 @@ impl SolveOk<'_> {
             ));
         }
         self
+    }
+}
+
+pub struct SolveErr {
+    body: String,
+}
+
+impl SolveErr {
+    /// Check the kind field in the error response.
+    pub fn kind(self, expected_kind: &str) {
+        let result: serde_json::Value = serde_json::from_str(&self.body).unwrap();
+        assert!(result.is_object());
+        assert_eq!(result.as_object().unwrap().len(), 2);
+        assert!(result.get("kind").is_some());
+        assert!(result.get("description").is_some());
+        let kind = result.get("kind").unwrap().as_str().unwrap();
+        assert_eq!(kind, expected_kind);
     }
 }
 
@@ -1588,10 +1623,9 @@ pub enum Balance {
 }
 
 /// A /settle response.
-pub struct Settle<'a> {
+pub struct Settle {
     old_balances: HashMap<&'static str, eth::U256>,
     status: SettleStatus,
-    test: &'a Test,
 }
 
 #[derive(Debug, PartialEq)]
@@ -1603,8 +1637,7 @@ pub enum SettleStatus {
     },
 }
 
-pub struct SettleOk<'a> {
-    test: &'a Test,
+pub struct SettleOk {
     old_balances: HashMap<&'static str, eth::U256>,
 }
 
@@ -1612,14 +1645,13 @@ pub struct SettleErr {
     body: String,
 }
 
-impl<'a> Settle<'a> {
+impl Settle {
     /// Expect the /settle endpoint to have returned a 200 OK response.
-    pub async fn ok(self) -> SettleOk<'a> {
+    pub async fn ok(self) -> SettleOk {
         // Ensure that the response is OK.
         assert_eq!(self.status, SettleStatus::Ok);
 
         SettleOk {
-            test: self.test,
             old_balances: self.old_balances,
         }
     }
@@ -1636,10 +1668,10 @@ impl<'a> Settle<'a> {
     }
 }
 
-impl<'a> SettleOk<'a> {
+impl SettleOk {
     /// Check that the user balance changed.
-    pub async fn balance(self, token: &'static str, balance: Balance) -> SettleOk<'a> {
-        let new_balances = self.test.balances().await;
+    pub async fn balance(self, test: &Test, token: &'static str, balance: Balance) -> SettleOk {
+        let new_balances = test.balances().await;
         let new_balance = new_balances.get(token).unwrap();
         let old_balance = self.old_balances.get(token).unwrap();
         match balance {
@@ -1651,41 +1683,57 @@ impl<'a> SettleOk<'a> {
 
     /// Ensure that the onchain balances changed in accordance with the
     /// [`ab_order`].
-    pub async fn ab_order_executed(self) -> SettleOk<'a> {
-        self.balance("A", Balance::SmallerBy(AB_ORDER_AMOUNT.ether().into_wei()))
-            .await
-            .balance("B", Balance::Greater)
-            .await
+    pub async fn ab_order_executed(self, test: &Test) -> SettleOk {
+        self.balance(
+            test,
+            "A",
+            Balance::SmallerBy(AB_ORDER_AMOUNT.ether().into_wei()),
+        )
+        .await
+        .balance(test, "B", Balance::Greater)
+        .await
     }
 
     /// Ensure that the onchain balances changed in accordance with the
     /// [`cd_order`].
-    pub async fn cd_order_executed(self) -> SettleOk<'a> {
-        self.balance("C", Balance::SmallerBy(CD_ORDER_AMOUNT.ether().into_wei()))
-            .await
-            .balance("D", Balance::Greater)
-            .await
+    pub async fn cd_order_executed(self, test: &Test) -> SettleOk {
+        self.balance(
+            test,
+            "C",
+            Balance::SmallerBy(CD_ORDER_AMOUNT.ether().into_wei()),
+        )
+        .await
+        .balance(test, "D", Balance::Greater)
+        .await
     }
 
     /// Ensure that the onchain balances changed in accordance with the
     /// [`eth_order`].
-    pub async fn eth_order_executed(self) -> SettleOk<'a> {
-        self.balance("A", Balance::SmallerBy(ETH_ORDER_AMOUNT.ether().into_wei()))
-            .await
-            .balance("ETH", Balance::Greater)
-            .await
+    pub async fn eth_order_executed(self, test: &Test) -> SettleOk {
+        self.balance(
+            test,
+            "A",
+            Balance::SmallerBy(ETH_ORDER_AMOUNT.ether().into_wei()),
+        )
+        .await
+        .balance(test, "ETH", Balance::Greater)
+        .await
     }
 }
 
 impl SettleErr {
     /// Check the kind field in the error response.
-    pub fn kind(self, expected_kind: &str) {
+    pub fn kind(&self, expected_kind: &str) {
+        assert_eq!(self.get_kind(), expected_kind);
+    }
+
+    /// Extract the kind field from the error response.
+    pub fn get_kind(&self) -> String {
         let result: serde_json::Value = serde_json::from_str(&self.body).unwrap();
         assert!(result.is_object());
         assert_eq!(result.as_object().unwrap().len(), 2);
         assert!(result.get("kind").is_some());
         assert!(result.get("description").is_some());
-        let kind = result.get("kind").unwrap().as_str().unwrap();
-        assert_eq!(kind, expected_kind);
+        result.get("kind").unwrap().as_str().unwrap().to_string()
     }
 }
