@@ -277,6 +277,11 @@ struct SolverConfig {
     /// tokens with `trace_callMany` based simulation.
     #[serde(default)]
     enable_simulation_bad_token_detection: bool,
+
+    /// Whether or not the solver opted into detecting unsupported
+    /// tokens with metrics-based detection.
+    #[serde(default)]
+    enable_metrics_bad_token_detection: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
