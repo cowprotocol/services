@@ -120,6 +120,7 @@ pub async fn load(chain: chain::Id, path: &Path) -> infra::Config {
                         .bad_token_detection
                         .metrics_strategy_required_measurements,
                 },
+                settle_queue_size: config.settle_queue_size,
             }
         }))
         .await,

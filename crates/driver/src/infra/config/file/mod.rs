@@ -272,6 +272,11 @@ struct SolverConfig {
     /// Configuration for bad token detection.
     #[serde(default, flatten)]
     bad_token_detection: BadTokenDetectionConfig,
+
+    /// The maximum number of `/settle` requests that can be queued up
+    /// before the driver starts dropping new `/solve` requests.
+    #[serde(default = "default_settle_queue_size")]
+    settle_queue_size: usize,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
@@ -717,4 +722,11 @@ fn default_metrics_bad_token_detector_failure_ratio() -> f64 {
 
 fn default_metrics_bad_token_detector_required_measurements() -> u32 {
     20
+}
+
+/// Keeps 2 requests in the queue plus 1 ongoing request making a total of 3
+/// pending settlements, which is considered big enough to avoid potential price
+/// moves or any other conflicts due to the extended settlement idle time.
+fn default_settle_queue_size() -> usize {
+    2
 }
