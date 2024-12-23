@@ -211,16 +211,16 @@ pub async fn run(args: Arguments) {
 
     let trace_call_detector = args.tracing_node_url.as_ref().map(|tracing_node_url| {
         CachingDetector::new(
-            Box::new(TraceCallDetector {
-                web3: shared::ethrpc::web3(
+            Box::new(TraceCallDetector::new(
+                shared::ethrpc::web3(
                     &args.shared.ethrpc,
                     &http_factory,
                     tracing_node_url,
                     "trace",
                 ),
+                settlement_contract.address(),
                 finder,
-                settlement_contract: settlement_contract.address(),
-            }),
+            )),
             args.shared.token_quality_cache_expiry,
             args.shared.token_quality_cache_prefetch_time,
         )

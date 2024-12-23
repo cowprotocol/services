@@ -45,13 +45,13 @@ impl Chain {
     /// The default amount in native tokens atoms to use for price estimation
     pub fn default_amount_to_estimate_native_prices_with(&self) -> U256 {
         match &self {
-            Self::Mainnet
-            | Self::Goerli
-            | Self::Sepolia
-            | Self::ArbitrumOne
-            | Self::Base
-            | Self::Hardhat => 10u128.pow(17).into(),
+            Self::Mainnet | Self::Goerli | Self::Sepolia | Self::ArbitrumOne | Self::Base => {
+                10u128.pow(17).into()
+            }
             Self::Gnosis => 10u128.pow(18).into(),
+            Self::Hardhat => {
+                panic!("unsupported chain for default amount to estimate native prices with")
+            }
         }
     }
 
@@ -64,8 +64,7 @@ impl Chain {
             Self::Sepolia => Duration::from_millis(12_000),
             Self::ArbitrumOne => Duration::from_millis(250),
             Self::Base => Duration::from_millis(2_000),
-            // dummy value as hardhat chain doesn't have a fixed block time
-            Self::Hardhat => Duration::from_millis(1_337),
+            Self::Hardhat => panic!("unsupported block time for Hardhat chain"),
         }
     }
 
