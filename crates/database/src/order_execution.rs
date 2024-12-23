@@ -18,7 +18,7 @@ pub async fn save(
     order: &OrderUid,
     auction: AuctionId,
     block_number: i64,
-    total_fee: Asset,
+    executed_fee: Asset,
     protocol_fees: &[Asset],
 ) -> Result<(), sqlx::Error> {
     let (protocol_fee_tokens, protocol_fee_amounts): (Vec<_>, Vec<_>) = protocol_fees
@@ -27,17 +27,17 @@ pub async fn save(
         .unzip();
 
     const QUERY: &str = r#"
-INSERT INTO order_execution (order_uid, auction_id, reward, total_fee, total_fee_token, block_number, protocol_fee_tokens, protocol_fee_amounts)
+INSERT INTO order_execution (order_uid, auction_id, reward, executed_fee, executed_fee_token, block_number, protocol_fee_tokens, protocol_fee_amounts)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 ON CONFLICT (order_uid, auction_id)
-DO UPDATE SET reward = $3, total_fee = $4, total_fee_token = $5, block_number = $6, protocol_fee_tokens = $7, protocol_fee_amounts = $8
+DO UPDATE SET reward = $3, executed_fee = $4, executed_fee_token = $5, block_number = $6, protocol_fee_tokens = $7, protocol_fee_amounts = $8
 ;"#;
     sqlx::query(QUERY)
         .bind(order)
         .bind(auction)
         .bind(0.) // reward is deprecated but saved for historical analysis
-        .bind(total_fee.amount)
-        .bind(total_fee.token)
+        .bind(executed_fee.amount)
+        .bind(executed_fee.token)
         .bind(block_number)
         .bind(protocol_fee_tokens)
         .bind(protocol_fee_amounts)

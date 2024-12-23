@@ -134,8 +134,6 @@ impl Trade {
 
     /// Total fee (protocol fee + network fee). Equal to a surplus difference
     /// before and after applying the fees.
-    ///
-    /// Denominated in SELL token
     pub fn fee_in_sell_token(&self) -> Result<eth::Asset, Error> {
         let fee = self.fee()?;
         self.fee_into_sell_token(fee.amount)
