@@ -301,8 +301,6 @@ pub enum Error {
     GasPrice(boundary::Error),
     #[error("access list estimation error: {0:?}")]
     AccessList(serde_json::Value),
-    #[error("unsupported chain")]
-    UnsupportedChain,
 }
 
 impl Error {
@@ -318,7 +316,6 @@ impl Error {
             }
             Error::GasPrice(_) => false,
             Error::AccessList(_) => true,
-            Error::UnsupportedChain => false,
         }
     }
 }
