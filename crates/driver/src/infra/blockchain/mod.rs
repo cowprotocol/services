@@ -28,8 +28,7 @@ impl Rpc {
     /// at the specifed URL.
     pub async fn new(url: &url::Url) -> Result<Self, RpcError> {
         let web3 = boundary::buffered_web3_client(url);
-        let chain = Chain::try_from(web3.eth().chain_id().await?)
-            .map_err(|_| RpcError::UnsupportedChain)?;
+        let chain = Chain::try_from(web3.eth().chain_id().await?)?;
 
         Ok(Self {
             web3,
@@ -54,8 +53,9 @@ pub enum RpcError {
     #[error("web3 error: {0:?}")]
     Web3(#[from] web3::error::Error),
     #[error("unsupported chain")]
-    UnsupportedChain,
+    UnsupportedChain(#[from] chain::ChainIdNotSupported),
 }
+
 /// The Ethereum blockchain.
 #[derive(Clone)]
 pub struct Ethereum {
