@@ -169,6 +169,23 @@ impl Solution {
         &self.trades
     }
 
+    /// Returns all the token pairs involved in the solution.
+    pub fn token_pairs(&self) -> Vec<(TokenAddress, TokenAddress)> {
+        self.trades
+            .iter()
+            .map(|trade| match trade {
+                Trade::Fulfillment(fulfillment) => {
+                    let order = fulfillment.order();
+                    (order.sell.token, order.buy.token)
+                }
+                Trade::Jit(jit) => {
+                    let order = jit.order();
+                    (order.sell.token, order.buy.token)
+                }
+            })
+            .collect()
+    }
+
     /// Interactions executed by this solution.
     pub fn interactions(&self) -> &[Interaction] {
         &self.interactions
