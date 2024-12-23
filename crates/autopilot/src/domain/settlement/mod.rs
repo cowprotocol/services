@@ -827,7 +827,7 @@ mod tests {
         let jit_trade = super::trade::Trade::new(transaction.trades[1].clone(), &auction, 0);
         assert_eq!(jit_trade.fee_in_ether(&auction.prices).unwrap().0, 0.into());
         assert_eq!(jit_trade.score(&auction).unwrap().0, 0.into());
-        assert_eq!(jit_trade.fee_breakdown(&auction).unwrap().total.0, 0.into());
+        assert_eq!(jit_trade.fee_breakdown(&auction).unwrap().total.amount.0, 0.into());
         assert!(jit_trade
             .fee_breakdown(&auction)
             .unwrap()
