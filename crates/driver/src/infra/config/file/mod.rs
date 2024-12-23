@@ -65,6 +65,14 @@ struct Config {
 
     /// Archive node URL used to index CoW AMM
     archive_node_url: Option<Url>,
+
+    /// How long should the token quality computed by the simulation
+    /// based logic be cached.
+    #[serde(
+        with = "humantime_serde",
+        default = "default_simulation_bad_token_max_age"
+    )]
+    simulation_bad_token_max_age: Duration,
 }
 
 #[serde_as]
@@ -260,6 +268,15 @@ struct SolverConfig {
     /// Maximum HTTP response size the driver will accept in bytes.
     #[serde(default = "default_response_size_limit_max_bytes")]
     response_size_limit_max_bytes: usize,
+
+    /// Configuration for bad token detection.
+    #[serde(default, flatten)]
+    bad_token_detection: BadTokenDetectionConfig,
+
+    /// The maximum number of `/settle` requests that can be queued up
+    /// before the driver starts dropping new `/solve` requests.
+    #[serde(default = "default_settle_queue_size")]
+    settle_queue_size: usize,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
@@ -653,4 +670,63 @@ fn default_order_priority_strategies() -> Vec<OrderPriorityStrategy> {
 
 fn default_max_order_age() -> Option<Duration> {
     Some(Duration::from_secs(300))
+}
+
+fn default_simulation_bad_token_max_age() -> Duration {
+    Duration::from_secs(600)
+}
+
+#[serde_as]
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct BadTokenDetectionConfig {
+    /// Which tokens are explicitly supported or unsupported by the solver.
+    #[serde(default)]
+    pub token_supported: HashMap<eth::H160, bool>,
+
+    /// Whether the solver opted into detecting unsupported
+    /// tokens with `trace_callMany` based simulation.
+    #[serde(default, rename = "enable-simulation-bad-token-detection")]
+    pub enable_simulation_strategy: bool,
+
+    /// Whether the solver opted into detecting unsupported
+    /// tokens with metrics-based detection.
+    #[serde(default, rename = "enable-metrics-bad-token-detection")]
+    pub enable_metrics_strategy: bool,
+
+    /// The ratio of failures to attempts that qualifies a token as unsupported.
+    #[serde(
+        default = "default_metrics_bad_token_detector_failure_ratio",
+        rename = "metrics-bad-token-detection-failure-ratio"
+    )]
+    pub metrics_strategy_failure_ratio: f64,
+
+    /// The minimum number of attempts required before evaluating a token’s
+    /// quality.
+    #[serde(
+        default = "default_metrics_bad_token_detector_required_measurements",
+        rename = "metrics-bad-token-detection-required-measurements"
+    )]
+    pub metrics_strategy_required_measurements: u32,
+}
+
+impl Default for BadTokenDetectionConfig {
+    fn default() -> Self {
+        serde_json::from_str("{}").expect("MetricsBadTokenDetectorConfig uses default values")
+    }
+}
+
+fn default_metrics_bad_token_detector_failure_ratio() -> f64 {
+    0.9
+}
+
+fn default_metrics_bad_token_detector_required_measurements() -> u32 {
+    20
+}
+
+/// Keeps 2 requests in the queue plus 1 ongoing request making a total of 3
+/// pending settlements, which is considered big enough to avoid potential price
+/// moves or any other conflicts due to the extended settlement idle time.
+fn default_settle_queue_size() -> usize {
+    2
 }

@@ -1,6 +1,6 @@
 use {
     crate::{
-        domain::eth,
+        domain::{competition::bad_tokens, eth},
         infra::{
             self,
             blockchain,
@@ -8,7 +8,7 @@ use {
             liquidity,
             mempool,
             simulator,
-            solver::{self, SolutionMerging},
+            solver::{self, BadTokenDetection, SolutionMerging},
         },
     },
     chain::Chain,
@@ -98,6 +98,33 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                 solver_native_token: config.manage_native_token.to_domain(),
                 quote_tx_origin: config.quote_tx_origin.map(eth::Address),
                 response_size_limit_max_bytes: config.response_size_limit_max_bytes,
+                bad_token_detection: BadTokenDetection {
+                    tokens_supported: config
+                        .bad_token_detection
+                        .token_supported
+                        .iter()
+                        .map(|(token, supported)| {
+                            (
+                                eth::TokenAddress(eth::ContractAddress(*token)),
+                                match supported {
+                                    true => bad_tokens::Quality::Supported,
+                                    false => bad_tokens::Quality::Unsupported,
+                                },
+                            )
+                        })
+                        .collect(),
+                    enable_simulation_strategy: config
+                        .bad_token_detection
+                        .enable_simulation_strategy,
+                    enable_metrics_strategy: config.bad_token_detection.enable_metrics_strategy,
+                    metrics_strategy_failure_ratio: config
+                        .bad_token_detection
+                        .metrics_strategy_failure_ratio,
+                    metrics_strategy_required_measurements: config
+                        .bad_token_detection
+                        .metrics_strategy_required_measurements,
+                },
+                settle_queue_size: config.settle_queue_size,
             }
         }))
         .await,
@@ -344,5 +371,6 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
         gas_estimator: config.gas_estimator,
         order_priority_strategies: config.order_priority_strategies,
         archive_node_url: config.archive_node_url,
+        simulation_bad_token_max_age: config.simulation_bad_token_max_age,
     }
 }
