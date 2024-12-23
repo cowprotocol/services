@@ -358,7 +358,7 @@ impl Competition {
 
         self.settle_queue.try_send(request).map_err(|err| {
             tracing::warn!(?err, "Failed to enqueue /settle request");
-            Error::SubmissionError
+            Error::TooManyPendingSettlements
         })?;
 
         response_receiver.await.map_err(|err| {
@@ -370,7 +370,7 @@ impl Competition {
     pub fn ensure_settle_queue_capacity(&self) -> Result<(), Error> {
         if self.settle_queue.capacity() == 0 {
             tracing::warn!("settlement queue is full; auction is rejected");
-            Err(Error::SettlementQueueIsFull)
+            Err(Error::TooManyPendingSettlements)
         } else {
             Ok(())
         }
@@ -607,5 +607,5 @@ pub enum Error {
     #[error("failed to submit the solution")]
     SubmissionError,
     #[error("too many pending settlements for the same solver")]
-    SettlementQueueIsFull,
+    TooManyPendingSettlements,
 }
