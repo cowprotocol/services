@@ -546,7 +546,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn properly_caches_internal_estimator_errors() {
+    async fn properly_caches_accumulative_errors() {
         let mut inner = MockNativePriceEstimating::new();
         inner
             .expect_estimate_native_price()
