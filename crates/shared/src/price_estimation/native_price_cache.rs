@@ -548,22 +548,61 @@ mod tests {
     #[tokio::test]
     async fn properly_caches_accumulative_errors() {
         let mut inner = MockNativePriceEstimating::new();
+        let mut seq = mockall::Sequence::new();
+
+        // First 3 calls: Return EstimatorInternal error
+        inner
+            .expect_estimate_native_price()
+            .times(3)
+            .in_sequence(&mut seq)
+            .returning(|_| {
+                async { Err(PriceEstimationError::EstimatorInternal(anyhow!("boom"))) }.boxed()
+            });
+
+        // Next 1 call: Return Ok(1.0)
+        inner
+            .expect_estimate_native_price()
+            .times(1)
+            .in_sequence(&mut seq)
+            .returning(|_| async { Ok(1.0) }.boxed());
+
+        // Next ACCUMULATIVE_ERRORS_THRESHOLD calls: Return EstimatorInternal error
+        // again
         inner
             .expect_estimate_native_price()
             .times(ACCUMULATIVE_ERRORS_THRESHOLD as usize)
+            .in_sequence(&mut seq)
             .returning(|_| {
                 async { Err(PriceEstimationError::EstimatorInternal(anyhow!("boom"))) }.boxed()
             });
 
         let estimator = CachingNativePriceEstimator::new(
             Box::new(inner),
-            Duration::from_millis(30),
+            Duration::from_millis(100),
             Default::default(),
             None,
             Default::default(),
             1,
         );
 
+        // First 3 calls: The cache is not used. Counter gets increased.
+        for _ in 0..3 {
+            let result = estimator.estimate_native_price(token(0)).await;
+            assert!(matches!(
+                result.as_ref().unwrap_err(),
+                PriceEstimationError::EstimatorInternal(_)
+            ));
+        }
+
+        // 4th call: Assert successful result (Ok(1.0))
+        let result = estimator.estimate_native_price(token(0)).await;
+        assert_eq!(result.as_ref().unwrap().to_i64().unwrap(), 1);
+
+        // Make sure the cached value gets evicted.
+        tokio::time::sleep(Duration::from_millis(120)).await;
+
+        // Next calls: The errors counter gets reset after the cache is updated on the
+        // previous step.
         for _ in 0..(ACCUMULATIVE_ERRORS_THRESHOLD * 2) {
             let result = estimator.estimate_native_price(token(0)).await;
             assert!(matches!(
