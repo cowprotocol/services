@@ -951,7 +951,17 @@ components:
           description: Surplus fee that the limit order was executed with.
           allOf:
             - $ref: "#/components/schemas/BigUint"
-          nullable: true
+          nullable: false
+        executedFee:
+          description: Total fee charged for execution of the order. Contains network fee and protocol fees.
+          allOf:
+            - $ref: "#/components/schemas/BigUint"
+          nullable: false
+        executedFeeToken:
+          description: Token the executed fee was captured in.
+          allOf:
+            - $ref: "#/components/schemas/Address"
+          nullable: false
         fullAppData:
           description: >
             Full `appData`, which the contract-level `appData` is a hash of. See

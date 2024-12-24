@@ -134,9 +134,13 @@ impl Trade {
 
     /// Total fee (protocol fee + network fee). Equal to a surplus difference
     /// before and after applying the fees.
-    pub fn fee_in_sell_token(&self) -> Result<eth::SellTokenAmount, Error> {
+    pub fn fee_in_sell_token(&self) -> Result<eth::Asset, Error> {
         let fee = self.fee()?;
         self.fee_into_sell_token(fee.amount)
+            .map(|amount| eth::Asset {
+                token: self.sell.token,
+                amount: amount.into(),
+            })
     }
 
     /// Total fee (protocol fee + network fee). Equal to a surplus difference
