@@ -70,7 +70,7 @@ struct CachedResult {
     result: CacheEntry,
     updated_at: Instant,
     requested_at: Instant,
-    estimator_internal_errors_count: u32,
+    accumulative_errors_count: u32,
 }
 
 const ESTIMATOR_INTERNAL_ERRORS_THRESHOLD: u32 = 5;
@@ -80,18 +80,18 @@ impl CachedResult {
         result: CacheEntry,
         updated_at: Instant,
         requested_at: Instant,
-        current_estimator_internal_errors_count: u32,
+        current_accumulative_errors_count: u32,
     ) -> Self {
         let estimator_internal_errors_count =
             matches!(result, Err(PriceEstimationError::EstimatorInternal(_)))
-                .then_some(current_estimator_internal_errors_count + 1)
+                .then_some(current_accumulative_errors_count + 1)
                 .unwrap_or_default();
 
         Self {
             result,
             updated_at,
             requested_at,
-            estimator_internal_errors_count,
+            accumulative_errors_count: estimator_internal_errors_count,
         }
     }
 
@@ -100,7 +100,7 @@ impl CachedResult {
     /// `ESTIMATOR_INTERNAL_ERRORS_THRESHOLD`.
     pub fn is_ready(&self) -> bool {
         !matches!(self.result, Err(PriceEstimationError::EstimatorInternal(_)))
-            || self.estimator_internal_errors_count >= ESTIMATOR_INTERNAL_ERRORS_THRESHOLD
+            || self.accumulative_errors_count >= ESTIMATOR_INTERNAL_ERRORS_THRESHOLD
     }
 }
 
@@ -151,7 +151,7 @@ impl Inner {
     }
 
     /// Checks cache for the given tokens one by one. If the price is already
-    /// cached it gets returned. If it's not in the cache a new price
+    /// cached, it gets returned. If it's not in the cache, a new price
     /// estimation request gets issued. We check the cache before each
     /// request because they can take a long time and some other task might
     /// have fetched some requested price in the meantime.
@@ -161,8 +161,8 @@ impl Inner {
         max_age: Duration,
     ) -> futures::stream::BoxStream<'a, (H160, NativePriceEstimateResult)> {
         let estimates = tokens.iter().map(move |token| async move {
-            let current_estimator_internal_errors_count = {
-                // check if price is cached by now
+            let current_accumulative_errors_count = {
+                // check if the price is cached by now
                 let now = Instant::now();
                 let mut cache = self.cache.lock().unwrap();
 
@@ -171,7 +171,7 @@ impl Inner {
                         if cached.is_ready() {
                             return (*token, cached.result);
                         } else {
-                            cached.estimator_internal_errors_count
+                            cached.accumulative_errors_count
                         }
                     }
                     None => Default::default(),
@@ -187,12 +187,7 @@ impl Inner {
 
                 cache.insert(
                     *token,
-                    CachedResult::new(
-                        result.clone(),
-                        now,
-                        now,
-                        current_estimator_internal_errors_count,
-                    ),
+                    CachedResult::new(result.clone(), now, now, current_accumulative_errors_count),
                 );
             };
 
