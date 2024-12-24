@@ -73,9 +73,9 @@ struct CachedResult {
     estimator_internal_errors_count: u32,
 }
 
-impl CachedResult {
-    const ESTIMATOR_INTERNAL_ERRORS_THRESHOLD: u32 = 5;
+const ESTIMATOR_INTERNAL_ERRORS_THRESHOLD: u32 = 5;
 
+impl CachedResult {
     pub fn new(
         result: CacheEntry,
         updated_at: Instant,
@@ -100,7 +100,7 @@ impl CachedResult {
     /// `ESTIMATOR_INTERNAL_ERRORS_THRESHOLD`.
     pub fn is_ready(&self) -> bool {
         !matches!(self.result, Err(PriceEstimationError::EstimatorInternal(_)))
-            || self.estimator_internal_errors_count >= Self::ESTIMATOR_INTERNAL_ERRORS_THRESHOLD
+            || self.estimator_internal_errors_count >= ESTIMATOR_INTERNAL_ERRORS_THRESHOLD
     }
 }
 
@@ -452,6 +452,7 @@ mod tests {
             native::{MockNativePriceEstimating, NativePriceEstimating},
             PriceEstimationError,
         },
+        anyhow::anyhow,
         futures::FutureExt,
         num::ToPrimitive,
     };
@@ -542,6 +543,34 @@ mod tests {
             assert!(matches!(
                 result.as_ref().unwrap_err(),
                 PriceEstimationError::NoLiquidity
+            ));
+        }
+    }
+
+    #[tokio::test]
+    async fn properly_caches_internal_estimator_errors() {
+        let mut inner = MockNativePriceEstimating::new();
+        inner
+            .expect_estimate_native_price()
+            .times(ESTIMATOR_INTERNAL_ERRORS_THRESHOLD as usize)
+            .returning(|_| {
+                async { Err(PriceEstimationError::EstimatorInternal(anyhow!("boom"))) }.boxed()
+            });
+
+        let estimator = CachingNativePriceEstimator::new(
+            Box::new(inner),
+            Duration::from_millis(30),
+            Default::default(),
+            None,
+            Default::default(),
+            1,
+        );
+
+        for _ in 0..(ESTIMATOR_INTERNAL_ERRORS_THRESHOLD * 2) {
+            let result = estimator.estimate_native_price(token(0)).await;
+            assert!(matches!(
+                result.as_ref().unwrap_err(),
+                PriceEstimationError::EstimatorInternal(_)
             ));
         }
     }
