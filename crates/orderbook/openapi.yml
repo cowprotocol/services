@@ -957,8 +957,8 @@ components:
           allOf:
             - $ref: "#/components/schemas/BigUint"
           nullable: false
-        executedTotalFeeToken:
-          description: Token the total fee was captured in.
+        executedFeeToken:
+          description: Token the executed fee was captured in.
           allOf:
             - $ref: "#/components/schemas/Address"
           nullable: false
