@@ -73,6 +73,9 @@ struct CachedResult {
     accumulative_errors_count: u32,
 }
 
+/// Defines how many consecutive errors are allowed before the cache starts
+/// returning the error to the user without trying to fetch the price from the
+/// estimator.
 const ACCUMULATIVE_ERRORS_THRESHOLD: u32 = 5;
 
 impl CachedResult {
