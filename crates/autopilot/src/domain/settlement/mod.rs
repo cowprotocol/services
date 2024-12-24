@@ -89,10 +89,27 @@ impl Settlement {
     }
 
     /// Per order fees breakdown. Contains all orders from the settlement
-    pub fn fee_breakdown(&self) -> HashMap<domain::OrderUid, Option<trade::FeeBreakdown>> {
+    pub fn fee_breakdown(&self) -> HashMap<domain::OrderUid, trade::FeeBreakdown> {
         self.trades
             .iter()
-            .map(|trade| (*trade.uid(), trade.fee_breakdown(&self.auction).ok()))
+            .map(|trade| {
+                let fee_breakdown = trade.fee_breakdown(&self.auction).unwrap_or_else(|err| {
+                    tracing::warn!(
+                        ?err,
+                        trade = %trade.uid(),
+                        "possible incomplete fee breakdown calculation",
+                    );
+                    trade::FeeBreakdown {
+                        total: eth::Asset {
+                            // TODO surplus token
+                            token: trade.sell_token(),
+                            amount: num::zero(),
+                        },
+                        protocol: vec![],
+                    }
+                });
+                (*trade.uid(), fee_breakdown)
+            })
             .collect()
     }
 
@@ -329,7 +346,7 @@ mod tests {
             trade.surplus_in_ether(&auction.prices).unwrap().0,
             eth::U256::from(52937525819789126u128)
         );
-        // fee read from "executedSurplusFee" https://api.cow.fi/mainnet/api/v1/orders/0x10dab31217bb6cc2ace0fe601c15d342f7626a1ee5ef0495449800e73156998740a50cf069e992aa4536211b23f286ef88752187ffffffff
+        // fee read from "executedFee" https://api.cow.fi/mainnet/api/v1/orders/0x10dab31217bb6cc2ace0fe601c15d342f7626a1ee5ef0495449800e73156998740a50cf069e992aa4536211b23f286ef88752187ffffffff
         // but not equal to 6890975030480504 anymore, since after this tx we switched to
         // convert the fee from surplus token directly to ether
         assert_eq!(
@@ -810,7 +827,10 @@ mod tests {
         let jit_trade = super::trade::Trade::new(transaction.trades[1].clone(), &auction, 0);
         assert_eq!(jit_trade.fee_in_ether(&auction.prices).unwrap().0, 0.into());
         assert_eq!(jit_trade.score(&auction).unwrap().0, 0.into());
-        assert_eq!(jit_trade.fee_breakdown(&auction).unwrap().total.0, 0.into());
+        assert_eq!(
+            jit_trade.fee_breakdown(&auction).unwrap().total.amount.0,
+            0.into()
+        );
         assert!(jit_trade
             .fee_breakdown(&auction)
             .unwrap()
