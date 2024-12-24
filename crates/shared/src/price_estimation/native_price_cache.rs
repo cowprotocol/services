@@ -73,7 +73,7 @@ struct CachedResult {
     accumulative_errors_count: u32,
 }
 
-const ESTIMATOR_INTERNAL_ERRORS_THRESHOLD: u32 = 5;
+const ACCUMULATIVE_ERRORS_THRESHOLD: u32 = 5;
 
 impl CachedResult {
     pub fn new(
@@ -100,7 +100,7 @@ impl CachedResult {
     /// `ESTIMATOR_INTERNAL_ERRORS_THRESHOLD`.
     pub fn is_ready(&self) -> bool {
         !matches!(self.result, Err(PriceEstimationError::EstimatorInternal(_)))
-            || self.accumulative_errors_count >= ESTIMATOR_INTERNAL_ERRORS_THRESHOLD
+            || self.accumulative_errors_count >= ACCUMULATIVE_ERRORS_THRESHOLD
     }
 }
 
@@ -547,7 +547,7 @@ mod tests {
         let mut inner = MockNativePriceEstimating::new();
         inner
             .expect_estimate_native_price()
-            .times(ESTIMATOR_INTERNAL_ERRORS_THRESHOLD as usize)
+            .times(ACCUMULATIVE_ERRORS_THRESHOLD as usize)
             .returning(|_| {
                 async { Err(PriceEstimationError::EstimatorInternal(anyhow!("boom"))) }.boxed()
             });
@@ -561,7 +561,7 @@ mod tests {
             1,
         );
 
-        for _ in 0..(ESTIMATOR_INTERNAL_ERRORS_THRESHOLD * 2) {
+        for _ in 0..(ACCUMULATIVE_ERRORS_THRESHOLD * 2) {
             let result = estimator.estimate_native_price(token(0)).await;
             assert!(matches!(
                 result.as_ref().unwrap_err(),
