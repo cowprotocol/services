@@ -25,38 +25,38 @@ async fn driver_handles_solutions_based_on_id() {
 
     // calling `/reveal` or `/settle` with incorrect solution ids
     // results in an error.
-    test.settle("99").await.err().kind("SolutionNotAvailable");
-    test.reveal("99").await.err().kind("SolutionNotAvailable");
+    test.settle(99).await.err().kind("SolutionNotAvailable");
+    test.reveal(99).await.err().kind("SolutionNotAvailable");
 
     // calling `/reveal` or `/settle` with a reasonable id works
     // but wrong auction id results in an error.
     test.set_auction_id(100);
-    test.reveal(&solution_id)
+    test.reveal(solution_id)
         .await
         .err()
         .kind("SolutionNotAvailable");
-    test.settle(&solution_id)
+    test.settle(solution_id)
         .await
         .err()
         .kind("SolutionNotAvailable");
 
     // calling `/reveal` or `/settle` with a reasonable id works.
     test.set_auction_id(1);
-    test.reveal(&solution_id).await.ok();
-    test.settle(&solution_id)
+    test.reveal(solution_id).await.ok();
+    test.settle(solution_id)
         .await
         .ok()
         .await
-        .eth_order_executed()
+        .eth_order_executed(&test)
         .await;
 
     // calling `/reveal` or `/settle` with for a legit solution that
     // has already been settled also fails.
-    test.settle(&solution_id)
+    test.settle(solution_id)
         .await
         .err()
         .kind("SolutionNotAvailable");
-    test.reveal(&solution_id)
+    test.reveal(solution_id)
         .await
         .err()
         .kind("SolutionNotAvailable");
@@ -89,11 +89,11 @@ async fn driver_can_settle_old_solutions() {
     // Technically this is not super convincing since all remembered solutions
     // are identical but this is the best we are going to get without needing
     // to heavily modify the testing framework.
-    test.settle(&id1)
+    test.settle(id1)
         .await
         .ok()
         .await
-        .eth_order_executed()
+        .eth_order_executed(&test)
         .await;
 }
 
@@ -118,12 +118,12 @@ async fn driver_has_a_short_memory() {
     let id6 = test.solve().await.ok().id();
 
     // recalling the 5 most recent solutions works
-    test.reveal(&id2).await.ok();
-    test.reveal(&id3).await.ok();
-    test.reveal(&id4).await.ok();
-    test.reveal(&id5).await.ok();
-    test.reveal(&id6).await.ok();
+    test.reveal(id2).await.ok();
+    test.reveal(id3).await.ok();
+    test.reveal(id4).await.ok();
+    test.reveal(id5).await.ok();
+    test.reveal(id6).await.ok();
 
     // recalling an older solution doesn't work
-    test.reveal(&id1).await.err().kind("SolutionNotAvailable");
+    test.reveal(id1).await.err().kind("SolutionNotAvailable");
 }

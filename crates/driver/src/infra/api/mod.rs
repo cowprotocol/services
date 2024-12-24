@@ -1,6 +1,6 @@
 use {
     crate::{
-        domain::{self, Mempools},
+        domain::{self, competition::bad_tokens, Mempools},
         infra::{
             self,
             config::file::OrderPriorityStrategy,
@@ -29,6 +29,7 @@ pub struct Api {
     pub eth: Ethereum,
     pub mempools: Mempools,
     pub addr: SocketAddr,
+    pub bad_token_detector: bad_tokens::simulation::Detector,
     /// If this channel is specified, the bound address will be sent to it. This
     /// allows the driver to bind to 0.0.0.0:0 during testing.
     pub addr_sender: Option<oneshot::Sender<SocketAddr>>,
@@ -57,6 +58,8 @@ impl Api {
         app = routes::metrics(app);
         app = routes::healthz(app);
 
+        let metrics_bad_token_detector_builder = bad_tokens::metrics::DetectorBuilder::default();
+
         // Multiplex each solver as part of the API. Multiple solvers are multiplexed
         // on the same driver so only one liquidity collector collects the liquidity
         // for all of them. This is important because liquidity collection is
@@ -69,17 +72,35 @@ impl Api {
             let router = routes::solve(router);
             let router = routes::reveal(router);
             let router = routes::settle(router);
+
+            let mut bad_tokens =
+                bad_tokens::Detector::new(solver.bad_token_detection().tokens_supported.clone());
+            if solver.bad_token_detection().enable_simulation_strategy {
+                bad_tokens.with_simulation_detector(self.bad_token_detector.clone());
+            }
+
+            if solver.bad_token_detection().enable_metrics_strategy {
+                bad_tokens.with_metrics_detector(
+                    metrics_bad_token_detector_builder.clone().build(
+                        solver.bad_token_detection().metrics_strategy_failure_ratio,
+                        solver
+                            .bad_token_detection()
+                            .metrics_strategy_required_measurements,
+                    ),
+                );
+            }
+
             let router = router.with_state(State(Arc::new(Inner {
                 eth: self.eth.clone(),
                 solver: solver.clone(),
-                competition: domain::Competition {
+                competition: domain::Competition::new(
                     solver,
-                    eth: self.eth.clone(),
-                    liquidity: self.liquidity.clone(),
-                    simulator: self.simulator.clone(),
-                    mempools: self.mempools.clone(),
-                    settlements: Default::default(),
-                },
+                    self.eth.clone(),
+                    self.liquidity.clone(),
+                    self.simulator.clone(),
+                    self.mempools.clone(),
+                    Arc::new(bad_tokens),
+                ),
                 liquidity: self.liquidity.clone(),
                 tokens: tokens.clone(),
                 pre_processor: pre_processor.clone(),
@@ -140,7 +161,7 @@ impl State {
 struct Inner {
     eth: Ethereum,
     solver: Solver,
-    competition: domain::Competition,
+    competition: Arc<domain::Competition>,
     liquidity: liquidity::Fetcher,
     tokens: tokens::Fetcher,
     pre_processor: domain::competition::AuctionProcessor,

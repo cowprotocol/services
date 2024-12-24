@@ -35,16 +35,16 @@ async fn possible() {
         .await;
 
     let id = test.solve().await.ok().orders(&[ab_order, cd_order]).id();
-    test.reveal(&id).await.ok().calldata();
-    test.settle(&id)
+    test.reveal(id).await.ok().calldata();
+    test.settle(id)
         .await
         // Even though the solver returned two solutions, the executed settlement is a
         // combination of the two, meaning the settlements were merged successfully.
         .ok()
         .await
-        .ab_order_executed()
+        .ab_order_executed(&test)
         .await
-        .cd_order_executed()
+        .cd_order_executed(&test)
         .await;
 }
 
@@ -91,8 +91,13 @@ async fn impossible() {
 
     // Only the first A-B order gets settled.
     let id = test.solve().await.ok().orders(&[order]).id();
-    test.reveal(&id).await.ok().calldata();
-    test.settle(&id).await.ok().await.ab_order_executed().await;
+    test.reveal(id).await.ok().calldata();
+    test.settle(id)
+        .await
+        .ok()
+        .await
+        .ab_order_executed(&test)
+        .await;
 }
 
 /// Test that mergable solutions don't get merged if feature was not enabled.
@@ -114,6 +119,11 @@ async fn possible_but_forbidden() {
     // Even though the solutions could be combined (see test "possible") they were
     // not because solution merging is not enabled by default.
     let id = test.solve().await.ok().orders(&[ab_order]).id();
-    test.reveal(&id).await.ok().calldata();
-    test.settle(&id).await.ok().await.ab_order_executed().await;
+    test.reveal(id).await.ok().calldata();
+    test.settle(id)
+        .await
+        .ok()
+        .await
+        .ab_order_executed(&test)
+        .await;
 }
