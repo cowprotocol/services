@@ -562,7 +562,7 @@ mod tests {
         // Next 1 call: Return Ok(1.0). This resets the errors counter.
         inner
             .expect_estimate_native_price()
-            .times(1)
+            .once()
             .in_sequence(&mut seq)
             .returning(|_| async { Ok(1.0) }.boxed());
 
@@ -580,7 +580,7 @@ mod tests {
         // counter.
         inner
             .expect_estimate_native_price()
-            .times(1)
+            .once()
             .in_sequence(&mut seq)
             .returning(|_| async { Err(PriceEstimationError::RateLimited) }.boxed());
 
