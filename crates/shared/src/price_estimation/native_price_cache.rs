@@ -550,7 +550,7 @@ mod tests {
         let mut inner = MockNativePriceEstimating::new();
         let mut seq = mockall::Sequence::new();
 
-        // First 3 calls: Return EstimatorInternal error
+        // First 3 calls: Return EstimatorInternal error. Increment the errors counter.
         inner
             .expect_estimate_native_price()
             .times(3)
@@ -559,18 +559,36 @@ mod tests {
                 async { Err(PriceEstimationError::EstimatorInternal(anyhow!("boom"))) }.boxed()
             });
 
-        // Next 1 call: Return Ok(1.0)
+        // Next 1 call: Return Ok(1.0). This resets the errors counter.
         inner
             .expect_estimate_native_price()
             .times(1)
             .in_sequence(&mut seq)
             .returning(|_| async { Ok(1.0) }.boxed());
 
-        // Next ACCUMULATIVE_ERRORS_THRESHOLD calls: Return EstimatorInternal error
-        // again
+        // Next 2 calls: Return EstimatorInternal error. Start incrementing the errors
+        // counter from the beginning.
         inner
             .expect_estimate_native_price()
-            .times(ACCUMULATIVE_ERRORS_THRESHOLD as usize)
+            .times(2)
+            .in_sequence(&mut seq)
+            .returning(|_| {
+                async { Err(PriceEstimationError::EstimatorInternal(anyhow!("boom"))) }.boxed()
+            });
+
+        // Next call: Return a recoverable error, which doesn't affect the errors
+        // counter.
+        inner
+            .expect_estimate_native_price()
+            .times(1)
+            .in_sequence(&mut seq)
+            .returning(|_| async { Err(PriceEstimationError::RateLimited) }.boxed());
+
+        // Since the ACCUMULATIVE_ERRORS_THRESHOLD is 5, there are only 3 more calls
+        // remain. Anything exceeding that must return the cached value.
+        inner
+            .expect_estimate_native_price()
+            .times(3)
             .in_sequence(&mut seq)
             .returning(|_| {
                 async { Err(PriceEstimationError::EstimatorInternal(anyhow!("boom"))) }.boxed()
@@ -579,7 +597,7 @@ mod tests {
         let estimator = CachingNativePriceEstimator::new(
             Box::new(inner),
             Duration::from_millis(100),
-            Default::default(),
+            Duration::from_millis(200),
             None,
             Default::default(),
             1,
@@ -594,15 +612,31 @@ mod tests {
             ));
         }
 
-        // 4th call: Assert successful result (Ok(1.0))
+        // Reset the errors counter.
         let result = estimator.estimate_native_price(token(0)).await;
         assert_eq!(result.as_ref().unwrap().to_i64().unwrap(), 1);
 
         // Make sure the cached value gets evicted.
         tokio::time::sleep(Duration::from_millis(120)).await;
 
-        // Next calls: The errors counter gets reset after the cache is updated on the
-        // previous step.
+        // Increment the errors counter again.
+        for _ in 0..2 {
+            let result = estimator.estimate_native_price(token(0)).await;
+            assert!(matches!(
+                result.as_ref().unwrap_err(),
+                PriceEstimationError::EstimatorInternal(_)
+            ));
+        }
+
+        // Receive a recoverable error, which shouldn't affect the counter.
+        let result = estimator.estimate_native_price(token(0)).await;
+        assert!(matches!(
+            result.as_ref().unwrap_err(),
+            PriceEstimationError::RateLimited
+        ));
+
+        // Make more than expected calls. The cache should be used once the threshold is
+        // reached.
         for _ in 0..(ACCUMULATIVE_ERRORS_THRESHOLD * 2) {
             let result = estimator.estimate_native_price(token(0)).await;
             assert!(matches!(
