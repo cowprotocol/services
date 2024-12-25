@@ -202,7 +202,27 @@ async fn single_replace_order_test(web3: Web3) {
 
     // Place Orders
     let services = Services::new(&onchain).await;
-    services.start_protocol(solver).await;
+    colocation::start_driver(
+        onchain.contracts(),
+        vec![
+            colocation::start_baseline_solver(
+                "test_solver".into(),
+                solver,
+                onchain.contracts().weth.address(),
+                vec![],
+                1,
+                true,
+            )
+            .await,
+        ],
+        colocation::LiquidityProvider::UniswapV2,
+        false,
+    );
+    services
+        .start_api(vec![
+            "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
+        ])
+        .await;
 
     let order = OrderCreation {
         sell_token: token_a.address(),
@@ -264,6 +284,17 @@ async fn single_replace_order_test(web3: Web3) {
 
     // Drive solution
     tracing::info!("Waiting for trade.");
+    services
+        .start_autopilot(
+            None,
+            vec![
+                "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
+                    .to_string(),
+            ],
+        )
+        .await;
+
     wait_for_condition(TIMEOUT, || async {
         let balance_after = token_a.balance_of(trader.address()).call().await.unwrap();
         onchain.mint_block().await;
