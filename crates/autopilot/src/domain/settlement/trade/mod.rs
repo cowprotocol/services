@@ -4,12 +4,13 @@ use {
         self,
         auction::{self, order},
         eth,
-        fee,
     },
     bigdecimal::Zero,
 };
 
 mod math;
+
+pub use math::FeeBreakdown;
 
 /// Trade type evaluated in a context of an Auction.
 #[derive(Clone, Debug)]
@@ -68,17 +69,23 @@ impl Trade {
     }
 
     /// All fees broke down into protocol fees per policy and total fee.
-    pub fn fee_breakdown(&self, auction: &super::Auction) -> Result<FeeBreakdown, math::Error> {
-        let trade = math::Trade::from(self);
-        let total = trade.fee_in_sell_token()?;
-        let protocol = trade.protocol_fees(auction)?;
-        Ok(FeeBreakdown { total, protocol })
+    pub fn fee_breakdown(
+        &self,
+        auction: &super::Auction,
+    ) -> Result<math::FeeBreakdown, math::Error> {
+        math::Trade::from(self).fee_breakdown(auction)
     }
 
-    pub fn sell_token(&self) -> eth::TokenAddress {
+    pub fn surplus_token(&self) -> eth::TokenAddress {
         match self {
-            Self::Fulfillment(trade) => trade.sell.token,
-            Self::Jit(trade) => trade.sell.token,
+            Self::Fulfillment(trade) => match trade.side {
+                order::Side::Buy => trade.sell.token,
+                order::Side::Sell => trade.buy.token,
+            },
+            Self::Jit(trade) => match trade.side {
+                order::Side::Buy => trade.sell.token,
+                order::Side::Sell => trade.buy.token,
+            },
         }
     }
 
@@ -161,23 +168,4 @@ pub struct Jit {
     pub prices: super::transaction::Prices,
     pub created: u32,
     pub surplus_capturing: bool,
-}
-
-/// Fee per trade in a solution. These fees are taken for the execution of the
-/// trade.
-#[derive(Debug, Clone)]
-pub struct FeeBreakdown {
-    /// Total fee the trade was charged (network fee + protocol fee)
-    // TODO surplus token
-    pub total: eth::Asset,
-    /// Breakdown of protocol fees.
-    pub protocol: Vec<ExecutedProtocolFee>,
-}
-
-#[derive(Debug, Clone)]
-pub struct ExecutedProtocolFee {
-    /// Policy that was used to calculate the fee.
-    pub policy: fee::Policy,
-    /// Fee that was taken for the trade, in surplus token.
-    pub fee: eth::Asset,
 }

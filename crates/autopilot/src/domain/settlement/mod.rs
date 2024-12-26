@@ -100,12 +100,9 @@ impl Settlement {
                         "possible incomplete fee breakdown calculation",
                     );
                     trade::FeeBreakdown {
-                        total: eth::Asset {
-                            // TODO surplus token
-                            token: trade.sell_token(),
-                            amount: num::zero(),
-                        },
+                        gas: num::zero(),
                         protocol: vec![],
+                        token: trade.surplus_token(),
                     }
                 });
                 (*trade.uid(), fee_breakdown)

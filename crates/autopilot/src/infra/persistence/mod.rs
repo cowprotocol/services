@@ -707,15 +707,15 @@ impl Persistence {
                     auction_id,
                     block_number,
                     Asset {
-                        token: ByteArray(order_fee.total.token.0 .0),
-                        amount: u256_to_big_decimal(&order_fee.total.amount.0),
+                        token: ByteArray(order_fee.token.0 .0),
+                        amount: u256_to_big_decimal(&order_fee.total().0),
                     },
                     &order_fee
                         .protocol
                         .into_iter()
                         .map(|executed| Asset {
-                            token: ByteArray(executed.fee.token.0 .0),
-                            amount: u256_to_big_decimal(&executed.fee.amount.0),
+                            token: ByteArray(order_fee.token.0 .0),
+                            amount: u256_to_big_decimal(&executed.fee.0),
                         })
                         .collect::<Vec<_>>(),
                 )
