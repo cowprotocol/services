@@ -256,11 +256,11 @@ async fn single_replace_order_test(web3: Web3) {
     let balance_before = token_a.balance_of(trader.address()).call().await.unwrap();
     let new_order_uid = services.create_order(&new_order).await.unwrap();
 
-    onchain.mint_block().await;
-
     // Check the previous order is cancelled
     let old_order = services.get_order(&order_id).await.unwrap();
     assert_eq!(old_order.metadata.status, OrderStatus::Cancelled);
+
+    onchain.mint_block().await;
 
     // Drive solution
     tracing::info!("Waiting for trade.");
