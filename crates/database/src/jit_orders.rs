@@ -32,13 +32,7 @@ NULL AS ethflow_data,
 NULL AS onchain_user,
 NULL AS onchain_placement_error,
 COALESCE((SELECT SUM(executed_fee) FROM order_execution oe WHERE oe.order_uid = o.uid), 0) as executed_fee,
-COALESCE(
-    (SELECT executed_fee_token FROM order_execution oe WHERE oe.order_uid = o.uid LIMIT 1), 
-    CASE 
-        WHEN o.kind = 'buy' THEN o.sell_token 
-        WHEN o.kind = 'sell' THEN o.buy_token 
-    END
-) AS executed_fee_token,
+COALESCE((SELECT executed_fee_token FROM order_execution oe WHERE oe.order_uid = o.uid LIMIT 1), o.sell_token) as executed_fee_token, -- TODO surplus token
 NULL AS full_app_data
 "#;
 
