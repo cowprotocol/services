@@ -9,14 +9,7 @@ use {
     ethcontract::{prelude::U256, Address},
     model::{
         order::{Order, OrderCreation, OrderCreationAppData, OrderKind},
-        quote::{
-            OrderQuote,
-            OrderQuoteRequest,
-            OrderQuoteResponse,
-            OrderQuoteSide,
-            SellAmount,
-            Validity,
-        },
+        quote::{OrderQuoteRequest, OrderQuoteResponse, OrderQuoteSide, SellAmount, Validity},
         signature::EcdsaSigningScheme,
     },
     reqwest::StatusCode,
