@@ -572,7 +572,13 @@ array(Select (p.target, p.value, p.data) from interactions p where p.order_uid =
 (SELECT onchain_o.sender from onchain_placed_orders onchain_o where onchain_o.uid = o.uid limit 1) as onchain_user,
 (SELECT onchain_o.placement_error from onchain_placed_orders onchain_o where onchain_o.uid = o.uid limit 1) as onchain_placement_error,
 COALESCE((SELECT SUM(executed_fee) FROM order_execution oe WHERE oe.order_uid = o.uid), 0) as executed_fee,
-COALESCE((SELECT executed_fee_token FROM order_execution oe WHERE oe.order_uid = o.uid LIMIT 1), o.sell_token) as executed_fee_token, -- TODO surplus token
+COALESCE(
+    (SELECT executed_fee_token FROM order_execution oe WHERE oe.order_uid = o.uid LIMIT 1), 
+    CASE 
+        WHEN o.kind = 'buy' THEN o.sell_token 
+        WHEN o.kind = 'sell' THEN o.buy_token 
+    END
+) AS executed_fee_token,
 (SELECT full_app_data FROM app_data ad WHERE o.app_data = ad.contract_app_data LIMIT 1) as full_app_data
 "#;
 
