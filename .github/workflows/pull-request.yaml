@@ -186,7 +186,7 @@ jobs:
 
   run-flaky-test:
     # to debug a flaky test set `if` to true and configure the flaky test in the `run` step
-    if: ${{ false }}
+    if: ${{ true }}
     timeout-minutes: 60
     runs-on: ubuntu-latest
     env:
@@ -215,7 +215,7 @@ jobs:
           attempt=1
           while true; do
             echo "Running test attempt #$attempt"
-            if ! cargo nextest run -p e2e local_node --test-threads 1 --failure-output final --run-ignored ignored-only; then
+            if ! cargo nextest run -p driver --no-capture --run-ignored ignored-only; then
               exit 1
             fi
             attempt=$((attempt+1))
