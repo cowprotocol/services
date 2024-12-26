@@ -260,8 +260,6 @@ async fn single_replace_order_test(web3: Web3) {
     let old_order = services.get_order(&order_id).await.unwrap();
     assert_eq!(old_order.metadata.status, OrderStatus::Cancelled);
 
-    onchain.mint_block().await;
-
     // Drive solution
     tracing::info!("Waiting for trade.");
     wait_for_condition(TIMEOUT, || async {
