@@ -89,7 +89,7 @@ impl Detector {
                         .await;
                     match result {
                         Err(err) => {
-                            tracing::debug!(?err, "failed to determine token quality");
+                            tracing::debug!(?err, token=?sell_token.0, "failed to determine token quality");
                             None
                         }
                         Ok(TokenQuality::Good) => {
@@ -99,7 +99,7 @@ impl Detector {
                             Some(Quality::Supported)
                         }
                         Ok(TokenQuality::Bad { reason }) => {
-                            tracing::debug!(reason, "cache token as unsupported");
+                            tracing::debug!(reason, token=?sell_token.0, "cache token as unsupported");
                             inner
                                 .cache
                                 .update_quality(sell_token, Quality::Unsupported, now);
