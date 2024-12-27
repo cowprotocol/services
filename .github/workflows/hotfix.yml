@@ -1,0 +1,81 @@
+name: Hotfix Release
+
+on:
+  pull_request_target:
+    types: [closed]
+    branches:
+      - main
+
+jobs:
+  hotfix_release:
+    if: ${{ github.event.pull_request.merged == true && contains(github.event.pull_request.labels.*.name, 'hotfix') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          git config user.name 'github-actions-bot'
+          git config user.email 'no-reply@github.com'
+          git fetch --tags
+
+      - name: Get latest release version tag
+        id: fetch_tag
+        run: |
+          LATEST_VERSION=$(curl -s https://api.github.com/repos/${{ github.repository }}/releases/latest | jq -r '.tag_name')
+          if ! [[ "$LATEST_VERSION" =~ ^v[0-9]+\.[0-9]+\..* ]]; then
+            echo "Invalid tag format, cannot bump version of: $LATEST_VERSION"
+            exit 1
+          fi
+          echo "latest=$LATEST_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Determine next patch version
+        id: bump
+        run: |
+          VERSION="${{ steps.fetch_tag.outputs.latest }}"
+          VERSION_NO_PREFIX="${VERSION#v}"
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION_NO_PREFIX"
+          NEW_PATCH=$((PATCH + 1))
+          NEW_TAG="v$MAJOR.$MINOR.$NEW_PATCH"
+          echo "tag=$NEW_TAG" >> $GITHUB_OUTPUT
+
+      - name: Create and switch to hotfix branch
+        run: |
+          git checkout "${{ steps.fetch_tag.outputs.latest }}"
+          git checkout -b "hotfix/${{ steps.bump.outputs.tag }}"
+
+      - name: Cherry-pick merged commit
+        run: |
+          MERGE_COMMIT_SHA="${{ github.event.pull_request.merge_commit_sha }}"
+          git cherry-pick "$MERGE_COMMIT_SHA"
+
+      - name: Create and push tag
+        id: tag_version
+        run: |
+          git tag "${{ steps.bump.outputs.tag }}"
+          git push origin "hotfix/${{ steps.bump.outputs.tag }}"
+          git push origin "${{ steps.bump.outputs.tag }}"
+
+      - name: "Create hotfix release"
+        uses: actions/github-script@v6
+        with:
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+          script: |
+            try {
+              const response = await github.rest.repos.createRelease({
+                draft: false,
+                generate_release_notes: true,
+                name: "Hotfix ${{ steps.bump.outputs.tag }}",
+                owner: context.repo.owner,
+                prerelease: false,
+                repo: context.repo.repo,
+                tag_name: "${{ steps.bump.outputs.tag }}",
+              });
+              core.exportVariable('RELEASE_ID', response.data.id);
+              core.exportVariable('RELEASE_UPLOAD_URL', response.data.upload_url);
+            } catch (error) {
+              core.setFailed(error.message);
+            }
