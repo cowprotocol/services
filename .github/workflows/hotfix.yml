@@ -4,7 +4,7 @@ on:
   pull_request_target:
     types: [closed]
     branches:
-      - main
+      - 'ilya/hotfix-test'
 
 jobs:
   hotfix_release:
