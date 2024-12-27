@@ -50,7 +50,10 @@ jobs:
       - name: Cherry-pick merged commit
         run: |
           MERGE_COMMIT_SHA="${{ github.event.pull_request.merge_commit_sha }}"
-          git cherry-pick "$MERGE_COMMIT_SHA"
+          if ! git cherry-pick "$MERGE_COMMIT_SHA"; then
+            echo "Cherry-pick failed. Please resolve conflicts manually."
+            exit 1
+          fi
 
       - name: Create and push tag
         id: tag_version
