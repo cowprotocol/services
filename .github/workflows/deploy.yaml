@@ -3,6 +3,9 @@ on:
   push:
     branches: [main]
     tags: [v*]
+  workflow_run:
+    workflows: [ "Hotfix Release" ]
+    types: [ completed ]
   workflow_dispatch:
 
 jobs:
