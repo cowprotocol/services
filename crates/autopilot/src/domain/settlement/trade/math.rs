@@ -14,7 +14,7 @@ use {
         util::conv::U256Ext,
     },
     bigdecimal::Zero,
-    num::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub, Saturating},
+    num::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub},
 };
 
 /// A trade containing bare minimum of onchain information required to calculate
@@ -118,15 +118,9 @@ impl Trade {
     ///
     /// Denominated in SURPLUS token
     pub fn fee_breakdown(&self, auction: &settlement::Auction) -> Result<FeeBreakdown, Error> {
-        let total = self.fee()?;
-        let protocol = self.protocol_fees(auction)?;
-
         Ok(FeeBreakdown {
-            // Gas fee depends on the existence of UCP prices and their truthfulness, while
-            // protocol fees depend on the final custom prices only. This means that (gas fee +
-            // protocol fee) can be smaller than (protocol fee) in some cases.
-            gas: total.saturating_sub(protocol.iter().map(|fee| fee.fee).sum()),
-            protocol,
+            executed: self.fee()?,
+            protocol: self.protocol_fees(auction)?,
             token: self.surplus_token(),
         })
     }
@@ -420,19 +414,13 @@ impl Trade {
 /// trade.
 #[derive(Debug, Clone)]
 pub struct FeeBreakdown {
-    /// Gas costs of the trade.
-    pub gas: eth::TokenAmount,
+    /// Fee reported by solvers, representing difference between UCP and custom
+    /// prices.
+    pub executed: eth::TokenAmount,
     /// Breakdown of protocol fees.
     pub protocol: Vec<ExecutedProtocolFee>,
     /// Surplus token in which all the fees were taken.
     pub token: eth::TokenAddress,
-}
-
-impl FeeBreakdown {
-    /// Total fee taken for the trade.
-    pub fn total(&self) -> eth::TokenAmount {
-        self.gas + self.protocol.iter().map(|fee| fee.fee).sum()
-    }
 }
 
 #[derive(Debug, Clone)]

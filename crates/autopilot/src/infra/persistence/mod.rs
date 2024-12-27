@@ -708,7 +708,7 @@ impl Persistence {
                     block_number,
                     Asset {
                         token: ByteArray(order_fee.token.0 .0),
-                        amount: u256_to_big_decimal(&order_fee.total().0),
+                        amount: u256_to_big_decimal(&order_fee.executed.0),
                     },
                     &order_fee
                         .protocol

@@ -100,7 +100,7 @@ impl Settlement {
                         "possible incomplete fee breakdown calculation",
                     );
                     trade::FeeBreakdown {
-                        gas: num::zero(),
+                        executed: num::zero(),
                         protocol: vec![],
                         token: trade.surplus_token(),
                     }
@@ -356,7 +356,7 @@ mod tests {
         // 6890975030480504 / 10115523891911314 * 18446744073709551616 =
         // 12566432956304187498
         assert_eq!(
-            trade.fee_breakdown(&auction).unwrap().gas.0,
+            trade.fee_breakdown(&auction).unwrap().executed.0,
             eth::U256::from(12566432956304187498u128)
         );
     }
@@ -834,7 +834,7 @@ mod tests {
         assert_eq!(jit_trade.fee_in_ether(&auction.prices).unwrap().0, 0.into());
         assert_eq!(jit_trade.score(&auction).unwrap().0, 0.into());
         assert_eq!(
-            jit_trade.fee_breakdown(&auction).unwrap().total().0,
+            jit_trade.fee_breakdown(&auction).unwrap().executed.0,
             0.into()
         );
         assert!(jit_trade
