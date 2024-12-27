@@ -59,7 +59,6 @@ jobs:
         id: tag_version
         run: |
           git tag "${{ steps.bump.outputs.tag }}"
-          git push origin "hotfix/${{ steps.bump.outputs.tag }}"
           git push origin "${{ steps.bump.outputs.tag }}"
 
       - name: "Create hotfix release"
