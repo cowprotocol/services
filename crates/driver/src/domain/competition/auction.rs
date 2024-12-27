@@ -165,7 +165,7 @@ impl AuctionProcessor {
             tracing::error!(?current_id, ?new_id, "received an outdated auction");
         }
         if current_id.0 == new_id.0 {
-            tracing::debug!("await running prioritization task");
+            tracing::info!("await running prioritization task");
             return lock.fut.clone();
         }
 
