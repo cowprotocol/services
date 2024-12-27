@@ -150,7 +150,7 @@ impl ZeroExApi {
             .json()
             .await?;
 
-        tracing::debug!(url = url.as_str(), ?response, "0x");
+        tracing::info!(url = url.as_str(), ?response, "0x");
 
         let can_settle =
             response.sell_amount <= order.sell_amount && response.buy_amount >= order.buy_amount;
