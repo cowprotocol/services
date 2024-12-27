@@ -19,7 +19,7 @@ jobs:
       - name: Configure git
         run: |
           git config user.name 'github-actions-bot'
-          git config user.email 'no-reply@github.com'
+          git config user.email 'dev@cow.fi'
           git fetch --tags
 
       - name: Get latest release version tag
