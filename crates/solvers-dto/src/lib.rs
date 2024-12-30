@@ -32,7 +32,7 @@ mod serialize {
                 {
                     if !s.starts_with("0x") {
                         return Err(de::Error::custom(format!(
-                            "failed to decode {s:?} as a hex string: missing \"0x\" prefix",
+                            "failed to decode {s:?} as a hex string: missing \"0x\" prefix 1",
                         )));
                     }
                     hex::decode(&s[2..]).map_err(|err| {
