@@ -36,7 +36,9 @@ mod serialize {
                         )));
                     }
                     hex::decode(&s[2..]).map_err(|err| {
-                        de::Error::custom(format!("failed to decode {s:?} as a hex string: {err}",))
+                        de::Error::custom(format!(
+                            "failed to decode {s:?} as a hex 1 string: {err}",
+                        ))
                     })
                 }
             }
