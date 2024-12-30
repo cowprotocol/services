@@ -1,5 +1,8 @@
 name: Hotfix Release
 
+permissions:
+  contents: write
+
 on:
   pull_request_target:
     types: [closed]
@@ -14,6 +17,7 @@ jobs:
       - name: Check out
         uses: actions/checkout@v4
         with:
+          token: "${{ secrets.HOTFIX_ACTION_JOB_TEST }}"
           fetch-depth: 0
 
       - name: Configure git
