@@ -66,7 +66,7 @@ mod serialize {
                 fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
                     write!(
                         formatter,
-                        "a hex-encoded string starting with \"0x\" containing {N} bytes",
+                        "a hex-encoded string starting with \"0x\" containing {N} bytes 2",
                     )
                 }
 
