@@ -67,7 +67,7 @@ jobs:
       - name: "Create hotfix release"
         uses: actions/github-script@v6
         with:
-          github-token: "${{ secrets.GITHUB_TOKEN }}"
+          github-token: "${{ secrets.HOTFIX_ACTION_TOKEN }}"
           script: |
             try {
               const response = await github.rest.repos.createRelease({
