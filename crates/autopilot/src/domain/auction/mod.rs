@@ -70,7 +70,7 @@ impl Price {
     /// use autopilot::domain::{auction::Price, eth};
     ///
     /// let amount = eth::TokenAmount::from(eth::U256::exp10(18));
-    /// let price = Price::new(eth::Ether::from(eth::U256::exp10(15))).unwrap(); // 0.001 ETH
+    /// let price = Price::try_new(eth::Ether::from(eth::U256::exp10(15))).unwrap(); // 0.001 ETH
     ///
     /// let eth = price.in_eth(amount);
     /// assert_eq!(eth, eth::Ether::from(eth::U256::exp10(15)));

@@ -3,9 +3,7 @@ use {
     crate::{
         domain::{
             competition::{self, auction, sorting},
-            eth,
-            liquidity,
-            time,
+            eth, liquidity, time,
         },
         infra::{self, blockchain, config::file::OrderPriorityStrategy, observe, Ethereum},
         util::{self, Bytes},
@@ -548,7 +546,7 @@ impl Price {
     /// use driver::domain::{competition::auction::Price, eth};
     ///
     /// let amount = eth::TokenAmount::from(eth::U256::exp10(18));
-    /// let price = Price::new(eth::Ether::from(eth::U256::exp10(15))).unwrap(); // 0.001 ETH
+    /// let price = Price::try_new(eth::Ether::from(eth::U256::exp10(15))).unwrap(); // 0.001 ETH
     ///
     /// let eth = price.in_eth(amount);
     /// assert_eq!(eth, eth::Ether::from(eth::U256::exp10(15)));
@@ -566,7 +564,7 @@ impl Price {
     /// use driver::domain::{competition::auction::Price, eth};
     ///
     /// let amount = eth::Ether::from(eth::U256::exp10(18));
-    /// let price = Price::new(eth::Ether::from(eth::U256::exp10(17))).unwrap(); // 0.1ETH
+    /// let price = Price::try_new(eth::Ether::from(eth::U256::exp10(17))).unwrap(); // 0.1ETH
     /// assert_eq!(price.from_eth(amount), eth::U256::exp10(19).into());
     /// ```
     pub fn from_eth(self, amount: eth::Ether) -> eth::TokenAmount {
