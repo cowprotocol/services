@@ -113,14 +113,14 @@ pub async fn token_first_trade_block(
     const QUERY: &str = r#"
 SELECT MIN(sub.block_number) AS earliest_block
 FROM (
-    SELECT t.block_number
+    SELECT MIN(t.block_number) AS block_number
     FROM trades t
     JOIN orders o ON t.order_uid = o.uid
     WHERE o.sell_token = $1 OR o.buy_token = $1
 
     UNION ALL
 
-    SELECT t.block_number
+    SELECT MIN(t.block_number) AS block_number
     FROM trades t
     JOIN jit_orders j ON t.order_uid = j.uid
     WHERE j.sell_token = $1 OR j.buy_token = $1
