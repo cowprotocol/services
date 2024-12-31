@@ -79,7 +79,7 @@ struct CachedResult {
 const ACCUMULATIVE_ERRORS_THRESHOLD: u32 = 5;
 
 impl CachedResult {
-    pub fn new(
+    fn new(
         result: CacheEntry,
         updated_at: Instant,
         requested_at: Instant,
@@ -101,7 +101,7 @@ impl CachedResult {
     /// The result is not ready if the estimator has returned an internal error
     /// and consecutive errors are less than
     /// `ESTIMATOR_INTERNAL_ERRORS_THRESHOLD`.
-    pub fn is_ready(&self) -> bool {
+    fn is_ready(&self) -> bool {
         !matches!(self.result, Err(PriceEstimationError::EstimatorInternal(_)))
             || self.accumulative_errors_count >= ACCUMULATIVE_ERRORS_THRESHOLD
     }
@@ -170,13 +170,10 @@ impl Inner {
                 let mut cache = self.cache.lock().unwrap();
 
                 match Self::get_cached_price(*token, now, &mut cache, &max_age, false) {
-                    Some(cached) => {
-                        if cached.is_ready() {
-                            return (*token, cached.result);
-                        } else {
-                            cached.accumulative_errors_count
-                        }
+                    Some(cached) if cached.is_ready() => {
+                        return (*token, cached.result);
                     }
+                    Some(cached) => cached.accumulative_errors_count,
                     None => Default::default(),
                 }
             };
