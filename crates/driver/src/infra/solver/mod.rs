@@ -7,7 +7,8 @@ use {
                 bad_tokens,
                 solution::{self, Solution},
             },
-            eth, liquidity,
+            eth,
+            liquidity,
             time::Remaining,
         },
         infra::{

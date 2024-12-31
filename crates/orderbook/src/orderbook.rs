@@ -14,7 +14,12 @@ use {
     ethcontract::H256,
     model::{
         order::{
-            Order, OrderCancellation, OrderCreation, OrderCreationAppData, OrderStatus, OrderUid,
+            Order,
+            OrderCancellation,
+            OrderCreation,
+            OrderCreationAppData,
+            OrderStatus,
+            OrderUid,
             SignedOrderCancellations,
         },
         quote::QuoteId,
@@ -28,7 +33,10 @@ use {
         fee::FeeParameters,
         order_quoting::Quote,
         order_validation::{
-            is_order_outside_market_price, Amounts, OrderValidating, ValidationError,
+            is_order_outside_market_price,
+            Amounts,
+            OrderValidating,
+            ValidationError,
         },
     },
     std::{borrow::Cow, sync::Arc},

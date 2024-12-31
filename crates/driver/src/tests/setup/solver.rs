@@ -1,7 +1,8 @@
 use {
     super::{
         blockchain::{self, Blockchain},
-        fee, Partial,
+        fee,
+        Partial,
     },
     crate::{
         domain::{

@@ -14,7 +14,9 @@ use {
     contracts::{GPv2Settlement, UniswapV3SwapRouter},
     ethrpc::block_stream::BlockRetrieving,
     shared::{
-        http_solver::model::TokenAmount, interaction::Interaction, maintenance::ServiceMaintenance,
+        http_solver::model::TokenAmount,
+        interaction::Interaction,
+        maintenance::ServiceMaintenance,
         sources::uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
     },
     solver::{

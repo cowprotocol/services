@@ -4,7 +4,9 @@ use {
         boundary,
         domain::{
             competition::{self, order},
-            eth, liquidity, time,
+            eth,
+            liquidity,
+            time,
         },
         infra::{
             self,
