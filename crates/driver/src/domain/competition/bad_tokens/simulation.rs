@@ -3,7 +3,7 @@ use {
         domain::{
             competition::{
                 bad_tokens::{cache::Cache, Quality},
-                order,
+                order::{self, Partial},
                 Order,
             },
             eth,
@@ -80,7 +80,10 @@ impl Detector {
                     })
                     .collect();
                 let trader = eth::Address::from(order.trader()).0;
-                let sell_amount = order.sell.amount.0;
+                let sell_amount = match order.partial {
+                    Partial::Yes { available } => available.0,
+                    Partial::No => order.sell.amount.0,
+                };
 
                 async move {
                     let result = inner
