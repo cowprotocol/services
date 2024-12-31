@@ -259,6 +259,34 @@ pub struct Arguments {
     pub token_quality_cache_prefetch_time: Duration,
 }
 
+#[derive(Clone, clap::Parser)]
+pub struct Db {
+    /// Base Url of the Postgres database
+    pub db_base_url: Option<Url>,
+    /// Database Username
+    #[clap(long, env)]
+    pub db_user: Option<String>,
+    /// Database password for the given username
+    #[clap(long, env)]
+    pub db_password: Option<String>,
+}
+
+impl Db {
+    /// Returns the DB URL with credentials
+    /// Returns `None` if the URL is not configured
+    pub fn to_url(&self) -> Option<Url> {
+        let mut url = self.db_base_url.clone()?;
+
+        if let Some(user) = &self.db_user {
+            url.query_pairs_mut()
+                .append_pair("user", user)
+                .extend_pairs(self.db_password.as_ref().map(|pass| ("password", pass)));
+        }
+
+        Some(url)
+    }
+}
+
 pub fn display_secret_option<T>(
     f: &mut Formatter<'_>,
     name: &str,
@@ -503,6 +531,59 @@ mod test {
             fairness_threshold: None,
         };
         assert_eq!(driver, expected);
+    }
+
+    #[test]
+    fn db_url_just_base_url() {
+        let db = Db {
+            db_base_url: Some("postgresql://mydatabase:1234".try_into().unwrap()),
+            db_user: None,
+            db_password: None,
+        };
+
+        assert_eq!(
+            db.to_url(),
+            Url::try_from("postgresql://mydatabase:1234").ok()
+        );
+    }
+
+    #[test]
+    fn db_url_base_url_with_user() {
+        let db = Db {
+            db_base_url: Some("postgresql://mydatabase:1234".try_into().unwrap()),
+            db_user: Some("myuser".to_string()),
+            db_password: None,
+        };
+
+        assert_eq!(
+            db.to_url(),
+            Url::try_from("postgresql://mydatabase:1234?user=myuser").ok()
+        );
+    }
+
+    #[test]
+    fn db_url_base_url_with_user_and_password() {
+        let db = Db {
+            db_base_url: Some("postgresql://mydatabase:1234".try_into().unwrap()),
+            db_user: Some("myuser".to_string()),
+            db_password: Some("mypassword".to_string()),
+        };
+
+        assert_eq!(
+            db.to_url(),
+            Url::try_from("postgresql://mydatabase:1234?user=myuser&password=mypassword").ok()
+        );
+    }
+
+    #[test]
+    fn db_url_empty() {
+        let db = Db {
+            db_base_url: None,
+            db_user: None,
+            db_password: None,
+        };
+
+        assert_eq!(db.to_url(), None);
     }
 
     #[test]

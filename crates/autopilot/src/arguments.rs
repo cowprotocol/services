@@ -4,7 +4,7 @@ use {
     clap::ValueEnum,
     primitive_types::H160,
     shared::{
-        arguments::{display_list, display_option, ExternalSolver},
+        arguments::{display_list, display_option, Db, ExternalSolver},
         bad_token::token_owner_finder,
         http_client,
         price_estimation::{self, NativePriceEstimators},
@@ -53,6 +53,10 @@ pub struct Arguments {
     /// postgres.
     #[clap(long, env, default_value = "postgresql://")]
     pub db_url: Url,
+
+    /// Url of the Postgres database.
+    #[clap(flatten)]
+    pub db: Db,
 
     /// The number of order events to insert in a single batch.
     #[clap(long, env, default_value = "500")]
@@ -269,6 +273,7 @@ impl std::fmt::Display for Arguments {
             order_events_cleanup_interval,
             order_events_cleanup_threshold,
             db_url,
+            db,
             insert_batch_size,
             native_price_estimation_results_required,
             max_settlement_transaction_wait,
@@ -292,6 +297,8 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "metrics_address: {}", metrics_address)?;
         let _intentionally_ignored = db_url;
         writeln!(f, "db_url: SECRET")?;
+        let _intentionally_ignored = db;
+        writeln!(f, "db: SECRET")?;
         writeln!(f, "skip_event_sync: {}", skip_event_sync)?;
         writeln!(f, "allowed_tokens: {:?}", allowed_tokens)?;
         writeln!(f, "unsupported_tokens: {:?}", unsupported_tokens)?;

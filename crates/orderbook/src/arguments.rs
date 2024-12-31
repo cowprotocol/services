@@ -2,7 +2,7 @@ use {
     primitive_types::H160,
     reqwest::Url,
     shared::{
-        arguments::{display_option, display_secret_option},
+        arguments::{display_option, display_secret_option, Db},
         bad_token::token_owner_finder,
         http_client,
         price_estimation::{self, NativePriceEstimators},
@@ -39,6 +39,10 @@ pub struct Arguments {
     /// postgres.
     #[clap(long, env, default_value = "postgresql://")]
     pub db_url: Url,
+
+    /// Url of the Postgres database.
+    #[clap(flatten)]
+    pub db: Db,
 
     /// The minimum amount of time in seconds an order has to be valid for.
     #[clap(
@@ -166,6 +170,7 @@ impl std::fmt::Display for Arguments {
             hooks_contract_address,
             app_data_size_limit,
             db_url,
+            db,
             max_gas_per_order,
         } = self;
 
@@ -178,6 +183,8 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "bind_address: {}", bind_address)?;
         let _intentionally_ignored = db_url;
         writeln!(f, "db_url: SECRET")?;
+        let _intentionally_ignored = db;
+        writeln!(f, "db: SECRET")?;
         writeln!(
             f,
             "min_order_validity_period: {:?}",
