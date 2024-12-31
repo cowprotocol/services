@@ -308,29 +308,6 @@ paths:
           description: No liquidity was found.
         "500":
           description: Unexpected error.
-  "/api/v1/token/{token}/first_trade_block":
-    get:
-      summary: Get the block number when the token was traded first.
-      description: |-
-        Returns the block number when the token was traded for the first time.
-      parameters:
-        - name: token
-          in: path
-          required: true
-          schema:
-            $ref: "#/components/schemas/Address"
-      responses:
-        "200":
-          description: The block number when the token was traded first.
-          content:
-            application/json:
-              schema:
-                type: integer
-                description: The block number when the token was traded first.
-        "404":
-          description: No trades were found for this token.
-        "500":
-          description: Unexpected error.
   /api/v1/quote:
     post:
       summary: Quote a price and fee for the specified order parameters.
@@ -430,7 +407,7 @@ paths:
         "200":
           description: Version
           content:
-            text/plain: {}
+            text/plain: { }
   "/api/v1/app_data/{app_data_hash}":
     get:
       summary: Get the full `appData` from contract `appDataHash`.
