@@ -15,6 +15,10 @@ servers:
     url: "https://api.cow.fi/arbitrum_one"
   - description: Arbitrum One (Staging)
     url: "https://barn.api.cow.fi/arbitrum_one"
+  - description: Base (Prod)
+    url: "https://api.cow.fi/base"
+  - description: Base (Staging)
+    url: "https://barn.api.cow.fi/base"
   - description: Sepolia (Prod)
     url: "https://api.cow.fi/sepolia"
   - description: Sepolia (Staging)
@@ -947,7 +951,17 @@ components:
           description: Surplus fee that the limit order was executed with.
           allOf:
             - $ref: "#/components/schemas/BigUint"
-          nullable: true
+          nullable: false
+        executedFee:
+          description: Total fee charged for execution of the order. Contains network fee and protocol fees.
+          allOf:
+            - $ref: "#/components/schemas/BigUint"
+          nullable: false
+        executedFeeToken:
+          description: Token the executed fee was captured in.
+          allOf:
+            - $ref: "#/components/schemas/Address"
+          nullable: false
         fullAppData:
           description: >
             Full `appData`, which the contract-level `appData` is a hash of. See
@@ -1099,14 +1113,6 @@ components:
             The block number for the auction. Orders and prices are guaranteed
             to be valid on this block. Proposed settlements should be valid for
             this block as well.
-        latestSettlementBlock:
-          type: integer
-          description: >
-            The latest block on which a settlement has been processed.
-
-            **NOTE**: Under certain conditions it is possible for a settlement
-            to have been mined as part of `block` but not have yet been
-            processed.
         orders:
           type: array
           items:

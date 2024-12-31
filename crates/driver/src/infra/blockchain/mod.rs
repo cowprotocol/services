@@ -1,6 +1,7 @@
 use {
     self::contracts::ContractAt,
     crate::{boundary, domain::eth},
+    chain::Chain,
     ethcontract::{dyns::DynWeb3, errors::ExecutionError},
     ethrpc::block_stream::CurrentBlockWatcher,
     std::{fmt, sync::Arc},
@@ -18,16 +19,16 @@ pub use self::{contracts::Contracts, gas::GasPriceEstimator};
 /// An Ethereum RPC connection.
 pub struct Rpc {
     web3: DynWeb3,
-    chain: chain::Id,
+    chain: Chain,
     url: Url,
 }
 
 impl Rpc {
     /// Instantiate an RPC client to an Ethereum (or Ethereum-compatible) node
     /// at the specifed URL.
-    pub async fn new(url: &url::Url) -> Result<Self, Error> {
+    pub async fn new(url: &url::Url) -> Result<Self, RpcError> {
         let web3 = boundary::buffered_web3_client(url);
-        let chain = web3.eth().chain_id().await?.into();
+        let chain = Chain::try_from(web3.eth().chain_id().await?)?;
 
         Ok(Self {
             web3,
@@ -36,8 +37,8 @@ impl Rpc {
         })
     }
 
-    /// Returns the chain id for the RPC connection.
-    pub fn chain(&self) -> chain::Id {
+    /// Returns the chain for the RPC connection.
+    pub fn chain(&self) -> Chain {
         self.chain
     }
 
@@ -45,6 +46,14 @@ impl Rpc {
     pub fn web3(&self) -> &DynWeb3 {
         &self.web3
     }
+}
+
+#[derive(Debug, Error)]
+pub enum RpcError {
+    #[error("web3 error: {0:?}")]
+    Web3(#[from] web3::error::Error),
+    #[error("unsupported chain")]
+    UnsupportedChain(#[from] chain::ChainIdNotSupported),
 }
 
 /// The Ethereum blockchain.
@@ -55,7 +64,7 @@ pub struct Ethereum {
 }
 
 struct Inner {
-    chain: chain::Id,
+    chain: Chain,
     contracts: Contracts,
     gas: Arc<GasPriceEstimator>,
     current_block: CurrentBlockWatcher,
@@ -102,7 +111,7 @@ impl Ethereum {
         }
     }
 
-    pub fn network(&self) -> chain::Id {
+    pub fn chain(&self) -> Chain {
         self.inner.chain
     }
 
@@ -147,7 +156,24 @@ impl Ethereum {
             access_list: Some(tx.access_list.into()),
             // Specifically set high gas because some nodes don't pick a sensible value if omitted.
             // And since we are only interested in access lists a very high value is fine.
-            gas: Some(self.block_gas_limit().0),
+            gas: Some(match self.inner.chain {
+                // Arbitrum has an exceptionally high block gas limit (1,125,899,906,842,624),
+                // making it unsuitable for this use case. To address this, we use a
+                // fixed gas limit of 100,000,000, which is sufficient
+                // for all solution types, while avoiding the "insufficient funds for gas * price +
+                // value" error that could occur when a large amount of ETH is
+                // needed to simulate the transaction, due to high transaction gas limit.
+                //
+                // If a new network is added, ensure its block gas limit is checked and handled
+                // appropriately to maintain compatibility with this logic.
+                Chain::ArbitrumOne => 100_000_000.into(),
+                Chain::Mainnet => self.block_gas_limit().0,
+                Chain::Goerli => self.block_gas_limit().0,
+                Chain::Gnosis => self.block_gas_limit().0,
+                Chain::Sepolia => self.block_gas_limit().0,
+                Chain::Base => self.block_gas_limit().0,
+                Chain::Hardhat => self.block_gas_limit().0,
+            }),
             gas_price: self.simulation_gas_price().await,
             ..Default::default()
         };

@@ -1,4 +1,4 @@
-mod revealed;
-mod solution;
+mod reveal_request;
+mod reveal_response;
 
-pub use {revealed::Revealed, solution::Solution};
+pub use {reveal_request::RevealRequest, reveal_response::RevealResponse};

@@ -167,7 +167,7 @@ jobs:
       # Build the driver's tests.
       - run: cargo build -p driver --tests
       # Don't spawn any docker containers. The driver's tests will spawn anvil itself.
-      - run: cargo nextest run -p driver --run-ignored ignored-only
+      - run: cargo nextest run -p driver --test-threads 1 --run-ignored ignored-only
 
   openapi:
     timeout-minutes: 60

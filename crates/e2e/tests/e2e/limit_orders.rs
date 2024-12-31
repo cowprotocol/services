@@ -445,9 +445,9 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
     assert_eq!(competition.transaction_hashes.len(), 2);
     // Verify that settlement::Observed properly handled events
     let order_a_settled = services.get_order(&uid_a).await.unwrap();
-    assert!(order_a_settled.metadata.executed_surplus_fee > 0.into());
+    assert!(order_a_settled.metadata.executed_fee > 0.into());
     let order_b_settled = services.get_order(&uid_b).await.unwrap();
-    assert!(order_b_settled.metadata.executed_surplus_fee > 0.into());
+    assert!(order_b_settled.metadata.executed_fee > 0.into());
 }
 
 async fn too_many_limit_orders_test(web3: Web3) {

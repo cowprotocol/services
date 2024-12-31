@@ -30,7 +30,7 @@ pub struct Auction {
     /// See the [`Self::id`] method.
     id: Option<Id>,
     /// See the [`Self::orders`] method.
-    orders: Vec<competition::Order>,
+    pub(crate) orders: Vec<competition::Order>,
     /// The tokens that are used in the orders of this auction.
     tokens: Tokens,
     gas_price: eth::GasPrice,
@@ -587,7 +587,7 @@ impl From<eth::U256> for Price {
 /// All auction prices
 pub type Prices = HashMap<eth::TokenAddress, Price>;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Id(pub i64);
 
 impl Id {

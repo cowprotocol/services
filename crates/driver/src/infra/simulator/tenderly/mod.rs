@@ -75,7 +75,7 @@ impl Tenderly {
             .client
             .post(self.endpoint.clone())
             .json(&dto::Request {
-                network_id: self.eth.network().to_string(),
+                network_id: self.eth.chain().id().to_string(),
                 from: tx.from.into(),
                 to: tx.to.into(),
                 input: tx.input.clone().into(),

@@ -18,25 +18,26 @@ pub async fn save(
     order: &OrderUid,
     auction: AuctionId,
     block_number: i64,
-    executed_fee: &BigDecimal,
-    executed_protocol_fees: &[Asset],
+    executed_fee: Asset,
+    protocol_fees: &[Asset],
 ) -> Result<(), sqlx::Error> {
-    let (protocol_fee_tokens, protocol_fee_amounts): (Vec<_>, Vec<_>) = executed_protocol_fees
+    let (protocol_fee_tokens, protocol_fee_amounts): (Vec<_>, Vec<_>) = protocol_fees
         .iter()
         .map(|entry| (entry.token, entry.amount.clone()))
         .unzip();
 
     const QUERY: &str = r#"
-INSERT INTO order_execution (order_uid, auction_id, reward, surplus_fee, block_number, protocol_fee_tokens, protocol_fee_amounts)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO order_execution (order_uid, auction_id, reward, executed_fee, executed_fee_token, block_number, protocol_fee_tokens, protocol_fee_amounts)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 ON CONFLICT (order_uid, auction_id)
-DO UPDATE SET reward = $3, surplus_fee = $4, block_number = $5, protocol_fee_tokens = $6, protocol_fee_amounts = $7
+DO UPDATE SET reward = $3, executed_fee = $4, executed_fee_token = $5, block_number = $6, protocol_fee_tokens = $7, protocol_fee_amounts = $8
 ;"#;
     sqlx::query(QUERY)
         .bind(order)
         .bind(auction)
         .bind(0.) // reward is deprecated but saved for historical analysis
-        .bind(Some(executed_fee))
+        .bind(executed_fee.amount)
+        .bind(executed_fee.token)
         .bind(block_number)
         .bind(protocol_fee_tokens)
         .bind(protocol_fee_amounts)
@@ -126,17 +127,29 @@ mod tests {
             &Default::default(),
             1,
             0,
-            &Default::default(),
+            Asset {
+                amount: BigDecimal::from(3),
+                token: Default::default(),
+            },
             protocol_fees.as_slice(),
         )
         .await
         .unwrap();
 
-        // save entry without protocol fees (simulate case when we are still not
-        // calculating them)
-        save(&mut db, &Default::default(), 2, 0, &Default::default(), &[])
-            .await
-            .unwrap();
+        // save entry for an order without protocol fees
+        save(
+            &mut db,
+            &Default::default(),
+            2,
+            0,
+            Asset {
+                amount: BigDecimal::from(3),
+                token: Default::default(),
+            },
+            &[],
+        )
+        .await
+        .unwrap();
 
         let keys: Vec<(AuctionId, OrderUid)> = vec![
             (1, Default::default()),

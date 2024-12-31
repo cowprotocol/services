@@ -21,7 +21,7 @@ use {
     database::order_events::OrderEventLabel,
     ethcontract::U256,
     ethrpc::block_stream::BlockInfo,
-    futures::{future::BoxFuture, FutureExt, TryFutureExt},
+    futures::{FutureExt, TryFutureExt},
     itertools::Itertools,
     model::solver_competition::{
         CompetitionAuction,
@@ -38,7 +38,7 @@ use {
         sync::Arc,
         time::{Duration, Instant},
     },
-    tokio::sync::{mpsc, Mutex},
+    tokio::sync::Mutex,
     tracing::Instrument,
 };
 
@@ -66,9 +66,6 @@ pub struct RunLoop {
     /// Maintenance tasks that should run before every runloop to have
     /// the most recent data available.
     maintenance: Arc<Maintenance>,
-    /// Queues by solver for executing settle futures one by one guaranteeing
-    /// FIFO execution order.
-    settlement_queues: Arc<Mutex<HashMap<String, mpsc::UnboundedSender<BoxFuture<'static, ()>>>>>,
 }
 
 impl RunLoop {
@@ -93,7 +90,6 @@ impl RunLoop {
             in_flight_orders: Default::default(),
             liveness,
             maintenance,
-            settlement_queues: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -214,7 +210,6 @@ impl RunLoop {
         Some(domain::Auction {
             id,
             block: auction.block,
-            latest_settlement_block: auction.latest_settlement_block,
             orders: auction.orders,
             prices: auction.prices,
             surplus_capturing_jit_order_owners: auction.surplus_capturing_jit_order_owners,
@@ -239,7 +234,7 @@ impl RunLoop {
         }
 
         let competition_simulation_block = self.eth.current_block().borrow().number;
-        let block_deadline = auction.block + self.config.submission_deadline;
+        let block_deadline = competition_simulation_block + self.config.submission_deadline;
 
         // Post-processing should not be executed asynchronously since it includes steps
         // of storing all the competition/auction-related data to the DB.
@@ -346,45 +341,7 @@ impl RunLoop {
         }
         .instrument(tracing::Span::current());
 
-        let sender = self.get_settlement_queue_sender(&driver.name).await;
-        if let Err(err) = sender.send(Box::pin(settle_fut)) {
-            tracing::warn!(driver = %driver.name, ?err, "failed to send settle future to queue");
-        }
-    }
-
-    /// Retrieves or creates the settlement queue sender for a given driver.
-    ///
-    /// This function ensures that there is a settlement execution queue
-    /// associated with the specified `driver_name`. If a queue already
-    /// exists, it returns the existing sender. If not, it creates a new
-    /// queue, starts a background task to process settlement futures,
-    /// guaranteeing FIFO execution order for settlements per driver, and
-    /// returns the new sender.
-    async fn get_settlement_queue_sender(
-        self: &Arc<Self>,
-        driver_name: &str,
-    ) -> mpsc::UnboundedSender<BoxFuture<'static, ()>> {
-        let mut settlement_queues = self.settlement_queues.lock().await;
-        match settlement_queues.get(driver_name) {
-            Some(sender) => sender.clone(),
-            None => {
-                let (tx, mut rx) = mpsc::unbounded_channel::<BoxFuture<'static, ()>>();
-                let driver_name = driver_name.to_string();
-                let self_ = self.clone();
-
-                settlement_queues.insert(driver_name.clone(), tx.clone());
-
-                tokio::spawn(async move {
-                    while let Some(fut) = rx.recv().await {
-                        fut.await;
-                    }
-
-                    tracing::info!(driver = %driver_name, "settlement execution queue stopped");
-                    self_.settlement_queues.lock().await.remove(&driver_name);
-                });
-                tx
-            }
-        }
+        tokio::spawn(settle_fut);
     }
 
     async fn post_processing(
@@ -814,7 +771,7 @@ impl RunLoop {
             let current_block = self.eth.current_block().borrow().number;
             anyhow::ensure!(
                 current_block < submission_deadline_latest_block,
-                "submission deadline was missed while waiting for the settlement queue"
+                "submission deadline was missed"
             );
 
             let request = settle::Request {
