@@ -492,6 +492,25 @@ impl Postgres {
             .map(full_order_into_model_order)
             .collect::<Result<Vec<_>>>()
     }
+
+    pub async fn token_first_trade_block(&self, token: &H160) -> Result<Option<u32>> {
+        let timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["token_first_trade_block"])
+            .start_timer();
+
+        let mut ex = self.pool.acquire().await?;
+        let block_number = database::trades::token_first_trade_block(&mut ex, ByteArray(token.0))
+            .await
+            .map_err(anyhow::Error::from)?
+            .map(u32::try_from)
+            .transpose()
+            .map_err(anyhow::Error::from)?;
+
+        timer.stop_and_record();
+
+        Ok(block_number)
+    }
 }
 
 #[async_trait]
