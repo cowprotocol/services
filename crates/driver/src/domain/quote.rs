@@ -4,9 +4,7 @@ use {
         boundary,
         domain::{
             competition::{self, order},
-            eth,
-            liquidity,
-            time,
+            eth, liquidity, time,
         },
         infra::{
             self,
@@ -36,7 +34,7 @@ pub struct Quote {
 }
 
 impl Quote {
-    fn new(eth: &Ethereum, solution: competition::Solution) -> Result<Self, Error> {
+    fn try_new(eth: &Ethereum, solution: competition::Solution) -> Result<Self, Error> {
         Ok(Self {
             clearing_prices: solution
                 .clearing_prices()
@@ -101,7 +99,7 @@ impl Order {
             .fake_auction(eth, tokens, solver.quote_using_limit_orders())
             .await?;
         let solutions = solver.solve(&auction, &liquidity).await?;
-        Quote::new(
+        Quote::try_new(
             eth,
             // TODO(#1468): choose the best solution in the future, but for now just pick the
             // first solution
@@ -226,7 +224,7 @@ impl Order {
 
     /// Returns the token pairs to fetch liquidity for.
     fn liquidity_pairs(&self) -> HashSet<liquidity::TokenPair> {
-        let pair = liquidity::TokenPair::new(self.tokens.sell(), self.tokens.buy())
+        let pair = liquidity::TokenPair::try_new(self.tokens.sell(), self.tokens.buy())
             .expect("sell != buy by construction");
         iter::once(pair).collect()
     }
@@ -243,7 +241,7 @@ pub struct Tokens {
 impl Tokens {
     /// Creates a new instance of [`Tokens`], verifying that the input buy and
     /// sell tokens are distinct.
-    pub fn new(sell: eth::TokenAddress, buy: eth::TokenAddress) -> Result<Self, SameTokens> {
+    pub fn try_new(sell: eth::TokenAddress, buy: eth::TokenAddress) -> Result<Self, SameTokens> {
         if sell == buy {
             return Err(SameTokens);
         }

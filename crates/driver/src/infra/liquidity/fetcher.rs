@@ -32,9 +32,9 @@ pub enum AtBlock {
 impl Fetcher {
     /// Creates a new liquidity fetcher for the specified Ethereum instance and
     /// configuration.
-    pub async fn new(eth: &Ethereum, config: &infra::liquidity::Config) -> Result<Self, Error> {
+    pub async fn try_new(eth: &Ethereum, config: &infra::liquidity::Config) -> Result<Self, Error> {
         let eth = eth.with_metric_label("liquidity".into());
-        let inner = boundary::liquidity::Fetcher::new(&eth, config).await?;
+        let inner = boundary::liquidity::Fetcher::try_new(&eth, config).await?;
         Ok(Self {
             inner: Arc::new(inner),
         })

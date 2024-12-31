@@ -73,7 +73,7 @@ pub struct TokenPair(eth::TokenAddress, eth::TokenAddress);
 impl TokenPair {
     /// Returns a token pair for the given tokens, or `Err` if `a` and `b` are
     /// equal.
-    pub fn new(a: eth::TokenAddress, b: eth::TokenAddress) -> Result<Self, InvalidTokenPair> {
+    pub fn try_new(a: eth::TokenAddress, b: eth::TokenAddress) -> Result<Self, InvalidTokenPair> {
         match a.cmp(&b) {
             Ordering::Less => Ok(Self(a, b)),
             Ordering::Equal => Err(InvalidTokenPair),

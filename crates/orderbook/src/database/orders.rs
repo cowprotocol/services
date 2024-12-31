@@ -14,15 +14,8 @@ use {
     futures::{stream::TryStreamExt, FutureExt, StreamExt},
     model::{
         order::{
-            EthflowData,
-            Interactions,
-            OnchainOrderData,
-            Order,
-            OrderClass,
-            OrderData,
-            OrderMetadata,
-            OrderStatus,
-            OrderUid,
+            EthflowData, Interactions, OnchainOrderData, Order, OrderClass, OrderData,
+            OrderMetadata, OrderStatus, OrderUid,
         },
         signature::Signature,
         time::now_in_epoch_seconds,
@@ -32,18 +25,10 @@ use {
     primitive_types::H160,
     shared::{
         db_order_conversions::{
-            buy_token_destination_from,
-            buy_token_destination_into,
-            extract_interactions,
-            onchain_order_placement_error_from,
-            order_class_from,
-            order_class_into,
-            order_kind_from,
-            order_kind_into,
-            sell_token_source_from,
-            sell_token_source_into,
-            signing_scheme_from,
-            signing_scheme_into,
+            buy_token_destination_from, buy_token_destination_into, extract_interactions,
+            onchain_order_placement_error_from, order_class_from, order_class_into,
+            order_kind_from, order_kind_into, sell_token_source_from, sell_token_source_into,
+            signing_scheme_from, signing_scheme_into,
         },
         fee::FeeParameters,
         order_quoting::Quote,
@@ -676,12 +661,9 @@ mod tests {
         database::{
             byte_array::ByteArray,
             orders::{
-                BuyTokenDestination as DbBuyTokenDestination,
-                FullOrder,
-                OrderClass as DbOrderClass,
-                OrderKind as DbOrderKind,
-                SellTokenSource as DbSellTokenSource,
-                SigningScheme as DbSigningScheme,
+                BuyTokenDestination as DbBuyTokenDestination, FullOrder,
+                OrderClass as DbOrderClass, OrderKind as DbOrderKind,
+                SellTokenSource as DbSellTokenSource, SigningScheme as DbSigningScheme,
             },
         },
         model::{
@@ -913,7 +895,7 @@ mod tests {
     async fn postgres_replace_order() {
         let owner = H160([0x77; 20]);
 
-        let db = Postgres::new("postgresql://").unwrap();
+        let db = Postgres::try_new("postgresql://").unwrap();
         database::clear_DANGER(&db.pool).await.unwrap();
 
         let old_order = Order {
@@ -979,7 +961,7 @@ mod tests {
     async fn postgres_replace_order_no_cancellation_on_error() {
         let owner = H160([0x77; 20]);
 
-        let db = Postgres::new("postgresql://").unwrap();
+        let db = Postgres::try_new("postgresql://").unwrap();
         database::clear_DANGER(&db.pool).await.unwrap();
 
         let old_order = Order {
@@ -1023,7 +1005,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_presignature_status() {
-        let db = Postgres::new("postgresql://").unwrap();
+        let db = Postgres::try_new("postgresql://").unwrap();
         database::clear_DANGER(&db.pool).await.unwrap();
         let uid = OrderUid([0u8; 56]);
         let order = Order {
@@ -1096,7 +1078,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_cancel_orders() {
-        let db = Postgres::new("postgresql://").unwrap();
+        let db = Postgres::try_new("postgresql://").unwrap();
         database::clear_DANGER(&db.pool).await.unwrap();
 
         // Define some helper closures to make the test easier to read.
@@ -1145,7 +1127,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_insert_orders_with_interactions() {
-        let db = Postgres::new("postgresql://").unwrap();
+        let db = Postgres::try_new("postgresql://").unwrap();
         database::clear_DANGER(&db.pool).await.unwrap();
 
         let interaction = |byte: u8| InteractionData {
@@ -1198,7 +1180,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_insert_orders_with_interactions_and_verified() {
-        let db = Postgres::new("postgresql://").unwrap();
+        let db = Postgres::try_new("postgresql://").unwrap();
         database::clear_DANGER(&db.pool).await.unwrap();
 
         let uid = OrderUid([0x42; 56]);

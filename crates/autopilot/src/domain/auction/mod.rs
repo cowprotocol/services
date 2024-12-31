@@ -47,7 +47,7 @@ impl Price {
     /// The base Ether amount for pricing.
     const BASE: u128 = 10_u128.pow(18);
 
-    pub fn new(value: eth::Ether) -> Result<Self, InvalidPrice> {
+    pub fn try_new(value: eth::Ether) -> Result<Self, InvalidPrice> {
         if value.0.is_zero() {
             Err(InvalidPrice)
         } else {

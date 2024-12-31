@@ -14,12 +14,7 @@ use {
     ethcontract::H256,
     model::{
         order::{
-            Order,
-            OrderCancellation,
-            OrderCreation,
-            OrderCreationAppData,
-            OrderStatus,
-            OrderUid,
+            Order, OrderCancellation, OrderCreation, OrderCreationAppData, OrderStatus, OrderUid,
             SignedOrderCancellations,
         },
         quote::QuoteId,
@@ -33,10 +28,7 @@ use {
         fee::FeeParameters,
         order_quoting::Quote,
         order_validation::{
-            is_order_outside_market_price,
-            Amounts,
-            OrderValidating,
-            ValidationError,
+            is_order_outside_market_price, Amounts, OrderValidating, ValidationError,
         },
     },
     std::{borrow::Cow, sync::Arc},
@@ -600,7 +592,7 @@ mod tests {
                 ))
             });
 
-        let database = crate::database::Postgres::new("postgresql://").unwrap();
+        let database = crate::database::Postgres::try_new("postgresql://").unwrap();
         database::clear_DANGER(&database.pool).await.unwrap();
         database.insert_order(&old_order, None).await.unwrap();
         let app_data = Arc::new(crate::app_data::Registry::new(

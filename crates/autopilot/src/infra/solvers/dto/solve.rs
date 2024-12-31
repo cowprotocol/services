@@ -95,7 +95,7 @@ impl Solution {
         Ok(domain::competition::Solution::new(
             self.solution_id,
             self.submission_address.into(),
-            domain::competition::Score::new(self.score.into())?,
+            domain::competition::Score::try_new(self.score.into())?,
             self.orders
                 .into_iter()
                 .map(|(o, amounts)| (o.into(), amounts.into_domain()))
@@ -103,7 +103,7 @@ impl Solution {
             self.clearing_prices
                 .into_iter()
                 .map(|(token, price)| {
-                    domain::auction::Price::new(price.into()).map(|price| (token.into(), price))
+                    domain::auction::Price::try_new(price.into()).map(|price| (token.into(), price))
                 })
                 .collect::<Result<_, _>>()?,
         ))

@@ -30,7 +30,7 @@ pub struct Postgres {
 // methods.
 
 impl Postgres {
-    pub fn new(uri: &str) -> Result<Self> {
+    pub fn try_new(uri: &str) -> Result<Self> {
         Ok(Self {
             pool: PgPool::connect_lazy(uri)?,
         })

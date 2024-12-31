@@ -1,8 +1,7 @@
 use {
     super::{
         blockchain::{self, Blockchain},
-        fee,
-        Partial,
+        fee, Partial,
     },
     crate::{
         domain::{
@@ -408,7 +407,7 @@ impl Solver {
             .collect::<HashMap<_, _>>();
 
         let url = config.blockchain.web3_url.parse().unwrap();
-        let rpc = infra::blockchain::Rpc::new(&url).await.unwrap();
+        let rpc = infra::blockchain::Rpc::try_new(&url).await.unwrap();
         let gas = Arc::new(
             infra::blockchain::GasPriceEstimator::new(
                 rpc.web3(),

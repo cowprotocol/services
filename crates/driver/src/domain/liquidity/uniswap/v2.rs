@@ -50,7 +50,7 @@ pub struct Reserves(eth::Asset, eth::Asset);
 impl Reserves {
     /// Creates new Uniswap V2 token reserves, returns `Err` if the specified
     /// token addresses are equal.
-    pub fn new(a: eth::Asset, b: eth::Asset) -> Result<Self, InvalidReserves> {
+    pub fn try_new(a: eth::Asset, b: eth::Asset) -> Result<Self, InvalidReserves> {
         match a.token.cmp(&b.token) {
             Ordering::Less => Ok(Self(a, b)),
             Ordering::Equal => Err(InvalidReserves),

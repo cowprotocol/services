@@ -7,11 +7,7 @@ use {
             BalancerSwapGivenOutInteraction,
         },
         liquidity::{
-            AmmOrderExecution,
-            Liquidity,
-            SettlementHandling,
-            StablePoolOrder,
-            WeightedProductOrder,
+            AmmOrderExecution, Liquidity, SettlementHandling, StablePoolOrder, WeightedProductOrder,
         },
         liquidity_collector::LiquidityCollecting,
         settlement::SettlementEncoder,
@@ -21,9 +17,7 @@ use {
     ethcontract::H256,
     model::TokenPair,
     shared::{
-        ethrpc::Web3,
-        http_solver::model::TokenAmount,
-        recent_block_cache::Block,
+        ethrpc::Web3, http_solver::model::TokenAmount, recent_block_cache::Block,
         sources::balancer_v2::pool_fetching::BalancerPoolFetching,
     },
     std::{collections::HashSet, sync::Arc},
@@ -241,15 +235,9 @@ mod tests {
             interaction::Interaction,
             sources::balancer_v2::{
                 pool_fetching::{
-                    AmplificationParameter,
-                    CommonPoolState,
-                    FetchedBalancerPools,
-                    MockBalancerPoolFetching,
-                    StablePool,
-                    TokenState,
-                    WeightedPool,
-                    WeightedPoolVersion,
-                    WeightedTokenState,
+                    AmplificationParameter, CommonPoolState, FetchedBalancerPools,
+                    MockBalancerPoolFetching, StablePool, TokenState, WeightedPool,
+                    WeightedPoolVersion, WeightedTokenState,
                 },
                 swap::fixed_point::Bfp,
             },
@@ -339,7 +327,7 @@ mod tests {
                 swap_fee: "0.002".parse().unwrap(),
                 paused: true,
             },
-            amplification_parameter: AmplificationParameter::new(1.into(), 1.into()).unwrap(),
+            amplification_parameter: AmplificationParameter::try_new(1.into(), 1.into()).unwrap(),
             reserves: btreemap! {
                 H160([0x73; 20]) => TokenState {
                         balance: 1_000_000_000_000_000_000u128.into(),

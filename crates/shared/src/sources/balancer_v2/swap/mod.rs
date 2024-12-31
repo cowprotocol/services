@@ -3,11 +3,7 @@ use {
         baseline_solver::BaselineSolvable,
         conversions::U256Ext,
         sources::balancer_v2::pool_fetching::{
-            AmplificationParameter,
-            StablePool,
-            TokenState,
-            WeightedPool,
-            WeightedPoolVersion,
+            AmplificationParameter, StablePool, TokenState, WeightedPool, WeightedPoolVersion,
             WeightedTokenState,
         },
     },
@@ -517,7 +513,7 @@ mod tests {
         let pool = create_stable_pool_with(
             tokens.clone(),
             balances,
-            AmplificationParameter::new(1.into(), 1.into()).unwrap(),
+            AmplificationParameter::try_new(1.into(), 1.into()).unwrap(),
             vec![Bfp::exp10(18), Bfp::exp10(18), Bfp::exp10(18)],
             1.into(),
         );
@@ -559,7 +555,7 @@ mod tests {
         let tokens = vec![dai, usdc, tusd];
         let scaling_exps = vec![Bfp::exp10(0), Bfp::exp10(12), Bfp::exp10(12)];
         let amplification_parameter =
-            AmplificationParameter::new(570000.into(), 1000.into()).unwrap();
+            AmplificationParameter::try_new(570000.into(), 1000.into()).unwrap();
         let balances = vec![
             40_927_687_702_846_622_465_144_342_i128.into(),
             59_448_574_675_062_i128.into(),
@@ -592,7 +588,7 @@ mod tests {
         let tokens = vec![dai, usdc, tusd];
         let scaling_exps = vec![Bfp::exp10(0), Bfp::exp10(12), Bfp::exp10(12)];
         let amplification_parameter =
-            AmplificationParameter::new(570000.into(), 1000.into()).unwrap();
+            AmplificationParameter::try_new(570000.into(), 1000.into()).unwrap();
         let balances = vec![
             34_869_494_603_218_073_631_628_580_i128.into(),
             48_176_005_970_419_i128.into(),

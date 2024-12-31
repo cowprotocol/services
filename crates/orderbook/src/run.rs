@@ -1,12 +1,7 @@
 use {
     crate::{
-        api,
-        arguments::Arguments,
-        database::Postgres,
-        ipfs::Ipfs,
-        ipfs_app_data::IpfsAppData,
-        orderbook::Orderbook,
-        quoter::QuoteHandler,
+        api, arguments::Arguments, database::Postgres, ipfs::Ipfs, ipfs_app_data::IpfsAppData,
+        orderbook::Orderbook, quoter::QuoteHandler,
     },
     anyhow::{anyhow, Context, Result},
     app_data::Validator,
@@ -36,8 +31,7 @@ use {
         price_estimation::{
             factory::{self, PriceEstimatorFactory},
             native::NativePriceEstimating,
-            PriceEstimating,
-            QuoteVerificationMode,
+            PriceEstimating, QuoteVerificationMode,
         },
         signature_validator,
         sources::{self, uniswap_v2::UniV2BaselineSourceParameters, BaselineSource},
@@ -139,7 +133,7 @@ pub async fn run(args: Arguments) {
         .await
         .expect("Deployed contract constants don't match the ones in this binary");
     let domain_separator = DomainSeparator::new(chain_id, settlement_contract.address());
-    let postgres = Postgres::new(args.db_url.as_str()).expect("failed to create database");
+    let postgres = Postgres::try_new(args.db_url.as_str()).expect("failed to create database");
 
     let balance_fetcher = account_balances::fetcher(
         &web3,

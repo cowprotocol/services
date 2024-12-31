@@ -66,7 +66,7 @@ impl FactoryIndexing for BalancerV2ComposableStablePoolFactory {
             )?;
             let amplification_parameter = {
                 let (factor, _, precision) = amplification_parameter;
-                AmplificationParameter::new(factor, precision)?
+                AmplificationParameter::try_new(factor, precision)?
             };
 
             Ok(Some(PoolState {

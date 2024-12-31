@@ -6,22 +6,14 @@
 
 use {
     self::{
-        aggregate::Aggregate,
-        cache::Cache,
-        internal::InternalPoolFetching,
-        registry::Registry,
+        aggregate::Aggregate, cache::Cache, internal::InternalPoolFetching, registry::Registry,
     },
     super::{
         graph_api::{BalancerSubgraphClient, RegisteredPools},
         pool_init::PoolInitializing,
         pools::{
             common::{self, PoolInfoFetcher},
-            stable,
-            weighted,
-            FactoryIndexing,
-            Pool,
-            PoolIndexing,
-            PoolKind,
+            stable, weighted, FactoryIndexing, Pool, PoolIndexing, PoolKind,
         },
         swap::fixed_point::Bfp,
     },
@@ -33,19 +25,12 @@ use {
     anyhow::{Context, Result},
     clap::ValueEnum,
     contracts::{
-        BalancerV2ComposableStablePoolFactory,
-        BalancerV2ComposableStablePoolFactoryV3,
-        BalancerV2ComposableStablePoolFactoryV4,
-        BalancerV2ComposableStablePoolFactoryV5,
-        BalancerV2ComposableStablePoolFactoryV6,
-        BalancerV2LiquidityBootstrappingPoolFactory,
-        BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory,
-        BalancerV2StablePoolFactoryV2,
-        BalancerV2Vault,
-        BalancerV2WeightedPool2TokensFactory,
-        BalancerV2WeightedPoolFactory,
-        BalancerV2WeightedPoolFactoryV3,
-        BalancerV2WeightedPoolFactoryV4,
+        BalancerV2ComposableStablePoolFactory, BalancerV2ComposableStablePoolFactoryV3,
+        BalancerV2ComposableStablePoolFactoryV4, BalancerV2ComposableStablePoolFactoryV5,
+        BalancerV2ComposableStablePoolFactoryV6, BalancerV2LiquidityBootstrappingPoolFactory,
+        BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory, BalancerV2StablePoolFactoryV2,
+        BalancerV2Vault, BalancerV2WeightedPool2TokensFactory, BalancerV2WeightedPoolFactory,
+        BalancerV2WeightedPoolFactoryV3, BalancerV2WeightedPoolFactoryV4,
     },
     ethcontract::{dyns::DynInstance, BlockId, Instance, H160, H256},
     ethrpc::block_stream::{BlockRetrieving, CurrentBlockWatcher},
@@ -229,7 +214,7 @@ pub struct BalancerContracts {
 }
 
 impl BalancerContracts {
-    pub async fn new(web3: &Web3, factory_kinds: Vec<BalancerFactoryKind>) -> Result<Self> {
+    pub async fn try_new(web3: &Web3, factory_kinds: Vec<BalancerFactoryKind>) -> Result<Self> {
         let web3 = ethrpc::instrumented::instrument_with_label(web3, "balancerV2".into());
         let vault = BalancerV2Vault::deployed(&web3)
             .await

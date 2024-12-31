@@ -4,9 +4,7 @@ use {
         infra::{
             self,
             blockchain::{self, Ethereum},
-            cli,
-            config,
-            liquidity,
+            cli, config, liquidity,
             simulator::{self, Simulator},
             solver::Solver,
             Api,
@@ -55,7 +53,7 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
         solvers: solvers(&config, &eth).await,
         liquidity: liquidity(&config, &eth).await,
         simulator: simulator(&config, &eth),
-        mempools: Mempools::new(
+        mempools: Mempools::try_new(
             config
                 .mempools
                 .iter()
@@ -128,7 +126,7 @@ fn simulator(config: &infra::Config, eth: &Ethereum) -> Simulator {
 }
 
 async fn ethrpc(args: &cli::Args) -> blockchain::Rpc {
-    blockchain::Rpc::new(&args.ethrpc)
+    blockchain::Rpc::try_new(&args.ethrpc)
         .await
         .expect("connect ethereum RPC")
 }
@@ -153,14 +151,16 @@ async fn solvers(config: &config::Config, eth: &Ethereum) -> Vec<Solver> {
         config
             .solvers
             .iter()
-            .map(|config| async move { Solver::new(config.clone(), eth.clone()).await.unwrap() })
+            .map(
+                |config| async move { Solver::try_new(config.clone(), eth.clone()).await.unwrap() },
+            )
             .collect::<Vec<_>>(),
     )
     .await
 }
 
 async fn liquidity(config: &config::Config, eth: &Ethereum) -> liquidity::Fetcher {
-    liquidity::Fetcher::new(eth, &config.liquidity)
+    liquidity::Fetcher::try_new(eth, &config.liquidity)
         .await
         .expect("initialize liquidity fetcher")
 }

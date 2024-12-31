@@ -3,9 +3,7 @@ use {
     crate::{
         domain::{
             competition::{self, auction, sorting},
-            eth,
-            liquidity,
-            time,
+            eth, liquidity, time,
         },
         infra::{self, blockchain, config::file::OrderPriorityStrategy, observe, Ethereum},
         util::{self, Bytes},
@@ -94,7 +92,9 @@ impl Auction {
     pub fn liquidity_pairs(&self) -> HashSet<liquidity::TokenPair> {
         self.orders
             .iter()
-            .filter_map(|order| liquidity::TokenPair::new(order.sell.token, order.buy.token).ok())
+            .filter_map(|order| {
+                liquidity::TokenPair::try_new(order.sell.token, order.buy.token).ok()
+            })
             .collect()
     }
 
@@ -528,7 +528,7 @@ impl Price {
     /// The base Ether amount for pricing.
     const BASE: u128 = 10_u128.pow(18);
 
-    pub fn new(value: eth::Ether) -> Result<Self, InvalidPrice> {
+    pub fn try_new(value: eth::Ether) -> Result<Self, InvalidPrice> {
         if value.0.is_zero() {
             Err(InvalidPrice)
         } else {
