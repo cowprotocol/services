@@ -120,6 +120,8 @@ jobs:
       - run: cargo nextest run -p e2e local_node --test-threads 1 --failure-output final --run-ignored ignored-only
 
   test-forked-node:
+    # Do not run this job on forks since some secrets are required for it.
+    if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
     timeout-minutes: 60
     runs-on: ubuntu-latest
     env:
