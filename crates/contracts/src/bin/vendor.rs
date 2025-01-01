@@ -29,7 +29,7 @@ fn main() {
 
 #[rustfmt::skip]
 fn run() -> Result<()> {
-    let vendor = Vendor::new()?;
+    let vendor = Vendor::try_new()?;
 
     const ETHFLOW_VERSION: &str = "0.0.0-rc.3";
 
