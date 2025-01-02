@@ -35,7 +35,7 @@ pub fn to_boundary_pool(address: H160, pool: &liquidity::stable::Pool) -> Option
             ))
         })
         .collect::<Option<_>>()?;
-    let amplification_parameter = AmplificationParameter::new(
+    let amplification_parameter = AmplificationParameter::try_new(
         *pool.amplification_parameter.numer(),
         *pool.amplification_parameter.denom(),
     )
