@@ -601,8 +601,11 @@ fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
         )?,
         executed_fee_amount: big_decimal_to_u256(&order.sum_fee)
             .context("executed fee amount is not a valid u256")?,
-        executed_surplus_fee: big_decimal_to_u256(&order.executed_surplus_fee)
-            .context("executed surplus fee is not a valid u256")?,
+        executed_surplus_fee: big_decimal_to_u256(&order.executed_fee)
+            .context("executed fee is not a valid u256")?,
+        executed_fee: big_decimal_to_u256(&order.executed_fee)
+            .context("executed fee is not a valid u256")?,
+        executed_fee_token: H160(order.executed_fee_token.0),
         invalidated: order.invalidated,
         status,
         is_liquidity_order: class == OrderClass::Liquidity,
@@ -726,7 +729,8 @@ mod tests {
             ethflow_data: None,
             onchain_user: None,
             onchain_placement_error: None,
-            executed_surplus_fee: Default::default(),
+            executed_fee: Default::default(),
+            executed_fee_token: ByteArray([1; 20]), // TODO surplus token
             full_app_data: Default::default(),
         };
 
@@ -909,7 +913,7 @@ mod tests {
     async fn postgres_replace_order() {
         let owner = H160([0x77; 20]);
 
-        let db = Postgres::new("postgresql://").unwrap();
+        let db = Postgres::try_new("postgresql://").unwrap();
         database::clear_DANGER(&db.pool).await.unwrap();
 
         let old_order = Order {
@@ -975,7 +979,7 @@ mod tests {
     async fn postgres_replace_order_no_cancellation_on_error() {
         let owner = H160([0x77; 20]);
 
-        let db = Postgres::new("postgresql://").unwrap();
+        let db = Postgres::try_new("postgresql://").unwrap();
         database::clear_DANGER(&db.pool).await.unwrap();
 
         let old_order = Order {
@@ -1019,7 +1023,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_presignature_status() {
-        let db = Postgres::new("postgresql://").unwrap();
+        let db = Postgres::try_new("postgresql://").unwrap();
         database::clear_DANGER(&db.pool).await.unwrap();
         let uid = OrderUid([0u8; 56]);
         let order = Order {
@@ -1092,7 +1096,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_cancel_orders() {
-        let db = Postgres::new("postgresql://").unwrap();
+        let db = Postgres::try_new("postgresql://").unwrap();
         database::clear_DANGER(&db.pool).await.unwrap();
 
         // Define some helper closures to make the test easier to read.
@@ -1141,7 +1145,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_insert_orders_with_interactions() {
-        let db = Postgres::new("postgresql://").unwrap();
+        let db = Postgres::try_new("postgresql://").unwrap();
         database::clear_DANGER(&db.pool).await.unwrap();
 
         let interaction = |byte: u8| InteractionData {
@@ -1194,7 +1198,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_insert_orders_with_interactions_and_verified() {
-        let db = Postgres::new("postgresql://").unwrap();
+        let db = Postgres::try_new("postgresql://").unwrap();
         database::clear_DANGER(&db.pool).await.unwrap();
 
         let uid = OrderUid([0x42; 56]);

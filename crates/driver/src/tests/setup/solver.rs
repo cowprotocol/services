@@ -408,7 +408,7 @@ impl Solver {
             .collect::<HashMap<_, _>>();
 
         let url = config.blockchain.web3_url.parse().unwrap();
-        let rpc = infra::blockchain::Rpc::new(&url).await.unwrap();
+        let rpc = infra::blockchain::Rpc::try_new(&url).await.unwrap();
         let gas = Arc::new(
             infra::blockchain::GasPriceEstimator::new(
                 rpc.web3(),
@@ -459,7 +459,7 @@ impl Solver {
                         .0
                         .to_string();
                     let expected = json!({
-                        "id": (!config.quote).then_some("1" ),
+                        "id": (!config.quote).then_some("1"),
                         "tokens": tokens_json,
                         "orders": orders_json,
                         "liquidity": [],

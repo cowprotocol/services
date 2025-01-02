@@ -21,7 +21,7 @@ pub fn to_domain(id: liquidity::Id, pool: WeightedProductOrder) -> Result<liquid
         kind: liquidity::Kind::BalancerV2Weighted(balancer::v2::weighted::Pool {
             vault: vault(&pool),
             id: pool_id(&pool),
-            reserves: balancer::v2::weighted::Reserves::new(
+            reserves: balancer::v2::weighted::Reserves::try_new(
                 pool.reserves
                     .into_iter()
                     .map(|(token, reserve)| {

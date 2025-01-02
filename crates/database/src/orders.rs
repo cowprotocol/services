@@ -493,7 +493,8 @@ pub struct FullOrder {
     pub ethflow_data: Option<(Option<TransactionHash>, i64)>,
     pub onchain_user: Option<Address>,
     pub onchain_placement_error: Option<OnchainOrderPlacementError>,
-    pub executed_surplus_fee: BigDecimal,
+    pub executed_fee: BigDecimal,
+    pub executed_fee_token: Address,
     pub full_app_data: Option<Vec<u8>>,
 }
 
@@ -570,7 +571,8 @@ array(Select (p.target, p.value, p.data) from interactions p where p.order_uid =
     where eth_o.uid = o.uid limit 1) as ethflow_data,
 (SELECT onchain_o.sender from onchain_placed_orders onchain_o where onchain_o.uid = o.uid limit 1) as onchain_user,
 (SELECT onchain_o.placement_error from onchain_placed_orders onchain_o where onchain_o.uid = o.uid limit 1) as onchain_placement_error,
-COALESCE((SELECT SUM(surplus_fee) FROM order_execution oe WHERE oe.order_uid = o.uid), 0) as executed_surplus_fee,
+COALESCE((SELECT SUM(executed_fee) FROM order_execution oe WHERE oe.order_uid = o.uid), 0) as executed_fee,
+COALESCE((SELECT executed_fee_token FROM order_execution oe WHERE oe.order_uid = o.uid LIMIT 1), o.sell_token) as executed_fee_token, -- TODO surplus token
 (SELECT full_app_data FROM app_data ad WHERE o.app_data = ad.contract_app_data LIMIT 1) as full_app_data
 "#;
 
@@ -820,6 +822,7 @@ mod tests {
             events::{Event, EventIndex, Invalidation, PreSignature, Settlement, Trade},
             onchain_broadcasted_orders::{insert_onchain_order, OnchainOrderPlacement},
             onchain_invalidations::insert_onchain_invalidation,
+            order_execution::Asset,
             PgTransaction,
         },
         bigdecimal::num_bigint::{BigInt, ToBigInt},
@@ -1917,18 +1920,28 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(order.executed_surplus_fee, fee);
+        assert_eq!(order.executed_fee, fee);
 
         let fee: BigDecimal = 1.into();
-        crate::order_execution::save(&mut db, &order_uid, 1, 0, &fee, &[])
-            .await
-            .unwrap();
+        crate::order_execution::save(
+            &mut db,
+            &order_uid,
+            1,
+            0,
+            Asset {
+                amount: fee.clone(),
+                token: Default::default(),
+            },
+            &[],
+        )
+        .await
+        .unwrap();
 
         let order = single_full_order(&mut db, &order_uid)
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(order.executed_surplus_fee, fee);
+        assert_eq!(order.executed_fee, fee);
     }
 
     #[tokio::test]
@@ -2042,7 +2055,10 @@ mod tests {
             &ByteArray([1u8; 56]),
             1,
             1,
-            &BigDecimal::from(1),
+            Asset {
+                amount: BigDecimal::from(1),
+                token: Default::default(),
+            },
             Default::default(),
         )
         .await
@@ -2052,7 +2068,10 @@ mod tests {
             &ByteArray([1u8; 56]),
             2,
             2,
-            &BigDecimal::from(2),
+            Asset {
+                amount: BigDecimal::from(2),
+                token: Default::default(),
+            },
             Default::default(),
         )
         .await
@@ -2062,7 +2081,10 @@ mod tests {
             &ByteArray([1u8; 56]),
             3,
             0,
-            &BigDecimal::from(4),
+            Asset {
+                amount: BigDecimal::from(4),
+                token: Default::default(),
+            },
             Default::default(),
         )
         .await
@@ -2072,7 +2094,10 @@ mod tests {
             &ByteArray([3u8; 56]),
             2,
             3,
-            &BigDecimal::from(4),
+            Asset {
+                amount: BigDecimal::from(4),
+                token: Default::default(),
+            },
             Default::default(),
         )
         .await

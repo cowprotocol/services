@@ -47,7 +47,7 @@ async fn driver_handles_solutions_based_on_id() {
         .await
         .ok()
         .await
-        .eth_order_executed()
+        .eth_order_executed(&test)
         .await;
 
     // calling `/reveal` or `/settle` with for a legit solution that
@@ -89,7 +89,12 @@ async fn driver_can_settle_old_solutions() {
     // Technically this is not super convincing since all remembered solutions
     // are identical but this is the best we are going to get without needing
     // to heavily modify the testing framework.
-    test.settle(id1).await.ok().await.eth_order_executed().await;
+    test.settle(id1)
+        .await
+        .ok()
+        .await
+        .eth_order_executed(&test)
+        .await;
 }
 
 /// Tests that the driver only remembers a relatively small number of solutions.

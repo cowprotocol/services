@@ -11,6 +11,7 @@ use {
             solver::{self, BadTokenDetection, SolutionMerging},
         },
     },
+    chain::Chain,
     futures::future::join_all,
     number::conversions::big_decimal_to_big_rational,
     std::path::Path,
@@ -23,7 +24,7 @@ use {
 /// # Panics
 ///
 /// This method panics if the config is invalid or on I/O errors.
-pub async fn load(chain: chain::Id, path: &Path) -> infra::Config {
+pub async fn load(chain: Chain, path: &Path) -> infra::Config {
     let data = fs::read_to_string(path)
         .await
         .unwrap_or_else(|e| panic!("I/O error while reading {path:?}: {e:?}"));
@@ -40,9 +41,12 @@ pub async fn load(chain: chain::Id, path: &Path) -> infra::Config {
     });
 
     assert_eq!(
-        config.chain_id.map(chain::Id::from).unwrap_or(chain),
+        config
+            .chain_id
+            .map(|id| Chain::try_from(id).expect("unsupported chain ID"))
+            .unwrap_or(chain),
         chain,
-        "The configured chain ID does not match connected Ethereum node"
+        "The configured chain ID does not match the connected Ethereum node"
     );
     infra::Config {
         solvers: join_all(config.solvers.into_iter().map(|config| async move {
@@ -96,6 +100,7 @@ pub async fn load(chain: chain::Id, path: &Path) -> infra::Config {
                 response_size_limit_max_bytes: config.response_size_limit_max_bytes,
                 bad_token_detection: BadTokenDetection {
                     tokens_supported: config
+                        .bad_token_detection
                         .token_supported
                         .iter()
                         .map(|(token, supported)| {
@@ -108,9 +113,18 @@ pub async fn load(chain: chain::Id, path: &Path) -> infra::Config {
                             )
                         })
                         .collect(),
-                    enable_simulation_based_bad_token_detection: config
-                        .enable_simulation_bad_token_detection,
+                    enable_simulation_strategy: config
+                        .bad_token_detection
+                        .enable_simulation_strategy,
+                    enable_metrics_strategy: config.bad_token_detection.enable_metrics_strategy,
+                    metrics_strategy_failure_ratio: config
+                        .bad_token_detection
+                        .metrics_strategy_failure_ratio,
+                    metrics_strategy_required_measurements: config
+                        .bad_token_detection
+                        .metrics_strategy_required_measurements,
                 },
+                settle_queue_size: config.settle_queue_size,
             }
         }))
         .await,

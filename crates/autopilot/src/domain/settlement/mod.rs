@@ -89,10 +89,27 @@ impl Settlement {
     }
 
     /// Per order fees breakdown. Contains all orders from the settlement
-    pub fn fee_breakdown(&self) -> HashMap<domain::OrderUid, Option<trade::FeeBreakdown>> {
+    pub fn fee_breakdown(&self) -> HashMap<domain::OrderUid, trade::FeeBreakdown> {
         self.trades
             .iter()
-            .map(|trade| (*trade.uid(), trade.fee_breakdown(&self.auction).ok()))
+            .map(|trade| {
+                let fee_breakdown = trade.fee_breakdown(&self.auction).unwrap_or_else(|err| {
+                    tracing::warn!(
+                        ?err,
+                        trade = %trade.uid(),
+                        "possible incomplete fee breakdown calculation",
+                    );
+                    trade::FeeBreakdown {
+                        total: eth::Asset {
+                            // TODO surplus token
+                            token: trade.sell_token(),
+                            amount: num::zero(),
+                        },
+                        protocol: vec![],
+                    }
+                });
+                (*trade.uid(), fee_breakdown)
+            })
             .collect()
     }
 
@@ -308,13 +325,14 @@ mod tests {
                     eth::TokenAddress(eth::H160::from_slice(&hex!(
                         "c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
                     ))),
-                    auction::Price::new(eth::U256::from(1000000000000000000u128).into()).unwrap(),
+                    auction::Price::try_new(eth::U256::from(1000000000000000000u128).into())
+                        .unwrap(),
                 ),
                 (
                     eth::TokenAddress(eth::H160::from_slice(&hex!(
                         "c52fafdc900cb92ae01e6e4f8979af7f436e2eb2"
                     ))),
-                    auction::Price::new(eth::U256::from(537359915436704u128).into()).unwrap(),
+                    auction::Price::try_new(eth::U256::from(537359915436704u128).into()).unwrap(),
                 ),
             ]),
             surplus_capturing_jit_order_owners: Default::default(),
@@ -329,7 +347,7 @@ mod tests {
             trade.surplus_in_ether(&auction.prices).unwrap().0,
             eth::U256::from(52937525819789126u128)
         );
-        // fee read from "executedSurplusFee" https://api.cow.fi/mainnet/api/v1/orders/0x10dab31217bb6cc2ace0fe601c15d342f7626a1ee5ef0495449800e73156998740a50cf069e992aa4536211b23f286ef88752187ffffffff
+        // fee read from "executedFee" https://api.cow.fi/mainnet/api/v1/orders/0x10dab31217bb6cc2ace0fe601c15d342f7626a1ee5ef0495449800e73156998740a50cf069e992aa4536211b23f286ef88752187ffffffff
         // but not equal to 6890975030480504 anymore, since after this tx we switched to
         // convert the fee from surplus token directly to ether
         assert_eq!(
@@ -438,15 +456,17 @@ mod tests {
                 eth::TokenAddress(eth::H160::from_slice(&hex!(
                     "dac17f958d2ee523a2206206994597c13d831ec7"
                 ))),
-                auction::Price::new(eth::U256::from(321341140475275961528483840u128).into())
+                auction::Price::try_new(eth::U256::from(321341140475275961528483840u128).into())
                     .unwrap(),
             ),
             (
                 eth::TokenAddress(eth::H160::from_slice(&hex!(
                     "056fd409e1d7a124bd7017459dfea2f387b6d5cd"
                 ))),
-                auction::Price::new(eth::U256::from(3177764302250520038326415654912u128).into())
-                    .unwrap(),
+                auction::Price::try_new(
+                    eth::U256::from(3177764302250520038326415654912u128).into(),
+                )
+                .unwrap(),
             ),
         ]);
 
@@ -604,14 +624,14 @@ mod tests {
                 eth::TokenAddress(eth::H160::from_slice(&hex!(
                     "a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
                 ))),
-                auction::Price::new(eth::U256::from(374263465721452989998170112u128).into())
+                auction::Price::try_new(eth::U256::from(374263465721452989998170112u128).into())
                     .unwrap(),
             ),
             (
                 eth::TokenAddress(eth::H160::from_slice(&hex!(
                     "c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
                 ))),
-                auction::Price::new(eth::U256::from(1000000000000000000u128).into()).unwrap(),
+                auction::Price::try_new(eth::U256::from(1000000000000000000u128).into()).unwrap(),
             ),
         ]);
 
@@ -778,19 +798,19 @@ mod tests {
                 eth::TokenAddress(eth::H160::from_slice(&hex!(
                     "812Ba41e071C7b7fA4EBcFB62dF5F45f6fA853Ee"
                 ))),
-                auction::Price::new(eth::U256::from(400373909534592401408u128).into()).unwrap(),
+                auction::Price::try_new(eth::U256::from(400373909534592401408u128).into()).unwrap(),
             ),
             (
                 eth::TokenAddress(eth::H160::from_slice(&hex!(
                     "a21Af1050F7B26e0cfF45ee51548254C41ED6b5c"
                 ))),
-                auction::Price::new(eth::U256::from(127910593u128).into()).unwrap(),
+                auction::Price::try_new(eth::U256::from(127910593u128).into()).unwrap(),
             ),
             (
                 eth::TokenAddress(eth::H160::from_slice(&hex!(
                     "c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
                 ))),
-                auction::Price::new(eth::U256::from(1000000000000000000u128).into()).unwrap(),
+                auction::Price::try_new(eth::U256::from(1000000000000000000u128).into()).unwrap(),
             ),
         ]);
 
@@ -810,7 +830,10 @@ mod tests {
         let jit_trade = super::trade::Trade::new(transaction.trades[1].clone(), &auction, 0);
         assert_eq!(jit_trade.fee_in_ether(&auction.prices).unwrap().0, 0.into());
         assert_eq!(jit_trade.score(&auction).unwrap().0, 0.into());
-        assert_eq!(jit_trade.fee_breakdown(&auction).unwrap().total.0, 0.into());
+        assert_eq!(
+            jit_trade.fee_breakdown(&auction).unwrap().total.amount.0,
+            0.into()
+        );
         assert!(jit_trade
             .fee_breakdown(&auction)
             .unwrap()

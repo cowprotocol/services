@@ -120,6 +120,8 @@ jobs:
       - run: cargo nextest run -p e2e local_node --test-threads 1 --failure-output final --run-ignored ignored-only
 
   test-forked-node:
+    # Do not run this job on forks since some secrets are required for it.
+    if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
     timeout-minutes: 60
     runs-on: ubuntu-latest
     env:
@@ -167,7 +169,7 @@ jobs:
       # Build the driver's tests.
       - run: cargo build -p driver --tests
       # Don't spawn any docker containers. The driver's tests will spawn anvil itself.
-      - run: cargo nextest run -p driver --run-ignored ignored-only
+      - run: cargo nextest run -p driver --test-threads 1 --run-ignored ignored-only
 
   openapi:
     timeout-minutes: 60

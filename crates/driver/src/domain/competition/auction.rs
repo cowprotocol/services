@@ -94,7 +94,9 @@ impl Auction {
     pub fn liquidity_pairs(&self) -> HashSet<liquidity::TokenPair> {
         self.orders
             .iter()
-            .filter_map(|order| liquidity::TokenPair::new(order.sell.token, order.buy.token).ok())
+            .filter_map(|order| {
+                liquidity::TokenPair::try_new(order.sell.token, order.buy.token).ok()
+            })
             .collect()
     }
 
@@ -528,7 +530,7 @@ impl Price {
     /// The base Ether amount for pricing.
     const BASE: u128 = 10_u128.pow(18);
 
-    pub fn new(value: eth::Ether) -> Result<Self, InvalidPrice> {
+    pub fn try_new(value: eth::Ether) -> Result<Self, InvalidPrice> {
         if value.0.is_zero() {
             Err(InvalidPrice)
         } else {
@@ -546,7 +548,7 @@ impl Price {
     /// use driver::domain::{competition::auction::Price, eth};
     ///
     /// let amount = eth::TokenAmount::from(eth::U256::exp10(18));
-    /// let price = Price::new(eth::Ether::from(eth::U256::exp10(15))).unwrap(); // 0.001 ETH
+    /// let price = Price::try_new(eth::Ether::from(eth::U256::exp10(15))).unwrap(); // 0.001 ETH
     ///
     /// let eth = price.in_eth(amount);
     /// assert_eq!(eth, eth::Ether::from(eth::U256::exp10(15)));
@@ -564,7 +566,7 @@ impl Price {
     /// use driver::domain::{competition::auction::Price, eth};
     ///
     /// let amount = eth::Ether::from(eth::U256::exp10(18));
-    /// let price = Price::new(eth::Ether::from(eth::U256::exp10(17))).unwrap(); // 0.1ETH
+    /// let price = Price::try_new(eth::Ether::from(eth::U256::exp10(17))).unwrap(); // 0.1ETH
     /// assert_eq!(price.from_eth(amount), eth::U256::exp10(19).into());
     /// ```
     pub fn from_eth(self, amount: eth::Ether) -> eth::TokenAmount {
@@ -587,7 +589,7 @@ impl From<eth::U256> for Price {
 /// All auction prices
 pub type Prices = HashMap<eth::TokenAddress, Price>;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Id(pub i64);
 
 impl Id {

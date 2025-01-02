@@ -11,6 +11,7 @@ use {
 enum Kind {
     QuotingFailed,
     SolverFailed,
+    TooManyPendingSettlements,
     SolutionNotAvailable,
     DeadlineExceeded,
     Unknown,
@@ -51,6 +52,7 @@ impl From<Kind> for (hyper::StatusCode, axum::Json<Error>) {
                  or sell amount"
             }
             Kind::FailedToSubmit => "Could not submit the solution to the blockchain",
+            Kind::TooManyPendingSettlements => "Settlement queue is full",
         };
         (
             hyper::StatusCode::BAD_REQUEST,
@@ -83,6 +85,7 @@ impl From<competition::Error> for (hyper::StatusCode, axum::Json<Error>) {
             competition::Error::DeadlineExceeded(_) => Kind::DeadlineExceeded,
             competition::Error::Solver(_) => Kind::SolverFailed,
             competition::Error::SubmissionError => Kind::FailedToSubmit,
+            competition::Error::TooManyPendingSettlements => Kind::TooManyPendingSettlements,
         };
         error.into()
     }

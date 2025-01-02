@@ -600,7 +600,7 @@ mod tests {
                 ))
             });
 
-        let database = crate::database::Postgres::new("postgresql://").unwrap();
+        let database = crate::database::Postgres::try_new("postgresql://").unwrap();
         database::clear_DANGER(&database.pool).await.unwrap();
         database.insert_order(&old_order, None).await.unwrap();
         let app_data = Arc::new(crate::app_data::Registry::new(
