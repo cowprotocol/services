@@ -145,7 +145,7 @@ impl Mempools {
                     TxStatus::Reverted => {
                         return Err(Error::Revert {
                             tx_id: hash.clone(),
-                            block_no: Some(block.number),
+                            block_number: block.number,
                         })
                     }
                     TxStatus::Pending => {
@@ -243,7 +243,7 @@ pub enum Error {
     #[error("Mined reverted transaction: {tx_id:?}")]
     Revert {
         tx_id: eth::TxId,
-        block_no: Option<BlockNo>,
+        block_number: BlockNo,
     },
     #[error("Simulation started reverting during submission")]
     SimulationRevert(Option<BlockNo>),
@@ -253,13 +253,4 @@ pub enum Error {
     Disabled,
     #[error("Failed to submit: {0:?}")]
     Other(#[from] anyhow::Error),
-}
-
-impl Error {
-    pub fn block_no(&self) -> Option<BlockNo> {
-        match &self {
-            Error::Revert { block_no, .. } | Error::SimulationRevert(block_no) => *block_no,
-            _ => None,
-        }
-    }
 }

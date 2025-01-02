@@ -333,7 +333,6 @@ pub fn mempool_executed(
                 ?err,
                 %mempool,
                 ?settlement,
-                block_no=err.block_no(),
                 "sending transaction via mempool failed",
             );
         }
