@@ -193,21 +193,7 @@ async fn run<F, Fut, T>(
     // it but rather in the locked state.
     let _lock = NODE_MUTEX.lock();
 
-    let node = match fork {
-        Some((fork, block_number)) => Node::forked(fork, block_number).await,
-        None => Node::new().await,
-    };
-
-    let node = Arc::new(Mutex::new(Some(node)));
-    let node_panic_handle = node.clone();
-    observe::panic_hook::prepend_panic_handler(Box::new(move |_| {
-        // Drop node in panic handler because `.catch_unwind()` does not catch all
-        // panics
-        let _ = node_panic_handle.lock().unwrap().take();
-    }));
-
-    let http = create_test_transport(NODE_HOST);
-    let web3 = Web3::new(http);
+    let (node, web3) = spawn_node_with_retries(&fork, 3).await;
 
     services::clear_database().await;
     // Hack: the closure may actually be unwind unsafe; moreover, `catch_unwind`
@@ -225,6 +211,57 @@ async fn run<F, Fut, T>(
     if let Err(err) = result {
         panic::resume_unwind(err);
     }
+}
+
+async fn try_spawn_node_and_check(
+    fork: &Option<(String, Option<u64>)>,
+) -> Option<(Arc<Mutex<Option<Node>>>, Web3)> {
+    let node = match fork {
+        Some((fork_url, block_number)) => Node::forked(fork_url.clone(), *block_number).await,
+        None => Node::new().await,
+    };
+    let node = Arc::new(Mutex::new(Some(node)));
+
+    let node_panic_handle = node.clone();
+    observe::panic_hook::prepend_panic_handler(Box::new(move |_| {
+        // Drop node in panic handler because `.catch_unwind()` does not catch all
+        // panics
+        let _ = node_panic_handle.lock().unwrap().take();
+    }));
+
+    let http = create_test_transport(NODE_HOST);
+    let web3 = Web3::new(http);
+
+    let block_check = tokio::time::timeout(Duration::from_secs(2), web3.eth().block_number()).await;
+    match block_check {
+        Ok(Ok(_)) => Some((node, web3)),
+        _ => {
+            let node = node.lock().unwrap().take();
+            if let Some(mut node) = node {
+                node.kill().await;
+            }
+            None
+        }
+    }
+}
+
+async fn spawn_node_with_retries(
+    fork: &Option<(String, Option<u64>)>,
+    max_attempts: u32,
+) -> (Arc<Mutex<Option<Node>>>, Web3) {
+    let mut attempts = 0;
+
+    while attempts < max_attempts {
+        match try_spawn_node_and_check(fork).await {
+            Some((node, web3)) => return (node, web3),
+            None => attempts += 1,
+        }
+    }
+
+    panic!(
+        "Failed to get block number after {:?} attempts",
+        max_attempts
+    );
 }
 
 #[macro_export]
