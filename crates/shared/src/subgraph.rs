@@ -29,7 +29,7 @@ pub struct Data<T> {
 
 impl SubgraphClient {
     /// Creates a new subgraph client from the specified organization and name.
-    pub fn new(subgraph_url: Url, client: Client) -> Result<Self> {
+    pub fn try_new(subgraph_url: Url, client: Client) -> Result<Self> {
         Ok(Self {
             client,
             subgraph_url,

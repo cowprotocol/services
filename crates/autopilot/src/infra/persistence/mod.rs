@@ -354,7 +354,7 @@ impl Persistence {
                 let token = eth::H160(price.token.0).into();
                 let price = big_decimal_to_u256(&price.price)
                     .ok_or(domain::auction::InvalidPrice)
-                    .and_then(|p| domain::auction::Price::new(p.into()))
+                    .and_then(|p| domain::auction::Price::try_new(p.into()))
                     .map_err(|_err| error::Auction::InvalidPrice(token));
                 price.map(|price| (token, price))
             })

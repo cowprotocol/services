@@ -229,7 +229,7 @@ pub struct BalancerContracts {
 }
 
 impl BalancerContracts {
-    pub async fn new(web3: &Web3, factory_kinds: Vec<BalancerFactoryKind>) -> Result<Self> {
+    pub async fn try_new(web3: &Web3, factory_kinds: Vec<BalancerFactoryKind>) -> Result<Self> {
         let web3 = ethrpc::instrumented::instrument_with_label(web3, "balancerV2".into());
         let vault = BalancerV2Vault::deployed(&web3)
             .await

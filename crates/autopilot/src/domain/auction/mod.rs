@@ -47,7 +47,7 @@ impl Price {
     /// The base Ether amount for pricing.
     const BASE: u128 = 10_u128.pow(18);
 
-    pub fn new(value: eth::Ether) -> Result<Self, InvalidPrice> {
+    pub fn try_new(value: eth::Ether) -> Result<Self, InvalidPrice> {
         if value.0.is_zero() {
             Err(InvalidPrice)
         } else {
@@ -70,7 +70,7 @@ impl Price {
     /// use autopilot::domain::{auction::Price, eth};
     ///
     /// let amount = eth::TokenAmount::from(eth::U256::exp10(18));
-    /// let price = Price::new(eth::Ether::from(eth::U256::exp10(15))).unwrap(); // 0.001 ETH
+    /// let price = Price::try_new(eth::Ether::from(eth::U256::exp10(15))).unwrap(); // 0.001 ETH
     ///
     /// let eth = price.in_eth(amount);
     /// assert_eq!(eth, eth::Ether::from(eth::U256::exp10(15)));

@@ -11,7 +11,7 @@ use {
 impl Order {
     pub fn into_domain(self, timeouts: Timeouts) -> Result<quote::Order, Error> {
         Ok(quote::Order {
-            tokens: quote::Tokens::new(self.sell_token.into(), self.buy_token.into())
+            tokens: quote::Tokens::try_new(self.sell_token.into(), self.buy_token.into())
                 .map_err(|quote::SameTokens| Error::SameTokens)?,
             amount: self.amount.into(),
             side: match self.kind {
