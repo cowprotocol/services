@@ -240,12 +240,12 @@ pub enum RevertProtection {
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("Mined reverted transaction: {tx_id:?}")]
+    #[error("Mined reverted transaction: {tx_id:?}, block number: {block_number}")]
     Revert {
         tx_id: eth::TxId,
         block_number: BlockNo,
     },
-    #[error("Simulation started reverting during submission")]
+    #[error("Simulation started reverting during submission, block number: {0:?}")]
     SimulationRevert(Option<BlockNo>),
     #[error("Settlement did not get included in time")]
     Expired,
