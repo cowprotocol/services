@@ -258,10 +258,7 @@ async fn spawn_node_with_retries(
         }
     }
 
-    panic!(
-        "Failed to get block number after {:?} attempts",
-        max_attempts
-    );
+    panic!("Failed to startup a node after {:?} attempts", max_attempts);
 }
 
 #[macro_export]
