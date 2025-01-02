@@ -20,6 +20,7 @@ use {
         time::Duration,
     },
     tempfile::TempPath,
+    web3::Transport,
 };
 pub use {deploy::*, onchain_components::*, services::*, solver::*};
 
@@ -232,8 +233,12 @@ async fn try_spawn_node_and_check(
     let http = create_test_transport(NODE_HOST);
     let web3 = Web3::new(http);
 
-    let block_check = tokio::time::timeout(Duration::from_secs(2), web3.eth().block_number()).await;
-    match block_check {
+    let mine_check = tokio::time::timeout(
+        Duration::from_secs(2),
+        web3.transport().execute("evm_mine", vec![]),
+    )
+    .await;
+    match mine_check {
         Ok(Ok(_)) => Some((node, web3)),
         _ => {
             let node = node.lock().unwrap().take();
