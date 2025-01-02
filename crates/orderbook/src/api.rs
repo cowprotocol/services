@@ -23,7 +23,7 @@ mod get_order_by_uid;
 mod get_order_status;
 mod get_orders_by_tx;
 mod get_solver_competition;
-mod get_token_first_trade_block;
+mod get_token_metadata;
 mod get_total_surplus;
 mod get_trades;
 mod get_user_orders;
@@ -109,10 +109,8 @@ pub fn handle_all_routes(
             box_filter(get_total_surplus::get(database.clone())),
         ),
         (
-            "v1/get_token_first_trade_block",
-            box_filter(get_token_first_trade_block::get_token_first_trade_block(
-                database,
-            )),
+            "v1/get_token_metadata",
+            box_filter(get_token_metadata::get_token_metadata(database)),
         ),
     ];
 
