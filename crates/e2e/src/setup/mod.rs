@@ -195,6 +195,7 @@ async fn run<F, Fut, T>(
     let _lock = NODE_MUTEX.lock();
 
     let (node, web3) = spawn_node_with_retries(&fork, 3).await;
+    tracing::info!("Node started");
 
     services::clear_database().await;
     // Hack: the closure may actually be unwind unsafe; moreover, `catch_unwind`
