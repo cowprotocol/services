@@ -206,8 +206,10 @@ async fn run<F, Fut, T>(
 
     let node = node.lock().unwrap().take();
     if let Some(mut node) = node {
+        tracing::info!("Killing node");
         node.kill().await;
     }
+    tracing::info!("Node killed");
     services::clear_database().await;
 
     if let Err(err) = result {
