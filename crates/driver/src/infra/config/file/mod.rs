@@ -708,6 +708,14 @@ pub struct BadTokenDetectionConfig {
         rename = "metrics-bad-token-detection-required-measurements"
     )]
     pub metrics_strategy_required_measurements: u32,
+
+    /// Controls whether the metrics based detection strategy should only log
+    /// unsupported tokens or actually filter them out.
+    #[serde(
+        default = "default_metrics_bad_token_detector_log_only",
+        rename = "metrics-bad-token-detection-log-only"
+    )]
+    pub metrics_strategy_log_only: bool,
 }
 
 impl Default for BadTokenDetectionConfig {
@@ -729,4 +737,8 @@ fn default_metrics_bad_token_detector_required_measurements() -> u32 {
 /// moves or any other conflicts due to the extended settlement idle time.
 fn default_settle_queue_size() -> usize {
     2
+}
+
+fn default_metrics_bad_token_detector_log_only() -> bool {
+    true
 }

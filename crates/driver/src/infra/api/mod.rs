@@ -73,21 +73,19 @@ impl Api {
             let router = routes::reveal(router);
             let router = routes::settle(router);
 
+            let bad_token_config = solver.bad_token_detection();
             let mut bad_tokens =
-                bad_tokens::Detector::new(solver.bad_token_detection().tokens_supported.clone());
-            if solver.bad_token_detection().enable_simulation_strategy {
+                bad_tokens::Detector::new(bad_token_config.tokens_supported.clone());
+            if bad_token_config.enable_simulation_strategy {
                 bad_tokens.with_simulation_detector(self.bad_token_detector.clone());
             }
 
-            if solver.bad_token_detection().enable_metrics_strategy {
-                bad_tokens.with_metrics_detector(
-                    metrics_bad_token_detector_builder.clone().build(
-                        solver.bad_token_detection().metrics_strategy_failure_ratio,
-                        solver
-                            .bad_token_detection()
-                            .metrics_strategy_required_measurements,
-                    ),
-                );
+            if bad_token_config.enable_metrics_strategy {
+                bad_tokens.with_metrics_detector(metrics_bad_token_detector_builder.clone().build(
+                    bad_token_config.metrics_strategy_failure_ratio,
+                    bad_token_config.metrics_strategy_required_measurements,
+                    bad_token_config.metrics_strategy_log_only,
+                ));
             }
 
             let router = router.with_state(State(Arc::new(Inner {
