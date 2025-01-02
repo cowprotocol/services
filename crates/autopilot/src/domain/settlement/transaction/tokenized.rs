@@ -16,7 +16,7 @@ pub(super) struct Tokenized {
 }
 
 impl Tokenized {
-    pub fn new(calldata: &eth::Calldata) -> Result<Self, error::Decoding> {
+    pub fn try_new(calldata: &eth::Calldata) -> Result<Self, error::Decoding> {
         let function = contracts::GPv2Settlement::raw_contract()
             .interface
             .abi

@@ -130,7 +130,7 @@ pub struct Config {
 }
 
 impl Solver {
-    pub async fn new(config: Config, eth: Ethereum) -> Result<Self> {
+    pub async fn try_new(config: Config, eth: Ethereum) -> Result<Self> {
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert(
             reqwest::header::CONTENT_TYPE,
