@@ -196,13 +196,16 @@ async fn run<F, Fut, T>(
 
     let (node, web3) = spawn_node_with_retries(&fork, 3).await;
     tracing::info!("Node started");
+    let id = uuid::Uuid::new_v4().to_string();
 
     services::clear_database().await;
+    tracing::info!("starting a test {:?}", id);
     // Hack: the closure may actually be unwind unsafe; moreover, `catch_unwind`
     // does not catch some types of panics. In this cases, the state of the node
     // is not restored. This is not considered an issue since this function
     // is supposed to be used in a test environment.
     let result = AssertUnwindSafe(f(web3.clone())).catch_unwind().await;
+    tracing::info!("the test {:?} is finished: {:?}", id, result);
 
     let node = node.lock().unwrap().take();
     if let Some(mut node) = node {
