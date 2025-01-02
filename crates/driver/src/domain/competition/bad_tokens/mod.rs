@@ -132,7 +132,7 @@ impl Detector {
         }
 
         if let Some(metrics) = &self.metrics {
-            return metrics.get_quality(&token);
+            return metrics.get_quality(&token, now);
         }
 
         None

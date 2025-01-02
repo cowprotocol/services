@@ -1,21 +1,37 @@
-use {super::Quality, crate::domain::eth, dashmap::DashMap, std::sync::Arc};
+use {
+    super::Quality,
+    crate::domain::eth,
+    dashmap::DashMap,
+    std::{
+        sync::Arc,
+        time::{Duration, Instant},
+    },
+};
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 struct TokenStatistics {
     attempts: u32,
     fails: u32,
+    flagged_unsupported_at: Option<Instant>,
 }
 
 #[derive(Default, Clone)]
 pub struct DetectorBuilder(Arc<DashMap<eth::TokenAddress, TokenStatistics>>);
 
 impl DetectorBuilder {
-    pub fn build(self, failure_ratio: f64, required_measurements: u32, log_only: bool) -> Detector {
+    pub fn build(
+        self,
+        failure_ratio: f64,
+        required_measurements: u32,
+        log_only: bool,
+        token_freeze_time: Duration,
+    ) -> Detector {
         Detector {
             failure_ratio,
             required_measurements,
             counter: self.0,
             log_only,
+            token_freeze_time,
         }
     }
 }
@@ -31,19 +47,28 @@ pub struct Detector {
     required_measurements: u32,
     counter: Arc<DashMap<eth::TokenAddress, TokenStatistics>>,
     log_only: bool,
+    token_freeze_time: Duration,
 }
 
 impl Detector {
-    pub fn get_quality(&self, token: &eth::TokenAddress) -> Option<Quality> {
-        let measurements = self.counter.get(token)?;
-        let is_unsupported = self.is_unsupported(&measurements);
+    pub fn get_quality(&self, token: &eth::TokenAddress, now: Instant) -> Option<Quality> {
+        let stats = self.counter.get(token)?;
+        if stats
+            .flagged_unsupported_at
+            .is_some_and(|t| now.duration_since(t) > self.token_freeze_time)
+        {
+            // Sometimes tokens only cause issues temporarily. If the token's freeze
+            // period expired we give it another chance to see if it still behaves badly.
+            return None;
+        }
+
+        let is_unsupported = self.stats_indicates_unsupported(&stats);
         (!self.log_only && is_unsupported).then_some(Quality::Unsupported)
     }
 
-    fn is_unsupported(&self, measurements: &TokenStatistics) -> bool {
-        let token_failure_ratio = measurements.fails as f64 / measurements.attempts as f64;
-        measurements.attempts >= self.required_measurements
-            && token_failure_ratio >= self.failure_ratio
+    fn stats_indicates_unsupported(&self, stats: &TokenStatistics) -> bool {
+        let token_failure_ratio = stats.fails as f64 / stats.attempts as f64;
+        stats.attempts >= self.required_measurements && token_failure_ratio >= self.failure_ratio
     }
 
     /// Updates the tokens that participated in settlements by
@@ -54,30 +79,39 @@ impl Detector {
         token_pairs: &[(eth::TokenAddress, eth::TokenAddress)],
         failure: bool,
     ) {
-        let mut unsupported_tokens = vec![];
+        let now = Instant::now();
+        let mut new_unsupported_tokens = vec![];
         token_pairs
             .iter()
             .flat_map(|(token_a, token_b)| [token_a, token_b])
             .for_each(|token| {
-                let measurement = self
+                let mut stats = self
                     .counter
                     .entry(*token)
                     .and_modify(|counter| {
                         counter.attempts += 1;
-                        counter.fails += u32::from(failure)
+                        counter.fails += u32::from(failure);
                     })
                     .or_insert_with(|| TokenStatistics {
                         attempts: 1,
                         fails: u32::from(failure),
+                        flagged_unsupported_at: None,
                     });
-                if self.is_unsupported(&measurement) {
-                    unsupported_tokens.push(token);
+
+                // token neeeds to be frozen as unsupported for a while
+                if self.stats_indicates_unsupported(&stats)
+                    && stats
+                        .flagged_unsupported_at
+                        .is_none_or(|t| now.duration_since(t) > self.token_freeze_time)
+                {
+                    new_unsupported_tokens.push(token);
+                    stats.flagged_unsupported_at = Some(now);
                 }
             });
 
-        if !unsupported_tokens.is_empty() {
+        if !new_unsupported_tokens.is_empty() {
             tracing::debug!(
-                tokens = ?unsupported_tokens,
+                tokens = ?new_unsupported_tokens,
                 "mark tokens as unsupported"
             );
         }
