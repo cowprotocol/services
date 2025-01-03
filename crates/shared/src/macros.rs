@@ -36,7 +36,7 @@ macro_rules! json_map {
 #[macro_export]
 macro_rules! externalprices {
     (native_token: $nt:expr $(, $($t:tt)*)?) => {
-        $crate::external_prices::ExternalPrices::new(
+        $crate::external_prices::ExternalPrices::try_new(
             $nt,
             ::maplit::hashmap!($($($t)*)*),
         )

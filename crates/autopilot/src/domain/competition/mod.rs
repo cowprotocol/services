@@ -79,7 +79,7 @@ pub struct TradedOrder {
 pub struct Score(eth::Ether);
 
 impl Score {
-    pub fn new(score: eth::Ether) -> Result<Self, ZeroScore> {
+    pub fn try_new(score: eth::Ether) -> Result<Self, ZeroScore> {
         if score.0.is_zero() {
             Err(ZeroScore)
         } else {

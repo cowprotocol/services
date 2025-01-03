@@ -33,7 +33,7 @@ pub struct Mempools {
 }
 
 impl Mempools {
-    pub fn new(mempools: Vec<infra::Mempool>, ethereum: Ethereum) -> Result<Self, NoMempools> {
+    pub fn try_new(mempools: Vec<infra::Mempool>, ethereum: Ethereum) -> Result<Self, NoMempools> {
         if mempools.is_empty() {
             Err(NoMempools)
         } else {

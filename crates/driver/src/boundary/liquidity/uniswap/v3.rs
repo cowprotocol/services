@@ -51,7 +51,7 @@ pub fn to_domain(id: liquidity::Id, pool: ConcentratedLiquidity) -> Result<liqui
         kind: liquidity::Kind::UniswapV3(Pool {
             router: handler.inner.router.address().into(),
             address: pool.pool.address.into(),
-            tokens: liquidity::TokenPair::new(
+            tokens: liquidity::TokenPair::try_new(
                 pool.pool.tokens[0].id.into(),
                 pool.pool.tokens[1].id.into(),
             )?,
