@@ -43,14 +43,14 @@ impl Cache {
         self.0
             .cache
             .entry(token)
-            .and_modify(|value| {
-                if !is_supported || now.duration_since(value.last_updated) > self.0.max_age {
+            .and_modify(|token| {
+                if !is_supported || now.duration_since(token.last_updated) > self.0.max_age {
                     // Only update the value if the cached value is outdated by now or
                     // if the new value is "Unsupported". This means on conflicting updates
                     // we err on the conservative side and assume a token is unsupported.
-                    value.is_supported = is_supported;
+                    token.is_supported = is_supported;
                 }
-                value.last_updated = now;
+                token.last_updated = now;
             })
             .or_insert_with(|| CacheEntry {
                 is_supported,
