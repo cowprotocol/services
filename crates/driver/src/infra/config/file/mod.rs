@@ -716,6 +716,15 @@ pub struct BadTokenDetectionConfig {
         rename = "metrics-bad-token-detection-log-only"
     )]
     pub metrics_strategy_log_only: bool,
+
+    /// How long the metrics based bad token detection should flag a token as
+    /// unsupported before it allows to solve for that token again.
+    #[serde(
+        default = "default_metrics_bad_token_detector_freeze_time",
+        rename = "metrics-bad-token-detection-token-freeze-time",
+        with = "humantime_serde"
+    )]
+    pub metrics_strategy_token_freeze_time: Duration,
 }
 
 impl Default for BadTokenDetectionConfig {
@@ -741,4 +750,8 @@ fn default_settle_queue_size() -> usize {
 
 fn default_metrics_bad_token_detector_log_only() -> bool {
     true
+}
+
+fn default_metrics_bad_token_detector_freeze_time() -> Duration {
+    Duration::from_secs(60 * 10)
 }
