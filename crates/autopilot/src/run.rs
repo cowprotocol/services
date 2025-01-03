@@ -552,22 +552,21 @@ pub async fn run(args: Arguments) {
         .drivers
         .into_iter()
         .map(|driver| async move {
-            infra::Driver::new(
+            infra::Driver::try_new(
                 driver.url,
                 driver.name.clone(),
                 driver.fairness_threshold.map(Into::into),
                 driver.submission_account,
             )
             .await
-            .ok()
             .map(Arc::new)
+            .expect("failed to load solver configuration")
         })
         .collect::<Vec<_>>();
 
     let drivers = futures::future::join_all(drivers_futures)
         .await
         .into_iter()
-        .flatten()
         .collect();
 
     let run = RunLoop::new(
@@ -595,22 +594,21 @@ async fn shadow_mode(args: Arguments) -> ! {
         .drivers
         .into_iter()
         .map(|driver| async move {
-            infra::Driver::new(
+            infra::Driver::try_new(
                 driver.url,
                 driver.name.clone(),
                 driver.fairness_threshold.map(Into::into),
                 driver.submission_account,
             )
             .await
-            .ok()
             .map(Arc::new)
+            .expect("failed to load solver configuration")
         })
         .collect::<Vec<_>>();
 
     let drivers = futures::future::join_all(drivers_futures)
         .await
         .into_iter()
-        .flatten()
         .collect();
 
     let trusted_tokens = {

@@ -28,10 +28,12 @@ pub struct Driver {
 pub enum Error {
     #[error("unable to load KMS account")]
     UnableToLoadKmsAccount,
+    #[error("failed to build client")]
+    FailedToBuildClient(#[source] reqwest::Error),
 }
 
 impl Driver {
-    pub async fn new(
+    pub async fn try_new(
         url: Url,
         name: String,
         fairness_threshold: Option<eth::Ether>,
@@ -59,7 +61,7 @@ impl Driver {
             client: Client::builder()
                 .timeout(RESPONSE_TIME_LIMIT)
                 .build()
-                .unwrap(),
+                .map_err(Error::FailedToBuildClient)?,
             submission_address: submission_address.into(),
         })
     }
