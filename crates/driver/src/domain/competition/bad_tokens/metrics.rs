@@ -15,27 +15,6 @@ struct TokenStatistics {
     flagged_unsupported_at: Option<Instant>,
 }
 
-#[derive(Default, Clone)]
-pub struct DetectorBuilder(Arc<DashMap<eth::TokenAddress, TokenStatistics>>);
-
-impl DetectorBuilder {
-    pub fn build(
-        self,
-        failure_ratio: f64,
-        required_measurements: u32,
-        log_only: bool,
-        token_freeze_time: Duration,
-    ) -> Detector {
-        Detector {
-            failure_ratio,
-            required_measurements,
-            counter: self.0,
-            log_only,
-            token_freeze_time,
-        }
-    }
-}
-
 /// Monitors tokens to determine whether they are considered "unsupported" based
 /// on the ratio of failing to total settlement encoding attempts. A token must
 /// have participated in at least `REQUIRED_MEASUREMENTS` attempts to be
@@ -51,6 +30,21 @@ pub struct Detector {
 }
 
 impl Detector {
+    pub fn new(
+        failure_ratio: f64,
+        required_measurements: u32,
+        log_only: bool,
+        token_freeze_time: Duration,
+    ) -> Self {
+        Self {
+            failure_ratio,
+            required_measurements,
+            counter: Default::default(),
+            log_only,
+            token_freeze_time,
+        }
+    }
+
     pub fn get_quality(&self, token: &eth::TokenAddress, now: Instant) -> Option<Quality> {
         let stats = self.counter.get(token)?;
         if stats
