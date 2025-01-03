@@ -56,12 +56,15 @@ impl Detector {
             return None;
         }
 
-        let is_unsupported = self.stats_indicates_unsupported(&stats);
+        let is_unsupported = self.stats_indicate_unsupported(&stats);
         (!self.log_only && is_unsupported).then_some(Quality::Unsupported)
     }
 
-    fn stats_indicates_unsupported(&self, stats: &TokenStatistics) -> bool {
-        let token_failure_ratio = stats.fails as f64 / stats.attempts as f64;
+    fn stats_indicate_unsupported(&self, stats: &TokenStatistics) -> bool {
+        let token_failure_ratio = match stats.attempts {
+            0 => return false,
+            attempts => f64::from(stats.fails) / f64::from(attempts)
+        };
         stats.attempts >= self.required_measurements && token_failure_ratio >= self.failure_ratio
     }
 
@@ -93,7 +96,7 @@ impl Detector {
                     });
 
                 // token neeeds to be frozen as unsupported for a while
-                if self.stats_indicates_unsupported(&stats)
+                if self.stats_indicate_unsupported(&stats)
                     && stats
                         .flagged_unsupported_at
                         .is_none_or(|t| now.duration_since(t) > self.token_freeze_time)
