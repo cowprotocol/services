@@ -316,4 +316,5 @@ pub struct BadTokenDetection {
     pub enable_metrics_strategy: bool,
     pub metrics_strategy_failure_ratio: f64,
     pub metrics_strategy_required_measurements: u32,
+    pub metrics_strategy_log_only: bool,
 }
