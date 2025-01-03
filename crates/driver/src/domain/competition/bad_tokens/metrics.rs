@@ -60,19 +60,21 @@ impl Detector {
             return Quality::Unknown;
         }
 
-        let is_unsupported = self.stats_indicate_unsupported(&stats);
-        match !self.log_only && is_unsupported {
-            true => Quality::Unsupported,
-            false => Quality::Supported,
+        match self.log_only {
+            true => Quality::Supported,
+            false => self.quality_based_on_stats(&stats),
         }
     }
 
-    fn stats_indicate_unsupported(&self, stats: &TokenStatistics) -> bool {
-        let token_failure_ratio = match stats.attempts {
-            0 => return false,
-            attempts => f64::from(stats.fails) / f64::from(attempts),
-        };
-        stats.attempts >= self.required_measurements && token_failure_ratio >= self.failure_ratio
+    fn quality_based_on_stats(&self, stats: &TokenStatistics) -> Quality {
+        if stats.attempts < self.required_measurements {
+            return Quality::Unknown;
+        }
+        let token_failure_ratio = f64::from(stats.fails) / f64::from(stats.attempts);
+        match token_failure_ratio >= self.failure_ratio {
+            true => Quality::Unsupported,
+            false => Quality::Supported,
+        }
     }
 
     /// Updates the tokens that participated in settlements by
@@ -103,7 +105,7 @@ impl Detector {
                     });
 
                 // token neeeds to be frozen as unsupported for a while
-                if self.stats_indicate_unsupported(&stats)
+                if self.quality_based_on_stats(&stats) == Quality::Unsupported
                     && stats
                         .flagged_unsupported_at
                         .is_none_or(|t| now.duration_since(t) > self.token_freeze_time)
