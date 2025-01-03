@@ -63,7 +63,7 @@ impl Detector {
     fn stats_indicate_unsupported(&self, stats: &TokenStatistics) -> bool {
         let token_failure_ratio = match stats.attempts {
             0 => return false,
-            attempts => f64::from(stats.fails) / f64::from(attempts)
+            attempts => f64::from(stats.fails) / f64::from(attempts),
         };
         stats.attempts >= self.required_measurements && token_failure_ratio >= self.failure_ratio
     }
