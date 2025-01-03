@@ -20,7 +20,7 @@ pub fn to_domain(id: liquidity::Id, pool: StablePoolOrder) -> Result<liquidity::
         kind: liquidity::Kind::BalancerV2Stable(balancer::v2::stable::Pool {
             vault: vault(&pool),
             id: pool_id(&pool),
-            reserves: balancer::v2::stable::Reserves::new(
+            reserves: balancer::v2::stable::Reserves::try_new(
                 pool.reserves
                     .into_iter()
                     .map(|(token, reserve)| {

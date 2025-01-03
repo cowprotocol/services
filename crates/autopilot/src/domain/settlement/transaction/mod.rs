@@ -57,7 +57,7 @@ impl Transaction {
                     clearing_prices,
                     trades: decoded_trades,
                     interactions: _interactions,
-                } = tokenized::Tokenized::new(&crate::util::Bytes(data.to_vec()))?;
+                } = tokenized::Tokenized::try_new(&crate::util::Bytes(data.to_vec()))?;
 
                 let mut trades = Vec::with_capacity(decoded_trades.len());
                 for trade in decoded_trades {

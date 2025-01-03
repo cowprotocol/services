@@ -48,7 +48,7 @@ pub struct AmplificationParameter {
 }
 
 impl AmplificationParameter {
-    pub fn new(factor: U256, precision: U256) -> Result<Self> {
+    pub fn try_new(factor: U256, precision: U256) -> Result<Self> {
         ensure!(!precision.is_zero(), "Zero precision not allowed");
         Ok(Self { factor, precision })
     }
@@ -106,7 +106,7 @@ impl FactoryIndexing for BalancerV2StablePoolFactoryV2 {
                 futures::try_join!(fetch_common, fetch_amplification_parameter)?;
             let amplification_parameter = {
                 let (factor, _, precision) = amplification_parameter;
-                AmplificationParameter::new(factor, precision)?
+                AmplificationParameter::try_new(factor, precision)?
             };
 
             Ok(Some(PoolState {
@@ -155,21 +155,21 @@ mod tests {
     #[test]
     fn amplification_parameter_conversions() {
         assert_eq!(
-            AmplificationParameter::new(2.into(), 3.into())
+            AmplificationParameter::try_new(2.into(), 3.into())
                 .unwrap()
                 .with_base(1000.into())
                 .unwrap(),
             666.into()
         );
         assert_eq!(
-            AmplificationParameter::new(7.into(), 8.into())
+            AmplificationParameter::try_new(7.into(), 8.into())
                 .unwrap()
                 .as_big_rational(),
             BigRational::new(7.into(), 8.into())
         );
 
         assert_eq!(
-            AmplificationParameter::new(1.into(), 0.into())
+            AmplificationParameter::try_new(1.into(), 0.into())
                 .unwrap_err()
                 .to_string(),
             "Zero precision not allowed"

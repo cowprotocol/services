@@ -24,7 +24,7 @@ pub fn to_domain(id: liquidity::Id, pool: ConstantProductOrder) -> Result<liquid
     );
 
     let bps = (pool.fee.numer() * BPS_BASE) / pool.fee.denom();
-    let fee = swapr::Fee::new(bps)?;
+    let fee = swapr::Fee::try_new(bps)?;
     Ok(liquidity::Liquidity {
         id,
         gas: GAS_PER_SWAP.into(),
