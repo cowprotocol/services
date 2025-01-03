@@ -106,6 +106,31 @@ AND t.log_index BETWEEN (SELECT * from previous_settlement) AND $2
         .await
 }
 
+pub async fn token_first_trade_block(
+    ex: &mut PgConnection,
+    token: Address,
+) -> Result<Option<i64>, sqlx::Error> {
+    const QUERY: &str = r#"
+SELECT MIN(sub.block_number) AS earliest_block
+FROM (
+    SELECT MIN(t.block_number) AS block_number
+    FROM trades t
+    JOIN orders o ON t.order_uid = o.uid
+    WHERE o.sell_token = $1 OR o.buy_token = $1
+
+    UNION ALL
+
+    SELECT MIN(t.block_number) AS block_number
+    FROM trades t
+    JOIN jit_orders j ON t.order_uid = j.uid
+    WHERE j.sell_token = $1 OR j.buy_token = $1
+) AS sub
+"#;
+
+    let (block_number,) = sqlx::query_as(QUERY).bind(token).fetch_one(ex).await?;
+    Ok(block_number)
+}
+
 #[cfg(test)]
 mod tests {
     use {
@@ -577,6 +602,33 @@ mod tests {
                 log_index: 2,
                 order_uid: trade_b.order_uid,
             }]
+        );
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_token_first_trade_block() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let token = Default::default();
+        assert_eq!(token_first_trade_block(&mut db, token).await.unwrap(), None);
+
+        let (owners, order_ids) = generate_owners_and_order_ids(2, 2).await;
+        let event_index_a = EventIndex {
+            block_number: 123,
+            log_index: 0,
+        };
+        let event_index_b = EventIndex {
+            block_number: 124,
+            log_index: 0,
+        };
+        add_order_and_trade(&mut db, owners[0], order_ids[0], event_index_a, None, None).await;
+        add_order_and_trade(&mut db, owners[1], order_ids[1], event_index_b, None, None).await;
+        assert_eq!(
+            token_first_trade_block(&mut db, token).await.unwrap(),
+            Some(123)
         );
     }
 }
