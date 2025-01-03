@@ -28,7 +28,7 @@ use {
     contracts::{BalancerV2Vault, IUniswapV3Factory},
     ethcontract::{common::DeploymentInformation, dyns::DynWeb3, errors::DeployError, BlockNumber},
     ethrpc::block_stream::block_number_to_block_number_hash,
-    futures::StreamExt,
+    futures::stream::StreamExt,
     model::DomainSeparator,
     observe::metrics::LivenessChecking,
     shared::{
@@ -348,7 +348,12 @@ pub async fn run(args: Arguments) {
 
     let price_estimator = price_estimator_factory
         .price_estimator(
-            &args.order_quoting.price_estimation_drivers,
+            &args
+                .order_quoting
+                .price_estimation_drivers
+                .iter()
+                .map(|price_estimator_driver| price_estimator_driver.clone().into())
+                .collect::<Vec<_>>(),
             native_price_estimator.clone(),
             gas_price_estimator.clone(),
         )
@@ -543,21 +548,32 @@ pub async fn run(args: Arguments) {
         max_winners_per_auction: args.max_winners_per_auction,
         max_solutions_per_solver: args.max_solutions_per_solver,
     };
+    let drivers_futures = args
+        .drivers
+        .into_iter()
+        .map(|driver| async move {
+            infra::Driver::try_new(
+                driver.url,
+                driver.name.clone(),
+                driver.fairness_threshold.map(Into::into),
+                driver.submission_account,
+            )
+            .await
+            .map(Arc::new)
+            .expect("failed to load solver configuration")
+        })
+        .collect::<Vec<_>>();
+
+    let drivers = futures::future::join_all(drivers_futures)
+        .await
+        .into_iter()
+        .collect();
 
     let run = RunLoop::new(
         run_loop_config,
         eth,
         persistence.clone(),
-        args.drivers
-            .into_iter()
-            .map(|driver| {
-                Arc::new(infra::Driver::new(
-                    driver.url,
-                    driver.name,
-                    driver.fairness_threshold.map(Into::into),
-                ))
-            })
-            .collect(),
+        drivers,
         solvable_orders_cache,
         trusted_tokens,
         liveness.clone(),
@@ -574,16 +590,25 @@ async fn shadow_mode(args: Arguments) -> ! {
         args.shadow.expect("missing shadow mode configuration"),
     );
 
-    let drivers = args
+    let drivers_futures = args
         .drivers
         .into_iter()
-        .map(|driver| {
-            Arc::new(infra::Driver::new(
+        .map(|driver| async move {
+            infra::Driver::try_new(
                 driver.url,
-                driver.name,
+                driver.name.clone(),
                 driver.fairness_threshold.map(Into::into),
-            ))
+                driver.submission_account,
+            )
+            .await
+            .map(Arc::new)
+            .expect("failed to load solver configuration")
         })
+        .collect::<Vec<_>>();
+
+    let drivers = futures::future::join_all(drivers_futures)
+        .await
+        .into_iter()
         .collect();
 
     let trusted_tokens = {

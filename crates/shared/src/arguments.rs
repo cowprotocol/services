@@ -55,7 +55,6 @@ macro_rules! logging_args_with_default_filter {
 pub struct ExternalSolver {
     pub name: String,
     pub url: Url,
-    pub fairness_threshold: Option<U256>,
 }
 
 // The following arguments are used to configure the order creation process
@@ -472,19 +471,16 @@ impl FromStr for ExternalSolver {
 
     fn from_str(solver: &str) -> Result<Self> {
         let parts: Vec<&str> = solver.split('|').collect();
-        ensure!(parts.len() >= 2, "not enough arguments for external solver");
+        ensure!(
+            parts.len() == 2,
+            "wrong number of arguments for external solver"
+        );
         let (name, url) = (parts[0], parts[1]);
         let url: Url = url.parse()?;
-        let fairness_threshold = match parts.get(2) {
-            Some(value) => {
-                Some(U256::from_dec_str(value).context("failed to parse fairness threshold")?)
-            }
-            None => None,
-        };
+
         Ok(Self {
             name: name.to_owned(),
             url,
-            fairness_threshold,
         })
     }
 }
@@ -492,30 +488,6 @@ impl FromStr for ExternalSolver {
 #[cfg(test)]
 mod test {
     use super::*;
-
-    #[test]
-    fn parse_driver() {
-        let argument = "name1|http://localhost:8080";
-        let driver = ExternalSolver::from_str(argument).unwrap();
-        let expected = ExternalSolver {
-            name: "name1".into(),
-            url: Url::parse("http://localhost:8080").unwrap(),
-            fairness_threshold: None,
-        };
-        assert_eq!(driver, expected);
-    }
-
-    #[test]
-    fn parse_driver_with_threshold() {
-        let argument = "name1|http://localhost:8080|1000000000000000000";
-        let driver = ExternalSolver::from_str(argument).unwrap();
-        let expected = ExternalSolver {
-            name: "name1".into(),
-            url: Url::parse("http://localhost:8080").unwrap(),
-            fairness_threshold: Some(U256::exp10(18)),
-        };
-        assert_eq!(driver, expected);
-    }
 
     #[test]
     fn parse_drivers_wrong_arguments() {

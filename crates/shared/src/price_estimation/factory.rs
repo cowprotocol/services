@@ -12,7 +12,7 @@ use {
         PriceEstimating,
     },
     crate::{
-        arguments::{self, ExternalSolver},
+        arguments,
         bad_token::BadTokenDetecting,
         baseline_solver::BaseTokens,
         code_fetching::CachedCodeFetcher,
@@ -23,6 +23,7 @@ use {
             buffered::{self, BufferedRequest, NativePriceBatchFetching},
             competition::PriceRanking,
             native::NativePriceEstimating,
+            ExternalSolver,
         },
         token_info::TokenInfoFetching,
     },
