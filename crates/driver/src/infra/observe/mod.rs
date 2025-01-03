@@ -339,7 +339,7 @@ pub fn mempool_executed(
     }
     let result = match res {
         Ok(_) => "Success",
-        Err(mempools::Error::Revert(_) | mempools::Error::SimulationRevert) => "Revert",
+        Err(mempools::Error::Revert { .. } | mempools::Error::SimulationRevert { .. }) => "Revert",
         Err(mempools::Error::Expired) => "Expired",
         Err(mempools::Error::Other(_)) => "Other",
         Err(mempools::Error::Disabled) => "Disabled",
