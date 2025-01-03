@@ -25,7 +25,7 @@ struct CacheEntry {
     /// when the decision on the token quality was made
     last_updated: Instant,
     /// whether the token is supported or not
-    quality: Quality,
+    is_supported: bool,
 }
 
 impl Cache {
@@ -39,23 +39,21 @@ impl Cache {
     }
 
     /// Updates whether or not a token should be considered supported.
-    pub fn update_quality(&self, token: eth::TokenAddress, quality: Quality, now: Instant) {
+    pub fn update_quality(&self, token: eth::TokenAddress, is_supported: bool, now: Instant) {
         self.0
             .cache
             .entry(token)
             .and_modify(|value| {
-                if quality == Quality::Unsupported
-                    || now.duration_since(value.last_updated) > self.0.max_age
-                {
+                if !is_supported || now.duration_since(value.last_updated) > self.0.max_age {
                     // Only update the value if the cached value is outdated by now or
                     // if the new value is "Unsupported". This means on conflicting updates
                     // we err on the conservative side and assume a token is unsupported.
-                    value.quality = quality;
+                    value.is_supported = is_supported;
                 }
                 value.last_updated = now;
             })
             .or_insert_with(|| CacheEntry {
-                quality,
+                is_supported,
                 last_updated: now,
             });
     }
@@ -69,9 +67,15 @@ impl Cache {
 
     /// Returns the quality of the token if the cached value has not expired
     /// yet.
-    pub fn get_quality(&self, token: &eth::TokenAddress, now: Instant) -> Option<Quality> {
-        let token = self.0.cache.get(token)?;
+    pub fn get_quality(&self, token: &eth::TokenAddress, now: Instant) -> Quality {
+        let Some(token) = self.0.cache.get(token) else {
+            return Quality::Unknown;
+        };
         let still_valid = now.duration_since(token.last_updated) > self.0.max_age;
-        still_valid.then_some(token.quality)
+        match (still_valid, token.is_supported) {
+            (false, _) => Quality::Unknown,
+            (true, true) => Quality::Supported,
+            (true, false) => Quality::Unsupported,
+        }
     }
 }

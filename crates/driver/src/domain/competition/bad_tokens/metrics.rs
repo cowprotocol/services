@@ -45,19 +45,26 @@ impl Detector {
         }
     }
 
-    pub fn get_quality(&self, token: &eth::TokenAddress, now: Instant) -> Option<Quality> {
-        let stats = self.counter.get(token)?;
+    pub fn get_quality(&self, token: &eth::TokenAddress, now: Instant) -> Quality {
+        let Some(stats) = self.counter.get(token) else {
+            return Quality::Unknown;
+        };
+
         if stats
             .flagged_unsupported_at
             .is_some_and(|t| now.duration_since(t) > self.token_freeze_time)
         {
             // Sometimes tokens only cause issues temporarily. If the token's freeze
-            // period expired we give it another chance to see if it still behaves badly.
-            return None;
+            // period expired we pretend we don't have enough information to give it
+            // another chance. If it still behaves badly it will get frozen immediately.
+            return Quality::Unknown;
         }
 
         let is_unsupported = self.stats_indicate_unsupported(&stats);
-        (!self.log_only && is_unsupported).then_some(Quality::Unsupported)
+        match !self.log_only && is_unsupported {
+            true => Quality::Unsupported,
+            false => Quality::Supported,
+        }
     }
 
     fn stats_indicate_unsupported(&self, stats: &TokenStatistics) -> bool {
@@ -128,28 +135,23 @@ mod tests {
 
         let token_a = eth::TokenAddress(eth::ContractAddress(H160([1; 20])));
         let token_b = eth::TokenAddress(eth::ContractAddress(H160([2; 20])));
+        let token_quality = || detector.get_quality(&token_a, Instant::now());
 
-        // token is reported as supported while we don't have enough measurements
-        assert_eq!(detector.get_quality(&token_a, Instant::now()), None);
+        // token is reported as unknown while we don't have enough measurements
+        assert_eq!(token_quality(), Quality::Unknown);
         detector.update_tokens(&[(token_a, token_b)], true);
-        assert_eq!(detector.get_quality(&token_a, Instant::now()), None);
+        assert_eq!(token_quality(), Quality::Unknown);
         detector.update_tokens(&[(token_a, token_b)], true);
 
         // after we got enough measurements the token gets marked as bad
-        assert_eq!(
-            detector.get_quality(&token_a, Instant::now()),
-            Some(Quality::Unsupported)
-        );
+        assert_eq!(token_quality(), Quality::Unsupported);
 
-        // after the freeze period is over the token gets reported as good again
+        // after the freeze period is over the token gets reported as unknown again
         tokio::time::sleep(FREEZE_DURATION).await;
-        assert_eq!(detector.get_quality(&token_a, Instant::now()), None);
+        assert_eq!(token_quality(), Quality::Unknown);
 
         // after an unfreeze another bad measurement is enough to freeze it again
         detector.update_tokens(&[(token_a, token_b)], true);
-        assert_eq!(
-            detector.get_quality(&token_a, Instant::now()),
-            Some(Quality::Unsupported)
-        );
+        assert_eq!(token_quality(), Quality::Unsupported);
     }
 }
