@@ -730,7 +730,7 @@ mod tests {
             onchain_user: None,
             onchain_placement_error: None,
             executed_fee: Default::default(),
-            executed_fee_token: ByteArray([1; 20]), // TODO surplus token
+            executed_fee_token: ByteArray([2; 20]),
             full_app_data: Default::default(),
         };
 

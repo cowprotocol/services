@@ -179,6 +179,7 @@ impl From<EffectiveGasPrice> for U256 {
         value.0.into()
     }
 }
+
 impl std::ops::Sub<Self> for TokenAmount {
     type Output = TokenAmount;
 
