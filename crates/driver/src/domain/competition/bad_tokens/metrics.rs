@@ -111,3 +111,43 @@ impl Detector {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use {super::*, ethcontract::H160};
+
+    /// Tests that a token only gets marked temporarily as unsupported.
+    /// After the freeze period it will be allowed again.
+    #[tokio::test]
+    async fn unfreeze_bad_tokens() {
+        const FREEZE_DURATION: Duration = Duration::from_millis(50);
+        let detector = Detector::new(0.5, 2, false, FREEZE_DURATION);
+
+        let token_a = eth::TokenAddress(eth::ContractAddress(H160([1; 20])));
+        let token_b = eth::TokenAddress(eth::ContractAddress(H160([2; 20])));
+
+        // token is reported as supported while we don't have enough measurements
+        assert_eq!(detector.get_quality(&token_a, Instant::now()), None);
+        detector.update_tokens(&[(token_a, token_b)], true);
+        assert_eq!(detector.get_quality(&token_a, Instant::now()), None);
+        detector.update_tokens(&[(token_a, token_b)], true);
+
+        // after we got enough measurements the token gets marked as bad
+        assert_eq!(
+            detector.get_quality(&token_a, Instant::now()),
+            Some(Quality::Unsupported)
+        );
+
+        // after the freeze period is over the token gets reported as good again
+        // after the token gets unfrozen it gets reported as good again
+        tokio::time::sleep(FREEZE_DURATION).await;
+        assert_eq!(detector.get_quality(&token_a, Instant::now()), None);
+
+        // after an unfreeze another bad measurement is enough to freeze it again
+        detector.update_tokens(&[(token_a, token_b)], true);
+        assert_eq!(
+            detector.get_quality(&token_a, Instant::now()),
+            Some(Quality::Unsupported)
+        );
+    }
+}
