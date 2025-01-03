@@ -139,7 +139,6 @@ mod tests {
         );
 
         // after the freeze period is over the token gets reported as good again
-        // after the token gets unfrozen it gets reported as good again
         tokio::time::sleep(FREEZE_DURATION).await;
         assert_eq!(detector.get_quality(&token_a, Instant::now()), None);
 
