@@ -188,7 +188,7 @@ jobs:
 
   run-flaky-test:
     # to debug a flaky test set `if` to true and configure the flaky test in the `run` step
-    if: ${{ false }}
+    if: ${{ true }}
     timeout-minutes: 60
     runs-on: ubuntu-latest
     env:
@@ -196,6 +196,8 @@ jobs:
       CARGO_PROFILE_DEV_DEBUG: 0
       CARGO_PROFILE_TEST_DEBUG: 0
       CARGO_TERM_COLOR: always
+      FORK_URL_MAINNET: ${{ secrets.FORK_URL_MAINNET }}
+      FORK_URL_GNOSIS: ${{ secrets.FORK_URL_GNOSIS }}
       TOML_TRACE_ERROR: 1
     steps:
       - uses: actions/checkout@v4
@@ -217,7 +219,7 @@ jobs:
           attempt=1
           while true; do
             echo "Running test attempt #$attempt"
-            if ! cargo nextest run -p e2e local_node --test-threads 1 --failure-output final --run-ignored ignored-only; then
+            if ! cargo nextest run -p e2e forked_node --test-threads 1 --failure-output final --run-ignored ignored-only; then
               exit 1
             fi
             attempt=$((attempt+1))

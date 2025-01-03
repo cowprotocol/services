@@ -20,6 +20,7 @@ use {
         time::Duration,
     },
     tempfile::TempPath,
+    web3::Transport,
 };
 pub use {deploy::*, onchain_components::*, services::*, solver::*};
 
@@ -193,12 +194,41 @@ async fn run<F, Fut, T>(
     // it but rather in the locked state.
     let _lock = NODE_MUTEX.lock();
 
+    let (node, web3) = spawn_node_with_retries(&fork, 3).await;
+    tracing::info!("Node started");
+    let id = uuid::Uuid::new_v4().to_string();
+
+    services::clear_database().await;
+    tracing::info!("starting a test {:?}", id);
+    // Hack: the closure may actually be unwind unsafe; moreover, `catch_unwind`
+    // does not catch some types of panics. In this cases, the state of the node
+    // is not restored. This is not considered an issue since this function
+    // is supposed to be used in a test environment.
+    let result = AssertUnwindSafe(f(web3.clone())).catch_unwind().await;
+    tracing::info!("the test {:?} is finished: {:?}", id, result);
+
+    let node = node.lock().unwrap().take();
+    if let Some(mut node) = node {
+        tracing::info!("Killing node");
+        node.kill().await;
+    }
+    tracing::info!("Node killed");
+    services::clear_database().await;
+
+    if let Err(err) = result {
+        panic::resume_unwind(err);
+    }
+}
+
+async fn try_spawn_node_and_check(
+    fork: &Option<(String, Option<u64>)>,
+) -> Option<(Arc<Mutex<Option<Node>>>, Web3)> {
     let node = match fork {
-        Some((fork, block_number)) => Node::forked(fork, block_number).await,
+        Some((fork_url, block_number)) => Node::forked(fork_url.clone(), *block_number).await,
         None => Node::new().await,
     };
-
     let node = Arc::new(Mutex::new(Some(node)));
+
     let node_panic_handle = node.clone();
     observe::panic_hook::prepend_panic_handler(Box::new(move |_| {
         // Drop node in panic handler because `.catch_unwind()` does not catch all
@@ -209,22 +239,37 @@ async fn run<F, Fut, T>(
     let http = create_test_transport(NODE_HOST);
     let web3 = Web3::new(http);
 
-    services::clear_database().await;
-    // Hack: the closure may actually be unwind unsafe; moreover, `catch_unwind`
-    // does not catch some types of panics. In this cases, the state of the node
-    // is not restored. This is not considered an issue since this function
-    // is supposed to be used in a test environment.
-    let result = AssertUnwindSafe(f(web3.clone())).catch_unwind().await;
-
-    let node = node.lock().unwrap().take();
-    if let Some(mut node) = node {
-        node.kill().await;
+    let mine_check = tokio::time::timeout(
+        Duration::from_secs(2),
+        web3.transport().execute("evm_mine", vec![]),
+    )
+    .await;
+    match mine_check {
+        Ok(Ok(_)) => Some((node, web3)),
+        _ => {
+            let node = node.lock().unwrap().take();
+            if let Some(mut node) = node {
+                node.kill().await;
+            }
+            None
+        }
     }
-    services::clear_database().await;
+}
 
-    if let Err(err) = result {
-        panic::resume_unwind(err);
+async fn spawn_node_with_retries(
+    fork: &Option<(String, Option<u64>)>,
+    max_attempts: u32,
+) -> (Arc<Mutex<Option<Node>>>, Web3) {
+    let mut attempts = 0;
+
+    while attempts < max_attempts {
+        match try_spawn_node_and_check(fork).await {
+            Some((node, web3)) => return (node, web3),
+            None => attempts += 1,
+        }
     }
+
+    panic!("Failed to startup a node after {:?} attempts", max_attempts);
 }
 
 #[macro_export]
