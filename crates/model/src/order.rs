@@ -673,6 +673,7 @@ pub struct OrderMetadata {
     pub executed_sell_amount: BigUint,
     #[serde_as(as = "HexOrDecimalU256")]
     pub executed_sell_amount_before_fees: U256,
+    // The fee amount is expressed in the surplus token
     #[serde_as(as = "HexOrDecimalU256")]
     pub executed_fee_amount: U256,
     #[serde_as(as = "HexOrDecimalU256")]
