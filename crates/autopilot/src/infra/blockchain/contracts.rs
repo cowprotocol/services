@@ -1,4 +1,4 @@
-use {crate::domain, chain::Chain, ethcontract::dyns::DynWeb3, primitive_types::H160};
+use {crate::domain, chain::Chain, ethrpc::Web3, primitive_types::H160};
 
 #[derive(Debug, Clone)]
 pub struct Contracts {
@@ -22,7 +22,7 @@ pub struct Addresses {
 }
 
 impl Contracts {
-    pub async fn new(web3: &DynWeb3, chain: &Chain, addresses: Addresses) -> Self {
+    pub async fn new(web3: &Web3, chain: &Chain, addresses: Addresses) -> Self {
         let address_for = |contract: &ethcontract::Contract, address: Option<H160>| {
             address
                 .or_else(|| deployment_address(contract, chain))

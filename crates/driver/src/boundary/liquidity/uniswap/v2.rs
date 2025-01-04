@@ -135,6 +135,7 @@ where
     let router = eth.contract_at::<IUniswapLikeRouter>(config.router);
     let settlement = eth.contracts().settlement().clone();
     let web3 = router.raw_instance().web3().clone();
+    let web3 = Web3::from_legacy_web3(web3);
     let pool_fetcher = {
         let factory = router.factory().call().await?;
         let pair_provider = PairProvider {

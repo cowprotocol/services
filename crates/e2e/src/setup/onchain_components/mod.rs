@@ -539,7 +539,7 @@ impl OnchainComponents {
     }
 
     pub async fn send_wei(&self, to: H160, amount: U256) {
-        TransactionBuilder::new(self.web3.clone())
+        TransactionBuilder::new(self.web3.web3.clone())
             .value(amount)
             .to(to)
             .send()

@@ -1,8 +1,8 @@
 //! Mockable Web3 transport implementation.
 
 use {
+    crate::Web3,
     ethcontract::{
-        Web3,
         futures::future::{self, Ready},
         jsonrpc::{Call, Id, MethodCall, Params},
         web3::{self, BatchTransport, RequestId, Transport},

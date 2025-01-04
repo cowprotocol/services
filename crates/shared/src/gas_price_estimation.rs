@@ -91,7 +91,7 @@ pub async fn create_priority_estimator(
                 ensure!(is_mainnet(&network_id), "GasNow only supports mainnet");
                 estimators.push(Box::new(GasNowGasStation::new(client())))
             }
-            GasEstimatorType::Web3 => estimators.push(Box::new(web3.clone())),
+            GasEstimatorType::Web3 => estimators.push(Box::new(web3.web3.clone())),
             GasEstimatorType::Native => {
                 match NativeGasEstimator::new(web3.transport().clone(), None).await {
                     Ok(estimator) => estimators.push(Box::new(estimator)),

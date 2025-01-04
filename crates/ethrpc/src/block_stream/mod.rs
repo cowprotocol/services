@@ -120,7 +120,7 @@ pub async fn current_block_stream(
 ) -> Result<CurrentBlockWatcher> {
     // Build new Web3 specifically for the current block stream to avoid batching
     // requests together on chains with a very high block frequency.
-    let web3 = Web3::new(Web3Transport::new(HttpTransport::new(
+    let web3 = crate::Web3::new(Web3Transport::new(HttpTransport::new(
         Default::default(),
         url,
         "block_stream".into(),
@@ -238,7 +238,7 @@ pub trait BlockRetrieving: Debug + Send + Sync + 'static {
 }
 
 #[async_trait::async_trait]
-impl BlockRetrieving for Web3 {
+impl BlockRetrieving for crate::Web3 {
     async fn current_block(&self) -> Result<BlockInfo> {
         get_block_at_id(self, BlockNumber::Latest.into())
             .await?
