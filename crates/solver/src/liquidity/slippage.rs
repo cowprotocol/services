@@ -85,8 +85,12 @@ impl SlippageContext<'_> {
 
 impl Default for SlippageContext<'static> {
     fn default() -> Self {
-        static CONTEXT: LazyLock<(ExternalPrices, SlippageCalculator)> = LazyLock::new(Default::default);
-        Self { prices: &CONTEXT.0, calculator: &CONTEXT.1 }
+        static CONTEXT: LazyLock<(ExternalPrices, SlippageCalculator)> =
+            LazyLock::new(Default::default);
+        Self {
+            prices: &CONTEXT.0,
+            calculator: &CONTEXT.1,
+        }
     }
 }
 

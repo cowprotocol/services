@@ -8,8 +8,7 @@ use {
         tokens::{self, Tokenize as _},
     },
     hex_literal::hex,
-    lazy_static::lazy_static,
-    std::iter,
+    std::{iter, sync::LazyLock},
     web3::{
         self,
         api::Eth,
@@ -160,12 +159,12 @@ fn decode(len: usize, return_data: Bytes) -> Vec<Result<Vec<u8>, ExecutionError>
 type ReturnData = Vec<(bool, ethcontract::Bytes<Vec<u8>>)>;
 
 fn decode_return_data(len: usize, return_data: Bytes) -> Result<ReturnData, DecodeError> {
-    lazy_static! {
-        static ref KIND: [ParamType; 1] = [ParamType::Array(Box::new(ParamType::Tuple(vec![
+    static KIND: LazyLock<[ParamType; 1]> = LazyLock::new(|| {
+        [ParamType::Array(Box::new(ParamType::Tuple(vec![
             ParamType::Bool,
             ParamType::Bytes,
-        ])),)];
-    }
+        ])))]
+    });
 
     let tokens = ethabi::decode(&*KIND, &return_data.0)?;
     let (results,) = <(ReturnData,)>::from_token(Token::Tuple(tokens))?;

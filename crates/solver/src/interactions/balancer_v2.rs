@@ -6,6 +6,7 @@ use {
         http_solver::model::TokenAmount,
         interaction::{EncodedInteraction, Interaction},
     },
+    std::sync::LazyLock,
 };
 
 #[derive(Clone, Debug)]
@@ -18,12 +19,10 @@ pub struct BalancerSwapGivenOutInteraction {
     pub user_data: Bytes<Vec<u8>>,
 }
 
-lazy_static::lazy_static! {
-    /// An impossibly distant future timestamp. Note that we use `0x80000...00`
-    /// as the value so that it is mostly 0's to save small amounts of gas on
-    /// calldata.
-    pub static ref NEVER: U256 = U256::from(1) << 255;
-}
+/// An impossibly distant future timestamp. Note that we use `0x80000...00`
+/// as the value so that it is mostly 0's to save small amounts of gas on
+/// calldata.
+pub static NEVER: LazyLock<U256> = LazyLock::new(|| U256::from(1) << 255);
 
 impl BalancerSwapGivenOutInteraction {
     pub fn encode_swap(&self) -> EncodedInteraction {

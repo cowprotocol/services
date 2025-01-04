@@ -5,8 +5,7 @@ use {
     model::order::OrderKind,
     number::nonzero::U256 as NonZeroU256,
     primitive_types::{H160, U256},
-    std::sync::Arc,
-    std::sync::LazyLock,
+    std::sync::{Arc, LazyLock},
 };
 
 mod coingecko;
