@@ -1,12 +1,12 @@
 use {
     crate::price_estimation::{PriceEstimating, PriceEstimationError, Query},
     bigdecimal::{BigDecimal, ToPrimitive},
-    cached::once_cell::sync::Lazy,
     futures::FutureExt,
     model::order::OrderKind,
     number::nonzero::U256 as NonZeroU256,
     primitive_types::{H160, U256},
     std::sync::Arc,
+    std::sync::LazyLock,
 };
 
 mod coingecko;
@@ -19,7 +19,7 @@ pub type NativePriceEstimateResult = Result<NativePrice, PriceEstimationError>;
 
 /// Convert from normalized price to floating point price
 pub fn from_normalized_price(price: BigDecimal) -> Option<f64> {
-    static ONE_E18: Lazy<BigDecimal> = Lazy::new(|| BigDecimal::try_from(1e18).unwrap());
+    static ONE_E18: LazyLock<BigDecimal> = LazyLock::new(|| BigDecimal::try_from(1e18).unwrap());
 
     // Divide by 1e18 to reverse the multiplication by 1e18
     let normalized_price = price / ONE_E18.clone();
