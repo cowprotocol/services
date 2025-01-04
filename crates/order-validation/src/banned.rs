@@ -1,6 +1,6 @@
 use {
-    contracts::ChainalysisOracle,
-    ethcontract::{H160, errors::MethodError, futures::future::join_all},
+    contracts::alloy::ChainalysisOracle,
+    ethcontract::{H160, futures::future::join_all},
     std::{
         collections::{HashMap, HashSet},
         sync::Arc,
@@ -22,12 +22,12 @@ struct UserMetadata {
 }
 
 struct Onchain {
-    contract: ChainalysisOracle,
+    contract: ChainalysisOracle::Instance,
     cache: RwLock<HashMap<H160, UserMetadata>>,
 }
 
 impl Onchain {
-    pub fn new(contract: ChainalysisOracle) -> Arc<Self> {
+    pub fn new(contract: ChainalysisOracle::Instance) -> Arc<Self> {
         let onchain = Arc::new(Self {
             contract,
             cache: Default::default(),
@@ -122,7 +122,7 @@ impl Users {
     /// Creates a new `Users` instance that checks the hardcoded list and uses
     /// the given `web3` instance to determine whether an onchain registry of
     /// banned addresses is available.
-    pub fn new(contract: Option<ChainalysisOracle>, banned_users: Vec<H160>) -> Self {
+    pub fn new(contract: Option<ChainalysisOracle::Instance>, banned_users: Vec<H160>) -> Self {
         Self {
             list: HashSet::from_iter(banned_users),
             onchain: contract.map(Onchain::new),
@@ -211,14 +211,40 @@ impl Users {
     }
 }
 
+trait ExtAlloyCompatible {
+    type AlloyType;
+    fn as_alloy(&self) -> Self::AlloyType;
+
+    #[allow(unused)]
+    fn from_alloy(val: Self::AlloyType) -> Self;
+}
+
+impl ExtAlloyCompatible for H160 {
+    type AlloyType = alloy::primitives::Address;
+
+    #[inline(always)]
+    fn as_alloy(&self) -> Self::AlloyType {
+        alloy::primitives::Address(self.0.into())
+    }
+
+    #[inline(always)]
+    fn from_alloy(val: Self::AlloyType) -> Self {
+        Self(val.0.0)
+    }
+}
+
 impl Onchain {
     async fn fetch(&self, address: H160) -> Result<bool, Error> {
-        Ok(self.contract.is_sanctioned(address).call().await?)
+        Ok(self
+            .contract
+            .isSanctioned(address.as_alloy())
+            .call()
+            .await?)
     }
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("failed to fetch banned users from onchain")]
-    Onchain(#[from] MethodError),
+    Onchain(#[from] alloy::contract::Error),
 }

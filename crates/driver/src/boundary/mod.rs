@@ -40,7 +40,7 @@ pub use {
 fn web3(eth: &Ethereum) -> Web3 {
     // Ugly way to get access to one of these... However, this way we don't
     // leak this into our domain logic.
-    eth.contracts().settlement().raw_instance().web3()
+    Web3::from_legacy_web3(eth.contracts().settlement().raw_instance().web3())
 }
 
 /// Builds a web3 client that buffers requests and sends them in a

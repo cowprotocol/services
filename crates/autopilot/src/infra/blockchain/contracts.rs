@@ -1,10 +1,16 @@
-use {crate::domain, chain::Chain, ethcontract::dyns::DynWeb3, primitive_types::H160};
+use {
+    crate::domain,
+    chain::Chain,
+    contracts::alloy::ChainalysisOracle,
+    ethrpc::Web3,
+    primitive_types::H160,
+};
 
 #[derive(Debug, Clone)]
 pub struct Contracts {
     settlement: contracts::GPv2Settlement,
     weth: contracts::WETH9,
-    chainalysis_oracle: Option<contracts::ChainalysisOracle>,
+    chainalysis_oracle: Option<ChainalysisOracle::Instance>,
     trampoline: contracts::HooksTrampoline,
 
     /// The authenticator contract that decides which solver is allowed to
@@ -22,7 +28,7 @@ pub struct Addresses {
 }
 
 impl Contracts {
-    pub async fn new(web3: &DynWeb3, chain: &Chain, addresses: Addresses) -> Self {
+    pub async fn new(web3: &Web3, chain: &Chain, addresses: Addresses) -> Self {
         let address_for = |contract: &ethcontract::Contract, address: Option<H160>| {
             address
                 .or_else(|| deployment_address(contract, chain))
@@ -50,7 +56,10 @@ impl Contracts {
             ),
         );
 
-        let chainalysis_oracle = contracts::ChainalysisOracle::deployed(web3).await.ok();
+        let chainalysis_oracle = Some(ChainalysisOracle::Instance::new(
+            Default::default(),
+            web3.alloy.clone(),
+        ));
 
         let settlement_domain_separator = domain::eth::DomainSeparator(
             settlement
@@ -92,7 +101,7 @@ impl Contracts {
         &self.settlement_domain_separator
     }
 
-    pub fn chainalysis_oracle(&self) -> &Option<contracts::ChainalysisOracle> {
+    pub fn chainalysis_oracle(&self) -> &Option<ChainalysisOracle::Instance> {
         &self.chainalysis_oracle
     }
 

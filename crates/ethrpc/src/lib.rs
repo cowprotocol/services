@@ -1,3 +1,4 @@
+pub mod alloy;
 pub mod block_stream;
 pub mod buffered;
 pub mod dummy;
@@ -9,18 +10,54 @@ pub mod multicall;
 
 use {
     self::{buffered::BufferedTransport, http::HttpTransport},
-    ethcontract::{batch::CallBatch, dyns::DynWeb3, transport::DynTransport},
+    ::alloy::providers::DynProvider,
+    ethcontract::{batch::CallBatch, transport::DynTransport},
     reqwest::{Client, Url},
     std::{num::NonZeroUsize, time::Duration},
+    web3::Transport,
 };
 
 pub const MAX_BATCH_SIZE: usize = 100;
 
-pub type Web3 = DynWeb3;
 pub type Web3Transport = DynTransport;
 pub type Web3CallBatch = CallBatch<Web3Transport>;
+pub type AlloyProvider = DynProvider;
 
-#[derive(Debug)]
+/// This is just a thin wrapper around providers (clients communicating
+/// with the blockchain) to aid the migration from `web3` to `alloy-provider`.
+/// It's able to dereference into the current provider (`web3`) but already
+/// providers access to the new provider (`alloy`). That way we should be able
+/// to convert each call site to use the new provider bit by bit instead of
+/// having to everything at once.
+#[derive(Debug, Clone)]
+pub struct Web3<T: Transport = DynTransport> {
+    pub web3: web3::Web3<T>,
+    pub alloy: AlloyProvider,
+}
+
+impl<T: Transport> std::ops::Deref for Web3<T> {
+    type Target = web3::Web3<T>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.web3
+    }
+}
+
+impl<T: Transport> Web3<T> {
+    pub fn new(transport: T) -> Self {
+        Self {
+            web3: web3::Web3::new(transport),
+            alloy: crate::alloy::provider("https://eth.llamarpc.com"),
+        }
+    }
+
+    pub fn from_legacy_web3(web3: web3::Web3<T>) -> Self {
+        let alloy = crate::alloy::provider("https://eth.llamarpc.com");
+        Self { web3, alloy }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct Config {
     /// Maximum batch size for Ethereum RPC requests. Use '0' to disable
     /// batching.
@@ -58,7 +95,7 @@ impl Default for Config {
         Self {
             ethrpc_max_batch_size: 20,
             ethrpc_max_concurrent_requests: 10,
-            ethrpc_batch_delay: Default::default(),
+            ethrpc_batch_delay: Duration::from_millis(5),
         }
     }
 }

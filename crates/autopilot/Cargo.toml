@@ -15,6 +15,7 @@ name = "autopilot"
 path = "src/main.rs"
 
 [dependencies]
+alloy = { workspace = true }
 app-data = { workspace = true }
 bytes-hex = { workspace = true }
 anyhow = { workspace = true }

@@ -175,7 +175,10 @@ pub enum DetectionError {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, ethrpc::create_env_test_transport, web3::Web3};
+    use {
+        super::*,
+        ethrpc::{Web3, create_env_test_transport},
+    };
 
     /// Tests that we can detect storage slots by probing the first
     /// n slots or by checking hardcoded known slots.

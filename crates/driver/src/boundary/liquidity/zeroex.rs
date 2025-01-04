@@ -7,7 +7,7 @@ use {
         infra::{self, Ethereum},
     },
     anyhow::anyhow,
-    ethrpc::block_stream::CurrentBlockWatcher,
+    ethrpc::{Web3, block_stream::CurrentBlockWatcher},
     shared::{
         http_client::HttpClientFactory,
         price_estimation::gas::GAS_PER_ZEROEX_ORDER,
@@ -96,6 +96,13 @@ pub async fn collector(
         blocks.clone(),
     )?);
     Ok(Box::new(
-        ZeroExLiquidity::new(web3, api, contract, settlement, blocks).await,
+        ZeroExLiquidity::new(
+            Web3::from_legacy_web3(web3),
+            api,
+            contract,
+            settlement,
+            blocks,
+        )
+        .await,
     ))
 }
