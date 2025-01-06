@@ -22,7 +22,6 @@ contracts = { path = "../contracts" }
 dashmap = { workspace = true }
 database = { path = "../database" }
 derive_more = { workspace = true }
-ttl_cache = "0.5"
 derivative = { workspace = true }
 ethcontract = { workspace = true }
 ethrpc = { path = "../ethrpc" }
@@ -34,7 +33,6 @@ hex-literal = { workspace = true }
 humantime = { workspace = true }
 indexmap = { workspace = true }
 itertools = { workspace = true }
-lazy_static = { workspace = true }
 maplit = { workspace = true }
 mockall = { workspace = true }
 model = { path = "../model" }

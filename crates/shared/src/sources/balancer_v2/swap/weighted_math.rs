@@ -5,16 +5,14 @@
 use {
     super::{error::Error, fixed_point::Bfp},
     ethcontract::U256,
-    lazy_static::lazy_static,
+    std::sync::LazyLock,
 };
 
 // https://github.com/balancer-labs/balancer-v2-monorepo/blob/6c9e24e22d0c46cca6dd15861d3d33da61a60b98/pkg/core/contracts/pools/weighted/WeightedMath.sol#L36-L37
-lazy_static! {
-    static ref MAX_IN_RATIO: Bfp =
-        Bfp::from_wei(U256::exp10(17).checked_mul(3_u32.into()).unwrap());
-    static ref MAX_OUT_RATIO: Bfp =
-        Bfp::from_wei(U256::exp10(17).checked_mul(3_u32.into()).unwrap());
-}
+static MAX_IN_RATIO: LazyLock<Bfp> =
+    LazyLock::new(|| Bfp::from_wei(U256::exp10(17).checked_mul(3_u32.into()).unwrap()));
+static MAX_OUT_RATIO: LazyLock<Bfp> =
+    LazyLock::new(|| Bfp::from_wei(U256::exp10(17).checked_mul(3_u32.into()).unwrap()));
 
 /// https://github.com/balancer-labs/balancer-v2-monorepo/blob/6c9e24e22d0c46cca6dd15861d3d33da61a60b98/pkg/core/contracts/pools/weighted/WeightedMath.sol#L69-L100
 /// It is not possible for the following addition balance_in.add(amount_in) to

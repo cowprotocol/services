@@ -16,7 +16,6 @@ async-trait = { workspace = true }
 futures = { workspace = true }
 hex = { workspace = true }
 hex-literal = { workspace = true }
-lazy_static = { workspace = true }
 mockall = { workspace = true }
 observe = { path = "../observe" }
 primitive-types = { workspace = true }
