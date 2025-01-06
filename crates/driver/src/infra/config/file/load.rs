@@ -123,6 +123,10 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                     metrics_strategy_required_measurements: config
                         .bad_token_detection
                         .metrics_strategy_required_measurements,
+                    metrics_strategy_log_only: config.bad_token_detection.metrics_strategy_log_only,
+                    metrics_strategy_token_freeze_time: config
+                        .bad_token_detection
+                        .metrics_strategy_token_freeze_time,
                 },
                 settle_queue_size: config.settle_queue_size,
             }
