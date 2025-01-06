@@ -1,6 +1,5 @@
 use {
     crate::database::Postgres,
-    anyhow::Context,
     hyper::StatusCode,
     primitive_types::H160,
     std::convert::Infallible,
@@ -17,19 +16,16 @@ pub fn get_token_metadata(
     get_native_prices_request().and_then(move |token: H160| {
         let db = db.clone();
         async move {
-            Result::<_, Infallible>::Ok(
-                match db
-                    .token_metadata(&token)
-                    .await
-                    .context("get_token_metadata error")
-                {
-                    Ok(metadata) => reply::with_status(reply::json(&metadata), StatusCode::OK),
-                    Err(err) => {
-                        tracing::error!(?err, ?token, "Failed to fetch token's first trade block");
-                        crate::api::internal_error_reply()
-                    }
-                },
-            )
+            let result = db.token_metadata(&token).await;
+            let response = match result {
+                Ok(metadata) => reply::with_status(reply::json(&metadata), StatusCode::OK),
+                Err(err) => {
+                    tracing::error!(?err, ?token, "Failed to fetch token's first trade block");
+                    crate::api::internal_error_reply()
+                }
+            };
+
+            Result::<_, Infallible>::Ok(response)
         }
     })
 }
