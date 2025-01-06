@@ -2,6 +2,7 @@ use {
     super::pair_provider::PairProvider,
     crate::{baseline_solver::BaselineSolvable, ethrpc::Web3, recent_block_cache::Block},
     anyhow::Result,
+    cached::{Cached, TimedCache},
     contracts::{errors::EthcontractErrorType, IUniswapLikePair, ERC20},
     ethcontract::{errors::MethodError, BlockId, H160, U256},
     futures::{
@@ -10,15 +11,16 @@ use {
     },
     model::TokenPair,
     num::rational::Ratio,
-    std::{collections::HashSet, sync::RwLock, time::Duration},
-    ttl_cache::TtlCache,
+    std::{
+        collections::HashSet,
+        sync::{LazyLock, RwLock},
+        time::Duration,
+    },
 };
 
 const POOL_SWAP_GAS_COST: usize = 60_000;
 
-lazy_static::lazy_static! {
-    static ref POOL_MAX_RESERVES: U256 = U256::from((1u128 << 112) - 1);
-}
+static POOL_MAX_RESERVES: LazyLock<U256> = LazyLock::new(|| U256::from((1u128 << 112) - 1));
 
 /// This type denotes `(reserve_a, reserve_b, token_b)` where
 /// `reserve_a` refers to the reserve of the excluded token.
@@ -182,8 +184,7 @@ impl BaselineSolvable for Pool {
 pub struct PoolFetcher<Reader> {
     pub pool_reader: Reader,
     pub web3: Web3,
-    pub cache_time: Duration,
-    pub non_existent_pools: RwLock<TtlCache<TokenPair, ()>>,
+    pub non_existent_pools: RwLock<TimedCache<TokenPair, ()>>,
 }
 
 impl<Reader> PoolFetcher<Reader> {
@@ -191,8 +192,7 @@ impl<Reader> PoolFetcher<Reader> {
         Self {
             pool_reader: reader,
             web3,
-            cache_time,
-            non_existent_pools: RwLock::new(TtlCache::new(usize::MAX)),
+            non_existent_pools: RwLock::new(TimedCache::with_lifespan(cache_time.as_secs())),
         }
     }
 }
@@ -205,8 +205,8 @@ where
     async fn fetch(&self, token_pairs: HashSet<TokenPair>, at_block: Block) -> Result<Vec<Pool>> {
         let mut token_pairs: Vec<_> = token_pairs.into_iter().collect();
         {
-            let non_existent_pools = self.non_existent_pools.read().unwrap();
-            token_pairs.retain(|pair| !non_existent_pools.contains_key(pair));
+            let mut non_existent_pools = self.non_existent_pools.write().unwrap();
+            token_pairs.retain(|pair| non_existent_pools.cache_get(pair).is_none());
         }
         let block = BlockId::Number(at_block.into());
         let futures = token_pairs
@@ -228,7 +228,7 @@ where
             tracing::debug!(token_pairs = ?new_missing_pairs, "stop indexing liquidity");
             let mut non_existent_pools = self.non_existent_pools.write().unwrap();
             for pair in new_missing_pairs {
-                non_existent_pools.insert(pair, (), self.cache_time);
+                non_existent_pools.cache_set(pair, ());
             }
         }
         Ok(pools)
