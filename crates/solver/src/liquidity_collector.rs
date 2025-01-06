@@ -2,9 +2,13 @@ use {
     crate::liquidity::Liquidity,
     anyhow::Result,
     model::TokenPair,
-    once_cell::sync::OnceCell,
     shared::{baseline_solver::BaseTokens, recent_block_cache::Block},
-    std::{collections::HashSet, future::Future, sync::Arc, time::Duration},
+    std::{
+        collections::HashSet,
+        future::Future,
+        sync::{Arc, OnceLock},
+        time::Duration,
+    },
     tracing::Instrument,
 };
 
@@ -50,7 +54,7 @@ impl LiquidityCollecting for LiquidityCollector {
 /// succeeds. Until the liquidity source has been initialised no liquidity will
 /// be provided.
 pub struct BackgroundInitLiquiditySource<L> {
-    liquidity_source: Arc<OnceCell<L>>,
+    liquidity_source: Arc<OnceLock<L>>,
 }
 
 impl<L> BackgroundInitLiquiditySource<L> {
@@ -66,7 +70,7 @@ impl<L> BackgroundInitLiquiditySource<L> {
             .liquidity_enabled
             .with_label_values(&[label])
             .set(0);
-        let liquidity_source = Arc::new(OnceCell::new());
+        let liquidity_source = Arc::new(OnceLock::new());
         let inner = liquidity_source.clone();
         let inner_label = label.to_owned();
         tokio::task::spawn(

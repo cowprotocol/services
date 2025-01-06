@@ -1,13 +1,17 @@
 use {
-    once_cell::sync::OnceCell,
     prometheus::Encoder,
-    std::{collections::HashMap, convert::Infallible, net::SocketAddr, sync::Arc},
+    std::{
+        collections::HashMap,
+        convert::Infallible,
+        net::SocketAddr,
+        sync::{Arc, OnceLock},
+    },
     tokio::task::{self, JoinHandle},
     warp::{Filter, Rejection, Reply},
 };
 
 /// Global metrics registry used by all components.
-static REGISTRY: OnceCell<prometheus_metric_storage::StorageRegistry> = OnceCell::new();
+static REGISTRY: OnceLock<prometheus_metric_storage::StorageRegistry> = OnceLock::new();
 
 /// Configure global metrics registry.
 ///

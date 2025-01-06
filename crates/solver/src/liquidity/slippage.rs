@@ -5,9 +5,8 @@ use {
     anyhow::{Context as _, Result},
     ethcontract::U256,
     num::{BigInt, BigRational, CheckedDiv, Integer as _, ToPrimitive as _},
-    once_cell::sync::OnceCell,
     shared::{external_prices::ExternalPrices, http_solver::model::TokenAmount},
-    std::{borrow::Cow, cmp},
+    std::{borrow::Cow, cmp, sync::LazyLock},
 };
 
 /// Constant maximum slippage of 10 BPS (0.1%) to use for on-chain liquidity.
@@ -86,9 +85,12 @@ impl SlippageContext<'_> {
 
 impl Default for SlippageContext<'static> {
     fn default() -> Self {
-        static CONTEXT: OnceCell<(ExternalPrices, SlippageCalculator)> = OnceCell::new();
-        let (prices, calculator) = CONTEXT.get_or_init(Default::default);
-        Self { prices, calculator }
+        static CONTEXT: LazyLock<(ExternalPrices, SlippageCalculator)> =
+            LazyLock::new(Default::default);
+        Self {
+            prices: &CONTEXT.0,
+            calculator: &CONTEXT.1,
+        }
     }
 }
 

@@ -11,14 +11,16 @@ use {
     },
     model::TokenPair,
     num::rational::Ratio,
-    std::{collections::HashSet, sync::RwLock, time::Duration},
+    std::{
+        collections::HashSet,
+        sync::{LazyLock, RwLock},
+        time::Duration,
+    },
 };
 
 const POOL_SWAP_GAS_COST: usize = 60_000;
 
-lazy_static::lazy_static! {
-    static ref POOL_MAX_RESERVES: U256 = U256::from((1u128 << 112) - 1);
-}
+static POOL_MAX_RESERVES: LazyLock<U256> = LazyLock::new(|| U256::from((1u128 << 112) - 1));
 
 /// This type denotes `(reserve_a, reserve_b, token_b)` where
 /// `reserve_a` refers to the reserve of the excluded token.
