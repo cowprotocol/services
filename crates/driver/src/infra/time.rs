@@ -7,7 +7,7 @@ pub fn now() -> chrono::DateTime<chrono::Utc> {
 /// During tests, the time is fixed.
 #[cfg(test)]
 pub fn now() -> chrono::DateTime<chrono::Utc> {
-    use std::sync::OnceLock;
-    static TIME: OnceLock<chrono::DateTime<chrono::Utc>> = OnceLock::new();
-    TIME.get_or_init(chrono::Utc::now).to_owned()
+    use std::sync::LazyLock;
+    static TIME: LazyLock<chrono::DateTime<chrono::Utc>> = LazyLock::new(chrono::Utc::now);
+    *TIME
 }
