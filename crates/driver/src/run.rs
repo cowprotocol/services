@@ -144,6 +144,7 @@ async fn ethereum(config: &infra::Config, ethrpc: blockchain::Rpc) -> Ethereum {
         config.contracts.clone(),
         gas,
         config.archive_node_url.as_ref(),
+        config.simulation_target,
     )
     .await
 }

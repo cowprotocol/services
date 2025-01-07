@@ -25,6 +25,15 @@ struct Config {
     #[serde(default)]
     disable_access_list_simulation: bool,
 
+    /// On which block tag ("latest" or "pending") transactions should be
+    /// simulated.
+    ///
+    /// latest: last block added to the block chain
+    /// pending: state of `latest` plus changes from transactions in the node's
+    /// mempool
+    #[serde(default = "default_simulation_target")]
+    simulation_target: ethcontract::BlockNumber,
+
     /// Disable gas simulation and always use this fixed gas value instead. This
     /// can be useful for testing, but shouldn't be used in production since it
     /// will cause the driver to return invalid scores.
@@ -754,4 +763,8 @@ fn default_metrics_bad_token_detector_log_only() -> bool {
 
 fn default_metrics_bad_token_detector_freeze_time() -> Duration {
     Duration::from_secs(60 * 10)
+}
+
+fn default_simulation_target() -> ethcontract::BlockNumber {
+    ethcontract::BlockNumber::Latest
 }
