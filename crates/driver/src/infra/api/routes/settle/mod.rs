@@ -20,7 +20,7 @@ async fn route(
     req: axum::Json<dto::SettleRequest>,
 ) -> Result<(), (hyper::StatusCode, axum::Json<Error>)> {
     let auction_id =
-        auction::Id::try_from(req.auction_id).map_err(Into::<api::routes::AuctionError>::into)?;
+        auction::Id::try_from(req.auction_id).map_err(api::routes::AuctionError::from)?;
     let solver = state.solver().name().to_string();
 
     let handle_request = async move {

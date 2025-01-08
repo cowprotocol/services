@@ -20,7 +20,7 @@ async fn route(
     req: axum::Json<dto::RevealRequest>,
 ) -> Result<axum::Json<dto::RevealResponse>, (hyper::StatusCode, axum::Json<Error>)> {
     let auction_id =
-        auction::Id::try_from(req.auction_id).map_err(Into::<api::routes::AuctionError>::into)?;
+        auction::Id::try_from(req.auction_id).map_err(api::routes::AuctionError::from)?;
     let handle_request = async {
         observe::revealing();
         let result = state
