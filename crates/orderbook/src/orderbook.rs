@@ -428,7 +428,11 @@ impl Orderbook {
     }
 
     pub async fn get_order(&self, uid: &OrderUid) -> Result<Option<Order>> {
-        self.database.single_order(uid).await
+        Ok(self
+            .database
+            .single_order_with_quote(uid)
+            .await?
+            .map(|order_with_qoute| order_with_qoute.order))
     }
 
     pub async fn get_orders_for_tx(&self, hash: &H256) -> Result<Vec<Order>> {

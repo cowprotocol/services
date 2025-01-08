@@ -725,6 +725,7 @@ impl OrderValidating for OrderValidator {
             signature: order.signature.clone(),
             data,
             interactions: app_data.interactions,
+            quote_metadata: None,
         };
 
         Ok((order, quote))

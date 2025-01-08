@@ -402,10 +402,12 @@ impl OrderStoring for Postgres {
                     _ => None,
                 };
 
-                Ok(OrderWithQuote {
-                    order: full_order_into_model_order(order_with_quote.full_order)?,
-                    quote,
-                })
+                let mut order = full_order_into_model_order(order_with_quote.full_order)?;
+                if let Some(quote) = quote.as_ref() {
+                    order.quote_metadata = Some(quote.metadata.to_string());
+                }
+
+                Ok(OrderWithQuote { order, quote })
             })
             .transpose()
     }
@@ -670,6 +672,7 @@ fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
             pre: pre_interactions,
             post: post_interactions,
         },
+        quote_metadata: None,
     })
 }
 

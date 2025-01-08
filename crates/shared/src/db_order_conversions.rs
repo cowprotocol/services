@@ -135,6 +135,7 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
             pre: pre_interactions,
             post: post_interactions,
         },
+        quote_metadata: None,
     })
 }
 
