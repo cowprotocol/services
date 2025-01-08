@@ -1,6 +1,6 @@
 use {
     super::Postgres,
-    crate::orderbook::AddOrderError,
+    crate::{dto::TokenMetadata, orderbook::AddOrderError},
     anyhow::{Context as _, Result},
     app_data::AppDataHash,
     async_trait::async_trait,
@@ -490,6 +490,27 @@ impl Postgres {
             .into_iter()
             .map(full_order_into_model_order)
             .collect::<Result<Vec<_>>>()
+    }
+
+    pub async fn token_metadata(&self, token: &H160) -> Result<TokenMetadata> {
+        let timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["token_first_trade_block"])
+            .start_timer();
+
+        let mut ex = self.pool.acquire().await?;
+        let block_number = database::trades::token_first_trade_block(&mut ex, ByteArray(token.0))
+            .await
+            .map_err(anyhow::Error::from)?
+            .map(u32::try_from)
+            .transpose()
+            .map_err(anyhow::Error::from)?;
+
+        timer.stop_and_record();
+
+        Ok(TokenMetadata {
+            first_trade_block: block_number,
+        })
     }
 }
 

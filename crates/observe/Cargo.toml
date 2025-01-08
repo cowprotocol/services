@@ -10,11 +10,10 @@ atty = "0.2"
 async-trait = { workspace = true }
 console-subscriber = "0.3.0"
 futures = { workspace = true }
-once_cell = { workspace = true }
 pin-project-lite = "0.2.14"
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
-time = { workspace = true }
+time = { version = "0.3.37", features = ["macros"] }
 tokio = { workspace = true, features = [ "fs" ] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt", "time"] }

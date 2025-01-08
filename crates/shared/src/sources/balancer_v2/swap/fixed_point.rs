@@ -7,13 +7,13 @@ use {
     super::error::Error,
     anyhow::{bail, ensure, Context, Result},
     ethcontract::U256,
-    lazy_static::lazy_static,
     num::{BigInt, BigRational},
     number::conversions::{big_int_to_u256, u256_to_big_int},
     std::{
         convert::TryFrom,
         fmt::{self, Debug, Formatter},
         str::FromStr,
+        sync::LazyLock,
     },
 };
 
@@ -27,16 +27,13 @@ mod logexpmath;
 /// including error codes, from which the name (Balancer Fixed Point).
 pub struct Bfp(U256);
 
-lazy_static! {
-    static ref ONE_18: U256 = U256::exp10(18);
-    static ref ONE_18_BIGINT: BigInt = u256_to_big_int(&ONE_18);
-    static ref ZERO: Bfp = Bfp(U256::zero());
-    static ref EPSILON: Bfp = Bfp(U256::one());
-    static ref ONE: Bfp = Bfp(*ONE_18);
-    static ref TWO: Bfp = Bfp(*ONE_18 * 2);
-    static ref FOUR: Bfp = Bfp(*ONE_18 * 4);
-    static ref MAX_POW_RELATIVE_ERROR: Bfp = Bfp(10000_usize.into());
-}
+static ONE_18: LazyLock<U256> = LazyLock::new(|| U256::exp10(18));
+static ONE_18_BIGINT: LazyLock<BigInt> = LazyLock::new(|| u256_to_big_int(&ONE_18));
+static ZERO: LazyLock<Bfp> = LazyLock::new(|| Bfp(U256::zero()));
+static ONE: LazyLock<Bfp> = LazyLock::new(|| Bfp(*ONE_18));
+static TWO: LazyLock<Bfp> = LazyLock::new(|| Bfp(*ONE_18 * 2));
+static FOUR: LazyLock<Bfp> = LazyLock::new(|| Bfp(*ONE_18 * 4));
+static MAX_POW_RELATIVE_ERROR: LazyLock<Bfp> = LazyLock::new(|| Bfp(10000_usize.into()));
 
 impl From<usize> for Bfp {
     fn from(num: usize) -> Self {
@@ -222,6 +219,8 @@ mod tests {
         super::*,
         num::{BigInt, One, Zero},
     };
+
+    static EPSILON: LazyLock<Bfp> = LazyLock::new(|| Bfp(U256::one()));
 
     #[test]
     fn parsing() {

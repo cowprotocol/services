@@ -12,9 +12,8 @@ pub mod trade;
 
 use {
     hex::{FromHex, FromHexError},
-    lazy_static::lazy_static,
     primitive_types::H160,
-    std::fmt,
+    std::{fmt, sync::LazyLock},
     web3::{
         ethabi::{encode, Token},
         signing,
@@ -115,18 +114,19 @@ impl std::fmt::Debug for DomainSeparator {
 
 impl DomainSeparator {
     pub fn new(chain_id: u64, contract_address: H160) -> Self {
-        lazy_static! {
-            /// The EIP-712 domain name used for computing the domain separator.
-            static ref DOMAIN_NAME: [u8; 32] = signing::keccak256(b"Gnosis Protocol");
+        /// The EIP-712 domain name used for computing the domain separator.
+        static DOMAIN_NAME: LazyLock<[u8; 32]> =
+            LazyLock::new(|| signing::keccak256(b"Gnosis Protocol"));
 
-            /// The EIP-712 domain version used for computing the domain separator.
-            static ref DOMAIN_VERSION: [u8; 32] = signing::keccak256(b"v2");
+        /// The EIP-712 domain version used for computing the domain separator.
+        static DOMAIN_VERSION: LazyLock<[u8; 32]> = LazyLock::new(|| signing::keccak256(b"v2"));
 
-            /// The EIP-712 domain type used computing the domain separator.
-            static ref DOMAIN_TYPE_HASH: [u8; 32] = signing::keccak256(
-                b"EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)",
-            );
-        }
+        /// The EIP-712 domain type used computing the domain separator.
+        static DOMAIN_TYPE_HASH: LazyLock<[u8; 32]> = LazyLock::new(|| {
+            signing::keccak256(
+            b"EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)",
+        )
+        });
         let abi_encode_string = encode(&[
             Token::Uint((*DOMAIN_TYPE_HASH).into()),
             Token::Uint((*DOMAIN_NAME).into()),

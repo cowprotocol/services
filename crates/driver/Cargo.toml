@@ -35,7 +35,6 @@ hex-literal = { workspace = true }
 humantime = { workspace = true }
 humantime-serde = { workspace = true }
 hyper = { workspace = true }
-lazy_static = { workspace = true }
 indexmap = { workspace = true, features = ["serde"] }
 itertools = { workspace = true }
 mimalloc = { workspace = true }

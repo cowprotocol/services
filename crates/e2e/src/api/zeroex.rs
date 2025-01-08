@@ -3,17 +3,14 @@ use {
     autopilot::domain::eth::U256,
     chrono::{DateTime, NaiveDateTime, Utc},
     driver::domain::eth::H256,
-    ethcontract::{
-        common::abi::{encode, Token},
-        private::lazy_static,
-    },
+    ethcontract::common::abi::{encode, Token},
     hex_literal::hex,
     model::DomainSeparator,
     shared::{
         zeroex_api,
         zeroex_api::{Order, OrderMetadata, OrderRecord, ZeroExSignature},
     },
-    std::net::SocketAddr,
+    std::{net::SocketAddr, sync::LazyLock},
     warp::{Filter, Reply},
     web3::{signing, types::H160},
 };
@@ -155,18 +152,19 @@ struct ZeroExDomainSeparator([u8; 32]);
 impl ZeroExDomainSeparator {
     // See <https://github.com/0xProject/protocol/blob/%400x/contracts-zero-ex%400.49.0/contracts/zero-ex/contracts/src/fixins/FixinEIP712.sol>
     pub fn new(chain_id: u64, contract_addr: H160) -> Self {
-        lazy_static! {
-            /// The EIP-712 domain name used for computing the domain separator.
-            static ref DOMAIN_NAME: [u8; 32] = signing::keccak256(b"ZeroEx");
+        /// The EIP-712 domain name used for computing the domain separator.
+        static DOMAIN_NAME: LazyLock<[u8; 32]> = LazyLock::new(|| signing::keccak256(b"ZeroEx"));
 
-            /// The EIP-712 domain version used for computing the domain separator.
-            static ref DOMAIN_VERSION: [u8; 32] = signing::keccak256(b"1.0.0");
+        /// The EIP-712 domain version used for computing the domain separator.
+        static DOMAIN_VERSION: LazyLock<[u8; 32]> = LazyLock::new(|| signing::keccak256(b"1.0.0"));
 
-            /// The EIP-712 domain type used computing the domain separator.
-            static ref DOMAIN_TYPE_HASH: [u8; 32] = signing::keccak256(
-                b"EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)",
-            );
-        }
+        /// The EIP-712 domain type used computing the domain separator.
+        static DOMAIN_TYPE_HASH: LazyLock<[u8; 32]> = LazyLock::new(|| {
+            signing::keccak256(
+            b"EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)",
+        )
+        });
+
         let abi_encode_string = encode(&[
             Token::FixedBytes((*DOMAIN_TYPE_HASH).into()),
             Token::FixedBytes((*DOMAIN_NAME).into()),
