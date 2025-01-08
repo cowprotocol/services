@@ -13,10 +13,10 @@ clap = { version = "4.5.6", features = ["derive", "env"] }
 dashmap = "6.1.0"
 derivative = "2.2.0"
 derive_more = { version = "1.0.0", features = ["full"] }
-ethcontract = { version = "0.25.7", default-features = false, features = ["aws-kms"] }
+ethcontract = { version = "0.25.8", default-features = false, features = ["aws-kms"] }
 mimalloc = "0.1.43"
-ethcontract-generate = { version = "0.25.7", default-features = false }
-ethcontract-mock = { version = "0.25.7", default-features = false }
+ethcontract-generate = { version = "0.25.8", default-features = false }
+ethcontract-mock = { version = "0.25.8", default-features = false }
 ethereum-types = "0.14.1"
 flate2 = "1.0.30"
 futures = "0.3.30"
@@ -44,7 +44,6 @@ serde_with = "3.8.1"
 sqlx = { version = "0.7", default-features = false, features = ["runtime-tokio", "tls-native-tls", "bigdecimal", "chrono", "postgres", "macros"] }
 strum = { version = "0.26.2", features = ["derive"] }
 tempfile = "3.10.1"
-time = { version = "0.3.36", features = ["macros"] }
 thiserror = "1.0.61"
 toml = "0.8.14"
 tokio = { version = "1.38.0", features = ["tracing"] }
