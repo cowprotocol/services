@@ -618,7 +618,9 @@ fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
         // - as it is limited by the order format.
         executed_sell_amount_before_fees: big_decimal_to_u256(&(&order.sum_sell - &order.sum_fee))
             .context("executed sell amount before fees does not fit in a u256")?,
-        executed_fee_amount: {
+        executed_fee_amount: if order.sum_fee.is_zero() {
+            0.into()
+        } else {
             let fee_in_sell_token = big_decimal_to_u256(&order.sum_fee)
                 .context("executed fee amount is not a valid u256")?;
             match order.kind {
