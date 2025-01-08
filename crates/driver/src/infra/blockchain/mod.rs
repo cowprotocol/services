@@ -26,7 +26,7 @@ pub struct Rpc {
 impl Rpc {
     /// Instantiate an RPC client to an Ethereum (or Ethereum-compatible) node
     /// at the specifed URL.
-    pub async fn new(url: &url::Url) -> Result<Self, RpcError> {
+    pub async fn try_new(url: &url::Url) -> Result<Self, RpcError> {
         let web3 = boundary::buffered_web3_client(url);
         let chain = Chain::try_from(web3.eth().chain_id().await?)?;
 
@@ -182,7 +182,10 @@ impl Ethereum {
             .transport()
             .execute(
                 "eth_createAccessList",
-                vec![serde_json::to_value(&tx).unwrap()],
+                vec![
+                    serde_json::to_value(&tx).unwrap(),
+                    serde_json::Value::String("latest".into()),
+                ],
             )
             .await?;
         if let Some(err) = json.get("error") {
@@ -207,7 +210,7 @@ impl Ethereum {
                     gas_price: self.simulation_gas_price().await,
                     ..Default::default()
                 },
-                None,
+                Some(ethcontract::BlockNumber::Latest),
             )
             .await
             .map(Into::into)

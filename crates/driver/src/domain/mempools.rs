@@ -33,7 +33,7 @@ pub struct Mempools {
 }
 
 impl Mempools {
-    pub fn new(mempools: Vec<infra::Mempool>, ethereum: Ethereum) -> Result<Self, NoMempools> {
+    pub fn try_new(mempools: Vec<infra::Mempool>, ethereum: Ethereum) -> Result<Self, NoMempools> {
         if mempools.is_empty() {
             Err(NoMempools)
         } else {
@@ -105,7 +105,7 @@ impl Mempools {
         // settlement. This way we only run iterations in blocks that can potentially
         // include the settlement.
         let mut block_stream = into_stream(self.ethereum.current_block().clone());
-        block_stream.next().await;
+        let block = block_stream.next().await;
 
         // The tx is simulated before submitting the solution to the competition, but a
         // delay between that and the actual execution can cause the simulation to be
@@ -116,7 +116,7 @@ impl Mempools {
                     ?err,
                     "settlement tx simulation reverted before submitting to the mempool"
                 );
-                return Err(Error::SimulationRevert);
+                return Err(Error::SimulationRevert(block.map(|block| block.number)));
             } else {
                 tracing::warn!(
                     ?err,
@@ -142,7 +142,12 @@ impl Mempools {
                     });
                 match receipt {
                     TxStatus::Executed => return Ok(hash.clone()),
-                    TxStatus::Reverted => return Err(Error::Revert(hash.clone())),
+                    TxStatus::Reverted => {
+                        return Err(Error::Revert {
+                            tx_id: hash.clone(),
+                            block_number: block.number,
+                        })
+                    }
                     TxStatus::Pending => {
                         // Check if the current block reached the submission deadline block number
                         if block.number >= submission_deadline {
@@ -172,7 +177,7 @@ impl Mempools {
                                     ?err,
                                     "tx started failing in mempool, cancelling"
                                 );
-                                return Err(Error::SimulationRevert);
+                                return Err(Error::SimulationRevert(Some(block.number)));
                             } else {
                                 tracing::warn!(?hash, ?err, "couldn't re-simulate tx");
                             }
@@ -235,10 +240,13 @@ pub enum RevertProtection {
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("Mined reverted transaction: {0:?}")]
-    Revert(eth::TxId),
-    #[error("Simulation started reverting during submission")]
-    SimulationRevert,
+    #[error("Mined reverted transaction: {tx_id:?}, block number: {block_number}")]
+    Revert {
+        tx_id: eth::TxId,
+        block_number: BlockNo,
+    },
+    #[error("Simulation started reverting during submission, block number: {0:?}")]
+    SimulationRevert(Option<BlockNo>),
     #[error("Settlement did not get included in time")]
     Expired,
     #[error("Strategy disabled for this tx")]

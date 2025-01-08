@@ -29,7 +29,7 @@ fn main() {
 
 #[rustfmt::skip]
 fn run() -> Result<()> {
-    let vendor = Vendor::new()?;
+    let vendor = Vendor::try_new()?;
 
     const ETHFLOW_VERSION: &str = "0.0.0-rc.3";
 
@@ -215,7 +215,7 @@ struct Vendor {
 }
 
 impl Vendor {
-    fn new() -> Result<Self> {
+    fn try_new() -> Result<Self> {
         let artifacts = paths::contract_artifacts_dir();
         tracing::info!("vendoring contract artifacts to '{}'", artifacts.display());
         fs::create_dir_all(&artifacts)?;

@@ -37,7 +37,7 @@ impl Pool {
 impl Fee {
     /// Creates a new fee from the specified basis points. Returns `Err` for
     /// invalid fee values (i.e. outside the range `[0, 1000]`).
-    pub fn new(bps: u32) -> Result<Self, InvalidFee> {
+    pub fn try_new(bps: u32) -> Result<Self, InvalidFee> {
         if !(0..=1000).contains(&bps) {
             return Err(InvalidFee);
         }

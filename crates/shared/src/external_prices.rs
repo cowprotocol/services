@@ -9,10 +9,12 @@ use {
     crate::conversions::U256Ext,
     anyhow::{bail, Result},
     ethcontract::{H160, U256},
-    lazy_static::lazy_static,
     model::order::BUY_ETH_ADDRESS,
     num::{BigInt, BigRational, One as _, ToPrimitive as _},
-    std::collections::{BTreeMap, HashMap},
+    std::{
+        collections::{BTreeMap, HashMap},
+        sync::LazyLock,
+    },
 };
 
 /// A collection of external prices used for converting token amounts to native
@@ -22,7 +24,7 @@ pub struct ExternalPrices(HashMap<H160, BigRational>);
 
 impl ExternalPrices {
     /// Creates a new set of external prices for the specified exchange rates.
-    pub fn new(native_token: H160, mut xrates: HashMap<H160, BigRational>) -> Result<Self> {
+    pub fn try_new(native_token: H160, mut xrates: HashMap<H160, BigRational>) -> Result<Self> {
         // Make sure to verify our invariant that native asset price and native
         // wrapped asset price exist with a value of 1. This protects us from
         // malformed input (in case there are issues with the prices from the
@@ -48,7 +50,7 @@ impl ExternalPrices {
         native_token: H160,
         prices: BTreeMap<H160, U256>,
     ) -> Result<Self> {
-        Self::new(
+        Self::try_new(
             native_token,
             prices
                 .into_iter()
@@ -68,13 +70,11 @@ impl ExternalPrices {
 
 impl Default for ExternalPrices {
     fn default() -> Self {
-        Self::new(Default::default(), Default::default()).unwrap()
+        Self::try_new(Default::default(), Default::default()).unwrap()
     }
 }
 
-lazy_static! {
-    static ref UNIT: BigInt = BigInt::from(1_000_000_000_000_000_000_u128);
-}
+static UNIT: LazyLock<BigInt> = LazyLock::new(|| BigInt::from(1_000_000_000_000_000_000_u128));
 
 /// Converts a token price from the orderbook API `/auction` endpoint to an
 /// native token exchange rate.

@@ -70,7 +70,7 @@ pub(in crate::boundary::liquidity) fn to_domain_pool(
     Ok(liquidity::uniswap::v2::Pool {
         address: pool.address.into(),
         router: router(&pool),
-        reserves: liquidity::uniswap::v2::Reserves::new(
+        reserves: liquidity::uniswap::v2::Reserves::try_new(
             eth::Asset {
                 token: pool.tokens.get().0.into(),
                 amount: pool.reserves.0.into(),
