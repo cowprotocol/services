@@ -318,17 +318,14 @@ impl Competition {
     pub async fn reveal(
         &self,
         solution_id: u64,
-        auction_id: Option<i64>,
+        auction_id: auction::Id,
     ) -> Result<Revealed, Error> {
         let settlement = self
             .settlements
             .lock()
             .unwrap()
             .iter()
-            .find(|s| {
-                s.solution().get() == solution_id
-                    && auction_id.is_none_or(|id| s.auction_id.0 == id)
-            })
+            .find(|s| s.solution().get() == solution_id && s.auction_id == auction_id)
             .cloned()
             .ok_or(Error::SolutionNotAvailable)?;
         Ok(Revealed {
@@ -347,7 +344,7 @@ impl Competition {
     /// [`Competition::solve`] to generate the solution.
     pub async fn settle(
         &self,
-        auction_id: Option<auction::Id>,
+        auction_id: auction::Id,
         solution_id: u64,
         submission_deadline: BlockNo,
     ) -> Result<Settled, Error> {
@@ -413,16 +410,14 @@ impl Competition {
                     tracing::error!(?err, "Failed to send /settle response");
                 }
             }
-            .instrument(
-                tracing::info_span!("/settle", solver, auction_id = ?auction_id.map(|id| id.0)),
-            )
+            .instrument(tracing::info_span!("/settle", solver, %auction_id))
             .await
         }
     }
 
     async fn process_settle_request(
         &self,
-        auction_id: Option<auction::Id>,
+        auction_id: auction::Id,
         solution_id: u64,
         submission_deadline: BlockNo,
     ) -> Result<Settled, Error> {
@@ -430,10 +425,7 @@ impl Competition {
             let mut lock = self.settlements.lock().unwrap();
             let index = lock
                 .iter()
-                .position(|s| {
-                    s.solution().get() == solution_id
-                        && auction_id.is_none_or(|id| s.auction_id == id)
-                })
+                .position(|s| s.solution().get() == solution_id && s.auction_id == auction_id)
                 .ok_or(Error::SolutionNotAvailable)?;
             // remove settlement to ensure we can't settle it twice by accident
             lock.swap_remove_front(index)
@@ -537,7 +529,7 @@ fn merge(solutions: impl Iterator<Item = Solution>, auction: &Auction) -> Vec<So
 }
 
 struct SettleRequest {
-    auction_id: Option<auction::Id>,
+    auction_id: auction::Id,
     solution_id: u64,
     submission_deadline: BlockNo,
     response_sender: oneshot::Sender<Result<Settled, Error>>,
