@@ -84,12 +84,31 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
         // Executed fee amounts and sell amounts before fees are capped by
         // order's fee and sell amounts, and thus can always fit in a `U256`
         // - as it is limited by the order format.
-        executed_sell_amount_before_fees: big_decimal_to_u256(&(order.sum_sell - &order.sum_fee))
-            .context(
-            "executed sell amount before fees does not fit in a u256",
-        )?,
-        executed_fee_amount: big_decimal_to_u256(&order.sum_fee)
-            .context("executed fee amount is not a valid u256")?,
+        executed_sell_amount_before_fees: big_decimal_to_u256(&(&order.sum_sell - &order.sum_fee))
+            .context("executed sell amount before fees does not fit in a u256")?,
+        executed_fee_amount: {
+            let fee_in_sell_token = big_decimal_to_u256(&order.sum_fee)
+                .context("executed fee amount is not a valid u256")?;
+            match order.kind {
+                DbOrderKind::Buy => fee_in_sell_token,
+                DbOrderKind::Sell => {
+                    // convert to buy token using executed amounts which are a very good
+                    // approximation of UCP prices conversion rate
+                    fee_in_sell_token
+                        .checked_mul(
+                            big_decimal_to_u256(&order.sum_buy)
+                                .context("executed buy amount is not an unsigned integer")?,
+                        )
+                        .context("fee_in_sell_token overflow")?
+                        .checked_div(
+                            big_decimal_to_u256(&(&order.sum_sell - &order.sum_fee)).context(
+                                "executed sell amount before fees does not fit in a u256",
+                            )?,
+                        )
+                        .context("fee_in_sell_token division by zero")?
+                }
+            }
+        },
         executed_surplus_fee: big_decimal_to_u256(&order.executed_fee)
             .context("executed fee is not a valid u256")?,
         executed_fee: big_decimal_to_u256(&order.executed_fee)
