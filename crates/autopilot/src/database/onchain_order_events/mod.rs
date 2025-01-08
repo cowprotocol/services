@@ -616,7 +616,6 @@ fn convert_onchain_order_placement(
         settlement_contract: ByteArray(settlement_contract.0),
         sell_token_balance: sell_token_source_into(order_data.sell_token_balance),
         buy_token_balance: buy_token_destination_into(order_data.buy_token_balance),
-        full_fee_amount: u256_to_big_decimal(&order_data.fee_amount),
         cancellation_timestamp: None,
         class: match order_data.fee_amount.is_zero() {
             true => OrderClass::Limit,
@@ -925,7 +924,6 @@ mod test {
             settlement_contract: ByteArray(settlement_contract.0),
             sell_token_balance: sell_token_source_into(expected_order_data.sell_token_balance),
             buy_token_balance: buy_token_destination_into(expected_order_data.buy_token_balance),
-            full_fee_amount: u256_to_big_decimal(&expected_order_data.fee_amount),
             cancellation_timestamp: None,
         };
         assert_eq!(onchain_order_placement, expected_onchain_order_placement);
@@ -1036,7 +1034,6 @@ mod test {
             settlement_contract: ByteArray(settlement_contract.0),
             sell_token_balance: sell_token_source_into(expected_order_data.sell_token_balance),
             buy_token_balance: buy_token_destination_into(expected_order_data.buy_token_balance),
-            full_fee_amount: u256_to_big_decimal(&U256::zero()),
             cancellation_timestamp: None,
         };
         assert_eq!(onchain_order_placement, expected_onchain_order_placement);
