@@ -437,7 +437,6 @@ impl Solver {
             },
             gas,
             None,
-            ethcontract::BlockNumber::Latest,
         )
         .await;
 

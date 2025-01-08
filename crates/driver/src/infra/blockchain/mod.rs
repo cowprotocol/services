@@ -68,7 +68,6 @@ struct Inner {
     contracts: Contracts,
     gas: Arc<GasPriceEstimator>,
     current_block: CurrentBlockWatcher,
-    simulation_target: ethcontract::BlockNumber,
 }
 
 impl Ethereum {
@@ -83,7 +82,6 @@ impl Ethereum {
         addresses: contracts::Addresses,
         gas: Arc<GasPriceEstimator>,
         archive_node_url: Option<&Url>,
-        simulation_target: ethcontract::BlockNumber,
     ) -> Self {
         let Rpc { web3, chain, url } = rpc;
 
@@ -108,7 +106,6 @@ impl Ethereum {
                 chain,
                 contracts,
                 gas,
-                simulation_target,
             }),
             web3,
         }
@@ -187,7 +184,7 @@ impl Ethereum {
                 "eth_createAccessList",
                 vec![
                     serde_json::to_value(&tx).unwrap(),
-                    serde_json::to_value(&self.inner.simulation_target).unwrap(),
+                    serde_json::Value::String("latest".into()),
                 ],
             )
             .await?;
@@ -213,7 +210,7 @@ impl Ethereum {
                     gas_price: self.simulation_gas_price().await,
                     ..Default::default()
                 },
-                Some(self.inner.simulation_target),
+                Some(ethcontract::BlockNumber::Latest),
             )
             .await
             .map(Into::into)
