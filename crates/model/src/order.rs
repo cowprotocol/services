@@ -1005,8 +1005,6 @@ mod tests {
             "executedSurplusFee": "1",
             "executedFee": "1",
             "executedFeeToken": "0x000000000000000000000000000000000000000a",
-            "fullFeeAmount": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
-            "solverFee": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
             "kind": "buy",
             "class": "limit",
             "partiallyFillable": false,
