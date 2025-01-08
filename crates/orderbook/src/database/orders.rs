@@ -606,10 +606,17 @@ fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
                     // convert to buy token using executed amounts which are a very good
                     // approximation of UCP prices conversion rate
                     fee_in_sell_token
-                        * big_decimal_to_u256(&order.sum_buy)
-                            .context("executed buy amount is not an unsigned integer")?
-                        / big_decimal_to_u256(&(&order.sum_sell - &order.sum_fee))
-                            .context("executed sell amount before fees does not fit in a u256")?
+                        .checked_mul(
+                            big_decimal_to_u256(&order.sum_buy)
+                                .context("executed buy amount is not an unsigned integer")?,
+                        )
+                        .context("fee_in_sell_token overflow")?
+                        .checked_div(
+                            big_decimal_to_u256(&(&order.sum_sell - &order.sum_fee)).context(
+                                "executed sell amount before fees does not fit in a u256",
+                            )?,
+                        )
+                        .context("fee_in_sell_token division by zero")?
                 }
             }
         },
