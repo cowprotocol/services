@@ -29,7 +29,7 @@ pub struct Api {
     pub eth: Ethereum,
     pub mempools: Mempools,
     pub addr: SocketAddr,
-    pub bad_token_detector_builder: bad_tokens::simulation::DetectorBuilder,
+    pub bad_token_detector: bad_tokens::simulation::Detector,
     /// If this channel is specified, the bound address will be sent to it. This
     /// allows the driver to bind to 0.0.0.0:0 during testing.
     pub addr_sender: Option<oneshot::Sender<SocketAddr>>,
@@ -75,9 +75,7 @@ impl Api {
             let mut bad_tokens =
                 bad_tokens::Detector::new(bad_token_config.tokens_supported.clone());
             if bad_token_config.enable_simulation_strategy {
-                bad_tokens.with_simulation_detector(
-                    self.bad_token_detector_builder.clone().build(name.clone()),
-                );
+                bad_tokens.with_simulation_detector(self.bad_token_detector.clone());
             }
 
             if bad_token_config.enable_metrics_strategy {

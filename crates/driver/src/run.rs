@@ -66,7 +66,7 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
             eth.clone(),
         )
         .unwrap(),
-        bad_token_detector_builder: bad_tokens::simulation::DetectorBuilder::new(
+        bad_token_detector: bad_tokens::simulation::Detector::new(
             config.simulation_bad_token_max_age,
             &eth,
         ),
