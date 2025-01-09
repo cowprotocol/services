@@ -182,10 +182,7 @@ impl Ethereum {
             .transport()
             .execute(
                 "eth_createAccessList",
-                vec![
-                    serde_json::to_value(&tx).unwrap(),
-                    serde_json::Value::String("latest".into()),
-                ],
+                vec![serde_json::to_value(&tx).unwrap()],
             )
             .await?;
         if let Some(err) = json.get("error") {
@@ -210,7 +207,7 @@ impl Ethereum {
                     gas_price: self.simulation_gas_price().await,
                     ..Default::default()
                 },
-                Some(ethcontract::BlockNumber::Latest),
+                None,
             )
             .await
             .map(Into::into)
