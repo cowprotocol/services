@@ -116,7 +116,7 @@ impl Detector {
                         }
                         Ok(TokenQuality::Bad { reason }) => {
                             tracing::debug!(reason, token=?sell_token.0, "cache token as unsupported");
-                            metrics::get().bad_tokens_detected.with_label_values(&[&solver_name,"simulation"]).inc();
+                            metrics::get().bad_tokens_detected.with_label_values(&[&solver_name, "simulation"]).inc();
                             inner
                                 .cache
                                 .update_quality(sell_token, false, now);
