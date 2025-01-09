@@ -8,7 +8,7 @@ use {
             },
             eth,
         },
-        infra,
+        infra::{self, observe::metrics, solver},
     },
     futures::FutureExt,
     model::interaction::InteractionData,
@@ -27,7 +27,13 @@ use {
 /// solvers. Checks the behavior on transfer using a `trace_callMany`
 /// based simulation.
 #[derive(Clone)]
-pub struct Detector(Arc<Inner>);
+pub struct Detector {
+    inner: Arc<Inner>,
+    solver: solver::Name,
+}
+
+#[derive(Clone)]
+pub struct DetectorBuilder(Arc<Inner>);
 
 struct Inner {
     cache: Cache,
@@ -35,7 +41,7 @@ struct Inner {
     sharing: BoxRequestSharing<order::Uid, Quality>,
 }
 
-impl Detector {
+impl DetectorBuilder {
     pub fn new(max_age: Duration, eth: &infra::Ethereum) -> Self {
         let detector =
             TraceCallDetectorRaw::new(eth.web3().clone(), eth.contracts().settlement().address());
@@ -46,11 +52,20 @@ impl Detector {
         }))
     }
 
+    pub fn build(self, solver: solver::Name) -> Detector {
+        Detector {
+            inner: self.0.clone(),
+            solver,
+        }
+    }
+}
+
+impl Detector {
     /// Simulates how the sell token behaves during transfers. Assumes that
     /// the order owner has the required sell token balance and approvals
     /// set.
     pub async fn determine_sell_token_quality(&self, order: &Order, now: Instant) -> Quality {
-        let cache = &self.0.cache;
+        let cache = &self.inner.cache;
         let quality = cache.get_quality(&order.sell.token, now);
         if quality != Quality::Unknown {
             return quality;
@@ -62,10 +77,10 @@ impl Detector {
         // if an equivalent request is already in-flight and awaits that instead of
         // creating a new one.
         let uid = order.uid;
-        self.0
+        self.inner
             .sharing
             .shared_or_else(uid, move |_uid| {
-                let inner = self.0.clone();
+                let inner = self.inner.clone();
                 let sell_token = order.sell.token;
                 let pre_interactions: Vec<_> = order
                     .pre_interactions
@@ -82,6 +97,7 @@ impl Detector {
                     order::Partial::No => order.sell.amount.0,
                 };
 
+                let solver_name = self.solver.0.clone();
                 async move {
                     let result = inner
                         .detector
@@ -100,6 +116,7 @@ impl Detector {
                         }
                         Ok(TokenQuality::Bad { reason }) => {
                             tracing::debug!(reason, token=?sell_token.0, "cache token as unsupported");
+                            metrics::get().bad_token_detection.with_label_values(&[&solver_name,"simulation"]).inc();
                             inner
                                 .cache
                                 .update_quality(sell_token, false, now);
@@ -117,6 +134,6 @@ impl std::ops::Deref for Detector {
     type Target = Cache;
 
     fn deref(&self) -> &Self::Target {
-        &self.0.cache
+        &self.inner.cache
     }
 }

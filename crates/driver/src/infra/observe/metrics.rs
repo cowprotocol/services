@@ -19,6 +19,9 @@ pub struct Metrics {
     /// The results of the mempool submission.
     #[metric(labels("mempool", "result"))]
     pub mempool_submission: prometheus::IntCounterVec,
+    /// Bad token detection metrics by solver and detection strategy.
+    #[metric(labels("solver", "strategy"))]
+    pub bad_token_detection: prometheus::IntCounterVec,
 }
 
 /// Setup the metrics registry.
