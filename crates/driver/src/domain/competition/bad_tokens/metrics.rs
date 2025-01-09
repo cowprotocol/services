@@ -127,7 +127,7 @@ impl Detector {
                 "mark tokens as unsupported"
             );
             metrics::get()
-                .bad_token_detection
+                .bad_tokens_detected
                 .with_label_values(&[&self.solver.0, "metrics"])
                 .inc_by(new_unsupported_tokens.len() as u64);
         }

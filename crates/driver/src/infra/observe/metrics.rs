@@ -21,7 +21,7 @@ pub struct Metrics {
     pub mempool_submission: prometheus::IntCounterVec,
     /// Bad token detection metrics by solver and detection strategy.
     #[metric(labels("solver", "strategy"))]
-    pub bad_token_detection: prometheus::IntCounterVec,
+    pub bad_tokens_detected: prometheus::IntCounterVec,
 }
 
 /// Setup the metrics registry.
