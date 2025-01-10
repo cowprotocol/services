@@ -1,6 +1,9 @@
 use {
     super::Quality,
-    crate::domain::eth,
+    crate::{
+        domain::eth,
+        infra::{observe::metrics, solver},
+    },
     dashmap::DashMap,
     std::{
         sync::Arc,
@@ -27,6 +30,7 @@ pub struct Detector {
     counter: Arc<DashMap<eth::TokenAddress, TokenStatistics>>,
     log_only: bool,
     token_freeze_time: Duration,
+    solver: solver::Name,
 }
 
 impl Detector {
@@ -35,6 +39,7 @@ impl Detector {
         required_measurements: u32,
         log_only: bool,
         token_freeze_time: Duration,
+        solver: solver::Name,
     ) -> Self {
         Self {
             failure_ratio,
@@ -42,6 +47,7 @@ impl Detector {
             counter: Default::default(),
             log_only,
             token_freeze_time,
+            solver,
         }
     }
 
@@ -120,6 +126,10 @@ impl Detector {
                 tokens = ?new_unsupported_tokens,
                 "mark tokens as unsupported"
             );
+            metrics::get()
+                .bad_tokens_detected
+                .with_label_values(&[&self.solver.0, "metrics"])
+                .inc_by(new_unsupported_tokens.len() as u64);
         }
     }
 }
@@ -133,7 +143,13 @@ mod tests {
     #[tokio::test]
     async fn unfreeze_bad_tokens() {
         const FREEZE_DURATION: Duration = Duration::from_millis(50);
-        let detector = Detector::new(0.5, 2, false, FREEZE_DURATION);
+        let detector = Detector::new(
+            0.5,
+            2,
+            false,
+            FREEZE_DURATION,
+            solver::Name("mysolver".to_string()),
+        );
 
         let token_a = eth::TokenAddress(eth::ContractAddress(H160([1; 20])));
         let token_b = eth::TokenAddress(eth::ContractAddress(H160([2; 20])));

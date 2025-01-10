@@ -334,7 +334,6 @@ pub mod tests {
             },
             metadata: OrderMetadata {
                 executed_sell_amount_before_fees: 10.into(),
-                solver_fee: 60.into(),
                 ..Default::default()
             },
             ..Default::default()

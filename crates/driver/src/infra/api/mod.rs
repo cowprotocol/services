@@ -84,6 +84,7 @@ impl Api {
                     bad_token_config.metrics_strategy_required_measurements,
                     bad_token_config.metrics_strategy_log_only,
                     bad_token_config.metrics_strategy_token_freeze_time,
+                    name.clone(),
                 ));
             }
 
