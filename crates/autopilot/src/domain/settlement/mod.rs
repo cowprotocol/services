@@ -213,10 +213,7 @@ impl From<infra::persistence::DatabaseError> for Error {
 #[cfg(test)]
 mod tests {
     use {
-        crate::{
-            domain::{self, auction, eth},
-            infra::solvers::dto::settle,
-        },
+        crate::domain::{self, auction, eth},
         hex_literal::hex,
         std::collections::{HashMap, HashSet},
     };
