@@ -27,7 +27,7 @@ async fn local_node_two_limit_orders() {
 }
 
 #[tokio::test]
-#[ignore]
+//#[ignore]
 async fn local_node_two_limit_orders_multiple_winners() {
     run_test(two_limit_orders_multiple_winners_test).await;
 }

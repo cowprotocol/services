@@ -29,8 +29,6 @@ pub struct Settlement {
     gas: eth::Gas,
     /// The effective gas price of the settlement transaction.
     gas_price: eth::EffectiveGasPrice,
-    /// The address of the solver that submitted the settlement transaction.
-    solver: eth::Address,
     /// The block number of the block that contains the settlement transaction.
     block: eth::BlockNo,
     /// The associated auction.
@@ -146,7 +144,6 @@ impl Settlement {
             .collect();
 
         Ok(Self {
-            solver: settled.solver,
             block: settled.block,
             gas: settled.gas,
             gas_price: settled.gas_price,
@@ -217,8 +214,8 @@ impl From<infra::persistence::DatabaseError> for Error {
 mod tests {
     use {
         crate::{
-            domain,
-            domain::{auction, eth},
+            domain::{self, auction, eth},
+            infra::solvers::dto::settle,
         },
         hex_literal::hex,
         std::collections::{HashMap, HashSet},
@@ -306,12 +303,19 @@ mod tests {
         let domain_separator = eth::DomainSeparator(hex!(
             "c078f884a2676e1345748b1feace7b0abee5d00ecadb6e574dcdd109a63e8943"
         ));
+        let settlement_contract = eth::Address(eth::H160::from_slice(&hex!(
+            "9008d19f58aabd9ed0d60971565aa8510560ab41"
+        )));
         let transaction = super::transaction::Transaction::new(
             &domain::eth::Transaction {
-                input: calldata.into(),
+                trace_calls: vec![domain::eth::TraceCall {
+                    to: settlement_contract,
+                    input: calldata.into(),
+                }],
                 ..Default::default()
             },
             &domain_separator,
+            settlement_contract,
         )
         .unwrap();
 
@@ -442,12 +446,19 @@ mod tests {
         let domain_separator = eth::DomainSeparator(hex!(
             "c078f884a2676e1345748b1feace7b0abee5d00ecadb6e574dcdd109a63e8943"
         ));
+        let settlement_contract = eth::Address(eth::H160::from_slice(&hex!(
+            "9008d19f58aabd9ed0d60971565aa8510560ab41"
+        )));
         let transaction = super::transaction::Transaction::new(
             &domain::eth::Transaction {
-                input: calldata.into(),
+                trace_calls: vec![domain::eth::TraceCall {
+                    to: settlement_contract,
+                    input: calldata.into(),
+                }],
                 ..Default::default()
             },
             &domain_separator,
+            settlement_contract,
         )
         .unwrap();
 
@@ -610,12 +621,19 @@ mod tests {
         let domain_separator = eth::DomainSeparator(hex!(
             "c078f884a2676e1345748b1feace7b0abee5d00ecadb6e574dcdd109a63e8943"
         ));
+        let settlement_contract = eth::Address(eth::H160::from_slice(&hex!(
+            "9008d19f58aabd9ed0d60971565aa8510560ab41"
+        )));
         let transaction = super::transaction::Transaction::new(
             &domain::eth::Transaction {
-                input: calldata.into(),
+                trace_calls: vec![domain::eth::TraceCall {
+                    to: settlement_contract,
+                    input: calldata.into(),
+                }],
                 ..Default::default()
             },
             &domain_separator,
+            settlement_contract,
         )
         .unwrap();
 
@@ -784,12 +802,19 @@ mod tests {
         let domain_separator = eth::DomainSeparator(hex!(
             "c078f884a2676e1345748b1feace7b0abee5d00ecadb6e574dcdd109a63e8943"
         ));
+        let settlement_contract = eth::Address(eth::H160::from_slice(&hex!(
+            "9008d19f58aabd9ed0d60971565aa8510560ab41"
+        )));
         let transaction = super::transaction::Transaction::new(
             &domain::eth::Transaction {
-                input: calldata.into(),
+                trace_calls: vec![domain::eth::TraceCall {
+                    to: settlement_contract,
+                    input: calldata.into(),
+                }],
                 ..Default::default()
             },
             &domain_separator,
+            settlement_contract,
         )
         .unwrap();
 

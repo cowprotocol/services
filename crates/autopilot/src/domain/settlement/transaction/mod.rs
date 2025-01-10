@@ -1,6 +1,9 @@
-use crate::{
-    boundary,
-    domain::{self, auction::order, eth},
+use {
+    crate::{
+        boundary,
+        domain::{self, auction::order, eth},
+    },
+    ethcontract::common::FunctionExt,
 };
 
 mod tokenized;
@@ -12,8 +15,6 @@ pub struct Transaction {
     pub hash: eth::TxId,
     /// The associated auction id.
     pub auction_id: domain::auction::Id,
-    /// The address of the solver that submitted the transaction.
-    pub solver: eth::Address,
     /// The block number of the block that contains the transaction.
     pub block: eth::BlockNo,
     /// The timestamp of the block that contains the transaction.
@@ -30,15 +31,21 @@ impl Transaction {
     pub fn new(
         transaction: &eth::Transaction,
         domain_separator: &eth::DomainSeparator,
+        settlement_contract: eth::Address,
     ) -> Result<Self, Error> {
+        // find trace call to settlement contract
+        let calldata = transaction
+            .trace_calls
+            .iter()
+            .find(|trace| is_settlement_trace(trace, settlement_contract))
+            .map(|trace| trace.input.clone())
+            .ok_or(Error::MissingCallData)?;
+
         /// Number of bytes that may be appended to the calldata to store an
         /// auction id.
         const META_DATA_LEN: usize = 8;
 
-        let (data, metadata) = transaction
-            .input
-            .0
-            .split_at(transaction.input.0.len() - META_DATA_LEN);
+        let (data, metadata) = calldata.0.split_at(calldata.0.len() - META_DATA_LEN);
         let metadata: Option<[u8; META_DATA_LEN]> = metadata.try_into().ok();
         let auction_id = metadata
             .map(crate::domain::auction::Id::from_be_bytes)
@@ -46,7 +53,6 @@ impl Transaction {
         Ok(Self {
             hash: transaction.hash,
             auction_id,
-            solver: transaction.from,
             block: transaction.block,
             timestamp: transaction.timestamp,
             gas: transaction.gas,
@@ -116,6 +122,17 @@ impl Transaction {
     }
 }
 
+fn is_settlement_trace(trace: &eth::TraceCall, settlement_contract: eth::Address) -> bool {
+    trace.input.0.starts_with(
+        &contracts::GPv2Settlement::raw_contract()
+            .interface
+            .abi
+            .function("settle")
+            .unwrap()
+            .selector(),
+    ) && trace.to == settlement_contract
+}
+
 /// Trade containing onchain observable data specific to a settlement
 /// transaction.
 #[derive(Debug, Clone)]
@@ -154,6 +171,8 @@ pub struct ClearingPrices {
 pub enum Error {
     #[error("missing auction id")]
     MissingAuctionId,
+    #[error("missing calldata")]
+    MissingCallData,
     #[error(transparent)]
     Decoding(#[from] tokenized::error::Decoding),
     #[error("failed to recover order uid {0}")]
