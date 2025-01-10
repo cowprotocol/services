@@ -123,14 +123,15 @@ impl Transaction {
 }
 
 fn is_settlement_trace(trace: &eth::TraceCall, settlement_contract: eth::Address) -> bool {
-    trace.input.0.starts_with(
-        &contracts::GPv2Settlement::raw_contract()
-            .interface
-            .abi
-            .function("settle")
-            .unwrap()
-            .selector(),
-    ) && trace.to == settlement_contract
+    trace.to == settlement_contract
+        && trace.input.0.starts_with(
+            &contracts::GPv2Settlement::raw_contract()
+                .interface
+                .abi
+                .function("settle")
+                .unwrap()
+                .selector(),
+        )
 }
 
 /// Trade containing onchain observable data specific to a settlement
