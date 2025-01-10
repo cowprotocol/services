@@ -28,7 +28,7 @@ use {
     url::Url,
 };
 
-mod metrics;
+pub mod metrics;
 
 /// Setup the observability. The log argument configures the tokio tracing
 /// framework.

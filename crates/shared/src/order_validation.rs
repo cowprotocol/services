@@ -713,7 +713,6 @@ impl OrderValidating for OrderValidator {
                 creation_date: chrono::offset::Utc::now(),
                 uid,
                 settlement_contract,
-                full_fee_amount: data.fee_amount,
                 class,
                 full_app_data: match order.app_data {
                     OrderCreationAppData::Both { full, .. }
