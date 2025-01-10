@@ -207,7 +207,6 @@ async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), Insert
         settlement_contract: ByteArray(order.metadata.settlement_contract.0),
         sell_token_balance: sell_token_source_into(order.data.sell_token_balance),
         buy_token_balance: buy_token_destination_into(order.data.buy_token_balance),
-        full_fee_amount: u256_to_big_decimal(&order.metadata.full_fee_amount),
         cancellation_timestamp: None,
     };
 
@@ -632,11 +631,6 @@ fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
         is_liquidity_order: class == OrderClass::Liquidity,
         class,
         settlement_contract: H160(order.settlement_contract.0),
-        full_fee_amount: big_decimal_to_u256(&order.full_fee_amount)
-            .context("full_fee_amount is not U256")?,
-        // Initialize unscaled and scale later when required.
-        solver_fee: big_decimal_to_u256(&order.full_fee_amount)
-            .context("solver_fee is not U256")?,
         ethflow_data,
         onchain_user,
         onchain_order_data,
@@ -730,7 +724,6 @@ mod tests {
             valid_to: valid_to_timestamp.timestamp(),
             app_data: ByteArray([0; 32]),
             fee_amount: BigDecimal::default(),
-            full_fee_amount: BigDecimal::default(),
             kind: DbOrderKind::Sell,
             class: DbOrderClass::Liquidity,
             partially_fillable: true,

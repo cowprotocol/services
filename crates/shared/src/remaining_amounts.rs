@@ -196,10 +196,6 @@ mod tests {
                 partially_fillable: false,
                 ..Default::default()
             },
-            metadata: OrderMetadata {
-                full_fee_amount: 42.into(),
-                ..Default::default()
-            },
             ..Default::default()
         }
         .into();
@@ -220,7 +216,6 @@ mod tests {
             },
             metadata: OrderMetadata {
                 executed_sell_amount_before_fees: 0.into(),
-                full_fee_amount: 13.into(),
                 ..Default::default()
             },
             ..Default::default()
@@ -243,7 +238,6 @@ mod tests {
             },
             metadata: OrderMetadata {
                 executed_sell_amount_before_fees: 90.into(),
-                full_fee_amount: 200.into(),
                 ..Default::default()
             },
             ..Default::default()
@@ -265,7 +259,6 @@ mod tests {
             },
             metadata: OrderMetadata {
                 executed_buy_amount: 9_u32.into(),
-                full_fee_amount: 200.into(),
                 ..Default::default()
             },
             ..Default::default()
