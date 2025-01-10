@@ -223,8 +223,9 @@ mod tests {
         constant_x: fn(u32) -> I256,
         constant_a: fn(u32) -> I256,
     ) {
+        let regex = r".* ([ax])([\d]+) = (\d+);.*$";
         for line in code.split('\n').filter(|line| !line.trim().is_empty()) {
-            let re = Regex::new(r".* ([ax])([\d]+) = (\d+);.*$").unwrap();
+            let re = Regex::new(regex).unwrap();
             let cap = re.captures_iter(line).next().unwrap();
             match &cap[1] {
                 "x" => assert_eq!(&cap[3], format!("{}", constant_x(cap[2].parse().unwrap()))),

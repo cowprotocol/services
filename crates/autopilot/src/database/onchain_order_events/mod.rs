@@ -435,8 +435,8 @@ type GeneralOnchainOrderPlacementData = (
     OnchainOrderPlacement,
     Order,
 );
-async fn parse_general_onchain_order_placement_data<'a>(
-    quoter: &'a dyn OrderQuoting,
+async fn parse_general_onchain_order_placement_data(
+    quoter: &dyn OrderQuoting,
     order_placement_events_and_quotes_zipped: Vec<(EthContractEvent<ContractEvent>, i64, i64)>,
     domain_separator: DomainSeparator,
     settlement_contract: H160,
