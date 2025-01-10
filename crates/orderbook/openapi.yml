@@ -903,8 +903,8 @@ components:
             - $ref: "#/components/schemas/BigUint"
         executedFeeAmount:
           description: The total amount of signed order fees that have been executed
-            for this order. The value is expressed in surplus token - sell token for 
-            buy orders, and in buy token for sell orders.
+            for this order. The value is expressed in surplus token (sell token for 
+            buy orders, and in buy token for sell orders).
           allOf:
             - $ref: "#/components/schemas/BigUint"
         invalidated:
