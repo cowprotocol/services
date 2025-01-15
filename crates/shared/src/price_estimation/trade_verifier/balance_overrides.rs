@@ -173,32 +173,28 @@ impl Strategy {
     /// Computes the storage slot and value to override for a particular token
     /// holder and amount.
     fn state_override(&self, holder: &Address, amount: &U256) -> (H256, H256) {
+        let key = match self {
+            Self::SolidityMapping { slot } => {
+                let mut buf = [0; 64];
+                buf[12..32].copy_from_slice(holder.as_fixed_bytes());
+                slot.to_big_endian(&mut buf[32..64]);
+                H256(signing::keccak256(&buf))
+            }
+            Self::SoladyMapping => {
+                let mut buf = [0; 32];
+                buf[0..20].copy_from_slice(holder.as_fixed_bytes());
+                buf[28..32].copy_from_slice(&[0x87, 0xa2, 0x11, 0xa2]);
+                H256(signing::keccak256(&buf))
+            }
+        };
+
         let value = {
             let mut buf = [0; 32];
             amount.to_big_endian(&mut buf);
             H256(buf)
         };
 
-        match self {
-            Self::SolidityMapping { slot } => {
-                let key = {
-                    let mut buf = [0; 64];
-                    buf[12..32].copy_from_slice(holder.as_fixed_bytes());
-                    slot.to_big_endian(&mut buf[32..64]);
-                    H256(signing::keccak256(&buf))
-                };
-                (key, value)
-            }
-            Self::SoladyMapping => {
-                let key = {
-                    let mut buf = [0; 32];
-                    buf[0..20].copy_from_slice(holder.as_fixed_bytes());
-                    buf[28..32].copy_from_slice(&[0x87, 0xa2, 0x11, 0xa2]);
-                    H256(signing::keccak256(&buf))
-                };
-                (key, value)
-            }
-        }
+        (key, value)
     }
 }
 
