@@ -28,7 +28,7 @@ pub struct Transaction {
 }
 
 impl Transaction {
-    pub fn new(
+    pub fn try_new(
         transaction: &eth::Transaction,
         domain_separator: &eth::DomainSeparator,
         settlement_contract: eth::Address,

@@ -303,7 +303,7 @@ mod tests {
         let settlement_contract = eth::Address(eth::H160::from_slice(&hex!(
             "9008d19f58aabd9ed0d60971565aa8510560ab41"
         )));
-        let transaction = super::transaction::Transaction::new(
+        let transaction = super::transaction::Transaction::try_new(
             &domain::eth::Transaction {
                 trace_calls: vec![domain::eth::TraceCall {
                     to: settlement_contract,
@@ -446,7 +446,7 @@ mod tests {
         let settlement_contract = eth::Address(eth::H160::from_slice(&hex!(
             "9008d19f58aabd9ed0d60971565aa8510560ab41"
         )));
-        let transaction = super::transaction::Transaction::new(
+        let transaction = super::transaction::Transaction::try_new(
             &domain::eth::Transaction {
                 trace_calls: vec![domain::eth::TraceCall {
                     to: settlement_contract,
@@ -621,7 +621,7 @@ mod tests {
         let settlement_contract = eth::Address(eth::H160::from_slice(&hex!(
             "9008d19f58aabd9ed0d60971565aa8510560ab41"
         )));
-        let transaction = super::transaction::Transaction::new(
+        let transaction = super::transaction::Transaction::try_new(
             &domain::eth::Transaction {
                 trace_calls: vec![domain::eth::TraceCall {
                     to: settlement_contract,
@@ -802,7 +802,7 @@ mod tests {
         let settlement_contract = eth::Address(eth::H160::from_slice(&hex!(
             "9008d19f58aabd9ed0d60971565aa8510560ab41"
         )));
-        let transaction = super::transaction::Transaction::new(
+        let transaction = super::transaction::Transaction::try_new(
             &domain::eth::Transaction {
                 trace_calls: vec![domain::eth::TraceCall {
                     to: settlement_contract,

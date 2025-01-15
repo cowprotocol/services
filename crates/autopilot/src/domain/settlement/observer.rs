@@ -67,7 +67,7 @@ impl Observer {
             Ok(transaction) => {
                 let separator = self.eth.contracts().settlement_domain_separator();
                 let settlement_contract = self.eth.contracts().settlement().address().into();
-                settlement::Transaction::new(&transaction, separator, settlement_contract)
+                settlement::Transaction::try_new(&transaction, separator, settlement_contract)
             }
             Err(err) => {
                 tracing::warn!(hash = ?event.transaction, ?err, "no tx found");
