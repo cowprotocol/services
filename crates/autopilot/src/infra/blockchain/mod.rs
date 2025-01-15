@@ -8,6 +8,7 @@ use {
     std::time::Duration,
     thiserror::Error,
     url::Url,
+    web3::Transport,
 };
 
 pub mod contracts;
@@ -103,10 +104,17 @@ impl Ethereum {
     }
 
     pub async fn transaction(&self, hash: eth::TxId) -> Result<eth::Transaction, Error> {
+        let trace_transaction = match self.chain {
+            Chain::ArbitrumOne => web3::helpers::CallFuture::new(self.web3.transport().execute(
+                "arbtrace_transaction",
+                vec![serde_json::to_value(hash.0).unwrap()],
+            )),
+            _ => self.web3.trace().transaction(hash.0),
+        };
         let (transaction, receipt, traces) = tokio::try_join!(
             self.web3.eth().transaction(hash.0.into()),
             self.web3.eth().transaction_receipt(hash.0),
-            self.web3.trace().transaction(hash.0),
+            trace_transaction,
         )?;
         let transaction = transaction.ok_or(Error::TransactionNotFound)?;
         let receipt = receipt.ok_or(Error::TransactionNotFound)?;
