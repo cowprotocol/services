@@ -1,10 +1,6 @@
-use {
-    crate::{
-        boundary,
-        domain::{self, auction::order, eth},
-    },
-    ethcontract::common::FunctionExt,
-    std::sync::LazyLock,
+use crate::{
+    boundary,
+    domain::{self, auction::order, eth},
 };
 
 mod tokenized;
@@ -16,6 +12,8 @@ pub struct Transaction {
     pub hash: eth::TxId,
     /// The associated auction id.
     pub auction_id: domain::auction::Id,
+    /// The address of the solver that submitted the transaction.
+    pub solver: eth::Address,
     /// The block number of the block that contains the transaction.
     pub block: eth::BlockNo,
     /// The timestamp of the block that contains the transaction.
@@ -29,33 +27,18 @@ pub struct Transaction {
 }
 
 impl Transaction {
-    pub fn try_new(
+    pub fn new(
         transaction: &eth::Transaction,
         domain_separator: &eth::DomainSeparator,
-        settlement_contract: eth::Address,
     ) -> Result<Self, Error> {
-        // find trace call to settlement contract
-        let calldata = transaction
-            .trace_calls
-            .iter()
-            .find(|trace| is_settlement_trace(trace, settlement_contract))
-            .map(|trace| trace.input.clone())
-            // all transactions emitting settlement events should have a /settle call, 
-            // otherwise it's an execution client bug
-            .ok_or(Error::MissingCalldata)?;
-
         /// Number of bytes that may be appended to the calldata to store an
         /// auction id.
         const META_DATA_LEN: usize = 8;
 
-        let (data, metadata) = calldata.0.split_at(
-            calldata
-                .0
-                .len()
-                .checked_sub(META_DATA_LEN)
-                // should contain at least 4 bytes for function selector and 8 bytes for auction id
-                .ok_or(Error::MissingCalldata)?,
-        );
+        let (data, metadata) = transaction
+            .input
+            .0
+            .split_at(transaction.input.0.len() - META_DATA_LEN);
         let metadata: Option<[u8; META_DATA_LEN]> = metadata.try_into().ok();
         let auction_id = metadata
             .map(crate::domain::auction::Id::from_be_bytes)
@@ -63,6 +46,7 @@ impl Transaction {
         Ok(Self {
             hash: transaction.hash,
             auction_id,
+            solver: transaction.from,
             block: transaction.block,
             timestamp: transaction.timestamp,
             gas: transaction.gas,
@@ -132,14 +116,6 @@ impl Transaction {
     }
 }
 
-fn is_settlement_trace(trace: &eth::TraceCall, settlement_contract: eth::Address) -> bool {
-    static SETTLE_FUNCTION_SELECTOR: LazyLock<[u8; 4]> = LazyLock::new(|| {
-        let abi = &contracts::GPv2Settlement::raw_contract().interface.abi;
-        abi.function("settle").unwrap().selector()
-    });
-    trace.to == settlement_contract && trace.input.0.starts_with(&*SETTLE_FUNCTION_SELECTOR)
-}
-
 /// Trade containing onchain observable data specific to a settlement
 /// transaction.
 #[derive(Debug, Clone)]
@@ -176,8 +152,6 @@ pub struct ClearingPrices {
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("settle calldata must exist for all transactions emitting settlement event")]
-    MissingCalldata,
     #[error("missing auction id")]
     MissingAuctionId,
     #[error(transparent)]
