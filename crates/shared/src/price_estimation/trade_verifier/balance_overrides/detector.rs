@@ -45,7 +45,7 @@ impl Detector {
             // not have false positives for cases where the token balances in
             // some other denomination from the actual token balance (such as
             // stETH for example) and not run into issues with overflows.
-            let amount = U256::from(u64::from_be_bytes([i; 8]));
+            let amount = U256::from(u64::from_be_bytes([i + 1; 8]));
 
             (strategy, amount)
         });
