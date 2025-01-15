@@ -4,6 +4,7 @@ use {
         domain::{self, auction::order, eth},
     },
     ethcontract::common::FunctionExt,
+    std::sync::LazyLock,
 };
 
 mod tokenized;
@@ -39,13 +40,22 @@ impl Transaction {
             .iter()
             .find(|trace| is_settlement_trace(trace, settlement_contract))
             .map(|trace| trace.input.clone())
-            .ok_or(Error::MissingCallData)?;
+            // all transactions emitting settlement events should have a /settle call, 
+            // otherwise it's an execution client bug
+            .ok_or(Error::MissingCalldata)?;
 
         /// Number of bytes that may be appended to the calldata to store an
         /// auction id.
         const META_DATA_LEN: usize = 8;
 
-        let (data, metadata) = calldata.0.split_at(calldata.0.len() - META_DATA_LEN);
+        let (data, metadata) = calldata.0.split_at(
+            calldata
+                .0
+                .len()
+                .checked_sub(META_DATA_LEN)
+                // should contain at least 4 bytes for function selector and 8 bytes for auction id
+                .ok_or(Error::MissingCalldata)?,
+        );
         let metadata: Option<[u8; META_DATA_LEN]> = metadata.try_into().ok();
         let auction_id = metadata
             .map(crate::domain::auction::Id::from_be_bytes)
@@ -123,15 +133,11 @@ impl Transaction {
 }
 
 fn is_settlement_trace(trace: &eth::TraceCall, settlement_contract: eth::Address) -> bool {
-    trace.to == settlement_contract
-        && trace.input.0.starts_with(
-            &contracts::GPv2Settlement::raw_contract()
-                .interface
-                .abi
-                .function("settle")
-                .unwrap()
-                .selector(),
-        )
+    static SETTLE_FUNCTION_SELECTOR: LazyLock<[u8; 4]> = LazyLock::new(|| {
+        let abi = &contracts::GPv2Settlement::raw_contract().interface.abi;
+        abi.function("settle").unwrap().selector()
+    });
+    trace.to == settlement_contract && trace.input.0.starts_with(&*SETTLE_FUNCTION_SELECTOR)
 }
 
 /// Trade containing onchain observable data specific to a settlement
@@ -170,10 +176,10 @@ pub struct ClearingPrices {
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("settle calldata must exist for all transactions emitting settlement event")]
+    MissingCalldata,
     #[error("missing auction id")]
     MissingAuctionId,
-    #[error("missing calldata")]
-    MissingCallData,
     #[error(transparent)]
     Decoding(#[from] tokenized::error::Decoding),
     #[error("failed to recover order uid {0}")]

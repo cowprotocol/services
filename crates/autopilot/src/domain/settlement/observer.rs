@@ -96,7 +96,17 @@ impl Observer {
                 (auction_id, settlement)
             }
             Err(err) => {
-                tracing::warn!(hash = ?event.transaction, ?err, "invalid settlement transaction");
+                match err {
+                    settlement::transaction::Error::MissingCalldata => {
+                        tracing::error!(hash = ?event.transaction, ?err, "invalid settlement transaction")
+                    }
+                    settlement::transaction::Error::MissingAuctionId
+                    | settlement::transaction::Error::Decoding(_)
+                    | settlement::transaction::Error::SignatureRecover(_)
+                    | settlement::transaction::Error::OrderUidRecover(_) => {
+                        tracing::warn!(hash = ?event.transaction, ?err, "invalid settlement transaction")
+                    }
+                }
                 // default values so we don't get stuck on invalid settlement transactions
                 (0.into(), None)
             }
