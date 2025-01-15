@@ -53,15 +53,15 @@ impl Detector {
         // bunch of different slots and see which one sticks. We try balance
         // mappings for the first `TRIES` slots; each with a unique value.
         let mut tries = (0..Self::TRIES).map(|i| {
-            let strategy = Strategy::Mapping { slot: U256::from(i) };
+            let strategy = Strategy::SolidityMapping { slot: U256::from(i) };
             (strategy, marker_amount_for_index(i))
         })
         // Afterwards we try hardcoded storage slots based on popular utility
         // libraries like OpenZeppelin.
         .chain((Self::TRIES..).zip([
-            *OPEN_ZEPPELIN_ERC20_UPGRADEABLE,
-        ]).map(|(index, slot)| {
-            let strategy = Strategy::Mapping { slot };
+            Strategy::SolidityMapping{ slot: *OPEN_ZEPPELIN_ERC20_UPGRADEABLE },
+            Strategy::SoladyMapping,
+        ]).map(|(index, strategy)| {
             (strategy, marker_amount_for_index(index))
         }));
 
@@ -145,7 +145,7 @@ mod tests {
             .detect(addr!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"))
             .await
             .unwrap();
-        assert_eq!(storage, Strategy::Mapping { slot: 3.into() });
+        assert_eq!(storage, Strategy::SolidityMapping { slot: 3.into() });
 
         let storage = detector
             .detect(addr!("4956b52ae2ff65d74ca2d61207523288e4528f96"))
@@ -153,9 +153,15 @@ mod tests {
             .unwrap();
         assert_eq!(
             storage,
-            Strategy::Mapping {
+            Strategy::SolidityMapping {
                 slot: *OPEN_ZEPPELIN_ERC20_UPGRADEABLE
             }
         );
+
+        let storage = detector
+            .detect(addr!("0000000000c5dc95539589fbd24be07c6c14eca4"))
+            .await
+            .unwrap();
+        assert_eq!(storage, Strategy::SoladyMapping);
     }
 }

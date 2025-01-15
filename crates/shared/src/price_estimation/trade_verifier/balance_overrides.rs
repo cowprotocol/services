@@ -86,7 +86,8 @@ impl Display for TokenConfiguration {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         let format_entry =
             |f: &mut Formatter, (addr, strategy): (&Address, &Strategy)| match strategy {
-                Strategy::Mapping { slot } => write!(f, "{addr:?}@{slot}"),
+                Strategy::SolidityMapping { slot } => write!(f, "{addr:?}@{slot}"),
+                Strategy::SoladyMapping => write!(f, "SoladyMapping({addr:?})"),
             };
 
         let mut entries = self.0.iter();
@@ -121,7 +122,7 @@ impl FromStr for TokenConfiguration {
                     .context("expected {addr}@{slot} format")?;
                 Ok((
                     addr.parse()?,
-                    Strategy::Mapping {
+                    Strategy::SolidityMapping {
                         slot: slot.parse()?,
                     },
                 ))
@@ -160,25 +161,40 @@ pub enum Strategy {
     /// The strategy is configured with the storage slot [^1] of the mapping.
     ///
     /// [^1]: <https://docs.soliditylang.org/en/latest/internals/layout_in_storage.html#mappings-and-dynamic-arrays>
-    Mapping { slot: U256 },
+    SolidityMapping { slot: U256 },
+    /// Strategy computing storage slot for balances based on the Solady library
+    /// [^1].
+    ///
+    /// [^1]: <https://github.com/Vectorized/solady/blob/6122858a3aed96ee9493b99f70a245237681a95f/src/tokens/ERC20.sol#L75-L81>
+    SoladyMapping,
 }
 
 impl Strategy {
     /// Computes the storage slot and value to override for a particular token
     /// holder and amount.
     fn state_override(&self, holder: &Address, amount: &U256) -> (H256, H256) {
+        let value = {
+            let mut buf = [0; 32];
+            amount.to_big_endian(&mut buf);
+            H256(buf)
+        };
+
         match self {
-            Self::Mapping { slot } => {
+            Self::SolidityMapping { slot } => {
                 let key = {
                     let mut buf = [0; 64];
                     buf[12..32].copy_from_slice(holder.as_fixed_bytes());
                     slot.to_big_endian(&mut buf[32..64]);
                     H256(signing::keccak256(&buf))
                 };
-                let value = {
+                (key, value)
+            }
+            Self::SoladyMapping => {
+                let key = {
                     let mut buf = [0; 32];
-                    amount.to_big_endian(&mut buf);
-                    H256(buf)
+                    buf[0..20].copy_from_slice(holder.as_fixed_bytes());
+                    buf[28..32].copy_from_slice(&[0x87, 0xa2, 0x11, 0xa2]);
+                    H256(signing::keccak256(&buf))
                 };
                 (key, value)
             }
@@ -264,7 +280,7 @@ mod tests {
     async fn balance_override_computation() {
         let balance_overrides = BalanceOverrides {
             hardcoded: hashmap! {
-                addr!("DEf1CA1fb7FBcDC777520aa7f396b4E015F497aB") => Strategy::Mapping {
+                addr!("DEf1CA1fb7FBcDC777520aa7f396b4E015F497aB") => Strategy::SolidityMapping {
                     slot: U256::from(0),
                 },
             },
