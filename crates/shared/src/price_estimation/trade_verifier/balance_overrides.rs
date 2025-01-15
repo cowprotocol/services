@@ -151,7 +151,7 @@ pub struct BalanceOverrideRequest {
 }
 
 /// Balance override strategy for a token.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Strategy {
     /// Balance override strategy for tokens whose balances are stored in a
     /// direct Solidity mapping from token holder to balance amount in the

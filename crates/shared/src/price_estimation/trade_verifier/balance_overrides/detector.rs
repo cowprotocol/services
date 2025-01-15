@@ -126,3 +126,36 @@ pub enum DetectionError {
     #[error(transparent)]
     Simulation(#[from] SimulationError),
 }
+
+#[cfg(test)]
+mod tests {
+    use {super::*, ethrpc::create_env_test_transport, web3::Web3};
+
+    /// Tests that we can detect storage slots by probing the first
+    /// n slots or by checking hardcoded known slots.
+    /// Set `NODE_URL` environment to a mainnet RPC URL.
+    #[ignore]
+    #[tokio::test]
+    async fn detects_storage_slots() {
+        let detector = Detector {
+            simulator: Arc::new(Web3::new(create_env_test_transport())),
+        };
+
+        let storage = detector
+            .detect(addr!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"))
+            .await
+            .unwrap();
+        assert_eq!(storage, Strategy::Mapping { slot: 3.into() });
+
+        let storage = detector
+            .detect(addr!("4956b52ae2ff65d74ca2d61207523288e4528f96"))
+            .await
+            .unwrap();
+        assert_eq!(
+            storage,
+            Strategy::Mapping {
+                slot: *OPEN_ZEPPELIN_ERC20_UPGRADEABLE
+            }
+        );
+    }
+}
