@@ -1,7 +1,7 @@
 use {
     crate::{app_data_hash::hash_full_app_data, AppDataHash, Hooks},
     anyhow::{anyhow, Context, Result},
-    primitive_types::H160,
+    primitive_types::{H160, U256},
     serde::{de, Deserialize, Deserializer, Serialize, Serializer},
     std::{fmt, fmt::Display},
 };
@@ -24,6 +24,24 @@ pub struct ProtocolAppData {
     pub signer: Option<H160>,
     pub replaced_order: Option<ReplacedOrder>,
     pub partner_fee: Option<PartnerFee>,
+    pub flashloan: Option<Flashloan>,
+}
+
+/// Contains information to hint at how a solver could make
+/// use of flashloans to settle the associated order.
+/// Since using flashloans introduces a bunch of complexities
+/// all these hints are not binding for the solver.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
+pub struct Flashloan {
+    /// Which contract to request the flashloan from.
+    lender: Option<H160>,
+    /// Who should receive the borrowed tokens. If this is not
+    /// set the order owner will get the tokens.
+    borrower: Option<H160>,
+    /// Which token to flashloan.
+    token: H160,
+    /// How much of the token to flashloan.
+    amount: U256,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
@@ -217,6 +235,7 @@ impl From<BackendAppData> for ProtocolAppData {
             signer: None,
             replaced_order: None,
             partner_fee: None,
+            flashloan: None,
         }
     }
 }
