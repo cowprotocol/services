@@ -7,7 +7,7 @@
     Reminder: Please consider backward compatibility when modifying the API specification. 
     If breaking changes are unavoidable, ensure:
     - You explicitly pointed out breaking changes.
-    - You communicate the changes to affected teams.
+    - You communicate the changes to affected teams (at least Frontend team and SAFE team).
     - You provide proper versioning and migration mechanisms.
   pathFilter:
     - "**/openapi.yml"

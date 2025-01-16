@@ -195,9 +195,7 @@ impl TryFrom<QuoteRow> for QuoteData {
             expiration: row.expiration_timestamp,
             quote_kind: row.quote_kind,
             solver: H160(row.solver.0),
-            // Even if the quote was verified at the time of creation
-            // it might no longer be accurate.
-            verified: false,
+            verified: row.verified,
             metadata: row.metadata.try_into()?,
         })
     }

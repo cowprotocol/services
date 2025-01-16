@@ -270,7 +270,6 @@ Column                    | Type                         | Nullable | Details
  settlement\_contract     | bytea                        | not null | address of the contract that should be used to settle this order
  sell\_token\_balance     | [enum](#selltokensource)     | not null | defines how sell\_tokens need to be transferred into the settlement contract
  buy\_token\_balance      | [enum](#buytokendestination) | not null | defined how buy\_tokens need to be transferred back to the user
- full\_fee\_amount        | numeric                      | not null | estimated execution cost in sell\_token of this order
  class                    | [enum](#orderclass)          | not null | determines which special trade semantics will apply to the execution of this order
 
 

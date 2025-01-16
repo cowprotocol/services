@@ -86,7 +86,8 @@ impl Display for TokenConfiguration {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         let format_entry =
             |f: &mut Formatter, (addr, strategy): (&Address, &Strategy)| match strategy {
-                Strategy::Mapping { slot } => write!(f, "{addr:?}@{slot}"),
+                Strategy::SolidityMapping { slot } => write!(f, "{addr:?}@{slot}"),
+                Strategy::SoladyMapping => write!(f, "SoladyMapping({addr:?})"),
             };
 
         let mut entries = self.0.iter();
@@ -121,7 +122,7 @@ impl FromStr for TokenConfiguration {
                     .context("expected {addr}@{slot} format")?;
                 Ok((
                     addr.parse()?,
-                    Strategy::Mapping {
+                    Strategy::SolidityMapping {
                         slot: slot.parse()?,
                     },
                 ))
@@ -151,7 +152,7 @@ pub struct BalanceOverrideRequest {
 }
 
 /// Balance override strategy for a token.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Strategy {
     /// Balance override strategy for tokens whose balances are stored in a
     /// direct Solidity mapping from token holder to balance amount in the
@@ -160,29 +161,40 @@ pub enum Strategy {
     /// The strategy is configured with the storage slot [^1] of the mapping.
     ///
     /// [^1]: <https://docs.soliditylang.org/en/latest/internals/layout_in_storage.html#mappings-and-dynamic-arrays>
-    Mapping { slot: U256 },
+    SolidityMapping { slot: U256 },
+    /// Strategy computing storage slot for balances based on the Solady library
+    /// [^1].
+    ///
+    /// [^1]: <https://github.com/Vectorized/solady/blob/6122858a3aed96ee9493b99f70a245237681a95f/src/tokens/ERC20.sol#L75-L81>
+    SoladyMapping,
 }
 
 impl Strategy {
     /// Computes the storage slot and value to override for a particular token
     /// holder and amount.
     fn state_override(&self, holder: &Address, amount: &U256) -> (H256, H256) {
-        match self {
-            Self::Mapping { slot } => {
-                let key = {
-                    let mut buf = [0; 64];
-                    buf[12..32].copy_from_slice(holder.as_fixed_bytes());
-                    slot.to_big_endian(&mut buf[32..64]);
-                    H256(signing::keccak256(&buf))
-                };
-                let value = {
-                    let mut buf = [0; 32];
-                    amount.to_big_endian(&mut buf);
-                    H256(buf)
-                };
-                (key, value)
+        let key = match self {
+            Self::SolidityMapping { slot } => {
+                let mut buf = [0; 64];
+                buf[12..32].copy_from_slice(holder.as_fixed_bytes());
+                slot.to_big_endian(&mut buf[32..64]);
+                H256(signing::keccak256(&buf))
             }
-        }
+            Self::SoladyMapping => {
+                let mut buf = [0; 32];
+                buf[0..20].copy_from_slice(holder.as_fixed_bytes());
+                buf[28..32].copy_from_slice(&[0x87, 0xa2, 0x11, 0xa2]);
+                H256(signing::keccak256(&buf))
+            }
+        };
+
+        let value = {
+            let mut buf = [0; 32];
+            amount.to_big_endian(&mut buf);
+            H256(buf)
+        };
+
+        (key, value)
     }
 }
 
@@ -264,7 +276,7 @@ mod tests {
     async fn balance_override_computation() {
         let balance_overrides = BalanceOverrides {
             hardcoded: hashmap! {
-                addr!("DEf1CA1fb7FBcDC777520aa7f396b4E015F497aB") => Strategy::Mapping {
+                addr!("DEf1CA1fb7FBcDC777520aa7f396b4E015F497aB") => Strategy::SolidityMapping {
                     slot: U256::from(0),
                 },
             },
@@ -290,7 +302,7 @@ mod tests {
 
         // You can verify the state override computation is correct by running:
         // ```
-        // curl -X POST $RPC -H 'Content-Type: application/data' --data '{
+        // curl -X POST $RPC -H 'Content-Type: application/json' --data '{
         //   "jsonrpc": "2.0",
         //   "id": 0,
         //   "method": "eth_call",
@@ -326,5 +338,56 @@ mod tests {
                 .await,
             None,
         );
+    }
+
+    #[tokio::test]
+    async fn balance_override_computation_solady() {
+        let balance_overrides = BalanceOverrides {
+            hardcoded: hashmap! {
+                addr!("0000000000c5dc95539589fbd24be07c6c14eca4") => Strategy::SoladyMapping,
+            },
+            ..Default::default()
+        };
+
+        assert_eq!(
+            balance_overrides
+                .state_override(BalanceOverrideRequest {
+                    token: addr!("0000000000c5dc95539589fbd24be07c6c14eca4"),
+                    holder: addr!("d8dA6BF26964aF9D7eEd9e03E53415D37aA96045"),
+                    amount: 0x42_u64.into(),
+                })
+                .await,
+            Some(StateOverride {
+                state_diff: Some(hashmap! {
+                    H256(hex!("f6a6656ed2d14bad3cdd3e8871db3f535a136a1b6cd5ae2dced8eb813f3d4e4f")) =>
+                        H256(hex!("0000000000000000000000000000000000000000000000000000000000000042")),
+                }),
+                ..Default::default()
+            }),
+        );
+
+        // You can verify the state override computation is correct by running:
+        // ```
+        // curl -X POST $RPC -H 'Content-Type: application/json' --data '{
+        //   "jsonrpc": "2.0",
+        //   "id": 0,
+        //   "method": "eth_call",
+        //   "params": [
+        //     {
+        //       "to": "0x0000000000c5dc95539589fbd24be07c6c14eca4",
+        //       "data": "0x70a08231000000000000000000000000d8dA6BF26964aF9D7eEd9e03E53415D37aA96045"
+        //     },
+        //     "latest",
+        //     {
+        //       "0x0000000000c5dc95539589fbd24be07c6c14eca4": {
+        //         "stateDiff": {
+        //           "f6a6656ed2d14bad3cdd3e8871db3f535a136a1b6cd5ae2dced8eb813f3d4e4f":
+        //             "0x0000000000000000000000000000000000000000000000000000000000000042"
+        //         }
+        //       }
+        //     }
+        //   ]
+        // }'
+        // ```
     }
 }
