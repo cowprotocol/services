@@ -302,7 +302,7 @@ mod tests {
 
         // You can verify the state override computation is correct by running:
         // ```
-        // curl -X POST $RPC -H 'Content-Type: application/data' --data '{
+        // curl -X POST $RPC -H 'Content-Type: application/json' --data '{
         //   "jsonrpc": "2.0",
         //   "id": 0,
         //   "method": "eth_call",
@@ -338,5 +338,56 @@ mod tests {
                 .await,
             None,
         );
+    }
+
+    #[tokio::test]
+    async fn balance_override_computation_solady() {
+        let balance_overrides = BalanceOverrides {
+            hardcoded: hashmap! {
+                addr!("0000000000c5dc95539589fbd24be07c6c14eca4") => Strategy::SoladyMapping,
+            },
+            ..Default::default()
+        };
+
+        assert_eq!(
+            balance_overrides
+                .state_override(BalanceOverrideRequest {
+                    token: addr!("0000000000c5dc95539589fbd24be07c6c14eca4"),
+                    holder: addr!("d8dA6BF26964aF9D7eEd9e03E53415D37aA96045"),
+                    amount: 0x42_u64.into(),
+                })
+                .await,
+            Some(StateOverride {
+                state_diff: Some(hashmap! {
+                    H256(hex!("f6a6656ed2d14bad3cdd3e8871db3f535a136a1b6cd5ae2dced8eb813f3d4e4f")) =>
+                        H256(hex!("0000000000000000000000000000000000000000000000000000000000000042")),
+                }),
+                ..Default::default()
+            }),
+        );
+
+        // You can verify the state override computation is correct by running:
+        // ```
+        // curl -X POST $RPC -H 'Content-Type: application/json' --data '{
+        //   "jsonrpc": "2.0",
+        //   "id": 0,
+        //   "method": "eth_call",
+        //   "params": [
+        //     {
+        //       "to": "0x0000000000c5dc95539589fbd24be07c6c14eca4",
+        //       "data": "0x70a08231000000000000000000000000d8dA6BF26964aF9D7eEd9e03E53415D37aA96045"
+        //     },
+        //     "latest",
+        //     {
+        //       "0x0000000000c5dc95539589fbd24be07c6c14eca4": {
+        //         "stateDiff": {
+        //           "f6a6656ed2d14bad3cdd3e8871db3f535a136a1b6cd5ae2dced8eb813f3d4e4f":
+        //             "0x0000000000000000000000000000000000000000000000000000000000000042"
+        //         }
+        //       }
+        //     }
+        //   ]
+        // }'
+        // ```
     }
 }
