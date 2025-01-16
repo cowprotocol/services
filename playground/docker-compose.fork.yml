@@ -1,6 +1,7 @@
 version: "3.9"
 services:
   chain:
+    platform: linux/amd64 
     image: ghcr.io/foundry-rs/foundry:latest
     restart: always
     entrypoint: /usr/local/bin/anvil
@@ -110,7 +111,7 @@ services:
       - SOLVER_TIME_LIMIT=5
       - PRICE_ESTIMATION_DRIVERS=baseline|http://driver/baseline
       - NATIVE_PRICE_ESTIMATORS=baseline|http://driver/baseline
-      - DRIVERS=baseline|http://driver/baseline
+      - DRIVERS=baseline|http://driver/baseline,solver-2|http://driver/solver-2
       - SKIP_EVENT_SYNC=true
       - BASELINE_SOURCES=None
       - RUST_BACKTRACE=1
@@ -158,6 +159,23 @@ services:
       - ./baseline.toml:/baseline.toml
     ports:
       - 9001:80
+
+  solver-2:
+    build:
+      context: ../
+      target: solvers
+      dockerfile: ./Dockerfile
+    restart: always
+    command: baseline --config /solver-2.toml
+    environment:
+      - ADDR=0.0.0.0:80
+      - LOG=solvers=trace,shared=trace
+      - RUST_BACKTRACE=1
+      - TOML_TRACE_ERROR=1
+    volumes:
+      - ./solver-2.toml:/solver-2.toml
+    ports:
+      - 9002:80
 
   frontend:
     build:

@@ -8,6 +8,7 @@ use {
             mempool,
             simulator,
             solver,
+            pod
         },
     },
     std::time::Duration,
@@ -30,4 +31,5 @@ pub struct Config {
     pub order_priority_strategies: Vec<OrderPriorityStrategy>,
     pub archive_node_url: Option<Url>,
     pub simulation_bad_token_max_age: Duration,
+    pub pod: Option<pod::Config>
 }

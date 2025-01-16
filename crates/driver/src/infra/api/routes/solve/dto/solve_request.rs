@@ -2,8 +2,7 @@ use {
     crate::{
         domain::{
             competition::{self, auction, order},
-            eth,
-            time,
+            eth, time,
         },
         infra::{solver::Timeouts, tokens, Ethereum},
         util::serialize,
@@ -211,6 +210,10 @@ pub struct SolveRequest {
 impl SolveRequest {
     pub fn id(&self) -> i64 {
         self.id
+    }
+
+    pub fn deadline(&self) -> chrono::DateTime<chrono::Utc> {
+        self.deadline
     }
 }
 

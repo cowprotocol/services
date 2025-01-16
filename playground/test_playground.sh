@@ -37,7 +37,7 @@ app_data_hash=$(cast keccak $APPDATA)
 
 # Deposit WETH
 echo "Wrapping some ETH"
-docker exec playground-chain-1 cast send --private-key $PRIVATE_KEY --value 3ether $WETH_ADDRESS > /dev/null
+docker exec playground-chain-1 cast send --private-key $PRIVATE_KEY --value $SELL_AMOUNT $WETH_ADDRESS > /dev/null
 
 echo "Setting WETH allowance"
 docker exec playground-chain-1 cast send --private-key $PRIVATE_KEY $WETH_ADDRESS "approve(address, uint)" $COW_VAULT_RELAYER_CONTRACT $MAXUINT256 > /dev/null
@@ -64,10 +64,10 @@ quote_response=$( curl --retry 5 --fail-with-body -s --show-error -X 'POST' \
 buyAmount=$(jq -r --args '.quote.buyAmount' <<< "${quote_response}")
 feeAmount=$(jq -r --args '.quote.feeAmount' <<< "${quote_response}")
 validTo=$(($(date +%s) + 120)) # validity time: now + 2 minutes
-sellAmount=$((SELL_AMOUNT - feeAmount))
+sellAmount=$(bc <<< "$SELL_AMOUNT - $feeAmount")
 
 # Apply slippage
-buyAmount=$((buyAmount * ( 100 - $SLIPPAGE ) / 100 )) # apply slippage
+buyAmount=$(bc <<< "$buyAmount * (100 - $SLIPPAGE) / 100") # apply slippage
 
 # Prepare EIP712 message
 eip712_message=$(jq -r --args '
@@ -135,7 +135,7 @@ orderUid=$( curl --retry 5 --fail-with-body -s --show-error -X 'POST' \
   -H 'accept: application/json' \
   -H 'Content-Type: application/json' \
   -d "${order_proposal}")
-orderUid=${orderUid:1:-1} # remove quotes
+orderUid=${orderUid:1:114} # remove quotes
 echo "Order UID: $orderUid"
 
 for i in $(seq 1 24);

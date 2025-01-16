@@ -5,10 +5,9 @@ use {
             self,
             config::file::OrderPriorityStrategy,
             liquidity,
+            pod::Pod,
             solver::{Solver, Timeouts},
-            tokens,
-            Ethereum,
-            Simulator,
+            tokens, Ethereum, Simulator,
         },
     },
     error::Error,
@@ -29,6 +28,7 @@ pub struct Api {
     pub eth: Ethereum,
     pub mempools: Mempools,
     pub addr: SocketAddr,
+    pub pod: Option<Arc<Pod>>,
     pub bad_token_detector: bad_tokens::simulation::Detector,
     /// If this channel is specified, the bound address will be sent to it. This
     /// allows the driver to bind to 0.0.0.0:0 during testing.
@@ -92,9 +92,9 @@ impl Api {
 
             let router = router.with_state(State(Arc::new(Inner {
                 eth: self.eth.clone(),
-                solver: solver.clone(),
+                solver: Arc::new(solver.clone()),
                 competition: domain::Competition::new(
-                    solver,
+                    solver.clone(),
                     self.eth.clone(),
                     self.liquidity.clone(),
                     self.simulator.clone(),
@@ -104,6 +104,7 @@ impl Api {
                 liquidity: self.liquidity.clone(),
                 tokens: tokens.clone(),
                 pre_processor: pre_processor.clone(),
+                pod: self.pod.clone()
             })));
             let path = format!("/{name}");
             infra::observe::mounting_solver(&name, &path);
@@ -133,7 +134,7 @@ impl State {
         &self.0.eth
     }
 
-    fn solver(&self) -> &Solver {
+    fn solver(&self) -> &Arc<Solver> {
         &self.0.solver
     }
 
@@ -156,13 +157,18 @@ impl State {
     fn timeouts(&self) -> Timeouts {
         self.0.solver.timeouts()
     }
+
+    fn pod(&self) -> &Option<Arc<Pod>> {
+        &self.0.pod
+    }
 }
 
 struct Inner {
     eth: Ethereum,
-    solver: Solver,
+    solver: Arc<Solver>,
     competition: Arc<domain::Competition>,
     liquidity: liquidity::Fetcher,
     tokens: tokens::Fetcher,
     pre_processor: domain::competition::AuctionProcessor,
+    pod: Option<Arc<Pod>>,
 }

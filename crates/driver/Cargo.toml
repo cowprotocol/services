@@ -55,7 +55,8 @@ toml = { workspace = true }
 tower = "0.4"
 tower-http = { version = "0.4", features = ["limit", "trace"] }
 url = { workspace = true, features = ["serde"] }
-web3 = { workspace = true, features = ["http"] }
+web3 = { workspace = true, features = ["http", "ws-tokio", "ws-tls-tokio"] }
+futures-util = { version = "0.3.31" }
 
 # These still use { workspace = true } because they're used at
 # the boundary between driver and shared.
@@ -75,6 +76,7 @@ shared = { path = "../shared" }
 solver = { path = "../solver" }
 tracing = { workspace = true }
 warp = { workspace = true }
+alloy = { version = "0.9.2", features = ["full", "serde"] }
 
 [dev-dependencies]
 maplit = { workspace = true }

@@ -9,6 +9,7 @@ use {
             liquidity,
             simulator::{self, Simulator},
             solver::Solver,
+            pod::Pod,
             Api,
         },
     },
@@ -54,6 +55,7 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
     let serve = Api {
         solvers: solvers(&config, &eth).await,
         liquidity: liquidity(&config, &eth).await,
+        pod: pod(&config).await,
         simulator: simulator(&config, &eth),
         mempools: Mempools::new(
             config
@@ -163,6 +165,21 @@ async fn liquidity(config: &config::Config, eth: &Ethereum) -> liquidity::Fetche
     liquidity::Fetcher::new(eth, &config.liquidity)
         .await
         .expect("initialize liquidity fetcher")
+}
+
+async fn pod(config: &config::Config) -> Option<Arc<Pod>> {
+    match config.pod {
+        None => return None,
+        Some(ref config) => {
+            let http_endpoint = config.http_endpoint.clone();
+            let ws_endpoint = config.ws_endpoint.clone();
+            let contract_address = config.contract_address;
+            let pod = Pod::new(http_endpoint, ws_endpoint, contract_address)
+                .await
+                .expect("initialize pod");
+            return Some(Arc::new(pod));
+        }
+    }
 }
 
 #[cfg(unix)]

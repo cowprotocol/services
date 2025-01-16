@@ -11,6 +11,7 @@ pub mod simulator;
 pub mod solver;
 pub mod time;
 pub mod tokens;
+pub mod pod;
 
 pub use {
     self::solver::Solver,

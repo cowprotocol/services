@@ -4,6 +4,15 @@ endpoint = "http://baseline"
 absolute-slippage = "40000000000000000" # Denominated in wei, optional
 relative-slippage = "0.1" # Percentage in the [0, 1] range
 account = "0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6" # Known test private key
+# http-time-buffer = "1s"
+
+[[solver]]
+name = "solver-2" # Arbitrary name given to this solver, must be unique
+endpoint = "http://solver-2"
+absolute-slippage = "40000000000000000" # Denominated in wei, optional
+relative-slippage = "0.1" # Percentage in the [0, 1] range
+account = "0xdbda1821b80551c9d65939329250298aa3472ba22feea921c0cf5d620ea67b97" # Known test private key
+# http-time-buffer = "1s"
 
 [submission]
 gas-price-cap = "1000000000000"
@@ -25,3 +34,8 @@ base-tokens = [
 
 [[liquidity.uniswap-v2]] # Uniswap V2 configuration
 preset = "uniswap-v2"
+
+[pod]
+http-endpoint = "https://rpc.dev.pod.network"
+ws-endpoint = "wss://ws-rpc.dev.pod.network"
+contract-address = "0x217F5658c6ecC27D439922263AD9Bb8e992e0373"

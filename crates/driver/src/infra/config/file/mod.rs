@@ -1,4 +1,6 @@
 pub use load::load;
+use crate::infra::pod;
+
 use {
     crate::{domain::eth, infra, util::serialize},
     reqwest::Url,
@@ -54,6 +56,8 @@ struct Config {
 
     #[serde(default)]
     liquidity: LiquidityConfig,
+
+    pod: Option<pod::Config>,
 
     /// Defines order prioritization strategies that will be applied in the
     /// specified order.

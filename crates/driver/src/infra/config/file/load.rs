@@ -49,6 +49,7 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
         "The configured chain ID does not match the connected Ethereum node"
     );
     infra::Config {
+        pod: config.pod,
         solvers: join_all(config.solvers.into_iter().map(|config| async move {
             let account = match config.account {
                 file::Account::PrivateKey(private_key) => ethcontract::Account::Offline(
