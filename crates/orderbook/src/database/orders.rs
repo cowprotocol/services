@@ -404,7 +404,7 @@ impl OrderStoring for Postgres {
 
                 let mut order = full_order_into_model_order(order_with_quote.full_order)?;
                 if let Some(quote) = quote.as_ref() {
-                    order.quote_metadata = Some(quote.metadata.to_string());
+                    order.metadata.quote_metadata = Some(quote.metadata.to_string());
                 }
 
                 Ok(OrderWithQuote { order, quote })
@@ -647,6 +647,7 @@ fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
             .map(String::from_utf8)
             .transpose()
             .context("full app data isn't utf-8")?,
+        quote_metadata: None,
     };
     let data = OrderData {
         sell_token: H160(order.sell_token.0),
@@ -672,7 +673,6 @@ fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
             pre: pre_interactions,
             post: post_interactions,
         },
-        quote_metadata: None,
     })
 }
 

@@ -53,10 +53,6 @@ pub struct Order {
     pub signature: Signature,
     #[serde(default)]
     pub interactions: Interactions,
-    /// If this order was crated from quote, then this field contains that quote
-    /// metadata
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub quote_metadata: Option<String>,
 }
 
 #[derive(Eq, PartialEq, Clone, Copy, Debug, Deserialize, Serialize, Hash, Default)]
@@ -185,11 +181,6 @@ impl OrderBuilder {
 
     pub fn with_class(mut self, class: OrderClass) -> Self {
         self.0.metadata.class = class;
-        self
-    }
-
-    pub fn with_quote_metadata(mut self, metadata: &str) -> Self {
-        self.0.quote_metadata = Some(metadata.to_string());
         self
     }
 
@@ -725,6 +716,10 @@ pub struct OrderMetadata {
     /// Full app data that `OrderData::app_data` is a hash of. Can be None if
     /// the backend doesn't know about the full app data.
     pub full_app_data: Option<String>,
+    /// If the order was crated from quote, then this field contains that quote
+    /// metadata
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quote_metadata: Option<String>,
 }
 
 // uid as 56 bytes: 32 for orderDigest, 20 for ownerAddress and 4 for validTo
@@ -1107,7 +1102,6 @@ mod tests {
             }
             .to_signature(signing_scheme),
             interactions: Interactions::default(),
-            quote_metadata: None,
         };
         let deserialized: Order = serde_json::from_value(value.clone()).unwrap();
         assert_eq!(deserialized, expected);

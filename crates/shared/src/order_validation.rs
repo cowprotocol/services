@@ -720,12 +720,16 @@ impl OrderValidating for OrderValidator {
                     | OrderCreationAppData::Full { full } => Some(full),
                     OrderCreationAppData::Hash { .. } => full_app_data_override,
                 },
+                quote_metadata: quote
+                    .clone()
+                    .map(|val| serde_json::to_string(&val.data.metadata))
+                    .transpose()
+                    .map_err(|e| ValidationError::Other(e.into()))?,
                 ..Default::default()
             },
             signature: order.signature.clone(),
             data,
             interactions: app_data.interactions,
-            quote_metadata: None,
         };
 
         Ok((order, quote))
