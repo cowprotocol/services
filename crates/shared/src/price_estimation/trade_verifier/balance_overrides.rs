@@ -37,19 +37,32 @@ pub struct Arguments {
     /// will take precedence.
     #[clap(long, env, action = clap::ArgAction::Set, default_value_t)]
     pub quote_autodetect_token_balance_overrides: bool,
+
+    /// Controls how many storage slots get probed for automatically
+    /// detecting how to override the balances of a token.
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "60")]
+    pub quote_autodetect_token_balance_overrides_probing_depth: u8,
+
+    /// Controls how many storage slots get probed for automatically
+    /// detecting how to override the balances of a token.
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "1000")]
+    pub quote_autodetect_token_balance_overrides_cache_size: usize,
 }
 
 impl Arguments {
-    const CACHE_SIZE: usize = 1000;
-
     /// Creates a balance overrides instance from the current configuration.
     pub fn init(&self, simulator: Arc<dyn CodeSimulating>) -> Arc<dyn BalanceOverriding> {
         Arc::new(BalanceOverrides {
             hardcoded: self.quote_token_balance_overrides.0.clone(),
             detector: self.quote_autodetect_token_balance_overrides.then(|| {
                 (
-                    Detector::new(simulator),
-                    Mutex::new(SizedCache::with_size(Self::CACHE_SIZE)),
+                    Detector::new(
+                        simulator,
+                        self.quote_autodetect_token_balance_overrides_probing_depth,
+                    ),
+                    Mutex::new(SizedCache::with_size(
+                        self.quote_autodetect_token_balance_overrides_cache_size,
+                    )),
                 )
             }),
         })
@@ -61,6 +74,8 @@ impl Display for Arguments {
         let Self {
             quote_token_balance_overrides,
             quote_autodetect_token_balance_overrides,
+            quote_autodetect_token_balance_overrides_probing_depth,
+            quote_autodetect_token_balance_overrides_cache_size,
         } = self;
 
         writeln!(
@@ -72,6 +87,16 @@ impl Display for Arguments {
             f,
             "quote_autodetect_token_balance_overrides: {:?}",
             quote_autodetect_token_balance_overrides
+        )?;
+        writeln!(
+            f,
+            "quote_autodetect_token_balance_overrides_probing_depth: {:?}",
+            quote_autodetect_token_balance_overrides_probing_depth
+        )?;
+        writeln!(
+            f,
+            "quote_autodetect_token_balance_overrides_cache_size: {:?}",
+            quote_autodetect_token_balance_overrides_cache_size
         )?;
 
         Ok(())
