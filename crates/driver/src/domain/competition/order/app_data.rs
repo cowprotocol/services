@@ -68,7 +68,6 @@ impl AppDataRetriever {
                     .base_url
                     .join(&format!("v1/app_data/{:?}", app_data.0))?;
                 let response = self_.0.client.get(url).send().await?;
-
                 let validated_app_data = match response.status() {
                     StatusCode::NOT_FOUND => None,
                     _ => {

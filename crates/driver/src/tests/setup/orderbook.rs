@@ -3,6 +3,8 @@ use {
     std::net::SocketAddr,
 };
 
+/// A mocked orderbook service that provides `/v1/app_data/{app_data_hash}` API.
+/// Always returns 404 Not Found.
 pub struct Orderbook {
     pub addr: SocketAddr,
 }

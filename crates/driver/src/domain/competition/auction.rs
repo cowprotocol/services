@@ -147,8 +147,9 @@ type Balances = HashMap<BalanceGroup, order::SellAmount>;
 
 impl AuctionProcessor {
     /// Process the auction by prioritizing the orders and filtering out
-    /// unfillable orders. Fetches full app data for each order and returns an
-    /// auction with updated orders.
+    /// unfillable orders as well as those that failed to fetch app data.
+    /// Fetches full app data for each order and returns an auction with
+    /// updated orders.
     pub async fn process(&self, auction: Auction, solver: &eth::H160) -> Auction {
         let (app_data_by_order, mut prioritized_orders) = join(
             self.collect_orders_app_data(&auction),
