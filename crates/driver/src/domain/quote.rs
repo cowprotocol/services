@@ -15,7 +15,6 @@ use {
         },
         util,
     },
-    anyhow::anyhow,
     chrono::Utc,
     std::{
         collections::{HashMap, HashSet},
@@ -183,7 +182,6 @@ impl Order {
             auction::Error::InvalidTokens => panic!("fake auction with invalid tokens"),
             auction::Error::InvalidAmounts => panic!("fake auction with invalid amounts"),
             auction::Error::Blockchain(e) => e.into(),
-            auction::Error::AppDataFetching(_, e) => Error::Boundary(anyhow!("{}", e)),
         })
     }
 

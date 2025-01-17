@@ -177,8 +177,6 @@ pub enum Error {
     InvalidAmounts,
     #[error("blockchain error: {0:?}")]
     Blockchain(#[source] crate::infra::blockchain::Error),
-    #[error("internal error")]
-    Internal,
 }
 
 impl From<auction::InvalidId> for Error {
@@ -193,7 +191,6 @@ impl From<auction::Error> for Error {
             auction::Error::InvalidTokens => Self::InvalidTokens,
             auction::Error::InvalidAmounts => Self::InvalidAmounts,
             auction::Error::Blockchain(err) => Self::Blockchain(err),
-            auction::Error::AppDataFetching(_, _) => Self::Internal,
         }
     }
 }

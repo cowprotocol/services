@@ -10,9 +10,8 @@ use {
         infra::{self, blockchain, config::file::OrderPriorityStrategy, observe, Ethereum},
         util::{self, Bytes},
     },
-    app_data::ValidatedAppData,
     chrono::{Duration, Utc},
-    futures::future::{join_all, try_join, try_join_all, BoxFuture, FutureExt, Shared},
+    futures::future::{join, join_all, BoxFuture, FutureExt, Shared},
     itertools::Itertools,
     model::{order::OrderKind, signature::Signature},
     shared::signature_validator::{Contracts, SignatureValidating},
@@ -150,40 +149,52 @@ impl AuctionProcessor {
     /// Process the auction by prioritizing the orders and filtering out
     /// unfillable orders. Fetches full app data for each order and returns an
     /// auction with updated orders.
-    pub async fn process(&self, auction: Auction, solver: &eth::H160) -> Result<Auction, Error> {
-        let (app_data_by_order, mut prioritized_orders) = try_join(
+    pub async fn process(&self, auction: Auction, solver: &eth::H160) -> Auction {
+        let (app_data_by_order, mut prioritized_orders) = join(
             self.collect_orders_app_data(&auction),
-            self.prioritize_orders(&auction, solver).map(Ok),
+            self.prioritize_orders(&auction, solver),
         )
-        .await?;
+        .await;
 
-        for order in &mut prioritized_orders {
-            if let Some(Some(app_data)) = app_data_by_order.get(&order.uid) {
-                order.app_data = app_data.clone().into();
-            }
-        }
+        // Filter out orders that failed to fetch app data.
+        prioritized_orders.retain_mut(|order| {
+            app_data_by_order.get(&order.uid).map_or(true, |result| {
+                match result {
+                    Err(err) => {
+                        tracing::warn!(order_uid=?order.uid, ?err, "failed to fetch app data for order, excluding from auction");
+                        false
+                    }
+                    Ok(Some(app_data)) => {
+                        order.app_data = app_data.clone().into();
+                        true
+                    }
+                    Ok(None) => true
+                }
+            })
+        });
 
-        Ok(Auction {
+        Auction {
             orders: prioritized_orders,
             ..auction
-        })
+        }
     }
 
     /// Fetches the app data for all orders in the auction.
+    /// Returns a map from order UIDs to the result of fetching the app data.
     async fn collect_orders_app_data(
         &self,
         auction: &Auction,
-    ) -> Result<HashMap<order::Uid, Option<ValidatedAppData>>, Error> {
-        Ok(try_join_all(auction.orders.iter().map(|order| async {
-            self.app_data_retriever
-                .get(order.app_data.hash())
-                .await
-                .map(|app_data| (order.uid, app_data))
-                .map_err(|err| Error::AppDataFetching(order.uid, err))
+    ) -> HashMap<
+        order::Uid,
+        Result<Option<app_data::ValidatedAppData>, order::app_data::FetchingError>,
+    > {
+        join_all(auction.orders.iter().map(|order| async {
+            let result = self.app_data_retriever.get(order.app_data.hash()).await;
+            (order.uid, result)
         }))
-        .await?
+        .await
         .into_iter()
-        .collect::<HashMap<_, _>>())
+        .collect::<HashMap<_, _>>()
     }
 
     /// Prioritize well priced and filter out unfillable orders from the given
@@ -672,6 +683,4 @@ pub enum Error {
     InvalidAmounts,
     #[error("blockchain error: {0:?}")]
     Blockchain(#[from] blockchain::Error),
-    #[error("order {0:?} app data fetching error: {1}")]
-    AppDataFetching(order::Uid, order::app_data::FetchingError),
 }

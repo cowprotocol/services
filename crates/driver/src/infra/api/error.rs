@@ -99,7 +99,6 @@ impl From<api::routes::AuctionError> for (hyper::StatusCode, axum::Json<Error>) 
             api::routes::AuctionError::InvalidTokens => Kind::InvalidTokens,
             api::routes::AuctionError::InvalidAmounts => Kind::InvalidAmounts,
             api::routes::AuctionError::Blockchain(_) => Kind::Unknown,
-            api::routes::AuctionError::Internal => Kind::Unknown,
         };
         error.into()
     }
