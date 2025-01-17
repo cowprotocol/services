@@ -73,6 +73,9 @@ struct Config {
         default = "default_simulation_bad_token_max_age"
     )]
     simulation_bad_token_max_age: Duration,
+
+    /// URL of the orderbook API to fetch order's app-data from.
+    orderbook_url: Url,
 }
 
 #[serde_as]

@@ -19,6 +19,7 @@ use {
     futures::Future,
     std::{net::SocketAddr, sync::Arc},
     tokio::sync::oneshot,
+    url::Url,
 };
 
 mod error;
@@ -44,6 +45,7 @@ impl Api {
         self,
         shutdown: impl Future<Output = ()> + Send + 'static,
         order_priority_strategies: Vec<OrderPriorityStrategy>,
+        orderbook_url: Url,
     ) -> Result<(), hyper::Error> {
         // Add middleware.
         let mut app = axum::Router::new().layer(
@@ -55,7 +57,7 @@ impl Api {
         );
 
         let tokens = tokens::Fetcher::new(&self.eth);
-        let app_data_fetcher = AppDataFetcher::new("http://localhost:8080".parse().unwrap());
+        let app_data_fetcher = AppDataFetcher::new(orderbook_url);
         let pre_processor = domain::competition::AuctionProcessor::new(
             &self.eth,
             order_priority_strategies,
