@@ -53,6 +53,13 @@ impl Driver {
             }
             Account::Address(address) => address,
         };
+        tracing::info!(
+            ?name,
+            ?url,
+            ?fairness_threshold,
+            ?submission_address,
+            "Creating solver"
+        );
 
         Ok(Self {
             name,
