@@ -1179,6 +1179,11 @@ mod tests {
             },
             metadata: OrderMetadata {
                 uid,
+                quote_metadata: Some(
+                    "{\"interactions\":[],\"jitOrders\":[],\"preInteractions\":[],\"version\":\"1.\
+                     0\"}"
+                        .to_string(),
+                ),
                 ..Default::default()
             },
             interactions: Interactions {
@@ -1226,6 +1231,15 @@ mod tests {
             },
             metadata: OrderMetadata {
                 uid,
+                quote_metadata: Some(
+                    "{\"interactions\":[{\"callData\":\"0x0114\",\"target\":\"\
+                     0x0101010101010101010101010101010101010101\",\"value\":\"100\"},{\"callData\"\
+                     :\"0x0214\",\"target\":\"0x0202020202020202020202020202020202020202\",\"\
+                     value\":\"10\"}],\"jitOrders\":[],\"preInteractions\":[{\"callData\":\"\
+                     0x0314\",\"target\":\"0x0303030303030303030303030303030303030303\",\"value\":\
+                     \"30\"}],\"version\":\"1.0\"}"
+                        .to_string(),
+                ),
                 ..Default::default()
             },
             ..Default::default()
