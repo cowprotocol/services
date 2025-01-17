@@ -12,6 +12,7 @@ use {
 };
 pub use {fees::FeePolicy, signature::Signature};
 
+pub mod app_data;
 pub mod fees;
 pub mod signature;
 
@@ -48,6 +49,42 @@ pub struct Order {
     pub protocol_fees: Vec<FeePolicy>,
     /// The winning quote.
     pub quote: Option<Quote>,
+}
+
+/// The app data associated with an order.
+#[derive(Debug, Clone, From)]
+pub enum AppData {
+    /// App data hash.
+    Hash(AppDataHash),
+    /// Validated full app data.
+    Full(Box<::app_data::ValidatedAppData>),
+}
+
+impl Default for AppData {
+    fn default() -> Self {
+        Self::Hash(Default::default())
+    }
+}
+
+impl AppData {
+    pub fn hash(&self) -> AppDataHash {
+        match self {
+            Self::Hash(hash) => *hash,
+            Self::Full(data) => AppDataHash(data.hash.0.into()),
+        }
+    }
+}
+
+impl From<[u8; APP_DATA_LEN]> for AppData {
+    fn from(app_data_hash: [u8; APP_DATA_LEN]) -> Self {
+        Self::Hash(app_data_hash.into())
+    }
+}
+
+impl From<::app_data::ValidatedAppData> for AppData {
+    fn from(value: ::app_data::ValidatedAppData) -> Self {
+        Self::Full(Box::new(value))
+    }
 }
 
 /// An amount denominated in the sell token of an [`Order`].
@@ -273,17 +310,17 @@ pub const APP_DATA_LEN: usize = 32;
 /// This is a hash allowing arbitrary user data to be associated with an order.
 /// While this type holds the hash, the data itself is uploaded to IPFS. This
 /// hash is signed along with the order.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct AppData(pub Bytes<[u8; APP_DATA_LEN]>);
+#[derive(Debug, Default, Clone, Copy, Hash, PartialEq, Eq)]
+pub struct AppDataHash(pub Bytes<[u8; APP_DATA_LEN]>);
 
-impl From<[u8; APP_DATA_LEN]> for AppData {
+impl From<[u8; APP_DATA_LEN]> for AppDataHash {
     fn from(inner: [u8; APP_DATA_LEN]) -> Self {
         Self(inner.into())
     }
 }
 
-impl From<AppData> for [u8; APP_DATA_LEN] {
-    fn from(app_data: AppData) -> Self {
+impl From<AppDataHash> for [u8; APP_DATA_LEN] {
+    fn from(app_data: AppDataHash) -> Self {
         app_data.0.into()
     }
 }
@@ -388,7 +425,7 @@ pub struct Jit {
     pub receiver: eth::Address,
     pub valid_to: util::Timestamp,
     pub partially_fillable: bool,
-    pub app_data: AppData,
+    pub app_data: AppDataHash,
     pub side: Side,
     pub sell_token_balance: SellTokenBalance,
     pub buy_token_balance: BuyTokenBalance,

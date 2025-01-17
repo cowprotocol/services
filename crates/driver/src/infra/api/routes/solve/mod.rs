@@ -34,8 +34,12 @@ async fn route(
         let competition = state.competition();
         let auction = state
             .pre_processor()
-            .prioritize(auction, &competition.solver.account().address())
-            .await;
+            .process(auction, &competition.solver.account().address())
+            .await
+            .map_err(|err| {
+                tracing::error!(?err, "unable to pre-process the auction");
+                Into::<AuctionError>::into(err)
+            })?;
         let result = competition.solve(auction).await;
         competition.ensure_settle_queue_capacity()?;
         observe::solved(state.solver().name(), &result);

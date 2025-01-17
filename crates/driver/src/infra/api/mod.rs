@@ -1,6 +1,10 @@
 use {
     crate::{
-        domain::{self, competition::bad_tokens, Mempools},
+        domain::{
+            self,
+            competition::{bad_tokens, order::app_data::AppDataFetcher},
+            Mempools,
+        },
         infra::{
             self,
             config::file::OrderPriorityStrategy,
@@ -51,8 +55,12 @@ impl Api {
         );
 
         let tokens = tokens::Fetcher::new(&self.eth);
-        let pre_processor =
-            domain::competition::AuctionProcessor::new(&self.eth, order_priority_strategies);
+        let app_data_fetcher = AppDataFetcher::new("http://localhost:8080".parse().unwrap());
+        let pre_processor = domain::competition::AuctionProcessor::new(
+            &self.eth,
+            order_priority_strategies,
+            Arc::new(app_data_fetcher),
+        );
 
         // Add the metrics and healthz endpoints.
         app = routes::metrics(app);

@@ -10,8 +10,9 @@ use {
         infra::{self, blockchain, config::file::OrderPriorityStrategy, observe, Ethereum},
         util::{self, Bytes},
     },
+    app_data::ValidatedAppData,
     chrono::{Duration, Utc},
-    futures::future::{join_all, BoxFuture, FutureExt, Shared},
+    futures::future::{join_all, try_join, try_join_all, BoxFuture, FutureExt, Shared},
     itertools::Itertools,
     model::{order::OrderKind, signature::Signature},
     shared::signature_validator::{Contracts, SignatureValidating},
@@ -127,7 +128,10 @@ impl Auction {
 }
 
 #[derive(Clone)]
-pub struct AuctionProcessor(Arc<Mutex<Inner>>);
+pub struct AuctionProcessor {
+    inner: Arc<Mutex<Inner>>,
+    app_data_fetcher: Arc<order::app_data::AppDataFetcher>,
+}
 
 struct Inner {
     auction: auction::Id,
@@ -143,15 +147,43 @@ type BalanceGroup = (order::Trader, eth::TokenAddress, order::SellTokenBalance);
 type Balances = HashMap<BalanceGroup, order::SellAmount>;
 
 impl AuctionProcessor {
-    /// Prioritize well priced and filter out unfillable orders from the given
-    /// auction.
-    pub async fn prioritize(&self, auction: Auction, solver: &eth::H160) -> Auction {
-        Auction {
-            orders: self.prioritize_orders(&auction, solver).await,
-            ..auction
+    pub async fn process(&self, auction: Auction, solver: &eth::H160) -> Result<Auction, Error> {
+        let (app_data_by_order, mut prioritized_orders) = try_join(
+            self.collect_orders_app_data(&auction),
+            self.prioritize_orders(&auction, solver).map(Ok),
+        )
+        .await?;
+
+        for order in &mut prioritized_orders {
+            if let Some(Some(app_data)) = app_data_by_order.get(&order.uid) {
+                order.app_data = app_data.clone().into();
+            }
         }
+
+        Ok(Auction {
+            orders: prioritized_orders,
+            ..auction
+        })
     }
 
+    async fn collect_orders_app_data(
+        &self,
+        auction: &Auction,
+    ) -> Result<HashMap<order::Uid, Option<ValidatedAppData>>, Error> {
+        Ok(try_join_all(auction.orders.iter().map(|order| async {
+            self.app_data_fetcher
+                .fetch(order.app_data.hash())
+                .await
+                .map(|app_data| (order.uid, app_data))
+                .map_err(|err| Error::AppDataFetching(order.uid, err))
+        }))
+        .await?
+        .into_iter()
+        .collect::<HashMap<_, _>>())
+    }
+
+    /// Prioritize well priced and filter out unfillable orders from the given
+    /// auction.
     fn prioritize_orders(
         &self,
         auction: &Auction,
@@ -161,7 +193,7 @@ impl AuctionProcessor {
             .id()
             .expect("auctions used for quoting do not have to be prioritized");
 
-        let mut lock = self.0.lock().unwrap();
+        let mut lock = self.inner.lock().unwrap();
         let current_id = lock.auction;
         if new_id.0 < current_id.0 {
             tracing::error!(?current_id, ?new_id, "received an outdated auction");
@@ -367,7 +399,7 @@ impl AuctionProcessor {
                     (*cow_amm.address(), cow_amm.validated_template_order(prices, signature_validator, &domain_separator).await)
                 }),
         )
-        .await;
+            .await;
 
         // Convert results to domain format.
         let domain_separator =
@@ -392,7 +424,7 @@ impl AuctionProcessor {
                     },
                     kind: order::Kind::Limit,
                     side: template.order.kind.into(),
-                    app_data: order::AppData(Bytes(template.order.app_data.0)),
+                    app_data: order::AppDataHash(Bytes(template.order.app_data.0)).into(),
                     buy_token_balance: template.order.buy_token_balance.into(),
                     sell_token_balance: template.order.sell_token_balance.into(),
                     partial: match template.order.partially_fillable {
@@ -449,6 +481,7 @@ impl AuctionProcessor {
     pub fn new(
         eth: &infra::Ethereum,
         order_priority_strategies: Vec<OrderPriorityStrategy>,
+        app_data_fetcher: Arc<order::app_data::AppDataFetcher>,
     ) -> Self {
         let eth = eth.with_metric_label("auctionPreProcessing".into());
         let mut order_sorting_strategies = vec![];
@@ -478,13 +511,16 @@ impl AuctionProcessor {
             },
         );
 
-        Self(Arc::new(Mutex::new(Inner {
-            auction: Id(0),
-            fut: futures::future::pending().boxed().shared(),
-            eth,
-            order_sorting_strategies,
-            signature_validator,
-        })))
+        Self {
+            inner: Arc::new(Mutex::new(Inner {
+                auction: Id(0),
+                fut: futures::future::pending().boxed().shared(),
+                eth,
+                order_sorting_strategies,
+                signature_validator,
+            })),
+            app_data_fetcher,
+        }
     }
 }
 
@@ -632,4 +668,6 @@ pub enum Error {
     InvalidAmounts,
     #[error("blockchain error: {0:?}")]
     Blockchain(#[from] blockchain::Error),
+    #[error("order {0:?} app data fetching error: {1}")]
+    AppDataFetching(order::Uid, order::app_data::FetchingError),
 }

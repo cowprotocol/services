@@ -38,6 +38,7 @@ hyper = { workspace = true }
 indexmap = { workspace = true, features = ["serde"] }
 itertools = { workspace = true }
 mimalloc = { workspace = true }
+moka = { version = "0.12.10", features = ["future"] }
 num = { workspace = true }
 number = { path = "../number" }
 prometheus = { workspace = true }
