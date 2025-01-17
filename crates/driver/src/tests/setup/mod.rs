@@ -28,7 +28,10 @@ use {
                 ETH_ORDER_AMOUNT,
             },
             hex_address,
-            setup::blockchain::{Blockchain, Interaction, Trade},
+            setup::{
+                blockchain::{Blockchain, Interaction, Trade},
+                orderbook::Orderbook,
+            },
         },
     },
     app_data::AppDataHash,
@@ -51,6 +54,7 @@ use {
 pub mod blockchain;
 mod driver;
 pub mod fee;
+mod orderbook;
 mod solver;
 
 #[derive(Debug, Clone, Copy)]
@@ -957,6 +961,7 @@ impl Setup {
             (solver.clone(), instance.addr)
         }))
         .await;
+        let orderbook = Orderbook::start();
         let driver = Driver::new(
             &driver::Config {
                 config_file,
@@ -966,6 +971,7 @@ impl Setup {
             },
             &solvers_with_address,
             &blockchain,
+            orderbook,
         )
         .await;
 

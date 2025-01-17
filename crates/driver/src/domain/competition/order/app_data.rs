@@ -66,7 +66,7 @@ impl AppDataRetriever {
                 let url = self_
                     .0
                     .base_url
-                    .join(&format!("v1/app_data/{:?}", app_data))?;
+                    .join(&format!("v1/app_data/{:?}", app_data.0))?;
                 let response = self_.0.client.get(url).send().await?;
 
                 let validated_app_data = match response.status() {

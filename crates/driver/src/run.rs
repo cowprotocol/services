@@ -79,7 +79,7 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
             let _ = shutdown_receiver.await;
         },
         config.order_priority_strategies,
-        config.orderbook_url,
+        args.orderbook_url,
     );
 
     futures::pin_mut!(serve);

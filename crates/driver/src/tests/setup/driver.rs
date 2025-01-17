@@ -3,7 +3,10 @@ use {
     crate::{
         domain::competition::order,
         infra::config::file::OrderPriorityStrategy,
-        tests::{hex_address, setup::blockchain::Trade},
+        tests::{
+            hex_address,
+            setup::{blockchain::Trade, orderbook::Orderbook},
+        },
     },
     rand::seq::SliceRandom,
     serde_json::json,
@@ -31,6 +34,7 @@ impl Driver {
         config: &Config,
         solvers: &Vec<(Solver, SocketAddr)>,
         blockchain: &Blockchain,
+        orderbook: Orderbook,
     ) -> Self {
         let (config_file, config_temp_path) = match config.config_file.as_ref() {
             Some(config_file) => (config_file.to_owned(), None),
@@ -46,6 +50,8 @@ impl Driver {
             "0.0.0.0:0".to_owned(),
             "--ethrpc".to_owned(),
             blockchain.web3_url.clone(),
+            "--orderbook-url".to_owned(),
+            format!("http://{:?}", orderbook.addr).to_owned(),
             "--config".to_owned(),
             config_file.to_str().unwrap().to_owned(),
         ];
