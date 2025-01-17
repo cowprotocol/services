@@ -38,13 +38,13 @@ pub struct Arguments {
     #[clap(long, env, action = clap::ArgAction::Set, default_value_t)]
     pub quote_autodetect_token_balance_overrides: bool,
 
-    /// Controls how many storage slots get probed for automatically
-    /// detecting how to override the balances of a token.
+    /// Controls how many storage slots get probed per storage entry point
+    /// for automatically detecting how to override the balances of a token.
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "60")]
     pub quote_autodetect_token_balance_overrides_probing_depth: u8,
 
-    /// Controls how many storage slots get probed for automatically
-    /// detecting how to override the balances of a token.
+    /// Controls for how many tokens we store the result of the automatic
+    /// balance override detection before evicting less used entries.
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "1000")]
     pub quote_autodetect_token_balance_overrides_cache_size: usize,
 }
