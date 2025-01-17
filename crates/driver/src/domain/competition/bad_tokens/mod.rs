@@ -23,6 +23,9 @@ pub enum Quality {
     ///   contract - see <https://github.com/cowprotocol/services/pull/781>
     /// * probably tons of other reasons
     Unsupported,
+    /// The detection strategy does not have enough data to make an informed
+    /// decision.
+    Unknown,
 }
 
 #[derive(Default)]
@@ -67,26 +70,23 @@ impl Detector {
             let buy = self.get_token_quality(order.buy.token, now);
             match (sell, buy) {
                 // both tokens supported => keep order
-                (Some(Quality::Supported), Some(Quality::Supported)) => Either::Left(order),
+                (Quality::Supported, Quality::Supported) => Either::Left(order),
                 // at least 1 token unsupported => drop order
-                (Some(Quality::Unsupported), _) | (_, Some(Quality::Unsupported)) => {
-                    Either::Right(order.uid)
-                }
+                (Quality::Unsupported, _) | (_, Quality::Unsupported) => Either::Right(order.uid),
                 // sell token quality is unknown => keep order if token is supported
-                (None, _) => {
+                (Quality::Unknown, _) => {
                     let Some(detector) = &self.simulation_detector else {
                         // we can't determine quality => assume order is good
                         return Either::Left(order);
                     };
-                    let quality = detector.determine_sell_token_quality(&order, now).await;
-                    match quality {
-                        Some(Quality::Supported) => Either::Left(order),
+                    match detector.determine_sell_token_quality(&order, now).await {
+                        Quality::Supported => Either::Left(order),
                         _ => Either::Right(order.uid),
                     }
                 }
                 // buy token quality is unknown => keep order (because we can't
                 // determine quality and assume it's good)
-                (_, None) => Either::Left(order),
+                (_, Quality::Unknown) => Either::Left(order),
             }
         });
         let (supported_orders, removed_uids): (Vec<_>, Vec<_>) = join_all(token_quality_checks)
@@ -120,22 +120,27 @@ impl Detector {
         }
     }
 
-    fn get_token_quality(&self, token: eth::TokenAddress, now: Instant) -> Option<Quality> {
-        if let Some(quality) = self.hardcoded.get(&token) {
-            return Some(*quality);
+    fn get_token_quality(&self, token: eth::TokenAddress, now: Instant) -> Quality {
+        match self.hardcoded.get(&token) {
+            None | Some(Quality::Unknown) => (),
+            Some(quality) => return *quality,
         }
 
-        if let Some(detector) = &self.simulation_detector {
-            if let Some(quality) = detector.get_quality(&token, now) {
-                return Some(quality);
-            }
+        if let Some(Quality::Unsupported) = self
+            .simulation_detector
+            .as_ref()
+            .map(|d| d.get_quality(&token, now))
+        {
+            return Quality::Unsupported;
         }
 
-        if let Some(metrics) = &self.metrics {
-            return metrics.get_quality(&token);
+        if let Some(Quality::Unsupported) =
+            self.metrics.as_ref().map(|m| m.get_quality(&token, now))
+        {
+            return Quality::Unsupported;
         }
 
-        None
+        Quality::Unknown
     }
 }
 

@@ -20,6 +20,12 @@ async fn local_node_app_data() {
     run_test(app_data).await;
 }
 
+#[tokio::test]
+#[ignore]
+async fn local_node_app_data_full_format() {
+    run_test(app_data_full_format).await;
+}
+
 // Test that orders can be placed with the new app data format.
 async fn app_data(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3).await;
@@ -176,4 +182,110 @@ async fn app_data(web3: Web3) {
         .await
         .unwrap_err();
     dbg!(err);
+}
+
+/// Tests that orders can be placed with an app data JSON containing
+/// all supported features.
+async fn app_data_full_format(web3: Web3) {
+    let mut onchain = OnchainComponents::deploy(web3).await;
+    let [solver] = onchain.make_solvers(to_wei(1)).await;
+    let [trader] = onchain.make_accounts(to_wei(1)).await;
+    let [token_a, token_b] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
+        .await;
+
+    token_a.mint(trader.address(), to_wei(10)).await;
+    tx!(
+        trader.account(),
+        token_a.approve(onchain.contracts().allowance, to_wei(10))
+    );
+
+    let mut valid_to: u32 = model::time::now_in_epoch_seconds() + 300;
+    let mut create_order = |app_data| {
+        let order = OrderCreation {
+            app_data,
+            sell_token: token_a.address(),
+            sell_amount: to_wei(2),
+            buy_token: token_b.address(),
+            buy_amount: to_wei(1),
+            valid_to,
+            kind: OrderKind::Sell,
+            ..Default::default()
+        }
+        .sign(
+            EcdsaSigningScheme::Eip712,
+            &onchain.contracts().domain_separator,
+            SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        );
+        // Adjust valid to make sure we get unique UIDs.
+        valid_to += 1;
+        order
+    };
+
+    let services = Services::new(&onchain).await;
+    services.start_protocol(solver).await;
+
+    // Unknown hashes are not accepted.
+    let order0 = create_order(OrderCreationAppData::Hash {
+        hash: AppDataHash([0; 32]),
+    });
+    let order_uid = services.create_order(&order0).await.unwrap();
+
+    // appdata using all features
+    let app_data = format!(
+        r#"{{
+        "version": "0.9.0",
+        "appCode": "CoW Swap",
+        "environment": "barn",
+        "metadata": {{
+            "quote": {{
+                "slippageBps": "50"
+            }},
+            "hooks": {{
+                "pre": [
+                    {{
+                        "target": "0x0000000000000000000000000000000000000000",
+                        "callData": "0x12345678",
+                        "gasLimit": "21000"
+                    }}
+                ],
+                "post": [
+                    {{
+                        "target": "0x0000000000000000000000000000000000000000",
+                        "callData": "0x12345678",
+                        "gasLimit": "21000"
+                    }}
+                ]
+            }},
+            "flashloan": {{
+                "lender": "0x1111111111111111111111111111111111111111",
+                "borrower": "0x2222222222222222222222222222222222222222",
+                "token": "0x3333333333333333333333333333333333333333",
+                "amount": "1234"
+            }},
+            "signer": "{:?}",
+            "replacedOrder": {{
+                "uid": "{}"
+            }},
+            "partnerFee": {{
+                "bps": 1,
+                "recipient": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            }}
+        }}
+    }}"#,
+        trader.address(),
+        order_uid
+    );
+
+    let app_data_hash = AppDataHash(hash_full_app_data(app_data.as_bytes()));
+    let order1 = create_order(OrderCreationAppData::Full {
+        full: app_data.to_string(),
+    });
+    let uid = services.create_order(&order1).await.unwrap();
+    let order1_ = services.get_order(&uid).await.unwrap();
+    assert_eq!(order1_.data.app_data, app_data_hash);
+    assert_eq!(order1_.metadata.full_app_data, Some(app_data.to_string()));
+
+    let app_data_ = services.get_app_data(app_data_hash).await.unwrap();
+    assert_eq!(app_data_, app_data);
 }

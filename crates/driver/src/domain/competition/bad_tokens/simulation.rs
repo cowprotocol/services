@@ -8,7 +8,7 @@ use {
             },
             eth,
         },
-        infra,
+        infra::{self, observe::metrics},
     },
     futures::FutureExt,
     model::interaction::InteractionData,
@@ -32,7 +32,7 @@ pub struct Detector(Arc<Inner>);
 struct Inner {
     cache: Cache,
     detector: TraceCallDetectorRaw,
-    sharing: BoxRequestSharing<order::Uid, Option<Quality>>,
+    sharing: BoxRequestSharing<order::Uid, Quality>,
 }
 
 impl Detector {
@@ -49,14 +49,11 @@ impl Detector {
     /// Simulates how the sell token behaves during transfers. Assumes that
     /// the order owner has the required sell token balance and approvals
     /// set.
-    pub async fn determine_sell_token_quality(
-        &self,
-        order: &Order,
-        now: Instant,
-    ) -> Option<Quality> {
+    pub async fn determine_sell_token_quality(&self, order: &Order, now: Instant) -> Quality {
         let cache = &self.0.cache;
-        if let Some(quality) = cache.get_quality(&order.sell.token, now) {
-            return Some(quality);
+        let quality = cache.get_quality(&order.sell.token, now);
+        if quality != Quality::Unknown {
+            return quality;
         }
 
         // The simulation detector gets used by multiple solvers at the same time
@@ -93,20 +90,22 @@ impl Detector {
                     match result {
                         Err(err) => {
                             tracing::debug!(?err, token=?sell_token.0, "failed to determine token quality");
-                            None
+                            Quality::Unknown
                         }
                         Ok(TokenQuality::Good) => {
                             inner
                                 .cache
-                                .update_quality(sell_token, Quality::Supported, now);
-                            Some(Quality::Supported)
+                                .update_quality(sell_token, true, now);
+                            Quality::Supported
                         }
                         Ok(TokenQuality::Bad { reason }) => {
                             tracing::debug!(reason, token=?sell_token.0, "cache token as unsupported");
+                            // All solvers share the same cache for the simulation detector, so there is no need to specify the solver name here.
+                            metrics::get().bad_tokens_detected.with_label_values(&["any", "simulation"]).inc();
                             inner
                                 .cache
-                                .update_quality(sell_token, Quality::Unsupported, now);
-                            Some(Quality::Unsupported)
+                                .update_quality(sell_token, false, now);
+                            Quality::Unsupported
                         }
                     }
                 }

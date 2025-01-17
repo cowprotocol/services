@@ -5,27 +5,32 @@
 use {
     super::super::error::Error,
     ethcontract::{I256, U256},
-    lazy_static::lazy_static,
-    std::convert::TryFrom,
+    std::{convert::TryFrom, sync::LazyLock},
 };
 
 /// Fixed point number stored in a type of bit size 256 that stores exactly 18
 /// decimal digits.
 type Ufixed256x18 = U256;
 
-lazy_static! {
-    static ref ONE_18: I256 = I256::exp10(18);
-    static ref ONE_20: I256 = I256::exp10(20);
-    static ref ONE_36: I256 = I256::exp10(36);
-    static ref UFIXED256X18_ONE: Ufixed256x18 = U256::try_from(*ONE_18).unwrap();
-    static ref MAX_NATURAL_EXPONENT: I256 = ONE_18.checked_mul(I256::from(130_i128)).unwrap();
-    static ref MIN_NATURAL_EXPONENT: I256 = ONE_18.checked_mul(I256::from(-41_i128)).unwrap();
-    static ref LN_36_LOWER_BOUND: I256 = ONE_18.checked_sub(I256::exp10(17)).unwrap();
-    static ref LN_36_UPPER_BOUND: I256 = ONE_18.checked_add(I256::exp10(17)).unwrap();
-    static ref MILD_EXPONENT_BOUND: Ufixed256x18 = (U256::one() << 254_u32)
+static ONE_18: LazyLock<I256> = LazyLock::new(|| I256::exp10(18));
+static ONE_20: LazyLock<I256> = LazyLock::new(|| I256::exp10(20));
+static ONE_36: LazyLock<I256> = LazyLock::new(|| I256::exp10(36));
+static UFIXED256X18_ONE: LazyLock<Ufixed256x18> =
+    LazyLock::new(|| U256::try_from(*ONE_18).unwrap());
+static MAX_NATURAL_EXPONENT: LazyLock<I256> =
+    LazyLock::new(|| ONE_18.checked_mul(I256::from(130_i128)).unwrap());
+static MIN_NATURAL_EXPONENT: LazyLock<I256> =
+    LazyLock::new(|| ONE_18.checked_mul(I256::from(-41_i128)).unwrap());
+static LN_36_LOWER_BOUND: LazyLock<I256> =
+    LazyLock::new(|| ONE_18.checked_sub(I256::exp10(17)).unwrap());
+static LN_36_UPPER_BOUND: LazyLock<I256> =
+    LazyLock::new(|| ONE_18.checked_add(I256::exp10(17)).unwrap());
+static MILD_EXPONENT_BOUND: LazyLock<Ufixed256x18> = LazyLock::new(|| {
+    (U256::one() << 254_u32)
         .checked_div(U256::try_from(*ONE_20).unwrap())
-        .unwrap();
-}
+        .unwrap()
+});
+
 fn constant_x_20(i: u32) -> I256 {
     match i {
         2 => 3_200_000_000_000_000_000_000_i128,
@@ -218,8 +223,8 @@ mod tests {
         constant_x: fn(u32) -> I256,
         constant_a: fn(u32) -> I256,
     ) {
+        let re = Regex::new(r".* ([ax])([\d]+) = (\d+);.*$").unwrap();
         for line in code.split('\n').filter(|line| !line.trim().is_empty()) {
-            let re = Regex::new(r".* ([ax])([\d]+) = (\d+);.*$").unwrap();
             let cap = re.captures_iter(line).next().unwrap();
             match &cap[1] {
                 "x" => assert_eq!(&cap[3], format!("{}", constant_x(cap[2].parse().unwrap()))),

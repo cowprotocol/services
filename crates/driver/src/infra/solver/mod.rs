@@ -22,7 +22,7 @@ use {
     derive_more::{From, Into},
     num::BigRational,
     reqwest::header::HeaderName,
-    std::collections::HashMap,
+    std::{collections::HashMap, time::Duration},
     tap::TapFallible,
     thiserror::Error,
     tracing::Instrument,
@@ -316,4 +316,6 @@ pub struct BadTokenDetection {
     pub enable_metrics_strategy: bool,
     pub metrics_strategy_failure_ratio: f64,
     pub metrics_strategy_required_measurements: u32,
+    pub metrics_strategy_log_only: bool,
+    pub metrics_strategy_token_freeze_time: Duration,
 }

@@ -17,7 +17,6 @@ chrono = { workspace = true, features = ["serde", "clock"] }
 derive_more = { workspace = true }
 hex = { workspace = true, default-features = false }
 hex-literal = { workspace = true }
-lazy_static = { workspace = true }
 number = { path = "../number" }
 num = { workspace = true }
 primitive-types = { workspace = true }

@@ -276,7 +276,7 @@ impl RunLoop {
         let revealed = driver
             .reveal(&reveal::Request {
                 solution_id,
-                auction_id: None, // Requires 2-stage release for API-break change
+                auction_id: request.id,
             })
             .await
             .map_err(Error::Reveal)?;

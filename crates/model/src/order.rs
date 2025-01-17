@@ -212,8 +212,6 @@ pub struct OrderData {
     /// as they should only ever be used to improve the price of a regular order
     /// and should not be settled on their own.
     /// This is 0 for limit orders as their fee gets taken from the surplus.
-    /// This is equal to `OrderMetadata::full_fee_amount` except for old orders
-    /// where the subsidy was applied (at the time when we used the subsidies).
     #[serde_as(as = "HexOrDecimalU256")]
     pub fee_amount: U256,
     pub kind: OrderKind,
@@ -685,27 +683,6 @@ pub struct OrderMetadata {
     #[serde(flatten)]
     pub class: OrderClass,
     pub settlement_contract: H160,
-    /// This is `fee_amount` for liquidity orders. See comment on `fee_amount`
-    /// for the reasoning.
-    /// For market/limit orders it's the gas used of the best trade
-    /// execution we could find while quoting converted to an equivalent
-    /// `sell_token` amount.
-    /// Does not take partial fill into account.
-    ///
-    /// [TO BE DEPRECATED]
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub full_fee_amount: U256,
-    /// The fee amount that should be used for objective value computations.
-    ///
-    /// This is different than the actual signed fee in that it
-    /// does not have any subsidies applied and may be scaled by a constant
-    /// factor to make matching orders more valuable from an objective value
-    /// perspective.
-    /// Does not take partial fill into account.
-    ///
-    /// [TO BE DEPRECATED]
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub solver_fee: U256,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ethflow_data: Option<EthflowData>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1028,8 +1005,6 @@ mod tests {
             "executedSurplusFee": "1",
             "executedFee": "1",
             "executedFeeToken": "0x000000000000000000000000000000000000000a",
-            "fullFeeAmount": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
-            "solverFee": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
             "kind": "buy",
             "class": "limit",
             "partiallyFillable": false,
@@ -1064,8 +1039,6 @@ mod tests {
                 invalidated: true,
                 status: OrderStatus::Open,
                 settlement_contract: H160::from_low_u64_be(2),
-                full_fee_amount: U256::MAX,
-                solver_fee: U256::MAX,
                 full_app_data: Some("123".to_string()),
                 ..Default::default()
             },
