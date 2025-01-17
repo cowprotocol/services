@@ -2,7 +2,7 @@ use {
     crate::{
         domain::{
             self,
-            competition::{bad_tokens, order::app_data::AppDataFetcher},
+            competition::{bad_tokens, order::app_data::AppDataRetriever},
             Mempools,
         },
         infra::{
@@ -57,11 +57,11 @@ impl Api {
         );
 
         let tokens = tokens::Fetcher::new(&self.eth);
-        let app_data_fetcher = AppDataFetcher::new(orderbook_url);
+        let app_data_retriever = AppDataRetriever::new(orderbook_url);
         let pre_processor = domain::competition::AuctionProcessor::new(
             &self.eth,
             order_priority_strategies,
-            Arc::new(app_data_fetcher),
+            Arc::new(app_data_retriever),
         );
 
         // Add the metrics and healthz endpoints.

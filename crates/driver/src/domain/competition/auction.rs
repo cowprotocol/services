@@ -130,7 +130,7 @@ impl Auction {
 #[derive(Clone)]
 pub struct AuctionProcessor {
     inner: Arc<Mutex<Inner>>,
-    app_data_fetcher: Arc<order::app_data::AppDataFetcher>,
+    app_data_retriever: Arc<order::app_data::AppDataRetriever>,
 }
 
 struct Inner {
@@ -147,6 +147,9 @@ type BalanceGroup = (order::Trader, eth::TokenAddress, order::SellTokenBalance);
 type Balances = HashMap<BalanceGroup, order::SellAmount>;
 
 impl AuctionProcessor {
+    /// Process the auction by prioritizing the orders and filtering out
+    /// unfillable orders. Fetches full app data for each order and returns an
+    /// auction with updated orders.
     pub async fn process(&self, auction: Auction, solver: &eth::H160) -> Result<Auction, Error> {
         let (app_data_by_order, mut prioritized_orders) = try_join(
             self.collect_orders_app_data(&auction),
@@ -166,13 +169,14 @@ impl AuctionProcessor {
         })
     }
 
+    /// Fetches the app data for all orders in the auction.
     async fn collect_orders_app_data(
         &self,
         auction: &Auction,
     ) -> Result<HashMap<order::Uid, Option<ValidatedAppData>>, Error> {
         Ok(try_join_all(auction.orders.iter().map(|order| async {
-            self.app_data_fetcher
-                .fetch(order.app_data.hash())
+            self.app_data_retriever
+                .get(order.app_data.hash())
                 .await
                 .map(|app_data| (order.uid, app_data))
                 .map_err(|err| Error::AppDataFetching(order.uid, err))
@@ -481,7 +485,7 @@ impl AuctionProcessor {
     pub fn new(
         eth: &infra::Ethereum,
         order_priority_strategies: Vec<OrderPriorityStrategy>,
-        app_data_fetcher: Arc<order::app_data::AppDataFetcher>,
+        app_data_retriever: Arc<order::app_data::AppDataRetriever>,
     ) -> Self {
         let eth = eth.with_metric_label("auctionPreProcessing".into());
         let mut order_sorting_strategies = vec![];
@@ -519,7 +523,7 @@ impl AuctionProcessor {
                 order_sorting_strategies,
                 signature_validator,
             })),
-            app_data_fetcher,
+            app_data_retriever,
         }
     }
 }

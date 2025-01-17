@@ -8,8 +8,20 @@ use {
     url::Url,
 };
 
+/// A struct for retrieving order's full app-data by its hash from a remote
+/// service, with support for caching and deduplicating concurrent requests.
+///
+/// Ensures efficient access to application data by:
+/// - Caching results to avoid redundant network requests.
+/// - Sharing ongoing requests to prevent duplicate fetches for the same
+///   `app_data`.
+/// - Validating fetched app data.
+///
+/// LRU cache is used since only ~2% of app-data is unique across all orders
+/// meaning that the cache hit rate is expected to be high, so there is no need
+/// for TTL cache.
 #[derive(Clone)]
-pub struct AppDataFetcher(Arc<Inner>);
+pub struct AppDataRetriever(Arc<Inner>);
 
 struct Inner {
     client: reqwest::Client,
@@ -22,18 +34,23 @@ struct Inner {
     cache: Cache<super::AppDataHash, Option<app_data::ValidatedAppData>>,
 }
 
-impl AppDataFetcher {
+impl AppDataRetriever {
+    // According to statistics, the average size of the app-data is ~800 bytes. With
+    // this constant, the approximate size of the cache will be ~1.6 MB.
+    const CACHE_SIZE: u64 = 2_000;
+
     pub fn new(orderbook_url: Url) -> Self {
         Self(Arc::new(Inner {
             client: reqwest::Client::new(),
             base_url: orderbook_url,
             request_sharing: BoxRequestSharing::labelled("app_data".to_string()),
             app_data_validator: app_data::Validator::new(usize::MAX),
-            cache: Cache::new(2_000),
+            cache: Cache::new(Self::CACHE_SIZE),
         }))
     }
 
-    pub async fn fetch(
+    /// Retrieves the full app-data for the given `app_data` hash, if exists.
+    pub async fn get(
         &self,
         app_data: super::AppDataHash,
     ) -> Result<Option<app_data::ValidatedAppData>, FetchingError> {
@@ -80,7 +97,7 @@ impl AppDataFetcher {
 
 #[derive(Error, Debug)]
 pub enum FetchingError {
-    #[error("unable to send a request: {0}")]
+    #[error("error while sending a request: {0}")]
     Http(String),
     #[error("received invalid app data: {0}")]
     InvalidAppData(#[from] anyhow::Error),
@@ -96,7 +113,7 @@ impl From<reqwest::Error> for FetchingError {
 
 impl From<url::ParseError> for FetchingError {
     fn from(err: url::ParseError) -> Self {
-        FetchingError::Http(err.to_string())
+        FetchingError::Internal(err.to_string())
     }
 }
 
