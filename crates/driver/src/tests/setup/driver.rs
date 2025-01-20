@@ -34,7 +34,7 @@ impl Driver {
         config: &Config,
         solvers: &Vec<(Solver, SocketAddr)>,
         blockchain: &Blockchain,
-        orderbook: Orderbook,
+        orderbook: &Orderbook,
     ) -> Self {
         let (config_file, config_temp_path) = match config.config_file.as_ref() {
             Some(config_file) => (config_file.to_owned(), None),
@@ -51,7 +51,7 @@ impl Driver {
             "--ethrpc".to_owned(),
             blockchain.web3_url.clone(),
             "--orderbook-url".to_owned(),
-            format!("http://{:?}", orderbook.addr).to_owned(),
+            format!("http://{}", orderbook.addr).to_owned(),
             "--config".to_owned(),
             config_file.to_str().unwrap().to_owned(),
         ];

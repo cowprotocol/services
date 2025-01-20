@@ -971,7 +971,7 @@ impl Setup {
             },
             &solvers_with_address,
             &blockchain,
-            orderbook,
+            &orderbook,
         )
         .await;
 

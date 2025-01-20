@@ -24,7 +24,7 @@ impl Orderbook {
 
     /// Default mock handler that always returns 404 Not Found.
     async fn mock_handler(Path(app_data): Path<String>) -> StatusCode {
-        println!("Received app_data request: {}", app_data);
+        println!("Orderbook received an app_data request: {}", app_data);
         StatusCode::NOT_FOUND
     }
 }
