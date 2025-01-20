@@ -33,7 +33,7 @@ impl Orderbook {
                 if let AppData::Full(validated_data) = &order.app_data {
                     Some((
                         app_data::AppDataHash(order.app_data.hash().0 .0),
-                        validated_data.document.clone(),
+                        app_data::Root::new(Some(validated_data.protocol.clone())),
                     ))
                 } else {
                     None
@@ -57,7 +57,7 @@ impl Orderbook {
 
     async fn app_data_handler(
         Path(app_data): Path<String>,
-        Extension(app_data_storage): Extension<HashMap<app_data::AppDataHash, String>>,
+        Extension(app_data_storage): Extension<HashMap<app_data::AppDataHash, app_data::Root>>,
     ) -> impl IntoResponse {
         println!("Orderbook received an app_data request: {}", app_data);
 

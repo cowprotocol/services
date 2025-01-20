@@ -10,7 +10,13 @@ use {
             eth,
             time::{self},
         },
-        infra::{self, blockchain::contracts::Addresses, config::file::FeeHandler, Ethereum},
+        infra::{
+            self,
+            blockchain::contracts::Addresses,
+            config::file::FeeHandler,
+            solver::dto::FlashloanLender,
+            Ethereum,
+        },
         tests::{hex_address, setup::blockchain::Trade},
     },
     ethereum_types::H160,
@@ -43,6 +49,7 @@ pub struct Config<'a> {
     pub private_key: ethcontract::PrivateKey,
     pub expected_surplus_capturing_jit_order_owners: Vec<H160>,
     pub allow_multiple_solve_requests: bool,
+    pub flashloan_lender_override: HashMap<&'a str, Option<FlashloanLender>>,
 }
 
 impl Solver {
@@ -146,6 +153,9 @@ impl Solver {
                 "signature": if config.quote { "0x".to_string() } else { format!("0x{}", hex::encode(quote.order_signature(config.blockchain))) },
                 "signingScheme": if config.quote { "eip1271" } else { "eip712" },
             });
+            if let Some(flashloan) = quote.order.app_data.flashloan() {
+                order["flashloan"] = json!(flashloan);
+            }
             if config.fee_handler == FeeHandler::Solver {
                 order.as_object_mut().unwrap().insert(
                     "feePolicies".to_owned(),
@@ -235,19 +245,37 @@ impl Solver {
                                 .order
                                 .solver_fee
                                 .map(|fee| fee.to_string());
-                            match fee {
-                                Some(fee) => trades_json.push(json!({
+                            let mut trade_json = match fee {
+                                Some(fee) => json!({
                                     "kind": "fulfillment",
                                     "order": order,
                                     "executedAmount": executed_amount,
                                     "fee": fee,
-                                })),
-                                None => trades_json.push(json!({
+                                }),
+                                None => json!({
                                     "kind": "fulfillment",
                                     "order": order,
                                     "executedAmount": executed_amount,
-                                })),
+                                }),
+                            };
+                            let flashloan_lender = config
+                                .flashloan_lender_override
+                                .get(fulfillment.quoted_order.order.name)
+                                .cloned()
+                                .unwrap_or_else(|| {
+                                    fulfillment.quoted_order.order.app_data.flashloan().map(
+                                        |flashloan| FlashloanLender {
+                                            address: flashloan.lender.unwrap_or_default(),
+                                            token: flashloan.token,
+                                            amount: flashloan.amount,
+                                        },
+                                    )
+                                });
+                            if let Some(flashloan_lender) = flashloan_lender {
+                                trade_json["flashloanLender"] = json!(flashloan_lender);
                             }
+
+                            trades_json.push(trade_json);
                         }
                     }
                     Trade::Jit(jit) => {

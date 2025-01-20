@@ -16,6 +16,7 @@ use {
                 FeeHandler,
                 OrderPriorityStrategy,
             },
+            solver::dto::FlashloanLender,
         },
         tests::{
             cases::{
@@ -38,6 +39,7 @@ use {
             },
         },
     },
+    app_data::{hash_full_app_data, ProtocolAppData},
     bigdecimal::{BigDecimal, FromPrimitive},
     ethcontract::dyns::DynTransport,
     futures::future::join_all,
@@ -285,6 +287,10 @@ impl Order {
     pub fn pre_interaction(mut self, interaction: Interaction) -> Self {
         self.pre_interactions.push(interaction);
         self
+    }
+
+    pub fn app_data(self, app_data: AppData) -> Self {
+        Self { app_data, ..self }
     }
 
     fn surplus_fee(&self) -> eth::U256 {
@@ -570,6 +576,9 @@ pub enum Calldata {
 pub struct Solution {
     pub calldata: Calldata,
     pub orders: Vec<&'static str>,
+    /// Custom flashloan lenders to be used by the solver. Otherwise, the ones
+    /// from the test orders are used.
+    pub flashloan_lenders: HashMap<&'static str, Option<FlashloanLender>>,
 }
 
 impl Solution {
@@ -611,6 +620,15 @@ impl Solution {
             ..self
         }
     }
+
+    pub fn flashloan_lender(
+        mut self,
+        order: &'static str,
+        lender: Option<FlashloanLender>,
+    ) -> Self {
+        self.flashloan_lenders.insert(order, lender);
+        self
+    }
 }
 
 impl Default for Solution {
@@ -620,6 +638,7 @@ impl Default for Solution {
                 additional_bytes: 0,
             },
             orders: Default::default(),
+            flashloan_lenders: Default::default(),
         }
     }
 }
@@ -665,6 +684,7 @@ pub fn ab_solution() -> Solution {
             additional_bytes: 0,
         },
         orders: vec!["A-B order"],
+        flashloan_lenders: Default::default(),
     }
 }
 
@@ -696,6 +716,7 @@ pub fn ad_solution() -> Solution {
             additional_bytes: 0,
         },
         orders: vec!["A-D order"],
+        flashloan_lenders: Default::default(),
     }
 }
 
@@ -727,6 +748,7 @@ pub fn cd_solution() -> Solution {
             additional_bytes: 0,
         },
         orders: vec!["C-D order"],
+        flashloan_lenders: Default::default(),
     }
 }
 
@@ -757,6 +779,7 @@ pub fn eth_solution() -> Solution {
             additional_bytes: 0,
         },
         orders: vec!["ETH order"],
+        flashloan_lenders: Default::default(),
     }
 }
 
@@ -946,6 +969,16 @@ impl Setup {
             .into_iter()
             .map(|order| blockchain.quote(&order))
             .collect::<Vec<_>>();
+        let flashloan_lender_override: HashMap<_, _> = self
+            .solutions
+            .iter()
+            .flat_map(|solution| {
+                solution
+                    .flashloan_lenders
+                    .iter()
+                    .map(|(order, lender)| (*order, lender.clone()))
+            })
+            .collect();
         let solvers_with_address = join_all(self.solvers.iter().map(|solver| async {
             let instance = SolverInstance::new(solver::Config {
                 blockchain: &blockchain,
@@ -959,6 +992,7 @@ impl Setup {
                 expected_surplus_capturing_jit_order_owners: surplus_capturing_jit_order_owners
                     .clone(),
                 allow_multiple_solve_requests: self.allow_multiple_solve_requests,
+                flashloan_lender_override: flashloan_lender_override.clone(),
             })
             .await;
 
@@ -1216,6 +1250,7 @@ impl<'a> Solve<'a> {
     /// Expect the /solve endpoint to have returned a 200 OK response.
     pub fn ok(self) -> SolveOk<'a> {
         assert_eq!(self.status, hyper::StatusCode::OK);
+        println!("self.body={}", self.body);
         SolveOk {
             body: self.body,
             trades: self.trades,
@@ -1747,5 +1782,17 @@ impl SettleErr {
         assert!(result.get("kind").is_some());
         assert!(result.get("description").is_some());
         result.get("kind").unwrap().as_str().unwrap().to_string()
+    }
+}
+
+pub fn protocol_app_data_into_validated(protocol: ProtocolAppData) -> app_data::ValidatedAppData {
+    let root = app_data::Root::new(Some(protocol.clone()));
+    let document = serde_json::to_string(&root).unwrap();
+    let hash = app_data::AppDataHash(hash_full_app_data(document.as_bytes()));
+
+    app_data::ValidatedAppData {
+        hash,
+        document,
+        protocol,
     }
 }

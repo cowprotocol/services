@@ -11,6 +11,7 @@ use {
 pub mod buy_eth;
 pub mod example_config;
 pub mod fees;
+mod flashloan_tips;
 pub mod internalization;
 pub mod jit_orders;
 pub mod merge_settlements;

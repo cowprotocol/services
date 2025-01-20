@@ -16,7 +16,7 @@ use {
         order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
         DomainSeparator,
     },
-    serde::Deserialize,
+    serde::{Deserialize, Serialize},
     serde_with::serde_as,
     std::collections::HashMap,
 };
@@ -235,13 +235,13 @@ impl Solutions {
                 if flashloan_lender.token != flashloan.token {
                     return Err(super::Error(format!(
                         "flashloan lender token mismatch for order {:?}",
-                        order.uid
+                        order.uid.0
                     )));
                 }
                 if flashloan_lender.amount < flashloan.amount {
                     return Err(super::Error(format!(
                         "flashloan lender amount is too low for order {:?}",
-                        order.uid
+                        order.uid.0
                     )));
                 }
 
@@ -249,7 +249,7 @@ impl Solutions {
                     Some(lender) if lender != flashloan_lender.address => {
                         return Err(super::Error(format!(
                             "flashloan lender address mismatch for order {:?}",
-                            order.uid
+                            order.uid.0
                         )));
                     }
                     None => {
@@ -262,11 +262,11 @@ impl Solutions {
             }
             (Some(_), None) => Err(super::Error(format!(
                 "missing flashloan lender data for order {:?}",
-                order.uid
+                order.uid.0
             ))),
             (None, Some(_)) => Err(super::Error(format!(
                 "unexpected flashloan lender data for order {:?}",
-                order.uid
+                order.uid.0
             ))),
             (None, None) => Ok(order),
         }
@@ -533,7 +533,7 @@ pub enum Score {
 }
 
 #[serde_as]
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FlashloanLender {
     pub address: eth::H160,

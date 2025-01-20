@@ -9,14 +9,14 @@ use {
 /// The minimum valid empty app data JSON string.
 pub const EMPTY: &str = "{}";
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct ValidatedAppData {
     pub hash: AppDataHash,
     pub document: String,
     pub protocol: ProtocolAppData,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ProtocolAppData {
     #[serde(default)]
@@ -37,19 +37,19 @@ pub struct Flashloan {
     pub lender: Option<H160>,
     /// Who should receive the borrowed tokens. If this is not
     /// set the order owner will get the tokens.
-    borrower: Option<H160>,
+    pub borrower: Option<H160>,
     /// Which token to flashloan.
     pub token: H160,
     /// How much of the token to flashloan.
     pub amount: U256,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, Eq, PartialEq)]
 pub struct ReplacedOrder {
     pub uid: OrderUid,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, Eq, PartialEq)]
 pub struct PartnerFee {
     pub bps: u64,
     pub recipient: H160,
@@ -139,8 +139,8 @@ impl Validator {
 ///
 /// For more detailed information on the schema, see:
 /// <https://github.com/cowprotocol/app-data>.
-#[derive(Deserialize)]
-struct Root {
+#[derive(Clone, Serialize, Deserialize)]
+pub struct Root {
     metadata: Option<ProtocolAppData>,
     /// DEPRECATED. The `backend` field was originally specified to contain all
     /// protocol-specific app data (such as hooks). However, after releasing
@@ -148,6 +148,15 @@ struct Root {
     /// However, in order to not break existing integrations, we allow using the
     /// `backend` field for specifying hooks.
     backend: Option<BackendAppData>,
+}
+
+impl Root {
+    pub fn new(metadata: Option<ProtocolAppData>) -> Self {
+        Self {
+            metadata,
+            backend: None,
+        }
+    }
 }
 
 // uid as 56 bytes: 32 for orderDigest, 20 for ownerAddress and 4 for validTo
@@ -222,7 +231,7 @@ impl<'de> Deserialize<'de> for OrderUid {
 }
 
 /// The legacy `backend` app data object.
-#[derive(Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 struct BackendAppData {
     #[serde(default)]
     pub hooks: Hooks,
