@@ -312,11 +312,15 @@ pub struct TradeEvent {
     pub order_uid: domain::OrderUid,
 }
 
-/// A trace of a Call type of action.
-#[derive(Debug, Clone, Default)]
-pub struct TraceCall {
-    pub to: Address,
+/// Call frames of a transaction.
+#[derive(Clone, Debug, Default)]
+pub struct CallFrame {
+    /// The address of the contract that was called.
+    pub to: Option<Address>,
+    /// Calldata input.
     pub input: Calldata,
+    /// Recorded child calls.
+    pub calls: Vec<CallFrame>,
 }
 
 /// Any type of on-chain transaction.
@@ -335,5 +339,5 @@ pub struct Transaction {
     /// The effective gas price of the transaction.
     pub gas_price: EffectiveGasPrice,
     /// Traces of all Calls contained in the transaction.
-    pub trace_calls: Vec<TraceCall>,
+    pub trace_calls: CallFrame,
 }

@@ -35,11 +35,7 @@ impl Transaction {
         settlement_contract: eth::Address,
     ) -> Result<Self, Error> {
         // find trace call to settlement contract
-        let calldata = transaction
-            .trace_calls
-            .iter()
-            .find(|trace| is_settlement_trace(trace, settlement_contract))
-            .map(|trace| trace.input.clone())
+        let calldata = find_settlement_trace(&transaction.trace_calls, settlement_contract).map(|trace| trace.input.clone())
             // all transactions emitting settlement events should have a /settle call, 
             // otherwise it's an execution client bug
             .ok_or(Error::MissingCalldata)?;
@@ -132,12 +128,31 @@ impl Transaction {
     }
 }
 
-fn is_settlement_trace(trace: &eth::TraceCall, settlement_contract: eth::Address) -> bool {
+fn find_settlement_trace(
+    call_frame: &eth::CallFrame,
+    settlement_contract: eth::Address,
+) -> Option<&eth::CallFrame> {
+    // Use a stack to keep track of frames to process
+    let mut stack = vec![call_frame];
+
+    while let Some(call_frame) = stack.pop() {
+        if is_settlement_trace(call_frame, settlement_contract) {
+            return Some(call_frame);
+        }
+        // Add all nested calls to the stack
+        stack.extend(&call_frame.calls);
+    }
+
+    None
+}
+
+fn is_settlement_trace(trace: &eth::CallFrame, settlement_contract: eth::Address) -> bool {
     static SETTLE_FUNCTION_SELECTOR: LazyLock<[u8; 4]> = LazyLock::new(|| {
         let abi = &contracts::GPv2Settlement::raw_contract().interface.abi;
         abi.function("settle").unwrap().selector()
     });
-    trace.to == settlement_contract && trace.input.0.starts_with(&*SETTLE_FUNCTION_SELECTOR)
+    trace.to.unwrap_or_default() == settlement_contract
+        && trace.input.0.starts_with(&*SETTLE_FUNCTION_SELECTOR)
 }
 
 /// Trade containing onchain observable data specific to a settlement

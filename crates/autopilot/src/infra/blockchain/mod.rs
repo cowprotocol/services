@@ -1,6 +1,7 @@
 use {
     self::contracts::Contracts,
     crate::{boundary, domain::eth},
+    ::serde::Deserialize,
     chain::Chain,
     ethcontract::dyns::DynWeb3,
     ethrpc::block_stream::CurrentBlockWatcher,
@@ -8,6 +9,7 @@ use {
     std::time::Duration,
     thiserror::Error,
     url::Url,
+    web3::{types::Bytes, Transport},
 };
 
 pub mod contracts;
@@ -106,7 +108,15 @@ impl Ethereum {
         let (transaction, receipt, traces) = tokio::try_join!(
             self.web3.eth().transaction(hash.0.into()),
             self.web3.eth().transaction_receipt(hash.0),
-            self.web3.trace().transaction(hash.0),
+            {
+                let hash = web3::helpers::serialize(&hash.0);
+                let tracing_options = serde_json::json!({ "tracer": "callTracer" });
+                web3::helpers::CallFuture::new(
+                    self.web3
+                        .transport()
+                        .execute("debug_traceTransaction", vec![hash, tracing_options]),
+                )
+            }
         )?;
         let transaction = transaction.ok_or(Error::TransactionNotFound)?;
         let receipt = receipt.ok_or(Error::TransactionNotFound)?;
@@ -130,7 +140,7 @@ impl Ethereum {
 fn into_domain(
     transaction: web3::types::Transaction,
     receipt: web3::types::TransactionReceipt,
-    traces: Vec<web3::types::Trace>,
+    trace_calls: CallFrame,
     timestamp: U256,
 ) -> anyhow::Result<eth::Transaction> {
     Ok(eth::Transaction {
@@ -153,17 +163,31 @@ fn into_domain(
             .ok_or(anyhow::anyhow!("missing effective_gas_price"))?
             .into(),
         timestamp: timestamp.as_u32(),
-        trace_calls: traces
-            .into_iter()
-            .filter_map(|trace| match trace.action {
-                web3::types::Action::Call(call) => Some(eth::TraceCall {
-                    to: call.to.into(),
-                    input: call.input.0.into(),
-                }),
-                _ => None,
-            })
-            .collect(),
+        trace_calls: trace_calls.into(),
     })
+}
+
+/// Taken from alloy::rpc::types::trace::geth::CallFrame
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+pub struct CallFrame {
+    /// The address of the contract that was called.
+    #[serde(default)]
+    pub to: Option<primitive_types::H160>,
+    /// Calldata input.
+    pub input: Bytes,
+    /// Recorded child calls.
+    #[serde(default)]
+    pub calls: Vec<CallFrame>,
+}
+
+impl From<CallFrame> for eth::CallFrame {
+    fn from(frame: CallFrame) -> Self {
+        eth::CallFrame {
+            to: frame.to.map(Into::into),
+            input: frame.input.0.into(),
+            calls: frame.calls.into_iter().map(Into::into).collect(),
+        }
+    }
 }
 
 #[derive(Debug, Error)]

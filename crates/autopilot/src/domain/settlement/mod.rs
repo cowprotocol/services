@@ -434,10 +434,11 @@ mod tests {
         )));
         let transaction = super::transaction::Transaction::try_new(
             &domain::eth::Transaction {
-                trace_calls: vec![domain::eth::TraceCall {
-                    to: settlement_contract,
+                trace_calls: domain::eth::CallFrame {
+                    to: Some(settlement_contract),
                     input: calldata.into(),
-                }],
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             &domain_separator,
@@ -540,10 +541,11 @@ mod tests {
         )));
         let transaction = super::transaction::Transaction::try_new(
             &domain::eth::Transaction {
-                trace_calls: vec![domain::eth::TraceCall {
-                    to: settlement_contract,
+                trace_calls: domain::eth::CallFrame {
+                    to: Some(settlement_contract),
                     input: calldata.into(),
-                }],
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             &domain_separator,
@@ -683,10 +685,11 @@ mod tests {
         )));
         let transaction = super::transaction::Transaction::try_new(
             &domain::eth::Transaction {
-                trace_calls: vec![domain::eth::TraceCall {
-                    to: settlement_contract,
+                trace_calls: domain::eth::CallFrame {
+                    to: Some(settlement_contract),
                     input: calldata.into(),
-                }],
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             &domain_separator,
@@ -858,10 +861,11 @@ mod tests {
         )));
         let transaction = super::transaction::Transaction::try_new(
             &domain::eth::Transaction {
-                trace_calls: vec![domain::eth::TraceCall {
-                    to: settlement_contract,
+                trace_calls: domain::eth::CallFrame {
+                    to: Some(settlement_contract),
                     input: calldata.into(),
-                }],
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             &domain_separator,
@@ -1039,10 +1043,11 @@ mod tests {
         )));
         let transaction = super::transaction::Transaction::try_new(
             &domain::eth::Transaction {
-                trace_calls: vec![domain::eth::TraceCall {
-                    to: settlement_contract,
+                trace_calls: domain::eth::CallFrame {
+                    to: Some(settlement_contract),
                     input: calldata.into(),
-                }],
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             &domain_separator,
