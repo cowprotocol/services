@@ -94,6 +94,9 @@ impl Driver {
         if let Some(timeout) = timeout {
             request = request.timeout(timeout);
         }
+        if let Some(request_id) = observe::request_id::get_task_local_storage() {
+            request = request.header("X-REQUEST-ID", request_id);
+        }
 
         let mut response = request.send().await.context("send")?;
         let status = response.status().as_u16();
