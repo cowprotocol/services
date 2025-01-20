@@ -111,11 +111,8 @@ impl RunLoop {
                     .single_run(auction)
                     .instrument(tracing::info_span!("auction", auction_id));
 
-                ::observe::request_id::set_task_local_storage(
-                    auction_id.to_string(),
-                    auction_task,
-                )
-                .await;
+                ::observe::request_id::set_task_local_storage(auction_id.to_string(), auction_task)
+                    .await;
             };
         }
     }
