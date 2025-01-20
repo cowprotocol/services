@@ -142,7 +142,7 @@ impl Solver {
                     order::Kind::Market => "market",
                     order::Kind::Limit { .. } => "limit",
                 },
-                "appData": quote.order.app_data,
+                "appData": app_data::AppDataHash(quote.order.app_data.hash().0.0),
                 "signature": if config.quote { "0x".to_string() } else { format!("0x{}", hex::encode(quote.order_signature(config.blockchain))) },
                 "signingScheme": if config.quote { "eip1271" } else { "eip712" },
             });
@@ -342,7 +342,7 @@ impl Solver {
                                 "sellAmount": jit.quoted_order.order.sell_amount.to_string(),
                                 "buyAmount": jit.quoted_order.order.buy_amount.unwrap_or_default().to_string(),
                                 "validTo": jit.quoted_order.order.valid_to,
-                                "appData": jit.quoted_order.order.app_data,
+                                "appData": app_data::AppDataHash(jit.quoted_order.order.app_data.hash().0.0),
                                 "kind": match jit.quoted_order.order.side {
                                             order::Side::Sell => "sell",
                                             order::Side::Buy => "buy",

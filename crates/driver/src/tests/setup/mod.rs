@@ -3,7 +3,11 @@
 use {
     self::{driver::Driver, solver::Solver as SolverInstance},
     crate::{
-        domain::{competition::order, eth, time},
+        domain::{
+            competition::{order, order::AppData},
+            eth,
+            time,
+        },
         infra::{
             self,
             config::file::{
@@ -34,7 +38,6 @@ use {
             },
         },
     },
-    app_data::AppDataHash,
     bigdecimal::{BigDecimal, FromPrimitive},
     ethcontract::dyns::DynTransport,
     futures::future::join_all,
@@ -141,7 +144,7 @@ pub struct Order {
     pub fee_amount: eth::U256,
     pub sell_token_source: SellTokenSource,
     pub buy_token_destination: BuyTokenDestination,
-    pub app_data: AppDataHash,
+    pub app_data: AppData,
     pub quote: Option<OrderQuote>,
     pub pre_interactions: Vec<Interaction>,
 }
@@ -938,6 +941,7 @@ impl Setup {
                 trades: [fulfillment_trades, jit_trades].concat(),
             });
         }
+        let orderbook = Orderbook::start(&orders);
         let quotes = orders
             .into_iter()
             .map(|order| blockchain.quote(&order))
@@ -961,7 +965,6 @@ impl Setup {
             (solver.clone(), instance.addr)
         }))
         .await;
-        let orderbook = Orderbook::start();
         let driver = Driver::new(
             &driver::Config {
                 config_file,
@@ -1571,7 +1574,10 @@ impl QuoteOk<'_> {
         let app_data = result_jit_order.get("appData").unwrap().as_str().unwrap();
         assert_eq!(
             app_data,
-            format!("0x{}", hex::encode(expected.quoted_order.order.app_data.0))
+            format!(
+                "0x{}",
+                hex::encode(expected.quoted_order.order.app_data.hash().0 .0)
+            )
         );
 
         let result_pre_interactions = result
