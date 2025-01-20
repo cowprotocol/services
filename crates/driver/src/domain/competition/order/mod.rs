@@ -73,6 +73,13 @@ impl AppData {
             Self::Full(data) => AppDataHash(data.hash.0.into()),
         }
     }
+
+    pub fn flashloan(&self) -> Option<::app_data::Flashloan> {
+        match self {
+            Self::Hash(_) => None,
+            Self::Full(data) => data.protocol.flashloan.clone(),
+        }
+    }
 }
 
 impl From<[u8; APP_DATA_LEN]> for AppData {

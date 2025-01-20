@@ -15,7 +15,7 @@ use {
             serialize,
         },
     },
-    app_data::AppDataHash,
+    app_data::{AppDataHash, Flashloan},
     indexmap::IndexMap,
     model::{
         interaction::InteractionData,
@@ -159,6 +159,7 @@ impl Auction {
                                 .collect(),
                         ),
                         app_data: AppDataHash(order.app_data.hash().0.into()),
+                        flashloan: order.app_data.flashloan(),
                         signature: order.signature.data.clone().into(),
                         signing_scheme: match order.signature.scheme {
                             Scheme::Eip712 => SigningScheme::Eip712,
@@ -363,6 +364,7 @@ struct Order {
     buy_token_destination: BuyTokenDestination,
     class: Class,
     app_data: AppDataHash,
+    flashloan: Option<Flashloan>,
     signing_scheme: SigningScheme,
     #[serde(with = "bytes_hex")]
     signature: Vec<u8>,

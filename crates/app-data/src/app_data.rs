@@ -31,7 +31,7 @@ pub struct ProtocolAppData {
 /// use of flashloans to settle the associated order.
 /// Since using flashloans introduces a bunch of complexities
 /// all these hints are not binding for the solver.
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, Eq, PartialEq)]
 pub struct Flashloan {
     /// Which contract to request the flashloan from.
     lender: Option<H160>,
