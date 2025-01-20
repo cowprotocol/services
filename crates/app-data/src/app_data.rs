@@ -34,14 +34,14 @@ pub struct ProtocolAppData {
 #[derive(Clone, Debug, Default, Serialize, Deserialize, Eq, PartialEq)]
 pub struct Flashloan {
     /// Which contract to request the flashloan from.
-    lender: Option<H160>,
+    pub lender: Option<H160>,
     /// Who should receive the borrowed tokens. If this is not
     /// set the order owner will get the tokens.
     borrower: Option<H160>,
     /// Which token to flashloan.
-    token: H160,
+    pub token: H160,
     /// How much of the token to flashloan.
-    amount: U256,
+    pub amount: U256,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]

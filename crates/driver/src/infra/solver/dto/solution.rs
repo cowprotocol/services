@@ -1,6 +1,11 @@
 use {
     crate::{
-        domain::{competition, competition::order, eth, liquidity},
+        domain::{
+            competition,
+            competition::{order, Order},
+            eth,
+            liquidity,
+        },
         infra::{solver::Config, Solver},
         util::{serialize, Bytes},
     },
@@ -42,8 +47,8 @@ impl Solutions {
                                     // TODO this error should reference the UID
                                     .ok_or(super::Error(
                                         "invalid order UID specified in fulfillment".to_owned()
-                                    ))?
-                                    .clone();
+                                    ))
+                                    .and_then(|order| Self::order_with_flashloan_lender(order.clone(), fulfillment.flashloan_lender))?;
 
                                 competition::solution::trade::Fulfillment::new(
                                     order,
@@ -220,6 +225,52 @@ impl Solutions {
             })
             .collect()
     }
+
+    fn order_with_flashloan_lender(
+        order: Order,
+        flashloan_lender: Option<FlashloanLender>,
+    ) -> Result<Order, super::Error> {
+        match (order.app_data.flashloan(), flashloan_lender) {
+            (Some(ref mut flashloan), Some(flashloan_lender)) => {
+                if flashloan_lender.token != flashloan.token {
+                    return Err(super::Error(format!(
+                        "flashloan lender token mismatch for order {:?}",
+                        order.uid
+                    )));
+                }
+                if flashloan_lender.amount < flashloan.amount {
+                    return Err(super::Error(format!(
+                        "flashloan lender amount is too low for order {:?}",
+                        order.uid
+                    )));
+                }
+
+                match flashloan.lender {
+                    Some(lender) if lender != flashloan_lender.address => {
+                        return Err(super::Error(format!(
+                            "flashloan lender address mismatch for order {:?}",
+                            order.uid
+                        )));
+                    }
+                    None => {
+                        flashloan.lender = Some(flashloan_lender.address);
+                    }
+                    _ => {}
+                }
+
+                Ok(order)
+            }
+            (Some(_), None) => Err(super::Error(format!(
+                "missing flashloan lender address for order {:?}",
+                order.uid
+            ))),
+            (None, Some(_)) => Err(super::Error(format!(
+                "unexpected flashloan lender data for order {:?}",
+                order.uid
+            ))),
+            (None, None) => Ok(order),
+        }
+    }
 }
 
 #[serde_as]
@@ -262,6 +313,7 @@ struct Fulfillment {
     executed_amount: eth::U256,
     #[serde_as(as = "Option<serialize::U256>")]
     fee: Option<eth::U256>,
+    flashloan_lender: Option<FlashloanLender>,
 }
 
 #[serde_as]
@@ -478,4 +530,14 @@ pub enum Score {
     },
     #[serde(rename_all = "camelCase")]
     RiskAdjusted { success_probability: f64 },
+}
+
+#[serde_as]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FlashloanLender {
+    pub address: eth::H160,
+    pub token: eth::H160,
+    #[serde_as(as = "serialize::U256")]
+    pub amount: eth::U256,
 }
