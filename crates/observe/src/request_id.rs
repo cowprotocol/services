@@ -118,6 +118,7 @@ mod test {
         // create a task with some task local value
         let _ = set_task_local_storage("1234".into(), async {
             // spawn a new task that copies the parent's task local value
+            assert_eq!(Some("1234".into()), get_task_local_storage());
             spawn_task_with_current_request_id(async {
                 receiver1.await.unwrap();
                 assert_eq!(Some("1234".into()), get_task_local_storage());
