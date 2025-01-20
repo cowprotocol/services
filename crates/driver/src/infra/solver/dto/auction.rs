@@ -364,6 +364,7 @@ struct Order {
     buy_token_destination: BuyTokenDestination,
     class: Class,
     app_data: AppDataHash,
+    #[serde(skip_serializing_if = "Option::is_none")]
     flashloan: Option<Flashloan>,
     signing_scheme: SigningScheme,
     #[serde(with = "bytes_hex")]
