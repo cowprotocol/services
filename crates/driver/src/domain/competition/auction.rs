@@ -151,7 +151,7 @@ impl AuctionProcessor {
     /// Fetches full app data for each order and returns an auction with
     /// updated orders.
     pub async fn process(&self, auction: Auction, solver: &eth::H160) -> Auction {
-        let (app_data_by_order, mut prioritized_orders) = join(
+        let (mut app_data_by_order, mut prioritized_orders) = join(
             self.collect_orders_app_data(&auction),
             self.prioritize_orders(&auction, solver),
         )
@@ -159,14 +159,14 @@ impl AuctionProcessor {
 
         // Filter out orders that failed to fetch app data.
         prioritized_orders.retain_mut(|order| {
-            app_data_by_order.get(&order.uid).map_or(true, |result| {
+            app_data_by_order.remove(&order.uid).map_or(true, |result| {
                 match result {
                     Err(err) => {
                         tracing::warn!(order_uid=?order.uid, ?err, "failed to fetch app data for order, excluding from auction");
                         false
                     }
                     Ok(Some(app_data)) => {
-                        order.app_data = app_data.clone().into();
+                        order.app_data = app_data.into();
                         true
                     }
                     Ok(None) => true
