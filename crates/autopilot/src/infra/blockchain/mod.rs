@@ -103,9 +103,10 @@ impl Ethereum {
     }
 
     pub async fn transaction(&self, hash: eth::TxId) -> Result<eth::Transaction, Error> {
-        let (transaction, receipt) = tokio::try_join!(
+        let (transaction, receipt, traces) = tokio::try_join!(
             self.web3.eth().transaction(hash.0.into()),
-            self.web3.eth().transaction_receipt(hash.0)
+            self.web3.eth().transaction_receipt(hash.0),
+            self.web3.trace().transaction(hash.0),
         )?;
         let transaction = transaction.ok_or(Error::TransactionNotFound)?;
         let receipt = receipt.ok_or(Error::TransactionNotFound)?;
@@ -121,13 +122,15 @@ impl Ethereum {
             .block(block_hash.into())
             .await?
             .ok_or(Error::TransactionNotFound)?;
-        into_domain(transaction, receipt, block.timestamp).map_err(Error::IncompleteTransactionData)
+        into_domain(transaction, receipt, traces, block.timestamp)
+            .map_err(Error::IncompleteTransactionData)
     }
 }
 
 fn into_domain(
     transaction: web3::types::Transaction,
     receipt: web3::types::TransactionReceipt,
+    traces: Vec<web3::types::Trace>,
     timestamp: U256,
 ) -> anyhow::Result<eth::Transaction> {
     Ok(eth::Transaction {
@@ -136,7 +139,6 @@ fn into_domain(
             .from
             .ok_or(anyhow::anyhow!("missing from"))?
             .into(),
-        input: transaction.input.0.into(),
         block: receipt
             .block_number
             .ok_or(anyhow::anyhow!("missing block_number"))?
@@ -151,6 +153,16 @@ fn into_domain(
             .ok_or(anyhow::anyhow!("missing effective_gas_price"))?
             .into(),
         timestamp: timestamp.as_u32(),
+        trace_calls: traces
+            .into_iter()
+            .filter_map(|trace| match trace.action {
+                web3::types::Action::Call(call) => Some(eth::TraceCall {
+                    to: call.to.into(),
+                    input: call.input.0.into(),
+                }),
+                _ => None,
+            })
+            .collect(),
     })
 }
 
