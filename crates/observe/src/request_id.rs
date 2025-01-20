@@ -48,7 +48,7 @@ where
     F::Output: Send + 'static,
 {
     if let Some(id) = get_task_local_storage() {
-        tokio::task::spawn(REQUEST_ID.scope(id, future))
+        tokio::task::spawn(set_task_local_storage(id, future))
     } else {
         tokio::task::spawn(future)
     }
@@ -82,8 +82,10 @@ macro_rules! make_service_with_task_local_storage {
                                 )
                             };
                             let span = tracing::info_span!("request", id);
-                            let handle_request = observe::request_id::REQUEST_ID
-                                .scope(id, hyper::service::Service::call(&mut warp_svc, req));
+                            let handle_request = observe::request_id::set_task_local_storage(
+                                id,
+                                hyper::service::Service::call(&mut warp_svc, req),
+                            );
                             tracing::Instrument::instrument(handle_request, span)
                         });
                     Ok::<_, std::convert::Infallible>(svc)
@@ -91,4 +93,44 @@ macro_rules! make_service_with_task_local_storage {
             })
         }
     }};
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[tokio::test]
+    async fn request_id_copied_to_new_task() {
+        // use channels to enforce that assertions happen in the desired order.
+        // First we assert that the parent task's storage is empty after we
+        // spawned the child task.
+        // Afterwards we assert that the child task still has the parent task's
+        // value at the time of spawning.
+        let (sender1, receiver1) = tokio::sync::oneshot::channel();
+        let (sender2, receiver2) = tokio::sync::oneshot::channel();
+
+        spawn_task_with_current_request_id(async {
+            assert_eq!(None, get_task_local_storage());
+        })
+        .await
+        .unwrap();
+
+        // create a task with some task local value
+        let _ = set_task_local_storage("1234".into(), async {
+            // spawn a new task that copies the parent's task local value
+            spawn_task_with_current_request_id(async {
+                receiver1.await.unwrap();
+                assert_eq!(Some("1234".into()), get_task_local_storage());
+                sender2.send(()).unwrap();
+            });
+        })
+        .await;
+
+        // task local value is not populated outside of the previous scope
+        assert_eq!(None, get_task_local_storage());
+        sender1.send(()).unwrap();
+
+        // block test until the important assertion happened
+        receiver2.await.unwrap();
+    }
 }
