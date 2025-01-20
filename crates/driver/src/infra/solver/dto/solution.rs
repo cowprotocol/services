@@ -261,7 +261,7 @@ impl Solutions {
                 Ok(order)
             }
             (Some(_), None) => Err(super::Error(format!(
-                "missing flashloan lender address for order {:?}",
+                "missing flashloan lender data for order {:?}",
                 order.uid
             ))),
             (None, Some(_)) => Err(super::Error(format!(
