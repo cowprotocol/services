@@ -155,6 +155,11 @@ impl AuctionProcessor {
     /// unfillable orders. Fetches full app data for each order and returns an
     /// auction with updated orders.
     pub async fn prioritize(&self, auction: Auction, solver: &eth::H160) -> Auction {
+        let _timer = metrics::get()
+            .auction_preprocessing
+            .with_label_values(&["total"])
+            .start_timer();
+
         Auction {
             orders: self.prioritize_orders(&auction, solver).await,
             ..auction
