@@ -146,9 +146,8 @@ type Balances = HashMap<BalanceGroup, order::SellAmount>;
 
 impl AuctionProcessor {
     /// Process the auction by prioritizing the orders and filtering out
-    /// unfillable orders as well as those that failed to fetch app data.
-    /// Fetches full app data for each order and returns an auction with
-    /// updated orders.
+    /// unfillable orders. Fetches full app data for each order and returns an
+    /// auction with updated orders.
     pub async fn prioritize(&self, auction: Auction, solver: &eth::H160) -> Auction {
         Auction {
             orders: self.prioritize_orders(&auction, solver).await,
@@ -156,8 +155,6 @@ impl AuctionProcessor {
         }
     }
 
-    /// Prioritize well priced and filter out unfillable orders from the given
-    /// auction.
     fn prioritize_orders(
         &self,
         auction: &Auction,
@@ -419,7 +416,7 @@ impl AuctionProcessor {
                     (*cow_amm.address(), cow_amm.validated_template_order(prices, signature_validator, &domain_separator).await)
                 }),
         )
-            .await;
+        .await;
 
         // Convert results to domain format.
         let domain_separator =
