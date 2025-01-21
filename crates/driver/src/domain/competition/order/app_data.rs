@@ -35,17 +35,13 @@ struct Inner {
 }
 
 impl AppDataRetriever {
-    // According to statistics, the average size of the app-data is ~800 bytes. With
-    // this constant, the approximate size of the cache will be ~1.6 MB.
-    const CACHE_SIZE: u64 = 2_000;
-
-    pub fn new(orderbook_url: Url) -> Self {
+    pub fn new(orderbook_url: Url, cache_size: u64) -> Self {
         Self(Arc::new(Inner {
             client: reqwest::Client::new(),
             base_url: orderbook_url,
             request_sharing: BoxRequestSharing::labelled("app_data".to_string()),
             app_data_validator: app_data::Validator::new(usize::MAX),
-            cache: Cache::new(Self::CACHE_SIZE),
+            cache: Cache::new(cache_size),
         }))
     }
 

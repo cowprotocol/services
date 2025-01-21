@@ -34,7 +34,7 @@ async fn route(
         let competition = state.competition();
         let auction = state
             .pre_processor()
-            .process(auction, &competition.solver.account().address())
+            .prioritize(auction, &competition.solver.account().address())
             .await;
         let result = competition.solve(auction).await;
         competition.ensure_settle_queue_capacity()?;

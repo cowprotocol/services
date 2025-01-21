@@ -1,6 +1,9 @@
 use {
     crate::{
-        domain::{competition::bad_tokens, Mempools},
+        domain::{
+            competition::{bad_tokens, order::app_data::AppDataRetriever},
+            Mempools,
+        },
         infra::{
             self,
             blockchain::{self, Ethereum},
@@ -51,6 +54,10 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
 
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let eth = ethereum(&config, ethrpc).await;
+    let app_data_retriever = config.flashloans.enabled.then_some(AppDataRetriever::new(
+        args.orderbook_url,
+        config.flashloans.cache_size,
+    ));
     let serve = Api {
         solvers: solvers(&config, &eth).await,
         liquidity: liquidity(&config, &eth).await,
@@ -79,7 +86,7 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
             let _ = shutdown_receiver.await;
         },
         config.order_priority_strategies,
-        args.orderbook_url,
+        app_data_retriever,
     );
 
     futures::pin_mut!(serve);

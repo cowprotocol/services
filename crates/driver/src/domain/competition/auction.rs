@@ -137,7 +137,7 @@ struct Inner {
     /// `order_priority_strategies` from the driver's config.
     order_sorting_strategies: Vec<Arc<dyn sorting::SortingStrategy>>,
     signature_validator: Arc<dyn SignatureValidating>,
-    app_data_retriever: Arc<order::app_data::AppDataRetriever>,
+    app_data_retriever: Option<order::app_data::AppDataRetriever>,
 }
 
 type BalanceGroup = (order::Trader, eth::TokenAddress, order::SellTokenBalance);
@@ -148,29 +148,11 @@ impl AuctionProcessor {
     /// unfillable orders as well as those that failed to fetch app data.
     /// Fetches full app data for each order and returns an auction with
     /// updated orders.
-    pub async fn process(&self, auction: Auction, solver: &eth::H160) -> Auction {
+    pub async fn prioritize(&self, auction: Auction, solver: &eth::H160) -> Auction {
         Auction {
             orders: self.prioritize_orders(&auction, solver).await,
             ..auction
         }
-    }
-
-    /// Fetches the app data for all orders in the auction.
-    /// Returns a map from order UIDs to the result of fetching the app data.
-    async fn collect_orders_app_data(
-        app_data_retriever: Arc<order::app_data::AppDataRetriever>,
-        orders: &[order::Order],
-    ) -> HashMap<
-        order::Uid,
-        Result<Option<app_data::ValidatedAppData>, order::app_data::FetchingError>,
-    > {
-        join_all(orders.iter().map(|order| async {
-            let result = app_data_retriever.get(order.app_data.hash()).await;
-            (order.uid, result)
-        }))
-        .await
-        .into_iter()
-        .collect::<HashMap<_, _>>()
     }
 
     /// Prioritize well priced and filter out unfillable orders from the given
@@ -203,7 +185,7 @@ impl AuctionProcessor {
         let mut orders = auction.orders.clone();
         let solver = *solver;
         let order_comparators = lock.order_sorting_strategies.clone();
-        let app_data_fetcher = lock.app_data_retriever.clone();
+        let app_data_retriever = lock.app_data_retriever.clone();
 
         // Use spawn_blocking() because a lot of CPU bound computations are happening
         // and we don't want to block the runtime for too long.
@@ -215,7 +197,7 @@ impl AuctionProcessor {
                 rt.block_on(async {
                     tokio::join!(
                         Self::fetch_balances(&eth, &orders),
-                        Self::collect_orders_app_data(app_data_fetcher, &orders),
+                        Self::collect_orders_app_data(app_data_retriever, &orders),
                     )
                 });
 
@@ -238,6 +220,28 @@ impl AuctionProcessor {
         lock.fut = fut.clone();
 
         fut
+    }
+
+    /// Fetches the app data for all orders in the auction.
+    /// Returns a map from order UIDs to the result of fetching the app data.
+    async fn collect_orders_app_data(
+        app_data_retriever: Option<order::app_data::AppDataRetriever>,
+        orders: &[order::Order],
+    ) -> HashMap<
+        order::Uid,
+        Result<Option<app_data::ValidatedAppData>, order::app_data::FetchingError>,
+    > {
+        if let Some(app_data_retriever) = app_data_retriever {
+            join_all(orders.iter().map(|order| async {
+                let result = app_data_retriever.get(order.app_data.hash()).await;
+                (order.uid, result)
+            }))
+            .await
+            .into_iter()
+            .collect::<HashMap<_, _>>()
+        } else {
+            Default::default()
+        }
     }
 
     /// Removes orders that:
@@ -502,7 +506,7 @@ impl AuctionProcessor {
     pub fn new(
         eth: &infra::Ethereum,
         order_priority_strategies: Vec<OrderPriorityStrategy>,
-        app_data_retriever: Arc<order::app_data::AppDataRetriever>,
+        app_data_retriever: Option<order::app_data::AppDataRetriever>,
     ) -> Self {
         let eth = eth.with_metric_label("auctionPreProcessing".into());
         let mut order_sorting_strategies = vec![];

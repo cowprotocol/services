@@ -73,6 +73,10 @@ struct Config {
         default = "default_simulation_bad_token_max_age"
     )]
     simulation_bad_token_max_age: Duration,
+
+    /// Configuration for flashloans.
+    #[serde(default, flatten)]
+    flashloans: Flashloans,
 }
 
 #[serde_as]
@@ -733,6 +737,28 @@ impl Default for BadTokenDetectionConfig {
     }
 }
 
+#[serde_as]
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct Flashloans {
+    /// Whether the flashloans feature is enabled.
+    #[serde(default, rename = "flashloans-enabled")]
+    pub enabled: bool,
+
+    /// The maximum number of app-data entries in the cache.
+    #[serde(
+        default = "default_flashloans_cache_size",
+        rename = "flashloans-cache-size"
+    )]
+    pub cache_size: u64,
+}
+
+impl Default for Flashloans {
+    fn default() -> Self {
+        serde_json::from_str("{}").expect("Flashloans uses default values")
+    }
+}
+
 fn default_metrics_bad_token_detector_failure_ratio() -> f64 {
     0.9
 }
@@ -754,4 +780,10 @@ fn default_metrics_bad_token_detector_log_only() -> bool {
 
 fn default_metrics_bad_token_detector_freeze_time() -> Duration {
     Duration::from_secs(60 * 10)
+}
+
+/// According to statistics, the average size of the app-data is ~800 bytes.
+/// With this default, the approximate size of the cache will be ~1.6 MB.
+fn default_flashloans_cache_size() -> u64 {
+    2000
 }
