@@ -476,10 +476,15 @@ pub async fn run(args: Arguments) {
     let mut maintenance = Maintenance::new(settlement_event_indexer, db.clone());
     maintenance.with_cow_amms(&cow_amm_registry);
 
-    if let Some(ethflow_contract) = args.ethflow_contract {
+    for (ethflow_contract, ethflow_indexing_start) in args
+        .ethflow_contract
+        .into_iter()
+        .zip(args.ethflow_indexing_start)
+    {
         let ethflow_refund_start_block = determine_ethflow_refund_indexing_start(
             &skip_event_sync_start,
-            args.ethflow_indexing_start,
+            &ethflow_contract,
+            Some(ethflow_indexing_start),
             &web3,
             chain_id,
             db.clone(),
@@ -509,7 +514,7 @@ pub async fn run(args: Arguments) {
 
         let ethflow_start_block = determine_ethflow_indexing_start(
             &skip_event_sync_start,
-            args.ethflow_indexing_start,
+            Some(ethflow_indexing_start),
             &web3,
             chain_id,
         )
@@ -520,7 +525,7 @@ pub async fn run(args: Arguments) {
             // interface called CoWSwapOnchainOrders.
             CoWSwapOnchainOrdersContract::new(web3.clone(), ethflow_contract),
             onchain_order_event_parser,
-            block_retriever,
+            block_retriever.clone(),
             ethflow_start_block,
         )
         .await

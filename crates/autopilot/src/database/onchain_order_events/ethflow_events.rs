@@ -19,7 +19,7 @@ use {
         orders::{ExecutionTime, Interaction, Order},
         PgTransaction,
     },
-    ethcontract::Event as EthContractEvent,
+    ethcontract::{Event as EthContractEvent, H160},
     ethrpc::{
         block_stream::{block_by_number, block_number_to_block_number_hash, BlockNumberHash},
         Web3,
@@ -201,6 +201,7 @@ pub async fn determine_ethflow_indexing_start(
 /// and will panic  if it cannot retrieve the information it needs.
 pub async fn determine_ethflow_refund_indexing_start(
     skip_event_sync_start: &Option<BlockNumberHash>,
+    ethflow_contract: &H160,
     ethflow_indexing_start: Option<u64>,
     web3: &Web3,
     chain_id: u64,
@@ -218,7 +219,7 @@ pub async fn determine_ethflow_refund_indexing_start(
         ),
         None => None,
     };
-    let last_db_ethflow_block = last_db_ethflow_block(web3, db).await;
+    let last_db_ethflow_block = last_db_ethflow_block(web3, db, ethflow_contract).await;
     let settlement_block = settlement_deployment_block_number_hash(web3, chain_id)
         .await
         .unwrap_or_else(|err| {
@@ -243,16 +244,18 @@ pub async fn determine_ethflow_refund_indexing_start(
 async fn last_db_ethflow_block(
     web3: &Web3,
     db: crate::database::Postgres,
+    ethflow_contract: &H160,
 ) -> Option<BlockNumberHash> {
     let mut ex = db
         .pool
         .acquire()
         .await
         .expect("Should be able to acquire connection");
-    let last_refund_block_number = database::ethflow_orders::last_indexed_block(&mut ex)
-        .await
-        .expect("Should be able to find last indexed block for ethflow orders")
-        .unwrap_or_default() as u64;
+    let last_refund_block_number =
+        database::ethflow_orders::last_indexed_block(&mut ex, &ByteArray(ethflow_contract.0))
+            .await
+            .expect("Should be able to find last indexed block for ethflow orders")
+            .unwrap_or_default() as u64;
 
     if last_refund_block_number > 0 {
         let last_refund_block = block_by_number(web3, last_refund_block_number.into())
@@ -269,9 +272,12 @@ async fn last_db_ethflow_block(
         }
     }
 
-    let last_order_block_number = database::onchain_broadcasted_orders::last_block(&mut ex)
-        .await
-        .expect("Should be able to find last onchain broadcasted order block")
+    let last_order_block_number = database::onchain_broadcasted_orders::last_indexed_block(
+        &mut ex,
+        &ByteArray(ethflow_contract.0),
+    )
+    .await
+    .expect("Should be able to find last onchain broadcasted order block")
         as u64;
 
     if last_order_block_number > 0 {

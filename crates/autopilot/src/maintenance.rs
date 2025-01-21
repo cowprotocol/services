@@ -30,7 +30,7 @@ pub struct Maintenance {
     /// Indexes and persists all events emited by the settlement contract.
     settlement_indexer: EventUpdater<Indexer, GPv2SettlementContract>,
     /// Indexes ethflow orders (orders selling native ETH).
-    ethflow_indexer: Option<EthflowIndexer>,
+    ethflow_indexers: Vec<EthflowIndexer>,
     /// Used for periodic cleanup tasks to not have the DB overflow with old
     /// data.
     db_cleanup: Postgres,
@@ -49,7 +49,7 @@ impl Maintenance {
             settlement_indexer,
             db_cleanup,
             cow_amm_indexer: Default::default(),
-            ethflow_indexer: None,
+            ethflow_indexers: Default::default(),
             last_processed: Default::default(),
         }
     }
@@ -98,7 +98,7 @@ impl Maintenance {
     /// Registers all maintenance tasks that are necessary to correctly support
     /// ethflow orders.
     pub fn with_ethflow(&mut self, ethflow_indexer: EthflowIndexer) {
-        self.ethflow_indexer = Some(ethflow_indexer);
+        self.ethflow_indexers.push(ethflow_indexer);
     }
 
     pub fn with_cow_amms(&mut self, registry: &cow_amm::Registry) {
@@ -106,8 +106,8 @@ impl Maintenance {
     }
 
     async fn index_ethflow_orders(&self) -> Result<()> {
-        if let Some(indexer) = &self.ethflow_indexer {
-            return indexer.run_maintenance().await;
+        for indexer in &self.ethflow_indexers {
+            indexer.run_maintenance().await?;
         }
         Ok(())
     }

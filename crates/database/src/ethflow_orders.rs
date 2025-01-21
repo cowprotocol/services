@@ -1,5 +1,5 @@
 use {
-    crate::{OrderUid, PgTransaction, TransactionHash},
+    crate::{Address, OrderUid, PgTransaction, TransactionHash},
     sqlx::{Executor, PgConnection},
 };
 
@@ -74,7 +74,11 @@ pub async fn delete_refunds(
 }
 
 /// Returns the last block where an ethflow refund transaction has been indexed.
-pub async fn last_indexed_block(ex: &mut PgConnection) -> Result<Option<i64>, sqlx::Error> {
+pub async fn last_indexed_block(
+    ex: &mut PgConnection,
+    _contract: &Address,
+) -> Result<Option<i64>, sqlx::Error> {
+    // todo update query
     const QUERY: &str = r#"
         SELECT block_number from ethflow_refunds ORDER BY block_number DESC LIMIT 1;
     "#;

@@ -51,7 +51,11 @@ pub struct OnchainOrderPlacementRow {
     pub log_index: i64,
 }
 
-pub async fn last_block(ex: &mut PgConnection) -> Result<i64, sqlx::Error> {
+pub async fn last_indexed_block(
+    ex: &mut PgConnection,
+    _contract: &Address,
+) -> Result<i64, sqlx::Error> {
+    // todo update query
     const QUERY: &str = r#"
         SELECT COALESCE(MAX(block_number), 0) FROM onchain_placed_orders;
     "#;
@@ -167,7 +171,7 @@ mod tests {
         append(&mut db, &[(event_index, OnchainOrderPlacement::default())])
             .await
             .unwrap();
-        assert_eq!(last_block(&mut db).await.unwrap(), 1);
+        assert_eq!(last_indexed_block(&mut db).await.unwrap(), 1);
     }
 
     #[tokio::test]
