@@ -142,8 +142,8 @@ impl Validator {
 ///
 /// For more detailed information on the schema, see:
 /// <https://github.com/cowprotocol/app-data>.
-#[derive(Clone, Deserialize)]
-#[cfg_attr(any(test, feature = "test_helpers"), derive(Serialize))]
+#[derive(Deserialize)]
+#[cfg_attr(any(test, feature = "test_helpers"), derive(Clone, Serialize))]
 pub struct Root {
     metadata: Option<ProtocolAppData>,
     /// DEPRECATED. The `backend` field was originally specified to contain all
@@ -235,8 +235,8 @@ impl<'de> Deserialize<'de> for OrderUid {
 }
 
 /// The legacy `backend` app data object.
-#[derive(Clone, Debug, Default, Deserialize)]
-#[cfg_attr(any(test, feature = "test_helpers"), derive(Serialize))]
+#[derive(Debug, Default, Deserialize)]
+#[cfg_attr(any(test, feature = "test_helpers"), derive(Clone, Serialize))]
 struct BackendAppData {
     #[serde(default)]
     pub hooks: Hooks,

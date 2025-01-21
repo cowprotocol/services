@@ -16,7 +16,7 @@ use {
         order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
         DomainSeparator,
     },
-    serde::{Deserialize, Serialize},
+    serde::Deserialize,
     serde_with::serde_as,
     std::collections::HashMap,
 };
@@ -533,7 +533,8 @@ pub enum Score {
 }
 
 #[serde_as]
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(test, derive(serde::Serialize))]
 #[serde(rename_all = "camelCase")]
 pub struct FlashloanLender {
     pub address: eth::H160,
