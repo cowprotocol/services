@@ -9,7 +9,7 @@ use {
 /// The minimum valid empty app data JSON string.
 pub const EMPTY: &str = "{}";
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ValidatedAppData {
     pub hash: AppDataHash,
     pub document: String,

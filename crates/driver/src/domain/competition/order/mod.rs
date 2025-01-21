@@ -52,7 +52,8 @@ pub struct Order {
 }
 
 /// The app data associated with an order.
-#[derive(Debug, Clone, From, PartialEq)]
+#[derive(Debug, Clone, From)]
+#[cfg_attr(test, derive(PartialEq))]
 pub enum AppData {
     /// App data hash.
     Hash(AppDataHash),
