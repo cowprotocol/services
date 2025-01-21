@@ -210,6 +210,7 @@ async fn create_config_file(
            "#
     };
     write!(file, "{simulation}").unwrap();
+    writeln!(file, "flashloans-enabled = true").unwrap();
     write!(
         file,
         r#"[contracts]
