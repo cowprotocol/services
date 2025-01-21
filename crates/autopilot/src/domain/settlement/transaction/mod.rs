@@ -132,15 +132,16 @@ fn find_settlement_trace(
     call_frame: &eth::CallFrame,
     settlement_contract: eth::Address,
 ) -> Option<&eth::CallFrame> {
-    // Use a stack to keep track of frames to process
-    let mut stack = vec![call_frame];
+    // Use a queue (VecDeque) to keep track of frames to process
+    let mut queue = std::collections::VecDeque::new();
+    queue.push_back(call_frame);
 
-    while let Some(call_frame) = stack.pop() {
+    while let Some(call_frame) = queue.pop_front() {
         if is_settlement_trace(call_frame, settlement_contract) {
             return Some(call_frame);
         }
-        // Add all nested calls to the stack
-        stack.extend(&call_frame.calls);
+        // Add all nested calls to the queue
+        queue.extend(&call_frame.calls);
     }
 
     None
