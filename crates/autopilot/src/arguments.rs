@@ -30,10 +30,13 @@ pub struct Arguments {
     #[clap(flatten)]
     pub price_estimation: price_estimation::Arguments,
 
-    /// Address of the ethflow contract. If not specified, eth-flow orders are
+    /// Address of the ethflow contracts. If not specified, eth-flow orders are
     /// disabled.
+    /// In general, one contract is sufficient for the service to function.
+    /// Support for multiple contract was added to support transition period for
+    /// integrators when the migration of the eth-flow contract happens.
     #[clap(long, env)]
-    pub ethflow_contract: Option<H160>,
+    pub ethflow_contract: Vec<H160>,
 
     /// Timestamp at which we should start indexing eth-flow contract events.
     /// If there are already events in the database for a date later than this,

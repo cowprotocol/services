@@ -23,12 +23,12 @@ static ALL_VALID_ONCHAIN_ORDER_TOPICS: [H256; 2] =
 // onchain-order contract ABI).
 pub struct CoWSwapOnchainOrdersContract {
     web3: Web3,
-    address: H160,
+    addresses: Vec<H160>,
 }
 
 impl CoWSwapOnchainOrdersContract {
-    pub fn new(web3: Web3, address: H160) -> Self {
-        Self { web3, address }
+    pub fn new(web3: Web3, addresses: Vec<H160>) -> Self {
+        Self { web3, addresses }
     }
 }
 
@@ -36,7 +36,10 @@ impl EventRetrieving for CoWSwapOnchainOrdersContract {
     type Event = cowswap_onchain_orders::Event;
 
     fn get_events(&self) -> AllEventsBuilder<DynTransport, Self::Event> {
-        let mut events = AllEventsBuilder::new(self.web3.clone(), self.address, None);
+        let mut events =
+            AllEventsBuilder::new(self.web3.clone(), *self.addresses.first().unwrap(), None);
+        // We want to observe multiple addresses for events.
+        events.filter = events.filter.address(self.addresses.clone());
         // Filter out events that don't belong to the ABI of `OnchainOrdersContract`.
         // This is done because there could be other unrelated events fired by
         // the contract which should be ignored. Also, it makes the request more
