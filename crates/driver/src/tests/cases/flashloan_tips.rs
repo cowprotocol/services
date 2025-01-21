@@ -169,3 +169,24 @@ async fn insufficient_flashloan_lender_amount_solution() {
 
     test.solve().await.err().kind("SolverFailed");
 }
+
+#[tokio::test]
+#[ignore]
+async fn unexpected_flashloan_lender_data_solution() {
+    let order = ab_order();
+    let test = setup()
+        .pool(ab_pool())
+        .order(order.clone())
+        .solution(ab_solution().flashloan_lender(
+            order.name,
+            Some(FlashloanLender {
+                address: H160::from_low_u64_be(1),
+                token: H160::from_low_u64_be(3),
+                amount: 3.into(),
+            }),
+        ))
+        .done()
+        .await;
+
+    test.solve().await.err().kind("SolverFailed");
+}
