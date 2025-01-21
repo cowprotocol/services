@@ -1,5 +1,5 @@
 use {
-    crate::{domain::competition::order::AppData, tests::setup::Order},
+    crate::{domain::competition::order::app_data::AppData, tests::setup::Order},
     axum::{
         extract::Path,
         http::StatusCode,

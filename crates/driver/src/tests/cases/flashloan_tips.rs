@@ -1,6 +1,6 @@
 use {
     crate::{
-        domain::competition::order::AppData,
+        domain::competition::order::app_data::AppData,
         infra::solver::dto::FlashloanLender,
         tests::{
             setup,

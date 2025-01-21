@@ -4,7 +4,7 @@ use {
     self::{driver::Driver, solver::Solver as SolverInstance},
     crate::{
         domain::{
-            competition::{order, order::AppData},
+            competition::{order, order::app_data::AppData},
             eth,
             time,
         },
