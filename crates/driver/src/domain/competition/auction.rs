@@ -444,7 +444,7 @@ impl AuctionProcessor {
                     },
                     kind: order::Kind::Limit,
                     side: template.order.kind.into(),
-                    app_data: order::AppDataHash(Bytes(template.order.app_data.0)).into(),
+                    app_data: order::app_data::AppDataHash(Bytes(template.order.app_data.0)).into(),
                     buy_token_balance: template.order.buy_token_balance.into(),
                     sell_token_balance: template.order.sell_token_balance.into(),
                     partial: match template.order.partially_fillable {

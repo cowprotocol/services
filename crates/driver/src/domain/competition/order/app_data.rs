@@ -1,4 +1,6 @@
 use {
+    crate::util::Bytes,
+    derive_more::From,
     futures::FutureExt,
     moka::future::Cache,
     reqwest::StatusCode,
@@ -26,12 +28,10 @@ pub struct AppDataRetriever(Arc<Inner>);
 struct Inner {
     client: reqwest::Client,
     base_url: Url,
-    request_sharing: BoxRequestSharing<
-        super::AppDataHash,
-        Result<Option<app_data::ValidatedAppData>, FetchingError>,
-    >,
+    request_sharing:
+        BoxRequestSharing<AppDataHash, Result<Option<app_data::ValidatedAppData>, FetchingError>>,
     app_data_validator: app_data::Validator,
-    cache: Cache<super::AppDataHash, Option<app_data::ValidatedAppData>>,
+    cache: Cache<AppDataHash, Option<app_data::ValidatedAppData>>,
 }
 
 impl AppDataRetriever {
@@ -48,13 +48,13 @@ impl AppDataRetriever {
     /// Retrieves the full app-data for the given `app_data` hash, if exists.
     pub async fn get(
         &self,
-        app_data: super::AppDataHash,
+        app_data: AppDataHash,
     ) -> Result<Option<app_data::ValidatedAppData>, FetchingError> {
         if let Some(app_data) = self.0.cache.get(&app_data).await {
             return Ok(app_data.clone());
         }
 
-        let app_data_fut = move |app_data: &super::AppDataHash| {
+        let app_data_fut = move |app_data: &AppDataHash| {
             let app_data = *app_data;
             let self_ = self.clone();
 
@@ -87,6 +87,63 @@ impl AppDataRetriever {
             .request_sharing
             .shared_or_else(app_data, app_data_fut)
             .await
+    }
+}
+
+/// The app data associated with an order.
+#[derive(Debug, Clone, From)]
+pub enum AppData {
+    /// App data hash.
+    Hash(AppDataHash),
+    /// Validated full app data.
+    Full(Box<::app_data::ValidatedAppData>),
+}
+
+impl Default for AppData {
+    fn default() -> Self {
+        Self::Hash(Default::default())
+    }
+}
+
+impl AppData {
+    pub fn hash(&self) -> AppDataHash {
+        match self {
+            Self::Hash(hash) => *hash,
+            Self::Full(data) => AppDataHash(data.hash.0.into()),
+        }
+    }
+}
+
+impl From<[u8; APP_DATA_LEN]> for AppData {
+    fn from(app_data_hash: [u8; APP_DATA_LEN]) -> Self {
+        Self::Hash(app_data_hash.into())
+    }
+}
+
+impl From<::app_data::ValidatedAppData> for AppData {
+    fn from(value: ::app_data::ValidatedAppData) -> Self {
+        Self::Full(Box::new(value))
+    }
+}
+
+/// The length of the app data hash in bytes.
+pub const APP_DATA_LEN: usize = 32;
+
+/// This is a hash allowing arbitrary user data to be associated with an order.
+/// While this type holds the hash, the data itself is uploaded to IPFS. This
+/// hash is signed along with the order.
+#[derive(Debug, Default, Clone, Copy, Hash, PartialEq, Eq)]
+pub struct AppDataHash(pub Bytes<[u8; APP_DATA_LEN]>);
+
+impl From<[u8; APP_DATA_LEN]> for AppDataHash {
+    fn from(inner: [u8; APP_DATA_LEN]) -> Self {
+        Self(inner.into())
+    }
+}
+
+impl From<AppDataHash> for [u8; APP_DATA_LEN] {
+    fn from(app_data: AppDataHash) -> Self {
+        app_data.0.into()
     }
 }
 
