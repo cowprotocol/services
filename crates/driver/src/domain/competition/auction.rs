@@ -219,8 +219,7 @@ impl AuctionProcessor {
                     )
                 });
 
-            Self::filter_orders_by_balances(&mut balances, &mut orders);
-            Self::filter_orders_by_app_data(&mut app_data_by_order, &mut orders);
+            Self::filter_orders(&mut balances, &mut app_data_by_order, &mut orders);
 
             tracing::debug!(auction_id = new_id.0, time =? start.elapsed(), "auction preprocessing done");
             orders
@@ -241,8 +240,17 @@ impl AuctionProcessor {
         fut
     }
 
-    /// Removes orders that cannot be filled due to missing funds of the owner.
-    fn filter_orders_by_balances(balances: &mut Balances, orders: &mut Vec<order::Order>) {
+    /// Removes orders that:
+    /// - Cannot be filled due to missing funds of the owner.
+    /// - Require flashloan but failed to fetch app data.
+    fn filter_orders(
+        balances: &mut Balances,
+        app_data_by_order: &mut HashMap<
+            order::Uid,
+            Result<Option<app_data::ValidatedAppData>, order::app_data::FetchingError>,
+        >,
+        orders: &mut Vec<order::Order>,
+    ) {
         // The auction that we receive from the `autopilot` assumes that there
         // is sufficient balance to completely cover all the orders. **This is
         // not the case** (as the protocol should not chose which limit orders
@@ -307,19 +315,7 @@ impl AuctionProcessor {
             }
 
             remaining_balance.0 -= allocated_balance.0;
-            true
-        });
-    }
 
-    /// Filter out orders that require flashloan but failed to fetch app data.
-    fn filter_orders_by_app_data(
-        app_data_by_order: &mut HashMap<
-            order::Uid,
-            Result<Option<app_data::ValidatedAppData>, order::app_data::FetchingError>,
-        >,
-        orders: &mut Vec<order::Order>,
-    ) {
-        orders.retain_mut(|order| {
             app_data_by_order.remove(&order.uid).map_or(true, |result| {
                 match result {
                     Err(err) => {
