@@ -244,6 +244,7 @@ pub struct Solution {
     #[serde(default)]
     post_interactions: Vec<InteractionData>,
     gas: Option<u64>,
+    #[serde(default)]
     flashloans: Vec<Flashloan>,
 }
 

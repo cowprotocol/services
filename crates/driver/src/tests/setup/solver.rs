@@ -373,14 +373,17 @@ impl Solver {
                     }
                 }
             }
-            solutions_json.push(json!({
+            let mut solution_json = json!({
                 "id": i,
                 "prices": prices_json,
                 "trades": trades_json,
                 "interactions": interactions_json,
                 "preInteractions": pre_interactions_json,
-                "flashloans": solution.flashloans.clone(),
-            }));
+            });
+            if !solution.flashloans.is_empty() {
+                solution_json["flashloans"] = json!(solution.flashloans);
+            }
+            solutions_json.push(solution_json);
         }
 
         let build_tokens = config
