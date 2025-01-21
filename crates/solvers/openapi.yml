@@ -384,8 +384,8 @@ components:
           $ref: "#/components/schemas/OrderClass"
         appData:
           $ref: "#/components/schemas/AppData"
-        flashloan:
-          $ref: "#/components/schemas/Flashloan"
+        flashloanHint:
+          $ref: "#/components/schemas/FlashloanHint"
         signingScheme:
           $ref: "#/components/schemas/SigningScheme"
         signature:
@@ -805,11 +805,6 @@ components:
             "sellToken" for sell orders, and "buyToken" for buy orders.
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
-        flashloanLender:
-          description: |
-            The lender data that is able to provide a flashloan.
-          allOf:
-            - $ref: "#/components/schemas/FlashloanLender"
     JitTrade:
       description: |
         A trade with a JIT order.
@@ -1006,6 +1001,12 @@ components:
         gas:
           type: integer
           description: How many units of gas this solution is estimated to cost.
+        flashloans:
+          description: |
+            Flashloans that are provided for this solution.
+          type: array
+          items:
+            $ref: "#/components/schemas/Flashloan"
     Call:
       type: object
       properties:
