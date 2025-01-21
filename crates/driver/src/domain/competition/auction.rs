@@ -11,7 +11,7 @@ use {
         util::{self, Bytes},
     },
     chrono::{Duration, Utc},
-    futures::future::{join, join_all, BoxFuture, FutureExt, Shared},
+    futures::future::{join_all, BoxFuture, FutureExt, Shared},
     itertools::Itertools,
     model::{order::OrderKind, signature::Signature},
     shared::signature_validator::{Contracts, SignatureValidating},
@@ -127,10 +127,7 @@ impl Auction {
 }
 
 #[derive(Clone)]
-pub struct AuctionProcessor {
-    inner: Arc<Mutex<Inner>>,
-    app_data_retriever: Arc<order::app_data::AppDataRetriever>,
-}
+pub struct AuctionProcessor(Arc<Mutex<Inner>>);
 
 struct Inner {
     auction: auction::Id,
@@ -140,6 +137,7 @@ struct Inner {
     /// `order_priority_strategies` from the driver's config.
     order_sorting_strategies: Vec<Arc<dyn sorting::SortingStrategy>>,
     signature_validator: Arc<dyn SignatureValidating>,
+    app_data_retriever: Arc<order::app_data::AppDataRetriever>,
 }
 
 type BalanceGroup = (order::Trader, eth::TokenAddress, order::SellTokenBalance);
@@ -151,31 +149,8 @@ impl AuctionProcessor {
     /// Fetches full app data for each order and returns an auction with
     /// updated orders.
     pub async fn process(&self, auction: Auction, solver: &eth::H160) -> Auction {
-        let (mut app_data_by_order, mut prioritized_orders) = join(
-            self.collect_orders_app_data(&auction),
-            self.prioritize_orders(&auction, solver),
-        )
-        .await;
-
-        // Filter out orders that failed to fetch app data.
-        prioritized_orders.retain_mut(|order| {
-            app_data_by_order.remove(&order.uid).map_or(true, |result| {
-                match result {
-                    Err(err) => {
-                        tracing::warn!(order_uid=?order.uid, ?err, "failed to fetch app data for order, excluding from auction");
-                        false
-                    }
-                    Ok(Some(app_data)) => {
-                        order.app_data = app_data.into();
-                        true
-                    }
-                    Ok(None) => true
-                }
-            })
-        });
-
         Auction {
-            orders: prioritized_orders,
+            orders: self.prioritize_orders(&auction, solver).await,
             ..auction
         }
     }
@@ -183,14 +158,14 @@ impl AuctionProcessor {
     /// Fetches the app data for all orders in the auction.
     /// Returns a map from order UIDs to the result of fetching the app data.
     async fn collect_orders_app_data(
-        &self,
-        auction: &Auction,
+        app_data_retriever: Arc<order::app_data::AppDataRetriever>,
+        orders: &[order::Order],
     ) -> HashMap<
         order::Uid,
         Result<Option<app_data::ValidatedAppData>, order::app_data::FetchingError>,
     > {
-        join_all(auction.orders.iter().map(|order| async {
-            let result = self.app_data_retriever.get(order.app_data.hash()).await;
+        join_all(orders.iter().map(|order| async {
+            let result = app_data_retriever.get(order.app_data.hash()).await;
             (order.uid, result)
         }))
         .await
@@ -209,7 +184,7 @@ impl AuctionProcessor {
             .id()
             .expect("auctions used for quoting do not have to be prioritized");
 
-        let mut lock = self.inner.lock().unwrap();
+        let mut lock = self.0.lock().unwrap();
         let current_id = lock.auction;
         if new_id.0 < current_id.0 {
             tracing::error!(?current_id, ?new_id, "received an outdated auction");
@@ -228,6 +203,7 @@ impl AuctionProcessor {
         let mut orders = auction.orders.clone();
         let solver = *solver;
         let order_comparators = lock.order_sorting_strategies.clone();
+        let app_data_fetcher = lock.app_data_retriever.clone();
 
         // Use spawn_blocking() because a lot of CPU bound computations are happening
         // and we don't want to block the runtime for too long.
@@ -235,9 +211,17 @@ impl AuctionProcessor {
             let start = std::time::Instant::now();
             orders.extend(rt.block_on(Self::cow_amm_orders(&eth, &tokens, &cow_amms, signature_validator.as_ref())));
             sorting::sort_orders(&mut orders, &tokens, &solver, &order_comparators);
-            let mut balances =
-                rt.block_on(async { Self::fetch_balances(&eth, &orders).await });
-            Self::filter_orders(&mut balances, &mut orders);
+            let (mut balances, mut app_data_by_order) =
+                rt.block_on(async {
+                    tokio::join!(
+                        Self::fetch_balances(&eth, &orders),
+                        Self::collect_orders_app_data(app_data_fetcher, &orders),
+                    )
+                });
+
+            Self::filter_orders_by_balances(&mut balances, &mut orders);
+            Self::filter_orders_by_app_data(&mut app_data_by_order, &mut orders);
+
             tracing::debug!(auction_id = new_id.0, time =? start.elapsed(), "auction preprocessing done");
             orders
         })
@@ -258,7 +242,7 @@ impl AuctionProcessor {
     }
 
     /// Removes orders that cannot be filled due to missing funds of the owner.
-    fn filter_orders(balances: &mut Balances, orders: &mut Vec<order::Order>) {
+    fn filter_orders_by_balances(balances: &mut Balances, orders: &mut Vec<order::Order>) {
         // The auction that we receive from the `autopilot` assumes that there
         // is sufficient balance to completely cover all the orders. **This is
         // not the case** (as the protocol should not chose which limit orders
@@ -324,6 +308,31 @@ impl AuctionProcessor {
 
             remaining_balance.0 -= allocated_balance.0;
             true
+        });
+    }
+
+    /// Filter out orders that require flashloan but failed to fetch app data.
+    fn filter_orders_by_app_data(
+        app_data_by_order: &mut HashMap<
+            order::Uid,
+            Result<Option<app_data::ValidatedAppData>, order::app_data::FetchingError>,
+        >,
+        orders: &mut Vec<order::Order>,
+    ) {
+        orders.retain_mut(|order| {
+            app_data_by_order.remove(&order.uid).map_or(true, |result| {
+                match result {
+                    Err(err) => {
+                        tracing::warn!(order_uid=?order.uid, ?err, "failed to fetch app data for order, excluding from auction");
+                        false
+                    }
+                    Ok(Some(app_data)) => {
+                        order.app_data = app_data.into();
+                        true
+                    }
+                    Ok(None) => true
+                }
+            })
         });
     }
 
@@ -527,16 +536,14 @@ impl AuctionProcessor {
             },
         );
 
-        Self {
-            inner: Arc::new(Mutex::new(Inner {
-                auction: Id(0),
-                fut: futures::future::pending().boxed().shared(),
-                eth,
-                order_sorting_strategies,
-                signature_validator,
-            })),
+        Self(Arc::new(Mutex::new(Inner {
+            auction: Id(0),
+            fut: futures::future::pending().boxed().shared(),
+            eth,
+            order_sorting_strategies,
+            signature_validator,
             app_data_retriever,
-        }
+        })))
     }
 }
 
