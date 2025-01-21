@@ -533,8 +533,8 @@ pub enum Score {
 }
 
 #[serde_as]
-#[derive(Clone, Debug, Deserialize)]
-#[cfg_attr(test, derive(serde::Serialize))]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(Clone, serde::Serialize))]
 #[serde(rename_all = "camelCase")]
 pub struct FlashloanLender {
     pub address: eth::H160,
