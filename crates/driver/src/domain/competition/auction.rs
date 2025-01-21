@@ -19,6 +19,7 @@ use {
         collections::{HashMap, HashSet},
         sync::{Arc, Mutex},
     },
+    tap::TapFallible,
     thiserror::Error,
 };
 
@@ -227,14 +228,14 @@ impl AuctionProcessor {
     async fn collect_orders_app_data(
         app_data_retriever: Option<order::app_data::AppDataRetriever>,
         orders: &[order::Order],
-    ) -> HashMap<
-        order::Uid,
-        Result<Option<app_data::ValidatedAppData>, order::app_data::FetchingError>,
-    > {
+    ) -> HashMap<order::Uid, Option<app_data::ValidatedAppData>> {
         if let Some(app_data_retriever) = app_data_retriever {
             join_all(orders.iter().map(|order| async {
-                let result = app_data_retriever.get(order.app_data.hash()).await;
-                (order.uid, result)
+                let fetched_app_data = app_data_retriever.get(order.app_data.hash()).await.tap_err(|err| {
+                    tracing::warn!(order_uid=?order.uid, ?err, "failed to fetch app data for order");
+                }).ok().flatten();
+
+                (order.uid, fetched_app_data)
             }))
             .await
             .into_iter()
@@ -244,15 +245,11 @@ impl AuctionProcessor {
         }
     }
 
-    /// Removes orders that:
-    /// - Cannot be filled due to missing funds of the owner.
-    /// - Failed to fetch app data.
+    /// Removes orders that cannot be filled due to missing funds of the owner
+    /// and updates the fetched app data.
     fn filter_orders(
         balances: &mut Balances,
-        app_data_by_order: &mut HashMap<
-            order::Uid,
-            Result<Option<app_data::ValidatedAppData>, order::app_data::FetchingError>,
-        >,
+        app_data_by_order: &mut HashMap<order::Uid, Option<app_data::ValidatedAppData>>,
         orders: &mut Vec<order::Order>,
     ) {
         // The auction that we receive from the `autopilot` assumes that there
@@ -320,19 +317,12 @@ impl AuctionProcessor {
 
             remaining_balance.0 -= allocated_balance.0;
 
-            app_data_by_order.remove(&order.uid).map_or(true, |result| {
-                match result {
-                    Err(err) => {
-                        tracing::warn!(order_uid=?order.uid, ?err, "failed to fetch app data for order, excluding from auction");
-                        false
-                    }
-                    Ok(Some(app_data)) => {
-                        order.app_data = app_data.into();
-                        true
-                    }
-                    Ok(None) => true
-                }
-            })
+            // Update order app data if it was fetched.
+            if let Some(fetched_app_data) = app_data_by_order.remove(&order.uid).flatten() {
+                order.app_data = fetched_app_data.into();
+            }
+
+            true
         });
     }
 
