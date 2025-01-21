@@ -159,7 +159,7 @@ impl Auction {
                                 .collect(),
                         ),
                         app_data: AppDataHash(order.app_data.hash().0.into()),
-                        flashloan: order.app_data.flashloan().map(Into::into),
+                        flashloan_hint: order.app_data.flashloan().map(Into::into),
                         signature: order.signature.data.clone().into(),
                         signing_scheme: match order.signature.scheme {
                             Scheme::Eip712 => SigningScheme::Eip712,
@@ -365,7 +365,7 @@ struct Order {
     class: Class,
     app_data: AppDataHash,
     #[serde(skip_serializing_if = "Option::is_none")]
-    flashloan: Option<FlashloanTip>,
+    flashloan_hint: Option<FlashloanHint>,
     signing_scheme: SigningScheme,
     #[serde(with = "bytes_hex")]
     signature: Vec<u8>,
@@ -605,14 +605,14 @@ struct ForeignLimitOrder {
 #[serde_as]
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct FlashloanTip {
+struct FlashloanHint {
     pub lender: Option<eth::H160>,
     pub borrower: Option<eth::H160>,
     pub token: eth::H160,
     pub amount: eth::U256,
 }
 
-impl From<app_data::Flashloan> for FlashloanTip {
+impl From<app_data::Flashloan> for FlashloanHint {
     fn from(value: app_data::Flashloan) -> Self {
         Self {
             lender: value.lender,

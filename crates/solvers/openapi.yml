@@ -233,9 +233,9 @@ components:
         order. This can also be used to ensure uniqueness between two orders
         with otherwise the exact same parameters.
       example: "0x0000000000000000000000000000000000000000000000000000000000000000"
-    Flashloan:
+    FlashloanHint:
       description: |
-        Contains information to hint at hint at how to make use of flashloans to settle the associated order.
+        Contains information to hint at how how to make use of flashloans to settle the associated order.
       type: object
       required:
         - token
@@ -258,16 +258,19 @@ components:
           description: How much of the token to flashloan.
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
-    FlashloanLender:
+    Flashloan:
       description: |
-        Contains information about the lender that is able to provide a flashloan.
+        Contains information about a flashloan for the solver's solution.
       type: object
       required:
-        - address
+        - lender
+        - borrower
         - token
         - amount
       properties:
-        address:
+        lender:
+          $ref: "#/components/schemas/Address"
+        borrower:
           $ref: "#/components/schemas/Address"
         token:
           $ref: "#/components/schemas/Token"
