@@ -233,6 +233,46 @@ components:
         order. This can also be used to ensure uniqueness between two orders
         with otherwise the exact same parameters.
       example: "0x0000000000000000000000000000000000000000000000000000000000000000"
+    Flashloan:
+      description: |
+        Contains information to hint at hint at how to make use of flashloans to settle the associated order.
+      type: object
+      required:
+        - token
+        - amount
+      properties:
+        lender:
+          description: Which contract to request the flashloan from.
+          allOf:
+            - $ref: "#/components/schemas/Address"
+        borrower:
+          description: |
+            Who should receive the borrowed tokens. If this is not set the order owner will get the tokens.
+          allOf:
+            - $ref: "#/components/schemas/Address"
+        token:
+          description: Which token to flashloan.
+          allOf:
+            - $ref: "#/components/schemas/Token"
+        amount:
+          description: How much of the token to flashloan.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
+    FlashloanLender:
+      description: |
+        Contains information about the lender that is able to provide a flashloan.
+      type: object
+      required:
+        - address
+        - token
+        - amount
+      properties:
+        address:
+          $ref: "#/components/schemas/Address"
+        token:
+          $ref: "#/components/schemas/Token"
+        amount:
+          $ref: "#/components/schemas/TokenAmount"
     SellTokenBalance:
       description: |
         Where should the sell token be drawn from?
@@ -273,9 +313,19 @@ components:
         - buyToken
         - sellAmount
         - buyAmount
+        - fullBuyAmount
+        - validTo
         - kind
+        - owner
         - partiallyFillable
+        - preInteractions
+        - postInteractions
+        - sellTokenSource
+        - buyTokenDestination
         - class
+        - appData
+        - signingScheme
+        - signature
       properties:
         uid:
           $ref: "#/components/schemas/OrderUid"
@@ -331,6 +381,8 @@ components:
           $ref: "#/components/schemas/OrderClass"
         appData:
           $ref: "#/components/schemas/AppData"
+        flashloan:
+          $ref: "#/components/schemas/Flashloan"
         signingScheme:
           $ref: "#/components/schemas/SigningScheme"
         signature:
@@ -727,6 +779,7 @@ components:
       required:
         - kind
         - order
+        - executedAmount
       properties:
         kind:
           type: string
@@ -749,6 +802,11 @@ components:
             "sellToken" for sell orders, and "buyToken" for buy orders.
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
+        flashloanLender:
+          description: |
+            The lender data that is able to provide a flashloan.
+          allOf:
+            - $ref: "#/components/schemas/FlashloanLender"
     JitTrade:
       description: |
         A trade with a JIT order.
