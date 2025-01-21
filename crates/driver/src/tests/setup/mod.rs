@@ -39,7 +39,6 @@ use {
             },
         },
     },
-    app_data::{hash_full_app_data, ProtocolAppData},
     bigdecimal::{BigDecimal, FromPrimitive},
     ethcontract::dyns::DynTransport,
     futures::future::join_all,
@@ -1782,17 +1781,5 @@ impl SettleErr {
         assert!(result.get("kind").is_some());
         assert!(result.get("description").is_some());
         result.get("kind").unwrap().as_str().unwrap().to_string()
-    }
-}
-
-pub fn protocol_app_data_into_validated(protocol: ProtocolAppData) -> app_data::ValidatedAppData {
-    let root = app_data::Root::new(Some(protocol.clone()));
-    let document = serde_json::to_string(&root).unwrap();
-    let hash = app_data::AppDataHash(hash_full_app_data(document.as_bytes()));
-
-    app_data::ValidatedAppData {
-        hash,
-        document,
-        protocol,
     }
 }

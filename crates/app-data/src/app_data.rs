@@ -16,7 +16,8 @@ pub struct ValidatedAppData {
     pub protocol: ProtocolAppData,
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
+#[cfg_attr(any(test, feature = "test_helpers"), derive(Serialize))]
 #[serde(rename_all = "camelCase")]
 pub struct ProtocolAppData {
     #[serde(default)]
@@ -44,12 +45,14 @@ pub struct Flashloan {
     pub amount: U256,
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
+#[cfg_attr(any(test, feature = "test_helpers"), derive(Serialize))]
 pub struct ReplacedOrder {
     pub uid: OrderUid,
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
+#[cfg_attr(any(test, feature = "test_helpers"), derive(Serialize))]
 pub struct PartnerFee {
     pub bps: u64,
     pub recipient: H160,
@@ -139,7 +142,8 @@ impl Validator {
 ///
 /// For more detailed information on the schema, see:
 /// <https://github.com/cowprotocol/app-data>.
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Deserialize)]
+#[cfg_attr(any(test, feature = "test_helpers"), derive(Serialize))]
 pub struct Root {
     metadata: Option<ProtocolAppData>,
     /// DEPRECATED. The `backend` field was originally specified to contain all
@@ -231,7 +235,8 @@ impl<'de> Deserialize<'de> for OrderUid {
 }
 
 /// The legacy `backend` app data object.
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
+#[cfg_attr(any(test, feature = "test_helpers"), derive(Serialize))]
 struct BackendAppData {
     #[serde(default)]
     pub hooks: Hooks,

@@ -4,10 +4,10 @@ use {
         infra::solver::dto::FlashloanLender,
         tests::{
             setup,
-            setup::{ab_order, ab_pool, ab_solution, protocol_app_data_into_validated},
+            setup::{ab_order, ab_pool, ab_solution},
         },
     },
-    app_data::{Flashloan, ProtocolAppData},
+    app_data::{hash_full_app_data, Flashloan, ProtocolAppData},
     primitive_types::H160,
 };
 
@@ -189,4 +189,16 @@ async fn unexpected_flashloan_lender_data_solution() {
         .await;
 
     test.solve().await.err().kind("SolverFailed");
+}
+
+fn protocol_app_data_into_validated(protocol: ProtocolAppData) -> app_data::ValidatedAppData {
+    let root = app_data::Root::new(Some(protocol.clone()));
+    let document = serde_json::to_string(&root).unwrap();
+    let hash = app_data::AppDataHash(hash_full_app_data(document.as_bytes()));
+
+    app_data::ValidatedAppData {
+        hash,
+        document,
+        protocol,
+    }
 }
