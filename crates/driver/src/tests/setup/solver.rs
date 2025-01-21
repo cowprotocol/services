@@ -10,7 +10,13 @@ use {
             eth,
             time::{self},
         },
-        infra::{self, blockchain::contracts::Addresses, config::file::FeeHandler, Ethereum},
+        infra::{
+            self,
+            blockchain::contracts::Addresses,
+            config::file::FeeHandler,
+            solver::dto::FlashloanHint,
+            Ethereum,
+        },
         tests::{hex_address, setup::blockchain::Trade},
     },
     ethereum_types::H160,
@@ -147,7 +153,7 @@ impl Solver {
                 "signingScheme": if config.quote { "eip1271" } else { "eip712" },
             });
             if let Some(flashloan) = quote.order.app_data.flashloan() {
-                order["flashloan"] = json!(flashloan);
+                order["flashloanHint"] = json!(Into::<FlashloanHint>::into(flashloan));
             }
             if config.fee_handler == FeeHandler::Solver {
                 order.as_object_mut().unwrap().insert(

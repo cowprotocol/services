@@ -5,7 +5,7 @@ mod notification;
 mod solution;
 
 pub use {
-    auction::Auction,
+    auction::{Auction, FlashloanHint},
     notification::Notification,
     solution::{Flashloan, Solutions},
 };

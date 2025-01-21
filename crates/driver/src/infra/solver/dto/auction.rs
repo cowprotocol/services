@@ -605,7 +605,7 @@ struct ForeignLimitOrder {
 #[serde_as]
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct FlashloanHint {
+pub struct FlashloanHint {
     pub lender: Option<eth::H160>,
     pub borrower: Option<eth::H160>,
     pub token: eth::H160,
