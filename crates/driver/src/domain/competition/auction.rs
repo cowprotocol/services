@@ -242,7 +242,7 @@ impl AuctionProcessor {
 
     /// Removes orders that:
     /// - Cannot be filled due to missing funds of the owner.
-    /// - Require flashloan but failed to fetch app data.
+    /// - Failed to fetch app data.
     fn filter_orders(
         balances: &mut Balances,
         app_data_by_order: &mut HashMap<
