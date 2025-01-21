@@ -60,6 +60,7 @@ impl Driver {
             .post(url)
             .json(request)
             .timeout(timeout)
+            .header("X-REQUEST-ID", request.auction_id.to_string())
             .send()
             .await
             .context("send")?;
