@@ -20,7 +20,7 @@ use {
         errors::EthcontractErrorType,
         BalancerV2BasePoolFactory,
     },
-    ethcontract::{dyns::DynAllEventsBuilder, errors::MethodError, BlockId, Instance, H256},
+    ethcontract::{dyns::DynAllEventsBuilder, errors::MethodError, BlockId, Instance, H160, H256},
     ethrpc::{
         block_stream::{BlockNumberHash, BlockRetrieving},
         Web3Transport,
@@ -45,6 +45,10 @@ impl EventRetrieving for BasePoolFactoryContract {
         let mut events = self.0.all_events();
         events.filter = events.filter.topic0(POOL_CREATED_TOPIC.into());
         events
+    }
+
+    fn get_address(&self) -> H160 {
+        self.0.address()
     }
 }
 

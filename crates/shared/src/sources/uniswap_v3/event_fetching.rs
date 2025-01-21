@@ -88,6 +88,11 @@ impl EventRetrieving for UniswapV3PoolEventFetcher {
             .topic0(events_signatures.into());
         events
     }
+
+    fn get_address(&self) -> H160 {
+        // irrelevant for UniswapV3
+        H160::default()
+    }
 }
 
 #[derive(Debug, Default)]

@@ -32,4 +32,8 @@ impl EventRetrieving for EthFlowRefundRetriever {
         events.filter = events.filter.topic0(vec![ORDER_REFUND_TOPIC].into());
         events
     }
+
+    fn get_address(&self) -> H160 {
+        self.address
+    }
 }

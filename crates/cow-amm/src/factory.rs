@@ -22,4 +22,8 @@ impl EventRetrieving for Factory {
         events.filter = events.filter.topic0(Some(AMM_DEPLOYED_TOPIC).into());
         events
     }
+
+    fn get_address(&self) -> Address {
+        self.address
+    }
 }

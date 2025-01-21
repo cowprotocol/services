@@ -7,6 +7,7 @@ use {
         errors::ExecutionError,
         Event as EthcontractEvent,
         EventMetadata,
+        H160,
     },
     ethrpc::block_stream::{BlockNumberHash, BlockRetrieving, RangeInclusive},
     futures::{future, Stream, StreamExt, TryStreamExt},
@@ -89,6 +90,8 @@ pub trait EventStoring<T>: Send + Sync {
 pub trait EventRetrieving {
     type Event: ParseLog;
     fn get_events(&self) -> AllEventsBuilder<DynTransport, Self::Event>;
+    // todo result to optional since not all retrievers observe a single contract
+    fn get_address(&self) -> H160;
 }
 
 #[derive(Debug)]
@@ -595,6 +598,10 @@ macro_rules! impl_event_retrieving {
                 Self::Event,
             > {
                 self.0.all_events()
+            }
+
+            fn get_address(&self) -> ::ethcontract::H160 {
+                self.0.address()
             }
         }
     };

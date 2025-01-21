@@ -46,4 +46,8 @@ impl EventRetrieving for CoWSwapOnchainOrdersContract {
             .topic0(ALL_VALID_ONCHAIN_ORDER_TOPICS.to_vec().into());
         events
     }
+
+    fn get_address(&self) -> H160 {
+        self.address
+    }
 }
