@@ -7,7 +7,13 @@ use {
             liquidity,
             time,
         },
-        infra::{self, blockchain, config::file::OrderPriorityStrategy, observe, Ethereum},
+        infra::{
+            self,
+            blockchain,
+            config::file::OrderPriorityStrategy,
+            observe::{self, metrics},
+            Ethereum,
+        },
         util::{self, Bytes},
     },
     chrono::{Duration, Utc},
@@ -227,6 +233,11 @@ impl AuctionProcessor {
         orders: &[order::Order],
     ) -> HashMap<order::Uid, Option<app_data::ValidatedAppData>> {
         if let Some(app_data_retriever) = app_data_retriever {
+            let _timer = metrics::get()
+                .auction_preprocessing
+                .with_label_values(&["fetch_app_data"])
+                .start_timer();
+
             join_all(orders.iter().map(|order| async {
                 let fetched_app_data = app_data_retriever
                     .get(order.app_data.hash())
@@ -354,6 +365,11 @@ impl AuctionProcessor {
                 }
             })
             .collect::<Vec<_>>();
+
+        let _timer = metrics::get()
+            .auction_preprocessing
+            .with_label_values(&["fetch_balances"])
+            .start_timer();
 
         join_all(
             traders
