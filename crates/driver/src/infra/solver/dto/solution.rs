@@ -1,11 +1,6 @@
 use {
     crate::{
-        domain::{
-            competition,
-            competition::{order, Order},
-            eth,
-            liquidity,
-        },
+        domain::{competition, competition::order, eth, liquidity},
         infra::{solver::Config, Solver},
         util::{serialize, Bytes},
     },
@@ -47,8 +42,8 @@ impl Solutions {
                                     // TODO this error should reference the UID
                                     .ok_or(super::Error(
                                         "invalid order UID specified in fulfillment".to_owned()
-                                    ))
-                                    .and_then(|order| Self::order_with_flashloan_lender(order.clone(), fulfillment.flashloan_lender))?;
+                                    ))?
+                                    .clone();
 
                                 competition::solution::trade::Fulfillment::new(
                                     order,
@@ -210,6 +205,7 @@ impl Solutions {
                     solution.gas.map(|gas| eth::Gas(gas.into())),
                     solver_config.fee_handler,
                     auction.surplus_capturing_jit_order_owners(),
+                    solution.flashloans,
                 )
                 .map_err(|err| match err {
                     competition::solution::error::Solution::InvalidClearingPrices => {
@@ -224,52 +220,6 @@ impl Solutions {
                 })
             })
             .collect()
-    }
-
-    fn order_with_flashloan_lender(
-        order: Order,
-        flashloan_lender: Option<FlashloanLender>,
-    ) -> Result<Order, super::Error> {
-        match (order.app_data.flashloan(), flashloan_lender) {
-            (Some(ref mut flashloan), Some(flashloan_lender)) => {
-                if flashloan_lender.token != flashloan.token {
-                    return Err(super::Error(format!(
-                        "flashloan lender token mismatch for order {:?}",
-                        order.uid.0
-                    )));
-                }
-                if flashloan_lender.amount < flashloan.amount {
-                    return Err(super::Error(format!(
-                        "flashloan lender amount is too low for order {:?}",
-                        order.uid.0
-                    )));
-                }
-
-                match flashloan.lender {
-                    Some(lender) if lender != flashloan_lender.address => {
-                        return Err(super::Error(format!(
-                            "flashloan lender address mismatch for order {:?}",
-                            order.uid.0
-                        )));
-                    }
-                    None => {
-                        flashloan.lender = Some(flashloan_lender.address);
-                    }
-                    _ => {}
-                }
-
-                Ok(order)
-            }
-            (Some(_), None) => Err(super::Error(format!(
-                "missing flashloan lender data for order {:?}",
-                order.uid.0
-            ))),
-            (None, Some(_)) => Err(super::Error(format!(
-                "unexpected flashloan lender data for order {:?}",
-                order.uid.0
-            ))),
-            (None, None) => Ok(order),
-        }
     }
 }
 
@@ -294,6 +244,7 @@ pub struct Solution {
     #[serde(default)]
     post_interactions: Vec<InteractionData>,
     gas: Option<u64>,
+    flashloans: Vec<Flashloan>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -313,7 +264,6 @@ struct Fulfillment {
     executed_amount: eth::U256,
     #[serde_as(as = "Option<serialize::U256>")]
     fee: Option<eth::U256>,
-    flashloan_lender: Option<FlashloanLender>,
 }
 
 #[serde_as]
@@ -533,11 +483,12 @@ pub enum Score {
 }
 
 #[serde_as]
-#[derive(Debug, Deserialize)]
-#[cfg_attr(test, derive(Clone, serde::Serialize))]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(test, derive(serde::Serialize))]
 #[serde(rename_all = "camelCase")]
-pub struct FlashloanLender {
-    pub address: eth::H160,
+pub struct Flashloan {
+    pub lender: eth::H160,
+    pub borrower: eth::H160,
     pub token: eth::H160,
     #[serde_as(as = "serialize::U256")]
     pub amount: eth::U256,

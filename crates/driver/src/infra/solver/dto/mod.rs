@@ -7,7 +7,7 @@ mod solution;
 pub use {
     auction::Auction,
     notification::Notification,
-    solution::{FlashloanLender, Solutions},
+    solution::{Flashloan, Solutions},
 };
 
 #[derive(Debug, thiserror::Error)]

@@ -36,6 +36,8 @@ pub mod trade;
 
 pub use {error::Error, interaction::Interaction, settlement::Settlement, trade::Trade};
 
+use crate::infra::solver::dto::Flashloan;
+
 type Prices = HashMap<eth::TokenAddress, eth::U256>;
 
 // TODO Add a constructor and ensure that the clearing prices are included for
@@ -54,6 +56,7 @@ pub struct Solution {
     solver: Solver,
     weth: eth::WethAddress,
     gas: Option<eth::Gas>,
+    flashloans: Vec<Flashloan>,
 }
 
 impl Solution {
@@ -70,6 +73,7 @@ impl Solution {
         gas: Option<eth::Gas>,
         fee_handler: FeeHandler,
         surplus_capturing_jit_order_owners: &HashSet<eth::Address>,
+        flashloans: Vec<Flashloan>,
     ) -> Result<Self, error::Solution> {
         // Surplus capturing JIT orders behave like Fulfillment orders. They capture
         // surplus, pay network fees and contribute to score of a solution.
@@ -125,6 +129,7 @@ impl Solution {
             solver,
             weth,
             gas,
+            flashloans,
         };
 
         // Check that the solution includes clearing prices for all user trades.
@@ -356,6 +361,7 @@ impl Solution {
                 (None, Some(gas)) => Some(gas),
                 (None, None) => None,
             },
+            flashloans: self.flashloans.clone(),
         })
     }
 

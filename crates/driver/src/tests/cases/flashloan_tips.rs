@@ -1,7 +1,7 @@
 use {
     crate::{
         domain::competition::order::app_data::AppData,
-        infra::solver::dto::FlashloanLender,
+        infra::solver,
         tests::{
             setup,
             setup::{ab_order, ab_pool, ab_solution},
@@ -13,14 +13,46 @@ use {
 
 #[tokio::test]
 #[ignore]
-async fn valid_data() {
+async fn solutions_with_flashloan() {
+    let flashloan = Flashloan {
+        lender: Some(H160::from_low_u64_be(1)),
+        borrower: Some(H160::from_low_u64_be(2)),
+        token: H160::from_low_u64_be(3),
+        amount: 3.into(),
+    };
     let protocol_app_data = ProtocolAppData {
-        flashloan: Some(Flashloan {
-            lender: Some(H160::from_low_u64_be(1)),
-            borrower: Some(H160::from_low_u64_be(2)),
-            token: H160::from_low_u64_be(3),
-            amount: 3.into(),
-        }),
+        flashloan: Some(flashloan.clone()),
+        ..Default::default()
+    };
+    let app_data = AppData::Full(Box::new(protocol_app_data_into_validated(
+        protocol_app_data,
+    )));
+    let order = ab_order().app_data(app_data);
+
+    let test = setup()
+        .pool(ab_pool())
+        .order(order.clone())
+        .solution(ab_solution().flashloan(flashloan_into_dto(flashloan)))
+        .done()
+        .await;
+
+    // blocked by https://github.com/cowprotocol/services/issues/3218
+    // todo: instead, check the solution using
+    // `test.solve().await.ok().orders(&[order]);`
+    test.solve().await.ok();
+}
+
+#[tokio::test]
+#[ignore]
+async fn solutions_without_flashloan() {
+    let flashloan = Flashloan {
+        lender: Some(H160::from_low_u64_be(1)),
+        borrower: Some(H160::from_low_u64_be(2)),
+        token: H160::from_low_u64_be(3),
+        amount: 3.into(),
+    };
+    let protocol_app_data = ProtocolAppData {
+        flashloan: Some(flashloan.clone()),
         ..Default::default()
     };
     let app_data = AppData::Full(Box::new(protocol_app_data_into_validated(
@@ -41,156 +73,6 @@ async fn valid_data() {
     test.solve().await.ok();
 }
 
-#[tokio::test]
-#[ignore]
-async fn missing_flashloan_solution() {
-    let protocol_app_data = ProtocolAppData {
-        flashloan: Some(Flashloan {
-            borrower: Some(H160::from_low_u64_be(1)),
-            token: H160::from_low_u64_be(3),
-            amount: 3.into(),
-            ..Default::default()
-        }),
-        ..Default::default()
-    };
-    let app_data = AppData::Full(Box::new(protocol_app_data_into_validated(
-        protocol_app_data,
-    )));
-    let order = ab_order().app_data(app_data);
-
-    let test = setup()
-        .pool(ab_pool())
-        .order(order.clone())
-        .solution(ab_solution().flashloan_lender(order.name, None))
-        .done()
-        .await;
-
-    test.solve().await.err().kind("SolverFailed");
-}
-
-#[tokio::test]
-#[ignore]
-async fn wrong_flashloan_lender_address_solution() {
-    let protocol_app_data = ProtocolAppData {
-        flashloan: Some(Flashloan {
-            borrower: Some(H160::from_low_u64_be(1)),
-            token: H160::from_low_u64_be(3),
-            amount: 3.into(),
-            lender: Some(H160::from_low_u64_be(2)),
-        }),
-        ..Default::default()
-    };
-    let app_data = AppData::Full(Box::new(protocol_app_data_into_validated(
-        protocol_app_data,
-    )));
-    let order = ab_order().app_data(app_data);
-
-    let test = setup()
-        .pool(ab_pool())
-        .order(order.clone())
-        .solution(ab_solution().flashloan_lender(
-            order.name,
-            Some(FlashloanLender {
-                address: H160::from_low_u64_be(100),
-                token: H160::from_low_u64_be(3),
-                amount: 3.into(),
-            }),
-        ))
-        .done()
-        .await;
-
-    test.solve().await.err().kind("SolverFailed");
-}
-
-#[tokio::test]
-#[ignore]
-async fn wrong_flashloan_lender_token_solution() {
-    let protocol_app_data = ProtocolAppData {
-        flashloan: Some(Flashloan {
-            borrower: Some(H160::from_low_u64_be(1)),
-            token: H160::from_low_u64_be(3),
-            amount: 3.into(),
-            ..Default::default()
-        }),
-        ..Default::default()
-    };
-    let app_data = AppData::Full(Box::new(protocol_app_data_into_validated(
-        protocol_app_data,
-    )));
-    let order = ab_order().app_data(app_data);
-
-    let test = setup()
-        .pool(ab_pool())
-        .order(order.clone())
-        .solution(ab_solution().flashloan_lender(
-            order.name,
-            Some(FlashloanLender {
-                address: H160::from_low_u64_be(1),
-                token: H160::from_low_u64_be(2),
-                amount: 3.into(),
-            }),
-        ))
-        .done()
-        .await;
-
-    test.solve().await.err().kind("SolverFailed");
-}
-
-#[tokio::test]
-#[ignore]
-async fn insufficient_flashloan_lender_amount_solution() {
-    let protocol_app_data = ProtocolAppData {
-        flashloan: Some(Flashloan {
-            borrower: Some(H160::from_low_u64_be(1)),
-            token: H160::from_low_u64_be(3),
-            amount: 3.into(),
-            ..Default::default()
-        }),
-        ..Default::default()
-    };
-    let app_data = AppData::Full(Box::new(protocol_app_data_into_validated(
-        protocol_app_data,
-    )));
-    let order = ab_order().app_data(app_data);
-
-    let test = setup()
-        .pool(ab_pool())
-        .order(order.clone())
-        .solution(ab_solution().flashloan_lender(
-            order.name,
-            Some(FlashloanLender {
-                address: H160::from_low_u64_be(1),
-                token: H160::from_low_u64_be(3),
-                amount: 1.into(),
-            }),
-        ))
-        .done()
-        .await;
-
-    test.solve().await.err().kind("SolverFailed");
-}
-
-#[tokio::test]
-#[ignore]
-async fn unexpected_flashloan_lender_data_solution() {
-    let order = ab_order();
-    let test = setup()
-        .pool(ab_pool())
-        .order(order.clone())
-        .solution(ab_solution().flashloan_lender(
-            order.name,
-            Some(FlashloanLender {
-                address: H160::from_low_u64_be(1),
-                token: H160::from_low_u64_be(3),
-                amount: 3.into(),
-            }),
-        ))
-        .done()
-        .await;
-
-    test.solve().await.err().kind("SolverFailed");
-}
-
 fn protocol_app_data_into_validated(protocol: ProtocolAppData) -> app_data::ValidatedAppData {
     let root = app_data::Root::new(Some(protocol.clone()));
     let document = serde_json::to_string(&root).unwrap();
@@ -200,5 +82,14 @@ fn protocol_app_data_into_validated(protocol: ProtocolAppData) -> app_data::Vali
         hash,
         document,
         protocol,
+    }
+}
+
+fn flashloan_into_dto(flashloan: Flashloan) -> solver::dto::Flashloan {
+    solver::dto::Flashloan {
+        lender: flashloan.lender.unwrap_or_default(),
+        borrower: flashloan.borrower.unwrap_or_default(),
+        token: flashloan.token,
+        amount: flashloan.amount,
     }
 }

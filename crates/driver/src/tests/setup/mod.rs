@@ -16,7 +16,7 @@ use {
                 FeeHandler,
                 OrderPriorityStrategy,
             },
-            solver::dto::FlashloanLender,
+            solver::dto::Flashloan,
         },
         tests::{
             cases::{
@@ -575,9 +575,7 @@ pub enum Calldata {
 pub struct Solution {
     pub calldata: Calldata,
     pub orders: Vec<&'static str>,
-    /// Custom flashloan lenders to be used by the solver. Otherwise, the ones
-    /// from the test orders are used.
-    pub flashloan_lenders: HashMap<&'static str, Option<FlashloanLender>>,
+    pub flashloans: Vec<Flashloan>,
 }
 
 impl Solution {
@@ -620,12 +618,8 @@ impl Solution {
         }
     }
 
-    pub fn flashloan_lender(
-        mut self,
-        order: &'static str,
-        lender: Option<FlashloanLender>,
-    ) -> Self {
-        self.flashloan_lenders.insert(order, lender);
+    pub fn flashloan(mut self, flashloan: Flashloan) -> Self {
+        self.flashloans.push(flashloan);
         self
     }
 }
@@ -637,7 +631,7 @@ impl Default for Solution {
                 additional_bytes: 0,
             },
             orders: Default::default(),
-            flashloan_lenders: Default::default(),
+            flashloans: Default::default(),
         }
     }
 }
@@ -683,7 +677,7 @@ pub fn ab_solution() -> Solution {
             additional_bytes: 0,
         },
         orders: vec!["A-B order"],
-        flashloan_lenders: Default::default(),
+        flashloans: Default::default(),
     }
 }
 
@@ -715,7 +709,7 @@ pub fn ad_solution() -> Solution {
             additional_bytes: 0,
         },
         orders: vec!["A-D order"],
-        flashloan_lenders: Default::default(),
+        flashloans: Default::default(),
     }
 }
 
@@ -747,7 +741,7 @@ pub fn cd_solution() -> Solution {
             additional_bytes: 0,
         },
         orders: vec!["C-D order"],
-        flashloan_lenders: Default::default(),
+        flashloans: Default::default(),
     }
 }
 
@@ -778,7 +772,7 @@ pub fn eth_solution() -> Solution {
             additional_bytes: 0,
         },
         orders: vec!["ETH order"],
-        flashloan_lenders: Default::default(),
+        flashloans: Default::default(),
     }
 }
 
@@ -961,6 +955,7 @@ impl Setup {
                 .collect::<Vec<_>>();
             solutions.push(blockchain::Solution {
                 trades: [fulfillment_trades, jit_trades].concat(),
+                flashloans: solution.flashloans.clone(),
             });
         }
         let orderbook = Orderbook::start(&orders);
@@ -968,16 +963,6 @@ impl Setup {
             .into_iter()
             .map(|order| blockchain.quote(&order))
             .collect::<Vec<_>>();
-        let flashloan_lender_override: HashMap<_, _> = self
-            .solutions
-            .iter()
-            .flat_map(|solution| {
-                solution
-                    .flashloan_lenders
-                    .iter()
-                    .map(|(order, lender)| (*order, lender.clone()))
-            })
-            .collect();
         let solvers_with_address = join_all(self.solvers.iter().map(|solver| async {
             let instance = SolverInstance::new(solver::Config {
                 blockchain: &blockchain,
@@ -991,7 +976,6 @@ impl Setup {
                 expected_surplus_capturing_jit_order_owners: surplus_capturing_jit_order_owners
                     .clone(),
                 allow_multiple_solve_requests: self.allow_multiple_solve_requests,
-                flashloan_lender_override: flashloan_lender_override.clone(),
             })
             .await;
 

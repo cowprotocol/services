@@ -15,7 +15,7 @@ use {
             serialize,
         },
     },
-    app_data::{AppDataHash, Flashloan},
+    app_data::AppDataHash,
     indexmap::IndexMap,
     model::{
         interaction::InteractionData,
@@ -159,7 +159,7 @@ impl Auction {
                                 .collect(),
                         ),
                         app_data: AppDataHash(order.app_data.hash().0.into()),
-                        flashloan: order.app_data.flashloan(),
+                        flashloan: order.app_data.flashloan().map(Into::into),
                         signature: order.signature.data.clone().into(),
                         signing_scheme: match order.signature.scheme {
                             Scheme::Eip712 => SigningScheme::Eip712,
@@ -365,7 +365,7 @@ struct Order {
     class: Class,
     app_data: AppDataHash,
     #[serde(skip_serializing_if = "Option::is_none")]
-    flashloan: Option<Flashloan>,
+    flashloan: Option<FlashloanTip>,
     signing_scheme: SigningScheme,
     #[serde(with = "bytes_hex")]
     signature: Vec<u8>,
@@ -600,6 +600,27 @@ struct ForeignLimitOrder {
     taker_amount: eth::U256,
     #[serde_as(as = "serialize::U256")]
     taker_token_fee_amount: eth::U256,
+}
+
+#[serde_as]
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FlashloanTip {
+    pub lender: Option<eth::H160>,
+    pub borrower: Option<eth::H160>,
+    pub token: eth::H160,
+    pub amount: eth::U256,
+}
+
+impl From<app_data::Flashloan> for FlashloanTip {
+    fn from(value: app_data::Flashloan) -> Self {
+        Self {
+            lender: value.lender,
+            borrower: value.borrower,
+            token: value.token,
+            amount: value.amount,
+        }
+    }
 }
 
 fn fee_to_decimal(fee: liquidity::balancer::v2::Fee) -> bigdecimal::BigDecimal {

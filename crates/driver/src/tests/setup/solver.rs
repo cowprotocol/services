@@ -10,13 +10,7 @@ use {
             eth,
             time::{self},
         },
-        infra::{
-            self,
-            blockchain::contracts::Addresses,
-            config::file::FeeHandler,
-            solver::dto::FlashloanLender,
-            Ethereum,
-        },
+        infra::{self, blockchain::contracts::Addresses, config::file::FeeHandler, Ethereum},
         tests::{hex_address, setup::blockchain::Trade},
     },
     ethereum_types::H160,
@@ -49,7 +43,6 @@ pub struct Config<'a> {
     pub private_key: ethcontract::PrivateKey,
     pub expected_surplus_capturing_jit_order_owners: Vec<H160>,
     pub allow_multiple_solve_requests: bool,
-    pub flashloan_lender_override: HashMap<&'a str, Option<FlashloanLender>>,
 }
 
 impl Solver {
@@ -245,7 +238,7 @@ impl Solver {
                                 .order
                                 .solver_fee
                                 .map(|fee| fee.to_string());
-                            let mut trade_json = match fee {
+                            let trade_json = match fee {
                                 Some(fee) => json!({
                                     "kind": "fulfillment",
                                     "order": order,
@@ -258,22 +251,6 @@ impl Solver {
                                     "executedAmount": executed_amount,
                                 }),
                             };
-                            let flashloan_lender = config
-                                .flashloan_lender_override
-                                .get(fulfillment.quoted_order.order.name)
-                                .cloned()
-                                .unwrap_or_else(|| {
-                                    fulfillment.quoted_order.order.app_data.flashloan().map(
-                                        |flashloan| FlashloanLender {
-                                            address: flashloan.lender.unwrap_or_default(),
-                                            token: flashloan.token,
-                                            amount: flashloan.amount,
-                                        },
-                                    )
-                                });
-                            if let Some(flashloan_lender) = flashloan_lender {
-                                trade_json["flashloanLender"] = json!(flashloan_lender);
-                            }
 
                             trades_json.push(trade_json);
                         }
@@ -396,6 +373,7 @@ impl Solver {
                 "trades": trades_json,
                 "interactions": interactions_json,
                 "preInteractions": pre_interactions_json,
+                "flashloans": solution.flashloans.clone(),
             }));
         }
 
