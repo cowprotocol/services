@@ -38,7 +38,7 @@ impl Query {
         match (self.order_uid.as_ref(), self.owner.as_ref()) {
             (Some(_), None) | (None, Some(_)) => Ok(self.trade_filter()),
             _ => Err(TradeFilterError::InvalidFilter(
-                "Must specify exactly one of owner and orderUid.".to_owned(),
+                "Must specify exactly one of owner or orderUid.".to_owned(),
             )),
         }
     }
