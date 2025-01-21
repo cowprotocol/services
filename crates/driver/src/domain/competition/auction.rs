@@ -231,9 +231,14 @@ impl AuctionProcessor {
     ) -> HashMap<order::Uid, Option<app_data::ValidatedAppData>> {
         if let Some(app_data_retriever) = app_data_retriever {
             join_all(orders.iter().map(|order| async {
-                let fetched_app_data = app_data_retriever.get(order.app_data.hash()).await.tap_err(|err| {
-                    tracing::warn!(order_uid=?order.uid, ?err, "failed to fetch app data for order");
-                }).ok().flatten();
+                let fetched_app_data = app_data_retriever
+                    .get(order.app_data.hash())
+                    .await
+                    .tap_err(|err| {
+                        tracing::warn!(order_uid=?order.uid, ?err, "failed to fetch app data for order");
+                    })
+                    .ok()
+                    .flatten();
 
                 (order.uid, fetched_app_data)
             }))
