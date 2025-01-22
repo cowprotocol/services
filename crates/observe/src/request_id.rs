@@ -139,7 +139,7 @@ mod test {
 
     #[tokio::test]
     async fn request_id_from_current_span() {
-        crate::tracing::initialize_reentrant("debug");
+        crate::tracing::initialize_reentrant("error");
         async {
             assert_eq!(
                 Some("test".to_string()),
@@ -161,7 +161,7 @@ mod test {
 
     #[tokio::test]
     async fn request_id_from_ancestor_span() {
-        crate::tracing::initialize_reentrant("debug");
+        crate::tracing::initialize_reentrant("error");
         async {
             async {
                 async {
@@ -183,7 +183,7 @@ mod test {
 
     #[tokio::test]
     async fn request_id_from_first_ancestor_span() {
-        crate::tracing::initialize_reentrant("debug");
+        crate::tracing::initialize_reentrant("error");
         async {
             async {
                 async {
@@ -205,7 +205,7 @@ mod test {
 
     #[tokio::test]
     async fn request_id_within_spawned_task() {
-        crate::tracing::initialize_reentrant("debug");
+        crate::tracing::initialize_reentrant("error");
         async {
             tokio::spawn(
                 async {
