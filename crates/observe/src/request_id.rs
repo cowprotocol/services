@@ -16,42 +16,24 @@
 //! And when we issue requests to another process we can simply fetch the
 //! current identifier specific to our task and send that along with the
 //! request.
-use {std::future::Future, tokio::task::JoinHandle};
+use {
+    std::fmt,
+    tracing::{
+        field::{Field, Visit},
+        span::Attributes,
+        Id,
+        Span,
+        Subscriber,
+    },
+    tracing_subscriber::{layer::Context, registry::LookupSpan, Layer, Registry},
+};
 
-tokio::task_local! {
-    pub static REQUEST_ID: String;
-}
+/// Name of the span that stores the id used to associated logs
+/// across processes.
+pub const SPAN_NAME: &str = "request";
 
-/// Tries to read the `request_id` from this task's storage.
-/// Returns `None` if task local storage was not initialized or is empty.
-pub fn get_task_local_storage() -> Option<String> {
-    let mut id = None;
-    let _ = REQUEST_ID.try_with(|cell| {
-        id = Some(cell.clone());
-    });
-    id
-}
-
-/// Sets the tasks's local id to the passed in value for the given scope.
-pub async fn set_task_local_storage<F, R>(id: String, scope: F) -> R
-where
-    F: Future<Output = R>,
-{
-    REQUEST_ID.scope(id, scope).await
-}
-
-/// Spawns a new task and ensures it uses the same request id as the current
-/// task (if present). This allows for tracing requests across task boundaries.
-pub fn spawn_task_with_current_request_id<F>(future: F) -> JoinHandle<F::Output>
-where
-    F: Future + Send + 'static,
-    F::Output: Send + 'static,
-{
-    if let Some(id) = get_task_local_storage() {
-        tokio::task::spawn(set_task_local_storage(id, future))
-    } else {
-        tokio::task::spawn(future)
-    }
+pub fn info_span(request_id: String) -> Span {
+    tracing::info_span!(SPAN_NAME, id = request_id)
 }
 
 /// Takes a `tower::Service` and embeds it in a `make_service` function that
@@ -81,12 +63,9 @@ macro_rules! make_service_with_task_local_storage {
                                         .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
                                 )
                             };
-                            let span = tracing::info_span!("request", id);
-                            let handle_request = observe::request_id::set_task_local_storage(
-                                id,
-                                hyper::service::Service::call(&mut warp_svc, req),
-                            );
-                            tracing::Instrument::instrument(handle_request, span)
+                            let span = tracing::info_span!(observe::request_id::SPAN_NAME, id);
+                            let task = hyper::service::Service::call(&mut warp_svc, req);
+                            tracing::Instrument::instrument(task, span)
                         });
                     Ok::<_, std::convert::Infallible>(svc)
                 }
@@ -95,43 +74,72 @@ macro_rules! make_service_with_task_local_storage {
     }};
 }
 
+/// Looks up the request id from the current tracing span.
+pub fn from_current_span() -> Option<String> {
+    let mut result = None;
+
+    Span::current().with_subscriber(|(id, sub)| {
+        let registry = sub.downcast_ref::<Registry>().unwrap();
+        let mut current_span = registry.span(id);
+        while let Some(span) = current_span {
+            if let Some(request_id) = span.extensions().get::<RequestId>() {
+                result = Some(request_id.0.clone());
+                return;
+            }
+            current_span = span.parent();
+        }
+    });
+
+    result
+}
+
+/// Request id recovered from a tracing span.
+struct RequestId(String);
+
+/// Tracing layer that allows us to recover the request id
+/// from the current tracing span.
+pub struct ValuesLayer;
+
+impl<S: Subscriber + for<'lookup> LookupSpan<'lookup>> Layer<S> for ValuesLayer {
+    /// When creating a new span check if it contains the request_id and store
+    /// it in the trace's extension storage to make it available for lookup
+    /// later on.
+    fn on_new_span(&self, attrs: &Attributes<'_>, id: &Id, ctx: Context<'_, S>) {
+        let Some(span) = ctx.span(id) else {
+            return;
+        };
+        if span.name() != crate::request_id::SPAN_NAME {
+            return;
+        }
+
+        struct ValueVisitor(Option<RequestId>);
+        impl Visit for ValueVisitor {
+            // empty body because we want to use `record_str()` anyway
+            fn record_debug(&mut self, _field: &Field, _value: &dyn fmt::Debug) {}
+
+            fn record_str(&mut self, field: &Field, value: &str) {
+                if field.name() == "id" {
+                    self.0 = Some(RequestId(value.to_string()));
+                }
+            }
+        }
+
+        let mut visitor = ValueVisitor(None);
+        attrs.values().record(&mut visitor);
+
+        if let Some(request_id) = visitor.0 {
+            span.extensions_mut().insert(request_id);
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
 
     #[tokio::test]
-    async fn request_id_copied_to_new_task() {
-        // use channels to enforce that assertions happen in the desired order.
-        // First we assert that the parent task's storage is empty after we
-        // spawned the child task.
-        // Afterwards we assert that the child task still has the parent task's
-        // value at the time of spawning.
-        let (sender1, receiver1) = tokio::sync::oneshot::channel();
-        let (sender2, receiver2) = tokio::sync::oneshot::channel();
+    async fn request_id_from_current_span() {}
 
-        spawn_task_with_current_request_id(async {
-            assert_eq!(None, get_task_local_storage());
-        })
-        .await
-        .unwrap();
-
-        // create a task with some task local value
-        let _ = set_task_local_storage("1234".into(), async {
-            // spawn a new task that copies the parent's task local value
-            assert_eq!(Some("1234".into()), get_task_local_storage());
-            spawn_task_with_current_request_id(async {
-                receiver1.await.unwrap();
-                assert_eq!(Some("1234".into()), get_task_local_storage());
-                sender2.send(()).unwrap();
-            });
-        })
-        .await;
-
-        // task local value is not populated outside of the previous scope
-        assert_eq!(None, get_task_local_storage());
-        sender1.send(()).unwrap();
-
-        // block test until the important assertion happened
-        receiver2.await.unwrap();
-    }
+    #[tokio::test]
+    async fn request_id_from_parent_span() {}
 }

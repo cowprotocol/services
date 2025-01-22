@@ -107,11 +107,8 @@ where
                             (requests.remove(0), trace_ids.remove(0), senders.remove(0));
                         let result = match (&request, trace_id) {
                             (Call::MethodCall(_), Some(trace_id)) => {
-                                observe::request_id::set_task_local_storage(
-                                    trace_id,
-                                    inner.send(id, request),
-                                )
-                                .await
+                                let span = observe::request_id::info_span(trace_id);
+                                inner.send(id, request).instrument(span).await
                             }
                             _ => inner.send(id, request).await,
                         };
@@ -120,11 +117,8 @@ where
                     n => {
                         let results = match build_rpc_metadata(&requests, &trace_ids) {
                             Ok(metadata) => {
-                                observe::request_id::set_task_local_storage(
-                                    metadata,
-                                    inner.send_batch(requests),
-                                )
-                                .await
+                                let span = observe::request_id::info_span(metadata);
+                                inner.send_batch(requests).instrument(span).await
                             }
                             Err(err) => {
                                 tracing::error!(
@@ -148,7 +142,8 @@ where
     /// Queue a call by sending it over calls channel to the background worker.
     fn queue_call(&self, id: RequestId, request: Call) -> oneshot::Receiver<RpcResult> {
         let (sender, receiver) = oneshot::channel();
-        let trace_id = observe::request_id::get_task_local_storage();
+        let trace_id = observe::request_id::from_current_span();
+        // tracing::error!(trace_id, "enqueue call");
         let context = (id, request, trace_id, sender);
         self.calls
             .unbounded_send(context)

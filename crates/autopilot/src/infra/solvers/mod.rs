@@ -95,7 +95,7 @@ impl Driver {
         if let Some(timeout) = timeout {
             request = request.timeout(timeout);
         }
-        if let Some(request_id) = observe::request_id::get_task_local_storage() {
+        if let Some(request_id) = observe::request_id::from_current_span() {
             request = request.header("X-REQUEST-ID", request_id);
         }
 

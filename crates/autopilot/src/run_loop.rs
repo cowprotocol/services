@@ -107,12 +107,10 @@ impl RunLoop {
                 .await;
             if let Some(auction) = auction {
                 let auction_id = auction.id;
-                let auction_task = self_arc
+                self_arc
                     .single_run(auction)
-                    .instrument(tracing::info_span!("auction", auction_id));
-
-                ::observe::request_id::set_task_local_storage(auction_id.to_string(), auction_task)
-                    .await;
+                    .instrument(tracing::info_span!("auction", auction_id))
+                    .await
             };
         }
     }

@@ -355,8 +355,7 @@ impl Competition {
             solution_id,
             submission_deadline,
             response_sender,
-            request_id: ::observe::request_id::get_task_local_storage()
-                .unwrap_or_else(|| auction_id.to_string()),
+            tracing_span: tracing::Span::current(),
         };
 
         self.settle_queue.try_send(request).map_err(|err| {
@@ -389,10 +388,9 @@ impl Competition {
                 solution_id,
                 submission_deadline,
                 response_sender,
-                request_id,
+                tracing_span,
             } = request;
-            let solver = self.solver.name().as_str();
-            let submission_task = async {
+            async {
                 if self.eth.current_block().borrow().number >= submission_deadline {
                     if let Err(err) = response_sender.send(Err(DeadlineExceeded.into())) {
                         tracing::error!(
@@ -413,9 +411,8 @@ impl Competition {
                     tracing::error!(?err, "Failed to send /settle response");
                 }
             }
-            .instrument(tracing::info_span!("/settle", solver, %auction_id));
-
-            ::observe::request_id::set_task_local_storage(request_id, submission_task).await;
+            .instrument(tracing_span)
+            .await
         }
     }
 
@@ -537,7 +534,7 @@ struct SettleRequest {
     solution_id: u64,
     submission_deadline: BlockNo,
     response_sender: oneshot::Sender<Result<Settled, Error>>,
-    request_id: String,
+    tracing_span: tracing::Span,
 }
 
 /// Solution information sent to the protocol by the driver before the solution
