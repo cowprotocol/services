@@ -143,7 +143,6 @@ where
     fn queue_call(&self, id: RequestId, request: Call) -> oneshot::Receiver<RpcResult> {
         let (sender, receiver) = oneshot::channel();
         let trace_id = observe::request_id::from_current_span();
-        // tracing::error!(trace_id, "enqueue call");
         let context = (id, request, trace_id, sender);
         self.calls
             .unbounded_send(context)

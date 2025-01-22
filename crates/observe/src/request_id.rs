@@ -135,11 +135,93 @@ impl<S: Subscriber + for<'lookup> LookupSpan<'lookup>> Layer<S> for ValuesLayer 
 
 #[cfg(test)]
 mod test {
-    use super::*;
+    use {super::*, tracing::Instrument};
 
     #[tokio::test]
-    async fn request_id_from_current_span() {}
+    async fn request_id_from_current_span() {
+        crate::tracing::initialize_reentrant("debug");
+        async {
+            assert_eq!(
+                Some("test".to_string()),
+                crate::request_id::from_current_span()
+            );
+        }
+        .instrument(info_span("test".to_string()))
+        .await
+    }
 
     #[tokio::test]
-    async fn request_id_from_parent_span() {}
+    async fn request_id_not_set() {
+        crate::tracing::initialize_reentrant("debug");
+        async {
+            assert_eq!(None, crate::request_id::from_current_span());
+        }
+        .await
+    }
+
+    #[tokio::test]
+    async fn request_id_from_ancestor_span() {
+        crate::tracing::initialize_reentrant("debug");
+        async {
+            async {
+                async {
+                    // we traverse the span hierarchy until we find a span with the request id
+                    assert_eq!(
+                        Some("test".to_string()),
+                        crate::request_id::from_current_span()
+                    );
+                }
+                .instrument(tracing::info_span!("wrap2", value = "value2"))
+                .await
+            }
+            .instrument(tracing::info_span!("wrap1", value = "value1"))
+            .await
+        }
+        .instrument(info_span("test".to_string()))
+        .await
+    }
+
+    #[tokio::test]
+    async fn request_id_from_first_ancestor_span() {
+        crate::tracing::initialize_reentrant("debug");
+        async {
+            async {
+                async {
+                    // if multiple ancestors have a request id we take the closest one
+                    assert_eq!(
+                        Some("test_inner".to_string()),
+                        crate::request_id::from_current_span()
+                    );
+                }
+                .instrument(tracing::info_span!("wrap", value = "value"))
+                .await
+            }
+            .instrument(info_span("test_inner".to_string()))
+            .await
+        }
+        .instrument(info_span("test".to_string()))
+        .await
+    }
+
+    #[tokio::test]
+    async fn request_id_within_spawned_task() {
+        crate::tracing::initialize_reentrant("debug");
+        async {
+            tokio::spawn(
+                async {
+                    // we can spawn a new task and still find the request id if the spawned task
+                    // was instrumented with a span that contains the request id
+                    assert_eq!(
+                        Some("test".to_string()),
+                        crate::request_id::from_current_span()
+                    );
+                }
+                .instrument(Span::current()),
+            )
+            .await
+            .unwrap();
+        }
+        .instrument(info_span("test".to_string()))
+        .await
+    }
 }
