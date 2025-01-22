@@ -49,7 +49,7 @@ impl Transaction {
                 .0
                 .len()
                 .checked_sub(META_DATA_LEN)
-                // should contain at least 4 bytes for function selector and 8 bytes for auction id
+                // should contain at META_DATA_LEN bytes for auction id
                 .ok_or(Error::MissingCalldata)?,
         );
         let metadata: Option<[u8; META_DATA_LEN]> = metadata.try_into().ok();
