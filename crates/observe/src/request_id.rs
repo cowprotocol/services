@@ -98,9 +98,9 @@ struct RequestId(String);
 
 /// Tracing layer that allows us to recover the request id
 /// from the current tracing span.
-pub struct ValuesLayer;
+pub struct RequestIdLayer;
 
-impl<S: Subscriber + for<'lookup> LookupSpan<'lookup>> Layer<S> for ValuesLayer {
+impl<S: Subscriber + for<'lookup> LookupSpan<'lookup>> Layer<S> for RequestIdLayer {
     /// When creating a new span check if it contains the request_id and store
     /// it in the trace's extension storage to make it available for lookup
     /// later on.
@@ -112,8 +112,8 @@ impl<S: Subscriber + for<'lookup> LookupSpan<'lookup>> Layer<S> for ValuesLayer 
             return;
         }
 
-        struct ValueVisitor(Option<RequestId>);
-        impl Visit for ValueVisitor {
+        struct RequestIdVisitor(Option<RequestId>);
+        impl Visit for RequestIdVisitor {
             // empty body because we want to use `record_str()` anyway
             fn record_debug(&mut self, _field: &Field, _value: &dyn fmt::Debug) {}
 
@@ -124,7 +124,7 @@ impl<S: Subscriber + for<'lookup> LookupSpan<'lookup>> Layer<S> for ValuesLayer 
             }
         }
 
-        let mut visitor = ValueVisitor(None);
+        let mut visitor = RequestIdVisitor(None);
         attrs.values().record(&mut visitor);
 
         if let Some(request_id) = visitor.0 {
