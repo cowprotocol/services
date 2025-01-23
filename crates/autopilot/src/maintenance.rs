@@ -1,13 +1,10 @@
 use {
     crate::{
         boundary::events::settlement::{GPv2SettlementContract, Indexer},
-        database::{
-            onchain_order_events::{
-                ethflow_events::{EthFlowData, EthFlowDataForDb},
-                event_retriever::CoWSwapOnchainOrdersContract,
-                OnchainOrderParser,
-            },
-            Postgres,
+        database::onchain_order_events::{
+            ethflow_events::{EthFlowData, EthFlowDataForDb},
+            event_retriever::CoWSwapOnchainOrdersContract,
+            OnchainOrderParser,
         },
         event_updater::EventUpdater,
     },
@@ -31,9 +28,6 @@ pub struct Maintenance {
     settlement_indexer: EventUpdater<Indexer, GPv2SettlementContract>,
     /// Indexes ethflow orders (orders selling native ETH).
     ethflow_indexer: Option<EthflowIndexer>,
-    /// Used for periodic cleanup tasks to not have the DB overflow with old
-    /// data.
-    db_cleanup: Postgres,
     /// All indexing tasks to keep cow amms up to date.
     cow_amm_indexer: Vec<Arc<dyn Maintaining>>,
     /// On which block we last ran an update successfully.
@@ -41,13 +35,9 @@ pub struct Maintenance {
 }
 
 impl Maintenance {
-    pub fn new(
-        settlement_indexer: EventUpdater<Indexer, GPv2SettlementContract>,
-        db_cleanup: Postgres,
-    ) -> Self {
+    pub fn new(settlement_indexer: EventUpdater<Indexer, GPv2SettlementContract>) -> Self {
         Self {
             settlement_indexer,
-            db_cleanup,
             cow_amm_indexer: Default::default(),
             ethflow_indexer: None,
             last_processed: Default::default(),
@@ -88,7 +78,6 @@ impl Maintenance {
                 "settlement_indexer",
                 self.settlement_indexer.run_maintenance()
             ),
-            Self::timed_future("db_cleanup", self.db_cleanup.run_maintenance()),
             Self::timed_future("ethflow_indexer", self.index_ethflow_orders()),
         )?;
 

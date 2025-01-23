@@ -473,7 +473,7 @@ pub async fn run(args: Arguments) {
     let trusted_tokens =
         AutoUpdatingTokenList::from_configuration(market_makable_token_list_configuration).await;
 
-    let mut maintenance = Maintenance::new(settlement_event_indexer, db.clone());
+    let mut maintenance = Maintenance::new(settlement_event_indexer);
     maintenance.with_cow_amms(&cow_amm_registry);
 
     if let Some(ethflow_contract) = args.ethflow_contract {
