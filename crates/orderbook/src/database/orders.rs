@@ -365,9 +365,9 @@ impl OrderStoring for Postgres {
             .start_timer();
 
         let mut ex = self.pool.acquire().await?;
-        let order = orders::single_full_order_with_quote(&mut ex, &ByteArray(uid.0)).await?;
-        order
-            .map(|order_with_quote| {
+
+        let order = match orders::single_full_order_with_quote(&mut ex, &ByteArray(uid.0)).await? {
+            Some(order_with_quote) => {
                 let quote = match (
                     order_with_quote.quote_buy_amount,
                     order_with_quote.quote_sell_amount,
@@ -406,9 +406,19 @@ impl OrderStoring for Postgres {
                     order.metadata.quote_metadata = Some(quote.metadata.clone());
                 }
 
-                Ok(OrderWithQuote { order, quote })
-            })
-            .transpose()
+                Some(OrderWithQuote { order, quote })
+            }
+            None => {
+                // try to find the order in the JIT orders table
+                database::jit_orders::get_by_id(&mut ex, &ByteArray(uid.0))
+                    .await?
+                    .map(full_order_into_model_order)
+                    .transpose()?
+                    .map(|order| OrderWithQuote { order, quote: None })
+            }
+        };
+
+        Ok(order)
     }
 
     async fn orders_for_tx(&self, tx_hash: &H256) -> Result<Vec<Order>> {
@@ -1179,10 +1189,12 @@ mod tests {
             },
             metadata: OrderMetadata {
                 uid,
-                quote_metadata: Some(serde_json::from_str(
-                    "{\"interactions\":[],\"jitOrders\":[],\"preInteractions\":[],\"version\":\"1.\
-                     0\"}").unwrap(),
-                ),
+                quote_metadata: Some(serde_json::json!({
+                    "interactions":[],
+                    "jitOrders":[],
+                    "preInteractions":[],
+                    "version":"1.0"
+                })),
                 ..Default::default()
             },
             interactions: Interactions {
@@ -1230,14 +1242,15 @@ mod tests {
             },
             metadata: OrderMetadata {
                 uid,
-                quote_metadata: Some(serde_json::from_str(
-                    "{\"interactions\":[{\"callData\":\"0x0114\",\"target\":\"\
-                     0x0101010101010101010101010101010101010101\",\"value\":\"100\"},{\"callData\"\
-                     :\"0x0214\",\"target\":\"0x0202020202020202020202020202020202020202\",\"\
-                     value\":\"10\"}],\"jitOrders\":[],\"preInteractions\":[{\"callData\":\"\
-                     0x0314\",\"target\":\"0x0303030303030303030303030303030303030303\",\"value\":\
-                     \"30\"}],\"version\":\"1.0\"}").unwrap(),
-                ),
+                quote_metadata: Some(serde_json::json!({
+                    "interactions":[
+                        {"callData":"0x0114","target":"0x0101010101010101010101010101010101010101","value":"100"},
+                        {"callData":"0x0214","target":"0x0202020202020202020202020202020202020202","value":"10"}
+                    ],
+                    "jitOrders":[],
+                    "preInteractions":[{"callData":"0x0314","target":"0x0303030303030303030303030303030303030303","value":"30"}],
+                    "version":"1.0"}
+                )),
                 ..Default::default()
             },
             ..Default::default()
