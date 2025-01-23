@@ -696,7 +696,7 @@ pub struct OrderMetadata {
     /// If the order was crated from quote, then this field contains that quote
     /// metadata
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub quote_metadata: Option<String>,
+    pub quote_metadata: Option<serde_json::Value>,
 }
 
 // uid as 56 bytes: 32 for orderDigest, 20 for ownerAddress and 4 for validTo

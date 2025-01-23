@@ -721,7 +721,7 @@ impl OrderValidating for OrderValidator {
                 },
                 quote_metadata: quote
                     .clone()
-                    .map(|val| serde_json::to_string(&val.data.metadata))
+                    .map(|val| serde_json::to_value(&val.data.metadata))
                     .transpose()
                     .map_err(|e| ValidationError::Other(e.into()))?,
                 ..Default::default()

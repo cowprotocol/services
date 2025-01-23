@@ -403,7 +403,7 @@ impl OrderStoring for Postgres {
 
                 let mut order = full_order_into_model_order(order_with_quote.full_order)?;
                 if let Some(quote) = quote.as_ref() {
-                    order.metadata.quote_metadata = Some(quote.metadata.to_string());
+                    order.metadata.quote_metadata = Some(quote.metadata.clone());
                 }
 
                 Ok(OrderWithQuote { order, quote })
@@ -1179,10 +1179,9 @@ mod tests {
             },
             metadata: OrderMetadata {
                 uid,
-                quote_metadata: Some(
+                quote_metadata: Some(serde_json::from_str(
                     "{\"interactions\":[],\"jitOrders\":[],\"preInteractions\":[],\"version\":\"1.\
-                     0\"}"
-                        .to_string(),
+                     0\"}").unwrap(),
                 ),
                 ..Default::default()
             },
@@ -1231,14 +1230,13 @@ mod tests {
             },
             metadata: OrderMetadata {
                 uid,
-                quote_metadata: Some(
+                quote_metadata: Some(serde_json::from_str(
                     "{\"interactions\":[{\"callData\":\"0x0114\",\"target\":\"\
                      0x0101010101010101010101010101010101010101\",\"value\":\"100\"},{\"callData\"\
                      :\"0x0214\",\"target\":\"0x0202020202020202020202020202020202020202\",\"\
                      value\":\"10\"}],\"jitOrders\":[],\"preInteractions\":[{\"callData\":\"\
                      0x0314\",\"target\":\"0x0303030303030303030303030303030303030303\",\"value\":\
-                     \"30\"}],\"version\":\"1.0\"}"
-                        .to_string(),
+                     \"30\"}],\"version\":\"1.0\"}").unwrap(),
                 ),
                 ..Default::default()
             },

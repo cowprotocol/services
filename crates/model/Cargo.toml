@@ -22,6 +22,7 @@ num = { workspace = true }
 primitive-types = { workspace = true }
 secp256k1 = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 serde_with = { workspace = true }
 strum = { workspace = true }
 web3 = { workspace = true, features = ["signing"] }
