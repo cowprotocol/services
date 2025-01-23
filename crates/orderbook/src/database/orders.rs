@@ -401,11 +401,10 @@ impl OrderStoring for Postgres {
                     _ => None,
                 };
 
-                let mut order = full_order_into_model_order(order_with_quote.full_order)?;
-                if let Some(quote) = quote.as_ref() {
-                    order.metadata.quote_metadata = Some(quote.metadata.clone());
-                }
-
+                let order = full_order_with_quote_into_model_order(
+                    order_with_quote.full_order,
+                    quote.as_ref(),
+                )?;
                 Some(OrderWithQuote { order, quote })
             }
             None => {
@@ -597,6 +596,14 @@ fn calculate_status(order: &FullOrder) -> OrderStatus {
 }
 
 fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
+    full_order_with_quote_into_model_order(order, None)
+}
+
+/// If quote is provided, then it is used to extract quote metadata field value.
+fn full_order_with_quote_into_model_order(
+    order: FullOrder,
+    quote: Option<&orders::Quote>,
+) -> Result<Order> {
     let status = calculate_status(&order);
     let pre_interactions = extract_interactions(&order, database::orders::ExecutionTime::Pre)?;
     let post_interactions = extract_interactions(&order, database::orders::ExecutionTime::Post)?;
@@ -651,7 +658,7 @@ fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
             .map(String::from_utf8)
             .transpose()
             .context("full app data isn't utf-8")?,
-        quote_metadata: None,
+        quote_metadata: quote.map(|quote| quote.metadata.clone()),
     };
     let data = OrderData {
         sell_token: H160(order.sell_token.0),

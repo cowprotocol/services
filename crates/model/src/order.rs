@@ -693,8 +693,8 @@ pub struct OrderMetadata {
     /// Full app data that `OrderData::app_data` is a hash of. Can be None if
     /// the backend doesn't know about the full app data.
     pub full_app_data: Option<String>,
-    /// If the order was crated from quote, then this field contains that quote
-    /// metadata
+    /// If the order was crated with a quote, then this field contains the
+    /// quote's metadata.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quote_metadata: Option<serde_json::Value>,
 }
