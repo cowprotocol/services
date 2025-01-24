@@ -79,7 +79,13 @@ pub fn from_current_span() -> Option<String> {
     let mut result = None;
 
     Span::current().with_subscriber(|(id, sub)| {
-        let registry = sub.downcast_ref::<Registry>().unwrap();
+        let Some(registry) = sub.downcast_ref::<Registry>() else {
+            tracing::error!(
+                "looking up request_ids using the `RequestIdLayer` requires the global tracing \
+                 subscriber to be `tracing_subscriber::Registry`"
+            );
+            return;
+        };
         let mut current_span = registry.span(id);
         while let Some(span) = current_span {
             if let Some(request_id) = span.extensions().get::<RequestId>() {
