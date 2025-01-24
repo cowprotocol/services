@@ -111,7 +111,7 @@ impl Api {
                 .layer(axum::extract::DefaultBodyLimit::disable());
         }
 
-        let make_svc = observe::make_service_with_task_local_storage!(app);
+        let make_svc = observe::make_service_with_request_tracing!(app);
 
         // Start the server.
         let server = axum::Server::bind(&self.addr).serve(make_svc);
