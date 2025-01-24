@@ -43,7 +43,7 @@ pub fn info_span(request_id: String) -> Span {
 /// Either that gets taken from the requests `X-REQUEST-ID` header of if that's
 /// missing a globally unique request number will be generated.
 #[macro_export]
-macro_rules! make_service_with_task_local_storage {
+macro_rules! make_service_with_request_tracing {
     ($service:expr) => {{
         {
             let internal_request_id = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
