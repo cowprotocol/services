@@ -982,7 +982,6 @@ impl Setup {
             (solver.clone(), instance.addr)
         }))
         .await;
-        let orderbook = Orderbook::start();
         let driver = Driver::new(
             &driver::Config {
                 config_file,
