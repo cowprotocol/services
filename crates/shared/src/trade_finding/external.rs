@@ -70,7 +70,7 @@ impl ExternalTradeFinder {
                 deadline: chrono::Utc::now() + self.timeout,
             };
             let block_dependent = query.block_dependent;
-            let id = observe::request_id::get_task_local_storage();
+            let id = observe::request_id::from_current_span();
             let timeout = self.timeout;
             let client = self.client.clone();
             let quote_endpoint = self.quote_endpoint.clone();
