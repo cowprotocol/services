@@ -21,10 +21,6 @@ pub struct Args {
     #[clap(long, env)]
     pub ethrpc: Url,
 
-    /// The orderbook API base URL.
-    #[clap(long, env)]
-    pub orderbook_url: Url,
-
     /// Path to the driver configuration file. This file should be in TOML
     /// format. For an example see
     /// https://github.com/cowprotocol/services/blob/main/crates/driver/example.toml.

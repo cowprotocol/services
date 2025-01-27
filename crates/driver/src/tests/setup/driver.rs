@@ -21,6 +21,7 @@ pub struct Config {
     pub enable_simulation: bool,
     pub mempools: Vec<Mempool>,
     pub order_priority_strategies: Vec<OrderPriorityStrategy>,
+    pub orderbook: Orderbook,
 }
 
 pub struct Driver {
@@ -34,7 +35,6 @@ impl Driver {
         config: &Config,
         solvers: &Vec<(Solver, SocketAddr)>,
         blockchain: &Blockchain,
-        orderbook: &Orderbook,
     ) -> Self {
         let (config_file, config_temp_path) = match config.config_file.as_ref() {
             Some(config_file) => (config_file.to_owned(), None),
@@ -50,8 +50,6 @@ impl Driver {
             "0.0.0.0:0".to_owned(),
             "--ethrpc".to_owned(),
             blockchain.web3_url.clone(),
-            "--orderbook-url".to_owned(),
-            format!("http://{}", orderbook.addr).to_owned(),
             "--config".to_owned(),
             config_file.to_str().unwrap().to_owned(),
         ];
@@ -210,7 +208,13 @@ async fn create_config_file(
            "#
     };
     write!(file, "{simulation}").unwrap();
-    writeln!(file, "flashloans-enabled = true").unwrap();
+    writeln!(file, "app-data-fetching-enabled = true").unwrap();
+    writeln!(
+        file,
+        r#"orderbook-url = "http://{}""#,
+        config.orderbook.addr
+    )
+    .unwrap();
     write!(
         file,
         r#"[contracts]

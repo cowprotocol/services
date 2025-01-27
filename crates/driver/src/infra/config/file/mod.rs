@@ -2,7 +2,7 @@ pub use load::load;
 use {
     crate::{domain::eth, infra, util::serialize},
     reqwest::Url,
-    serde::{Deserialize, Serialize},
+    serde::{Deserialize, Deserializer, Serialize},
     serde_with::serde_as,
     solver::solver::Arn,
     std::{collections::HashMap, time::Duration},
@@ -76,7 +76,7 @@ struct Config {
 
     /// Configuration for flashloans.
     #[serde(default, flatten)]
-    flashloans: Flashloans,
+    flashloans: AppDataFetching,
 }
 
 #[serde_as]
@@ -737,25 +737,50 @@ impl Default for BadTokenDetectionConfig {
     }
 }
 
-#[serde_as]
-#[derive(Clone, Debug, Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct Flashloans {
-    /// Whether the flashloans feature is enabled.
-    #[serde(default, rename = "flashloans-enabled")]
-    pub enabled: bool,
+#[derive(Clone, Debug)]
+pub enum AppDataFetching {
+    /// App-data fetching is disabled
+    Disabled,
 
-    /// The maximum number of app-data entries in the cache.
-    #[serde(
-        default = "default_flashloans_cache_size",
-        rename = "flashloans-cache-size"
-    )]
-    pub cache_size: u64,
+    /// App-data fetching is enabled
+    Enabled {
+        /// The base URL of the orderbook to fetch app-data from
+        orderbook_url: Url,
+
+        /// The maximum number of app-data entries in the cache
+        cache_size: u64,
+    },
 }
 
-impl Default for Flashloans {
-    fn default() -> Self {
-        serde_json::from_str("{}").expect("Flashloans uses default values")
+impl<'de> Deserialize<'de> for AppDataFetching {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[serde_as]
+        #[derive(Deserialize)]
+        #[serde(rename_all = "kebab-case", deny_unknown_fields)]
+        struct Helper {
+            #[serde(default)]
+            app_data_fetching_enabled: bool,
+            orderbook_url: Option<Url>,
+            #[serde(default = "default_app_data_cache_size")]
+            cache_size: u64,
+        }
+
+        let helper = Helper::deserialize(deserializer)?;
+        match helper.app_data_fetching_enabled {
+            false => Ok(AppDataFetching::Disabled),
+            true => {
+                let orderbook_url = helper
+                    .orderbook_url
+                    .ok_or_else(|| serde::de::Error::custom("Missing `orderbook_url` field"))?;
+                Ok(AppDataFetching::Enabled {
+                    orderbook_url,
+                    cache_size: helper.cache_size,
+                })
+            }
+        }
     }
 }
 
@@ -784,6 +809,6 @@ fn default_metrics_bad_token_detector_freeze_time() -> Duration {
 
 /// According to statistics, the average size of the app-data is ~800 bytes.
 /// With this default, the approximate size of the cache will be ~1.6 MB.
-fn default_flashloans_cache_size() -> u64 {
+fn default_app_data_cache_size() -> u64 {
     2000
 }

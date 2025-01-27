@@ -346,8 +346,8 @@ impl AuctionProcessor {
             remaining_balance.0 -= allocated_balance.0;
 
             // Update order app data if it was fetched.
-            if let Some(fetched_app_data) = app_data_by_hash.remove(&order.app_data.hash()) {
-                order.app_data = fetched_app_data.into();
+            if let Some(fetched_app_data) = app_data_by_hash.get(&order.app_data.hash()) {
+                order.app_data = fetched_app_data.clone().into();
             }
 
             true

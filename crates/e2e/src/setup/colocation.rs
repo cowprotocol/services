@@ -162,7 +162,8 @@ factory = "{:?}"
 
     let config_file = config_tmp_file(format!(
         r#"
-flashloans-enabled = true
+app-data-fetching-enabled = true
+orderbook-url = "http://localhost:8080"
 
 [contracts]
 gp-v2-settlement = "{:?}"
@@ -188,7 +189,6 @@ mempool = "public"
     let args = vec![
         "driver".to_string(),
         format!("--config={}", config_file.display()),
-        "--orderbook-url=http://localhost:8080".to_string(),
         format!("--ethrpc={NODE_HOST}"),
     ];
 
