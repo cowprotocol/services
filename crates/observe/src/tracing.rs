@@ -1,5 +1,5 @@
 use {
-    crate::tracing_reload_handler::spawn_reload_handler,
+    crate::{request_id::RequestIdLayer, tracing_reload_handler::spawn_reload_handler},
     std::{panic::PanicHookInfo, sync::Once},
     time::macros::format_description,
     tracing::level_filters::LevelFilter,
@@ -82,6 +82,7 @@ fn set_tracing_subscriber(env_filter: &str, stderr_threshold: LevelFilter) {
         tracing_subscriber::registry()
             .with(console_subscriber::spawn())
             .with(fmt_layer!(env_filter, stderr_threshold))
+            .with(RequestIdLayer)
             .init();
         tracing::info!("started programm with support for tokio-console");
 
@@ -97,6 +98,7 @@ fn set_tracing_subscriber(env_filter: &str, stderr_threshold: LevelFilter) {
             // `sqlx` uses under the hood.
             .with(tracing::level_filters::LevelFilter::TRACE)
             .with(fmt_layer!(env_filter, stderr_threshold))
+            .with(RequestIdLayer)
             .init();
         tracing::info!("started programm without support for tokio-console");
 
