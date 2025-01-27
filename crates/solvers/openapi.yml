@@ -1003,7 +1003,8 @@ components:
           description: How many units of gas this solution is estimated to cost.
         flashloans:
           description: |
-            Flashloans that are provided for this solution.
+            Flashloans that are provided for this solution. 
+            In case of the field absense, the driver will use the order's flashloan hint originally defined by the user.
           type: array
           items:
             $ref: "#/components/schemas/Flashloan"
