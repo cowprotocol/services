@@ -48,7 +48,7 @@ impl Orderbook {
             axum::Server::bind(&"0.0.0.0:0".parse().unwrap()).serve(app.into_make_service());
         let addr = server.local_addr();
 
-        println!("Orderbook mock server listening on {}", addr);
+        tracing::info!("Orderbook mock server listening on {}", addr);
 
         tokio::spawn(server);
 
@@ -59,7 +59,7 @@ impl Orderbook {
         Path(app_data): Path<String>,
         Extension(app_data_storage): Extension<HashMap<app_data::AppDataHash, app_data::Root>>,
     ) -> impl IntoResponse {
-        println!("Orderbook received an app_data request: {}", app_data);
+        tracing::debug!("Orderbook received an app_data request: {}", app_data);
 
         let app_data_hash = match app_data.parse::<app_data::AppDataHash>() {
             Ok(hash) => hash,
