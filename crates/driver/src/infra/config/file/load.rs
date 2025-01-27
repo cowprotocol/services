@@ -49,8 +49,8 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
         "The configured chain ID does not match the connected Ethereum node"
     );
     infra::Config {
-        solvers: join_all(config.solvers.into_iter().map(|config| async move {
-            let account = match config.account {
+        solvers: join_all(config.solvers.into_iter().map(|solver_config| async move {
+            let account = match solver_config.account {
                 file::Account::PrivateKey(private_key) => ethcontract::Account::Offline(
                     ethcontract::PrivateKey::from_raw(private_key.0).unwrap(),
                     None,
@@ -66,40 +66,40 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                 file::Account::Address(address) => ethcontract::Account::Local(address, None),
             };
             solver::Config {
-                endpoint: config.endpoint,
-                name: config.name.into(),
+                endpoint: solver_config.endpoint,
+                name: solver_config.name.into(),
                 slippage: solver::Slippage {
-                    relative: big_decimal_to_big_rational(&config.slippage.relative),
-                    absolute: config.slippage.absolute.map(eth::Ether),
+                    relative: big_decimal_to_big_rational(&solver_config.slippage.relative),
+                    absolute: solver_config.slippage.absolute.map(eth::Ether),
                 },
-                liquidity: if config.skip_liquidity {
+                liquidity: if solver_config.skip_liquidity {
                     solver::Liquidity::Skip
                 } else {
                     solver::Liquidity::Fetch
                 },
                 account,
                 timeouts: solver::Timeouts {
-                    http_delay: chrono::Duration::from_std(config.timeouts.http_time_buffer)
+                    http_delay: chrono::Duration::from_std(solver_config.timeouts.http_time_buffer)
                         .unwrap(),
-                    solving_share_of_deadline: config
+                    solving_share_of_deadline: solver_config
                         .timeouts
                         .solving_share_of_deadline
                         .try_into()
                         .unwrap(),
                 },
-                request_headers: config.request_headers,
-                fee_handler: config.fee_handler,
-                quote_using_limit_orders: config.quote_using_limit_orders,
-                merge_solutions: match config.merge_solutions {
+                request_headers: solver_config.request_headers,
+                fee_handler: solver_config.fee_handler,
+                quote_using_limit_orders: solver_config.quote_using_limit_orders,
+                merge_solutions: match solver_config.merge_solutions {
                     true => SolutionMerging::Allowed,
                     false => SolutionMerging::Forbidden,
                 },
-                s3: config.s3.map(Into::into),
-                solver_native_token: config.manage_native_token.to_domain(),
-                quote_tx_origin: config.quote_tx_origin.map(eth::Address),
-                response_size_limit_max_bytes: config.response_size_limit_max_bytes,
+                s3: solver_config.s3.map(Into::into),
+                solver_native_token: solver_config.manage_native_token.to_domain(),
+                quote_tx_origin: solver_config.quote_tx_origin.map(eth::Address),
+                response_size_limit_max_bytes: solver_config.response_size_limit_max_bytes,
                 bad_token_detection: BadTokenDetection {
-                    tokens_supported: config
+                    tokens_supported: solver_config
                         .bad_token_detection
                         .token_supported
                         .iter()
@@ -113,22 +113,27 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                             )
                         })
                         .collect(),
-                    enable_simulation_strategy: config
+                    enable_simulation_strategy: solver_config
                         .bad_token_detection
                         .enable_simulation_strategy,
-                    enable_metrics_strategy: config.bad_token_detection.enable_metrics_strategy,
-                    metrics_strategy_failure_ratio: config
+                    enable_metrics_strategy: solver_config
+                        .bad_token_detection
+                        .enable_metrics_strategy,
+                    metrics_strategy_failure_ratio: solver_config
                         .bad_token_detection
                         .metrics_strategy_failure_ratio,
-                    metrics_strategy_required_measurements: config
+                    metrics_strategy_required_measurements: solver_config
                         .bad_token_detection
                         .metrics_strategy_required_measurements,
-                    metrics_strategy_log_only: config.bad_token_detection.metrics_strategy_log_only,
-                    metrics_strategy_token_freeze_time: config
+                    metrics_strategy_log_only: solver_config
+                        .bad_token_detection
+                        .metrics_strategy_log_only,
+                    metrics_strategy_token_freeze_time: solver_config
                         .bad_token_detection
                         .metrics_strategy_token_freeze_time,
                 },
-                settle_queue_size: config.settle_queue_size,
+                settle_queue_size: solver_config.settle_queue_size,
+                flashloans_enabled: config.flashloans_enabled,
             }
         }))
         .await,

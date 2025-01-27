@@ -33,6 +33,7 @@ impl Auction {
         weth: eth::WethAddress,
         fee_handler: FeeHandler,
         solver_native_token: ManageNativeToken,
+        flashloans_enabled: bool,
     ) -> Self {
         let mut tokens: HashMap<eth::H160, _> = auction
             .tokens()
@@ -159,7 +160,9 @@ impl Auction {
                                 .collect(),
                         ),
                         app_data: AppDataHash(order.app_data.hash().0.into()),
-                        flashloan_hint: order.app_data.flashloan().cloned().map(Into::into),
+                        flashloan_hint: flashloans_enabled
+                            .then(|| order.app_data.flashloan().cloned().map(Into::into))
+                            .flatten(),
                         signature: order.signature.data.clone().into(),
                         signing_scheme: match order.signature.scheme {
                             Scheme::Eip712 => SigningScheme::Eip712,

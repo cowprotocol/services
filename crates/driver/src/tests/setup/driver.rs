@@ -215,6 +215,7 @@ async fn create_config_file(
         config.orderbook.addr
     )
     .unwrap();
+    writeln!(file, "flashloans-enabled = true").unwrap();
     write!(
         file,
         r#"[contracts]

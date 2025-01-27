@@ -77,6 +77,10 @@ struct Config {
     /// Configuration for the app-data fetching.
     #[serde(default, flatten)]
     app_data_fetching: AppDataFetching,
+
+    /// Whether the flashloans feature is enabled.
+    #[serde(default)]
+    flashloans_enabled: bool,
 }
 
 #[serde_as]

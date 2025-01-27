@@ -127,6 +127,8 @@ pub struct Config {
     pub bad_token_detection: BadTokenDetection,
     /// Max size of the pending settlements queue.
     pub settle_queue_size: usize,
+    /// Whether flashloan hints should be sent to the solver.
+    pub flashloans_enabled: bool,
 }
 
 impl Solver {
@@ -228,6 +230,7 @@ impl Solver {
             weth,
             self.config.fee_handler,
             self.config.solver_native_token,
+            self.config.flashloans_enabled,
         );
         // Only auctions with IDs are real auctions (/quote requests don't have an ID,
         // and it makes no sense to store them)
