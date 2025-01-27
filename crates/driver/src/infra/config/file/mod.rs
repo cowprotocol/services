@@ -76,7 +76,7 @@ struct Config {
 
     /// Configuration for flashloans.
     #[serde(default, flatten)]
-    flashloans: Flashloans,
+    flashloans: AppDataFetching,
 }
 
 #[serde_as]
@@ -742,22 +742,22 @@ impl Default for BadTokenDetectionConfig {
 #[serde(
     rename_all = "kebab-case",
     deny_unknown_fields,
-    tag = "flashloans-enabled"
+    tag = "app-data-fetching-enabled"
 )]
-pub enum Flashloans {
-    /// Flashloans feature is disabled
+pub enum AppDataFetching {
+    /// App-data fetching is disabled
     #[serde(rename = "false")]
     #[default]
     Disabled,
 
-    /// Flashloans feature is enabled
+    /// App-data fetching is enabled
     #[serde(rename = "true")]
     Enabled {
         /// The base URL of the orderbook to fetch app-data from
         orderbook_url: Url,
 
         /// The maximum number of app-data entries in the cache
-        #[serde(default = "default_flashloans_cache_size")]
+        #[serde(default = "default_app_data_cache_size")]
         cache_size: u64,
     },
 }
@@ -787,6 +787,6 @@ fn default_metrics_bad_token_detector_freeze_time() -> Duration {
 
 /// According to statistics, the average size of the app-data is ~800 bytes.
 /// With this default, the approximate size of the cache will be ~1.6 MB.
-fn default_flashloans_cache_size() -> u64 {
+fn default_app_data_cache_size() -> u64 {
     2000
 }

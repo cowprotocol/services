@@ -55,11 +55,11 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let eth = ethereum(&config, ethrpc).await;
     let app_data_retriever = match &config.flashloans {
-        config::file::Flashloans::Enabled {
+        config::file::AppDataFetching::Enabled {
             orderbook_url,
             cache_size,
         } => Some(AppDataRetriever::new(orderbook_url.clone(), *cache_size)),
-        config::file::Flashloans::Disabled => None,
+        config::file::AppDataFetching::Disabled => None,
     };
     let serve = Api {
         solvers: solvers(&config, &eth).await,

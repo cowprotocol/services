@@ -208,7 +208,7 @@ async fn create_config_file(
            "#
     };
     write!(file, "{simulation}").unwrap();
-    writeln!(file, "flashloans-enabled = true").unwrap();
+    writeln!(file, "app-data-fetching-enabled = true").unwrap();
     writeln!(file, r#"orderbook-url = "{}""#, config.orderbook.addr).unwrap();
     write!(
         file,
