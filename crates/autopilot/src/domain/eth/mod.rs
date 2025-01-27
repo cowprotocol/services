@@ -312,6 +312,17 @@ pub struct TradeEvent {
     pub order_uid: domain::OrderUid,
 }
 
+/// Call frames of a transaction.
+#[derive(Clone, Debug, Default)]
+pub struct CallFrame {
+    /// The address of the contract that was called.
+    pub to: Option<Address>,
+    /// Calldata input.
+    pub input: Calldata,
+    /// Recorded child calls.
+    pub calls: Vec<CallFrame>,
+}
+
 /// Any type of on-chain transaction.
 #[derive(Debug, Clone, Default)]
 pub struct Transaction {
@@ -319,8 +330,6 @@ pub struct Transaction {
     pub hash: TxId,
     /// The address of the sender of the transaction.
     pub from: Address,
-    /// The call data of the transaction.
-    pub input: Calldata,
     /// The block number of the block that contains the transaction.
     pub block: BlockNo,
     /// The timestamp of the block that contains the transaction.
@@ -329,4 +338,6 @@ pub struct Transaction {
     pub gas: Gas,
     /// The effective gas price of the transaction.
     pub gas_price: EffectiveGasPrice,
+    /// Traces of all Calls contained in the transaction.
+    pub trace_calls: CallFrame,
 }

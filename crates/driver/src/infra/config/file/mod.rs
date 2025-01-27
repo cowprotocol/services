@@ -778,7 +778,7 @@ impl<'de> Deserialize<'de> for AppDataFetching {
             true => {
                 let orderbook_url = helper
                     .orderbook_url
-                    .ok_or_else(|| serde::de::Error::custom("Missing `orderbook_url` field"))?;
+                    .ok_or_else(|| serde::de::Error::custom("Missing `orderbook-url` field"))?;
                 Ok(AppDataFetching::Enabled {
                     orderbook_url,
                     cache_size: helper.cache_size,
