@@ -609,6 +609,7 @@ pub struct FlashloanHint {
     pub lender: Option<eth::H160>,
     pub borrower: Option<eth::H160>,
     pub token: eth::H160,
+    #[serde_as(as = "serialize::U256")]
     pub amount: eth::U256,
 }
 
