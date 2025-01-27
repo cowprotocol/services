@@ -48,9 +48,9 @@ impl AppDataRetriever {
     /// Retrieves the full app-data for the given `app_data` hash, if exists.
     pub async fn get(
         &self,
-        app_data: AppDataHash,
+        app_data: &AppDataHash,
     ) -> Result<Option<app_data::ValidatedAppData>, FetchingError> {
-        if let Some(app_data) = self.0.cache.get(&app_data).await {
+        if let Some(app_data) = self.0.cache.get(app_data).await {
             return Ok(app_data.clone());
         }
 
@@ -85,7 +85,7 @@ impl AppDataRetriever {
 
         self.0
             .request_sharing
-            .shared_or_else(app_data, app_data_fut)
+            .shared_or_else(*app_data, app_data_fut)
             .await
     }
 }

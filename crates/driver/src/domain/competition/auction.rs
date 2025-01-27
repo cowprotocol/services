@@ -202,7 +202,7 @@ impl AuctionProcessor {
             let start = std::time::Instant::now();
             orders.extend(rt.block_on(Self::cow_amm_orders(&eth, &tokens, &cow_amms, signature_validator.as_ref())));
             sorting::sort_orders(&mut orders, &tokens, &solver, &order_comparators);
-            let (mut balances, mut app_data_by_order) =
+            let (mut balances, mut app_data_by_hash) =
                 rt.block_on(async {
                     tokio::join!(
                         Self::fetch_balances(&eth, &orders),
@@ -210,7 +210,7 @@ impl AuctionProcessor {
                     )
                 });
 
-            Self::filter_orders(&mut balances, &mut app_data_by_order, &mut orders);
+            Self::filter_orders(&mut balances, &mut app_data_by_hash, &mut orders);
 
             tracing::debug!(auction_id = new_id.0, time =? start.elapsed(), "auction preprocessing done");
             orders
@@ -232,42 +232,52 @@ impl AuctionProcessor {
     }
 
     /// Fetches the app data for all orders in the auction.
-    /// Returns a map from order UIDs to the result of fetching the app data.
+    /// Returns a map from app data hash to the fetched app data.
     async fn collect_orders_app_data(
         app_data_retriever: Option<order::app_data::AppDataRetriever>,
         orders: &[order::Order],
-    ) -> HashMap<order::Uid, Option<app_data::ValidatedAppData>> {
-        if let Some(app_data_retriever) = app_data_retriever {
-            let _timer = metrics::get()
-                .auction_preprocessing
-                .with_label_values(&["fetch_app_data"])
-                .start_timer();
+    ) -> HashMap<order::app_data::AppDataHash, app_data::ValidatedAppData> {
+        let Some(app_data_retriever) = app_data_retriever else {
+            return Default::default();
+        };
 
-            join_all(orders.iter().map(|order| async {
-                let fetched_app_data = app_data_retriever
-                    .get(order.app_data.hash())
-                    .await
-                    .tap_err(|err| {
-                        tracing::warn!(order_uid=?order.uid, ?err, "failed to fetch app data for order");
-                    })
-                    .ok()
-                    .flatten();
+        let _timer = metrics::get()
+            .auction_preprocessing
+            .with_label_values(&["fetch_app_data"])
+            .start_timer();
 
-                (order.uid, fetched_app_data)
-            }))
-            .await
-            .into_iter()
-            .collect::<HashMap<_, _>>()
-        } else {
-            Default::default()
-        }
+        join_all(
+            orders
+                .iter()
+                .map(|order| order.app_data.hash())
+                .unique()
+                .map(|app_data_hash| {
+                    let app_data_retriever = app_data_retriever.clone();
+                    async move {
+                        let fetched_app_data = app_data_retriever
+                            .get(&app_data_hash)
+                            .await
+                            .tap_err(|err| {
+                                tracing::warn!(?app_data_hash, ?err, "failed to fetch app data");
+                            })
+                            .ok()
+                            .flatten();
+
+                        (app_data_hash, fetched_app_data)
+                    }
+                }),
+        )
+        .await
+        .into_iter()
+        .filter_map(|(app_data_hash, app_data)| app_data.map(|app_data| (app_data_hash, app_data)))
+        .collect::<HashMap<_, _>>()
     }
 
     /// Removes orders that cannot be filled due to missing funds of the owner
     /// and updates the fetched app data.
     fn filter_orders(
         balances: &mut Balances,
-        app_data_by_order: &mut HashMap<order::Uid, Option<app_data::ValidatedAppData>>,
+        app_data_by_hash: &mut HashMap<order::app_data::AppDataHash, app_data::ValidatedAppData>,
         orders: &mut Vec<order::Order>,
     ) {
         // The auction that we receive from the `autopilot` assumes that there
@@ -336,7 +346,7 @@ impl AuctionProcessor {
             remaining_balance.0 -= allocated_balance.0;
 
             // Update order app data if it was fetched.
-            if let Some(fetched_app_data) = app_data_by_order.remove(&order.uid).flatten() {
+            if let Some(fetched_app_data) = app_data_by_hash.remove(&order.app_data.hash()) {
                 order.app_data = fetched_app_data.into();
             }
 
