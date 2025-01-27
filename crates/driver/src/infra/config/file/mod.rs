@@ -74,9 +74,9 @@ struct Config {
     )]
     simulation_bad_token_max_age: Duration,
 
-    /// Configuration for flashloans.
+    /// Configuration for the app-data fetching.
     #[serde(default, flatten)]
-    flashloans: AppDataFetching,
+    app_data_fetching: AppDataFetching,
 }
 
 #[serde_as]
