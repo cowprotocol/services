@@ -210,7 +210,7 @@ impl AuctionProcessor {
                     )
                 });
 
-            Self::filter_orders(&mut balances, &mut app_data_by_hash, &mut orders);
+            Self::update_orders(&mut balances, &mut app_data_by_hash, &mut orders);
 
             tracing::debug!(auction_id = new_id.0, time =? start.elapsed(), "auction preprocessing done");
             orders
@@ -275,7 +275,7 @@ impl AuctionProcessor {
 
     /// Removes orders that cannot be filled due to missing funds of the owner
     /// and updates the fetched app data.
-    fn filter_orders(
+    fn update_orders(
         balances: &mut Balances,
         app_data_by_hash: &mut HashMap<order::app_data::AppDataHash, app_data::ValidatedAppData>,
         orders: &mut Vec<order::Order>,
