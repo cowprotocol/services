@@ -162,10 +162,6 @@ factory = "{:?}"
 
     let config_file = config_tmp_file(format!(
         r#"
-app-data-fetching-enabled = true
-orderbook-url = "http://localhost:8080"
-flashloans-enabled = true
-
 [contracts]
 gp-v2-settlement = "{:?}"
 weth = "{:?}"
