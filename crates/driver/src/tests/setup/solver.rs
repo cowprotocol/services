@@ -153,7 +153,7 @@ impl Solver {
                 "signingScheme": if config.quote { "eip1271" } else { "eip712" },
             });
             if let Some(flashloan) = quote.order.app_data.flashloan() {
-                order["flashloanHint"] = json!(Into::<FlashloanHint>::into(flashloan));
+                order["flashloanHint"] = json!(Into::<FlashloanHint>::into(flashloan.clone()));
             }
             if config.fee_handler == FeeHandler::Solver {
                 order.as_object_mut().unwrap().insert(

@@ -1233,7 +1233,6 @@ impl<'a> Solve<'a> {
     /// Expect the /solve endpoint to have returned a 200 OK response.
     pub fn ok(self) -> SolveOk<'a> {
         assert_eq!(self.status, hyper::StatusCode::OK);
-        println!("self.body={}", self.body);
         SolveOk {
             body: self.body,
             trades: self.trades,

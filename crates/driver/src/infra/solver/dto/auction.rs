@@ -159,7 +159,7 @@ impl Auction {
                                 .collect(),
                         ),
                         app_data: AppDataHash(order.app_data.hash().0.into()),
-                        flashloan_hint: order.app_data.flashloan().map(Into::into),
+                        flashloan_hint: order.app_data.flashloan().cloned().map(Into::into),
                         signature: order.signature.data.clone().into(),
                         signing_scheme: match order.signature.scheme {
                             Scheme::Eip712 => SigningScheme::Eip712,

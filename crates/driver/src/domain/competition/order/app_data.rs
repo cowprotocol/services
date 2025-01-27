@@ -114,10 +114,10 @@ impl AppData {
         }
     }
 
-    pub fn flashloan(&self) -> Option<app_data::Flashloan> {
+    pub fn flashloan(&self) -> Option<&app_data::Flashloan> {
         match self {
             Self::Hash(_) => None,
-            Self::Full(data) => data.protocol.flashloan.clone(),
+            Self::Full(data) => data.protocol.flashloan.as_ref(),
         }
     }
 }
