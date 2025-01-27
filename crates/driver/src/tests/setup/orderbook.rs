@@ -13,8 +13,8 @@ use {
 };
 
 /// A mocked orderbook service that provides `/v1/app_data/{app_data_hash}` API.
-/// Uses in-memory app_data storage represented by a `HashMap` which is
-/// sufficient due to read-only concurrent access.
+/// Uses in-memory app_data storage implemented with an axum extension layer and
+/// a `HashMap` which is sufficient due to read-only concurrent access.
 pub struct Orderbook {
     pub addr: SocketAddr,
 }
