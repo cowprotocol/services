@@ -64,6 +64,8 @@ impl Pod {
             .await?
             .hash();
 
+        // TODO: the transaction receipt is immediately available and we can remove polling once we
+        // switch to pod-sdk.
         for _ in 0..10 {
             let receipt = web3.eth().transaction_receipt(tx_hash).await?;
             if let Some(receipt) = receipt {

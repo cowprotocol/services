@@ -1,7 +1,7 @@
 version: "3.9"
 services:
   chain:
-    platform: linux/amd64 
+    # platform: linux/amd64 # Uncomment this line if you are running on apple silicon
     image: ghcr.io/foundry-rs/foundry:latest
     restart: always
     entrypoint: /usr/local/bin/anvil
