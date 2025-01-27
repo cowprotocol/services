@@ -52,9 +52,9 @@ pub struct Arguments {
     #[clap(long, env)]
     pub chain_id: Option<u64>,
 
-    /// Address of the ethflow contract
+    /// Addresses of the ethflow contracts
     #[clap(long, env)]
-    pub ethflow_contract: H160,
+    pub ethflow_contract: Vec<H160>,
 
     #[clap(long, env, hide_env_values = true)]
     pub refunder_pk: String,
