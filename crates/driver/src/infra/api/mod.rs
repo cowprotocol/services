@@ -1,6 +1,10 @@
 use {
     crate::{
-        domain::{self, competition::bad_tokens, Mempools},
+        domain::{
+            self,
+            competition::{bad_tokens, order::app_data::AppDataRetriever},
+            Mempools,
+        },
         infra::{
             self,
             config::file::OrderPriorityStrategy,
@@ -40,6 +44,7 @@ impl Api {
         self,
         shutdown: impl Future<Output = ()> + Send + 'static,
         order_priority_strategies: Vec<OrderPriorityStrategy>,
+        app_data_retriever: Option<AppDataRetriever>,
     ) -> Result<(), hyper::Error> {
         // Add middleware.
         let mut app = axum::Router::new().layer(
@@ -51,8 +56,11 @@ impl Api {
         );
 
         let tokens = tokens::Fetcher::new(&self.eth);
-        let pre_processor =
-            domain::competition::AuctionProcessor::new(&self.eth, order_priority_strategies);
+        let pre_processor = domain::competition::AuctionProcessor::new(
+            &self.eth,
+            order_priority_strategies,
+            app_data_retriever,
+        );
 
         // Add the metrics and healthz endpoints.
         app = routes::metrics(app);
