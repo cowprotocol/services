@@ -1,7 +1,7 @@
 //! Module containing Ethereum RPC extension methods.
 
 use {
-    serde::Serialize,
+    serde::{Deserialize, Serialize},
     std::collections::HashMap,
     web3::{
         self,
@@ -44,6 +44,41 @@ where
                 .execute("eth_call", vec![call, block, overrides]),
         )
     }
+}
+
+pub trait TracesExt<T>
+where
+    T: Transport,
+{
+    fn debug_transaction(&self, hash: H256) -> CallFuture<CallFrame, T::Out>;
+}
+
+impl<T> TracesExt<T> for web3::api::Traces<T>
+where
+    T: Transport,
+{
+    fn debug_transaction(&self, hash: H256) -> CallFuture<CallFrame, T::Out> {
+        let hash = helpers::serialize(&hash);
+        let tracing_options = serde_json::json!({ "tracer": "callTracer" });
+
+        CallFuture::new(
+            self.transport()
+                .execute("debug_traceTransaction", vec![hash, tracing_options]),
+        )
+    }
+}
+
+/// Taken from alloy::rpc::types::trace::geth::CallFrame
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+pub struct CallFrame {
+    /// The address of the contract that was called.
+    #[serde(default)]
+    pub to: Option<primitive_types::H160>,
+    /// Calldata input.
+    pub input: Bytes,
+    /// Recorded child calls.
+    #[serde(default)]
+    pub calls: Vec<CallFrame>,
 }
 
 /// State overrides.
