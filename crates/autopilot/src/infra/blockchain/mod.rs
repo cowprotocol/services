@@ -3,7 +3,7 @@ use {
     crate::{boundary, domain::eth},
     chain::Chain,
     ethcontract::dyns::DynWeb3,
-    ethrpc::{block_stream::CurrentBlockWatcher, extensions::TracesExt},
+    ethrpc::{block_stream::CurrentBlockWatcher, extensions::DebugNamespace},
     primitive_types::U256,
     std::time::Duration,
     thiserror::Error,
@@ -106,7 +106,7 @@ impl Ethereum {
         let (transaction, receipt, traces) = tokio::try_join!(
             self.web3.eth().transaction(hash.0.into()),
             self.web3.eth().transaction_receipt(hash.0),
-            self.web3.trace().debug_transaction(hash.0),
+            self.web3.debug().transaction(hash.0),
         )?;
         let transaction = transaction.ok_or(Error::TransactionNotFound)?;
         let receipt = receipt.ok_or(Error::TransactionNotFound)?;
