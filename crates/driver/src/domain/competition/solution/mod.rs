@@ -11,7 +11,7 @@ use {
             blockchain::{self, Ethereum},
             config::file::FeeHandler,
             simulator,
-            solver::{ManageNativeToken, Solver},
+            solver::{dto::Flashloan, ManageNativeToken, Solver},
             Simulator,
         },
     },
@@ -35,8 +35,6 @@ pub mod slippage;
 pub mod trade;
 
 pub use {error::Error, interaction::Interaction, settlement::Settlement, trade::Trade};
-
-use crate::infra::solver::dto::Flashloan;
 
 type Prices = HashMap<eth::TokenAddress, eth::U256>;
 
