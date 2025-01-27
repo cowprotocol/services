@@ -968,10 +968,10 @@ impl Setup {
                 enable_simulation: self.enable_simulation,
                 mempools: self.mempools,
                 order_priority_strategies: self.order_priority_strategies,
+                orderbook,
             },
             &solvers_with_address,
             &blockchain,
-            &orderbook,
         )
         .await;
 

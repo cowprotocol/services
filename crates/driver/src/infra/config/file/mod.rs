@@ -738,25 +738,28 @@ impl Default for BadTokenDetectionConfig {
 }
 
 #[serde_as]
-#[derive(Clone, Debug, Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct Flashloans {
-    /// Whether the flashloans feature is enabled.
-    #[serde(default, rename = "flashloans-enabled")]
-    pub enabled: bool,
+#[derive(Clone, Debug, Deserialize, Default)]
+#[serde(
+    rename_all = "kebab-case",
+    deny_unknown_fields,
+    tag = "flashloans-enabled"
+)]
+pub enum Flashloans {
+    /// Flashloans feature is disabled
+    #[serde(rename = "false")]
+    #[default]
+    Disabled,
 
-    /// The maximum number of app-data entries in the cache.
-    #[serde(
-        default = "default_flashloans_cache_size",
-        rename = "flashloans-cache-size"
-    )]
-    pub cache_size: u64,
-}
+    /// Flashloans feature is enabled
+    #[serde(rename = "true")]
+    Enabled {
+        /// The base URL of the orderbook to fetch app-data from
+        orderbook_url: Url,
 
-impl Default for Flashloans {
-    fn default() -> Self {
-        serde_json::from_str("{}").expect("Flashloans uses default values")
-    }
+        /// The maximum number of app-data entries in the cache
+        #[serde(default = "default_flashloans_cache_size")]
+        cache_size: u64,
+    },
 }
 
 fn default_metrics_bad_token_detector_failure_ratio() -> f64 {
