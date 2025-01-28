@@ -52,7 +52,7 @@ impl Default for Mock {
             .route("/solve", axum::routing::post(solve))
             .with_state(state.clone());
 
-        let make_svc = observe::make_service_with_task_local_storage!(app);
+        let make_svc = observe::make_service_with_request_tracing!(app);
         let server = axum::Server::bind(&"0.0.0.0:0".parse().unwrap()).serve(make_svc);
 
         let mock = Mock {

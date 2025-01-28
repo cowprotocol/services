@@ -291,7 +291,7 @@ struct JitOrder {
     partially_fillable: bool,
     valid_to: u32,
     #[serde_as(as = "serialize::Hex")]
-    app_data: [u8; order::APP_DATA_LEN],
+    app_data: [u8; order::app_data::APP_DATA_LEN],
     kind: Kind,
     sell_token_balance: SellTokenBalance,
     buy_token_balance: BuyTokenBalance,

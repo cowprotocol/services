@@ -3,7 +3,10 @@ use {
     crate::{
         domain::competition::order,
         infra::config::file::OrderPriorityStrategy,
-        tests::{hex_address, setup::blockchain::Trade},
+        tests::{
+            hex_address,
+            setup::{blockchain::Trade, orderbook::Orderbook},
+        },
     },
     rand::seq::SliceRandom,
     serde_json::json,
@@ -18,6 +21,7 @@ pub struct Config {
     pub enable_simulation: bool,
     pub mempools: Vec<Mempool>,
     pub order_priority_strategies: Vec<OrderPriorityStrategy>,
+    pub orderbook: Orderbook,
 }
 
 pub struct Driver {
@@ -204,6 +208,13 @@ async fn create_config_file(
            "#
     };
     write!(file, "{simulation}").unwrap();
+    writeln!(file, "app-data-fetching-enabled = true").unwrap();
+    writeln!(
+        file,
+        r#"orderbook-url = "http://{}""#,
+        config.orderbook.addr
+    )
+    .unwrap();
     write!(
         file,
         r#"[contracts]

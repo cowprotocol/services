@@ -98,6 +98,7 @@ impl Driver {
             .post(url)
             .json(request)
             .timeout(timeout)
+            .header("X-REQUEST-ID", request.auction_id.to_string())
             .send()
             .await
             .context("send")?;
@@ -131,6 +132,9 @@ impl Driver {
 
         if let Some(timeout) = timeout {
             request = request.timeout(timeout);
+        }
+        if let Some(request_id) = observe::request_id::from_current_span() {
+            request = request.header("X-REQUEST-ID", request_id);
         }
 
         let mut response = request.send().await.context("send")?;

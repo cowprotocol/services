@@ -158,7 +158,7 @@ impl Auction {
                                 .map(FeePolicy::from_domain)
                                 .collect(),
                         ),
-                        app_data: AppDataHash(order.app_data.0.into()),
+                        app_data: AppDataHash(order.app_data.hash().0.into()),
                         signature: order.signature.data.clone().into(),
                         signing_scheme: match order.signature.scheme {
                             Scheme::Eip712 => SigningScheme::Eip712,

@@ -3,7 +3,7 @@ use {
     crate::{boundary, domain::eth},
     chain::Chain,
     ethcontract::dyns::DynWeb3,
-    ethrpc::block_stream::CurrentBlockWatcher,
+    ethrpc::{block_stream::CurrentBlockWatcher, extensions::DebugNamespace},
     primitive_types::U256,
     std::time::Duration,
     thiserror::Error,
@@ -103,9 +103,10 @@ impl Ethereum {
     }
 
     pub async fn transaction(&self, hash: eth::TxId) -> Result<eth::Transaction, Error> {
-        let (transaction, receipt) = tokio::try_join!(
+        let (transaction, receipt, traces) = tokio::try_join!(
             self.web3.eth().transaction(hash.0.into()),
-            self.web3.eth().transaction_receipt(hash.0)
+            self.web3.eth().transaction_receipt(hash.0),
+            self.web3.debug().transaction(hash.0),
         )?;
         let transaction = transaction.ok_or(Error::TransactionNotFound)?;
         let receipt = receipt.ok_or(Error::TransactionNotFound)?;
@@ -121,13 +122,15 @@ impl Ethereum {
             .block(block_hash.into())
             .await?
             .ok_or(Error::TransactionNotFound)?;
-        into_domain(transaction, receipt, block.timestamp).map_err(Error::IncompleteTransactionData)
+        into_domain(transaction, receipt, traces, block.timestamp)
+            .map_err(Error::IncompleteTransactionData)
     }
 }
 
 fn into_domain(
     transaction: web3::types::Transaction,
     receipt: web3::types::TransactionReceipt,
+    trace_calls: ethrpc::extensions::CallFrame,
     timestamp: U256,
 ) -> anyhow::Result<eth::Transaction> {
     Ok(eth::Transaction {
@@ -136,7 +139,6 @@ fn into_domain(
             .from
             .ok_or(anyhow::anyhow!("missing from"))?
             .into(),
-        input: transaction.input.0.into(),
         block: receipt
             .block_number
             .ok_or(anyhow::anyhow!("missing block_number"))?
@@ -151,7 +153,18 @@ fn into_domain(
             .ok_or(anyhow::anyhow!("missing effective_gas_price"))?
             .into(),
         timestamp: timestamp.as_u32(),
+        trace_calls: trace_calls.into(),
     })
+}
+
+impl From<ethrpc::extensions::CallFrame> for eth::CallFrame {
+    fn from(frame: ethrpc::extensions::CallFrame) -> Self {
+        eth::CallFrame {
+            to: frame.to.map(Into::into),
+            input: frame.input.0.into(),
+            calls: frame.calls.into_iter().map(Into::into).collect(),
+        }
+    }
 }
 
 #[derive(Debug, Error)]

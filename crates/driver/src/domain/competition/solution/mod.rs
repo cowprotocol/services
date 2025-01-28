@@ -95,7 +95,7 @@ impl Solution {
                             .unwrap_or(u32::MIN)
                             .into(),
                         valid_to: jit.order().valid_to,
-                        app_data: jit.order().app_data,
+                        app_data: jit.order().app_data.into(),
                         partial: jit.order().partially_fillable(),
                         pre_interactions: vec![],
                         post_interactions: vec![],

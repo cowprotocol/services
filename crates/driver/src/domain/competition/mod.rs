@@ -355,6 +355,7 @@ impl Competition {
             solution_id,
             submission_deadline,
             response_sender,
+            tracing_span: tracing::Span::current(),
         };
 
         self.settle_queue.try_send(request).map_err(|err| {
@@ -387,8 +388,8 @@ impl Competition {
                 solution_id,
                 submission_deadline,
                 response_sender,
+                tracing_span,
             } = request;
-            let solver = self.solver.name().as_str();
             async {
                 if self.eth.current_block().borrow().number >= submission_deadline {
                     if let Err(err) = response_sender.send(Err(DeadlineExceeded.into())) {
@@ -410,7 +411,7 @@ impl Competition {
                     tracing::error!(?err, "Failed to send /settle response");
                 }
             }
-            .instrument(tracing::info_span!("/settle", solver, %auction_id))
+            .instrument(tracing_span)
             .await
         }
     }
@@ -533,6 +534,7 @@ struct SettleRequest {
     solution_id: u64,
     submission_deadline: BlockNo,
     response_sender: oneshot::Sender<Result<Settled, Error>>,
+    tracing_span: tracing::Span,
 }
 
 /// Solution information sent to the protocol by the driver before the solution
