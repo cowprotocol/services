@@ -108,8 +108,8 @@ services:
       - NATIVE_PRICE_CACHE_MAX_UPDATE_SIZE=100
       - NATIVE_PRICE_CACHE_MAX_AGE=20m
       - SOLVER_TIME_LIMIT=5
-      - PRICE_ESTIMATION_DRIVERS=baseline|http://driver/baseline|0x2e6822f4Ab355E386d1A4fd34947ACE0F6f344a7
-      - NATIVE_PRICE_ESTIMATORS=baseline|http://driver/baseline|0x2e6822f4Ab355E386d1A4fd34947ACE0F6f344a7
+      - PRICE_ESTIMATION_DRIVERS=baseline|http://driver/baseline
+      - NATIVE_PRICE_ESTIMATORS=baseline|http://driver/baseline
       - DRIVERS=baseline|http://driver/baseline|0x2e6822f4Ab355E386d1A4fd34947ACE0F6f344a7
       - SKIP_EVENT_SYNC=true
       - BASELINE_SOURCES=None
