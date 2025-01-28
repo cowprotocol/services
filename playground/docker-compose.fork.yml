@@ -110,7 +110,7 @@ services:
       - SOLVER_TIME_LIMIT=5
       - PRICE_ESTIMATION_DRIVERS=baseline|http://driver/baseline
       - NATIVE_PRICE_ESTIMATORS=baseline|http://driver/baseline
-      - DRIVERS=baseline|http://driver/baseline|0x2e6822f4Ab355E386d1A4fd34947ACE0F6f344a7
+      - DRIVERS=baseline|http://driver/baseline|0xa0Ee7A142d267C1f36714E4a8F75612F20a79720
       - SKIP_EVENT_SYNC=true
       - BASELINE_SOURCES=None
       - RUST_BACKTRACE=1
