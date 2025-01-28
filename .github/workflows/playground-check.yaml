@@ -2,6 +2,7 @@ name: Playground operation check
 
 on:
   workflow_dispatch:
+  pull_request:
   schedule:
     # Run this job once per day
     - cron: "0 0 * * *"
