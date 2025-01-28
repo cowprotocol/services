@@ -5,6 +5,7 @@ use {
             competition::order,
             eth::{self, ContractAddress},
         },
+        infra::solver::dto::Flashloan,
         tests::{self, boundary, cases::EtherExt},
     },
     ethcontract::{dyns::DynWeb3, transport::DynTransport, PrivateKey, Web3},
@@ -14,7 +15,6 @@ use {
     std::collections::HashMap,
     web3::{signing::Key, Transport},
 };
-
 // TODO Possibly might be a good idea to use an enum for tokens instead of
 // &'static str
 
@@ -88,6 +88,7 @@ impl Pool {
 #[derive(Debug, Clone)]
 pub struct Solution {
     pub trades: Vec<Trade>,
+    pub flashloans: Vec<Flashloan>,
 }
 
 #[derive(Debug, Clone)]

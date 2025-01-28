@@ -92,6 +92,7 @@ impl AppDataRetriever {
 
 /// The app data associated with an order.
 #[derive(Debug, Clone, From)]
+#[cfg_attr(test, derive(PartialEq))]
 pub enum AppData {
     /// App data hash.
     Hash(AppDataHash),
@@ -110,6 +111,13 @@ impl AppData {
         match self {
             Self::Hash(hash) => *hash,
             Self::Full(data) => AppDataHash(data.hash.0.into()),
+        }
+    }
+
+    pub fn flashloan(&self) -> Option<&app_data::Flashloan> {
+        match self {
+            Self::Hash(_) => None,
+            Self::Full(data) => data.protocol.flashloan.as_ref(),
         }
     }
 }

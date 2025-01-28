@@ -205,6 +205,7 @@ impl Solutions {
                     solution.gas.map(|gas| eth::Gas(gas.into())),
                     solver_config.fee_handler,
                     auction.surplus_capturing_jit_order_owners(),
+                    solution.flashloans,
                 )
                 .map_err(|err| match err {
                     competition::solution::error::Solution::InvalidClearingPrices => {
@@ -243,6 +244,8 @@ pub struct Solution {
     #[serde(default)]
     post_interactions: Vec<InteractionData>,
     gas: Option<u64>,
+    #[serde(default)]
+    flashloans: Vec<Flashloan>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -478,4 +481,16 @@ pub enum Score {
     },
     #[serde(rename_all = "camelCase")]
     RiskAdjusted { success_probability: f64 },
+}
+
+#[serde_as]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(test, derive(serde::Serialize))]
+#[serde(rename_all = "camelCase")]
+pub struct Flashloan {
+    pub lender: eth::H160,
+    pub borrower: eth::H160,
+    pub token: eth::H160,
+    #[serde_as(as = "serialize::U256")]
+    pub amount: eth::U256,
 }

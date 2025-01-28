@@ -107,7 +107,7 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
                 order::Kind::Market => "market",
                 order::Kind::Limit { .. } => "limit",
             },
-            "appData": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "appData": app_data::AppDataHash(quote.order.app_data.hash().0 .0),
             "signingScheme": "eip712",
             "signature": format!("0x{}", hex::encode(quote.order_signature(&test.blockchain))),
             "quote": quote.order.quote,
@@ -215,6 +215,7 @@ async fn create_config_file(
         config.orderbook.addr
     )
     .unwrap();
+    writeln!(file, "flashloans-enabled = true").unwrap();
     write!(
         file,
         r#"[contracts]

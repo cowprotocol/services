@@ -10,7 +10,13 @@ use {
             eth,
             time::{self},
         },
-        infra::{self, blockchain::contracts::Addresses, config::file::FeeHandler, Ethereum},
+        infra::{
+            self,
+            blockchain::contracts::Addresses,
+            config::file::FeeHandler,
+            solver::dto::FlashloanHint,
+            Ethereum,
+        },
         tests::{hex_address, setup::blockchain::Trade},
     },
     ethereum_types::H160,
@@ -142,10 +148,13 @@ impl Solver {
                     order::Kind::Market => "market",
                     order::Kind::Limit { .. } => "limit",
                 },
-                "appData": quote.order.app_data,
+                "appData": app_data::AppDataHash(quote.order.app_data.hash().0.0),
                 "signature": if config.quote { "0x".to_string() } else { format!("0x{}", hex::encode(quote.order_signature(config.blockchain))) },
                 "signingScheme": if config.quote { "eip1271" } else { "eip712" },
             });
+            if let Some(flashloan) = quote.order.app_data.flashloan() {
+                order["flashloanHint"] = json!(Into::<FlashloanHint>::into(flashloan.clone()));
+            }
             if config.fee_handler == FeeHandler::Solver {
                 order.as_object_mut().unwrap().insert(
                     "feePolicies".to_owned(),
@@ -235,19 +244,21 @@ impl Solver {
                                 .order
                                 .solver_fee
                                 .map(|fee| fee.to_string());
-                            match fee {
-                                Some(fee) => trades_json.push(json!({
+                            let trade_json = match fee {
+                                Some(fee) => json!({
                                     "kind": "fulfillment",
                                     "order": order,
                                     "executedAmount": executed_amount,
                                     "fee": fee,
-                                })),
-                                None => trades_json.push(json!({
+                                }),
+                                None => json!({
                                     "kind": "fulfillment",
                                     "order": order,
                                     "executedAmount": executed_amount,
-                                })),
-                            }
+                                }),
+                            };
+
+                            trades_json.push(trade_json);
                         }
                     }
                     Trade::Jit(jit) => {
@@ -342,7 +353,7 @@ impl Solver {
                                 "sellAmount": jit.quoted_order.order.sell_amount.to_string(),
                                 "buyAmount": jit.quoted_order.order.buy_amount.unwrap_or_default().to_string(),
                                 "validTo": jit.quoted_order.order.valid_to,
-                                "appData": jit.quoted_order.order.app_data,
+                                "appData": app_data::AppDataHash(jit.quoted_order.order.app_data.hash().0.0),
                                 "kind": match jit.quoted_order.order.side {
                                             order::Side::Sell => "sell",
                                             order::Side::Buy => "buy",
@@ -362,13 +373,17 @@ impl Solver {
                     }
                 }
             }
-            solutions_json.push(json!({
+            let mut solution_json = json!({
                 "id": i,
                 "prices": prices_json,
                 "trades": trades_json,
                 "interactions": interactions_json,
                 "preInteractions": pre_interactions_json,
-            }));
+            });
+            if !solution.flashloans.is_empty() {
+                solution_json["flashloans"] = json!(solution.flashloans);
+            }
+            solutions_json.push(solution_json);
         }
 
         let build_tokens = config
