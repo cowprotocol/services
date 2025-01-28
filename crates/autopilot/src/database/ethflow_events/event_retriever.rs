@@ -28,7 +28,7 @@ impl EventRetrieving for EthFlowRefundRetriever {
         let mut events = AllEventsBuilder::new(self.web3.clone(), self.address, None);
         // Filter out events that we don't want to listen for in the contract. `Self` is
         // designed to only pick up refunding events. Adding a filter also makes
-        // the query more efficient.
+        // the query more efficient!
         events.filter = events.filter.topic0(vec![ORDER_REFUND_TOPIC].into());
         events
     }
