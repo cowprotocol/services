@@ -90,7 +90,7 @@ async fn refunder_tx(web3: Web3) {
     let mut refunder = RefundService::new(
         pg_pool,
         web3,
-        onchain.contracts().ethflow.clone(),
+        vec![onchain.contracts().ethflow.clone()],
         validity_duration as i64 / 2,
         10u64,
         refunder.account().clone(),

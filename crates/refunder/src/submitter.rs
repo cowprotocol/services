@@ -16,7 +16,6 @@ use {
     ethcontract::{
         transaction::{confirm::ConfirmParams, ResolveCondition},
         Account,
-        H160,
         U256,
     },
     gas_estimation::{GasPrice1559, GasPriceEstimating},
@@ -44,7 +43,6 @@ const GAS_PRICE_BUMP: f64 = 1.125;
 
 pub struct Submitter {
     pub web3: Web3,
-    pub ethflow_contracts: Vec<CoWSwapEthFlow>,
     pub account: Account,
     pub gas_estimator: Box<dyn GasPriceEstimating>,
     pub gas_parameters_of_last_tx: Option<GasPrice1559>,
@@ -64,8 +62,9 @@ impl Submitter {
 
     pub async fn submit(
         &mut self,
-        uids: Vec<(OrderUid, H160)>,
+        uids: Vec<OrderUid>,
         encoded_ethflow_orders: Vec<EncodedEthflowOrder>,
+        ethflow_contract: &CoWSwapEthFlow,
     ) -> Result<()> {
         let confirm_params = ConfirmParams {
             block_timeout: Some(5),
@@ -83,10 +82,7 @@ impl Submitter {
 
         self.gas_parameters_of_last_tx = Some(gas_price);
         self.nonce_of_last_submission = Some(nonce);
-        let tx_result = self
-            .ethflow_contracts
-            .first()
-            .unwrap()
+        let tx_result = ethflow_contract
             .invalidate_orders_ignoring_not_allowed(encoded_ethflow_orders)
             .gas_price(into_gas_price(&gas_price))
             .from(self.account.clone())

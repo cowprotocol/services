@@ -17,6 +17,7 @@ use {
     },
     futures::{stream, StreamExt},
     sqlx::PgPool,
+    std::collections::HashMap,
 };
 
 pub const NO_OWNER: H160 = H160([0u8; 20]);
@@ -51,12 +52,11 @@ impl RefundService {
         RefundService {
             db,
             web3: web3.clone(),
-            ethflow_contracts: ethflow_contracts.clone(),
+            ethflow_contracts,
             min_validity_duration,
             min_slippage: min_slippage_bps as f64 / 10000f64,
             submitter: Submitter {
                 web3: web3.clone(),
-                ethflow_contracts,
                 account,
                 gas_estimator: Box::new(web3),
                 gas_parameters_of_last_tx: None,
@@ -199,30 +199,46 @@ impl RefundService {
 
         tracing::debug!("Trying to refund the following uids: {:?}", uids);
 
-        let futures = uids.iter().map(|(uid, _)| {
-            let (uid, self_) = (*uid, &self);
-            async move {
-                self_
-                    .get_ethflow_data_from_db(&uid)
-                    .await
-                    .context(format!("uid {uid:?}"))
-            }
-        });
-        let encoded_ethflow_orders: Vec<EncodedEthflowOrder> = stream::iter(futures)
-            .buffer_unordered(10)
-            .filter_map(|result| async {
-                match result {
-                    Ok(order) => Some(order.encode()),
-                    Err(err) => {
-                        tracing::error!(?err, "failed to get data from db");
-                        None
-                    }
-                }
-            })
-            .collect()
-            .await;
+        // Go over all uids and group them by contract address
+        let mut uids_by_contract: HashMap<H160, Vec<OrderUid>> = HashMap::new();
+        for (uid, contract) in uids.iter() {
+            uids_by_contract.entry(*contract).or_default().push(*uid);
+        }
 
-        self.submitter.submit(uids, encoded_ethflow_orders).await?;
+        // For each contract, issue a separate tx to refund
+        for (contract, uids) in uids_by_contract.into_iter() {
+            let futures = uids.iter().map(|uid| {
+                let (uid, self_) = (*uid, &self);
+                async move {
+                    self_
+                        .get_ethflow_data_from_db(&uid)
+                        .await
+                        .context(format!("uid {uid:?}"))
+                }
+            });
+            let encoded_ethflow_orders: Vec<EncodedEthflowOrder> = stream::iter(futures)
+                .buffer_unordered(10)
+                .filter_map(|result| async {
+                    match result {
+                        Ok(order) => Some(order.encode()),
+                        Err(err) => {
+                            tracing::error!(?err, "failed to get data from db");
+                            None
+                        }
+                    }
+                })
+                .collect()
+                .await;
+            let ethflow_contract = self
+                .ethflow_contracts
+                .iter()
+                .find(|c| c.address() == contract)
+                .ok_or_else(|| anyhow!("Could not find contract with address: {:?}", contract))?;
+            self.submitter
+                .submit(uids, encoded_ethflow_orders, ethflow_contract)
+                .await?;
+        }
+
         Ok(())
     }
 }
