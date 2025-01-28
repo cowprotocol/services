@@ -77,6 +77,7 @@ tracing = { workspace = true }
 warp = { workspace = true }
 
 [dev-dependencies]
+app-data = { path = "../app-data", features = ["test_helpers"] }
 maplit = { workspace = true }
 mockall = { workspace = true }
 solvers-dto = { path = "../solvers-dto" }
