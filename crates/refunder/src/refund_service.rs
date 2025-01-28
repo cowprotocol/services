@@ -24,6 +24,8 @@ pub const NO_OWNER: H160 = H160([0u8; 20]);
 pub const INVALIDATED_OWNER: H160 = H160([255u8; 20]);
 const MAX_NUMBER_OF_UIDS_PER_REFUND_TX: usize = 30;
 
+type CoWSwapEthFlowAddress = H160;
+
 pub struct RefundService {
     pub db: PgPool,
     pub web3: Web3,
@@ -98,7 +100,7 @@ impl RefundService {
     async fn identify_uids_refunding_status_via_web3_calls(
         &self,
         refundable_order_uids: Vec<EthOrderPlacement>,
-    ) -> Result<Vec<(OrderUid, H160)>> {
+    ) -> Result<Vec<(OrderUid, CoWSwapEthFlowAddress)>> {
         let mut batch = Web3CallBatch::new(self.web3.transport().clone());
         let futures = refundable_order_uids
             .iter()
@@ -121,6 +123,8 @@ impl RefundService {
                     for (index, call) in contract_calls.into_iter().enumerate() {
                         match call.await {
                             Ok((owner, _)) => {
+                                // if an order is found to be invalidated in any contract, it is
+                                // already refunded and we can skip the rest
                                 if owner == INVALIDATED_OWNER {
                                     return Some((
                                         eth_order_placement.uid,
@@ -128,6 +132,8 @@ impl RefundService {
                                         None,
                                     ));
                                 }
+                                // if an order has a valid owner in any contract, it should be
+                                // refunded for that contract
                                 if owner != NO_OWNER {
                                     return Some((
                                         eth_order_placement.uid,
@@ -147,7 +153,7 @@ impl RefundService {
                         }
                     }
 
-                    // otherwise the order has no owner in all contract and therefore is invalid
+                    // otherwise the order has no owner in all contracts and therefore is invalid
                     Some((eth_order_placement.uid, RefundStatus::Invalid, None))
                 }
             })
@@ -189,7 +195,10 @@ impl RefundService {
         Ok(order_to_ethflow_data(order, ethflow_order))
     }
 
-    async fn send_out_refunding_tx(&mut self, uids: Vec<(OrderUid, H160)>) -> Result<()> {
+    async fn send_out_refunding_tx(
+        &mut self,
+        uids: Vec<(OrderUid, CoWSwapEthFlowAddress)>,
+    ) -> Result<()> {
         if uids.is_empty() {
             return Ok(());
         }

@@ -33,7 +33,7 @@ async fn refunder_tx(web3: Web3) {
     let receiver = Some(H160([42; 20]));
     let sell_amount = U256::from("3000000000000000");
 
-    let ethflow_contract = onchain.contracts().ethflows.get(0).unwrap();
+    let ethflow_contract = onchain.contracts().ethflows.first().unwrap();
     let quote = OrderQuoteRequest {
         from: ethflow_contract.address(),
         sell_token: onchain.contracts().weth.address(),

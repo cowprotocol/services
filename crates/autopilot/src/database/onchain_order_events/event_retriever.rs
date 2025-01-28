@@ -28,6 +28,10 @@ pub struct CoWSwapOnchainOrdersContract {
 
 impl CoWSwapOnchainOrdersContract {
     pub fn new(web3: Web3, addresses: Vec<H160>) -> Self {
+        assert!(
+            !addresses.is_empty(),
+            "CoWSwapOnchainOrdersContract must have at least one address to listen to."
+        );
         Self { web3, addresses }
     }
 }

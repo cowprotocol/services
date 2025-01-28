@@ -646,7 +646,7 @@ impl ExtendedEthFlowOrder {
                 .expect("Couldn't query domain separator")
                 .0,
         );
-        self.to_cow_swap_order(&ethflow_contract, &contracts.weth)
+        self.to_cow_swap_order(ethflow_contract, &contracts.weth)
             .data
             .uid(&domain_separator, &ethflow_contract.address())
     }

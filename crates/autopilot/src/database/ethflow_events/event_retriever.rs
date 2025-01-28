@@ -17,6 +17,10 @@ pub struct EthFlowRefundRetriever {
 
 impl EthFlowRefundRetriever {
     pub fn new(web3: Web3, addresses: Vec<H160>) -> Self {
+        assert!(
+            !addresses.is_empty(),
+            "EthFlowRefundRetriever must have at least one address to listen to."
+        );
         Self { web3, addresses }
     }
 }
