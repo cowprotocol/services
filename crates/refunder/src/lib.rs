@@ -58,7 +58,7 @@ pub async fn run(args: arguments::Arguments) {
     observe::metrics::serve_metrics(liveness.clone(), ([0, 0, 0, 0], args.metrics_port).into());
 
     let ethflow_contracts = args
-        .ethflow_contract
+        .ethflow_contracts
         .iter()
         .map(|contract| CoWSwapEthFlow::at(&web3, *contract))
         .collect();

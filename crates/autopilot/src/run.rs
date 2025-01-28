@@ -476,7 +476,7 @@ pub async fn run(args: Arguments) {
     let mut maintenance = Maintenance::new(settlement_event_indexer, db.clone());
     maintenance.with_cow_amms(&cow_amm_registry);
 
-    if !args.ethflow_contract.is_empty() {
+    if !args.ethflow_contracts.is_empty() {
         let ethflow_refund_start_block = determine_ethflow_refund_indexing_start(
             &skip_event_sync_start,
             args.ethflow_indexing_start,
@@ -489,7 +489,7 @@ pub async fn run(args: Arguments) {
         let refund_event_handler = EventUpdater::new_skip_blocks_before(
             // This cares only about ethflow refund events because all the other ethflow
             // events are already indexed by the OnchainOrderParser.
-            EthFlowRefundRetriever::new(web3.clone(), args.ethflow_contract.clone()),
+            EthFlowRefundRetriever::new(web3.clone(), args.ethflow_contracts.clone()),
             db.clone(),
             block_retriever.clone(),
             ethflow_refund_start_block,
@@ -518,7 +518,7 @@ pub async fn run(args: Arguments) {
         let onchain_order_indexer = EventUpdater::new_skip_blocks_before(
             // The events from the ethflow contract are read with the more generic contract
             // interface called CoWSwapOnchainOrders.
-            CoWSwapOnchainOrdersContract::new(web3.clone(), args.ethflow_contract),
+            CoWSwapOnchainOrdersContract::new(web3.clone(), args.ethflow_contracts),
             onchain_order_event_parser,
             block_retriever,
             ethflow_start_block,

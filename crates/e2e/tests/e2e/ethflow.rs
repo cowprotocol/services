@@ -97,13 +97,21 @@ async fn eth_flow_tx(web3: Web3) {
     let ethflow_order =
         ExtendedEthFlowOrder::from_quote(&quote, valid_to).include_slippage_bps(300);
 
-    submit_order(&ethflow_order, trader.account(), onchain.contracts()).await;
+    let ethflow_contract = onchain.contracts().ethflows.first().unwrap();
+    submit_order(
+        &ethflow_order,
+        trader.account(),
+        onchain.contracts(),
+        ethflow_contract,
+    )
+    .await;
 
     test_order_availability_in_api(
         &services,
         &ethflow_order,
         &trader.address(),
         onchain.contracts(),
+        ethflow_contract,
     )
     .await;
 
@@ -115,7 +123,11 @@ async fn eth_flow_tx(web3: Web3) {
     let fee_charged = || async {
         onchain.mint_block().await;
         let order = services
-            .get_order(&ethflow_order.uid(onchain.contracts()).await)
+            .get_order(
+                &ethflow_order
+                    .uid(onchain.contracts(), ethflow_contract)
+                    .await,
+            )
             .await
             .unwrap();
         order.metadata.executed_fee > U256::zero()
@@ -127,6 +139,7 @@ async fn eth_flow_tx(web3: Web3) {
         &ethflow_order,
         &trader.address(),
         onchain.contracts(),
+        ethflow_contract,
     )
     .await;
 }
@@ -160,13 +173,21 @@ async fn eth_flow_without_quote(web3: Web3) {
         app_data: Default::default(),
     });
 
-    submit_order(&ethflow_order, trader.account(), onchain.contracts()).await;
+    let ethflow_contract = onchain.contracts().ethflows.first().unwrap();
+    submit_order(
+        &ethflow_order,
+        trader.account(),
+        onchain.contracts(),
+        ethflow_contract,
+    )
+    .await;
 
     test_order_availability_in_api(
         &services,
         &ethflow_order,
         &trader.address(),
         onchain.contracts(),
+        ethflow_contract,
     )
     .await;
 
@@ -202,13 +223,20 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
         valid_to,
     )
     .include_slippage_bps(300);
-    submit_order(&dummy_order, dummy_trader.account(), onchain.contracts()).await;
+    let ethflow_contract = onchain.contracts().ethflows.first().unwrap();
+    submit_order(
+        &dummy_order,
+        dummy_trader.account(),
+        onchain.contracts(),
+        ethflow_contract,
+    )
+    .await;
     web3.api::<TestNodeApi<_>>()
         .mine_pending_block()
         .await
         .unwrap();
     dummy_order
-        .mine_order_invalidation(dummy_trader.account(), &onchain.contracts().ethflow)
+        .mine_order_invalidation(dummy_trader.account(), ethflow_contract)
         .await;
 
     // Create the actual order that should be picked up by the services and matched.
@@ -232,7 +260,13 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
         valid_to,
     )
     .include_slippage_bps(300);
-    submit_order(&ethflow_order, trader.account(), onchain.contracts()).await;
+    submit_order(
+        &ethflow_order,
+        trader.account(),
+        onchain.contracts(),
+        ethflow_contract,
+    )
+    .await;
 
     tracing::info!("waiting for trade");
     test_order_was_settled(&ethflow_order, &web3).await;
@@ -240,7 +274,7 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
     // Check order events
     let events = crate::database::events_of_order(
         services.db(),
-        &dummy_order.uid(onchain.contracts()).await,
+        &dummy_order.uid(onchain.contracts(), ethflow_contract).await,
     )
     .await;
     assert_eq!(events.first().unwrap().label, OrderEventLabel::Created);
@@ -276,18 +310,23 @@ async fn test_submit_quote(
     response
 }
 
-async fn submit_order(ethflow_order: &ExtendedEthFlowOrder, user: &Account, contracts: &Contracts) {
+async fn submit_order(
+    ethflow_order: &ExtendedEthFlowOrder,
+    user: &Account,
+    contracts: &Contracts,
+    ethflow_contract: &CoWSwapEthFlow,
+) {
     assert_eq!(
-        ethflow_order.status(contracts).await,
+        ethflow_order.status(contracts, ethflow_contract).await,
         EthFlowOrderOnchainStatus::Free
     );
 
     let result = ethflow_order
-        .mine_order_creation(user, &contracts.ethflow)
+        .mine_order_creation(user, ethflow_contract)
         .await;
     assert_eq!(result.as_receipt().unwrap().status, Some(1.into()));
     assert_eq!(
-        ethflow_order.status(contracts).await,
+        ethflow_order.status(contracts, ethflow_contract).await,
         EthFlowOrderOnchainStatus::Created(user.address(), ethflow_order.0.valid_to)
     );
 }
@@ -297,18 +336,27 @@ async fn test_order_availability_in_api(
     order: &ExtendedEthFlowOrder,
     owner: &H160,
     contracts: &Contracts,
+    ethflow_contract: &CoWSwapEthFlow,
 ) {
     tracing::info!("Waiting for order to show up in API.");
-    let uid = order.uid(contracts).await;
+    let uid = order.uid(contracts, ethflow_contract).await;
     let is_available = || async { services.get_order(&uid).await.is_ok() };
     wait_for_condition(TIMEOUT, is_available).await.unwrap();
 
-    test_orders_query(services, order, owner, contracts).await;
+    test_orders_query(services, order, owner, contracts, ethflow_contract).await;
 
     // Api returns eth flow orders for both eth-flow contract address and actual
     // owner
-    for address in [owner, &contracts.ethflow.address()] {
-        test_account_query(address, services.client(), order, owner, contracts).await;
+    for address in [owner, &ethflow_contract.address()] {
+        test_account_query(
+            address,
+            services.client(),
+            order,
+            owner,
+            contracts,
+            ethflow_contract,
+        )
+        .await;
     }
 }
 
@@ -317,18 +365,26 @@ async fn test_trade_availability_in_api(
     order: &ExtendedEthFlowOrder,
     owner: &H160,
     contracts: &Contracts,
+    ethflow_contract: &CoWSwapEthFlow,
 ) {
     test_trade_query(
-        &TradeQuery::ByUid(order.uid(contracts).await),
+        &TradeQuery::ByUid(order.uid(contracts, ethflow_contract).await),
         client,
         contracts,
+        ethflow_contract,
     )
     .await;
 
     // Api returns eth flow orders for both eth-flow contract address and actual
     // owner
-    for address in [owner, &contracts.ethflow.address()] {
-        test_trade_query(&TradeQuery::ByOwner(*address), client, contracts).await;
+    for address in [owner, &ethflow_contract.address()] {
+        test_trade_query(
+            &TradeQuery::ByOwner(*address),
+            client,
+            contracts,
+            ethflow_contract,
+        )
+        .await;
     }
 }
 
@@ -352,12 +408,13 @@ async fn test_orders_query(
     order: &ExtendedEthFlowOrder,
     owner: &H160,
     contracts: &Contracts,
+    ethflow_contract: &CoWSwapEthFlow,
 ) {
     let response = services
-        .get_order(&order.uid(contracts).await)
+        .get_order(&order.uid(contracts, ethflow_contract).await)
         .await
         .unwrap();
-    test_order_parameters(&response, order, owner, contracts).await;
+    test_order_parameters(&response, order, owner, contracts, ethflow_contract).await;
 }
 
 async fn test_account_query(
@@ -366,6 +423,7 @@ async fn test_account_query(
     order: &ExtendedEthFlowOrder,
     owner: &H160,
     contracts: &Contracts,
+    ethflow_contract: &CoWSwapEthFlow,
 ) {
     let query = client
         .get(format!(
@@ -377,7 +435,7 @@ async fn test_account_query(
     assert_eq!(query.status(), 200);
     let response = query.json::<Vec<Order>>().await.unwrap();
     assert_eq!(response.len(), 1);
-    test_order_parameters(&response[0], order, owner, contracts).await;
+    test_order_parameters(&response[0], order, owner, contracts, ethflow_contract).await;
 }
 
 enum TradeQuery {
@@ -385,7 +443,12 @@ enum TradeQuery {
     ByOwner(H160),
 }
 
-async fn test_trade_query(query_type: &TradeQuery, client: &Client, contracts: &Contracts) {
+async fn test_trade_query(
+    query_type: &TradeQuery,
+    client: &Client,
+    contracts: &Contracts,
+    ethflow_contract: &CoWSwapEthFlow,
+) {
     let query = client
         .get(format!("{API_HOST}{TRADES_ENDPOINT}",))
         .query(&[match query_type {
@@ -400,7 +463,7 @@ async fn test_trade_query(query_type: &TradeQuery, client: &Client, contracts: &
     assert_eq!(response.len(), 1);
 
     // Expected values from actual EIP1271 order instead of eth-flow order
-    assert_eq!(response[0].owner, contracts.ethflow.address());
+    assert_eq!(response[0].owner, ethflow_contract.address());
     assert_eq!(response[0].sell_token, contracts.weth.address());
 }
 
@@ -409,10 +472,11 @@ async fn test_order_parameters(
     order: &ExtendedEthFlowOrder,
     owner: &H160,
     contracts: &Contracts,
+    ethflow_contract: &CoWSwapEthFlow,
 ) {
     // Expected values from actual EIP1271 order instead of eth-flow order
     assert_eq!(response.data.valid_to, u32::MAX);
-    assert_eq!(response.metadata.owner, contracts.ethflow.address());
+    assert_eq!(response.metadata.owner, ethflow_contract.address());
     assert_eq!(response.data.sell_token, contracts.weth.address());
 
     // Specific parameters return the missing values
@@ -432,7 +496,7 @@ async fn test_order_parameters(
     );
     assert_eq!(response.metadata.class, OrderClass::Limit);
     assert!(order
-        .is_valid_cowswap_signature(&response.signature, contracts)
+        .is_valid_cowswap_signature(&response.signature, contracts, ethflow_contract)
         .await
         .is_ok());
 
@@ -440,7 +504,7 @@ async fn test_order_parameters(
     assert_eq!(response.interactions.pre.len(), 1);
     assert_eq!(
         response.interactions.pre[0].target,
-        contracts.ethflow.address()
+        ethflow_contract.address()
     );
     assert_eq!(response.interactions.pre[0].call_data, WRAP_ALL_SELECTOR);
 }
@@ -492,10 +556,13 @@ impl ExtendedEthFlowOrder {
         })
     }
 
-    pub async fn status(&self, contracts: &Contracts) -> EthFlowOrderOnchainStatus {
-        contracts
-            .ethflow
-            .orders(Bytes(self.hash(contracts).await.0))
+    pub async fn status(
+        &self,
+        contracts: &Contracts,
+        ethflow: &CoWSwapEthFlow,
+    ) -> EthFlowOrderOnchainStatus {
+        ethflow
+            .orders(Bytes(self.hash(contracts, ethflow).await.0))
             .call()
             .await
             .expect("Couldn't fetch order status")
@@ -506,6 +573,7 @@ impl ExtendedEthFlowOrder {
         &self,
         cowswap_signature: &Signature,
         contracts: &Contracts,
+        ethflow: &CoWSwapEthFlow,
     ) -> anyhow::Result<()> {
         let bytes = match cowswap_signature {
             Signature::Eip1271(bytes) => bytes,
@@ -516,10 +584,9 @@ impl ExtendedEthFlowOrder {
         }
         .clone();
 
-        let result = contracts
-            .ethflow
+        let result = ethflow
             .is_valid_signature(
-                Bytes(self.hash(contracts).await.to_fixed_bytes()),
+                Bytes(self.hash(contracts, ethflow).await.to_fixed_bytes()),
                 Bytes(bytes),
             )
             .call()
@@ -550,7 +617,7 @@ impl ExtendedEthFlowOrder {
         tx!(sender, ethflow.invalidate_order(self.0.encode()))
     }
 
-    async fn hash(&self, contracts: &Contracts) -> H256 {
+    async fn hash(&self, contracts: &Contracts, ethflow: &CoWSwapEthFlow) -> H256 {
         let domain_separator = DomainSeparator(
             contracts
                 .gp_settlement
@@ -563,13 +630,13 @@ impl ExtendedEthFlowOrder {
         H256(hashed_eip712_message(
             &domain_separator,
             &self
-                .to_cow_swap_order(&contracts.ethflow, &contracts.weth)
+                .to_cow_swap_order(ethflow, &contracts.weth)
                 .data
                 .hash_struct(),
         ))
     }
 
-    pub async fn uid(&self, contracts: &Contracts) -> OrderUid {
+    pub async fn uid(&self, contracts: &Contracts, ethflow_contract: &CoWSwapEthFlow) -> OrderUid {
         let domain_separator = DomainSeparator(
             contracts
                 .gp_settlement
@@ -579,9 +646,9 @@ impl ExtendedEthFlowOrder {
                 .expect("Couldn't query domain separator")
                 .0,
         );
-        self.to_cow_swap_order(&contracts.ethflow, &contracts.weth)
+        self.to_cow_swap_order(&ethflow_contract, &contracts.weth)
             .data
-            .uid(&domain_separator, &contracts.ethflow.address())
+            .uid(&domain_separator, &ethflow_contract.address())
     }
 }
 

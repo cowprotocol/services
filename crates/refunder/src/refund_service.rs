@@ -118,34 +118,37 @@ impl RefundService {
                     .collect::<Vec<_>>();
 
                 async move {
-                    let mut order_owner = None;
-                    let mut contract = Default::default();
                     for (index, call) in contract_calls.into_iter().enumerate() {
                         match call.await {
-                            Ok(order) => {
-                                order_owner = Some(order.0);
-                                contract = self.ethflow_contracts[index].address();
-                                break;
+                            Ok((owner, _)) => {
+                                if owner == INVALIDATED_OWNER {
+                                    return Some((
+                                        eth_order_placement.uid,
+                                        RefundStatus::Refunded,
+                                        None,
+                                    ));
+                                }
+                                if owner != NO_OWNER {
+                                    return Some((
+                                        eth_order_placement.uid,
+                                        RefundStatus::NotYetRefunded,
+                                        Some(self.ethflow_contracts[index].address()),
+                                    ));
+                                }
                             }
                             Err(err) => {
-                                if index == self.ethflow_contracts.len() - 1 {
-                                    tracing::error!(
-                                        "Error while getting the currentonchain status of \
-                                         orderhash {:?}, {:?}",
-                                        H256(order_hash),
-                                        err
-                                    );
-                                }
+                                tracing::error!(
+                                    "Error while getting the currentonchain status of orderhash \
+                                     {:?}, {:?}",
+                                    H256(order_hash),
+                                    err
+                                );
                             }
                         }
                     }
-                    let refund_status = match order_owner {
-                        Some(bytes) if bytes == INVALIDATED_OWNER => RefundStatus::Refunded,
-                        Some(bytes) if bytes == NO_OWNER => RefundStatus::Invalid,
-                        // any other owner
-                        _ => RefundStatus::NotYetRefunded,
-                    };
-                    Some((eth_order_placement.uid, refund_status, contract))
+
+                    // otherwise the order has no owner in all contract and therefore is invalid
+                    Some((eth_order_placement.uid, RefundStatus::Invalid, None))
                 }
             })
             .collect::<Vec<_>>();
@@ -158,7 +161,7 @@ impl RefundService {
             match refund_status {
                 RefundStatus::Refunded => (),
                 RefundStatus::Invalid => invalid_uids.push(uid),
-                RefundStatus::NotYetRefunded => to_be_refunded_uids.push((uid, contract)),
+                RefundStatus::NotYetRefunded => to_be_refunded_uids.push((uid, contract.unwrap())),
             }
         }
         if !invalid_uids.is_empty() {

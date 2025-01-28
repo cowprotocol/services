@@ -35,8 +35,8 @@ pub struct Arguments {
     /// In general, one contract is sufficient for the service to function.
     /// Support for multiple contract was added to support transition period for
     /// integrators when the migration of the eth-flow contract happens.
-    #[clap(long, env)]
-    pub ethflow_contract: Vec<H160>,
+    #[clap(long, env, use_value_delimiter = true)]
+    pub ethflow_contracts: Vec<H160>,
 
     /// Timestamp at which we should start indexing eth-flow contract events.
     /// If there are already events in the database for a date later than this,
@@ -248,7 +248,7 @@ impl std::fmt::Display for Arguments {
             token_owner_finder,
             price_estimation,
             tracing_node_url,
-            ethflow_contract,
+            ethflow_contracts,
             ethflow_indexing_start,
             metrics_address,
             skip_event_sync,
@@ -290,7 +290,7 @@ impl std::fmt::Display for Arguments {
         write!(f, "{}", token_owner_finder)?;
         write!(f, "{}", price_estimation)?;
         display_option(f, "tracing_node_url", tracing_node_url)?;
-        writeln!(f, "ethflow_contract: {:?}", ethflow_contract)?;
+        writeln!(f, "ethflow_contracts: {:?}", ethflow_contracts)?;
         writeln!(f, "ethflow_indexing_start: {:?}", ethflow_indexing_start)?;
         writeln!(f, "metrics_address: {}", metrics_address)?;
         let _intentionally_ignored = db_url;
