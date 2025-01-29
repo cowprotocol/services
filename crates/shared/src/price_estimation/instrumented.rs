@@ -37,8 +37,8 @@ impl<T> InstrumentedPriceEstimator<T> {
         }
     }
 
-    /// Determines the result of a price estimate, returning either "success" or the
-    /// error reason
+    /// Determines the result of a price estimate, returning either "success" or
+    /// the error reason
     fn estimate_result<B>(&self, estimate: Result<&B, &PriceEstimationError>) -> &str {
         // Count as a successful request if the answer is ok (no error) or if the error
         // is No Liquidity
