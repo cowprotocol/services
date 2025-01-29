@@ -15,7 +15,7 @@ use {
             },
             Postgres,
         },
-        domain,
+        domain::{self, competition::SolverParticipationGuard},
         event_updater::EventUpdater,
         infra,
         maintenance::Maintenance,
@@ -367,8 +367,20 @@ pub async fn run(args: Arguments) {
 
     let persistence =
         infra::persistence::Persistence::new(args.s3.into().unwrap(), Arc::new(db.clone())).await;
-    let settlement_observer =
-        crate::domain::settlement::Observer::new(eth.clone(), persistence.clone());
+    let (settlement_updates_sender, settlement_updates_receiver) =
+        tokio::sync::mpsc::unbounded_channel();
+    let settlement_observer = crate::domain::settlement::Observer::new(
+        eth.clone(),
+        persistence.clone(),
+        settlement_updates_sender,
+    );
+    let solver_participation_guard = SolverParticipationGuard::new(
+        eth.clone(),
+        db.clone(),
+        settlement_updates_receiver,
+        args.solver_blacklist_cache_ttl,
+        args.solver_last_auctions_participation_count,
+    );
     let settlement_contract_start_index =
         if let Some(DeploymentInformation::BlockNumber(settlement_contract_start_index)) =
             eth.contracts().settlement().deployment_information()
@@ -574,6 +586,7 @@ pub async fn run(args: Arguments) {
         eth,
         persistence.clone(),
         drivers,
+        solver_participation_guard,
         solvable_orders_cache,
         trusted_tokens,
         liveness.clone(),

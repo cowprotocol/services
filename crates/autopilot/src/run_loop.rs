@@ -4,7 +4,14 @@ use {
         domain::{
             self,
             auction::Id,
-            competition::{self, Solution, SolutionError, TradedOrder, Unranked},
+            competition::{
+                self,
+                Solution,
+                SolutionError,
+                SolverParticipationGuard,
+                TradedOrder,
+                Unranked,
+            },
             eth::{self, TxId},
             OrderUid,
         },
@@ -59,6 +66,7 @@ pub struct RunLoop {
     eth: infra::Ethereum,
     persistence: infra::Persistence,
     drivers: Vec<Arc<infra::Driver>>,
+    solver_participation_guard: SolverParticipationGuard,
     solvable_orders_cache: Arc<SolvableOrdersCache>,
     trusted_tokens: AutoUpdatingTokenList,
     in_flight_orders: Arc<Mutex<HashSet<OrderUid>>>,
@@ -75,6 +83,7 @@ impl RunLoop {
         eth: infra::Ethereum,
         persistence: infra::Persistence,
         drivers: Vec<Arc<infra::Driver>>,
+        solver_participation_guard: SolverParticipationGuard,
         solvable_orders_cache: Arc<SolvableOrdersCache>,
         trusted_tokens: AutoUpdatingTokenList,
         liveness: Arc<Liveness>,
@@ -85,6 +94,7 @@ impl RunLoop {
             eth,
             persistence,
             drivers,
+            solver_participation_guard,
             solvable_orders_cache,
             trusted_tokens,
             in_flight_orders: Default::default(),
@@ -726,23 +736,14 @@ impl RunLoop {
         request: &solve::Request,
     ) -> Result<Vec<Result<competition::Solution, domain::competition::SolutionError>>, SolveError>
     {
-        let authenticator = self.eth.contracts().authenticator();
-        let is_allowed = authenticator
-            .is_solver(driver.submission_address.into())
-            .call()
-            .await
-            .map_err(|err| {
-                tracing::warn!(
-                    driver = driver.name,
-                    ?driver.submission_address,
-                    ?err,
-                    "failed to check if solver is deny listed"
-                );
+        let can_participate = self.solver_participation_guard.can_participate(&driver.submission_address).await.map_err(|err| {
+            tracing::error!(?err, driver = %driver.name, ?driver.submission_address, "solver participation check failed");
                 SolveError::SolverDenyListed
-            })?;
+            }
+        )?;
 
-        // Do not send the request to the driver if the solver is denied
-        if !is_allowed {
+        // Do not send the request to the driver if the solver is deny-listed
+        if !can_participate {
             return Err(SolveError::SolverDenyListed);
         }
 

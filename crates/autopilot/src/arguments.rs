@@ -242,6 +242,14 @@ pub struct Arguments {
     /// Archive node URL used to index CoW AMM
     #[clap(long, env)]
     pub archive_node_url: Option<Url>,
+
+    #[clap(long, env, default_value = "5m", value_parser = humantime::parse_duration)]
+    /// The time-to-live for the solver participation blacklist cache.
+    pub solver_blacklist_cache_ttl: Duration,
+
+    #[clap(long, env, default_value = "3")]
+    /// The number of last auctions to check solver participation eligibility.
+    pub solver_last_auctions_participation_count: u32,
 }
 
 impl std::fmt::Display for Arguments {
@@ -287,6 +295,8 @@ impl std::fmt::Display for Arguments {
             max_winners_per_auction,
             archive_node_url,
             max_solutions_per_solver,
+            solver_blacklist_cache_ttl,
+            solver_last_auctions_participation_count,
         } = self;
 
         write!(f, "{}", shared)?;
@@ -369,6 +379,16 @@ impl std::fmt::Display for Arguments {
             f,
             "max_solutions_per_solver: {:?}",
             max_solutions_per_solver
+        )?;
+        writeln!(
+            f,
+            "solver_blacklist_cache_ttl: {:?}",
+            solver_blacklist_cache_ttl
+        )?;
+        writeln!(
+            f,
+            "solver_last_auctions_participation_count: {:?}",
+            solver_last_auctions_participation_count
         )?;
         Ok(())
     }

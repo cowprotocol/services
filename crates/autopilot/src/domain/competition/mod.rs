@@ -6,8 +6,12 @@ use {
 };
 
 mod participant;
+mod solver_participation_guard;
 
-pub use participant::{Participant, Ranked, Unranked};
+pub use {
+    participant::{Participant, Ranked, Unranked},
+    solver_participation_guard::{DatabaseSolverParticipationValidator, SolverParticipationGuard},
+};
 
 type SolutionId = u64;
 
