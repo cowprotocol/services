@@ -1,7 +1,6 @@
 use {
     crate::{database::Postgres, domain::eth, infra::Ethereum},
     ethrpc::block_stream::CurrentBlockWatcher,
-    futures::future::try_join_all,
     std::{
         sync::Arc,
         time::{Duration, Instant},
@@ -12,7 +11,8 @@ use {
 pub struct SolverParticipationGuard(Arc<Inner>);
 
 struct Inner {
-    validators: Vec<Box<dyn SolverParticipationValidator + Send + Sync>>,
+    onchain_solver_participation_validator: OnchainSolverParticipationValidator,
+    database_solver_participation_validator: DatabaseSolverParticipationValidator,
 }
 
 impl SolverParticipationGuard {
@@ -34,22 +34,31 @@ impl SolverParticipationGuard {
         );
 
         Self(Arc::new(Inner {
-            validators: vec![
-                Box::new(database_solver_participation_validator),
-                Box::new(onchain_solver_participation_validator),
-            ],
+            onchain_solver_participation_validator,
+            database_solver_participation_validator,
         }))
     }
 
     pub async fn can_participate(&self, solver: &eth::Address) -> anyhow::Result<bool> {
-        try_join_all(
-            self.0
-                .validators
-                .iter()
-                .map(|strategy| strategy.can_participate(solver)),
-        )
-        .await
-        .map(|results| results.into_iter().all(|can_participate| can_participate))
+        if !self
+            .0
+            .database_solver_participation_validator
+            .can_participate(solver)
+            .await?
+        {
+            return Ok(false);
+        }
+
+        if !self
+            .0
+            .onchain_solver_participation_validator
+            .can_participate(solver)
+            .await?
+        {
+            return Ok(false);
+        }
+
+        Ok(true)
     }
 }
 
