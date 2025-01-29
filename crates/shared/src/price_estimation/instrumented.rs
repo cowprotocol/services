@@ -148,11 +148,17 @@ mod tests {
         let expectations = vec![
             (0, Ok(Estimate::default())),
             (1, Err(PriceEstimationError::NoLiquidity)),
-            (0, Err(PriceEstimationError::UnsupportedToken {
-                token: H160([0; 20]),
-                reason: "".to_string(),
-            })),
-            (1, Err(PriceEstimationError::UnsupportedOrderType("".to_string()))),
+            (
+                0,
+                Err(PriceEstimationError::UnsupportedToken {
+                    token: H160([0; 20]),
+                    reason: "".to_string(),
+                }),
+            ),
+            (
+                1,
+                Err(PriceEstimationError::UnsupportedOrderType("".to_string())),
+            ),
             (0, Err(PriceEstimationError::RateLimited)),
             (1, Err(PriceEstimationError::EstimatorInternal(anyhow!("")))),
             (0, Err(PriceEstimationError::ProtocolInternal(anyhow!("")))),
@@ -182,7 +188,7 @@ mod tests {
             "unsupported_order_type",
             "rate_limited",
             "estimator_internal_error",
-            "protocol_internal_error"
+            "protocol_internal_error",
         ] {
             let observed = instrumented
                 .metrics
