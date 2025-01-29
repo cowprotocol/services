@@ -157,15 +157,69 @@ mod tests {
             .times(1)
             .withf(move |q| *q == expected_query)
             .returning(|_| {
+                async { Err(PriceEstimationError::NoLiquidity) }.boxed()
+            });
+        let expected_query = queries[0].clone();
+        estimator
+            .expect_estimate()
+            .times(1)
+            .withf(move |q| *q == expected_query)
+            .returning(|_| {
+                async { Err(PriceEstimationError::UnsupportedToken {
+                            token: H160([0; 20]),
+                            reason: "".to_string()
+                        }) }.boxed()
+            });
+        let expected_query = queries[1].clone();
+        estimator
+            .expect_estimate()
+            .times(1)
+            .withf(move |q| *q == expected_query)
+            .returning(|_| {
+                async { Err(PriceEstimationError::UnsupportedOrderType("".to_string())) }.boxed()
+            });
+        let expected_query = queries[0].clone();
+        estimator
+            .expect_estimate()
+            .times(1)
+            .withf(move |q| *q == expected_query)
+            .returning(|_| {
+                async { Err(PriceEstimationError::RateLimited) }.boxed()
+            });
+        let expected_query = queries[1].clone();
+        estimator
+            .expect_estimate()
+            .times(1)
+            .withf(move |q| *q == expected_query)
+            .returning(|_| {
                 async { Err(PriceEstimationError::EstimatorInternal(anyhow!(""))) }.boxed()
+            });
+        let expected_query = queries[0].clone();
+        estimator
+            .expect_estimate()
+            .times(1)
+            .withf(move |q| *q == expected_query)
+            .returning(|_| {
+                async { Err(PriceEstimationError::ProtocolInternal(anyhow!(""))) }.boxed()
             });
 
         let instrumented = InstrumentedPriceEstimator::new(estimator, "foo".to_string());
 
         let _ = instrumented.estimate(queries[0].clone()).await;
         let _ = instrumented.estimate(queries[1].clone()).await;
+        let _ = instrumented.estimate(queries[0].clone()).await;
+        let _ = instrumented.estimate(queries[1].clone()).await;
+        let _ = instrumented.estimate(queries[0].clone()).await;
+        let _ = instrumented.estimate(queries[1].clone()).await;
+        let _ = instrumented.estimate(queries[0].clone()).await;
 
-        for result in &["success", "estimator_internal_error"] {
+        for result in &[
+            "unsupported_token",
+            "unsupported_order_type",
+            "rate_limited",
+            "estimator_internal_error",
+            "protocol_internal_error"
+        ] {
             let observed = instrumented
                 .metrics
                 .price_estimates
@@ -173,11 +227,17 @@ mod tests {
                 .get();
             assert_eq!(observed, 1);
         }
-        let observed = instrumented
+        let observed_success = instrumented
+            .metrics
+            .price_estimates
+            .with_label_values(&["foo", "success"])
+            .get();
+        assert_eq!(observed_success, 2);
+        let observed_count = instrumented
             .metrics
             .price_estimation_times
             .with_label_values(&["foo"])
             .get_sample_count();
-        assert_eq!(observed, 2);
+        assert_eq!(observed_count, 7);
     }
 }
