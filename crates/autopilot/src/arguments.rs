@@ -261,9 +261,9 @@ pub struct SolverParticipationGuardConfig {
 pub struct DbBasedValidatorConfig {
     /// Enables or disables the solver participation guard
     #[clap(
-        long,
-        env,
-        name = "db_based_solver_participation_guard_enabled",
+        id = "db_enabled",
+        long = "db-based-solver-participation-guard-enabled",
+        env = "DB_BASED_SOLVER_PARTICIPATION_GUARD_ENABLED",
         default_value = "true"
     )]
     pub enabled: bool,
@@ -281,9 +281,9 @@ pub struct DbBasedValidatorConfig {
 pub struct OnchainBasedValidatorConfig {
     /// Enables or disables the solver participation guard
     #[clap(
-        long,
-        env,
-        name = "onchain_based_solver_participation_guard_enabled",
+        id = "onchain_enabled",
+        long = "onchain-based-solver-participation-guard-enabled",
+        env = "ONCHAIN_BASED_SOLVER_PARTICIPATION_GUARD_ENABLED",
         default_value = "true"
     )]
     pub enabled: bool,
