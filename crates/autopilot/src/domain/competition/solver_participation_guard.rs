@@ -1,5 +1,9 @@
 use {
-    crate::{database::Postgres, domain::eth, infra::Ethereum},
+    crate::{
+        database::Postgres,
+        domain::{eth, Metrics},
+        infra::Ethereum,
+    },
     ethrpc::block_stream::CurrentBlockWatcher,
     std::{
         sync::Arc,
@@ -117,7 +121,15 @@ impl DatabaseSolverParticipationValidator {
                     Ok(non_settling_solvers) => {
                         let non_settling_solvers = non_settling_solvers
                             .into_iter()
-                            .map(|solver| eth::Address(solver.0.into()))
+                            .map(|solver| {
+                                let address = eth::Address(solver.0.into());
+
+                                Metrics::get()
+                                    .non_settling_solver
+                                    .with_label_values(&[&format!("{:#x}", address.0)]);
+
+                                address
+                            })
                             .collect::<Vec<_>>();
 
                         tracing::debug!(?non_settling_solvers, "found non-settling solvers");
