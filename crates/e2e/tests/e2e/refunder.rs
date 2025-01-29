@@ -75,7 +75,7 @@ async fn refunder_tx(web3: Web3) {
         },
         side: OrderQuoteSide::Sell {
             sell_amount: model::quote::SellAmount::AfterFee {
-                value: NonZeroU256::try_from(sell_amount - U256::from(1)).unwrap(),
+                value: NonZeroU256::try_from(sell_amount).unwrap(),
             },
         },
         ..Default::default()
