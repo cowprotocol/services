@@ -527,7 +527,7 @@ impl ExtendedEthFlowOrder {
         })
     }
 
-    fn to_cow_swap_order(&self, ethflow: &CoWSwapEthFlow, weth: &WETH9) -> Order {
+    fn to_cow_swap_order(&self, ethflow_contract: &CoWSwapEthFlow, weth: &WETH9) -> Order {
         // Each ethflow user order has an order that is representing
         // it as EIP1271 order with a different owner and valid_to
         OrderBuilder::default()
@@ -541,7 +541,7 @@ impl ExtendedEthFlowOrder {
             .with_valid_to(u32::MAX)
             .with_app_data(self.0.app_data.0)
             .with_class(OrderClass::Market) // Eth-flow orders only support market orders at this point in time
-            .with_eip1271(ethflow.address(), hex!("").into())
+            .with_eip1271(ethflow_contract.address(), hex!("").into())
             .build()
     }
 
@@ -559,10 +559,10 @@ impl ExtendedEthFlowOrder {
     pub async fn status(
         &self,
         contracts: &Contracts,
-        ethflow: &CoWSwapEthFlow,
+        ethflow_contract: &CoWSwapEthFlow,
     ) -> EthFlowOrderOnchainStatus {
-        ethflow
-            .orders(Bytes(self.hash(contracts, ethflow).await.0))
+        ethflow_contract
+            .orders(Bytes(self.hash(contracts, ethflow_contract).await.0))
             .call()
             .await
             .expect("Couldn't fetch order status")
@@ -573,7 +573,7 @@ impl ExtendedEthFlowOrder {
         &self,
         cowswap_signature: &Signature,
         contracts: &Contracts,
-        ethflow: &CoWSwapEthFlow,
+        ethflow_contract: &CoWSwapEthFlow,
     ) -> anyhow::Result<()> {
         let bytes = match cowswap_signature {
             Signature::Eip1271(bytes) => bytes,
@@ -584,9 +584,9 @@ impl ExtendedEthFlowOrder {
         }
         .clone();
 
-        let result = ethflow
+        let result = ethflow_contract
             .is_valid_signature(
-                Bytes(self.hash(contracts, ethflow).await.to_fixed_bytes()),
+                Bytes(self.hash(contracts, ethflow_contract).await.to_fixed_bytes()),
                 Bytes(bytes),
             )
             .call()
@@ -600,24 +600,24 @@ impl ExtendedEthFlowOrder {
     pub async fn mine_order_creation(
         &self,
         owner: &Account,
-        ethflow: &CoWSwapEthFlow,
+        ethflow_contract: &CoWSwapEthFlow,
     ) -> TransactionResult {
         tx_value!(
             owner,
             self.0.sell_amount + self.0.fee_amount,
-            ethflow.create_order(self.0.encode())
+            ethflow_contract.create_order(self.0.encode())
         )
     }
 
     pub async fn mine_order_invalidation(
         &self,
         sender: &Account,
-        ethflow: &CoWSwapEthFlow,
+        ethflow_contract: &CoWSwapEthFlow,
     ) -> TransactionResult {
-        tx!(sender, ethflow.invalidate_order(self.0.encode()))
+        tx!(sender, ethflow_contract.invalidate_order(self.0.encode()))
     }
 
-    async fn hash(&self, contracts: &Contracts, ethflow: &CoWSwapEthFlow) -> H256 {
+    async fn hash(&self, contracts: &Contracts, ethflow_contract: &CoWSwapEthFlow) -> H256 {
         let domain_separator = DomainSeparator(
             contracts
                 .gp_settlement
@@ -630,7 +630,7 @@ impl ExtendedEthFlowOrder {
         H256(hashed_eip712_message(
             &domain_separator,
             &self
-                .to_cow_swap_order(ethflow, &contracts.weth)
+                .to_cow_swap_order(ethflow_contract, &contracts.weth)
                 .data
                 .hash_struct(),
         ))
