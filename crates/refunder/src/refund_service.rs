@@ -166,7 +166,7 @@ impl RefundService {
         }
 
         // Go over all order uids and group them by ethflow contract address
-        let mut uids_by_contract: HashMap<H160, Vec<OrderUid>> = HashMap::new();
+        let mut uids_by_contract: HashMap<CoWSwapEthFlowAddress, Vec<OrderUid>> = HashMap::new();
         for (uid, contract) in uids.iter() {
             for c in contract.iter() {
                 uids_by_contract.entry(*c).or_default().push(*uid);
