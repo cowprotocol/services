@@ -154,14 +154,21 @@ impl AuctionProcessor {
     /// Process the auction by prioritizing the orders and filtering out
     /// unfillable orders. Fetches full app data for each order and returns an
     /// auction with updated orders.
-    pub async fn prioritize(&self, auction: Auction, solver: &eth::H160) -> Auction {
+    pub async fn prioritize(
+        &self,
+        auction: Auction,
+        solver_name: &infra::solver::Name,
+        solver_address: &eth::H160,
+    ) -> Auction {
         let _timer = metrics::get()
             .auction_preprocessing
-            .with_label_values(&["total"])
+            .with_label_values(&[&solver_name.0, "total"])
             .start_timer();
 
         Auction {
-            orders: self.prioritize_orders(&auction, solver).await,
+            orders: self
+                .prioritize_orders(&auction, solver_name, solver_address)
+                .await,
             ..auction
         }
     }
@@ -169,7 +176,8 @@ impl AuctionProcessor {
     fn prioritize_orders(
         &self,
         auction: &Auction,
-        solver: &eth::H160,
+        solver_name: &infra::solver::Name,
+        solver_address: &eth::H160,
     ) -> Shared<BoxFuture<'static, Vec<Order>>> {
         let new_id = auction
             .id()
@@ -192,9 +200,10 @@ impl AuctionProcessor {
         let signature_validator = lock.signature_validator.clone();
         let cow_amms = auction.surplus_capturing_jit_order_owners.clone();
         let mut orders = auction.orders.clone();
-        let solver = *solver;
+        let solver = *solver_address;
         let order_comparators = lock.order_sorting_strategies.clone();
         let app_data_retriever = lock.app_data_retriever.clone();
+        let solver_name = solver_name.clone();
 
         // Use spawn_blocking() because a lot of CPU bound computations are happening
         // and we don't want to block the runtime for too long.
@@ -205,8 +214,8 @@ impl AuctionProcessor {
             let (mut balances, mut app_data_by_hash) =
                 rt.block_on(async {
                     tokio::join!(
-                        Self::fetch_balances(&eth, &orders),
-                        Self::collect_orders_app_data(app_data_retriever, &orders),
+                        Self::fetch_balances(&eth, &orders, &solver_name),
+                        Self::collect_orders_app_data(app_data_retriever, &orders, &solver_name),
                     )
                 });
 
@@ -236,6 +245,7 @@ impl AuctionProcessor {
     async fn collect_orders_app_data(
         app_data_retriever: Option<order::app_data::AppDataRetriever>,
         orders: &[order::Order],
+        solver_name: &infra::solver::Name,
     ) -> HashMap<order::app_data::AppDataHash, app_data::ValidatedAppData> {
         let Some(app_data_retriever) = app_data_retriever else {
             return Default::default();
@@ -243,7 +253,7 @@ impl AuctionProcessor {
 
         let _timer = metrics::get()
             .auction_preprocessing
-            .with_label_values(&["fetch_app_data"])
+            .with_label_values(&[&solver_name.0, "fetch_app_data"])
             .start_timer();
 
         join_all(
@@ -355,7 +365,11 @@ impl AuctionProcessor {
     }
 
     /// Fetches the tradable balance for every order owner.
-    async fn fetch_balances(ethereum: &infra::Ethereum, orders: &[order::Order]) -> Balances {
+    async fn fetch_balances(
+        ethereum: &infra::Ethereum,
+        orders: &[order::Order],
+        solver_name: &infra::solver::Name,
+    ) -> Balances {
         let ethereum = ethereum.with_metric_label("orderBalances".into());
         let mut tokens: HashMap<_, _> = Default::default();
         // Collect trader/token/source/interaction tuples for fetching available
@@ -383,7 +397,7 @@ impl AuctionProcessor {
 
         let _timer = metrics::get()
             .auction_preprocessing
-            .with_label_values(&["fetch_balances"])
+            .with_label_values(&[&solver_name.0, "fetch_balances"])
             .start_timer();
 
         join_all(

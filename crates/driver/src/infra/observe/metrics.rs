@@ -24,7 +24,7 @@ pub struct Metrics {
     pub bad_tokens_detected: prometheus::IntCounterVec,
     /// Time spent in the auction preprocessing stage.
     #[metric(
-        labels("stage"),
+        labels("solver", "auction_preprocessing_stage"),
         buckets(
             0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0
         )
