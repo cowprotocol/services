@@ -145,73 +145,37 @@ mod tests {
         ];
 
         let mut estimator = MockPriceEstimating::new();
-        let expected_query = queries[0].clone();
-        estimator
-            .expect_estimate()
-            .times(1)
-            .withf(move |q| *q == expected_query)
-            .returning(|_| async { Ok(Estimate::default()) }.boxed());
-        let expected_query = queries[1].clone();
-        estimator
-            .expect_estimate()
-            .times(1)
-            .withf(move |q| *q == expected_query)
-            .returning(|_| {
-                async { Err(PriceEstimationError::NoLiquidity) }.boxed()
-            });
-        let expected_query = queries[0].clone();
-        estimator
-            .expect_estimate()
-            .times(1)
-            .withf(move |q| *q == expected_query)
-            .returning(|_| {
-                async { Err(PriceEstimationError::UnsupportedToken {
-                            token: H160([0; 20]),
-                            reason: "".to_string()
-                        }) }.boxed()
-            });
-        let expected_query = queries[1].clone();
-        estimator
-            .expect_estimate()
-            .times(1)
-            .withf(move |q| *q == expected_query)
-            .returning(|_| {
-                async { Err(PriceEstimationError::UnsupportedOrderType("".to_string())) }.boxed()
-            });
-        let expected_query = queries[0].clone();
-        estimator
-            .expect_estimate()
-            .times(1)
-            .withf(move |q| *q == expected_query)
-            .returning(|_| {
-                async { Err(PriceEstimationError::RateLimited) }.boxed()
-            });
-        let expected_query = queries[1].clone();
-        estimator
-            .expect_estimate()
-            .times(1)
-            .withf(move |q| *q == expected_query)
-            .returning(|_| {
-                async { Err(PriceEstimationError::EstimatorInternal(anyhow!(""))) }.boxed()
-            });
-        let expected_query = queries[0].clone();
-        estimator
-            .expect_estimate()
-            .times(1)
-            .withf(move |q| *q == expected_query)
-            .returning(|_| {
-                async { Err(PriceEstimationError::ProtocolInternal(anyhow!(""))) }.boxed()
-            });
+        let expectations = vec![
+            (0, Ok(Estimate::default())),
+            (1, Err(PriceEstimationError::NoLiquidity)),
+            (0, Err(PriceEstimationError::UnsupportedToken {
+                token: H160([0; 20]),
+                reason: "".to_string(),
+            })),
+            (1, Err(PriceEstimationError::UnsupportedOrderType("".to_string()))),
+            (0, Err(PriceEstimationError::RateLimited)),
+            (1, Err(PriceEstimationError::EstimatorInternal(anyhow!("")))),
+            (0, Err(PriceEstimationError::ProtocolInternal(anyhow!("")))),
+        ];
+
+        for (query_index, result) in expectations {
+            let expected_query = queries[query_index].clone();
+            estimator
+                .expect_estimate()
+                .times(1)
+                .withf(move |q| *q == expected_query)
+                .returning(move |_| {
+                    let result = result.clone();
+                    async { result }.boxed()
+                });
+        }
 
         let instrumented = InstrumentedPriceEstimator::new(estimator, "foo".to_string());
 
-        let _ = instrumented.estimate(queries[0].clone()).await;
-        let _ = instrumented.estimate(queries[1].clone()).await;
-        let _ = instrumented.estimate(queries[0].clone()).await;
-        let _ = instrumented.estimate(queries[1].clone()).await;
-        let _ = instrumented.estimate(queries[0].clone()).await;
-        let _ = instrumented.estimate(queries[1].clone()).await;
-        let _ = instrumented.estimate(queries[0].clone()).await;
+        for i in 0..7 {
+            let query = if i % 2 == 0 { &queries[0] } else { &queries[1] };
+            let _ = instrumented.estimate(query.clone()).await;
+        }
 
         for result in &[
             "unsupported_token",
