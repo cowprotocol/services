@@ -110,7 +110,7 @@ impl Detector {
                         flagged_unsupported_at: None,
                     });
 
-                // token neeeds to be frozen as unsupported for a while
+                // token needs to be frozen as unsupported for a while
                 if self.quality_based_on_stats(&stats) == Quality::Unsupported
                     && stats
                         .flagged_unsupported_at

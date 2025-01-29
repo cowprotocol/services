@@ -146,7 +146,6 @@ impl super::Postgres {
         current_block: u64,
     ) -> anyhow::Result<Vec<Address>> {
         let mut ex = self.pool.acquire().await.context("acquire")?;
-
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["find_non_settling_solvers"])

@@ -117,7 +117,7 @@ impl DatabaseSolverParticipationValidator {
                             .map(|solver| eth::Address(solver.0.into()))
                             .collect::<Vec<_>>();
 
-                        tracing::debug!(?non_settling_solvers, "found non-settling solvers",);
+                        tracing::debug!(?non_settling_solvers, "found non-settling solvers");
 
                         let now = Instant::now();
                         for solver in non_settling_solvers {
