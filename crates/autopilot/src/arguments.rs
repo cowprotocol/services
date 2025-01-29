@@ -243,13 +243,50 @@ pub struct Arguments {
     #[clap(long, env)]
     pub archive_node_url: Option<Url>,
 
-    #[clap(long, env, default_value = "5m", value_parser = humantime::parse_duration)]
+    /// Configuration for the solver participation guard.
+    #[clap(flatten)]
+    pub solver_participation_guard: SolverParticipationGuardConfig,
+}
+
+#[derive(Debug, clap::Parser)]
+pub struct SolverParticipationGuardConfig {
+    #[clap(flatten)]
+    pub db_based_validator: DbBasedValidatorConfig,
+
+    #[clap(flatten)]
+    pub onchain_based_validator: OnchainBasedValidatorConfig,
+}
+
+#[derive(Debug, clap::Parser)]
+pub struct DbBasedValidatorConfig {
+    /// Enables or disables the solver participation guard
+    #[clap(
+        long,
+        env,
+        name = "db_based_solver_participation_guard_enabled",
+        default_value = "true"
+    )]
+    pub enabled: bool,
+
     /// The time-to-live for the solver participation blacklist cache.
+    #[clap(long, env, default_value = "5m", value_parser = humantime::parse_duration)]
     pub solver_blacklist_cache_ttl: Duration,
 
-    #[clap(long, env, default_value = "3")]
     /// The number of last auctions to check solver participation eligibility.
+    #[clap(long, env, default_value = "3")]
     pub solver_last_auctions_participation_count: u32,
+}
+
+#[derive(Debug, Clone, clap::Parser)]
+pub struct OnchainBasedValidatorConfig {
+    /// Enables or disables the solver participation guard
+    #[clap(
+        long,
+        env,
+        name = "onchain_based_solver_participation_guard_enabled",
+        default_value = "true"
+    )]
+    pub enabled: bool,
 }
 
 impl std::fmt::Display for Arguments {
@@ -295,8 +332,7 @@ impl std::fmt::Display for Arguments {
             max_winners_per_auction,
             archive_node_url,
             max_solutions_per_solver,
-            solver_blacklist_cache_ttl,
-            solver_last_auctions_participation_count,
+            solver_participation_guard,
         } = self;
 
         write!(f, "{}", shared)?;
@@ -382,13 +418,8 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(
             f,
-            "solver_blacklist_cache_ttl: {:?}",
-            solver_blacklist_cache_ttl
-        )?;
-        writeln!(
-            f,
-            "solver_last_auctions_participation_count: {:?}",
-            solver_last_auctions_participation_count
+            "solver_participation_guard: {:?}",
+            solver_participation_guard
         )?;
         Ok(())
     }

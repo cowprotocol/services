@@ -1,5 +1,6 @@
 use {
     crate::{
+        arguments::SolverParticipationGuardConfig,
         database::Postgres,
         domain::{eth, Metrics},
         infra::Ethereum,
@@ -26,25 +27,31 @@ impl SolverParticipationGuard {
         eth: Ethereum,
         db: Postgres,
         settlement_updates_receiver: tokio::sync::mpsc::UnboundedReceiver<()>,
-        ttl: Duration,
-        last_auctions_count: u32,
+        config: SolverParticipationGuardConfig,
     ) -> Self {
-        let current_block = eth.current_block().clone();
-        let onchain_solver_participation_validator = OnchainSolverParticipationValidator { eth };
-        let database_solver_participation_validator = DatabaseSolverParticipationValidator::new(
-            db,
-            current_block,
-            settlement_updates_receiver,
-            ttl,
-            last_auctions_count,
-        );
+        let mut validators: Vec<Box<dyn SolverParticipationValidator + Send + Sync>> = Vec::new();
 
-        Self(Arc::new(Inner {
-            validators: vec![
-                Box::new(database_solver_participation_validator),
-                Box::new(onchain_solver_participation_validator),
-            ],
-        }))
+        if config.db_based_validator.enabled {
+            let current_block = eth.current_block().clone();
+            let database_solver_participation_validator = DatabaseSolverParticipationValidator::new(
+                db,
+                current_block,
+                settlement_updates_receiver,
+                config.db_based_validator.solver_blacklist_cache_ttl,
+                config
+                    .db_based_validator
+                    .solver_last_auctions_participation_count,
+            );
+            validators.push(Box::new(database_solver_participation_validator));
+        }
+
+        if config.onchain_based_validator.enabled {
+            let onchain_solver_participation_validator =
+                OnchainSolverParticipationValidator { eth };
+            validators.push(Box::new(onchain_solver_participation_validator));
+        }
+
+        Self(Arc::new(Inner { validators }))
     }
 
     /// Checks if a solver can participate in the competition.
