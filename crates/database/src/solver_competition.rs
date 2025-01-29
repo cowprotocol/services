@@ -368,8 +368,10 @@ mod tests {
     use {
         super::*,
         crate::{
+            auction,
             byte_array::ByteArray,
-            events::{EventIndex, Settlement},
+            events::{self, EventIndex, Settlement},
+            settlements,
         },
         sqlx::{Connection, Row},
     };
@@ -583,5 +585,167 @@ mod tests {
         // but when solution 3 is fetched, it should have the same orders that were
         // inserted (2 fetched from "proposed_jit_orders" and 1 from "orders" table)
         assert!(fetched_solutions[2].orders.len() == 3);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_non_settling_solvers_roundtrip() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let non_settling_solver = ByteArray([1u8; 20]);
+
+        let deadline_block = 100u64;
+        let last_auctions_count = 3i64;
+        // competition_auctions
+        // Insert auctions within the deadline
+        for auction_id in 1..=4 {
+            let auction = auction::Auction {
+                id: auction_id,
+                block: auction_id,
+                deadline: i64::try_from(deadline_block).unwrap(),
+                order_uids: Default::default(),
+                price_tokens: Default::default(),
+                price_values: Default::default(),
+                surplus_capturing_jit_order_owners: Default::default(),
+            };
+            auction::save(&mut db, auction).await.unwrap();
+        }
+
+        // Insert auctions outside the deadline
+        for auction_id in 5..=6 {
+            let auction = auction::Auction {
+                id: auction_id,
+                block: auction_id,
+                deadline: i64::try_from(deadline_block).unwrap() + auction_id,
+                order_uids: Default::default(),
+                price_tokens: Default::default(),
+                price_values: Default::default(),
+                surplus_capturing_jit_order_owners: Default::default(),
+            };
+            auction::save(&mut db, auction).await.unwrap();
+        }
+
+        // proposed_solutions
+        // Non-settling solver wins all auctions within the deadline
+        for auction_id in 2..=4 {
+            let solutions = vec![Solution {
+                uid: auction_id,
+                id: auction_id.into(),
+                solver: non_settling_solver,
+                is_winner: true,
+                score: Default::default(),
+                orders: Default::default(),
+                price_tokens: Default::default(),
+                price_values: Default::default(),
+            }];
+            save_solutions(&mut db, auction_id, &solutions)
+                .await
+                .unwrap();
+        }
+
+        // Non-settling solver wins not all the auctions within the deadline
+        for auction_id in 2..=4 {
+            let solutions = vec![Solution {
+                uid: auction_id,
+                id: auction_id.into(),
+                solver: ByteArray([2u8; 20]),
+                is_winner: auction_id != 2,
+                score: Default::default(),
+                orders: Default::default(),
+                price_tokens: Default::default(),
+                price_values: Default::default(),
+            }];
+            save_solutions(&mut db, auction_id, &solutions)
+                .await
+                .unwrap();
+        }
+
+        // Another non-settling solver has `last_auctions_count` winning auctions but
+        // not consecutive
+        for auction_id in 1..=4 {
+            // Break the sequence
+            if auction_id == 2 {
+                continue;
+            }
+            let solutions = vec![Solution {
+                uid: auction_id,
+                id: auction_id.into(),
+                solver: ByteArray([3u8; 20]),
+                is_winner: true,
+                score: Default::default(),
+                orders: Default::default(),
+                price_tokens: Default::default(),
+                price_values: Default::default(),
+            }];
+            save_solutions(&mut db, auction_id, &solutions)
+                .await
+                .unwrap();
+        }
+
+        // One more non-settling solver has `last_auctions_count` winning auctions but
+        // some of them are outside the deadline
+        for auction_id in 3..=5 {
+            let solutions = vec![Solution {
+                uid: auction_id,
+                id: auction_id.into(),
+                solver: ByteArray([4u8; 20]),
+                is_winner: true,
+                score: Default::default(),
+                orders: Default::default(),
+                price_tokens: Default::default(),
+                price_values: Default::default(),
+            }];
+            save_solutions(&mut db, auction_id, &solutions)
+                .await
+                .unwrap();
+        }
+
+        // Verify only the non-settling solver is returned
+        let result = find_non_settling_solvers(
+            &mut db,
+            u32::try_from(last_auctions_count).unwrap(),
+            deadline_block,
+        )
+        .await
+        .unwrap();
+        assert_eq!(result, vec![non_settling_solver]);
+
+        // Non-settling solver settles one of the auctions
+        let event = EventIndex {
+            block_number: 4,
+            log_index: 0,
+        };
+        let settlement = Settlement {
+            solver: non_settling_solver,
+            transaction_hash: ByteArray([0u8; 32]),
+        };
+        events::insert_settlement(&mut db, &event, &settlement)
+            .await
+            .unwrap();
+
+        // The same result until the auction_id is updated in the settlements table
+        let result = find_non_settling_solvers(
+            &mut db,
+            u32::try_from(last_auctions_count).unwrap(),
+            deadline_block,
+        )
+        .await
+        .unwrap();
+        assert_eq!(result, vec![non_settling_solver]);
+
+        settlements::update_settlement_auction(&mut db, 4, 0, 4)
+            .await
+            .unwrap();
+
+        let result = find_non_settling_solvers(
+            &mut db,
+            u32::try_from(last_auctions_count).unwrap(),
+            deadline_block,
+        )
+        .await
+        .unwrap();
+        assert!(result.is_empty());
     }
 }
