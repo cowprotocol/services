@@ -37,15 +37,19 @@ impl<T> InstrumentedPriceEstimator<T> {
         }
     }
 
-    /// Determines the result of a price estimate as either "success" or
-    /// "failure".
+    /// Determines the result of a price estimate, returning either "success" or the
+    /// error reason
     fn estimate_result<B>(&self, estimate: Result<&B, &PriceEstimationError>) -> &str {
         // Count as a successful request if the answer is ok (no error) or if the error
         // is No Liquidity
-        if estimate.is_ok() || matches!(estimate, Err(PriceEstimationError::NoLiquidity)) {
-            "success"
-        } else {
-            "failure"
+        match estimate {
+            Ok(_) => "success",
+            Err(PriceEstimationError::NoLiquidity) => "success",
+            Err(PriceEstimationError::UnsupportedToken { .. }) => "unsupported_token",
+            Err(PriceEstimationError::UnsupportedOrderType(_)) => "unsupported_order_type",
+            Err(PriceEstimationError::RateLimited) => "rate_limited",
+            Err(PriceEstimationError::EstimatorInternal(_)) => "estimator_internal_error",
+            Err(PriceEstimationError::ProtocolInternal(_)) => "protocol_internal_error",
         }
     }
 }
