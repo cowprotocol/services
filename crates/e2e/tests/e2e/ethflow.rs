@@ -586,7 +586,11 @@ impl ExtendedEthFlowOrder {
 
         let result = ethflow_contract
             .is_valid_signature(
-                Bytes(self.hash(contracts, ethflow_contract).await.to_fixed_bytes()),
+                Bytes(
+                    self.hash(contracts, ethflow_contract)
+                        .await
+                        .to_fixed_bytes(),
+                ),
                 Bytes(bytes),
             )
             .call()
