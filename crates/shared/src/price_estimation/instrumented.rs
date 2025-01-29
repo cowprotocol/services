@@ -165,7 +165,7 @@ mod tests {
         let _ = instrumented.estimate(queries[0].clone()).await;
         let _ = instrumented.estimate(queries[1].clone()).await;
 
-        for result in &["success", "failure"] {
+        for result in &["success", "estimator_internal_error"] {
             let observed = instrumented
                 .metrics
                 .price_estimates
