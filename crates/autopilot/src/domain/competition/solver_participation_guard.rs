@@ -7,12 +7,14 @@ use {
     },
 };
 
+/// This struct checks whether a solver can participate in the competition by
+/// using different validators.
 #[derive(Clone)]
 pub struct SolverParticipationGuard(Arc<Inner>);
 
 struct Inner {
-    onchain_solver_participation_validator: OnchainSolverParticipationValidator,
-    database_solver_participation_validator: DatabaseSolverParticipationValidator,
+    /// Stores the validators in order they will be called.
+    validators: Vec<Box<dyn SolverParticipationValidator + Send + Sync>>,
 }
 
 impl SolverParticipationGuard {
@@ -34,28 +36,25 @@ impl SolverParticipationGuard {
         );
 
         Self(Arc::new(Inner {
-            onchain_solver_participation_validator,
-            database_solver_participation_validator,
+            validators: vec![
+                Box::new(database_solver_participation_validator),
+                Box::new(onchain_solver_participation_validator),
+            ],
         }))
     }
 
+    /// Checks if a solver can participate in the competition.
+    /// Sequentially asks internal validators to avoid redundant RPC calls in
+    /// the following order:
+    /// 1. DatabaseSolverParticipationValidator - operates fast since it uses
+    ///    in-memory cache.
+    /// 2. OnchainSolverParticipationValidator - only then calls the
+    ///    Authenticator contract.
     pub async fn can_participate(&self, solver: &eth::Address) -> anyhow::Result<bool> {
-        if !self
-            .0
-            .database_solver_participation_validator
-            .can_participate(solver)
-            .await?
-        {
-            return Ok(false);
-        }
-
-        if !self
-            .0
-            .onchain_solver_participation_validator
-            .can_participate(solver)
-            .await?
-        {
-            return Ok(false);
+        for validator in &self.0.validators {
+            if !validator.is_allowed(solver).await? {
+                return Ok(false);
+            }
         }
 
         Ok(true)
@@ -64,15 +63,17 @@ impl SolverParticipationGuard {
 
 #[async_trait::async_trait]
 trait SolverParticipationValidator: Send + Sync {
-    async fn can_participate(&self, solver: &eth::Address) -> anyhow::Result<bool>;
+    async fn is_allowed(&self, solver: &eth::Address) -> anyhow::Result<bool>;
 }
 
+/// Checks the DB by searching for solvers that won N last consecutive auctions
+/// but never settled any of them.
 #[derive(Clone)]
 pub struct DatabaseSolverParticipationValidator(Arc<DatabaseSolverParticipationValidatorInner>);
 
 struct DatabaseSolverParticipationValidatorInner {
     db: Postgres,
-    cache: dashmap::DashMap<eth::Address, Instant>,
+    banned_solvers: dashmap::DashMap<eth::Address, Instant>,
     ttl: Duration,
     last_auctions_count: u32,
 }
@@ -87,7 +88,7 @@ impl DatabaseSolverParticipationValidator {
     ) -> Self {
         let self_ = Self(Arc::new(DatabaseSolverParticipationValidatorInner {
             db,
-            cache: Default::default(),
+            banned_solvers: Default::default(),
             ttl,
             last_auctions_count,
         }));
@@ -97,6 +98,8 @@ impl DatabaseSolverParticipationValidator {
         self_
     }
 
+    /// Update the internal cache only once the settlement table is updated to
+    /// avoid redundant DB queries.
     fn start_maintenance(
         &self,
         mut settlement_updates_receiver: tokio::sync::mpsc::UnboundedReceiver<()>,
@@ -121,7 +124,7 @@ impl DatabaseSolverParticipationValidator {
 
                         let now = Instant::now();
                         for solver in non_settling_solvers {
-                            self_.cache.insert(solver, now);
+                            self_.banned_solvers.insert(solver, now);
                         }
                     }
                     Err(err) => {
@@ -135,12 +138,12 @@ impl DatabaseSolverParticipationValidator {
 
 #[async_trait::async_trait]
 impl SolverParticipationValidator for DatabaseSolverParticipationValidator {
-    async fn can_participate(&self, solver: &eth::Address) -> anyhow::Result<bool> {
-        if let Some(entry) = self.0.cache.get(solver) {
+    async fn is_allowed(&self, solver: &eth::Address) -> anyhow::Result<bool> {
+        if let Some(entry) = self.0.banned_solvers.get(solver) {
             if Instant::now().duration_since(*entry.value()) < self.0.ttl {
                 return Ok(false);
             } else {
-                self.0.cache.remove(solver);
+                self.0.banned_solvers.remove(solver);
             }
         }
 
@@ -148,13 +151,15 @@ impl SolverParticipationValidator for DatabaseSolverParticipationValidator {
     }
 }
 
+/// Calls Authenticator contract to check if a solver has a sufficient
+/// permission.
 struct OnchainSolverParticipationValidator {
     eth: Ethereum,
 }
 
 #[async_trait::async_trait]
 impl SolverParticipationValidator for OnchainSolverParticipationValidator {
-    async fn can_participate(&self, solver: &eth::Address) -> anyhow::Result<bool> {
+    async fn is_allowed(&self, solver: &eth::Address) -> anyhow::Result<bool> {
         Ok(self
             .eth
             .contracts()

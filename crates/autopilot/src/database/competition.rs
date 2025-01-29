@@ -140,6 +140,10 @@ impl super::Postgres {
         Ok(())
     }
 
+    /// Finds solvers that won `last_auctions_count` consecutive auctions but
+    /// never settled any of them. The current block is used to prevent
+    /// selecting auctions with deadline after the current block since they
+    /// still can be settled.
     pub async fn find_non_settling_solvers(
         &self,
         last_auctions_count: u32,
