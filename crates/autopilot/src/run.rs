@@ -586,7 +586,9 @@ pub async fn run(args: Arguments) {
         drivers
             .iter()
             .filter_map(|driver| {
-                (driver.accepts_unsettled_blocking).then_some(driver.submission_address)
+                driver
+                    .accepts_unsettled_blocking
+                    .then_some(driver.submission_address)
             })
             .collect::<HashSet<_, _>>(),
     );
