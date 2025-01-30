@@ -43,8 +43,7 @@ impl<T> InstrumentedPriceEstimator<T> {
         // Count as a successful request if the answer is ok (no error) or if the error
         // is No Liquidity
         match estimate {
-            Ok(_) => "success",
-            Err(PriceEstimationError::NoLiquidity) => "success",
+            Ok(_) | Err(PriceEstimationError::NoLiquidity) => "success",
             Err(PriceEstimationError::UnsupportedToken { .. }) => "unsupported_token",
             Err(PriceEstimationError::UnsupportedOrderType(_)) => "unsupported_order_type",
             Err(PriceEstimationError::RateLimited) => "rate_limited",
