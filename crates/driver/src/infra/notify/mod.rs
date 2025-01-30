@@ -12,11 +12,11 @@ use {
 };
 
 pub fn solver_timeout(solver: &Solver, auction_id: Option<auction::Id>) {
-    solver.notify(auction_id, None, notification::Kind::Timeout);
+    solver.notify_and_forget(auction_id, None, notification::Kind::Timeout);
 }
 
 pub fn empty_solution(solver: &Solver, auction_id: Option<auction::Id>, solution: solution::Id) {
-    solver.notify(
+    solver.notify_and_forget(
         auction_id,
         Some(solution),
         notification::Kind::EmptySolution,
@@ -45,7 +45,7 @@ pub fn scoring_failed(
         }
     };
 
-    solver.notify(auction_id, Some(solution_id.clone()), notification);
+    solver.notify_and_forget(auction_id, Some(solution_id.clone()), notification);
 }
 
 pub fn encoding_failed(
@@ -76,7 +76,7 @@ pub fn encoding_failed(
         solution::Error::Encoding(_) => return,
     };
 
-    solver.notify(auction_id, Some(solution_id.clone()), notification);
+    solver.notify_and_forget(auction_id, Some(solution_id.clone()), notification);
 }
 
 pub fn simulation_failed(
@@ -94,7 +94,7 @@ pub fn simulation_failed(
         ),
         simulator::Error::Other(error) => notification::Kind::DriverError(error.to_string()),
     };
-    solver.notify(auction_id, Some(solution_id.clone()), kind);
+    solver.notify_and_forget(auction_id, Some(solution_id.clone()), kind);
 }
 
 pub fn executed(
@@ -111,7 +111,7 @@ pub fn executed(
         Err(Error::Other(_) | Error::Disabled) => notification::Settlement::Fail,
     };
 
-    solver.notify(
+    solver.notify_and_forget(
         Some(auction_id),
         Some(solution_id.clone()),
         notification::Kind::Settled(kind),
@@ -123,7 +123,7 @@ pub fn duplicated_solution_id(
     auction_id: Option<auction::Id>,
     solution_id: &solution::Id,
 ) {
-    solver.notify(
+    solver.notify_and_forget(
         auction_id,
         Some(solution_id.clone()),
         notification::Kind::DuplicatedSolutionId,
@@ -131,5 +131,5 @@ pub fn duplicated_solution_id(
 }
 
 pub fn postprocessing_timed_out(solver: &Solver, auction_id: Option<auction::Id>) {
-    solver.notify(auction_id, None, notification::Kind::PostprocessingTimedOut);
+    solver.notify_and_forget(auction_id, None, notification::Kind::PostprocessingTimedOut);
 }

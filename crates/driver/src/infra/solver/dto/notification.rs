@@ -61,6 +61,7 @@ impl Notification {
                     notify::Settlement::Expired => Kind::Expired,
                 },
                 notify::Kind::PostprocessingTimedOut => Kind::PostprocessingTimedOut,
+                notify::Kind::UnsettledConsecutiveAuctions => Kind::UnsettledConsecutiveAuctions,
             },
         }
     }
@@ -144,6 +145,7 @@ pub enum Kind {
     Expired,
     Fail,
     PostprocessingTimedOut,
+    UnsettledConsecutiveAuctions,
 }
 
 type BlockNo = u64;

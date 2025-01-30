@@ -112,3 +112,12 @@ impl From<api::routes::OrderError> for (hyper::StatusCode, axum::Json<Error>) {
         error.into()
     }
 }
+
+impl From<api::routes::NotifyError> for (hyper::StatusCode, axum::Json<Error>) {
+    fn from(value: api::routes::NotifyError) -> Self {
+        let error = match value {
+            api::routes::NotifyError::UnableToNotify => Kind::Unknown,
+        };
+        error.into()
+    }
+}

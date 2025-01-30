@@ -45,6 +45,9 @@ pub enum Kind {
     DriverError(String),
     /// On-chain solution postprocessing timed out.
     PostprocessingTimedOut,
+    /// The solver won multiple consecutive auctions but none of the settlement
+    /// succeeded.
+    UnsettledConsecutiveAuctions,
 }
 
 #[derive(Debug)]
