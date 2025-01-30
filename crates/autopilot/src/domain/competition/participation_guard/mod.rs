@@ -8,7 +8,7 @@ use {
         domain::eth,
         infra::Ethereum,
     },
-    std::{collections::HashMap, sync::Arc},
+    std::{collections::HashSet, sync::Arc},
 };
 
 /// This struct checks whether a solver can participate in the competition by
@@ -27,7 +27,7 @@ impl SolverParticipationGuard {
         db: Postgres,
         settlement_updates_receiver: tokio::sync::mpsc::UnboundedReceiver<()>,
         db_based_validator_config: DbBasedSolverParticipationGuardConfig,
-        db_validator_acceptance_by_solver: HashMap<eth::Address, bool>,
+        db_validator_accepted_solvers: HashSet<eth::Address>,
     ) -> Self {
         let mut validators: Vec<Box<dyn Validator + Send + Sync>> = Vec::new();
 
@@ -39,7 +39,7 @@ impl SolverParticipationGuard {
                 settlement_updates_receiver,
                 db_based_validator_config.solver_blacklist_cache_ttl,
                 db_based_validator_config.solver_last_auctions_participation_count,
-                db_validator_acceptance_by_solver,
+                db_validator_accepted_solvers,
             );
             validators.push(Box::new(database_solver_participation_validator));
         }
