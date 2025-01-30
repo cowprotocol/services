@@ -138,6 +138,33 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "500":
           $ref: "#/components/responses/InternalServerError"
+  /notify:
+    post:
+      description: |
+        Receive a notification in case the driver was banned for a certain reason.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: string
+              enum:
+                - unsettledConsecutiveAuctions
+              description: |-
+                A notification that informs about a reasoning why the driver was banned.
+      responses:
+        "200":
+          description: notification successfully received.
+        "500":
+          description: Unable to notify solver.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Unable to notify solver"
 components:
   schemas:
     Address:
