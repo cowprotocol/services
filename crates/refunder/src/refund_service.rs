@@ -205,7 +205,10 @@ impl RefundService {
         }
 
         // Group order uids by ethflow contract address
-        let uids_by_contract = uids.iter().group_by(|(_, contract)| contract);
+        let uids_by_contract = uids
+            .into_iter()
+            .map(|(uid, contract)| (contract, uid))
+            .into_group_map();
 
         // For each ethflow contract, issue a separate tx to refund
         for (contract, uids) in uids_by_contract.into_iter() {
@@ -219,10 +222,10 @@ impl RefundService {
             tracing::debug!("Trying to refund the following uids: {:?}", uids);
 
             let futures = uids.iter().map(|uid| {
-                let ((uid, _), self_) = (*uid, &self);
+                let (uid, self_) = (*uid, &self);
                 async move {
                     self_
-                        .get_ethflow_data_from_db(uid)
+                        .get_ethflow_data_from_db(&uid)
                         .await
                         .context(format!("uid {uid:?}"))
                 }
@@ -243,14 +246,10 @@ impl RefundService {
             let ethflow_contract = self
                 .ethflow_contracts
                 .iter()
-                .find(|c| c.address() == *contract)
+                .find(|c| c.address() == contract)
                 .ok_or_else(|| anyhow!("Could not find contract with address: {:?}", contract))?;
             self.submitter
-                .submit(
-                    uids.iter().map(|(uid, _)| uid).collect(),
-                    encoded_ethflow_orders,
-                    ethflow_contract,
-                )
+                .submit(uids, encoded_ethflow_orders, ethflow_contract)
                 .await?;
         }
 

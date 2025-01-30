@@ -62,7 +62,7 @@ impl Submitter {
 
     pub async fn submit(
         &mut self,
-        uids: Vec<&OrderUid>,
+        uids: Vec<OrderUid>,
         encoded_ethflow_orders: Vec<EncodedEthflowOrder>,
         ethflow_contract: &CoWSwapEthFlow,
     ) -> Result<()> {
