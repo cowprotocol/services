@@ -118,8 +118,8 @@ impl RefundService {
                         .find(|contract| contract.address() == ethflow_contract_address);
                     if ethflow_contract.is_none() {
                         tracing::error!(
-                            "Could not find ethflow contract with address: {:?}",
-                            ethflow_contract_address
+                            ?ethflow_contract_address,
+                            "Could not find ethflow contract with address",
                         );
                     }
                     ethflow_contract.map(|contract| (eth_order_placement, contract))
