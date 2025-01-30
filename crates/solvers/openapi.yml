@@ -89,6 +89,7 @@ paths:
                     - cancelled
                     - fail
                     - postprocessingTimedOut
+                    - unsettledConsecutiveAuctions
       responses:
         "200":
           description: notification successfully received.
