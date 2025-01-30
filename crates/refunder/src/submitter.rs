@@ -16,6 +16,7 @@ use {
     ethcontract::{
         transaction::{confirm::ConfirmParams, ResolveCondition},
         Account,
+        H160,
         U256,
     },
     gas_estimation::{GasPrice1559, GasPriceEstimating},
@@ -64,7 +65,7 @@ impl Submitter {
         &mut self,
         uids: Vec<OrderUid>,
         encoded_ethflow_orders: Vec<EncodedEthflowOrder>,
-        ethflow_contract: &CoWSwapEthFlow,
+        ethflow_contract: H160,
     ) -> Result<()> {
         let confirm_params = ConfirmParams {
             block_timeout: Some(5),
@@ -82,6 +83,7 @@ impl Submitter {
 
         self.gas_parameters_of_last_tx = Some(gas_price);
         self.nonce_of_last_submission = Some(nonce);
+        let ethflow_contract = CoWSwapEthFlow::at(&self.web3, ethflow_contract);
         let tx_result = ethflow_contract
             .invalidate_orders_ignoring_not_allowed(encoded_ethflow_orders)
             .gas_price(into_gas_price(&gas_price))

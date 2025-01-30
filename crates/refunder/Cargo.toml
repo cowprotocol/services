@@ -15,6 +15,7 @@ ethcontract = { workspace = true }
 ethrpc = { path = "../ethrpc" }
 futures = { workspace = true }
 gas-estimation = { workspace = true }
+hex = { workspace = true }
 humantime = { workspace = true }
 itertools = { workspace = true }
 mimalloc = "0.1.43"

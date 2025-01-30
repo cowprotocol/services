@@ -3893,6 +3893,7 @@ dependencies = [
  "ethrpc",
  "futures",
  "gas-estimation",
+ "hex",
  "humantime",
  "itertools 0.12.1",
  "mimalloc",

@@ -9,15 +9,10 @@ use {
         OrderUid,
     },
     ethcontract::{Account, H160, H256},
-    ethrpc::{
-        block_stream::timestamp_of_current_block_in_seconds,
-        Web3,
-        Web3CallBatch,
-        MAX_BATCH_SIZE,
-    },
+    ethrpc::{block_stream::timestamp_of_current_block_in_seconds, Web3},
     futures::{stream, StreamExt},
-    itertools::Itertools,
     sqlx::PgPool,
+    std::collections::HashMap,
 };
 
 pub const NO_OWNER: H160 = H160([0u8; 20]);
@@ -100,8 +95,7 @@ impl RefundService {
     async fn identify_uids_refunding_status_via_web3_calls(
         &self,
         refundable_order_uids: Vec<EthOrderPlacement>,
-    ) -> Vec<(OrderUid, CoWSwapEthFlowAddress)> {
-        let mut batch = Web3CallBatch::new(self.web3.transport().clone());
+    ) -> HashMap<CoWSwapEthFlowAddress, Vec<OrderUid>> {
         let futures = refundable_order_uids
             .into_iter()
             .filter_map(|eth_order_placement| {
@@ -116,46 +110,44 @@ impl RefundService {
                     .iter()
                     .find(|contract| contract.address() == ethflow_contract_address);
                 if ethflow_contract.is_none() {
-                    tracing::error!(
-                        ?ethflow_contract_address,
-                        "Could not find ethflow contract with address",
+                    tracing::warn!(
+                        uid = format!("0x{}", hex::encode(eth_order_placement.uid.0)),
+                        ethflow = ?ethflow_contract_address,
+                        "refunding orders from specific contract is not enabled",
                     );
                 }
                 ethflow_contract.map(|contract| (eth_order_placement, contract))
             })
-            .map(|(eth_order_placement, ethflow_contract)| {
+            .map(|(eth_order_placement, ethflow_contract)| async move {
                 let order_hash: [u8; 32] = eth_order_placement.uid.0[0..32]
                     .try_into()
                     .expect("order_uid slice with incorrect length");
                 let order = ethflow_contract
                     .orders(ethcontract::tokens::Bytes(order_hash))
-                    .batch_call(&mut batch);
-                async move {
-                    let order_owner = match order.await {
-                        Ok(order) => Some(order.0),
-                        Err(err) => {
-                            tracing::error!(
-                                uid =? H256(order_hash),
-                                ?err,
-                                "Error while getting the current onchain status ot the order"
-                            );
-                            return None;
-                        }
-                    };
-                    let refund_status = match order_owner {
-                        Some(bytes) if bytes == INVALIDATED_OWNER => RefundStatus::Refunded,
-                        Some(bytes) if bytes == NO_OWNER => RefundStatus::Invalid,
-                        // any other owner
-                        _ => RefundStatus::NotYetRefunded,
-                    };
-                    Some((eth_order_placement.uid, refund_status, ethflow_contract))
-                }
-            })
-            .collect::<Vec<_>>();
+                    .call()
+                    .await;
+                let order_owner = match order {
+                    Ok(order) => Some(order.0),
+                    Err(err) => {
+                        tracing::error!(
+                            uid =? H256(order_hash),
+                            ?err,
+                            "Error while getting the current onchain status ot the order"
+                        );
+                        return None;
+                    }
+                };
+                let refund_status = match order_owner {
+                    Some(bytes) if bytes == INVALIDATED_OWNER => RefundStatus::Refunded,
+                    Some(bytes) if bytes == NO_OWNER => RefundStatus::Invalid,
+                    // any other owner
+                    _ => RefundStatus::NotYetRefunded,
+                };
+                Some((eth_order_placement.uid, refund_status, ethflow_contract))
+            });
 
-        batch.execute_all(MAX_BATCH_SIZE).await;
         let uid_with_latest_refundablility = futures::future::join_all(futures).await;
-        let mut to_be_refunded_uids = Vec::new();
+        let mut to_be_refunded_uids = HashMap::<_, Vec<_>>::new();
         let mut invalid_uids = Vec::new();
         for (uid, refund_status, ethflow_contract) in
             uid_with_latest_refundablility.into_iter().flatten()
@@ -164,7 +156,10 @@ impl RefundService {
                 RefundStatus::Refunded => (),
                 RefundStatus::Invalid => invalid_uids.push(uid),
                 RefundStatus::NotYetRefunded => {
-                    to_be_refunded_uids.push((uid, ethflow_contract.address()))
+                    to_be_refunded_uids
+                        .entry(ethflow_contract.address())
+                        .or_default()
+                        .push(uid);
                 }
             }
         }
@@ -195,26 +190,17 @@ impl RefundService {
 
     async fn send_out_refunding_tx(
         &mut self,
-        uids: Vec<(OrderUid, CoWSwapEthFlowAddress)>,
+        uids_by_contract: HashMap<CoWSwapEthFlowAddress, Vec<OrderUid>>,
     ) -> Result<()> {
-        if uids.is_empty() {
+        if uids_by_contract.is_empty() {
             return Ok(());
         }
 
-        // Group order uids by ethflow contract address
-        let uids_by_contract = uids
-            .into_iter()
-            .map(|(uid, contract)| (contract, uid))
-            .into_group_map();
-
         // For each ethflow contract, issue a separate tx to refund
-        for (contract, uids) in uids_by_contract.into_iter() {
+        for (contract, mut uids) in uids_by_contract.into_iter() {
             // only try to refund MAX_NUMBER_OF_UIDS_PER_REFUND_TX uids, in order to fit
             // into gas limit
-            let uids = uids
-                .into_iter()
-                .take(MAX_NUMBER_OF_UIDS_PER_REFUND_TX)
-                .collect::<Vec<_>>();
+            uids.truncate(MAX_NUMBER_OF_UIDS_PER_REFUND_TX);
 
             tracing::debug!("Trying to refund the following uids: {:?}", uids);
 
@@ -240,13 +226,8 @@ impl RefundService {
                 })
                 .collect()
                 .await;
-            let ethflow_contract = self
-                .ethflow_contracts
-                .iter()
-                .find(|c| c.address() == contract)
-                .ok_or_else(|| anyhow!("Could not find contract with address: {:?}", contract))?;
             self.submitter
-                .submit(uids, encoded_ethflow_orders, ethflow_contract)
+                .submit(uids, encoded_ethflow_orders, contract)
                 .await?;
         }
 
