@@ -5,10 +5,9 @@ use {
     crate::{
         arguments::DbBasedSolverParticipationGuardConfig,
         database::Postgres,
-        domain::eth,
-        infra::Ethereum,
+        infra::{Driver, Ethereum},
     },
-    std::{collections::HashSet, sync::Arc},
+    std::sync::Arc,
 };
 
 /// This struct checks whether a solver can participate in the competition by
@@ -27,7 +26,6 @@ impl SolverParticipationGuard {
         db: Postgres,
         settlement_updates_receiver: tokio::sync::mpsc::UnboundedReceiver<()>,
         db_based_validator_config: DbBasedSolverParticipationGuardConfig,
-        db_validator_accepted_solvers: HashSet<eth::Address>,
     ) -> Self {
         let mut validators: Vec<Box<dyn Validator + Send + Sync>> = Vec::new();
 
@@ -39,7 +37,6 @@ impl SolverParticipationGuard {
                 settlement_updates_receiver,
                 db_based_validator_config.solver_blacklist_cache_ttl,
                 db_based_validator_config.solver_last_auctions_participation_count,
-                db_validator_accepted_solvers,
             );
             validators.push(Box::new(database_solver_participation_validator));
         }
@@ -55,9 +52,9 @@ impl SolverParticipationGuard {
     /// the following order:
     /// 1. DB-based validator: operates fast since it uses in-memory cache.
     /// 2. Onchain-based validator: only then calls the Authenticator contract.
-    pub async fn can_participate(&self, solver: &eth::Address) -> anyhow::Result<bool> {
+    pub async fn can_participate(&self, driver: &Driver) -> anyhow::Result<bool> {
         for validator in &self.0.validators {
-            if !validator.is_allowed(solver).await? {
+            if !validator.is_allowed(driver).await? {
                 return Ok(false);
             }
         }
@@ -68,5 +65,5 @@ impl SolverParticipationGuard {
 
 #[async_trait::async_trait]
 trait Validator: Send + Sync {
-    async fn is_allowed(&self, solver: &eth::Address) -> anyhow::Result<bool>;
+    async fn is_allowed(&self, driver: &Driver) -> anyhow::Result<bool>;
 }

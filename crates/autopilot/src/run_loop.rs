@@ -736,7 +736,7 @@ impl RunLoop {
         request: &solve::Request,
     ) -> Result<Vec<Result<competition::Solution, domain::competition::SolutionError>>, SolveError>
     {
-        let can_participate = self.solver_participation_guard.can_participate(&driver.submission_address).await.map_err(|err| {
+        let can_participate = self.solver_participation_guard.can_participate(driver).await.map_err(|err| {
             tracing::error!(?err, driver = %driver.name, ?driver.submission_address, "solver participation check failed");
                 SolveError::SolverDenyListed
             }
