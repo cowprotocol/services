@@ -194,13 +194,19 @@ impl AuctionProcessor {
         // Use spawn_blocking() because a lot of CPU bound computations are happening
         // and we don't want to block the runtime for too long.
         let fut = tokio::task::spawn_blocking(move || {
-            let start = std::time::Instant::now();
-            orders.extend(rt.block_on(Self::cow_amm_orders(&eth, &tokens, &cow_amms, signature_validator.as_ref())));
-            sorting::sort_orders(&mut orders, &tokens, &solver, &order_comparators);
             let _timer = metrics::get()
                 .auction_preprocessing
                 .with_label_values(&["total"])
                 .start_timer();
+            let start = std::time::Instant::now();
+            {
+                let _timer = metrics::get()
+                    .auction_preprocessing
+                    .with_label_values(&["cow_amm_orders_and_sorting"])
+                    .start_timer();
+                orders.extend(rt.block_on(Self::cow_amm_orders(&eth, &tokens, &cow_amms, signature_validator.as_ref())));
+                sorting::sort_orders(&mut orders, &tokens, &solver, &order_comparators);
+            }
             let (mut balances, mut app_data_by_hash) =
                 rt.block_on(async {
                     tokio::join!(
