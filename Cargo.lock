@@ -3894,6 +3894,7 @@ dependencies = [
  "futures",
  "gas-estimation",
  "humantime",
+ "itertools 0.12.1",
  "mimalloc",
  "number",
  "observe",

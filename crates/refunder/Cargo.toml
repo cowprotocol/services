@@ -16,6 +16,7 @@ ethrpc = { path = "../ethrpc" }
 futures = { workspace = true }
 gas-estimation = { workspace = true }
 humantime = { workspace = true }
+itertools = { workspace = true }
 mimalloc = "0.1.43"
 number = { path = "../number" }
 observe = { path = "../observe" }
