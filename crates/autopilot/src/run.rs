@@ -372,7 +372,7 @@ pub async fn run(args: Arguments) {
         eth.clone(),
         db.clone(),
         settlement_updates_receiver,
-        args.solver_participation_guard,
+        args.db_based_solver_participation_guard,
     );
 
     let persistence =

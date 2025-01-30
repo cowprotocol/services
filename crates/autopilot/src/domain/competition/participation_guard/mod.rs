@@ -3,7 +3,7 @@ mod onchain;
 
 use {
     crate::{
-        arguments::SolverParticipationGuardConfig,
+        arguments::DbBasedSolverParticipationGuardConfig,
         database::Postgres,
         domain::eth,
         infra::Ethereum,
@@ -26,28 +26,24 @@ impl SolverParticipationGuard {
         eth: Ethereum,
         db: Postgres,
         settlement_updates_receiver: tokio::sync::mpsc::UnboundedReceiver<()>,
-        config: SolverParticipationGuardConfig,
+        db_based_validator_config: DbBasedSolverParticipationGuardConfig,
     ) -> Self {
         let mut validators: Vec<Box<dyn Validator + Send + Sync>> = Vec::new();
 
-        if config.db_based_validator.enabled {
+        if db_based_validator_config.enabled {
             let current_block = eth.current_block().clone();
             let database_solver_participation_validator = db::Validator::new(
                 db,
                 current_block,
                 settlement_updates_receiver,
-                config.db_based_validator.solver_blacklist_cache_ttl,
-                config
-                    .db_based_validator
-                    .solver_last_auctions_participation_count,
+                db_based_validator_config.solver_blacklist_cache_ttl,
+                db_based_validator_config.solver_last_auctions_participation_count,
             );
             validators.push(Box::new(database_solver_participation_validator));
         }
 
-        if config.onchain_based_validator.enabled {
-            let onchain_solver_participation_validator = onchain::Validator { eth };
-            validators.push(Box::new(onchain_solver_participation_validator));
-        }
+        let onchain_solver_participation_validator = onchain::Validator { eth };
+        validators.push(Box::new(onchain_solver_participation_validator));
 
         Self(Arc::new(Inner { validators }))
     }

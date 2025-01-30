@@ -245,20 +245,11 @@ pub struct Arguments {
 
     /// Configuration for the solver participation guard.
     #[clap(flatten)]
-    pub solver_participation_guard: SolverParticipationGuardConfig,
+    pub db_based_solver_participation_guard: DbBasedSolverParticipationGuardConfig,
 }
 
 #[derive(Debug, clap::Parser)]
-pub struct SolverParticipationGuardConfig {
-    #[clap(flatten)]
-    pub db_based_validator: DbBasedValidatorConfig,
-
-    #[clap(flatten)]
-    pub onchain_based_validator: OnchainBasedValidatorConfig,
-}
-
-#[derive(Debug, clap::Parser)]
-pub struct DbBasedValidatorConfig {
+pub struct DbBasedSolverParticipationGuardConfig {
     /// Enables or disables the solver participation guard
     #[clap(
         id = "db_enabled",
@@ -275,18 +266,6 @@ pub struct DbBasedValidatorConfig {
     /// The number of last auctions to check solver participation eligibility.
     #[clap(long, env, default_value = "3")]
     pub solver_last_auctions_participation_count: u32,
-}
-
-#[derive(Debug, Clone, clap::Parser)]
-pub struct OnchainBasedValidatorConfig {
-    /// Enables or disables the solver participation guard
-    #[clap(
-        id = "onchain_enabled",
-        long = "onchain-based-solver-participation-guard-enabled",
-        env = "ONCHAIN_BASED_SOLVER_PARTICIPATION_GUARD_ENABLED",
-        default_value = "true"
-    )]
-    pub enabled: bool,
 }
 
 impl std::fmt::Display for Arguments {
@@ -332,7 +311,7 @@ impl std::fmt::Display for Arguments {
             max_winners_per_auction,
             archive_node_url,
             max_solutions_per_solver,
-            solver_participation_guard,
+            db_based_solver_participation_guard,
         } = self;
 
         write!(f, "{}", shared)?;
@@ -418,8 +397,8 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(
             f,
-            "solver_participation_guard: {:?}",
-            solver_participation_guard
+            "db_based_solver_participation_guard: {:?}",
+            db_based_solver_participation_guard
         )?;
         Ok(())
     }
@@ -432,6 +411,7 @@ pub struct Solver {
     pub url: Url,
     pub submission_account: Account,
     pub fairness_threshold: Option<U256>,
+    pub accepts_unsettled_blocking: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -480,18 +460,34 @@ impl FromStr for Solver {
             Account::Address(H160::from_str(parts[2]).context("failed to parse submission")?)
         };
 
-        let fairness_threshold = match parts.get(3) {
-            Some(value) => {
-                Some(U256::from_dec_str(value).context("failed to parse fairness threshold")?)
+        let mut fairness_threshold: Option<U256> = Default::default();
+        let mut accepts_unsettled_blocking = false;
+
+        if let Some(value) = parts.get(3) {
+            match U256::from_dec_str(value) {
+                Ok(parsed_fairness_threshold) => {
+                    fairness_threshold = Some(parsed_fairness_threshold);
+                }
+                Err(_) => {
+                    accepts_unsettled_blocking = value
+                        .parse()
+                        .context("failed to parse solver's third arg param")?
+                }
             }
-            None => None,
         };
+
+        if let Some(value) = parts.get(4) {
+            accepts_unsettled_blocking = value
+                .parse()
+                .context("failed to parse `accepts_unsettled_blocking` flag")?;
+        }
 
         Ok(Self {
             name: name.to_owned(),
             url,
             fairness_threshold,
             submission_account,
+            accepts_unsettled_blocking,
         })
     }
 }
@@ -688,6 +684,7 @@ mod test {
             name: "name1".into(),
             url: Url::parse("http://localhost:8080").unwrap(),
             fairness_threshold: None,
+            accepts_unsettled_blocking: false,
             submission_account: Account::Address(H160::from_slice(&hex!(
                 "C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
             ))),
@@ -703,6 +700,7 @@ mod test {
             name: "name1".into(),
             url: Url::parse("http://localhost:8080").unwrap(),
             fairness_threshold: None,
+            accepts_unsettled_blocking: false,
             submission_account: Account::Kms(
                 Arn::from_str("arn:aws:kms:supersecretstuff").unwrap(),
             ),
@@ -721,6 +719,40 @@ mod test {
                 "C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
             ))),
             fairness_threshold: Some(U256::exp10(18)),
+            accepts_unsettled_blocking: false,
+        };
+        assert_eq!(driver, expected);
+    }
+
+    #[test]
+    fn parse_driver_with_accepts_unsettled_blocking_flag() {
+        let argument =
+            "name1|http://localhost:8080|0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2|true";
+        let driver = Solver::from_str(argument).unwrap();
+        let expected = Solver {
+            name: "name1".into(),
+            url: Url::parse("http://localhost:8080").unwrap(),
+            submission_account: Account::Address(H160::from_slice(&hex!(
+                "C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+            ))),
+            fairness_threshold: None,
+            accepts_unsettled_blocking: true,
+        };
+        assert_eq!(driver, expected);
+    }
+
+    #[test]
+    fn parse_driver_with_threshold_and_accepts_unsettled_blocking_flag() {
+        let argument = "name1|http://localhost:8080|0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2|1000000000000000000|true";
+        let driver = Solver::from_str(argument).unwrap();
+        let expected = Solver {
+            name: "name1".into(),
+            url: Url::parse("http://localhost:8080").unwrap(),
+            submission_account: Account::Address(H160::from_slice(&hex!(
+                "C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+            ))),
+            fairness_threshold: Some(U256::exp10(18)),
+            accepts_unsettled_blocking: true,
         };
         assert_eq!(driver, expected);
     }
