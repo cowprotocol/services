@@ -2,7 +2,7 @@ pub use load::load;
 use {
     crate::{domain::eth, infra, util::serialize},
     reqwest::Url,
-    serde::{Deserialize, Serialize},
+    serde::{Deserialize, Deserializer, Serialize},
     serde_with::serde_as,
     solver::solver::Arn,
     std::{collections::HashMap, time::Duration},
@@ -73,6 +73,14 @@ struct Config {
         default = "default_simulation_bad_token_max_age"
     )]
     simulation_bad_token_max_age: Duration,
+
+    /// Configuration for the app-data fetching.
+    #[serde(default, flatten)]
+    app_data_fetching: AppDataFetching,
+
+    /// Whether the flashloans feature is enabled.
+    #[serde(default)]
+    flashloans_enabled: bool,
 }
 
 #[serde_as]
@@ -733,6 +741,53 @@ impl Default for BadTokenDetectionConfig {
     }
 }
 
+#[derive(Clone, Debug)]
+pub enum AppDataFetching {
+    /// App-data fetching is disabled
+    Disabled,
+
+    /// App-data fetching is enabled
+    Enabled {
+        /// The base URL of the orderbook to fetch app-data from
+        orderbook_url: Url,
+
+        /// The maximum number of app-data entries in the cache
+        cache_size: u64,
+    },
+}
+
+impl<'de> Deserialize<'de> for AppDataFetching {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[serde_as]
+        #[derive(Deserialize)]
+        #[serde(rename_all = "kebab-case", deny_unknown_fields)]
+        struct Helper {
+            #[serde(default)]
+            app_data_fetching_enabled: bool,
+            orderbook_url: Option<Url>,
+            #[serde(default = "default_app_data_cache_size")]
+            cache_size: u64,
+        }
+
+        let helper = Helper::deserialize(deserializer)?;
+        match helper.app_data_fetching_enabled {
+            false => Ok(AppDataFetching::Disabled),
+            true => {
+                let orderbook_url = helper
+                    .orderbook_url
+                    .ok_or_else(|| serde::de::Error::custom("Missing `orderbook-url` field"))?;
+                Ok(AppDataFetching::Enabled {
+                    orderbook_url,
+                    cache_size: helper.cache_size,
+                })
+            }
+        }
+    }
+}
+
 fn default_metrics_bad_token_detector_failure_ratio() -> f64 {
     0.9
 }
@@ -754,4 +809,10 @@ fn default_metrics_bad_token_detector_log_only() -> bool {
 
 fn default_metrics_bad_token_detector_freeze_time() -> Duration {
     Duration::from_secs(60 * 10)
+}
+
+/// According to statistics, the average size of the app-data is ~800 bytes.
+/// With this default, the approximate size of the cache will be ~1.6 MB.
+fn default_app_data_cache_size() -> u64 {
+    2000
 }

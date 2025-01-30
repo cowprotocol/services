@@ -107,12 +107,10 @@ impl RunLoop {
                 .await;
             if let Some(auction) = auction {
                 let auction_id = auction.id;
-                let auction_task = self_arc
+                self_arc
                     .single_run(auction)
-                    .instrument(tracing::info_span!("auction", auction_id));
-
-                ::observe::request_id::set_task_local_storage(auction_id.to_string(), auction_task)
-                    .await;
+                    .instrument(tracing::info_span!("auction", auction_id))
+                    .await
             };
         }
     }
@@ -190,6 +188,7 @@ impl RunLoop {
                 return None;
             }
         };
+        let auction = self.remove_in_flight_orders(auction).await;
 
         let id = match self.persistence.replace_current_auction(&auction).await {
             Ok(id) => {
@@ -221,8 +220,6 @@ impl RunLoop {
     async fn single_run(self: &Arc<Self>, auction: domain::Auction) {
         let single_run_start = Instant::now();
         tracing::info!(auction_id = ?auction.id, "solving");
-
-        let auction = self.remove_in_flight_orders(auction).await;
 
         // Mark all auction orders as `Ready` for competition
         self.persistence
@@ -515,6 +512,24 @@ impl RunLoop {
             std::cmp::Reverse(participant.solution().score().get().0)
         });
 
+        // Filter out solutions that don't come from their corresponding submission
+        // address
+        let mut solutions = solutions
+            .into_iter()
+            .filter(|participant| {
+                let submission_address = participant.driver().submission_address;
+                let is_solution_from_driver = participant.solution().solver() == submission_address;
+                if !is_solution_from_driver {
+                    tracing::warn!(
+                        driver = participant.driver().name,
+                        ?submission_address,
+                        "the solution received is not from the driver submission address"
+                    );
+                }
+                is_solution_from_driver
+            })
+            .collect::<Vec<_>>();
+
         // Limit the number of accepted solutions per solver. Do not alter the ordering
         // of solutions
         let mut counter = HashMap::new();
@@ -710,6 +725,26 @@ impl RunLoop {
         request: &solve::Request,
     ) -> Result<Vec<Result<competition::Solution, domain::competition::SolutionError>>, SolveError>
     {
+        let authenticator = self.eth.contracts().authenticator();
+        let is_allowed = authenticator
+            .is_solver(driver.submission_address.into())
+            .call()
+            .await
+            .map_err(|err| {
+                tracing::warn!(
+                    driver = driver.name,
+                    ?driver.submission_address,
+                    ?err,
+                    "failed to check if solver is deny listed"
+                );
+                SolveError::SolverDenyListed
+            })?;
+
+        // Do not send the request to the driver if the solver is denied
+        if !is_allowed {
+            return Err(SolveError::SolverDenyListed);
+        }
+
         let response = tokio::time::timeout(self.config.solve_deadline, driver.solve(request))
             .await
             .map_err(|_| SolveError::Timeout)?
@@ -717,33 +752,7 @@ impl RunLoop {
         if response.solutions.is_empty() {
             return Err(SolveError::NoSolutions);
         }
-        let solutions = response.into_domain();
-
-        // TODO: remove this workaround when implementing #2780
-        // Discard any solutions from solvers that got deny listed in the mean time.
-        let futures = solutions.into_iter().map(|solution| async {
-            let solution = solution?;
-            let solver = solution.solver();
-            let authenticator = self.eth.contracts().authenticator();
-            let is_allowed = authenticator.is_solver(solver.into()).call().await;
-
-            match is_allowed {
-                Ok(true) => Ok(solution),
-                Ok(false) => Err(domain::competition::SolutionError::SolverDenyListed),
-                Err(err) => {
-                    // log warning but discard solution anyway to be on the safe side
-                    tracing::warn!(
-                        driver = driver.name,
-                        ?solver,
-                        ?err,
-                        "failed to check if solver is deny listed"
-                    );
-                    Err(domain::competition::SolutionError::SolverDenyListed)
-                }
-            }
-        });
-
-        Ok(futures::future::join_all(futures).await)
+        Ok(response.into_domain())
     }
 
     /// Execute the solver's solution. Returns Ok when the corresponding
@@ -846,7 +855,10 @@ impl RunLoop {
 
     /// Removes orders that are currently being settled to avoid solvers trying
     /// to fill an order a second time.
-    async fn remove_in_flight_orders(&self, mut auction: domain::Auction) -> domain::Auction {
+    async fn remove_in_flight_orders(
+        &self,
+        mut auction: domain::RawAuctionData,
+    ) -> domain::RawAuctionData {
         let in_flight = &*self.in_flight_orders.lock().await;
         if in_flight.is_empty() {
             return auction;
@@ -867,6 +879,8 @@ enum SolveError {
     NoSolutions,
     #[error(transparent)]
     Failure(anyhow::Error),
+    #[error("the solver got deny listed")]
+    SolverDenyListed,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -959,6 +973,7 @@ impl Metrics {
             SolveError::Timeout => "timeout",
             SolveError::NoSolutions => "no_solutions",
             SolveError::Failure(_) => "error",
+            SolveError::SolverDenyListed => "deny_listed",
         };
         Self::get()
             .solve

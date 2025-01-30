@@ -93,7 +93,7 @@ pub fn tx(
                         sell_amount: trade.order().sell.amount.into(),
                         buy_amount: trade.order().buy.amount.into(),
                         valid_to: trade.order().valid_to.into(),
-                        app_data: trade.order().app_data.0 .0.into(),
+                        app_data: trade.order().app_data.hash().0 .0.into(),
                         fee_amount: eth::U256::zero(),
                         flags: Flags {
                             side: trade.order().side,

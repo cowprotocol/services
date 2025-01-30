@@ -157,7 +157,10 @@ async fn zero_ex_liquidity(web3: Web3) {
             vec![
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
-                "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+                format!(
+                    "--drivers=test_solver|http://localhost:11088/test_solver|{}",
+                    hex::encode(solver.address())
+                ),
             ],
         )
         .await;

@@ -2,7 +2,7 @@ mod dto;
 
 use {
     crate::{
-        domain::{competition, competition::auction},
+        domain::competition::auction,
         infra::{
             api::{self, Error, State},
             observe,
@@ -23,7 +23,7 @@ async fn route(
         auction::Id::try_from(req.auction_id).map_err(api::routes::AuctionError::from)?;
     let solver = state.solver().name().to_string();
 
-    let handle_request = async move {
+    async move {
         observe::settling();
         let result = state
             .competition()
@@ -36,16 +36,6 @@ async fn route(
         observe::settled(state.solver().name(), &result);
         result.map(|_| ()).map_err(Into::into)
     }
-    .instrument(tracing::info_span!("/settle", solver, %auction_id));
-
-    // Handle `/settle` call in a background task to ensure that we correctly
-    // submit the settlement (or cancellation) on-chain even if the server
-    // aborts the endpoint handler code.
-    // This can happen due do connection issues or when the autopilot aborts
-    // the `/settle` call when we reach the submission deadline.
-    Ok(
-        ::observe::request_id::spawn_task_with_current_request_id(handle_request)
-            .await
-            .unwrap_or_else(|_| Err(competition::Error::SubmissionError))?,
-    )
+    .instrument(tracing::info_span!("/settle", solver, %auction_id))
+    .await
 }
