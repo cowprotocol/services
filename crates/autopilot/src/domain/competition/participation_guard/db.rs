@@ -95,7 +95,7 @@ impl Validator {
         });
     }
 
-    /// Try to notify all the non-settling external solvers.
+    /// Try to notify all the non-settling solvers.
     fn notify_solvers(&self, non_settling_solvers: &[eth::Address]) {
         let futures = non_settling_solvers
             .iter()
