@@ -102,30 +102,27 @@ impl RefundService {
         refundable_order_uids: Vec<EthOrderPlacement>,
     ) -> Vec<(OrderUid, CoWSwapEthFlowAddress)> {
         let mut batch = Web3CallBatch::new(self.web3.transport().clone());
-        let refundable_order_uids =
-            refundable_order_uids
-                .into_iter()
-                .filter_map(|eth_order_placement| {
-                    // Owner of the ethflow order is always the ethflow contract itself
-                    let ethflow_contract_address = H160(
-                        eth_order_placement.uid.0[32..52]
-                            .try_into()
-                            .expect("order_uid slice with incorrect length"),
-                    );
-                    let ethflow_contract = self
-                        .ethflow_contracts
-                        .iter()
-                        .find(|contract| contract.address() == ethflow_contract_address);
-                    if ethflow_contract.is_none() {
-                        tracing::error!(
-                            ?ethflow_contract_address,
-                            "Could not find ethflow contract with address",
-                        );
-                    }
-                    ethflow_contract.map(|contract| (eth_order_placement, contract))
-                });
-
         let futures = refundable_order_uids
+            .into_iter()
+            .filter_map(|eth_order_placement| {
+                // Owner of the ethflow order is always the ethflow contract itself
+                let ethflow_contract_address = H160(
+                    eth_order_placement.uid.0[32..52]
+                        .try_into()
+                        .expect("order_uid slice with incorrect length"),
+                );
+                let ethflow_contract = self
+                    .ethflow_contracts
+                    .iter()
+                    .find(|contract| contract.address() == ethflow_contract_address);
+                if ethflow_contract.is_none() {
+                    tracing::error!(
+                        ?ethflow_contract_address,
+                        "Could not find ethflow contract with address",
+                    );
+                }
+                ethflow_contract.map(|contract| (eth_order_placement, contract))
+            })
             .map(|(eth_order_placement, ethflow_contract)| {
                 let order_hash: [u8; 32] = eth_order_placement.uid.0[0..32]
                     .try_into()
