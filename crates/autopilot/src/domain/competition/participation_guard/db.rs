@@ -5,6 +5,7 @@ use {
     },
     ethrpc::block_stream::CurrentBlockWatcher,
     std::{
+        collections::HashMap,
         sync::Arc,
         time::{Duration, Instant},
     },
@@ -20,6 +21,7 @@ struct Inner {
     banned_solvers: dashmap::DashMap<eth::Address, Instant>,
     ttl: Duration,
     last_auctions_count: u32,
+    db_validator_acceptance_by_solver: HashMap<eth::Address, bool>,
 }
 
 impl Validator {
@@ -29,12 +31,14 @@ impl Validator {
         settlement_updates_receiver: tokio::sync::mpsc::UnboundedReceiver<()>,
         ttl: Duration,
         last_auctions_count: u32,
+        db_validator_acceptance_by_solver: HashMap<eth::Address, bool>,
     ) -> Self {
         let self_ = Self(Arc::new(Inner {
             db,
             banned_solvers: Default::default(),
             ttl,
             last_auctions_count,
+            db_validator_acceptance_by_solver,
         }));
 
         self_.start_maintenance(settlement_updates_receiver, current_block);
@@ -91,6 +95,18 @@ impl Validator {
 #[async_trait::async_trait]
 impl super::Validator for Validator {
     async fn is_allowed(&self, solver: &eth::Address) -> anyhow::Result<bool> {
+        // Check if solver accepted this feature. This should be removed once a CIP is
+        // approved.
+        if !self
+            .0
+            .db_validator_acceptance_by_solver
+            .get(solver)
+            .copied()
+            .unwrap_or_default()
+        {
+            return Ok(true);
+        }
+
         if let Some(entry) = self.0.banned_solvers.get(solver) {
             if Instant::now().duration_since(*entry.value()) < self.0.ttl {
                 return Ok(false);

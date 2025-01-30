@@ -52,6 +52,7 @@ use {
         token_list::{AutoUpdatingTokenList, TokenListConfiguration},
     },
     std::{
+        collections::HashMap,
         sync::{Arc, RwLock},
         time::{Duration, Instant},
     },
@@ -368,13 +369,6 @@ pub async fn run(args: Arguments) {
     let (settlement_updates_sender, settlement_updates_receiver) =
         tokio::sync::mpsc::unbounded_channel();
 
-    let solver_participation_guard = SolverParticipationGuard::new(
-        eth.clone(),
-        db.clone(),
-        settlement_updates_receiver,
-        args.db_based_solver_participation_guard,
-    );
-
     let persistence =
         infra::persistence::Persistence::new(args.s3.into().unwrap(), Arc::new(db.clone())).await;
     let settlement_observer = crate::domain::settlement::Observer::new(
@@ -561,6 +555,7 @@ pub async fn run(args: Arguments) {
         max_winners_per_auction: args.max_winners_per_auction,
         max_solutions_per_solver: args.max_solutions_per_solver,
     };
+
     let drivers_futures = args
         .drivers
         .into_iter()
@@ -570,6 +565,7 @@ pub async fn run(args: Arguments) {
                 driver.name.clone(),
                 driver.fairness_threshold.map(Into::into),
                 driver.submission_account,
+                driver.accepts_unsettled_blocking,
             )
             .await
             .map(Arc::new)
@@ -577,10 +573,21 @@ pub async fn run(args: Arguments) {
         })
         .collect::<Vec<_>>();
 
-    let drivers = futures::future::join_all(drivers_futures)
+    let drivers: Vec<_> = futures::future::join_all(drivers_futures)
         .await
         .into_iter()
         .collect();
+
+    let solver_participation_guard = SolverParticipationGuard::new(
+        eth.clone(),
+        db.clone(),
+        settlement_updates_receiver,
+        args.db_based_solver_participation_guard,
+        drivers
+            .iter()
+            .map(|driver| (driver.submission_address, driver.accepts_unsettled_blocking))
+            .collect::<HashMap<_, _>>(),
+    );
 
     let run = RunLoop::new(
         run_loop_config,
@@ -613,6 +620,7 @@ async fn shadow_mode(args: Arguments) -> ! {
                 driver.name.clone(),
                 driver.fairness_threshold.map(Into::into),
                 driver.submission_account,
+                driver.accepts_unsettled_blocking,
             )
             .await
             .map(Arc::new)
