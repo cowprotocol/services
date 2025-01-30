@@ -5,9 +5,10 @@ use {
     crate::{
         arguments::DbBasedSolverParticipationGuardConfig,
         database::Postgres,
-        infra::{Driver, Ethereum},
+        domain::eth,
+        infra,
     },
-    std::sync::Arc,
+    std::{collections::HashMap, sync::Arc},
 };
 
 /// This struct checks whether a solver can participate in the competition by
@@ -22,10 +23,11 @@ struct Inner {
 
 impl SolverParticipationGuard {
     pub fn new(
-        eth: Ethereum,
+        eth: infra::Ethereum,
         db: Postgres,
         settlement_updates_receiver: tokio::sync::mpsc::UnboundedReceiver<()>,
         db_based_validator_config: DbBasedSolverParticipationGuardConfig,
+        drivers_by_address: HashMap<eth::Address, Arc<infra::Driver>>,
     ) -> Self {
         let mut validators: Vec<Box<dyn Validator + Send + Sync>> = Vec::new();
 
@@ -37,6 +39,7 @@ impl SolverParticipationGuard {
                 settlement_updates_receiver,
                 db_based_validator_config.solver_blacklist_cache_ttl,
                 db_based_validator_config.solver_last_auctions_participation_count,
+                drivers_by_address,
             );
             validators.push(Box::new(database_solver_participation_validator));
         }
@@ -52,7 +55,7 @@ impl SolverParticipationGuard {
     /// the following order:
     /// 1. DB-based validator: operates fast since it uses in-memory cache.
     /// 2. Onchain-based validator: only then calls the Authenticator contract.
-    pub async fn can_participate(&self, driver: &Driver) -> anyhow::Result<bool> {
+    pub async fn can_participate(&self, driver: &infra::Driver) -> anyhow::Result<bool> {
         for validator in &self.0.validators {
             if !validator.is_allowed(driver).await? {
                 return Ok(false);
@@ -65,5 +68,5 @@ impl SolverParticipationGuard {
 
 #[async_trait::async_trait]
 trait Validator: Send + Sync {
-    async fn is_allowed(&self, driver: &Driver) -> anyhow::Result<bool>;
+    async fn is_allowed(&self, driver: &infra::Driver) -> anyhow::Result<bool>;
 }

@@ -1,6 +1,6 @@
 use {
     self::dto::{reveal, settle, solve},
-    crate::{arguments::Account, domain::eth, util},
+    crate::{arguments::Account, domain::eth, infra::solvers::dto::notify, util},
     anyhow::{anyhow, Context, Result},
     reqwest::{Client, StatusCode},
     std::time::Duration,
@@ -114,6 +114,10 @@ impl Driver {
             return Err(anyhow!("bad status {status}: {text}"));
         }
         Ok(())
+    }
+
+    pub async fn notify(&self, request: &notify::Request) -> Result<()> {
+        self.request_response("notify", request, None).await
     }
 
     async fn request_response<Response>(

@@ -52,6 +52,7 @@ use {
         token_list::{AutoUpdatingTokenList, TokenListConfiguration},
     },
     std::{
+        collections::HashMap,
         sync::{Arc, RwLock},
         time::{Duration, Instant},
     },
@@ -368,12 +369,6 @@ pub async fn run(args: Arguments) {
     let (settlement_updates_sender, settlement_updates_receiver) =
         tokio::sync::mpsc::unbounded_channel();
 
-    let solver_participation_guard = SolverParticipationGuard::new(
-        eth.clone(),
-        db.clone(),
-        settlement_updates_receiver,
-        args.db_based_solver_participation_guard,
-    );
     let persistence =
         infra::persistence::Persistence::new(args.s3.into().unwrap(), Arc::new(db.clone())).await;
     let settlement_observer = crate::domain::settlement::Observer::new(
@@ -582,6 +577,17 @@ pub async fn run(args: Arguments) {
         .await
         .into_iter()
         .collect();
+
+    let solver_participation_guard = SolverParticipationGuard::new(
+        eth.clone(),
+        db.clone(),
+        settlement_updates_receiver,
+        args.db_based_solver_participation_guard,
+        drivers
+            .iter()
+            .map(|driver| (driver.submission_address, driver.clone()))
+            .collect::<HashMap<_, _>>(),
+    );
 
     let run = RunLoop::new(
         run_loop_config,
