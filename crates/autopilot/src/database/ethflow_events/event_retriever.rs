@@ -29,8 +29,7 @@ impl EventRetrieving for EthFlowRefundRetriever {
     type Event = contracts::cowswap_eth_flow::Event;
 
     fn get_events(&self) -> AllEventsBuilder<DynTransport, Self::Event> {
-        let mut events =
-            AllEventsBuilder::new(self.web3.clone(), *self.addresses.first().unwrap(), None);
+        let mut events = AllEventsBuilder::new(self.web3.clone(), H160::default(), None);
         // We want to observe multiple addresses for events.
         events.filter = events.filter.address(self.addresses.clone());
         // Filter out events that we don't want to listen for in the contract. `Self` is
