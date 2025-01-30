@@ -177,7 +177,7 @@ mod tests {
 
         let instrumented = InstrumentedPriceEstimator::new(estimator, "foo".to_string());
 
-        for i in 0..7 {
+        for i in 0..expectations.len() {
             let query = if i % 2 == 0 { &queries[0] } else { &queries[1] };
             let _ = instrumented.estimate(query.clone()).await;
         }
