@@ -65,41 +65,35 @@ impl Validator {
                     .await
                 {
                     Ok(non_settling_solvers) => {
-                        let non_settling_solvers = non_settling_solvers
+                        let non_settling_drivers = non_settling_solvers
                             .into_iter()
-                            .map(|solver| {
+                            .filter_map(|solver| {
                                 let address = eth::Address(solver.0.into());
-                                match self_.0.drivers_by_address.get(&address) {
-                                    Some(driver) => {
-                                        Metrics::get()
-                                            .non_settling_solver
-                                            .with_label_values(&[&driver.name]);
-                                    }
-                                    None => {
-                                        tracing::warn!(
-                                            ?address,
-                                            "unrecognized driver in non-settling solvers",
-                                        );
-                                    }
+                                if let Some(driver) = self_.0.drivers_by_address.get(&address) {
+                                    Metrics::get()
+                                        .non_settling_solver
+                                        .with_label_values(&[&driver.name]);
+                                    Some(driver.clone())
+                                } else {
+                                    None
                                 }
-
-                                address
                             })
                             .collect::<Vec<_>>();
 
-                        tracing::debug!(?non_settling_solvers, "found non-settling solvers");
+                        let non_settling_solver_names = non_settling_drivers
+                            .iter()
+                            .map(|driver| driver.name.clone())
+                            .collect::<Vec<_>>();
+
+                        tracing::debug!(solvers = ?non_settling_solver_names, "found non-settling solvers");
 
                         let now = Instant::now();
-                        non_settling_solvers
+                        non_settling_drivers
                             .into_iter()
                             // Check if solver accepted this feature. This should be removed once a CIP is
                             // approved.
-                            .filter_map(|solver| {
-                                self_
-                                    .0
-                                    .drivers_by_address
-                                    .get(&solver)
-                                    .filter(|driver| driver.accepts_unsettled_blocking).map(|_| solver)
+                            .filter_map(|driver| {
+                                driver.accepts_unsettled_blocking.then_some(driver.submission_address)
                             })
                             .for_each(|solver| {
                                 self_.0.banned_solvers.insert(solver, now);
