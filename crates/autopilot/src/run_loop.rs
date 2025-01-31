@@ -188,6 +188,7 @@ impl RunLoop {
                 return None;
             }
         };
+        let auction = self.remove_in_flight_orders(auction).await;
 
         let id = match self.persistence.replace_current_auction(&auction).await {
             Ok(id) => {
@@ -219,8 +220,6 @@ impl RunLoop {
     async fn single_run(self: &Arc<Self>, auction: domain::Auction) {
         let single_run_start = Instant::now();
         tracing::info!(auction_id = ?auction.id, "solving");
-
-        let auction = self.remove_in_flight_orders(auction).await;
 
         // Mark all auction orders as `Ready` for competition
         self.persistence
@@ -856,7 +855,10 @@ impl RunLoop {
 
     /// Removes orders that are currently being settled to avoid solvers trying
     /// to fill an order a second time.
-    async fn remove_in_flight_orders(&self, mut auction: domain::Auction) -> domain::Auction {
+    async fn remove_in_flight_orders(
+        &self,
+        mut auction: domain::RawAuctionData,
+    ) -> domain::RawAuctionData {
         let in_flight = &*self.in_flight_orders.lock().await;
         if in_flight.is_empty() {
             return auction;

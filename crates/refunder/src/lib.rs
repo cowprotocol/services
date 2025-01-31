@@ -57,12 +57,16 @@ pub async fn run(args: arguments::Arguments) {
     });
     observe::metrics::serve_metrics(liveness.clone(), ([0, 0, 0, 0], args.metrics_port).into());
 
-    let ethflow_contract = CoWSwapEthFlow::at(&web3, args.ethflow_contract);
+    let ethflow_contracts = args
+        .ethflow_contracts
+        .iter()
+        .map(|contract| CoWSwapEthFlow::at(&web3, *contract))
+        .collect();
     let refunder_account = Account::Offline(args.refunder_pk.parse::<PrivateKey>().unwrap(), None);
     let mut refunder = RefundService::new(
         pg_pool,
         web3,
-        ethflow_contract,
+        ethflow_contracts,
         i64::try_from(args.min_validity_duration.as_secs()).unwrap_or(i64::MAX),
         args.min_slippage_bps,
         refunder_account,
