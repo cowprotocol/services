@@ -2,15 +2,16 @@ use {
     crate::{
         database::Postgres,
         domain::{eth, Metrics},
-        infra,
+        infra::{self, solvers::dto},
     },
     ethrpc::block_stream::CurrentBlockWatcher,
     futures::future::join_all,
     std::{
-        collections::HashMap,
+        collections::{HashMap, HashSet},
         sync::Arc,
         time::{Duration, Instant},
     },
+    tokio::join,
 };
 
 /// Checks the DB by searching for solvers that won N last consecutive auctions
@@ -35,11 +36,6 @@ impl Validator {
         last_auctions_count: u32,
         drivers_by_address: HashMap<eth::Address, Arc<infra::Driver>>,
     ) -> Self {
-        // Keep only drivers that accept unsettled blocking.
-        let drivers_by_address = drivers_by_address
-            .into_iter()
-            .filter(|(_, driver)| driver.accepts_unsettled_blocking)
-            .collect();
         let self_ = Self(Arc::new(Inner {
             db,
             banned_solvers: Default::default(),
@@ -64,65 +60,75 @@ impl Validator {
         tokio::spawn(async move {
             while settlement_updates_receiver.recv().await.is_some() {
                 let current_block = current_block.borrow().number;
-                match self_
-                    .0
-                    .db
-                    .find_non_settling_solvers(self_.0.last_auctions_count, current_block)
-                    .await
-                {
-                    Ok(non_settling_solvers) => {
-                        let non_settling_solvers = non_settling_solvers
-                            .into_iter()
-                            .map(|solver| {
-                                let address = eth::Address(solver.0.into());
-                                if let Some(driver) = self_.0.drivers_by_address.get(&address) {
-                                    Metrics::get()
-                                        .non_settling_solver
-                                        .with_label_values(&[&driver.name]);
-                                }
 
-                                address
-                            })
-                            .collect::<Vec<_>>();
+                let (non_settling_solvers, mut low_settling_solvers) = join!(
+                    self_.find_non_settling_solvers(current_block),
+                    self_.find_low_settling_solvers(current_block)
+                );
+                // Non-settling issue has a higher priority, remove duplicates from low-settling
+                // solvers.
+                low_settling_solvers.retain(|solver| !non_settling_solvers.contains(solver));
 
-                        tracing::debug!(?non_settling_solvers, "found non-settling solvers");
-                        self_.notify_solvers(&non_settling_solvers);
-
-                        let now = Instant::now();
-                        non_settling_solvers
-                            .into_iter()
-                            // Check if solver accepted this feature. This should be removed once a CIP is
-                            // approved.
-                            .filter(|solver| self_.0.drivers_by_address.contains_key(solver))
-                            .for_each(|solver| {
-                                self_.0.banned_solvers.insert(solver, now);
-                            });
-                    }
-                    Err(err) => {
-                        tracing::warn!(?err, "error while searching for non-settling solvers")
-                    }
-                }
+                self_.post_process(
+                    &non_settling_solvers,
+                    &dto::notify::Request::UnsettledConsecutiveAuctions,
+                );
+                self_.post_process(
+                    &low_settling_solvers,
+                    &dto::notify::Request::LowSettlingRate,
+                );
             }
         });
     }
 
+    async fn find_non_settling_solvers(&self, current_block: u64) -> HashSet<eth::Address> {
+        let last_auctions_count = self.0.last_auctions_count;
+        match self
+            .0
+            .db
+            .find_non_settling_solvers(last_auctions_count, current_block)
+            .await
+        {
+            Ok(solvers) => solvers
+                .into_iter()
+                .map(|solver| eth::Address(solver.0.into()))
+                .collect(),
+            Err(err) => {
+                tracing::warn!(?err, "error while searching for non-settling solvers");
+                Default::default()
+            }
+        }
+    }
+
+    async fn find_low_settling_solvers(&self, current_block: u64) -> HashSet<eth::Address> {
+        let last_auctions_count = self.0.last_auctions_count;
+        match self
+            .0
+            .db
+            .find_low_settling_solvers(last_auctions_count, current_block, 1.0)
+            .await
+        {
+            Ok(solvers) => solvers
+                .into_iter()
+                .map(|solver| eth::Address(solver.0.into()))
+                .collect(),
+            Err(err) => {
+                tracing::warn!(?err, "error while searching for low-settling solvers");
+                Default::default()
+            }
+        }
+    }
+
     /// Try to notify all the non-settling solvers in a background task.
-    fn notify_solvers(&self, non_settling_solvers: &[eth::Address]) {
-        let futures = non_settling_solvers
+    fn notify_solvers(drivers: &[Arc<infra::Driver>], request: &dto::notify::Request) {
+        let futures = drivers
             .iter()
             .cloned()
-            .map(|solver| {
-                let self_ = self.0.clone();
+            .map(|driver| {
+                let request = request.clone();
                 async move {
-                    if let Some(driver) = self_.drivers_by_address.get(&solver) {
-                        if let Err(err) = driver
-                            .notify(
-                                &infra::solvers::dto::notify::Request::UnsettledConsecutiveAuctions,
-                            )
-                            .await
-                        {
-                            tracing::debug!(?solver, ?err, "unable to notify external solver");
-                        }
+                    if let Err(err) = driver.notify(&request).await {
+                        tracing::debug!(solver = ?driver.name, ?err, "unable to notify external solver");
                     }
                 }
             })
@@ -131,6 +137,52 @@ impl Validator {
         tokio::spawn(async move {
             join_all(futures).await;
         });
+    }
+
+    /// Updates the cache and notifies the solvers.
+    fn post_process(&self, solvers: &HashSet<eth::Address>, request: &dto::notify::Request) {
+        if solvers.is_empty() {
+            return;
+        }
+
+        let drivers = solvers
+            .iter()
+            .filter_map(|solver| self.0.drivers_by_address.get(solver).cloned())
+            .collect::<Vec<_>>();
+
+        let log_message = match request {
+            dto::notify::Request::UnsettledConsecutiveAuctions => "found non-settling solvers",
+            dto::notify::Request::LowSettlingRate => "found low-settling solvers",
+        };
+        let solver_names = drivers
+            .iter()
+            .map(|driver| driver.name.clone())
+            .collect::<Vec<_>>();
+        tracing::debug!(solvers = ?solver_names, log_message);
+
+        let reason = match request {
+            dto::notify::Request::UnsettledConsecutiveAuctions => "non_settling",
+            dto::notify::Request::LowSettlingRate => "low_settling",
+        };
+
+        for solver in solver_names {
+            Metrics::get()
+                .banned_solver
+                .with_label_values(&[&solver, reason]);
+        }
+
+        let drivers = drivers
+            .into_iter()
+            // Notify and block only solvers that accept unsettled blocking feature. This should be removed once a CIP is approved.
+            .filter(|driver| driver.accepts_unsettled_blocking)
+            .collect::<Vec<_>>();
+
+        Self::notify_solvers(&drivers, request);
+
+        let now = Instant::now();
+        for driver in drivers {
+            self.0.banned_solvers.insert(driver.submission_address, now);
+        }
     }
 }
 

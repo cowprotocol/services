@@ -20,8 +20,8 @@ pub use {
 pub struct Metrics {
     /// How many times the solver marked as non-settling based on the database
     /// statistics.
-    #[metric(labels("solver"))]
-    pub non_settling_solver: prometheus::IntCounterVec,
+    #[metric(labels("solver", "reason"))]
+    pub banned_solver: prometheus::IntCounterVec,
 }
 
 impl Metrics {
