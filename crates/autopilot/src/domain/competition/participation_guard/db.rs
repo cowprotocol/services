@@ -35,16 +35,17 @@ impl Validator {
         last_auctions_count: u32,
         drivers_by_address: HashMap<eth::Address, Arc<infra::Driver>>,
     ) -> Self {
-        let accepted_drivers_by_address = drivers_by_address
+        // Keep only drivers that accept unsettled blocking.
+        let drivers_by_address = drivers_by_address
             .into_iter()
             .filter(|(_, driver)| driver.accepts_unsettled_blocking)
-            .collect::<HashMap<_, _>>();
+            .collect();
         let self_ = Self(Arc::new(Inner {
             db,
             banned_solvers: Default::default(),
             ttl,
             last_auctions_count,
-            drivers_by_address: accepted_drivers_by_address,
+            drivers_by_address,
         }));
 
         self_.start_maintenance(settlement_updates_receiver, current_block);
@@ -74,10 +75,11 @@ impl Validator {
                             .into_iter()
                             .map(|solver| {
                                 let address = eth::Address(solver.0.into());
-
-                                Metrics::get()
-                                    .non_settling_solver
-                                    .with_label_values(&[&format!("{:#x}", address.0)]);
+                                if let Some(driver) = self_.0.drivers_by_address.get(&address) {
+                                    Metrics::get()
+                                        .non_settling_solver
+                                        .with_label_values(&[&driver.name]);
+                                }
 
                                 address
                             })
@@ -134,8 +136,8 @@ impl Validator {
 
 #[async_trait::async_trait]
 impl super::Validator for Validator {
-    async fn is_allowed(&self, driver: &infra::Driver) -> anyhow::Result<bool> {
-        if let Some(entry) = self.0.banned_solvers.get(&driver.submission_address) {
+    async fn is_allowed(&self, solver: &eth::Address) -> anyhow::Result<bool> {
+        if let Some(entry) = self.0.banned_solvers.get(solver) {
             if Instant::now().duration_since(*entry.value()) < self.0.ttl {
                 return Ok(false);
             } else {
