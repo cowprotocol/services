@@ -35,12 +35,16 @@ impl Validator {
         last_auctions_count: u32,
         drivers_by_address: HashMap<eth::Address, Arc<infra::Driver>>,
     ) -> Self {
+        let accepted_drivers_by_address = drivers_by_address
+            .into_iter()
+            .filter(|(_, driver)| driver.accepts_unsettled_blocking)
+            .collect::<HashMap<_, _>>();
         let self_ = Self(Arc::new(Inner {
             db,
             banned_solvers: Default::default(),
             ttl,
             last_auctions_count,
-            drivers_by_address,
+            drivers_by_address: accepted_drivers_by_address,
         }));
 
         self_.start_maintenance(settlement_updates_receiver, current_block);
@@ -83,9 +87,14 @@ impl Validator {
                         self_.notify_solvers(&non_settling_solvers);
 
                         let now = Instant::now();
-                        for solver in non_settling_solvers {
-                            self_.0.banned_solvers.insert(solver, now);
-                        }
+                        non_settling_solvers
+                            .into_iter()
+                            // Check if solver accepted this feature. This should be removed once a CIP is
+                            // approved.
+                            .filter(|solver| self_.0.drivers_by_address.contains_key(solver))
+                            .for_each(|solver| {
+                                self_.0.banned_solvers.insert(solver, now);
+                            });
                     }
                     Err(err) => {
                         tracing::warn!(?err, "error while searching for non-settling solvers")
@@ -103,22 +112,19 @@ impl Validator {
             .map(|solver| {
                 let self_ = self.0.clone();
                 async move {
-                    match self_.drivers_by_address.get(&solver) {
-                        Some(driver) => {
-                            if let Err(err) = driver
-                                .notify(&infra::solvers::dto::notify::Request::UnsettledConsecutiveAuctions)
-                                .await
-                            {
-                                tracing::debug!(?solver, ?err, "unable to notify external solver");
-                            }
-                        }
-                        None => {
-                            tracing::error!(?solver, "found unrecognized non-settling driver");
+                    if let Some(driver) = self_.drivers_by_address.get(&solver) {
+                        if let Err(err) = driver
+                            .notify(
+                                &infra::solvers::dto::notify::Request::UnsettledConsecutiveAuctions,
+                            )
+                            .await
+                        {
+                            tracing::debug!(?solver, ?err, "unable to notify external solver");
                         }
                     }
                 }
-            }
-        ).collect::<Vec<_>>();
+            })
+            .collect::<Vec<_>>();
 
         tokio::spawn(async move {
             join_all(futures).await;
@@ -129,12 +135,6 @@ impl Validator {
 #[async_trait::async_trait]
 impl super::Validator for Validator {
     async fn is_allowed(&self, driver: &infra::Driver) -> anyhow::Result<bool> {
-        // Check if solver accepted this feature. This should be removed once a CIP is
-        // approved.
-        if !driver.accepts_unsettled_blocking {
-            return Ok(true);
-        }
-
         if let Some(entry) = self.0.banned_solvers.get(&driver.submission_address) {
             if Instant::now().duration_since(*entry.value()) < self.0.ttl {
                 return Ok(false);
