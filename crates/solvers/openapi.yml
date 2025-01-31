@@ -89,7 +89,7 @@ paths:
                     - cancelled
                     - fail
                     - postprocessingTimedOut
-                    - unsettledConsecutiveAuctions
+                    - banned
       responses:
         "200":
           description: notification successfully received.
