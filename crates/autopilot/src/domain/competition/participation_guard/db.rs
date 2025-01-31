@@ -141,7 +141,7 @@ impl super::Validator for Validator {
             if Instant::now().duration_since(*entry.value()) < self.0.ttl {
                 return Ok(false);
             } else {
-                self.0.banned_solvers.remove(&driver.submission_address);
+                self.0.banned_solvers.remove(solver);
             }
         }
 

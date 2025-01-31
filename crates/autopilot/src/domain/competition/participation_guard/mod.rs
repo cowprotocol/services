@@ -55,9 +55,9 @@ impl SolverParticipationGuard {
     /// the following order:
     /// 1. DB-based validator: operates fast since it uses in-memory cache.
     /// 2. Onchain-based validator: only then calls the Authenticator contract.
-    pub async fn can_participate(&self, driver: &infra::Driver) -> anyhow::Result<bool> {
+    pub async fn can_participate(&self, solver: &eth::Address) -> anyhow::Result<bool> {
         for validator in &self.0.validators {
-            if !validator.is_allowed(driver).await? {
+            if !validator.is_allowed(solver).await? {
                 return Ok(false);
             }
         }
@@ -68,5 +68,5 @@ impl SolverParticipationGuard {
 
 #[async_trait::async_trait]
 trait Validator: Send + Sync {
-    async fn is_allowed(&self, driver: &infra::Driver) -> anyhow::Result<bool>;
+    async fn is_allowed(&self, solver: &eth::Address) -> anyhow::Result<bool>;
 }
