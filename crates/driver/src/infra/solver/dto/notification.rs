@@ -61,7 +61,11 @@ impl Notification {
                     notify::Settlement::Expired => Kind::Expired,
                 },
                 notify::Kind::PostprocessingTimedOut => Kind::PostprocessingTimedOut,
-                notify::Kind::UnsettledConsecutiveAuctions => Kind::UnsettledConsecutiveAuctions,
+                notify::Kind::Banned(reason) => Kind::Banned(match reason {
+                    notify::BanReason::UnsettledConsecutiveAuctions => {
+                        BanReason::UnsettledConsecutiveAuctions
+                    }
+                }),
             },
         }
     }
@@ -145,6 +149,13 @@ pub enum Kind {
     Expired,
     Fail,
     PostprocessingTimedOut,
+    Banned(BanReason),
+}
+
+#[serde_as]
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase", tag = "reason")]
+pub enum BanReason {
     UnsettledConsecutiveAuctions,
 }
 

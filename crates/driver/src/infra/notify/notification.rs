@@ -45,9 +45,8 @@ pub enum Kind {
     DriverError(String),
     /// On-chain solution postprocessing timed out.
     PostprocessingTimedOut,
-    /// The solver won multiple consecutive auctions but none of the settlement
-    /// succeeded.
-    UnsettledConsecutiveAuctions,
+    /// The solver has been banned for a specific reason.
+    Banned(BanReason),
 }
 
 #[derive(Debug)]
@@ -59,6 +58,12 @@ pub enum ScoreKind {
     InvalidExecutedAmount,
     /// missing native price for the surplus token
     MissingPrice(TokenAddress),
+}
+
+#[derive(Debug)]
+pub enum BanReason {
+    /// The driver won multiple consecutive auctions but never settled them.
+    UnsettledConsecutiveAuctions,
 }
 
 #[derive(Debug)]

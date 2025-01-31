@@ -12,7 +12,7 @@ impl From<NotifyRequest> for notify::Kind {
     fn from(value: NotifyRequest) -> Self {
         match value {
             NotifyRequest::UnsettledConsecutiveAuctions => {
-                notify::Kind::UnsettledConsecutiveAuctions
+                notify::Kind::Banned(notify::BanReason::UnsettledConsecutiveAuctions)
             }
         }
     }
