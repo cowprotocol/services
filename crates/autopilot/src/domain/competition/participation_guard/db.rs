@@ -123,7 +123,11 @@ impl Validator {
             .map(|solver| {
                 let self_ = self.0.clone();
                 async move {
-                    if let Some(driver) = self_.drivers_by_address.get(&solver) {
+                    if let Some(driver) = self_
+                        .drivers_by_address
+                        .get(&solver)
+                        .filter(|driver| driver.accepts_unsettled_blocking)
+                    {
                         if let Err(err) = driver
                             .notify(
                                 &infra::solvers::dto::notify::Request::UnsettledConsecutiveAuctions,
