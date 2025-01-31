@@ -89,23 +89,30 @@ impl Validator {
                             .collect::<Vec<_>>();
 
                         tracing::debug!(?non_settling_solvers, "found non-settling solvers");
-                        self_.notify_solvers(&non_settling_solvers);
 
-                        let now = Instant::now();
-                        non_settling_solvers
+                        let drivers = non_settling_solvers
                             .into_iter()
-                            // Check if solver accepted this feature. This should be removed once a CIP is
-                            // approved.
                             .filter_map(|solver| {
                                 self_
                                     .0
                                     .drivers_by_address
                                     .get(&solver)
-                                    .filter(|driver| driver.accepts_unsettled_blocking).map(|_| solver)
+                                    // Check if solver accepted this feature. This should be removed once a CIP is
+                                    // approved.
+                                    .filter(|driver| driver.accepts_unsettled_blocking)
+                                    .cloned()
                             })
-                            .for_each(|solver| {
-                                self_.0.banned_solvers.insert(solver, now);
-                            });
+                            .collect::<Vec<_>>();
+
+                        Self::notify_solvers(&drivers);
+
+                        let now = Instant::now();
+                        for driver in drivers {
+                            self_
+                                .0
+                                .banned_solvers
+                                .insert(driver.submission_address, now);
+                        }
                     }
                     Err(err) => {
                         tracing::warn!(?err, "error while searching for non-settling solvers")
@@ -116,26 +123,17 @@ impl Validator {
     }
 
     /// Try to notify all the non-settling solvers in a background task.
-    fn notify_solvers(&self, non_settling_solvers: &[eth::Address]) {
-        let futures = non_settling_solvers
+    fn notify_solvers(non_settling_drivers: &[Arc<infra::Driver>]) {
+        let futures = non_settling_drivers
             .iter()
             .cloned()
-            .map(|solver| {
-                let self_ = self.0.clone();
+            .map(|driver| {
                 async move {
-                    if let Some(driver) = self_
-                        .drivers_by_address
-                        .get(&solver)
-                        .filter(|driver| driver.accepts_unsettled_blocking)
+                    if let Err(err) = driver
+                        .notify(&infra::solvers::dto::notify::Request::UnsettledConsecutiveAuctions)
+                        .await
                     {
-                        if let Err(err) = driver
-                            .notify(
-                                &infra::solvers::dto::notify::Request::UnsettledConsecutiveAuctions,
-                            )
-                            .await
-                        {
-                            tracing::debug!(?solver, ?err, "unable to notify external solver");
-                        }
+                        tracing::debug!(solver = ?driver.name, ?err, "unable to notify external solver");
                     }
                 }
             })
