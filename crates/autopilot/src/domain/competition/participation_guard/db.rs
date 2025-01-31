@@ -1,5 +1,10 @@
 use {
     crate::{
+        arguments::{
+            DbBasedSolverParticipationGuardConfig,
+            LowSettlingValidatorConfig,
+            NonSettlingValidatorConfig,
+        },
         database::Postgres,
         domain::{eth, Metrics},
         infra::{self, solvers::dto},
@@ -15,7 +20,8 @@ use {
 };
 
 /// Checks the DB by searching for solvers that won N last consecutive auctions
-/// but never settled any of them.
+/// and either never settled any of them or their settlement success rate is
+/// lower than `min_settlement_success_rate`.
 #[derive(Clone)]
 pub(super) struct Validator(Arc<Inner>);
 
@@ -23,8 +29,8 @@ struct Inner {
     db: Postgres,
     banned_solvers: dashmap::DashMap<eth::Address, Instant>,
     ttl: Duration,
-    last_auctions_count: u32,
-    min_settlement_success_rate: f64,
+    non_settling_config: NonSettlingValidatorConfig,
+    low_settling_config: LowSettlingValidatorConfig,
     drivers_by_address: HashMap<eth::Address, Arc<infra::Driver>>,
 }
 
@@ -33,17 +39,15 @@ impl Validator {
         db: Postgres,
         current_block: CurrentBlockWatcher,
         settlement_updates_receiver: tokio::sync::mpsc::UnboundedReceiver<()>,
-        ttl: Duration,
-        last_auctions_count: u32,
-        min_settlement_success_rate: f64,
+        db_based_validator_config: DbBasedSolverParticipationGuardConfig,
         drivers_by_address: HashMap<eth::Address, Arc<infra::Driver>>,
     ) -> Self {
         let self_ = Self(Arc::new(Inner {
             db,
             banned_solvers: Default::default(),
-            ttl,
-            last_auctions_count,
-            min_settlement_success_rate,
+            ttl: db_based_validator_config.solver_blacklist_cache_ttl,
+            non_settling_config: db_based_validator_config.non_settling_validator_config,
+            low_settling_config: db_based_validator_config.low_settling_validator_config,
             drivers_by_address,
         }));
 
@@ -85,10 +89,17 @@ impl Validator {
     }
 
     async fn find_non_settling_solvers(&self, current_block: u64) -> HashSet<eth::Address> {
+        if !self.0.non_settling_config.enabled {
+            return Default::default();
+        }
+
         match self
             .0
             .db
-            .find_non_settling_solvers(self.0.last_auctions_count, current_block)
+            .find_non_settling_solvers(
+                self.0.non_settling_config.last_auctions_participation_count,
+                current_block,
+            )
             .await
         {
             Ok(solvers) => solvers
@@ -103,13 +114,19 @@ impl Validator {
     }
 
     async fn find_low_settling_solvers(&self, current_block: u64) -> HashSet<eth::Address> {
+        if !self.0.low_settling_config.enabled {
+            return Default::default();
+        }
+
         match self
             .0
             .db
             .find_low_settling_solvers(
-                self.0.last_auctions_count,
+                self.0.low_settling_config.last_auctions_participation_count,
                 current_block,
-                self.0.min_settlement_success_rate,
+                self.0
+                    .low_settling_config
+                    .solver_min_settlement_success_rate,
             )
             .await
         {

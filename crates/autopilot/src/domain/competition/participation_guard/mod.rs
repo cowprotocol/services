@@ -31,19 +31,15 @@ impl SolverParticipationGuard {
     ) -> Self {
         let mut validators: Vec<Box<dyn Validator + Send + Sync>> = Vec::new();
 
-        if db_based_validator_config.enabled {
-            let current_block = eth.current_block().clone();
-            let database_solver_participation_validator = db::Validator::new(
-                db,
-                current_block,
-                settlement_updates_receiver,
-                db_based_validator_config.solver_blacklist_cache_ttl,
-                db_based_validator_config.solver_last_auctions_participation_count,
-                db_based_validator_config.solver_min_settlement_success_rate,
-                drivers_by_address,
-            );
-            validators.push(Box::new(database_solver_participation_validator));
-        }
+        let current_block = eth.current_block().clone();
+        let database_solver_participation_validator = db::Validator::new(
+            db,
+            current_block,
+            settlement_updates_receiver,
+            db_based_validator_config,
+            drivers_by_address,
+        );
+        validators.push(Box::new(database_solver_participation_validator));
 
         let onchain_solver_participation_validator = onchain::Validator { eth };
         validators.push(Box::new(onchain_solver_participation_validator));

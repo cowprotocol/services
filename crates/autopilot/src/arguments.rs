@@ -250,22 +250,57 @@ pub struct Arguments {
 
 #[derive(Debug, clap::Parser)]
 pub struct DbBasedSolverParticipationGuardConfig {
-    /// Enables or disables the solver participation guard
-    #[clap(
-        id = "db_enabled",
-        long = "db-based-solver-participation-guard-enabled",
-        env = "DB_BASED_SOLVER_PARTICIPATION_GUARD_ENABLED",
-        default_value = "true"
-    )]
-    pub enabled: bool,
-
     /// The time-to-live for the solver participation blacklist cache.
     #[clap(long, env, default_value = "5m", value_parser = humantime::parse_duration)]
     pub solver_blacklist_cache_ttl: Duration,
 
+    #[clap(flatten)]
+    pub non_settling_validator_config: NonSettlingValidatorConfig,
+
+    #[clap(flatten)]
+    pub low_settling_validator_config: LowSettlingValidatorConfig,
+}
+
+#[derive(Debug, clap::Parser)]
+pub struct NonSettlingValidatorConfig {
+    /// Enables search of non-settling solvers.
+    #[clap(
+        id = "non_settling_solvers_blacklisting_enabled",
+        long = "non-settling-solvers-blacklisting-enabled",
+        env = "NON_SETTLING_SOLVERS_BLACKLISTING_ENABLED",
+        default_value = "true"
+    )]
+    pub enabled: bool,
+
     /// The number of last auctions to check solver participation eligibility.
-    #[clap(long, env, default_value = "3")]
-    pub solver_last_auctions_participation_count: u32,
+    #[clap(
+        id = "non_settling_last_auctions_participation_count",
+        long = "non-settling-last-auctions-participation-count",
+        env = "NON_SETTLING_LAST_AUCTIONS_PARTICIPATION_COUNT",
+        default_value = "3"
+    )]
+    pub last_auctions_participation_count: u32,
+}
+
+#[derive(Debug, clap::Parser)]
+pub struct LowSettlingValidatorConfig {
+    /// Enables search of non-settling solvers.
+    #[clap(
+        id = "low_settling_solvers_blacklisting_enabled",
+        long = "low-settling-solvers-blacklisting-enabled",
+        env = "LOW_SETTLING_SOLVERS_BLACKLISTING_ENABLED",
+        default_value = "true"
+    )]
+    pub enabled: bool,
+
+    /// The number of last auctions to check solver participation eligibility.
+    #[clap(
+        id = "low_settling_last_auctions_participation_count",
+        long = "low-settling-last-auctions-participation-count",
+        env = "LOW_SETTLING_LAST_AUCTIONS_PARTICIPATION_COUNT",
+        default_value = "100"
+    )]
+    pub last_auctions_participation_count: u32,
 
     /// A minimum success rate for a solver to be considered eligible for
     /// participation in the competition. Otherwise, the solver will be
