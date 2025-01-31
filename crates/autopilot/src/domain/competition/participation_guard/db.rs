@@ -24,6 +24,7 @@ struct Inner {
     banned_solvers: dashmap::DashMap<eth::Address, Instant>,
     ttl: Duration,
     last_auctions_count: u32,
+    min_settlement_success_rate: f64,
     drivers_by_address: HashMap<eth::Address, Arc<infra::Driver>>,
 }
 
@@ -34,6 +35,7 @@ impl Validator {
         settlement_updates_receiver: tokio::sync::mpsc::UnboundedReceiver<()>,
         ttl: Duration,
         last_auctions_count: u32,
+        min_settlement_success_rate: f64,
         drivers_by_address: HashMap<eth::Address, Arc<infra::Driver>>,
     ) -> Self {
         let self_ = Self(Arc::new(Inner {
@@ -41,6 +43,7 @@ impl Validator {
             banned_solvers: Default::default(),
             ttl,
             last_auctions_count,
+            min_settlement_success_rate,
             drivers_by_address,
         }));
 
@@ -82,11 +85,10 @@ impl Validator {
     }
 
     async fn find_non_settling_solvers(&self, current_block: u64) -> HashSet<eth::Address> {
-        let last_auctions_count = self.0.last_auctions_count;
         match self
             .0
             .db
-            .find_non_settling_solvers(last_auctions_count, current_block)
+            .find_non_settling_solvers(self.0.last_auctions_count, current_block)
             .await
         {
             Ok(solvers) => solvers
@@ -101,11 +103,14 @@ impl Validator {
     }
 
     async fn find_low_settling_solvers(&self, current_block: u64) -> HashSet<eth::Address> {
-        let last_auctions_count = self.0.last_auctions_count;
         match self
             .0
             .db
-            .find_low_settling_solvers(last_auctions_count, current_block, 1.0)
+            .find_low_settling_solvers(
+                self.0.last_auctions_count,
+                current_block,
+                self.0.min_settlement_success_rate,
+            )
             .await
         {
             Ok(solvers) => solvers

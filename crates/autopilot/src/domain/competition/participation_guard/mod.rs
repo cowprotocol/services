@@ -39,6 +39,7 @@ impl SolverParticipationGuard {
                 settlement_updates_receiver,
                 db_based_validator_config.solver_blacklist_cache_ttl,
                 db_based_validator_config.solver_last_auctions_participation_count,
+                db_based_validator_config.solver_min_settlement_success_rate,
                 drivers_by_address,
             );
             validators.push(Box::new(database_solver_participation_validator));
