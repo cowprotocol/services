@@ -34,11 +34,6 @@ impl Validator {
         last_auctions_count: u32,
         drivers_by_address: HashMap<eth::Address, Arc<infra::Driver>>,
     ) -> Self {
-        // Keep only drivers that accept unsettled blocking.
-        let drivers_by_address = drivers_by_address
-            .into_iter()
-            .filter(|(_, driver)| driver.accepts_unsettled_blocking)
-            .collect();
         let self_ = Self(Arc::new(Inner {
             db,
             banned_solvers: Default::default(),
@@ -74,10 +69,18 @@ impl Validator {
                             .into_iter()
                             .map(|solver| {
                                 let address = eth::Address(solver.0.into());
-                                if let Some(driver) = self_.0.drivers_by_address.get(&address) {
-                                    Metrics::get()
-                                        .non_settling_solver
-                                        .with_label_values(&[&driver.name]);
+                                match self_.0.drivers_by_address.get(&address) {
+                                    Some(driver) => {
+                                        Metrics::get()
+                                            .non_settling_solver
+                                            .with_label_values(&[&driver.name]);
+                                    }
+                                    None => {
+                                        tracing::warn!(
+                                            ?address,
+                                            "unrecognized driver in non-settling solvers",
+                                        );
+                                    }
                                 }
 
                                 address
