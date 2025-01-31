@@ -96,7 +96,13 @@ impl Validator {
                             .into_iter()
                             // Check if solver accepted this feature. This should be removed once a CIP is
                             // approved.
-                            .filter(|solver| self_.0.drivers_by_address.contains_key(solver))
+                            .filter_map(|solver| {
+                                self_
+                                    .0
+                                    .drivers_by_address
+                                    .get(&solver)
+                                    .filter(|driver| driver.accepts_unsettled_blocking).map(|_| solver)
+                            })
                             .for_each(|solver| {
                                 self_.0.banned_solvers.insert(solver, now);
                             });
