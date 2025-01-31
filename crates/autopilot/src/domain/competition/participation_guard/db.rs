@@ -104,7 +104,7 @@ impl Validator {
         });
     }
 
-    /// Try to notify all the non-settling solvers.
+    /// Try to notify all the non-settling solvers in a background task.
     fn notify_solvers(&self, non_settling_solvers: &[eth::Address]) {
         let futures = non_settling_solvers
             .iter()
