@@ -171,16 +171,16 @@ impl Validator {
                 .with_label_values(&[&solver, reason]);
         }
 
-        let drivers = drivers
+        let non_settling_drivers = drivers
             .into_iter()
             // Notify and block only solvers that accept unsettled blocking feature. This should be removed once a CIP is approved.
             .filter(|driver| driver.accepts_unsettled_blocking)
             .collect::<Vec<_>>();
 
-        Self::notify_solvers(&drivers, request);
+        Self::notify_solvers(&non_settling_drivers, request);
 
         let now = Instant::now();
-        for driver in drivers {
+        for driver in non_settling_drivers {
             self.0.banned_solvers.insert(driver.submission_address, now);
         }
     }
