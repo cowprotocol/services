@@ -52,7 +52,6 @@ use {
         token_list::{AutoUpdatingTokenList, TokenListConfiguration},
     },
     std::{
-        collections::HashMap,
         sync::{Arc, RwLock},
         time::{Duration, Instant},
     },
@@ -586,7 +585,7 @@ pub async fn run(args: Arguments) {
         drivers
             .iter()
             .map(|driver| (driver.submission_address, driver.clone()))
-            .collect::<HashMap<_, _>>(),
+            .collect(),
     );
 
     let run = RunLoop::new(
