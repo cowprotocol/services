@@ -163,7 +163,8 @@ mod tests {
             (0, Err(PriceEstimationError::ProtocolInternal(anyhow!("")))),
         ];
 
-        for (query_index, result) in expectations {
+        let expectations_cloned = expectations.clone();
+        for (query_index, result) in expectations_cloned {
             let expected_query = queries[query_index].clone();
             estimator
                 .expect_estimate()
