@@ -52,7 +52,7 @@ use {
         token_list::{AutoUpdatingTokenList, TokenListConfiguration},
     },
     std::{
-        collections::HashSet,
+        collections::HashMap,
         sync::{Arc, RwLock},
         time::{Duration, Instant},
     },
@@ -585,12 +585,8 @@ pub async fn run(args: Arguments) {
         args.db_based_solver_participation_guard,
         drivers
             .iter()
-            .filter_map(|driver| {
-                driver
-                    .accepts_unsettled_blocking
-                    .then_some(driver.submission_address)
-            })
-            .collect::<HashSet<_, _>>(),
+            .map(|driver| (driver.submission_address, driver.clone()))
+            .collect::<HashMap<_, _>>(),
     );
 
     let run = RunLoop::new(

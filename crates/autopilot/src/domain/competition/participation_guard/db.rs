@@ -2,10 +2,11 @@ use {
     crate::{
         database::Postgres,
         domain::{eth, Metrics},
+        infra,
     },
     ethrpc::block_stream::CurrentBlockWatcher,
     std::{
-        collections::HashSet,
+        collections::HashMap,
         sync::Arc,
         time::{Duration, Instant},
     },
@@ -21,7 +22,7 @@ struct Inner {
     banned_solvers: dashmap::DashMap<eth::Address, Instant>,
     ttl: Duration,
     last_auctions_count: u32,
-    db_validator_accepted_solvers: HashSet<eth::Address>,
+    drivers_by_address: HashMap<eth::Address, Arc<infra::Driver>>,
 }
 
 impl Validator {
@@ -31,14 +32,19 @@ impl Validator {
         settlement_updates_receiver: tokio::sync::mpsc::UnboundedReceiver<()>,
         ttl: Duration,
         last_auctions_count: u32,
-        db_validator_accepted_solvers: HashSet<eth::Address>,
+        drivers_by_address: HashMap<eth::Address, Arc<infra::Driver>>,
     ) -> Self {
+        // Keep only drivers that accept unsettled blocking.
+        let drivers_by_address = drivers_by_address
+            .into_iter()
+            .filter(|(_, driver)| driver.accepts_unsettled_blocking)
+            .collect();
         let self_ = Self(Arc::new(Inner {
             db,
             banned_solvers: Default::default(),
             ttl,
             last_auctions_count,
-            db_validator_accepted_solvers,
+            drivers_by_address,
         }));
 
         self_.start_maintenance(settlement_updates_receiver, current_block);
@@ -53,13 +59,14 @@ impl Validator {
         mut settlement_updates_receiver: tokio::sync::mpsc::UnboundedReceiver<()>,
         current_block: CurrentBlockWatcher,
     ) {
-        let self_ = self.0.clone();
+        let self_ = self.clone();
         tokio::spawn(async move {
             while settlement_updates_receiver.recv().await.is_some() {
                 let current_block = current_block.borrow().number;
                 match self_
+                    .0
                     .db
-                    .find_non_settling_solvers(self_.last_auctions_count, current_block)
+                    .find_non_settling_solvers(self_.0.last_auctions_count, current_block)
                     .await
                 {
                     Ok(non_settling_solvers) => {
@@ -67,10 +74,11 @@ impl Validator {
                             .into_iter()
                             .map(|solver| {
                                 let address = eth::Address(solver.0.into());
-
-                                Metrics::get()
-                                    .non_settling_solver
-                                    .with_label_values(&[&format!("{:#x}", address.0)]);
+                                if let Some(driver) = self_.0.drivers_by_address.get(&address) {
+                                    Metrics::get()
+                                        .non_settling_solver
+                                        .with_label_values(&[&driver.name]);
+                                }
 
                                 address
                             })
@@ -79,9 +87,14 @@ impl Validator {
                         tracing::debug!(?non_settling_solvers, "found non-settling solvers");
 
                         let now = Instant::now();
-                        for solver in non_settling_solvers {
-                            self_.banned_solvers.insert(solver, now);
-                        }
+                        non_settling_solvers
+                            .into_iter()
+                            // Check if solver accepted this feature. This should be removed once a CIP is
+                            // approved.
+                            .filter(|solver| self_.0.drivers_by_address.contains_key(solver))
+                            .for_each(|solver| {
+                                self_.0.banned_solvers.insert(solver, now);
+                            });
                     }
                     Err(err) => {
                         tracing::warn!(?err, "error while searching for non-settling solvers")
@@ -95,12 +108,6 @@ impl Validator {
 #[async_trait::async_trait]
 impl super::Validator for Validator {
     async fn is_allowed(&self, solver: &eth::Address) -> anyhow::Result<bool> {
-        // Check if solver accepted this feature. This should be removed once a CIP is
-        // approved.
-        if !self.0.db_validator_accepted_solvers.contains(solver) {
-            return Ok(true);
-        }
-
         if let Some(entry) = self.0.banned_solvers.get(solver) {
             if Instant::now().duration_since(*entry.value()) < self.0.ttl {
                 return Ok(false);

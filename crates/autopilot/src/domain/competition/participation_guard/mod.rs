@@ -6,9 +6,9 @@ use {
         arguments::DbBasedSolverParticipationGuardConfig,
         database::Postgres,
         domain::eth,
-        infra::Ethereum,
+        infra::{self, Ethereum},
     },
-    std::{collections::HashSet, sync::Arc},
+    std::{collections::HashMap, sync::Arc},
 };
 
 /// This struct checks whether a solver can participate in the competition by
@@ -27,7 +27,7 @@ impl SolverParticipationGuard {
         db: Postgres,
         settlement_updates_receiver: tokio::sync::mpsc::UnboundedReceiver<()>,
         db_based_validator_config: DbBasedSolverParticipationGuardConfig,
-        db_validator_accepted_solvers: HashSet<eth::Address>,
+        drivers_by_address: HashMap<eth::Address, Arc<infra::Driver>>,
     ) -> Self {
         let mut validators: Vec<Box<dyn Validator + Send + Sync>> = Vec::new();
 
@@ -39,7 +39,7 @@ impl SolverParticipationGuard {
                 settlement_updates_receiver,
                 db_based_validator_config.solver_blacklist_cache_ttl,
                 db_based_validator_config.solver_last_auctions_participation_count,
-                db_validator_accepted_solvers,
+                drivers_by_address,
             );
             validators.push(Box::new(database_solver_participation_validator));
         }
