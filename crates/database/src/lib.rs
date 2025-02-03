@@ -93,9 +93,12 @@ pub async fn get_table_names(ex: &mut PgConnection) -> sqlx::Result<&'static [&'
 }
 
 pub async fn all_tables(ex: &mut PgConnection) -> impl Iterator<Item = &'static str> {
-    let tables = get_table_names(ex).await.expect("get_table_names");
-
-    tables.iter().copied().chain(LARGE_TABLES.iter().copied())
+    get_table_names(ex)
+        .await
+        .expect("all_tables")
+        .iter()
+        .copied()
+        .chain(LARGE_TABLES.iter().copied())
 }
 
 /// Delete all data in the database. Only used by tests.
