@@ -596,6 +596,7 @@ mod tests {
 
         let non_settling_solver = ByteArray([1u8; 20]);
 
+        let mut solution_uid = 0;
         let deadline_block = 100u64;
         let last_auctions_count = 3i64;
         // competition_auctions
@@ -628,11 +629,12 @@ mod tests {
         }
 
         // proposed_solutions
-        // Non-settling solver wins all auctions within the deadline
+        // Non-settling solver wins `last_auctions_count` auctions within the deadline
         for auction_id in 2..=4 {
+            solution_uid += 1;
             let solutions = vec![Solution {
                 uid: auction_id,
-                id: auction_id.into(),
+                id: solution_uid.into(),
                 solver: non_settling_solver,
                 is_winner: true,
                 score: Default::default(),
@@ -645,11 +647,12 @@ mod tests {
                 .unwrap();
         }
 
-        // Non-settling solver wins not all the auctions within the deadline
+        // Another non-settling solver wins not all the auctions within the deadline
         for auction_id in 2..=4 {
+            solution_uid += 1;
             let solutions = vec![Solution {
                 uid: auction_id,
-                id: auction_id.into(),
+                id: solution_uid.into(),
                 solver: ByteArray([2u8; 20]),
                 is_winner: auction_id != 2,
                 score: Default::default(),
@@ -662,16 +665,17 @@ mod tests {
                 .unwrap();
         }
 
-        // Another non-settling solver has `last_auctions_count` winning auctions but
+        // One more non-settling solver has `last_auctions_count` winning auctions but
         // not consecutive
         for auction_id in 1..=4 {
             // Break the sequence
             if auction_id == 2 {
                 continue;
             }
+            solution_uid += 1;
             let solutions = vec![Solution {
                 uid: auction_id,
-                id: auction_id.into(),
+                id: solution_uid.into(),
                 solver: ByteArray([3u8; 20]),
                 is_winner: true,
                 score: Default::default(),
@@ -687,9 +691,10 @@ mod tests {
         // One more non-settling solver has `last_auctions_count` winning auctions but
         // some of them are outside the deadline
         for auction_id in 3..=5 {
+            solution_uid += 1;
             let solutions = vec![Solution {
                 uid: auction_id,
-                id: auction_id.into(),
+                id: solution_uid.into(),
                 solver: ByteArray([4u8; 20]),
                 is_winner: true,
                 score: Default::default(),
