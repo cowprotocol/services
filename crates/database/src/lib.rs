@@ -50,7 +50,7 @@ use {
 pub type PgTransaction<'a> = sqlx::Transaction<'a, sqlx::Postgres>;
 
 /// The names of tables we use in the db.
-static TABLES: OnceCell<Vec<&'static str>> = OnceCell::const_new();
+static TABLES: OnceCell<&'static [&'static str]> = OnceCell::const_new();
 
 /// The names of potentially big volume tables we use in the db.
 pub const LARGE_TABLES: &[&str] = &["order_events"];
@@ -69,7 +69,6 @@ pub async fn get_table_names(ex: &mut PgConnection) -> sqlx::Result<&'static [&'
             for table in LARGE_TABLES {
                 query_builder.push(", ").push_bind(*table);
             }
-
             query_builder.push(")");
 
             let mut table_names: Vec<&'static str> = query_builder
@@ -85,10 +84,12 @@ pub async fn get_table_names(ex: &mut PgConnection) -> sqlx::Result<&'static [&'
 
             table_names.extend(LARGE_TABLES.iter().copied());
 
-            Ok(table_names)
+            let leaked_slice: &'static mut [&'static str] =
+                Box::leak(table_names.into_boxed_slice());
+            Ok(&*leaked_slice)
         })
         .await
-        .map(Vec::as_slice)
+        .copied()
 }
 
 pub async fn all_tables(ex: &mut PgConnection) -> impl Iterator<Item = &'static str> {
