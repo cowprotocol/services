@@ -50,12 +50,12 @@ use {
 pub type PgTransaction<'a> = sqlx::Transaction<'a, sqlx::Postgres>;
 
 /// The names of tables we use in the db.
-static TABLES: OnceCell<Vec<String>> = OnceCell::const_new();
+static TABLES: OnceCell<Vec<&'static str>> = OnceCell::const_new();
 
 /// The names of potentially big volume tables we use in the db.
 pub const LARGE_TABLES: &[&str] = &["order_events"];
 
-pub async fn get_table_names(ex: &mut PgConnection) -> sqlx::Result<&[String]> {
+pub async fn get_table_names(ex: &mut PgConnection) -> sqlx::Result<&'static [&'static str]> {
     TABLES
         .get_or_try_init(|| async {
             #[derive(sqlx::FromRow, Debug)]
@@ -72,24 +72,29 @@ pub async fn get_table_names(ex: &mut PgConnection) -> sqlx::Result<&[String]> {
 
             query_builder.push(")");
 
-            query_builder
+            let mut table_names: Vec<&'static str> = query_builder
                 .build_query_as::<TableName>()
                 .fetch_all(ex)
-                .await
-                .map(|r| r.into_iter().map(|TableName(name)| name).collect())
+                .await?
+                .into_iter()
+                .map(|TableName(name)| {
+                    let leaked: &'static mut str = Box::leak(name.into_boxed_str());
+                    leaked as &'static str
+                })
+                .collect();
+
+            table_names.extend(LARGE_TABLES.iter().copied());
+
+            Ok(table_names)
         })
         .await
-        .map(|v| v.as_slice())
+        .map(Vec::as_slice)
 }
 
-pub async fn all_tables(ex: &mut PgConnection) -> Vec<String> {
+pub async fn all_tables(ex: &mut PgConnection) -> impl Iterator<Item = &'static str> {
     let tables = get_table_names(ex).await.expect("get_table_names");
 
-    tables
-        .iter()
-        .map(String::clone)
-        .chain(LARGE_TABLES.iter().map(|&s| s.to_string()))
-        .collect()
+    tables.iter().copied().chain(LARGE_TABLES.iter().copied())
 }
 
 /// Delete all data in the database. Only used by tests.
