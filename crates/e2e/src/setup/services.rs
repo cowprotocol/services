@@ -147,12 +147,19 @@ impl<'a> Services<'a> {
     /// deadline in case the solution would start to revert at some point)
     pub async fn start_autopilot(&self, solve_deadline: Option<Duration>, extra_args: Vec<String>) {
         let solve_deadline = solve_deadline.unwrap_or(Duration::from_secs(2));
+        let ethflow_contracts = self
+            .contracts
+            .ethflows
+            .iter()
+            .map(|c| format!("{:?}", c.address()))
+            .collect::<Vec<_>>()
+            .join(",");
 
         let args = [
             "autopilot".to_string(),
             "--max-run-loop-delay=100ms".to_string(),
             "--run-loop-native-price-timeout=500ms".to_string(),
-            format!("--ethflow-contract={:?}", self.contracts.ethflow.address()),
+            format!("--ethflow-contracts={ethflow_contracts}"),
             "--skip-event-sync=true".to_string(),
             format!("--solve-deadline={solve_deadline:?}"),
         ]
