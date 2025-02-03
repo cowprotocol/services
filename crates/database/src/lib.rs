@@ -55,7 +55,7 @@ static TABLES: OnceCell<Vec<String>> = OnceCell::const_new();
 /// The names of potentially big volume tables we use in the db.
 pub const LARGE_TABLES: &[&str] = &["order_events"];
 
-pub async fn get_table_names(ex: &mut PgConnection) -> sqlx::Result<&Vec<String>> {
+pub async fn get_table_names(ex: &mut PgConnection) -> sqlx::Result<&[String]> {
     TABLES
         .get_or_try_init(|| async {
             #[derive(sqlx::FromRow, Debug)]
@@ -79,6 +79,7 @@ pub async fn get_table_names(ex: &mut PgConnection) -> sqlx::Result<&Vec<String>
                 .map(|r| r.into_iter().map(|TableName(name)| name).collect())
         })
         .await
+        .map(|v| v.as_slice())
 }
 
 pub async fn all_tables(ex: &mut PgConnection) -> Vec<String> {

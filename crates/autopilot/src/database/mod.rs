@@ -42,7 +42,7 @@ impl Postgres {
 
         // update table row metrics
         let mut ex = self.pool.acquire().await?;
-        let tables = database::get_table_names(&mut ex).await?.clone();
+        let tables = database::get_table_names(&mut ex).await?.to_vec();
         for table in tables {
             let count = count_rows_in_table(&mut ex, &table).await?;
             metrics.table_rows.with_label_values(&[&table]).set(count);
