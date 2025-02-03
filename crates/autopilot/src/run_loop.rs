@@ -865,7 +865,13 @@ impl RunLoop {
         };
 
         auction.orders.retain(|o| !in_flight.contains(&o.uid));
-        tracing::debug!(orders = ?in_flight, "filtered out in-flight orders");
+        auction
+            .surplus_capturing_jit_order_owners
+            .retain(|owner| !in_flight.iter().any(|i| i.owner() == *owner));
+        tracing::debug!(
+            orders = ?in_flight,
+            "filtered out in-flight orders and surplus_capturing_jit_order_owners"
+        );
 
         auction
     }
