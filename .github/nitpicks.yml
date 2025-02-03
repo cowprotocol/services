@@ -1,5 +1,6 @@
 - markdown: |
     Reminder: Please update the DB Readme and comment whether migrations are reversible (include rollback scripts if applicable).
+    If new tables were added, update the [tables list](https://github.com/cowprotocol/services/blob/main/crates/database/src/lib.rs#L51-L85).
   pathFilter:
     - "database/sql/**"
 
