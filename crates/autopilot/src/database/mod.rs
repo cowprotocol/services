@@ -41,10 +41,11 @@ impl Postgres {
         let metrics = Metrics::get();
 
         // update table row metrics
-        for &table in database::TABLES {
-            let mut ex = self.pool.acquire().await?;
-            let count = count_rows_in_table(&mut ex, table).await?;
-            metrics.table_rows.with_label_values(&[table]).set(count);
+        let mut ex = self.pool.acquire().await?;
+        let tables = database::get_table_names(&mut ex).await?.clone();
+        for table in tables {
+            let count = count_rows_in_table(&mut ex, &table).await?;
+            metrics.table_rows.with_label_values(&[&table]).set(count);
         }
 
         // update table row metrics
