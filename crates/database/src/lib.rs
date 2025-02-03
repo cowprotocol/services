@@ -66,9 +66,9 @@ pub async fn get_table_names(ex: &mut PgConnection) -> sqlx::Result<&'static [&'
                  LIKE '%flyway%' AND tablename NOT IN (",
             );
 
-            for table in LARGE_TABLES {
-                query_builder.push(", ").push_bind(*table);
-            }
+            query_builder.push_values(LARGE_TABLES, |mut builder, table| {
+                builder.push_bind(table);
+            });
             query_builder.push(")");
 
             let mut table_names: Vec<&'static str> = query_builder
