@@ -92,19 +92,18 @@ pub async fn get_table_names(ex: &mut PgConnection) -> sqlx::Result<&'static [&'
         .copied()
 }
 
-pub async fn all_tables(ex: &mut PgConnection) -> impl Iterator<Item = &'static str> {
-    get_table_names(ex)
-        .await
-        .expect("all_tables")
+pub async fn all_tables(ex: &mut PgConnection) -> sqlx::Result<impl Iterator<Item = &'static str>> {
+    Ok(get_table_names(ex)
+        .await?
         .iter()
         .copied()
-        .chain(LARGE_TABLES.iter().copied())
+        .chain(LARGE_TABLES.iter().copied()))
 }
 
 /// Delete all data in the database. Only used by tests.
 #[allow(non_snake_case)]
 pub async fn clear_DANGER_(ex: &mut PgTransaction<'_>) -> sqlx::Result<()> {
-    for table in all_tables(ex).await {
+    for table in all_tables(ex).await? {
         ex.execute(format!("TRUNCATE {table};").as_str()).await?;
     }
     Ok(())
