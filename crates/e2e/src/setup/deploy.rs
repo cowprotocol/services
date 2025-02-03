@@ -26,7 +26,7 @@ pub struct Contracts {
     pub weth: WETH9,
     pub allowance: Address,
     pub domain_separator: DomainSeparator,
-    pub ethflow: CoWSwapEthFlow,
+    pub ethflows: Vec<CoWSwapEthFlow>,
     pub hooks: HooksTrampoline,
     pub cow_amm_helper: Option<CowAmmLegacyHelper>,
 }
@@ -70,7 +70,7 @@ impl Contracts {
                     .expect("Couldn't query domain separator")
                     .0,
             ),
-            ethflow: CoWSwapEthFlow::deployed(web3).await.unwrap(),
+            ethflows: vec![CoWSwapEthFlow::deployed(web3).await.unwrap()],
             hooks: HooksTrampoline::deployed(web3).await.unwrap(),
             gp_settlement,
             cow_amm_helper,
@@ -157,6 +157,7 @@ impl Contracts {
         );
 
         let ethflow = deploy!(CoWSwapEthFlow(gp_settlement.address(), weth.address()));
+        let ethflow_secondary = deploy!(CoWSwapEthFlow(gp_settlement.address(), weth.address()));
         let hooks = deploy!(HooksTrampoline(gp_settlement.address()));
 
         Self {
@@ -171,7 +172,7 @@ impl Contracts {
             weth,
             allowance,
             domain_separator,
-            ethflow,
+            ethflows: vec![ethflow, ethflow_secondary],
             hooks,
             // Current helper contract only works in forked tests
             cow_amm_helper: None,
