@@ -498,18 +498,29 @@ impl Postgres {
             .with_label_values(&["token_first_trade_block"])
             .start_timer();
 
-        let mut ex = self.pool.acquire().await?;
-        let block_number = database::trades::token_first_trade_block(&mut ex, ByteArray(token.0))
-            .await
-            .map_err(anyhow::Error::from)?
-            .map(u32::try_from)
-            .transpose()
-            .map_err(anyhow::Error::from)?;
+        let (block_number, native_price) = tokio::join!(
+            async {
+                let mut ex = self.pool.acquire().await?;
+                database::trades::token_first_trade_block(&mut ex, ByteArray(token.0))
+                    .await
+                    .map_err(anyhow::Error::from)?
+                    .map(u32::try_from)
+                    .transpose()
+                    .map_err(anyhow::Error::from)
+            },
+            async {
+                let mut ex = self.pool.acquire().await?;
+                database::auction_prices::fetch_latest_token_price(&mut ex, ByteArray(token.0))
+                    .await
+                    .map_err(anyhow::Error::from)
+            }
+        );
 
         timer.stop_and_record();
 
         Ok(TokenMetadata {
-            first_trade_block: block_number,
+            first_trade_block: block_number?,
+            most_recent_native_price: native_price?,
         })
     }
 }

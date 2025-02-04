@@ -55,6 +55,22 @@ SELECT * FROM auction_prices WHERE auction_id = (
     sqlx::query_as(QUERY).fetch_all(ex).await
 }
 
+pub async fn fetch_latest_token_price(
+    ex: &mut PgConnection,
+    token: Address,
+) -> Result<Option<BigDecimal>, sqlx::Error> {
+    const QUERY: &str = r#"
+SELECT price FROM auction_prices
+WHERE token = $1
+ORDER BY auction_id DESC
+LIMIT 1
+    "#;
+
+    let auction_price: Option<AuctionPrice> =
+        sqlx::query_as(QUERY).bind(token).fetch_optional(ex).await?;
+    Ok(auction_price.map(|ap| ap.price))
+}
+
 #[cfg(test)]
 mod tests {
     use {super::*, crate::byte_array::ByteArray, sqlx::Connection};
@@ -70,24 +86,31 @@ mod tests {
             AuctionPrice {
                 auction_id: 1,
                 token: ByteArray([2; 20]),
-                price: 4.into(),
+                price: 1.into(),
             },
             AuctionPrice {
                 auction_id: 1,
                 token: ByteArray([3; 20]),
-                price: 5.into(),
+                price: 2.into(),
             },
         ];
         let auction_2 = vec![AuctionPrice {
             auction_id: 2,
-            token: ByteArray([4; 20]),
-            price: 6.into(),
+            token: ByteArray([2; 20]),
+            price: 3.into(),
         }];
-        let auction_3 = vec![AuctionPrice {
-            auction_id: 3,
-            token: ByteArray([5; 20]),
-            price: 7.into(),
-        }];
+        let auction_3 = vec![
+            AuctionPrice {
+                auction_id: 3,
+                token: ByteArray([3; 20]),
+                price: 4.into(),
+            },
+            AuctionPrice {
+                auction_id: 3,
+                token: ByteArray([4; 20]),
+                price: 5.into(),
+            },
+        ];
 
         insert(&mut db, &auction_1).await.unwrap();
         insert(&mut db, &auction_2).await.unwrap();
@@ -103,5 +126,14 @@ mod tests {
         // non-existent auction
         let output = fetch(&mut db, 4).await.unwrap();
         assert!(output.is_empty());
+        // latest prices
+        let output = fetch_latest_prices(&mut db).await.unwrap();
+        assert_eq!(output, auction_3);
+        // latest token price
+        let output = fetch_latest_token_price(&mut db, ByteArray([2; 20]))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(output, 3.into());
     }
 }
