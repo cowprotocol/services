@@ -49,13 +49,12 @@ use {
 
 pub type PgTransaction<'a> = sqlx::Transaction<'a, sqlx::Postgres>;
 
-/// The names of tables we use in the db.
-static TABLES: OnceCell<&'static [&'static str]> = OnceCell::const_new();
-
 /// The names of potentially big volume tables we use in the db.
 pub const LARGE_TABLES: &[&str] = &["auction_prices", "order_events"];
 
 pub async fn get_table_names(ex: &mut PgConnection) -> sqlx::Result<&'static [&'static str]> {
+    static TABLES: OnceCell<&'static [&'static str]> = OnceCell::const_new();
+
     TABLES
         .get_or_try_init(|| async {
             #[derive(sqlx::FromRow, Debug)]
