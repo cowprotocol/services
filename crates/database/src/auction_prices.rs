@@ -60,7 +60,7 @@ pub async fn fetch_latest_token_price(
     token: Address,
 ) -> Result<Option<BigDecimal>, sqlx::Error> {
     const QUERY: &str = r#"
-SELECT price FROM auction_prices
+SELECT * FROM auction_prices
 WHERE token = $1
 ORDER BY auction_id DESC
 LIMIT 1
