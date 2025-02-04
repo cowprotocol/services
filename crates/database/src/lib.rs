@@ -71,7 +71,7 @@ pub async fn get_table_names(ex: &mut PgConnection) -> sqlx::Result<&'static [&'
             });
             query_builder.push(")");
 
-            let mut table_names: Vec<&'static str> = query_builder
+            let table_names: Vec<&'static str> = query_builder
                 .build_query_as::<TableName>()
                 .fetch_all(ex)
                 .await?
@@ -81,8 +81,6 @@ pub async fn get_table_names(ex: &mut PgConnection) -> sqlx::Result<&'static [&'
                     leaked as &'static str
                 })
                 .collect();
-
-            table_names.extend(LARGE_TABLES.iter().copied());
 
             let leaked_slice: &'static mut [&'static str] =
                 Box::leak(table_names.into_boxed_slice());
