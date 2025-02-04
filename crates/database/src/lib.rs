@@ -52,7 +52,7 @@ pub type PgTransaction<'a> = sqlx::Transaction<'a, sqlx::Postgres>;
 /// The names of potentially big volume tables we use in the db.
 pub const LARGE_TABLES: &[&str] = &["auction_prices", "order_events"];
 
-pub async fn get_table_names(ex: &mut PgConnection) -> sqlx::Result<&'static Vec<String>> {
+pub async fn all_tables(ex: &mut PgConnection) -> sqlx::Result<&'static Vec<String>> {
     static TABLES: OnceCell<Vec<String>> = OnceCell::const_new();
 
     TABLES
@@ -78,7 +78,7 @@ pub async fn get_table_names(ex: &mut PgConnection) -> sqlx::Result<&'static Vec
 /// Delete all data in the database. Only used by tests.
 #[allow(non_snake_case)]
 pub async fn clear_DANGER_(ex: &mut PgTransaction<'_>) -> sqlx::Result<()> {
-    for table in get_table_names(ex).await? {
+    for table in all_tables(ex).await? {
         ex.execute(format!("TRUNCATE {table};").as_str()).await?;
     }
     Ok(())
