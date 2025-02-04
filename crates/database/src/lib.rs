@@ -62,13 +62,17 @@ pub async fn get_table_names(ex: &mut PgConnection) -> sqlx::Result<&'static [&'
 
             let mut query_builder = QueryBuilder::new(
                 "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename NOT \
-                 LIKE '%flyway%' AND tablename NOT IN (",
+                 LIKE '%flyway%'",
             );
 
-            query_builder.push_values(LARGE_TABLES, |mut builder, table| {
-                builder.push_bind(table);
-            });
-            query_builder.push(")");
+            #[allow(clippy::const_is_empty)]
+            if !LARGE_TABLES.is_empty() {
+                query_builder.push(" AND tablename NOT IN (");
+                query_builder.push_values(LARGE_TABLES, |mut builder, table| {
+                    builder.push_bind(table);
+                });
+                query_builder.push(")");
+            }
 
             let table_names: Vec<&'static str> = query_builder
                 .build_query_as::<TableName>()
