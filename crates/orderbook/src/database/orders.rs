@@ -523,7 +523,7 @@ impl Postgres {
 
         Ok(TokenMetadata {
             first_trade_block: block_number?,
-            most_recent_native_price: native_price?,
+            stored_native_price: native_price?,
         })
     }
 }
