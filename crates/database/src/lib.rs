@@ -25,7 +25,7 @@ pub mod trades;
 
 use {
     byte_array::ByteArray,
-    sqlx::{Executor, PgConnection, PgPool, QueryBuilder},
+    sqlx::{Executor, PgConnection, PgPool},
     tokio::sync::OnceCell,
 };
 
@@ -52,59 +52,33 @@ pub type PgTransaction<'a> = sqlx::Transaction<'a, sqlx::Postgres>;
 /// The names of potentially big volume tables we use in the db.
 pub const LARGE_TABLES: &[&str] = &["auction_prices", "order_events"];
 
-pub async fn get_table_names(ex: &mut PgConnection) -> sqlx::Result<&'static [&'static str]> {
-    static TABLES: OnceCell<&'static [&'static str]> = OnceCell::const_new();
+pub async fn get_table_names(ex: &mut PgConnection) -> sqlx::Result<&'static Vec<String>> {
+    static TABLES: OnceCell<Vec<String>> = OnceCell::const_new();
 
     TABLES
         .get_or_try_init(|| async {
             #[derive(sqlx::FromRow, Debug)]
             struct TableName(String);
 
-            let mut query_builder = QueryBuilder::new(
-                "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename NOT \
-                 LIKE '%flyway%'",
-            );
+            const QUERY: &str = "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND \
+                                 tablename NOT LIKE '%flyway%'";
 
-            #[allow(clippy::const_is_empty)]
-            if !LARGE_TABLES.is_empty() {
-                query_builder.push(" AND tablename NOT IN (");
-                query_builder.push_values(LARGE_TABLES, |mut builder, table| {
-                    builder.push_bind(table);
-                });
-                query_builder.push(")");
-            }
-
-            let table_names: Vec<&'static str> = query_builder
-                .build_query_as::<TableName>()
+            let table_names: Vec<String> = sqlx::query_as(QUERY)
                 .fetch_all(ex)
                 .await?
                 .into_iter()
-                .map(|TableName(name)| {
-                    let leaked: &'static mut str = Box::leak(name.into_boxed_str());
-                    leaked as &'static str
-                })
+                .map(|TableName(name)| name)
                 .collect();
 
-            let leaked_slice: &'static mut [&'static str] =
-                Box::leak(table_names.into_boxed_slice());
-            Ok(&*leaked_slice)
+            Ok(table_names)
         })
         .await
-        .copied()
-}
-
-pub async fn all_tables(ex: &mut PgConnection) -> sqlx::Result<impl Iterator<Item = &'static str>> {
-    Ok(get_table_names(ex)
-        .await?
-        .iter()
-        .copied()
-        .chain(LARGE_TABLES.iter().copied()))
 }
 
 /// Delete all data in the database. Only used by tests.
 #[allow(non_snake_case)]
 pub async fn clear_DANGER_(ex: &mut PgTransaction<'_>) -> sqlx::Result<()> {
-    for table in all_tables(ex).await? {
+    for table in get_table_names(ex).await? {
         ex.execute(format!("TRUNCATE {table};").as_str()).await?;
     }
     Ok(())
