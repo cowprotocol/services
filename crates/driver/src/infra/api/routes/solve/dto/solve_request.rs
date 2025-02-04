@@ -254,7 +254,7 @@ struct Order {
     buy_token_balance: BuyTokenBalance,
     class: Class,
     #[serde_as(as = "serialize::Hex")]
-    app_data: [u8; order::APP_DATA_LEN],
+    app_data: [u8; order::app_data::APP_DATA_LEN],
     signing_scheme: SigningScheme,
     #[serde_as(as = "serialize::Hex")]
     signature: Vec<u8>,

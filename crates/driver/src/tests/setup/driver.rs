@@ -3,7 +3,10 @@ use {
     crate::{
         domain::competition::order,
         infra::config::file::OrderPriorityStrategy,
-        tests::{hex_address, setup::blockchain::Trade},
+        tests::{
+            hex_address,
+            setup::{blockchain::Trade, orderbook::Orderbook},
+        },
     },
     rand::seq::SliceRandom,
     serde_json::json,
@@ -18,6 +21,7 @@ pub struct Config {
     pub enable_simulation: bool,
     pub mempools: Vec<Mempool>,
     pub order_priority_strategies: Vec<OrderPriorityStrategy>,
+    pub orderbook: Orderbook,
 }
 
 pub struct Driver {
@@ -103,7 +107,7 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
                 order::Kind::Market => "market",
                 order::Kind::Limit { .. } => "limit",
             },
-            "appData": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "appData": app_data::AppDataHash(quote.order.app_data.hash().0 .0),
             "signingScheme": "eip712",
             "signature": format!("0x{}", hex::encode(quote.order_signature(&test.blockchain))),
             "quote": quote.order.quote,
@@ -204,6 +208,14 @@ async fn create_config_file(
            "#
     };
     write!(file, "{simulation}").unwrap();
+    writeln!(file, "app-data-fetching-enabled = true").unwrap();
+    writeln!(
+        file,
+        r#"orderbook-url = "http://{}""#,
+        config.orderbook.addr
+    )
+    .unwrap();
+    writeln!(file, "flashloans-enabled = true").unwrap();
     write!(
         file,
         r#"[contracts]

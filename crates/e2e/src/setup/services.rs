@@ -147,12 +147,19 @@ impl<'a> Services<'a> {
     /// deadline in case the solution would start to revert at some point)
     pub async fn start_autopilot(&self, solve_deadline: Option<Duration>, extra_args: Vec<String>) {
         let solve_deadline = solve_deadline.unwrap_or(Duration::from_secs(2));
+        let ethflow_contracts = self
+            .contracts
+            .ethflows
+            .iter()
+            .map(|c| format!("{:?}", c.address()))
+            .collect::<Vec<_>>()
+            .join(",");
 
         let args = [
             "autopilot".to_string(),
             "--max-run-loop-delay=100ms".to_string(),
             "--run-loop-native-price-timeout=500ms".to_string(),
-            format!("--ethflow-contract={:?}", self.contracts.ethflow.address()),
+            format!("--ethflow-contracts={ethflow_contracts}"),
             "--skip-event-sync=true".to_string(),
             format!("--solve-deadline={solve_deadline:?}"),
         ]
@@ -201,7 +208,7 @@ impl<'a> Services<'a> {
             vec![
                 colocation::start_baseline_solver(
                     "test_solver".into(),
-                    solver,
+                    solver.clone(),
                     self.contracts.weth.address(),
                     vec![],
                     1,
@@ -216,7 +223,10 @@ impl<'a> Services<'a> {
             None,
             [
                 vec![
-                    "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+                    format!(
+                        "--drivers=test_solver|http://localhost:11088/test_solver|{}",
+                        hex::encode(solver.address())
+                    ),
                     "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                         .to_string(),
                 ],
@@ -261,7 +271,7 @@ impl<'a> Services<'a> {
             solvers.push(
                 colocation::start_baseline_solver(
                     "baseline_solver".into(),
-                    solver,
+                    solver.clone(),
                     self.contracts.weth.address(),
                     vec![],
                     1,
@@ -273,7 +283,7 @@ impl<'a> Services<'a> {
             // Here we call the baseline_solver "test_quoter" to make the native price
             // estimation use the baseline_solver instead of the test_quoter
             let autopilot_args = vec![
-                "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+                format!("--drivers=test_solver|http://localhost:11088/test_solver|{}", hex::encode(solver.address())),
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/baseline_solver,test_solver|http://localhost:11088/test_solver".to_string(),
                 "--native-price-estimators=test_quoter|http://localhost:11088/baseline_solver,test_solver|http://localhost:11088/test_solver".to_string(),
             ];
@@ -284,7 +294,10 @@ impl<'a> Services<'a> {
             (autopilot_args, api_args)
         } else {
             let autopilot_args = vec![
-                "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+                format!(
+                    "--drivers=test_solver|http://localhost:11088/test_solver|{}",
+                    hex::encode(solver.address())
+                ),
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
                 "--native-price-estimators=test_quoter|http://localhost:11088/test_solver"

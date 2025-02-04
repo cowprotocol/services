@@ -1,15 +1,22 @@
 use {
     crate::{domain::fee::FeeFactor, infra},
-    anyhow::Context,
+    anyhow::{anyhow, ensure, Context},
     clap::ValueEnum,
-    primitive_types::H160,
+    primitive_types::{H160, U256},
     shared::{
-        arguments::{display_list, display_option, ExternalSolver},
+        arguments::{display_list, display_option},
         bad_token::token_owner_finder,
         http_client,
         price_estimation::{self, NativePriceEstimators},
     },
-    std::{net::SocketAddr, num::NonZeroUsize, str::FromStr, time::Duration},
+    std::{
+        fmt,
+        fmt::{Display, Formatter},
+        net::SocketAddr,
+        num::NonZeroUsize,
+        str::FromStr,
+        time::Duration,
+    },
     url::Url,
 };
 
@@ -30,10 +37,13 @@ pub struct Arguments {
     #[clap(flatten)]
     pub price_estimation: price_estimation::Arguments,
 
-    /// Address of the ethflow contract. If not specified, eth-flow orders are
+    /// Address of the ethflow contracts. If not specified, eth-flow orders are
     /// disabled.
-    #[clap(long, env)]
-    pub ethflow_contract: Option<H160>,
+    /// In general, one contract is sufficient for the service to function.
+    /// Support for multiple contract was added to support transition period for
+    /// integrators when the migration of the eth-flow contract happens.
+    #[clap(long, env, use_value_delimiter = true)]
+    pub ethflow_contracts: Vec<H160>,
 
     /// Timestamp at which we should start indexing eth-flow contract events.
     /// If there are already events in the database for a date later than this,
@@ -137,9 +147,10 @@ pub struct Arguments {
     )]
     pub trusted_tokens_update_interval: Duration,
 
-    /// A list of drivers in the following format: `<NAME>|<URL>,<NAME>|<URL>`
+    /// A list of drivers in the following format:
+    /// `<NAME>|<URL>|<SUBMISSION_ADDRESS>|<FAIRNESS_THRESHOLD>`
     #[clap(long, env, use_value_delimiter = true)]
-    pub drivers: Vec<ExternalSolver>,
+    pub drivers: Vec<Solver>,
 
     /// The maximum number of blocks to wait for a settlement to appear on
     /// chain.
@@ -245,7 +256,7 @@ impl std::fmt::Display for Arguments {
             token_owner_finder,
             price_estimation,
             tracing_node_url,
-            ethflow_contract,
+            ethflow_contracts,
             ethflow_indexing_start,
             metrics_address,
             skip_event_sync,
@@ -287,7 +298,7 @@ impl std::fmt::Display for Arguments {
         write!(f, "{}", token_owner_finder)?;
         write!(f, "{}", price_estimation)?;
         display_option(f, "tracing_node_url", tracing_node_url)?;
-        writeln!(f, "ethflow_contract: {:?}", ethflow_contract)?;
+        writeln!(f, "ethflow_contracts: {:?}", ethflow_contracts)?;
         writeln!(f, "ethflow_indexing_start: {:?}", ethflow_indexing_start)?;
         writeln!(f, "metrics_address: {}", metrics_address)?;
         let _intentionally_ignored = db_url;
@@ -363,6 +374,77 @@ impl std::fmt::Display for Arguments {
             max_solutions_per_solver
         )?;
         Ok(())
+    }
+}
+
+/// External solver driver configuration
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Solver {
+    pub name: String,
+    pub url: Url,
+    pub submission_account: Account,
+    pub fairness_threshold: Option<U256>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Account {
+    /// AWS KMS is used to retrieve the solver public key
+    Kms(Arn),
+    /// Solver public key
+    Address(H160),
+}
+
+// Wrapper type for AWS ARN identifiers
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Arn(pub String);
+
+impl FromStr for Arn {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // Could be more strict here, but this should suffice to catch unintended
+        // configuration mistakes
+        if s.starts_with("arn:aws:kms:") {
+            Ok(Self(s.to_string()))
+        } else {
+            Err(anyhow!("Invalid ARN identifier: {}", s))
+        }
+    }
+}
+
+impl Display for Solver {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}({})", self.name, self.url)
+    }
+}
+
+impl FromStr for Solver {
+    type Err = anyhow::Error;
+
+    fn from_str(solver: &str) -> anyhow::Result<Self> {
+        let parts: Vec<&str> = solver.split('|').collect();
+        ensure!(parts.len() >= 3, "not enough arguments for external solver");
+        let (name, url) = (parts[0], parts[1]);
+        let url: Url = url.parse()?;
+        let submission_account = if let Ok(value) = Arn::from_str(parts[2]) {
+            Account::Kms(value)
+        } else {
+            Account::Address(H160::from_str(parts[2]).context("failed to parse submission")?)
+        };
+
+        let fairness_threshold = match parts.get(3) {
+            Some(value) => {
+                Some(U256::from_dec_str(value).context("failed to parse fairness threshold")?)
+            }
+            None => None,
+        };
+
+        Ok(Self {
+            name: name.to_owned(),
+            url,
+            fairness_threshold,
+            submission_account,
+        })
     }
 }
 
@@ -524,7 +606,7 @@ impl FromStr for CowAmmConfig {
 
 #[cfg(test)]
 mod test {
-    use super::*;
+    use {super::*, hex_literal::hex};
 
     #[test]
     fn test_fee_factor_limits() {
@@ -548,5 +630,50 @@ mod test {
                 .to_string()
                 .contains("Factor must be in the range [0, 1)"),)
         }
+    }
+
+    #[test]
+    fn parse_driver_submission_account_address() {
+        let argument = "name1|http://localhost:8080|0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
+        let driver = Solver::from_str(argument).unwrap();
+        let expected = Solver {
+            name: "name1".into(),
+            url: Url::parse("http://localhost:8080").unwrap(),
+            fairness_threshold: None,
+            submission_account: Account::Address(H160::from_slice(&hex!(
+                "C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+            ))),
+        };
+        assert_eq!(driver, expected);
+    }
+
+    #[test]
+    fn parse_driver_submission_account_arn() {
+        let argument = "name1|http://localhost:8080|arn:aws:kms:supersecretstuff";
+        let driver = Solver::from_str(argument).unwrap();
+        let expected = Solver {
+            name: "name1".into(),
+            url: Url::parse("http://localhost:8080").unwrap(),
+            fairness_threshold: None,
+            submission_account: Account::Kms(
+                Arn::from_str("arn:aws:kms:supersecretstuff").unwrap(),
+            ),
+        };
+        assert_eq!(driver, expected);
+    }
+
+    #[test]
+    fn parse_driver_with_threshold() {
+        let argument = "name1|http://localhost:8080|0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2|1000000000000000000";
+        let driver = Solver::from_str(argument).unwrap();
+        let expected = Solver {
+            name: "name1".into(),
+            url: Url::parse("http://localhost:8080").unwrap(),
+            submission_account: Account::Address(H160::from_slice(&hex!(
+                "C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+            ))),
+            fairness_threshold: Some(U256::exp10(18)),
+        };
+        assert_eq!(driver, expected);
     }
 }

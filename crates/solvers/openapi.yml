@@ -233,6 +233,49 @@ components:
         order. This can also be used to ensure uniqueness between two orders
         with otherwise the exact same parameters.
       example: "0x0000000000000000000000000000000000000000000000000000000000000000"
+    FlashloanHint:
+      description: |
+        Contains information to hint at how how to make use of flashloans to settle the associated order.
+      type: object
+      required:
+        - token
+        - amount
+      properties:
+        lender:
+          description: Which contract to request the flashloan from.
+          allOf:
+            - $ref: "#/components/schemas/Address"
+        borrower:
+          description: |
+            Who should receive the borrowed tokens. If this is not set the order owner will get the tokens.
+          allOf:
+            - $ref: "#/components/schemas/Address"
+        token:
+          description: Which token to flashloan.
+          allOf:
+            - $ref: "#/components/schemas/Token"
+        amount:
+          description: How much of the token to flashloan.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
+    Flashloan:
+      description: |
+        Contains information about a flashloan for the solver's solution.
+      type: object
+      required:
+        - lender
+        - borrower
+        - token
+        - amount
+      properties:
+        lender:
+          $ref: "#/components/schemas/Address"
+        borrower:
+          $ref: "#/components/schemas/Address"
+        token:
+          $ref: "#/components/schemas/Token"
+        amount:
+          $ref: "#/components/schemas/TokenAmount"
     SellTokenBalance:
       description: |
         Where should the sell token be drawn from?
@@ -273,9 +316,19 @@ components:
         - buyToken
         - sellAmount
         - buyAmount
+        - fullBuyAmount
+        - validTo
         - kind
+        - owner
         - partiallyFillable
+        - preInteractions
+        - postInteractions
+        - sellTokenSource
+        - buyTokenDestination
         - class
+        - appData
+        - signingScheme
+        - signature
       properties:
         uid:
           $ref: "#/components/schemas/OrderUid"
@@ -331,6 +384,8 @@ components:
           $ref: "#/components/schemas/OrderClass"
         appData:
           $ref: "#/components/schemas/AppData"
+        flashloanHint:
+          $ref: "#/components/schemas/FlashloanHint"
         signingScheme:
           $ref: "#/components/schemas/SigningScheme"
         signature:
@@ -727,6 +782,7 @@ components:
       required:
         - kind
         - order
+        - executedAmount
       properties:
         kind:
           type: string
@@ -945,6 +1001,13 @@ components:
         gas:
           type: integer
           description: How many units of gas this solution is estimated to cost.
+        flashloans:
+          description: |
+            Flashloans that are provided for this solution. 
+            In case of the field absense, the driver will use the order's flashloan hint originally defined by the user.
+          type: array
+          items:
+            $ref: "#/components/schemas/Flashloan"
     Call:
       type: object
       properties:

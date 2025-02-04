@@ -45,7 +45,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
         vec![
             colocation::start_baseline_solver(
                 "test_solver".into(),
-                solver,
+                solver.clone(),
                 onchain.contracts().weth.address(),
                 vec![],
                 1,
@@ -67,7 +67,10 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
                     token_a = token_a.address(),
                     token_b = token_b.address()
                 ),
-                "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+                format!(
+                    "--drivers=test_solver|http://localhost:11088/test_solver|{}",
+                    hex::encode(solver.address())
+                ),
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
             ],

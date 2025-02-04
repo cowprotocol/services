@@ -1,9 +1,10 @@
 use {
     self::dto::{reveal, settle, solve},
-    crate::{domain::eth, util},
+    crate::{arguments::Account, domain::eth, util},
     anyhow::{anyhow, Context, Result},
     reqwest::{Client, StatusCode},
     std::time::Duration,
+    thiserror::Error,
     url::Url,
 };
 
@@ -19,20 +20,57 @@ pub struct Driver {
     // winning solution should be discarded if it contains at least one order, which
     // another driver solved with surplus exceeding this driver's surplus by `threshold`
     pub fairness_threshold: Option<eth::Ether>,
+    pub submission_address: eth::Address,
     client: Client,
 }
 
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error("unable to load KMS account")]
+    UnableToLoadKmsAccount,
+    #[error("failed to build client")]
+    FailedToBuildClient(#[source] reqwest::Error),
+}
+
 impl Driver {
-    pub fn new(url: Url, name: String, fairness_threshold: Option<eth::Ether>) -> Self {
-        Self {
+    pub async fn try_new(
+        url: Url,
+        name: String,
+        fairness_threshold: Option<eth::Ether>,
+        submission_account: Account,
+    ) -> Result<Self, Error> {
+        let submission_address = match submission_account {
+            Account::Kms(key_id) => {
+                let config = ethcontract::aws_config::load_from_env().await;
+                let account =
+                    ethcontract::transaction::kms::Account::new((&config).into(), &key_id.0)
+                        .await
+                        .map_err(|_| {
+                            tracing::error!(?name, ?key_id, "Unable to load KMS account");
+                            Error::UnableToLoadKmsAccount
+                        })?;
+                account.public_address()
+            }
+            Account::Address(address) => address,
+        };
+        tracing::info!(
+            ?name,
+            ?url,
+            ?fairness_threshold,
+            ?submission_address,
+            "Creating solver"
+        );
+
+        Ok(Self {
             name,
             url,
             fairness_threshold,
             client: Client::builder()
                 .timeout(RESPONSE_TIME_LIMIT)
                 .build()
-                .unwrap(),
-        }
+                .map_err(Error::FailedToBuildClient)?,
+            submission_address: submission_address.into(),
+        })
     }
 
     pub async fn solve(&self, request: &solve::Request) -> Result<solve::Response> {
@@ -60,6 +98,7 @@ impl Driver {
             .post(url)
             .json(request)
             .timeout(timeout)
+            .header("X-REQUEST-ID", request.auction_id.to_string())
             .send()
             .await
             .context("send")?;
@@ -94,7 +133,7 @@ impl Driver {
         if let Some(timeout) = timeout {
             request = request.timeout(timeout);
         }
-        if let Some(request_id) = observe::request_id::get_task_local_storage() {
+        if let Some(request_id) = observe::request_id::from_current_span() {
             request = request.header("X-REQUEST-ID", request_id);
         }
 

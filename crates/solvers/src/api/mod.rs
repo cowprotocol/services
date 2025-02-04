@@ -35,7 +35,7 @@ impl Api {
             // axum's default body limit needs to be disabled to not have the default limit on top of our custom limit
             .layer(axum::extract::DefaultBodyLimit::disable());
 
-        let make_svc = observe::make_service_with_task_local_storage!(app);
+        let make_svc = observe::make_service_with_request_tracing!(app);
 
         let server = axum::Server::bind(&self.addr).serve(make_svc);
         if let Some(bind) = bind {
