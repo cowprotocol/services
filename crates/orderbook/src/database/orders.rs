@@ -29,7 +29,7 @@ use {
     },
     num::Zero,
     number::conversions::{big_decimal_to_big_uint, big_decimal_to_u256, u256_to_big_decimal},
-    primitive_types::H160,
+    primitive_types::{H160, U256},
     shared::{
         db_order_conversions::{
             buy_token_destination_from,
@@ -510,9 +510,12 @@ impl Postgres {
             },
             async {
                 let mut ex = self.pool.acquire().await?;
-                database::auction_prices::fetch_latest_token_price(&mut ex, ByteArray(token.0))
-                    .await
-                    .map_err(anyhow::Error::from)
+                Ok::<Option<U256>, anyhow::Error>(
+                    database::auction_prices::fetch_latest_token_price(&mut ex, ByteArray(token.0))
+                        .await
+                        .map_err(anyhow::Error::from)?
+                        .and_then(|price| big_decimal_to_u256(&price)),
+                )
             }
         );
 
