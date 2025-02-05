@@ -498,7 +498,7 @@ impl Postgres {
             .with_label_values(&["token_first_trade_block"])
             .start_timer();
 
-        let (block_number, native_price) = tokio::join!(
+        let (first_trade_block, native_price) = tokio::try_join!(
             async {
                 let mut ex = self.pool.acquire().await?;
                 database::trades::token_first_trade_block(&mut ex, ByteArray(token.0))
@@ -517,13 +517,13 @@ impl Postgres {
                         .and_then(|price| big_decimal_to_u256(&price)),
                 )
             }
-        );
+        )?;
 
         timer.stop_and_record();
 
         Ok(TokenMetadata {
-            first_trade_block: block_number?,
-            stored_native_price: native_price?,
+            first_trade_block,
+            native_price,
         })
     }
 }

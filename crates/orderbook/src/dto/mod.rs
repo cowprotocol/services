@@ -18,5 +18,5 @@ use {
 pub struct TokenMetadata {
     pub first_trade_block: Option<u32>,
     #[serde_as(as = "Option<HexOrDecimalU256>")]
-    pub stored_native_price: Option<U256>,
+    pub native_price: Option<U256>,
 }
