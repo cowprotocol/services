@@ -80,6 +80,7 @@ include_contracts! {
     ERC1271SignatureValidator;
     ERC20;
     ERC20Mintable;
+    ERC3156FlashLoanSolverWrapper;
     GPv2AllowListAuthentication;
     GPv2Settlement;
     GnosisSafe;
