@@ -493,49 +493,47 @@ impl Postgres {
     }
 
     pub async fn token_metadata(&self, token: &H160) -> Result<TokenMetadata> {
-        let (first_trade_block, native_price) = tokio::try_join!(
-            async {
-                let timer = super::Metrics::get()
-                    .database_queries
-                    .with_label_values(&["token_first_trade_block"])
-                    .start_timer();
-
+        let (first_trade_block, native_price): (Option<u32>, Option<U256>) = tokio::try_join!(
+            self.execute_instrumented("token_first_trade_block", async {
                 let mut ex = self.pool.acquire().await?;
-                let first_trade_block =
-                    database::trades::token_first_trade_block(&mut ex, ByteArray(token.0))
-                        .await
-                        .map_err(anyhow::Error::from)?
-                        .map(u32::try_from)
-                        .transpose()
-                        .map_err(anyhow::Error::from)?;
-
-                timer.observe_duration();
-
-                Ok(first_trade_block)
-            },
-            async {
-                let timer = super::Metrics::get()
-                    .database_queries
-                    .with_label_values(&["fetch_latest_token_price"])
-                    .start_timer();
-
+                database::trades::token_first_trade_block(&mut ex, ByteArray(token.0))
+                    .await
+                    .map_err(anyhow::Error::from)?
+                    .map(u32::try_from)
+                    .transpose()
+                    .map_err(anyhow::Error::from)
+            }),
+            self.execute_instrumented("fetch_latest_token_price", async {
                 let mut ex = self.pool.acquire().await?;
-                let latest_token_price =
+                Ok(
                     database::auction_prices::fetch_latest_token_price(&mut ex, ByteArray(token.0))
                         .await
                         .map_err(anyhow::Error::from)?
-                        .and_then(|price| big_decimal_to_u256(&price));
-
-                timer.observe_duration();
-
-                Ok::<Option<U256>, anyhow::Error>(latest_token_price)
-            }
+                        .and_then(|price| big_decimal_to_u256(&price)),
+                )
+            })
         )?;
 
         Ok(TokenMetadata {
             first_trade_block,
             native_price,
         })
+    }
+
+    async fn execute_instrumented<F, T>(&self, label: &str, f: F) -> Result<T>
+    where
+        F: std::future::Future<Output = Result<T>>,
+    {
+        let timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&[label])
+            .start_timer();
+
+        let result = f.await?;
+
+        timer.observe_duration();
+
+        Ok(result)
     }
 }
 
