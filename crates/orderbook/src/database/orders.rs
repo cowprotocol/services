@@ -29,7 +29,7 @@ use {
     },
     num::Zero,
     number::conversions::{big_decimal_to_big_uint, big_decimal_to_u256, u256_to_big_decimal},
-    primitive_types::H160,
+    primitive_types::{H160, U256},
     shared::{
         db_order_conversions::{
             buy_token_destination_from,
@@ -498,18 +498,32 @@ impl Postgres {
             .with_label_values(&["token_first_trade_block"])
             .start_timer();
 
-        let mut ex = self.pool.acquire().await?;
-        let block_number = database::trades::token_first_trade_block(&mut ex, ByteArray(token.0))
-            .await
-            .map_err(anyhow::Error::from)?
-            .map(u32::try_from)
-            .transpose()
-            .map_err(anyhow::Error::from)?;
+        let (first_trade_block, native_price) = tokio::try_join!(
+            async {
+                let mut ex = self.pool.acquire().await?;
+                database::trades::token_first_trade_block(&mut ex, ByteArray(token.0))
+                    .await
+                    .map_err(anyhow::Error::from)?
+                    .map(u32::try_from)
+                    .transpose()
+                    .map_err(anyhow::Error::from)
+            },
+            async {
+                let mut ex = self.pool.acquire().await?;
+                Ok::<Option<U256>, anyhow::Error>(
+                    database::auction_prices::fetch_latest_token_price(&mut ex, ByteArray(token.0))
+                        .await
+                        .map_err(anyhow::Error::from)?
+                        .and_then(|price| big_decimal_to_u256(&price)),
+                )
+            }
+        )?;
 
         timer.stop_and_record();
 
         Ok(TokenMetadata {
-            first_trade_block: block_number,
+            first_trade_block,
+            native_price,
         })
     }
 }
