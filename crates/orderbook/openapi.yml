@@ -912,10 +912,6 @@ components:
           description: Order status.
           allOf:
             - $ref: "#/components/schemas/OrderStatus"
-        fullFeeAmount:
-          description: Amount that the signed fee would be without subsidies.
-          allOf:
-            - $ref: "#/components/schemas/TokenAmount"
         isLiquidityOrder:
           description: |-
             Liquidity orders are functionally the same as normal smart contract

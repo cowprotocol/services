@@ -96,7 +96,6 @@ pub struct Order {
     pub settlement_contract: Address,
     pub sell_token_balance: SellTokenSource,
     pub buy_token_balance: BuyTokenDestination,
-    pub full_fee_amount: BigDecimal,
     pub cancellation_timestamp: Option<DateTime<Utc>>,
     pub class: OrderClass,
 }
@@ -140,11 +139,10 @@ INSERT INTO orders (
     settlement_contract,
     sell_token_balance,
     buy_token_balance,
-    full_fee_amount,
     cancellation_timestamp,
     class
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
     "#;
 
 pub async fn insert_order_and_ignore_conflicts(
@@ -183,7 +181,6 @@ async fn insert_order_execute_sqlx(
         .bind(order.settlement_contract)
         .bind(order.sell_token_balance)
         .bind(order.buy_token_balance)
-        .bind(&order.full_fee_amount)
         .bind(order.cancellation_timestamp)
         .bind(order.class)
         .execute(ex)
@@ -473,7 +470,6 @@ pub struct FullOrder {
     pub valid_to: i64,
     pub app_data: AppId,
     pub fee_amount: BigDecimal,
-    pub full_fee_amount: BigDecimal,
     pub kind: OrderKind,
     pub class: OrderClass,
     pub partially_fillable: bool,
@@ -547,7 +543,7 @@ impl FullOrder {
 // that with the current amount of data this wouldn't be better.
 pub const SELECT: &str = r#"
 o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, o.sell_amount, o.buy_amount,
-o.valid_to, o.app_data, o.fee_amount, o.full_fee_amount, o.kind, o.partially_fillable, o.signature,
+o.valid_to, o.app_data, o.fee_amount, o.kind, o.partially_fillable, o.signature,
 o.receiver, o.signing_scheme, o.settlement_contract, o.sell_token_balance, o.buy_token_balance,
 o.class,
 (SELECT COALESCE(SUM(t.buy_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_buy,
@@ -880,7 +876,6 @@ mod tests {
         assert_eq!(order.valid_to, full_order.valid_to);
         assert_eq!(order.app_data, full_order.app_data);
         assert_eq!(order.fee_amount, full_order.fee_amount);
-        assert_eq!(order.full_fee_amount, full_order.full_fee_amount);
         assert_eq!(order.kind, full_order.kind);
         assert_eq!(order.class, full_order.class);
         assert_eq!(order.partially_fillable, full_order.partially_fillable);
@@ -1363,10 +1358,6 @@ mod tests {
         assert_eq!(
             order_with_quote.full_order.fee_amount,
             full_order.fee_amount
-        );
-        assert_eq!(
-            order_with_quote.full_order.full_fee_amount,
-            full_order.full_fee_amount
         );
         assert_eq!(order_with_quote.full_order.kind, full_order.kind);
         assert_eq!(order_with_quote.full_order.class, full_order.class);

@@ -28,7 +28,7 @@ use {
     contracts::{BalancerV2Vault, IUniswapV3Factory},
     ethcontract::{common::DeploymentInformation, dyns::DynWeb3, errors::DeployError, BlockNumber},
     ethrpc::block_stream::block_number_to_block_number_hash,
-    futures::StreamExt,
+    futures::stream::StreamExt,
     model::DomainSeparator,
     observe::metrics::LivenessChecking,
     shared::{
@@ -348,7 +348,12 @@ pub async fn run(args: Arguments) {
 
     let price_estimator = price_estimator_factory
         .price_estimator(
-            &args.order_quoting.price_estimation_drivers,
+            &args
+                .order_quoting
+                .price_estimation_drivers
+                .iter()
+                .map(|price_estimator_driver| price_estimator_driver.clone().into())
+                .collect::<Vec<_>>(),
             native_price_estimator.clone(),
             gas_price_estimator.clone(),
         )
@@ -476,7 +481,7 @@ pub async fn run(args: Arguments) {
     let mut maintenance = Maintenance::new(settlement_event_indexer, db.clone());
     maintenance.with_cow_amms(&cow_amm_registry);
 
-    if let Some(ethflow_contract) = args.ethflow_contract {
+    if !args.ethflow_contracts.is_empty() {
         let ethflow_refund_start_block = determine_ethflow_refund_indexing_start(
             &skip_event_sync_start,
             args.ethflow_indexing_start,
@@ -489,7 +494,7 @@ pub async fn run(args: Arguments) {
         let refund_event_handler = EventUpdater::new_skip_blocks_before(
             // This cares only about ethflow refund events because all the other ethflow
             // events are already indexed by the OnchainOrderParser.
-            EthFlowRefundRetriever::new(web3.clone(), ethflow_contract),
+            EthFlowRefundRetriever::new(web3.clone(), args.ethflow_contracts.clone()),
             db.clone(),
             block_retriever.clone(),
             ethflow_refund_start_block,
@@ -518,7 +523,7 @@ pub async fn run(args: Arguments) {
         let onchain_order_indexer = EventUpdater::new_skip_blocks_before(
             // The events from the ethflow contract are read with the more generic contract
             // interface called CoWSwapOnchainOrders.
-            CoWSwapOnchainOrdersContract::new(web3.clone(), ethflow_contract),
+            CoWSwapOnchainOrdersContract::new(web3.clone(), args.ethflow_contracts),
             onchain_order_event_parser,
             block_retriever,
             ethflow_start_block,
@@ -543,21 +548,32 @@ pub async fn run(args: Arguments) {
         max_winners_per_auction: args.max_winners_per_auction,
         max_solutions_per_solver: args.max_solutions_per_solver,
     };
+    let drivers_futures = args
+        .drivers
+        .into_iter()
+        .map(|driver| async move {
+            infra::Driver::try_new(
+                driver.url,
+                driver.name.clone(),
+                driver.fairness_threshold.map(Into::into),
+                driver.submission_account,
+            )
+            .await
+            .map(Arc::new)
+            .expect("failed to load solver configuration")
+        })
+        .collect::<Vec<_>>();
+
+    let drivers = futures::future::join_all(drivers_futures)
+        .await
+        .into_iter()
+        .collect();
 
     let run = RunLoop::new(
         run_loop_config,
         eth,
         persistence.clone(),
-        args.drivers
-            .into_iter()
-            .map(|driver| {
-                Arc::new(infra::Driver::new(
-                    driver.url,
-                    driver.name,
-                    driver.fairness_threshold.map(Into::into),
-                ))
-            })
-            .collect(),
+        drivers,
         solvable_orders_cache,
         trusted_tokens,
         liveness.clone(),
@@ -574,16 +590,25 @@ async fn shadow_mode(args: Arguments) -> ! {
         args.shadow.expect("missing shadow mode configuration"),
     );
 
-    let drivers = args
+    let drivers_futures = args
         .drivers
         .into_iter()
-        .map(|driver| {
-            Arc::new(infra::Driver::new(
+        .map(|driver| async move {
+            infra::Driver::try_new(
                 driver.url,
-                driver.name,
+                driver.name.clone(),
                 driver.fairness_threshold.map(Into::into),
-            ))
+                driver.submission_account,
+            )
+            .await
+            .map(Arc::new)
+            .expect("failed to load solver configuration")
         })
+        .collect::<Vec<_>>();
+
+    let drivers = futures::future::join_all(drivers_futures)
+        .await
+        .into_iter()
         .collect();
 
     let trusted_tokens = {

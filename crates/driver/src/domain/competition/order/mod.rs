@@ -12,6 +12,7 @@ use {
 };
 pub use {fees::FeePolicy, signature::Signature};
 
+pub mod app_data;
 pub mod fees;
 pub mod signature;
 
@@ -29,7 +30,7 @@ pub struct Order {
     pub sell: eth::Asset,
     pub side: Side,
     pub kind: Kind,
-    pub app_data: AppData,
+    pub app_data: app_data::AppData,
     pub partial: Partial,
     /// The onchain calls to run before sending user funds to the settlement
     /// contract.
@@ -267,27 +268,6 @@ impl From<Uid> for [u8; UID_LEN] {
     }
 }
 
-/// The length of the app data hash in bytes.
-pub const APP_DATA_LEN: usize = 32;
-
-/// This is a hash allowing arbitrary user data to be associated with an order.
-/// While this type holds the hash, the data itself is uploaded to IPFS. This
-/// hash is signed along with the order.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct AppData(pub Bytes<[u8; APP_DATA_LEN]>);
-
-impl From<[u8; APP_DATA_LEN]> for AppData {
-    fn from(inner: [u8; APP_DATA_LEN]) -> Self {
-        Self(inner.into())
-    }
-}
-
-impl From<AppData> for [u8; APP_DATA_LEN] {
-    fn from(app_data: AppData) -> Self {
-        app_data.0.into()
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
     /// Order intended to be immediately executed. This is the "regular" type of
@@ -388,7 +368,7 @@ pub struct Jit {
     pub receiver: eth::Address,
     pub valid_to: util::Timestamp,
     pub partially_fillable: bool,
-    pub app_data: AppData,
+    pub app_data: app_data::AppDataHash,
     pub side: Side,
     pub sell_token_balance: SellTokenBalance,
     pub buy_token_balance: BuyTokenBalance,

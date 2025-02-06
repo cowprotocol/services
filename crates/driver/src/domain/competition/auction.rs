@@ -7,7 +7,13 @@ use {
             liquidity,
             time,
         },
-        infra::{self, blockchain, config::file::OrderPriorityStrategy, observe, Ethereum},
+        infra::{
+            self,
+            blockchain,
+            config::file::OrderPriorityStrategy,
+            observe::{self, metrics},
+            Ethereum,
+        },
         util::{self, Bytes},
     },
     chrono::{Duration, Utc},
@@ -19,6 +25,7 @@ use {
         collections::{HashMap, HashSet},
         sync::{Arc, Mutex},
     },
+    tap::TapFallible,
     thiserror::Error,
 };
 
@@ -137,14 +144,16 @@ struct Inner {
     /// `order_priority_strategies` from the driver's config.
     order_sorting_strategies: Vec<Arc<dyn sorting::SortingStrategy>>,
     signature_validator: Arc<dyn SignatureValidating>,
+    app_data_retriever: Option<order::app_data::AppDataRetriever>,
 }
 
 type BalanceGroup = (order::Trader, eth::TokenAddress, order::SellTokenBalance);
 type Balances = HashMap<BalanceGroup, order::SellAmount>;
 
 impl AuctionProcessor {
-    /// Prioritize well priced and filter out unfillable orders from the given
-    /// auction.
+    /// Process the auction by prioritizing the orders and filtering out
+    /// unfillable orders. Fetches full app data for each order and returns an
+    /// auction with updated orders.
     pub async fn prioritize(&self, auction: Auction, solver: &eth::H160) -> Auction {
         Auction {
             orders: self.prioritize_orders(&auction, solver).await,
@@ -180,16 +189,34 @@ impl AuctionProcessor {
         let mut orders = auction.orders.clone();
         let solver = *solver;
         let order_comparators = lock.order_sorting_strategies.clone();
+        let app_data_retriever = lock.app_data_retriever.clone();
 
         // Use spawn_blocking() because a lot of CPU bound computations are happening
         // and we don't want to block the runtime for too long.
         let fut = tokio::task::spawn_blocking(move || {
+            let _timer = metrics::get()
+                .auction_preprocessing
+                .with_label_values(&["total"])
+                .start_timer();
             let start = std::time::Instant::now();
-            orders.extend(rt.block_on(Self::cow_amm_orders(&eth, &tokens, &cow_amms, signature_validator.as_ref())));
-            sorting::sort_orders(&mut orders, &tokens, &solver, &order_comparators);
-            let mut balances =
-                rt.block_on(async { Self::fetch_balances(&eth, &orders).await });
-            Self::filter_orders(&mut balances, &mut orders);
+            {
+                let _timer = metrics::get()
+                    .auction_preprocessing
+                    .with_label_values(&["cow_amm_orders_and_sorting"])
+                    .start_timer();
+                orders.extend(rt.block_on(Self::cow_amm_orders(&eth, &tokens, &cow_amms, signature_validator.as_ref())));
+                sorting::sort_orders(&mut orders, &tokens, &solver, &order_comparators);
+            }
+            let (mut balances, mut app_data_by_hash) =
+                rt.block_on(async {
+                    tokio::join!(
+                        Self::fetch_balances(&eth, &orders),
+                        Self::collect_orders_app_data(app_data_retriever, &orders),
+                    )
+                });
+
+            Self::update_orders(&mut balances, &mut app_data_by_hash, &mut orders);
+
             tracing::debug!(auction_id = new_id.0, time =? start.elapsed(), "auction preprocessing done");
             orders
         })
@@ -209,8 +236,55 @@ impl AuctionProcessor {
         fut
     }
 
-    /// Removes orders that cannot be filled due to missing funds of the owner.
-    fn filter_orders(balances: &mut Balances, orders: &mut Vec<order::Order>) {
+    /// Fetches the app data for all orders in the auction.
+    /// Returns a map from app data hash to the fetched app data.
+    async fn collect_orders_app_data(
+        app_data_retriever: Option<order::app_data::AppDataRetriever>,
+        orders: &[order::Order],
+    ) -> HashMap<order::app_data::AppDataHash, app_data::ValidatedAppData> {
+        let Some(app_data_retriever) = app_data_retriever else {
+            return Default::default();
+        };
+
+        let _timer = metrics::get()
+            .auction_preprocessing
+            .with_label_values(&["fetch_app_data"])
+            .start_timer();
+
+        join_all(
+            orders
+                .iter()
+                .map(|order| order.app_data.hash())
+                .unique()
+                .map(|app_data_hash| {
+                    let app_data_retriever = app_data_retriever.clone();
+                    async move {
+                        let fetched_app_data = app_data_retriever
+                            .get(&app_data_hash)
+                            .await
+                            .tap_err(|err| {
+                                tracing::warn!(?app_data_hash, ?err, "failed to fetch app data");
+                            })
+                            .ok()
+                            .flatten();
+
+                        (app_data_hash, fetched_app_data)
+                    }
+                }),
+        )
+        .await
+        .into_iter()
+        .filter_map(|(app_data_hash, app_data)| app_data.map(|app_data| (app_data_hash, app_data)))
+        .collect::<HashMap<_, _>>()
+    }
+
+    /// Removes orders that cannot be filled due to missing funds of the owner
+    /// and updates the fetched app data.
+    fn update_orders(
+        balances: &mut Balances,
+        app_data_by_hash: &mut HashMap<order::app_data::AppDataHash, app_data::ValidatedAppData>,
+        orders: &mut Vec<order::Order>,
+    ) {
         // The auction that we receive from the `autopilot` assumes that there
         // is sufficient balance to completely cover all the orders. **This is
         // not the case** (as the protocol should not chose which limit orders
@@ -275,6 +349,12 @@ impl AuctionProcessor {
             }
 
             remaining_balance.0 -= allocated_balance.0;
+
+            // Update order app data if it was fetched.
+            if let Some(fetched_app_data) = app_data_by_hash.get(&order.app_data.hash()) {
+                order.app_data = fetched_app_data.clone().into();
+            }
+
             true
         });
     }
@@ -305,6 +385,11 @@ impl AuctionProcessor {
                 }
             })
             .collect::<Vec<_>>();
+
+        let _timer = metrics::get()
+            .auction_preprocessing
+            .with_label_values(&["fetch_balances"])
+            .start_timer();
 
         join_all(
             traders
@@ -392,7 +477,7 @@ impl AuctionProcessor {
                     },
                     kind: order::Kind::Limit,
                     side: template.order.kind.into(),
-                    app_data: order::AppData(Bytes(template.order.app_data.0)),
+                    app_data: order::app_data::AppDataHash(Bytes(template.order.app_data.0)).into(),
                     buy_token_balance: template.order.buy_token_balance.into(),
                     sell_token_balance: template.order.sell_token_balance.into(),
                     partial: match template.order.partially_fillable {
@@ -449,6 +534,7 @@ impl AuctionProcessor {
     pub fn new(
         eth: &infra::Ethereum,
         order_priority_strategies: Vec<OrderPriorityStrategy>,
+        app_data_retriever: Option<order::app_data::AppDataRetriever>,
     ) -> Self {
         let eth = eth.with_metric_label("auctionPreProcessing".into());
         let mut order_sorting_strategies = vec![];
@@ -484,6 +570,7 @@ impl AuctionProcessor {
             eth,
             order_sorting_strategies,
             signature_validator,
+            app_data_retriever,
         })))
     }
 }

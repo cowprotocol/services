@@ -1,7 +1,7 @@
 use {
     crate::{app_data_hash::hash_full_app_data, AppDataHash, Hooks},
     anyhow::{anyhow, Context, Result},
-    primitive_types::H160,
+    primitive_types::{H160, U256},
     serde::{de, Deserialize, Deserializer, Serialize, Serializer},
     std::{fmt, fmt::Display},
 };
@@ -17,6 +17,7 @@ pub struct ValidatedAppData {
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
+#[cfg_attr(any(test, feature = "test_helpers"), derive(Serialize))]
 #[serde(rename_all = "camelCase")]
 pub struct ProtocolAppData {
     #[serde(default)]
@@ -24,14 +25,35 @@ pub struct ProtocolAppData {
     pub signer: Option<H160>,
     pub replaced_order: Option<ReplacedOrder>,
     pub partner_fee: Option<PartnerFee>,
+    pub flashloan: Option<Flashloan>,
+}
+
+/// Contains information to hint at how a solver could make
+/// use of flashloans to settle the associated order.
+/// Since using flashloans introduces a bunch of complexities
+/// all these hints are not binding for the solver.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
+#[cfg_attr(any(test, feature = "test_helpers"), derive(Serialize))]
+pub struct Flashloan {
+    /// Which contract to request the flashloan from.
+    pub lender: Option<H160>,
+    /// Who should receive the borrowed tokens. If this is not
+    /// set the order owner will get the tokens.
+    pub borrower: Option<H160>,
+    /// Which token to flashloan.
+    pub token: H160,
+    /// How much of the token to flashloan.
+    pub amount: U256,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
+#[cfg_attr(any(test, feature = "test_helpers"), derive(Serialize))]
 pub struct ReplacedOrder {
     pub uid: OrderUid,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
+#[cfg_attr(any(test, feature = "test_helpers"), derive(Serialize))]
 pub struct PartnerFee {
     pub bps: u64,
     pub recipient: H160,
@@ -122,7 +144,8 @@ impl Validator {
 /// For more detailed information on the schema, see:
 /// <https://github.com/cowprotocol/app-data>.
 #[derive(Deserialize)]
-struct Root {
+#[cfg_attr(any(test, feature = "test_helpers"), derive(Clone, Serialize))]
+pub struct Root {
     metadata: Option<ProtocolAppData>,
     /// DEPRECATED. The `backend` field was originally specified to contain all
     /// protocol-specific app data (such as hooks). However, after releasing
@@ -130,6 +153,15 @@ struct Root {
     /// However, in order to not break existing integrations, we allow using the
     /// `backend` field for specifying hooks.
     backend: Option<BackendAppData>,
+}
+
+impl Root {
+    pub fn new(metadata: Option<ProtocolAppData>) -> Self {
+        Self {
+            metadata,
+            backend: None,
+        }
+    }
 }
 
 // uid as 56 bytes: 32 for orderDigest, 20 for ownerAddress and 4 for validTo
@@ -205,6 +237,7 @@ impl<'de> Deserialize<'de> for OrderUid {
 
 /// The legacy `backend` app data object.
 #[derive(Debug, Default, Deserialize)]
+#[cfg_attr(any(test, feature = "test_helpers"), derive(Clone, Serialize))]
 struct BackendAppData {
     #[serde(default)]
     pub hooks: Hooks,
@@ -217,6 +250,7 @@ impl From<BackendAppData> for ProtocolAppData {
             signer: None,
             replaced_order: None,
             partner_fee: None,
+            flashloan: None,
         }
     }
 }

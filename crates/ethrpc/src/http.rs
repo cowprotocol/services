@@ -79,13 +79,13 @@ async fn execute_rpc<T: DeserializeOwned>(
         .body(body);
     match request {
         Request::Single(Call::MethodCall(call)) => {
-            if let Some(metadata) = observe::request_id::get_task_local_storage() {
+            if let Some(metadata) = observe::request_id::from_current_span() {
                 request_builder = request_builder.header("X-REQUEST-ID", metadata);
             }
             request_builder = request_builder.header("X-RPC-METHOD", call.method.clone());
         }
         Request::Batch(_) => {
-            if let Some(metadata) = observe::request_id::get_task_local_storage() {
+            if let Some(metadata) = observe::request_id::from_current_span() {
                 request_builder = request_builder.header("X-RPC-BATCH-METADATA", metadata);
             }
         }

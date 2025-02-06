@@ -29,7 +29,7 @@ use {
     },
     num::Zero,
     number::conversions::{big_decimal_to_big_uint, big_decimal_to_u256, u256_to_big_decimal},
-    primitive_types::H160,
+    primitive_types::{H160, U256},
     shared::{
         db_order_conversions::{
             buy_token_destination_from,
@@ -207,7 +207,6 @@ async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), Insert
         settlement_contract: ByteArray(order.metadata.settlement_contract.0),
         sell_token_balance: sell_token_source_into(order.data.sell_token_balance),
         buy_token_balance: buy_token_destination_into(order.data.buy_token_balance),
-        full_fee_amount: u256_to_big_decimal(&order.metadata.full_fee_amount),
         cancellation_timestamp: None,
     };
 
@@ -499,18 +498,32 @@ impl Postgres {
             .with_label_values(&["token_first_trade_block"])
             .start_timer();
 
-        let mut ex = self.pool.acquire().await?;
-        let block_number = database::trades::token_first_trade_block(&mut ex, ByteArray(token.0))
-            .await
-            .map_err(anyhow::Error::from)?
-            .map(u32::try_from)
-            .transpose()
-            .map_err(anyhow::Error::from)?;
+        let (first_trade_block, native_price) = tokio::try_join!(
+            async {
+                let mut ex = self.pool.acquire().await?;
+                database::trades::token_first_trade_block(&mut ex, ByteArray(token.0))
+                    .await
+                    .map_err(anyhow::Error::from)?
+                    .map(u32::try_from)
+                    .transpose()
+                    .map_err(anyhow::Error::from)
+            },
+            async {
+                let mut ex = self.pool.acquire().await?;
+                Ok::<Option<U256>, anyhow::Error>(
+                    database::auction_prices::fetch_latest_token_price(&mut ex, ByteArray(token.0))
+                        .await
+                        .map_err(anyhow::Error::from)?
+                        .and_then(|price| big_decimal_to_u256(&price)),
+                )
+            }
+        )?;
 
         timer.stop_and_record();
 
         Ok(TokenMetadata {
-            first_trade_block: block_number,
+            first_trade_block,
+            native_price,
         })
     }
 }
@@ -630,11 +643,6 @@ fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
         is_liquidity_order: class == OrderClass::Liquidity,
         class,
         settlement_contract: H160(order.settlement_contract.0),
-        full_fee_amount: big_decimal_to_u256(&order.full_fee_amount)
-            .context("full_fee_amount is not U256")?,
-        // Initialize unscaled and scale later when required.
-        solver_fee: big_decimal_to_u256(&order.full_fee_amount)
-            .context("solver_fee is not U256")?,
         ethflow_data,
         onchain_user,
         onchain_order_data,
@@ -728,7 +736,6 @@ mod tests {
             valid_to: valid_to_timestamp.timestamp(),
             app_data: ByteArray([0; 32]),
             fee_amount: BigDecimal::default(),
-            full_fee_amount: BigDecimal::default(),
             kind: DbOrderKind::Sell,
             class: DbOrderClass::Liquidity,
             partially_fillable: true,

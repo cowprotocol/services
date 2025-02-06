@@ -59,18 +59,7 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
         sender: onchain_user,
         placement_error: onchain_placement_error,
     });
-    let full_fee_amount =
-        big_decimal_to_u256(&order.full_fee_amount).context("full_fee_amount is not U256")?;
     let fee_amount = big_decimal_to_u256(&order.fee_amount).context("fee_amount is not U256")?;
-    let solver_fee = match &class {
-        // Liquidity orders should never have a fee unless the owner bribes the protocol by setting
-        // one themselves.
-        OrderClass::Liquidity => fee_amount,
-        // We can't use `surplus_fee` or `fee_amount` here because those values include subsidies.
-        // All else being equal a solver would then prefer including an unsubsidized order over a
-        // subsidized one which we don't want.
-        OrderClass::Limit | OrderClass::Market => full_fee_amount,
-    };
 
     let metadata = OrderMetadata {
         creation_date: order.creation_timestamp,
@@ -98,8 +87,6 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
         is_liquidity_order: class == OrderClass::Liquidity,
         class,
         settlement_contract: H160(order.settlement_contract.0),
-        full_fee_amount,
-        solver_fee,
         ethflow_data,
         onchain_user,
         onchain_order_data,

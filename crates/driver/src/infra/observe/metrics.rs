@@ -19,6 +19,17 @@ pub struct Metrics {
     /// The results of the mempool submission.
     #[metric(labels("mempool", "result"))]
     pub mempool_submission: prometheus::IntCounterVec,
+    /// How many tokens detected by specific solver and strategy.
+    #[metric(labels("solver", "strategy"))]
+    pub bad_tokens_detected: prometheus::IntCounterVec,
+    /// Time spent in the auction preprocessing stage.
+    #[metric(
+        labels("stage"),
+        buckets(
+            0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0
+        )
+    )]
+    pub auction_preprocessing: prometheus::HistogramVec,
 }
 
 /// Setup the metrics registry.

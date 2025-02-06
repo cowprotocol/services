@@ -67,6 +67,7 @@ async fn place_order_with_quote(web3: Web3) {
     let quote_response = services.submit_quote(&quote_request).await.unwrap();
     tracing::debug!(?quote_response);
     assert!(quote_response.id.is_some());
+    assert!(quote_response.verified);
 
     let quote_metadata =
         crate::database::quote_metadata(services.db(), quote_response.id.unwrap()).await;
@@ -99,9 +100,8 @@ async fn place_order_with_quote(web3: Web3) {
         &database::byte_array::ByteArray(order_uid.0),
     )
     .await
+    .unwrap()
     .unwrap();
-    assert!(order_quote.is_some());
-    // compare quote metadata and order quote metadata
-    let order_quote_metadata = order_quote.unwrap().metadata;
-    assert_eq!(quote_metadata.unwrap().0, order_quote_metadata);
+    assert_eq!(quote_response.verified, order_quote.verified);
+    assert_eq!(quote_metadata.unwrap().0, order_quote.metadata);
 }
