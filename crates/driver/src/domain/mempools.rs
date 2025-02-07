@@ -126,12 +126,13 @@ impl Mempools {
         }
 
         let hash = mempool.submit(tx.clone(), settlement.gas, solver).await?;
-        tracing::debug!(?hash, "submitted tx to the mempool");
+        let submitted_at_block = self.ethereum.current_block().borrow().number;
+        tracing::debug!(?hash, current_block = ?submitted_at_block, "submitted tx to the mempool");
 
         // Wait for the transaction to be mined, expired or failing.
         let result = async {
             while let Some(block) = block_stream.next().await {
-                tracing::debug!(?hash, "checking if tx is confirmed");
+                tracing::debug!(?hash, current_block = ?block.number, "checking if tx is confirmed");
                 let receipt = self
                     .ethereum
                     .transaction_status(&hash)
@@ -162,7 +163,11 @@ impl Mempools {
                                 ?cancellation_tx_hash,
                                 "tx not confirmed in time, cancelling",
                             );
-                            return Err(Error::Expired);
+                            return Err(Error::Expired {
+                                tx_id: hash.clone(),
+                                submitted_at_block,
+                                submission_deadline,
+                            });
                         }
                         // Check if transaction still simulates
                         if let Err(err) = self.ethereum.estimate_gas(tx).await {
@@ -248,7 +253,11 @@ pub enum Error {
     #[error("Simulation started reverting during submission, block number: {0:?}")]
     SimulationRevert(Option<BlockNo>),
     #[error("Settlement did not get included in time")]
-    Expired,
+    Expired {
+        tx_id: eth::TxId,
+        submitted_at_block: BlockNo,
+        submission_deadline: BlockNo,
+    },
     #[error("Strategy disabled for this tx")]
     Disabled,
     #[error("Failed to submit: {0:?}")]
