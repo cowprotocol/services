@@ -1709,6 +1709,7 @@ dependencies = [
  "bigdecimal",
  "chrono",
  "const_format",
+ "derive_more 1.0.0",
  "futures",
  "hex",
  "maplit",

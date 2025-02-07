@@ -1,26 +1,19 @@
-use {
-    sqlx::{
-        encode::IsNull,
-        error::BoxDynError,
-        postgres::{PgArgumentBuffer, PgHasArrayType, PgTypeInfo, PgValueFormat, PgValueRef},
-        Decode,
-        Encode,
-        Postgres,
-        Type,
-    },
-    std::fmt::{self, Debug, Formatter},
+use sqlx::{
+    encode::IsNull,
+    error::BoxDynError,
+    postgres::{PgArgumentBuffer, PgHasArrayType, PgTypeInfo, PgValueFormat, PgValueRef},
+    Decode,
+    Encode,
+    Postgres,
+    Type,
 };
 
 /// Wrapper type for fixed size byte arrays compatible with sqlx's Postgres
 /// implementation.
-#[derive(Clone, Copy, Eq, PartialEq, Hash, sqlx::FromRow)]
-pub struct ByteArray<const N: usize>(pub [u8; N]);
-
-impl<const N: usize> Debug for ByteArray<N> {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "0x{}", hex::encode(self.0))
-    }
-}
+#[derive(Clone, Copy, Eq, PartialEq, Hash, sqlx::FromRow, derive_more::Debug)]
+pub struct ByteArray<const N: usize>(
+    #[debug("0x{}", hex::encode::<&[u8]>(self.0.as_ref()))] pub [u8; N],
+);
 
 impl<const N: usize> Default for ByteArray<N> {
     fn default() -> Self {

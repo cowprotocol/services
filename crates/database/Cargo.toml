@@ -9,6 +9,7 @@ license = "MIT OR Apache-2.0"
 bigdecimal = { workspace = true }
 chrono = { workspace = true, features = ["clock"] }
 const_format = "0.2.32"
+derive_more = { workspace = true }
 futures = { workspace = true }
 hex = { workspace = true }
 sqlx = { workspace = true }
