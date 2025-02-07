@@ -40,6 +40,7 @@ use {
             order_class_into,
             order_kind_from,
             order_kind_into,
+            order_quote_into_model,
             sell_token_source_from,
             sell_token_source_into,
             signing_scheme_from,
@@ -658,7 +659,7 @@ fn full_order_with_quote_into_model_order(
             .map(String::from_utf8)
             .transpose()
             .context("full app data isn't utf-8")?,
-        quote_metadata: quote.map(|quote| quote.metadata.clone()),
+        quote: quote.map(order_quote_into_model).transpose()?,
     };
     let data = OrderData {
         sell_token: H160(order.sell_token.0),
@@ -1196,12 +1197,6 @@ mod tests {
             },
             metadata: OrderMetadata {
                 uid,
-                quote_metadata: Some(serde_json::json!({
-                    "interactions":[],
-                    "jitOrders":[],
-                    "preInteractions":[],
-                    "version":"1.0"
-                })),
                 ..Default::default()
             },
             interactions: Interactions {
@@ -1249,15 +1244,6 @@ mod tests {
             },
             metadata: OrderMetadata {
                 uid,
-                quote_metadata: Some(serde_json::json!({
-                    "interactions":[
-                        {"callData":"0x0114","target":"0x0101010101010101010101010101010101010101","value":"100"},
-                        {"callData":"0x0214","target":"0x0202020202020202020202020202020202020202","value":"10"}
-                    ],
-                    "jitOrders":[],
-                    "preInteractions":[{"callData":"0x0314","target":"0x0303030303030303030303030303030303030303","value":"30"}],
-                    "version":"1.0"}
-                )),
                 ..Default::default()
             },
             ..Default::default()
