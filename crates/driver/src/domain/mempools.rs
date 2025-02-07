@@ -252,7 +252,10 @@ pub enum Error {
     },
     #[error("Simulation started reverting during submission, block number: {0:?}")]
     SimulationRevert(Option<BlockNo>),
-    #[error("Settlement did not get included in time")]
+    #[error(
+        "Settlement did not get included in time: submitted at block: {submitted_at_block}, \
+         submission deadline: {submission_deadline}, tx: {tx_id:?}"
+    )]
     Expired {
         tx_id: eth::TxId,
         submitted_at_block: BlockNo,
