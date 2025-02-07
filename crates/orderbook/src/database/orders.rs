@@ -29,7 +29,7 @@ use {
     },
     num::Zero,
     number::conversions::{big_decimal_to_big_uint, big_decimal_to_u256, u256_to_big_decimal},
-    primitive_types::H160,
+    primitive_types::{H160, U256},
     shared::{
         db_order_conversions::{
             buy_token_destination_from,
@@ -505,24 +505,47 @@ impl Postgres {
     }
 
     pub async fn token_metadata(&self, token: &H160) -> Result<TokenMetadata> {
-        let timer = super::Metrics::get()
-            .database_queries
-            .with_label_values(&["token_first_trade_block"])
-            .start_timer();
-
-        let mut ex = self.pool.acquire().await?;
-        let block_number = database::trades::token_first_trade_block(&mut ex, ByteArray(token.0))
-            .await
-            .map_err(anyhow::Error::from)?
-            .map(u32::try_from)
-            .transpose()
-            .map_err(anyhow::Error::from)?;
-
-        timer.stop_and_record();
+        let (first_trade_block, native_price): (Option<u32>, Option<U256>) = tokio::try_join!(
+            self.execute_instrumented("token_first_trade_block", async {
+                let mut ex = self.pool.acquire().await?;
+                database::trades::token_first_trade_block(&mut ex, ByteArray(token.0))
+                    .await
+                    .map_err(anyhow::Error::from)?
+                    .map(u32::try_from)
+                    .transpose()
+                    .map_err(anyhow::Error::from)
+            }),
+            self.execute_instrumented("fetch_latest_token_price", async {
+                let mut ex = self.pool.acquire().await?;
+                Ok(
+                    database::auction_prices::fetch_latest_token_price(&mut ex, ByteArray(token.0))
+                        .await
+                        .map_err(anyhow::Error::from)?
+                        .and_then(|price| big_decimal_to_u256(&price)),
+                )
+            })
+        )?;
 
         Ok(TokenMetadata {
-            first_trade_block: block_number,
+            first_trade_block,
+            native_price,
         })
+    }
+
+    async fn execute_instrumented<F, T>(&self, label: &str, f: F) -> Result<T>
+    where
+        F: std::future::Future<Output = Result<T>>,
+    {
+        let timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&[label])
+            .start_timer();
+
+        let result = f.await?;
+
+        timer.observe_duration();
+
+        Ok(result)
     }
 }
 
@@ -641,8 +664,6 @@ fn full_order_with_quote_into_model_order(
         )?,
         executed_fee_amount: big_decimal_to_u256(&order.sum_fee)
             .context("executed fee amount is not a valid u256")?,
-        executed_surplus_fee: big_decimal_to_u256(&order.executed_fee)
-            .context("executed fee is not a valid u256")?,
         executed_fee: big_decimal_to_u256(&order.executed_fee)
             .context("executed fee is not a valid u256")?,
         executed_fee_token: H160(order.executed_fee_token.0),
