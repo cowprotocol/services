@@ -4,7 +4,7 @@ use {
         domain::{eth, fee},
     },
     primitive_types::{H160, H256, U256},
-    std::fmt::{self, Display},
+    std::fmt::{self, Debug, Display, Formatter},
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -104,13 +104,19 @@ pub enum BuyTokenDestination {
 /// choosable by the user. On the services level this is a hash of an app data
 /// json document, which associates arbitrary information with an order while
 /// being signed by the user.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct AppDataHash(pub [u8; 32]);
+
+impl Debug for AppDataHash {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "0x{}", hex::encode(self.0))
+    }
+}
 
 /// Signature over the order data.
 /// All variants rely on the EIP-712 hash of the order data, referred to as the
 /// order hash.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub enum Signature {
     /// The order struct is signed according to EIP-712.
     ///
@@ -151,6 +157,18 @@ impl Signature {
             Self::Eip1271(signature) => signature.clone(),
             Self::PreSign => Vec::new(),
         }
+    }
+}
+
+impl Debug for Signature {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        if let Signature::PreSign = self {
+            return f.write_str("PreSign");
+        }
+
+        let scheme = format!("{:?}", self.scheme());
+        let bytes = format!("0x{}", hex::encode(self.to_bytes()));
+        f.debug_tuple(&scheme).field(&bytes).finish()
     }
 }
 
