@@ -105,10 +105,7 @@ pub enum BuyTokenDestination {
 /// json document, which associates arbitrary information with an order while
 /// being signed by the user.
 #[derive(Clone, derive_more::Debug, PartialEq)]
-pub struct AppDataHash(
-    #[debug("0x{}", hex::encode::<&[u8]>(self.0.as_ref()))]
-    pub [u8; 32]
-);
+pub struct AppDataHash(#[debug("0x{}", hex::encode::<&[u8]>(self.0.as_ref()))] pub [u8; 32]);
 /// Signature over the order data.
 /// All variants rely on the EIP-712 hash of the order data, referred to as the
 /// order hash.
