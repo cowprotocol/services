@@ -50,7 +50,12 @@ use {
 pub type PgTransaction<'a> = sqlx::Transaction<'a, sqlx::Postgres>;
 
 /// The names of potentially big volume tables we use in the db.
-pub const LARGE_TABLES: &[&str] = &["auction_prices", "order_events"];
+pub const LARGE_TABLES: &[&str] = &[
+    "auction_participants",
+    "auction_prices",
+    "order_events",
+    "proposed_trade_executions",
+];
 
 pub async fn all_tables(ex: &mut PgConnection) -> sqlx::Result<&'static Vec<String>> {
     static TABLES: OnceCell<Vec<String>> = OnceCell::const_new();
@@ -61,7 +66,7 @@ pub async fn all_tables(ex: &mut PgConnection) -> sqlx::Result<&'static Vec<Stri
             struct TableName(String);
 
             const QUERY: &str = "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND \
-                                 tablename NOT LIKE '%flyway%'";
+                                 tablename NOT LIKE '%flyway%' AND tablename NOT LIKE 'aws%'";
 
             let table_names: Vec<String> = sqlx::query_as(QUERY)
                 .fetch_all(ex)

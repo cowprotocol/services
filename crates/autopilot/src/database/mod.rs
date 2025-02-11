@@ -43,13 +43,12 @@ impl Postgres {
         // update table row metrics
         let mut ex = self.pool.acquire().await?;
         for table in database::all_tables(&mut ex).await? {
-            if database::LARGE_TABLES.iter().any(|t| *t == table) {
-                let count = estimate_rows_in_table(&mut ex, table).await?;
-                metrics.table_rows.with_label_values(&[table]).set(count);
+            let count = if database::LARGE_TABLES.iter().any(|t| *t == table) {
+                estimate_rows_in_table(&mut ex, table).await?
             } else {
-                let count = count_rows_in_table(&mut ex, table).await?;
-                metrics.table_rows.with_label_values(&[table]).set(count);
-            }
+                count_rows_in_table(&mut ex, table).await?
+            };
+            metrics.table_rows.with_label_values(&[table]).set(count);
         }
 
         // update unused app data metric
@@ -77,7 +76,7 @@ async fn count_rows_in_table(ex: &mut PgConnection, table: &str) -> sqlx::Result
 }
 
 async fn estimate_rows_in_table(ex: &mut PgConnection, table: &str) -> sqlx::Result<i64> {
-    let query = format!("SELECT reltuples::bigint FROM pg_class WHERE relname='{table}';");
+    let query = format!("SELECT reltuples::bigint FROM pg_class WHERE oid = '{table}'::regclass;");
     sqlx::query_scalar(&query).fetch_one(ex).await
 }
 
