@@ -365,16 +365,13 @@ pub async fn run(args: Arguments) {
         None
     };
 
-    let (settlement_updates_sender, settlement_updates_receiver) =
+    let (competition_updates_sender, competition_updates_receiver) =
         tokio::sync::mpsc::unbounded_channel();
 
     let persistence =
         infra::persistence::Persistence::new(args.s3.into().unwrap(), Arc::new(db.clone())).await;
-    let settlement_observer = crate::domain::settlement::Observer::new(
-        eth.clone(),
-        persistence.clone(),
-        settlement_updates_sender,
-    );
+    let settlement_observer =
+        crate::domain::settlement::Observer::new(eth.clone(), persistence.clone());
     let settlement_contract_start_index =
         if let Some(DeploymentInformation::BlockNumber(settlement_contract_start_index)) =
             eth.contracts().settlement().deployment_information()
@@ -487,7 +484,7 @@ pub async fn run(args: Arguments) {
     let mut maintenance = Maintenance::new(settlement_event_indexer, db.clone());
     maintenance.with_cow_amms(&cow_amm_registry);
 
-    if let Some(ethflow_contract) = args.ethflow_contract {
+    if !args.ethflow_contracts.is_empty() {
         let ethflow_refund_start_block = determine_ethflow_refund_indexing_start(
             &skip_event_sync_start,
             args.ethflow_indexing_start,
@@ -500,7 +497,7 @@ pub async fn run(args: Arguments) {
         let refund_event_handler = EventUpdater::new_skip_blocks_before(
             // This cares only about ethflow refund events because all the other ethflow
             // events are already indexed by the OnchainOrderParser.
-            EthFlowRefundRetriever::new(web3.clone(), ethflow_contract),
+            EthFlowRefundRetriever::new(web3.clone(), args.ethflow_contracts.clone()),
             db.clone(),
             block_retriever.clone(),
             ethflow_refund_start_block,
@@ -529,7 +526,7 @@ pub async fn run(args: Arguments) {
         let onchain_order_indexer = EventUpdater::new_skip_blocks_before(
             // The events from the ethflow contract are read with the more generic contract
             // interface called CoWSwapOnchainOrders.
-            CoWSwapOnchainOrdersContract::new(web3.clone(), ethflow_contract),
+            CoWSwapOnchainOrdersContract::new(web3.clone(), args.ethflow_contracts),
             onchain_order_event_parser,
             block_retriever,
             ethflow_start_block,
@@ -580,7 +577,7 @@ pub async fn run(args: Arguments) {
     let solver_participation_guard = SolverParticipationGuard::new(
         eth.clone(),
         db.clone(),
-        settlement_updates_receiver,
+        competition_updates_receiver,
         args.db_based_solver_participation_guard,
         drivers
             .iter()
@@ -598,6 +595,7 @@ pub async fn run(args: Arguments) {
         trusted_tokens,
         liveness.clone(),
         Arc::new(maintenance),
+        competition_updates_sender,
     );
     run.run_forever().await;
 }

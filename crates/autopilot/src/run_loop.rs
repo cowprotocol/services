@@ -74,6 +74,7 @@ pub struct RunLoop {
     /// Maintenance tasks that should run before every runloop to have
     /// the most recent data available.
     maintenance: Arc<Maintenance>,
+    competition_updates_sender: tokio::sync::mpsc::UnboundedSender<()>,
 }
 
 impl RunLoop {
@@ -88,6 +89,7 @@ impl RunLoop {
         trusted_tokens: AutoUpdatingTokenList,
         liveness: Arc<Liveness>,
         maintenance: Arc<Maintenance>,
+        competition_updates_sender: tokio::sync::mpsc::UnboundedSender<()>,
     ) -> Self {
         Self {
             config,
@@ -100,6 +102,7 @@ impl RunLoop {
             in_flight_orders: Default::default(),
             liveness,
             maintenance,
+            competition_updates_sender,
         }
     }
 
@@ -198,6 +201,7 @@ impl RunLoop {
                 return None;
             }
         };
+        let auction = self.remove_in_flight_orders(auction).await;
 
         let id = match self.persistence.replace_current_auction(&auction).await {
             Ok(id) => {
@@ -229,8 +233,6 @@ impl RunLoop {
     async fn single_run(self: &Arc<Self>, auction: domain::Auction) {
         let single_run_start = Instant::now();
         tracing::info!(auction_id = ?auction.id, "solving");
-
-        let auction = self.remove_in_flight_orders(auction).await;
 
         // Mark all auction orders as `Ready` for competition
         self.persistence
@@ -464,7 +466,7 @@ impl RunLoop {
             competition_table,
         };
 
-        if let Err(err) = futures::try_join!(
+        match futures::try_join!(
             self.persistence
                 .save_auction(auction, block_deadline)
                 .map_err(|e| e.0.context("failed to save auction")),
@@ -472,9 +474,18 @@ impl RunLoop {
                 .save_solutions(auction.id, solutions)
                 .map_err(|e| e.0.context("failed to save solutions")),
         ) {
-            // Don't error if saving of auction and solution fails, until stable.
-            // Various edge cases with JIT orders verifiable only in production.
-            tracing::warn!(?err, "failed to save new competition data");
+            Ok(_) => {
+                // Notify the solver participation guard that the proposed solutions have been
+                // saved.
+                if let Err(err) = self.competition_updates_sender.send(()) {
+                    tracing::error!(?err, "failed to notify solver participation guard");
+                }
+            }
+            Err(err) => {
+                // Don't error if saving of auction and solution fails, until stable.
+                // Various edge cases with JIT orders verifiable only in production.
+                tracing::warn!(?err, "failed to save new competition data");
+            }
         }
 
         tracing::trace!(?competition, "saving competition");
@@ -857,7 +868,10 @@ impl RunLoop {
 
     /// Removes orders that are currently being settled to avoid solvers trying
     /// to fill an order a second time.
-    async fn remove_in_flight_orders(&self, mut auction: domain::Auction) -> domain::Auction {
+    async fn remove_in_flight_orders(
+        &self,
+        mut auction: domain::RawAuctionData,
+    ) -> domain::RawAuctionData {
         let in_flight = &*self.in_flight_orders.lock().await;
         if in_flight.is_empty() {
             return auction;

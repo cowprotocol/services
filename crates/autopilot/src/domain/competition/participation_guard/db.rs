@@ -70,14 +70,13 @@ impl Validator {
                             .into_iter()
                             .filter_map(|solver| {
                                 let address = eth::Address(solver.0.into());
-                                if let Some(driver) = self_.0.drivers_by_address.get(&address) {
+                                self_.0.drivers_by_address.get(&address).map(|driver| {
                                     Metrics::get()
                                         .non_settling_solver
                                         .with_label_values(&[&driver.name]);
-                                    Some(driver.clone())
-                                } else {
-                                    None
-                                }
+                                    
+                                    driver.clone()
+                                })
                             })
                             .collect::<Vec<_>>();
 

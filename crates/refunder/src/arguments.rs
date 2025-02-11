@@ -52,9 +52,9 @@ pub struct Arguments {
     #[clap(long, env)]
     pub chain_id: Option<u64>,
 
-    /// Address of the ethflow contract
-    #[clap(long, env)]
-    pub ethflow_contract: H160,
+    /// Addresses of the ethflow contracts
+    #[clap(long, env, use_value_delimiter = true)]
+    pub ethflow_contracts: Vec<H160>,
 
     #[clap(long, env, hide_env_values = true)]
     pub refunder_pk: String,
@@ -73,7 +73,7 @@ impl std::fmt::Display for Arguments {
             min_slippage_bps,
             node_url,
             chain_id,
-            ethflow_contract,
+            ethflow_contracts,
             metrics_port,
             logging,
             db_url,
@@ -89,7 +89,7 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "db_url: SECRET")?;
         writeln!(f, "node_url: {}", node_url)?;
         display_option(f, "chain_id", chain_id)?;
-        writeln!(f, "ethflow_contract: {:?}", ethflow_contract)?;
+        writeln!(f, "ethflow_contracts: {:?}", ethflow_contracts)?;
         let _intentionally_ignored = refunder_pk;
         writeln!(f, "refunder_pk: SECRET")?;
         writeln!(f, "metrics_port: {}", metrics_port)?;
