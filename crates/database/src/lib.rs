@@ -66,7 +66,8 @@ pub async fn all_tables(ex: &mut PgConnection) -> sqlx::Result<&'static Vec<Stri
             struct TableName(String);
 
             const QUERY: &str = "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND \
-                                 tablename NOT LIKE '%flyway%' AND tablename NOT LIKE 'aws%'";
+                                 tablename NOT LIKE '%flyway%' AND tableowner NOT IN ('rdsadmin', \
+                                 'cow_protocol_admin')";
 
             let table_names: Vec<String> = sqlx::query_as(QUERY)
                 .fetch_all(ex)
