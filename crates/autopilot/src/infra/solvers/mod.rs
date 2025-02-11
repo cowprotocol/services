@@ -2,8 +2,9 @@ use {
     self::dto::{reveal, settle, solve},
     crate::{arguments::Account, domain::eth, infra::solvers::dto::notify, util},
     anyhow::{anyhow, Context, Result},
+    ethcontract::jsonrpc::futures_util::future::join_all,
     reqwest::{Client, StatusCode},
-    std::time::Duration,
+    std::{sync::Arc, time::Duration},
     thiserror::Error,
     url::Url,
 };
@@ -175,4 +176,24 @@ pub async fn response_body_with_size_limit(
         bytes.extend_from_slice(slice);
     }
     Ok(bytes)
+}
+
+/// Try to notify all the non-settling solvers in a background task.
+pub fn notify_non_settling_solvers(non_settling_drivers: &[Arc<Driver>]) {
+    let futures = non_settling_drivers
+        .iter()
+        .cloned()
+        .map(|driver| async move {
+            if let Err(err) = driver
+                .notify(&notify::Request::UnsettledConsecutiveAuctions)
+                .await
+            {
+                tracing::debug!(solver = ?driver.name, ?err, "unable to notify external solver");
+            }
+        })
+        .collect::<Vec<_>>();
+
+    tokio::spawn(async move {
+        join_all(futures).await;
+    });
 }

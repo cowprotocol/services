@@ -5,7 +5,6 @@ use {
         infra,
     },
     ethrpc::block_stream::CurrentBlockWatcher,
-    futures::future::join_all,
     std::{
         collections::HashMap,
         sync::Arc,
@@ -74,7 +73,7 @@ impl Validator {
                                     Metrics::get()
                                         .non_settling_solver
                                         .with_label_values(&[&driver.name]);
-                                    
+
                                     driver.clone()
                                 })
                             })
@@ -94,7 +93,7 @@ impl Validator {
                             .filter(|driver| driver.accepts_unsettled_blocking)
                             .collect::<Vec<_>>();
 
-                        Self::notify_solvers(&non_settling_drivers);
+                        infra::notify_non_settling_solvers(&non_settling_drivers);
 
                         let now = Instant::now();
                         for driver in non_settling_drivers {
@@ -109,28 +108,6 @@ impl Validator {
                     }
                 }
             }
-        });
-    }
-
-    /// Try to notify all the non-settling solvers in a background task.
-    fn notify_solvers(non_settling_drivers: &[Arc<infra::Driver>]) {
-        let futures = non_settling_drivers
-            .iter()
-            .cloned()
-            .map(|driver| {
-                async move {
-                    if let Err(err) = driver
-                        .notify(&infra::solvers::dto::notify::Request::UnsettledConsecutiveAuctions)
-                        .await
-                    {
-                        tracing::debug!(solver = ?driver.name, ?err, "unable to notify external solver");
-                    }
-                }
-            })
-            .collect::<Vec<_>>();
-
-        tokio::spawn(async move {
-            join_all(futures).await;
         });
     }
 }
