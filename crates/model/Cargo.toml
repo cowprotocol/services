@@ -28,7 +28,6 @@ strum = { workspace = true }
 web3 = { workspace = true, features = ["signing"] }
 
 [dev-dependencies]
-serde_json = { workspace = true }
 maplit = { workspace = true }
 testlib = { path = "../testlib" }
 

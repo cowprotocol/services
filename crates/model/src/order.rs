@@ -974,10 +974,15 @@ impl BuyTokenDestination {
 #[derive(Eq, PartialEq, Clone, Default, Deserialize, Serialize, DeriveDebug)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderQuote {
+    #[serde_as(as = "DisplayFromStr")]
     pub gas_amount: BigDecimal,
+    #[serde_as(as = "DisplayFromStr")]
     pub gas_price: BigDecimal,
+    #[serde_as(as = "DisplayFromStr")]
     pub sell_token_price: BigDecimal,
+    #[serde_as(as = "DisplayFromStr")]
     pub sell_amount: BigDecimal,
+    #[serde_as(as = "DisplayFromStr")]
     pub buy_amount: BigDecimal,
     pub solver: H160,
     pub verified: bool,
