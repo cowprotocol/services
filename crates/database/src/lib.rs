@@ -52,8 +52,6 @@ pub type PgTransaction<'a> = sqlx::Transaction<'a, sqlx::Postgres>;
 pub const TABLES: &[&str] = &[
     "app_data",
     "auction_orders",
-    "auction_participants",
-    "auction_prices",
     "auctions",
     "competition_auctions",
     "ethflow_orders",
@@ -71,7 +69,6 @@ pub const TABLES: &[&str] = &[
     "presignature_events",
     "proposed_jit_orders",
     "proposed_solutions",
-    "proposed_trade_executions",
     "quotes",
     "settlement_observations",
     "settlement_scores",
@@ -82,7 +79,12 @@ pub const TABLES: &[&str] = &[
 ];
 
 /// The names of potentially big volume tables we use in the db.
-pub const LARGE_TABLES: &[&str] = &["order_events"];
+pub const LARGE_TABLES: &[&str] = &[
+    "auction_prices",
+    "auction_participants",
+    "order_events",
+    "proposed_trade_executions",
+];
 
 pub fn all_tables() -> impl Iterator<Item = &'static str> {
     TABLES.iter().copied().chain(LARGE_TABLES.iter().copied())
