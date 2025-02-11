@@ -73,7 +73,7 @@ impl Validator {
                                     Metrics::get()
                                         .non_settling_solver
                                         .with_label_values(&[&driver.name]);
-                                    
+
                                     driver.clone()
                                 })
                             })
