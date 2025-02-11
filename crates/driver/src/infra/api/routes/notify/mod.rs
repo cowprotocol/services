@@ -13,7 +13,7 @@ async fn route(
     req: axum::Json<dto::NotifyRequest>,
 ) -> Result<hyper::StatusCode, (hyper::StatusCode, axum::Json<Error>)> {
     let solver = &state.solver().name().0;
-    tracing::trace!(?req, ?solver, "received a notification");
+    tracing::debug!(?req, ?solver, "received a notification");
     state
         .solver()
         .notify(None, None, req.0.into())

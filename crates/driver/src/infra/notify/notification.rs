@@ -46,7 +46,10 @@ pub enum Kind {
     /// On-chain solution postprocessing timed out.
     PostprocessingTimedOut,
     /// The solver has been banned for a specific reason.
-    Banned(BanReason),
+    Banned {
+        reason: BanReason,
+        until_timestamp: u64,
+    },
 }
 
 #[derive(Debug)]

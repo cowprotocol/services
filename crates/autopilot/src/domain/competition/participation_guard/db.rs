@@ -5,6 +5,7 @@ use {
         infra,
     },
     ethrpc::block_stream::CurrentBlockWatcher,
+    model::time::now_in_epoch_seconds,
     std::{
         collections::HashMap,
         sync::Arc,
@@ -93,9 +94,14 @@ impl Validator {
                             .filter(|driver| driver.accepts_unsettled_blocking)
                             .collect::<Vec<_>>();
 
-                        infra::notify_non_settling_solvers(&non_settling_drivers);
-
                         let now = Instant::now();
+                        let banned_until_timestamp =
+                            u64::from(now_in_epoch_seconds()) + self_.0.ttl.as_secs();
+                        infra::notify_non_settling_solvers(
+                            &non_settling_drivers,
+                            banned_until_timestamp,
+                        );
+
                         for driver in non_settling_drivers {
                             self_
                                 .0

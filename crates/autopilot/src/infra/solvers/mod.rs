@@ -179,13 +179,18 @@ pub async fn response_body_with_size_limit(
 }
 
 /// Try to notify all the non-settling solvers in a background task.
-pub fn notify_non_settling_solvers(non_settling_drivers: &[Arc<Driver>]) {
+pub fn notify_non_settling_solvers(
+    non_settling_drivers: &[Arc<Driver>],
+    banned_until_timestamp: u64,
+) {
     let futures = non_settling_drivers
         .iter()
         .cloned()
         .map(|driver| async move {
             if let Err(err) = driver
-                .notify(&notify::Request::UnsettledConsecutiveAuctions)
+                .notify(&notify::Request::UnsettledConsecutiveAuctions(
+                    banned_until_timestamp,
+                ))
                 .await
             {
                 tracing::debug!(solver = ?driver.name, ?err, "unable to notify external solver");
