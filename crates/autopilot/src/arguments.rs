@@ -258,14 +258,14 @@ pub struct DbBasedSolverParticipationGuardConfig {
     pub solver_blacklist_cache_ttl: Duration,
 
     #[clap(flatten)]
-    pub non_settling_validator_config: NonSettlingValidatorConfig,
+    pub non_settling_solvers_finder_config: NonSettlingSolversFinderConfig,
 
     #[clap(flatten)]
-    pub low_settling_validator_config: LowSettlingValidatorConfig,
+    pub low_settling_solvers_finder_config: LowSettlingSolversFinderConfig,
 }
 
 #[derive(Debug, clap::Parser)]
-pub struct NonSettlingValidatorConfig {
+pub struct NonSettlingSolversFinderConfig {
     /// Enables search of non-settling solvers.
     #[clap(
         id = "non_settling_solvers_blacklisting_enabled",
@@ -286,7 +286,7 @@ pub struct NonSettlingValidatorConfig {
 }
 
 #[derive(Debug, clap::Parser)]
-pub struct LowSettlingValidatorConfig {
+pub struct LowSettlingSolversFinderConfig {
     /// Enables search of non-settling solvers.
     #[clap(
         id = "low_settling_solvers_blacklisting_enabled",

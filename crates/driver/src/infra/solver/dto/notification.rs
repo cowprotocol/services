@@ -65,7 +65,7 @@ impl Notification {
                     notify::BanReason::UnsettledConsecutiveAuctions => {
                         BanReason::UnsettledConsecutiveAuctions
                     }
-                    notify::BanReason::LowSettlingRate => BanReason::LowSettlingRate,
+                    notify::BanReason::HighSettleFailureRate => BanReason::LowSettlingRate,
                 }),
             },
         }

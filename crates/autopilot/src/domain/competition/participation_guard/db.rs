@@ -2,8 +2,8 @@ use {
     crate::{
         arguments::{
             DbBasedSolverParticipationGuardConfig,
-            LowSettlingValidatorConfig,
-            NonSettlingValidatorConfig,
+            LowSettlingSolversFinderConfig,
+            NonSettlingSolversFinderConfig,
         },
         database::Postgres,
         domain::{eth, Metrics},
@@ -23,18 +23,18 @@ use {
 /// and either never settled any of them or their settlement success rate is
 /// lower than `min_settlement_success_rate`.
 #[derive(Clone)]
-pub(super) struct Validator(Arc<Inner>);
+pub(super) struct SolverValidator(Arc<Inner>);
 
 struct Inner {
     db: Postgres,
     banned_solvers: dashmap::DashMap<eth::Address, Instant>,
     ttl: Duration,
-    non_settling_config: NonSettlingValidatorConfig,
-    low_settling_config: LowSettlingValidatorConfig,
+    non_settling_config: NonSettlingSolversFinderConfig,
+    low_settling_config: LowSettlingSolversFinderConfig,
     drivers_by_address: HashMap<eth::Address, Arc<infra::Driver>>,
 }
 
-impl Validator {
+impl SolverValidator {
     pub fn new(
         db: Postgres,
         current_block: CurrentBlockWatcher,
@@ -46,8 +46,8 @@ impl Validator {
             db,
             banned_solvers: Default::default(),
             ttl: db_based_validator_config.solver_blacklist_cache_ttl,
-            non_settling_config: db_based_validator_config.non_settling_validator_config,
-            low_settling_config: db_based_validator_config.low_settling_validator_config,
+            non_settling_config: db_based_validator_config.non_settling_solvers_finder_config,
+            low_settling_config: db_based_validator_config.low_settling_solvers_finder_config,
             drivers_by_address,
         }));
 
@@ -82,7 +82,7 @@ impl Validator {
                 );
                 self_.post_process(
                     &low_settling_solvers,
-                    &dto::notify::Request::LowSettlingRate,
+                    &dto::notify::Request::HighSettleFailureRate,
                 );
             }
         });
@@ -174,7 +174,7 @@ impl Validator {
 
         let log_message = match request {
             dto::notify::Request::UnsettledConsecutiveAuctions => "found non-settling solvers",
-            dto::notify::Request::LowSettlingRate => "found low-settling solvers",
+            dto::notify::Request::HighSettleFailureRate => "found high-failure-settlement solvers",
         };
         let solver_names = drivers
             .iter()
@@ -184,7 +184,7 @@ impl Validator {
 
         let reason = match request {
             dto::notify::Request::UnsettledConsecutiveAuctions => "non_settling",
-            dto::notify::Request::LowSettlingRate => "low_settling",
+            dto::notify::Request::HighSettleFailureRate => "high_settle_failure_rate",
         };
 
         for solver in solver_names {
@@ -209,7 +209,7 @@ impl Validator {
 }
 
 #[async_trait::async_trait]
-impl super::Validator for Validator {
+impl super::SolverValidator for SolverValidator {
     async fn is_allowed(&self, solver: &eth::Address) -> anyhow::Result<bool> {
         if let Some(entry) = self.0.banned_solvers.get(solver) {
             if Instant::now().duration_since(*entry.value()) < self.0.ttl {

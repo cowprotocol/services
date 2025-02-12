@@ -64,8 +64,8 @@ pub enum ScoreKind {
 pub enum BanReason {
     /// The driver won multiple consecutive auctions but never settled them.
     UnsettledConsecutiveAuctions,
-    /// Driver's success settling rate is below the threshold.
-    LowSettlingRate,
+    /// Driver's settle failure rate is above the threshold.
+    HighSettleFailureRate,
 }
 
 #[derive(Debug)]

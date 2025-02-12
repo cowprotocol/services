@@ -6,6 +6,6 @@ use {serde::Serialize, serde_with::serde_as};
 pub enum Request {
     /// The driver won multiple consecutive auctions but never settled them.
     UnsettledConsecutiveAuctions,
-    /// Driver's success settling rate is below the threshold.
-    LowSettlingRate,
+    /// Driver's settle failure rate is above the threshold.
+    HighSettleFailureRate,
 }
