@@ -259,7 +259,6 @@ pub struct Arguments {
         long,
         env,
         value_delimiter = ',',
-        num_args = 1..,
         value_parser = parse_tuple::<H160, H160>
     )]
     pub native_price_approximation_tokens: Vec<(H160, H160)>,
