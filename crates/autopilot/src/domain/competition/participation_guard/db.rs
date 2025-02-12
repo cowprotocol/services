@@ -5,7 +5,6 @@ use {
             LowSettlingSolversFinderConfig,
             NonSettlingSolversFinderConfig,
         },
-        database::Postgres,
         domain::{eth, Metrics},
         infra::{self, solvers::dto},
     },
@@ -110,10 +109,7 @@ impl SolverValidator {
             )
             .await
         {
-            Ok(solvers) => solvers
-                .into_iter()
-                .map(|solver| eth::Address(solver.0.into()))
-                .collect(),
+            Ok(solvers) => solvers.into_iter().collect(),
             Err(err) => {
                 tracing::warn!(?err, "error while searching for non-settling solvers");
                 Default::default()
@@ -138,10 +134,7 @@ impl SolverValidator {
             )
             .await
         {
-            Ok(solvers) => solvers
-                .into_iter()
-                .map(|solver| eth::Address(solver.0.into()))
-                .collect(),
+            Ok(solvers) => solvers.into_iter().collect(),
             Err(err) => {
                 tracing::warn!(?err, "error while searching for low-settling solvers");
                 Default::default()
