@@ -2,12 +2,7 @@ mod db;
 mod onchain;
 
 use {
-    crate::{
-        arguments::DbBasedSolverParticipationGuardConfig,
-        database::Postgres,
-        domain::eth,
-        infra,
-    },
+    crate::{arguments::DbBasedSolverParticipationGuardConfig, domain::eth, infra},
     std::{collections::HashMap, sync::Arc},
 };
 
@@ -24,8 +19,8 @@ struct Inner {
 impl SolverParticipationGuard {
     pub fn new(
         eth: infra::Ethereum,
-        db: Postgres,
-        settlement_updates_receiver: tokio::sync::mpsc::UnboundedReceiver<()>,
+        persistence: infra::Persistence,
+        competition_updates_receiver: tokio::sync::mpsc::UnboundedReceiver<()>,
         db_based_validator_config: DbBasedSolverParticipationGuardConfig,
         drivers_by_address: HashMap<eth::Address, Arc<infra::Driver>>,
     ) -> Self {
@@ -33,9 +28,9 @@ impl SolverParticipationGuard {
 
         let current_block = eth.current_block().clone();
         let database_solver_participation_validator = db::SolverValidator::new(
-            db,
+            persistence,
             current_block,
-            settlement_updates_receiver,
+            competition_updates_receiver,
             db_based_validator_config,
             drivers_by_address,
         );

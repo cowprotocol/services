@@ -26,7 +26,7 @@ use {
 pub(super) struct SolverValidator(Arc<Inner>);
 
 struct Inner {
-    db: Postgres,
+    persistence: infra::Persistence,
     banned_solvers: dashmap::DashMap<eth::Address, Instant>,
     ttl: Duration,
     non_settling_config: NonSettlingSolversFinderConfig,
@@ -36,14 +36,14 @@ struct Inner {
 
 impl SolverValidator {
     pub fn new(
-        db: Postgres,
+        persistence: infra::Persistence,
         current_block: CurrentBlockWatcher,
-        settlement_updates_receiver: tokio::sync::mpsc::UnboundedReceiver<()>,
+        competition_updates_receiver: tokio::sync::mpsc::UnboundedReceiver<()>,
         db_based_validator_config: DbBasedSolverParticipationGuardConfig,
         drivers_by_address: HashMap<eth::Address, Arc<infra::Driver>>,
     ) -> Self {
         let self_ = Self(Arc::new(Inner {
-            db,
+            persistence,
             banned_solvers: Default::default(),
             ttl: db_based_validator_config.solver_blacklist_cache_ttl,
             non_settling_config: db_based_validator_config.non_settling_solvers_finder_config,
@@ -51,7 +51,7 @@ impl SolverValidator {
             drivers_by_address,
         }));
 
-        self_.start_maintenance(settlement_updates_receiver, current_block);
+        self_.start_maintenance(competition_updates_receiver, current_block);
 
         self_
     }
@@ -60,12 +60,12 @@ impl SolverValidator {
     /// avoid redundant DB queries.
     fn start_maintenance(
         &self,
-        mut settlement_updates_receiver: tokio::sync::mpsc::UnboundedReceiver<()>,
+        mut competition_updates_receiver: tokio::sync::mpsc::UnboundedReceiver<()>,
         current_block: CurrentBlockWatcher,
     ) {
         let self_ = self.clone();
         tokio::spawn(async move {
-            while settlement_updates_receiver.recv().await.is_some() {
+            while competition_updates_receiver.recv().await.is_some() {
                 let current_block = current_block.borrow().number;
 
                 let (non_settling_solvers, mut low_settling_solvers) = join!(
@@ -103,7 +103,7 @@ impl SolverValidator {
 
         match self
             .0
-            .db
+            .persistence
             .find_non_settling_solvers(
                 self.0.non_settling_config.last_auctions_participation_count,
                 current_block,
@@ -128,7 +128,7 @@ impl SolverValidator {
 
         match self
             .0
-            .db
+            .persistence
             .find_low_settling_solvers(
                 self.0.low_settling_config.last_auctions_participation_count,
                 current_block,
