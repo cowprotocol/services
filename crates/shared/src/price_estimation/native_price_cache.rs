@@ -187,13 +187,12 @@ impl Inner {
                 }
             };
 
-            let token_to_fetch = self
+            let token_to_fetch = *self
                 .approximation_tokens
                 .read()
                 .unwrap()
                 .get(token)
-                .unwrap_or(&token)
-                .clone();
+                .unwrap_or(token);
             let result = self.estimator.estimate_native_price(token_to_fetch).await;
 
             // update price in cache
