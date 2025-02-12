@@ -1,6 +1,5 @@
 use {
     crate::{
-        database::Postgres,
         domain::{eth, Metrics},
         infra,
     },
@@ -19,7 +18,7 @@ use {
 pub(super) struct Validator(Arc<Inner>);
 
 struct Inner {
-    db: Postgres,
+    persistence: infra::Persistence,
     banned_solvers: dashmap::DashMap<eth::Address, Instant>,
     ttl: Duration,
     last_auctions_count: u32,
@@ -28,22 +27,22 @@ struct Inner {
 
 impl Validator {
     pub fn new(
-        db: Postgres,
+        persistence: infra::Persistence,
         current_block: CurrentBlockWatcher,
-        settlement_updates_receiver: tokio::sync::mpsc::UnboundedReceiver<()>,
+        competition_updates_receiver: tokio::sync::mpsc::UnboundedReceiver<()>,
         ttl: Duration,
         last_auctions_count: u32,
         drivers_by_address: HashMap<eth::Address, Arc<infra::Driver>>,
     ) -> Self {
         let self_ = Self(Arc::new(Inner {
-            db,
+            persistence,
             banned_solvers: Default::default(),
             ttl,
             last_auctions_count,
             drivers_by_address,
         }));
 
-        self_.start_maintenance(settlement_updates_receiver, current_block);
+        self_.start_maintenance(competition_updates_receiver, current_block);
 
         self_
     }
@@ -52,16 +51,16 @@ impl Validator {
     /// avoid redundant DB queries.
     fn start_maintenance(
         &self,
-        mut settlement_updates_receiver: tokio::sync::mpsc::UnboundedReceiver<()>,
+        mut competition_updates_receiver: tokio::sync::mpsc::UnboundedReceiver<()>,
         current_block: CurrentBlockWatcher,
     ) {
         let self_ = self.clone();
         tokio::spawn(async move {
-            while settlement_updates_receiver.recv().await.is_some() {
+            while competition_updates_receiver.recv().await.is_some() {
                 let current_block = current_block.borrow().number;
                 match self_
                     .0
-                    .db
+                    .persistence
                     .find_non_settling_solvers(self_.0.last_auctions_count, current_block)
                     .await
                 {
@@ -69,8 +68,7 @@ impl Validator {
                         let non_settling_drivers = non_settling_solvers
                             .into_iter()
                             .filter_map(|solver| {
-                                let address = eth::Address(solver.0.into());
-                                self_.0.drivers_by_address.get(&address).map(|driver| {
+                                self_.0.drivers_by_address.get(&solver).map(|driver| {
                                     Metrics::get()
                                         .non_settling_solver
                                         .with_label_values(&[&driver.name]);

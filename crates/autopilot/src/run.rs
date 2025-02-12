@@ -576,7 +576,7 @@ pub async fn run(args: Arguments) {
 
     let solver_participation_guard = SolverParticipationGuard::new(
         eth.clone(),
-        db.clone(),
+        persistence.clone(),
         competition_updates_receiver,
         args.db_based_solver_participation_guard,
         drivers

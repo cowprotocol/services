@@ -139,28 +139,4 @@ impl super::Postgres {
 
         Ok(())
     }
-
-    /// Finds solvers that won `last_auctions_count` consecutive auctions but
-    /// never settled any of them. The current block is used to prevent
-    /// selecting auctions with deadline after the current block since they
-    /// still can be settled.
-    pub async fn find_non_settling_solvers(
-        &self,
-        last_auctions_count: u32,
-        current_block: u64,
-    ) -> anyhow::Result<Vec<Address>> {
-        let mut ex = self.pool.acquire().await.context("acquire")?;
-        let _timer = super::Metrics::get()
-            .database_queries
-            .with_label_values(&["find_non_settling_solvers"])
-            .start_timer();
-
-        database::solver_competition::find_non_settling_solvers(
-            &mut ex,
-            last_auctions_count,
-            current_block,
-        )
-        .await
-        .context("solver_competition::find_non_settling_solvers")
-    }
 }
