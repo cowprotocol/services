@@ -6,7 +6,6 @@ use {
     },
     anyhow::{ensure, Result},
     bigdecimal::BigDecimal,
-    dashmap::DashMap,
     ethcontract::{H160, U256},
     futures::future::BoxFuture,
     itertools::Itertools,
@@ -256,16 +255,15 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        required = false,
         value_delimiter = ',',
         num_args = 1..,
-        value_parser = parse_key_value_pair::<H160, H160>
+        value_parser = parse_tuple::<H160, H160>
     )]
-    pub native_price_approximation_tokens: DashMap<H160, H160>,
+    pub native_price_approximation_tokens: Vec<(H160, H160)>,
 }
 
-/// Custom parser for Clap HashMap key-value pairs
-fn parse_key_value_pair<T, U>(input: &str) -> Result<(T, U), Box<dyn Error + Send + Sync + 'static>>
+/// Custom Clap parser for tuple pair
+fn parse_tuple<T, U>(input: &str) -> Result<(T, U), Box<dyn Error + Send + Sync + 'static>>
 where
     T: std::str::FromStr,
     T::Err: Error + Send + Sync + 'static,
@@ -273,7 +271,9 @@ where
     U::Err: Error + Send + Sync + 'static,
 {
     let pos = input.find('|').ok_or_else(|| {
-        format!("invalid key value pair delimiter character, expected: 'key|value', got: '{input}'")
+        format!(
+            "invalid pair values delimiter character, expected: 'value1|value2', got: '{input}'"
+        )
     })?;
     Ok((input[..pos].parse()?, input[pos + 1..].parse()?))
 }
@@ -709,8 +709,8 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_two_tokens_pair() {
-        let result = parse_key_value_pair::<H160, H160>(
+    fn test_parse_tuple() {
+        let result = parse_tuple::<H160, H160>(
             "0102030405060708091011121314151617181920|a1a2a3a4a5a6a7a8a9a0a1a2a3a4a5a6a7a8a9a0",
         )
         .unwrap();
@@ -723,7 +723,7 @@ mod tests {
             H160::from_str("a1a2a3a4a5a6a7a8a9a0a1a2a3a4a5a6a7a8a9a0").unwrap()
         );
 
-        let result = parse_key_value_pair::<H160, H160>(
+        let result = parse_tuple::<H160, H160>(
             "0102030405060708091011121314151617181920 a1a2a3a4a5a6a7a8a9a0a1a2a3a4a5a6a7a8a9a0",
         );
         assert!(result.is_err());
