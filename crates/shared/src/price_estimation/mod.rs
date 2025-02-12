@@ -16,6 +16,7 @@ use {
     serde::{Deserialize, Serialize},
     std::{
         cmp::{Eq, PartialEq},
+        collections::HashMap,
         fmt::{self, Display, Formatter},
         future::Future,
         hash::Hash,
@@ -245,6 +246,9 @@ pub struct Arguments {
 
     #[clap(flatten)]
     pub balance_overrides: balance_overrides::Arguments,
+
+    // TODO
+    pub native_price_approximation_tokens: HashMap<H160, H160>,
 }
 
 #[derive(clap::Parser)]
@@ -325,6 +329,7 @@ impl Display for Arguments {
             quote_verification,
             quote_timeout,
             balance_overrides,
+            native_price_approximation_tokens,
         } = self;
 
         display_option(
@@ -403,6 +408,11 @@ impl Display for Arguments {
         writeln!(f, "quote_verification: {:?}", quote_verification)?;
         writeln!(f, "quote_timeout: {:?}", quote_timeout)?;
         write!(f, "{}", balance_overrides)?;
+        writeln!(
+            f,
+            "native_price_approximation_tokens: {:?}",
+            native_price_approximation_tokens
+        )?;
 
         Ok(())
     }

@@ -13,7 +13,7 @@ use {
     rand::Rng,
     std::{
         collections::{hash_map::Entry, HashMap},
-        sync::{Arc, Mutex, MutexGuard, Weak},
+        sync::{Arc, Mutex, MutexGuard, RwLock, Weak},
         time::{Duration, Instant},
     },
     tokio::time,
@@ -54,6 +54,15 @@ struct Inner {
     estimator: Box<dyn NativePriceEstimating>,
     max_age: Duration,
     concurrent_requests: usize,
+    // TODO remove when implementing a less hacky solution
+    /// Maps a requested token to an approximating token. If the system
+    /// wants to get the native price for the requested token the native
+    /// price of the approximating token should be fetched and returned instead.
+    /// This can be useful for tokens that are hard to route but are pegged to
+    /// the same underlying asset so approximating their native prices is deemed
+    /// safe (e.g. csUSDL => Dai). It's very important that the 2 tokens have
+    /// the same number of decimals.
+    approximation_tokens: RwLock<HashMap<H160, H160>>,
 }
 
 struct UpdateTask {
@@ -178,7 +187,14 @@ impl Inner {
                 }
             };
 
-            let result = self.estimator.estimate_native_price(*token).await;
+            let token_to_fetch = self
+                .approximation_tokens
+                .read()
+                .unwrap()
+                .get(token)
+                .unwrap_or(&token)
+                .clone();
+            let result = self.estimator.estimate_native_price(token_to_fetch).await;
 
             // update price in cache
             if should_cache(&result) {
@@ -317,6 +333,7 @@ impl CachingNativePriceEstimator {
         update_size: Option<usize>,
         prefetch_time: Duration,
         concurrent_requests: usize,
+        approximation_tokens: HashMap<H160, H160>,
     ) -> Self {
         let inner = Arc::new(Inner {
             estimator,
@@ -324,6 +341,7 @@ impl CachingNativePriceEstimator {
             high_priority: Default::default(),
             max_age,
             concurrent_requests,
+            approximation_tokens: approximation_tokens.into(),
         });
 
         let update_task = UpdateTask {
@@ -474,6 +492,7 @@ mod tests {
             None,
             Default::default(),
             1,
+            Default::default(),
         );
         estimator.initialize_cache(prices).await;
 
@@ -508,6 +527,7 @@ mod tests {
             None,
             Default::default(),
             1,
+            Default::default(),
         );
 
         for _ in 0..10 {
@@ -531,6 +551,7 @@ mod tests {
             None,
             Default::default(),
             1,
+            Default::default(),
         );
 
         for _ in 0..10 {
@@ -598,6 +619,7 @@ mod tests {
             None,
             Default::default(),
             1,
+            Default::default(),
         );
 
         // First 3 calls: The cache is not used. Counter gets increased.
@@ -658,6 +680,7 @@ mod tests {
             None,
             Default::default(),
             1,
+            Default::default(),
         );
 
         for _ in 0..10 {
@@ -712,6 +735,7 @@ mod tests {
             Some(1),
             Duration::default(),
             1,
+            Default::default(),
         );
 
         // fill cache with 2 different queries
@@ -750,6 +774,7 @@ mod tests {
             None,
             Duration::default(),
             1,
+            Default::default(),
         );
 
         let tokens: Vec<_> = (0..10).map(H160::from_low_u64_be).collect();
@@ -795,6 +820,7 @@ mod tests {
             None,
             Duration::default(),
             BATCH_SIZE,
+            Default::default(),
         );
 
         let tokens: Vec<_> = (0..BATCH_SIZE as u64).map(H160::from_low_u64_be).collect();
@@ -833,6 +859,7 @@ mod tests {
             estimator: Box::new(MockNativePriceEstimating::new()),
             max_age: Default::default(),
             concurrent_requests: 1,
+            approximation_tokens: Default::default(),
         };
 
         let now = now + Duration::from_secs(1);

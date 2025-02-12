@@ -377,6 +377,7 @@ impl<'a> PriceEstimatorFactory<'a> {
             Some(self.args.native_price_cache_max_update_size),
             self.args.native_price_prefetch_time,
             self.args.native_price_cache_concurrent_requests,
+            self.args.native_price_approximation_tokens.clone(),
         ));
         Ok(native_estimator)
     }
