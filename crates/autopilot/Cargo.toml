@@ -61,7 +61,6 @@ url = { workspace = true }
 web3 = { workspace = true }
 
 [dev-dependencies]
-dashmap = { workspace = true }
 mockall = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 
