@@ -537,6 +537,68 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn caches_approximated_estimates_use() {
+        let mut inner = MockNativePriceEstimating::new();
+        inner
+            .expect_estimate_native_price()
+            .times(1)
+            .withf(move |t| *t == token(0))
+            .returning(|_| async { Ok(1.0) }.boxed());
+        inner
+            .expect_estimate_native_price()
+            .times(1)
+            .withf(move |t| *t == token(100))
+            .returning(|_| async { Ok(100.0) }.boxed());
+        inner
+            .expect_estimate_native_price()
+            .times(1)
+            .withf(move |t| *t == token(200))
+            .returning(|_| async { Ok(200.0) }.boxed());
+
+        let estimator = CachingNativePriceEstimator::new(
+            Box::new(inner),
+            Duration::from_millis(30),
+            Default::default(),
+            None,
+            Default::default(),
+            1,
+            // set token approximations for tokens 1 and 2
+            HashMap::from([(token(1), token(100)), (token(2), token(200))]),
+        );
+
+        // no approximation token used for token 0
+        assert_eq!(
+            estimator
+                .estimate_native_price(token(0))
+                .await
+                .unwrap()
+                .to_i64()
+                .unwrap(),
+            1
+        );
+
+        // approximation price used for tokens 1 and 2
+        assert_eq!(
+            estimator
+                .estimate_native_price(token(1))
+                .await
+                .unwrap()
+                .to_i64()
+                .unwrap(),
+            100
+        );
+        assert_eq!(
+            estimator
+                .estimate_native_price(token(2))
+                .await
+                .unwrap()
+                .to_i64()
+                .unwrap(),
+            200
+        );
+    }
+
+    #[tokio::test]
     async fn caches_nonrecoverable_failed_estimates() {
         let mut inner = MockNativePriceEstimating::new();
         inner

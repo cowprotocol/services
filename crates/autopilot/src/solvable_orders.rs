@@ -907,6 +907,7 @@ mod tests {
             None,
             Default::default(),
             3,
+            HashMap::new(),
         );
         let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
 
@@ -996,6 +997,7 @@ mod tests {
             None,
             Default::default(),
             1,
+            HashMap::new(),
         );
         let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
 
@@ -1033,6 +1035,84 @@ mod tests {
                 token1 => U256::from(2_000_000_000_000_000_000_u128),
                 token3 => U256::from(250_000_000_000_000_000_u128),
                 token5 => U256::from(5_000_000_000_000_000_000_u128),
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn check_native_price_approximations() {
+        let token1 = H160([1; 20]);
+        let token2 = H160([2; 20]);
+        let token3 = H160([3; 20]);
+
+        let token_approx1 = H160([4; 20]);
+        let token_approx2 = H160([5; 20]);
+
+        let orders = vec![
+            OrderBuilder::default()
+                .with_sell_token(token1)
+                .with_buy_token(token2)
+                .with_buy_amount(1.into())
+                .with_sell_amount(1.into())
+                .build(),
+            OrderBuilder::default()
+                .with_sell_token(token1)
+                .with_buy_token(token2)
+                .with_buy_amount(1.into())
+                .with_sell_amount(1.into())
+                .build(),
+            OrderBuilder::default()
+                .with_sell_token(token1)
+                .with_buy_token(token3)
+                .with_buy_amount(1.into())
+                .with_sell_amount(1.into())
+                .build(),
+        ];
+
+        let mut native_price_estimator = MockNativePriceEstimating::new();
+        native_price_estimator
+            .expect_estimate_native_price()
+            .times(1)
+            .withf(move |token| *token == token3)
+            .returning(|_| async { Ok(3.) }.boxed());
+        native_price_estimator
+            .expect_estimate_native_price()
+            .times(1)
+            .withf(move |token| *token == token_approx1)
+            .returning(|_| async { Ok(40.) }.boxed());
+        native_price_estimator
+            .expect_estimate_native_price()
+            .times(1)
+            .withf(move |token| *token == token_approx2)
+            .returning(|_| async { Ok(50.) }.boxed());
+
+        let native_price_estimator = CachingNativePriceEstimator::new(
+            Box::new(native_price_estimator),
+            Duration::from_secs(10),
+            Duration::MAX,
+            None,
+            Default::default(),
+            3,
+            // Set to use native price approximations for the following tokens
+            HashMap::from([(token1, token_approx1), (token2, token_approx2)]),
+        );
+        let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
+
+        let (filtered_orders, prices) = get_orders_with_native_prices(
+            orders.clone(),
+            &native_price_estimator,
+            metrics,
+            vec![],
+            Duration::from_secs(10),
+        )
+        .await;
+        assert_eq!(filtered_orders, orders);
+        assert_eq!(
+            prices,
+            btreemap! {
+                token1 => U256::from(40_000_000_000_000_000_000_u128),
+                token2 => U256::from(50_000_000_000_000_000_000_u128),
+                token3 => U256::from(3_000_000_000_000_000_000_u128),
             }
         );
     }
