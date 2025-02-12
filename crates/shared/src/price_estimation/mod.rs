@@ -17,6 +17,7 @@ use {
     std::{
         cmp::{Eq, PartialEq},
         collections::HashMap,
+        error::Error,
         fmt::{self, Display, Formatter},
         future::Future,
         hash::Hash,
@@ -247,8 +248,33 @@ pub struct Arguments {
     #[clap(flatten)]
     pub balance_overrides: balance_overrides::Arguments,
 
-    // TODO
+    /// List of mappings of native price tokens substitutions with approximated
+    /// value from other token:
+    /// "<token1>|<approx_token1>,<token2>|<approx_token2>"
+    /// - token1 is a token address for which we get the native token price
+    /// - approx_token1 is a token address used for the price approximation
+    #[clap(
+        long,
+        env,
+        value_delimiter = ',',
+        num_args = 1..,
+        value_parser = parse_key_value_pair::<H160, H160>
+    )]
     pub native_price_approximation_tokens: HashMap<H160, H160>,
+}
+
+/// Custom parser for Clap HashMap key-value pairs
+fn parse_key_value_pair<T, U>(input: &str) -> Result<(T, U), Box<dyn Error + Send + Sync + 'static>>
+where
+    T: std::str::FromStr,
+    T::Err: Error + Send + Sync + 'static,
+    U: std::str::FromStr,
+    U::Err: Error + Send + Sync + 'static,
+{
+    let pos = input.find('|').ok_or_else(|| {
+        format!("invalid key value pair delimiter character, expected: 'key|value', got: '{input}'")
+    })?;
+    Ok((input[..pos].parse()?, input[pos + 1..].parse()?))
 }
 
 #[derive(clap::Parser)]
@@ -678,6 +704,27 @@ mod tests {
 
         let result = CoinGecko::try_parse_from(args);
 
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_two_tokens_pair() {
+        let result = parse_key_value_pair::<H160, H160>(
+            "0102030405060708091011121314151617181920|a1a2a3a4a5a6a7a8a9a0a1a2a3a4a5a6a7a8a9a0",
+        )
+        .unwrap();
+        assert_eq!(
+            result.0,
+            H160::from_str("0102030405060708091011121314151617181920").unwrap()
+        );
+        assert_eq!(
+            result.1,
+            H160::from_str("a1a2a3a4a5a6a7a8a9a0a1a2a3a4a5a6a7a8a9a0").unwrap()
+        );
+
+        let result = parse_key_value_pair::<H160, H160>(
+            "0102030405060708091011121314151617181920 a1a2a3a4a5a6a7a8a9a0a1a2a3a4a5a6a7a8a9a0",
+        );
         assert!(result.is_err());
     }
 }
