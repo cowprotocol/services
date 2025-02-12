@@ -7,5 +7,5 @@ pub enum Request {
     /// The driver won multiple consecutive auctions but never settled them.
     UnsettledConsecutiveAuctions(u64),
     /// Driver's settle failure rate is above the threshold.
-    HighSettleFailureRate,
+    HighSettleFailureRate(u64),
 }

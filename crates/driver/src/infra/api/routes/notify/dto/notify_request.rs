@@ -17,6 +17,10 @@ impl From<NotifyRequest> for notify::Kind {
                 reason: notify::BanReason::UnsettledConsecutiveAuctions,
                 until_timestamp,
             },
+            NotifyRequest::HighSettleFailureRate(until_timestamp) => notify::Kind::Banned {
+                reason: notify::BanReason::HighSettleFailureRate,
+                until_timestamp,
+            },
         }
     }
 }
