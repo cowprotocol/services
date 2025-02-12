@@ -24,7 +24,7 @@ impl SolverParticipationGuard {
     pub fn new(
         eth: Ethereum,
         persistence: infra::Persistence,
-        settlement_updates_receiver: tokio::sync::mpsc::UnboundedReceiver<()>,
+        competition_updates_receiver: tokio::sync::mpsc::UnboundedReceiver<()>,
         db_based_validator_config: DbBasedSolverParticipationGuardConfig,
         drivers_by_address: HashMap<eth::Address, Arc<infra::Driver>>,
     ) -> Self {
@@ -35,7 +35,7 @@ impl SolverParticipationGuard {
             let database_solver_participation_validator = db::Validator::new(
                 persistence,
                 current_block,
-                settlement_updates_receiver,
+                competition_updates_receiver,
                 db_based_validator_config.solver_blacklist_cache_ttl,
                 db_based_validator_config.solver_last_auctions_participation_count,
                 drivers_by_address,

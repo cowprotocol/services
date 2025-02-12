@@ -28,7 +28,7 @@ impl Validator {
     pub fn new(
         persistence: infra::Persistence,
         current_block: CurrentBlockWatcher,
-        settlement_updates_receiver: tokio::sync::mpsc::UnboundedReceiver<()>,
+        competition_updates_receiver: tokio::sync::mpsc::UnboundedReceiver<()>,
         ttl: Duration,
         last_auctions_count: u32,
         drivers_by_address: HashMap<eth::Address, Arc<infra::Driver>>,
@@ -41,7 +41,7 @@ impl Validator {
             drivers_by_address,
         }));
 
-        self_.start_maintenance(settlement_updates_receiver, current_block);
+        self_.start_maintenance(competition_updates_receiver, current_block);
 
         self_
     }
@@ -50,12 +50,12 @@ impl Validator {
     /// avoid redundant DB queries.
     fn start_maintenance(
         &self,
-        mut settlement_updates_receiver: tokio::sync::mpsc::UnboundedReceiver<()>,
+        mut competition_updates_receiver: tokio::sync::mpsc::UnboundedReceiver<()>,
         current_block: CurrentBlockWatcher,
     ) {
         let self_ = self.clone();
         tokio::spawn(async move {
-            while settlement_updates_receiver.recv().await.is_some() {
+            while competition_updates_receiver.recv().await.is_some() {
                 let current_block = current_block.borrow().number;
                 match self_
                     .0
