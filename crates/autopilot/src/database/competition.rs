@@ -164,6 +164,10 @@ impl super::Postgres {
         .context("solver_competition::find_non_settling_solvers")
     }
 
+    /// Finds solvers that have a successful settling rate below the given
+    /// ratio. The current block is used to prevent
+    /// selecting auctions with deadline after the current block since they
+    /// still can be settled.
     pub async fn find_low_settling_solvers(
         &self,
         last_auctions_count: u32,
