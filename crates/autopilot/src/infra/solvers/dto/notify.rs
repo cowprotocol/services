@@ -4,6 +4,15 @@ use {serde::Serialize, serde_with::serde_as};
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Request {
-    /// The driver won multiple consecutive auctions but never settled them.
-    UnsettledConsecutiveAuctions(u64),
+    Banned {
+        reason: BanReason,
+        until_timestamp: u64,
+    },
+}
+
+#[serde_as]
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum BanReason {
+    UnsettledConsecutiveAuctions,
 }

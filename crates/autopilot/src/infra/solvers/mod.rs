@@ -188,9 +188,10 @@ pub fn notify_non_settling_solvers(
         .cloned()
         .map(|driver| async move {
             if let Err(err) = driver
-                .notify(&notify::Request::UnsettledConsecutiveAuctions(
-                    banned_until_timestamp,
-                ))
+                .notify(&notify::Request::Banned {
+                    reason: notify::BanReason::UnsettledConsecutiveAuctions,
+                    until_timestamp: banned_until_timestamp,
+                })
                 .await
             {
                 tracing::debug!(solver = ?driver.name, ?err, "unable to notify external solver");
