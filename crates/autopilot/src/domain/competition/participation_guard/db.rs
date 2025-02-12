@@ -82,13 +82,15 @@ impl SolverValidator {
 
                 self_.post_process(
                     &non_settling_solvers,
-                    &dto::notify::Request::UnsettledConsecutiveAuctions(banned_until_timestamp),
+                    &dto::notify::BanReason::UnsettledConsecutiveAuctions,
                     found_at,
+                    banned_until_timestamp,
                 );
                 self_.post_process(
                     &low_settling_solvers,
-                    &dto::notify::Request::HighSettleFailureRate(banned_until_timestamp),
+                    &dto::notify::BanReason::HighSettleFailureRate,
                     found_at,
+                    banned_until_timestamp,
                 );
             }
         });
@@ -151,8 +153,9 @@ impl SolverValidator {
     fn post_process(
         &self,
         solvers: &HashSet<eth::Address>,
-        request: &dto::notify::Request,
+        ban_reason: &dto::notify::BanReason,
         found_at: Instant,
+        banned_until_timestamp: u64,
     ) {
         if solvers.is_empty() {
             return;
@@ -163,9 +166,9 @@ impl SolverValidator {
             .filter_map(|solver| self.0.drivers_by_address.get(solver).cloned())
             .collect::<Vec<_>>();
 
-        let log_message = match request {
-            dto::notify::Request::UnsettledConsecutiveAuctions(_) => "found non-settling solvers",
-            dto::notify::Request::HighSettleFailureRate(_) => {
+        let log_message = match ban_reason {
+            dto::notify::BanReason::UnsettledConsecutiveAuctions => "found non-settling solvers",
+            dto::notify::BanReason::HighSettleFailureRate => {
                 "found high-failure-settlement solvers"
             }
         };
@@ -175,9 +178,9 @@ impl SolverValidator {
             .collect::<Vec<_>>();
         tracing::debug!(solvers = ?solver_names, log_message);
 
-        let reason = match request {
-            dto::notify::Request::UnsettledConsecutiveAuctions(_) => "non_settling",
-            dto::notify::Request::HighSettleFailureRate(_) => "high_settle_failure_rate",
+        let reason = match ban_reason {
+            dto::notify::BanReason::UnsettledConsecutiveAuctions => "non_settling",
+            dto::notify::BanReason::HighSettleFailureRate => "high_settle_failure_rate",
         };
 
         for solver in solver_names {
@@ -186,15 +189,15 @@ impl SolverValidator {
                 .with_label_values(&[&solver, reason]);
         }
 
-        let non_settling_drivers = drivers
+        let banned_drivers = drivers
             .into_iter()
             // Notify and block only solvers that accept unsettled blocking feature. This should be removed once a CIP is approved.
             .filter(|driver| driver.accepts_unsettled_blocking)
             .collect::<Vec<_>>();
 
-        infra::notify_non_settling_solvers(&non_settling_drivers, request);
+        infra::notify_banned_solvers(&banned_drivers, ban_reason, banned_until_timestamp);
 
-        for driver in non_settling_drivers {
+        for driver in banned_drivers {
             self.0
                 .banned_solvers
                 .insert(driver.submission_address, found_at);

@@ -179,21 +179,25 @@ pub async fn response_body_with_size_limit(
 }
 
 /// Try to notify all the non-settling solvers in a background task.
-pub fn notify_non_settling_solvers(
-    non_settling_drivers: &[Arc<Driver>],
-    request: &notify::Request,
+pub fn notify_banned_solvers(
+    drivers: &[Arc<Driver>],
+    reason: &notify::BanReason,
+    banned_until_timestamp: u64,
 ) {
-    let futures = non_settling_drivers
+    let request = notify::Request::Banned {
+        reason: reason.clone(),
+        banned_until_timestamp,
+    };
+    let futures = drivers
         .iter()
         .cloned()
         .map(|driver| {
             let request = request.clone();
             async move {
-                if let Err(err) = driver.notify(&request).await {
-                    tracing::debug!(solver = ?driver.name, ?err, "unable to notify external solver");
-                }
+            if let Err(err) = driver.notify(&request).await {
+                tracing::debug!(solver = ?driver.name, ?err, "unable to notify external solver");
             }
-        })
+        }})
         .collect::<Vec<_>>();
 
     tokio::spawn(async move {
