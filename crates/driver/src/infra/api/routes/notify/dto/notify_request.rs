@@ -5,20 +5,18 @@ use {crate::infra::notify, serde::Deserialize, serde_with::serde_as};
 #[serde(rename_all = "camelCase")]
 pub enum NotifyRequest {
     /// The driver won multiple consecutive auctions but never settled them.
-    UnsettledConsecutiveAuctions,
+    UnsettledConsecutiveAuctions(u64),
     /// Driver's success settling rate is below the threshold.
-    HighSettleFailureRate,
+    HighSettleFailureRate(u64),
 }
 
 impl From<NotifyRequest> for notify::Kind {
     fn from(value: NotifyRequest) -> Self {
         match value {
-            NotifyRequest::UnsettledConsecutiveAuctions => {
-                notify::Kind::Banned(notify::BanReason::UnsettledConsecutiveAuctions)
-            }
-            NotifyRequest::HighSettleFailureRate => {
-                notify::Kind::Banned(notify::BanReason::HighSettleFailureRate)
-            }
+            NotifyRequest::UnsettledConsecutiveAuctions(until_timestamp) => notify::Kind::Banned {
+                reason: notify::BanReason::UnsettledConsecutiveAuctions,
+                until_timestamp,
+            },
         }
     }
 }

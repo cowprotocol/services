@@ -19,34 +19,23 @@ use {
 pub struct Observer {
     eth: infra::Ethereum,
     persistence: infra::Persistence,
-    settlement_updates_sender: tokio::sync::mpsc::UnboundedSender<()>,
 }
 
 impl Observer {
     /// Creates a new Observer and asynchronously schedules the first update
     /// run.
-    pub fn new(
-        eth: infra::Ethereum,
-        persistence: infra::Persistence,
-        settlement_updates_sender: tokio::sync::mpsc::UnboundedSender<()>,
-    ) -> Self {
-        Self {
-            eth,
-            persistence,
-            settlement_updates_sender,
-        }
+    pub fn new(eth: infra::Ethereum, persistence: infra::Persistence) -> Self {
+        Self { eth, persistence }
     }
 
     /// Fetches all the available missing data needed for bookkeeping.
     /// This needs to get called after indexing a new settlement event
     /// since this code needs that data to already be present in the DB.
     pub async fn update(&self) {
-        let mut updated = false;
         loop {
             match self.single_update().await {
                 Ok(true) => {
                     tracing::debug!("on settlement event updater ran and processed event");
-                    updated = true;
                     // There might be more pending updates, continue immediately.
                     continue;
                 }
@@ -58,12 +47,6 @@ impl Observer {
                     tracing::error!(?err, "on settlement event update task failed");
                     break;
                 }
-            }
-        }
-        if updated {
-            // Notify the solver participation guard that a settlement has been updated.
-            if let Err(err) = self.settlement_updates_sender.send(()) {
-                tracing::error!(?err, "failed to notify solver participation guard");
             }
         }
     }

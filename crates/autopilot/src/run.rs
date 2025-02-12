@@ -365,16 +365,13 @@ pub async fn run(args: Arguments) {
         None
     };
 
-    let (settlement_updates_sender, settlement_updates_receiver) =
+    let (competition_updates_sender, competition_updates_receiver) =
         tokio::sync::mpsc::unbounded_channel();
 
     let persistence =
         infra::persistence::Persistence::new(args.s3.into().unwrap(), Arc::new(db.clone())).await;
-    let settlement_observer = crate::domain::settlement::Observer::new(
-        eth.clone(),
-        persistence.clone(),
-        settlement_updates_sender,
-    );
+    let settlement_observer =
+        crate::domain::settlement::Observer::new(eth.clone(), persistence.clone());
     let settlement_contract_start_index =
         if let Some(DeploymentInformation::BlockNumber(settlement_contract_start_index)) =
             eth.contracts().settlement().deployment_information()
@@ -580,7 +577,7 @@ pub async fn run(args: Arguments) {
     let solver_participation_guard = SolverParticipationGuard::new(
         eth.clone(),
         db.clone(),
-        settlement_updates_receiver,
+        competition_updates_receiver,
         args.db_based_solver_participation_guard,
         drivers
             .iter()
@@ -598,6 +595,7 @@ pub async fn run(args: Arguments) {
         trusted_tokens,
         liveness.clone(),
         Arc::new(maintenance),
+        competition_updates_sender,
     );
     run.run_forever().await;
 }

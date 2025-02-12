@@ -10,7 +10,7 @@ use {
         infra::{self, solvers::dto},
     },
     ethrpc::block_stream::CurrentBlockWatcher,
-    futures::future::join_all,
+    model::time::now_in_epoch_seconds,
     std::{
         collections::{HashMap, HashSet},
         sync::Arc,
@@ -139,26 +139,6 @@ impl SolverValidator {
                 Default::default()
             }
         }
-    }
-
-    /// Try to notify all the non-settling solvers in a background task.
-    fn notify_solvers(drivers: &[Arc<infra::Driver>], request: &dto::notify::Request) {
-        let futures = drivers
-            .iter()
-            .cloned()
-            .map(|driver| {
-                let request = request.clone();
-                async move {
-                    if let Err(err) = driver.notify(&request).await {
-                        tracing::debug!(solver = ?driver.name, ?err, "unable to notify external solver");
-                    }
-                }
-            })
-            .collect::<Vec<_>>();
-
-        tokio::spawn(async move {
-            join_all(futures).await;
-        });
     }
 
     /// Updates the cache and notifies the solvers.
