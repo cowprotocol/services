@@ -256,6 +256,7 @@ pub struct Arguments {
     #[clap(
         long,
         env,
+        required = false,
         value_delimiter = ',',
         num_args = 1..,
         value_parser = parse_key_value_pair::<H160, H160>
