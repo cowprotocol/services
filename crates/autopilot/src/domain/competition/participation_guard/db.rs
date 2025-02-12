@@ -126,7 +126,7 @@ impl Validator {
                 current_block,
                 self.0
                     .low_settling_config
-                    .solver_min_settlement_success_rate,
+                    .solver_max_settlement_failure_rate,
             )
             .await
         {

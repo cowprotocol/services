@@ -152,7 +152,7 @@ pub async fn find_low_settling_solvers(
     ex: &mut PgConnection,
     last_auctions_count: u32,
     current_block: u64,
-    min_success_ratio: f64,
+    max_failure_rate: f64,
 ) -> Result<Vec<Address>, sqlx::Error> {
     const QUERY: &str = r#"
 WITH
@@ -179,13 +179,13 @@ WITH
     )
 SELECT solver
 FROM solver_settlement_counts
-WHERE (total_settlements::decimal / NULLIF(total_wins, 0)) < $3;
+WHERE (1 - (total_settlements::decimal / NULLIF(total_wins, 0))) > $3;
     "#;
 
     sqlx::query_scalar(QUERY)
         .bind(sqlx::types::BigDecimal::from(current_block))
         .bind(i64::from(last_auctions_count))
-        .bind(min_success_ratio)
+        .bind(max_failure_rate)
         .fetch_all(ex)
         .await
 }
@@ -805,7 +805,7 @@ mod tests {
 
         let deadline_block = 2u64;
         let last_auctions_count = 100i64;
-        let min_ratio = 0.4;
+        let max_failure_ratio = 0.6;
         let mut solution_uid = 0;
 
         for auction_id in 1..=10 {
@@ -912,7 +912,7 @@ mod tests {
             &mut db,
             u32::try_from(last_auctions_count).unwrap(),
             deadline_block,
-            min_ratio,
+            max_failure_ratio,
         )
         .await
         .unwrap();
@@ -941,7 +941,7 @@ mod tests {
             &mut db,
             u32::try_from(last_auctions_count).unwrap(),
             deadline_block,
-            min_ratio,
+            max_failure_ratio,
         )
         .await
         .unwrap();

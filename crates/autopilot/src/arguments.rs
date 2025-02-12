@@ -305,11 +305,11 @@ pub struct LowSettlingValidatorConfig {
     )]
     pub last_auctions_participation_count: u32,
 
-    /// A minimum success rate for a solver to be considered eligible for
+    /// A max failure rate for a solver to remain eligible for
     /// participation in the competition. Otherwise, the solver will be
     /// banned.
-    #[clap(long, env, default_value = "0.1")]
-    pub solver_min_settlement_success_rate: f64,
+    #[clap(long, env, default_value = "0.9")]
+    pub solver_max_settlement_failure_rate: f64,
 }
 
 impl std::fmt::Display for Arguments {

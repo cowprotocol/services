@@ -164,15 +164,14 @@ impl super::Postgres {
         .context("solver_competition::find_non_settling_solvers")
     }
 
-    /// Finds solvers that have a successful settling rate below the given
-    /// ratio. The current block is used to prevent
-    /// selecting auctions with deadline after the current block since they
-    /// still can be settled.
+    /// Finds solvers that have a failure settling rate above the given
+    /// ratio. The current block is used to prevent selecting auctions with
+    /// deadline after the current block since they still can be settled.
     pub async fn find_low_settling_solvers(
         &self,
         last_auctions_count: u32,
         current_block: u64,
-        min_success_ratio: f64,
+        max_failure_rate: f64,
     ) -> anyhow::Result<Vec<Address>> {
         let mut ex = self.pool.acquire().await.context("acquire")?;
         let _timer = super::Metrics::get()
@@ -184,7 +183,7 @@ impl super::Postgres {
             &mut ex,
             last_auctions_count,
             current_block,
-            min_success_ratio,
+            max_failure_rate,
         )
         .await
         .context("solver_competition::find_low_settling_solvers")
