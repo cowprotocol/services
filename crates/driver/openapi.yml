@@ -149,9 +149,9 @@ paths:
             schema:
               type: string
               enum:
-                - unsettledConsecutiveAuctions
+                - banned
               description: |-
-                A notification that informs about a reasoning why the driver was banned.
+                The reason for the notification with optional additional context.
       responses:
         "200":
           description: notification successfully received.
