@@ -6,6 +6,7 @@ use {
     },
     anyhow::{ensure, Result},
     bigdecimal::BigDecimal,
+    dashmap::DashMap,
     ethcontract::{H160, U256},
     futures::future::BoxFuture,
     itertools::Itertools,
@@ -16,7 +17,6 @@ use {
     serde::{Deserialize, Serialize},
     std::{
         cmp::{Eq, PartialEq},
-        collections::HashMap,
         error::Error,
         fmt::{self, Display, Formatter},
         future::Future,
@@ -260,7 +260,7 @@ pub struct Arguments {
         num_args = 1..,
         value_parser = parse_key_value_pair::<H160, H160>
     )]
-    pub native_price_approximation_tokens: HashMap<H160, H160>,
+    pub native_price_approximation_tokens: DashMap<H160, H160>,
 }
 
 /// Custom parser for Clap HashMap key-value pairs

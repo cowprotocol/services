@@ -848,6 +848,7 @@ impl OrderFilterCounter {
 mod tests {
     use {
         super::*,
+        dashmap::DashMap,
         futures::FutureExt,
         maplit::{btreemap, hashset},
         mockall::predicate::eq,
@@ -907,7 +908,7 @@ mod tests {
             None,
             Default::default(),
             3,
-            HashMap::new(),
+            Default::default(),
         );
         let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
 
@@ -997,7 +998,7 @@ mod tests {
             None,
             Default::default(),
             1,
-            HashMap::new(),
+            Default::default(),
         );
         let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
 
@@ -1094,7 +1095,7 @@ mod tests {
             Default::default(),
             3,
             // Set to use native price approximations for the following tokens
-            HashMap::from([(token1, token_approx1), (token2, token_approx2)]),
+            DashMap::from_iter([(token1, token_approx1), (token2, token_approx2)]),
         );
         let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
 
