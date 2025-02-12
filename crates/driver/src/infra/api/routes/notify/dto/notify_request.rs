@@ -6,7 +6,7 @@ use {crate::infra::notify, serde::Deserialize, serde_with::serde_as};
 pub enum NotifyRequest {
     Banned {
         reason: BanReason,
-        banned_until_timestamp: u64,
+        until_timestamp: u64,
     },
 }
 
@@ -25,7 +25,7 @@ impl From<NotifyRequest> for notify::Kind {
         match value {
             NotifyRequest::Banned {
                 reason,
-                banned_until_timestamp,
+                until_timestamp,
             } => notify::Kind::Banned {
                 reason: match reason {
                     BanReason::UnsettledConsecutiveAuctions => {
@@ -33,7 +33,7 @@ impl From<NotifyRequest> for notify::Kind {
                     }
                     BanReason::HighSettleFailureRate => notify::BanReason::HighSettleFailureRate,
                 },
-                until_timestamp: banned_until_timestamp,
+                until_timestamp,
             },
         }
     }

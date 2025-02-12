@@ -186,7 +186,7 @@ pub fn notify_banned_solvers(
 ) {
     let request = notify::Request::Banned {
         reason: reason.clone(),
-        banned_until_timestamp,
+        until_timestamp: banned_until_timestamp,
     };
     let futures = drivers
         .iter()

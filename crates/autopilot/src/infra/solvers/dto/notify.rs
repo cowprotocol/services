@@ -6,7 +6,7 @@ use {serde::Serialize, serde_with::serde_as};
 pub enum Request {
     Banned {
         reason: BanReason,
-        banned_until_timestamp: u64,
+        until_timestamp: u64,
     },
 }
 
