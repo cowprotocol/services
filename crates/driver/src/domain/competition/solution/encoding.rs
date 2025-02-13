@@ -191,8 +191,23 @@ pub fn tx(
         min: None,
         prices: auction.prices().clone(),
     };
-    if let Some(_flashloan) = solution.flashloans.first() {
-        // TODO transfer tokens from solver wrapper to settlement contract
+    if let Some(flashloan) = solution.flashloans.first() {
+        // Transfer tokens from solver wrapper to settlement contract
+        let tx = contracts::ERC20::at(
+            &contracts.settlement().raw_instance().web3(),
+            flashloan.token.into(),
+        )
+        .transfer_from(
+            contracts.flashloan_wrapper().address(),
+            contracts.settlement().address(),
+            flashloan.amount.0,
+        )
+        .into_inner();
+        interactions.push(eth::Interaction {
+            target: tx.to.unwrap().into(),
+            value: eth::U256::zero().into(),
+            call_data: tx.data.unwrap().0.into(),
+        });
     }
     for interaction in solution.interactions() {
         if matches!(internalization, settlement::Internalization::Enable)
@@ -218,9 +233,23 @@ pub fn tx(
         interactions.push(unwrap(native_unwrap, contracts.weth()));
     }
 
-    if let Some(_flashloan) = solution.flashloans.first() {
-        // TODO: transfer tokens from settlement contract to solver wrapper for
-        // repayment
+    if let Some(flashloan) = solution.flashloans.first() {
+        // Transfer tokens from settlement contract to solver wrapper for repayment
+        let tx = contracts::ERC20::at(
+            &contracts.settlement().raw_instance().web3(),
+            flashloan.token.into(),
+        )
+        .transfer_from(
+            contracts.settlement().address(),
+            contracts.flashloan_wrapper().address(),
+            flashloan.amount.0,
+        )
+        .into_inner();
+        interactions.push(eth::Interaction {
+            target: tx.to.unwrap().into(),
+            value: eth::U256::zero().into(),
+            call_data: tx.data.unwrap().0.into(),
+        });
 
         // TODO: potentially add manual call to
         // "ERC3156FlashLoanSolverWrapper::onFlashLoan"
