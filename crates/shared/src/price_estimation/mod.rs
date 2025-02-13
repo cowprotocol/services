@@ -729,5 +729,32 @@ mod tests {
             "0102030405060708091011121314151617181920 a1a2a3a4a5a6a7a8a9a0a1a2a3a4a5a6a7a8a9a0",
         );
         assert!(result.is_err());
+
+        // test parsing with delimiter
+        #[derive(Parser)]
+        struct Cli {
+            #[arg(value_delimiter = ',', value_parser = parse_tuple::<H160, H160>)]
+            param: Vec<(H160, H160)>,
+        }
+        let cli = Cli::parse_from(vec![
+            "",
+            r#"0102030405060708091011121314151617181920|a1a2a3a4a5a6a7a8a9a0a1a2a3a4a5a6a7a8a9a0,
+            f102030405060708091011121314151617181920|f1a2a3a4a5a6a7a8a9a0a1a2a3a4a5a6a7a8a9a0"#,
+        ]);
+
+        assert_eq!(
+            cli.param[0],
+            (
+                H160::from_str("0102030405060708091011121314151617181920").unwrap(),
+                H160::from_str("a1a2a3a4a5a6a7a8a9a0a1a2a3a4a5a6a7a8a9a0").unwrap()
+            )
+        );
+        assert_eq!(
+            cli.param[1],
+            (
+                H160::from_str("f102030405060708091011121314151617181920").unwrap(),
+                H160::from_str("f1a2a3a4a5a6a7a8a9a0a1a2a3a4a5a6a7a8a9a0").unwrap()
+            )
+        );
     }
 }
