@@ -39,6 +39,12 @@ async fn local_node_low_settling_solver() {
     run_test(low_settling_solver).await;
 }
 
+#[tokio::test]
+#[ignore]
+async fn local_node_not_allowed_solver() {
+    run_test(not_allowed_solver).await;
+}
+
 async fn non_settling_solver(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
@@ -95,7 +101,6 @@ async fn non_settling_solver(web3: Web3) {
         token_a.approve(onchain.contracts().allowance, to_wei(1000))
     );
 
-    // Place Orders
     let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
@@ -238,6 +243,83 @@ async fn low_settling_solver(web3: Web3) {
             .await
             .is_err()
     );
+}
+
+async fn not_allowed_solver(web3: Web3) {
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+
+    let [solver] = onchain.make_solvers(to_wei(1)).await;
+    let [trader_a] = onchain.make_accounts(to_wei(1)).await;
+    let [token_a, token_b] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
+        .await;
+
+    // Fund trader accounts
+    token_a.mint(trader_a.address(), to_wei(1000)).await;
+
+    // Create and fund Uniswap pool
+    token_a.mint(solver.address(), to_wei(1000)).await;
+    token_b.mint(solver.address(), to_wei(1000)).await;
+    tx!(
+        solver.account(),
+        onchain
+            .contracts()
+            .uniswap_v2_factory
+            .create_pair(token_a.address(), token_b.address())
+    );
+    tx!(
+        solver.account(),
+        token_a.approve(
+            onchain.contracts().uniswap_v2_router.address(),
+            to_wei(1000)
+        )
+    );
+    tx!(
+        solver.account(),
+        token_b.approve(
+            onchain.contracts().uniswap_v2_router.address(),
+            to_wei(1000)
+        )
+    );
+    tx!(
+        solver.account(),
+        onchain.contracts().uniswap_v2_router.add_liquidity(
+            token_a.address(),
+            token_b.address(),
+            to_wei(1000),
+            to_wei(1000),
+            0_u64.into(),
+            0_u64.into(),
+            solver.address(),
+            U256::max_value(),
+        )
+    );
+
+    // Approve GPv2 for trading
+    tx!(
+        trader_a.account(),
+        token_a.approve(onchain.contracts().allowance, to_wei(1000))
+    );
+
+    let solver_address = solver.address();
+    let services = Services::new(&onchain).await;
+    services.start_protocol(solver).await;
+
+    execute_order(&onchain, &trader_a, &token_a, &token_b, &services)
+        .await
+        .unwrap();
+
+    // Ban the solver
+    onchain
+        .contracts()
+        .gp_authenticator
+        .methods()
+        .remove_solver(solver_address)
+        .send()
+        .await
+        .unwrap();
+
+    assert!(execute_order(&onchain, &trader_a, &token_a, &token_b, &services).await.is_err());
 }
 
 async fn replace_solver_for_auction_ids(pool: &Db, auction_ids: &[i64], solver: &H160) {
