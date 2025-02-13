@@ -4,6 +4,7 @@ use {
         BalancerV2Vault,
         CoWSwapEthFlow,
         CowAmmLegacyHelper,
+        ERC3156FlashLoanSolverWrapper,
         GPv2AllowListAuthentication,
         GPv2Settlement,
         HooksTrampoline,
@@ -29,6 +30,8 @@ pub struct Contracts {
     pub ethflows: Vec<CoWSwapEthFlow>,
     pub hooks: HooksTrampoline,
     pub cow_amm_helper: Option<CowAmmLegacyHelper>,
+    // Optional since ERC3156FlashLoanSolverWrapper::deployed() is missing
+    pub flashloan_wrapper: Option<ERC3156FlashLoanSolverWrapper>,
 }
 
 impl Contracts {
@@ -74,6 +77,7 @@ impl Contracts {
             hooks: HooksTrampoline::deployed(web3).await.unwrap(),
             gp_settlement,
             cow_amm_helper,
+            flashloan_wrapper: None,
         }
     }
 
@@ -159,6 +163,7 @@ impl Contracts {
         let ethflow = deploy!(CoWSwapEthFlow(gp_settlement.address(), weth.address()));
         let ethflow_secondary = deploy!(CoWSwapEthFlow(gp_settlement.address(), weth.address()));
         let hooks = deploy!(HooksTrampoline(gp_settlement.address()));
+        let flashloan_wrapper = deploy!(ERC3156FlashLoanSolverWrapper(gp_settlement.address()));
 
         Self {
             chain_id: network_id
@@ -176,6 +181,7 @@ impl Contracts {
             hooks,
             // Current helper contract only works in forked tests
             cow_amm_helper: None,
+            flashloan_wrapper: Some(flashloan_wrapper),
         }
     }
 

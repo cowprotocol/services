@@ -415,3 +415,11 @@ impl From<CodeDigest> for [u8; 32] {
         value.0 .0
     }
 }
+
+#[derive(Debug, Clone)]
+pub struct Flashloan {
+    pub lender: ContractAddress,
+    pub borrower: ContractAddress,
+    pub token: TokenAddress,
+    pub amount: TokenAmount,
+}

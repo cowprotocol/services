@@ -5,13 +5,13 @@ use {
         boundary,
         domain::{
             competition::{self, order},
-            eth::{self, TokenAddress},
+            eth::{self, Flashloan, TokenAddress},
         },
         infra::{
             blockchain::{self, Ethereum},
             config::file::FeeHandler,
             simulator,
-            solver::{dto::Flashloan, ManageNativeToken, Solver},
+            solver::{ManageNativeToken, Solver},
             Simulator,
         },
     },
@@ -359,7 +359,7 @@ impl Solution {
                 (None, Some(gas)) => Some(gas),
                 (None, None) => None,
             },
-            flashloans: self.flashloans.clone(),
+            flashloans: [self.flashloans.clone(), other.flashloans.clone()].concat(),
         })
     }
 

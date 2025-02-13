@@ -366,6 +366,9 @@ struct ContractsConfig {
     /// rebalancing orders for.
     #[serde(default)]
     cow_amms: Vec<CowAmmConfig>,
+
+    /// Flashloan wrapper contract address.
+    flashloan_wrapper: Option<eth::H160>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
