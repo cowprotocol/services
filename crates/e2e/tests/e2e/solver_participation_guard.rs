@@ -319,7 +319,11 @@ async fn not_allowed_solver(web3: Web3) {
         .await
         .unwrap();
 
-    assert!(execute_order(&onchain, &trader_a, &token_a, &token_b, &services).await.is_err());
+    assert!(
+        execute_order(&onchain, &trader_a, &token_a, &token_b, &services)
+            .await
+            .is_err()
+    );
 }
 
 async fn replace_solver_for_auction_ids(pool: &Db, auction_ids: &[i64], solver: &H160) {
