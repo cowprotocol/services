@@ -75,7 +75,6 @@ impl FromStr for ExternalSolver {
 #[derive(Clone, Debug, Hash, Eq, PartialEq)]
 pub enum NativePriceEstimator {
     Driver(ExternalSolver),
-    OneInchSpotPriceApi,
     CoinGecko,
 }
 
@@ -83,7 +82,6 @@ impl Display for NativePriceEstimator {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         let formatter = match self {
             NativePriceEstimator::Driver(s) => format!("{}|{}", &s.name, s.url),
-            NativePriceEstimator::OneInchSpotPriceApi => "OneInchSpotPriceApi".into(),
             NativePriceEstimator::CoinGecko => "CoinGecko".into(),
         };
         write!(f, "{}", formatter)
@@ -133,7 +131,6 @@ impl FromStr for NativePriceEstimator {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "OneInchSpotPriceApi" => Ok(NativePriceEstimator::OneInchSpotPriceApi),
             "CoinGecko" => Ok(NativePriceEstimator::CoinGecko),
             estimator => Ok(NativePriceEstimator::Driver(ExternalSolver::from_str(
                 estimator,
@@ -205,14 +202,6 @@ pub struct Arguments {
     /// The API endpoint for the Balancer SOR API for solving.
     #[clap(long, env)]
     pub balancer_sor_url: Option<Url>,
-
-    /// The API key for the 1Inch API.
-    #[clap(long, env)]
-    pub one_inch_api_key: Option<String>,
-
-    /// The base URL for the 1Inch API.
-    #[clap(long, env, default_value = "https://api.1inch.dev/")]
-    pub one_inch_url: Url,
 
     /// The CoinGecko native price configuration
     #[clap(flatten)]
@@ -351,8 +340,6 @@ impl Display for Arguments {
             native_price_cache_concurrent_requests,
             amount_to_estimate_prices_with,
             balancer_sor_url,
-            one_inch_api_key,
-            one_inch_url,
             coin_gecko,
             quote_inaccuracy_limit,
             quote_verification,
@@ -397,12 +384,6 @@ impl Display for Arguments {
             amount_to_estimate_prices_with,
         )?;
         display_option(f, "balancer_sor_url", balancer_sor_url)?;
-        display_secret_option(
-            f,
-            "one_inch_spot_price_api_key: {:?}",
-            one_inch_api_key.as_ref(),
-        )?;
-        writeln!(f, "one_inch_spot_price_api_url: {}", one_inch_url)?;
         display_secret_option(
             f,
             "coin_gecko_api_key: {:?}",
@@ -638,9 +619,8 @@ mod tests {
                 ExternalSolver::from_str("baseline|http://localhost:1234/|0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2").unwrap(),
             )
             .to_string(),
-            &NativePriceEstimator::OneInchSpotPriceApi.to_string(),
             "one|http://localhost:1111/,two|http://localhost:2222/;three|http://localhost:3333/,four|http://localhost:4444/",
-            &format!("one|http://localhost:1111/,two|http://localhost:2222/;{},four|http://localhost:4444/", NativePriceEstimator::OneInchSpotPriceApi),
+            &format!("one|http://localhost:1111/,two|http://localhost:2222/;CoinGecko,four|http://localhost:4444/"),
         ] {
             assert_eq!(stringified(&parsed(repr).unwrap()), repr);
         }

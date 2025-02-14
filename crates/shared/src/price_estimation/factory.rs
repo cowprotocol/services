@@ -210,23 +210,6 @@ impl<'a> PriceEstimatorFactory<'a> {
                     )),
                 ))
             }
-            NativePriceEstimatorSource::OneInchSpotPriceApi => {
-                let name = "OneInchSpotPriceApi".to_string();
-                Ok((
-                    name.clone(),
-                    Arc::new(InstrumentedPriceEstimator::new(
-                        native::OneInch::new(
-                            self.components.http_factory.create(),
-                            self.args.one_inch_url.clone(),
-                            self.args.one_inch_api_key.clone(),
-                            self.network.chain.id(),
-                            self.network.block_stream.clone(),
-                            self.components.tokens.clone(),
-                        ),
-                        name,
-                    )),
-                ))
-            }
             NativePriceEstimatorSource::CoinGecko => {
                 let name = "CoinGecko".to_string();
                 let coin_gecko = native::CoinGecko::new(

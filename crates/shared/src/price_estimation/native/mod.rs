@@ -9,9 +9,8 @@ use {
 };
 
 mod coingecko;
-mod oneinch;
 
-pub use self::{coingecko::CoinGecko, oneinch::OneInch};
+pub use self::{coingecko::CoinGecko};
 
 pub type NativePrice = f64;
 pub type NativePriceEstimateResult = Result<NativePrice, PriceEstimationError>;
