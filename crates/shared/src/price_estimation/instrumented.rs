@@ -37,15 +37,19 @@ impl<T> InstrumentedPriceEstimator<T> {
         }
     }
 
-    /// Determines the result of a price estimate as either "success" or
-    /// "failure".
+    /// Determines the result of a price estimate, returning either "success" or
+    /// the error reason
     fn estimate_result<B>(&self, estimate: Result<&B, &PriceEstimationError>) -> &str {
         // Count as a successful request if the answer is ok (no error) or if the error
         // is No Liquidity
-        if estimate.is_ok() || matches!(estimate, Err(PriceEstimationError::NoLiquidity)) {
-            "success"
-        } else {
-            "failure"
+        match estimate {
+            Ok(_) => "success",
+            Err(PriceEstimationError::NoLiquidity) => "no_liquidity",
+            Err(PriceEstimationError::UnsupportedToken { .. }) => "unsupported_token",
+            Err(PriceEstimationError::UnsupportedOrderType(_)) => "unsupported_order_type",
+            Err(PriceEstimationError::RateLimited) => "rate_limited",
+            Err(PriceEstimationError::EstimatorInternal(_)) => "estimator_internal_error",
+            Err(PriceEstimationError::ProtocolInternal(_)) => "protocol_internal_error",
         }
     }
 }
@@ -121,47 +125,56 @@ mod tests {
 
     #[tokio::test]
     async fn records_metrics_for_each_query() {
-        let queries = [
-            Arc::new(Query {
-                verification: Default::default(),
-                sell_token: H160([1; 20]),
-                buy_token: H160([2; 20]),
-                in_amount: NonZeroU256::try_from(3).unwrap(),
-                kind: OrderKind::Sell,
-                block_dependent: false,
-            }),
-            Arc::new(Query {
-                verification: Default::default(),
-                sell_token: H160([4; 20]),
-                buy_token: H160([5; 20]),
-                in_amount: NonZeroU256::try_from(6).unwrap(),
-                kind: OrderKind::Buy,
-                block_dependent: false,
-            }),
-        ];
+        let query = Arc::new(Query {
+            verification: Default::default(),
+            sell_token: H160([1; 20]),
+            buy_token: H160([2; 20]),
+            in_amount: NonZeroU256::try_from(3).unwrap(),
+            kind: OrderKind::Sell,
+            block_dependent: false,
+        });
 
         let mut estimator = MockPriceEstimating::new();
-        let expected_query = queries[0].clone();
-        estimator
-            .expect_estimate()
-            .times(1)
-            .withf(move |q| *q == expected_query)
-            .returning(|_| async { Ok(Estimate::default()) }.boxed());
-        let expected_query = queries[1].clone();
-        estimator
-            .expect_estimate()
-            .times(1)
-            .withf(move |q| *q == expected_query)
-            .returning(|_| {
-                async { Err(PriceEstimationError::EstimatorInternal(anyhow!(""))) }.boxed()
-            });
+        let expectations = vec![
+            Ok(Estimate::default()),
+            Err(PriceEstimationError::NoLiquidity),
+            Err(PriceEstimationError::UnsupportedToken {
+                token: H160([0; 20]),
+                reason: "".to_string(),
+            }),
+            Err(PriceEstimationError::UnsupportedOrderType("".to_string())),
+            Err(PriceEstimationError::RateLimited),
+            Err(PriceEstimationError::EstimatorInternal(anyhow!(""))),
+            Err(PriceEstimationError::ProtocolInternal(anyhow!(""))),
+        ];
+
+        let expectations_cloned = expectations.clone();
+        for result in expectations_cloned {
+            let expected_query = query.clone();
+            estimator
+                .expect_estimate()
+                .times(1)
+                .withf(move |q| *q == expected_query)
+                .returning(move |_| {
+                    let result = result.clone();
+                    async { result }.boxed()
+                });
+        }
 
         let instrumented = InstrumentedPriceEstimator::new(estimator, "foo".to_string());
 
-        let _ = instrumented.estimate(queries[0].clone()).await;
-        let _ = instrumented.estimate(queries[1].clone()).await;
+        for _ in 0..expectations.len() {
+            let _ = instrumented.estimate(query.clone()).await;
+        }
 
-        for result in &["success", "failure"] {
+        for result in &[
+            "no_liquidity",
+            "unsupported_token",
+            "unsupported_order_type",
+            "rate_limited",
+            "estimator_internal_error",
+            "protocol_internal_error",
+        ] {
             let observed = instrumented
                 .metrics
                 .price_estimates
@@ -169,11 +182,17 @@ mod tests {
                 .get();
             assert_eq!(observed, 1);
         }
-        let observed = instrumented
+        let observed_success = instrumented
+            .metrics
+            .price_estimates
+            .with_label_values(&["foo", "success"])
+            .get();
+        assert_eq!(observed_success, 1);
+        let observed_count = instrumented
             .metrics
             .price_estimation_times
             .with_label_values(&["foo"])
             .get_sample_count();
-        assert_eq!(observed, 2);
+        assert_eq!(observed_count, 7);
     }
 }
