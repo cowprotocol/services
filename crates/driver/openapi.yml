@@ -141,7 +141,7 @@ paths:
   /notify:
     post:
       description: |
-        Receive a notification in case the driver was banned for a certain reason.
+        Receive a notification with a specific reason.
       requestBody:
         required: true
         content:
