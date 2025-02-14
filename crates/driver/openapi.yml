@@ -155,16 +155,6 @@ paths:
       responses:
         "200":
           description: notification successfully received.
-        "500":
-          description: Unable to notify solver.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  error:
-                    type: string
-                    example: "Unable to notify solver"
 components:
   schemas:
     Address:

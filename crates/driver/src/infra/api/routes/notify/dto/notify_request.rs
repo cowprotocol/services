@@ -35,9 +35,3 @@ impl From<NotifyRequest> for notify::Kind {
         }
     }
 }
-
-#[derive(Debug, thiserror::Error)]
-pub enum Error {
-    #[error("Unable to notify solver")]
-    UnableToNotify,
-}
