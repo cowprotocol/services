@@ -16,6 +16,7 @@ use {
     serde::{Deserialize, Serialize},
     std::{
         cmp::{Eq, PartialEq},
+        error::Error,
         fmt::{self, Display, Formatter},
         future::Future,
         hash::Hash,
@@ -245,6 +246,38 @@ pub struct Arguments {
 
     #[clap(flatten)]
     pub balance_overrides: balance_overrides::Arguments,
+
+    /// List of mappings of native price tokens substitutions with approximated
+    /// value from other token:
+    /// "<token1>|<approx_token1>,<token2>|<approx_token2>"
+    /// - token1 is a token address for which we get the native token price
+    /// - approx_token1 is a token address used for the price approximation
+    ///
+    /// It is very important that both tokens in the pair have the same number
+    /// of decimals.
+    #[clap(
+        long,
+        env,
+        value_delimiter = ',',
+        value_parser = parse_tuple::<H160, H160>
+    )]
+    pub native_price_approximation_tokens: Vec<(H160, H160)>,
+}
+
+/// Custom Clap parser for tuple pair
+fn parse_tuple<T, U>(input: &str) -> Result<(T, U), Box<dyn Error + Send + Sync + 'static>>
+where
+    T: std::str::FromStr,
+    T::Err: Error + Send + Sync + 'static,
+    U: std::str::FromStr,
+    U::Err: Error + Send + Sync + 'static,
+{
+    let pos = input.find('|').ok_or_else(|| {
+        format!(
+            "invalid pair values delimiter character, expected: 'value1|value2', got: '{input}'"
+        )
+    })?;
+    Ok((input[..pos].parse()?, input[pos + 1..].parse()?))
 }
 
 #[derive(clap::Parser)]
@@ -325,6 +358,7 @@ impl Display for Arguments {
             quote_verification,
             quote_timeout,
             balance_overrides,
+            native_price_approximation_tokens,
         } = self;
 
         display_option(
@@ -403,6 +437,11 @@ impl Display for Arguments {
         writeln!(f, "quote_verification: {:?}", quote_verification)?;
         writeln!(f, "quote_timeout: {:?}", quote_timeout)?;
         write!(f, "{}", balance_overrides)?;
+        writeln!(
+            f,
+            "native_price_approximation_tokens: {:?}",
+            native_price_approximation_tokens
+        )?;
 
         Ok(())
     }
@@ -669,5 +708,53 @@ mod tests {
         let result = CoinGecko::try_parse_from(args);
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_tuple() {
+        let result = parse_tuple::<H160, H160>(
+            "0102030405060708091011121314151617181920|a1a2a3a4a5a6a7a8a9a0a1a2a3a4a5a6a7a8a9a0",
+        )
+        .unwrap();
+        assert_eq!(
+            result.0,
+            H160::from_str("0102030405060708091011121314151617181920").unwrap()
+        );
+        assert_eq!(
+            result.1,
+            H160::from_str("a1a2a3a4a5a6a7a8a9a0a1a2a3a4a5a6a7a8a9a0").unwrap()
+        );
+
+        let result = parse_tuple::<H160, H160>(
+            "0102030405060708091011121314151617181920 a1a2a3a4a5a6a7a8a9a0a1a2a3a4a5a6a7a8a9a0",
+        );
+        assert!(result.is_err());
+
+        // test parsing with delimiter
+        #[derive(Parser)]
+        struct Cli {
+            #[arg(value_delimiter = ',', value_parser = parse_tuple::<H160, H160>)]
+            param: Vec<(H160, H160)>,
+        }
+        let cli = Cli::parse_from(vec![
+            "",
+            r#"0102030405060708091011121314151617181920|a1a2a3a4a5a6a7a8a9a0a1a2a3a4a5a6a7a8a9a0,
+            f102030405060708091011121314151617181920|f1a2a3a4a5a6a7a8a9a0a1a2a3a4a5a6a7a8a9a0"#,
+        ]);
+
+        assert_eq!(
+            cli.param[0],
+            (
+                H160::from_str("0102030405060708091011121314151617181920").unwrap(),
+                H160::from_str("a1a2a3a4a5a6a7a8a9a0a1a2a3a4a5a6a7a8a9a0").unwrap()
+            )
+        );
+        assert_eq!(
+            cli.param[1],
+            (
+                H160::from_str("f102030405060708091011121314151617181920").unwrap(),
+                H160::from_str("f1a2a3a4a5a6a7a8a9a0a1a2a3a4a5a6a7a8a9a0").unwrap()
+            )
+        );
     }
 }

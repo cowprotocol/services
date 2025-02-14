@@ -107,7 +107,7 @@ pub fn executed(
         Ok(hash) => notification::Settlement::Success(hash.clone()),
         Err(Error::Revert { tx_id: hash, .. }) => notification::Settlement::Revert(hash.clone()),
         Err(Error::SimulationRevert { .. }) => notification::Settlement::SimulationRevert,
-        Err(Error::Expired) => notification::Settlement::Expired,
+        Err(Error::Expired { .. }) => notification::Settlement::Expired,
         Err(Error::Other(_) | Error::Disabled) => notification::Settlement::Fail,
     };
 
