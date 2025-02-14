@@ -639,6 +639,7 @@ fn main() {
     });
     generate_contract("ERC20");
     generate_contract("ERC20Mintable");
+    generate_contract("ERC3156FlashLoanSolverWrapper");
     generate_contract_with_config("GPv2AllowListAuthentication", |builder| {
         builder
             .contract_mod_override("gpv2_allow_list_authentication")
