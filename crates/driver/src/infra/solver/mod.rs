@@ -270,7 +270,7 @@ impl Solver {
         let client = self.client.clone();
         let response_limit = self.config.response_size_limit_max_bytes;
         let future = async move {
-            if let Err(error) = Self::notify_(
+            if let Err(error) = Self::notify_inner(
                 base_url,
                 client,
                 response_limit,
@@ -296,7 +296,7 @@ impl Solver {
         let base_url = self.config.endpoint.clone();
         let client = self.client.clone();
 
-        Self::notify_(
+        Self::notify_inner(
             base_url,
             client,
             self.config.response_size_limit_max_bytes,
@@ -307,7 +307,7 @@ impl Solver {
         .await
     }
 
-    async fn notify_(
+    async fn notify_inner(
         base_url: url::Url,
         client: reqwest::Client,
         response_limit: usize,
