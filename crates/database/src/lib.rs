@@ -25,8 +25,7 @@ pub mod trades;
 
 use {
     byte_array::ByteArray,
-    sqlx::{Executor, PgConnection, PgPool},
-    tokio::sync::OnceCell,
+    sqlx::{Executor, PgPool},
 };
 
 // Design:
@@ -49,36 +48,52 @@ use {
 
 pub type PgTransaction<'a> = sqlx::Transaction<'a, sqlx::Postgres>;
 
+/// The names of tables we use in the db.
+pub const TABLES: &[&str] = &[
+    "app_data",
+    "auction_orders",
+    "auctions",
+    "competition_auctions",
+    "ethflow_orders",
+    "ethflow_refunds",
+    "fee_policies",
+    "interactions",
+    "invalidations",
+    "jit_orders",
+    "last_indexed_blocks",
+    "onchain_order_invalidations",
+    "onchain_placed_orders",
+    "order_execution",
+    "order_quotes",
+    "orders",
+    "presignature_events",
+    "proposed_jit_orders",
+    "proposed_solutions",
+    "quotes",
+    "settlement_observations",
+    "settlement_scores",
+    "settlements",
+    "solver_competitions",
+    "surplus_capturing_jit_order_owners",
+    "trades",
+];
+
 /// The names of potentially big volume tables we use in the db.
-pub const LARGE_TABLES: &[&str] = &["auction_prices", "order_events"];
+pub const LARGE_TABLES: &[&str] = &[
+    "auction_prices",
+    "auction_participants",
+    "order_events",
+    "proposed_trade_executions",
+];
 
-pub async fn all_tables(ex: &mut PgConnection) -> sqlx::Result<&'static Vec<String>> {
-    static TABLES: OnceCell<Vec<String>> = OnceCell::const_new();
-
-    TABLES
-        .get_or_try_init(|| async {
-            #[derive(sqlx::FromRow, Debug)]
-            struct TableName(String);
-
-            const QUERY: &str = "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND \
-                                 tablename NOT LIKE '%flyway%'";
-
-            let table_names: Vec<String> = sqlx::query_as(QUERY)
-                .fetch_all(ex)
-                .await?
-                .into_iter()
-                .map(|TableName(name)| name)
-                .collect();
-
-            Ok(table_names)
-        })
-        .await
+pub fn all_tables() -> impl Iterator<Item = &'static str> {
+    TABLES.iter().copied().chain(LARGE_TABLES.iter().copied())
 }
 
 /// Delete all data in the database. Only used by tests.
 #[allow(non_snake_case)]
 pub async fn clear_DANGER_(ex: &mut PgTransaction<'_>) -> sqlx::Result<()> {
-    for table in all_tables(ex).await? {
+    for table in all_tables() {
         ex.execute(format!("TRUNCATE {table};").as_str()).await?;
     }
     Ok(())
