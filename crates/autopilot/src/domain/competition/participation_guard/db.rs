@@ -46,8 +46,9 @@ impl Validator {
         self_
     }
 
-    /// Update the internal cache only once the settlement table is updated to
-    /// avoid redundant DB queries.
+    /// Update the internal cache only once the competition auctions table is
+    /// updated to avoid redundant DB queries on each block or any other
+    /// timeout.
     fn start_maintenance(
         &self,
         mut competition_updates_receiver: tokio::sync::mpsc::UnboundedReceiver<()>,
