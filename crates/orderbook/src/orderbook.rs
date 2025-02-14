@@ -1,7 +1,7 @@
 use {
     crate::{
         database::{
-            orders::{InsertionError, OrderStoring, OrderWithQuote},
+            orders::{InsertionError, OrderStoring},
             trades::{TradeFilter, TradeRetrieving},
         },
         dto,
@@ -9,6 +9,7 @@ use {
     },
     anyhow::{Context, Result},
     app_data::{AppDataHash, Validator},
+    bigdecimal::ToPrimitive,
     chrono::Utc,
     database::order_events::OrderEventLabel,
     ethcontract::H256,
@@ -26,7 +27,6 @@ use {
         solver_competition::{self, SolverCompetitionAPI},
         DomainSeparator,
     },
-    number::conversions::big_decimal_to_u256,
     observe::metrics::LivenessChecking,
     primitive_types::H160,
     shared::{
@@ -72,26 +72,27 @@ impl Metrics {
             .expect("unexpected error getting metrics instance")
     }
 
-    fn on_order_operation(order: &OrderWithQuote, operation: OrderOperation) {
-        let class = if order.quote.as_ref().is_some_and(|quote| {
+    fn on_order_operation(order: &Order, operation: OrderOperation) {
+        let class = if order.metadata.quote.as_ref().is_some_and(|quote| {
             // Check if the order at the submission time was "in market"
             !is_order_outside_market_price(
                 &Amounts {
-                    sell: order.order.data.sell_amount,
-                    buy: order.order.data.buy_amount,
-                    fee: order.order.data.fee_amount,
+                    sell: order.data.sell_amount,
+                    buy: order.data.buy_amount,
+                    fee: order.data.fee_amount,
                 },
                 &Amounts {
-                    sell: big_decimal_to_u256(&quote.sell_amount).unwrap(),
-                    buy: big_decimal_to_u256(&quote.buy_amount).unwrap(),
+                    sell: quote.sell_amount,
+                    buy: quote.buy_amount,
                     fee: FeeParameters {
-                        gas_amount: quote.gas_amount,
-                        gas_price: quote.gas_price,
-                        sell_token_price: quote.sell_token_price,
+                        // safe to unwrap as these values were converted from f64 previously
+                        gas_amount: quote.gas_amount.to_f64().unwrap(),
+                        gas_price: quote.gas_price.to_f64().unwrap(),
+                        sell_token_price: quote.sell_token_price.to_f64().unwrap(),
                     }
                     .fee(),
                 },
-                order.order.data.kind,
+                order.data.kind,
             )
         }) {
             OrderClass::Market
@@ -239,7 +240,7 @@ impl Orderbook {
             .get_replaced_order(&payload, full_app_data_override.as_deref())
             .await?;
 
-        let (order, quote) = self
+        let (mut order, quote) = self
             .order_validator
             .validate_and_construct_order(
                 payload,
@@ -260,10 +261,8 @@ impl Orderbook {
                 .insert_order(&order, quote.clone())
                 .await
                 .map_err(|err| AddOrderError::from_insertion(err, &order))?;
-            Metrics::on_order_operation(
-                &OrderWithQuote::try_new(order, quote)?,
-                OrderOperation::Created,
-            );
+            order.set_order_quote(quote.map(|q| q.try_to_model_order_quote()).transpose()?);
+            Metrics::on_order_operation(&order, OrderOperation::Created);
 
             Ok((order_uid, quote_id))
         }
@@ -275,16 +274,16 @@ impl Orderbook {
     async fn find_order_for_cancellation(
         &self,
         order_uid: &OrderUid,
-    ) -> Result<OrderWithQuote, OrderCancellationError> {
+    ) -> Result<Order, OrderCancellationError> {
         let order = self
             .database
             .single_order_with_quote(order_uid)
             .await?
             .ok_or(OrderCancellationError::OrderNotFound)?;
 
-        match order.order.metadata.status {
+        match order.metadata.status {
             OrderStatus::PresignaturePending => return Err(OrderCancellationError::OnChainOrder),
-            OrderStatus::Open if !order.order.signature.scheme().is_ecdsa_scheme() => {
+            OrderStatus::Open if !order.signature.scheme().is_ecdsa_scheme() => {
                 return Err(OrderCancellationError::OnChainOrder);
             }
             OrderStatus::Fulfilled => return Err(OrderCancellationError::OrderFullyExecuted),
@@ -309,10 +308,7 @@ impl Orderbook {
         let signer = cancellation
             .validate(&self.domain_separator)
             .map_err(|_| OrderCancellationError::InvalidSignature)?;
-        if orders
-            .iter()
-            .any(|order| signer != order.order.metadata.owner)
-        {
+        if orders.iter().any(|order| signer != order.metadata.owner) {
             return Err(OrderCancellationError::WrongOwner);
         };
 
@@ -323,7 +319,7 @@ impl Orderbook {
             .await?;
 
         for order in &orders {
-            tracing::debug!(order_uid =% order.order.metadata.uid, "order cancelled");
+            tracing::debug!(order_uid =% order.metadata.uid, "order cancelled");
             Metrics::on_order_operation(order, OrderOperation::Cancelled);
         }
 
@@ -342,17 +338,17 @@ impl Orderbook {
         let signer = cancellation
             .validate(&self.domain_separator)
             .map_err(|_| OrderCancellationError::InvalidSignature)?;
-        if signer != order.order.metadata.owner {
+        if signer != order.metadata.owner {
             return Err(OrderCancellationError::WrongOwner);
         };
 
         // order is already known to exist in DB at this point, and signer is
         // known to be correct!
         self.database
-            .cancel_order(&order.order.metadata.uid, Utc::now())
+            .cancel_order(&order.metadata.uid, Utc::now())
             .await?;
 
-        tracing::debug!(order_uid =% order.order.metadata.uid, "order cancelled");
+        tracing::debug!(order_uid =% order.metadata.uid, "order cancelled");
         Metrics::on_order_operation(&order, OrderOperation::Cancelled);
 
         Ok(())
@@ -362,7 +358,7 @@ impl Orderbook {
         &self,
         new_order: &OrderCreation,
         app_data_override: Option<&str>,
-    ) -> Result<Option<OrderWithQuote>, AddOrderError> {
+    ) -> Result<Option<Order>, AddOrderError> {
         let full_app_data = match &new_order.app_data {
             OrderCreationAppData::Hash { .. } => app_data_override,
             OrderCreationAppData::Both { full, .. } | OrderCreationAppData::Full { full } => {
@@ -388,8 +384,8 @@ impl Orderbook {
 
     pub async fn replace_order(
         &self,
-        validated_new_order: Order,
-        old_order: OrderWithQuote,
+        mut validated_new_order: Order,
+        old_order: Order,
         quote: Option<Quote>,
     ) -> Result<(OrderUid, Option<i64>), AddOrderError> {
         // Replacement order signatures need to be validated meaning we cannot
@@ -403,7 +399,7 @@ impl Orderbook {
 
         // Verify that the new order is a valid replacement order by checking
         // that both the old and new orders have the same signer.
-        if validated_new_order.metadata.owner != old_order.order.metadata.owner {
+        if validated_new_order.metadata.owner != old_order.metadata.owner {
             return Err(AddOrderError::InvalidReplacement);
         }
 
@@ -411,28 +407,19 @@ impl Orderbook {
         let order_uid = validated_new_order.metadata.uid;
 
         self.database
-            .replace_order(
-                &old_order.order.metadata.uid,
-                &validated_new_order,
-                quote.clone(),
-            )
+            .replace_order(&old_order.metadata.uid, &validated_new_order, quote.clone())
             .await
             .map_err(|err| AddOrderError::from_insertion(err, &validated_new_order))?;
+        validated_new_order
+            .set_order_quote(quote.map(|q| q.try_to_model_order_quote()).transpose()?);
         Metrics::on_order_operation(&old_order, OrderOperation::Cancelled);
-        Metrics::on_order_operation(
-            &OrderWithQuote::try_new(validated_new_order, quote)?,
-            OrderOperation::Created,
-        );
+        Metrics::on_order_operation(&validated_new_order, OrderOperation::Created);
 
         Ok((order_uid, quote_id))
     }
 
     pub async fn get_order(&self, uid: &OrderUid) -> Result<Option<Order>> {
-        Ok(self
-            .database
-            .single_order_with_quote(uid)
-            .await?
-            .map(|order_with_qoute| order_with_qoute.order))
+        self.database.single_order_with_quote(uid).await
     }
 
     pub async fn get_orders_for_tx(&self, hash: &H256) -> Result<Vec<Order>> {

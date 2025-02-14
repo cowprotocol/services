@@ -1,6 +1,6 @@
 use {
     super::Postgres,
-    crate::{dto::TokenMetadata, orderbook::AddOrderError},
+    crate::dto::TokenMetadata,
     anyhow::{Context as _, Result},
     app_data::AppDataHash,
     async_trait::async_trait,
@@ -78,39 +78,7 @@ pub trait OrderStoring: Send + Sync {
         limit: Option<u64>,
     ) -> Result<Vec<Order>>;
     async fn latest_order_event(&self, order_uid: &OrderUid) -> Result<Option<OrderEvent>>;
-    async fn single_order_with_quote(&self, uid: &OrderUid) -> Result<Option<OrderWithQuote>>;
-}
-
-pub struct OrderWithQuote {
-    pub order: Order,
-    pub quote: Option<orders::Quote>,
-}
-
-impl OrderWithQuote {
-    pub fn try_new(order: Order, quote: Option<Quote>) -> Result<Self, AddOrderError> {
-        Ok(Self {
-            quote: quote
-                .map(|quote| {
-                    Ok::<database::orders::Quote, AddOrderError>(orders::Quote {
-                        order_uid: ByteArray(order.metadata.uid.0),
-                        gas_amount: quote.data.fee_parameters.gas_amount,
-                        gas_price: quote.data.fee_parameters.gas_price,
-                        sell_token_price: quote.data.fee_parameters.sell_token_price,
-                        sell_amount: u256_to_big_decimal(&quote.sell_amount),
-                        buy_amount: u256_to_big_decimal(&quote.buy_amount),
-                        solver: ByteArray(quote.data.solver.0),
-                        verified: quote.data.verified,
-                        metadata: quote
-                            .data
-                            .metadata
-                            .try_into()
-                            .map_err(AddOrderError::MetadataSerializationFailed)?,
-                    })
-                })
-                .transpose()?,
-            order,
-        })
-    }
+    async fn single_order_with_quote(&self, uid: &OrderUid) -> Result<Option<Order>>;
 }
 
 #[derive(Debug)]
@@ -359,7 +327,7 @@ impl OrderStoring for Postgres {
         order.map(full_order_into_model_order).transpose()
     }
 
-    async fn single_order_with_quote(&self, uid: &OrderUid) -> Result<Option<OrderWithQuote>> {
+    async fn single_order_with_quote(&self, uid: &OrderUid) -> Result<Option<Order>> {
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["single_order_with_quote"])
@@ -406,7 +374,7 @@ impl OrderStoring for Postgres {
                     order_with_quote.full_order,
                     quote.as_ref(),
                 )?;
-                Some(OrderWithQuote { order, quote })
+                Some(order)
             }
             None => {
                 // try to find the order in the JIT orders table
@@ -414,7 +382,6 @@ impl OrderStoring for Postgres {
                     .await?
                     .map(full_order_into_model_order)
                     .transpose()?
-                    .map(|order| OrderWithQuote { order, quote: None })
             }
         };
 
@@ -1240,14 +1207,23 @@ mod tests {
 
         // Test `single_order_with_quote`
         let single_order_with_quote = db.single_order_with_quote(&uid).await.unwrap().unwrap();
-        assert_eq!(single_order_with_quote.order, order);
+
+        let mut order_with_quote = order;
+        order_with_quote.set_order_quote(Some(quote.try_to_model_order_quote().unwrap()));
+
+        assert_eq!(single_order_with_quote, order_with_quote);
         assert_eq!(
-            single_order_with_quote.quote.clone().unwrap().sell_amount,
-            u256_to_big_decimal(&quote.sell_amount)
+            single_order_with_quote
+                .metadata
+                .quote
+                .clone()
+                .unwrap()
+                .sell_amount,
+            quote.sell_amount
         );
         assert_eq!(
-            single_order_with_quote.quote.unwrap().buy_amount,
-            u256_to_big_decimal(&quote.buy_amount)
+            single_order_with_quote.metadata.quote.unwrap().buy_amount,
+            quote.buy_amount
         );
     }
 
@@ -1301,10 +1277,14 @@ mod tests {
             },
             ..Default::default()
         };
-        db.insert_order(&order, Some(quote)).await.unwrap();
+        db.insert_order(&order, Some(quote.clone())).await.unwrap();
 
         let single_order_with_quote = db.single_order_with_quote(&uid).await.unwrap().unwrap();
-        assert_eq!(single_order_with_quote.order, order);
-        assert!(single_order_with_quote.quote.unwrap().verified);
+
+        let mut order_with_quote = order;
+        order_with_quote.set_order_quote(Some(quote.try_to_model_order_quote().unwrap()));
+
+        assert_eq!(single_order_with_quote, order_with_quote);
+        assert!(single_order_with_quote.metadata.quote.unwrap().verified);
     }
 }

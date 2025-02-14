@@ -133,8 +133,8 @@ pub fn order_quote_into_model(quote: &database::orders::Quote) -> Result<OrderQu
         gas_price: BigDecimal::from_f64(quote.gas_price).context("gas_price is not U256")?,
         sell_token_price: BigDecimal::from_f64(quote.sell_token_price)
             .context("gas_price is not U256")?,
-        sell_amount: quote.sell_amount.clone(),
-        buy_amount: quote.buy_amount.clone(),
+        sell_amount: big_decimal_to_u256(&quote.sell_amount).context("sell_amount is not U256")?,
+        buy_amount: big_decimal_to_u256(&quote.buy_amount).context("buy_amount is not U256")?,
         solver: H160(quote.solver.0),
         verified: quote.verified,
         metadata: quote.metadata.clone(),

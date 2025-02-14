@@ -82,6 +82,10 @@ impl Order {
     pub fn is_limit_order(&self) -> bool {
         matches!(self.metadata.class, OrderClass::Limit)
     }
+
+    pub fn set_order_quote(&mut self, quote: Option<OrderQuote>) {
+        self.metadata.quote = quote;
+    }
 }
 
 #[derive(Clone, Default, Debug)]
@@ -980,10 +984,10 @@ pub struct OrderQuote {
     pub gas_price: BigDecimal,
     #[serde_as(as = "DisplayFromStr")]
     pub sell_token_price: BigDecimal,
-    #[serde_as(as = "DisplayFromStr")]
-    pub sell_amount: BigDecimal,
-    #[serde_as(as = "DisplayFromStr")]
-    pub buy_amount: BigDecimal,
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub sell_amount: U256,
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub buy_amount: U256,
     pub solver: H160,
     pub verified: bool,
     pub metadata: serde_json::Value,
