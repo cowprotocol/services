@@ -58,51 +58,38 @@ impl Validator {
         tokio::spawn(async move {
             while competition_updates_receiver.recv().await.is_some() {
                 let current_block = current_block.borrow().number;
-                match self_
+                let non_settling_solvers = match self_
                     .0
                     .persistence
                     .find_non_settling_solvers(self_.0.last_auctions_count, current_block)
                     .await
                 {
-                    Ok(non_settling_solvers) => {
-                        let non_settling_drivers = non_settling_solvers
-                            .into_iter()
-                            .filter_map(|solver| {
-                                self_.0.drivers_by_address.get(&solver).map(|driver| {
-                                    Metrics::get()
-                                        .non_settling_solver
-                                        .with_label_values(&[&driver.name]);
-
-                                    driver.clone()
-                                })
-                            })
-                            .collect::<Vec<_>>();
-
-                        let non_settling_solver_names = non_settling_drivers
-                            .iter()
-                            .map(|driver| driver.name.clone())
-                            .collect::<Vec<_>>();
-
-                        tracing::debug!(solvers = ?non_settling_solver_names, "found non-settling solvers");
-
-                        let now = Instant::now();
-                        non_settling_drivers
-                            .into_iter()
-                            // Check if solver accepted this feature. This should be removed once the CIP
-                            // making this mandatory has been approved.
-                            .filter_map(|driver| {
-                                driver.accepts_unsettled_blocking.then_some(driver.submission_address)
-                            })
-                            .for_each(|solver| {
-                                self_.0.banned_solvers.insert(solver, now);
-                            });
-                    }
+                    Ok(non_settling_solvers) => non_settling_solvers,
                     Err(err) => {
-                        tracing::warn!(?err, "error while searching for non-settling solvers")
+                        tracing::warn!(?err, "error while searching for non-settling solvers");
+                        continue;
+                    }
+                };
+
+                tracing::debug!(solvers = ?non_settling_solvers, "found non-settling solvers");
+
+                let now = Instant::now();
+                for solver in non_settling_solvers {
+                    let Some(driver) = self_.0.drivers_by_address.get(&solver) else {
+                        continue;
+                    };
+                    Metrics::get()
+                        .non_settling_solver
+                        .with_label_values(&[&driver.name]);
+                    // Check if solver accepted this feature. This should be removed once the CIP
+                    // making this mandatory has been approved.
+                    if driver.accepts_unsettled_blocking {
+                        tracing::debug!(?solver, "disabling solver temporarily");
+                        self_.0.banned_solvers.insert(solver, now);
                     }
                 }
             }
-            tracing::error!("competition_updates_receiver closed");
+            tracing::error!("stream of settlement updates terminated unexpectedly");
         });
     }
 }
