@@ -579,10 +579,7 @@ pub async fn run(args: Arguments) {
         persistence.clone(),
         competition_updates_receiver,
         args.db_based_solver_participation_guard,
-        drivers
-            .iter()
-            .map(|driver| (driver.submission_address, driver.clone()))
-            .collect(),
+        drivers.iter().cloned(),
     );
 
     let run = RunLoop::new(

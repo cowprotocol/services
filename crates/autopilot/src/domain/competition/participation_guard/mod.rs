@@ -7,7 +7,7 @@ use {
         domain::eth,
         infra::{self, Ethereum},
     },
-    std::{collections::HashMap, sync::Arc},
+    std::sync::Arc,
 };
 
 /// This struct checks whether a solver can participate in the competition by
@@ -26,7 +26,7 @@ impl SolverParticipationGuard {
         persistence: infra::Persistence,
         competition_updates_receiver: tokio::sync::mpsc::UnboundedReceiver<()>,
         db_based_validator_config: DbBasedSolverParticipationGuardConfig,
-        drivers_by_address: HashMap<eth::Address, Arc<infra::Driver>>,
+        drivers: impl IntoIterator<Item = Arc<infra::Driver>>,
     ) -> Self {
         let mut validators: Vec<Box<dyn Validator + Send + Sync>> = Vec::new();
 
@@ -38,7 +38,10 @@ impl SolverParticipationGuard {
                 competition_updates_receiver,
                 db_based_validator_config.solver_blacklist_cache_ttl,
                 db_based_validator_config.solver_last_auctions_participation_count,
-                drivers_by_address,
+                drivers
+                    .into_iter()
+                    .map(|driver| (driver.submission_address, driver.clone()))
+                    .collect(),
             );
             validators.push(Box::new(database_solver_participation_validator));
         }
