@@ -72,25 +72,27 @@ impl Validator {
                     }
                 };
 
-                tracing::debug!(solvers = ?non_settling_solvers, "found non-settling solvers");
-
+                let mut non_settling_solver_names: Vec<&str> = Vec::new();
                 let now = Instant::now();
                 let banned_until = Utc::now() + self_.0.ttl;
                 for solver in non_settling_solvers {
                     let Some(driver) = self_.0.drivers_by_address.get(&solver) else {
                         continue;
                     };
+                    non_settling_solver_names.push(driver.name.as_ref());
                     Metrics::get()
                         .non_settling_solver
                         .with_label_values(&[&driver.name]);
                     // Check if solver accepted this feature. This should be removed once the CIP
                     // making this mandatory has been approved.
                     if driver.accepts_unsettled_blocking {
-                        tracing::debug!(?solver, "disabling solver temporarily");
+                        tracing::debug!(solver = ?driver.name, "disabling solver temporarily");
                         infra::notify_non_settling_solver(driver.clone(), banned_until);
                         self_.0.banned_solvers.insert(solver, now);
                     }
                 }
+
+                tracing::debug!(solvers = ?non_settling_solver_names, "found non-settling solvers");
             }
             tracing::error!("stream of settlement updates terminated unexpectedly");
         });
