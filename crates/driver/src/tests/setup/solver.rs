@@ -449,7 +449,7 @@ impl Solver {
                 settlement: Some(config.blockchain.settlement.address().into()),
                 weth: Some(config.blockchain.weth.address().into()),
                 cow_amms: vec![],
-                flashloan_wrapper: None,
+                flashloan_wrapper: Some(config.blockchain.flashloan_wrapper.address().into()),
             },
             gas,
             None,
