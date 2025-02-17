@@ -172,15 +172,10 @@ impl SolverValidator {
             .collect::<Vec<_>>();
         tracing::debug!(solvers = ?solver_names, log_message);
 
-        let reason = match ban_reason {
-            dto::notify::BanReason::UnsettledConsecutiveAuctions => "non_settling",
-            dto::notify::BanReason::HighSettleFailureRate => "high_settle_failure_rate",
-        };
-
         for solver in solver_names {
             Metrics::get()
                 .banned_solver
-                .with_label_values(&[&solver, reason]);
+                .with_label_values(&[&solver, ban_reason.as_str()]);
         }
 
         let banned_drivers = drivers

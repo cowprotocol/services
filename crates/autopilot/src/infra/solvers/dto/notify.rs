@@ -19,3 +19,12 @@ pub enum BanReason {
     /// Driver's settle failure rate is above the threshold.
     HighSettleFailureRate,
 }
+
+impl BanReason {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            BanReason::UnsettledConsecutiveAuctions => "non_settling",
+            BanReason::HighSettleFailureRate => "high_settle_failure_rate",
+        }
+    }
+}
