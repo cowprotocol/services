@@ -30,8 +30,7 @@ pub struct Contracts {
     pub ethflows: Vec<CoWSwapEthFlow>,
     pub hooks: HooksTrampoline,
     pub cow_amm_helper: Option<CowAmmLegacyHelper>,
-    // Optional since ERC3156FlashLoanSolverWrapper::deployed() is missing
-    pub flashloan_wrapper: Option<ERC3156FlashLoanSolverWrapper>,
+    pub flashloan_wrapper: ERC3156FlashLoanSolverWrapper,
 }
 
 impl Contracts {
@@ -77,7 +76,8 @@ impl Contracts {
             hooks: HooksTrampoline::deployed(web3).await.unwrap(),
             gp_settlement,
             cow_amm_helper,
-            flashloan_wrapper: None,
+            // TODO cleanup when contract is actually deployed
+            flashloan_wrapper: ERC3156FlashLoanSolverWrapper::at(web3, Default::default()),
         }
     }
 
@@ -181,7 +181,7 @@ impl Contracts {
             hooks,
             // Current helper contract only works in forked tests
             cow_amm_helper: None,
-            flashloan_wrapper: Some(flashloan_wrapper),
+            flashloan_wrapper,
         }
     }
 

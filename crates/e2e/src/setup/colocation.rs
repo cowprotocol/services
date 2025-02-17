@@ -168,6 +168,7 @@ orderbook-url = "http://localhost:8080"
 [contracts]
 gp-v2-settlement = "{:?}"
 weth = "{:?}"
+flashloan-wrapper = "{:?}"
 {cow_amms}
 
 {solvers}
@@ -185,6 +186,7 @@ mempool = "public"
 "#,
         contracts.gp_settlement.address(),
         contracts.weth.address(),
+        contracts.flashloan_wrapper.address(),
     ));
     let args = vec![
         "driver".to_string(),
