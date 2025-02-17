@@ -1,4 +1,3 @@
-use chrono::DateTime;
 use {
     crate::{
         arguments::{
@@ -9,7 +8,7 @@ use {
         domain::{eth, Metrics},
         infra::{self, solvers::dto},
     },
-    chrono::Utc,
+    chrono::{DateTime, Utc},
     ethrpc::block_stream::CurrentBlockWatcher,
     std::{
         collections::{HashMap, HashSet},
@@ -154,7 +153,7 @@ impl SolverValidator {
     ) {
         let mut non_settling_solver_names: Vec<&str> = Vec::new();
         for solver in solvers {
-            let Some(driver) = self.0.drivers_by_address.get(&solver) else {
+            let Some(driver) = self.0.drivers_by_address.get(solver) else {
                 continue;
             };
             non_settling_solver_names.push(driver.name.as_ref());
@@ -165,8 +164,8 @@ impl SolverValidator {
             // making this mandatory has been approved.
             if driver.accepts_unsettled_blocking {
                 tracing::debug!(solver = ?driver.name, "disabling solver temporarily");
-                infra::notify_non_settling_solver(driver.clone(), banned_until);
-                self.0.banned_solvers.insert(solver.clone(), found_at);
+                infra::notify_banned_solver(driver.clone(), ban_reason, banned_until);
+                self.0.banned_solvers.insert(*solver, found_at);
             }
         }
 

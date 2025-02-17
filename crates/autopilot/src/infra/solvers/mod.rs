@@ -179,14 +179,16 @@ pub async fn response_body_with_size_limit(
 }
 
 /// Notifies the non-settling driver in a fire-and-forget manner.
-pub fn notify_non_settling_solver(non_settling_driver: Arc<Driver>,reason: &notify::BanReason, banned_until: DateTime<Utc>) {
+pub fn notify_banned_solver(
+    non_settling_driver: Arc<Driver>,
+    reason: &notify::BanReason,
+    banned_until: DateTime<Utc>,
+) {
     let request = notify::Request::Banned {
         reason: reason.clone(),
         until: banned_until,
     };
     tokio::spawn(async move {
-        let _ = non_settling_driver
-            .notify(&request)
-            .await;
+        let _ = non_settling_driver.notify(&request).await;
     });
 }
