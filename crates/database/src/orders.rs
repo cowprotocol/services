@@ -574,19 +574,6 @@ COALESCE((SELECT executed_fee_token FROM order_execution oe WHERE oe.order_uid =
 
 pub const FROM: &str = "orders o";
 
-pub async fn single_full_order(
-    ex: &mut PgConnection,
-    uid: &OrderUid,
-) -> Result<Option<FullOrder>, sqlx::Error> {
-    #[rustfmt::skip]
-        const QUERY: &str = const_format::concatcp!(
-"SELECT ", SELECT,
-" FROM ", FROM,
-" WHERE o.uid = $1 ",
-        );
-    sqlx::query_as(QUERY).bind(uid).fetch_optional(ex).await
-}
-
 pub async fn single_full_order_with_quote(
     ex: &mut PgConnection,
     uid: &OrderUid,
@@ -845,6 +832,19 @@ mod tests {
             .bind(execution)
             .fetch_all(ex)
             .await
+    }
+
+    async fn single_full_order(
+        ex: &mut PgConnection,
+        uid: &OrderUid,
+    ) -> Result<Option<FullOrder>, sqlx::Error> {
+        #[rustfmt::skip]
+            const QUERY: &str = const_format::concatcp!(
+    "SELECT ", SELECT,
+    " FROM ", FROM,
+    " WHERE o.uid = $1 ",
+            );
+        sqlx::query_as(QUERY).bind(uid).fetch_optional(ex).await
     }
 
     #[tokio::test]
