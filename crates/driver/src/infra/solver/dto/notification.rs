@@ -7,6 +7,7 @@ use {
         infra::notify,
         util::serialize,
     },
+    chrono::{DateTime, Utc},
     serde::Serialize,
     serde_with::serde_as,
     std::collections::BTreeSet,
@@ -61,17 +62,14 @@ impl Notification {
                     notify::Settlement::Expired => Kind::Expired,
                 },
                 notify::Kind::PostprocessingTimedOut => Kind::PostprocessingTimedOut,
-                notify::Kind::Banned {
-                    reason,
-                    until_timestamp,
-                } => Kind::Banned {
+                notify::Kind::Banned { reason, until } => Kind::Banned {
                     reason: match reason {
                         notify::BanReason::UnsettledConsecutiveAuctions => {
                             BanReason::UnsettledConsecutiveAuctions
                         }
                         notify::BanReason::HighSettleFailureRate => BanReason::LowSettlingRate,
                     },
-                    until_timestamp,
+                    until,
                 },
             },
         }
@@ -158,7 +156,7 @@ pub enum Kind {
     PostprocessingTimedOut,
     Banned {
         reason: BanReason,
-        until_timestamp: u64,
+        until: DateTime<Utc>,
     },
 }
 

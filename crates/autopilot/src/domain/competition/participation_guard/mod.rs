@@ -3,7 +3,7 @@ mod onchain;
 
 use {
     crate::{arguments::DbBasedSolverParticipationGuardConfig, domain::eth, infra},
-    std::{collections::HashMap, sync::Arc},
+    std::sync::Arc,
 };
 
 /// This struct checks whether a solver can participate in the competition by
@@ -22,7 +22,7 @@ impl SolverParticipationGuard {
         persistence: infra::Persistence,
         competition_updates_receiver: tokio::sync::mpsc::UnboundedReceiver<()>,
         db_based_validator_config: DbBasedSolverParticipationGuardConfig,
-        drivers_by_address: HashMap<eth::Address, Arc<infra::Driver>>,
+        drivers: impl IntoIterator<Item = Arc<infra::Driver>>,
     ) -> Self {
         let mut validators: Vec<Box<dyn SolverValidator + Send + Sync>> = Vec::new();
 
@@ -32,7 +32,10 @@ impl SolverParticipationGuard {
             current_block,
             competition_updates_receiver,
             db_based_validator_config,
-            drivers_by_address,
+            drivers
+                .into_iter()
+                .map(|driver| (driver.submission_address, driver.clone()))
+                .collect(),
         );
         validators.push(Box::new(database_solver_participation_validator));
 

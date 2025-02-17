@@ -97,6 +97,18 @@ GROUP BY sc.id
     sqlx::query_as(QUERY).bind(tx_hash).fetch_optional(ex).await
 }
 
+/// Identifies solvers that have consistently failed to settle solutions in
+/// recent N auctions.
+///
+/// 1. Retrieves `last_auctions_count` most recent auctions already ended
+///    auctions by filtering them by their deadlines.
+/// 2. Identifies solvers who won these auctions but did not submit a successful
+///    settlement.
+/// 3. Counts how often each solver appears in these unsuccessful cases.
+/// 4. Determines the total number of auctions considered.
+/// 5. Flags solvers who failed to settle in all of these auctions.
+/// 6. Returns a list of solvers that have consistently failed to settle
+///    solutions.
 pub async fn find_non_settling_solvers(
     ex: &mut PgConnection,
     last_auctions_count: u32,

@@ -1,7 +1,5 @@
 mod dto;
 
-pub use dto::NotifyError;
-
 use crate::infra::api::{Error, State};
 
 pub(in crate::infra::api) fn notify(router: axum::Router<State>) -> axum::Router<State> {
@@ -14,10 +12,10 @@ async fn route(
 ) -> Result<hyper::StatusCode, (hyper::StatusCode, axum::Json<Error>)> {
     let solver = &state.solver().name().0;
     tracing::debug!(?req, ?solver, "received a notification");
-    state
-        .solver()
-        .notify(None, None, req.0.into())
-        .await
-        .map(|_| hyper::StatusCode::OK)
-        .map_err(|_| NotifyError::UnableToNotify.into())
+
+    if let Err(err) = state.solver().notify(None, None, req.0.into()).await {
+        tracing::debug!(?err, "failed to notify solver");
+    }
+
+    Ok(hyper::StatusCode::OK)
 }

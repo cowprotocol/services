@@ -561,7 +561,7 @@ pub async fn run(args: Arguments) {
                 driver.name.clone(),
                 driver.fairness_threshold.map(Into::into),
                 driver.submission_account,
-                driver.accepts_unsettled_blocking,
+                driver.requested_timeout_on_problems,
             )
             .await
             .map(Arc::new)
@@ -579,10 +579,7 @@ pub async fn run(args: Arguments) {
         persistence.clone(),
         competition_updates_receiver,
         args.db_based_solver_participation_guard,
-        drivers
-            .iter()
-            .map(|driver| (driver.submission_address, driver.clone()))
-            .collect(),
+        drivers.iter().cloned(),
     );
 
     let run = RunLoop::new(
@@ -617,7 +614,7 @@ async fn shadow_mode(args: Arguments) -> ! {
                 driver.name.clone(),
                 driver.fairness_threshold.map(Into::into),
                 driver.submission_account,
-                driver.accepts_unsettled_blocking,
+                driver.requested_timeout_on_problems,
             )
             .await
             .map(Arc::new)
