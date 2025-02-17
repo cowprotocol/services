@@ -779,7 +779,7 @@ mod test {
     #[test]
     fn parse_driver_with_accepts_unsettled_blocking_flag() {
         let argument =
-            "name1|http://localhost:8080|0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2|true";
+            "name1|http://localhost:8080|0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2|requested_timeout_on_problems";
         let driver = Solver::from_str(argument).unwrap();
         let expected = Solver {
             name: "name1".into(),
@@ -795,7 +795,7 @@ mod test {
 
     #[test]
     fn parse_driver_with_threshold_and_accepts_unsettled_blocking_flag() {
-        let argument = "name1|http://localhost:8080|0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2|1000000000000000000|true";
+        let argument = "name1|http://localhost:8080|0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2|1000000000000000000|requested_timeout_on_problems";
         let driver = Solver::from_str(argument).unwrap();
         let expected = Solver {
             name: "name1".into(),
