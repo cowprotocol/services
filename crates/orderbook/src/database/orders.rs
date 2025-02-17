@@ -1188,25 +1188,14 @@ mod tests {
         assert_eq!(interactions, order.interactions);
 
         // Test `single_order_with_quote`
-        let single_order_with_quote = db.single_order(&uid).await.unwrap().unwrap();
+        let mut single_order_with_quote = db.single_order(&uid).await.unwrap().unwrap();
 
-        let mut order_with_quote = order;
-        order_with_quote.set_order_quote(quote.try_to_model_order_quote().unwrap());
-
-        assert_eq!(single_order_with_quote, order_with_quote);
         assert_eq!(
-            single_order_with_quote
-                .metadata
-                .quote
-                .clone()
-                .unwrap()
-                .sell_amount,
-            quote.sell_amount
+            single_order_with_quote.metadata.quote,
+            Some(quote.try_to_model_order_quote().unwrap())
         );
-        assert_eq!(
-            single_order_with_quote.metadata.quote.unwrap().buy_amount,
-            quote.buy_amount
-        );
+        single_order_with_quote.metadata.quote = None; // already compared, now compary orders
+        assert_eq!(single_order_with_quote, order);
     }
 
     #[tokio::test]
@@ -1261,12 +1250,14 @@ mod tests {
         };
         db.insert_order(&order, Some(quote.clone())).await.unwrap();
 
-        let single_order_with_quote = db.single_order(&uid).await.unwrap().unwrap();
+        let mut single_order_with_quote = db.single_order(&uid).await.unwrap().unwrap();
 
-        let mut order_with_quote = order;
-        order_with_quote.set_order_quote(quote.try_to_model_order_quote().unwrap());
-
-        assert_eq!(single_order_with_quote, order_with_quote);
+        assert_eq!(
+            single_order_with_quote.metadata.quote,
+            Some(quote.try_to_model_order_quote().unwrap())
+        );
         assert!(single_order_with_quote.metadata.quote.unwrap().verified);
+        single_order_with_quote.metadata.quote = None; // already compared, now compary orders
+        assert_eq!(single_order_with_quote, order);
     }
 }

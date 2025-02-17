@@ -82,10 +82,6 @@ impl Order {
     pub fn is_limit_order(&self) -> bool {
         matches!(self.metadata.class, OrderClass::Limit)
     }
-
-    pub fn set_order_quote(&mut self, quote: OrderQuote) {
-        self.metadata.quote = Some(quote);
-    }
 }
 
 #[derive(Clone, Default, Debug)]
