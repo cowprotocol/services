@@ -723,7 +723,7 @@ impl OrderValidating for OrderValidator {
                     .as_ref()
                     .map(|q| q.try_to_model_order_quote())
                     .transpose()
-                    .map_err(|e| ValidationError::Other(e))?,
+                    .map_err(ValidationError::Other)?,
                 ..Default::default()
             },
             signature: order.signature.clone(),
