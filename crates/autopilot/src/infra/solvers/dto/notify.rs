@@ -1,4 +1,8 @@
-use {serde::Serialize, serde_with::serde_as};
+use {
+    chrono::{DateTime, Utc},
+    serde::Serialize,
+    serde_with::serde_as,
+};
 
 #[serde_as]
 #[derive(Clone, Debug, Serialize)]
@@ -6,7 +10,7 @@ use {serde::Serialize, serde_with::serde_as};
 pub enum Request {
     Banned {
         reason: BanReason,
-        until_timestamp: u64,
+        until: DateTime<Utc>,
     },
 }
 

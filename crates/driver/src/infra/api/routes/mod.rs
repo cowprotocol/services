@@ -11,7 +11,7 @@ pub(super) use {
     healthz::healthz,
     info::info,
     metrics::metrics,
-    notify::{notify, NotifyError},
+    notify::notify,
     quote::{quote, OrderError},
     reveal::reveal,
     settle::settle,

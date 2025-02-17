@@ -1,3 +1,4 @@
+use chrono::DateTime;
 use {
     crate::{
         arguments::{
@@ -8,8 +9,8 @@ use {
         domain::{eth, Metrics},
         infra::{self, solvers::dto},
     },
+    chrono::Utc,
     ethrpc::block_stream::CurrentBlockWatcher,
-    model::time::now_in_epoch_seconds,
     std::{
         collections::{HashMap, HashSet},
         sync::Arc,
@@ -77,22 +78,22 @@ impl SolverValidator {
                 low_settling_solvers.retain(|solver| !non_settling_solvers.contains(solver));
 
                 let found_at = Instant::now();
-                let banned_until_timestamp =
-                    u64::from(now_in_epoch_seconds()) + self_.0.ttl.as_secs();
+                let banned_until = Utc::now() + self_.0.ttl;
 
                 self_.post_process(
                     &non_settling_solvers,
                     &dto::notify::BanReason::UnsettledConsecutiveAuctions,
                     found_at,
-                    banned_until_timestamp,
+                    banned_until,
                 );
                 self_.post_process(
                     &low_settling_solvers,
                     &dto::notify::BanReason::HighSettleFailureRate,
                     found_at,
-                    banned_until_timestamp,
+                    banned_until,
                 );
             }
+            tracing::error!("stream of settlement updates terminated unexpectedly");
         });
     }
 
@@ -149,16 +150,25 @@ impl SolverValidator {
         solvers: &HashSet<eth::Address>,
         ban_reason: &dto::notify::BanReason,
         found_at: Instant,
-        banned_until_timestamp: u64,
+        banned_until: DateTime<Utc>,
     ) {
-        if solvers.is_empty() {
-            return;
+        let mut non_settling_solver_names: Vec<&str> = Vec::new();
+        for solver in solvers {
+            let Some(driver) = self.0.drivers_by_address.get(&solver) else {
+                continue;
+            };
+            non_settling_solver_names.push(driver.name.as_ref());
+            Metrics::get()
+                .banned_solver
+                .with_label_values(&[driver.name.as_ref(), ban_reason.as_str()]);
+            // Check if solver accepted this feature. This should be removed once the CIP
+            // making this mandatory has been approved.
+            if driver.accepts_unsettled_blocking {
+                tracing::debug!(solver = ?driver.name, "disabling solver temporarily");
+                infra::notify_non_settling_solver(driver.clone(), banned_until);
+                self.0.banned_solvers.insert(solver.clone(), found_at);
+            }
         }
-
-        let drivers = solvers
-            .iter()
-            .filter_map(|solver| self.0.drivers_by_address.get(solver).cloned())
-            .collect::<Vec<_>>();
 
         let log_message = match ban_reason {
             dto::notify::BanReason::UnsettledConsecutiveAuctions => "found non-settling solvers",
@@ -166,31 +176,7 @@ impl SolverValidator {
                 "found high-failure-settlement solvers"
             }
         };
-        let solver_names = drivers
-            .iter()
-            .map(|driver| driver.name.as_ref())
-            .collect::<Vec<_>>();
-        tracing::debug!(solvers = ?solver_names, log_message);
-
-        for solver in solver_names {
-            Metrics::get()
-                .banned_solver
-                .with_label_values(&[solver, ban_reason.as_str()]);
-        }
-
-        let banned_drivers = drivers
-            .into_iter()
-            // Notify and block only solvers that accept unsettled blocking feature. This should be removed once a CIP is approved.
-            .filter(|driver| driver.accepts_unsettled_blocking)
-            .collect::<Vec<_>>();
-
-        infra::notify_banned_solvers(&banned_drivers, ban_reason, banned_until_timestamp);
-
-        for driver in banned_drivers {
-            self.0
-                .banned_solvers
-                .insert(driver.submission_address, found_at);
-        }
+        tracing::debug!(solvers = ?non_settling_solver_names, log_message);
     }
 }
 
@@ -198,11 +184,7 @@ impl SolverValidator {
 impl super::SolverValidator for SolverValidator {
     async fn is_allowed(&self, solver: &eth::Address) -> anyhow::Result<bool> {
         if let Some(entry) = self.0.banned_solvers.get(solver) {
-            if Instant::now().duration_since(*entry.value()) < self.0.ttl {
-                return Ok(false);
-            } else {
-                self.0.banned_solvers.remove(solver);
-            }
+            return Ok(entry.elapsed() >= self.0.ttl);
         }
 
         Ok(true)

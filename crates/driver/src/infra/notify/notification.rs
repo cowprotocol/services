@@ -3,6 +3,7 @@ use {
         competition::{auction, solution},
         eth::{self, Ether, TokenAddress},
     },
+    chrono::{DateTime, Utc},
     std::collections::BTreeSet,
 };
 
@@ -48,7 +49,7 @@ pub enum Kind {
     /// The solver has been banned for a specific reason.
     Banned {
         reason: BanReason,
-        until_timestamp: u64,
+        until: DateTime<Utc>,
     },
 }
 

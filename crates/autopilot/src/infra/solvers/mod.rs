@@ -2,7 +2,7 @@ use {
     self::dto::{reveal, settle, solve},
     crate::{arguments::Account, domain::eth, infra::solvers::dto::notify, util},
     anyhow::{anyhow, Context, Result},
-    ethcontract::jsonrpc::futures_util::future::join_all,
+    chrono::{DateTime, Utc},
     reqwest::{Client, StatusCode},
     std::{sync::Arc, time::Duration},
     thiserror::Error,
@@ -178,29 +178,15 @@ pub async fn response_body_with_size_limit(
     Ok(bytes)
 }
 
-/// Try to notify all the non-settling solvers in a background task.
-pub fn notify_banned_solvers(
-    drivers: &[Arc<Driver>],
-    reason: &notify::BanReason,
-    banned_until_timestamp: u64,
-) {
+/// Notifies the non-settling driver in a fire-and-forget manner.
+pub fn notify_non_settling_solver(non_settling_driver: Arc<Driver>,reason: &notify::BanReason, banned_until: DateTime<Utc>) {
     let request = notify::Request::Banned {
         reason: reason.clone(),
-        until_timestamp: banned_until_timestamp,
+        until: banned_until,
     };
-    let futures = drivers
-        .iter()
-        .cloned()
-        .map(|driver| {
-            let request = request.clone();
-            async move {
-            if let Err(err) = driver.notify(&request).await {
-                tracing::debug!(solver = ?driver.name, ?err, "unable to notify external solver");
-            }
-        }})
-        .collect::<Vec<_>>();
-
     tokio::spawn(async move {
-        join_all(futures).await;
+        let _ = non_settling_driver
+            .notify(&request)
+            .await;
     });
 }

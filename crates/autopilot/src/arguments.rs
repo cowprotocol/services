@@ -253,7 +253,18 @@ pub struct Arguments {
 
 #[derive(Debug, clap::Parser)]
 pub struct DbBasedSolverParticipationGuardConfig {
-    /// The time-to-live for the solver participation blacklist cache.
+    /// Enables or disables the solver participation guard
+    #[clap(
+        id = "db_enabled",
+        long = "db-based-solver-participation-guard-enabled",
+        env = "DB_BASED_SOLVER_PARTICIPATION_GUARD_ENABLED",
+        default_value = "true"
+    )]
+    pub enabled: bool,
+
+    /// Sets the duration for which the solver remains blacklisted.
+    /// Technically, the time-to-live for the solver participation blacklist
+    /// cache.
     #[clap(long, env, default_value = "5m", value_parser = humantime::parse_duration)]
     pub solver_blacklist_cache_ttl: Duration,
 
