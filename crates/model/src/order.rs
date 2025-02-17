@@ -83,8 +83,8 @@ impl Order {
         matches!(self.metadata.class, OrderClass::Limit)
     }
 
-    pub fn set_order_quote(&mut self, quote: Option<OrderQuote>) {
-        self.metadata.quote = quote;
+    pub fn set_order_quote(&mut self, quote: OrderQuote) {
+        self.metadata.quote = Some(quote);
     }
 }
 
@@ -696,7 +696,7 @@ pub struct OrderMetadata {
     /// Full app data that `OrderData::app_data` is a hash of. Can be None if
     /// the backend doesn't know about the full app data.
     pub full_app_data: Option<String>,
-    /// If the order was crated with a quote, then this field contains that
+    /// If the order was created with a quote, then this field contains that
     /// quote informations for reference.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quote: Option<OrderQuote>,

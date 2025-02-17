@@ -719,6 +719,11 @@ impl OrderValidating for OrderValidator {
                     | OrderCreationAppData::Full { full } => Some(full),
                     OrderCreationAppData::Hash { .. } => full_app_data_override,
                 },
+                quote: quote
+                    .as_ref()
+                    .map(|q| q.try_to_model_order_quote())
+                    .transpose()
+                    .map_err(|e| ValidationError::Other(e))?,
                 ..Default::default()
             },
             signature: order.signature.clone(),

@@ -240,7 +240,7 @@ impl Orderbook {
             .get_replaced_order(&payload, full_app_data_override.as_deref())
             .await?;
 
-        let (mut order, quote) = self
+        let (order, quote) = self
             .order_validator
             .validate_and_construct_order(
                 payload,
@@ -258,10 +258,9 @@ impl Orderbook {
             let order_uid = order.metadata.uid;
 
             self.database
-                .insert_order(&order, quote.clone())
+                .insert_order(&order, quote)
                 .await
                 .map_err(|err| AddOrderError::from_insertion(err, &order))?;
-            order.set_order_quote(quote.map(|q| q.try_to_model_order_quote()).transpose()?);
             Metrics::on_order_operation(&order, OrderOperation::Created);
 
             Ok((order_uid, quote_id))
@@ -277,7 +276,7 @@ impl Orderbook {
     ) -> Result<Order, OrderCancellationError> {
         let order = self
             .database
-            .single_order_with_quote(order_uid)
+            .single_order(order_uid)
             .await?
             .ok_or(OrderCancellationError::OrderNotFound)?;
 
@@ -384,7 +383,7 @@ impl Orderbook {
 
     pub async fn replace_order(
         &self,
-        mut validated_new_order: Order,
+        validated_new_order: Order,
         old_order: Order,
         quote: Option<Quote>,
     ) -> Result<(OrderUid, Option<i64>), AddOrderError> {
@@ -410,8 +409,6 @@ impl Orderbook {
             .replace_order(&old_order.metadata.uid, &validated_new_order, quote.clone())
             .await
             .map_err(|err| AddOrderError::from_insertion(err, &validated_new_order))?;
-        validated_new_order
-            .set_order_quote(quote.map(|q| q.try_to_model_order_quote()).transpose()?);
         Metrics::on_order_operation(&old_order, OrderOperation::Cancelled);
         Metrics::on_order_operation(&validated_new_order, OrderOperation::Created);
 
@@ -419,7 +416,7 @@ impl Orderbook {
     }
 
     pub async fn get_order(&self, uid: &OrderUid) -> Result<Option<Order>> {
-        self.database.single_order_with_quote(uid).await
+        self.database.single_order(uid).await
     }
 
     pub async fn get_orders_for_tx(&self, hash: &H256) -> Result<Vec<Order>> {

@@ -68,7 +68,6 @@ pub trait OrderStoring: Send + Sync {
         new_quote: Option<Quote>,
     ) -> Result<(), InsertionError>;
     async fn orders_for_tx(&self, tx_hash: &H256) -> Result<Vec<Order>>;
-    async fn single_order(&self, uid: &OrderUid) -> Result<Option<Order>>;
     /// All orders of a single user ordered by creation date descending (newest
     /// orders first).
     async fn user_orders(
@@ -78,7 +77,7 @@ pub trait OrderStoring: Send + Sync {
         limit: Option<u64>,
     ) -> Result<Vec<Order>>;
     async fn latest_order_event(&self, order_uid: &OrderUid) -> Result<Option<OrderEvent>>;
-    async fn single_order_with_quote(&self, uid: &OrderUid) -> Result<Option<Order>>;
+    async fn single_order(&self, uid: &OrderUid) -> Result<Option<Order>>;
 }
 
 #[derive(Debug)]
@@ -314,23 +313,6 @@ impl OrderStoring for Postgres {
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["single_order"])
-            .start_timer();
-
-        let mut ex = self.pool.acquire().await?;
-        let order = match database::orders::single_full_order(&mut ex, &ByteArray(uid.0)).await? {
-            Some(order) => Some(order),
-            None => {
-                // try to find the order in the JIT orders table
-                database::jit_orders::get_by_id(&mut ex, &ByteArray(uid.0)).await?
-            }
-        };
-        order.map(full_order_into_model_order).transpose()
-    }
-
-    async fn single_order_with_quote(&self, uid: &OrderUid) -> Result<Option<Order>> {
-        let _timer = super::Metrics::get()
-            .database_queries
-            .with_label_values(&["single_order_with_quote"])
             .start_timer();
 
         let mut ex = self.pool.acquire().await?;
@@ -1206,10 +1188,10 @@ mod tests {
         assert_eq!(interactions, order.interactions);
 
         // Test `single_order_with_quote`
-        let single_order_with_quote = db.single_order_with_quote(&uid).await.unwrap().unwrap();
+        let single_order_with_quote = db.single_order(&uid).await.unwrap().unwrap();
 
         let mut order_with_quote = order;
-        order_with_quote.set_order_quote(Some(quote.try_to_model_order_quote().unwrap()));
+        order_with_quote.set_order_quote(quote.try_to_model_order_quote().unwrap());
 
         assert_eq!(single_order_with_quote, order_with_quote);
         assert_eq!(
@@ -1279,10 +1261,10 @@ mod tests {
         };
         db.insert_order(&order, Some(quote.clone())).await.unwrap();
 
-        let single_order_with_quote = db.single_order_with_quote(&uid).await.unwrap().unwrap();
+        let single_order_with_quote = db.single_order(&uid).await.unwrap().unwrap();
 
         let mut order_with_quote = order;
-        order_with_quote.set_order_quote(Some(quote.try_to_model_order_quote().unwrap()));
+        order_with_quote.set_order_quote(quote.try_to_model_order_quote().unwrap());
 
         assert_eq!(single_order_with_quote, order_with_quote);
         assert!(single_order_with_quote.metadata.quote.unwrap().verified);
