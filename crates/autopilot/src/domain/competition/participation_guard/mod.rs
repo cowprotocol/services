@@ -2,11 +2,7 @@ mod db;
 mod onchain;
 
 use {
-    crate::{
-        arguments::DbBasedSolverParticipationGuardConfig,
-        domain::eth,
-        infra::self,
-    },
+    crate::{arguments::DbBasedSolverParticipationGuardConfig, domain::eth, infra},
     std::sync::Arc,
 };
 

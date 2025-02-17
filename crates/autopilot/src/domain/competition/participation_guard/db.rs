@@ -87,7 +87,7 @@ impl Validator {
                     // making this mandatory has been approved.
                     if driver.accepts_unsettled_blocking {
                         tracing::debug!(?solver, "disabling solver temporarily");
-                        infra::notify_non_settling_solver(&solver, banned_until);
+                        infra::notify_non_settling_solver(driver.clone(), banned_until);
                         self_.0.banned_solvers.insert(solver, now);
                     }
                 }
