@@ -3,8 +3,8 @@ use {
         domain::{eth, Metrics},
         infra,
     },
+    chrono::Utc,
     ethrpc::block_stream::CurrentBlockWatcher,
-    model::time::now_in_epoch_seconds,
     std::{
         collections::HashMap,
         sync::Arc,
@@ -94,12 +94,8 @@ impl Validator {
                             .collect::<Vec<_>>();
 
                         let now = Instant::now();
-                        let banned_until_timestamp =
-                            u64::from(now_in_epoch_seconds()) + self_.0.ttl.as_secs();
-                        infra::notify_non_settling_solvers(
-                            &non_settling_drivers,
-                            banned_until_timestamp,
-                        );
+                        let banned_until = Utc::now() + self_.0.ttl;
+                        infra::notify_non_settling_solvers(&non_settling_drivers, banned_until);
 
                         for driver in non_settling_drivers {
                             self_
