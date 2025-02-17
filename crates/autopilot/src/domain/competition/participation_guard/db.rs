@@ -59,56 +59,40 @@ impl Validator {
         tokio::spawn(async move {
             while competition_updates_receiver.recv().await.is_some() {
                 let current_block = current_block.borrow().number;
-                match self_
+                let non_settling_solvers = match self_
                     .0
                     .persistence
                     .find_non_settling_solvers(self_.0.last_auctions_count, current_block)
                     .await
                 {
-                    Ok(non_settling_solvers) => {
-                        let non_settling_drivers = non_settling_solvers
-                            .into_iter()
-                            .filter_map(|solver| {
-                                self_.0.drivers_by_address.get(&solver).map(|driver| {
-                                    Metrics::get()
-                                        .non_settling_solver
-                                        .with_label_values(&[&driver.name]);
-
-                                    driver.clone()
-                                })
-                            })
-                            .collect::<Vec<_>>();
-
-                        let non_settling_solver_names = non_settling_drivers
-                            .iter()
-                            .map(|driver| driver.name.clone())
-                            .collect::<Vec<_>>();
-
-                        tracing::debug!(solvers = ?non_settling_solver_names, "found non-settling solvers");
-
-                        let non_settling_drivers = non_settling_drivers
-                            .into_iter()
-                            // Check if solver accepted this feature. This should be removed once a CIP is
-                            // approved.
-                            .filter(|driver| driver.accepts_unsettled_blocking)
-                            .collect::<Vec<_>>();
-
-                        let now = Instant::now();
-                        let banned_until = Utc::now() + self_.0.ttl;
-                        infra::notify_non_settling_solvers(&non_settling_drivers, banned_until);
-
-                        for driver in non_settling_drivers {
-                            self_
-                                .0
-                                .banned_solvers
-                                .insert(driver.submission_address, now);
-                        }
-                    }
+                    Ok(non_settling_solvers) => non_settling_solvers,
                     Err(err) => {
-                        tracing::warn!(?err, "error while searching for non-settling solvers")
+                        tracing::warn!(?err, "error while searching for non-settling solvers");
+                        continue;
+                    }
+                };
+
+                tracing::debug!(solvers = ?non_settling_solvers, "found non-settling solvers");
+
+                let now = Instant::now();
+                let banned_until = Utc::now() + self_.0.ttl;
+                for solver in non_settling_solvers {
+                    let Some(driver) = self_.0.drivers_by_address.get(&solver) else {
+                        continue;
+                    };
+                    Metrics::get()
+                        .non_settling_solver
+                        .with_label_values(&[&driver.name]);
+                    // Check if solver accepted this feature. This should be removed once the CIP
+                    // making this mandatory has been approved.
+                    if driver.accepts_unsettled_blocking {
+                        tracing::debug!(?solver, "disabling solver temporarily");
+                        infra::notify_non_settling_solver(&solver, banned_until);
+                        self_.0.banned_solvers.insert(solver, now);
                     }
                 }
             }
+            tracing::error!("stream of settlement updates terminated unexpectedly");
         });
     }
 }
@@ -117,11 +101,7 @@ impl Validator {
 impl super::Validator for Validator {
     async fn is_allowed(&self, solver: &eth::Address) -> anyhow::Result<bool> {
         if let Some(entry) = self.0.banned_solvers.get(solver) {
-            if Instant::now().duration_since(*entry.value()) < self.0.ttl {
-                return Ok(false);
-            } else {
-                self.0.banned_solvers.remove(solver);
-            }
+            return Ok(entry.elapsed() >= self.0.ttl);
         }
 
         Ok(true)
