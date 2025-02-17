@@ -168,14 +168,14 @@ impl SolverValidator {
         };
         let solver_names = drivers
             .iter()
-            .map(|driver| driver.name.clone())
+            .map(|driver| driver.name.as_ref())
             .collect::<Vec<_>>();
         tracing::debug!(solvers = ?solver_names, log_message);
 
         for solver in solver_names {
             Metrics::get()
                 .banned_solver
-                .with_label_values(&[&solver, ban_reason.as_str()]);
+                .with_label_values(&[solver, ban_reason.as_str()]);
         }
 
         let banned_drivers = drivers
