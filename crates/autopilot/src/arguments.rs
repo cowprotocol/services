@@ -416,7 +416,7 @@ pub struct Solver {
     pub url: Url,
     pub submission_account: Account,
     pub fairness_threshold: Option<U256>,
-    pub accepts_unsettled_blocking: bool,
+    pub requested_timeout_on_problems: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -466,7 +466,7 @@ impl FromStr for Solver {
         };
 
         let mut fairness_threshold: Option<U256> = Default::default();
-        let mut accepts_unsettled_blocking = false;
+        let mut requested_timeout_on_problems = false;
 
         if let Some(value) = parts.get(3) {
             match U256::from_dec_str(value) {
@@ -474,17 +474,14 @@ impl FromStr for Solver {
                     fairness_threshold = Some(parsed_fairness_threshold);
                 }
                 Err(_) => {
-                    accepts_unsettled_blocking = value
-                        .parse()
-                        .context("failed to parse solver's third arg param")?
+                    requested_timeout_on_problems =
+                        value.to_lowercase() == "requested_timeout_on_problems";
                 }
             }
         };
 
         if let Some(value) = parts.get(4) {
-            accepts_unsettled_blocking = value
-                .parse()
-                .context("failed to parse `accepts_unsettled_blocking` flag")?;
+            requested_timeout_on_problems = value.to_lowercase() == "requested_timeout_on_problems";
         }
 
         Ok(Self {
@@ -492,7 +489,7 @@ impl FromStr for Solver {
             url,
             fairness_threshold,
             submission_account,
-            accepts_unsettled_blocking,
+            requested_timeout_on_problems,
         })
     }
 }
@@ -689,7 +686,7 @@ mod test {
             name: "name1".into(),
             url: Url::parse("http://localhost:8080").unwrap(),
             fairness_threshold: None,
-            accepts_unsettled_blocking: false,
+            requested_timeout_on_problems: false,
             submission_account: Account::Address(H160::from_slice(&hex!(
                 "C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
             ))),
@@ -705,7 +702,7 @@ mod test {
             name: "name1".into(),
             url: Url::parse("http://localhost:8080").unwrap(),
             fairness_threshold: None,
-            accepts_unsettled_blocking: false,
+            requested_timeout_on_problems: false,
             submission_account: Account::Kms(
                 Arn::from_str("arn:aws:kms:supersecretstuff").unwrap(),
             ),
@@ -724,7 +721,7 @@ mod test {
                 "C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
             ))),
             fairness_threshold: Some(U256::exp10(18)),
-            accepts_unsettled_blocking: false,
+            requested_timeout_on_problems: false,
         };
         assert_eq!(driver, expected);
     }
@@ -741,7 +738,7 @@ mod test {
                 "C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
             ))),
             fairness_threshold: None,
-            accepts_unsettled_blocking: true,
+            requested_timeout_on_problems: true,
         };
         assert_eq!(driver, expected);
     }
@@ -757,7 +754,7 @@ mod test {
                 "C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
             ))),
             fairness_threshold: Some(U256::exp10(18)),
-            accepts_unsettled_blocking: true,
+            requested_timeout_on_problems: true,
         };
         assert_eq!(driver, expected);
     }

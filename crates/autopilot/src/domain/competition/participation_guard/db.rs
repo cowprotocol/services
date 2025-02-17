@@ -83,7 +83,7 @@ impl Validator {
                         .with_label_values(&[&driver.name]);
                     // Check if solver accepted this feature. This should be removed once the CIP
                     // making this mandatory has been approved.
-                    if driver.accepts_unsettled_blocking {
+                    if driver.requested_timeout_on_problems {
                         tracing::debug!(solver = ?driver.name, "disabling solver temporarily");
                         self_.0.banned_solvers.insert(solver, now);
                     }

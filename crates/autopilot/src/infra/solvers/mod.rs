@@ -21,7 +21,7 @@ pub struct Driver {
     // another driver solved with surplus exceeding this driver's surplus by `threshold`
     pub fairness_threshold: Option<eth::Ether>,
     pub submission_address: eth::Address,
-    pub accepts_unsettled_blocking: bool,
+    pub requested_timeout_on_problems: bool,
     client: Client,
 }
 
@@ -39,7 +39,7 @@ impl Driver {
         name: String,
         fairness_threshold: Option<eth::Ether>,
         submission_account: Account,
-        accepts_unsettled_blocking: bool,
+        requested_timeout_on_problems: bool,
     ) -> Result<Self, Error> {
         let submission_address = match submission_account {
             Account::Kms(key_id) => {
@@ -72,7 +72,7 @@ impl Driver {
                 .build()
                 .map_err(Error::FailedToBuildClient)?,
             submission_address: submission_address.into(),
-            accepts_unsettled_blocking,
+            requested_timeout_on_problems,
         })
     }
 
