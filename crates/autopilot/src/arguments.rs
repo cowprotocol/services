@@ -262,7 +262,9 @@ pub struct DbBasedSolverParticipationGuardConfig {
     )]
     pub enabled: bool,
 
-    /// The time-to-live for the solver participation blacklist cache.
+    /// Sets the duration for which the solver remains blacklisted.
+    /// Technically, the time-to-live for the solver participation blacklist
+    /// cache.
     #[clap(long, env, default_value = "5m", value_parser = humantime::parse_duration)]
     pub solver_blacklist_cache_ttl: Duration,
 

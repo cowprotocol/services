@@ -88,8 +88,8 @@ impl Validator {
                         let now = Instant::now();
                         non_settling_drivers
                             .into_iter()
-                            // Check if solver accepted this feature. This should be removed once a CIP is
-                            // approved.
+                            // Check if solver accepted this feature. This should be removed once the CIP
+                            // making this mandatory has been approved.
                             .filter_map(|driver| {
                                 driver.accepts_unsettled_blocking.then_some(driver.submission_address)
                             })
@@ -102,6 +102,7 @@ impl Validator {
                     }
                 }
             }
+            tracing::error!("competition_updates_receiver closed");
         });
     }
 }
@@ -110,11 +111,7 @@ impl Validator {
 impl super::Validator for Validator {
     async fn is_allowed(&self, solver: &eth::Address) -> anyhow::Result<bool> {
         if let Some(entry) = self.0.banned_solvers.get(solver) {
-            if Instant::now().duration_since(*entry.value()) < self.0.ttl {
-                return Ok(false);
-            } else {
-                self.0.banned_solvers.remove(solver);
-            }
+            return Ok(entry.elapsed() >= self.0.ttl);
         }
 
         Ok(true)
