@@ -561,7 +561,7 @@ pub async fn run(args: Arguments) {
                 driver.name.clone(),
                 driver.fairness_threshold.map(Into::into),
                 driver.submission_account,
-                driver.accepts_unsettled_blocking,
+                driver.requested_timeout_on_problems,
             )
             .await
             .map(Arc::new)
@@ -614,7 +614,7 @@ async fn shadow_mode(args: Arguments) -> ! {
                 driver.name.clone(),
                 driver.fairness_threshold.map(Into::into),
                 driver.submission_account,
-                driver.accepts_unsettled_blocking,
+                driver.requested_timeout_on_problems,
             )
             .await
             .map(Arc::new)
