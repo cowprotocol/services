@@ -177,6 +177,20 @@ async fn not_allowed_solver(web3: Web3) {
             .await
             .is_err()
     );
+
+    // Unban the solver
+    onchain
+        .contracts()
+        .gp_authenticator
+        .methods()
+        .add_solver(solver_address)
+        .send()
+        .await
+        .unwrap();
+
+    execute_order(&onchain, &trader_a, &token_a, &token_b, &services)
+        .await
+        .unwrap();
 }
 
 async fn setup(
