@@ -15,7 +15,7 @@ pub enum Request {
 }
 
 #[serde_as]
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum BanReason {
     /// The driver won multiple consecutive auctions but never settled them.

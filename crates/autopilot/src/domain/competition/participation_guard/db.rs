@@ -81,13 +81,13 @@ impl SolverValidator {
 
                 self_.post_process(
                     &non_settling_solvers,
-                    &dto::notify::BanReason::UnsettledConsecutiveAuctions,
+                    dto::notify::BanReason::UnsettledConsecutiveAuctions,
                     found_at,
                     banned_until,
                 );
                 self_.post_process(
                     &low_settling_solvers,
-                    &dto::notify::BanReason::HighSettleFailureRate,
+                    dto::notify::BanReason::HighSettleFailureRate,
                     found_at,
                     banned_until,
                 );
@@ -147,7 +147,7 @@ impl SolverValidator {
     fn post_process(
         &self,
         solvers: &HashSet<eth::Address>,
-        ban_reason: &dto::notify::BanReason,
+        ban_reason: dto::notify::BanReason,
         found_at: Instant,
         banned_until: DateTime<Utc>,
     ) {
