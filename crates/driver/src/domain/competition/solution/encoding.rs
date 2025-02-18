@@ -175,14 +175,18 @@ pub fn tx(
     };
 
     // Add all interactions needed to move flash loaned tokens around
+    // These interactions are executed before all other pre-interactions
     if let Some(flashloan) = solution.flashloans.first() {
         // Allow settlement contract to pull borrowed tokens from flashloan wrapper
-        pre_interactions.push(approve_flashloan(
-            flashloan.token,
-            flashloan.amount,
-            contracts.settlement().address().into(),
-            contracts.flashloan_wrapper(),
-        ));
+        pre_interactions.insert(
+            0,
+            approve_flashloan(
+                flashloan.token,
+                flashloan.amount,
+                contracts.settlement().address().into(),
+                contracts.flashloan_wrapper(),
+            ),
+        );
 
         // Transfer tokens from flashloan wrapper to user (i.e. borrower) to later allow
         // settlement contract to pull in all the necessary sell tokens from the user.
@@ -196,28 +200,14 @@ pub fn tx(
             flashloan.amount.0,
         )
         .into_inner();
-        pre_interactions.push(eth::Interaction {
-            target: tx.to.unwrap().into(),
-            value: eth::U256::zero().into(),
-            call_data: tx.data.unwrap().0.into(),
-        });
-
-        // Transfer tokens from settlement contract to flashloan wrapper for repayment
-        let tx = contracts::ERC20::at(
-            &contracts.settlement().raw_instance().web3(),
-            flashloan.token.into(),
-        )
-        .transfer_from(
-            contracts.settlement().address(),
-            contracts.flashloan_wrapper().address(),
-            flashloan.amount.0,
-        )
-        .into_inner();
-        post_interactions.push(eth::Interaction {
-            target: tx.to.unwrap().into(),
-            value: eth::U256::zero().into(),
-            call_data: tx.data.unwrap().0.into(),
-        });
+        pre_interactions.insert(
+            1,
+            eth::Interaction {
+                target: tx.to.unwrap().into(),
+                value: eth::U256::zero().into(),
+                call_data: tx.data.unwrap().0.into(),
+            },
+        );
 
         // Allow flash loan lender to transfer tokens back from wrapper contract
         post_interactions.push(approve_flashloan(

@@ -185,6 +185,31 @@ impl Contracts {
         }
     }
 
+    // Delete when flashloan is actually deployed
+    pub async fn deploy_flashloan(self: Self, web3: &Web3) -> Self {
+        macro_rules! deploy {
+                ($contract:ident) => { deploy!($contract ()) };
+                ($contract:ident ( $($param:expr),* $(,)? )) => {
+                    deploy!($contract ($($param),*) as stringify!($contract))
+                };
+                ($contract:ident ( $($param:expr),* $(,)? ) as $name:expr) => {{
+                    let name = $name;
+                    $contract::builder(&web3 $(, $param)*)
+                        .deploy()
+                        .await
+                        .unwrap_or_else(|e| panic!("failed to deploy {name}: {e:?}"))
+                }};
+            }
+
+        let flashloan_wrapper =
+            deploy!(ERC3156FlashLoanSolverWrapper(self.gp_settlement.address()));
+
+        Self {
+            flashloan_wrapper,
+            ..self
+        }
+    }
+
     pub fn default_pool_code(&self) -> H256 {
         match self.chain_id {
             100 => H256(shared::sources::uniswap_v2::HONEYSWAP_INIT),
