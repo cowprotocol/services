@@ -834,7 +834,7 @@ mod tests {
             .await
     }
 
-    async fn single_full_order(
+    async fn single_full_order_without_quote(
         ex: &mut PgConnection,
         uid: &OrderUid,
     ) -> Result<Option<FullOrder>, sqlx::Error> {
@@ -861,7 +861,7 @@ mod tests {
         let order_ = read_order(&mut db, &order.uid).await.unwrap().unwrap();
         assert_eq!(order, order_);
 
-        let full_order = single_full_order(&mut db, &order.uid)
+        let full_order = single_full_order_without_quote(&mut db, &order.uid)
             .await
             .unwrap()
             .unwrap();
@@ -923,7 +923,7 @@ mod tests {
         .await
         .unwrap();
         insert_order(&mut db, &order).await.unwrap();
-        let order_ = single_full_order(&mut db, &order.uid)
+        let order_ = single_full_order_without_quote(&mut db, &order.uid)
             .await
             .unwrap()
             .unwrap();
@@ -958,7 +958,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let order_ = single_full_order(&mut db, &order.uid)
+        let order_ = single_full_order_without_quote(&mut db, &order.uid)
             .await
             .unwrap()
             .unwrap();
@@ -994,7 +994,7 @@ mod tests {
         insert_or_overwrite_interaction(&mut db, &post_interaction_1, &order.uid)
             .await
             .unwrap();
-        let order_ = single_full_order(&mut db, &order.uid)
+        let order_ = single_full_order_without_quote(&mut db, &order.uid)
             .await
             .unwrap()
             .unwrap();
@@ -1084,7 +1084,7 @@ mod tests {
         insert_or_overwrite_interaction(&mut db, &pre_interaction_1, &order.uid)
             .await
             .unwrap();
-        let order_ = single_full_order(&mut db, &order.uid)
+        let order_ = single_full_order_without_quote(&mut db, &order.uid)
             .await
             .unwrap()
             .unwrap();
@@ -1458,7 +1458,7 @@ mod tests {
             .unwrap();
         }
 
-        let order = single_full_order(&mut db, &order.uid)
+        let order = single_full_order_without_quote(&mut db, &order.uid)
             .await
             .unwrap()
             .unwrap();
@@ -1558,7 +1558,7 @@ mod tests {
             ..Default::default()
         };
         insert_order(&mut db, &order).await.unwrap();
-        let result = single_full_order(&mut db, &order.uid)
+        let result = single_full_order_without_quote(&mut db, &order.uid)
             .await
             .unwrap()
             .unwrap();
@@ -1566,7 +1566,7 @@ mod tests {
         insert_onchain_invalidation(&mut db, &EventIndex::default(), &order.uid)
             .await
             .unwrap();
-        let result = single_full_order(&mut db, &order.uid)
+        let result = single_full_order_without_quote(&mut db, &order.uid)
             .await
             .unwrap()
             .unwrap();
@@ -1907,7 +1907,7 @@ mod tests {
         .unwrap();
 
         let fee: BigDecimal = 0.into();
-        let order = single_full_order(&mut db, &order_uid)
+        let order = single_full_order_without_quote(&mut db, &order_uid)
             .await
             .unwrap()
             .unwrap();
@@ -1928,7 +1928,7 @@ mod tests {
         .await
         .unwrap();
 
-        let order = single_full_order(&mut db, &order_uid)
+        let order = single_full_order_without_quote(&mut db, &order_uid)
             .await
             .unwrap()
             .unwrap();
@@ -1946,7 +1946,7 @@ mod tests {
             ..Default::default()
         };
         insert_order(&mut db, &order).await.unwrap();
-        let full_order = single_full_order(&mut db, &order.uid)
+        let full_order = single_full_order_without_quote(&mut db, &order.uid)
             .await
             .unwrap()
             .unwrap();
@@ -1955,7 +1955,7 @@ mod tests {
         crate::app_data::insert(&mut db, &order.app_data, &full_app_data)
             .await
             .unwrap();
-        let full_order = single_full_order(&mut db, &order.uid)
+        let full_order = single_full_order_without_quote(&mut db, &order.uid)
             .await
             .unwrap()
             .unwrap();
