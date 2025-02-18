@@ -317,7 +317,7 @@ impl OrderStoring for Postgres {
 
         let mut ex = self.pool.acquire().await?;
 
-        let order = match orders::single_full_order_with_quote(&mut ex, &ByteArray(uid.0)).await? {
+        match orders::single_full_order_with_quote(&mut ex, &ByteArray(uid.0)).await? {
             Some(order_with_quote) => {
                 let quote = match (
                     order_with_quote.quote_buy_amount,
@@ -352,22 +352,19 @@ impl OrderStoring for Postgres {
                     _ => None,
                 };
 
-                let order = full_order_with_quote_into_model_order(
+                Some(full_order_with_quote_into_model_order(
                     order_with_quote.full_order,
                     quote.as_ref(),
-                )?;
-                Some(order)
+                ))
             }
             None => {
                 // try to find the order in the JIT orders table
                 database::jit_orders::get_by_id(&mut ex, &ByteArray(uid.0))
                     .await?
                     .map(full_order_into_model_order)
-                    .transpose()?
             }
-        };
-
-        Ok(order)
+        }
+        .transpose()
     }
 
     async fn orders_for_tx(&self, tx_hash: &H256) -> Result<Vec<Order>> {
