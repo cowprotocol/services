@@ -303,6 +303,15 @@ impl OnchainComponents {
                 .expect("failed to add solver");
         }
 
+        // flashloan wrapper also needs to be authorized
+        self.contracts
+            .gp_authenticator
+            .add_solver(self.contracts.flashloan_wrapper.address())
+            .from(auth_manager)
+            .send()
+            .await
+            .expect("failed to add flashloan wrapper");
+
         solvers
     }
 

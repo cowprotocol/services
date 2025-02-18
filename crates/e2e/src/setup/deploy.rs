@@ -187,22 +187,13 @@ impl Contracts {
 
     // Delete when flashloan is actually deployed
     pub async fn deploy_flashloan(self, web3: &Web3) -> Self {
-        macro_rules! deploy {
-                ($contract:ident) => { deploy!($contract ()) };
-                ($contract:ident ( $($param:expr),* $(,)? )) => {
-                    deploy!($contract ($($param),*) as stringify!($contract))
-                };
-                ($contract:ident ( $($param:expr),* $(,)? ) as $name:expr) => {{
-                    let name = $name;
-                    $contract::builder(&web3 $(, $param)*)
-                        .deploy()
-                        .await
-                        .unwrap_or_else(|e| panic!("failed to deploy {name}: {e:?}"))
-                }};
-            }
-
         let flashloan_wrapper =
-            deploy!(ERC3156FlashLoanSolverWrapper(self.gp_settlement.address()));
+            ERC3156FlashLoanSolverWrapper::builder(&web3, self.gp_settlement.address())
+                .deploy()
+                .await
+                .unwrap_or_else(|e| {
+                    panic!("failed to deploy ERC3156FlashLoanSolverWrapper: {e:?}")
+                });
 
         Self {
             flashloan_wrapper,
