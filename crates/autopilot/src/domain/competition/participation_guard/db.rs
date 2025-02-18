@@ -151,9 +151,9 @@ impl SolverValidator {
         found_at: Instant,
         banned_until: DateTime<Utc>,
     ) {
-        let non_settling_solver_names: Vec<&str> = non_settling_solvers
+        let non_settling_solver_names: Vec<&str> = solvers
             .iter()
-            .filter_map(|solver| self_.0.drivers_by_address.get(solver))
+            .filter_map(|solver| self.0.drivers_by_address.get(solver))
             .map(|driver| {
                 Metrics::get()
                     .banned_solver
@@ -162,9 +162,8 @@ impl SolverValidator {
                 // CIP making this mandatory has been approved.
                 if driver.requested_timeout_on_problems {
                     tracing::debug!(solver = ?driver.name, "disabling solver temporarily");
-                    infra::notify_banned_solver(driver.clone(), banned_until);
-                    self_
-                        .0
+                    infra::notify_banned_solver(driver.clone(), ban_reason, banned_until);
+                    self.0
                         .banned_solvers
                         .insert(driver.submission_address, found_at);
                 }
