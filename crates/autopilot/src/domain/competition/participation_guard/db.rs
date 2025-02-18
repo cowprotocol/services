@@ -151,23 +151,26 @@ impl SolverValidator {
         found_at: Instant,
         banned_until: DateTime<Utc>,
     ) {
-        let mut non_settling_solver_names: Vec<&str> = Vec::new();
-        for solver in solvers {
-            let Some(driver) = self.0.drivers_by_address.get(solver) else {
-                continue;
-            };
-            non_settling_solver_names.push(driver.name.as_ref());
-            Metrics::get()
-                .banned_solver
-                .with_label_values(&[driver.name.as_ref(), ban_reason.as_str()]);
-            // Check if solver accepted this feature. This should be removed once the CIP
-            // making this mandatory has been approved.
-            if driver.requested_timeout_on_problems {
-                tracing::debug!(solver = ?driver.name, "disabling solver temporarily");
-                infra::notify_banned_solver(driver.clone(), ban_reason, banned_until);
-                self.0.banned_solvers.insert(*solver, found_at);
-            }
-        }
+        let non_settling_solver_names: Vec<&str> = non_settling_solvers
+            .iter()
+            .filter_map(|solver| self_.0.drivers_by_address.get(solver))
+            .map(|driver| {
+                Metrics::get()
+                    .banned_solver
+                    .with_label_values(&[driver.name.as_ref(), ban_reason.as_str()]);
+                // Check if solver accepted this feature. This should be removed once the
+                // CIP making this mandatory has been approved.
+                if driver.requested_timeout_on_problems {
+                    tracing::debug!(solver = ?driver.name, "disabling solver temporarily");
+                    infra::notify_banned_solver(driver.clone(), banned_until);
+                    self_
+                        .0
+                        .banned_solvers
+                        .insert(driver.submission_address, found_at);
+                }
+                driver.name.as_ref()
+            })
+            .collect();
 
         let log_message = match ban_reason {
             dto::notify::BanReason::UnsettledConsecutiveAuctions => "found non-settling solvers",
