@@ -186,7 +186,7 @@ impl Contracts {
     }
 
     // Delete when flashloan is actually deployed
-    pub async fn deploy_flashloan(self: Self, web3: &Web3) -> Self {
+    pub async fn deploy_flashloan(self, web3: &Web3) -> Self {
         macro_rules! deploy {
                 ($contract:ident) => { deploy!($contract ()) };
                 ($contract:ident ( $($param:expr),* $(,)? )) => {
