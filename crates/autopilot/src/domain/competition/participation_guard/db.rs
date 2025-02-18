@@ -71,23 +71,26 @@ impl Validator {
                     }
                 };
 
-                let mut non_settling_solver_names: Vec<&str> = Vec::new();
                 let now = Instant::now();
-                for solver in non_settling_solvers {
-                    let Some(driver) = self_.0.drivers_by_address.get(&solver) else {
-                        continue;
-                    };
-                    non_settling_solver_names.push(driver.name.as_ref());
-                    Metrics::get()
-                        .non_settling_solver
-                        .with_label_values(&[&driver.name]);
-                    // Check if solver accepted this feature. This should be removed once the CIP
-                    // making this mandatory has been approved.
-                    if driver.requested_timeout_on_problems {
-                        tracing::debug!(solver = ?driver.name, "disabling solver temporarily");
-                        self_.0.banned_solvers.insert(solver, now);
-                    }
-                }
+                let non_settling_solver_names: Vec<&str> = non_settling_solvers
+                    .iter()
+                    .filter_map(|solver| self_.0.drivers_by_address.get(solver))
+                    .map(|driver| {
+                        Metrics::get()
+                            .non_settling_solver
+                            .with_label_values(&[&driver.name]);
+                        // Check if solver accepted this feature. This should be removed once the
+                        // CIP making this mandatory has been approved.
+                        if driver.requested_timeout_on_problems {
+                            tracing::debug!(solver = ?driver.name, "disabling solver temporarily");
+                            self_
+                                .0
+                                .banned_solvers
+                                .insert(driver.submission_address, now);
+                        }
+                        driver.name.as_ref()
+                    })
+                    .collect();
 
                 tracing::debug!(solvers = ?non_settling_solver_names, "found non-settling solvers");
             }
