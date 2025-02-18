@@ -58,6 +58,15 @@ pub fn to_domain(auction: &Auction) -> Result<auction::Auction, Error> {
                     Class::Limit => order::Class::Limit,
                 },
                 partially_fillable: order.partially_fillable,
+                flashloan_hint: order
+                    .flashloan_hint
+                    .clone()
+                    .map(|hint| order::FlashloanHint {
+                        lender: hint.lender.map(eth::Address),
+                        borrower: hint.borrower.map(eth::Address),
+                        token: eth::TokenAddress(hint.token),
+                        amount: hint.amount,
+                    }),
             })
             .collect(),
         liquidity: auction

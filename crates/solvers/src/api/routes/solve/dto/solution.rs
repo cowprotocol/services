@@ -115,6 +115,16 @@ pub fn from_domain(solutions: &[solution::Solution]) -> super::Solutions {
                     })
                     .collect(),
                 gas: solution.gas.map(|gas| gas.0.as_u64()),
+                flashloans: solution
+                    .flashloans
+                    .iter()
+                    .map(|loan| Flashloan {
+                        lender: loan.lender.0,
+                        borrower: loan.borrower.0,
+                        token: loan.token.0,
+                        amount: loan.amount,
+                    })
+                    .collect(),
             })
             .collect(),
     }
