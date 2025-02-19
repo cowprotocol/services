@@ -494,6 +494,17 @@ pub struct FullOrder {
     pub full_app_data: Option<Vec<u8>>,
 }
 
+impl FullOrder {
+    pub fn valid_to(&self) -> i64 {
+        if let Some((_, valid_to)) = self.ethflow_data {
+            // For ethflow orders, we always return the user valid_to,
+            // as the Eip1271 valid to is u32::max
+            return valid_to;
+        }
+        self.valid_to
+    }
+}
+
 #[derive(Debug, sqlx::FromRow)]
 pub struct FullOrderWithQuote {
     #[sqlx(flatten)]
@@ -508,14 +519,41 @@ pub struct FullOrderWithQuote {
     pub solver: Option<Address>,
 }
 
-impl FullOrder {
-    pub fn valid_to(&self) -> i64 {
-        if let Some((_, valid_to)) = self.ethflow_data {
-            // For ethflow orders, we always return the user valid_to,
-            // as the Eip1271 valid to is u32::max
-            return valid_to;
-        }
-        self.valid_to
+impl FullOrderWithQuote {
+    pub fn into_order_and_quote(self) -> (FullOrder, Option<Quote>) {
+        let quote = match (
+            self.quote_buy_amount,
+            self.quote_sell_amount,
+            self.quote_gas_amount,
+            self.quote_gas_price,
+            self.quote_sell_token_price,
+            self.quote_verified,
+            self.quote_metadata,
+            self.solver,
+        ) {
+            (
+                Some(buy_amount),
+                Some(sell_amount),
+                Some(gas_amount),
+                Some(gas_price),
+                Some(sell_token_price),
+                Some(verified),
+                Some(metadata),
+                Some(solver),
+            ) => Some(Quote {
+                order_uid: self.full_order.uid,
+                gas_amount,
+                gas_price,
+                sell_token_price,
+                sell_amount,
+                buy_amount,
+                solver,
+                verified,
+                metadata,
+            }),
+            _ => None,
+        };
+        (self.full_order, quote)
     }
 }
 

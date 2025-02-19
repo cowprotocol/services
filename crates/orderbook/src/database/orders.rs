@@ -319,41 +319,9 @@ impl OrderStoring for Postgres {
 
         match orders::single_full_order_with_quote(&mut ex, &ByteArray(uid.0)).await? {
             Some(order_with_quote) => {
-                let quote = match (
-                    order_with_quote.quote_buy_amount,
-                    order_with_quote.quote_sell_amount,
-                    order_with_quote.quote_gas_amount,
-                    order_with_quote.quote_gas_price,
-                    order_with_quote.quote_sell_token_price,
-                    order_with_quote.quote_verified,
-                    order_with_quote.quote_metadata,
-                    order_with_quote.solver,
-                ) {
-                    (
-                        Some(buy_amount),
-                        Some(sell_amount),
-                        Some(gas_amount),
-                        Some(gas_price),
-                        Some(sell_token_price),
-                        Some(verified),
-                        Some(metadata),
-                        Some(solver),
-                    ) => Some(orders::Quote {
-                        order_uid: order_with_quote.full_order.uid,
-                        gas_amount,
-                        gas_price,
-                        sell_token_price,
-                        sell_amount,
-                        buy_amount,
-                        solver,
-                        verified,
-                        metadata,
-                    }),
-                    _ => None,
-                };
-
+                let (order, quote) = order_with_quote.into_order_and_quote();
                 Some(full_order_with_quote_into_model_order(
-                    order_with_quote.full_order,
+                    order,
                     quote.as_ref(),
                 ))
             }
