@@ -31,7 +31,7 @@ async fn forked_node_mainnet_single_flashloan_encoding_order() {
         forked_mainnet_single_flashloan_encoding_test,
         std::env::var("FORK_URL_MAINNET")
             .expect("FORK_URL_MAINNET must be set to run forked tests"),
-        18477910,
+        21874126,
     )
     .await;
 }
@@ -89,7 +89,7 @@ async fn forked_mainnet_single_flashloan_encoding_test(web3: Web3) {
         r#"{{
         "metadata": {{
             "flashloan": {{
-                "lender": "0x07df2ad9878F8797B4055230bbAE5C808b8259b3",
+                "lender": "0x60744434d6339a6B27d73d9Eda62b6F66a0a04FA",
                 "borrower": "{:?}",
                 "token": "0x6B175474E89094C44Da98b954EedeAC495271d0F",
                 "amount": "900000000000000000000"
@@ -111,7 +111,7 @@ async fn forked_mainnet_single_flashloan_encoding_test(web3: Web3) {
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         app_data,
-        // Receiver is borrower of the funds, so that borrowed funds can be returned to the lender
+        // Receiver is flashloan wrapper, so that borrowed funds can be returned to the lender
         receiver: Some(onchain.contracts().flashloan_wrapper.address()),
         ..Default::default()
     }
