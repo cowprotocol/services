@@ -34,6 +34,7 @@ impl Auction {
         fee_handler: FeeHandler,
         solver_native_token: ManageNativeToken,
         flashloans_enabled: bool,
+        flashloan_default_lender: eth::Address,
     ) -> Self {
         let mut tokens: HashMap<eth::H160, _> = auction
             .tokens()
@@ -161,7 +162,16 @@ impl Auction {
                         ),
                         app_data: AppDataHash(order.app_data.hash().0.into()),
                         flashloan_hint: flashloans_enabled
-                            .then(|| order.app_data.flashloan().cloned().map(Into::into))
+                            .then(|| {
+                                order.app_data.flashloan().map(|flashloan| FlashloanHint {
+                                    lender: flashloan.lender.unwrap_or(flashloan_default_lender.0),
+                                    borrower: flashloan
+                                        .borrower
+                                        .unwrap_or(eth::H160::from_slice(&order.uid.0 .0[32..52])),
+                                    token: flashloan.token,
+                                    amount: flashloan.amount,
+                                })
+                            })
                             .flatten(),
                         signature: order.signature.data.clone().into(),
                         signing_scheme: match order.signature.scheme {
@@ -609,22 +619,11 @@ struct ForeignLimitOrder {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FlashloanHint {
-    pub lender: Option<eth::H160>,
-    pub borrower: Option<eth::H160>,
+    pub lender: eth::H160,
+    pub borrower: eth::H160,
     pub token: eth::H160,
     #[serde_as(as = "serialize::U256")]
     pub amount: eth::U256,
-}
-
-impl From<app_data::Flashloan> for FlashloanHint {
-    fn from(value: app_data::Flashloan) -> Self {
-        Self {
-            lender: value.lender,
-            borrower: value.borrower,
-            token: value.token,
-            amount: value.amount,
-        }
-    }
 }
 
 fn fee_to_decimal(fee: liquidity::balancer::v2::Fee) -> bigdecimal::BigDecimal {

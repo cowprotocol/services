@@ -186,16 +186,14 @@ impl Single {
             flashloans: order
                 .flashloan_hint
                 .clone()
-                .map(|hint| match (hint.lender, hint.borrower) {
-                    (Some(lender), Some(borrower)) => vec![Flashloan {
-                        lender,
-                        borrower,
-                        token: hint.token,
-                        amount: hint.amount,
-                    }],
-                    _ => vec![],
+                .map(|hint| Flashloan {
+                    lender: hint.lender,
+                    borrower: hint.borrower,
+                    token: hint.token,
+                    amount: hint.amount,
                 })
-                .unwrap_or_default(),
+                .into_iter()
+                .collect(),
             trades: vec![Trade::Fulfillment(Fulfillment::new(order, executed, fee)?)],
         })
     }

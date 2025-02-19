@@ -286,8 +286,8 @@ pub struct ForeignLimitOrder {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FlashloanHint {
-    pub lender: Option<H160>,
-    pub borrower: Option<H160>,
+    pub lender: H160,
+    pub borrower: H160,
     pub token: H160,
     #[serde_as(as = "HexOrDecimalU256")]
     pub amount: U256,

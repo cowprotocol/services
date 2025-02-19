@@ -62,8 +62,8 @@ pub fn to_domain(auction: &Auction) -> Result<auction::Auction, Error> {
                     .flashloan_hint
                     .clone()
                     .map(|hint| order::FlashloanHint {
-                        lender: hint.lender.map(eth::Address),
-                        borrower: hint.borrower.map(eth::Address),
+                        lender: eth::Address(hint.lender),
+                        borrower: eth::Address(hint.borrower),
                         token: eth::TokenAddress(hint.token),
                         amount: hint.amount,
                     }),
