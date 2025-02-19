@@ -78,6 +78,7 @@ impl Api {
             let router = routes::solve(router);
             let router = routes::reveal(router);
             let router = routes::settle(router);
+            let router = routes::notify(router);
 
             let bad_token_config = solver.bad_token_detection();
             let mut bad_tokens =

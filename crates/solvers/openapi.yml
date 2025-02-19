@@ -89,6 +89,7 @@ paths:
                     - cancelled
                     - fail
                     - postprocessingTimedOut
+                    - banned
       responses:
         "200":
           description: notification successfully received.

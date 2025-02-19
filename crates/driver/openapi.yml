@@ -138,6 +138,23 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "500":
           $ref: "#/components/responses/InternalServerError"
+  /notify:
+    post:
+      description: |
+        Receive a notification with a specific reason.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: string
+              enum:
+                - banned
+              description: |-
+                The reason for the notification with optional additional context.
+      responses:
+        "200":
+          description: notification successfully received.
 components:
   schemas:
     Address:

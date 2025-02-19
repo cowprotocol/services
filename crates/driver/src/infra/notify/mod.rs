@@ -5,7 +5,14 @@ use {
 
 mod notification;
 
-pub use notification::{Kind, Notification, ScoreKind, Settlement, SimulationSucceededAtLeastOnce};
+pub use notification::{
+    BanReason,
+    Kind,
+    Notification,
+    ScoreKind,
+    Settlement,
+    SimulationSucceededAtLeastOnce,
+};
 use {
     super::simulator,
     crate::domain::{eth, mempools::Error},
