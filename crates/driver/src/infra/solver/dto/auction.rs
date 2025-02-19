@@ -165,9 +165,7 @@ impl Auction {
                             .then(|| {
                                 order.app_data.flashloan().map(|flashloan| FlashloanHint {
                                     lender: flashloan.lender.unwrap_or(flashloan_default_lender.0),
-                                    borrower: flashloan
-                                        .borrower
-                                        .unwrap_or(eth::H160::from_slice(&order.uid.0 .0[32..52])),
+                                    borrower: flashloan.borrower.unwrap_or(order.uid.owner().0),
                                     token: flashloan.token,
                                     amount: flashloan.amount,
                                 })
