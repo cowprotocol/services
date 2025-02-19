@@ -224,6 +224,21 @@ pub const UID_LEN: usize = 56;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Uid(pub Bytes<[u8; UID_LEN]>);
 
+impl Uid {
+    pub fn owner(&self) -> eth::Address {
+        self.parts().1.into()
+    }
+
+    /// Splits an order UID into its parts.
+    fn parts(&self) -> (eth::H256, eth::H160, u32) {
+        (
+            eth::H256::from_slice(&self.0 .0[0..32]),
+            eth::H160::from_slice(&self.0 .0[32..52]),
+            u32::from_le_bytes(self.0 .0[52..].try_into().unwrap()),
+        )
+    }
+}
+
 impl Default for Uid {
     fn default() -> Self {
         Self([0; UID_LEN].into())
