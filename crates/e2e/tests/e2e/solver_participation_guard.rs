@@ -21,6 +21,7 @@ use {
     },
     secp256k1::SecretKey,
     sqlx::Row,
+    std::time::Instant,
     web3::{
         signing::SecretKeyRef,
         types::{H160, U256},
@@ -52,7 +53,12 @@ async fn non_settling_solver(web3: Web3) {
     let (trader_a, token_a, token_b) = setup(&mut onchain, &solver).await;
 
     let services = Services::new(&onchain).await;
-    services.start_protocol(solver).await;
+    let args = ExtraServiceArgs {
+        // The solver gets banned for 40s.
+        autopilot: vec!["--solver-blacklist-cache-ttl=40s".to_string()],
+        ..Default::default()
+    };
+    services.start_protocol_with_args(args, solver).await;
 
     // Amount of order should be more or equal the non-settling threshold, which is
     // 3.
@@ -81,6 +87,7 @@ async fn non_settling_solver(web3: Web3) {
     replace_solver_for_auction_ids(pool, &last_auctions, &solver_b.address()).await;
     // The competition still passes since the stats are updated only after a new
     // solution from anyone is received and stored.
+    let now = Instant::now();
     assert!(
         execute_order(&onchain, &trader_a, &token_a, &token_b, &services)
             .await
@@ -92,6 +99,19 @@ async fn non_settling_solver(web3: Web3) {
             .await
             .is_err()
     );
+
+    // 40 seconds is the cache TTL, and 5 seconds is added to compensate any
+    // possible delays.
+    let sleep_timeout_secs = 40 - now.elapsed().as_secs() + 5;
+    println!(
+        "Sleeping for {} seconds to reset the solver participation guard cache",
+        sleep_timeout_secs
+    );
+    tokio::time::sleep(tokio::time::Duration::from_secs(sleep_timeout_secs)).await;
+    // The cache is reset, and the solver is allowed to participate again.
+    execute_order(&onchain, &trader_a, &token_a, &token_b, &services)
+        .await
+        .unwrap();
 }
 
 async fn low_settling_solver(web3: Web3) {
@@ -102,8 +122,12 @@ async fn low_settling_solver(web3: Web3) {
 
     let services = Services::new(&onchain).await;
     let args = ExtraServiceArgs {
-        // The solver is banned if the failure settlement rate is above 55%.
-        autopilot: vec!["--solver-max-settlement-failure-rate=0.55".to_string()],
+        autopilot: vec![
+            // The solver gets banned for 40s.
+            "--solver-blacklist-cache-ttl=40s".to_string(),
+            // The solver is banned if the failure settlement rate is above 55%.
+            "--solver-max-settlement-failure-rate=0.55".to_string(),
+        ],
         ..Default::default()
     };
     services.start_protocol_with_args(args, solver).await;
@@ -134,6 +158,7 @@ async fn low_settling_solver(web3: Web3) {
     replace_solver_for_auction_ids(pool, &random_auctions, &solver_b.address()).await;
     // The competition still passes since the stats are updated only after a new
     // solution from anyone is received and stored.
+    let now = Instant::now();
     assert!(
         execute_order(&onchain, &trader_a, &token_a, &token_b, &services)
             .await
@@ -145,6 +170,19 @@ async fn low_settling_solver(web3: Web3) {
             .await
             .is_err()
     );
+
+    // 40 seconds is the cache TTL, and 5 seconds is added to compensate any
+    // possible delays.
+    let sleep_timeout_secs = 40 - now.elapsed().as_secs() + 5;
+    println!(
+        "Sleeping for {} seconds to reset the solver participation guard cache",
+        sleep_timeout_secs
+    );
+    tokio::time::sleep(tokio::time::Duration::from_secs(sleep_timeout_secs)).await;
+    // The cache is reset, and the solver is allowed to participate again.
+    execute_order(&onchain, &trader_a, &token_a, &token_b, &services)
+        .await
+        .unwrap();
 }
 
 async fn not_allowed_solver(web3: Web3) {
