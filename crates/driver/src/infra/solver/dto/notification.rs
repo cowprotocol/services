@@ -159,7 +159,6 @@ pub enum Kind {
     },
 }
 
-#[serde_as]
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase", tag = "reason")]
 pub enum BanReason {
