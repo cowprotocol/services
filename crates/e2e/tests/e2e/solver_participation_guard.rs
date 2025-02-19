@@ -131,7 +131,6 @@ async fn low_settling_solver(web3: Web3) {
         .enumerate()
         .filter_map(|(i, id)| (i % 2 == 0).then_some(*id))
         .collect::<Vec<_>>();
-    tracing::info!("newlog random_auctions={:?}", random_auctions);
     replace_solver_for_auction_ids(pool, &random_auctions, &solver_b.address()).await;
     // The competition still passes since the stats are updated only after a new
     // solution from anyone is received and stored.
