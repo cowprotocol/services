@@ -1,5 +1,7 @@
 use {
-    crate::{domain::competition::order::app_data::AppData, tests::setup::Order}, app_data::AppDataDocument, axum::{
+    crate::{domain::competition::order::app_data::AppData, tests::setup::Order},
+    app_data::AppDataDocument,
+    axum::{
         extract::Path,
         http::StatusCode,
         response::IntoResponse,
@@ -7,7 +9,8 @@ use {
         Extension,
         Json,
         Router,
-    }, std::{collections::HashMap, net::SocketAddr}
+    },
+    std::{collections::HashMap, net::SocketAddr},
 };
 
 /// A mocked orderbook service that provides `/v1/app_data/{app_data_hash}` API.
