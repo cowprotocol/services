@@ -57,7 +57,7 @@ impl Rpc {
 #[derive(Clone)]
 pub struct Ethereum {
     web3: DynWeb3,
-    debug_api_web3: DynWeb3,
+    unbuffered_web3: DynWeb3,
     chain: Chain,
     current_block: CurrentBlockWatcher,
     contracts: Contracts,
@@ -72,7 +72,7 @@ impl Ethereum {
     /// any initialization error.
     pub async fn new(
         web3: DynWeb3,
-        debug_api_web3: DynWeb3,
+        unbuffered_web3: DynWeb3,
         chain: &Chain,
         url: Url,
         addresses: contracts::Addresses,
@@ -85,7 +85,7 @@ impl Ethereum {
                 .await
                 .expect("couldn't initialize current block stream"),
             web3,
-            debug_api_web3,
+            unbuffered_web3,
             chain: *chain,
             contracts,
         }
@@ -109,7 +109,9 @@ impl Ethereum {
         let (transaction, receipt, traces) = tokio::try_join!(
             self.web3.eth().transaction(hash.0.into()),
             self.web3.eth().transaction_receipt(hash.0),
-            self.debug_api_web3.debug().transaction(hash.0),
+            // Use unbuffered transport for the Debug API since not all providers support
+            // batched debug calls.
+            self.unbuffered_web3.debug().transaction(hash.0),
         )?;
         let transaction = transaction.ok_or(Error::TransactionNotFound)?;
         let receipt = receipt.ok_or(Error::TransactionNotFound)?;

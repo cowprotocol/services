@@ -108,13 +108,13 @@ async fn unbuffered_ethrpc(url: &Url) -> infra::blockchain::Rpc {
 
 async fn ethereum(
     web3: DynWeb3,
-    debug_api_web3: DynWeb3,
+    unbuffered_web3: DynWeb3,
     chain: &Chain,
     url: Url,
     contracts: infra::blockchain::contracts::Addresses,
     poll_interval: Duration,
 ) -> infra::Ethereum {
-    infra::Ethereum::new(web3, debug_api_web3, chain, url, contracts, poll_interval).await
+    infra::Ethereum::new(web3, unbuffered_web3, chain, url, contracts, poll_interval).await
 }
 
 pub async fn start(args: impl Iterator<Item = String>) {
@@ -171,9 +171,7 @@ pub async fn run(args: Arguments) {
         );
     }
 
-    // Use unbuffered transport for the Debug API since not all providers support
-    // batched debug calls.
-    let debug_api_ethrpc = unbuffered_ethrpc(&args.shared.node_url).await;
+    let unbuffered_ethrpc = unbuffered_ethrpc(&args.shared.node_url).await;
     let ethrpc = ethrpc(&args.shared.node_url, &args.shared.ethrpc).await;
     let chain = ethrpc.chain();
     let web3 = ethrpc.web3().clone();
@@ -184,7 +182,7 @@ pub async fn run(args: Arguments) {
     };
     let eth = ethereum(
         web3.clone(),
-        debug_api_ethrpc.web3().clone(),
+        unbuffered_ethrpc.web3().clone(),
         &chain,
         url,
         contracts.clone(),
