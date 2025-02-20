@@ -129,6 +129,8 @@ pub struct Config {
     pub settle_queue_size: usize,
     /// Whether flashloan hints should be sent to the solver.
     pub flashloans_enabled: bool,
+    /// If no lender is specified in flashloan hint, use default one
+    pub flashloan_default_lender: eth::Address,
 }
 
 impl Solver {
@@ -231,6 +233,7 @@ impl Solver {
             self.config.fee_handler,
             self.config.solver_native_token,
             self.config.flashloans_enabled,
+            self.config.flashloan_default_lender,
         );
         // Only auctions with IDs are real auctions (/quote requests don't have an ID,
         // and it makes no sense to store them)

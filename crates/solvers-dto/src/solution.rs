@@ -28,6 +28,8 @@ pub struct Solution {
     pub post_interactions: Vec<Call>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub gas: Option<u64>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub flashloans: Vec<Flashloan>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -195,4 +197,15 @@ pub enum SigningScheme {
     EthSign,
     PreSign,
     Eip1271,
+}
+
+#[serde_as]
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Flashloan {
+    pub lender: H160,
+    pub borrower: H160,
+    pub token: H160,
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub amount: U256,
 }

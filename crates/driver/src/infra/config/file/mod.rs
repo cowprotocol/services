@@ -5,7 +5,7 @@ use {
     serde::{Deserialize, Deserializer, Serialize},
     serde_with::serde_as,
     solver::solver::Arn,
-    std::{collections::HashMap, time::Duration},
+    std::{collections::HashMap, str::FromStr, time::Duration},
 };
 
 mod load;
@@ -81,6 +81,10 @@ struct Config {
     /// Whether the flashloans feature is enabled.
     #[serde(default)]
     flashloans_enabled: bool,
+
+    /// If no lender is specified in flashloan hint, use this default lender.
+    #[serde(default = "default_flashloans_lender")]
+    flashloans_default_lender: eth::H160,
 }
 
 #[serde_as]
@@ -685,6 +689,11 @@ fn default_max_order_age() -> Option<Duration> {
 
 fn default_simulation_bad_token_max_age() -> Duration {
     Duration::from_secs(600)
+}
+
+// SKY lending DAI token
+fn default_flashloans_lender() -> eth::H160 {
+    eth::H160::from_str("0x60744434d6339a6B27d73d9Eda62b6F66a0a04FA").unwrap()
 }
 
 #[serde_as]
