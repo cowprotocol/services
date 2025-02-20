@@ -86,20 +86,35 @@ impl Liveness {
     }
 }
 
+/// Creates Web3 transport based on the given config.
 async fn ethrpc(url: &Url, ethrpc_args: &shared::ethrpc::Arguments) -> infra::blockchain::Rpc {
     infra::blockchain::Rpc::new(url, ethrpc_args)
         .await
         .expect("connect ethereum RPC")
 }
 
+/// Creates unbuffered Web3 transport.
+async fn unbuffered_ethrpc(url: &Url) -> infra::blockchain::Rpc {
+    ethrpc(
+        url,
+        &shared::ethrpc::Arguments {
+            ethrpc_max_batch_size: 0,
+            ethrpc_max_concurrent_requests: 0,
+            ethrpc_batch_delay: Default::default(),
+        },
+    )
+    .await
+}
+
 async fn ethereum(
     web3: DynWeb3,
+    debug_api_web3: DynWeb3,
     chain: &Chain,
     url: Url,
     contracts: infra::blockchain::contracts::Addresses,
     poll_interval: Duration,
 ) -> infra::Ethereum {
-    infra::Ethereum::new(web3, chain, url, contracts, poll_interval).await
+    infra::Ethereum::new(web3, debug_api_web3, chain, url, contracts, poll_interval).await
 }
 
 pub async fn start(args: impl Iterator<Item = String>) {
@@ -156,6 +171,9 @@ pub async fn run(args: Arguments) {
         );
     }
 
+    // Use unbuffered transport for the Debug API since not all providers support
+    // batched debug calls.
+    let debug_api_ethrpc = unbuffered_ethrpc(&args.shared.node_url).await;
     let ethrpc = ethrpc(&args.shared.node_url, &args.shared.ethrpc).await;
     let chain = ethrpc.chain();
     let web3 = ethrpc.web3().clone();
@@ -166,6 +184,7 @@ pub async fn run(args: Arguments) {
     };
     let eth = ethereum(
         web3.clone(),
+        debug_api_ethrpc.web3().clone(),
         &chain,
         url,
         contracts.clone(),
