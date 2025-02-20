@@ -1,5 +1,7 @@
 use {
     crate::util::Bytes,
+    anyhow::Context,
+    app_data::AppDataDocument,
     derive_more::From,
     futures::FutureExt,
     moka::future::Cache,
@@ -62,12 +64,17 @@ impl AppDataRetriever {
                 let url = self_
                     .0
                     .base_url
-                    .join(&format!("v1/app_data/{:?}", app_data.0))?;
+                    .join(&format!("api/v1/app_data/{:?}", app_data.0))?;
                 let response = self_.0.client.get(url).send().await?;
                 let validated_app_data = match response.status() {
                     StatusCode::NOT_FOUND => None,
                     _ => {
-                        let bytes = response.error_for_status()?.bytes().await?;
+                        let bytes = {
+                            let body = response.text().await?;
+                            let appdata: AppDataDocument =
+                                serde_json::from_str(&body).context("invalid app data document")?;
+                            appdata.full_app_data.into_bytes()
+                        };
                         Some(self_.0.app_data_validator.validate(&bytes)?)
                     }
                 };
