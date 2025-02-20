@@ -493,6 +493,8 @@ impl std::fmt::Debug for Solution {
             .field("interactions", &self.interactions)
             .field("post_interactions", &self.post_interactions)
             .field("solver", &self.solver.name())
+            .field("gas", &self.gas)
+            .field("flashloans", &self.flashloans)
             .finish()
     }
 }
