@@ -69,13 +69,18 @@ impl AppDataRetriever {
                 let validated_app_data = match response.status() {
                     StatusCode::NOT_FOUND => None,
                     _ => {
-                        let bytes = {
-                            let body = response.text().await?;
-                            let appdata: AppDataDocument =
-                                serde_json::from_str(&body).context("invalid app data document")?;
-                            appdata.full_app_data.into_bytes()
-                        };
-                        Some(self_.0.app_data_validator.validate(&bytes)?)
+                        let appdata: AppDataDocument =
+                            serde_json::from_str(&response.text().await?)
+                                .context("invalid app data document")?;
+                        match appdata.full_app_data == "{}" {
+                            true => None, // empty app data
+                            false => Some(
+                                self_
+                                    .0
+                                    .app_data_validator
+                                    .validate(&appdata.full_app_data.into_bytes())?,
+                            ),
+                        }
                     }
                 };
 
