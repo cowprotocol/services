@@ -37,6 +37,8 @@ jobs:
           cp playground/.env.example playground/.env
           sed -i -e 's/ETH_RPC_URL=.*/ETH_RPC_URL=$FORK_URL_MAINNET/g' playground/.env
           cat playground/.env
+          # check if RPC node is working on specified URL
+          curl $FORK_URL_MAINNET -X POST -H "Content-Type: application/json" --data '{"jsonrpc": "2.0", "method": "eth_blockNumber", "params": [],"id":1}'
 
       - name: Start docker containers
         id: containers
