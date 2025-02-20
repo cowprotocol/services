@@ -37,8 +37,6 @@ jobs:
           cp playground/.env.example playground/.env
           sed -i -e 's/ETH_RPC_URL=.*/ETH_RPC_URL=$FORK_URL_MAINNET/g' playground/.env
           cat playground/.env
-          # check if RPC node is working on specified URL
-          curl $FORK_URL_MAINNET -X POST -H "Content-Type: application/json" --data '{"jsonrpc": "2.0", "method": "eth_blockNumber", "params": [],"id":1}'
 
       - name: Start docker containers
         id: containers
@@ -60,9 +58,9 @@ jobs:
         with:
           dest: './logs'
 
-      - name: Collect chain container health logs on failure
+      - name: Collect playground-chain-1 container health logs on failure
         if: failure()
-        run: docker inspect --format='{{json .State.Health}}' playground-chain-1 > ./logs/health-playground-chain-1.json
+        run: docker inspect --format='{{json .State.Health}}' playground-chain-1 > ./logs/playground-chain-1-health-log.json
 
       - name: Tar logs
         if: failure()
