@@ -53,7 +53,7 @@ The CI (check .github/workflows/pull-request.yaml) runs unit tests, e2e tests, `
 
 ### DB Tests:
 
-`cargo test -- postgres --test-threads 1 --ignored --nocapture`
+`cargo test -- postgres --test-threads 1 --ignored`
 
 **Note:** Requires postgres database running (see below).
 
