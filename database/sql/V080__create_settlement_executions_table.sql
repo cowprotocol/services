@@ -1,4 +1,4 @@
--- All events related to the settlement execution of an auction.
+-- Contains data for each settlement execution of an auction.
 CREATE TABLE settlement_executions
 (
     auction_id      integer     NOT NULL,
