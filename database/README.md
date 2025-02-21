@@ -461,8 +461,6 @@ auction\_id      | bigint      | not null | id of the auction the settlement exe
 solver           | bytea       | not null | public address of the winning solver that executed the settlement
 start\_timestamp | timestamptz | not null | when the settlement execution started
 end\_timestamp   | timestamptz | nullable | when the settlement execution ended
-start\_block     | bigint      | not null | block in which the settlement execution started
-end\_block       | bigint      | nullable | block in which the settlement execution ended
 deadline\_block  | bigint      | not null | latest block at which the settlement execution should have ended
 outcome          | text        | nullable | outcome of the settlement execution
 

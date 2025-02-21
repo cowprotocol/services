@@ -808,7 +808,6 @@ impl Persistence {
                 auction_id,
                 solver,
                 start_timestamp,
-                start_block,
                 deadline_block,
             } => {
                 let _timer = Metrics::get()
@@ -821,7 +820,6 @@ impl Persistence {
                     auction_id,
                     ByteArray(solver.0 .0),
                     start_timestamp,
-                    start_block.try_into().context("start block overflow")?,
                     deadline_block
                         .try_into()
                         .context("deadline block overflow")?,
@@ -832,7 +830,6 @@ impl Persistence {
                 auction_id,
                 solver,
                 end_timestamp,
-                end_block,
                 outcome,
             } => {
                 let _timer = Metrics::get()
@@ -845,7 +842,6 @@ impl Persistence {
                     auction_id,
                     ByteArray(solver.0 .0),
                     end_timestamp,
-                    end_block.try_into().context("end block overflow")?,
                     outcome,
                 )
                 .await?
