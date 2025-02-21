@@ -60,6 +60,7 @@ mod tests {
     use {
         super::*,
         crate::byte_array::ByteArray,
+        chrono::Timelike,
         sqlx::{Connection, PgConnection},
     };
 
@@ -73,7 +74,7 @@ mod tests {
         let auction_id = 1;
         let solver_a = ByteArray([1u8; 20]);
         let solver_b = ByteArray([2u8; 20]);
-        let start_timestamp = Utc::now();
+        let start_timestamp = now_truncated_to_microseconds();
         let start_block = 1;
         let deadline_block = 10;
 
@@ -124,7 +125,7 @@ mod tests {
         assert!(output.contains(&expected_a));
         assert!(output.contains(&expected_b));
 
-        let end_timestamp_a = Utc::now();
+        let end_timestamp_a = now_truncated_to_microseconds();
         let end_block_a = 8;
         let outcome_a = "success".to_string();
         update(
@@ -138,7 +139,7 @@ mod tests {
         .await
         .unwrap();
 
-        let end_timestamp_b = Utc::now();
+        let end_timestamp_b = now_truncated_to_microseconds();
         let end_block_b = 10;
         let outcome_b = "failure".to_string();
         update(
@@ -197,5 +198,13 @@ mod tests {
         const QUERY: &str = r#"SELECT * FROM settlement_executions WHERE auction_id = $1;"#;
 
         sqlx::query_as(QUERY).bind(auction_id).fetch_all(ex).await
+    }
+
+    /// In the DB we use `timestampz` which doesn't store nanoseconds, so we
+    /// truncate them to make the comparison work.
+    fn now_truncated_to_microseconds() -> DateTime<Utc> {
+        let now = Utc::now();
+        now.with_nanosecond((now.nanosecond() / 1_000) * 1_000)
+            .unwrap()
     }
 }
