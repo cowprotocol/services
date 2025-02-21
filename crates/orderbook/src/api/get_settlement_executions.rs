@@ -28,14 +28,20 @@ pub fn get(db: Postgres) -> impl Filter<Extract = (super::ApiReply,), Error = Re
             let result = db
                 .find_settlement_executions(from_auction, to_auction)
                 .await;
-
-            Result::<_, Infallible>::Ok(match result {
+            let response = match result {
                 Ok(executions) => reply::with_status(reply::json(&executions), StatusCode::OK),
                 Err(err) => {
-                    tracing::error!(?err, "get_settlement_executions");
+                    tracing::error!(
+                        ?err,
+                        ?from_auction,
+                        ?to_auction,
+                        "Failed to fetch settlement executions"
+                    );
                     crate::api::internal_error_reply()
                 }
-            })
+            };
+
+            Result::<_, Infallible>::Ok(response)
         }
     })
 }
