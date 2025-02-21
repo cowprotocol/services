@@ -5,6 +5,8 @@ CREATE TABLE settlement_executions
     solver          bytea       NOT NULL,
     start_timestamp timestamptz NOT NULL,
     end_timestamp   timestamptz,
+    start_block     bigint      NOT NULL,
+    end_block       bigint,
     deadline_block  bigint      NOT NULL,
     outcome         text,
     PRIMARY KEY (auction_id, solver)

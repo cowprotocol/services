@@ -9,10 +9,11 @@ pub async fn insert(
     auction_id: AuctionId,
     solver: Address,
     start_timestamp: DateTime<Utc>,
+    start_block: i64,
     deadline_block: i64,
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
-INSERT INTO settlement_executions (auction_id, solver, start_timestamp, deadline_block)
+INSERT INTO settlement_executions (auction_id, solver, start_timestamp, start_block, deadline_block)
 VALUES ($1, $2, $3, $4, $5)
     ;"#;
 
@@ -20,6 +21,7 @@ VALUES ($1, $2, $3, $4, $5)
         .bind(auction_id)
         .bind(solver)
         .bind(start_timestamp)
+        .bind(start_block)
         .bind(deadline_block)
         .execute(ex)
         .await?;
@@ -32,11 +34,12 @@ pub async fn update(
     auction_id: AuctionId,
     solver: Address,
     end_timestamp: DateTime<Utc>,
+    end_block: i64,
     outcome: String,
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
 UPDATE settlement_executions
-SET end_timestamp = $3, outcome = $5
+SET end_timestamp = $3, end_block = $4, outcome = $5
 WHERE auction_id = $1 AND solver = $2
     ;"#;
 
@@ -44,6 +47,7 @@ WHERE auction_id = $1 AND solver = $2
         .bind(auction_id)
         .bind(solver)
         .bind(end_timestamp)
+        .bind(end_block)
         .bind(outcome)
         .execute(ex)
         .await?;
@@ -71,6 +75,7 @@ mod tests {
         let solver_a = ByteArray([1u8; 20]);
         let solver_b = ByteArray([2u8; 20]);
         let start_timestamp = now_truncated_to_microseconds();
+        let start_block = 1;
         let deadline_block = 10;
 
         insert(
@@ -78,6 +83,7 @@ mod tests {
             auction_id,
             solver_a,
             start_timestamp,
+            start_block,
             deadline_block,
         )
         .await
@@ -87,6 +93,7 @@ mod tests {
             auction_id,
             solver_b,
             start_timestamp,
+            start_block,
             deadline_block,
         )
         .await
@@ -99,6 +106,8 @@ mod tests {
             solver: solver_a,
             start_timestamp,
             end_timestamp: None,
+            start_block,
+            end_block: None,
             deadline_block,
             outcome: None,
         };
@@ -107,6 +116,8 @@ mod tests {
             solver: solver_b,
             start_timestamp,
             end_timestamp: None,
+            start_block,
+            end_block: None,
             deadline_block,
             outcome: None,
         };
@@ -114,24 +125,28 @@ mod tests {
         assert!(output.contains(&expected_b));
 
         let end_timestamp_a = now_truncated_to_microseconds();
+        let end_block_a = 8;
         let outcome_a = "success".to_string();
         update(
             &mut db,
             auction_id,
             solver_a,
             end_timestamp_a,
+            end_block_a,
             outcome_a.clone(),
         )
         .await
         .unwrap();
 
         let end_timestamp_b = now_truncated_to_microseconds();
+        let end_block_b = 10;
         let outcome_b = "failure".to_string();
         update(
             &mut db,
             auction_id,
             solver_b,
             end_timestamp_b,
+            end_block_b,
             outcome_b.clone(),
         )
         .await
@@ -144,6 +159,8 @@ mod tests {
             solver: solver_a,
             start_timestamp,
             end_timestamp: Some(end_timestamp_a),
+            start_block,
+            end_block: Some(end_block_a),
             deadline_block,
             outcome: Some(outcome_a),
         };
@@ -152,6 +169,8 @@ mod tests {
             solver: solver_b,
             start_timestamp,
             end_timestamp: Some(end_timestamp_b),
+            start_block,
+            end_block: Some(end_block_b),
             deadline_block,
             outcome: Some(outcome_b),
         };
@@ -165,6 +184,8 @@ mod tests {
         pub solver: Address,
         pub start_timestamp: DateTime<Utc>,
         pub end_timestamp: Option<DateTime<Utc>>,
+        pub start_block: i64,
+        pub end_block: Option<i64>,
         pub deadline_block: i64,
         pub outcome: Option<String>,
     }

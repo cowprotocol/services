@@ -217,12 +217,14 @@ pub enum Execution {
         auction_id: AuctionId,
         solver: eth::Address,
         start_timestamp: DateTime<Utc>,
+        start_block: u64,
         deadline_block: u64,
     },
     Ended {
         auction_id: AuctionId,
         solver: eth::Address,
         end_timestamp: DateTime<Utc>,
+        end_block: u64,
         outcome: String,
     },
 }

@@ -777,6 +777,7 @@ impl RunLoop {
                 auction_id,
                 solver,
                 start_timestamp: chrono::Utc::now(),
+                start_block: current_block,
                 deadline_block: submission_deadline_latest_block,
             };
             let settle_event_store_fut = self
@@ -837,6 +838,7 @@ impl RunLoop {
         auction_id: i64,
         result: &Result<TxId, SettleError>,
     ) {
+        let current_block = self.eth.current_block().borrow().number;
         let persistence = self.persistence.clone();
         let outcome = match result {
             Ok(_) => "success".to_string(),
@@ -849,6 +851,7 @@ impl RunLoop {
                 auction_id,
                 solver,
                 end_timestamp: chrono::Utc::now(),
+                end_block: current_block,
                 outcome,
             };
             if let Err(err) = persistence
