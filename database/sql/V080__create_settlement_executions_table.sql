@@ -3,7 +3,7 @@ CREATE TABLE settlement_executions
 (
     auction_id      bigint      NOT NULL,
     solver          bytea       NOT NULL,
-    start_timestamp timestamptz NOT NULL DEFAULT now(),
+    start_timestamp timestamptz NOT NULL,
     end_timestamp   timestamptz,
     start_block     bigint      NOT NULL,
     end_block       bigint,
