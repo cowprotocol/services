@@ -797,6 +797,63 @@ impl Persistence {
         ex.commit().await?;
         Ok(())
     }
+
+    pub async fn store_settlement_execution(
+        &self,
+        event: domain::settlement::Execution,
+    ) -> Result<(), DatabaseError> {
+        let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
+        match event {
+            domain::settlement::Execution::Started {
+                auction_id,
+                solver,
+                start_timestamp,
+                start_block,
+                deadline_block,
+            } => {
+                let _timer = Metrics::get()
+                    .database_queries
+                    .with_label_values(&["insert_settlement_execution_event"])
+                    .start_timer();
+
+                database::settlement_executions::insert(
+                    &mut ex,
+                    auction_id,
+                    ByteArray(solver.0 .0),
+                    start_timestamp,
+                    start_block.try_into().context("start block overflow")?,
+                    deadline_block
+                        .try_into()
+                        .context("deadline block overflow")?,
+                )
+                .await?
+            }
+            domain::settlement::Execution::Ended {
+                auction_id,
+                solver,
+                end_timestamp,
+                end_block,
+                outcome,
+            } => {
+                let _timer = Metrics::get()
+                    .database_queries
+                    .with_label_values(&["update_settlement_execution_event"])
+                    .start_timer();
+
+                database::settlement_executions::update(
+                    &mut ex,
+                    auction_id,
+                    ByteArray(solver.0 .0),
+                    end_timestamp,
+                    end_block.try_into().context("end block overflow")?,
+                    outcome,
+                )
+                .await?
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(prometheus_metric_storage::MetricStorage)]

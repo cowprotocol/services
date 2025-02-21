@@ -8,6 +8,7 @@ use {
         domain::{self, eth},
         infra,
     },
+    chrono::{DateTime, Utc},
     std::collections::HashMap,
 };
 
@@ -15,7 +16,7 @@ mod auction;
 mod observer;
 mod trade;
 mod transaction;
-use chain::Chain;
+use {crate::infra::persistence::dto::AuctionId, chain::Chain};
 pub use {auction::Auction, observer::Observer, trade::Trade, transaction::Transaction};
 
 /// A settled transaction together with the `Auction`, for which it was executed
@@ -208,6 +209,24 @@ impl From<infra::persistence::DatabaseError> for Error {
     fn from(err: infra::persistence::DatabaseError) -> Self {
         Self::Infra(err.0)
     }
+}
+
+#[derive(Debug)]
+pub enum Execution {
+    Started {
+        auction_id: AuctionId,
+        solver: eth::Address,
+        start_timestamp: DateTime<Utc>,
+        start_block: u64,
+        deadline_block: u64,
+    },
+    Ended {
+        auction_id: AuctionId,
+        solver: eth::Address,
+        end_timestamp: DateTime<Utc>,
+        end_block: u64,
+        outcome: String,
+    },
 }
 
 #[cfg(test)]
