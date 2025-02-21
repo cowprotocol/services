@@ -412,10 +412,10 @@ impl OrderValidator {
                 }
                 Err(err) => match err {
                     TransferSimulationError::InsufficientAllowance => {
-                        res = Err(ValidationError::InsufficientAllowance);
+                        return Err(ValidationError::InsufficientAllowance);
                     }
                     TransferSimulationError::InsufficientBalance => {
-                        res = Err(ValidationError::InsufficientBalance);
+                        return Err(ValidationError::InsufficientBalance);
                     }
                     TransferSimulationError::TransferFailed => {
                         res = Err(ValidationError::TransferSimulationFailed);
