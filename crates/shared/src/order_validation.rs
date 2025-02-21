@@ -412,9 +412,12 @@ impl OrderValidator {
                 }
                 Err(err) => match err {
                     TransferSimulationError::InsufficientAllowance => {
+                        // This error will be triggered regardless of the amount
                         return Err(ValidationError::InsufficientAllowance);
                     }
                     TransferSimulationError::InsufficientBalance => {
+                        // Since the amount starts at 1 atom, if this error is triggered then it
+                        // will be triggered for the other amounts too
                         return Err(ValidationError::InsufficientBalance);
                     }
                     TransferSimulationError::TransferFailed => {
