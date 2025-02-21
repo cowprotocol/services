@@ -795,7 +795,7 @@ impl RunLoop {
             futures::future::Either::Right((driver_result, wait_for_settlement_transaction)) => {
                 match driver_result {
                     Ok(_) => wait_for_settlement_transaction.await,
-                    Err(err) => Err(SettleError::Failure(err)),
+                    Err(err) => Err(SettleError::Other(err)),
                 }
             }
         };
@@ -848,9 +848,7 @@ impl RunLoop {
                 break;
             }
         }
-        Err(SettleError::Failure(anyhow::anyhow!(
-            "settlement transaction await reached deadline"
-        )))
+        Err(SettleError::Timeout)
     }
 
     /// Removes orders that are currently being settled to avoid solvers trying
@@ -892,7 +890,9 @@ enum SolveError {
 #[derive(Debug, thiserror::Error)]
 enum SettleError {
     #[error(transparent)]
-    Failure(anyhow::Error),
+    Other(anyhow::Error),
+    #[error("settlement transaction await reached deadline")]
+    Timeout,
 }
 
 #[derive(prometheus_metric_storage::MetricStorage)]
@@ -1019,7 +1019,8 @@ impl Metrics {
 
     fn settle_err(driver: &infra::Driver, elapsed: Duration, err: &SettleError) {
         let label = match err {
-            SettleError::Failure(_) => "error",
+            SettleError::Other(_) => "error",
+            SettleError::Timeout => "timeout",
         };
         Self::get()
             .settle
