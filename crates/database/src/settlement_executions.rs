@@ -120,6 +120,7 @@ mod tests {
             deadline_block,
             outcome: None,
         };
+        println!("newlog output{:?}", output);
         assert!(output.contains(&expected_a));
         assert!(output.contains(&expected_b));
 
