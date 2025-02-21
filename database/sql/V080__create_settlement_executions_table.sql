@@ -1,7 +1,7 @@
 -- Contains data for each settlement execution of an auction.
 CREATE TABLE settlement_executions
 (
-    auction_id      integer     NOT NULL,
+    auction_id      bigint      NOT NULL,
     solver          bytea       NOT NULL,
     start_timestamp timestamptz NOT NULL DEFAULT now(),
     end_timestamp   timestamptz,
