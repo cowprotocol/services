@@ -523,6 +523,7 @@ impl Postgres {
         })
     }
 
+    /// Retrieve all settlements executions for the given auction IDs range.
     pub async fn find_settlement_executions(
         &self,
         from_auction: AuctionId,
