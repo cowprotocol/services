@@ -4,6 +4,18 @@ use {
     sqlx::PgConnection,
 };
 
+#[derive(Debug, Clone, Eq, PartialEq, sqlx::FromRow)]
+pub struct ExecutionRow {
+    pub auction_id: AuctionId,
+    pub solver: Address,
+    pub start_timestamp: DateTime<Utc>,
+    pub end_timestamp: Option<DateTime<Utc>>,
+    pub start_block: i64,
+    pub end_block: Option<i64>,
+    pub deadline_block: i64,
+    pub outcome: Option<String>,
+}
+
 pub async fn insert(
     ex: &mut PgConnection,
     auction_id: AuctionId,
@@ -55,6 +67,25 @@ WHERE auction_id = $1 AND solver = $2
     Ok(())
 }
 
+pub async fn find(
+    ex: &mut PgConnection,
+    from_auction_id: AuctionId,
+    to_auction_id: AuctionId,
+) -> Result<Vec<ExecutionRow>, sqlx::Error> {
+    const QUERY: &str = r#"
+SELECT * FROM settlement_executions
+WHERE auction_id >= $1 AND auction_id <= $2
+    ;"#;
+
+    let rows = sqlx::query_as::<_, ExecutionRow>(QUERY)
+        .bind(from_auction_id)
+        .bind(to_auction_id)
+        .fetch_all(ex)
+        .await?;
+
+    Ok(rows)
+}
+
 #[cfg(test)]
 mod tests {
     use {
@@ -71,7 +102,8 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        let auction_id = 1;
+        let auction_id_a = 1;
+        let auction_id_b = 2;
         let solver_a = ByteArray([1u8; 20]);
         let solver_b = ByteArray([2u8; 20]);
         let start_timestamp = now_truncated_to_microseconds();
@@ -80,7 +112,7 @@ mod tests {
 
         insert(
             &mut db,
-            auction_id,
+            auction_id_a,
             solver_a,
             start_timestamp,
             start_block,
@@ -90,7 +122,7 @@ mod tests {
         .unwrap();
         insert(
             &mut db,
-            auction_id,
+            auction_id_a,
             solver_b,
             start_timestamp,
             start_block,
@@ -98,11 +130,21 @@ mod tests {
         )
         .await
         .unwrap();
+        insert(
+            &mut db,
+            auction_id_b,
+            solver_a,
+            start_timestamp,
+            start_block,
+            deadline_block,
+        )
+        .await
+        .unwrap();
 
-        let output = fetch(&mut db, auction_id).await.unwrap();
-        assert_eq!(output.len(), 2);
+        let output = find(&mut db, auction_id_a, auction_id_b).await.unwrap();
+        assert_eq!(output.len(), 3);
         let expected_a = ExecutionRow {
-            auction_id,
+            auction_id: auction_id_a,
             solver: solver_a,
             start_timestamp,
             end_timestamp: None,
@@ -112,8 +154,18 @@ mod tests {
             outcome: None,
         };
         let expected_b = ExecutionRow {
-            auction_id,
+            auction_id: auction_id_a,
             solver: solver_b,
+            start_timestamp,
+            end_timestamp: None,
+            start_block,
+            end_block: None,
+            deadline_block,
+            outcome: None,
+        };
+        let expected_c = ExecutionRow {
+            auction_id: auction_id_b,
+            solver: solver_a,
             start_timestamp,
             end_timestamp: None,
             start_block,
@@ -123,13 +175,14 @@ mod tests {
         };
         assert!(output.contains(&expected_a));
         assert!(output.contains(&expected_b));
+        assert!(output.contains(&expected_c));
 
         let end_timestamp_a = now_truncated_to_microseconds();
         let end_block_a = 8;
         let outcome_a = "success".to_string();
         update(
             &mut db,
-            auction_id,
+            auction_id_a,
             solver_a,
             end_timestamp_a,
             end_block_a,
@@ -143,7 +196,7 @@ mod tests {
         let outcome_b = "failure".to_string();
         update(
             &mut db,
-            auction_id,
+            auction_id_a,
             solver_b,
             end_timestamp_b,
             end_block_b,
@@ -152,10 +205,10 @@ mod tests {
         .await
         .unwrap();
 
-        let output = fetch(&mut db, auction_id).await.unwrap();
+        let output = find(&mut db, auction_id_a, auction_id_a).await.unwrap();
         assert_eq!(output.len(), 2);
         let expected_a = ExecutionRow {
-            auction_id,
+            auction_id: auction_id_a,
             solver: solver_a,
             start_timestamp,
             end_timestamp: Some(end_timestamp_a),
@@ -165,7 +218,7 @@ mod tests {
             outcome: Some(outcome_a),
         };
         let expected_b = ExecutionRow {
-            auction_id,
+            auction_id: auction_id_a,
             solver: solver_b,
             start_timestamp,
             end_timestamp: Some(end_timestamp_b),
@@ -176,27 +229,6 @@ mod tests {
         };
         assert!(output.contains(&expected_a));
         assert!(output.contains(&expected_b));
-    }
-
-    #[derive(Debug, Clone, Eq, PartialEq, sqlx::FromRow)]
-    struct ExecutionRow {
-        pub auction_id: AuctionId,
-        pub solver: Address,
-        pub start_timestamp: DateTime<Utc>,
-        pub end_timestamp: Option<DateTime<Utc>>,
-        pub start_block: i64,
-        pub end_block: Option<i64>,
-        pub deadline_block: i64,
-        pub outcome: Option<String>,
-    }
-
-    async fn fetch(
-        ex: &mut PgConnection,
-        auction_id: AuctionId,
-    ) -> Result<Vec<ExecutionRow>, sqlx::Error> {
-        const QUERY: &str = r#"SELECT * FROM settlement_executions WHERE auction_id = $1;"#;
-
-        sqlx::query_as(QUERY).bind(auction_id).fetch_all(ex).await
     }
 
     /// In the DB we use `timestampz` which doesn't store nanoseconds, so we

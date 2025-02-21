@@ -22,6 +22,7 @@ mod get_native_price;
 mod get_order_by_uid;
 mod get_order_status;
 mod get_orders_by_tx;
+mod get_settlement_executions;
 mod get_solver_competition;
 mod get_token_metadata;
 mod get_total_surplus;
@@ -110,7 +111,11 @@ pub fn handle_all_routes(
         ),
         (
             "v1/get_token_metadata",
-            box_filter(get_token_metadata::get_token_metadata(database)),
+            box_filter(get_token_metadata::get_token_metadata(database.clone())),
+        ),
+        (
+            "v1/get_settlement_executions",
+            box_filter(get_settlement_executions::get(database)),
         ),
     ];
 

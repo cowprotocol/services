@@ -1,6 +1,9 @@
 use {
     super::Postgres,
-    crate::{dto::TokenMetadata, orderbook::AddOrderError},
+    crate::{
+        dto::{AuctionId, SettlementExecution, TokenMetadata},
+        orderbook::AddOrderError,
+    },
     anyhow::{Context as _, Result},
     app_data::AppDataHash,
     async_trait::async_trait,
@@ -27,7 +30,7 @@ use {
         signature::Signature,
         time::now_in_epoch_seconds,
     },
-    num::Zero,
+    num::{ToPrimitive, Zero},
     number::conversions::{big_decimal_to_big_uint, big_decimal_to_u256, u256_to_big_decimal},
     primitive_types::{H160, U256},
     shared::{
@@ -518,6 +521,43 @@ impl Postgres {
             first_trade_block,
             native_price,
         })
+    }
+
+    pub async fn find_settlement_executions(
+        &self,
+        from_auction: AuctionId,
+        to_auction: AuctionId,
+    ) -> Result<Vec<SettlementExecution>> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["find_settlement_executions"])
+            .start_timer();
+
+        let mut ex = self.pool.acquire().await?;
+        let executions = database::settlement_executions::find(&mut ex, from_auction, to_auction)
+            .await?
+            .into_iter()
+            .map(|row| {
+                Ok(SettlementExecution {
+                    auction_id: row.auction_id,
+                    solver: H160(row.solver.0),
+                    start_timestamp: row.start_timestamp,
+                    end_timestamp: row.end_timestamp,
+                    start_block: row.start_block.to_u32().context("start block is not u32")?,
+                    end_block: row
+                        .end_block
+                        .map(|block| block.to_u32().context("end block is not u32"))
+                        .transpose()?,
+                    deadline_block: row
+                        .deadline_block
+                        .to_u32()
+                        .context("deadline block is not u32")?,
+                    outcome: row.outcome,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        Ok(executions)
     }
 
     async fn execute_instrumented<F, T>(&self, label: &str, f: F) -> Result<T>
