@@ -13,7 +13,7 @@ pub async fn insert(
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
 INSERT INTO settlement_executions (auction_id, solver, start_timestamp, deadline_block)
-VALUES ($1, $2, $3, $4)
+VALUES ($1, $2, $3, $4, $5)
     ;"#;
 
     sqlx::query(QUERY)
@@ -36,7 +36,7 @@ pub async fn update(
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
 UPDATE settlement_executions
-SET end_timestamp = $3, outcome = $4
+SET end_timestamp = $3, outcome = $5
 WHERE auction_id = $1 AND solver = $2
     ;"#;
 
