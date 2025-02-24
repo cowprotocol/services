@@ -4,7 +4,14 @@ use {
         domain::{
             self,
             auction::Id,
-            competition::{self, Solution, SolutionError, TradedOrder, Unranked},
+            competition::{
+                self,
+                Solution,
+                SolutionError,
+                SolverParticipationGuard,
+                TradedOrder,
+                Unranked,
+            },
             eth::{self, TxId},
             OrderUid,
         },
@@ -59,6 +66,7 @@ pub struct RunLoop {
     eth: infra::Ethereum,
     persistence: infra::Persistence,
     drivers: Vec<Arc<infra::Driver>>,
+    solver_participation_guard: SolverParticipationGuard,
     solvable_orders_cache: Arc<SolvableOrdersCache>,
     trusted_tokens: AutoUpdatingTokenList,
     in_flight_orders: Arc<Mutex<HashSet<OrderUid>>>,
@@ -66,6 +74,7 @@ pub struct RunLoop {
     /// Maintenance tasks that should run before every runloop to have
     /// the most recent data available.
     maintenance: Arc<Maintenance>,
+    competition_updates_sender: tokio::sync::mpsc::UnboundedSender<()>,
 }
 
 impl RunLoop {
@@ -75,21 +84,25 @@ impl RunLoop {
         eth: infra::Ethereum,
         persistence: infra::Persistence,
         drivers: Vec<Arc<infra::Driver>>,
+        solver_participation_guard: SolverParticipationGuard,
         solvable_orders_cache: Arc<SolvableOrdersCache>,
         trusted_tokens: AutoUpdatingTokenList,
         liveness: Arc<Liveness>,
         maintenance: Arc<Maintenance>,
+        competition_updates_sender: tokio::sync::mpsc::UnboundedSender<()>,
     ) -> Self {
         Self {
             config,
             eth,
             persistence,
             drivers,
+            solver_participation_guard,
             solvable_orders_cache,
             trusted_tokens,
             in_flight_orders: Default::default(),
             liveness,
             maintenance,
+            competition_updates_sender,
         }
     }
 
@@ -453,7 +466,7 @@ impl RunLoop {
             competition_table,
         };
 
-        if let Err(err) = futures::try_join!(
+        match futures::try_join!(
             self.persistence
                 .save_auction(auction, block_deadline)
                 .map_err(|e| e.0.context("failed to save auction")),
@@ -461,9 +474,18 @@ impl RunLoop {
                 .save_solutions(auction.id, solutions)
                 .map_err(|e| e.0.context("failed to save solutions")),
         ) {
-            // Don't error if saving of auction and solution fails, until stable.
-            // Various edge cases with JIT orders verifiable only in production.
-            tracing::warn!(?err, "failed to save new competition data");
+            Ok(_) => {
+                // Notify the solver participation guard that the proposed solutions have been
+                // saved.
+                if let Err(err) = self.competition_updates_sender.send(()) {
+                    tracing::error!(?err, "failed to notify solver participation guard");
+                }
+            }
+            Err(err) => {
+                // Don't error if saving of auction and solution fails, until stable.
+                // Various edge cases with JIT orders verifiable only in production.
+                tracing::warn!(?err, "failed to save new competition data");
+            }
         }
 
         tracing::trace!(?competition, "saving competition");
@@ -725,23 +747,14 @@ impl RunLoop {
         request: &solve::Request,
     ) -> Result<Vec<Result<competition::Solution, domain::competition::SolutionError>>, SolveError>
     {
-        let authenticator = self.eth.contracts().authenticator();
-        let is_allowed = authenticator
-            .is_solver(driver.submission_address.into())
-            .call()
-            .await
-            .map_err(|err| {
-                tracing::warn!(
-                    driver = driver.name,
-                    ?driver.submission_address,
-                    ?err,
-                    "failed to check if solver is deny listed"
-                );
+        let can_participate = self.solver_participation_guard.can_participate(&driver.submission_address).await.map_err(|err| {
+            tracing::error!(?err, driver = %driver.name, ?driver.submission_address, "solver participation check failed");
                 SolveError::SolverDenyListed
-            })?;
+            }
+        )?;
 
-        // Do not send the request to the driver if the solver is denied
-        if !is_allowed {
+        // Do not send the request to the driver if the solver is deny-listed
+        if !can_participate {
             return Err(SolveError::SolverDenyListed);
         }
 

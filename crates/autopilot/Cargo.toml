@@ -25,6 +25,7 @@ chrono = { workspace = true }
 clap = { workspace = true }
 contracts = { path = "../contracts" }
 cow-amm = { path = "../cow-amm" }
+dashmap = { workspace = true }
 database = { path = "../database" }
 derive_more = { workspace = true }
 ethcontract = { workspace = true }
