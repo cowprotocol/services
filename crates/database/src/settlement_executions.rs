@@ -202,8 +202,6 @@ mod tests {
     /// In the DB we use `timestampz` which doesn't store nanoseconds, so we
     /// truncate them to make the comparison work.
     fn now_truncated_to_microseconds() -> DateTime<Utc> {
-        let now = Utc::now();
-        now.with_nanosecond((now.nanosecond() / 1_000) * 1_000)
-            .unwrap()
+        Utc::now().with_nanosecond(0).unwrap()
     }
 }
