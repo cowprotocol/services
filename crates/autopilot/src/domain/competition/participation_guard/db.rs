@@ -161,11 +161,19 @@ impl SolverValidator {
                 // Check if solver accepted this feature. This should be removed once the
                 // CIP making this mandatory has been approved.
                 if driver.requested_timeout_on_problems {
-                    tracing::debug!(solver = ?driver.name, "disabling solver temporarily");
-                    infra::notify_banned_solver(driver.clone(), ban_reason, banned_until);
-                    self.0
+                    let is_absent_or_expired = self
+                        .0
                         .banned_solvers
-                        .insert(driver.submission_address, found_at);
+                        .get(&driver.submission_address)
+                        .is_none_or(|entry| entry.elapsed() >= self.0.ttl);
+                    // The solver should try again once the cache is expired.
+                    if is_absent_or_expired {
+                        tracing::debug!(solver = ?driver.name, "disabling solver temporarily");
+                        infra::notify_banned_solver(driver.clone(), ban_reason, banned_until);
+                        self.0
+                            .banned_solvers
+                            .insert(driver.submission_address, found_at);
+                    }
                 }
                 driver.name.as_ref()
             })
