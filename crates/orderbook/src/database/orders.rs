@@ -1,6 +1,6 @@
 use {
     super::Postgres,
-    crate::{dto::TokenMetadata, orderbook::AddOrderError},
+    crate::dto::TokenMetadata,
     anyhow::{Context as _, Result},
     app_data::AppDataHash,
     async_trait::async_trait,
@@ -40,6 +40,7 @@ use {
             order_class_into,
             order_kind_from,
             order_kind_into,
+            order_quote_into_model,
             sell_token_source_from,
             sell_token_source_into,
             signing_scheme_from,
@@ -67,7 +68,6 @@ pub trait OrderStoring: Send + Sync {
         new_quote: Option<Quote>,
     ) -> Result<(), InsertionError>;
     async fn orders_for_tx(&self, tx_hash: &H256) -> Result<Vec<Order>>;
-    async fn single_order(&self, uid: &OrderUid) -> Result<Option<Order>>;
     /// All orders of a single user ordered by creation date descending (newest
     /// orders first).
     async fn user_orders(
@@ -77,39 +77,7 @@ pub trait OrderStoring: Send + Sync {
         limit: Option<u64>,
     ) -> Result<Vec<Order>>;
     async fn latest_order_event(&self, order_uid: &OrderUid) -> Result<Option<OrderEvent>>;
-    async fn single_order_with_quote(&self, uid: &OrderUid) -> Result<Option<OrderWithQuote>>;
-}
-
-pub struct OrderWithQuote {
-    pub order: Order,
-    pub quote: Option<orders::Quote>,
-}
-
-impl OrderWithQuote {
-    pub fn try_new(order: Order, quote: Option<Quote>) -> Result<Self, AddOrderError> {
-        Ok(Self {
-            quote: quote
-                .map(|quote| {
-                    Ok::<database::orders::Quote, AddOrderError>(orders::Quote {
-                        order_uid: ByteArray(order.metadata.uid.0),
-                        gas_amount: quote.data.fee_parameters.gas_amount,
-                        gas_price: quote.data.fee_parameters.gas_price,
-                        sell_token_price: quote.data.fee_parameters.sell_token_price,
-                        sell_amount: u256_to_big_decimal(&quote.sell_amount),
-                        buy_amount: u256_to_big_decimal(&quote.buy_amount),
-                        solver: ByteArray(quote.data.solver.0),
-                        verified: quote.data.verified,
-                        metadata: quote
-                            .data
-                            .metadata
-                            .try_into()
-                            .map_err(AddOrderError::MetadataSerializationFailed)?,
-                    })
-                })
-                .transpose()?,
-            order,
-        })
-    }
+    async fn single_order(&self, uid: &OrderUid) -> Result<Option<Order>>;
 }
 
 #[derive(Debug)]
@@ -348,65 +316,23 @@ impl OrderStoring for Postgres {
             .start_timer();
 
         let mut ex = self.pool.acquire().await?;
-        let order = match database::orders::single_full_order(&mut ex, &ByteArray(uid.0)).await? {
-            Some(order) => Some(order),
+
+        match orders::single_full_order_with_quote(&mut ex, &ByteArray(uid.0)).await? {
+            Some(order_with_quote) => {
+                let (order, quote) = order_with_quote.into_order_and_quote();
+                Some(full_order_with_quote_into_model_order(
+                    order,
+                    quote.as_ref(),
+                ))
+            }
             None => {
                 // try to find the order in the JIT orders table
-                database::jit_orders::get_by_id(&mut ex, &ByteArray(uid.0)).await?
+                database::jit_orders::get_by_id(&mut ex, &ByteArray(uid.0))
+                    .await?
+                    .map(full_order_into_model_order)
             }
-        };
-        order.map(full_order_into_model_order).transpose()
-    }
-
-    async fn single_order_with_quote(&self, uid: &OrderUid) -> Result<Option<OrderWithQuote>> {
-        let _timer = super::Metrics::get()
-            .database_queries
-            .with_label_values(&["single_order_with_quote"])
-            .start_timer();
-
-        let mut ex = self.pool.acquire().await?;
-        let order = orders::single_full_order_with_quote(&mut ex, &ByteArray(uid.0)).await?;
-        order
-            .map(|order_with_quote| {
-                let quote = match (
-                    order_with_quote.quote_buy_amount,
-                    order_with_quote.quote_sell_amount,
-                    order_with_quote.quote_gas_amount,
-                    order_with_quote.quote_gas_price,
-                    order_with_quote.quote_sell_token_price,
-                    order_with_quote.quote_verified,
-                    order_with_quote.quote_metadata,
-                    order_with_quote.solver,
-                ) {
-                    (
-                        Some(buy_amount),
-                        Some(sell_amount),
-                        Some(gas_amount),
-                        Some(gas_price),
-                        Some(sell_token_price),
-                        Some(verified),
-                        Some(metadata),
-                        Some(solver),
-                    ) => Some(orders::Quote {
-                        order_uid: order_with_quote.full_order.uid,
-                        gas_amount,
-                        gas_price,
-                        sell_token_price,
-                        sell_amount,
-                        buy_amount,
-                        solver,
-                        verified,
-                        metadata,
-                    }),
-                    _ => None,
-                };
-
-                Ok(OrderWithQuote {
-                    order: full_order_into_model_order(order_with_quote.full_order)?,
-                    quote,
-                })
-            })
-            .transpose()
+        }
+        .transpose()
     }
 
     async fn orders_for_tx(&self, tx_hash: &H256) -> Result<Vec<Order>> {
@@ -608,6 +534,14 @@ fn calculate_status(order: &FullOrder) -> OrderStatus {
 }
 
 fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
+    full_order_with_quote_into_model_order(order, None)
+}
+
+/// If quote is provided, then it is used to extract quote metadata field value.
+fn full_order_with_quote_into_model_order(
+    order: FullOrder,
+    quote: Option<&orders::Quote>,
+) -> Result<Order> {
     let status = calculate_status(&order);
     let pre_interactions = extract_interactions(&order, database::orders::ExecutionTime::Pre)?;
     let post_interactions = extract_interactions(&order, database::orders::ExecutionTime::Post)?;
@@ -660,6 +594,7 @@ fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
             .map(String::from_utf8)
             .transpose()
             .context("full app data isn't utf-8")?,
+        quote: quote.map(order_quote_into_model).transpose()?,
     };
     let data = OrderData {
         sell_token: H160(order.sell_token.0),
@@ -1218,16 +1153,14 @@ mod tests {
         assert_eq!(interactions, order.interactions);
 
         // Test `single_order_with_quote`
-        let single_order_with_quote = db.single_order_with_quote(&uid).await.unwrap().unwrap();
-        assert_eq!(single_order_with_quote.order, order);
+        let mut single_order_with_quote = db.single_order(&uid).await.unwrap().unwrap();
+
         assert_eq!(
-            single_order_with_quote.quote.clone().unwrap().sell_amount,
-            u256_to_big_decimal(&quote.sell_amount)
+            single_order_with_quote.metadata.quote,
+            Some(quote.try_to_model_order_quote().unwrap())
         );
-        assert_eq!(
-            single_order_with_quote.quote.unwrap().buy_amount,
-            u256_to_big_decimal(&quote.buy_amount)
-        );
+        single_order_with_quote.metadata.quote = None; // already compared, now compary orders
+        assert_eq!(single_order_with_quote, order);
     }
 
     #[tokio::test]
@@ -1280,10 +1213,16 @@ mod tests {
             },
             ..Default::default()
         };
-        db.insert_order(&order, Some(quote)).await.unwrap();
+        db.insert_order(&order, Some(quote.clone())).await.unwrap();
 
-        let single_order_with_quote = db.single_order_with_quote(&uid).await.unwrap().unwrap();
-        assert_eq!(single_order_with_quote.order, order);
-        assert!(single_order_with_quote.quote.unwrap().verified);
+        let mut single_order_with_quote = db.single_order(&uid).await.unwrap().unwrap();
+
+        assert_eq!(
+            single_order_with_quote.metadata.quote,
+            Some(quote.try_to_model_order_quote().unwrap())
+        );
+        assert!(single_order_with_quote.metadata.quote.unwrap().verified);
+        single_order_with_quote.metadata.quote = None; // already compared, now compary orders
+        assert_eq!(single_order_with_quote, order);
     }
 }

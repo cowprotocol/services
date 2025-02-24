@@ -494,6 +494,17 @@ pub struct FullOrder {
     pub full_app_data: Option<Vec<u8>>,
 }
 
+impl FullOrder {
+    pub fn valid_to(&self) -> i64 {
+        if let Some((_, valid_to)) = self.ethflow_data {
+            // For ethflow orders, we always return the user valid_to,
+            // as the Eip1271 valid to is u32::max
+            return valid_to;
+        }
+        self.valid_to
+    }
+}
+
 #[derive(Debug, sqlx::FromRow)]
 pub struct FullOrderWithQuote {
     #[sqlx(flatten)]
@@ -508,14 +519,41 @@ pub struct FullOrderWithQuote {
     pub solver: Option<Address>,
 }
 
-impl FullOrder {
-    pub fn valid_to(&self) -> i64 {
-        if let Some((_, valid_to)) = self.ethflow_data {
-            // For ethflow orders, we always return the user valid_to,
-            // as the Eip1271 valid to is u32::max
-            return valid_to;
-        }
-        self.valid_to
+impl FullOrderWithQuote {
+    pub fn into_order_and_quote(self) -> (FullOrder, Option<Quote>) {
+        let quote = match (
+            self.quote_buy_amount,
+            self.quote_sell_amount,
+            self.quote_gas_amount,
+            self.quote_gas_price,
+            self.quote_sell_token_price,
+            self.quote_verified,
+            self.quote_metadata,
+            self.solver,
+        ) {
+            (
+                Some(buy_amount),
+                Some(sell_amount),
+                Some(gas_amount),
+                Some(gas_price),
+                Some(sell_token_price),
+                Some(verified),
+                Some(metadata),
+                Some(solver),
+            ) => Some(Quote {
+                order_uid: self.full_order.uid,
+                gas_amount,
+                gas_price,
+                sell_token_price,
+                sell_amount,
+                buy_amount,
+                solver,
+                verified,
+                metadata,
+            }),
+            _ => None,
+        };
+        (self.full_order, quote)
     }
 }
 
@@ -573,19 +611,6 @@ COALESCE((SELECT executed_fee_token FROM order_execution oe WHERE oe.order_uid =
 "#;
 
 pub const FROM: &str = "orders o";
-
-pub async fn single_full_order(
-    ex: &mut PgConnection,
-    uid: &OrderUid,
-) -> Result<Option<FullOrder>, sqlx::Error> {
-    #[rustfmt::skip]
-        const QUERY: &str = const_format::concatcp!(
-"SELECT ", SELECT,
-" FROM ", FROM,
-" WHERE o.uid = $1 ",
-        );
-    sqlx::query_as(QUERY).bind(uid).fetch_optional(ex).await
-}
 
 pub async fn single_full_order_with_quote(
     ex: &mut PgConnection,
@@ -861,10 +886,11 @@ mod tests {
         let order_ = read_order(&mut db, &order.uid).await.unwrap().unwrap();
         assert_eq!(order, order_);
 
-        let full_order = single_full_order(&mut db, &order.uid)
+        let full_order = single_full_order_with_quote(&mut db, &order.uid)
             .await
             .unwrap()
-            .unwrap();
+            .unwrap()
+            .full_order;
 
         assert_eq!(order.uid, full_order.uid);
         assert_eq!(order.owner, full_order.owner);
@@ -923,10 +949,11 @@ mod tests {
         .await
         .unwrap();
         insert_order(&mut db, &order).await.unwrap();
-        let order_ = single_full_order(&mut db, &order.uid)
+        let order_ = single_full_order_with_quote(&mut db, &order.uid)
             .await
             .unwrap()
-            .unwrap();
+            .unwrap()
+            .full_order;
         assert_eq!(Some(sender), order_.onchain_user);
     }
 
@@ -958,10 +985,11 @@ mod tests {
         )
         .await
         .unwrap();
-        let order_ = single_full_order(&mut db, &order.uid)
+        let order_ = single_full_order_with_quote(&mut db, &order.uid)
             .await
             .unwrap()
-            .unwrap();
+            .unwrap()
+            .full_order;
         assert_eq!(
             Some((Some(Default::default()), user_valid_to)),
             order_.ethflow_data
@@ -994,10 +1022,11 @@ mod tests {
         insert_or_overwrite_interaction(&mut db, &post_interaction_1, &order.uid)
             .await
             .unwrap();
-        let order_ = single_full_order(&mut db, &order.uid)
+        let order_ = single_full_order_with_quote(&mut db, &order.uid)
             .await
             .unwrap()
-            .unwrap();
+            .unwrap()
+            .full_order;
         assert_eq!(
             vec![ByteArray::default(), ByteArray([1; 20])],
             order_
@@ -1084,10 +1113,11 @@ mod tests {
         insert_or_overwrite_interaction(&mut db, &pre_interaction_1, &order.uid)
             .await
             .unwrap();
-        let order_ = single_full_order(&mut db, &order.uid)
+        let order_ = single_full_order_with_quote(&mut db, &order.uid)
             .await
             .unwrap()
-            .unwrap();
+            .unwrap()
+            .full_order;
         assert_eq!(
             vec![ByteArray::default(), ByteArray([1; 20])],
             order_
@@ -1458,10 +1488,11 @@ mod tests {
             .unwrap();
         }
 
-        let order = single_full_order(&mut db, &order.uid)
+        let order = single_full_order_with_quote(&mut db, &order.uid)
             .await
             .unwrap()
-            .unwrap();
+            .unwrap()
+            .full_order;
 
         let expected_sell_amount_including_fees: BigInt = sell_amount_including_fee * 16;
         assert!(expected_sell_amount_including_fees > u256_max);
@@ -1558,18 +1589,20 @@ mod tests {
             ..Default::default()
         };
         insert_order(&mut db, &order).await.unwrap();
-        let result = single_full_order(&mut db, &order.uid)
+        let result = single_full_order_with_quote(&mut db, &order.uid)
             .await
             .unwrap()
-            .unwrap();
+            .unwrap()
+            .full_order;
         assert!(!result.invalidated);
         insert_onchain_invalidation(&mut db, &EventIndex::default(), &order.uid)
             .await
             .unwrap();
-        let result = single_full_order(&mut db, &order.uid)
+        let result = single_full_order_with_quote(&mut db, &order.uid)
             .await
             .unwrap()
-            .unwrap();
+            .unwrap()
+            .full_order;
         assert!(result.invalidated);
     }
 
@@ -1907,10 +1940,11 @@ mod tests {
         .unwrap();
 
         let fee: BigDecimal = 0.into();
-        let order = single_full_order(&mut db, &order_uid)
+        let order = single_full_order_with_quote(&mut db, &order_uid)
             .await
             .unwrap()
-            .unwrap();
+            .unwrap()
+            .full_order;
         assert_eq!(order.executed_fee, fee);
 
         let fee: BigDecimal = 1.into();
@@ -1928,10 +1962,11 @@ mod tests {
         .await
         .unwrap();
 
-        let order = single_full_order(&mut db, &order_uid)
+        let order = single_full_order_with_quote(&mut db, &order_uid)
             .await
             .unwrap()
-            .unwrap();
+            .unwrap()
+            .full_order;
         assert_eq!(order.executed_fee, fee);
     }
 
@@ -1946,19 +1981,21 @@ mod tests {
             ..Default::default()
         };
         insert_order(&mut db, &order).await.unwrap();
-        let full_order = single_full_order(&mut db, &order.uid)
+        let full_order = single_full_order_with_quote(&mut db, &order.uid)
             .await
             .unwrap()
-            .unwrap();
+            .unwrap()
+            .full_order;
         assert!(full_order.full_app_data.is_none());
         let full_app_data = vec![0u8, 1, 2];
         crate::app_data::insert(&mut db, &order.app_data, &full_app_data)
             .await
             .unwrap();
-        let full_order = single_full_order(&mut db, &order.uid)
+        let full_order = single_full_order_with_quote(&mut db, &order.uid)
             .await
             .unwrap()
-            .unwrap();
+            .unwrap()
+            .full_order;
         assert_eq!(full_order.full_app_data, Some(full_app_data));
     }
 

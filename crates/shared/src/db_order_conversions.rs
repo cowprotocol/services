@@ -1,6 +1,7 @@
 use {
     anyhow::{Context, Result},
     app_data::AppDataHash,
+    bigdecimal::BigDecimal,
     database::{
         onchain_broadcasted_orders::OnchainOrderPlacementError as DbOnchainOrderPlacementError,
         orders::{
@@ -27,12 +28,14 @@ use {
             OrderData,
             OrderKind,
             OrderMetadata,
+            OrderQuote,
             OrderStatus,
             OrderUid,
             SellTokenSource,
         },
         signature::{Signature, SigningScheme},
     },
+    num::FromPrimitive,
     number::conversions::{big_decimal_to_big_uint, big_decimal_to_u256},
 };
 
@@ -95,6 +98,7 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
             .map(String::from_utf8)
             .transpose()
             .context("full app data isn't utf-8")?,
+        quote: None,
     };
     let data = OrderData {
         sell_token: H160(order.sell_token.0),
@@ -120,6 +124,20 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
             pre: pre_interactions,
             post: post_interactions,
         },
+    })
+}
+
+pub fn order_quote_into_model(quote: &database::orders::Quote) -> Result<OrderQuote> {
+    Ok(OrderQuote {
+        gas_amount: BigDecimal::from_f64(quote.gas_amount).context("gas_amount is not U256")?,
+        gas_price: BigDecimal::from_f64(quote.gas_price).context("gas_price is not U256")?,
+        sell_token_price: BigDecimal::from_f64(quote.sell_token_price)
+            .context("gas_price is not U256")?,
+        sell_amount: big_decimal_to_u256(&quote.sell_amount).context("sell_amount is not U256")?,
+        buy_amount: big_decimal_to_u256(&quote.buy_amount).context("buy_amount is not U256")?,
+        solver: H160(quote.solver.0),
+        verified: quote.verified,
+        metadata: quote.metadata.clone(),
     })
 }
 
