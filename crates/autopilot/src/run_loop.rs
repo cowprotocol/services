@@ -855,6 +855,7 @@ impl RunLoop {
         auction_id: i64,
         result: &Result<TxId, SettleError>,
     ) {
+        let end_timestamp = chrono::Utc::now();
         let current_block = self.eth.current_block().borrow().number;
         let persistence = self.persistence.clone();
         let outcome = match result {
@@ -867,7 +868,7 @@ impl RunLoop {
             let execution_ended = ExecutionEnded {
                 auction_id,
                 solver,
-                end_timestamp: chrono::Utc::now(),
+                end_timestamp,
                 end_block: current_block,
                 outcome,
             };
