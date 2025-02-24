@@ -98,12 +98,9 @@ impl Settlement {
                         "possible incomplete fee breakdown calculation",
                     );
                     trade::FeeBreakdown {
-                        total: eth::Asset {
-                            // TODO surplus token
-                            token: trade.sell_token(),
-                            amount: num::zero(),
-                        },
+                        executed: num::zero(),
                         protocol: vec![],
+                        token: trade.surplus_token(),
                     }
                 });
                 (*trade.uid(), fee_breakdown)
@@ -591,6 +588,15 @@ mod tests {
         assert_eq!(
             trade.fee_in_ether(&auction.prices).unwrap().0,
             eth::U256::from(6752697350740628u128)
+        );
+        // fee read from "executedFee" https://api.cow.fi/mainnet/api/v1/orders/0x10dab31217bb6cc2ace0fe601c15d342f7626a1ee5ef0495449800e73156998740a50cf069e992aa4536211b23f286ef88752187ffffffff
+        // and then using UCP prices from https://api.cow.fi/mainnet/api/v1/solver_competition/by_tx_hash/0xc48dc0d43ffb43891d8c3ad7bcf05f11465518a2610869b20b0b4ccb61497634
+        // fee can be converted to surplus token:
+        // 6890975030480504 / 10115523891911314 * 18446744073709551616 =
+        // 12566432956304187498
+        assert_eq!(
+            trade.fee_breakdown(&auction).unwrap().executed.0,
+            eth::U256::from(12566432956304187498u128)
         );
     }
 
@@ -1093,7 +1099,7 @@ mod tests {
         assert_eq!(jit_trade.fee_in_ether(&auction.prices).unwrap().0, 0.into());
         assert_eq!(jit_trade.score(&auction).unwrap().0, 0.into());
         assert_eq!(
-            jit_trade.fee_breakdown(&auction).unwrap().total.amount.0,
+            jit_trade.fee_breakdown(&auction).unwrap().executed.0,
             0.into()
         );
         assert!(jit_trade
