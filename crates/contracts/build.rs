@@ -27,6 +27,7 @@ fn main() {
     // - https://doc.rust-lang.org/cargo/reference/build-scripts.html#cargorerun-if-changedpath
     println!("cargo:rerun-if-changed=build.rs");
 
+    generate_contract("AaveFlashLoanSolverWrapper");
     generate_contract_with_config("CoWSwapEthFlow", |builder| {
         builder
             .contract_mod_override("cowswap_eth_flow")

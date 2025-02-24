@@ -49,6 +49,7 @@ macro_rules! include_contracts {
 }
 
 include_contracts! {
+    AaveFlashLoanSolverWrapper;
     BalancerV2Authorizer;
     BalancerV2BasePool;
     BalancerV2BasePoolFactory;
