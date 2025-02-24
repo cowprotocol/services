@@ -453,7 +453,7 @@ Indexes:
 
 ### settlement\_executions
 
-Contains data for each settlement execution of an auction.
+Contains data for each settlement execution of an auction. To check if the auction was settled on-chain, refer to the `settlements` table.
 
  Column          | Type        | Nullable | Details
 -----------------|-------------|----------|--------
