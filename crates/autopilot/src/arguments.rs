@@ -268,9 +268,59 @@ pub struct DbBasedSolverParticipationGuardConfig {
     #[clap(long, env, default_value = "5m", value_parser = humantime::parse_duration)]
     pub solver_blacklist_cache_ttl: Duration,
 
+    #[clap(flatten)]
+    pub non_settling_solvers_finder_config: NonSettlingSolversFinderConfig,
+
+    #[clap(flatten)]
+    pub low_settling_solvers_finder_config: LowSettlingSolversFinderConfig,
+}
+
+#[derive(Debug, clap::Parser)]
+pub struct NonSettlingSolversFinderConfig {
+    /// Enables search of non-settling solvers.
+    #[clap(
+        id = "non_settling_solvers_blacklisting_enabled",
+        long = "non-settling-solvers-blacklisting-enabled",
+        env = "NON_SETTLING_SOLVERS_BLACKLISTING_ENABLED",
+        default_value = "true"
+    )]
+    pub enabled: bool,
+
     /// The number of last auctions to check solver participation eligibility.
-    #[clap(long, env, default_value = "3")]
-    pub solver_last_auctions_participation_count: u32,
+    #[clap(
+        id = "non_settling_last_auctions_participation_count",
+        long = "non-settling-last-auctions-participation-count",
+        env = "NON_SETTLING_LAST_AUCTIONS_PARTICIPATION_COUNT",
+        default_value = "3"
+    )]
+    pub last_auctions_participation_count: u32,
+}
+
+#[derive(Debug, clap::Parser)]
+pub struct LowSettlingSolversFinderConfig {
+    /// Enables search of non-settling solvers.
+    #[clap(
+        id = "low_settling_solvers_blacklisting_enabled",
+        long = "low-settling-solvers-blacklisting-enabled",
+        env = "LOW_SETTLING_SOLVERS_BLACKLISTING_ENABLED",
+        default_value = "true"
+    )]
+    pub enabled: bool,
+
+    /// The number of last auctions to check solver participation eligibility.
+    #[clap(
+        id = "low_settling_last_auctions_participation_count",
+        long = "low-settling-last-auctions-participation-count",
+        env = "LOW_SETTLING_LAST_AUCTIONS_PARTICIPATION_COUNT",
+        default_value = "100"
+    )]
+    pub last_auctions_participation_count: u32,
+
+    /// A max failure rate for a solver to remain eligible for
+    /// participation in the competition. Otherwise, the solver will be
+    /// banned.
+    #[clap(long, env, default_value = "0.9")]
+    pub solver_max_settlement_failure_rate: f64,
 }
 
 impl std::fmt::Display for Arguments {

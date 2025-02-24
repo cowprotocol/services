@@ -13,7 +13,7 @@ pub struct SolverParticipationGuard(Arc<Inner>);
 
 struct Inner {
     /// Stores the validators in order they will be called.
-    validators: Vec<Box<dyn Validator + Send + Sync>>,
+    validators: Vec<Box<dyn SolverValidator + Send + Sync>>,
 }
 
 impl SolverParticipationGuard {
@@ -24,23 +24,20 @@ impl SolverParticipationGuard {
         db_based_validator_config: DbBasedSolverParticipationGuardConfig,
         drivers: impl IntoIterator<Item = Arc<infra::Driver>>,
     ) -> Self {
-        let mut validators: Vec<Box<dyn Validator + Send + Sync>> = Vec::new();
+        let mut validators: Vec<Box<dyn SolverValidator + Send + Sync>> = Vec::new();
 
-        if db_based_validator_config.enabled {
-            let current_block = eth.current_block().clone();
-            let database_solver_participation_validator = db::Validator::new(
-                persistence,
-                current_block,
-                competition_updates_receiver,
-                db_based_validator_config.solver_blacklist_cache_ttl,
-                db_based_validator_config.solver_last_auctions_participation_count,
-                drivers
-                    .into_iter()
-                    .map(|driver| (driver.submission_address, driver.clone()))
-                    .collect(),
-            );
-            validators.push(Box::new(database_solver_participation_validator));
-        }
+        let current_block = eth.current_block().clone();
+        let database_solver_participation_validator = db::SolverValidator::new(
+            persistence,
+            current_block,
+            competition_updates_receiver,
+            db_based_validator_config,
+            drivers
+                .into_iter()
+                .map(|driver| (driver.submission_address, driver.clone()))
+                .collect(),
+        );
+        validators.push(Box::new(database_solver_participation_validator));
 
         let onchain_solver_participation_validator = onchain::Validator { eth };
         validators.push(Box::new(onchain_solver_participation_validator));
@@ -65,6 +62,6 @@ impl SolverParticipationGuard {
 }
 
 #[async_trait::async_trait]
-trait Validator: Send + Sync {
+trait SolverValidator: Send + Sync {
     async fn is_allowed(&self, solver: &eth::Address) -> anyhow::Result<bool>;
 }

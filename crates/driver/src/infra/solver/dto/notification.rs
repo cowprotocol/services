@@ -67,6 +67,7 @@ impl Notification {
                         notify::BanReason::UnsettledConsecutiveAuctions => {
                             BanReason::UnsettledConsecutiveAuctions
                         }
+                        notify::BanReason::HighSettleFailureRate => BanReason::LowSettlingRate,
                     },
                     until,
                 },
@@ -163,6 +164,7 @@ pub enum Kind {
 #[serde(rename_all = "camelCase", tag = "reason")]
 pub enum BanReason {
     UnsettledConsecutiveAuctions,
+    LowSettlingRate,
 }
 
 type BlockNo = u64;

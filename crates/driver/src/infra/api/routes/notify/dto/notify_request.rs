@@ -21,6 +21,8 @@ pub enum NotifyRequest {
 pub enum BanReason {
     /// The driver won multiple consecutive auctions but never settled them.
     UnsettledConsecutiveAuctions,
+    /// Driver's settle failure rate is above the threshold.
+    HighSettleFailureRate,
 }
 
 impl From<NotifyRequest> for notify::Kind {
@@ -31,6 +33,7 @@ impl From<NotifyRequest> for notify::Kind {
                     BanReason::UnsettledConsecutiveAuctions => {
                         notify::BanReason::UnsettledConsecutiveAuctions
                     }
+                    BanReason::HighSettleFailureRate => notify::BanReason::HighSettleFailureRate,
                 },
                 until,
             },
