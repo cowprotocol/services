@@ -741,14 +741,14 @@ impl Persistence {
                                     block_number: i64::try_from(block_number.0).ok()?,
                                     log_index: i64::try_from(*log_index).ok()?,
                                     uid: ByteArray(jit_order.uid.0),
-                                    owner: ByteArray(jit_order.uid.owner().0 .0),
+                                    owner: ByteArray(jit_order.uid.owner().0.0),
                                     creation_timestamp: chrono::DateTime::from_timestamp(
                                         i64::from(jit_order.created),
                                         0,
                                     )
-                                    .unwrap_or_default(),
-                                    sell_token: ByteArray(jit_order.sell.token.0 .0),
-                                    buy_token: ByteArray(jit_order.buy.token.0 .0),
+                                        .unwrap_or_default(),
+                                    sell_token: ByteArray(jit_order.sell.token.0.0),
+                                    buy_token: ByteArray(jit_order.buy.token.0.0),
                                     sell_amount: u256_to_big_decimal(&jit_order.sell.amount.0),
                                     buy_amount: u256_to_big_decimal(&jit_order.buy.amount.0),
                                     valid_to: i64::from(jit_order.valid_to),
@@ -757,7 +757,7 @@ impl Persistence {
                                     kind: jit_order.side.into(),
                                     partially_fillable: jit_order.partially_fillable,
                                     signature: jit_order.signature.to_bytes(),
-                                    receiver: ByteArray(jit_order.receiver.0 .0),
+                                    receiver: ByteArray(jit_order.receiver.0.0),
                                     signing_scheme: match jit_order.signature.scheme() {
                                         DomainSigningScheme::Eip712 => DbSigningScheme::Eip712,
                                         DomainSigningScheme::EthSign => DbSigningScheme::EthSign,
@@ -790,11 +790,63 @@ impl Persistence {
                         })
                         .collect::<Vec<_>>(),
                 )
-                .await?;
+                    .await?;
             }
         }
 
         ex.commit().await?;
+        Ok(())
+    }
+
+    pub async fn store_settlement_execution_started(
+        &self,
+        event: domain::settlement::ExecutionStarted,
+    ) -> Result<(), DatabaseError> {
+        let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["insert_settlement_execution_event"])
+            .start_timer();
+
+        database::settlement_executions::insert(
+            &mut ex,
+            event.auction_id,
+            ByteArray(event.solver.0 .0),
+            event.start_timestamp,
+            event
+                .start_block
+                .try_into()
+                .context("start block overflow")?,
+            event
+                .deadline_block
+                .try_into()
+                .context("deadline block overflow")?,
+        )
+        .await?;
+
+        Ok(())
+    }
+
+    pub async fn store_settlement_execution_ended(
+        &self,
+        event: domain::settlement::ExecutionEnded,
+    ) -> Result<(), DatabaseError> {
+        let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["update_settlement_execution_event"])
+            .start_timer();
+
+        database::settlement_executions::update(
+            &mut ex,
+            event.auction_id,
+            ByteArray(event.solver.0 .0),
+            event.end_timestamp,
+            event.end_block.try_into().context("end block overflow")?,
+            event.outcome,
+        )
+        .await?;
+
         Ok(())
     }
 }

@@ -6,6 +6,7 @@ use {
             auction::Id,
             competition::{self, Solution, SolutionError, TradedOrder, Unranked},
             eth::{self, TxId},
+            settlement::{ExecutionEnded, ExecutionStarted},
             OrderUid,
         },
         infra::{
@@ -778,6 +779,13 @@ impl RunLoop {
                 submission_deadline_latest_block,
                 auction_id,
             };
+
+            self.store_execution_started(
+                auction_id,
+                solver,
+                current_block,
+                submission_deadline_latest_block,
+            );
             driver
                 .settle(&request, self.config.max_settlement_transaction_wait)
                 .await
@@ -800,6 +808,8 @@ impl RunLoop {
             }
         };
 
+        self.store_execution_ended(solver, auction_id, &result);
+
         // Clean up the in-flight orders regardless the result.
         self.in_flight_orders
             .lock()
@@ -807,6 +817,68 @@ impl RunLoop {
             .retain(|order| !solved_order_uids.contains(order));
 
         result
+    }
+
+    /// Stores settlement execution started event in the DB in a background task
+    /// to not block the runloop.
+    fn store_execution_started(
+        &self,
+        auction_id: i64,
+        solver: eth::Address,
+        start_block: u64,
+        deadline_block: u64,
+    ) {
+        let persistence = self.persistence.clone();
+        tokio::spawn(async move {
+            let execution_started = ExecutionStarted {
+                auction_id,
+                solver,
+                start_timestamp: chrono::Utc::now(),
+                start_block,
+                deadline_block,
+            };
+
+            if let Err(err) = persistence
+                .store_settlement_execution_started(execution_started)
+                .await
+            {
+                tracing::error!(?err, "failed to store settlement execution event");
+            }
+        });
+    }
+
+    /// Stores settlement execution ended event in the DB in a background task
+    /// to not block the runloop.
+    fn store_execution_ended(
+        &self,
+        solver: eth::Address,
+        auction_id: i64,
+        result: &Result<TxId, SettleError>,
+    ) {
+        let end_timestamp = chrono::Utc::now();
+        let current_block = self.eth.current_block().borrow().number;
+        let persistence = self.persistence.clone();
+        let outcome = match result {
+            Ok(_) => "success".to_string(),
+            Err(SettleError::Timeout) => "timeout".to_string(),
+            Err(SettleError::Other(err)) => format!("driver failed: {}", err),
+        };
+
+        tokio::spawn(async move {
+            let execution_ended = ExecutionEnded {
+                auction_id,
+                solver,
+                end_timestamp,
+                end_block: current_block,
+                outcome,
+            };
+            if let Err(err) = persistence
+                .store_settlement_execution_ended(execution_ended)
+                .await
+            {
+                tracing::error!(?err, "failed to update settlement execution event");
+            }
+        });
     }
 
     /// Tries to find a `settle` contract call with calldata ending in `tag` and
