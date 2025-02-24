@@ -773,33 +773,22 @@ impl RunLoop {
                 current_block < submission_deadline_latest_block,
                 "submission deadline was missed"
             );
-            let execution_started = ExecutionStarted {
-                auction_id,
-                solver,
-                start_timestamp: chrono::Utc::now(),
-                start_block: current_block,
-                deadline_block: submission_deadline_latest_block,
-            };
-            let settle_event_store_fut = self
-                .persistence
-                .store_settlement_execution_started(execution_started);
 
             let request = settle::Request {
                 solution_id,
                 submission_deadline_latest_block,
                 auction_id,
             };
-            let settle_fut = driver.settle(&request, self.config.max_settlement_transaction_wait);
-            // Await for storing the event also to avoid possible conflicts with updating
-            // the event.
-            let (store_result, settle_result) = tokio::join!(settle_event_store_fut, settle_fut);
 
-            // Storing the event is not critical, so we just log the error.
-            if let Err(err) = store_result {
-                tracing::error!(?err, "failed to store settlement execution event");
-            }
-
-            settle_result
+            self.store_execution_started(
+                auction_id,
+                solver,
+                current_block,
+                submission_deadline_latest_block,
+            );
+            driver
+                .settle(&request, self.config.max_settlement_transaction_wait)
+                .await
         }
         .boxed();
 
@@ -828,6 +817,34 @@ impl RunLoop {
             .retain(|order| !solved_order_uids.contains(order));
 
         result
+    }
+
+    /// Stores settlement execution started event in the DB in a background task
+    /// to not block the runloop.
+    fn store_execution_started(
+        &self,
+        auction_id: i64,
+        solver: eth::Address,
+        start_block: u64,
+        deadline_block: u64,
+    ) {
+        let persistence = self.persistence.clone();
+        tokio::spawn(async move {
+            let execution_started = ExecutionStarted {
+                auction_id,
+                solver,
+                start_timestamp: chrono::Utc::now(),
+                start_block,
+                deadline_block,
+            };
+
+            if let Err(err) = persistence
+                .store_settlement_execution_started(execution_started)
+                .await
+            {
+                tracing::error!(?err, "failed to store settlement execution event");
+            }
+        });
     }
 
     /// Stores settlement execution ended event in the DB in a background task
