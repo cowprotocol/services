@@ -90,6 +90,8 @@ include_contracts! {
     Roles;
     HoneyswapRouter;
     HooksTrampoline;
+    IAavePool;
+    IFlashLoanSolverWrapper;
     ISwaprPair;
     IUniswapLikePair;
     IUniswapLikeRouter;

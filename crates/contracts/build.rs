@@ -806,6 +806,8 @@ fn main() {
             .add_network_str(ARBITRUM_ONE, "0x01DcB88678aedD0C4cC9552B20F4718550250574")
             .add_network_str(BASE, "0x01DcB88678aedD0C4cC9552B20F4718550250574")
     });
+    generate_contract("IAavePool");
+    generate_contract("IFlashLoanSolverWrapper");
     generate_contract("IUniswapLikeRouter");
     generate_contract("IUniswapLikePair");
     // EIP-1271 contract - SignatureValidator
