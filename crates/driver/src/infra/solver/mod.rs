@@ -243,11 +243,14 @@ impl Solver {
         let body = serde_json::to_string(&auction_dto).unwrap();
         let url = shared::url::join(&self.config.endpoint, "solve");
         super::observe::solver_request(&url, &body);
-        let mut req = self
-            .client
-            .post(url.clone())
-            .body(body)
-            .timeout(auction.deadline().solvers().remaining().unwrap_or_default());
+        let timeout = match auction.deadline().solvers().remaining() {
+            Ok(timeout) => timeout,
+            Err(_) => {
+                tracing::warn!("auction deadline exceeded before sending request to solver");
+                return Ok(Default::default());
+            }
+        };
+        let mut req = self.client.post(url.clone()).body(body).timeout(timeout);
         if let Some(id) = observe::request_id::from_current_span() {
             req = req.header("X-REQUEST-ID", id);
         }
