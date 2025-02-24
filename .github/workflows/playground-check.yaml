@@ -58,6 +58,10 @@ jobs:
         with:
           dest: './logs'
 
+      - name: Collect playground-chain-1 container health logs on failure
+        if: failure()
+        run: docker inspect --format='{{json .State.Health}}' playground-chain-1 > ./logs/playground-chain-1-health-log.json
+
       - name: Tar logs
         if: failure()
         run: tar cvzf ./logs.tgz ./logs
