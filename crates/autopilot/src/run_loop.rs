@@ -6,7 +6,7 @@ use {
             auction::Id,
             competition::{self, Solution, SolutionError, TradedOrder, Unranked},
             eth::{self, TxId},
-            settlement::Execution,
+            settlement::{ExecutionEnded, ExecutionStarted},
             OrderUid,
         },
         infra::{
@@ -773,7 +773,7 @@ impl RunLoop {
                 current_block < submission_deadline_latest_block,
                 "submission deadline was missed"
             );
-            let execution_started = Execution::Started {
+            let execution_started = ExecutionStarted {
                 auction_id,
                 solver,
                 start_timestamp: chrono::Utc::now(),
@@ -782,7 +782,7 @@ impl RunLoop {
             };
             let settle_event_store_fut = self
                 .persistence
-                .store_settlement_execution(execution_started);
+                .store_settlement_execution_started(execution_started);
 
             let request = settle::Request {
                 solution_id,
@@ -847,7 +847,7 @@ impl RunLoop {
         };
 
         tokio::spawn(async move {
-            let execution_ended = Execution::Ended {
+            let execution_ended = ExecutionEnded {
                 auction_id,
                 solver,
                 end_timestamp: chrono::Utc::now(),
@@ -855,7 +855,7 @@ impl RunLoop {
                 outcome,
             };
             if let Err(err) = persistence
-                .store_settlement_execution(execution_ended)
+                .store_settlement_execution_ended(execution_ended)
                 .await
             {
                 tracing::error!(?err, "failed to update settlement execution event");

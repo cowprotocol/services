@@ -212,21 +212,21 @@ impl From<infra::persistence::DatabaseError> for Error {
 }
 
 #[derive(Debug)]
-pub enum Execution {
-    Started {
-        auction_id: AuctionId,
-        solver: eth::Address,
-        start_timestamp: DateTime<Utc>,
-        start_block: u64,
-        deadline_block: u64,
-    },
-    Ended {
-        auction_id: AuctionId,
-        solver: eth::Address,
-        end_timestamp: DateTime<Utc>,
-        end_block: u64,
-        outcome: String,
-    },
+pub struct ExecutionStarted {
+    pub auction_id: AuctionId,
+    pub solver: eth::Address,
+    pub start_timestamp: DateTime<Utc>,
+    pub start_block: u64,
+    pub deadline_block: u64,
+}
+
+#[derive(Debug)]
+pub struct ExecutionEnded {
+    pub auction_id: AuctionId,
+    pub solver: eth::Address,
+    pub end_timestamp: DateTime<Utc>,
+    pub end_block: u64,
+    pub outcome: String,
 }
 
 #[cfg(test)]
