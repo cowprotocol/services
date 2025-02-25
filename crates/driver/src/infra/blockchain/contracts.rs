@@ -17,7 +17,7 @@ pub struct Contracts {
     /// The domain separator for settlement contract used for signing orders.
     settlement_domain_separator: eth::DomainSeparator,
     cow_amm_registry: cow_amm::Registry,
-    flashloan_wrapper: contracts::ERC3156FlashLoanSolverWrapper,
+    flashloan_wrapper: contracts::IFlashLoanSolverWrapper,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -80,10 +80,10 @@ impl Contracts {
         }
         cow_amm_registry.spawn_maintenance_task(block_stream);
 
-        let flashloan_wrapper = contracts::ERC3156FlashLoanSolverWrapper::at(
+        let flashloan_wrapper = contracts::IFlashLoanSolverWrapper::at(
             web3,
             address_for(
-                contracts::ERC3156FlashLoanSolverWrapper::raw_contract(),
+                contracts::IFlashLoanSolverWrapper::raw_contract(),
                 addresses.flashloan_wrapper,
             ),
         );
@@ -127,7 +127,7 @@ impl Contracts {
         &self.cow_amm_registry
     }
 
-    pub fn flashloan_wrapper(&self) -> &contracts::ERC3156FlashLoanSolverWrapper {
+    pub fn flashloan_wrapper(&self) -> &contracts::IFlashLoanSolverWrapper {
         &self.flashloan_wrapper
     }
 }

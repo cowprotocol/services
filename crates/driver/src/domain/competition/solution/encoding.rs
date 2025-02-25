@@ -343,7 +343,7 @@ fn approve_flashloan(
     token: eth::TokenAddress,
     amount: eth::TokenAmount,
     spender: eth::ContractAddress,
-    flashloan_wrapper: &contracts::ERC3156FlashLoanSolverWrapper,
+    flashloan_wrapper: &contracts::IFlashLoanSolverWrapper,
 ) -> eth::Interaction {
     let tx = flashloan_wrapper
         .approve(token.into(), spender.into(), amount.0)
