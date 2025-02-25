@@ -91,6 +91,7 @@ const DEFAULT_FILTERS: &[&str] = &[
     "e2e=debug",
     "orderbook=debug",
     "shared=debug",
+    "shared::event_handling=off",
     "solver=debug",
     "solvers=debug",
     "orderbook::api::request_summary=off",
