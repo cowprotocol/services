@@ -29,10 +29,9 @@ use {
     },
     crate::domain::{
         competition::{
-            order,
-            order::{FeePolicy, Side},
-            solution::error::Trade,
             PriceLimits,
+            order::{self, FeePolicy, Side},
+            solution::error::Trade,
         },
         eth::{self},
     },

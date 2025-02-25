@@ -4,8 +4,8 @@ use {
         domain::{self, eth},
     },
     bigdecimal::{
-        num_traits::{CheckedDiv, CheckedMul},
         FromPrimitive,
+        num_traits::{CheckedDiv, CheckedMul},
     },
     num::BigRational,
     number::conversions::{big_decimal_to_u256, big_rational_to_u256},

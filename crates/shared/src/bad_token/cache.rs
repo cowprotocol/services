@@ -150,12 +150,16 @@ mod tests {
         );
         let now = Instant::now();
         detector.cache.insert(token, (now, TokenQuality::Good));
-        assert!(detector
-            .get_from_cache(&token, now + Duration::from_secs(1))
-            .is_some());
-        assert!(detector
-            .get_from_cache(&token, now + Duration::from_secs(3))
-            .is_none());
+        assert!(
+            detector
+                .get_from_cache(&token, now + Duration::from_secs(1))
+                .is_some()
+        );
+        assert!(
+            detector
+                .get_from_cache(&token, now + Duration::from_secs(3))
+                .is_none()
+        );
     }
 
     #[tokio::test]

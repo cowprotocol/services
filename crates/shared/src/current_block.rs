@@ -4,8 +4,8 @@ use {
     anyhow::Result,
     clap::Parser,
     ethrpc::{
-        block_stream::{current_block_stream, BlockRetrieving, CurrentBlockWatcher},
         Web3,
+        block_stream::{BlockRetrieving, CurrentBlockWatcher, current_block_stream},
     },
     std::{
         fmt::{self, Display, Formatter},

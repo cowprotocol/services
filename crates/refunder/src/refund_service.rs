@@ -1,16 +1,16 @@
 use {
-    super::ethflow_order::{order_to_ethflow_data, EncodedEthflowOrder, EthflowOrder},
+    super::ethflow_order::{EncodedEthflowOrder, EthflowOrder, order_to_ethflow_data},
     crate::submitter::Submitter,
-    anyhow::{anyhow, Context, Result},
+    anyhow::{Context, Result, anyhow},
     contracts::CoWSwapEthFlow,
     database::{
-        ethflow_orders::{read_order, refundable_orders, EthOrderPlacement},
-        orders::read_order as read_db_order,
         OrderUid,
+        ethflow_orders::{EthOrderPlacement, read_order, refundable_orders},
+        orders::read_order as read_db_order,
     },
     ethcontract::{Account, H160, H256},
-    ethrpc::{block_stream::timestamp_of_current_block_in_seconds, Web3},
-    futures::{stream, StreamExt},
+    ethrpc::{Web3, block_stream::timestamp_of_current_block_in_seconds},
+    futures::{StreamExt, stream},
     sqlx::PgPool,
     std::collections::HashMap,
 };

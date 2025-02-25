@@ -3,11 +3,11 @@ use {
     crate::{baseline_solver::BaselineSolvable, ethrpc::Web3, recent_block_cache::Block},
     anyhow::Result,
     cached::{Cached, TimedCache},
-    contracts::{errors::EthcontractErrorType, IUniswapLikePair, ERC20},
-    ethcontract::{errors::MethodError, BlockId, H160, U256},
+    contracts::{ERC20, IUniswapLikePair, errors::EthcontractErrorType},
+    ethcontract::{BlockId, H160, U256, errors::MethodError},
     futures::{
-        future::{self, BoxFuture},
         FutureExt as _,
+        future::{self, BoxFuture},
     },
     model::TokenPair,
     num::rational::Ratio,
@@ -515,8 +515,10 @@ mod tests {
             token1_balance: Ok(1.into()),
         };
         let pool_address = Default::default();
-        assert!(handle_results(fetched_pool, pool_address)
-            .unwrap()
-            .is_none())
+        assert!(
+            handle_results(fetched_pool, pool_address)
+                .unwrap()
+                .is_none()
+        )
     }
 }

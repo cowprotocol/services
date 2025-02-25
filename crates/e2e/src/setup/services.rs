@@ -1,11 +1,11 @@
 use {
     super::TestAccount,
     crate::setup::{
-        colocation::{self, SolverEngine},
-        wait_for_condition,
         Contracts,
         OnchainComponents,
         TIMEOUT,
+        colocation::{self, SolverEngine},
+        wait_for_condition,
     },
     app_data::{AppDataDocument, AppDataHash},
     autopilot::infra::persistence::dto,
@@ -110,7 +110,7 @@ impl<'a> Services<'a> {
         ServicesBuilder::new()
     }
 
-    fn api_autopilot_arguments() -> impl Iterator<Item = String> {
+    fn api_autopilot_arguments() -> impl Iterator<Item = String> + use<> {
         [
             "--native-price-estimators=test_quoter|http://localhost:11088/test_solver".to_string(),
             "--amount-to-estimate-prices-with=1000000000000000000".to_string(),
@@ -122,7 +122,7 @@ impl<'a> Services<'a> {
         .into_iter()
     }
 
-    fn api_autopilot_solver_arguments(&self) -> impl Iterator<Item = String> {
+    fn api_autopilot_solver_arguments(&self) -> impl Iterator<Item = String> + use<> {
         [
             "--baseline-sources=None".to_string(),
             "--network-block-interval=1s".to_string(),

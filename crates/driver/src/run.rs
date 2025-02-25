@@ -1,18 +1,18 @@
 use {
     crate::{
         domain::{
-            competition::{bad_tokens, order::app_data::AppDataRetriever},
             Mempools,
+            competition::{bad_tokens, order::app_data::AppDataRetriever},
         },
         infra::{
             self,
+            Api,
             blockchain::{self, Ethereum},
             cli,
             config,
             liquidity,
             simulator::{self, Simulator},
             solver::Solver,
-            Api,
         },
     },
     clap::Parser,

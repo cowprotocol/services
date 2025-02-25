@@ -8,22 +8,22 @@ use {
         maintenance::Maintaining,
         recent_block_cache::Block,
         sources::balancer_v2::pools::{
-            common::PoolInfoFetching,
             FactoryIndexing,
             Pool,
             PoolStatus,
+            common::PoolInfoFetching,
         },
     },
     anyhow::Result,
     contracts::{
+        BalancerV2BasePoolFactory,
         balancer_v2_base_pool_factory,
         errors::EthcontractErrorType,
-        BalancerV2BasePoolFactory,
     },
-    ethcontract::{dyns::DynAllEventsBuilder, errors::MethodError, BlockId, Instance, H256},
+    ethcontract::{BlockId, H256, Instance, dyns::DynAllEventsBuilder, errors::MethodError},
     ethrpc::{
-        block_stream::{BlockNumberHash, BlockRetrieving},
         Web3Transport,
+        block_stream::{BlockNumberHash, BlockRetrieving},
     },
     futures::future,
     hex_literal::hex,
@@ -160,7 +160,7 @@ mod tests {
     use {
         super::*,
         crate::sources::balancer_v2::{
-            pools::{weighted, PoolKind},
+            pools::{PoolKind, weighted},
             swap::fixed_point::Bfp,
         },
         contracts::errors::{testing_contract_error, testing_node_error},

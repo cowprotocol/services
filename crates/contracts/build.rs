@@ -1,9 +1,9 @@
 use {
     ethcontract::{
-        common::{contract::Network, DeploymentInformation},
         Address,
+        common::{DeploymentInformation, contract::Network},
     },
-    ethcontract_generate::{loaders::TruffleLoader, ContractBuilder},
+    ethcontract_generate::{ContractBuilder, loaders::TruffleLoader},
     std::{env, path::Path},
 };
 

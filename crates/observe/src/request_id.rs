@@ -19,13 +19,13 @@
 use {
     std::fmt,
     tracing::{
-        field::{Field, Visit},
-        span::Attributes,
         Id,
         Span,
         Subscriber,
+        field::{Field, Visit},
+        span::Attributes,
     },
-    tracing_subscriber::{layer::Context, registry::LookupSpan, Layer, Registry},
+    tracing_subscriber::{Layer, Registry, layer::Context, registry::LookupSpan},
 };
 
 /// Name of the span that stores the id used to associated logs
@@ -44,7 +44,7 @@ pub fn info_span(request_id: String) -> Span {
 /// missing a globally unique request number will be generated.
 #[macro_export]
 macro_rules! make_service_with_request_tracing {
-    ($service:expr) => {{
+    ($service:expr_2021) => {{
         {
             let internal_request_id = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
             hyper::service::make_service_fn(move |_| {

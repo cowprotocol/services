@@ -1,11 +1,11 @@
 use {
     super::TokenOwnerProposing,
-    anyhow::{ensure, Result},
+    anyhow::{Result, ensure},
     chain::Chain,
     ethcontract::H160,
     prometheus::IntCounterVec,
     prometheus_metric_storage::MetricStorage,
-    rate_limit::{back_off, RateLimiter, Strategy},
+    rate_limit::{RateLimiter, Strategy, back_off},
     reqwest::{Client, StatusCode, Url},
     serde::Deserialize,
 };

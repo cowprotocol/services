@@ -1,6 +1,6 @@
 use {
     crate::{
-        api::{error, extract_payload, ApiReply, IntoWarpReply},
+        api::{ApiReply, IntoWarpReply, error, extract_payload},
         orderbook::{AddOrderError, Orderbook},
     },
     anyhow::Result,
@@ -17,10 +17,10 @@ use {
     },
     std::{convert::Infallible, sync::Arc},
     warp::{
-        hyper::StatusCode,
-        reply::{self, with_status},
         Filter,
         Rejection,
+        hyper::StatusCode,
+        reply::{self, with_status},
     },
 };
 
@@ -305,7 +305,7 @@ mod tests {
         crate::api::response_body,
         model::order::{OrderCreation, OrderUid},
         serde_json::json,
-        warp::{test::request, Reply},
+        warp::{Reply, test::request},
     };
 
     #[tokio::test]

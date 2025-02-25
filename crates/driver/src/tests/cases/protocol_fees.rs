@@ -3,16 +3,16 @@ use crate::{
     infra::config::file::FeeHandler,
     tests::{
         self,
-        cases::{is_approximately_equal, EtherExt},
+        cases::{EtherExt, is_approximately_equal},
         setup::{
+            ExpectedOrderAmounts,
+            Test,
             ab_adjusted_pool,
             ab_liquidity_quote,
             ab_order,
             ab_solution,
             fee::{Policy, Quote},
             test_solver,
-            ExpectedOrderAmounts,
-            Test,
         },
     },
 };

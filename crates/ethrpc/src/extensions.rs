@@ -5,10 +5,10 @@ use {
     std::collections::HashMap,
     web3::{
         self,
+        Transport,
         api::Namespace,
         helpers::{self, CallFuture},
-        types::{BlockId, Bytes, CallRequest, H160, H256, U256, U64},
-        Transport,
+        types::{BlockId, Bytes, CallRequest, H160, H256, U64, U256},
     },
 };
 
@@ -138,7 +138,7 @@ pub struct CallFrame {
 mod tests {
     use {
         super::*,
-        crate::{create_env_test_transport, Web3},
+        crate::{Web3, create_env_test_transport},
         hex_literal::hex,
         maplit::hashmap,
         web3::types::BlockNumber,

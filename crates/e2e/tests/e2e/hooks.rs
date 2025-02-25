@@ -10,7 +10,7 @@ use {
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
-        signature::{hashed_eip712_message, EcdsaSigningScheme, Signature},
+        signature::{EcdsaSigningScheme, Signature, hashed_eip712_message},
     },
     number::nonzero::U256 as NonZeroU256,
     reqwest::StatusCode,

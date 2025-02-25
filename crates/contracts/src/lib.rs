@@ -3,10 +3,10 @@
 pub use ethcontract;
 pub mod errors;
 use {
-    anyhow::{anyhow, bail, Result},
+    anyhow::{Result, anyhow, bail},
     ethcontract::{
-        common::{contract::Network, DeploymentInformation},
         Contract,
+        common::{DeploymentInformation, contract::Network},
     },
 };
 
@@ -146,7 +146,7 @@ mod tests {
             futures::future::{self, FutureExt as _, Ready},
             json::json,
             jsonrpc::{Call, Id, MethodCall, Params, Value},
-            web3::{error::Result as Web3Result, BatchTransport, RequestId, Transport, Web3},
+            web3::{BatchTransport, RequestId, Transport, Web3, error::Result as Web3Result},
         },
     };
 
@@ -193,7 +193,7 @@ mod tests {
     #[test]
     fn deployment_addresses() {
         macro_rules! assert_has_deployment_address {
-            ($contract:ident for $network:expr) => {{
+            ($contract:ident for $network:expr_2021) => {{
                 let web3 = Web3::new(ChainIdTransport($network));
                 let deployed = $contract::deployed(&web3).now_or_never().unwrap();
                 assert!(deployed.is_ok());
@@ -255,7 +255,7 @@ mod tests {
     #[test]
     fn deployment_information() {
         macro_rules! assert_has_deployment_information {
-            ($contract:ident for $network:expr) => {{
+            ($contract:ident for $network:expr_2021) => {{
                 let web3 = Web3::new(ChainIdTransport($network));
                 let instance = $contract::deployed(&web3).now_or_never().unwrap().unwrap();
                 assert!(matches!(

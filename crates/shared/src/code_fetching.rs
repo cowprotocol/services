@@ -78,7 +78,7 @@ impl CodeFetching for CachedCodeFetcher {
 mod tests {
     use {
         super::*,
-        mockall::{predicate, Sequence},
+        mockall::{Sequence, predicate},
     };
 
     #[tokio::test]

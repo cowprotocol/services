@@ -1,6 +1,6 @@
 use {
     contracts::cow_amm_legacy_helper::Event as CowAmmEvent,
-    ethcontract::{contract::AllEventsBuilder, dyns::DynTransport, Address, H256},
+    ethcontract::{Address, H256, contract::AllEventsBuilder, dyns::DynTransport},
     ethrpc::Web3,
     shared::event_handling::EventRetrieving,
 };

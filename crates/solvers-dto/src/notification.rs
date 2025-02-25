@@ -2,7 +2,7 @@ use {
     super::serialize,
     number::serialization::HexOrDecimalU256,
     serde::Deserialize,
-    serde_with::{serde_as, DisplayFromStr},
+    serde_with::{DisplayFromStr, serde_as},
     std::collections::BTreeSet,
     web3::types::{AccessList, H160, H256, U256},
 };

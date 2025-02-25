@@ -10,8 +10,8 @@ pub(super) use {
     healthz::healthz,
     info::info,
     metrics::metrics,
-    quote::{quote, OrderError},
+    quote::{OrderError, quote},
     reveal::reveal,
     settle::settle,
-    solve::{solve, AuctionError},
+    solve::{AuctionError, solve},
 };

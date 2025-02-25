@@ -1,7 +1,7 @@
 use {
-    anyhow::{ensure, Result},
+    anyhow::{Result, ensure},
     ethrpc::block_stream::{self, BlockInfo, CurrentBlockWatcher},
-    futures::{future::join_all, Stream, StreamExt as _},
+    futures::{Stream, StreamExt as _, future::join_all},
     std::{sync::Arc, time::Duration},
     tokio::time,
     tracing::Instrument as _,

@@ -7,7 +7,7 @@ use {
     crate::infra::config::file::GasEstimatorType,
     crate::{domain::eth, infra::mempool},
     ethcontract::dyns::DynWeb3,
-    gas_estimation::{nativegasestimator::NativeGasEstimator, GasPriceEstimating},
+    gas_estimation::{GasPriceEstimating, nativegasestimator::NativeGasEstimator},
     std::sync::Arc,
 };
 

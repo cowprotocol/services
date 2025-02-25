@@ -297,7 +297,7 @@ mod tests {
         let deposit_in = 20_000_000_000_000_000_000_000_u128;
         let deposit_out = 10_000_000_000_000_000_000_000_u128;
         macro_rules! calc_with_default_pool {
-            ($fn_name:ident, $amount: expr) => {
+            ($fn_name:ident, $amount: expr_2021) => {
                 $fn_name(
                     Bfp::from_wei(deposit_in.into()),
                     Bfp::from_wei(500_000_000_000_000_u128.into()),

@@ -4,7 +4,7 @@ use {
         arguments::{self, display_option, display_secret_option},
         trade_finding::{Interaction, QuoteExecution},
     },
-    anyhow::{ensure, Result},
+    anyhow::{Result, ensure},
     bigdecimal::BigDecimal,
     ethcontract::{H160, U256},
     futures::future::BoxFuture,

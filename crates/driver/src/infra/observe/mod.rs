@@ -4,21 +4,21 @@
 //! and update the metrics, if the event is worth measuring.
 
 use {
-    super::{simulator, solver::Timeouts, Ethereum, Mempool},
+    super::{Ethereum, Mempool, simulator, solver::Timeouts},
     crate::{
         boundary,
         domain::{
+            Liquidity,
             competition::{
                 self,
-                solution::{self, Settlement},
                 Solution,
                 Solved,
+                solution::{self, Settlement},
             },
             eth::{self, Gas},
             mempools,
             quote::{self, Quote},
             time::{Deadline, Remaining},
-            Liquidity,
         },
         infra::solver,
         util::http,
