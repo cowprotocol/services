@@ -265,9 +265,7 @@ async fn single_replace_order_test(web3: Web3) {
     wait_for_condition(TIMEOUT, || async {
         let balance_after = token_a.balance_of(trader.address()).call().await.unwrap();
         onchain.mint_block().await;
-        let diff = balance_before.saturating_sub(balance_after);
-        tracing::debug!(?diff);
-        diff == to_wei(3)
+        balance_before.saturating_sub(balance_after) == to_wei(3)
     })
     .await
     .unwrap();
