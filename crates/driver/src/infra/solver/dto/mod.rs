@@ -1,12 +1,11 @@
 //! DTOs modeling the HTTP REST interface of the solver.
 
 mod auction;
-mod notification;
+pub mod notification;
 mod solution;
 
 pub use {
     auction::{Auction, FlashloanHint},
-    notification::Notification,
     solution::Solutions,
 };
 
