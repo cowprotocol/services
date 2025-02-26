@@ -21,13 +21,13 @@ use {
         onchain_broadcasted_orders::{OnchainOrderPlacement, OnchainOrderPlacementError},
         orders::{Order, OrderClass, insert_quotes},
     },
-    ethcontract::{Event as EthContractEvent, H160},
+    ethcontract::{Event as EthContractEvent, H160, TransactionHash},
     ethrpc::{
         Web3,
         block_stream::{RangeInclusive, timestamp_of_block_in_seconds},
     },
     futures::{StreamExt, stream},
-    itertools::multiunzip,
+    itertools::{izip, multiunzip},
     model::{
         DomainSeparator,
         order::{
@@ -214,6 +214,7 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
         Vec<Option<database::orders::Quote>>,
         Vec<(database::events::EventIndex, OnchainOrderPlacement)>,
         Vec<Order>,
+        Vec<TransactionHash>,
     )> {
         let block_number_timestamp_hashmap =
             get_block_numbers_of_events(&self.web3, &order_placement_events).await?;
@@ -233,6 +234,7 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
             let EthContractEvent { meta, .. } = event;
             if let Some(meta) = meta {
                 let event_index = meta_to_event_index(meta);
+                let tx_hash = meta.transaction_hash;
                 if let Some(quote_id) = quote_id_hashmap.get(&event_index) {
                     events_and_quotes.push((
                         event.clone(),
@@ -242,6 +244,7 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
                             .get(&(event_index.block_number as u64))
                             .unwrap() as i64,
                         *quote_id,
+                        tx_hash,
                     ));
                 }
             }
@@ -256,7 +259,7 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
         .await;
 
         let data_tuple = onchain_order_data.into_iter().map(
-            |(event_index, quote, onchain_order_placement, order)| {
+            |(event_index, quote, onchain_order_placement, order, tx_hash)| {
                 (
                     self.custom_onchain_data_parser
                         .customized_event_data_for_event_index(
@@ -268,6 +271,7 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
                     quote,
                     (event_index, onchain_order_placement),
                     order,
+                    tx_hash,
                 )
             },
         );
@@ -310,7 +314,7 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
             .collect();
         let invalidation_events = get_invalidation_events(events)?;
         let invalided_order_uids = extract_invalidated_order_uids(invalidation_events)?;
-        let (custom_onchain_data, quotes, broadcasted_order_data, orders) = self
+        let (custom_onchain_data, quotes, broadcasted_order_data, orders, tx_hashes) = self
             .extract_custom_and_general_order_data(order_placement_events)
             .await?;
 
@@ -355,8 +359,8 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
         for order in &invalided_order_uids {
             tracing::debug!(?order, "invalidated order");
         }
-        for (order, quote) in orders.iter().zip(quotes.iter()) {
-            tracing::debug!(order =? order.uid, ?quote, "order created");
+        for (order, quote, tx_hash) in izip!(orders, quotes, tx_hashes) {
+            tracing::debug!(order =? order.uid, ?quote, ?tx_hash, "order created");
         }
 
         Ok(())
@@ -434,16 +438,22 @@ type GeneralOnchainOrderPlacementData = (
     Option<database::orders::Quote>,
     OnchainOrderPlacement,
     Order,
+    TransactionHash,
 );
 async fn parse_general_onchain_order_placement_data(
     quoter: &'_ dyn OrderQuoting,
-    order_placement_events_and_quotes_zipped: Vec<(EthContractEvent<ContractEvent>, i64, i64)>,
+    order_placement_events_and_quotes_zipped: Vec<(
+        EthContractEvent<ContractEvent>,
+        i64,
+        i64,
+        TransactionHash,
+    )>,
     domain_separator: DomainSeparator,
     settlement_contract: H160,
     metrics: &'static Metrics,
 ) -> Vec<GeneralOnchainOrderPlacementData> {
     let futures = order_placement_events_and_quotes_zipped.into_iter().map(
-        |(EthContractEvent { data, meta }, event_timestamp, quote_id)| async move {
+        |(EthContractEvent { data, meta }, event_timestamp, quote_id, tx_hash)| async move {
             let meta = match meta {
                 Some(meta) => meta,
                 None => {
@@ -505,6 +515,7 @@ async fn parse_general_onchain_order_placement_data(
                 quote,
                 order_data.0,
                 order_data.1,
+                tx_hash,
             ))
         },
     );
