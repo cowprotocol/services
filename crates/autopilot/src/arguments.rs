@@ -245,6 +245,82 @@ pub struct Arguments {
     /// Archive node URL used to index CoW AMM
     #[clap(long, env)]
     pub archive_node_url: Option<Url>,
+
+    /// Configuration for the solver participation guard.
+    #[clap(flatten)]
+    pub db_based_solver_participation_guard: DbBasedSolverParticipationGuardConfig,
+}
+
+#[derive(Debug, clap::Parser)]
+pub struct DbBasedSolverParticipationGuardConfig {
+    /// Enables or disables the solver participation guard
+    #[clap(
+        id = "db_enabled",
+        long = "db-based-solver-participation-guard-enabled",
+        env = "DB_BASED_SOLVER_PARTICIPATION_GUARD_ENABLED",
+        default_value = "true"
+    )]
+    pub enabled: bool,
+
+    /// Sets the duration for which the solver remains blacklisted.
+    /// Technically, the time-to-live for the solver participation blacklist
+    /// cache.
+    #[clap(long, env, default_value = "5m", value_parser = humantime::parse_duration)]
+    pub solver_blacklist_cache_ttl: Duration,
+
+    #[clap(flatten)]
+    pub non_settling_solvers_finder_config: NonSettlingSolversFinderConfig,
+
+    #[clap(flatten)]
+    pub low_settling_solvers_finder_config: LowSettlingSolversFinderConfig,
+}
+
+#[derive(Debug, clap::Parser)]
+pub struct NonSettlingSolversFinderConfig {
+    /// Enables search of non-settling solvers.
+    #[clap(
+        id = "non_settling_solvers_blacklisting_enabled",
+        long = "non-settling-solvers-blacklisting-enabled",
+        env = "NON_SETTLING_SOLVERS_BLACKLISTING_ENABLED",
+        default_value = "true"
+    )]
+    pub enabled: bool,
+
+    /// The number of last auctions to check solver participation eligibility.
+    #[clap(
+        id = "non_settling_last_auctions_participation_count",
+        long = "non-settling-last-auctions-participation-count",
+        env = "NON_SETTLING_LAST_AUCTIONS_PARTICIPATION_COUNT",
+        default_value = "3"
+    )]
+    pub last_auctions_participation_count: u32,
+}
+
+#[derive(Debug, clap::Parser)]
+pub struct LowSettlingSolversFinderConfig {
+    /// Enables search of non-settling solvers.
+    #[clap(
+        id = "low_settling_solvers_blacklisting_enabled",
+        long = "low-settling-solvers-blacklisting-enabled",
+        env = "LOW_SETTLING_SOLVERS_BLACKLISTING_ENABLED",
+        default_value = "true"
+    )]
+    pub enabled: bool,
+
+    /// The number of last auctions to check solver participation eligibility.
+    #[clap(
+        id = "low_settling_last_auctions_participation_count",
+        long = "low-settling-last-auctions-participation-count",
+        env = "LOW_SETTLING_LAST_AUCTIONS_PARTICIPATION_COUNT",
+        default_value = "100"
+    )]
+    pub last_auctions_participation_count: u32,
+
+    /// A max failure rate for a solver to remain eligible for
+    /// participation in the competition. Otherwise, the solver will be
+    /// banned.
+    #[clap(long, env, default_value = "0.9")]
+    pub solver_max_settlement_failure_rate: f64,
 }
 
 impl std::fmt::Display for Arguments {
@@ -290,6 +366,7 @@ impl std::fmt::Display for Arguments {
             max_winners_per_auction,
             archive_node_url,
             max_solutions_per_solver,
+            db_based_solver_participation_guard,
         } = self;
 
         write!(f, "{}", shared)?;
@@ -373,6 +450,11 @@ impl std::fmt::Display for Arguments {
             "max_solutions_per_solver: {:?}",
             max_solutions_per_solver
         )?;
+        writeln!(
+            f,
+            "db_based_solver_participation_guard: {:?}",
+            db_based_solver_participation_guard
+        )?;
         Ok(())
     }
 }
@@ -384,6 +466,7 @@ pub struct Solver {
     pub url: Url,
     pub submission_account: Account,
     pub fairness_threshold: Option<U256>,
+    pub requested_timeout_on_problems: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -431,18 +514,31 @@ impl FromStr for Solver {
             _ => Account::Address(H160::from_str(parts[2]).context("failed to parse submission")?),
         };
 
-        let fairness_threshold = match parts.get(3) {
-            Some(value) => {
-                Some(U256::from_dec_str(value).context("failed to parse fairness threshold")?)
+        let mut fairness_threshold: Option<U256> = Default::default();
+        let mut requested_timeout_on_problems = false;
+
+        if let Some(value) = parts.get(3) {
+            match U256::from_dec_str(value) {
+                Ok(parsed_fairness_threshold) => {
+                    fairness_threshold = Some(parsed_fairness_threshold);
+                }
+                Err(_) => {
+                    requested_timeout_on_problems =
+                        value.to_lowercase() == "requested_timeout_on_problems";
+                }
             }
-            None => None,
         };
+
+        if let Some(value) = parts.get(4) {
+            requested_timeout_on_problems = value.to_lowercase() == "requested_timeout_on_problems";
+        }
 
         Ok(Self {
             name: name.to_owned(),
             url,
             fairness_threshold,
             submission_account,
+            requested_timeout_on_problems,
         })
     }
 }
@@ -641,6 +737,7 @@ mod test {
             name: "name1".into(),
             url: Url::parse("http://localhost:8080").unwrap(),
             fairness_threshold: None,
+            requested_timeout_on_problems: false,
             submission_account: Account::Address(H160::from_slice(&hex!(
                 "C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
             ))),
@@ -656,6 +753,7 @@ mod test {
             name: "name1".into(),
             url: Url::parse("http://localhost:8080").unwrap(),
             fairness_threshold: None,
+            requested_timeout_on_problems: false,
             submission_account: Account::Kms(
                 Arn::from_str("arn:aws:kms:supersecretstuff").unwrap(),
             ),
@@ -674,6 +772,40 @@ mod test {
                 "C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
             ))),
             fairness_threshold: Some(U256::exp10(18)),
+            requested_timeout_on_problems: false,
+        };
+        assert_eq!(driver, expected);
+    }
+
+    #[test]
+    fn parse_driver_with_accepts_unsettled_blocking_flag() {
+        let argument =
+            "name1|http://localhost:8080|0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2|requested_timeout_on_problems";
+        let driver = Solver::from_str(argument).unwrap();
+        let expected = Solver {
+            name: "name1".into(),
+            url: Url::parse("http://localhost:8080").unwrap(),
+            submission_account: Account::Address(H160::from_slice(&hex!(
+                "C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+            ))),
+            fairness_threshold: None,
+            requested_timeout_on_problems: true,
+        };
+        assert_eq!(driver, expected);
+    }
+
+    #[test]
+    fn parse_driver_with_threshold_and_accepts_unsettled_blocking_flag() {
+        let argument = "name1|http://localhost:8080|0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2|1000000000000000000|requested_timeout_on_problems";
+        let driver = Solver::from_str(argument).unwrap();
+        let expected = Solver {
+            name: "name1".into(),
+            url: Url::parse("http://localhost:8080").unwrap(),
+            submission_account: Account::Address(H160::from_slice(&hex!(
+                "C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+            ))),
+            fairness_threshold: Some(U256::exp10(18)),
+            requested_timeout_on_problems: true,
         };
         assert_eq!(driver, expected);
     }
