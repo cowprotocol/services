@@ -156,9 +156,9 @@ mod tests {
         super::*,
         crate::{
             byte_array::ByteArray,
-            events::{insert_trade, EventIndex, Trade},
+            events::{EventIndex, Trade, insert_trade},
             onchain_invalidations::insert_onchain_invalidation,
-            orders::{insert_order, insert_quote, Order, Quote},
+            orders::{Order, Quote, insert_order, insert_quote},
         },
         bigdecimal::BigDecimal,
         chrono::{TimeZone, Utc},

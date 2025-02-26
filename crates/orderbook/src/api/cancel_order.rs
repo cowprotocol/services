@@ -1,16 +1,16 @@
 use {
     crate::{
-        api::{convert_json_response, extract_payload, IntoWarpReply},
+        api::{IntoWarpReply, convert_json_response, extract_payload},
         orderbook::{OrderCancellationError, Orderbook},
     },
     anyhow::Result,
     model::order::{CancellationPayload, OrderCancellation, OrderUid},
     std::{convert::Infallible, sync::Arc},
-    warp::{hyper::StatusCode, reply::with_status, Filter, Rejection},
+    warp::{Filter, Rejection, hyper::StatusCode, reply::with_status},
 };
 
-pub fn cancel_order_request(
-) -> impl Filter<Extract = (OrderCancellation,), Error = Rejection> + Clone {
+pub fn cancel_order_request()
+-> impl Filter<Extract = (OrderCancellation,), Error = Rejection> + Clone {
     warp::path!("v1" / "orders" / OrderUid)
         .and(warp::delete())
         .and(extract_payload())
@@ -87,7 +87,7 @@ mod tests {
         hex_literal::hex,
         model::signature::{EcdsaSignature, EcdsaSigningScheme},
         serde_json::json,
-        warp::{test::request, Reply},
+        warp::{Reply, test::request},
     };
 
     #[test]

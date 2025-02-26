@@ -2,17 +2,17 @@ use {
     crate::{
         domain::{
             self,
-            competition::{bad_tokens, order::app_data::AppDataRetriever},
             Mempools,
+            competition::{bad_tokens, order::app_data::AppDataRetriever},
         },
         infra::{
             self,
+            Ethereum,
+            Simulator,
             config::file::OrderPriorityStrategy,
             liquidity,
             solver::{Solver, Timeouts},
             tokens,
-            Ethereum,
-            Simulator,
         },
     },
     error::Error,

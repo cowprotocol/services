@@ -1,6 +1,6 @@
 use {
     crate::{Address, OrderUid, PgTransaction, TransactionHash},
-    sqlx::{types::BigDecimal, Executor, PgConnection},
+    sqlx::{Executor, PgConnection, types::BigDecimal},
 };
 
 #[derive(Clone, Debug)]

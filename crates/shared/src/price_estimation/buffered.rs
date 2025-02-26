@@ -3,8 +3,8 @@
 
 use {
     crate::price_estimation::{
-        native::{NativePriceEstimateResult, NativePriceEstimating},
         PriceEstimationError,
+        native::{NativePriceEstimateResult, NativePriceEstimating},
     },
     anyhow::anyhow,
     futures::{

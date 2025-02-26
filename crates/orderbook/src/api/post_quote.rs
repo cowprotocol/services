@@ -1,7 +1,7 @@
 use {
     super::post_order::{AppDataValidationErrorWrapper, PartialValidationErrorWrapper},
     crate::{
-        api::{self, convert_json_response, error, rich_error, ApiReply, IntoWarpReply},
+        api::{self, ApiReply, IntoWarpReply, convert_json_response, error, rich_error},
         quoter::{OrderQuoteError, QuoteHandler},
     },
     anyhow::Result,
@@ -106,7 +106,7 @@ mod tests {
         reqwest::StatusCode,
         serde_json::json,
         shared::order_quoting::CalculateQuoteError,
-        warp::{test::request, Reply},
+        warp::{Reply, test::request},
     };
 
     #[test]

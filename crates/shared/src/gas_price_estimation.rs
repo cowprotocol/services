@@ -1,15 +1,15 @@
 use {
     crate::{ethrpc::Web3, http_client::HttpClientFactory},
-    anyhow::{ensure, Context, Result},
+    anyhow::{Context, Result, ensure},
     gas_estimation::{
-        blocknative::BlockNative,
-        nativegasestimator::NativeGasEstimator,
         EthGasStation,
         GasNowGasStation,
         GasPrice1559,
         GasPriceEstimating,
         PriorityGasPriceEstimating,
         Transport,
+        blocknative::BlockNative,
+        nativegasestimator::NativeGasEstimator,
     },
     reqwest::header::{self, HeaderMap, HeaderValue},
     serde::de::DeserializeOwned,
@@ -51,7 +51,7 @@ pub async fn create_priority_estimator(
     web3: &Web3,
     estimator_types: &[GasEstimatorType],
     blocknative_api_key: Option<String>,
-) -> Result<impl GasPriceEstimating> {
+) -> Result<impl GasPriceEstimating + use<>> {
     let client = || Client(http_factory.create());
     let network_id = web3.eth().chain_id().await?.to_string();
     let mut estimators = Vec::<Box<dyn GasPriceEstimating>>::new();
@@ -66,13 +66,14 @@ pub async fn create_priority_estimator(
                     "BlockNative api key is empty"
                 );
                 let api_key = HeaderValue::from_str(&blocknative_api_key.clone().unwrap());
-                let headers = if let Ok(mut api_key) = api_key {
-                    let mut headers = HeaderMap::new();
-                    api_key.set_sensitive(true);
-                    headers.insert(header::AUTHORIZATION, api_key);
-                    headers
-                } else {
-                    HeaderMap::new()
+                let headers = match api_key {
+                    Ok(mut api_key) => {
+                        let mut headers = HeaderMap::new();
+                        api_key.set_sensitive(true);
+                        headers.insert(header::AUTHORIZATION, api_key);
+                        headers
+                    }
+                    _ => HeaderMap::new(),
                 };
                 match BlockNative::new(client(), headers).await {
                     Ok(estimator) => estimators.push(Box::new(estimator)),

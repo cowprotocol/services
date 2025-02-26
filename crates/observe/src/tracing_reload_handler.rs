@@ -3,7 +3,7 @@ use {
         io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
         net::{UnixListener, UnixStream},
     },
-    tracing_subscriber::{reload, EnvFilter},
+    tracing_subscriber::{EnvFilter, reload},
 };
 
 /// Spawns a new thread that listens for connections to a UNIX socket

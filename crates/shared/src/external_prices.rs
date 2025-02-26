@@ -7,7 +7,7 @@
 
 use {
     crate::conversions::U256Ext,
-    anyhow::{bail, Result},
+    anyhow::{Result, bail},
     ethcontract::{H160, U256},
     model::order::BUY_ETH_ADDRESS,
     num::{BigInt, BigRational, One as _, ToPrimitive as _},
@@ -142,19 +142,23 @@ mod tests {
     #[test]
     fn from_auction_price_errors_on_invalid_native_prices() {
         let native_token = H160([42; 20]);
-        assert!(ExternalPrices::try_from_auction_prices(
-            native_token,
-            btreemap! {
-                native_token => U256::from(4_200_000_000_000_000_000_u128),
-            },
-        )
-        .is_err());
-        assert!(ExternalPrices::try_from_auction_prices(
-            native_token,
-            btreemap! {
-                BUY_ETH_ADDRESS => U256::from(13_370_000_000_000_000_000_u128),
-            },
-        )
-        .is_err());
+        assert!(
+            ExternalPrices::try_from_auction_prices(
+                native_token,
+                btreemap! {
+                    native_token => U256::from(4_200_000_000_000_000_000_u128),
+                },
+            )
+            .is_err()
+        );
+        assert!(
+            ExternalPrices::try_from_auction_prices(
+                native_token,
+                btreemap! {
+                    BUY_ETH_ADDRESS => U256::from(13_370_000_000_000_000_000_u128),
+                },
+            )
+            .is_err()
+        );
     }
 }

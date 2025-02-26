@@ -35,7 +35,7 @@ use {
     prometheus::IntCounterVec,
     std::{
         cmp,
-        collections::{hash_map::Entry, BTreeMap, HashMap, HashSet},
+        collections::{BTreeMap, HashMap, HashSet, hash_map::Entry},
         hash::Hash,
         num::{NonZeroU64, NonZeroUsize},
         sync::{Arc, Mutex},
@@ -464,7 +464,7 @@ where
 mod tests {
     use {
         super::*,
-        ethrpc::block_stream::{mock_single_block, BlockInfo},
+        ethrpc::block_stream::{BlockInfo, mock_single_block},
         futures::FutureExt,
         std::sync::Arc,
     };

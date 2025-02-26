@@ -1,7 +1,7 @@
 use {
     super::Strategy,
     crate::code_simulation::{CodeSimulating, SimulationError},
-    contracts::{dummy_contract, ERC20},
+    contracts::{ERC20, dummy_contract},
     ethcontract::{Address, H256, U256},
     ethrpc::extensions::StateOverride,
     maplit::hashmap,

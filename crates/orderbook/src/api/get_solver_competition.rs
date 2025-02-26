@@ -6,9 +6,9 @@ use {
     reqwest::StatusCode,
     std::{convert::Infallible, sync::Arc},
     warp::{
-        reply::{with_status, Json, WithStatus},
         Filter,
         Rejection,
+        reply::{Json, WithStatus, with_status},
     },
 };
 
@@ -75,7 +75,7 @@ mod tests {
     use {
         super::*,
         crate::solver_competition::MockSolverCompetitionStoring,
-        warp::{test::request, Reply},
+        warp::{Reply, test::request},
     };
 
     #[tokio::test]

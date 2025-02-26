@@ -1,28 +1,28 @@
 use {
     super::{OnchainOrderCustomData, OnchainOrderParsing},
     crate::database::events::meta_to_event_index,
-    anyhow::{anyhow, Context, Result},
+    anyhow::{Context, Result, anyhow},
     chrono::Duration,
     contracts::{
+        GPv2Settlement,
         cowswap_onchain_orders::{
-            event_data::OrderPlacement as ContractOrderPlacement,
             Event as ContractEvent,
+            event_data::OrderPlacement as ContractOrderPlacement,
         },
         deployment_block,
-        GPv2Settlement,
     },
     database::{
+        PgTransaction,
         byte_array::ByteArray,
         ethflow_orders::EthOrderPlacement,
         events::EventIndex,
         onchain_broadcasted_orders::OnchainOrderPlacement,
         orders::{ExecutionTime, Interaction, Order},
-        PgTransaction,
     },
     ethcontract::Event as EthContractEvent,
     ethrpc::{
-        block_stream::{block_by_number, block_number_to_block_number_hash, BlockNumberHash},
         Web3,
+        block_stream::{BlockNumberHash, block_by_number, block_number_to_block_number_hash},
     },
     hex_literal::hex,
     model::time::now_in_epoch_seconds,

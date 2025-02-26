@@ -5,7 +5,7 @@ use {
     serde::Serialize,
     shared::price_estimation::native::NativePriceEstimating,
     std::{convert::Infallible, sync::Arc},
-    warp::{hyper::StatusCode, reply::with_status, Filter, Rejection},
+    warp::{Filter, Rejection, hyper::StatusCode, reply::with_status},
 };
 
 #[derive(Serialize)]

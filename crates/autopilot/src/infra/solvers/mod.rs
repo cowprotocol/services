@@ -1,7 +1,7 @@
 use {
     self::dto::{reveal, settle, solve},
     crate::{arguments::Account, domain::eth, util},
-    anyhow::{anyhow, Context, Result},
+    anyhow::{Context, Result, anyhow},
     reqwest::{Client, StatusCode},
     std::time::Duration,
     thiserror::Error,

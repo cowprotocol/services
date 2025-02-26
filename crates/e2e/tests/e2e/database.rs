@@ -2,7 +2,7 @@
 //! during a test.
 
 use {
-    database::{byte_array::ByteArray, order_events, Address, TransactionHash},
+    database::{Address, TransactionHash, byte_array::ByteArray, order_events},
     e2e::setup::Db,
     model::order::OrderUid,
     std::ops::DerefMut,

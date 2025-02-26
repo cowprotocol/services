@@ -15,13 +15,13 @@ use {
     crate::{
         domain::{
             competition::{
+                PriceLimits,
                 auction,
                 order::FeePolicy,
                 solution::{
                     error,
                     fee::{self, adjust_quote_to_order_limits},
                 },
-                PriceLimits,
             },
             eth,
         },

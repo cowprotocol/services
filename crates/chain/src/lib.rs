@@ -1,8 +1,8 @@
 use {
     derive_more::{From, Into},
     ethcontract::{
-        jsonrpc::serde::{de, Deserialize, Deserializer},
         U256,
+        jsonrpc::serde::{Deserialize, Deserializer, de},
     },
     std::time::Duration,
     thiserror::Error,

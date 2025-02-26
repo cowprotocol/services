@@ -1,7 +1,7 @@
 use {
     super::{Trade, TradeExecution},
     crate::interactions::UnwrapWethInteraction,
-    anyhow::{bail, ensure, Context as _, Result},
+    anyhow::{Context as _, Result, bail, ensure},
     itertools::Either,
     model::{
         interaction::InteractionData,
@@ -581,7 +581,7 @@ pub(crate) fn verify_executed_amount(order: &Order, executed: U256) -> Result<()
 pub mod tests {
     use {
         super::*,
-        contracts::{dummy_contract, WETH9},
+        contracts::{WETH9, dummy_contract},
         ethcontract::Bytes,
         maplit::hashmap,
         model::order::{Interactions, OrderBuilder, OrderData},
@@ -704,9 +704,11 @@ pub mod tests {
             .with_buy_amount(10.into())
             .with_class(OrderClass::Liquidity)
             .build();
-        assert!(settlement
-            .add_trade(order01.clone(), 10.into(), 0.into())
-            .is_ok());
+        assert!(
+            settlement
+                .add_trade(order01.clone(), 10.into(), 0.into())
+                .is_ok()
+        );
         // ensures that the output of add_liquidity_order is not changed after adding
         // liquidity order
         assert_eq!(settlement.tokens, vec![token(1)]);
@@ -827,9 +829,11 @@ pub mod tests {
     #[test]
     fn settlement_encoder_token_equivalency_missing_tokens() {
         let mut encoder = SettlementEncoder::new(HashMap::new());
-        assert!(encoder
-            .add_token_equivalency(H160([0; 20]), H160([1; 20]))
-            .is_err());
+        assert!(
+            encoder
+                .add_token_equivalency(H160([0; 20]), H160([1; 20]))
+                .is_err()
+        );
     }
 
     #[test]

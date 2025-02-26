@@ -3,7 +3,7 @@ use {
     anyhow::Result,
     reqwest::StatusCode,
     std::{convert::Infallible, sync::Arc},
-    warp::{reply::with_status, Filter, Rejection},
+    warp::{Filter, Rejection, reply::with_status},
 };
 
 fn get_auction_request() -> impl Filter<Extract = (), Error = Rejection> + Clone {

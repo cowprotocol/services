@@ -15,6 +15,7 @@ pub struct Order {
     pub side: Side,
     pub class: Class,
     pub partially_fillable: bool,
+    pub flashloan_hint: Option<FlashloanHint>,
 }
 
 impl Order {
@@ -132,4 +133,13 @@ impl Debug for AppData {
             .field(&util::fmt::Hex(&self.0))
             .finish()
     }
+}
+
+/// A hint for the solver to use a flashloan for this order.
+#[derive(Debug, Clone)]
+pub struct FlashloanHint {
+    pub lender: eth::Address,
+    pub borrower: eth::Address,
+    pub token: eth::TokenAddress,
+    pub amount: eth::U256,
 }

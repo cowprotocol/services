@@ -14,15 +14,17 @@ use {
         signature_validator::{SignatureCheck, SignatureValidating, SignatureValidationError},
         trade_finding,
     },
-    anyhow::{anyhow, Result},
+    anyhow::{Result, anyhow},
     app_data::{AppDataHash, Hook, Hooks, ValidatedAppData, Validator},
     async_trait::async_trait,
     contracts::{HooksTrampoline, WETH9},
     ethcontract::{Bytes, H160, H256, U256},
     model::{
+        DomainSeparator,
         interaction::InteractionData,
         order::{
             AppdataFromMismatch,
+            BUY_ETH_ADDRESS,
             BuyTokenDestination,
             Interactions,
             Order,
@@ -34,12 +36,10 @@ use {
             OrderMetadata,
             SellTokenSource,
             VerificationError,
-            BUY_ETH_ADDRESS,
         },
         quote::{OrderQuoteSide, QuoteSigningScheme, SellAmount},
-        signature::{self, hashed_eip712_message, Signature, SigningScheme},
+        signature::{self, Signature, SigningScheme, hashed_eip712_message},
         time,
-        DomainSeparator,
     },
     std::{sync::Arc, time::Duration},
 };
@@ -362,6 +362,77 @@ impl OrderValidator {
             post: to_interactions(&hooks.post),
         }
     }
+
+    /// Verifies that tokens can actually be transferred from the user account
+    /// to the settlement contract (takes pre-hooks into account).
+    async fn ensure_token_is_transferable(
+        &self,
+        order: &OrderCreation,
+        owner: H160,
+        app_data: &OrderAppData,
+    ) -> Result<(), ValidationError> {
+        let mut res = Ok(());
+
+        // Simulate transferring a small token balance into the settlement contract.
+        // As a spam protection we require that an account must have at least 1 atom
+        // of the sell_token. However, some tokens (e.g. rebasing tokens) actually run
+        // into numerical issues with such small amounts. But there are also tokens
+        // where a single atom is already quite expensive (tokenized stocks).
+        // To cover both cases we simulate multiple small transfers. As soon as one
+        // passes we consider the token transferable. If all transfers fail we return
+        // the last error.
+        for transfer_amount in [1, 10, 100].into_iter().map(U256::from) {
+            match self
+                .balance_fetcher
+                .can_transfer(
+                    &account_balances::Query {
+                        token: order.data().sell_token,
+                        owner,
+                        source: order.data().sell_token_balance,
+                        interactions: app_data.interactions.pre.clone(),
+                    },
+                    transfer_amount,
+                )
+                .await
+            {
+                Ok(_) => return Ok(()),
+                Err(
+                    TransferSimulationError::InsufficientAllowance
+                    | TransferSimulationError::InsufficientBalance
+                    | TransferSimulationError::TransferFailed,
+                ) if order.signature == Signature::PreSign => {
+                    // We have an exception for pre-sign orders where they do not
+                    // require sufficient balance or allowance. The idea, is that
+                    // this allows smart contracts to place orders bundled with
+                    // other transactions that either produce the required balance
+                    // or set the allowance. This would, for example, allow a Gnosis
+                    // Safe to bundle the pre-signature transaction with a WETH wrap
+                    // and WETH approval to the vault relayer contract.
+                    return Ok(());
+                }
+                Err(err) => match err {
+                    TransferSimulationError::InsufficientAllowance => {
+                        // This error will be triggered regardless of the amount
+                        return Err(ValidationError::InsufficientAllowance);
+                    }
+                    TransferSimulationError::InsufficientBalance => {
+                        // Since the amount starts at 1 atom, if this error is triggered then it
+                        // will be triggered for the other amounts too
+                        return Err(ValidationError::InsufficientBalance);
+                    }
+                    TransferSimulationError::TransferFailed => {
+                        res = Err(ValidationError::TransferSimulationFailed);
+                    }
+                    TransferSimulationError::Other(err) => {
+                        tracing::warn!("TransferSimulation failed: {:?}", err);
+                        res = Err(ValidationError::TransferSimulationFailed);
+                    }
+                },
+            }
+        }
+
+        res
+    }
 }
 
 #[async_trait::async_trait]
@@ -554,51 +625,8 @@ impl OrderValidating for OrderValidator {
             verification,
         };
 
-        // Fast path to check if transfer is possible with a single node query.
-        // If not, run extra queries for additional information.
-        match self
-            .balance_fetcher
-            .can_transfer(
-                &account_balances::Query {
-                    token: data.sell_token,
-                    owner,
-                    source: data.sell_token_balance,
-                    interactions: app_data.interactions.pre.clone(),
-                },
-                MINIMUM_BALANCE,
-            )
-            .await
-        {
-            Ok(_) => (),
-            Err(
-                TransferSimulationError::InsufficientAllowance
-                | TransferSimulationError::InsufficientBalance
-                | TransferSimulationError::TransferFailed,
-            ) if signing_scheme == SigningScheme::PreSign => {
-                // We have an exception for pre-sign orders where they do not
-                // require sufficient balance or allowance. The idea, is that
-                // this allows smart contracts to place orders bundled with
-                // other transactions that either produce the required balance
-                // or set the allowance. This would, for example, allow a Gnosis
-                // Safe to bundle the pre-signature transaction with a WETH wrap
-                // and WETH approval to the vault relayer contract.
-            }
-            Err(err) => match err {
-                TransferSimulationError::InsufficientAllowance => {
-                    return Err(ValidationError::InsufficientAllowance);
-                }
-                TransferSimulationError::InsufficientBalance => {
-                    return Err(ValidationError::InsufficientBalance);
-                }
-                TransferSimulationError::TransferFailed => {
-                    return Err(ValidationError::TransferSimulationFailed);
-                }
-                TransferSimulationError::Other(err) => {
-                    tracing::warn!("TransferSimulation failed: {:?}", err);
-                    return Err(ValidationError::TransferSimulationFailed);
-                }
-            },
-        }
+        self.ensure_token_is_transferable(&order, owner, &app_data)
+            .await?;
 
         // Check if we need to re-classify the market order if it is outside the market
         // price. We consider out-of-price orders as liquidity orders. See
@@ -791,13 +819,6 @@ fn has_same_buy_and_sell_token(order: &PreOrderData, native_token: &WETH9) -> bo
     order.sell_token == order.buy_token
         || (order.sell_token == native_token.address() && order.buy_token == BUY_ETH_ADDRESS)
 }
-
-/// Min balance user must have in sell token for order to be accepted.
-// All orders can be placed without having the full sell balance.
-// A minimum, of 1 atom is still required as a spam protection measure.
-// TODO: ideally, we should keep the full balance enforcement for SWAPs,
-// but given all orders are LIMIT now, this is harder to do.
-const MINIMUM_BALANCE: U256 = U256::one(); // 1 atom of a token
 
 /// Retrieves the quote for an order that is being created and verify that its
 /// fee is sufficient.
@@ -1186,35 +1207,41 @@ mod tests {
         };
 
         assert!(validator.partial_validate(order()).await.is_ok());
-        assert!(validator
-            .partial_validate(PreOrderData {
-                valid_to: u32::MAX,
-                signing_scheme: SigningScheme::PreSign,
-                ..order()
-            })
-            .await
-            .is_ok());
-        assert!(validator
-            .partial_validate(PreOrderData {
-                class: OrderClass::Limit,
-                owner: H160::from_low_u64_be(0x42),
-                valid_to: time::now_in_epoch_seconds()
-                    + validity_configuration.max_market.as_secs() as u32
-                    + 2,
-                ..order()
-            })
-            .await
-            .is_ok());
-        assert!(validator
-            .partial_validate(PreOrderData {
-                partially_fillable: true,
-                class: OrderClass::Liquidity,
-                owner: H160::from_low_u64_be(0x42),
-                valid_to: u32::MAX,
-                ..order()
-            })
-            .await
-            .is_ok());
+        assert!(
+            validator
+                .partial_validate(PreOrderData {
+                    valid_to: u32::MAX,
+                    signing_scheme: SigningScheme::PreSign,
+                    ..order()
+                })
+                .await
+                .is_ok()
+        );
+        assert!(
+            validator
+                .partial_validate(PreOrderData {
+                    class: OrderClass::Limit,
+                    owner: H160::from_low_u64_be(0x42),
+                    valid_to: time::now_in_epoch_seconds()
+                        + validity_configuration.max_market.as_secs() as u32
+                        + 2,
+                    ..order()
+                })
+                .await
+                .is_ok()
+        );
+        assert!(
+            validator
+                .partial_validate(PreOrderData {
+                    partially_fillable: true,
+                    class: OrderClass::Liquidity,
+                    owner: H160::from_low_u64_be(0x42),
+                    valid_to: u32::MAX,
+                    ..order()
+                })
+                .await
+                .is_ok()
+        );
     }
 
     #[tokio::test]
@@ -1350,15 +1377,17 @@ mod tests {
             ..validator
         };
 
-        assert!(validator
-            .validate_and_construct_order(
-                creation.clone(),
-                &domain_separator,
-                Default::default(),
-                None
-            )
-            .await
-            .is_ok());
+        assert!(
+            validator
+                .validate_and_construct_order(
+                    creation.clone(),
+                    &domain_separator,
+                    Default::default(),
+                    None
+                )
+                .await
+                .is_ok()
+        );
 
         let mut signature_validator = MockSignatureValidating::new();
         signature_validator
@@ -1377,15 +1406,17 @@ mod tests {
             ..validator
         };
 
-        assert!(validator
-            .validate_and_construct_order(
-                creation.clone(),
-                &domain_separator,
-                Default::default(),
-                None
-            )
-            .await
-            .is_ok());
+        assert!(
+            validator
+                .validate_and_construct_order(
+                    creation.clone(),
+                    &domain_separator,
+                    Default::default(),
+                    None
+                )
+                .await
+                .is_ok()
+        );
 
         let creation_ = OrderCreation {
             fee_amount: U256::zero(),
@@ -1552,15 +1583,17 @@ mod tests {
             },
             ..Default::default()
         };
-        assert!(validator
-            .validate_and_construct_order(
-                creation.clone(),
-                &Default::default(),
-                Default::default(),
-                None,
-            )
-            .await
-            .is_ok());
+        assert!(
+            validator
+                .validate_and_construct_order(
+                    creation.clone(),
+                    &Default::default(),
+                    Default::default(),
+                    None,
+                )
+                .await
+                .is_ok()
+        );
     }
 
     #[tokio::test]

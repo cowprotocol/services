@@ -13,14 +13,14 @@ use {
     shared::{
         addr,
         price_estimation::{
+            Estimate,
+            Verification,
             trade_verifier::{
-                balance_overrides::BalanceOverrides,
                 PriceQuery,
                 TradeVerifier,
                 TradeVerifying,
+                balance_overrides::BalanceOverrides,
             },
-            Estimate,
-            Verification,
         },
         trade_finding::{Interaction, LegacyTrade, QuoteExecution, TradeKind},
     },

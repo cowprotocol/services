@@ -2,19 +2,19 @@
 
 use {
     ethcontract::{
+        Web3,
         futures::future::{self, Ready},
         jsonrpc::{Call, Id, MethodCall, Params},
         web3::{self, BatchTransport, RequestId, Transport},
-        Web3,
     },
     serde_json::Value,
     std::{
         fmt::{self, Debug, Formatter},
         sync::{
-            atomic::{AtomicUsize, Ordering},
             Arc,
             Mutex,
             MutexGuard,
+            atomic::{AtomicUsize, Ordering},
         },
     },
 };

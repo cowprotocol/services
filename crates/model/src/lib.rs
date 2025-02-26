@@ -15,7 +15,7 @@ use {
     primitive_types::H160,
     std::{fmt, sync::LazyLock},
     web3::{
-        ethabi::{encode, Token},
+        ethabi::{Token, encode},
         signing,
     },
 };
@@ -149,10 +149,12 @@ mod tests {
 
     #[test]
     fn domain_separator_from_str() {
-        assert!(DomainSeparator::from_str(
-            "9d7e07ef92761aa9453ae5ff25083a2b19764131b15295d3c7e89f1f1b8c67d9"
-        )
-        .is_ok());
+        assert!(
+            DomainSeparator::from_str(
+                "9d7e07ef92761aa9453ae5ff25083a2b19764131b15295d3c7e89f1f1b8c67d9"
+            )
+            .is_ok()
+        );
     }
 
     #[test]

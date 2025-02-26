@@ -350,9 +350,11 @@ mod tests {
             amp,
         );
         let result = calculate_invariant(amplification_parameter, &balances).unwrap();
-        assert!((result.to_f64_lossy() / 1e18 - expected)
-            .abs()
-            .le(&max_relative_error));
+        assert!(
+            (result.to_f64_lossy() / 1e18 - expected)
+                .abs()
+                .le(&max_relative_error)
+        );
     }
 
     #[test]
@@ -367,9 +369,11 @@ mod tests {
         let float_balances = balances.iter().map(|x| x.to_f64_lossy()).collect();
         let expected = calculate_invariant_approx(float_balances, amp);
         let max_relative_error = 0.001;
-        assert!((result.to_f64_lossy() / 1e18 - expected)
-            .abs()
-            .le(&max_relative_error));
+        assert!(
+            (result.to_f64_lossy() / 1e18 - expected)
+                .abs()
+                .le(&max_relative_error)
+        );
     }
 
     #[test]
@@ -381,9 +385,11 @@ mod tests {
         let expected = calculate_invariant_approx(float_balances, amp);
         let max_relative_error = 0.001;
         let result = calculate_invariant(amplification_parameter, &balances).unwrap();
-        assert!((result.to_f64_lossy() / 1e18 - expected)
-            .abs()
-            .le(&max_relative_error));
+        assert!(
+            (result.to_f64_lossy() / 1e18 - expected)
+                .abs()
+                .le(&max_relative_error)
+        );
     }
 
     #[test]
@@ -411,9 +417,11 @@ mod tests {
             amount_out.to_f64_lossy(),
         );
         let max_relative_error = 0.001;
-        assert!((result.to_f64_lossy() - expected)
-            .abs()
-            .le(&max_relative_error));
+        assert!(
+            (result.to_f64_lossy() - expected)
+                .abs()
+                .le(&max_relative_error)
+        );
     }
 
     #[test]
@@ -441,9 +449,11 @@ mod tests {
             amount_out.to_f64_lossy(),
         );
         let max_relative_error = 0.001;
-        assert!((result.to_f64_lossy() - expected)
-            .abs()
-            .le(&max_relative_error));
+        assert!(
+            (result.to_f64_lossy() - expected)
+                .abs()
+                .le(&max_relative_error)
+        );
     }
 
     #[test]
@@ -471,9 +481,11 @@ mod tests {
             token_amount_in.to_f64_lossy(),
         );
         let max_relative_error = 0.001;
-        assert!((result.to_f64_lossy() - expected)
-            .abs()
-            .le(&max_relative_error));
+        assert!(
+            (result.to_f64_lossy() - expected)
+                .abs()
+                .le(&max_relative_error)
+        );
     }
 
     #[test]
@@ -501,8 +513,10 @@ mod tests {
             token_amount_in.to_f64_lossy(),
         );
         let max_relative_error = 0.001;
-        assert!((result.to_f64_lossy() - expected)
-            .abs()
-            .le(&max_relative_error));
+        assert!(
+            (result.to_f64_lossy() - expected)
+                .abs()
+                .le(&max_relative_error)
+        );
     }
 }

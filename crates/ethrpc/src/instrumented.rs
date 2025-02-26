@@ -4,9 +4,9 @@ use {
         jsonrpc::types::{Call, Value},
         transport::DynTransport,
     },
-    futures::{future::BoxFuture, FutureExt},
+    futures::{FutureExt, future::BoxFuture},
     std::sync::Arc,
-    web3::{error::Error as Web3Error, BatchTransport, RequestId, Transport},
+    web3::{BatchTransport, RequestId, Transport, error::Error as Web3Error},
 };
 
 #[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
@@ -32,7 +32,7 @@ struct Metrics {
 
 impl Metrics {
     #[must_use]
-    fn on_request_start(&self, label: &str, method: &str) -> impl Drop {
+    fn on_request_start(&self, label: &str, method: &str) -> impl Drop + use<> {
         let requests_inflight = self.requests_inflight.with_label_values(&[label, method]);
         let requests_complete = self.requests_complete.with_label_values(&[label, method]);
         let requests_duration_seconds = self
@@ -74,10 +74,9 @@ impl InstrumentedTransport {
 /// Adds metrics for RPC requests using the provided label.
 pub fn instrument_with_label(web3: &DynWeb3, label: String) -> DynWeb3 {
     let transport = web3.transport().clone();
-    let instrumented = if let Some(instrumented) = transport.downcast::<InstrumentedTransport>() {
-        instrumented.with_additional_label(label)
-    } else {
-        InstrumentedTransport::new(label, transport)
+    let instrumented = match transport.downcast::<InstrumentedTransport>() {
+        Some(instrumented) => instrumented.with_additional_label(label),
+        _ => InstrumentedTransport::new(label, transport),
     };
     web3::Web3::new(DynTransport::new(instrumented))
 }

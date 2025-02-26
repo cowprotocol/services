@@ -7,7 +7,7 @@ use {
             setup::{ab_order, ab_pool, ab_solution},
         },
     },
-    app_data::{hash_full_app_data, Flashloan, ProtocolAppData},
+    app_data::{Flashloan, ProtocolAppData, hash_full_app_data},
     primitive_types::H160,
 };
 

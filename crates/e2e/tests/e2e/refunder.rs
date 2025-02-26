@@ -3,7 +3,7 @@ use {
     chrono::{TimeZone, Utc},
     e2e::{nodes::local_node::TestNodeApi, setup::*},
     ethcontract::{H160, U256},
-    ethrpc::{block_stream::timestamp_of_current_block_in_seconds, Web3},
+    ethrpc::{Web3, block_stream::timestamp_of_current_block_in_seconds},
     model::quote::{OrderQuoteRequest, OrderQuoteSide, QuoteSigningScheme, Validity},
     number::nonzero::U256 as NonZeroU256,
     refunder::refund_service::RefundService,

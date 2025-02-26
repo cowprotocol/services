@@ -7,7 +7,7 @@ use {
     anyhow::{Context, Result},
     bigdecimal::BigDecimal,
     database::order_events::OrderEventLabel,
-    futures::{future::join_all, FutureExt},
+    futures::{FutureExt, future::join_all},
     indexmap::IndexSet,
     itertools::{Either, Itertools},
     model::{
@@ -22,14 +22,14 @@ use {
         account_balances::{BalanceFetching, Query},
         bad_token::BadTokenDetecting,
         price_estimation::{
-            native::{to_normalized_price, NativePriceEstimating},
+            native::{NativePriceEstimating, to_normalized_price},
             native_price_cache::CachingNativePriceEstimator,
         },
         remaining_amounts,
         signature_validator::{SignatureCheck, SignatureValidating},
     },
     std::{
-        collections::{btree_map::Entry, BTreeMap, HashMap, HashSet},
+        collections::{BTreeMap, HashMap, HashSet, btree_map::Entry},
         future::Future,
         sync::Arc,
         time::Duration,
@@ -858,7 +858,7 @@ mod tests {
         primitive_types::H160,
         shared::{
             bad_token::list_based::ListBasedDetector,
-            price_estimation::{native::MockNativePriceEstimating, PriceEstimationError},
+            price_estimation::{PriceEstimationError, native::MockNativePriceEstimating},
             signature_validator::{MockSignatureValidating, SignatureValidationError},
         },
     };

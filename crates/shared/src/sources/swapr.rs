@@ -4,8 +4,8 @@ use {
     crate::sources::uniswap_v2::pool_fetching::{self, DefaultPoolReader, Pool, PoolReading},
     anyhow::Result,
     contracts::ISwaprPair,
-    ethcontract::{errors::MethodError, BlockId},
-    futures::{future::BoxFuture, FutureExt as _},
+    ethcontract::{BlockId, errors::MethodError},
+    futures::{FutureExt as _, future::BoxFuture},
     model::TokenPair,
     num::rational::Ratio,
 };
@@ -53,9 +53,9 @@ mod tests {
     use {
         super::*,
         crate::{
-            ethrpc::{create_env_test_transport, Web3},
+            ethrpc::{Web3, create_env_test_transport},
             recent_block_cache::Block,
-            sources::{uniswap_v2, BaselineSource},
+            sources::{BaselineSource, uniswap_v2},
         },
         contracts::errors::testing_contract_error,
         ethcontract::H160,
@@ -91,12 +91,14 @@ mod tests {
     fn ignores_contract_errors_when_reading_fee() {
         let tokens = TokenPair::new(H160([1; 20]), H160([2; 20])).unwrap();
         let address = H160::from_low_u64_be(1);
-        assert!(handle_results(
-            Ok(Some(Pool::uniswap(address, tokens, (0, 0)))),
-            Err(testing_contract_error()),
-        )
-        .unwrap()
-        .is_none());
+        assert!(
+            handle_results(
+                Ok(Some(Pool::uniswap(address, tokens, (0, 0)))),
+                Err(testing_contract_error()),
+            )
+            .unwrap()
+            .is_none()
+        );
     }
 
     #[tokio::test]

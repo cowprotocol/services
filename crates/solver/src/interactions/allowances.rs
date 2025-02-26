@@ -4,8 +4,8 @@
 
 use {
     crate::interactions::Erc20ApproveInteraction,
-    anyhow::{anyhow, ensure, Context as _, Result},
-    contracts::{dummy_contract, ERC20},
+    anyhow::{Context as _, Result, anyhow, ensure},
+    contracts::{ERC20, dummy_contract},
     ethcontract::{H160, U256},
     ethrpc::Web3,
     maplit::hashmap,
@@ -244,13 +244,13 @@ mod tests {
     use {
         super::*,
         ethcontract::{
+            Bytes,
             common::abi::{self, Token},
             web3::types::CallRequest,
-            Bytes,
         },
         ethrpc::mock,
         maplit::{hashmap, hashset},
-        serde_json::{json, Value},
+        serde_json::{Value, json},
         shared::addr,
     };
 
@@ -306,9 +306,11 @@ mod tests {
             },
         );
 
-        assert!(allowances
-            .approve_token(TokenAmount::new(H160([0x03; 20]), 0))
-            .is_err());
+        assert!(
+            allowances
+                .approve_token(TokenAmount::new(H160([0x03; 20]), 0))
+                .is_err()
+        );
     }
 
     #[test]
@@ -355,9 +357,11 @@ mod tests {
     #[test]
     fn error_extending_allowances_for_different_spenders() {
         let mut allowances = Allowances::empty(H160([0x01; 20]));
-        assert!(allowances
-            .extend(Allowances::empty(H160([0x02; 20])))
-            .is_err());
+        assert!(
+            allowances
+                .extend(Allowances::empty(H160([0x02; 20])))
+                .is_err()
+        );
     }
 
     #[test]

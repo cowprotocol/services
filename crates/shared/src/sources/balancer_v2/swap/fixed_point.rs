@@ -5,7 +5,7 @@
 
 use {
     super::error::Error,
-    anyhow::{bail, ensure, Context, Result},
+    anyhow::{Context, Result, bail, ensure},
     ethcontract::U256,
     num::{BigInt, BigRational},
     number::conversions::{big_int_to_u256, u256_to_big_int},
@@ -299,10 +299,12 @@ mod tests {
         let max_in_ratio = Bfp::from_wei(U256::exp10(17).checked_mul(3_u32.into()).unwrap());
         let balance_in = Bfp::from_wei(U256::MAX / (U256::exp10(17) * U256::from(3)));
         assert!(balance_in.mul_down(max_in_ratio).is_ok());
-        assert!((balance_in.add(Bfp::one()))
-            .unwrap()
-            .mul_down(max_in_ratio)
-            .is_err());
+        assert!(
+            (balance_in.add(Bfp::one()))
+                .unwrap()
+                .mul_down(max_in_ratio)
+                .is_err()
+        );
     }
 
     macro_rules! test_div {
@@ -438,11 +440,13 @@ mod tests {
 
     #[test]
     fn big_rational_to_bfp_overflow() {
-        assert!(Bfp::try_from(&BigRational::new(
-            u256_to_big_int(&U256::MAX) + 1,
-            BigInt::from(1_000_000_000_000_000_000u64)
-        ))
-        .is_err());
+        assert!(
+            Bfp::try_from(&BigRational::new(
+                u256_to_big_int(&U256::MAX) + 1,
+                BigInt::from(1_000_000_000_000_000_000u64)
+            ))
+            .is_err()
+        );
     }
 
     #[test]

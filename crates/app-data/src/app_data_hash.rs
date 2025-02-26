@@ -22,7 +22,7 @@
 //! [0]: https://github.com/cowprotocol/services/issues/1465
 
 use {
-    serde::{de, Deserializer, Serializer},
+    serde::{Deserializer, Serializer, de},
     serde_with::serde::{Deserialize, Serialize},
     std::{
         borrow::Cow,

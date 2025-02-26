@@ -3,17 +3,17 @@ use {
         arguments::Arguments,
         boundary,
         database::{
+            Postgres,
             ethflow_events::event_retriever::EthFlowRefundRetriever,
             onchain_order_events::{
+                OnchainOrderParser,
                 ethflow_events::{
+                    EthFlowOnchainOrderParser,
                     determine_ethflow_indexing_start,
                     determine_ethflow_refund_indexing_start,
-                    EthFlowOnchainOrderParser,
                 },
                 event_retriever::CoWSwapOnchainOrdersContract,
-                OnchainOrderParser,
             },
-            Postgres,
         },
         domain::{self, competition::SolverParticipationGuard},
         event_updater::EventUpdater,
@@ -26,7 +26,7 @@ use {
     chain::Chain,
     clap::Parser,
     contracts::{BalancerV2Vault, IUniswapV3Factory},
-    ethcontract::{common::DeploymentInformation, dyns::DynWeb3, errors::DeployError, BlockNumber},
+    ethcontract::{BlockNumber, common::DeploymentInformation, dyns::DynWeb3, errors::DeployError},
     ethrpc::block_stream::block_number_to_block_number_hash,
     futures::stream::StreamExt,
     model::DomainSeparator,
@@ -47,7 +47,7 @@ use {
         order_quoting::{self, OrderQuoter},
         price_estimation::factory::{self, PriceEstimatorFactory},
         signature_validator,
-        sources::{uniswap_v2::UniV2BaselineSourceParameters, BaselineSource},
+        sources::{BaselineSource, uniswap_v2::UniV2BaselineSourceParameters},
         token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
         token_list::{AutoUpdatingTokenList, TokenListConfiguration},
     },
@@ -86,20 +86,35 @@ impl Liveness {
     }
 }
 
+/// Creates Web3 transport based on the given config.
 async fn ethrpc(url: &Url, ethrpc_args: &shared::ethrpc::Arguments) -> infra::blockchain::Rpc {
     infra::blockchain::Rpc::new(url, ethrpc_args)
         .await
         .expect("connect ethereum RPC")
 }
 
+/// Creates unbuffered Web3 transport.
+async fn unbuffered_ethrpc(url: &Url) -> infra::blockchain::Rpc {
+    ethrpc(
+        url,
+        &shared::ethrpc::Arguments {
+            ethrpc_max_batch_size: 0,
+            ethrpc_max_concurrent_requests: 0,
+            ethrpc_batch_delay: Default::default(),
+        },
+    )
+    .await
+}
+
 async fn ethereum(
     web3: DynWeb3,
+    unbuffered_web3: DynWeb3,
     chain: &Chain,
     url: Url,
     contracts: infra::blockchain::contracts::Addresses,
     poll_interval: Duration,
 ) -> infra::Ethereum {
-    infra::Ethereum::new(web3, chain, url, contracts, poll_interval).await
+    infra::Ethereum::new(web3, unbuffered_web3, chain, url, contracts, poll_interval).await
 }
 
 pub async fn start(args: impl Iterator<Item = String>) {
@@ -156,6 +171,7 @@ pub async fn run(args: Arguments) {
         );
     }
 
+    let unbuffered_ethrpc = unbuffered_ethrpc(&args.shared.node_url).await;
     let ethrpc = ethrpc(&args.shared.node_url, &args.shared.ethrpc).await;
     let chain = ethrpc.chain();
     let web3 = ethrpc.web3().clone();
@@ -166,6 +182,7 @@ pub async fn run(args: Arguments) {
     };
     let eth = ethereum(
         web3.clone(),
+        unbuffered_ethrpc.web3().clone(),
         &chain,
         url,
         contracts.clone(),
@@ -373,17 +390,18 @@ pub async fn run(args: Arguments) {
     let settlement_observer =
         crate::domain::settlement::Observer::new(eth.clone(), persistence.clone());
     let settlement_contract_start_index =
-        if let Some(DeploymentInformation::BlockNumber(settlement_contract_start_index)) =
-            eth.contracts().settlement().deployment_information()
-        {
-            settlement_contract_start_index
-        } else {
-            // If the deployment information can't be found, start from 0 (default
-            // behaviour). For real contracts, the deployment information is specified
-            // for all the networks, but it isn't specified for the e2e tests which deploy
-            // the contracts from scratch
-            tracing::warn!("Settlement contract deployment information not found");
-            0
+        match eth.contracts().settlement().deployment_information() {
+            Some(DeploymentInformation::BlockNumber(settlement_contract_start_index)) => {
+                settlement_contract_start_index
+            }
+            _ => {
+                // If the deployment information can't be found, start from 0 (default
+                // behaviour). For real contracts, the deployment information is specified
+                // for all the networks, but it isn't specified for the e2e tests which deploy
+                // the contracts from scratch
+                tracing::warn!("Settlement contract deployment information not found");
+                0
+            }
         };
     let settlement_event_indexer = EventUpdater::new(
         boundary::events::settlement::GPv2SettlementContract::new(
