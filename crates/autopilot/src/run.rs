@@ -15,7 +15,7 @@ use {
                 event_retriever::CoWSwapOnchainOrdersContract,
             },
         },
-        domain,
+        domain::{self, competition::SolverParticipationGuard},
         event_updater::EventUpdater,
         infra,
         maintenance::Maintenance,
@@ -382,6 +382,9 @@ pub async fn run(args: Arguments) {
         None
     };
 
+    let (competition_updates_sender, competition_updates_receiver) =
+        tokio::sync::mpsc::unbounded_channel();
+
     let persistence =
         infra::persistence::Persistence::new(args.s3.into().unwrap(), Arc::new(db.clone())).await;
     let settlement_observer =
@@ -566,6 +569,7 @@ pub async fn run(args: Arguments) {
         max_winners_per_auction: args.max_winners_per_auction,
         max_solutions_per_solver: args.max_solutions_per_solver,
     };
+
     let drivers_futures = args
         .drivers
         .into_iter()
@@ -575,6 +579,7 @@ pub async fn run(args: Arguments) {
                 driver.name.clone(),
                 driver.fairness_threshold.map(Into::into),
                 driver.submission_account,
+                driver.requested_timeout_on_problems,
             )
             .await
             .map(Arc::new)
@@ -582,20 +587,30 @@ pub async fn run(args: Arguments) {
         })
         .collect::<Vec<_>>();
 
-    let drivers = futures::future::join_all(drivers_futures)
+    let drivers: Vec<_> = futures::future::join_all(drivers_futures)
         .await
         .into_iter()
         .collect();
+
+    let solver_participation_guard = SolverParticipationGuard::new(
+        eth.clone(),
+        persistence.clone(),
+        competition_updates_receiver,
+        args.db_based_solver_participation_guard,
+        drivers.iter().cloned(),
+    );
 
     let run = RunLoop::new(
         run_loop_config,
         eth,
         persistence.clone(),
         drivers,
+        solver_participation_guard,
         solvable_orders_cache,
         trusted_tokens,
         liveness.clone(),
         Arc::new(maintenance),
+        competition_updates_sender,
     );
     run.run_forever().await;
 }
@@ -617,6 +632,7 @@ async fn shadow_mode(args: Arguments) -> ! {
                 driver.name.clone(),
                 driver.fairness_threshold.map(Into::into),
                 driver.submission_account,
+                driver.requested_timeout_on_problems,
             )
             .await
             .map(Arc::new)
