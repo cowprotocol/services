@@ -230,6 +230,24 @@ pub fn tx(
             },
         );
 
+        // Since the order receiver is expected to be the setttlement contract, we need
+        // to transfer tokens from the settlement contract to the flashloan wrapper
+        let tx = contracts::ERC20::at(
+            &contracts.settlement().raw_instance().web3(),
+            flashloan.token.into(),
+        )
+        .transfer_from(
+            contracts.settlement().address().into(),
+            flashloan_wrapper.address(),
+            flashloan.amount.0, // or order buy amount?
+        )
+        .into_inner();
+        post_interactions.push(eth::Interaction {
+            target: tx.to.unwrap().into(),
+            value: eth::U256::zero().into(),
+            call_data: tx.data.unwrap().0.into(),
+        });
+
         // Allow flash loan lender to transfer tokens back from wrapper contract
         post_interactions.push(approve_flashloan(
             flashloan.token,
