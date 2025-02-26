@@ -1,5 +1,6 @@
 use {
     contracts::{
+        AaveFlashLoanSolverWrapper,
         BalancerV2Authorizer,
         BalancerV2Vault,
         CoWSwapEthFlow,
@@ -30,7 +31,8 @@ pub struct Contracts {
     pub ethflows: Vec<CoWSwapEthFlow>,
     pub hooks: HooksTrampoline,
     pub cow_amm_helper: Option<CowAmmLegacyHelper>,
-    pub flashloan_wrapper: ERC3156FlashLoanSolverWrapper,
+    pub flashloan_wrapper_maker: ERC3156FlashLoanSolverWrapper,
+    pub flashloan_wrapper_aave: AaveFlashLoanSolverWrapper,
 }
 
 impl Contracts {
@@ -77,7 +79,8 @@ impl Contracts {
             gp_settlement,
             cow_amm_helper,
             // TODO cleanup when contract is actually deployed
-            flashloan_wrapper: ERC3156FlashLoanSolverWrapper::at(web3, Default::default()),
+            flashloan_wrapper_maker: ERC3156FlashLoanSolverWrapper::at(web3, Default::default()),
+            flashloan_wrapper_aave: AaveFlashLoanSolverWrapper::at(web3, Default::default()),
         }
     }
 
@@ -163,7 +166,9 @@ impl Contracts {
         let ethflow = deploy!(CoWSwapEthFlow(gp_settlement.address(), weth.address()));
         let ethflow_secondary = deploy!(CoWSwapEthFlow(gp_settlement.address(), weth.address()));
         let hooks = deploy!(HooksTrampoline(gp_settlement.address()));
-        let flashloan_wrapper = deploy!(ERC3156FlashLoanSolverWrapper(gp_settlement.address()));
+        let flashloan_wrapper_maker =
+            deploy!(ERC3156FlashLoanSolverWrapper(gp_settlement.address()));
+        let flashloan_wrapper_aave = deploy!(AaveFlashLoanSolverWrapper(gp_settlement.address()));
 
         Self {
             chain_id: network_id
@@ -181,22 +186,29 @@ impl Contracts {
             hooks,
             // Current helper contract only works in forked tests
             cow_amm_helper: None,
-            flashloan_wrapper,
+            flashloan_wrapper_maker,
+            flashloan_wrapper_aave,
         }
     }
 
     // Delete when flashloan is actually deployed
     pub async fn deploy_flashloan(self, web3: &Web3) -> Self {
-        let flashloan_wrapper =
+        let flashloan_wrapper_maker =
             ERC3156FlashLoanSolverWrapper::builder(web3, self.gp_settlement.address())
                 .deploy()
                 .await
                 .unwrap_or_else(|e| {
                     panic!("failed to deploy ERC3156FlashLoanSolverWrapper: {e:?}")
                 });
+        let flashloan_wrapper_aave =
+            AaveFlashLoanSolverWrapper::builder(web3, self.gp_settlement.address())
+                .deploy()
+                .await
+                .unwrap_or_else(|e| panic!("failed to deploy AaveFlashLoanSolverWrapper: {e:?}"));
 
         Self {
-            flashloan_wrapper,
+            flashloan_wrapper_maker,
+            flashloan_wrapper_aave,
             ..self
         }
     }

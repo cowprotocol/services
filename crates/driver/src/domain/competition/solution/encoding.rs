@@ -14,6 +14,7 @@ use {
     },
     allowance::Allowance,
     itertools::Itertools,
+    std::str::FromStr,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -174,9 +175,29 @@ pub fn tx(
         prices: auction.prices().clone(),
     };
 
+    // Only single flashloan solutions are supported, so take the first one
+    let flashloan = solution.flashloans.first().map(|flashloan| {
+        // Find the right wrapper to use for this flashloan
+        let flashloan_wrappers = contracts.flashloan_wrappers();
+
+        // TODO fix
+        // Hardcoded configuration for now
+        // For maker as lender (0x60744434d6339a6B27d73d9Eda62b6F66a0a04FA), we use the
+        // first wrapper, otherwise use the second one
+        let maker_lender =
+            eth::H160::from_str("0x60744434d6339a6B27d73d9Eda62b6F66a0a04FA").unwrap();
+        let flashloan_wrapper = if flashloan.lender.0 == maker_lender {
+            &flashloan_wrappers[0]
+        } else {
+            &flashloan_wrappers[1]
+        };
+
+        (flashloan, flashloan_wrapper)
+    });
+
     // Add all interactions needed to move flash loaned tokens around
     // These interactions are executed before all other pre-interactions
-    if let Some(flashloan) = solution.flashloans.first() {
+    if let Some((flashloan, flashloan_wrapper)) = flashloan {
         // Allow settlement contract to pull borrowed tokens from flashloan wrapper
         pre_interactions.insert(
             0,
@@ -184,7 +205,7 @@ pub fn tx(
                 flashloan.token,
                 flashloan.amount,
                 contracts.settlement().address().into(),
-                contracts.flashloan_wrapper(),
+                flashloan_wrapper,
             ),
         );
 
@@ -195,7 +216,7 @@ pub fn tx(
             flashloan.token.into(),
         )
         .transfer_from(
-            contracts.flashloan_wrapper().address(),
+            flashloan_wrapper.address(),
             flashloan.borrower.into(),
             flashloan.amount.0,
         )
@@ -214,7 +235,7 @@ pub fn tx(
             flashloan.token,
             flashloan.amount,
             flashloan.lender,
-            contracts.flashloan_wrapper(),
+            flashloan_wrapper,
         ));
     }
 
@@ -261,9 +282,8 @@ pub fn tx(
     calldata.extend(auction.id().ok_or(Error::MissingAuctionId)?.to_be_bytes());
 
     // Target and calldata depend on whether a flashloan is used
-    let (to, calldata) = match solution.flashloans.first() {
-        Some(flashloan) => {
-            let flashloan_wrapper = contracts.flashloan_wrapper();
+    let (to, calldata) = match flashloan {
+        Some((flashloan, flashloan_wrapper)) => {
             let calldata = flashloan_wrapper
                 .flash_loan_and_settle(
                     flashloan.lender.into(),

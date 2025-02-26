@@ -306,7 +306,14 @@ impl OnchainComponents {
         // flashloan wrapper also needs to be authorized
         self.contracts
             .gp_authenticator
-            .add_solver(self.contracts.flashloan_wrapper.address())
+            .add_solver(self.contracts.flashloan_wrapper_maker.address())
+            .from(auth_manager.clone())
+            .send()
+            .await
+            .expect("failed to add flashloan wrapper");
+        self.contracts
+            .gp_authenticator
+            .add_solver(self.contracts.flashloan_wrapper_aave.address())
             .from(auth_manager)
             .send()
             .await

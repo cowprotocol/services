@@ -17,7 +17,9 @@ pub struct Contracts {
     /// The domain separator for settlement contract used for signing orders.
     settlement_domain_separator: eth::DomainSeparator,
     cow_amm_registry: cow_amm::Registry,
-    flashloan_wrapper: contracts::IFlashLoanSolverWrapper,
+
+    /// Each lender potentially has different solver wrapper.
+    flashloan_wrappers: Vec<contracts::IFlashLoanSolverWrapper>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -25,7 +27,7 @@ pub struct Addresses {
     pub settlement: Option<eth::ContractAddress>,
     pub weth: Option<eth::ContractAddress>,
     pub cow_amms: Vec<CowAmmConfig>,
-    pub flashloan_wrapper: Option<eth::ContractAddress>,
+    pub flashloan_wrappers: Vec<eth::ContractAddress>,
 }
 
 impl Contracts {
@@ -80,13 +82,19 @@ impl Contracts {
         }
         cow_amm_registry.spawn_maintenance_task(block_stream);
 
-        let flashloan_wrapper = contracts::IFlashLoanSolverWrapper::at(
-            web3,
-            address_for(
-                contracts::IFlashLoanSolverWrapper::raw_contract(),
-                addresses.flashloan_wrapper,
-            ),
-        );
+        let flashloan_wrappers = addresses
+            .flashloan_wrappers
+            .iter()
+            .map(|address| {
+                contracts::IFlashLoanSolverWrapper::at(
+                    web3,
+                    address_for(
+                        contracts::IFlashLoanSolverWrapper::raw_contract(),
+                        Some(*address),
+                    ),
+                )
+            })
+            .collect();
 
         Ok(Self {
             settlement,
@@ -95,7 +103,7 @@ impl Contracts {
             weth,
             settlement_domain_separator,
             cow_amm_registry,
-            flashloan_wrapper,
+            flashloan_wrappers,
         })
     }
 
@@ -127,8 +135,8 @@ impl Contracts {
         &self.cow_amm_registry
     }
 
-    pub fn flashloan_wrapper(&self) -> &contracts::IFlashLoanSolverWrapper {
-        &self.flashloan_wrapper
+    pub fn flashloan_wrappers(&self) -> &[contracts::IFlashLoanSolverWrapper] {
+        &self.flashloan_wrappers
     }
 }
 

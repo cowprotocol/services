@@ -112,7 +112,7 @@ async fn forked_mainnet_single_flashloan_encoding_test(web3: Web3) {
         kind: OrderKind::Sell,
         app_data,
         // Receiver is flashloan wrapper, so that borrowed funds can be returned to the lender
-        receiver: Some(onchain.contracts().flashloan_wrapper.address()),
+        receiver: Some(onchain.contracts().flashloan_wrapper_maker.address()),
         ..Default::default()
     }
     .sign(
