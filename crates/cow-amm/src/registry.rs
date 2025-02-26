@@ -1,8 +1,8 @@
 use {
-    crate::{cache::Storage, factory::Factory, maintainers::EmptyPoolRemoval, Amm},
+    crate::{Amm, cache::Storage, factory::Factory, maintainers::EmptyPoolRemoval},
     contracts::CowAmmLegacyHelper,
     ethcontract::Address,
-    ethrpc::{block_stream::CurrentBlockWatcher, Web3},
+    ethrpc::{Web3, block_stream::CurrentBlockWatcher},
     shared::{
         event_handling::EventHandler,
         maintenance::{Maintaining, ServiceMaintenance},

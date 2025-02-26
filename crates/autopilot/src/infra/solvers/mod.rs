@@ -1,7 +1,7 @@
 use {
     self::dto::{reveal, settle, solve},
     crate::{arguments::Account, domain::eth, infra::solvers::dto::notify, util},
-    anyhow::{anyhow, Context, Result},
+    anyhow::{Context, Result, anyhow},
     chrono::{DateTime, Utc},
     reqwest::{Client, StatusCode},
     std::{sync::Arc, time::Duration},

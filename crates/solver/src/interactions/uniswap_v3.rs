@@ -44,7 +44,7 @@ impl Interaction for UniswapV3Interaction {
 mod tests {
     use {
         super::*,
-        contracts::{dummy_contract, UniswapV3SwapRouter},
+        contracts::{UniswapV3SwapRouter, dummy_contract},
         hex_literal::hex,
     };
 
@@ -85,7 +85,7 @@ mod tests {
 
         // Verify Swap
         assert_eq!(swap_call.0, router.address());
-        let call = &swap_call.2 .0;
+        let call = &swap_call.2.0;
         let swap_signature = hex!("db3e2198");
         let deadline = [0xffu8; 32];
         assert_eq!(call[0..4], swap_signature);

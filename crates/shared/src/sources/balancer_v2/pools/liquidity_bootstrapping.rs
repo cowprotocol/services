@@ -1,7 +1,7 @@
 //! Module implementing liquidity bootstrapping pool specific indexing logic.
 
 use {
-    super::{common, FactoryIndexing, PoolIndexing},
+    super::{FactoryIndexing, PoolIndexing, common},
     crate::sources::balancer_v2::{
         graph_api::{PoolData, PoolType},
         swap::fixed_point::Bfp,
@@ -12,7 +12,7 @@ use {
         BalancerV2LiquidityBootstrappingPoolFactory,
     },
     ethcontract::BlockId,
-    futures::{future::BoxFuture, FutureExt as _},
+    futures::{FutureExt as _, future::BoxFuture},
 };
 
 pub use super::weighted::{PoolState, TokenState, Version};

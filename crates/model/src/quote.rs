@@ -9,7 +9,7 @@ use {
     chrono::{DateTime, Utc},
     number::{nonzero::U256 as NonZeroU256, serialization::HexOrDecimalU256},
     primitive_types::{H160, U256},
-    serde::{de, ser::SerializeStruct as _, Deserialize, Deserializer, Serialize, Serializer},
+    serde::{Deserialize, Deserializer, Serialize, Serializer, de, ser::SerializeStruct as _},
     serde_with::serde_as,
 };
 

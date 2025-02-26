@@ -1,8 +1,8 @@
 use {
     super::{
+        Partial,
         blockchain::{self, Blockchain},
         fee,
-        Partial,
     },
     crate::{
         domain::{
@@ -12,10 +12,10 @@ use {
         },
         infra::{
             self,
+            Ethereum,
             blockchain::contracts::Addresses,
             config::file::FeeHandler,
             solver::dto::FlashloanHint,
-            Ethereum,
         },
         tests::{hex_address, setup::blockchain::Trade},
     },
@@ -153,7 +153,12 @@ impl Solver {
                 "signingScheme": if config.quote { "eip1271" } else { "eip712" },
             });
             if let Some(flashloan) = quote.order.app_data.flashloan() {
-                order["flashloanHint"] = json!(Into::<FlashloanHint>::into(flashloan.clone()));
+                order["flashloanHint"] = json!(FlashloanHint {
+                    lender: flashloan.lender.unwrap(),
+                    borrower: flashloan.borrower.unwrap(),
+                    token: flashloan.token,
+                    amount: flashloan.amount
+                });
             }
             if config.fee_handler == FeeHandler::Solver {
                 order.as_object_mut().unwrap().insert(

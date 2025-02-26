@@ -1,5 +1,5 @@
 use {
-    app_data::{hash_full_app_data, AppDataHash},
+    app_data::{AppDataHash, hash_full_app_data},
     e2e::{setup::*, tx},
     ethcontract::prelude::U256,
     model::{

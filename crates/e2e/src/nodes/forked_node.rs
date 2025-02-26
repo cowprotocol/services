@@ -3,7 +3,7 @@ use {
     reqwest::Url,
     serde_json::json,
     std::fmt::Debug,
-    web3::{api::Namespace, helpers::CallFuture, Transport},
+    web3::{Transport, api::Namespace, helpers::CallFuture},
 };
 
 #[derive(Debug, Clone)]

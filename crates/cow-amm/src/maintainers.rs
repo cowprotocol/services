@@ -1,5 +1,5 @@
 use {
-    crate::{cache::Storage, Amm},
+    crate::{Amm, cache::Storage},
     contracts::ERC20,
     ethcontract::futures::future::{join_all, select_ok},
     ethrpc::Web3,

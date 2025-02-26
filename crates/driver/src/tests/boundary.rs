@@ -1,6 +1,6 @@
 //! Similar to [`crate::boundary`], but for test code.
 
-pub use model::{order::OrderUid, DomainSeparator};
+pub use model::{DomainSeparator, order::OrderUid};
 use {crate::domain::competition, secp256k1::SecretKey, web3::signing::SecretKeyRef};
 
 /// Order data used for calculating the order UID and signing.

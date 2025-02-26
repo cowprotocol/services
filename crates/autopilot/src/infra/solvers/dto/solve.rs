@@ -9,7 +9,7 @@ use {
     number::serialization::HexOrDecimalU256,
     primitive_types::{H160, U256},
     serde::{Deserialize, Serialize},
-    serde_with::{serde_as, DisplayFromStr},
+    serde_with::{DisplayFromStr, serde_as},
     std::{
         collections::{HashMap, HashSet},
         time::Duration,

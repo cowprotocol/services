@@ -1,6 +1,6 @@
 use {
     anyhow::Result,
-    database::{byte_array::ByteArray, Address},
+    database::{Address, byte_array::ByteArray},
     primitive_types::{H160, U256},
     sqlx::PgConnection,
 };

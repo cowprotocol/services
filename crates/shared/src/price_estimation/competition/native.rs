@@ -1,11 +1,11 @@
 use {
-    super::{compare_error, CompetitionEstimator},
+    super::{CompetitionEstimator, compare_error},
     crate::price_estimation::{
-        native::{is_price_malformed, NativePriceEstimateResult, NativePriceEstimating},
         PriceEstimationError,
+        native::{NativePriceEstimateResult, NativePriceEstimating, is_price_malformed},
     },
     anyhow::Context,
-    futures::{future::BoxFuture, FutureExt},
+    futures::{FutureExt, future::BoxFuture},
     model::order::OrderKind,
     primitive_types::H160,
     std::{cmp::Ordering, sync::Arc},
@@ -83,11 +83,13 @@ mod tests {
 
         let priority: CompetitionEstimator<Arc<dyn NativePriceEstimating>> =
             CompetitionEstimator::new(
-                vec![estimates
-                    .into_iter()
-                    .enumerate()
-                    .map(|(i, e)| (format!("estimator_{i}"), estimator(e)))
-                    .collect()],
+                vec![
+                    estimates
+                        .into_iter()
+                        .enumerate()
+                        .map(|(i, e)| (format!("estimator_{i}"), estimator(e)))
+                        .collect(),
+                ],
                 ranking.clone(),
             );
 

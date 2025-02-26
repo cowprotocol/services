@@ -1,5 +1,5 @@
 use {
-    super::{compare_error, CompetitionEstimator, PriceRanking},
+    super::{CompetitionEstimator, PriceRanking, compare_error},
     crate::price_estimation::{
         Estimate,
         PriceEstimateResult,
@@ -143,9 +143,9 @@ mod tests {
         crate::{
             gas_price_estimation::FakeGasPriceEstimator,
             price_estimation::{
-                native::MockNativePriceEstimating,
                 MockPriceEstimating,
                 QuoteVerificationMode,
+                native::MockNativePriceEstimating,
             },
         },
         gas_estimation::GasPrice1559,
@@ -204,11 +204,13 @@ mod tests {
         }
 
         let priority: CompetitionEstimator<Arc<dyn PriceEstimating>> = CompetitionEstimator::new(
-            vec![estimates
-                .into_iter()
-                .enumerate()
-                .map(|(i, e)| (format!("estimator_{i}"), estimator(e)))
-                .collect()],
+            vec![
+                estimates
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, e)| (format!("estimator_{i}"), estimator(e)))
+                    .collect(),
+            ],
             ranking.clone(),
         )
         .with_verification(verification);

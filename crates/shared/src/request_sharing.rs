@@ -1,11 +1,11 @@
 use {
     futures::{
-        future::{BoxFuture, Shared, WeakShared},
         FutureExt,
+        future::{BoxFuture, Shared, WeakShared},
     },
     prometheus::{
-        core::{AtomicU64, GenericGaugeVec},
         IntCounterVec,
+        core::{AtomicU64, GenericGaugeVec},
     },
     std::{
         collections::HashMap,

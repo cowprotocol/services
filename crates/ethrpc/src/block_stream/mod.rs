@@ -1,6 +1,6 @@
 use {
-    crate::{http::HttpTransport, instrumented::instrument_with_label, Web3, Web3Transport},
-    anyhow::{anyhow, ensure, Context as _, Result},
+    crate::{Web3, Web3Transport, http::HttpTransport, instrumented::instrument_with_label},
+    anyhow::{Context as _, Result, anyhow, ensure},
     futures::StreamExt,
     primitive_types::{H256, U256},
     std::{
@@ -13,10 +13,10 @@ use {
     tracing::Instrument,
     url::Url,
     web3::{
-        helpers,
-        types::{Block, BlockId, BlockNumber, U64},
         BatchTransport,
         Transport,
+        helpers,
+        types::{Block, BlockId, BlockNumber, U64},
     },
 };
 
@@ -374,7 +374,7 @@ mod tests {
         super::*,
         crate::create_env_test_transport,
         futures::StreamExt,
-        tokio::time::{timeout, Duration},
+        tokio::time::{Duration, timeout},
     };
 
     fn new_block(number: u64) -> BlockInfo {

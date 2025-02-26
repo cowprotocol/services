@@ -3,7 +3,7 @@ use {
         setup::{safe::Safe, *},
         tx,
     },
-    ethcontract::{prelude::U256, H160},
+    ethcontract::{H160, prelude::U256},
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind},
         signature::EcdsaSigningScheme,

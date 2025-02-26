@@ -1,15 +1,15 @@
 use {
     super::{NativePriceEstimateResult, NativePriceEstimating},
     crate::{
-        price_estimation::{buffered::NativePriceBatchFetching, PriceEstimationError},
+        price_estimation::{PriceEstimationError, buffered::NativePriceBatchFetching},
         token_info::{TokenInfo, TokenInfoFetching},
     },
-    anyhow::{anyhow, Context, Result},
+    anyhow::{Context, Result, anyhow},
     chain::Chain,
-    futures::{future::BoxFuture, FutureExt},
+    futures::{FutureExt, future::BoxFuture},
     primitive_types::H160,
     reqwest::{Client, StatusCode},
-    rust_decimal::{prelude::ToPrimitive, Decimal, MathematicalOps},
+    rust_decimal::{Decimal, MathematicalOps, prelude::ToPrimitive},
     serde::Deserialize,
     std::{
         collections::{HashMap, HashSet},

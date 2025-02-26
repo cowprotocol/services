@@ -3,7 +3,7 @@ use {
     autopilot::domain::eth::U256,
     chrono::{DateTime, NaiveDateTime, Utc},
     driver::domain::eth::H256,
-    ethcontract::common::abi::{encode, Token},
+    ethcontract::common::abi::{Token, encode},
     hex_literal::hex,
     model::DomainSeparator,
     shared::{

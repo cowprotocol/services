@@ -1,7 +1,7 @@
 use {
     reqwest::StatusCode,
     std::convert::Infallible,
-    warp::{reply::with_status, Filter, Rejection, Reply},
+    warp::{Filter, Rejection, Reply, reply::with_status},
 };
 
 pub fn version() -> impl Filter<Extract = (Box<dyn Reply>,), Error = Rejection> + Clone {

@@ -140,21 +140,23 @@ impl Inner {
                 None => {
                     // Estimate the price of the sell token in the native token
                     let native_price_request = self.native_price_request(&order);
-                    if let Some(route) = boundary_solver.route(native_price_request, self.max_hops)
-                    {
-                        // how many units of buy_token are bought for one unit of sell_token
-                        // (buy_amount / sell_amount).
-                        let price = self.native_token_price_estimation_amount.to_f64_lossy()
-                            / route.input().amount.to_f64_lossy();
-                        let Some(price) = to_normalized_price(price) else {
-                            continue;
-                        };
+                    match boundary_solver.route(native_price_request, self.max_hops) {
+                        Some(route) => {
+                            // how many units of buy_token are bought for one unit of sell_token
+                            // (buy_amount / sell_amount).
+                            let price = self.native_token_price_estimation_amount.to_f64_lossy()
+                                / route.input().amount.to_f64_lossy();
+                            let Some(price) = to_normalized_price(price) else {
+                                continue;
+                            };
 
-                        auction::Price(eth::Ether(price))
-                    } else {
-                        // This is to allow quotes to be generated for tokens for which the sell
-                        // token price is not available, so we default to fee=0
-                        auction::Price(eth::Ether(eth::U256::MAX))
+                            auction::Price(eth::Ether(price))
+                        }
+                        _ => {
+                            // This is to allow quotes to be generated for tokens for which the sell
+                            // token price is not available, so we default to fee=0
+                            auction::Price(eth::Ether(eth::U256::MAX))
+                        }
                     }
                 }
             };
@@ -190,7 +192,7 @@ impl Inner {
 
                 let gas = route.gas() + self.solution_gas_offset;
                 let fee = sell_token_price
-                    .ether_value(eth::Ether(gas.0.checked_mul(auction.gas_price.0 .0)?))?
+                    .ether_value(eth::Ether(gas.0.checked_mul(auction.gas_price.0.0)?))?
                     .into();
 
                 Some(
@@ -215,7 +217,7 @@ impl Inner {
         }
     }
 
-    fn requests_for_order(&self, order: &Order) -> impl Iterator<Item = Request> {
+    fn requests_for_order(&self, order: &Order) -> impl Iterator<Item = Request> + use<> {
         let order::Order {
             sell, buy, side, ..
         } = order.clone();

@@ -3,7 +3,7 @@ use {
     hyper::StatusCode,
     primitive_types::H160,
     std::convert::Infallible,
-    warp::{reply, Filter, Rejection},
+    warp::{Filter, Rejection, reply},
 };
 
 fn get_native_prices_request() -> impl Filter<Extract = (H160,), Error = Rejection> + Clone {

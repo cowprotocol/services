@@ -2,18 +2,18 @@ use {
     super::{AmmOrderExecution, ConcentratedLiquidity, SettlementHandling},
     crate::{
         interactions::{
-            allowances::{AllowanceManager, AllowanceManaging, Allowances, Approval},
             ExactOutputSingleParams,
             UniswapV3Interaction,
+            allowances::{AllowanceManager, AllowanceManaging, Allowances, Approval},
         },
         liquidity::Liquidity,
         liquidity_collector::LiquidityCollecting,
         settlement::SettlementEncoder,
     },
-    anyhow::{ensure, Context, Result},
+    anyhow::{Context, Result, ensure},
     contracts::{GPv2Settlement, UniswapV3SwapRouter},
     model::TokenPair,
-    num::{rational::Ratio, CheckedMul},
+    num::{CheckedMul, rational::Ratio},
     primitive_types::{H160, U256},
     shared::{
         ethrpc::Web3,

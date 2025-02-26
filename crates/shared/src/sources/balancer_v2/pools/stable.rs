@@ -1,7 +1,7 @@
 //! Module implementing stable pool specific indexing logic.
 
 use {
-    super::{common, FactoryIndexing, PoolIndexing},
+    super::{FactoryIndexing, PoolIndexing, common},
     crate::{
         conversions::U256Ext as _,
         sources::balancer_v2::{
@@ -9,10 +9,10 @@ use {
             swap::fixed_point::Bfp,
         },
     },
-    anyhow::{ensure, Result},
+    anyhow::{Result, ensure},
     contracts::{BalancerV2StablePool, BalancerV2StablePoolFactoryV2},
     ethcontract::{BlockId, H160, U256},
-    futures::{future::BoxFuture, FutureExt as _},
+    futures::{FutureExt as _, future::BoxFuture},
     num::BigRational,
     std::collections::BTreeMap,
 };

@@ -5,7 +5,6 @@ use {
         price_estimation::{PriceEstimationError, Query},
         request_sharing::{BoxRequestSharing, RequestSharing},
         trade_finding::{
-            map_interactions_data,
             Interaction,
             LegacyTrade,
             Quote,
@@ -14,12 +13,13 @@ use {
             TradeError,
             TradeFinding,
             TradeKind,
+            map_interactions_data,
         },
     },
-    anyhow::{anyhow, Context},
+    anyhow::{Context, anyhow},
     ethrpc::block_stream::CurrentBlockWatcher,
     futures::FutureExt,
-    reqwest::{header, Client},
+    reqwest::{Client, header},
     url::Url,
 };
 

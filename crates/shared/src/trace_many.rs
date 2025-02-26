@@ -2,9 +2,9 @@ use {
     crate::ethrpc::Web3,
     anyhow::{Context, Result},
     web3::{
-        types::{BlockNumber, BlockTrace, CallRequest, TraceType},
         Error,
         Transport,
+        types::{BlockNumber, BlockTrace, CallRequest, TraceType},
     },
 };
 
