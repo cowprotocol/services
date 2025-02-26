@@ -1,23 +1,23 @@
 use {
     self::solution::settlement,
     super::{
-        time::{self, Remaining},
         Mempools,
+        time::{self, Remaining},
     },
     crate::{
         domain::{competition::solution::Settlement, eth, time::DeadlineExceeded},
         infra::{
             self,
+            Simulator,
             blockchain::Ethereum,
             notify,
             observe,
             simulator::{RevertError, SimulatorError},
             solver::{self, SolutionMerging, Solver},
-            Simulator,
         },
         util::Bytes,
     },
-    futures::{stream::FuturesUnordered, StreamExt},
+    futures::{StreamExt, stream::FuturesUnordered},
     itertools::Itertools,
     std::{
         cmp::Reverse,

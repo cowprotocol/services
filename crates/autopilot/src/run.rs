@@ -3,17 +3,17 @@ use {
         arguments::Arguments,
         boundary,
         database::{
+            Postgres,
             ethflow_events::event_retriever::EthFlowRefundRetriever,
             onchain_order_events::{
+                OnchainOrderParser,
                 ethflow_events::{
+                    EthFlowOnchainOrderParser,
                     determine_ethflow_indexing_start,
                     determine_ethflow_refund_indexing_start,
-                    EthFlowOnchainOrderParser,
                 },
                 event_retriever::CoWSwapOnchainOrdersContract,
-                OnchainOrderParser,
             },
-            Postgres,
         },
         domain,
         event_updater::EventUpdater,
@@ -26,7 +26,7 @@ use {
     chain::Chain,
     clap::Parser,
     contracts::{BalancerV2Vault, IUniswapV3Factory},
-    ethcontract::{common::DeploymentInformation, dyns::DynWeb3, errors::DeployError, BlockNumber},
+    ethcontract::{BlockNumber, common::DeploymentInformation, dyns::DynWeb3, errors::DeployError},
     ethrpc::block_stream::block_number_to_block_number_hash,
     futures::stream::StreamExt,
     model::DomainSeparator,
@@ -47,7 +47,7 @@ use {
         order_quoting::{self, OrderQuoter},
         price_estimation::factory::{self, PriceEstimatorFactory},
         signature_validator,
-        sources::{uniswap_v2::UniV2BaselineSourceParameters, BaselineSource},
+        sources::{BaselineSource, uniswap_v2::UniV2BaselineSourceParameters},
         token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
         token_list::{AutoUpdatingTokenList, TokenListConfiguration},
     },
@@ -387,17 +387,18 @@ pub async fn run(args: Arguments) {
     let settlement_observer =
         crate::domain::settlement::Observer::new(eth.clone(), persistence.clone());
     let settlement_contract_start_index =
-        if let Some(DeploymentInformation::BlockNumber(settlement_contract_start_index)) =
-            eth.contracts().settlement().deployment_information()
-        {
-            settlement_contract_start_index
-        } else {
-            // If the deployment information can't be found, start from 0 (default
-            // behaviour). For real contracts, the deployment information is specified
-            // for all the networks, but it isn't specified for the e2e tests which deploy
-            // the contracts from scratch
-            tracing::warn!("Settlement contract deployment information not found");
-            0
+        match eth.contracts().settlement().deployment_information() {
+            Some(DeploymentInformation::BlockNumber(settlement_contract_start_index)) => {
+                settlement_contract_start_index
+            }
+            _ => {
+                // If the deployment information can't be found, start from 0 (default
+                // behaviour). For real contracts, the deployment information is specified
+                // for all the networks, but it isn't specified for the e2e tests which deploy
+                // the contracts from scratch
+                tracing::warn!("Settlement contract deployment information not found");
+                0
+            }
         };
     let settlement_event_indexer = EventUpdater::new(
         boundary::events::settlement::GPv2SettlementContract::new(

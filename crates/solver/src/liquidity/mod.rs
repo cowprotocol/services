@@ -11,8 +11,8 @@ use {
     crate::settlement::SettlementEncoder,
     anyhow::Result,
     model::{
-        order::{Order, OrderKind, OrderUid},
         TokenPair,
+        order::{Order, OrderKind, OrderUid},
     },
     num::rational::Ratio,
     primitive_types::{H160, U256},

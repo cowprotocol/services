@@ -1,13 +1,13 @@
 use {
-    super::{token_owner_finder::TokenOwnerFinding, BadTokenDetecting, TokenQuality},
+    super::{BadTokenDetecting, TokenQuality, token_owner_finder::TokenOwnerFinding},
     crate::{ethrpc::Web3, trace_many},
-    anyhow::{bail, ensure, Context, Result},
+    anyhow::{Context, Result, bail, ensure},
     contracts::ERC20,
     ethcontract::{
+        PrivateKey,
         dyns::DynTransport,
         jsonrpc::ErrorCode,
         transaction::TransactionBuilder,
-        PrivateKey,
     },
     model::interaction::InteractionData,
     primitive_types::{H160, U256},
@@ -76,7 +76,7 @@ impl TraceCallDetector {
                 return Ok(TokenQuality::bad(format!(
                     "Could not find on chain source of the token with at least {MIN_AMOUNT} \
                      balance.",
-                )))
+                )));
             }
         };
         self.inner
@@ -209,7 +209,7 @@ impl TraceCallDetectorRaw {
                 return Ok(TokenQuality::bad(format!(
                     "Transfer of token from on chain source {take_from:?} into settlement \
                      contract failed: {reason}"
-                )))
+                )));
             }
         };
         let arbitrary = Self::arbitrary_recipient();
@@ -219,7 +219,7 @@ impl TraceCallDetectorRaw {
                 return Ok(TokenQuality::bad(format!(
                     "Transfer token out of settlement contract to arbitrary recipient \
                      {arbitrary:?} failed: {reason}",
-                )))
+                )));
             }
         };
 
@@ -261,7 +261,7 @@ impl TraceCallDetectorRaw {
             None => {
                 return Ok(TokenQuality::bad(format!(
                     "Transferring {amount} into settlement contract would overflow its balance."
-                )))
+                )));
             }
         };
         // Allow for a small discrepancy (1 wei) in the balance after the transfer which
@@ -288,7 +288,7 @@ impl TraceCallDetectorRaw {
                 return Ok(TokenQuality::bad(format!(
                     "Transferring {amount} into arbitrary recipient {arbitrary:?} would overflow \
                      its balance."
-                )))
+                )));
             }
         };
         // Allow for a small discrepancy (1 wei) in the balance after the transfer
@@ -360,6 +360,7 @@ mod tests {
         super::*,
         crate::{
             bad_token::token_owner_finder::{
+                TokenOwnerFinder,
                 blockscout::BlockscoutTokenOwnerFinder,
                 liquidity::{
                     BalancerVaultFinder,
@@ -371,10 +372,9 @@ mod tests {
                     solver_api::SolverConfiguration,
                     solver_finder::AutoUpdatingSolverTokenOwnerFinder,
                 },
-                TokenOwnerFinder,
             },
             ethrpc::create_env_test_transport,
-            sources::{uniswap_v2, BaselineSource},
+            sources::{BaselineSource, uniswap_v2},
         },
         chain::Chain,
         contracts::{BalancerV2Vault, IUniswapV3Factory},

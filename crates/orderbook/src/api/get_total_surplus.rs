@@ -3,7 +3,7 @@ use {
     primitive_types::H160,
     serde_json::json,
     std::convert::Infallible,
-    warp::{http::StatusCode, reply::with_status, Filter, Rejection},
+    warp::{Filter, Rejection, http::StatusCode, reply::with_status},
 };
 
 pub fn get(db: Postgres) -> impl Filter<Extract = (super::ApiReply,), Error = Rejection> + Clone {

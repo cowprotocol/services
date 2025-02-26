@@ -41,25 +41,31 @@ impl SlippageContext<'_> {
         // 2. If no sell token price is available, compute the capped slippage using the
         //    buy token amount
         // 3. Fall back to using the default relative slippage without capping
-        let relative = if let Ok(relative) = relative_ratio(&execution.input_max) {
-            tracing::debug!(
-                input_token = ?execution.input_max.token,
-                "using AMM input token for capped surplus",
-            );
-            relative
-        } else if let Ok(relative) = relative_ratio(&execution.output) {
-            tracing::debug!(
-                output_token = ?execution.output.token,
-                "using AMM output token for capped surplus",
-            );
-            relative
-        } else {
-            tracing::warn!(
-                input_token = ?execution.input_max.token,
-                output_token = ?execution.output.token,
-                "unable to compute capped slippage; falling back to relative slippage",
-            );
-            Cow::Borrowed(&self.calculator.relative)
+        let relative = match relative_ratio(&execution.input_max) {
+            Ok(relative) => {
+                tracing::debug!(
+                    input_token = ?execution.input_max.token,
+                    "using AMM input token for capped surplus",
+                );
+                relative
+            }
+            _ => match relative_ratio(&execution.output) {
+                Ok(relative) => {
+                    tracing::debug!(
+                        output_token = ?execution.output.token,
+                        "using AMM output token for capped surplus",
+                    );
+                    relative
+                }
+                _ => {
+                    tracing::warn!(
+                        input_token = ?execution.input_max.token,
+                        output_token = ?execution.output.token,
+                        "unable to compute capped slippage; falling back to relative slippage",
+                    );
+                    Cow::Borrowed(&self.calculator.relative)
+                }
+            },
         };
 
         let absolute = absolute_slippage_amount(

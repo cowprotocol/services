@@ -1,5 +1,5 @@
 use {
-    crate::{auction::AuctionId, Address},
+    crate::{Address, auction::AuctionId},
     chrono::{DateTime, Utc},
     sqlx::PgConnection,
 };

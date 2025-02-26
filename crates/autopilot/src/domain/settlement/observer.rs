@@ -12,7 +12,7 @@
 
 use {
     crate::{domain::settlement, infra},
-    anyhow::{anyhow, Result},
+    anyhow::{Result, anyhow},
 };
 
 #[derive(Clone)]

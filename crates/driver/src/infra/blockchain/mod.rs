@@ -272,7 +272,7 @@ impl Ethereum {
             .estimate()
             .await
             .ok()
-            .map(|gas| gas.effective().0 .0)
+            .map(|gas| gas.effective().0.0)
     }
 
     pub fn web3(&self) -> &DynWeb3 {

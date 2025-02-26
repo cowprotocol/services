@@ -6,7 +6,7 @@
 use {
     super::{SignatureCheck, SignatureValidating, SignatureValidationError},
     anyhow::Result,
-    contracts::{errors::EthcontractErrorType, ERC1271SignatureValidator},
+    contracts::{ERC1271SignatureValidator, errors::EthcontractErrorType},
     ethcontract::Bytes,
     ethrpc::Web3,
     futures::future,

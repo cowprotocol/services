@@ -1,6 +1,6 @@
 use {
     crate::{
-        database::{app_data::InsertError, Postgres},
+        database::{Postgres, app_data::InsertError},
         ipfs_app_data::IpfsAppData,
     },
     anyhow::{Context, Result},

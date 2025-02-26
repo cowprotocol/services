@@ -1,9 +1,9 @@
 use {
     super::PriceEstimationError,
     crate::price_estimation::native::{
-        from_normalized_price,
         NativePriceEstimateResult,
         NativePriceEstimating,
+        from_normalized_price,
     },
     bigdecimal::BigDecimal,
     futures::{FutureExt, StreamExt},
@@ -12,7 +12,7 @@ use {
     prometheus::{IntCounter, IntCounterVec, IntGauge},
     rand::Rng,
     std::{
-        collections::{hash_map::Entry, HashMap},
+        collections::{HashMap, hash_map::Entry},
         sync::{Arc, Mutex, MutexGuard, Weak},
         time::{Duration, Instant},
     },
@@ -458,8 +458,8 @@ mod tests {
     use {
         super::*,
         crate::price_estimation::{
-            native::{MockNativePriceEstimating, NativePriceEstimating},
             PriceEstimationError,
+            native::{MockNativePriceEstimating, NativePriceEstimating},
         },
         anyhow::anyhow,
         futures::FutureExt,

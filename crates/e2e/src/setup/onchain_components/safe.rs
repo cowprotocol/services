@@ -9,9 +9,9 @@ use {
     ethcontract::{Bytes, H160, H256, U256},
     hex_literal::hex,
     model::{
-        order::OrderCreation,
-        signature::{hashed_eip712_message, Signature},
         DomainSeparator,
+        order::OrderCreation,
+        signature::{Signature, hashed_eip712_message},
     },
     shared::ethrpc::Web3,
     web3::{
@@ -21,7 +21,7 @@ use {
 };
 
 macro_rules! tx_safe {
-    ($acc:expr, $safe:ident, $call:expr) => {{
+    ($acc:expr_2021, $safe:ident, $call:expr_2021) => {{
         let call = $call;
         $crate::tx!(
             $acc,

@@ -5,15 +5,15 @@ use {
     },
     crate::{
         domain::{
+            BlockNo,
             competition::solution::Settlement,
             eth::{TxId, TxStatus},
-            BlockNo,
         },
-        infra::{self, observe, solver::Solver, Ethereum},
+        infra::{self, Ethereum, observe, solver::Solver},
     },
     anyhow::Context,
     ethrpc::block_stream::into_stream,
-    futures::{future::select_ok, FutureExt, StreamExt},
+    futures::{FutureExt, StreamExt, future::select_ok},
     thiserror::Error,
     tracing::Instrument,
 };

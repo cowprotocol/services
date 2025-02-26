@@ -1,9 +1,9 @@
 use {
     crate::price_estimation::{
-        native::{NativePriceEstimateResult, NativePriceEstimating},
         PriceEstimating,
         PriceEstimationError,
         Query,
+        native::{NativePriceEstimateResult, NativePriceEstimating},
     },
     ethcontract::jsonrpc::futures_util::future::BoxFuture,
     futures::future::FutureExt,

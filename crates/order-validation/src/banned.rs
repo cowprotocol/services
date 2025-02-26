@@ -1,6 +1,6 @@
 use {
     contracts::ChainalysisOracle,
-    ethcontract::{errors::MethodError, futures::future::join_all, H160},
+    ethcontract::{H160, errors::MethodError, futures::future::join_all},
     std::{
         collections::{HashMap, HashSet},
         sync::Arc,
@@ -171,13 +171,12 @@ impl Users {
             let cache = onchain.cache.read().await;
             need_lookup
                 .into_iter()
-                .filter(|address| {
-                    if let Some(metadata) = &mut cache.get(address) {
+                .filter(|address| match &mut cache.get(address) {
+                    Some(metadata) => {
                         metadata.is_banned.then(|| banned.insert(*address));
                         false
-                    } else {
-                        true
                     }
+                    _ => true,
                 })
                 .collect()
         };

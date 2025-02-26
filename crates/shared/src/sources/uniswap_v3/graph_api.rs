@@ -12,8 +12,8 @@ use {
     number::serialization::HexOrDecimalU256,
     reqwest::{Client, Url},
     serde::{Deserialize, Serialize},
-    serde_json::{json, Map, Value},
-    serde_with::{serde_as, DisplayFromStr},
+    serde_json::{Map, Value, json},
+    serde_with::{DisplayFromStr, serde_as},
     std::collections::HashMap,
 };
 

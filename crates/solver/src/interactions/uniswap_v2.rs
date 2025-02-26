@@ -39,7 +39,7 @@ impl UniswapInteraction {
 mod tests {
     use {
         super::*,
-        contracts::{dummy_contract, IUniswapLikeRouter},
+        contracts::{IUniswapLikeRouter, dummy_contract},
         ethrpc::dummy,
         hex_literal::hex,
     };
@@ -72,7 +72,7 @@ mod tests {
 
         // Verify Swap
         assert_eq!(swap_call.0, router.address());
-        let call = &swap_call.2 .0;
+        let call = &swap_call.2.0;
         let swap_signature = hex!("8803dbee");
         let path_offset = 160;
         let path_size = 2;

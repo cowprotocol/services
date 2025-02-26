@@ -161,7 +161,7 @@ impl<'a> StablePoolRef<'a> {
     /// swaps.
     ///
     /// <https://etherscan.io/address/0xf9ac7B9dF2b3454E841110CcE5550bD5AC6f875F#code#F2#L278>
-    pub fn reserves_without_bpt(&self) -> impl Iterator<Item = (H160, TokenState)> + 'a {
+    pub fn reserves_without_bpt(&self) -> impl Iterator<Item = (H160, TokenState)> + 'a + use<'a> {
         let bpt = self.address;
         self.reserves
             .iter()

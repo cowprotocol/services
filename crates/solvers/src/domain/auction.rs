@@ -74,7 +74,7 @@ impl Price {
     /// Computes an amount equivalent in value to the specified [`eth::Ether`]
     /// at the given price.
     pub fn ether_value(&self, eth: eth::Ether) -> Option<U256> {
-        eth.0.checked_mul(Self::BASE.into())?.checked_div(self.0 .0)
+        eth.0.checked_mul(Self::BASE.into())?.checked_div(self.0.0)
     }
 }
 

@@ -1,9 +1,9 @@
 //! Small abstraction over the AWS S3 SDK to upload arbitrary json object to S3.
 
 use {
-    anyhow::{anyhow, Context, Result},
-    aws_sdk_s3::{primitives::ByteStream, Client},
-    flate2::{bufread::GzEncoder, Compression},
+    anyhow::{Context, Result, anyhow},
+    aws_sdk_s3::{Client, primitives::ByteStream},
+    flate2::{Compression, bufread::GzEncoder},
     serde::Serialize,
     std::io::Read,
 };

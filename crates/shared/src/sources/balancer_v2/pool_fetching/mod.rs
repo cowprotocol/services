@@ -15,13 +15,13 @@ use {
         graph_api::{BalancerSubgraphClient, RegisteredPools},
         pool_init::PoolInitializing,
         pools::{
-            common::{self, PoolInfoFetcher},
-            stable,
-            weighted,
             FactoryIndexing,
             Pool,
             PoolIndexing,
             PoolKind,
+            common::{self, PoolInfoFetcher},
+            stable,
+            weighted,
         },
         swap::fixed_point::Bfp,
     },
@@ -47,7 +47,7 @@ use {
         BalancerV2WeightedPoolFactoryV3,
         BalancerV2WeightedPoolFactoryV4,
     },
-    ethcontract::{dyns::DynInstance, BlockId, Instance, H160, H256},
+    ethcontract::{BlockId, H160, H256, Instance, dyns::DynInstance},
     ethrpc::block_stream::{BlockRetrieving, CurrentBlockWatcher},
     model::TokenPair,
     reqwest::{Client, Url},
@@ -392,7 +392,7 @@ async fn create_aggregate_pool_fetcher(
     let mut registered_pools_by_factory = registered_pools.group_by_factory();
 
     macro_rules! registry {
-        ($factory:ident, $instance:expr) => {{
+        ($factory:ident, $instance:expr_2021) => {{
             create_internal_pool_fetcher(
                 contracts.vault.clone(),
                 $factory::with_deployment_info(

@@ -2,9 +2,9 @@ use {
     app_data::AppDataHash,
     ethcontract::common::abi::ethereum_types::Address,
     model::{
+        DomainSeparator,
         order::{BuyTokenDestination, OrderData, OrderKind, OrderUid, SellTokenSource},
         signature::EcdsaSigningScheme,
-        DomainSeparator,
     },
     solvers_dto::solution::{Asset, Kind},
     web3::signing::SecretKeyRef,

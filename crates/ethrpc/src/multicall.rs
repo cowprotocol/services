@@ -11,10 +11,10 @@ use {
     std::{iter, sync::LazyLock},
     web3::{
         self,
+        Transport,
         api::Eth,
         ethabi::{self, ParamType, Token},
-        types::{AccessList, BlockId, Bytes, CallRequest, H160, U256, U64},
-        Transport,
+        types::{AccessList, BlockId, Bytes, CallRequest, H160, U64, U256},
     },
 };
 
@@ -218,14 +218,12 @@ where
 mod tests {
     use {
         super::*,
-        crate::{create_env_test_transport, Web3},
+        crate::{Web3, create_env_test_transport},
         std::fmt::Debug,
     };
 
     macro_rules! data {
-        ($x:literal) => {{
-            ::hex_literal::hex!($x).to_vec()
-        }};
+        ($x:literal) => {{ ::hex_literal::hex!($x).to_vec() }};
     }
 
     #[test]

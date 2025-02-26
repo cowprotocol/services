@@ -4,7 +4,7 @@ use {
             competition,
             competition::{
                 order,
-                order::{fees, signature::Scheme, Side},
+                order::{Side, fees, signature::Scheme},
             },
             eth::{self},
             liquidity,

@@ -2,7 +2,7 @@
 
 use {
     crate::{domain::eth, util::conv::u256::U256Ext},
-    bigdecimal::{num_traits::CheckedMul, BigDecimal, FromPrimitive, Signed},
+    bigdecimal::{BigDecimal, FromPrimitive, Signed, num_traits::CheckedMul},
     num::BigRational,
     number::conversions::big_decimal_to_big_rational,
     std::str::FromStr,

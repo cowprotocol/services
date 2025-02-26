@@ -6,7 +6,7 @@
 use {
     anyhow::{Context, Result},
     clap::Parser,
-    model::order::{OrderClass, OrderKind, OrderStatus, OrderUid, BUY_ETH_ADDRESS},
+    model::order::{BUY_ETH_ADDRESS, OrderClass, OrderKind, OrderStatus, OrderUid},
     number::serialization::HexOrDecimalU256,
     primitive_types::{H160, U256},
     prometheus::IntGauge,

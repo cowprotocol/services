@@ -3,7 +3,7 @@ use {
     anyhow::Result,
     model::order::OrderUid,
     std::{convert::Infallible, sync::Arc},
-    warp::{hyper::StatusCode, Filter, Rejection},
+    warp::{Filter, Rejection, hyper::StatusCode},
 };
 
 fn get_status_request() -> impl Filter<Extract = (OrderUid,), Error = Rejection> + Clone {

@@ -1,8 +1,8 @@
 use {
     super::{
+        Partial,
         blockchain::{self, Blockchain},
         fee,
-        Partial,
     },
     crate::{
         domain::{
@@ -12,10 +12,10 @@ use {
         },
         infra::{
             self,
+            Ethereum,
             blockchain::contracts::Addresses,
             config::file::FeeHandler,
             solver::dto::FlashloanHint,
-            Ethereum,
         },
         tests::{hex_address, setup::blockchain::Trade},
     },

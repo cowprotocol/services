@@ -1,7 +1,7 @@
 use {
     crate::{
         domain::eth,
-        infra::{blockchain, Ethereum},
+        infra::{Ethereum, blockchain},
     },
     anyhow::Result,
     ethrpc::block_stream::{self, CurrentBlockWatcher},
