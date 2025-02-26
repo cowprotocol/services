@@ -17,15 +17,15 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = { workspace = true }
-app-data = { path = "../app-data" }
+app-data = { workspace = true }
 async-trait = { workspace = true }
 bigdecimal = { workspace = true }
 cached = { workspace = true }
-chain = { path = "../chain" }
+chain = { workspace = true }
 chrono = { workspace = true, features = ["clock"] }
 clap = { workspace = true }
-contracts = { path = "../contracts" }
-database = { path = "../database" }
+contracts = { workspace = true }
+database = { workspace = true }
 ethcontract = { workspace = true }
 futures = { workspace = true }
 hex = { workspace = true }
@@ -33,12 +33,12 @@ hex-literal = { workspace = true }
 humantime = { workspace = true }
 hyper = { workspace = true }
 mimalloc = { workspace = true }
-model = { path = "../model" }
-multibase = "0.9"
+model = { workspace = true }
+multibase = { workspace = true }
 num = { workspace = true }
-number = { path = "../number" }
-order-validation = { path = "../order-validation" }
-observe = { path = "../observe" }
+number = { workspace = true }
+order-validation = { workspace = true }
+observe = { workspace = true }
 primitive-types = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
@@ -46,8 +46,8 @@ reqwest = { workspace = true, features = ["json"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
-shared = { path = "../shared" }
-strum_macros = "0.26.4"
+shared = { workspace = true }
+strum_macros = { workspace = true }
 sqlx = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
@@ -61,7 +61,7 @@ tokio = { workspace = true, features = ["test-util"] }
 
 [build-dependencies]
 anyhow = { workspace = true }
-vergen = { version = "8", features = ["git", "gitcl"] }
+vergen = { workspace = true, features = ["git", "gitcl"] }
 
 [lints]
 workspace = true
