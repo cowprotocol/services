@@ -7,5 +7,5 @@ pub use {
     blockchain::Ethereum,
     order_validation::banned,
     persistence::Persistence,
-    solvers::{notify_non_settling_solver, Driver},
+    solvers::{Driver, notify_non_settling_solver},
 };

@@ -1,6 +1,6 @@
 use {
     crate::{
-        domain::{eth, Metrics},
+        domain::{Metrics, eth},
         infra,
     },
     chrono::Utc,
