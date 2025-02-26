@@ -188,11 +188,11 @@ pub fn tx(
             eth::H160::from_str("0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2").unwrap();
 
         let (flashloan_wrapper, flash_fee) = if flashloan.lender.0 == maker_lender {
-            (&flashloan_wrappers[0], 1) // MAKER
+            (&flashloan_wrappers[0], None) // MAKER
         } else if flashloan.lender.0 == aave_lender {
-            (&flashloan_wrappers[1], 1000) // AAVE
+            (&flashloan_wrappers[1], Some(1000)) // AAVE
         } else {
-            (&flashloan_wrappers[0], 1) // for driver tests to pass
+            (&flashloan_wrappers[0], None) // for driver tests to pass
         };
 
         (flashloan, flashloan_wrapper, flash_fee)
@@ -235,11 +235,15 @@ pub fn tx(
 
         // Repayment amount needs to be increased by flash fee
         let repayment_amount = flashloan.amount.0
-            + flashloan
-                .amount
-                .0
-                .checked_div(primitive_types::U256::from(flash_fee))
-                .unwrap();
+            + flash_fee
+                .map(|fee_factor| {
+                    flashloan
+                        .amount
+                        .0
+                        .checked_div(primitive_types::U256::from(fee_factor))
+                        .unwrap()
+                })
+                .unwrap_or_default();
 
         // Since the order receiver is expected to be the setttlement contract, we need
         // to transfer tokens from the settlement contract to the flashloan wrapper
