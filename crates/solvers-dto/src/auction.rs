@@ -54,7 +54,7 @@ pub struct Order {
     pub buy_token_destination: BuyTokenDestination,
     pub class: Class,
     pub app_data: AppDataHash,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub flashloan_hint: Option<FlashloanHint>,
     pub signing_scheme: SigningScheme,
     #[serde(with = "bytes_hex")]
