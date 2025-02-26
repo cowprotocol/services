@@ -1,16 +1,16 @@
 use {
     e2e::{
         setup::{
-            run_test,
-            to_wei,
-            wait_for_condition,
             Db,
             ExtraServiceArgs,
             MintableToken,
             OnchainComponents,
             Services,
-            TestAccount,
             TIMEOUT,
+            TestAccount,
+            run_test,
+            to_wei,
+            wait_for_condition,
         },
         tx,
     },
