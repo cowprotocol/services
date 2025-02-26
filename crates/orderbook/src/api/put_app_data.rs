@@ -1,10 +1,10 @@
 use {
-    crate::api::{internal_error_reply, IntoWarpReply},
+    crate::api::{IntoWarpReply, internal_error_reply},
     anyhow::Result,
     app_data::{AppDataDocument, AppDataHash},
     reqwest::StatusCode,
     std::{convert::Infallible, sync::Arc},
-    warp::{body, reply, Filter, Rejection},
+    warp::{Filter, Rejection, body, reply},
 };
 
 fn request(

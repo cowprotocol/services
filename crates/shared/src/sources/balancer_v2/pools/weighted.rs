@@ -1,19 +1,19 @@
 //! Module implementing weighted pool specific indexing logic.
 
 use {
-    super::{common, FactoryIndexing, PoolIndexing},
+    super::{FactoryIndexing, PoolIndexing, common},
     crate::sources::balancer_v2::{
         graph_api::{PoolData, PoolType},
         swap::fixed_point::Bfp,
     },
-    anyhow::{anyhow, Result},
+    anyhow::{Result, anyhow},
     contracts::{
         BalancerV2WeightedPool,
         BalancerV2WeightedPoolFactory,
         BalancerV2WeightedPoolFactoryV3,
     },
     ethcontract::{BlockId, H160},
-    futures::{future::BoxFuture, FutureExt as _},
+    futures::{FutureExt as _, future::BoxFuture},
     std::collections::BTreeMap,
 };
 

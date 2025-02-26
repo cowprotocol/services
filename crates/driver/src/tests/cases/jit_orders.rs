@@ -5,16 +5,16 @@ use crate::{
     },
     tests::{
         self,
-        cases::{is_approximately_equal, EtherExt},
+        cases::{EtherExt, is_approximately_equal},
         setup::{
             self,
+            ExpectedOrderAmounts,
+            Test,
             ab_adjusted_pool,
             ab_liquidity_quote,
             ab_order,
             ab_solution,
             test_solver,
-            ExpectedOrderAmounts,
-            Test,
         },
     },
 };

@@ -1,6 +1,6 @@
 use {
     primitive_types::U256,
-    serde::{de, Deserializer, Serializer},
+    serde::{Deserializer, Serializer, de},
     serde_with::{DeserializeAs, SerializeAs},
     std::fmt,
 };
@@ -71,8 +71,8 @@ mod tests {
     use {
         super::*,
         serde::de::{
-            value::{Error as ValueError, StrDeserializer},
             IntoDeserializer,
+            value::{Error as ValueError, StrDeserializer},
         },
     };
 

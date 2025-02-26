@@ -1,10 +1,10 @@
 //! A module implementing a client for querying subgraphs.
 
 use {
-    anyhow::{bail, Result},
+    anyhow::{Result, bail},
     reqwest::{Client, Url},
-    serde::{de::DeserializeOwned, Deserialize, Serialize},
-    serde_json::{json, Map, Value},
+    serde::{Deserialize, Serialize, de::DeserializeOwned},
+    serde_json::{Map, Value, json},
     thiserror::Error,
 };
 
@@ -164,7 +164,7 @@ fn empty_data<T>() -> Option<T> {
 mod tests {
     use {
         super::*,
-        serde_json::{json, Value},
+        serde_json::{Value, json},
     };
 
     #[test]
@@ -244,25 +244,33 @@ mod tests {
 
     #[test]
     fn deserialize_invalid_response() {
-        assert!(response_from_json::<bool>(json!({
-            "data": null,
-            "errors": null,
-        }))
-        .is_err());
-        assert!(response_from_json::<bool>(json!({
-            "data": null,
-            "errors": [],
-        }))
-        .is_err());
-        assert!(response_from_json::<bool>(json!({
-            "data": true,
-            "errors": [],
-        }))
-        .is_err());
-        assert!(response_from_json::<bool>(json!({
-            "data": true,
-            "errors": [{"message":"bad"}],
-        }))
-        .is_err());
+        assert!(
+            response_from_json::<bool>(json!({
+                "data": null,
+                "errors": null,
+            }))
+            .is_err()
+        );
+        assert!(
+            response_from_json::<bool>(json!({
+                "data": null,
+                "errors": [],
+            }))
+            .is_err()
+        );
+        assert!(
+            response_from_json::<bool>(json!({
+                "data": true,
+                "errors": [],
+            }))
+            .is_err()
+        );
+        assert!(
+            response_from_json::<bool>(json!({
+                "data": true,
+                "errors": [{"message":"bad"}],
+            }))
+            .is_err()
+        );
     }
 }

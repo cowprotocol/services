@@ -3,7 +3,7 @@ use {
     anyhow::Result,
     model::order::{Order, OrderUid},
     std::{convert::Infallible, sync::Arc},
-    warp::{hyper::StatusCode, reply, Filter, Rejection},
+    warp::{Filter, Rejection, hyper::StatusCode, reply},
 };
 
 pub fn get_order_by_uid_request() -> impl Filter<Extract = (OrderUid,), Error = Rejection> + Clone {
@@ -44,7 +44,7 @@ mod tests {
     use {
         super::*,
         crate::api::response_body,
-        warp::{test::request, Reply},
+        warp::{Reply, test::request},
     };
 
     #[tokio::test]

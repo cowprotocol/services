@@ -2,8 +2,8 @@ use {
     super::{LimitOrderExecution, LimitOrderId, LiquidityOrderId, SettlementHandling},
     crate::{
         interactions::{
-            allowances::{AllowanceManager, AllowanceManaging, Allowances},
             ZeroExInteraction,
+            allowances::{AllowanceManager, AllowanceManaging, Allowances},
         },
         liquidity::{Exchange, LimitOrder, Liquidity},
         liquidity_collector::LiquidityCollecting,
@@ -12,10 +12,10 @@ use {
     anyhow::Result,
     arc_swap::ArcSwap,
     contracts::{GPv2Settlement, IZeroEx},
-    ethrpc::block_stream::{into_stream, CurrentBlockWatcher},
+    ethrpc::block_stream::{CurrentBlockWatcher, into_stream},
     futures::StreamExt,
     itertools::Itertools,
-    model::{order::OrderKind, TokenPair},
+    model::{TokenPair, order::OrderKind},
     primitive_types::{H160, U256},
     shared::{
         ethrpc::Web3,

@@ -1,6 +1,6 @@
 use {
     contracts::cowswap_onchain_orders,
-    ethcontract::{contract::AllEventsBuilder, transport::DynTransport, H160, H256},
+    ethcontract::{H160, H256, contract::AllEventsBuilder, transport::DynTransport},
     hex_literal::hex,
     shared::{ethrpc::Web3, event_handling::EventRetrieving},
 };

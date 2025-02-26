@@ -12,8 +12,8 @@ pub(super) use {
     info::info,
     metrics::metrics,
     notify::notify,
-    quote::{quote, OrderError},
+    quote::{OrderError, quote},
     reveal::reveal,
     settle::settle,
-    solve::{solve, AuctionError},
+    solve::{AuctionError, solve},
 };

@@ -1,8 +1,8 @@
 use {
-    crate::{app_data_hash::hash_full_app_data, AppDataHash, Hooks},
-    anyhow::{anyhow, Context, Result},
+    crate::{AppDataHash, Hooks, app_data_hash::hash_full_app_data},
+    anyhow::{Context, Result, anyhow},
     primitive_types::{H160, U256},
-    serde::{de, Deserialize, Deserializer, Serialize, Serializer},
+    serde::{Deserialize, Deserializer, Serialize, Serializer, de},
     std::{fmt, fmt::Display},
 };
 
@@ -260,7 +260,7 @@ mod tests {
     use {super::*, crate::Hook, ethcontract::H160};
 
     macro_rules! assert_app_data {
-        ($s:expr, $e:expr $(,)?) => {{
+        ($s:expr_2021, $e:expr_2021 $(,)?) => {{
             let s = $s;
             let a = Validator::default().validate(s.as_ref()).unwrap();
             assert_eq!(a.protocol, $e);

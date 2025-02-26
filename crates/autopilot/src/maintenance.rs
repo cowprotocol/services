@@ -2,22 +2,22 @@ use {
     crate::{
         boundary::events::settlement::{GPv2SettlementContract, Indexer},
         database::{
+            Postgres,
             onchain_order_events::{
+                OnchainOrderParser,
                 ethflow_events::{EthFlowData, EthFlowDataForDb},
                 event_retriever::CoWSwapOnchainOrdersContract,
-                OnchainOrderParser,
             },
-            Postgres,
         },
         event_updater::EventUpdater,
     },
     anyhow::Result,
-    ethrpc::block_stream::{into_stream, BlockInfo, CurrentBlockWatcher},
+    ethrpc::block_stream::{BlockInfo, CurrentBlockWatcher, into_stream},
     futures::StreamExt,
     prometheus::{
-        core::{AtomicU64, GenericGauge},
         HistogramVec,
         IntCounterVec,
+        core::{AtomicU64, GenericGauge},
     },
     shared::maintenance::Maintaining,
     std::{future::Future, sync::Arc},

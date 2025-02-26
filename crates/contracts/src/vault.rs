@@ -3,7 +3,7 @@
 
 use {
     crate::{BalancerV2Authorizer, BalancerV2Vault},
-    ethcontract::{common::FunctionExt as _, errors::MethodError, web3::signing, Bytes, H160},
+    ethcontract::{Bytes, H160, common::FunctionExt as _, errors::MethodError, web3::signing},
 };
 
 fn role_id(target: H160, function_name: &str) -> Bytes<[u8; 32]> {

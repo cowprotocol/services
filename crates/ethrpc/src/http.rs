@@ -1,23 +1,23 @@
 use {
     ethcontract::jsonrpc as jsonrpc_core,
-    futures::{future::BoxFuture, FutureExt},
+    futures::{FutureExt, future::BoxFuture},
     jsonrpc_core::types::{Call, Output, Request, Value},
-    reqwest::{header, Client, Url},
-    serde::{de::DeserializeOwned, Deserialize, Serialize},
+    reqwest::{Client, Url, header},
+    serde::{Deserialize, Serialize, de::DeserializeOwned},
     std::{
         collections::HashMap,
         fmt::{Debug, Formatter},
         sync::{
-            atomic::{AtomicUsize, Ordering},
             Arc,
+            atomic::{AtomicUsize, Ordering},
         },
     },
     web3::{
-        error::{Error as Web3Error, TransportError},
-        helpers,
         BatchTransport,
         RequestId,
         Transport,
+        error::{Error as Web3Error, TransportError},
+        helpers,
     },
 };
 
@@ -269,10 +269,12 @@ mod tests {
 
     #[test]
     fn errors_on_invalid_string_batch_responses() {
-        assert!(handle_batch_response(
-            &[1],
-            vec![OutputOrString::String("there is no spoon".into())],
-        )
-        .is_err());
+        assert!(
+            handle_batch_response(
+                &[1],
+                vec![OutputOrString::String("there is no spoon".into())],
+            )
+            .is_err()
+        );
     }
 }

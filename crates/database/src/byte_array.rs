@@ -1,12 +1,12 @@
 use {
     sqlx::{
-        encode::IsNull,
-        error::BoxDynError,
-        postgres::{PgArgumentBuffer, PgHasArrayType, PgTypeInfo, PgValueFormat, PgValueRef},
         Decode,
         Encode,
         Postgres,
         Type,
+        encode::IsNull,
+        error::BoxDynError,
+        postgres::{PgArgumentBuffer, PgHasArrayType, PgTypeInfo, PgValueFormat, PgValueRef},
     },
     std::fmt::{self, Debug, Formatter},
 };

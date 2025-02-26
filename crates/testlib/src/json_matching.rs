@@ -28,7 +28,7 @@ use {anyhow::anyhow, std::collections::HashSet};
 /// ```
 #[macro_export]
 macro_rules! assert_json_matches_excluding {
-    ($actual:expr, $expected:expr, $exclude_paths:expr) => {{
+    ($actual:expr_2021, $expected:expr_2021, $exclude_paths:expr_2021) => {{
         let exclude_paths = $crate::json_matching::parse_field_paths(&$exclude_paths);
         let result =
             $crate::json_matching::json_matches_excluding(&$actual, &$expected, &exclude_paths);
@@ -77,7 +77,7 @@ macro_rules! assert_json_matches_excluding {
 /// there are any differences between the two, the test will fail with a panic.
 #[macro_export]
 macro_rules! assert_json_matches {
-    ($actual:expr, $expected:expr) => {{
+    ($actual:expr_2021, $expected:expr_2021) => {{
         let result = $crate::json_matching::json_matches_excluding(
             &$actual,
             &$expected,

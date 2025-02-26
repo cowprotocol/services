@@ -51,7 +51,7 @@ RUN if [ -n "$ETH_RPC_URL" ]; then \
                 REACT_APP_ORDER_BOOK_URLS=$(echo $REACT_APP_ORDER_BOOK_URLS | jq --arg chain "100" '.[$chain]="http://127.0.0.1:8080"') \
                 ;; \
         esac; \
-        yarn build --env REACT_APP_NETWORK_URL_1=$REACT_APP_NETWORK_URL_1 \
+        NODE_OPTIONS="--max-old-space-size=4096" NX_NO_CLOUD=true yarn build --env REACT_APP_NETWORK_URL_1=$REACT_APP_NETWORK_URL_1 \
                    --env REACT_APP_NETWORK_URL_5=$REACT_APP_NETWORK_URL_5 \
                    --env REACT_APP_NETWORK_URL_100=$REACT_APP_NETWORK_URL_100 \
                    --env REACT_APP_ORDER_BOOK_URLS="$REACT_APP_ORDER_BOOK_URLS"; \

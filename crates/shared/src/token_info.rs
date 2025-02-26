@@ -1,12 +1,12 @@
 use {
     anyhow::Result,
     async_trait::async_trait,
-    contracts::{errors::EthcontractErrorType, ERC20},
-    ethcontract::{errors::MethodError, H160},
+    contracts::{ERC20, errors::EthcontractErrorType},
+    ethcontract::{H160, errors::MethodError},
     ethrpc::Web3,
     futures::{
-        future::{BoxFuture, Shared},
         FutureExt,
+        future::{BoxFuture, Shared},
     },
     model::order::BUY_ETH_ADDRESS,
     std::{

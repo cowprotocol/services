@@ -5,7 +5,7 @@ use {
             LowSettlingSolversFinderConfig,
             NonSettlingSolversFinderConfig,
         },
-        domain::{eth, Metrics},
+        domain::{Metrics, eth},
         infra::{self, solvers::dto},
     },
     chrono::{DateTime, Utc},

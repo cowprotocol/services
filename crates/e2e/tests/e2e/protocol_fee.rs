@@ -6,7 +6,7 @@ use {
         tx,
         tx_value,
     },
-    ethcontract::{prelude::U256, Address},
+    ethcontract::{Address, prelude::U256},
     model::{
         order::{Order, OrderCreation, OrderCreationAppData, OrderKind},
         quote::{
@@ -70,7 +70,11 @@ async fn combined_protocol_fees(web3: Web3) {
 
     let [solver] = onchain.make_solvers(to_wei(200)).await;
     let [trader] = onchain.make_accounts(to_wei(200)).await;
-    let [limit_order_token, market_order_token, partner_fee_order_token] = onchain
+    let [
+        limit_order_token,
+        market_order_token,
+        partner_fee_order_token,
+    ] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(20), to_wei(20))
         .await;
 
@@ -226,42 +230,48 @@ async fn combined_protocol_fees(web3: Web3) {
     .await
     .expect("Timeout waiting for eviction of the cached liquidity");
 
-    let [market_quote_after, limit_quote_after, partner_fee_quote_after] =
-        futures::future::try_join_all(
-            [
-                &market_order_token,
-                &limit_order_token,
-                &partner_fee_order_token,
-            ]
-            .map(|token| {
-                get_quote(
-                    &services,
-                    onchain.contracts().weth.address(),
-                    token.address(),
-                    OrderKind::Sell,
-                    sell_amount,
-                    quote_valid_to,
-                )
-            }),
-        )
-        .await
-        .unwrap()
-        .try_into()
-        .expect("Expected exactly two elements");
+    let [
+        market_quote_after,
+        limit_quote_after,
+        partner_fee_quote_after,
+    ] = futures::future::try_join_all(
+        [
+            &market_order_token,
+            &limit_order_token,
+            &partner_fee_order_token,
+        ]
+        .map(|token| {
+            get_quote(
+                &services,
+                onchain.contracts().weth.address(),
+                token.address(),
+                OrderKind::Sell,
+                sell_amount,
+                quote_valid_to,
+            )
+        }),
+    )
+    .await
+    .unwrap()
+    .try_into()
+    .expect("Expected exactly two elements");
 
-    let [market_price_improvement_uid, limit_surplus_order_uid, partner_fee_order_uid] =
-        futures::future::try_join_all(
-            [
-                &market_price_improvement_order,
-                &limit_surplus_order,
-                &partner_fee_order,
-            ]
-            .map(|order| services.create_order(order)),
-        )
-        .await
-        .unwrap()
-        .try_into()
-        .expect("Expected exactly four elements");
+    let [
+        market_price_improvement_uid,
+        limit_surplus_order_uid,
+        partner_fee_order_uid,
+    ] = futures::future::try_join_all(
+        [
+            &market_price_improvement_order,
+            &limit_surplus_order,
+            &partner_fee_order,
+        ]
+        .map(|order| services.create_order(order)),
+    )
+    .await
+    .unwrap()
+    .try_into()
+    .expect("Expected exactly four elements");
 
     onchain.mint_block().await;
 
@@ -327,23 +337,26 @@ async fn combined_protocol_fees(web3: Web3) {
     // see `limit_surplus_policy.factor`, which is 0.3
     assert!(limit_executed_fee_in_buy_token >= limit_quote_diff * 3 / 10);
 
-    let [market_order_token_balance, limit_order_token_balance, partner_fee_order_token_balance] =
-        futures::future::try_join_all(
-            [
-                &market_order_token,
-                &limit_order_token,
-                &partner_fee_order_token,
-            ]
-            .map(|token| {
-                token
-                    .balance_of(onchain.contracts().gp_settlement.address())
-                    .call()
-            }),
-        )
-        .await
-        .unwrap()
-        .try_into()
-        .expect("Expected exactly four elements");
+    let [
+        market_order_token_balance,
+        limit_order_token_balance,
+        partner_fee_order_token_balance,
+    ] = futures::future::try_join_all(
+        [
+            &market_order_token,
+            &limit_order_token,
+            &partner_fee_order_token,
+        ]
+        .map(|token| {
+            token
+                .balance_of(onchain.contracts().gp_settlement.address())
+                .call()
+        }),
+    )
+    .await
+    .unwrap()
+    .try_into()
+    .expect("Expected exactly four elements");
     assert_approximately_eq!(market_executed_fee_in_buy_token, market_order_token_balance);
     assert_approximately_eq!(limit_executed_fee_in_buy_token, limit_order_token_balance);
     assert_approximately_eq!(

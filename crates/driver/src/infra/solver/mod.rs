@@ -129,6 +129,8 @@ pub struct Config {
     pub settle_queue_size: usize,
     /// Whether flashloan hints should be sent to the solver.
     pub flashloans_enabled: bool,
+    /// If no lender is specified in flashloan hint, use default one
+    pub flashloan_default_lender: eth::Address,
 }
 
 impl Solver {
@@ -231,6 +233,7 @@ impl Solver {
             self.config.fee_handler,
             self.config.solver_native_token,
             self.config.flashloans_enabled,
+            self.config.flashloan_default_lender,
         );
         // Only auctions with IDs are real auctions (/quote requests don't have an ID,
         // and it makes no sense to store them)
@@ -240,11 +243,14 @@ impl Solver {
         let body = serde_json::to_string(&auction_dto).unwrap();
         let url = shared::url::join(&self.config.endpoint, "solve");
         super::observe::solver_request(&url, &body);
-        let mut req = self
-            .client
-            .post(url.clone())
-            .body(body)
-            .timeout(auction.deadline().solvers().remaining().unwrap_or_default());
+        let timeout = match auction.deadline().solvers().remaining() {
+            Ok(timeout) => timeout,
+            Err(_) => {
+                tracing::warn!("auction deadline exceeded before sending request to solver");
+                return Ok(Default::default());
+            }
+        };
+        let mut req = self.client.post(url.clone()).body(body).timeout(timeout);
         if let Some(id) = observe::request_id::from_current_span() {
             req = req.header("X-REQUEST-ID", id);
         }

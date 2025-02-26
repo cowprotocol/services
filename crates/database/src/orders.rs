@@ -1,20 +1,20 @@
 use {
     crate::{
-        onchain_broadcasted_orders::OnchainOrderPlacementError,
-        order_events::{insert_order_event, OrderEvent, OrderEventLabel},
         Address,
         AppId,
         OrderUid,
         TransactionHash,
+        onchain_broadcasted_orders::OnchainOrderPlacementError,
+        order_events::{OrderEvent, OrderEventLabel, insert_order_event},
     },
     futures::stream::BoxStream,
     sqlx::{
-        types::{
-            chrono::{DateTime, Utc},
-            BigDecimal,
-        },
         PgConnection,
         QueryBuilder,
+        types::{
+            BigDecimal,
+            chrono::{DateTime, Utc},
+        },
     },
 };
 
@@ -808,18 +808,18 @@ mod tests {
     use {
         super::*,
         crate::{
+            PgTransaction,
             byte_array::ByteArray,
             ethflow_orders::{
-                insert_or_overwrite_ethflow_order,
-                insert_refund_tx_hash,
                 EthOrderPlacement,
                 Refund,
+                insert_or_overwrite_ethflow_order,
+                insert_refund_tx_hash,
             },
             events::{Event, EventIndex, Invalidation, PreSignature, Settlement, Trade},
-            onchain_broadcasted_orders::{insert_onchain_order, OnchainOrderPlacement},
+            onchain_broadcasted_orders::{OnchainOrderPlacement, insert_onchain_order},
             onchain_invalidations::insert_onchain_invalidation,
             order_execution::Asset,
-            PgTransaction,
         },
         bigdecimal::num_bigint::{BigInt, ToBigInt},
         chrono::{Duration, TimeZone, Utc},

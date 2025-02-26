@@ -1,5 +1,5 @@
 use {
-    crate::{jit_orders, orders, Address},
+    crate::{Address, jit_orders, orders},
     futures::stream::BoxStream,
     sqlx::PgConnection,
 };
@@ -54,7 +54,7 @@ mod tests {
         crate::{
             byte_array::ByteArray,
             events::EventIndex,
-            onchain_broadcasted_orders::{insert_onchain_order, OnchainOrderPlacement},
+            onchain_broadcasted_orders::{OnchainOrderPlacement, insert_onchain_order},
         },
         chrono::{DateTime, Utc},
         futures::StreamExt,

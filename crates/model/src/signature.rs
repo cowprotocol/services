@@ -1,8 +1,8 @@
 use {
-    crate::{quote::QuoteSigningScheme, DomainSeparator},
-    anyhow::{ensure, Context as _, Result},
+    crate::{DomainSeparator, quote::QuoteSigningScheme},
+    anyhow::{Context as _, Result, ensure},
     primitive_types::{H160, H256},
-    serde::{de, Deserialize, Serialize},
+    serde::{Deserialize, Serialize, de},
     std::{
         convert::TryInto as _,
         fmt::{self, Debug, Formatter},

@@ -7,7 +7,7 @@ use {
     primitive_types::{H160, U256},
     shared::{
         conversions::U256Ext as _,
-        encoded_settlement::{encode_trade, EncodedSettlement, EncodedTrade},
+        encoded_settlement::{EncodedSettlement, EncodedTrade, encode_trade},
         http_solver::model::InternalizationStrategy,
     },
     std::collections::HashMap,
@@ -294,19 +294,23 @@ pub mod tests {
             token0 => 1.into(),
             token1 => 1.into(),
         });
-        assert!(settlement
-            .encoder
-            .add_trade(order.clone(), 10.into(), 0.into())
-            .is_ok());
+        assert!(
+            settlement
+                .encoder
+                .add_trade(order.clone(), 10.into(), 0.into())
+                .is_ok()
+        );
 
         let mut settlement = Settlement::new(hashmap! {
             token0 => 1.into(),
             token1 => 0.into(),
         });
-        assert!(settlement
-            .encoder
-            .add_trade(order, 10.into(), 0.into())
-            .is_err());
+        assert!(
+            settlement
+                .encoder
+                .add_trade(order, 10.into(), 0.into())
+                .is_err()
+        );
     }
 
     #[test]

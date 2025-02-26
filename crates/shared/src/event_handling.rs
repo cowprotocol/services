@@ -2,14 +2,14 @@ use {
     crate::maintenance::Maintaining,
     anyhow::{Context, Error, Result},
     ethcontract::{
+        Event as EthcontractEvent,
+        EventMetadata,
         contract::{AllEventsBuilder, ParseLog},
         dyns::DynTransport,
         errors::ExecutionError,
-        Event as EthcontractEvent,
-        EventMetadata,
     },
     ethrpc::block_stream::{BlockNumberHash, BlockRetrieving, RangeInclusive},
-    futures::{future, Stream, StreamExt, TryStreamExt},
+    futures::{Stream, StreamExt, TryStreamExt, future},
     std::sync::Arc,
     tokio::sync::Mutex,
     tracing::Instrument,
@@ -443,7 +443,8 @@ where
     async fn past_events_by_block_number_range(
         &self,
         block_range: &RangeInclusive<u64>,
-    ) -> Result<impl Stream<Item = Result<EthcontractEvent<C::Event>>>, ExecutionError> {
+    ) -> Result<impl Stream<Item = Result<EthcontractEvent<C::Event>>> + use<C, S>, ExecutionError>
+    {
         Ok(self
             .contract
             .get_events()
@@ -620,12 +621,12 @@ fn track_block_range(range: &str) {
 mod tests {
     use {
         super::*,
-        contracts::{gpv2_settlement, GPv2Settlement},
+        contracts::{GPv2Settlement, gpv2_settlement},
         ethcontract::{BlockNumber, H256},
         ethrpc::{
+            Web3,
             block_stream::block_number_to_block_number_hash,
             create_env_test_transport,
-            Web3,
         },
         std::str::FromStr,
     };

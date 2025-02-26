@@ -1,6 +1,6 @@
 use {
     crate::{domain::fee::FeeFactor, infra},
-    anyhow::{anyhow, ensure, Context},
+    anyhow::{Context, anyhow, ensure},
     clap::ValueEnum,
     primitive_types::{H160, U256},
     shared::{
@@ -509,10 +509,9 @@ impl FromStr for Solver {
         ensure!(parts.len() >= 3, "not enough arguments for external solver");
         let (name, url) = (parts[0], parts[1]);
         let url: Url = url.parse()?;
-        let submission_account = if let Ok(value) = Arn::from_str(parts[2]) {
-            Account::Kms(value)
-        } else {
-            Account::Address(H160::from_str(parts[2]).context("failed to parse submission")?)
+        let submission_account = match Arn::from_str(parts[2]) {
+            Ok(value) => Account::Kms(value),
+            _ => Account::Address(H160::from_str(parts[2]).context("failed to parse submission")?),
         };
 
         let mut fairness_threshold: Option<U256> = Default::default();
@@ -720,11 +719,13 @@ mod test {
         ];
 
         for policy in policies {
-            assert!(FeePolicy::from_str(policy)
-                .err()
-                .unwrap()
-                .to_string()
-                .contains("Factor must be in the range [0, 1)"),)
+            assert!(
+                FeePolicy::from_str(policy)
+                    .err()
+                    .unwrap()
+                    .to_string()
+                    .contains("Factor must be in the range [0, 1)"),
+            )
         }
     }
 

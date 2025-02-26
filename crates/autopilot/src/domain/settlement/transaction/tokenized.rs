@@ -4,7 +4,7 @@ use {
         domain::{self, auction::order, eth},
     },
     app_data::AppDataHash,
-    ethcontract::{common::FunctionExt, tokens::Tokenize, Address, Bytes, U256},
+    ethcontract::{Address, Bytes, U256, common::FunctionExt, tokens::Tokenize},
 };
 
 // Original type for input of `GPv2Settlement.settle` function.
@@ -65,7 +65,7 @@ pub fn order_uid(
     domain_separator: &eth::DomainSeparator,
 ) -> Result<domain::OrderUid, error::Uid> {
     let flags = TradeFlags(trade.8);
-    let signature = crate::boundary::Signature::from_bytes(flags.signing_scheme(), &trade.10 .0)
+    let signature = crate::boundary::Signature::from_bytes(flags.signing_scheme(), &trade.10.0)
         .map_err(error::Uid::Signature)?;
 
     let order = model::order::OrderData {
@@ -75,7 +75,7 @@ pub fn order_uid(
         sell_amount: trade.3,
         buy_amount: trade.4,
         valid_to: trade.5,
-        app_data: AppDataHash(trade.6 .0),
+        app_data: AppDataHash(trade.6.0),
         fee_amount: trade.7,
         kind: match flags.side() {
             domain::auction::order::Side::Buy => model::order::OrderKind::Buy,
@@ -87,7 +87,7 @@ pub fn order_uid(
     };
     let domain_separator = crate::boundary::DomainSeparator(domain_separator.0);
     let owner = signature
-        .recover_owner(&trade.10 .0, &domain_separator, &order.hash_struct())
+        .recover_owner(&trade.10.0, &domain_separator, &order.hash_struct())
         .map_err(error::Uid::RecoverOwner)?;
     Ok(order.uid(&domain_separator, &owner).into())
 }

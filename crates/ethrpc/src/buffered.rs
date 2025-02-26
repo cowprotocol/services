@@ -408,9 +408,9 @@ mod tests {
         super::*,
         crate::mock::MockTransport,
         ethcontract::{
-            jsonrpc::{Id, MethodCall, Params},
-            Web3,
             U256,
+            Web3,
+            jsonrpc::{Id, MethodCall, Params},
         },
         mockall::predicate,
         serde_json::json,

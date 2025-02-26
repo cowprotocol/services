@@ -1,9 +1,9 @@
 use {
     ethcontract::{
-        common::{contract::Network, DeploymentInformation},
         Address,
+        common::{DeploymentInformation, contract::Network},
     },
-    ethcontract_generate::{loaders::TruffleLoader, ContractBuilder},
+    ethcontract_generate::{ContractBuilder, loaders::TruffleLoader},
     std::{env, path::Path},
 };
 
@@ -27,6 +27,7 @@ fn main() {
     // - https://doc.rust-lang.org/cargo/reference/build-scripts.html#cargorerun-if-changedpath
     println!("cargo:rerun-if-changed=build.rs");
 
+    generate_contract("AaveFlashLoanSolverWrapper");
     generate_contract_with_config("CoWSwapEthFlow", |builder| {
         builder
             .contract_mod_override("cowswap_eth_flow")
@@ -806,6 +807,8 @@ fn main() {
             .add_network_str(ARBITRUM_ONE, "0x01DcB88678aedD0C4cC9552B20F4718550250574")
             .add_network_str(BASE, "0x01DcB88678aedD0C4cC9552B20F4718550250574")
     });
+    generate_contract("IAavePool");
+    generate_contract("IFlashLoanSolverWrapper");
     generate_contract("IUniswapLikeRouter");
     generate_contract("IUniswapLikePair");
     // EIP-1271 contract - SignatureValidator

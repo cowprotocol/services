@@ -1,7 +1,7 @@
 //! Serialization of Vec<u8> to 0x prefixed hex string
 
 use {
-    serde::{de::Error, Deserialize, Deserializer, Serializer},
+    serde::{Deserialize, Deserializer, Serializer, de::Error},
     serde_with::{DeserializeAs, SerializeAs},
     std::borrow::Cow,
 };

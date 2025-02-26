@@ -90,7 +90,7 @@ impl std::ops::Mul<f64> for GasPrice {
 
 impl From<EffectiveGasPrice> for GasPrice {
     fn from(value: EffectiveGasPrice) -> Self {
-        let value = value.0 .0;
+        let value = value.0.0;
         Self {
             max: value.into(),
             tip: value.into(),
@@ -109,7 +109,7 @@ pub struct FeePerGas(pub Ether);
 impl FeePerGas {
     /// Multiplies this fee by the given floating point number, rounding up.
     fn mul_ceil(self, rhs: f64) -> Self {
-        U256::from_f64_lossy((self.0 .0.to_f64_lossy() * rhs).ceil()).into()
+        U256::from_f64_lossy((self.0.0.to_f64_lossy() * rhs).ceil()).into()
     }
 }
 
@@ -137,7 +137,7 @@ impl ops::Mul<FeePerGas> for Gas {
     type Output = Ether;
 
     fn mul(self, rhs: FeePerGas) -> Self::Output {
-        (self.0 * rhs.0 .0).into()
+        (self.0 * rhs.0.0).into()
     }
 }
 

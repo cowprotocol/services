@@ -1,5 +1,5 @@
 use {
-    crate::{auction::AuctionId, OrderUid},
+    crate::{OrderUid, auction::AuctionId},
     sqlx::PgConnection,
 };
 
