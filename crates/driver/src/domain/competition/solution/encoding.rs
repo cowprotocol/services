@@ -237,7 +237,7 @@ pub fn tx(
             flashloan.token.into(),
         )
         .transfer_from(
-            contracts.settlement().address().into(),
+            contracts.settlement().address(),
             flashloan_wrapper.address(),
             flashloan.amount.0, // or order buy amount?
         )

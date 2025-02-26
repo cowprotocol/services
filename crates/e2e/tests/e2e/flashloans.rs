@@ -107,10 +107,11 @@ async fn forked_mainnet_single_flashloan_encoding_test(web3: Web3) {
         sell_token: token_usdc.address(),
         sell_amount: to_wei_with_exp(1000, 6),
         buy_token: token_dai.address(),
-        buy_amount: to_wei_with_exp(900, 18),
+        buy_amount: to_wei_with_exp(900, 18), // equal to flashloan amount
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Buy,
         app_data,
+        partially_fillable: false,
         // Receiver is always the settlement contract, so driver will have to manually send funds to
         // solver wrapper (flashloan borrower)
         receiver: Some(onchain.contracts().gp_settlement.address()),
