@@ -221,7 +221,7 @@ async fn create_config_file(
         r#"[contracts]
            gp-v2-settlement = "{}"
            weth = "{}"
-           flashloan-wrapper = "{}"
+           flashloan-wrappers = ["{}"]
 
            [submission]
            gas-price-cap = "1000000000000"
