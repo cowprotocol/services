@@ -90,4 +90,5 @@ pub struct Tx {
 #[serde(rename_all = "camelCase", tag = "reason")]
 pub enum BanReason {
     UnsettledConsecutiveAuctions,
+    HighSettleFailureRate,
 }
