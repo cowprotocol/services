@@ -182,22 +182,25 @@ pub fn tx(
 
         // TODO fix
         // Hardcoded configuration for now
-        // For maker as lender (0x60744434d6339a6B27d73d9Eda62b6F66a0a04FA), we use the
-        // first wrapper, otherwise use the second one
         let maker_lender =
             eth::H160::from_str("0x60744434d6339a6B27d73d9Eda62b6F66a0a04FA").unwrap();
-        let flashloan_wrapper = if flashloan.lender.0 == maker_lender {
-            &flashloan_wrappers[0]
+        let aave_lender =
+            eth::H160::from_str("0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2").unwrap();
+
+        let (flashloan_wrapper, flash_fee) = if flashloan.lender.0 == maker_lender {
+            (&flashloan_wrappers[0], 1) // MAKER
+        } else if flashloan.lender.0 == aave_lender {
+            (&flashloan_wrappers[1], 1000) // AAVE
         } else {
-            &flashloan_wrappers[1]
+            (&flashloan_wrappers[0], 1) // for driver tests to pass
         };
 
-        (flashloan, flashloan_wrapper)
+        (flashloan, flashloan_wrapper, flash_fee)
     });
 
     // Add all interactions needed to move flash loaned tokens around
     // These interactions are executed before all other pre-interactions
-    if let Some((flashloan, flashloan_wrapper)) = flashloan {
+    if let Some((flashloan, flashloan_wrapper, flash_fee)) = flashloan {
         // Allow settlement contract to pull borrowed tokens from flashloan wrapper
         pre_interactions.insert(
             0,
@@ -230,6 +233,14 @@ pub fn tx(
             },
         );
 
+        // Repayment amount needs to be increased by flash fee
+        let repayment_amount = flashloan.amount.0
+            + flashloan
+                .amount
+                .0
+                .checked_div(primitive_types::U256::from(flash_fee))
+                .unwrap();
+
         // Since the order receiver is expected to be the setttlement contract, we need
         // to transfer tokens from the settlement contract to the flashloan wrapper
         let tx = contracts::ERC20::at(
@@ -239,7 +250,7 @@ pub fn tx(
         .transfer_from(
             contracts.settlement().address(),
             flashloan_wrapper.address(),
-            flashloan.amount.0, // or order buy amount?
+            repayment_amount,
         )
         .into_inner();
         post_interactions.push(eth::Interaction {
@@ -248,10 +259,10 @@ pub fn tx(
             call_data: tx.data.unwrap().0.into(),
         });
 
-        // Allow flash loan lender to transfer tokens back from wrapper contract
+        // Allow flash loan lender to take tokens from wrapper contract
         post_interactions.push(approve_flashloan(
             flashloan.token,
-            flashloan.amount,
+            repayment_amount.into(),
             flashloan.lender,
             flashloan_wrapper,
         ));
@@ -301,7 +312,7 @@ pub fn tx(
 
     // Target and calldata depend on whether a flashloan is used
     let (to, calldata) = match flashloan {
-        Some((flashloan, flashloan_wrapper)) => {
+        Some((flashloan, flashloan_wrapper, _)) => {
             let calldata = flashloan_wrapper
                 .flash_loan_and_settle(
                     flashloan.lender.into(),
