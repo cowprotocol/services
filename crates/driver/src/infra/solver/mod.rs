@@ -226,7 +226,7 @@ impl Solver {
     ) -> Result<Vec<Solution>, Error> {
         // Fetch the solutions from the solver.
         let weth = self.eth.contracts().weth_address();
-        let auction_dto = dto::Auction::new(
+        let auction_dto = dto::auction::new(
             auction,
             liquidity,
             weth,
