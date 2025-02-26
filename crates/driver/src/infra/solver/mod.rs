@@ -257,9 +257,15 @@ impl Solver {
         let res = util::http::send(self.config.response_size_limit_max_bytes, req).await;
         super::observe::solver_response(&url, res.as_deref());
         let res = res?;
-        let res: dto::Solutions = serde_json::from_str(&res)
+        let res: solvers_dto::solution::Solutions = serde_json::from_str(&res)
             .tap_err(|err| tracing::warn!(res, ?err, "failed to parse solver response"))?;
-        let solutions = res.into_domain(auction, liquidity, weth, self.clone(), &self.config)?;
+        let solutions = dto::Solutions::from(res).into_domain(
+            auction,
+            liquidity,
+            weth,
+            self.clone(),
+            &self.config,
+        )?;
 
         super::observe::solutions(&solutions, auction.surplus_capturing_jit_order_owners());
         Ok(solutions)

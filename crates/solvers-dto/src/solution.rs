@@ -1,20 +1,20 @@
 use {
     super::serialize,
     number::serialization::HexOrDecimalU256,
-    serde::Serialize,
+    serde::{Deserialize, Serialize},
     serde_with::serde_as,
     std::collections::HashMap,
     web3::types::{H160, U256},
 };
 
-#[derive(Debug, Serialize, Default)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct Solutions {
     pub solutions: Vec<Solution>,
 }
 
 #[serde_as]
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Solution {
     pub id: u64,
@@ -32,7 +32,7 @@ pub struct Solution {
     pub flashloans: Vec<Flashloan>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Trade {
     Fulfillment(Fulfillment),
@@ -40,7 +40,7 @@ pub enum Trade {
 }
 
 #[serde_as]
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Fulfillment {
     #[serde_as(as = "serialize::Hex")]
@@ -53,7 +53,7 @@ pub struct Fulfillment {
 }
 
 #[serde_as]
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JitTrade {
     pub order: JitOrder,
@@ -64,7 +64,7 @@ pub struct JitTrade {
 }
 
 #[serde_as]
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JitOrder {
     pub sell_token: H160,
@@ -74,6 +74,8 @@ pub struct JitOrder {
     pub sell_amount: U256,
     #[serde_as(as = "HexOrDecimalU256")]
     pub buy_amount: U256,
+    #[serde(default)]
+    pub partially_fillable: bool,
     pub valid_to: u32,
     #[serde_as(as = "serialize::Hex")]
     pub app_data: [u8; 32],
@@ -85,14 +87,14 @@ pub struct JitOrder {
     pub signature: Vec<u8>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Kind {
     Sell,
     Buy,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Interaction {
     Liquidity(LiquidityInteraction),
@@ -100,7 +102,7 @@ pub enum Interaction {
 }
 
 #[serde_as]
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub struct Call {
     pub target: H160,
@@ -111,7 +113,7 @@ pub struct Call {
 }
 
 #[serde_as]
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LiquidityInteraction {
     pub internalize: bool,
@@ -125,7 +127,7 @@ pub struct LiquidityInteraction {
 }
 
 #[serde_as]
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CustomInteraction {
     pub internalize: bool,
@@ -143,7 +145,7 @@ pub struct CustomInteraction {
 /// An interaction that can be executed as part of an order's pre- or
 /// post-interactions.
 #[serde_as]
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderInteraction {
     pub target: H160,
@@ -155,7 +157,7 @@ pub struct OrderInteraction {
 }
 
 #[serde_as]
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Asset {
     pub token: H160,
@@ -164,7 +166,7 @@ pub struct Asset {
 }
 
 #[serde_as]
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Allowance {
     pub token: H160,
@@ -173,7 +175,7 @@ pub struct Allowance {
     pub amount: U256,
 }
 
-#[derive(Clone, Debug, Default, Serialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum SellTokenBalance {
     #[default]
@@ -182,7 +184,7 @@ pub enum SellTokenBalance {
     External,
 }
 
-#[derive(Clone, Debug, Default, Serialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum BuyTokenBalance {
     #[default]
@@ -190,7 +192,7 @@ pub enum BuyTokenBalance {
     Internal,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum SigningScheme {
     Eip712,
@@ -200,7 +202,7 @@ pub enum SigningScheme {
 }
 
 #[serde_as]
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Flashloan {
     pub lender: H160,
