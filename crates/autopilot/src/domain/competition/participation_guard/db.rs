@@ -1,6 +1,6 @@
 use {
     crate::{
-        domain::{eth, Metrics},
+        domain::{Metrics, eth},
         infra,
     },
     ethrpc::block_stream::CurrentBlockWatcher,
