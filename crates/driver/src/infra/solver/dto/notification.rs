@@ -7,6 +7,7 @@ use {
         infra::notify,
         util::serialize,
     },
+    chrono::{DateTime, Utc},
     serde::Serialize,
     serde_with::serde_as,
     std::collections::BTreeSet,
@@ -61,6 +62,14 @@ impl Notification {
                     notify::Settlement::Expired => Kind::Expired,
                 },
                 notify::Kind::PostprocessingTimedOut => Kind::PostprocessingTimedOut,
+                notify::Kind::Banned { reason, until } => Kind::Banned {
+                    reason: match reason {
+                        notify::BanReason::UnsettledConsecutiveAuctions => {
+                            BanReason::UnsettledConsecutiveAuctions
+                        }
+                    },
+                    until,
+                },
             },
         }
     }
@@ -144,6 +153,16 @@ pub enum Kind {
     Expired,
     Fail,
     PostprocessingTimedOut,
+    Banned {
+        reason: BanReason,
+        until: DateTime<Utc>,
+    },
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase", tag = "reason")]
+pub enum BanReason {
+    UnsettledConsecutiveAuctions,
 }
 
 type BlockNo = u64;

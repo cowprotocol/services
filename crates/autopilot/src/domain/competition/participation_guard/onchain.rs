@@ -1,9 +1,9 @@
-use crate::{domain::eth, infra::Ethereum};
+use crate::{domain::eth, infra};
 
 /// Calls Authenticator contract to check if a solver has a sufficient
 /// permission.
 pub(super) struct Validator {
-    pub eth: Ethereum,
+    pub eth: infra::Ethereum,
 }
 
 #[async_trait::async_trait]

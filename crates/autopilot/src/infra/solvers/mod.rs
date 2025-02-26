@@ -1,9 +1,10 @@
 use {
     self::dto::{reveal, settle, solve},
-    crate::{arguments::Account, domain::eth, util},
+    crate::{arguments::Account, domain::eth, infra::solvers::dto::notify, util},
     anyhow::{Context, Result, anyhow},
+    chrono::{DateTime, Utc},
     reqwest::{Client, StatusCode},
-    std::time::Duration,
+    std::{sync::Arc, time::Duration},
     thiserror::Error,
     url::Url,
 };
@@ -116,6 +117,10 @@ impl Driver {
         Ok(())
     }
 
+    pub async fn notify(&self, request: &notify::Request) -> Result<()> {
+        self.request_response("notify", request, None).await
+    }
+
     async fn request_response<Response>(
         &self,
         path: &str,
@@ -171,4 +176,16 @@ pub async fn response_body_with_size_limit(
         bytes.extend_from_slice(slice);
     }
     Ok(bytes)
+}
+
+/// Notifies the non-settling driver in a fire-and-forget manner.
+pub fn notify_non_settling_solver(non_settling_driver: Arc<Driver>, banned_until: DateTime<Utc>) {
+    tokio::spawn(async move {
+        let _ = non_settling_driver
+            .notify(&notify::Request::Banned {
+                reason: notify::BanReason::UnsettledConsecutiveAuctions,
+                until: banned_until,
+            })
+            .await;
+    });
 }

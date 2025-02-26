@@ -3,6 +3,7 @@ use {
         domain::{Metrics, eth},
         infra,
     },
+    chrono::Utc,
     ethrpc::block_stream::CurrentBlockWatcher,
     std::{
         collections::HashMap,
@@ -72,6 +73,7 @@ impl Validator {
                 };
 
                 let now = Instant::now();
+                let banned_until = Utc::now() + self_.0.ttl;
                 let non_settling_solver_names: Vec<&str> = non_settling_solvers
                     .iter()
                     .filter_map(|solver| self_.0.drivers_by_address.get(solver))
@@ -83,6 +85,7 @@ impl Validator {
                         // CIP making this mandatory has been approved.
                         if driver.requested_timeout_on_problems {
                             tracing::debug!(solver = ?driver.name, "disabling solver temporarily");
+                            infra::notify_non_settling_solver(driver.clone(), banned_until);
                             self_
                                 .0
                                 .banned_solvers

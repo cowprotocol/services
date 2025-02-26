@@ -1,5 +1,6 @@
 use {
     super::serialize,
+    chrono::{DateTime, Utc},
     number::serialization::HexOrDecimalU256,
     serde::Deserialize,
     serde_with::{DisplayFromStr, serde_as},
@@ -64,6 +65,10 @@ pub enum Kind {
     Cancelled,
     Fail,
     PostprocessingTimedOut,
+    Banned {
+        reason: BanReason,
+        until: DateTime<Utc>,
+    },
 }
 
 type BlockNo = u64;
@@ -79,4 +84,10 @@ pub struct Tx {
     #[serde_as(as = "HexOrDecimalU256")]
     pub value: U256,
     pub access_list: AccessList,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", tag = "reason")]
+pub enum BanReason {
+    UnsettledConsecutiveAuctions,
 }
