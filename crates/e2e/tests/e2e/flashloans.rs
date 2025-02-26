@@ -40,6 +40,7 @@ async fn forked_node_mainnet_single_flashloan_encoding_maker() {
 #[ignore]
 async fn forked_node_mainnet_single_flashloan_encoding_aave() {
     run_forked_test_with_block_number(
+        forked_mainnet_single_flashloan_encoding_aave_test,
         std::env::var("FORK_URL_MAINNET")
             .expect("FORK_URL_MAINNET must be set to run forked tests"),
         21874126,
