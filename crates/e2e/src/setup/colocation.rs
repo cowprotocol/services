@@ -1,6 +1,6 @@
 use {
     crate::setup::*,
-    ethcontract::{common::DeploymentInformation, H160},
+    ethcontract::{H160, common::DeploymentInformation},
     reqwest::Url,
     std::collections::HashSet,
     tokio::task::JoinHandle,

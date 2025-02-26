@@ -13,7 +13,7 @@ use {
         UniswapV2Router02,
         WETH9,
     },
-    ethcontract::{errors::DeployError, Address, H256, U256},
+    ethcontract::{Address, H256, U256, errors::DeployError},
     model::DomainSeparator,
     shared::ethrpc::Web3,
 };
@@ -98,10 +98,10 @@ impl Contracts {
 
         macro_rules! deploy {
                 ($contract:ident) => { deploy!($contract ()) };
-                ($contract:ident ( $($param:expr),* $(,)? )) => {
+                ($contract:ident ( $($param:expr_2021),* $(,)? )) => {
                     deploy!($contract ($($param),*) as stringify!($contract))
                 };
-                ($contract:ident ( $($param:expr),* $(,)? ) as $name:expr) => {{
+                ($contract:ident ( $($param:expr_2021),* $(,)? ) as $name:expr_2021) => {{
                     let name = $name;
                     $contract::builder(&web3 $(, $param)*)
                         .deploy()

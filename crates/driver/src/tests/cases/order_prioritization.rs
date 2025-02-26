@@ -3,7 +3,7 @@ use {
         infra::config::file::{FeeHandler, OrderPriorityStrategy},
         tests::{
             cases::EtherExt,
-            setup::{ab_order, ab_pool, ab_solution, setup, test_solver, Order, OrderQuote},
+            setup::{Order, OrderQuote, ab_order, ab_pool, ab_solution, setup, test_solver},
         },
     },
     chrono::Utc,

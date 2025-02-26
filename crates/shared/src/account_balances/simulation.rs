@@ -5,7 +5,7 @@
 use {
     super::{BalanceFetching, Query, TransferSimulationError},
     anyhow::Result,
-    contracts::{erc20::Contract, BalancerV2Vault},
+    contracts::{BalancerV2Vault, erc20::Contract},
     ethcontract::{Bytes, H160, U256},
     ethrpc::Web3,
     futures::future,

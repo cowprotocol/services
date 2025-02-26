@@ -2,12 +2,12 @@ use {
     anyhow::{Context, Result},
     app_data::AppDataHash,
     contracts::CowAmmLegacyHelper,
-    ethcontract::{errors::MethodError, Address, Bytes, U256},
+    ethcontract::{Address, Bytes, U256, errors::MethodError},
     model::{
+        DomainSeparator,
         interaction::InteractionData,
         order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
-        signature::{hashed_eip712_message, Signature},
-        DomainSeparator,
+        signature::{Signature, hashed_eip712_message},
     },
     shared::signature_validator::{SignatureCheck, SignatureValidating},
 };
@@ -96,12 +96,12 @@ impl Amm {
             sell_amount: order.3,
             buy_amount: order.4,
             valid_to: order.5,
-            app_data: AppDataHash(order.6 .0),
+            app_data: AppDataHash(order.6.0),
             fee_amount: order.7,
-            kind: convert_kind(&order.8 .0)?,
+            kind: convert_kind(&order.8.0)?,
             partially_fillable: order.9,
-            sell_token_balance: convert_sell_token_source(&order.10 .0)?,
-            buy_token_balance: convert_buy_token_destination(&order.11 .0)?,
+            sell_token_balance: convert_sell_token_source(&order.10.0)?,
+            buy_token_balance: convert_buy_token_destination(&order.11.0)?,
         };
 
         let pre_interactions = convert_interactions(pre_interactions);
@@ -145,7 +145,7 @@ fn convert_interactions(interactions: Vec<RawInteraction>) -> Vec<InteractionDat
         .map(|interaction| InteractionData {
             target: interaction.0,
             value: interaction.1,
-            call_data: interaction.2 .0,
+            call_data: interaction.2.0,
         })
         .collect()
 }

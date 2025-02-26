@@ -1,15 +1,15 @@
 use {
     crate::{
         domain::{competition, competition::order, eth, liquidity},
-        infra::{solver::Config, Solver},
-        util::{serialize, Bytes},
+        infra::{Solver, solver::Config},
+        util::{Bytes, serialize},
     },
     app_data::AppDataHash,
     itertools::Itertools,
     model::{
+        DomainSeparator,
         interaction::InteractionData,
         order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
-        DomainSeparator,
     },
     serde::Deserialize,
     serde_with::serde_as,

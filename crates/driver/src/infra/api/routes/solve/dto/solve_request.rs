@@ -5,7 +5,7 @@ use {
             eth,
             time,
         },
-        infra::{solver::Timeouts, tokens, Ethereum},
+        infra::{Ethereum, solver::Timeouts, tokens},
         util::serialize,
     },
     serde::Deserialize,

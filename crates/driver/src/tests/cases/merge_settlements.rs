@@ -2,6 +2,8 @@ use crate::tests::{
     cases::EtherExt,
     setup::{
         self,
+        Solution,
+        Test,
         ab_order,
         ab_pool,
         ab_solution,
@@ -12,8 +14,6 @@ use crate::tests::{
         cd_pool,
         cd_solution,
         test_solver,
-        Solution,
-        Test,
     },
 };
 

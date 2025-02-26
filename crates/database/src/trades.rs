@@ -1,5 +1,5 @@
 use {
-    crate::{auction::AuctionId, events::EventIndex, Address, OrderUid, TransactionHash},
+    crate::{Address, OrderUid, TransactionHash, auction::AuctionId, events::EventIndex},
     bigdecimal::BigDecimal,
     futures::stream::BoxStream,
     sqlx::PgConnection,
@@ -136,11 +136,11 @@ mod tests {
     use {
         super::*,
         crate::{
+            PgTransaction,
             byte_array::ByteArray,
             events::{Event, EventIndex, Settlement, Trade},
-            onchain_broadcasted_orders::{insert_onchain_order, OnchainOrderPlacement},
+            onchain_broadcasted_orders::{OnchainOrderPlacement, insert_onchain_order},
             orders::Order,
-            PgTransaction,
         },
         futures::TryStreamExt,
         sqlx::Connection,

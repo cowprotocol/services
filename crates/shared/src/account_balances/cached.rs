@@ -1,7 +1,7 @@
 use {
     crate::account_balances::{BalanceFetching, Query, TransferSimulationError},
     anyhow::Result,
-    ethrpc::block_stream::{into_stream, CurrentBlockWatcher},
+    ethrpc::block_stream::{CurrentBlockWatcher, into_stream},
     futures::StreamExt,
     itertools::Itertools,
     primitive_types::U256,

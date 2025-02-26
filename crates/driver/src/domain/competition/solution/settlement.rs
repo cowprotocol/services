@@ -1,16 +1,16 @@
 use {
-    super::{encoding, trade::ClearingPrices, Error, Solution},
+    super::{Error, Solution, encoding, trade::ClearingPrices},
     crate::{
         domain::{
             competition::{
                 self,
                 auction,
                 order::{self},
-                solution::{self, error, Trade},
+                solution::{self, Trade, error},
             },
             eth,
         },
-        infra::{blockchain::Ethereum, observe, solver::ManageNativeToken, Simulator},
+        infra::{Simulator, blockchain::Ethereum, observe, solver::ManageNativeToken},
     },
     futures::future::try_join_all,
     std::collections::{BTreeSet, HashMap, HashSet},

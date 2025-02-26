@@ -7,7 +7,7 @@ use {
         },
     },
     shared::sources::balancer_v2::pool_fetching::WeightedPoolVersion,
-    solver::liquidity::{balancer_v2, WeightedProductOrder},
+    solver::liquidity::{WeightedProductOrder, balancer_v2},
 };
 
 /// Median gas used per BalancerSwapGivenOutInteraction.

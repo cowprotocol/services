@@ -7,9 +7,9 @@ pub mod settlement;
 
 pub use {
     auction::{
-        order::{Order, OrderUid},
         Auction,
         RawAuctionData,
+        order::{Order, OrderUid},
     },
     fee::ProtocolFees,
     quote::Quote,

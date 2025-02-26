@@ -1,5 +1,5 @@
 use {
-    crate::{auction::AuctionId, Address, PgTransaction},
+    crate::{Address, PgTransaction, auction::AuctionId},
     bigdecimal::BigDecimal,
     sqlx::PgConnection,
     std::ops::DerefMut,

@@ -3,11 +3,11 @@ use {
         database::competition::Competition,
         domain::{
             self,
+            OrderUid,
             auction::Id,
             competition::{self, Solution, SolutionError, TradedOrder, Unranked},
             eth::{self, TxId},
             settlement::{ExecutionEnded, ExecutionStarted},
-            OrderUid,
         },
         infra::{
             self,

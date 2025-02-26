@@ -4,7 +4,7 @@ use {
     app_data::{AppDataDocument, AppDataHash},
     reqwest::StatusCode,
     std::convert::Infallible,
-    warp::{reply, Filter, Rejection, Reply},
+    warp::{Filter, Rejection, Reply, reply},
 };
 
 pub fn request() -> impl Filter<Extract = (AppDataHash,), Error = Rejection> + Clone {

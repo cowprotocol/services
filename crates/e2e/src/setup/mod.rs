@@ -7,10 +7,10 @@ mod services;
 mod solver;
 
 use {
-    crate::nodes::{Node, NODE_HOST},
-    anyhow::{anyhow, Result},
+    crate::nodes::{NODE_HOST, Node},
+    anyhow::{Result, anyhow},
     ethcontract::futures::FutureExt,
-    shared::ethrpc::{create_test_transport, Web3},
+    shared::ethrpc::{Web3, create_test_transport},
     std::{
         future::Future,
         io::Write,
@@ -229,7 +229,7 @@ async fn run<F, Fut, T>(
 
 #[macro_export]
 macro_rules! assert_approximately_eq {
-    ($executed_value:expr, $expected_value:expr) => {{
+    ($executed_value:expr_2021, $expected_value:expr_2021) => {{
         let lower = $expected_value * U256::from(99999999999u128) / U256::from(100000000000u128);
         let upper =
             ($expected_value * U256::from(100000000001u128) / U256::from(100000000000u128)) + 1;

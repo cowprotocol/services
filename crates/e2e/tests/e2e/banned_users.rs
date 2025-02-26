@@ -3,15 +3,15 @@ use {
     e2e::{
         nodes::forked_node::ForkedNodeApi,
         setup::{
+            OnchainComponents,
+            Services,
             run_forked_test_with_block_number,
             to_wei,
             to_wei_with_exp,
-            OnchainComponents,
-            Services,
         },
         tx,
     },
-    ethcontract::{prelude::U256, H160},
+    ethcontract::{H160, prelude::U256},
     ethrpc::Web3,
     model::quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
     reqwest::StatusCode,

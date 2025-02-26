@@ -49,12 +49,14 @@ impl Interaction {
                 // minimizes the approval fees over time. This is a
                 // potential security issue, but we assume that the router contract for protocol
                 // indexed liquidity to be safe.
-                vec![eth::Allowance {
-                    token: interaction.input.token,
-                    spender: address,
-                    amount: eth::U256::max_value(),
-                }
-                .into()]
+                vec![
+                    eth::Allowance {
+                        token: interaction.input.token,
+                        spender: address,
+                        amount: eth::U256::max_value(),
+                    }
+                    .into(),
+                ]
             }
         }
     }

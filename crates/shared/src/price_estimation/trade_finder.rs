@@ -3,16 +3,16 @@
 
 use {
     super::{
-        rate_limited,
-        trade_verifier::{PriceQuery, TradeVerifying},
         Estimate,
         PriceEstimateResult,
         PriceEstimating,
         PriceEstimationError,
         Query,
+        rate_limited,
+        trade_verifier::{PriceQuery, TradeVerifying},
     },
     crate::trade_finding::{TradeError, TradeFinding},
-    anyhow::{anyhow, Result},
+    anyhow::{Result, anyhow},
     futures::future::FutureExt,
     rate_limit::RateLimiter,
     std::sync::Arc,

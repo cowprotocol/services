@@ -1,14 +1,14 @@
 use {
     crate::{
-        auction::AuctionId,
-        orders::OrderKind,
         Address,
         OrderUid,
         PgTransaction,
         TransactionHash,
+        auction::AuctionId,
+        orders::OrderKind,
     },
     bigdecimal::BigDecimal,
-    sqlx::{types::JsonValue, PgConnection, QueryBuilder},
+    sqlx::{PgConnection, QueryBuilder, types::JsonValue},
     std::ops::DerefMut,
 };
 
@@ -342,10 +342,12 @@ mod tests {
         assert_eq!(value, value_.json);
         assert!(value_.tx_hashes.is_empty());
         // load by tx doesn't work, as there is no settlement yet
-        assert!(load_by_tx_hash(&mut db, &ByteArray([0u8; 32]))
-            .await
-            .unwrap()
-            .is_none());
+        assert!(
+            load_by_tx_hash(&mut db, &ByteArray([0u8; 32]))
+                .await
+                .unwrap()
+                .is_none()
+        );
 
         // non-existent auction returns none
         assert!(load_by_id(&mut db, 1).await.unwrap().is_none());

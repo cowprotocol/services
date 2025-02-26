@@ -64,7 +64,7 @@ impl Reserves {
     }
 
     /// Returns an iterator over the reserve assets.
-    pub fn iter(&self) -> impl Iterator<Item = eth::Asset> {
+    pub fn iter(&self) -> impl Iterator<Item = eth::Asset> + use<> {
         self.into_iter()
     }
 }

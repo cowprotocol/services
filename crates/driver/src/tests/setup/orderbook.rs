@@ -2,13 +2,13 @@ use {
     crate::{domain::competition::order::app_data::AppData, tests::setup::Order},
     app_data::AppDataDocument,
     axum::{
+        Extension,
+        Json,
+        Router,
         extract::Path,
         http::StatusCode,
         response::IntoResponse,
         routing::get,
-        Extension,
-        Json,
-        Router,
     },
     std::{collections::HashMap, net::SocketAddr},
 };
@@ -33,7 +33,7 @@ impl Orderbook {
             .filter_map(|order| {
                 if let AppData::Full(validated_data) = &order.app_data {
                     Some((
-                        app_data::AppDataHash(order.app_data.hash().0 .0),
+                        app_data::AppDataHash(order.app_data.hash().0.0),
                         app_data::Root::new(Some(validated_data.protocol.clone())),
                     ))
                 } else {

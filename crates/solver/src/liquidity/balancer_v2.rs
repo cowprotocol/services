@@ -3,8 +3,8 @@
 use {
     crate::{
         interactions::{
-            allowances::{AllowanceManager, AllowanceManaging, Allowances},
             BalancerSwapGivenOutInteraction,
+            allowances::{AllowanceManager, AllowanceManaging, Allowances},
         },
         liquidity::{
             AmmOrderExecution,

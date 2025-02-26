@@ -6,7 +6,7 @@ use {
             liquidity::{self, balancer},
         },
     },
-    solver::liquidity::{balancer_v2, StablePoolOrder},
+    solver::liquidity::{StablePoolOrder, balancer_v2},
 };
 
 /// Median gas used per BalancerSwapGivenOutInteraction.

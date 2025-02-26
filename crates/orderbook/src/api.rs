@@ -1,16 +1,16 @@
 use {
     crate::{app_data, database::Postgres, orderbook::Orderbook, quoter::QuoteHandler},
     anyhow::Result,
-    serde::{de::DeserializeOwned, Serialize},
-    shared::price_estimation::{native::NativePriceEstimating, PriceEstimationError},
+    serde::{Serialize, de::DeserializeOwned},
+    shared::price_estimation::{PriceEstimationError, native::NativePriceEstimating},
     std::{convert::Infallible, fmt::Debug, sync::Arc, time::Instant},
     warp::{
-        filters::BoxedFilter,
-        hyper::StatusCode,
-        reply::{json, with_status, Json, WithStatus},
         Filter,
         Rejection,
         Reply,
+        filters::BoxedFilter,
+        hyper::StatusCode,
+        reply::{Json, WithStatus, json, with_status},
     },
 };
 
@@ -256,8 +256,8 @@ pub async fn response_body(response: warp::hyper::Response<warp::hyper::Body>) -
 
 const MAX_JSON_BODY_PAYLOAD: u64 = 1024 * 16;
 
-pub fn extract_payload<T: DeserializeOwned + Send>(
-) -> impl Filter<Extract = (T,), Error = Rejection> + Clone {
+pub fn extract_payload<T: DeserializeOwned + Send>()
+-> impl Filter<Extract = (T,), Error = Rejection> + Clone {
     // (rejecting huge payloads)...
     extract_payload_with_max_size(MAX_JSON_BODY_PAYLOAD)
 }

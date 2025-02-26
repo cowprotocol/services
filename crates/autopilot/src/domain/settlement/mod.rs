@@ -1115,10 +1115,12 @@ mod tests {
             jit_trade.fee_breakdown(&auction).unwrap().total.amount.0,
             0.into()
         );
-        assert!(jit_trade
-            .fee_breakdown(&auction)
-            .unwrap()
-            .protocol
-            .is_empty());
+        assert!(
+            jit_trade
+                .fee_breakdown(&auction)
+                .unwrap()
+                .protocol
+                .is_empty()
+        );
     }
 }

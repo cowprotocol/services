@@ -2,9 +2,9 @@ use {
     crate::{
         domain::{
             competition::{
-                bad_tokens::{cache::Cache, Quality},
-                order,
                 Order,
+                bad_tokens::{Quality, cache::Cache},
+                order,
             },
             eth,
         },
@@ -13,7 +13,7 @@ use {
     futures::FutureExt,
     model::interaction::InteractionData,
     shared::{
-        bad_token::{trace_call::TraceCallDetectorRaw, TokenQuality},
+        bad_token::{TokenQuality, trace_call::TraceCallDetectorRaw},
         request_sharing::BoxRequestSharing,
     },
     std::{

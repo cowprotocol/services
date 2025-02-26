@@ -1,7 +1,7 @@
 use {
     crate::{
         db_order_conversions::order_kind_into,
-        order_quoting::{quote_kind_from_signing_scheme, QuoteData, QuoteSearchParameters},
+        order_quoting::{QuoteData, QuoteSearchParameters, quote_kind_from_signing_scheme},
     },
     anyhow::Result,
     chrono::{DateTime, Utc},

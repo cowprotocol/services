@@ -2,11 +2,11 @@ use {
     crate::{
         bad_token::{BadTokenDetecting, TokenQuality},
         price_estimation::{
-            gas::{GAS_PER_WETH_UNWRAP, GAS_PER_WETH_WRAP},
             Estimate,
             PriceEstimating,
             PriceEstimationError,
             Query,
+            gas::{GAS_PER_WETH_UNWRAP, GAS_PER_WETH_WRAP},
         },
     },
     anyhow::anyhow,
@@ -43,7 +43,7 @@ impl SanitizedPriceEstimator {
             match self.bad_token_detector.detect(token).await {
                 Err(err) => return Err(PriceEstimationError::ProtocolInternal(err)),
                 Ok(TokenQuality::Bad { reason }) => {
-                    return Err(PriceEstimationError::UnsupportedToken { token, reason })
+                    return Err(PriceEstimationError::UnsupportedToken { token, reason });
                 }
                 _ => (),
             }

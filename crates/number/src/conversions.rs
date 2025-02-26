@@ -1,7 +1,7 @@
 use {
-    anyhow::{ensure, Result},
-    bigdecimal::{num_bigint::ToBigInt, BigDecimal},
-    num::{bigint::Sign, rational::Ratio, BigInt, BigRational, BigUint, Zero},
+    anyhow::{Result, ensure},
+    bigdecimal::{BigDecimal, num_bigint::ToBigInt},
+    num::{BigInt, BigRational, BigUint, Zero, bigint::Sign, rational::Ratio},
     primitive_types::U256,
 };
 

@@ -1,10 +1,11 @@
 pub use {
     crate::database::{
         competition::Competition,
-        order_events::{store_order_events, OrderEventLabel},
+        order_events::{OrderEventLabel, store_order_events},
     },
     database,
     model::{
+        DomainSeparator,
         interaction::InteractionData,
         order::{
             BuyTokenDestination,
@@ -18,9 +19,8 @@ pub use {
         },
         signature::{EcdsaSignature, Signature, SigningScheme},
         solver_competition::SolverCompetitionDB,
-        DomainSeparator,
     },
-    shared::order_validation::{is_order_outside_market_price, Amounts},
+    shared::order_validation::{Amounts, is_order_outside_market_price},
 };
 use {crate::domain, ethrpc::Web3, std::collections::HashMap, url::Url};
 

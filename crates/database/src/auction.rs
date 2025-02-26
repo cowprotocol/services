@@ -1,7 +1,7 @@
 use {
     crate::{Address, OrderUid},
     bigdecimal::BigDecimal,
-    sqlx::{types::JsonValue, PgConnection},
+    sqlx::{PgConnection, types::JsonValue},
 };
 
 pub type AuctionId = i64;

@@ -1,5 +1,5 @@
 use {
-    super::{blockchain::Blockchain, Mempool, Partial, Solver, Test},
+    super::{Mempool, Partial, Solver, Test, blockchain::Blockchain},
     crate::{
         domain::competition::order,
         infra::config::file::OrderPriorityStrategy,

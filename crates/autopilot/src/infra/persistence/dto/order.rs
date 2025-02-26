@@ -1,7 +1,7 @@
 use {
     crate::{
         boundary::{self},
-        domain::{self, eth, fee::FeeFactor, OrderUid},
+        domain::{self, OrderUid, eth, fee::FeeFactor},
     },
     app_data::AppDataHash,
     number::serialization::HexOrDecimalU256,

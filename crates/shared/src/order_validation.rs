@@ -14,15 +14,17 @@ use {
         signature_validator::{SignatureCheck, SignatureValidating, SignatureValidationError},
         trade_finding,
     },
-    anyhow::{anyhow, Result},
+    anyhow::{Result, anyhow},
     app_data::{AppDataHash, Hook, Hooks, ValidatedAppData, Validator},
     async_trait::async_trait,
     contracts::{HooksTrampoline, WETH9},
     ethcontract::{Bytes, H160, H256, U256},
     model::{
+        DomainSeparator,
         interaction::InteractionData,
         order::{
             AppdataFromMismatch,
+            BUY_ETH_ADDRESS,
             BuyTokenDestination,
             Interactions,
             Order,
@@ -34,12 +36,10 @@ use {
             OrderMetadata,
             SellTokenSource,
             VerificationError,
-            BUY_ETH_ADDRESS,
         },
         quote::{OrderQuoteSide, QuoteSigningScheme, SellAmount},
-        signature::{self, hashed_eip712_message, Signature, SigningScheme},
+        signature::{self, Signature, SigningScheme, hashed_eip712_message},
         time,
-        DomainSeparator,
     },
     std::{sync::Arc, time::Duration},
 };
@@ -1207,35 +1207,41 @@ mod tests {
         };
 
         assert!(validator.partial_validate(order()).await.is_ok());
-        assert!(validator
-            .partial_validate(PreOrderData {
-                valid_to: u32::MAX,
-                signing_scheme: SigningScheme::PreSign,
-                ..order()
-            })
-            .await
-            .is_ok());
-        assert!(validator
-            .partial_validate(PreOrderData {
-                class: OrderClass::Limit,
-                owner: H160::from_low_u64_be(0x42),
-                valid_to: time::now_in_epoch_seconds()
-                    + validity_configuration.max_market.as_secs() as u32
-                    + 2,
-                ..order()
-            })
-            .await
-            .is_ok());
-        assert!(validator
-            .partial_validate(PreOrderData {
-                partially_fillable: true,
-                class: OrderClass::Liquidity,
-                owner: H160::from_low_u64_be(0x42),
-                valid_to: u32::MAX,
-                ..order()
-            })
-            .await
-            .is_ok());
+        assert!(
+            validator
+                .partial_validate(PreOrderData {
+                    valid_to: u32::MAX,
+                    signing_scheme: SigningScheme::PreSign,
+                    ..order()
+                })
+                .await
+                .is_ok()
+        );
+        assert!(
+            validator
+                .partial_validate(PreOrderData {
+                    class: OrderClass::Limit,
+                    owner: H160::from_low_u64_be(0x42),
+                    valid_to: time::now_in_epoch_seconds()
+                        + validity_configuration.max_market.as_secs() as u32
+                        + 2,
+                    ..order()
+                })
+                .await
+                .is_ok()
+        );
+        assert!(
+            validator
+                .partial_validate(PreOrderData {
+                    partially_fillable: true,
+                    class: OrderClass::Liquidity,
+                    owner: H160::from_low_u64_be(0x42),
+                    valid_to: u32::MAX,
+                    ..order()
+                })
+                .await
+                .is_ok()
+        );
     }
 
     #[tokio::test]
@@ -1371,15 +1377,17 @@ mod tests {
             ..validator
         };
 
-        assert!(validator
-            .validate_and_construct_order(
-                creation.clone(),
-                &domain_separator,
-                Default::default(),
-                None
-            )
-            .await
-            .is_ok());
+        assert!(
+            validator
+                .validate_and_construct_order(
+                    creation.clone(),
+                    &domain_separator,
+                    Default::default(),
+                    None
+                )
+                .await
+                .is_ok()
+        );
 
         let mut signature_validator = MockSignatureValidating::new();
         signature_validator
@@ -1398,15 +1406,17 @@ mod tests {
             ..validator
         };
 
-        assert!(validator
-            .validate_and_construct_order(
-                creation.clone(),
-                &domain_separator,
-                Default::default(),
-                None
-            )
-            .await
-            .is_ok());
+        assert!(
+            validator
+                .validate_and_construct_order(
+                    creation.clone(),
+                    &domain_separator,
+                    Default::default(),
+                    None
+                )
+                .await
+                .is_ok()
+        );
 
         let creation_ = OrderCreation {
             fee_amount: U256::zero(),
@@ -1573,15 +1583,17 @@ mod tests {
             },
             ..Default::default()
         };
-        assert!(validator
-            .validate_and_construct_order(
-                creation.clone(),
-                &Default::default(),
-                Default::default(),
-                None,
-            )
-            .await
-            .is_ok());
+        assert!(
+            validator
+                .validate_and_construct_order(
+                    creation.clone(),
+                    &Default::default(),
+                    Default::default(),
+                    None,
+                )
+                .await
+                .is_ok()
+        );
     }
 
     #[tokio::test]

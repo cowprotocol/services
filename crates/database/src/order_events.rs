@@ -2,9 +2,9 @@
 //! This information gets used to compuate service level indicators.
 
 use {
-    crate::{byte_array::ByteArray, OrderUid},
+    crate::{OrderUid, byte_array::ByteArray},
     chrono::Utc,
-    sqlx::{types::chrono::DateTime, PgConnection, PgPool},
+    sqlx::{PgConnection, PgPool, types::chrono::DateTime},
 };
 
 /// Describes what kind of event was registered for an order.

@@ -9,10 +9,10 @@ use {
         },
         token_info::TokenInfoFetching,
     },
-    anyhow::{anyhow, ensure, Context, Result},
+    anyhow::{Context, Result, anyhow, ensure},
     contracts::{BalancerV2BasePool, BalancerV2Vault},
     ethcontract::{BlockId, Bytes, H160, H256, U256},
-    futures::{future::BoxFuture, FutureExt as _, TryFutureExt},
+    futures::{FutureExt as _, TryFutureExt, future::BoxFuture},
     std::{collections::BTreeMap, future::Future, sync::Arc},
     tokio::sync::oneshot,
 };
@@ -339,12 +339,12 @@ mod tests {
         crate::{
             sources::balancer_v2::{
                 graph_api::{PoolType, Token},
-                pools::{weighted, MockFactoryIndexing, PoolKind},
+                pools::{MockFactoryIndexing, PoolKind, weighted},
             },
             token_info::{MockTokenInfoFetching, TokenInfo},
         },
         anyhow::bail,
-        contracts::{dummy_contract, BalancerV2WeightedPool},
+        contracts::{BalancerV2WeightedPool, dummy_contract},
         ethcontract::U256,
         ethcontract_mock::Mock,
         futures::future,
@@ -750,10 +750,12 @@ mod tests {
             factory: MockFactoryIndexing::new(),
             token_infos: Arc::new(token_infos),
         };
-        assert!(pool_info_fetcher
-            .scaling_factors(&[H160([0xff; 20])])
-            .await
-            .is_err());
+        assert!(
+            pool_info_fetcher
+                .scaling_factors(&[H160([0xff; 20])])
+                .await
+                .is_err()
+        );
     }
 
     #[tokio::test]

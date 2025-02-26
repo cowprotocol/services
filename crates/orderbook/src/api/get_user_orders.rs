@@ -4,7 +4,7 @@ use {
     primitive_types::H160,
     serde::Deserialize,
     std::{convert::Infallible, sync::Arc},
-    warp::{hyper::StatusCode, reply::with_status, Filter, Rejection},
+    warp::{Filter, Rejection, hyper::StatusCode, reply::with_status},
 };
 
 #[derive(Clone, Copy, Debug, Deserialize)]
