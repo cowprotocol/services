@@ -40,9 +40,11 @@ pub struct Order {
     pub buy_amount: U256,
     #[serde_as(as = "HexOrDecimalU256")]
     pub full_buy_amount: U256,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub fee_policies: Option<Vec<FeePolicy>>,
     pub valid_to: u32,
     pub kind: Kind,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub receiver: Option<H160>,
     pub owner: H160,
     pub partially_fillable: bool,
@@ -52,7 +54,7 @@ pub struct Order {
     pub buy_token_destination: BuyTokenDestination,
     pub class: Class,
     pub app_data: AppDataHash,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub flashloan_hint: Option<FlashloanHint>,
     pub signing_scheme: SigningScheme,
     #[serde(with = "bytes_hex")]
