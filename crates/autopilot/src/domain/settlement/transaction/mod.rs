@@ -98,14 +98,14 @@ impl Transaction {
                         side: flags.side(),
                         receiver: trade.2.into(),
                         valid_to: trade.5,
-                        app_data: domain::auction::order::AppDataHash(trade.6 .0),
+                        app_data: domain::auction::order::AppDataHash(trade.6.0),
                         fee_amount: trade.7.into(),
                         sell_token_balance: flags.sell_token_balance().into(),
                         buy_token_balance: flags.buy_token_balance().into(),
                         partially_fillable: flags.partially_fillable(),
                         signature: (boundary::Signature::from_bytes(
                             flags.signing_scheme(),
-                            &trade.10 .0,
+                            &trade.10.0,
                         )
                         .map_err(Error::SignatureRecover)?)
                         .into(),

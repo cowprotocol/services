@@ -9,9 +9,9 @@ use {
         SettlementHandling,
     },
     crate::{interactions::UnwrapWethInteraction, settlement::SettlementEncoder},
-    anyhow::{ensure, Result},
+    anyhow::{Result, ensure},
     contracts::WETH9,
-    model::order::{Order, OrderClass, BUY_ETH_ADDRESS},
+    model::order::{BUY_ETH_ADDRESS, Order, OrderClass},
     std::sync::Arc,
 };
 

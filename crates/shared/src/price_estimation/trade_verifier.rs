@@ -6,31 +6,31 @@ use {
     crate::{
         code_fetching::CodeFetching,
         code_simulation::CodeSimulating,
-        encoded_settlement::{encode_trade, EncodedSettlement, EncodedTrade},
+        encoded_settlement::{EncodedSettlement, EncodedTrade, encode_trade},
         interaction::EncodedInteraction,
         trade_finding::{
-            external::dto::{self, JitOrder},
-            map_interactions_data,
             Interaction,
             QuoteExecution,
             TradeKind,
+            external::dto::{self, JitOrder},
+            map_interactions_data,
         },
     },
     anyhow::{Context, Result},
     bigdecimal::BigDecimal,
     contracts::{
+        GPv2Settlement,
+        WETH9,
         deployed_bytecode,
         dummy_contract,
         support::{AnyoneAuthenticator, Solver, Spardose, Trader},
-        GPv2Settlement,
-        WETH9,
     },
-    ethcontract::{tokens::Tokenize, Bytes, H160, U256},
-    ethrpc::{block_stream::CurrentBlockWatcher, extensions::StateOverride, Web3},
+    ethcontract::{Bytes, H160, U256, tokens::Tokenize},
+    ethrpc::{Web3, block_stream::CurrentBlockWatcher, extensions::StateOverride},
     model::{
-        order::{OrderData, OrderKind, BUY_ETH_ADDRESS},
-        signature::{Signature, SigningScheme},
         DomainSeparator,
+        order::{BUY_ETH_ADDRESS, OrderData, OrderKind},
+        signature::{Signature, SigningScheme},
     },
     num::BigRational,
     number::{
@@ -287,7 +287,7 @@ impl TradeVerifier {
         // not alter solver balances which may be used during settlement. We use
         // a similar strategy for determining whether or not to set approvals on
         // behalf of the trader.
-        if let Some(solver_balance_override) = self
+        match self
             .balance_overrides
             .state_override(BalanceOverrideRequest {
                 token: query.sell_token,
@@ -304,18 +304,23 @@ impl TradeVerifier {
             })
             .await
         {
-            tracing::trace!(?solver_balance_override, "solver balance override enabled");
-            overrides.insert(query.sell_token, solver_balance_override);
+            Some(solver_balance_override) => {
+                tracing::trace!(?solver_balance_override, "solver balance override enabled");
+                overrides.insert(query.sell_token, solver_balance_override);
 
-            if verification.from.is_zero() {
-                verification.from = H160::random();
-                tracing::debug!(
-                    trader = ?verification.from,
-                    "use random trader address with fake balances"
-                );
+                if verification.from.is_zero() {
+                    verification.from = H160::random();
+                    tracing::debug!(
+                        trader = ?verification.from,
+                        "use random trader address with fake balances"
+                    );
+                }
             }
-        } else if verification.from.is_zero() {
-            anyhow::bail!("trader is zero address and balances can not be faked");
+            _ => {
+                if verification.from.is_zero() {
+                    anyhow::bail!("trader is zero address and balances can not be faked");
+                }
+            }
         }
 
         // Set up mocked trader.

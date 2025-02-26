@@ -1,6 +1,6 @@
 use {
-    anyhow::{ensure, Result},
-    num::{rational::Ratio, BigInt, BigRational},
+    anyhow::{Result, ensure},
+    num::{BigInt, BigRational, rational::Ratio},
     primitive_types::U256,
 };
 

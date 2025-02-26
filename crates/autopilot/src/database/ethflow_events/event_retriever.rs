@@ -1,7 +1,7 @@
 //! A component that listens exclusively for `OrderRefund` events of the ethflow
 //! contract.
 use {
-    ethcontract::{contract::AllEventsBuilder, transport::DynTransport, H160, H256},
+    ethcontract::{H160, H256, contract::AllEventsBuilder, transport::DynTransport},
     hex_literal::hex,
     shared::{ethrpc::Web3, event_handling::EventRetrieving},
 };

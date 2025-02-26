@@ -4,8 +4,8 @@ use {
     anyhow::Result,
     ethcontract::H160,
     prometheus::{
-        core::{AtomicU64, GenericCounter},
         IntCounterVec,
+        core::{AtomicU64, GenericCounter},
     },
     std::{
         collections::HashMap,

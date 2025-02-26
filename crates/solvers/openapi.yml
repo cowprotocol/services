@@ -239,6 +239,8 @@ components:
         Contains information to hint at how how to make use of flashloans to settle the associated order.
       type: object
       required:
+        - lender
+        - borrower
         - token
         - amount
       properties:

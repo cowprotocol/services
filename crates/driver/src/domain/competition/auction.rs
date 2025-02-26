@@ -1,5 +1,5 @@
 use {
-    super::{order, Order},
+    super::{Order, order},
     crate::{
         domain::{
             competition::{self, auction, sorting},
@@ -9,15 +9,15 @@ use {
         },
         infra::{
             self,
+            Ethereum,
             blockchain,
             config::file::OrderPriorityStrategy,
             observe::{self, metrics},
-            Ethereum,
         },
         util::{self, Bytes},
     },
     chrono::{Duration, Utc},
-    futures::future::{join_all, BoxFuture, FutureExt, Shared},
+    futures::future::{BoxFuture, FutureExt, Shared, join_all},
     itertools::Itertools,
     model::{order::OrderKind, signature::Signature},
     shared::signature_validator::{Contracts, SignatureValidating},
@@ -641,7 +641,7 @@ impl Price {
     /// assert_eq!(eth, eth::Ether::from(eth::U256::exp10(15)));
     /// ```
     pub fn in_eth(self, amount: eth::TokenAmount) -> eth::Ether {
-        (amount.0 * self.0 .0 / Self::BASE).into()
+        (amount.0 * self.0.0 / Self::BASE).into()
     }
 
     /// Convert an amount of ETH into a token amount using this price.
@@ -657,7 +657,7 @@ impl Price {
     /// assert_eq!(price.from_eth(amount), eth::U256::exp10(19).into());
     /// ```
     pub fn from_eth(self, amount: eth::Ether) -> eth::TokenAmount {
-        (amount.0 * eth::U256::from(Self::BASE) / self.0 .0).into()
+        (amount.0 * eth::U256::from(Self::BASE) / self.0.0).into()
     }
 }
 

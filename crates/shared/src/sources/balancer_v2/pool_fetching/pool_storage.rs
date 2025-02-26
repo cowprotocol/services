@@ -18,12 +18,12 @@
 use {
     crate::{
         event_handling::EventStoring,
-        sources::balancer_v2::pools::{common, FactoryIndexing, PoolIndexing},
+        sources::balancer_v2::pools::{FactoryIndexing, PoolIndexing, common},
     },
     anyhow::{Context, Result},
     contracts::balancer_v2_base_pool_factory::{
-        event_data::PoolCreated,
         Event as BasePoolFactoryEvent,
+        event_data::PoolCreated,
     },
     ethcontract::{Event, H160, H256},
     ethrpc::block_stream::RangeInclusive,
@@ -77,7 +77,10 @@ where
     }
 
     /// Returns all pools containing both tokens from `TokenPair`
-    fn pool_ids_for_token_pair(&self, token_pair: &TokenPair) -> impl Iterator<Item = H256> + '_ {
+    fn pool_ids_for_token_pair(
+        &self,
+        token_pair: &TokenPair,
+    ) -> impl Iterator<Item = H256> + '_ + use<'_, Factory> {
         let (token0, token1) = token_pair.get();
 
         let pools0 = self.pools_by_token.get(&token0);
@@ -224,7 +227,7 @@ mod tests {
     use {
         super::*,
         crate::sources::balancer_v2::{
-            pools::{common::MockPoolInfoFetching, weighted, MockFactoryIndexing},
+            pools::{MockFactoryIndexing, common::MockPoolInfoFetching, weighted},
             swap::fixed_point::Bfp,
         },
         maplit::{hashmap, hashset},
@@ -514,9 +517,11 @@ mod tests {
             &new_pool,
         );
 
-        assert!(pool_store
-            .pools_by_token
-            .contains_key(&new_pool.common.tokens[0]));
+        assert!(
+            pool_store
+                .pools_by_token
+                .contains_key(&new_pool.common.tokens[0])
+        );
         assert_eq!(pool_store.last_event_block(), new_pool.common.block_created);
     }
 

@@ -1,5 +1,5 @@
 use {
-    serde::{de, Deserialize, Deserializer},
+    serde::{Deserialize, Deserializer, de},
     serde_with::DeserializeAs,
     std::borrow::Cow,
 };

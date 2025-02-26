@@ -14,7 +14,7 @@ use {
         zeroex_api::DefaultZeroExApi,
     },
     solver::{
-        liquidity::{zeroex::ZeroExLiquidity, LimitOrder},
+        liquidity::{LimitOrder, zeroex::ZeroExLiquidity},
         liquidity_collector::LiquidityCollecting,
     },
     std::sync::Arc,

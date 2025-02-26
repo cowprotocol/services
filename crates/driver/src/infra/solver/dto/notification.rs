@@ -41,7 +41,7 @@ impl Notification {
                 }
                 notify::Kind::ScoringFailed(scoring) => scoring.into(),
                 notify::Kind::NonBufferableTokensUsed(tokens) => Kind::NonBufferableTokensUsed {
-                    tokens: tokens.into_iter().map(|token| token.0 .0).collect(),
+                    tokens: tokens.into_iter().map(|token| token.0.0).collect(),
                 },
                 notify::Kind::SolverAccountInsufficientBalance(required) => {
                     Kind::SolverAccountInsufficientBalance {
@@ -160,7 +160,6 @@ pub enum Kind {
     },
 }
 
-#[serde_as]
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase", tag = "reason")]
 pub enum BanReason {

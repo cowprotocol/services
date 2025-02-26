@@ -1,7 +1,7 @@
 use {
     crate::ipfs::Ipfs,
     anyhow::Result,
-    app_data::{create_ipfs_cid, AppDataHash},
+    app_data::{AppDataHash, create_ipfs_cid},
     cached::{Cached, TimedSizedCache},
     std::sync::Mutex,
 };

@@ -3,6 +3,7 @@ use {
         database::competition::Competition,
         domain::{
             self,
+            OrderUid,
             auction::Id,
             competition::{
                 self,
@@ -13,7 +14,7 @@ use {
                 Unranked,
             },
             eth::{self, TxId},
-            OrderUid,
+            settlement::{ExecutionEnded, ExecutionStarted},
         },
         infra::{
             self,
@@ -791,6 +792,13 @@ impl RunLoop {
                 submission_deadline_latest_block,
                 auction_id,
             };
+
+            self.store_execution_started(
+                auction_id,
+                solver,
+                current_block,
+                submission_deadline_latest_block,
+            );
             driver
                 .settle(&request, self.config.max_settlement_transaction_wait)
                 .await
@@ -808,10 +816,12 @@ impl RunLoop {
             futures::future::Either::Right((driver_result, wait_for_settlement_transaction)) => {
                 match driver_result {
                     Ok(_) => wait_for_settlement_transaction.await,
-                    Err(err) => Err(SettleError::Failure(err)),
+                    Err(err) => Err(SettleError::Other(err)),
                 }
             }
         };
+
+        self.store_execution_ended(solver, auction_id, &result);
 
         // Clean up the in-flight orders regardless the result.
         self.in_flight_orders
@@ -820,6 +830,68 @@ impl RunLoop {
             .retain(|order| !solved_order_uids.contains(order));
 
         result
+    }
+
+    /// Stores settlement execution started event in the DB in a background task
+    /// to not block the runloop.
+    fn store_execution_started(
+        &self,
+        auction_id: i64,
+        solver: eth::Address,
+        start_block: u64,
+        deadline_block: u64,
+    ) {
+        let persistence = self.persistence.clone();
+        tokio::spawn(async move {
+            let execution_started = ExecutionStarted {
+                auction_id,
+                solver,
+                start_timestamp: chrono::Utc::now(),
+                start_block,
+                deadline_block,
+            };
+
+            if let Err(err) = persistence
+                .store_settlement_execution_started(execution_started)
+                .await
+            {
+                tracing::error!(?err, "failed to store settlement execution event");
+            }
+        });
+    }
+
+    /// Stores settlement execution ended event in the DB in a background task
+    /// to not block the runloop.
+    fn store_execution_ended(
+        &self,
+        solver: eth::Address,
+        auction_id: i64,
+        result: &Result<TxId, SettleError>,
+    ) {
+        let end_timestamp = chrono::Utc::now();
+        let current_block = self.eth.current_block().borrow().number;
+        let persistence = self.persistence.clone();
+        let outcome = match result {
+            Ok(_) => "success".to_string(),
+            Err(SettleError::Timeout) => "timeout".to_string(),
+            Err(SettleError::Other(err)) => format!("driver failed: {}", err),
+        };
+
+        tokio::spawn(async move {
+            let execution_ended = ExecutionEnded {
+                auction_id,
+                solver,
+                end_timestamp,
+                end_block: current_block,
+                outcome,
+            };
+            if let Err(err) = persistence
+                .store_settlement_execution_ended(execution_ended)
+                .await
+            {
+                tracing::error!(?err, "failed to update settlement execution event");
+            }
+        });
     }
 
     /// Tries to find a `settle` contract call with calldata ending in `tag` and
@@ -861,9 +933,7 @@ impl RunLoop {
                 break;
             }
         }
-        Err(SettleError::Failure(anyhow::anyhow!(
-            "settlement transaction await reached deadline"
-        )))
+        Err(SettleError::Timeout)
     }
 
     /// Removes orders that are currently being settled to avoid solvers trying
@@ -905,7 +975,9 @@ enum SolveError {
 #[derive(Debug, thiserror::Error)]
 enum SettleError {
     #[error(transparent)]
-    Failure(anyhow::Error),
+    Other(anyhow::Error),
+    #[error("settlement transaction await reached deadline")]
+    Timeout,
 }
 
 #[derive(prometheus_metric_storage::MetricStorage)]
@@ -1032,7 +1104,8 @@ impl Metrics {
 
     fn settle_err(driver: &infra::Driver, elapsed: Duration, err: &SettleError) {
         let label = match err {
-            SettleError::Failure(_) => "error",
+            SettleError::Other(_) => "error",
+            SettleError::Timeout => "timeout",
         };
         Self::get()
             .settle

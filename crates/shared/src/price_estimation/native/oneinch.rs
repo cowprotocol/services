@@ -1,13 +1,13 @@
 use {
     super::{NativePrice, NativePriceEstimateResult, NativePriceEstimating},
     crate::{price_estimation::PriceEstimationError, token_info::TokenInfoFetching},
-    anyhow::{anyhow, Context, Result},
-    ethrpc::block_stream::{into_stream, CurrentBlockWatcher},
-    futures::{future::BoxFuture, FutureExt, StreamExt},
+    anyhow::{Context, Result, anyhow},
+    ethrpc::block_stream::{CurrentBlockWatcher, into_stream},
+    futures::{FutureExt, StreamExt, future::BoxFuture},
     num::ToPrimitive,
     number::{conversions::u256_to_big_rational, serialization::HexOrDecimalU256},
     primitive_types::{H160, U256},
-    reqwest::{header::AUTHORIZATION, Client},
+    reqwest::{Client, header::AUTHORIZATION},
     serde::Deserialize,
     serde_with::serde_as,
     std::{

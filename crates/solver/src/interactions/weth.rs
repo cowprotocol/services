@@ -1,5 +1,5 @@
 use {
-    anyhow::{ensure, Result},
+    anyhow::{Result, ensure},
     contracts::WETH9,
     ethcontract::Bytes,
     primitive_types::U256,
@@ -55,7 +55,7 @@ mod tests {
 
         assert_eq!(withdraw_call.0, weth.address());
         assert_eq!(withdraw_call.1, U256::from(0));
-        let call = &withdraw_call.2 .0;
+        let call = &withdraw_call.2.0;
         assert_eq!(call.len(), 36);
         let withdraw_signature = hex!("2e1a7d4d");
         assert_eq!(call[0..4], withdraw_signature);

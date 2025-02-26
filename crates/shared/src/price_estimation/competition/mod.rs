@@ -1,5 +1,5 @@
 use {
-    super::{native::NativePriceEstimating, QuoteVerificationMode},
+    super::{QuoteVerificationMode, native::NativePriceEstimating},
     crate::price_estimation::PriceEstimationError,
     futures::{
         future::{BoxFuture, FutureExt},
@@ -74,8 +74,8 @@ impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
         query: Q,
         result_is_usable: impl Fn(&Result<R, PriceEstimationError>) -> bool,
         get_single_result: impl Fn(&T, Q) -> BoxFuture<'_, Result<R, PriceEstimationError>>
-            + Send
-            + 'static,
+        + Send
+        + 'static,
     ) -> Vec<ResultWithIndex<R>>
     where
         Q: Clone + Debug + Send + 'static,
@@ -278,9 +278,7 @@ mod tests {
             for response in responses {
                 estimator.expect_estimate().times(1).returning(move |_| {
                     let response = response.clone();
-                    {
-                        async move { response }.boxed()
-                    }
+                    async move { response }.boxed()
                 });
             }
             estimator

@@ -5,7 +5,7 @@ use {
             LowSettlingSolversFinderConfig,
             NonSettlingSolversFinderConfig,
         },
-        domain::{eth, Metrics},
+        domain::{Metrics, eth},
         infra::{self, solvers::dto},
     },
     chrono::{DateTime, Utc},
@@ -81,14 +81,16 @@ impl SolverValidator {
 
                 self_.post_process(
                     &non_settling_solvers,
-                    &dto::notify::BanReason::UnsettledConsecutiveAuctions,
+                    dto::notify::BanReason::UnsettledConsecutiveAuctions,
                     found_at,
+                    current_block,
                     banned_until,
                 );
                 self_.post_process(
                     &low_settling_solvers,
-                    &dto::notify::BanReason::HighSettleFailureRate,
+                    dto::notify::BanReason::HighSettleFailureRate,
                     found_at,
+                    current_block,
                     banned_until,
                 );
             }
@@ -147,8 +149,9 @@ impl SolverValidator {
     fn post_process(
         &self,
         solvers: &HashSet<eth::Address>,
-        ban_reason: &dto::notify::BanReason,
-        found_at: Instant,
+        ban_reason: dto::notify::BanReason,
+        found_at_timestamp: Instant,
+        found_at_block: u64,
         banned_until: DateTime<Utc>,
     ) {
         let non_settling_solver_names: Vec<&str> = solvers
@@ -172,7 +175,7 @@ impl SolverValidator {
                         infra::notify_banned_solver(driver.clone(), ban_reason, banned_until);
                         self.0
                             .banned_solvers
-                            .insert(driver.submission_address, found_at);
+                            .insert(driver.submission_address, found_at_timestamp);
                     }
                 }
                 driver.name.as_ref()
@@ -185,7 +188,7 @@ impl SolverValidator {
                 "found high-failure-settlement solvers"
             }
         };
-        tracing::debug!(solvers = ?non_settling_solver_names, log_message);
+        tracing::debug!(solvers = ?non_settling_solver_names, ?found_at_block, log_message);
     }
 }
 

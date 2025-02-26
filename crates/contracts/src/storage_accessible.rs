@@ -3,15 +3,15 @@
 use {
     crate::support::SimulateCode,
     ethcontract::{
+        H160,
         common::abi,
         contract::MethodBuilder,
         errors::MethodError,
         tokens::Tokenize,
         web3::{
-            types::{Bytes, CallRequest},
             Transport,
+            types::{Bytes, CallRequest},
         },
-        H160,
     },
     std::sync::LazyLock,
 };

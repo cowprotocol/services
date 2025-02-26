@@ -4,7 +4,7 @@ use {
     crate::domain::eth,
     bigdecimal::BigDecimal,
     ethereum_types::U256,
-    num::{rational::Ratio, BigInt, BigUint, One},
+    num::{BigInt, BigUint, One, rational::Ratio},
 };
 
 /// Converts a `BigDecimal` value to a `eth::Rational` value. Returns `None` if

@@ -4,7 +4,7 @@ use {
     bigdecimal::BigDecimal,
     number::serialization::HexOrDecimalU256,
     serde::Deserialize,
-    serde_with::{serde_as, DisplayFromStr},
+    serde_with::{DisplayFromStr, serde_as},
     std::collections::HashMap,
     web3::types::{H160, H256, U256},
 };
@@ -52,6 +52,8 @@ pub struct Order {
     pub buy_token_destination: BuyTokenDestination,
     pub class: Class,
     pub app_data: AppDataHash,
+    #[serde(default)]
+    pub flashloan_hint: Option<FlashloanHint>,
     pub signing_scheme: SigningScheme,
     #[serde(with = "bytes_hex")]
     pub signature: Vec<u8>,
@@ -278,4 +280,15 @@ pub struct ForeignLimitOrder {
     pub taker_amount: U256,
     #[serde_as(as = "HexOrDecimalU256")]
     pub taker_token_fee_amount: U256,
+}
+
+#[serde_as]
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FlashloanHint {
+    pub lender: H160,
+    pub borrower: H160,
+    pub token: H160,
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub amount: U256,
 }

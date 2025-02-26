@@ -4,10 +4,11 @@ use {
     contracts::{CoWSwapEthFlow, ERC20Mintable, WETH9},
     database::order_events::OrderEventLabel,
     e2e::{nodes::local_node::TestNodeApi, setup::*, tx, tx_value},
-    ethcontract::{transaction::TransactionResult, Account, Bytes, H160, H256, U256},
-    ethrpc::{block_stream::timestamp_of_current_block_in_seconds, Web3},
+    ethcontract::{Account, Bytes, H160, H256, U256, transaction::TransactionResult},
+    ethrpc::{Web3, block_stream::timestamp_of_current_block_in_seconds},
     hex_literal::hex,
     model::{
+        DomainSeparator,
         order::{
             BuyTokenDestination,
             EthflowData,
@@ -28,9 +29,8 @@ use {
             QuoteSigningScheme,
             Validity,
         },
-        signature::{hashed_eip712_message, Signature},
+        signature::{Signature, hashed_eip712_message},
         trade::Trade,
-        DomainSeparator,
     },
     number::nonzero::U256 as NonZeroU256,
     refunder::{
@@ -495,10 +495,12 @@ async fn test_order_parameters(
         })
     );
     assert_eq!(response.metadata.class, OrderClass::Limit);
-    assert!(order
-        .is_valid_cowswap_signature(&response.signature, contracts, ethflow_contract)
-        .await
-        .is_ok());
+    assert!(
+        order
+            .is_valid_cowswap_signature(&response.signature, contracts, ethflow_contract)
+            .await
+            .is_ok()
+    );
 
     // Requires wrapping first
     assert_eq!(response.interactions.pre.len(), 1);

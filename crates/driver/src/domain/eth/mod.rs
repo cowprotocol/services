@@ -113,11 +113,7 @@ pub struct TokenAddress(pub ContractAddress);
 impl TokenAddress {
     /// If the token is ETH, return WETH, thereby converting it to erc20.
     pub fn as_erc20(self, weth: WethAddress) -> Self {
-        if self == ETH_TOKEN {
-            weth.into()
-        } else {
-            self
-        }
+        if self == ETH_TOKEN { weth.into() } else { self }
     }
 }
 
@@ -412,6 +408,6 @@ impl From<[u8; 32]> for CodeDigest {
 
 impl From<CodeDigest> for [u8; 32] {
     fn from(value: CodeDigest) -> Self {
-        value.0 .0
+        value.0.0
     }
 }

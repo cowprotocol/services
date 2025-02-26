@@ -1,7 +1,7 @@
 //! Implements the logic for indexing `OrderRefund` events of the ethflow
 //! contract.
 use {
-    crate::database::{events::bytes_to_order_uid, Postgres},
+    crate::database::{Postgres, events::bytes_to_order_uid},
     anyhow::Result,
     database::ethflow_orders::Refund,
     ethrpc::block_stream::RangeInclusive,

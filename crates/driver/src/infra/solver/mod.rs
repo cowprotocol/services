@@ -129,6 +129,8 @@ pub struct Config {
     pub settle_queue_size: usize,
     /// Whether flashloan hints should be sent to the solver.
     pub flashloans_enabled: bool,
+    /// If no lender is specified in flashloan hint, use default one
+    pub flashloan_default_lender: eth::Address,
 }
 
 impl Solver {
@@ -231,6 +233,7 @@ impl Solver {
             self.config.fee_handler,
             self.config.solver_native_token,
             self.config.flashloans_enabled,
+            self.config.flashloan_default_lender,
         );
         // Only auctions with IDs are real auctions (/quote requests don't have an ID,
         // and it makes no sense to store them)
@@ -240,11 +243,14 @@ impl Solver {
         let body = serde_json::to_string(&auction_dto).unwrap();
         let url = shared::url::join(&self.config.endpoint, "solve");
         super::observe::solver_request(&url, &body);
-        let mut req = self
-            .client
-            .post(url.clone())
-            .body(body)
-            .timeout(auction.deadline().solvers().remaining().unwrap_or_default());
+        let timeout = match auction.deadline().solvers().remaining() {
+            Ok(timeout) => timeout,
+            Err(_) => {
+                tracing::warn!("auction deadline exceeded before sending request to solver");
+                return Ok(Default::default());
+            }
+        };
+        let mut req = self.client.post(url.clone()).body(body).timeout(timeout);
         if let Some(id) = observe::request_id::from_current_span() {
             req = req.header("X-REQUEST-ID", id);
         }
@@ -260,71 +266,27 @@ impl Solver {
     }
 
     /// Make a fire and forget POST request to notify the solver about an event.
-    pub fn notify_and_forget(
+    pub fn notify(
         &self,
         auction_id: Option<auction::Id>,
         solution_id: Option<solution::Id>,
         kind: notify::Kind,
     ) {
-        let base_url = self.config.endpoint.clone();
-        let client = self.client.clone();
-        let response_limit = self.config.response_size_limit_max_bytes;
-        let future = async move {
-            if let Err(error) = Self::notify_inner(
-                base_url,
-                client,
-                response_limit,
-                auction_id,
-                solution_id,
-                kind,
-            )
-            .await
-            {
-                tracing::warn!(?error, "failed to notify solver");
-            }
-        };
-
-        tokio::task::spawn(future.in_current_span());
-    }
-
-    pub async fn notify(
-        &self,
-        auction_id: Option<auction::Id>,
-        solution_id: Option<solution::Id>,
-        kind: notify::Kind,
-    ) -> Result<(), crate::util::http::Error> {
-        let base_url = self.config.endpoint.clone();
-        let client = self.client.clone();
-
-        Self::notify_inner(
-            base_url,
-            client,
-            self.config.response_size_limit_max_bytes,
-            auction_id,
-            solution_id,
-            kind,
-        )
-        .await
-    }
-
-    async fn notify_inner(
-        base_url: url::Url,
-        client: reqwest::Client,
-        response_limit: usize,
-        auction_id: Option<auction::Id>,
-        solution_id: Option<solution::Id>,
-        kind: notify::Kind,
-    ) -> Result<(), crate::util::http::Error> {
         let body =
             serde_json::to_string(&dto::Notification::new(auction_id, solution_id, kind)).unwrap();
-        let url = shared::url::join(&base_url, "notify");
+        let url = shared::url::join(&self.config.endpoint, "notify");
         super::observe::solver_request(&url, &body);
-        let mut req = client.post(url).body(body);
+        let mut req = self.client.post(url).body(body);
         if let Some(id) = observe::request_id::from_current_span() {
             req = req.header("X-REQUEST-ID", id);
         }
-
-        util::http::send(response_limit, req).await.map(|_| ())
+        let response_size = self.config.response_size_limit_max_bytes;
+        let future = async move {
+            if let Err(error) = util::http::send(response_size, req).await {
+                tracing::warn!(?error, "failed to notify solver");
+            }
+        };
+        tokio::task::spawn(future.in_current_span());
     }
 }
 
