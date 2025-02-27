@@ -16,7 +16,6 @@ use {
                 default_http_time_buffer,
                 default_solving_share_of_deadline,
             },
-            solver::dto::Flashloan,
         },
         tests::{
             cases::{
@@ -48,6 +47,7 @@ use {
     primitive_types::H160,
     secp256k1::SecretKey,
     serde_with::serde_as,
+    solvers_dto::solution::Flashloan,
     std::{
         collections::{HashMap, HashSet},
         path::PathBuf,

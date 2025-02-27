@@ -226,7 +226,7 @@ impl Solver {
     ) -> Result<Vec<Solution>, Error> {
         // Fetch the solutions from the solver.
         let weth = self.eth.contracts().weth_address();
-        let auction_dto = dto::Auction::new(
+        let auction_dto = dto::auction::new(
             auction,
             liquidity,
             weth,
@@ -257,9 +257,15 @@ impl Solver {
         let res = util::http::send(self.config.response_size_limit_max_bytes, req).await;
         super::observe::solver_response(&url, res.as_deref());
         let res = res?;
-        let res: dto::Solutions = serde_json::from_str(&res)
+        let res: solvers_dto::solution::Solutions = serde_json::from_str(&res)
             .tap_err(|err| tracing::warn!(res, ?err, "failed to parse solver response"))?;
-        let solutions = res.into_domain(auction, liquidity, weth, self.clone(), &self.config)?;
+        let solutions = dto::Solutions::from(res).into_domain(
+            auction,
+            liquidity,
+            weth,
+            self.clone(),
+            &self.config,
+        )?;
 
         super::observe::solutions(&solutions, auction.surplus_capturing_jit_order_owners());
         Ok(solutions)
@@ -273,7 +279,7 @@ impl Solver {
         kind: notify::Kind,
     ) {
         let body =
-            serde_json::to_string(&dto::Notification::new(auction_id, solution_id, kind)).unwrap();
+            serde_json::to_string(&dto::notification::new(auction_id, solution_id, kind)).unwrap();
         let url = shared::url::join(&self.config.endpoint, "notify");
         super::observe::solver_request(&url, &body);
         let mut req = self.client.post(url).body(body);
