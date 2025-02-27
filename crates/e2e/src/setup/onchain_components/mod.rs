@@ -227,7 +227,10 @@ impl OnchainComponents {
     }
 
     pub async fn deployed(web3: Web3) -> Self {
-        let contracts = Contracts::deployed(&web3).await;
+        let contracts = Contracts::deployed(&web3)
+            .await
+            .deploy_flashloan(&web3)
+            .await;
 
         Self {
             web3,
@@ -302,6 +305,22 @@ impl OnchainComponents {
                 .await
                 .expect("failed to add solver");
         }
+
+        // flashloan wrapper also needs to be authorized
+        self.contracts
+            .gp_authenticator
+            .add_solver(self.contracts.flashloan_wrapper_maker.address())
+            .from(auth_manager.clone())
+            .send()
+            .await
+            .expect("failed to add flashloan wrapper");
+        self.contracts
+            .gp_authenticator
+            .add_solver(self.contracts.flashloan_wrapper_aave.address())
+            .from(auth_manager)
+            .send()
+            .await
+            .expect("failed to add flashloan wrapper");
 
         solvers
     }

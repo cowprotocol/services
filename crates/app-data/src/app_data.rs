@@ -1,8 +1,10 @@
 use {
     crate::{AppDataHash, Hooks, app_data_hash::hash_full_app_data},
     anyhow::{Context, Result, anyhow},
+    number::serialization::HexOrDecimalU256,
     primitive_types::{H160, U256},
     serde::{Deserialize, Deserializer, Serialize, Serializer, de},
+    serde_with::serde_as,
     std::{fmt, fmt::Display},
 };
 
@@ -32,6 +34,7 @@ pub struct ProtocolAppData {
 /// use of flashloans to settle the associated order.
 /// Since using flashloans introduces a bunch of complexities
 /// all these hints are not binding for the solver.
+#[serde_as]
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
 #[cfg_attr(any(test, feature = "test_helpers"), derive(Serialize))]
 pub struct Flashloan {
@@ -43,6 +46,7 @@ pub struct Flashloan {
     /// Which token to flashloan.
     pub token: H160,
     /// How much of the token to flashloan.
+    #[serde_as(as = "HexOrDecimalU256")]
     pub amount: U256,
 }
 
