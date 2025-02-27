@@ -19,6 +19,7 @@ use {
     futures::future::try_join_all,
     itertools::Itertools,
     num::{BigRational, One},
+    solvers_dto::solution::Flashloan,
     std::{
         collections::{BTreeSet, HashMap, HashSet, hash_map::Entry},
         sync::atomic::{AtomicU64, Ordering},
@@ -34,7 +35,6 @@ pub mod settlement;
 pub mod slippage;
 pub mod trade;
 
-use solvers_dto::solution::Flashloan;
 pub use {error::Error, interaction::Interaction, settlement::Settlement, trade::Trade};
 
 type Prices = HashMap<eth::TokenAddress, eth::U256>;
