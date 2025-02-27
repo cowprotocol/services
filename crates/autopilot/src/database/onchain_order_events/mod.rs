@@ -360,7 +360,7 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
             tracing::debug!(?order, "invalidated order");
         }
         for (order, quote, tx_hash) in izip!(orders, quotes, tx_hashes) {
-            tracing::debug!(order =? order.uid, ?quote, ?tx_hash, "order created");
+            tracing::debug!(order =? order.uid, ?quote, onchain_transaction_hash = ?tx_hash, "order created");
         }
 
         Ok(())
