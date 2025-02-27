@@ -72,6 +72,7 @@ impl JitOrder {
             receiver: data.receiver.unwrap_or_default(),
             sell_amount: data.sell_amount,
             buy_amount: data.buy_amount,
+            partially_fillable: data.partially_fillable,
             valid_to: data.valid_to,
             app_data: data.app_data.0,
             kind: match data.kind {
