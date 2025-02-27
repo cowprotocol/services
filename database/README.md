@@ -468,6 +468,7 @@ outcome          | text        | nullable | outcome of the settlement execution
 
 Indexes:
 - PRIMARY KEY: btree(`auction_id`, `solver`)
+- settlement\_executions\_time\_range\_index: btree(`start_timestamp`, `end_timestamp`)
 
 ### solver\_competitions
 

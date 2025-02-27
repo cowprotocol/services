@@ -45,6 +45,7 @@ pub fn from_domain(solutions: &[solution::Solution]) -> super::Solutions {
                                     sell_amount: trade.order.sell.amount,
                                     buy_token: trade.order.buy.token.0,
                                     buy_amount: trade.order.buy.amount,
+                                    partially_fillable: trade.order.partially_fillable,
                                     receiver: trade.order.receiver,
                                     valid_to: trade.order.valid_to,
                                     app_data: trade.order.app_data.0,
