@@ -160,7 +160,8 @@ impl SolverValidator {
             .map(|driver| {
                 Metrics::get()
                     .banned_solver
-                    .with_label_values(&[driver.name.as_ref(), ban_reason.as_str()]);
+                    .with_label_values(&[driver.name.as_ref(), ban_reason.as_str()])
+                    .inc();
                 // Check if solver accepted this feature. This should be removed once the
                 // CIP making this mandatory has been approved.
                 if driver.requested_timeout_on_problems {
