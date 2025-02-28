@@ -287,7 +287,12 @@ impl RunLoop {
             .filter(|participant| participant.is_winner())
         {
             let (driver, solution) = (winner.driver(), winner.solution());
-            tracing::info!(driver = %driver.name, solution = %solution.id(), "winner");
+            tracing::info!(
+                driver = %driver.name,
+                solution = %solution.id(),
+                orders = ?solution.order_ids(),
+                "winner"
+            );
 
             self.start_settlement_execution(
                 auction.id,
