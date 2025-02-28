@@ -241,8 +241,8 @@ impl RunLoop {
 
         // Collect valid solutions from all drivers
         let solutions = self.competition(&auction).await;
-        observe::solutions(&solutions);
         if solutions.is_empty() {
+            tracing::info!("no solutions for auction");
             return;
         }
 
@@ -734,6 +734,13 @@ impl RunLoop {
             .into_iter()
             .filter_map(|solution| match solution {
                 Ok(solution) => {
+                    tracing::info!(
+                        driver = %driver.name,
+                        orders = ?solution.order_ids(),
+                        score = %solution.score(),
+                        solution = %solution.id(),
+                        "proposed solution"
+                    );
                     Metrics::solution_ok(&driver);
                     Some(competition::Participant::new(solution, driver.clone()))
                 }
@@ -1180,20 +1187,6 @@ pub mod observe {
             removed = ?removed,
             "Orders no longer in auction"
         );
-    }
-
-    pub fn solutions(solutions: &[domain::competition::Participant]) {
-        if solutions.is_empty() {
-            tracing::info!("no solutions for auction");
-        }
-        for participant in solutions {
-            tracing::debug!(
-                driver = %participant.driver().name,
-                orders = ?participant.solution().order_ids(),
-                solution = %participant.solution().id(),
-                "proposed solution"
-            );
-        }
     }
 
     /// Records metrics for the matched but unsettled orders.
