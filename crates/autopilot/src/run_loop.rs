@@ -959,12 +959,27 @@ impl RunLoop {
             return auction;
         };
 
-        auction.orders.retain(|o| !in_flight.contains(&o.uid));
-        auction
-            .surplus_capturing_jit_order_owners
-            .retain(|owner| !in_flight.iter().any(|i| i.owner() == *owner));
-        tracing::debug!(
-            orders = ?in_flight,
+        let mut removed_orders = vec![];
+        auction.orders.retain(|o| {
+            let keep = !in_flight.contains(&o.uid);
+            if !keep {
+                removed_orders.push(o.uid);
+            }
+            keep
+        });
+
+        let mut removed_jit_owners = vec![];
+        auction.surplus_capturing_jit_order_owners.retain(|owner| {
+            let keep = !in_flight.iter().any(|i| i.owner() == *owner);
+            if !keep {
+                removed_jit_owners.push(*owner);
+            }
+            keep
+        });
+
+        tracing::info!(
+            ?removed_orders,
+            ?removed_jit_owners,
             "filtered out in-flight orders and surplus_capturing_jit_order_owners"
         );
 
