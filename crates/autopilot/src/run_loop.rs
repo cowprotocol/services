@@ -930,7 +930,10 @@ impl RunLoop {
                 .find_settlement_transaction(auction_id, solver)
                 .await
             {
-                Ok(Some(transaction)) => return Ok(transaction),
+                Ok(Some(transaction)) => {
+                    tracing::info!(?solver, tx_hash = ?transaction, "found settlement onchain");
+                    return Ok(transaction);
+                }
                 Ok(None) => {}
                 Err(err) => {
                     tracing::warn!(
