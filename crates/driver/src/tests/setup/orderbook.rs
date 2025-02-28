@@ -1,5 +1,6 @@
 use {
     crate::{domain::competition::order::app_data::AppData, tests::setup::Order},
+    app_data::AppDataDocument,
     axum::{
         Extension,
         Json,
@@ -42,7 +43,7 @@ impl Orderbook {
             .collect::<HashMap<_, _>>();
 
         let app = Router::new()
-            .route("/v1/app_data/:app_data", get(Self::app_data_handler))
+            .route("/api/v1/app_data/:app_data", get(Self::app_data_handler))
             .layer(Extension(app_data_storage));
         let server =
             axum::Server::bind(&"0.0.0.0:0".parse().unwrap()).serve(app.into_make_service());
@@ -73,7 +74,10 @@ impl Orderbook {
         };
 
         if let Some(full_app_data) = app_data_storage.get(&app_data_hash) {
-            return Json(full_app_data.clone()).into_response();
+            let response = AppDataDocument {
+                full_app_data: serde_json::to_string(full_app_data).unwrap(),
+            };
+            return Json(response).into_response();
         }
 
         StatusCode::NOT_FOUND.into_response()

@@ -208,7 +208,16 @@ impl Solutions {
                     solution.gas.map(|gas| eth::Gas(gas.into())),
                     solver_config.fee_handler,
                     auction.surplus_capturing_jit_order_owners(),
-                    solution.flashloans,
+                    solution
+                        .flashloans
+                        .into_iter()
+                        .map(|flashloan| eth::Flashloan {
+                            lender: flashloan.lender.into(),
+                            borrower: flashloan.borrower.into(),
+                            token: flashloan.token.into(),
+                            amount: flashloan.amount.into(),
+                        })
+                        .collect(),
                 )
                 .map_err(|err| match err {
                     competition::solution::error::Solution::InvalidClearingPrices => {
