@@ -221,7 +221,7 @@ impl RateLimiter {
             .times_rate_limited(Instant::now(), &self.name);
         let times_rate_limited = match times_rate_limited {
             None => {
-                tracing::warn!(?self.name, "dropping task because API is currently rate limited");
+                tracing::debug!(?self.name, "dropping task because API is currently rate limited");
                 return Err(Error::RateLimited);
             }
             Some(times_rate_limited) => times_rate_limited,
@@ -234,7 +234,7 @@ impl RateLimiter {
                 .strategy()
                 .response_rate_limited(times_rate_limited, &self.name);
             if let Some(new_back_off) = new_back_off {
-                tracing::warn!(?self.name, ?new_back_off, "extended rate limiting");
+                tracing::debug!(?self.name, ?new_back_off, "extended rate limiting");
             }
         } else {
             self.strategy().response_ok(&self.name);

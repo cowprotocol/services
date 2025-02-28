@@ -241,8 +241,8 @@ impl RunLoop {
 
         // Collect valid solutions from all drivers
         let solutions = self.competition(&auction).await;
-        observe::solutions(&solutions);
         if solutions.is_empty() {
+            tracing::info!("no solutions for auction");
             return;
         }
 
@@ -287,7 +287,12 @@ impl RunLoop {
             .filter(|participant| participant.is_winner())
         {
             let (driver, solution) = (winner.driver(), winner.solution());
-            tracing::info!(driver = %driver.name, solution = %solution.id(), "winner");
+            tracing::info!(
+                driver = %driver.name,
+                solution = %solution.id(),
+                orders = ?solution.order_ids(),
+                "winner"
+            );
 
             self.start_settlement_execution(
                 auction.id,
@@ -571,7 +576,7 @@ impl RunLoop {
                 if Self::is_solution_fair(participant, &solutions[index..], auction) {
                     Some(participant)
                 } else {
-                    tracing::warn!(
+                    tracing::info!(
                         invalidated = participant.driver().name,
                         "fairness check invalidated of solution"
                     );
@@ -719,7 +724,7 @@ impl RunLoop {
                 if matches!(err, SolveError::NoSolutions) {
                     tracing::debug!(driver = %driver.name, "solver found no solution");
                 } else {
-                    tracing::warn!(?err, driver = %driver.name, "solve error");
+                    tracing::debug!(?err, driver = %driver.name, "solve error");
                 }
                 vec![]
             }
@@ -729,6 +734,13 @@ impl RunLoop {
             .into_iter()
             .filter_map(|solution| match solution {
                 Ok(solution) => {
+                    tracing::info!(
+                        driver = %driver.name,
+                        orders = ?solution.order_ids(),
+                        score = %solution.score(),
+                        solution = %solution.id(),
+                        "proposed solution"
+                    );
                     Metrics::solution_ok(&driver);
                     Some(competition::Participant::new(solution, driver.clone()))
                 }
@@ -918,7 +930,10 @@ impl RunLoop {
                 .find_settlement_transaction(auction_id, solver)
                 .await
             {
-                Ok(Some(transaction)) => return Ok(transaction),
+                Ok(Some(transaction)) => {
+                    tracing::info!(?solver, tx_hash = ?transaction, "found settlement onchain");
+                    return Ok(transaction);
+                }
                 Ok(None) => {}
                 Err(err) => {
                     tracing::warn!(
@@ -947,12 +962,27 @@ impl RunLoop {
             return auction;
         };
 
-        auction.orders.retain(|o| !in_flight.contains(&o.uid));
-        auction
-            .surplus_capturing_jit_order_owners
-            .retain(|owner| !in_flight.iter().any(|i| i.owner() == *owner));
-        tracing::debug!(
-            orders = ?in_flight,
+        let mut removed_orders = vec![];
+        auction.orders.retain(|o| {
+            let keep = !in_flight.contains(&o.uid);
+            if !keep {
+                removed_orders.push(o.uid);
+            }
+            keep
+        });
+
+        let mut removed_jit_owners = vec![];
+        auction.surplus_capturing_jit_order_owners.retain(|owner| {
+            let keep = !in_flight.iter().any(|i| i.owner() == *owner);
+            if !keep {
+                removed_jit_owners.push(*owner);
+            }
+            keep
+        });
+
+        tracing::info!(
+            ?removed_orders,
+            ?removed_jit_owners,
             "filtered out in-flight orders and surplus_capturing_jit_order_owners"
         );
 
@@ -1175,20 +1205,6 @@ pub mod observe {
             removed = ?removed,
             "Orders no longer in auction"
         );
-    }
-
-    pub fn solutions(solutions: &[domain::competition::Participant]) {
-        if solutions.is_empty() {
-            tracing::info!("no solutions for auction");
-        }
-        for participant in solutions {
-            tracing::debug!(
-                driver = %participant.driver().name,
-                orders = ?participant.solution().order_ids(),
-                solution = %participant.solution().id(),
-                "proposed solution"
-            );
-        }
     }
 
     /// Records metrics for the matched but unsettled orders.

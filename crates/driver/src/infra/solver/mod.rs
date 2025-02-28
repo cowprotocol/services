@@ -288,8 +288,11 @@ impl Solver {
         }
         let response_size = self.config.response_size_limit_max_bytes;
         let future = async move {
-            if let Err(error) = util::http::send(response_size, req).await {
-                tracing::warn!(?error, "failed to notify solver");
+            if let Err(err) = util::http::send(response_size, req).await {
+                // ignore errors of solvers that don't expect notifications
+                if !matches!(err, util::http::Error::NotOk { code: 404, .. }) {
+                    tracing::warn!(?err, "failed to notify solver");
+                }
             }
         };
         tokio::task::spawn(future.in_current_span());
