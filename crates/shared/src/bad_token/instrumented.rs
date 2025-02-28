@@ -48,15 +48,11 @@ impl BadTokenDetecting for InstrumentedBadTokenDetector {
             // prometheus isn't very good for string based data so we simply log the bad
             // tokens/errors and get the information from Kibana when we need it.
             Err(err) => {
-                tracing::warn!(
-                    "bad token detection for {:?} returned error:\n{:?}",
-                    token,
-                    err
-                );
+                tracing::warn!(?token, ?err, "bad token detection failed");
                 "error"
             }
             Ok(quality @ TokenQuality::Bad { .. }) => {
-                tracing::warn!("bad token detection for {:?} returned {:?}", token, quality);
+                tracing::debug!(?token, ?quality, "bad token detected");
                 "bad"
             }
         };

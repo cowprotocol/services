@@ -576,7 +576,7 @@ impl RunLoop {
                 if Self::is_solution_fair(participant, &solutions[index..], auction) {
                     Some(participant)
                 } else {
-                    tracing::warn!(
+                    tracing::info!(
                         invalidated = participant.driver().name,
                         "fairness check invalidated of solution"
                     );
@@ -724,7 +724,7 @@ impl RunLoop {
                 if matches!(err, SolveError::NoSolutions) {
                     tracing::debug!(driver = %driver.name, "solver found no solution");
                 } else {
-                    tracing::warn!(?err, driver = %driver.name, "solve error");
+                    tracing::debug!(?err, driver = %driver.name, "solve error");
                 }
                 vec![]
             }

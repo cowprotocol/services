@@ -210,7 +210,7 @@ impl TradeVerifier {
                         jit_orders: trade.jit_orders(),
                     },
                 };
-                tracing::warn!(
+                tracing::debug!(
                     ?estimate,
                     ?err,
                     "quote used invalid zeroex RFQ order; pass verification anyway"
@@ -428,7 +428,7 @@ impl TradeVerifying for TradeVerifier {
                             jit_orders: trade.jit_orders(),
                         },
                     };
-                    tracing::warn!(
+                    tracing::debug!(
                         ?err,
                         estimate = ?trade,
                         "failed verification; returning unverified estimate"
@@ -436,7 +436,7 @@ impl TradeVerifying for TradeVerifier {
                     Ok(estimate)
                 }
                 None => {
-                    tracing::warn!(
+                    tracing::debug!(
                         ?err,
                         estimate = ?trade,
                         "failed verification and no gas estimate provided; discarding estimate"
@@ -445,7 +445,7 @@ impl TradeVerifying for TradeVerifier {
                 }
             },
             Err(err @ Error::TooInaccurate) => {
-                tracing::warn!("discarding quote because it's too inaccurate");
+                tracing::debug!("discarding quote because it's too inaccurate");
                 Err(err.into())
             }
         }

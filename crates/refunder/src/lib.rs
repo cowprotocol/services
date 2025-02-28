@@ -72,7 +72,7 @@ pub async fn run(args: arguments::Arguments) {
         refunder_account,
     );
     loop {
-        tracing::info!("Staring a new refunding loop");
+        tracing::debug!("Starting a new refunding loop");
         match refunder.try_to_refund_all_eligble_orders().await {
             Ok(_) => {
                 track_refunding_loop_result("success");

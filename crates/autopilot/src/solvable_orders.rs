@@ -494,7 +494,7 @@ async fn find_invalid_signature_orders(
             continue;
         }
         if let Err(err) = validations.next().unwrap() {
-            tracing::warn!(
+            tracing::debug!(
                 order =% order.metadata.uid, ?err,
                 "invalid EIP-1271 signature"
             );
@@ -662,7 +662,7 @@ async fn find_unsupported_tokens(
                     match bad_token.detect(token).await {
                         Ok(quality) => (!quality.is_good()).then_some(token),
                         Err(err) => {
-                            tracing::warn!(
+                            tracing::debug!(
                                 ?token,
                                 ?err,
                                 "unable to determine token quality, assume good"

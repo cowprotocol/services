@@ -58,7 +58,7 @@ impl SlippageContext<'_> {
                     relative
                 }
                 _ => {
-                    tracing::warn!(
+                    tracing::debug!(
                         input_token = ?execution.input_max.token,
                         output_token = ?execution.output.token,
                         "unable to compute capped slippage; falling back to relative slippage",
