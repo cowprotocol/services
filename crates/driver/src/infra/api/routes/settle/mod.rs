@@ -3,10 +3,7 @@ mod dto;
 use {
     crate::{
         domain::competition::auction,
-        infra::{
-            api::{self, Error, State},
-            observe,
-        },
+        infra::api::{self, Error, State},
     },
     tracing::Instrument,
 };
@@ -24,7 +21,6 @@ async fn route(
     let solver = state.solver().name().to_string();
 
     async move {
-        observe::settling();
         let result = state
             .competition()
             .settle(
@@ -33,7 +29,6 @@ async fn route(
                 req.submission_deadline_latest_block,
             )
             .await;
-        observe::settled(state.solver().name(), &result);
         result.map(|_| ()).map_err(Into::into)
     }
     .instrument(tracing::info_span!("/settle", solver, %auction_id))
