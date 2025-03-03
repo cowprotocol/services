@@ -342,7 +342,7 @@ async fn forked_mainnet_repay_debt_with_collateral(web3: Web3) {
     // Deposit 50K USDC as collateral
     tx!(
         trader.account(),
-        aave_pool.deposit(
+        aave_pool.supply(
             usdc.address(),             // token
             to_wei_with_exp(50_000, 6), // amount
             trader.address(),           // on_behalf
