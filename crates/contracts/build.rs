@@ -992,6 +992,9 @@ fn main() {
             )
     });
     generate_contract("CowAmmUniswapV2PriceOracle");
+    generate_contract("COWShed");
+    generate_contract("COWShedFactory");
+    generate_contract("COWShedProxy");
 
     // Support contracts used for trade and token simulations.
     generate_contract("Solver");
