@@ -58,6 +58,7 @@ impl RefundService {
                 gas_estimator: Box::new(web3),
                 gas_parameters_of_last_tx: None,
                 nonce_of_last_submission: None,
+                block_of_last_submission: None,
             },
         }
     }
