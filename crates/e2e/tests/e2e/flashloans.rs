@@ -57,7 +57,7 @@ async fn forked_node_mainnet_repay_debt_with_collateral() {
         forked_mainnet_repay_debt_with_collateral,
         std::env::var("FORK_URL_MAINNET")
             .expect("FORK_URL_MAINNET must be set to run forked tests"),
-        21967663,
+        21874126,
     )
     .await;
 }
