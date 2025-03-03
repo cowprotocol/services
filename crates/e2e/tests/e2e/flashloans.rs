@@ -1,4 +1,9 @@
 use {
+    alloy::{
+        dyn_abi::Eip712Domain,
+        signers::{SignerSync, local::PrivateKeySigner},
+        sol_types::{SolCall, SolStruct, SolValue},
+    },
     contracts::{COWShedFactory, ERC20, IAavePool},
     e2e::{
         nodes::forked_node::ForkedNodeApi,
@@ -13,17 +18,17 @@ use {
         },
         tx,
     },
-    ethcontract::{H160, H256, U256, common::hash::keccak256},
-    ethrpc::{Web3, block_stream::BlockRetrieving},
+    ethcontract::{H160, U256},
+    ethrpc::Web3,
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::EcdsaSigningScheme,
     },
     secp256k1::SecretKey,
+    serde::Serialize,
     shared::addr,
-    std::time::Duration,
-    web3::{ethabi::Token, signing::SecretKeyRef},
+    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -313,16 +318,11 @@ async fn forked_mainnet_repay_debt_with_collateral(web3: Web3) {
     let forked_node_api = web3.api::<ForkedNodeApi<_>>();
 
     let [solver] = onchain.make_solvers_forked(to_wei(1)).await;
-
     let [trader] = onchain.make_accounts(to_wei(1)).await;
-    tracing::error!(addr = ?trader.address());
 
+    // transfer some USDC from a whale to our trader
     let usdc = ERC20::at(&web3, addr!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"));
-
-    // find some USDC available onchain
     let usdc_whale_mainnet = addr!("28c6c06298d514db089934071355e5743bf21d60");
-
-    // Give trader some USDC
     let usdc_whale = forked_node_api
         .impersonate(&usdc_whale_mainnet)
         .await
@@ -332,29 +332,14 @@ async fn forked_mainnet_repay_debt_with_collateral(web3: Web3) {
         usdc.transfer(trader.address(), to_wei_with_exp(50000, 6))
     );
 
-    // compute cowshed proxy for trader
-    let factory = COWShedFactory::at(&web3, addr!("00E989b87700514118Fa55326CD1cCE82faebEF6"));
-    let cowshed = factory.proxy_of(trader.address()).call().await.unwrap();
-    tracing::error!(?cowshed);
-
     let aave_pool = IAavePool::at(&web3, addr!("87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2"));
 
-    let borrow_power = aave_pool
-        .get_user_account_data(trader.address())
-        .call()
-        .await
-        .unwrap();
-    tracing::error!(?borrow_power, "before deposit");
-    // Lend 50K USDC
     // Approve AAVE to take the collateral
-    assert_eq!(
-        to_wei_with_exp(50000, 6),
-        usdc.balance_of(trader.address()).call().await.unwrap()
-    );
     tx!(
         trader.account(),
         usdc.approve(aave_pool.address(), to_wei_with_exp(50000, 6))
     );
+    // Deposit 50K USDC as collateral
     tx!(
         trader.account(),
         aave_pool.deposit(
@@ -364,29 +349,8 @@ async fn forked_mainnet_repay_debt_with_collateral(web3: Web3) {
             0,                          // referral code
         )
     );
-    assert_eq!(
-        U256::zero(),
-        usdc.balance_of(trader.address()).call().await.unwrap()
-    );
 
-    let borrow_power = aave_pool
-        .get_user_account_data(trader.address())
-        .call()
-        .await
-        .unwrap();
-    tracing::error!(?borrow_power, "after deposit");
-    // Borrow 1 WETH
-    aave_pool
-        .borrow(
-            onchain.contracts().weth.address(), // borrowed token
-            to_wei_with_exp(1, 16),             // borrowed amount
-            2.into(),                           // variable interest rate mode
-            0,                                  // referral code
-            trader.address(),                   // on_behalf
-        )
-        .call()
-        .await
-        .unwrap();
+    // Borrow 1 WETH against the USDC
     tx!(
         trader.account(),
         aave_pool.borrow(
@@ -397,95 +361,158 @@ async fn forked_mainnet_repay_debt_with_collateral(web3: Web3) {
             trader.address(),                   // on_behalf
         )
     );
-    // uses a ton of gas before reverting...
+
+    // do a bunch of stuff to build the appdata that:
+    // 1. takes out an 1 WETH flashloan for the user's cowshed proxy (flashloan
+    //    metadata)
+    // 2. repays the user's 1 WETH debt to unlock their 50K USDC (1st pre-hook)
+    // 3. withdraws the deposited 50K USDC for the user so they can sell it for WETH
+    //    (2nd pre-hook) currently only the order owner can withdraw the tokens
+    //    which would require a helper contract to make this a permissionless
+    //    operation that can be called in a pre-hook
+    let app_data = {
+        let alloy_trader: PrivateKeySigner = hex::encode(trader.private_key()).parse().unwrap();
+        let cowshed_factory =
+            COWShedFactory::at(&web3, addr!("00E989b87700514118Fa55326CD1cCE82faebEF6"));
+        // compute cowshed proxy for trader
+        let cowshed_proxy = cowshed_factory
+            .proxy_of(trader.address())
+            .call()
+            .await
+            .unwrap();
+
+        let hooks = COWShedHooks {
+            nonce: Default::default(),
+            deadline: alloy::primitives::U256::MAX,
+            calls: vec![Call {
+                target: aave_pool.address().0.into(),
+                value: alloy::primitives::U256::ZERO,
+                callData: repayCall {
+                    asset: onchain.contracts().weth.address().0.into(),
+                    amount: alloy::primitives::utils::parse_ether("1").unwrap(),
+                    interestRateMode: alloy::primitives::U256::from(2),
+                    onBehalfOf: alloy_trader.address(),
+                }
+                .abi_encode()
+                .into(),
+                allowFailure: false,
+                isDelegateCall: false,
+            }],
+        };
+        let domain = cowshed_proxy_domain_separator(cowshed_proxy, 1);
+        let hash_to_sign = hooks.eip712_signing_hash(&domain);
+        let signature = alloy_trader.sign_hash_sync(&hash_to_sign).unwrap();
+        // TODO: check if `v` being a bool when it should be u8 causes issues
+        let signature = (signature.r(), signature.s(), signature.v()).abi_encode_packed();
+        let factory_hook_call = ICOWShedFactory::executeHooksCall {
+            user: alloy_trader.address(),
+            calls: hooks.calls,
+            deadline: hooks.deadline,
+            nonce: hooks.nonce,
+            signature: signature.into(),
+        }
+        .abi_encode();
+
+        // TODO: check if the `lender` is actually correct of if it should
+        // be the Aave pool we have been using throughout the test.
+        let app_data = format!(
+            r#"{{
+                "metadata": {{
+                    "flashloan": {{
+                        "lender": "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2",
+                        "borrower": "{cowshed_proxy:?}",
+                        "token": "{:?}",
+                        "amount": "50000000000"
+                    }},
+                    "hooks": {{
+                        "target": {:?},
+                        "value": "0",
+                        "callData": {:?}
+                    }}
+                }}
+            }}"#,
+            usdc.address(),
+            cowshed_factory.address(),
+            hex::encode(&factory_hook_call),
+        );
+
+        OrderCreationAppData::Full {
+            full: app_data.to_string(),
+        }
+    };
+
+    let order = OrderCreation {
+        sell_token: usdc.address(),
+        sell_amount: to_wei_with_exp(50000, 6),
+        buy_token: onchain.contracts().weth.address(),
+        buy_amount: to_wei(1),
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        kind: OrderKind::Buy,
+        app_data,
+        partially_fillable: false,
+        // Receiver is always the settlement contract, so driver will have to manually send funds to
+        // solver wrapper (flashloan borrower)
+        receiver: Some(onchain.contracts().gp_settlement.address()),
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+    );
 
     // flow of funds:
     // 1. user borrows funds on AAVE
     // 2. flashloan goes to cowshed
-    // 3. cowshed repays debt position this step should also forward the funds to
-    //    the original user
-    // 4. executed trade `COLLATERAL => BORROWED_TOKEN`
-    // 5. user pays settlement contract
+    // 3. cowshed repays debt position this step should
+    // 4. HOW DOES USER ACTUALLY WITHDRAW THE COLLATERAL TOKENS??
+    // 5. used executes trade `COLLATERAL => BORROWED_TOKEN`
+    // 6. user pays settlement contract
 
     panic!("abort for now");
+}
 
-    // // Place Orders
-    // let services = Services::new(&onchain).await;
-    // services.start_protocol(solver).await;
+fn cowshed_proxy_domain_separator(proxy: H160, chain_id: u64) -> Eip712Domain {
+    alloy::sol_types::eip712_domain! {
+        name: "COWShed",
+        version: "1.0.0",
+        chain_id: chain_id,
+        verifying_contract: proxy.0.into(),
+    }
+}
 
-    // onchain.mint_block().await;
+alloy::sol! {
+    #[derive(Serialize)]
+    struct COWShedHooks {
+        Call[] calls;
+        bytes32 nonce;
+        uint256 deadline;
+    }
 
-    // // App data with flashloan
-    // let app_data = format!(
-    //     r#"{{
-    //     "metadata": {{
-    //         "flashloan": {{
-    //             "lender": "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2",
-    //             "borrower": "{:?}",
-    //             "token": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
-    //             "amount": "5000000000000000000"
-    //         }}
-    //     }}
-    // }}"#,
-    //     trader.address()
-    // );
+    #[derive(Serialize)]
+    struct Call {
+        address target;
+        uint256 value;
+        bytes callData;
+        bool allowFailure;
+        bool isDelegateCall;
+    }
 
-    // let app_data = OrderCreationAppData::Full {
-    //     full: app_data.to_string(),
-    // };
+    #[derive(Serialize)]
+    contract ICOWShedFactory {
+        function executeHooks(
+            Call[] calldata calls,
+            bytes32 nonce,
+            uint256 deadline,
+            address user,
+            bytes calldata signature
+        ) external;
+    }
 
-    // let order = OrderCreation {
-    //     sell_token: token_usdc.address(),
-    //     sell_amount: to_wei_with_exp(50000, 6),
-    //     buy_token: token_weth.address(),
-    //     buy_amount: U256::from(5005000000000000000u128), // equal to
-    // flashloan amount + 0.1% fee     valid_to:
-    // model::time::now_in_epoch_seconds() + 300,     kind: OrderKind::Buy,
-    //     app_data,
-    //     partially_fillable: false,
-    //     // Receiver is always the settlement contract, so driver will have to
-    // manually send funds to     // solver wrapper (flashloan borrower)
-    //     receiver: Some(onchain.contracts().gp_settlement.address()),
-    //     ..Default::default()
-    // }
-    // .sign(
-    //     EcdsaSigningScheme::Eip712,
-    //     &onchain.contracts().domain_separator,
-    //     SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).
-    // unwrap()), );
-
-    // // Warm up co-located driver by quoting the order (otherwise placing an
-    // order // may time out)
-    // let _ = services
-    //     .submit_quote(&OrderQuoteRequest {
-    //         sell_token: token_usdc.address(),
-    //         buy_token: token_weth.address(),
-    //         side: OrderQuoteSide::Sell {
-    //             sell_amount: SellAmount::BeforeFee {
-    //                 value: to_wei_with_exp(50000, 6).try_into().unwrap(),
-    //             },
-    //         },
-    //         ..Default::default()
-    //     })
-    //     .await;
-    // let order_id = services.create_order(&order).await.unwrap();
-
-    // // Drive solution
-    // tracing::info!("Waiting for trade.");
-
-    // wait_for_condition(TIMEOUT, || async {
-    //     onchain.mint_block().await;
-
-    //     let executed_fee = services
-    //         .get_order(&order_id)
-    //         .await
-    //         .unwrap()
-    //         .metadata
-    //         .executed_fee;
-    //     executed_fee > 0.into()
-
-    //     // TODO balances
-    // })
-    // .await
-    // .unwrap();
+    function repay(
+      address asset,
+      uint256 amount,
+      uint256 interestRateMode,
+      address onBehalfOf
+    ) external returns (uint256);
 }

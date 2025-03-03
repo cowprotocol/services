@@ -6,6 +6,7 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
+alloy = { version = "0.11.1", features = ["eip712", "sol-types"]}
 app-data = { path = "../app-data" }
 anyhow = { workspace = true }
 autopilot = { path = "../autopilot" }
