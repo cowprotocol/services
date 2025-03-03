@@ -14,7 +14,7 @@ use {
     },
     allowance::Allowance,
     itertools::Itertools,
-    std::str::FromStr,
+    std::ops::Mul,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -176,31 +176,25 @@ pub fn tx(
     };
 
     // Only single flashloan solutions are supported, so take the first one
-    let flashloan = solution.flashloans.first().map(|flashloan| {
-        // Find the right wrapper to use for this flashloan
-        let flashloan_wrappers = contracts.flashloan_wrappers();
+    let flashloan = solution
+        .flashloans
+        .first()
+        .map(|flashloan| {
+            // Find the right wrapper to use for this flashloan - maybe this should also be
+            // part of the eth::Flashloan building
+            let flashloan_wrappers = contracts.flashloan_wrappers();
 
-        // TODO fix
-        // Hardcoded configuration for now
-        let maker_lender =
-            eth::H160::from_str("0x60744434d6339a6B27d73d9Eda62b6F66a0a04FA").unwrap();
-        let aave_lender =
-            eth::H160::from_str("0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2").unwrap();
+            let flashloan_wrapper = flashloan_wrappers
+                .iter()
+                .find(|wrapper| wrapper.address() == flashloan.solver_wrapper.0);
 
-        let (flashloan_wrapper, flash_fee) = if flashloan.lender.0 == maker_lender {
-            (&flashloan_wrappers[0], None) // MAKER
-        } else if flashloan.lender.0 == aave_lender {
-            (&flashloan_wrappers[1], Some(1000)) // AAVE
-        } else {
-            (&flashloan_wrappers[0], None) // for driver tests to pass
-        };
-
-        (flashloan, flashloan_wrapper, flash_fee)
-    });
+            flashloan_wrapper.map(|flashloan_wrapper| (flashloan, flashloan_wrapper))
+        })
+        .flatten();
 
     // Add all interactions needed to move flash loaned tokens around
     // These interactions are executed before all other pre-interactions
-    if let Some((flashloan, flashloan_wrapper, flash_fee)) = flashloan {
+    if let Some((flashloan, flashloan_wrapper)) = flashloan {
         // Allow settlement contract to pull borrowed tokens from flashloan wrapper
         pre_interactions.insert(
             0,
@@ -233,17 +227,11 @@ pub fn tx(
             },
         );
 
-        // Repayment amount needs to be increased by flash fee
+        // Repayment amount needs to be increased by flash fee (TODO polish this)
         let repayment_amount = flashloan.amount.0
-            + flash_fee
-                .map(|fee_factor| {
-                    flashloan
-                        .amount
-                        .0
-                        .checked_div(primitive_types::U256::from(fee_factor))
-                        .unwrap()
-                })
-                .unwrap_or_default();
+            + ethcontract::U256::from_f64_lossy(
+                flashloan.flash_fee.0.mul(flashloan.amount.0.to_f64_lossy()),
+            );
 
         // Since the order receiver is expected to be the setttlement contract, we need
         // to transfer tokens from the settlement contract to the flashloan wrapper
@@ -316,7 +304,7 @@ pub fn tx(
 
     // Target and calldata depend on whether a flashloan is used
     let (to, calldata) = match flashloan {
-        Some((flashloan, flashloan_wrapper, _)) => {
+        Some((flashloan, flashloan_wrapper)) => {
             let calldata = flashloan_wrapper
                 .flash_loan_and_settle(
                     flashloan.lender.into(),

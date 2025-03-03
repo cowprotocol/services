@@ -418,4 +418,10 @@ pub struct Flashloan {
     pub borrower: ContractAddress,
     pub token: TokenAddress,
     pub amount: TokenAmount,
+    pub solver_wrapper: Address, // or IFlashLoanSolverWrapper?
+    pub flash_fee: FlashFee,
 }
+
+/// 0.001 representing 0.1% of the flashloan amount (for Aave, for example)
+#[derive(Debug, Copy, Clone)]
+pub struct FlashFee(pub f64);
