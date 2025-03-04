@@ -96,7 +96,7 @@ impl Persistence {
             return;
         };
         if instance.auction.orders.is_empty() {
-            tracing::info!("skip upload of empty auction");
+            tracing::debug!("skip upload of empty auction");
             return;
         }
         tokio::spawn(
@@ -106,7 +106,7 @@ impl Persistence {
                     .await
                 {
                     Ok(key) => {
-                        tracing::info!(?key, "uploaded auction to s3");
+                        tracing::debug!(?key, "uploaded auction to s3");
                     }
                     Err(err) => {
                         tracing::warn!(?err, "failed to upload auction to s3");
