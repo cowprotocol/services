@@ -316,6 +316,15 @@ pub struct LowSettlingSolversFinderConfig {
     )]
     pub last_auctions_participation_count: u32,
 
+    /// The minimum number of winning solutions to start considering the solver.
+    #[clap(
+        id = "low_settling_min_wins_threshold",
+        long = "low-settling-min-wins-threshold",
+        env = "LOW_SETTLING_MIN_WINS_THRESHOLD",
+        default_value = "3"
+    )]
+    pub min_wins_threshold: u32,
+
     /// A max failure rate for a solver to remain eligible for
     /// participation in the competition. Otherwise, the solver will be
     /// banned.

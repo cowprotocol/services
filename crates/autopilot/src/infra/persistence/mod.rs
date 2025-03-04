@@ -885,6 +885,7 @@ impl Persistence {
         last_auctions_count: u32,
         current_block: u64,
         max_failure_rate: f64,
+        min_wins_threshold: u32,
     ) -> anyhow::Result<Vec<eth::Address>> {
         let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
         let _timer = Metrics::get()
@@ -897,6 +898,7 @@ impl Persistence {
             last_auctions_count,
             current_block,
             max_failure_rate,
+            min_wins_threshold,
         )
         .await
         .context("solver_competition::find_low_settling_solvers")?
