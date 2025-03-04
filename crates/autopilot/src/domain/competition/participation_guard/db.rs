@@ -183,6 +183,10 @@ impl SolverValidator {
             })
             .collect();
 
+        if non_settling_solver_names.is_empty() {
+            return;
+        }
+
         let log_message = match ban_reason {
             dto::notify::BanReason::UnsettledConsecutiveAuctions => "found non-settling solvers",
             dto::notify::BanReason::HighSettleFailureRate => {

@@ -174,6 +174,7 @@ WITH
             SELECT DISTINCT ca.id AS auction_id
             FROM competition_auctions ca
             WHERE ca.deadline <= $1
+            ORDER BY ca.id DESC
             LIMIT $2
         ) latest_auctions
         JOIN proposed_solutions ps ON ps.auction_id = latest_auctions.auction_id
