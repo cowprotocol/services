@@ -9,16 +9,16 @@ license = "MIT OR Apache-2.0"
 anyhow = { workspace = true }
 clap = { workspace = true }
 humantime = { workspace = true }
-observe = { path = "../observe" }
+observe = { workspace = true }
 mimalloc = { workspace = true }
-model = { path = "../model" }
-number = { path = "../number" }
+model = { workspace = true }
+number = { workspace = true }
 primitive-types = { workspace = true }
 prometheus = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
 serde_with = { workspace = true }
 serde = { workspace = true }
-shared = { path = "../shared" }
+shared = { workspace = true }
 tokio = { workspace = true, features = ["macros", "time", "rt-multi-thread"] }
 tracing = { workspace = true }
 url = { workspace = true }
