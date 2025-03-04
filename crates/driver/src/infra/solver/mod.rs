@@ -30,6 +30,9 @@ use {
 
 pub mod dto;
 
+type SolverWrapper = eth::Address;
+type Lender = eth::Address;
+
 // TODO At some point I should be checking that the names are unique, I don't
 // think I'm doing that.
 /// The solver name. The user can configure this to be anything that they like.
@@ -131,6 +134,8 @@ pub struct Config {
     pub flashloans_enabled: bool,
     /// If no lender is specified in flashloan hint, use default one
     pub flashloan_default_lender: eth::Address,
+    /// Each lender has it's own solver and a flash fee
+    pub solver_for_lender: HashMap<Lender, (SolverWrapper, eth::FlashFee)>,
 }
 
 impl Solver {

@@ -208,11 +208,19 @@ impl Solutions {
                     solution
                         .flashloans
                         .into_iter()
-                        .map(|flashloan| eth::Flashloan {
-                            lender: flashloan.lender.into(),
-                            borrower: flashloan.borrower.into(),
-                            token: flashloan.token.into(),
-                            amount: flashloan.amount.into(),
+                        .filter_map(|flashloan| {
+                            solver_config
+                                .solver_for_lender
+                                .get(&flashloan.lender.into())
+                                .cloned()
+                                .map(|(solver_wrapper, flash_fee)| eth::Flashloan {
+                                    lender: flashloan.lender.into(),
+                                    borrower: flashloan.borrower.into(),
+                                    token: flashloan.token.into(),
+                                    amount: flashloan.amount.into(),
+                                    solver_wrapper,
+                                    flash_fee,
+                                })
                         })
                         .collect(),
                 )
