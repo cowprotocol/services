@@ -24,6 +24,7 @@ use {
         order::{OrderClass, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, QuoteId, QuoteSigningScheme, SellAmount},
     },
+    num::FromPrimitive,
     number::conversions::big_decimal_to_u256,
     std::sync::Arc,
     thiserror::Error,
@@ -137,6 +138,25 @@ impl Quote {
             .unwrap_or(U256::MAX);
 
         self
+    }
+
+    /// Converts this Quote to model OrderQuote.
+    pub fn try_to_model_order_quote(&self) -> Result<model::order::OrderQuote> {
+        Ok(model::order::OrderQuote {
+            gas_amount: bigdecimal::BigDecimal::from_f64(self.data.fee_parameters.gas_amount)
+                .context("gas amount is not a valid BigDecimal")?,
+            gas_price: bigdecimal::BigDecimal::from_f64(self.data.fee_parameters.gas_price)
+                .context("gas price is not a valid BigDecimal")?,
+            sell_token_price: bigdecimal::BigDecimal::from_f64(
+                self.data.fee_parameters.sell_token_price,
+            )
+            .context("sell token price is not a valid BigDecimal")?,
+            sell_amount: self.sell_amount,
+            buy_amount: self.buy_amount,
+            solver: self.data.solver,
+            verified: self.data.verified,
+            metadata: serde_json::to_value(&self.data.metadata)?,
+        })
     }
 }
 
