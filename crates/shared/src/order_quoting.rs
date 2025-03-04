@@ -1,9 +1,9 @@
 use {
     super::price_estimation::{
         self,
-        native::NativePriceEstimating,
         PriceEstimating,
         PriceEstimationError,
+        native::NativePriceEstimating,
     },
     crate::{
         account_balances::{BalanceFetching, Query},
@@ -726,13 +726,13 @@ mod tests {
         crate::{
             account_balances::MockBalanceFetching,
             gas_price_estimation::FakeGasPriceEstimator,
-            price_estimation::{native::MockNativePriceEstimating, MockPriceEstimating},
+            price_estimation::{MockPriceEstimating, native::MockNativePriceEstimating},
         },
         chrono::Utc,
         ethcontract::H160,
         futures::FutureExt,
         gas_estimation::GasPrice1559,
-        mockall::{predicate::eq, Sequence},
+        mockall::{Sequence, predicate::eq},
         model::time,
         number::nonzero::U256 as NonZeroU256,
         std::sync::Mutex,

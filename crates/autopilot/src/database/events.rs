@@ -1,19 +1,19 @@
 use {
-    anyhow::{anyhow, Context, Result},
+    anyhow::{Context, Result, anyhow},
     contracts::gpv2_settlement::{
+        Event as ContractEvent,
         event_data::{
             OrderInvalidated as ContractInvalidation,
             PreSignature as ContractPreSignature,
             Settlement as ContractSettlement,
             Trade as ContractTrade,
         },
-        Event as ContractEvent,
     },
     database::{
-        byte_array::ByteArray,
-        events::{Event, EventIndex, Invalidation, PreSignature, Settlement, Trade},
         OrderUid,
         PgTransaction,
+        byte_array::ByteArray,
+        events::{Event, EventIndex, Invalidation, PreSignature, Settlement, Trade},
     },
     ethcontract::{Event as EthContractEvent, EventMetadata},
     number::conversions::u256_to_big_decimal,

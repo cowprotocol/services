@@ -3,14 +3,14 @@ use {
     app_data::AppDataHash,
     bigdecimal::BigDecimal,
     number::serialization::HexOrDecimalU256,
-    serde::Deserialize,
-    serde_with::{serde_as, DisplayFromStr},
+    serde::{Deserialize, Serialize},
+    serde_with::{DisplayFromStr, serde_as},
     std::collections::HashMap,
     web3::types::{H160, H256, U256},
 };
 
 #[serde_as]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Auction {
     #[serde_as(as = "Option<DisplayFromStr>")]
@@ -25,7 +25,7 @@ pub struct Auction {
 }
 
 #[serde_as]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Order {
     #[serde_as(as = "serialize::Hex")]
@@ -40,9 +40,11 @@ pub struct Order {
     pub buy_amount: U256,
     #[serde_as(as = "HexOrDecimalU256")]
     pub full_buy_amount: U256,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub fee_policies: Option<Vec<FeePolicy>>,
     pub valid_to: u32,
     pub kind: Kind,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub receiver: Option<H160>,
     pub owner: H160,
     pub partially_fillable: bool,
@@ -52,7 +54,7 @@ pub struct Order {
     pub buy_token_destination: BuyTokenDestination,
     pub class: Class,
     pub app_data: AppDataHash,
-    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub flashloan_hint: Option<FlashloanHint>,
     pub signing_scheme: SigningScheme,
     #[serde(with = "bytes_hex")]
@@ -61,7 +63,7 @@ pub struct Order {
 
 /// Destination for which the buyAmount should be transferred to order's
 /// receiver to upon fulfillment
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BuyTokenDestination {
     /// Pay trade proceeds as an ERC20 token transfer
@@ -71,7 +73,7 @@ pub enum BuyTokenDestination {
 }
 
 /// Source from which the sellAmount should be drawn upon order fulfillment
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SellTokenSource {
     /// Direct ERC20 allowances to the Vault relayer contract
@@ -83,7 +85,7 @@ pub enum SellTokenSource {
 }
 
 #[serde_as]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InteractionData {
     pub target: H160,
@@ -93,7 +95,7 @@ pub struct InteractionData {
     pub call_data: Vec<u8>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SigningScheme {
     Eip712,
@@ -102,21 +104,21 @@ pub enum SigningScheme {
     PreSign,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Kind {
     Sell,
     Buy,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Class {
     Market,
     Limit,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum FeePolicy {
     #[serde(rename_all = "camelCase")]
@@ -132,7 +134,7 @@ pub enum FeePolicy {
 }
 
 #[serde_as]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Quote {
     #[serde_as(as = "HexOrDecimalU256")]
@@ -144,7 +146,7 @@ pub struct Quote {
 }
 
 #[serde_as]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct Token {
     pub decimals: Option<u8>,
@@ -157,7 +159,7 @@ pub struct Token {
 }
 
 #[allow(clippy::enum_variant_names)]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Liquidity {
     ConstantProduct(ConstantProductPool),
@@ -168,7 +170,7 @@ pub enum Liquidity {
 }
 
 #[serde_as]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConstantProductPool {
     pub id: String,
@@ -181,7 +183,7 @@ pub struct ConstantProductPool {
 }
 
 #[serde_as]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConstantProductReserve {
     #[serde_as(as = "HexOrDecimalU256")]
@@ -189,7 +191,7 @@ pub struct ConstantProductReserve {
 }
 
 #[serde_as]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WeightedProductPool {
     pub id: String,
@@ -203,7 +205,7 @@ pub struct WeightedProductPool {
 }
 
 #[serde_as]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WeightedProductReserve {
     #[serde_as(as = "HexOrDecimalU256")]
@@ -212,7 +214,7 @@ pub struct WeightedProductReserve {
     pub weight: BigDecimal,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum WeightedProductVersion {
     V0,
@@ -220,7 +222,7 @@ pub enum WeightedProductVersion {
 }
 
 #[serde_as]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StablePool {
     pub id: String,
@@ -234,7 +236,7 @@ pub struct StablePool {
 }
 
 #[serde_as]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StableReserve {
     #[serde_as(as = "HexOrDecimalU256")]
@@ -243,7 +245,7 @@ pub struct StableReserve {
 }
 
 #[serde_as]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConcentratedLiquidityPool {
     pub id: String,
@@ -263,7 +265,7 @@ pub struct ConcentratedLiquidityPool {
 }
 
 #[serde_as]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ForeignLimitOrder {
     pub id: String,
@@ -283,7 +285,7 @@ pub struct ForeignLimitOrder {
 }
 
 #[serde_as]
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FlashloanHint {
     pub lender: H160,

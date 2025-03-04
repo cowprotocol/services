@@ -1,9 +1,9 @@
 use {
-    crate::{orders::OrderKind, Address},
+    crate::{Address, orders::OrderKind},
     bigdecimal::BigDecimal,
     sqlx::{
-        types::chrono::{DateTime, Utc},
         PgConnection,
+        types::chrono::{DateTime, Utc},
     },
 };
 
@@ -156,7 +156,7 @@ mod tests {
         super::*,
         crate::byte_array::ByteArray,
         chrono::Duration,
-        sqlx::{types::chrono::TimeZone, Connection},
+        sqlx::{Connection, types::chrono::TimeZone},
     };
 
     /// The postgres database in our CI has different datetime precision than

@@ -2,13 +2,13 @@
 name = "app-data"
 version = "0.1.0"
 authors = ["Cow Protocol Developers <dev@cow.fi>"]
-edition = "2021"
+edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-bytes-hex = { path = "../bytes-hex" }
+bytes-hex = { workspace = true }
 anyhow = { workspace = true }
-tiny-keccak = { version = "2.0.2", features = ["keccak"] }
+tiny-keccak = { workspace = true, features = ["keccak"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }

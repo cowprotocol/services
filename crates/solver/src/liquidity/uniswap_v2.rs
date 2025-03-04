@@ -2,8 +2,8 @@ use {
     super::{AmmOrderExecution, ConstantProductOrder, SettlementHandling},
     crate::{
         interactions::{
-            allowances::{AllowanceManager, AllowanceManaging, Allowances, Approval},
             UniswapInteraction,
+            allowances::{AllowanceManager, AllowanceManaging, Allowances, Approval},
         },
         liquidity::Liquidity,
         liquidity_collector::LiquidityCollecting,

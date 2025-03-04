@@ -2,7 +2,7 @@ use {
     chrono::{DateTime, Utc},
     ethcontract::{H160, U256},
     std::fmt::Debug,
-    web3::{api::Namespace, helpers::CallFuture, Transport},
+    web3::{Transport, api::Namespace, helpers::CallFuture},
 };
 
 #[derive(Debug, Clone)]

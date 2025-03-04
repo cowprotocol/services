@@ -8,11 +8,11 @@ use {
         tx,
         tx_value,
     },
-    ethcontract::{web3::ethabi::Token, BlockId, BlockNumber, H160, U256},
+    ethcontract::{BlockId, BlockNumber, H160, U256, web3::ethabi::Token},
     model::{
         order::{OrderClass, OrderCreation, OrderData, OrderKind, OrderUid},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
-        signature::{hashed_eip712_message, EcdsaSigningScheme},
+        signature::{EcdsaSigningScheme, hashed_eip712_message},
     },
     secp256k1::SecretKey,
     shared::{addr, ethrpc::Web3},
@@ -321,6 +321,7 @@ async fn cow_amm_jit(web3: Web3) {
                     receiver: cow_amm_order.receiver.unwrap_or_default(),
                     sell_amount: cow_amm_order.sell_amount,
                     buy_amount: cow_amm_order.buy_amount,
+                    partially_fillable: cow_amm_order.partially_fillable,
                     valid_to: cow_amm_order.valid_to,
                     app_data: cow_amm_order.app_data.0,
                     kind: Kind::Sell,
@@ -450,12 +451,14 @@ async fn cow_amm_driver_support(web3: Web3) {
         zero_balance_amm_account,
         pendle_token.transfer(addr!("027e1cbf2c299cba5eb8a2584910d04f1a8aa403"), balance)
     );
-    assert!(pendle_token
-        .balance_of(zero_balance_amm)
-        .call()
-        .await
-        .unwrap()
-        .is_zero());
+    assert!(
+        pendle_token
+            .balance_of(zero_balance_amm)
+            .call()
+            .await
+            .unwrap()
+            .is_zero()
+    );
 
     // spawn a mock solver so we can later assert things about the received auction
     let mock_solver = Mock::default();
@@ -893,6 +896,7 @@ async fn cow_amm_opposite_direction(web3: Web3) {
                         receiver: cow_amm_order.receiver.unwrap_or_default(),
                         sell_amount: cow_amm_order.sell_amount,
                         buy_amount: cow_amm_order.buy_amount,
+                        partially_fillable: cow_amm_order.partially_fillable,
                         valid_to: cow_amm_order.valid_to,
                         app_data: cow_amm_order.app_data.0,
                         kind: Kind::Sell,

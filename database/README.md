@@ -451,6 +451,25 @@ Indexes:
 - settlements\_tx\_from\_tx\_nonce: btree(`tx_from`, `tx_nonce`)
 - settlements\_tx\_hash: hash(`tx_hash`)
 
+### settlement\_executions
+
+Contains data for each settlement execution of an auction. To check if the auction was settled on-chain, refer to the `settlements` table.
+
+ Column          | Type        | Nullable | Details
+-----------------|-------------|----------|--------
+auction\_id      | bigint      | not null | id of the auction the settlement execution belongs to
+solver           | bytea       | not null | public address of the winning solver that executed the settlement
+start\_timestamp | timestamptz | not null | when the settlement execution started
+end\_timestamp   | timestamptz | nullable | when the settlement execution ended
+start\_block     | bigint      | not null | block in which the settlement execution started
+end\_block       | bigint      | nullable | block in which the settlement execution ended
+deadline\_block  | bigint      | not null | latest block at which the settlement execution should have ended
+outcome          | text        | nullable | outcome of the settlement execution
+
+Indexes:
+- PRIMARY KEY: btree(`auction_id`, `solver`)
+- settlement\_executions\_time\_range\_index: btree(`start_timestamp`, `end_timestamp`)
+
 ### solver\_competitions
 
 Stores an overview of the solver competition. It contains orders in the auction along with prices for every relevant token as well as all valid solutions submitted by solvers together with their quality.

@@ -427,9 +427,11 @@ mod tests {
 
         // Note that we need to scale because of remaining balance, and that
         // we would overflow with these numbers:
-        assert!((order.sell_amount * order.sell_amount)
-            .checked_mul(balance)
-            .is_none());
+        assert!(
+            (order.sell_amount * order.sell_amount)
+                .checked_mul(balance)
+                .is_none()
+        );
 
         // However, `Remaining` supports these large orders with large partial
         // balances as scaling for remaining execution and available balance are

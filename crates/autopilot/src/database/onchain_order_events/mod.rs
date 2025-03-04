@@ -3,32 +3,33 @@ pub mod event_retriever;
 
 use {
     super::{
-        events::{bytes_to_order_uid, meta_to_event_index},
         Metrics as DatabaseMetrics,
         Postgres,
+        events::{bytes_to_order_uid, meta_to_event_index},
     },
-    anyhow::{anyhow, bail, Context, Result},
+    anyhow::{Context, Result, anyhow, bail},
     app_data::AppDataHash,
     chrono::{TimeZone, Utc},
     contracts::cowswap_onchain_orders::{
-        event_data::{OrderInvalidation, OrderPlacement as ContractOrderPlacement},
         Event as ContractEvent,
+        event_data::{OrderInvalidation, OrderPlacement as ContractOrderPlacement},
     },
     database::{
+        PgTransaction,
         byte_array::ByteArray,
         events::EventIndex,
         onchain_broadcasted_orders::{OnchainOrderPlacement, OnchainOrderPlacementError},
-        orders::{insert_quotes, Order, OrderClass},
-        PgTransaction,
+        orders::{Order, OrderClass, insert_quotes},
     },
-    ethcontract::{Event as EthContractEvent, H160},
+    ethcontract::{Event as EthContractEvent, H160, TransactionHash},
     ethrpc::{
-        block_stream::{timestamp_of_block_in_seconds, RangeInclusive},
         Web3,
+        block_stream::{RangeInclusive, timestamp_of_block_in_seconds},
     },
-    futures::{stream, StreamExt},
-    itertools::multiunzip,
+    futures::{StreamExt, stream},
+    itertools::{izip, multiunzip},
     model::{
+        DomainSeparator,
         order::{
             BuyTokenDestination,
             OrderData,
@@ -38,7 +39,6 @@ use {
             SellTokenSource,
         },
         signature::SigningScheme,
-        DomainSeparator,
     },
     number::conversions::u256_to_big_decimal,
     shared::{
@@ -51,9 +51,9 @@ use {
         event_handling::EventStoring,
         order_quoting::{OrderQuoting, Quote, QuoteSearchParameters},
         order_validation::{
+            ValidationError,
             convert_signing_scheme_into_quote_signing_scheme,
             get_quote_and_check_fee,
-            ValidationError,
         },
     },
     std::{collections::HashMap, sync::Arc},
@@ -214,6 +214,7 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
         Vec<Option<database::orders::Quote>>,
         Vec<(database::events::EventIndex, OnchainOrderPlacement)>,
         Vec<Order>,
+        Vec<TransactionHash>,
     )> {
         let block_number_timestamp_hashmap =
             get_block_numbers_of_events(&self.web3, &order_placement_events).await?;
@@ -233,6 +234,7 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
             let EthContractEvent { meta, .. } = event;
             if let Some(meta) = meta {
                 let event_index = meta_to_event_index(meta);
+                let tx_hash = meta.transaction_hash;
                 if let Some(quote_id) = quote_id_hashmap.get(&event_index) {
                     events_and_quotes.push((
                         event.clone(),
@@ -242,6 +244,7 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
                             .get(&(event_index.block_number as u64))
                             .unwrap() as i64,
                         *quote_id,
+                        tx_hash,
                     ));
                 }
             }
@@ -256,7 +259,7 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
         .await;
 
         let data_tuple = onchain_order_data.into_iter().map(
-            |(event_index, quote, onchain_order_placement, order)| {
+            |(event_index, quote, onchain_order_placement, order, tx_hash)| {
                 (
                     self.custom_onchain_data_parser
                         .customized_event_data_for_event_index(
@@ -268,6 +271,7 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
                     quote,
                     (event_index, onchain_order_placement),
                     order,
+                    tx_hash,
                 )
             },
         );
@@ -310,7 +314,7 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
             .collect();
         let invalidation_events = get_invalidation_events(events)?;
         let invalided_order_uids = extract_invalidated_order_uids(invalidation_events)?;
-        let (custom_onchain_data, quotes, broadcasted_order_data, orders) = self
+        let (custom_onchain_data, quotes, broadcasted_order_data, orders, tx_hashes) = self
             .extract_custom_and_general_order_data(order_placement_events)
             .await?;
 
@@ -355,8 +359,8 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
         for order in &invalided_order_uids {
             tracing::debug!(?order, "invalidated order");
         }
-        for (order, quote) in orders.iter().zip(quotes.iter()) {
-            tracing::debug!(order =? order.uid, ?quote, "order created");
+        for (order, quote, tx_hash) in izip!(orders, quotes, tx_hashes) {
+            tracing::debug!(order =? order.uid, ?quote, onchain_transaction_hash = ?tx_hash, "order created");
         }
 
         Ok(())
@@ -434,16 +438,22 @@ type GeneralOnchainOrderPlacementData = (
     Option<database::orders::Quote>,
     OnchainOrderPlacement,
     Order,
+    TransactionHash,
 );
 async fn parse_general_onchain_order_placement_data(
     quoter: &'_ dyn OrderQuoting,
-    order_placement_events_and_quotes_zipped: Vec<(EthContractEvent<ContractEvent>, i64, i64)>,
+    order_placement_events_and_quotes_zipped: Vec<(
+        EthContractEvent<ContractEvent>,
+        i64,
+        i64,
+        TransactionHash,
+    )>,
     domain_separator: DomainSeparator,
     settlement_contract: H160,
     metrics: &'static Metrics,
 ) -> Vec<GeneralOnchainOrderPlacementData> {
     let futures = order_placement_events_and_quotes_zipped.into_iter().map(
-        |(EthContractEvent { data, meta }, event_timestamp, quote_id)| async move {
+        |(EthContractEvent { data, meta }, event_timestamp, quote_id, tx_hash)| async move {
             let meta = match meta {
                 Some(meta) => meta,
                 None => {
@@ -505,6 +515,7 @@ async fn parse_general_onchain_order_placement_data(
                 quote,
                 order_data.0,
                 order_data.1,
+                tx_hash,
             ))
         },
     );
@@ -611,7 +622,7 @@ fn convert_onchain_order_placement(
         fee_amount: u256_to_big_decimal(&order_data.fee_amount),
         kind: order_kind_into(order_data.kind),
         partially_fillable: order_data.partially_fillable,
-        signature: order_placement.signature.1 .0.clone(),
+        signature: order_placement.signature.1.0.clone(),
         signing_scheme: signing_scheme_into(signing_scheme),
         settlement_contract: ByteArray(settlement_contract.0),
         sell_token_balance: sell_token_source_into(order_data.sell_token_balance),
@@ -637,7 +648,7 @@ fn extract_order_data_from_onchain_order_placement_event(
     let (signing_scheme, owner) = match order_placement.signature.0 {
         0 => (
             SigningScheme::Eip1271,
-            H160::from_slice(&order_placement.signature.1 .0[..20]),
+            H160::from_slice(&order_placement.signature.1.0[..20]),
         ),
         1 => (SigningScheme::PreSign, order_placement.sender),
         // Signatures can only be 0 and 1 by definition in the smart contrac:
@@ -658,12 +669,12 @@ fn extract_order_data_from_onchain_order_placement_event(
         sell_amount: order_placement.order.3,
         buy_amount: order_placement.order.4,
         valid_to: order_placement.order.5,
-        app_data: AppDataHash(order_placement.order.6 .0),
+        app_data: AppDataHash(order_placement.order.6.0),
         fee_amount: order_placement.order.7,
-        kind: OrderKind::from_contract_bytes(order_placement.order.8 .0)?,
+        kind: OrderKind::from_contract_bytes(order_placement.order.8.0)?,
         partially_fillable: order_placement.order.9,
-        sell_token_balance: SellTokenSource::from_contract_bytes(order_placement.order.10 .0)?,
-        buy_token_balance: BuyTokenDestination::from_contract_bytes(order_placement.order.11 .0)?,
+        sell_token_balance: SellTokenSource::from_contract_bytes(order_placement.order.10.0)?,
+        buy_token_balance: BuyTokenDestination::from_contract_bytes(order_placement.order.11.0)?,
     };
     let order_uid = order_data.uid(&domain_separator, &owner);
     Ok((order_data, owner, signing_scheme, order_uid))
@@ -700,9 +711,9 @@ mod test {
         database::{byte_array::ByteArray, onchain_broadcasted_orders::OnchainOrderPlacement},
         ethcontract::{Bytes, EventMetadata, H160, U256},
         model::{
+            DomainSeparator,
             order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
             signature::SigningScheme,
-            DomainSeparator,
         },
         number::conversions::u256_to_big_decimal,
         shared::{
@@ -919,7 +930,7 @@ mod test {
             kind: order_kind_into(expected_order_data.kind),
             class: OrderClass::Market,
             partially_fillable: expected_order_data.partially_fillable,
-            signature: order_placement.signature.1 .0,
+            signature: order_placement.signature.1.0,
             signing_scheme: signing_scheme_into(SigningScheme::Eip1271),
             settlement_contract: ByteArray(settlement_contract.0),
             sell_token_balance: sell_token_source_into(expected_order_data.sell_token_balance),
@@ -1029,7 +1040,7 @@ mod test {
             kind: order_kind_into(expected_order_data.kind),
             class: OrderClass::Limit,
             partially_fillable: expected_order_data.partially_fillable,
-            signature: order_placement.signature.1 .0,
+            signature: order_placement.signature.1.0,
             signing_scheme: signing_scheme_into(SigningScheme::Eip1271),
             settlement_contract: ByteArray(settlement_contract.0),
             sell_token_balance: sell_token_source_into(expected_order_data.sell_token_balance),

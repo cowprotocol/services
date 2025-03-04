@@ -2,17 +2,17 @@ use {
     crate::{
         domain::{
             self,
-            competition::{bad_tokens, order::app_data::AppDataRetriever},
             Mempools,
+            competition::{bad_tokens, order::app_data::AppDataRetriever},
         },
         infra::{
             self,
+            Ethereum,
+            Simulator,
             config::file::OrderPriorityStrategy,
             liquidity,
             solver::{Solver, Timeouts},
             tokens,
-            Ethereum,
-            Simulator,
         },
     },
     error::Error,
@@ -78,6 +78,7 @@ impl Api {
             let router = routes::solve(router);
             let router = routes::reveal(router);
             let router = routes::settle(router);
+            let router = routes::notify(router);
 
             let bad_token_config = solver.bad_token_detection();
             let mut bad_tokens =

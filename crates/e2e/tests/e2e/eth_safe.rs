@@ -5,8 +5,8 @@ use {
     },
     ethcontract::U256,
     model::{
-        order::{OrderCreation, OrderKind, BUY_ETH_ADDRESS},
-        signature::{hashed_eip712_message, Signature},
+        order::{BUY_ETH_ADDRESS, OrderCreation, OrderKind},
+        signature::{Signature, hashed_eip712_message},
     },
     shared::ethrpc::Web3,
 };

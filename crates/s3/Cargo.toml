@@ -2,13 +2,13 @@
 name = "s3"
 version = "0.1.0"
 authors = ["Cow Protocol Developers <dev@cow.fi>"]
-edition = "2021"
+edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
 anyhow = { workspace = true }
-aws-config = { version = "1.5.1", features = ["behavior-version-latest"] }
-aws-sdk-s3 = { version = "1.34.0", default-features = false, features = ["rustls", "rt-tokio"] }
+aws-config = { workspace = true, features = ["behavior-version-latest"] }
+aws-sdk-s3 = { workspace = true, features = ["rustls", "rt-tokio"] }
 flate2 = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

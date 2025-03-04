@@ -2,12 +2,12 @@
 
 use {
     crate::tenderly_api::{SimulationKind, SimulationRequest, StateObject, TenderlyApi},
-    anyhow::{ensure, Context as _, Result},
+    anyhow::{Context as _, Result, ensure},
     contracts::errors::EthcontractErrorType,
     ethcontract::errors::ExecutionError,
     ethrpc::{
-        extensions::{EthExt as _, StateOverride, StateOverrides},
         Web3,
+        extensions::{EthExt as _, StateOverride, StateOverrides},
     },
     std::sync::Arc,
     thiserror::Error,

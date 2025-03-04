@@ -1,8 +1,8 @@
 use {
     super::{
+        Partial,
         blockchain::{self, Blockchain},
         fee,
-        Partial,
     },
     crate::{
         domain::{
@@ -10,18 +10,13 @@ use {
             eth,
             time::{self},
         },
-        infra::{
-            self,
-            blockchain::contracts::Addresses,
-            config::file::FeeHandler,
-            solver::dto::FlashloanHint,
-            Ethereum,
-        },
+        infra::{self, Ethereum, blockchain::contracts::Addresses, config::file::FeeHandler},
         tests::{hex_address, setup::blockchain::Trade},
     },
     ethereum_types::H160,
     itertools::Itertools,
     serde_json::json,
+    solvers_dto::auction::FlashloanHint,
     std::{
         collections::{HashMap, HashSet},
         net::SocketAddr,

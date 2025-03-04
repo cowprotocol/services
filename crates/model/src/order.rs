@@ -3,23 +3,23 @@
 
 use {
     crate::{
+        DomainSeparator,
+        TokenPair,
         interaction::InteractionData,
         quote::QuoteId,
         signature::{self, EcdsaSignature, EcdsaSigningScheme, Signature},
-        DomainSeparator,
-        TokenPair,
     },
-    anyhow::{anyhow, Result},
-    app_data::{hash_full_app_data, AppDataHash},
+    anyhow::{Result, anyhow},
+    app_data::{AppDataHash, hash_full_app_data},
     bigdecimal::BigDecimal,
-    chrono::{offset::Utc, DateTime},
+    chrono::{DateTime, offset::Utc},
     derive_more::Debug as DeriveDebug,
     hex_literal::hex,
     num::BigUint,
     number::serialization::HexOrDecimalU256,
     primitive_types::{H160, H256, U256},
-    serde::{de, Deserialize, Deserializer, Serialize, Serializer},
-    serde_with::{serde_as, DisplayFromStr},
+    serde::{Deserialize, Deserializer, Serialize, Serializer, de},
+    serde_with::{DisplayFromStr, serde_as},
     std::{
         collections::HashSet,
         fmt::{self, Debug, Display},
@@ -380,7 +380,7 @@ impl OrderCreation {
                         from,
                         app_data_signer,
                     },
-                ))
+                ));
             }
         };
 

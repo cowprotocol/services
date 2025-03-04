@@ -21,9 +21,9 @@ use {
     shared::{
         http_solver::model::TokenAmount,
         sources::balancer_v2::{
-            pool_fetching::BalancerContracts,
             BalancerFactoryKind,
             BalancerPoolFetcher,
+            pool_fetching::BalancerContracts,
         },
         token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
     },
@@ -102,7 +102,7 @@ async fn init_liquidity(
     block_stream: &CurrentBlockWatcher,
     block_retriever: Arc<dyn BlockRetrieving>,
     config: &infra::liquidity::config::BalancerV2,
-) -> Result<impl LiquidityCollecting> {
+) -> Result<impl LiquidityCollecting + use<>> {
     let web3 = boundary::web3(eth);
     let contracts = BalancerContracts {
         vault: BalancerV2Vault::at(&web3, config.vault.into()),

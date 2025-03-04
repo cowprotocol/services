@@ -9,7 +9,7 @@ use {
     },
     async_trait::async_trait,
     contracts::{GPv2Settlement, IUniswapLikeRouter},
-    ethrpc::{block_stream::CurrentBlockWatcher, Web3},
+    ethrpc::{Web3, block_stream::CurrentBlockWatcher},
     shared::{
         http_solver::model::TokenAmount,
         sources::uniswap_v2::{
@@ -20,7 +20,10 @@ use {
     },
     solver::{
         interactions::allowances::{AllowanceManaging, Allowances, Approval, ApprovalRequest},
-        liquidity::{uniswap_v2, uniswap_v2::UniswapLikeLiquidity, ConstantProductOrder},
+        liquidity::{
+            ConstantProductOrder,
+            uniswap_v2::{self, UniswapLikeLiquidity},
+        },
         liquidity_collector::LiquidityCollecting,
     },
     std::{

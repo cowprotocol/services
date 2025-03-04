@@ -2,7 +2,7 @@
 name = "model"
 version = "0.1.0"
 authors = ["Gnosis Developers <developers@gnosis.io>", "Cow Protocol Developers <dev@cow.fi>"]
-edition = "2021"
+edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [lib]
@@ -10,14 +10,14 @@ doctest = false
 
 [dependencies]
 anyhow = { workspace = true }
-app-data = { path = "../app-data" }
-bytes-hex = { path = "../bytes-hex" }
+app-data = { workspace = true }
+bytes-hex = { workspace = true }
 bigdecimal = { workspace = true }
 chrono = { workspace = true, features = ["serde", "clock"] }
 derive_more = { workspace = true }
 hex = { workspace = true, default-features = false }
 hex-literal = { workspace = true }
-number = { path = "../number" }
+number = { workspace = true }
 num = { workspace = true }
 primitive-types = { workspace = true }
 secp256k1 = { workspace = true }
@@ -29,7 +29,7 @@ web3 = { workspace = true, features = ["signing"] }
 
 [dev-dependencies]
 maplit = { workspace = true }
-testlib = { path = "../testlib" }
+testlib = { workspace = true }
 
 [features]
 e2e = []

@@ -1,7 +1,7 @@
 [package]
 name = "solvers"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [lib]
 name = "solvers"
@@ -14,13 +14,13 @@ path = "src/main.rs"
 
 [dependencies]
 axum = { workspace = true }
-bigdecimal = { version = "0.3", features = ["serde"] }
-chain = { path = "../chain" }
+bigdecimal = { workspace = true, features = ["serde"] }
+chain = { workspace = true }
 chrono = { workspace = true, features = ["serde"], default-features = false }
 clap = { workspace = true, features = ["derive", "env"] }
 derive_more = { workspace = true }
 ethereum-types = { workspace = true }
-ethrpc = { path = "../ethrpc" }
+ethrpc = { workspace = true }
 hex = { workspace = true }
 hyper = { workspace = true }
 itertools = { workspace = true }
@@ -32,21 +32,21 @@ reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
-solvers-dto = { path = "../solvers-dto" }
+solvers-dto = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "time"] }
 toml = { workspace = true }
-tower = "0.4"
-tower-http = { version = "0.4", features = ["limit", "trace"] }
+tower = { workspace = true }
+tower-http = { workspace = true, features = ["limit", "trace"] }
 web3 = { workspace = true }
 
 # TODO Once solvers are ported and E2E tests set up, slowly migrate code and
 # remove/re-evaluate these dependencies.
 anyhow = { workspace = true }
-contracts = { path = "../contracts" }
-model = { path = "../model" }
-observe = { path = "../observe" }
-shared = { path = "../shared" }
-solver = { path = "../solver" }
+contracts = { workspace = true }
+model = { workspace = true }
+observe = { workspace = true }
+shared = { workspace = true }
+solver = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]

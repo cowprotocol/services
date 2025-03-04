@@ -2,14 +2,14 @@
 name = "rate-limit"
 version = "0.1.0"
 authors = ["Cow Protocol Developers <dev@cow.fi>"]
-edition = "2021"
+edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
 anyhow = { workspace = true }
 futures = { workspace = true }
 humantime = { workspace = true }
-observe = { path = "../observe" }
+observe = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }

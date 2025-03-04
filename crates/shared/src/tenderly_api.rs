@@ -10,8 +10,8 @@ use {
     clap::Parser,
     prometheus::IntGaugeVec,
     reqwest::{
-        header::{HeaderMap, HeaderValue},
         Url,
+        header::{HeaderMap, HeaderValue},
     },
     serde::{Deserialize, Serialize},
     std::{

@@ -5,13 +5,13 @@ use {
     crate::{
         gas_price_estimation::GasEstimatorType,
         sources::{
+            BaselineSource,
             balancer_v2::BalancerFactoryKind,
             uniswap_v2::UniV2BaselineSourceParameters,
-            BaselineSource,
         },
         tenderly_api,
     },
-    anyhow::{ensure, Context, Result},
+    anyhow::{Context, Result, ensure},
     bigdecimal::BigDecimal,
     ethcontract::{H160, U256},
     std::{

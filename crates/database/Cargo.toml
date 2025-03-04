@@ -2,13 +2,13 @@
 name = "database"
 version = "0.1.0"
 authors = ["Cow Protocol Developers <dev@cow.fi>"]
-edition = "2021"
+edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
 bigdecimal = { workspace = true }
 chrono = { workspace = true, features = ["clock"] }
-const_format = "0.2.32"
+const_format = { workspace = true }
 futures = { workspace = true }
 hex = { workspace = true }
 sqlx = { workspace = true }

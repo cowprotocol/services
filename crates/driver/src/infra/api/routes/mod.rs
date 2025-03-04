@@ -1,6 +1,7 @@
 mod healthz;
 mod info;
 mod metrics;
+mod notify;
 mod quote;
 mod reveal;
 mod settle;
@@ -10,8 +11,9 @@ pub(super) use {
     healthz::healthz,
     info::info,
     metrics::metrics,
-    quote::{quote, OrderError},
+    notify::notify,
+    quote::{OrderError, quote},
     reveal::reveal,
     settle::settle,
-    solve::{solve, AuctionError},
+    solve::{AuctionError, solve},
 };

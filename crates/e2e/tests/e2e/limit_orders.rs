@@ -2,7 +2,7 @@ use {
     contracts::ERC20,
     driver::domain::eth::NonZeroU256,
     e2e::{nodes::forked_node::ForkedNodeApi, setup::*, tx},
-    ethcontract::{prelude::U256, H160},
+    ethcontract::{H160, prelude::U256},
     fee::{FeePolicyOrderClass, ProtocolFee, ProtocolFeesConfig},
     model::{
         order::{OrderClass, OrderCreation, OrderKind},

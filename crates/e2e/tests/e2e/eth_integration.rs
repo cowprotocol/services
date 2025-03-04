@@ -2,7 +2,7 @@ use {
     e2e::{setup::*, tx},
     ethcontract::prelude::{Address, U256},
     model::{
-        order::{OrderCreation, OrderKind, BUY_ETH_ADDRESS},
+        order::{BUY_ETH_ADDRESS, OrderCreation, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::EcdsaSigningScheme,
     },

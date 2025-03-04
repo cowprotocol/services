@@ -2,18 +2,18 @@
 name = "observe"
 version = "0.1.0"
 authors = ["Cow Protocol Developers <dev@cow.fi>"]
-edition = "2021"
+edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-atty = "0.2"
+atty = { workspace = true }
 async-trait = { workspace = true }
-console-subscriber = "0.3.0"
+console-subscriber = { workspace = true }
 futures = { workspace = true }
-pin-project-lite = "0.2.14"
+pin-project-lite = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
-time = { version = "0.3.37", features = ["macros"] }
+time = { workspace = true, features = ["macros"] }
 tokio = { workspace = true, features = [ "fs" ] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt", "time"] }

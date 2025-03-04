@@ -1,5 +1,5 @@
 use {
-    serde::{de, Deserializer, Serializer},
+    serde::{Deserializer, Serializer, de},
     serde_with::{DeserializeAs, SerializeAs},
 };
 

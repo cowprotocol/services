@@ -16,7 +16,7 @@ use {
     reqwest::{Client, Url},
     serde::Deserialize,
     serde_json::json,
-    serde_with::{serde_as, DisplayFromStr},
+    serde_with::{DisplayFromStr, serde_as},
     std::collections::HashMap,
 };
 

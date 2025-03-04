@@ -1,7 +1,7 @@
 use {
     crate::{
         boundary,
-        database::{order_events::store_order_events, Postgres},
+        database::{Postgres, order_events::store_order_events},
         domain::{self, eth},
         infra::persistence::dto::AuctionId,
     },
@@ -152,7 +152,7 @@ impl Persistence {
                     let solution = Solution {
                         uid: uid.try_into().context("uid overflow")?,
                         id: u256_to_big_decimal(&participant.solution().id().into()),
-                        solver: ByteArray(participant.solution().solver().0 .0),
+                        solver: ByteArray(participant.solution().solver().0.0),
                         is_winner: participant.is_winner(),
                         score: u256_to_big_decimal(&participant.solution().score().get().0),
                         orders: participant
@@ -161,8 +161,8 @@ impl Persistence {
                             .iter()
                             .map(|(order_uid, order)| Order {
                                 uid: ByteArray(order_uid.0),
-                                sell_token: ByteArray(order.sell.token.0 .0),
-                                buy_token: ByteArray(order.buy.token.0 .0),
+                                sell_token: ByteArray(order.sell.token.0.0),
+                                buy_token: ByteArray(order.buy.token.0.0),
                                 limit_sell: u256_to_big_decimal(&order.sell.amount.0),
                                 limit_buy: u256_to_big_decimal(&order.buy.amount.0),
                                 executed_sell: u256_to_big_decimal(&order.executed_sell.0),
@@ -174,7 +174,7 @@ impl Persistence {
                             .solution()
                             .prices()
                             .keys()
-                            .map(|token| ByteArray(token.0 .0))
+                            .map(|token| ByteArray(token.0.0))
                             .collect(),
                         price_values: participant
                             .solution()
@@ -268,7 +268,7 @@ impl Persistence {
         Ok(database::settlements::find_settlement_transaction(
             &mut ex,
             auction_id,
-            ByteArray(solver.0 .0),
+            ByteArray(solver.0.0),
         )
         .await?
         .map(|hash| H256(hash.0).into()))
@@ -301,7 +301,7 @@ impl Persistence {
                 price_tokens: auction
                     .prices
                     .keys()
-                    .map(|token| ByteArray(token.0 .0))
+                    .map(|token| ByteArray(token.0.0))
                     .collect(),
                 price_values: auction
                     .prices
@@ -311,7 +311,7 @@ impl Persistence {
                 surplus_capturing_jit_order_owners: auction
                     .surplus_capturing_jit_order_owners
                     .iter()
-                    .map(|owner| ByteArray(owner.0 .0))
+                    .map(|owner| ByteArray(owner.0.0))
                     .collect(),
             },
         )
@@ -685,7 +685,7 @@ impl Persistence {
                     block_number,
                     log_index,
                     gas_used: u256_to_big_decimal(&gas.0),
-                    effective_gas_price: u256_to_big_decimal(&gas_price.0 .0),
+                    effective_gas_price: u256_to_big_decimal(&gas_price.0.0),
                     surplus: u256_to_big_decimal(&surplus.0),
                     fee: u256_to_big_decimal(&fee.0),
                 },
@@ -707,14 +707,14 @@ impl Persistence {
                     auction_id,
                     block_number,
                     Asset {
-                        token: ByteArray(order_fee.total.token.0 .0),
+                        token: ByteArray(order_fee.total.token.0.0),
                         amount: u256_to_big_decimal(&order_fee.total.amount.0),
                     },
                     &order_fee
                         .protocol
                         .into_iter()
                         .map(|executed| Asset {
-                            token: ByteArray(executed.fee.token.0 .0),
+                            token: ByteArray(executed.fee.token.0.0),
                             amount: u256_to_big_decimal(&executed.fee.amount.0),
                         })
                         .collect::<Vec<_>>(),
@@ -741,14 +741,14 @@ impl Persistence {
                                     block_number: i64::try_from(block_number.0).ok()?,
                                     log_index: i64::try_from(*log_index).ok()?,
                                     uid: ByteArray(jit_order.uid.0),
-                                    owner: ByteArray(jit_order.uid.owner().0 .0),
+                                    owner: ByteArray(jit_order.uid.owner().0.0),
                                     creation_timestamp: chrono::DateTime::from_timestamp(
                                         i64::from(jit_order.created),
                                         0,
                                     )
-                                    .unwrap_or_default(),
-                                    sell_token: ByteArray(jit_order.sell.token.0 .0),
-                                    buy_token: ByteArray(jit_order.buy.token.0 .0),
+                                        .unwrap_or_default(),
+                                    sell_token: ByteArray(jit_order.sell.token.0.0),
+                                    buy_token: ByteArray(jit_order.buy.token.0.0),
                                     sell_amount: u256_to_big_decimal(&jit_order.sell.amount.0),
                                     buy_amount: u256_to_big_decimal(&jit_order.buy.amount.0),
                                     valid_to: i64::from(jit_order.valid_to),
@@ -757,7 +757,7 @@ impl Persistence {
                                     kind: jit_order.side.into(),
                                     partially_fillable: jit_order.partially_fillable,
                                     signature: jit_order.signature.to_bytes(),
-                                    receiver: ByteArray(jit_order.receiver.0 .0),
+                                    receiver: ByteArray(jit_order.receiver.0.0),
                                     signing_scheme: match jit_order.signature.scheme() {
                                         DomainSigningScheme::Eip712 => DbSigningScheme::Eip712,
                                         DomainSigningScheme::EthSign => DbSigningScheme::EthSign,
@@ -790,12 +790,121 @@ impl Persistence {
                         })
                         .collect::<Vec<_>>(),
                 )
-                .await?;
+                    .await?;
             }
         }
 
         ex.commit().await?;
         Ok(())
+    }
+
+    pub async fn store_settlement_execution_started(
+        &self,
+        event: domain::settlement::ExecutionStarted,
+    ) -> Result<(), DatabaseError> {
+        let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["insert_settlement_execution_event"])
+            .start_timer();
+
+        database::settlement_executions::insert(
+            &mut ex,
+            event.auction_id,
+            ByteArray(event.solver.0.0),
+            event.start_timestamp,
+            event
+                .start_block
+                .try_into()
+                .context("start block overflow")?,
+            event
+                .deadline_block
+                .try_into()
+                .context("deadline block overflow")?,
+        )
+        .await?;
+
+        Ok(())
+    }
+
+    pub async fn store_settlement_execution_ended(
+        &self,
+        event: domain::settlement::ExecutionEnded,
+    ) -> Result<(), DatabaseError> {
+        let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["update_settlement_execution_event"])
+            .start_timer();
+
+        database::settlement_executions::update(
+            &mut ex,
+            event.auction_id,
+            ByteArray(event.solver.0.0),
+            event.end_timestamp,
+            event.end_block.try_into().context("end block overflow")?,
+            event.outcome,
+        )
+        .await?;
+
+        Ok(())
+    }
+
+    /// Finds solvers that won `last_auctions_count` consecutive auctions but
+    /// never settled any of them. The current block is used to prevent
+    /// selecting auctions with deadline after the current block since they
+    /// still can be settled.
+    pub async fn find_non_settling_solvers(
+        &self,
+        last_auctions_count: u32,
+        current_block: u64,
+    ) -> anyhow::Result<Vec<eth::Address>> {
+        let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["find_non_settling_solvers"])
+            .start_timer();
+
+        Ok(database::solver_competition::find_non_settling_solvers(
+            &mut ex,
+            last_auctions_count,
+            current_block,
+        )
+        .await
+        .context("failed to fetch non-settling solvers")?
+        .into_iter()
+        .map(|solver| eth::Address(solver.0.into()))
+        .collect())
+    }
+
+    /// Finds solvers that have a failure settling rate above the given
+    /// ratio. The current block is used to prevent selecting auctions with
+    /// deadline after the current block since they still can be settled.
+    pub async fn find_low_settling_solvers(
+        &self,
+        last_auctions_count: u32,
+        current_block: u64,
+        max_failure_rate: f64,
+        min_wins_threshold: u32,
+    ) -> anyhow::Result<Vec<eth::Address>> {
+        let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["find_low_settling_solvers"])
+            .start_timer();
+
+        Ok(database::solver_competition::find_low_settling_solvers(
+            &mut ex,
+            last_auctions_count,
+            current_block,
+            max_failure_rate,
+            min_wins_threshold,
+        )
+        .await
+        .context("solver_competition::find_low_settling_solvers")?
+        .into_iter()
+        .map(|solver| eth::Address(solver.0.into()))
+        .collect())
     }
 }
 

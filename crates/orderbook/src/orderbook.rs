@@ -14,6 +14,7 @@ use {
     database::order_events::OrderEventLabel,
     ethcontract::H256,
     model::{
+        DomainSeparator,
         order::{
             Order,
             OrderCancellation,
@@ -25,7 +26,6 @@ use {
         },
         quote::QuoteId,
         solver_competition::{self, SolverCompetitionAPI},
-        DomainSeparator,
     },
     observe::metrics::LivenessChecking,
     primitive_types::H160,
@@ -33,10 +33,10 @@ use {
         fee::FeeParameters,
         order_quoting::Quote,
         order_validation::{
-            is_order_outside_market_price,
             Amounts,
             OrderValidating,
             ValidationError,
+            is_order_outside_market_price,
         },
     },
     std::{borrow::Cow, sync::Arc},

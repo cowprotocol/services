@@ -11,17 +11,14 @@ use {
         infra::{
             self,
             config::file::{
-                default_http_time_buffer,
-                default_solving_share_of_deadline,
                 FeeHandler,
                 OrderPriorityStrategy,
+                default_http_time_buffer,
+                default_solving_share_of_deadline,
             },
-            solver::dto::Flashloan,
         },
         tests::{
             cases::{
-                is_approximately_equal,
-                EtherExt,
                 AB_ORDER_AMOUNT,
                 AD_ORDER_AMOUNT,
                 CD_ORDER_AMOUNT,
@@ -31,6 +28,8 @@ use {
                 DEFAULT_POOL_AMOUNT_D,
                 DEFAULT_SURPLUS_FACTOR,
                 ETH_ORDER_AMOUNT,
+                EtherExt,
+                is_approximately_equal,
             },
             hex_address,
             setup::{
@@ -48,6 +47,7 @@ use {
     primitive_types::H160,
     secp256k1::SecretKey,
     serde_with::serde_as,
+    solvers_dto::solution::Flashloan,
     std::{
         collections::{HashMap, HashSet},
         path::PathBuf,
@@ -1437,18 +1437,22 @@ impl RevealOk {
         assert_eq!(result.as_object().unwrap().len(), 1);
         let calldata = result.get("calldata").unwrap().as_object().unwrap();
         assert_eq!(calldata.len(), 2);
-        assert!(!calldata
-            .get("internalized")
-            .unwrap()
-            .as_str()
-            .unwrap()
-            .is_empty());
-        assert!(!calldata
-            .get("uninternalized")
-            .unwrap()
-            .as_str()
-            .unwrap()
-            .is_empty());
+        assert!(
+            !calldata
+                .get("internalized")
+                .unwrap()
+                .as_str()
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            !calldata
+                .get("uninternalized")
+                .unwrap()
+                .as_str()
+                .unwrap()
+                .is_empty()
+        );
         self
     }
 }
@@ -1593,7 +1597,7 @@ impl QuoteOk<'_> {
             app_data,
             format!(
                 "0x{}",
-                hex::encode(expected.quoted_order.order.app_data.hash().0 .0)
+                hex::encode(expected.quoted_order.order.app_data.hash().0.0)
             )
         );
 

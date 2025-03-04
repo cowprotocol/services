@@ -3,6 +3,7 @@ use {
         competition::{auction, solution},
         eth::{self, Ether, TokenAddress},
     },
+    chrono::{DateTime, Utc},
     std::collections::BTreeSet,
 };
 
@@ -45,6 +46,11 @@ pub enum Kind {
     DriverError(String),
     /// On-chain solution postprocessing timed out.
     PostprocessingTimedOut,
+    /// The solver has been banned for a specific reason.
+    Banned {
+        reason: BanReason,
+        until: DateTime<Utc>,
+    },
 }
 
 #[derive(Debug)]
@@ -56,6 +62,14 @@ pub enum ScoreKind {
     InvalidExecutedAmount,
     /// missing native price for the surplus token
     MissingPrice(TokenAddress),
+}
+
+#[derive(Debug)]
+pub enum BanReason {
+    /// The driver won multiple consecutive auctions but never settled them.
+    UnsettledConsecutiveAuctions,
+    /// Driver's settle failure rate is above the threshold.
+    HighSettleFailureRate,
 }
 
 #[derive(Debug)]

@@ -8,19 +8,20 @@ use {
             eth::{self, TokenAddress},
         },
         infra::{
+            Simulator,
             blockchain::{self, Ethereum},
             config::file::FeeHandler,
             simulator,
-            solver::{dto::Flashloan, ManageNativeToken, Solver},
-            Simulator,
+            solver::{ManageNativeToken, Solver},
         },
     },
     chrono::Utc,
     futures::future::try_join_all,
     itertools::Itertools,
     num::{BigRational, One},
+    solvers_dto::solution::Flashloan,
     std::{
-        collections::{hash_map::Entry, BTreeSet, HashMap, HashSet},
+        collections::{BTreeSet, HashMap, HashSet, hash_map::Entry},
         sync::atomic::{AtomicU64, Ordering},
     },
     thiserror::Error,
@@ -265,7 +266,7 @@ impl Solution {
         &self,
         eth: &Ethereum,
         internalization: settlement::Internalization,
-    ) -> Result<impl Iterator<Item = eth::allowance::Approval>, Error> {
+    ) -> Result<impl Iterator<Item = eth::allowance::Approval> + use<>, Error> {
         let settlement_contract = &eth.contracts().settlement();
         let allowances =
             try_join_all(self.allowances(internalization).map(|required| async move {
@@ -378,7 +379,7 @@ impl Solution {
     fn allowances(
         &self,
         internalization: settlement::Internalization,
-    ) -> impl Iterator<Item = eth::allowance::Required> {
+    ) -> impl Iterator<Item = eth::allowance::Required> + use<> {
         let mut normalized = HashMap::new();
         let allowances = self.interactions.iter().flat_map(|interaction| {
             if interaction.internalize()

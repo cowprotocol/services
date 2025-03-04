@@ -4,7 +4,7 @@ use {
     ethcontract::H256,
     reqwest::StatusCode,
     std::{convert::Infallible, sync::Arc},
-    warp::{reply::with_status, Filter, Rejection},
+    warp::{Filter, Rejection, reply::with_status},
 };
 
 pub fn get_orders_by_tx_request() -> impl Filter<Extract = (H256,), Error = Rejection> + Clone {

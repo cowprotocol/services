@@ -1,17 +1,17 @@
 [package]
 name = "cow-amm"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 anyhow = { workspace = true }
-app-data = { path = "../app-data" }
+app-data = { workspace = true }
 async-trait = { workspace = true }
-contracts = { path = "../contracts" }
+contracts = { workspace = true }
 ethcontract = { workspace = true }
-ethrpc = { path = "../ethrpc" }
-model = { path = "../model" }
-shared = { path = "../shared" }
+ethrpc = { workspace = true }
+model = { workspace = true }
+shared = { workspace = true }
 tokio = { workspace = true, features = [] }
 tracing = { workspace = true }
 hex = { workspace = true }

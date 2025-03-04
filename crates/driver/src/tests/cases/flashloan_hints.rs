@@ -1,13 +1,12 @@
 use {
     crate::{
         domain::competition::order::app_data::AppData,
-        infra::solver,
         tests::{
             setup,
             setup::{ab_order, ab_pool, ab_solution},
         },
     },
-    app_data::{hash_full_app_data, Flashloan, ProtocolAppData},
+    app_data::{Flashloan, ProtocolAppData, hash_full_app_data},
     primitive_types::H160,
 };
 
@@ -85,8 +84,8 @@ fn protocol_app_data_into_validated(protocol: ProtocolAppData) -> app_data::Vali
     }
 }
 
-fn flashloan_into_dto(flashloan: Flashloan) -> solver::dto::Flashloan {
-    solver::dto::Flashloan {
+fn flashloan_into_dto(flashloan: Flashloan) -> solvers_dto::solution::Flashloan {
+    solvers_dto::solution::Flashloan {
         lender: flashloan.lender.unwrap_or_default(),
         borrower: flashloan.borrower.unwrap_or_default(),
         token: flashloan.token,

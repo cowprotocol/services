@@ -3,10 +3,18 @@ use {
         database::competition::Competition,
         domain::{
             self,
-            auction::Id,
-            competition::{self, Solution, SolutionError, TradedOrder, Unranked},
-            eth::{self, TxId},
             OrderUid,
+            auction::Id,
+            competition::{
+                self,
+                Solution,
+                SolutionError,
+                SolverParticipationGuard,
+                TradedOrder,
+                Unranked,
+            },
+            eth::{self, TxId},
+            settlement::{ExecutionEnded, ExecutionStarted},
         },
         infra::{
             self,
@@ -59,6 +67,7 @@ pub struct RunLoop {
     eth: infra::Ethereum,
     persistence: infra::Persistence,
     drivers: Vec<Arc<infra::Driver>>,
+    solver_participation_guard: SolverParticipationGuard,
     solvable_orders_cache: Arc<SolvableOrdersCache>,
     trusted_tokens: AutoUpdatingTokenList,
     in_flight_orders: Arc<Mutex<HashSet<OrderUid>>>,
@@ -66,6 +75,7 @@ pub struct RunLoop {
     /// Maintenance tasks that should run before every runloop to have
     /// the most recent data available.
     maintenance: Arc<Maintenance>,
+    competition_updates_sender: tokio::sync::mpsc::UnboundedSender<()>,
 }
 
 impl RunLoop {
@@ -75,21 +85,25 @@ impl RunLoop {
         eth: infra::Ethereum,
         persistence: infra::Persistence,
         drivers: Vec<Arc<infra::Driver>>,
+        solver_participation_guard: SolverParticipationGuard,
         solvable_orders_cache: Arc<SolvableOrdersCache>,
         trusted_tokens: AutoUpdatingTokenList,
         liveness: Arc<Liveness>,
         maintenance: Arc<Maintenance>,
+        competition_updates_sender: tokio::sync::mpsc::UnboundedSender<()>,
     ) -> Self {
         Self {
             config,
             eth,
             persistence,
             drivers,
+            solver_participation_guard,
             solvable_orders_cache,
             trusted_tokens,
             in_flight_orders: Default::default(),
             liveness,
             maintenance,
+            competition_updates_sender,
         }
     }
 
@@ -453,7 +467,7 @@ impl RunLoop {
             competition_table,
         };
 
-        if let Err(err) = futures::try_join!(
+        match futures::try_join!(
             self.persistence
                 .save_auction(auction, block_deadline)
                 .map_err(|e| e.0.context("failed to save auction")),
@@ -461,9 +475,18 @@ impl RunLoop {
                 .save_solutions(auction.id, solutions)
                 .map_err(|e| e.0.context("failed to save solutions")),
         ) {
-            // Don't error if saving of auction and solution fails, until stable.
-            // Various edge cases with JIT orders verifiable only in production.
-            tracing::warn!(?err, "failed to save new competition data");
+            Ok(_) => {
+                // Notify the solver participation guard that the proposed solutions have been
+                // saved.
+                if let Err(err) = self.competition_updates_sender.send(()) {
+                    tracing::error!(?err, "failed to notify solver participation guard");
+                }
+            }
+            Err(err) => {
+                // Don't error if saving of auction and solution fails, until stable.
+                // Various edge cases with JIT orders verifiable only in production.
+                tracing::warn!(?err, "failed to save new competition data");
+            }
         }
 
         tracing::trace!(?competition, "saving competition");
@@ -725,23 +748,14 @@ impl RunLoop {
         request: &solve::Request,
     ) -> Result<Vec<Result<competition::Solution, domain::competition::SolutionError>>, SolveError>
     {
-        let authenticator = self.eth.contracts().authenticator();
-        let is_allowed = authenticator
-            .is_solver(driver.submission_address.into())
-            .call()
-            .await
-            .map_err(|err| {
-                tracing::warn!(
-                    driver = driver.name,
-                    ?driver.submission_address,
-                    ?err,
-                    "failed to check if solver is deny listed"
-                );
+        let can_participate = self.solver_participation_guard.can_participate(&driver.submission_address).await.map_err(|err| {
+            tracing::error!(?err, driver = %driver.name, ?driver.submission_address, "solver participation check failed");
                 SolveError::SolverDenyListed
-            })?;
+            }
+        )?;
 
-        // Do not send the request to the driver if the solver is denied
-        if !is_allowed {
+        // Do not send the request to the driver if the solver is deny-listed
+        if !can_participate {
             return Err(SolveError::SolverDenyListed);
         }
 
@@ -778,6 +792,13 @@ impl RunLoop {
                 submission_deadline_latest_block,
                 auction_id,
             };
+
+            self.store_execution_started(
+                auction_id,
+                solver,
+                current_block,
+                submission_deadline_latest_block,
+            );
             driver
                 .settle(&request, self.config.max_settlement_transaction_wait)
                 .await
@@ -795,10 +816,12 @@ impl RunLoop {
             futures::future::Either::Right((driver_result, wait_for_settlement_transaction)) => {
                 match driver_result {
                     Ok(_) => wait_for_settlement_transaction.await,
-                    Err(err) => Err(SettleError::Failure(err)),
+                    Err(err) => Err(SettleError::Other(err)),
                 }
             }
         };
+
+        self.store_execution_ended(solver, auction_id, &result);
 
         // Clean up the in-flight orders regardless the result.
         self.in_flight_orders
@@ -807,6 +830,68 @@ impl RunLoop {
             .retain(|order| !solved_order_uids.contains(order));
 
         result
+    }
+
+    /// Stores settlement execution started event in the DB in a background task
+    /// to not block the runloop.
+    fn store_execution_started(
+        &self,
+        auction_id: i64,
+        solver: eth::Address,
+        start_block: u64,
+        deadline_block: u64,
+    ) {
+        let persistence = self.persistence.clone();
+        tokio::spawn(async move {
+            let execution_started = ExecutionStarted {
+                auction_id,
+                solver,
+                start_timestamp: chrono::Utc::now(),
+                start_block,
+                deadline_block,
+            };
+
+            if let Err(err) = persistence
+                .store_settlement_execution_started(execution_started)
+                .await
+            {
+                tracing::error!(?err, "failed to store settlement execution event");
+            }
+        });
+    }
+
+    /// Stores settlement execution ended event in the DB in a background task
+    /// to not block the runloop.
+    fn store_execution_ended(
+        &self,
+        solver: eth::Address,
+        auction_id: i64,
+        result: &Result<TxId, SettleError>,
+    ) {
+        let end_timestamp = chrono::Utc::now();
+        let current_block = self.eth.current_block().borrow().number;
+        let persistence = self.persistence.clone();
+        let outcome = match result {
+            Ok(_) => "success".to_string(),
+            Err(SettleError::Timeout) => "timeout".to_string(),
+            Err(SettleError::Other(err)) => format!("driver failed: {}", err),
+        };
+
+        tokio::spawn(async move {
+            let execution_ended = ExecutionEnded {
+                auction_id,
+                solver,
+                end_timestamp,
+                end_block: current_block,
+                outcome,
+            };
+            if let Err(err) = persistence
+                .store_settlement_execution_ended(execution_ended)
+                .await
+            {
+                tracing::error!(?err, "failed to update settlement execution event");
+            }
+        });
     }
 
     /// Tries to find a `settle` contract call with calldata ending in `tag` and
@@ -848,9 +933,7 @@ impl RunLoop {
                 break;
             }
         }
-        Err(SettleError::Failure(anyhow::anyhow!(
-            "settlement transaction await reached deadline"
-        )))
+        Err(SettleError::Timeout)
     }
 
     /// Removes orders that are currently being settled to avoid solvers trying
@@ -892,7 +975,9 @@ enum SolveError {
 #[derive(Debug, thiserror::Error)]
 enum SettleError {
     #[error(transparent)]
-    Failure(anyhow::Error),
+    Other(anyhow::Error),
+    #[error("settlement transaction await reached deadline")]
+    Timeout,
 }
 
 #[derive(prometheus_metric_storage::MetricStorage)]
@@ -1019,7 +1104,8 @@ impl Metrics {
 
     fn settle_err(driver: &infra::Driver, elapsed: Duration, err: &SettleError) {
         let label = match err {
-            SettleError::Failure(_) => "error",
+            SettleError::Other(_) => "error",
+            SettleError::Timeout => "timeout",
         };
         Self::get()
             .settle

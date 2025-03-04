@@ -2,7 +2,7 @@
 name = "shared"
 version = "0.1.0"
 authors = ["Gnosis Developers <developers@gnosis.io>", "Cow Protocol Developers <dev@cow.fi>"]
-edition = "2021"
+edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [lib]
@@ -10,24 +10,24 @@ doctest = false
 
 [dependencies]
 anyhow = { workspace = true }
-app-data = { path = "../app-data" }
-bytes-hex = { path = "../bytes-hex" }
+app-data = { workspace = true }
+bytes-hex = { workspace = true }
 async-trait = { workspace = true }
 bigdecimal = { workspace = true }
 cached = { workspace = true }
-chain = { path = "../chain" }
+chain = { workspace = true }
 chrono = { workspace = true, features = ["clock"] }
 clap = { workspace = true }
-contracts = { path = "../contracts" }
+contracts = { workspace = true }
 dashmap = { workspace = true }
-database = { path = "../database" }
+database = { workspace = true }
 derive_more = { workspace = true }
 derivative = { workspace = true }
 ethcontract = { workspace = true }
-ethrpc = { path = "../ethrpc" }
+ethrpc = { workspace = true }
 futures = { workspace = true }
 gas-estimation = { workspace = true }
-observe = { path = "../observe" }
+observe = { workspace = true }
 hex = { workspace = true }
 hex-literal = { workspace = true }
 humantime = { workspace = true }
@@ -35,17 +35,17 @@ indexmap = { workspace = true }
 itertools = { workspace = true }
 maplit = { workspace = true }
 mockall = { workspace = true }
-model = { path = "../model" }
+model = { workspace = true }
 num = { workspace = true }
-number = { path = "../number" }
-order-validation = { path = "../order-validation" }
+number = { workspace = true }
+order-validation = { workspace = true }
 primitive-types = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 rand = { workspace = true }
-rate-limit = { path = "../rate-limit" }
+rate-limit = { workspace = true }
 reqwest = { workspace = true, features = ["cookies", "gzip", "json"] }
-rust_decimal = { version = "1.35.0", features = ["maths"] }
+rust_decimal = { workspace = true, features = ["maths"] }
 secp256k1 = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -59,11 +59,11 @@ url = { workspace = true }
 web3 = { workspace = true }
 
 [dev-dependencies]
-async-stream = "0.3.5"
+async-stream = { workspace = true }
 ethcontract-mock = { workspace = true }
 regex = { workspace = true }
-testlib = { path = "../testlib" }
-app-data = { path = "../app-data", features = ["test_helpers"] }
+testlib = { workspace = true }
+app-data = { workspace = true, features = ["test_helpers"] }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 
 [lints]

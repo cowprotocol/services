@@ -5,15 +5,15 @@ use {
             competition::order,
             eth::{self, ContractAddress},
         },
-        infra::solver::dto::Flashloan,
         tests::{self, boundary, cases::EtherExt},
     },
-    ethcontract::{dyns::DynWeb3, transport::DynTransport, PrivateKey, Web3},
+    ethcontract::{PrivateKey, Web3, dyns::DynWeb3, transport::DynTransport},
     futures::Future,
     secp256k1::SecretKey,
     serde_json::json,
+    solvers_dto::solution::Flashloan,
     std::collections::HashMap,
-    web3::{signing::Key, Transport},
+    web3::{Transport, signing::Key},
 };
 // TODO Possibly might be a good idea to use an enum for tokens instead of
 // &'static str

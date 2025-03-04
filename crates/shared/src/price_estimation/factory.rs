@@ -1,5 +1,8 @@
 use {
     super::{
+        Arguments,
+        NativePriceEstimator as NativePriceEstimatorSource,
+        PriceEstimating,
         competition::CompetitionEstimator,
         external::ExternalPriceEstimator,
         instrumented::InstrumentedPriceEstimator,
@@ -7,9 +10,6 @@ use {
         native_price_cache::CachingNativePriceEstimator,
         sanitized::SanitizedPriceEstimator,
         trade_verifier::{TradeVerifier, TradeVerifying},
-        Arguments,
-        NativePriceEstimator as NativePriceEstimatorSource,
-        PriceEstimating,
     },
     crate::{
         arguments,
@@ -20,10 +20,10 @@ use {
         ethrpc::Web3,
         http_client::HttpClientFactory,
         price_estimation::{
+            ExternalSolver,
             buffered::{self, BufferedRequest, NativePriceBatchFetching},
             competition::PriceRanking,
             native::NativePriceEstimating,
-            ExternalSolver,
         },
         token_info::TokenInfoFetching,
     },

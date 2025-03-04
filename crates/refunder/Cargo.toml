@@ -2,28 +2,28 @@
 name = "refunder"
 version = "0.1.0"
 authors = ["Gnosis Developers <developers@gnosis.io>", "Cow Protocol Developers <dev@cow.fi>"]
-edition = "2021"
+edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 clap = { workspace = true }
-contracts = { path = "../contracts" }
-database = { path = "../database" }
+contracts = { workspace = true }
+database = { workspace = true }
 ethcontract = { workspace = true }
-ethrpc = { path = "../ethrpc" }
+ethrpc = { workspace = true }
 futures = { workspace = true }
 gas-estimation = { workspace = true }
 hex = { workspace = true }
 humantime = { workspace = true }
 itertools = { workspace = true }
-mimalloc = "0.1.43"
-number = { path = "../number" }
-observe = { path = "../observe" }
+mimalloc = { workspace = true }
+number = { workspace = true }
+observe = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
-shared = { path = "../shared" }
+shared = { workspace = true }
 sqlx = { workspace = true }
 tokio = { workspace = true, features = ["macros", "time", "rt-multi-thread"] }
 tracing = { workspace = true }

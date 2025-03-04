@@ -2,8 +2,8 @@ use {
     super::auction,
     crate::{
         domain::eth,
-        infra::{blockchain, Ethereum},
-        util::{self, conv::u256::U256Ext, Bytes},
+        infra::{Ethereum, blockchain},
+        util::{self, Bytes, conv::u256::U256Ext},
     },
     bigdecimal::Zero,
     derive_more::{From, Into},
@@ -232,9 +232,9 @@ impl Uid {
     /// Splits an order UID into its parts.
     fn parts(&self) -> (eth::H256, eth::H160, u32) {
         (
-            eth::H256::from_slice(&self.0 .0[0..32]),
-            eth::H160::from_slice(&self.0 .0[32..52]),
-            u32::from_le_bytes(self.0 .0[52..].try_into().unwrap()),
+            eth::H256::from_slice(&self.0.0[0..32]),
+            eth::H160::from_slice(&self.0.0[32..52]),
+            u32::from_le_bytes(self.0.0[52..].try_into().unwrap()),
         )
     }
 }
@@ -247,7 +247,7 @@ impl Default for Uid {
 
 impl PartialEq<[u8; UID_LEN]> for Uid {
     fn eq(&self, other: &[u8; UID_LEN]) -> bool {
-        self.0 .0 == *other
+        self.0.0 == *other
     }
 }
 

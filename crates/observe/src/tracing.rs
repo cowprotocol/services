@@ -4,11 +4,11 @@ use {
     time::macros::format_description,
     tracing::level_filters::LevelFilter,
     tracing_subscriber::{
+        EnvFilter,
+        Layer,
         fmt::{time::UtcTime, writer::MakeWriterExt as _},
         prelude::*,
         util::SubscriberInitExt,
-        EnvFilter,
-        Layer,
     },
 };
 
@@ -51,7 +51,7 @@ fn set_tracing_subscriber(env_filter: &str, stderr_threshold: LevelFilter) {
     //    actually causing that but at this point I'm just happy if all the features
     //    work correctly.
     macro_rules! fmt_layer {
-        ($env_filter:expr, $stderr_threshold:expr) => {{
+        ($env_filter:expr_2021, $stderr_threshold:expr_2021) => {{
             tracing_subscriber::fmt::layer()
                 .with_writer(
                     std::io::stdout

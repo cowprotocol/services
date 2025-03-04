@@ -22,8 +22,8 @@ use {
     solver::{
         interactions::allowances::Allowances,
         liquidity::{
-            uniswap_v3::{self, UniswapV3Liquidity, UniswapV3SettlementHandler},
             ConcentratedLiquidity,
+            uniswap_v3::{self, UniswapV3Liquidity, UniswapV3SettlementHandler},
         },
         liquidity_collector::{BackgroundInitLiquiditySource, LiquidityCollecting},
     },
@@ -96,7 +96,7 @@ pub fn to_interaction(
     eth::Interaction {
         target: eth::Address(encoded.0),
         value: eth::Ether(encoded.1),
-        call_data: crate::util::Bytes(encoded.2 .0),
+        call_data: crate::util::Bytes(encoded.2.0),
     }
 }
 
@@ -125,7 +125,7 @@ async fn init_liquidity(
     eth: &Ethereum,
     block_retriever: Arc<dyn BlockRetrieving>,
     config: &infra::liquidity::config::UniswapV3,
-) -> anyhow::Result<impl LiquidityCollecting> {
+) -> anyhow::Result<impl LiquidityCollecting + use<>> {
     let web3 = boundary::web3(eth);
     let router = UniswapV3SwapRouter::at(&web3, config.router.0);
 

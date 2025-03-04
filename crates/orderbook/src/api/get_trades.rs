@@ -1,9 +1,9 @@
 use {
     crate::{
-        api::{error, ApiReply},
+        api::{ApiReply, error},
         database::{
-            trades::{TradeFilter, TradeRetrieving},
             Postgres,
+            trades::{TradeFilter, TradeRetrieving},
         },
     },
     anyhow::{Context, Result},
@@ -11,7 +11,7 @@ use {
     primitive_types::H160,
     serde::Deserialize,
     std::convert::Infallible,
-    warp::{hyper::StatusCode, reply::with_status, Filter, Rejection},
+    warp::{Filter, Rejection, hyper::StatusCode, reply::with_status},
 };
 
 #[derive(Deserialize)]
@@ -44,8 +44,8 @@ impl Query {
     }
 }
 
-fn get_trades_request(
-) -> impl Filter<Extract = (Result<TradeFilter, TradeFilterError>,), Error = Rejection> + Clone {
+fn get_trades_request()
+-> impl Filter<Extract = (Result<TradeFilter, TradeFilterError>,), Error = Rejection> + Clone {
     warp::path!("v1" / "trades")
         .and(warp::get())
         .and(warp::query::<Query>())
@@ -82,7 +82,7 @@ mod tests {
         super::*,
         hex_literal::hex,
         primitive_types::H160,
-        warp::test::{request, RequestBuilder},
+        warp::test::{RequestBuilder, request},
     };
 
     #[tokio::test]

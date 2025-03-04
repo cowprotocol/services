@@ -7,11 +7,11 @@ use {
     chrono::{DateTime, Utc},
     database::{
         byte_array::ByteArray,
-        order_events::{insert_order_event, OrderEvent, OrderEventLabel},
+        order_events::{OrderEvent, OrderEventLabel, insert_order_event},
         orders::{self, FullOrder, OrderKind as DbOrderKind},
     },
     ethcontract::H256,
-    futures::{stream::TryStreamExt, FutureExt, StreamExt},
+    futures::{FutureExt, StreamExt, stream::TryStreamExt},
     model::{
         order::{
             EthflowData,
@@ -48,9 +48,9 @@ use {
         },
         fee::FeeParameters,
         order_quoting::Quote,
-        order_validation::{is_order_outside_market_price, Amounts, LimitOrderCounting},
+        order_validation::{Amounts, LimitOrderCounting, is_order_outside_market_price},
     },
-    sqlx::{types::BigDecimal, Connection, PgConnection},
+    sqlx::{Connection, PgConnection, types::BigDecimal},
     std::convert::TryInto,
 };
 
@@ -58,7 +58,7 @@ use {
 #[async_trait::async_trait]
 pub trait OrderStoring: Send + Sync {
     async fn insert_order(&self, order: &Order, quote: Option<Quote>)
-        -> Result<(), InsertionError>;
+    -> Result<(), InsertionError>;
     async fn cancel_orders(&self, order_uids: Vec<OrderUid>, now: DateTime<Utc>) -> Result<()>;
     async fn cancel_order(&self, order_uid: &OrderUid, now: DateTime<Utc>) -> Result<()>;
     async fn replace_order(

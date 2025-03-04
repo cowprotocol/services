@@ -10,14 +10,14 @@
 
 use {
     super::ethflow_order::EncodedEthflowOrder,
-    anyhow::{anyhow, Result},
+    anyhow::{Result, anyhow},
     contracts::CoWSwapEthFlow,
     database::OrderUid,
     ethcontract::{
-        transaction::{confirm::ConfirmParams, ResolveCondition},
         Account,
         H160,
         U256,
+        transaction::{ResolveCondition, confirm::ConfirmParams},
     },
     gas_estimation::{GasPrice1559, GasPriceEstimating},
     shared::{
