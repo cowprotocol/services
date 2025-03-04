@@ -12,27 +12,27 @@ doctest = false
 
 [dependencies]
 anyhow = { workspace = true }
-arc-swap = "1.7.1"
+arc-swap = { workspace = true }
 async-trait = { workspace = true }
-contracts = { path = "../contracts" }
+contracts = { workspace = true }
 ethcontract = { workspace = true }
-ethrpc = { path = "../ethrpc" }
+ethrpc = { workspace = true }
 futures = { workspace = true }
-observe = { path = "../observe" }
+observe = { workspace = true }
 hex = { workspace = true }
 hex-literal = { workspace = true }
 itertools = { workspace = true }
 maplit = { workspace = true }
 mockall = { workspace = true }
-model = { path = "../model" }
+model = { workspace = true }
 num = { workspace = true }
-number = { path = "../number" }
+number = { workspace = true }
 primitive-types = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-shared = { path = "../shared" }
+shared = { workspace = true }
 strum = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
 tracing = { workspace = true }
@@ -41,7 +41,7 @@ web3 = { workspace = true }
 [dev-dependencies]
 derivative = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
-testlib = { path = "../testlib" }
+testlib = { workspace = true }
 
 [lints]
 workspace = true
