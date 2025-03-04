@@ -134,6 +134,7 @@ impl SolverValidator {
                 self.0
                     .low_settling_config
                     .solver_max_settlement_failure_rate,
+                self.0.low_settling_config.min_wins_threshold,
             )
             .await
         {
