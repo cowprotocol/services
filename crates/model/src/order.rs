@@ -693,7 +693,7 @@ pub struct OrderMetadata {
     /// the backend doesn't know about the full app data.
     pub full_app_data: Option<String>,
     /// If the order was created with a quote, then this field contains that
-    /// quote informations for reference.
+    /// quote data for reference.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quote: Option<OrderQuote>,
 }
