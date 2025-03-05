@@ -465,6 +465,7 @@ pub async fn run(args: Arguments) {
         domain::ProtocolFees::new(&args.fee_policies, args.fee_policy_max_partner_fee),
         cow_amm_registry.clone(),
         args.run_loop_native_price_timeout,
+        eth.contracts().settlement().address(),
     );
 
     let liveness = Arc::new(Liveness::new(args.max_auction_age));
