@@ -636,7 +636,7 @@ mod tests {
         },
         model::{
             interaction::InteractionData,
-            order::{Order, OrderData, OrderMetadata, OrderQuote, OrderStatus, OrderUid},
+            order::{Order, OrderData, OrderMetadata, OrderStatus, OrderUid},
             signature::{Signature, SigningScheme},
         },
         primitive_types::U256,
@@ -1107,6 +1107,14 @@ mod tests {
             id: Some(5),
             sell_amount: U256::from(1),
             buy_amount: U256::from(2),
+            data: QuoteData {
+                fee_parameters: FeeParameters {
+                    sell_token_price: 2.5,
+                    gas_amount: 0.01,
+                    gas_price: 0.003,
+                },
+                ..Default::default()
+            },
             ..Default::default()
         };
 
@@ -1118,11 +1126,7 @@ mod tests {
             },
             metadata: OrderMetadata {
                 uid,
-                quote: Some(OrderQuote {
-                    sell_amount: quote.sell_amount,
-                    buy_amount: quote.buy_amount,
-                    ..Default::default()
-                }),
+                quote: Some(quote.try_to_model_order_quote().unwrap()),
                 ..Default::default()
             },
             interactions: Interactions {
