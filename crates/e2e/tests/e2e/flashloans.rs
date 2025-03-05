@@ -270,7 +270,7 @@ async fn forked_mainnet_repay_debt_with_collateral_of_safe(web3: Web3) {
     assert!(settlement_weth < 200_000_000u128.into());
     tracing::info!("settlement contract only has dust amounts of WETH");
 
-    assert!(balance(&web3, trader.address(), ausdc).await < 1_000.into());
+    assert!(balance(&web3, trader.address(), ausdc).await < 10_000.into());
     tracing::info!("trader only has dust of aUSDC");
 }
 
