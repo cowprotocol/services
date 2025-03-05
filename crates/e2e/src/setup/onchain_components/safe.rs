@@ -93,7 +93,7 @@ impl Infrastructure {
 /// Wrapper over a deployed Safe.
 pub struct Safe {
     chain_id: U256,
-    pub contract: GnosisSafe,
+    contract: GnosisSafe,
     owner: TestAccount,
 }
 
@@ -134,6 +134,11 @@ impl Safe {
     /// Returns the address of the Safe.
     pub fn address(&self) -> H160 {
         self.contract.address()
+    }
+
+    /// Returns the next nonce to be used.
+    pub async fn nonce(&self) -> U256 {
+        self.contract.nonce().call().await.unwrap()
     }
 
     /// Returns a signed transaction ready for execution.

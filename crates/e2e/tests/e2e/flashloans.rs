@@ -113,7 +113,7 @@ async fn forked_mainnet_repay_debt_with_collateral(web3: Web3) {
         )
         .await;
 
-    let current_safe_nonce = trader.contract.nonce().call().await.unwrap();
+    let current_safe_nonce = trader.nonce().await;
 
     // Build appdata that does:
     // 1. take out a 1 WETH flashloan for the trader
