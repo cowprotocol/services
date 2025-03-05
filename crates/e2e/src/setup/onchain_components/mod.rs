@@ -227,10 +227,7 @@ impl OnchainComponents {
     }
 
     pub async fn deployed(web3: Web3) -> Self {
-        let contracts = Contracts::deployed(&web3)
-            .await
-            .deploy_flashloan(&web3)
-            .await;
+        let contracts = Contracts::deployed(&web3).await;
 
         Self {
             web3,

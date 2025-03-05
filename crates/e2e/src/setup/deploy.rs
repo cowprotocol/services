@@ -202,28 +202,6 @@ impl Contracts {
         }
     }
 
-    // Delete when flashloan is actually deployed
-    pub async fn deploy_flashloan(self, web3: &Web3) -> Self {
-        let flashloan_wrapper_maker =
-            ERC3156FlashLoanSolverWrapper::builder(web3, self.gp_settlement.address())
-                .deploy()
-                .await
-                .unwrap_or_else(|e| {
-                    panic!("failed to deploy ERC3156FlashLoanSolverWrapper: {e:?}")
-                });
-        let flashloan_wrapper_aave =
-            AaveFlashLoanSolverWrapper::builder(web3, self.gp_settlement.address())
-                .deploy()
-                .await
-                .unwrap_or_else(|e| panic!("failed to deploy AaveFlashLoanSolverWrapper: {e:?}"));
-
-        Self {
-            flashloan_wrapper_maker,
-            flashloan_wrapper_aave,
-            ..self
-        }
-    }
-
     pub fn default_pool_code(&self) -> H256 {
         match self.chain_id {
             100 => H256(shared::sources::uniswap_v2::HONEYSWAP_INIT),
