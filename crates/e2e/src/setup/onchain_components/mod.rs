@@ -303,6 +303,7 @@ impl OnchainComponents {
                 .expect("failed to add solver");
         }
 
+        // TODO: remove when contracts are actually deployed
         // flashloan wrapper also needs to be authorized
         self.contracts
             .gp_authenticator
