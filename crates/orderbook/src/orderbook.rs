@@ -31,7 +31,6 @@ use {
     primitive_types::H160,
     shared::{
         fee::FeeParameters,
-        order_quoting::Quote,
         order_validation::{
             Amounts,
             OrderValidating,
@@ -240,7 +239,7 @@ impl Orderbook {
             .get_replaced_order(&payload, full_app_data_override.as_deref())
             .await?;
 
-        let (order, quote) = self
+        let (order, quote_id) = self
             .order_validator
             .validate_and_construct_order(
                 payload,
@@ -250,21 +249,20 @@ impl Orderbook {
             )
             .await?;
 
+        let order_uid = order.metadata.uid;
+
         // Check if it has to replace an existing order
         if let Some(old_order) = replaced_order {
-            self.replace_order(order, old_order, quote).await
+            self.replace_order(order, old_order).await?
         } else {
-            let quote_id = quote.as_ref().and_then(|quote| quote.id);
-            let order_uid = order.metadata.uid;
-
             self.database
-                .insert_order(&order, quote)
+                .insert_order(&order)
                 .await
                 .map_err(|err| AddOrderError::from_insertion(err, &order))?;
             Metrics::on_order_operation(&order, OrderOperation::Created);
-
-            Ok((order_uid, quote_id))
         }
+
+        Ok((order_uid, quote_id))
     }
 
     /// Finds an order for cancellation.
@@ -385,8 +383,7 @@ impl Orderbook {
         &self,
         validated_new_order: Order,
         old_order: Order,
-        quote: Option<Quote>,
-    ) -> Result<(OrderUid, Option<i64>), AddOrderError> {
+    ) -> Result<(), AddOrderError> {
         // Replacement order signatures need to be validated meaning we cannot
         // accept `PreSign` orders, otherwise anyone can cancel a user order by
         // submitting a `PreSign` order on someone's behalf.
@@ -402,17 +399,14 @@ impl Orderbook {
             return Err(AddOrderError::InvalidReplacement);
         }
 
-        let quote_id = quote.as_ref().and_then(|quote| quote.id);
-        let order_uid = validated_new_order.metadata.uid;
-
         self.database
-            .replace_order(&old_order.metadata.uid, &validated_new_order, quote.clone())
+            .replace_order(&old_order.metadata.uid, &validated_new_order)
             .await
             .map_err(|err| AddOrderError::from_insertion(err, &validated_new_order))?;
         Metrics::on_order_operation(&old_order, OrderOperation::Cancelled);
         Metrics::on_order_operation(&validated_new_order, OrderOperation::Created);
 
-        Ok((order_uid, quote_id))
+        Ok(())
     }
 
     pub async fn get_order(&self, uid: &OrderUid) -> Result<Option<Order>> {
@@ -567,7 +561,7 @@ mod tests {
                 let old_order = old_order.clone();
                 move |_| Ok(Some(old_order.clone()))
             });
-        database.expect_replace_order().returning(|_, _, _| Ok(()));
+        database.expect_replace_order().returning(|_, _| Ok(()));
 
         let mut order_validator = MockOrderValidating::new();
         order_validator
@@ -590,7 +584,7 @@ mod tests {
 
         let database = crate::database::Postgres::try_new("postgresql://").unwrap();
         database::clear_DANGER(&database.pool).await.unwrap();
-        database.insert_order(&old_order, None).await.unwrap();
+        database.insert_order(&old_order).await.unwrap();
         let app_data = Arc::new(crate::app_data::Registry::new(
             Validator::new(8192),
             database.clone(),

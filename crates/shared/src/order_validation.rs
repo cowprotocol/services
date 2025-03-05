@@ -37,7 +37,7 @@ use {
             SellTokenSource,
             VerificationError,
         },
-        quote::{OrderQuoteSide, QuoteSigningScheme, SellAmount},
+        quote::{OrderQuoteSide, QuoteId, QuoteSigningScheme, SellAmount},
         signature::{self, Signature, SigningScheme, hashed_eip712_message},
         time,
     },
@@ -94,7 +94,7 @@ pub trait OrderValidating: Send + Sync {
         domain_separator: &DomainSeparator,
         settlement_contract: H160,
         full_app_data_override: Option<String>,
-    ) -> Result<(Order, Option<Quote>), ValidationError>;
+    ) -> Result<(Order, Option<QuoteId>), ValidationError>;
 }
 
 #[derive(Debug)]
@@ -547,7 +547,7 @@ impl OrderValidating for OrderValidator {
         domain_separator: &DomainSeparator,
         settlement_contract: H160,
         full_app_data_override: Option<String>,
-    ) -> Result<(Order, Option<Quote>), ValidationError> {
+    ) -> Result<(Order, Option<QuoteId>), ValidationError> {
         // Happens before signature verification because a miscalculated app data hash
         // by the API user would lead to being unable to validate the signature below.
         let app_data = self.validate_app_data(&order.app_data, &full_app_data_override)?;
@@ -759,7 +759,7 @@ impl OrderValidating for OrderValidator {
             interactions: app_data.interactions,
         };
 
-        Ok((order, quote))
+        Ok((order, quote.and_then(|q| q.id)))
     }
 }
 
@@ -1427,11 +1427,11 @@ mod tests {
             fee_amount: U256::zero(),
             ..creation.clone()
         };
-        let (order, quote) = validator
+        let (order, _) = validator
             .validate_and_construct_order(creation_, &domain_separator, Default::default(), None)
             .await
             .unwrap();
-        assert!(quote.is_some());
+        assert!(order.metadata.quote.is_some());
         assert!(order.metadata.class.is_limit());
 
         let creation_ = OrderCreation {
@@ -1442,11 +1442,11 @@ mod tests {
             },
             ..creation
         };
-        let (order, quote) = validator
+        let (order, _) = validator
             .validate_and_construct_order(creation_, &domain_separator, Default::default(), None)
             .await
             .unwrap();
-        assert!(quote.is_some());
+        assert!(order.metadata.quote.is_some());
         assert!(order.metadata.class.is_limit());
     }
 
