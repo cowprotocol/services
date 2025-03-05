@@ -220,7 +220,7 @@ impl Mempools {
         solver: &Solver,
         blocks_elapsed: u64,
     ) -> Result<TxId, Error> {
-        let gas_price_bump_factor = GAS_PRICE_BUMP.powf(blocks_elapsed.max(1) as f64);
+        let gas_price_bump_factor = GAS_PRICE_BUMP*(blocks_elapsed.max(1) as f64);
         let cancellation = eth::Tx {
             from: solver.address(),
             to: solver.address(),
