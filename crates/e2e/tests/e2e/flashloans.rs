@@ -209,8 +209,8 @@ async fn forked_mainnet_repay_debt_with_collateral_of_safe(web3: Web3) {
         kind: OrderKind::Buy,
         app_data,
         partially_fillable: false,
-        // Receiver is always the settlement contract, so driver will have to manually send funds to
-        // solver wrapper (flashloan borrower)
+        // receiver is always the settlement contract because the driver takes
+        // funds from the settlement contract to pay back the loan
         receiver: Some(onchain.contracts().gp_settlement.address()),
         ..Default::default()
     };
