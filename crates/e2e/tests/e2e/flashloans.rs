@@ -26,9 +26,9 @@ use {
 
 #[tokio::test]
 #[ignore]
-async fn forked_node_mainnet_repay_debt_with_collateral() {
+async fn forked_node_mainnet_repay_debt_with_collateral_of_safe() {
     run_forked_test_with_block_number(
-        forked_mainnet_repay_debt_with_collateral,
+        forked_mainnet_repay_debt_with_collateral_of_safe,
         std::env::var("FORK_URL_MAINNET")
             .expect("FORK_URL_MAINNET must be set to run forked tests"),
         21874126,
@@ -36,7 +36,9 @@ async fn forked_node_mainnet_repay_debt_with_collateral() {
     .await;
 }
 
-async fn forked_mainnet_repay_debt_with_collateral(web3: Web3) {
+// Tests the rough flow of how a safe that took out a loan on AAVE
+// could repay it using its own collateral fronted by a flashloan.
+async fn forked_mainnet_repay_debt_with_collateral_of_safe(web3: Web3) {
     let mut onchain = OnchainComponents::deployed(web3.clone()).await;
     let forked_node_api = web3.api::<ForkedNodeApi<_>>();
 
