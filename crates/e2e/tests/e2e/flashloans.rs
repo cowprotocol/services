@@ -118,7 +118,7 @@ async fn forked_mainnet_repay_debt_with_collateral_of_safe(web3: Web3) {
     let current_safe_nonce = trader.nonce().await;
 
     // Build appdata that does:
-    // 1. take out a 1 WETH flashloan for the trader
+    // 1. take out a 1 WETH flashloan for the trader (flashloan hint)
     // 2. repay the 1 WETH debt to unlock trader's collateral (1st pre-hook)
     // 3. withdraw the collateral it can be sold for WETH (2nd pre-hook)
     let app_data = {
@@ -219,6 +219,7 @@ async fn forked_mainnet_repay_debt_with_collateral_of_safe(web3: Web3) {
         &order.data().hash_struct(),
     )));
 
+    tracing::info!("Removing all USDC and WETH from settlement contract for easier accounting");
     {
         let settlement = forked_node_api
             .impersonate(&settlement.address())
@@ -234,7 +235,6 @@ async fn forked_mainnet_repay_debt_with_collateral_of_safe(web3: Web3) {
         let amount = balance(&web3, settlement.address(), weth.address()).await;
         assert_eq!(amount, 0.into());
     }
-    tracing::info!("Removed all USDC and WETH from settlement contract");
 
     let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
