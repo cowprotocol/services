@@ -294,6 +294,15 @@ impl AuctionProcessor {
         // down in case the available user balance is only enough to partially
         // cover the rest of the order.
         orders.retain_mut(|order| {
+            // Update order app data if it was fetched.
+            if let Some(fetched_app_data) = app_data_by_hash.get(&order.app_data.hash()) {
+                order.app_data = fetched_app_data.clone().into();
+                if order.app_data.flashloan().is_some() {
+                    // assume all the necessary tokens will come from the flashloan
+                    return true;
+                }
+            }
+
             let remaining_balance = match balances.get_mut(&(
                 order.trader(),
                 order.sell.token,
@@ -349,11 +358,6 @@ impl AuctionProcessor {
             }
 
             remaining_balance.0 -= allocated_balance.0;
-
-            // Update order app data if it was fetched.
-            if let Some(fetched_app_data) = app_data_by_hash.get(&order.app_data.hash()) {
-                order.app_data = fetched_app_data.clone().into();
-            }
 
             true
         });

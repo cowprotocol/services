@@ -15,6 +15,7 @@ serde_with = { workspace = true }
 primitive-types = { workspace = true }
 hex = { workspace = true }
 hex-literal = { workspace = true }
+number = { path = "../number" }
 
 [dev-dependencies]
 ethcontract = { workspace = true }

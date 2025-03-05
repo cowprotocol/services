@@ -99,6 +99,7 @@ pub struct SolvableOrdersCache {
     protocol_fees: domain::ProtocolFees,
     cow_amm_registry: cow_amm::Registry,
     native_price_timeout: Duration,
+    settlement_contract: H160,
 }
 
 type Balances = HashMap<Query, U256>;
@@ -123,6 +124,7 @@ impl SolvableOrdersCache {
         protocol_fees: domain::ProtocolFees,
         cow_amm_registry: cow_amm::Registry,
         native_price_timeout: Duration,
+        settlement_contract: H160,
     ) -> Arc<Self> {
         let self_ = Arc::new(Self {
             min_order_validity_period,
@@ -139,6 +141,7 @@ impl SolvableOrdersCache {
             protocol_fees,
             cow_amm_registry,
             native_price_timeout,
+            settlement_contract,
         });
         self_
     }
@@ -181,7 +184,7 @@ impl SolvableOrdersCache {
             )
         };
 
-        let orders = orders_with_balance(orders, &balances);
+        let orders = orders_with_balance(orders, &balances, self.settlement_contract);
         let removed = counter.checkpoint("insufficient_balance", &orders);
         invalid_order_uids.extend(removed);
 
@@ -507,10 +510,23 @@ async fn find_invalid_signature_orders(
 
 /// Removes orders that can't possibly be settled because there isn't enough
 /// balance.
-fn orders_with_balance(mut orders: Vec<Order>, balances: &Balances) -> Vec<Order> {
+fn orders_with_balance(
+    mut orders: Vec<Order>,
+    balances: &Balances,
+    settlement_contract: H160,
+) -> Vec<Order> {
     // Prefer newer orders over older ones.
     orders.sort_by_key(|order| std::cmp::Reverse(order.metadata.creation_date));
     orders.retain(|order| {
+        if order.data.receiver.as_ref() == Some(&settlement_contract) {
+            // TODO: replace with proper detection logic
+            // for now we assume that all orders with the settlement contract
+            // as the receiver are flashloan orders which unlock the necessary
+            // funds via a pre-interaction that can't succeed in our balance
+            // fetching simulation logic.
+            return true;
+        }
+
         let balance = match balances.get(&Query::from_order(order)) {
             None => return false,
             Some(balance) => *balance,
@@ -1351,6 +1367,7 @@ mod tests {
 
     #[test]
     fn orders_with_balance_() {
+        let settlement_contract = H160([1; 20]);
         let orders = vec![
             // enough balance for sell and fee
             Order {
@@ -1396,18 +1413,31 @@ mod tests {
                 },
                 ..Default::default()
             },
+            // considered flashloan order because of special receiver
+            Order {
+                data: OrderData {
+                    sell_token: H160::from_low_u64_be(6),
+                    sell_amount: 200.into(),
+                    fee_amount: 0.into(),
+                    partially_fillable: true,
+                    receiver: Some(settlement_contract),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
         ];
         let balances = [
             (Query::from_order(&orders[0]), 2.into()),
             (Query::from_order(&orders[1]), 1.into()),
             (Query::from_order(&orders[2]), 1.into()),
             (Query::from_order(&orders[3]), 0.into()),
+            (Query::from_order(&orders[4]), 0.into()),
         ]
         .into_iter()
         .collect();
-        let expected = &[0, 2];
+        let expected = &[0, 2, 4];
 
-        let filtered = orders_with_balance(orders.clone(), &balances);
+        let filtered = orders_with_balance(orders.clone(), &balances, settlement_contract);
         assert_eq!(filtered.len(), expected.len());
         for index in expected {
             let found = filtered.iter().any(|o| o.data == orders[*index].data);

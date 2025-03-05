@@ -5,7 +5,7 @@ use {
         boundary,
         domain::{
             competition::{self, order},
-            eth::{self, TokenAddress},
+            eth::{self, Flashloan, TokenAddress},
         },
         infra::{
             Simulator,
@@ -19,7 +19,6 @@ use {
     futures::future::try_join_all,
     itertools::Itertools,
     num::{BigRational, One},
-    solvers_dto::solution::Flashloan,
     std::{
         collections::{BTreeSet, HashMap, HashSet, hash_map::Entry},
         sync::atomic::{AtomicU64, Ordering},
@@ -360,7 +359,7 @@ impl Solution {
                 (None, Some(gas)) => Some(gas),
                 (None, None) => None,
             },
-            flashloans: self.flashloans.clone(),
+            flashloans: [self.flashloans.clone(), other.flashloans.clone()].concat(),
         })
     }
 
@@ -494,6 +493,8 @@ impl std::fmt::Debug for Solution {
             .field("interactions", &self.interactions)
             .field("post_interactions", &self.post_interactions)
             .field("solver", &self.solver.name())
+            .field("gas", &self.gas)
+            .field("flashloans", &self.flashloans)
             .finish()
     }
 }

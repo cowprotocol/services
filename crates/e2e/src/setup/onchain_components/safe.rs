@@ -136,6 +136,11 @@ impl Safe {
         self.contract.address()
     }
 
+    /// Returns the next nonce to be used.
+    pub async fn nonce(&self) -> U256 {
+        self.contract.nonce().call().await.unwrap()
+    }
+
     /// Returns a signed transaction ready for execution.
     pub fn sign_transaction(
         &self,
