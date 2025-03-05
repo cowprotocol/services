@@ -93,7 +93,7 @@ impl Infrastructure {
 /// Wrapper over a deployed Safe.
 pub struct Safe {
     chain_id: U256,
-    contract: GnosisSafe,
+    pub contract: GnosisSafe,
     owner: TestAccount,
 }
 
