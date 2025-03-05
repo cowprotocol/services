@@ -134,6 +134,7 @@ impl SolverValidator {
                 self.0
                     .low_settling_config
                     .solver_max_settlement_failure_rate,
+                self.0.low_settling_config.min_wins_threshold,
             )
             .await
         {
@@ -182,6 +183,10 @@ impl SolverValidator {
                 driver.name.as_ref()
             })
             .collect();
+
+        if non_settling_solver_names.is_empty() {
+            return;
+        }
 
         let log_message = match ban_reason {
             dto::notify::BanReason::UnsettledConsecutiveAuctions => "found non-settling solvers",

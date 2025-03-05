@@ -316,6 +316,15 @@ pub struct LowSettlingSolversFinderConfig {
     )]
     pub last_auctions_participation_count: u32,
 
+    /// The minimum number of winning solutions to start considering the solver.
+    #[clap(
+        id = "low_settling_min_wins_threshold",
+        long = "low-settling-min-wins-threshold",
+        env = "LOW_SETTLING_MIN_WINS_THRESHOLD",
+        default_value = "3"
+    )]
+    pub min_wins_threshold: u32,
+
     /// A max failure rate for a solver to remain eligible for
     /// participation in the competition. Otherwise, the solver will be
     /// banned.
@@ -524,13 +533,13 @@ impl FromStr for Solver {
                 }
                 Err(_) => {
                     requested_timeout_on_problems =
-                        value.to_lowercase() == "requested_timeout_on_problems";
+                        value.to_lowercase() == "requested-timeout-on-problems";
                 }
             }
         };
 
         if let Some(value) = parts.get(4) {
-            requested_timeout_on_problems = value.to_lowercase() == "requested_timeout_on_problems";
+            requested_timeout_on_problems = value.to_lowercase() == "requested-timeout-on-problems";
         }
 
         Ok(Self {
@@ -780,7 +789,7 @@ mod test {
     #[test]
     fn parse_driver_with_accepts_unsettled_blocking_flag() {
         let argument =
-            "name1|http://localhost:8080|0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2|requested_timeout_on_problems";
+            "name1|http://localhost:8080|0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2|requested-timeout-on-problems";
         let driver = Solver::from_str(argument).unwrap();
         let expected = Solver {
             name: "name1".into(),
@@ -796,7 +805,7 @@ mod test {
 
     #[test]
     fn parse_driver_with_threshold_and_accepts_unsettled_blocking_flag() {
-        let argument = "name1|http://localhost:8080|0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2|1000000000000000000|requested_timeout_on_problems";
+        let argument = "name1|http://localhost:8080|0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2|1000000000000000000|requested-timeout-on-problems";
         let driver = Solver::from_str(argument).unwrap();
         let expected = Solver {
             name: "name1".into(),

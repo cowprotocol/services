@@ -165,6 +165,7 @@ pub async fn find_low_settling_solvers(
     last_auctions_count: u32,
     current_block: u64,
     max_failure_rate: f64,
+    min_wins_threshold: u32,
 ) -> Result<Vec<Address>, sqlx::Error> {
     const QUERY: &str = r#"
 WITH
@@ -174,6 +175,7 @@ WITH
             SELECT DISTINCT ca.id AS auction_id
             FROM competition_auctions ca
             WHERE ca.deadline <= $1
+            ORDER BY ca.id DESC
             LIMIT $2
         ) latest_auctions
         JOIN proposed_solutions ps ON ps.auction_id = latest_auctions.auction_id
@@ -190,12 +192,13 @@ WITH
     )
 SELECT solver
 FROM solver_settlement_counts
-WHERE (1 - (total_settlements::decimal / NULLIF(total_wins, 0))) > $3;
+WHERE total_wins >= $3 AND (1 - (total_settlements::decimal / NULLIF(total_wins, 0))) > $4;
     "#;
 
     sqlx::query_scalar(QUERY)
         .bind(sqlx::types::BigDecimal::from(current_block))
         .bind(i64::from(last_auctions_count))
+        .bind(i64::from(min_wins_threshold))
         .bind(max_failure_rate)
         .fetch_all(ex)
         .await
@@ -819,6 +822,7 @@ mod tests {
         let deadline_block = 2u64;
         let last_auctions_count = 100i64;
         let max_failure_ratio = 0.6;
+        let min_wins_threshold = 2;
         let mut solution_uid = 0;
 
         for auction_id in 1..=10 {
@@ -926,6 +930,7 @@ mod tests {
             u32::try_from(last_auctions_count).unwrap(),
             deadline_block,
             max_failure_ratio,
+            min_wins_threshold,
         )
         .await
         .unwrap();
@@ -933,6 +938,20 @@ mod tests {
         assert_eq!(result.len(), 2);
         assert!(result.contains(&low_settling_solver));
         assert!(result.contains(&non_settling_solver));
+
+        // Both won only 5 auctions. With threshold 6, no solver should be returned.
+        assert!(
+            find_low_settling_solvers(
+                &mut db,
+                u32::try_from(last_auctions_count).unwrap(),
+                deadline_block,
+                max_failure_ratio,
+                6,
+            )
+            .await
+            .unwrap()
+            .is_empty()
+        );
 
         // Low settling solver settles another auction
         let event = EventIndex {
@@ -955,6 +974,7 @@ mod tests {
             u32::try_from(last_auctions_count).unwrap(),
             deadline_block,
             max_failure_ratio,
+            min_wins_threshold,
         )
         .await
         .unwrap();
