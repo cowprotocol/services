@@ -15,22 +15,23 @@ name = "autopilot"
 path = "src/main.rs"
 
 [dependencies]
-app-data = { path = "../app-data" }
-bytes-hex = { path = "../bytes-hex" }
+app-data = { workspace = true }
+bytes-hex = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 bigdecimal = { workspace = true }
-chain = { path = "../chain" }
+chain = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
-contracts = { path = "../contracts" }
-cow-amm = { path = "../cow-amm" }
-database = { path = "../database" }
+contracts = { workspace = true }
+cow-amm = { workspace = true }
+dashmap = { workspace = true }
+database = { workspace = true }
 derive_more = { workspace = true }
 ethcontract = { workspace = true }
-ethrpc = { path = "../ethrpc" }
+ethrpc = { workspace = true }
 futures = { workspace = true }
-observe = { path = "../observe" }
+observe = { workspace = true }
 hex = { workspace = true }
 hex-literal = { workspace = true }
 humantime = { workspace = true }
@@ -38,20 +39,20 @@ indexmap = { workspace = true }
 itertools = { workspace = true }
 maplit = { workspace = true }
 mimalloc = { workspace = true }
-model = { path = "../model" }
+model = { workspace = true }
 num = { workspace = true }
-number = { path = "../number" }
-order-validation = { path = "../order-validation" }
+number = { workspace = true }
+order-validation = { workspace = true }
 primitive-types = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true, features = ["gzip", "json"] }
-s3 = { path = "../s3" }
+s3 = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
-shared = { path = "../shared" }
+shared = { workspace = true }
 sqlx = { workspace = true }
 strum = { workspace = true }
 thiserror = { workspace = true }

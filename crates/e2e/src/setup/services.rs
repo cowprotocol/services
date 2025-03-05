@@ -224,7 +224,7 @@ impl<'a> Services<'a> {
             [
                 vec![
                     format!(
-                        "--drivers=test_solver|http://localhost:11088/test_solver|{}",
+                        "--drivers=test_solver|http://localhost:11088/test_solver|{}|requested-timeout-on-problems",
                         hex::encode(solver.address())
                     ),
                     "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"

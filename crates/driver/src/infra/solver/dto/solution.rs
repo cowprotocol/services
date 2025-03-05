@@ -1,20 +1,20 @@
 use {
     crate::{
-        domain::{competition, competition::order, eth, liquidity},
+        domain::{competition, eth, liquidity},
         infra::{Solver, solver::Config},
-        util::{Bytes, serialize},
+        util::Bytes,
     },
     app_data::AppDataHash,
     itertools::Itertools,
     model::{
         DomainSeparator,
-        interaction::InteractionData,
         order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
     },
-    serde::Deserialize,
-    serde_with::serde_as,
-    std::collections::HashMap,
+    std::str::FromStr,
 };
+
+#[derive(derive_more::From)]
+pub struct Solutions(solvers_dto::solution::Solutions);
 
 impl Solutions {
     pub fn into_domain(
@@ -25,7 +25,7 @@ impl Solutions {
         solver: Solver,
         solver_config: &Config,
     ) -> Result<Vec<competition::Solution>, super::Error> {
-        self.solutions
+        self.0.solutions
             .into_iter()
             .map(|solution| {
                 competition::Solution::new(
@@ -34,7 +34,7 @@ impl Solutions {
                         .trades
                         .into_iter()
                         .map(|trade| match trade {
-                            Trade::Fulfillment(fulfillment) => {
+                            solvers_dto::solution::Trade::Fulfillment(fulfillment) => {
                                 let order = auction
                                     .orders()
                                     .iter()
@@ -58,56 +58,58 @@ impl Solutions {
                                 .map(competition::solution::Trade::Fulfillment)
                                 .map_err(|err| super::Error(format!("invalid fulfillment: {err}")))
                             }
-                            Trade::Jit(jit) => Ok(competition::solution::Trade::Jit(
+                            solvers_dto::solution::Trade::Jit(jit) => {
+                                let jit_order: JitOrder = jit.order.into();
+                                Ok(competition::solution::Trade::Jit(
                                 competition::solution::trade::Jit::new(
                                     competition::order::Jit {
-                                        uid: jit.order.uid(
+                                        uid: jit_order.uid(
                                             solver.eth.contracts().settlement_domain_separator(),
                                         )?,
                                         sell: eth::Asset {
-                                            amount: jit.order.sell_amount.into(),
-                                            token: jit.order.sell_token.into(),
+                                            amount: jit_order.0.sell_amount.into(),
+                                            token: jit_order.0.sell_token.into(),
                                         },
                                         buy: eth::Asset {
-                                            amount: jit.order.buy_amount.into(),
-                                            token: jit.order.buy_token.into(),
+                                            amount: jit_order.0.buy_amount.into(),
+                                            token: jit_order.0.buy_token.into(),
                                         },
-                                        receiver: jit.order.receiver.into(),
-                                        partially_fillable: jit.order.partially_fillable,
-                                        valid_to: jit.order.valid_to.into(),
-                                        app_data: jit.order.app_data.into(),
-                                        side: match jit.order.kind {
-                                            Kind::Sell => competition::order::Side::Sell,
-                                            Kind::Buy => competition::order::Side::Buy,
+                                        receiver: jit_order.0.receiver.into(),
+                                        partially_fillable: jit_order.0.partially_fillable,
+                                        valid_to: jit_order.0.valid_to.into(),
+                                        app_data: jit_order.0.app_data.into(),
+                                        side: match jit_order.0.kind {
+                                            solvers_dto::solution::Kind::Sell => competition::order::Side::Sell,
+                                            solvers_dto::solution::Kind::Buy => competition::order::Side::Buy,
                                         },
-                                        sell_token_balance: match jit.order.sell_token_balance {
-                                            SellTokenBalance::Erc20 => {
+                                        sell_token_balance: match jit_order.0.sell_token_balance {
+                                            solvers_dto::solution::SellTokenBalance::Erc20 => {
                                                 competition::order::SellTokenBalance::Erc20
                                             }
-                                            SellTokenBalance::Internal => {
+                                            solvers_dto::solution::SellTokenBalance::Internal => {
                                                 competition::order::SellTokenBalance::Internal
                                             }
-                                            SellTokenBalance::External => {
+                                            solvers_dto::solution::SellTokenBalance::External => {
                                                 competition::order::SellTokenBalance::External
                                             }
                                         },
-                                        buy_token_balance: match jit.order.buy_token_balance {
-                                            BuyTokenBalance::Erc20 => {
+                                        buy_token_balance: match jit_order.0.buy_token_balance {
+                                            solvers_dto::solution::BuyTokenBalance::Erc20 => {
                                                 competition::order::BuyTokenBalance::Erc20
                                             }
-                                            BuyTokenBalance::Internal => {
+                                            solvers_dto::solution::BuyTokenBalance::Internal => {
                                                 competition::order::BuyTokenBalance::Internal
                                             }
                                         },
-                                        signature: jit.order.signature(
+                                        signature: jit_order.signature(
                                             solver.eth.contracts().settlement_domain_separator(),
                                         )?,
                                     },
                                     jit.executed_amount.into(),
-                                    jit.fee.into(),
+                                    jit.fee.unwrap_or_default().into(),
                                 )
                                 .map_err(|err| super::Error(format!("invalid JIT trade: {err}")))?,
-                            )),
+                            ))},
                         })
                         .try_collect()?,
                     solution
@@ -121,19 +123,19 @@ impl Solutions {
                         .map(|interaction| eth::Interaction {
                             target: interaction.target.into(),
                             value: interaction.value.into(),
-                            call_data: Bytes(interaction.call_data),
+                            call_data: Bytes(interaction.calldata),
                         })
                         .collect(),
                     solution
                         .interactions
                         .into_iter()
                         .map(|interaction| match interaction {
-                            Interaction::Custom(interaction) => {
+                            solvers_dto::solution::Interaction::Custom(interaction) => {
                                 Ok(competition::solution::Interaction::Custom(
                                     competition::solution::interaction::Custom {
                                         target: interaction.target.into(),
                                         value: interaction.value.into(),
-                                        call_data: interaction.call_data.into(),
+                                        call_data: interaction.calldata.into(),
                                         allowances: interaction
                                             .allowances
                                             .into_iter()
@@ -166,10 +168,11 @@ impl Solutions {
                                     },
                                 ))
                             }
-                            Interaction::Liquidity(interaction) => {
+                            solvers_dto::solution::Interaction::Liquidity(interaction) => {
+                                let liquidity_id = usize::from_str(&interaction.id).map_err(|_| super::Error("invalid liquidity ID format".to_owned()))?;
                                 let liquidity = liquidity
                                     .iter()
-                                    .find(|liquidity| liquidity.id == interaction.id)
+                                    .find(|liquidity| liquidity.id == liquidity_id)
                                     .ok_or(super::Error(
                                         "invalid liquidity ID specified in interaction".to_owned(),
                                     ))?
@@ -197,7 +200,7 @@ impl Solutions {
                         .map(|interaction| eth::Interaction {
                             target: interaction.target.into(),
                             value: interaction.value.into(),
-                            call_data: Bytes(interaction.call_data),
+                            call_data: Bytes(interaction.calldata),
                         })
                         .collect(),
                     solver.clone(),
@@ -232,110 +235,33 @@ impl Solutions {
     }
 }
 
-#[serde_as]
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Solutions {
-    solutions: Vec<Solution>,
-}
-
-#[serde_as]
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Solution {
-    id: u64,
-    #[serde_as(as = "HashMap<_, serialize::U256>")]
-    prices: HashMap<eth::H160, eth::U256>,
-    trades: Vec<Trade>,
-    #[serde(default)]
-    pre_interactions: Vec<InteractionData>,
-    interactions: Vec<Interaction>,
-    #[serde(default)]
-    post_interactions: Vec<InteractionData>,
-    gas: Option<u64>,
-    #[serde(default)]
-    flashloans: Vec<Flashloan>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
-enum Trade {
-    Fulfillment(Fulfillment),
-    Jit(JitTrade),
-}
-
-#[serde_as]
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Fulfillment {
-    #[serde_as(as = "serialize::Hex")]
-    order: [u8; order::UID_LEN],
-    #[serde_as(as = "serialize::U256")]
-    executed_amount: eth::U256,
-    #[serde_as(as = "Option<serialize::U256>")]
-    fee: Option<eth::U256>,
-}
-
-#[serde_as]
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct JitTrade {
-    order: JitOrder,
-    #[serde_as(as = "serialize::U256")]
-    executed_amount: eth::U256,
-    #[serde(default)]
-    #[serde_as(as = "serialize::U256")]
-    fee: eth::U256,
-}
-
-#[serde_as]
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct JitOrder {
-    sell_token: eth::H160,
-    buy_token: eth::H160,
-    receiver: eth::H160,
-    #[serde_as(as = "serialize::U256")]
-    sell_amount: eth::U256,
-    #[serde_as(as = "serialize::U256")]
-    buy_amount: eth::U256,
-    #[serde(default)]
-    partially_fillable: bool,
-    valid_to: u32,
-    #[serde_as(as = "serialize::Hex")]
-    app_data: [u8; order::app_data::APP_DATA_LEN],
-    kind: Kind,
-    sell_token_balance: SellTokenBalance,
-    buy_token_balance: BuyTokenBalance,
-    signing_scheme: SigningScheme,
-    #[serde_as(as = "serialize::Hex")]
-    signature: Vec<u8>,
-}
+#[derive(derive_more::From)]
+pub struct JitOrder(solvers_dto::solution::JitOrder);
 
 impl JitOrder {
     fn raw_order_data(&self) -> OrderData {
         OrderData {
-            sell_token: self.sell_token,
-            buy_token: self.buy_token,
-            receiver: Some(self.receiver),
-            sell_amount: self.sell_amount,
-            buy_amount: self.buy_amount,
-            valid_to: self.valid_to,
-            app_data: AppDataHash(self.app_data),
+            sell_token: self.0.sell_token,
+            buy_token: self.0.buy_token,
+            receiver: Some(self.0.receiver),
+            sell_amount: self.0.sell_amount,
+            buy_amount: self.0.buy_amount,
+            valid_to: self.0.valid_to,
+            app_data: AppDataHash(self.0.app_data),
             fee_amount: 0.into(),
-            kind: match self.kind {
-                Kind::Sell => OrderKind::Sell,
-                Kind::Buy => OrderKind::Buy,
+            kind: match self.0.kind {
+                solvers_dto::solution::Kind::Sell => OrderKind::Sell,
+                solvers_dto::solution::Kind::Buy => OrderKind::Buy,
             },
-            partially_fillable: self.partially_fillable,
-            sell_token_balance: match self.sell_token_balance {
-                SellTokenBalance::Erc20 => SellTokenSource::Erc20,
-                SellTokenBalance::Internal => SellTokenSource::Internal,
-                SellTokenBalance::External => SellTokenSource::External,
+            partially_fillable: self.0.partially_fillable,
+            sell_token_balance: match self.0.sell_token_balance {
+                solvers_dto::solution::SellTokenBalance::Erc20 => SellTokenSource::Erc20,
+                solvers_dto::solution::SellTokenBalance::Internal => SellTokenSource::Internal,
+                solvers_dto::solution::SellTokenBalance::External => SellTokenSource::External,
             },
-            buy_token_balance: match self.buy_token_balance {
-                BuyTokenBalance::Erc20 => BuyTokenDestination::Erc20,
-                BuyTokenBalance::Internal => BuyTokenDestination::Internal,
+            buy_token_balance: match self.0.buy_token_balance {
+                solvers_dto::solution::BuyTokenBalance::Erc20 => BuyTokenDestination::Erc20,
+                solvers_dto::solution::BuyTokenBalance::Internal => BuyTokenDestination::Internal,
             },
         }
     }
@@ -345,31 +271,42 @@ impl JitOrder {
         domain_separator: &eth::DomainSeparator,
     ) -> Result<competition::order::Signature, super::Error> {
         let mut signature = competition::order::Signature {
-            scheme: match self.signing_scheme {
-                SigningScheme::Eip712 => competition::order::signature::Scheme::Eip712,
-                SigningScheme::EthSign => competition::order::signature::Scheme::EthSign,
-                SigningScheme::PreSign => competition::order::signature::Scheme::PreSign,
-                SigningScheme::Eip1271 => competition::order::signature::Scheme::Eip1271,
+            scheme: match self.0.signing_scheme {
+                solvers_dto::solution::SigningScheme::Eip712 => {
+                    competition::order::signature::Scheme::Eip712
+                }
+                solvers_dto::solution::SigningScheme::EthSign => {
+                    competition::order::signature::Scheme::EthSign
+                }
+                solvers_dto::solution::SigningScheme::PreSign => {
+                    competition::order::signature::Scheme::PreSign
+                }
+                solvers_dto::solution::SigningScheme::Eip1271 => {
+                    competition::order::signature::Scheme::Eip1271
+                }
             },
-            data: self.signature.clone().into(),
+            data: self.0.signature.clone().into(),
             signer: Default::default(),
         };
 
         let signer = signature
             .to_boundary_signature()
             .recover_owner(
-                self.signature.as_slice(),
+                self.0.signature.as_slice(),
                 &DomainSeparator(domain_separator.0),
                 &self.raw_order_data().hash_struct(),
             )
             .map_err(|e| super::Error(e.to_string()))?;
 
-        if matches!(self.signing_scheme, SigningScheme::Eip1271) {
+        if matches!(
+            self.0.signing_scheme,
+            solvers_dto::solution::SigningScheme::Eip1271
+        ) {
             // For EIP-1271 signatures the encoding logic prepends the signer to the raw
             // signature bytes. This leads to the owner being encoded twice in
             // the final settlement calldata unless we remove that from the raw
             // data.
-            signature.data = Bytes(self.signature[20..].to_vec());
+            signature.data = Bytes(self.0.signature[20..].to_vec());
         }
 
         signature.signer = signer.into();
@@ -377,10 +314,7 @@ impl JitOrder {
         Ok(signature)
     }
 
-    fn uid(
-        &self,
-        domain: &eth::DomainSeparator,
-    ) -> Result<crate::domain::competition::order::Uid, super::Error> {
+    fn uid(&self, domain: &eth::DomainSeparator) -> Result<competition::order::Uid, super::Error> {
         let order_data = self.raw_order_data();
         let signature = self.signature(domain)?;
         Ok(order_data
@@ -388,118 +322,4 @@ impl JitOrder {
             .0
             .into())
     }
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-enum Kind {
-    Sell,
-    Buy,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
-enum Interaction {
-    Liquidity(LiquidityInteraction),
-    Custom(CustomInteraction),
-}
-
-#[serde_as]
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct LiquidityInteraction {
-    internalize: bool,
-    #[serde_as(as = "serde_with::DisplayFromStr")]
-    id: usize,
-    input_token: eth::H160,
-    output_token: eth::H160,
-    #[serde_as(as = "serialize::U256")]
-    input_amount: eth::U256,
-    #[serde_as(as = "serialize::U256")]
-    output_amount: eth::U256,
-}
-
-#[serde_as]
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct CustomInteraction {
-    internalize: bool,
-    target: eth::H160,
-    #[serde_as(as = "serialize::U256")]
-    value: eth::U256,
-    #[serde_as(as = "serialize::Hex")]
-    call_data: Vec<u8>,
-    allowances: Vec<Allowance>,
-    inputs: Vec<Asset>,
-    outputs: Vec<Asset>,
-}
-
-#[serde_as]
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Asset {
-    token: eth::H160,
-    #[serde_as(as = "serialize::U256")]
-    amount: eth::U256,
-}
-
-#[serde_as]
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Allowance {
-    token: eth::H160,
-    spender: eth::H160,
-    #[serde_as(as = "serialize::U256")]
-    amount: eth::U256,
-}
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "camelCase")]
-enum SellTokenBalance {
-    #[default]
-    Erc20,
-    Internal,
-    External,
-}
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "camelCase")]
-enum BuyTokenBalance {
-    #[default]
-    Erc20,
-    Internal,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-enum SigningScheme {
-    Eip712,
-    EthSign,
-    PreSign,
-    Eip1271,
-}
-
-#[serde_as]
-#[allow(dead_code)]
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", tag = "kind")]
-pub enum Score {
-    Solver {
-        #[serde_as(as = "serialize::U256")]
-        score: eth::U256,
-    },
-    #[serde(rename_all = "camelCase")]
-    RiskAdjusted { success_probability: f64 },
-}
-
-#[serde_as]
-#[derive(Clone, Debug, Deserialize)]
-#[cfg_attr(test, derive(serde::Serialize))]
-#[serde(rename_all = "camelCase")]
-pub struct Flashloan {
-    pub lender: eth::H160,
-    pub borrower: eth::H160,
-    pub token: eth::H160,
-    #[serde_as(as = "serialize::U256")]
-    pub amount: eth::U256,
 }

@@ -1,162 +1,99 @@
-use {
-    crate::{
-        domain::{
-            competition::{auction, solution},
-            eth::{self},
-        },
-        infra::notify,
-        util::serialize,
-    },
-    serde::Serialize,
-    serde_with::serde_as,
-    std::collections::BTreeSet,
-    web3::types::AccessList,
+use crate::{
+    domain::competition::{auction, solution},
+    infra::notify,
 };
 
-impl Notification {
-    pub fn new(
-        auction_id: Option<auction::Id>,
-        solution_id: Option<solution::Id>,
-        kind: notify::Kind,
-    ) -> Self {
-        Self {
-            auction_id: auction_id.as_ref().map(ToString::to_string),
-            solution_id: solution_id.map(SolutionId::from_domain),
-            kind: match kind {
-                notify::Kind::Timeout => Kind::Timeout,
-                notify::Kind::EmptySolution => Kind::EmptySolution,
-                notify::Kind::SimulationFailed(block, tx, succeeded_once) => {
-                    Kind::SimulationFailed {
-                        block: block.0,
-                        tx: Tx {
-                            from: tx.from.into(),
-                            to: tx.to.into(),
-                            input: tx.input.into(),
-                            value: tx.value.into(),
-                            access_list: tx.access_list.into(),
-                        },
-                        succeeded_once,
-                    }
+pub fn new(
+    auction_id: Option<auction::Id>,
+    solution_id: Option<solution::Id>,
+    kind: notify::Kind,
+) -> solvers_dto::notification::Notification {
+    solvers_dto::notification::Notification {
+        auction_id: auction_id.as_ref().map(|id| id.0),
+        solution_id: solution_id.map(solution_id_from_domain),
+        kind: match kind {
+            notify::Kind::Timeout => solvers_dto::notification::Kind::Timeout,
+            notify::Kind::EmptySolution => solvers_dto::notification::Kind::EmptySolution,
+            notify::Kind::SimulationFailed(block, tx, succeeded_once) => {
+                solvers_dto::notification::Kind::SimulationFailed {
+                    block: block.0,
+                    tx: solvers_dto::notification::Tx {
+                        from: tx.from.into(),
+                        to: tx.to.into(),
+                        input: tx.input.into(),
+                        value: tx.value.into(),
+                        access_list: tx.access_list.into(),
+                    },
+                    succeeded_once,
                 }
-                notify::Kind::ScoringFailed(scoring) => scoring.into(),
-                notify::Kind::NonBufferableTokensUsed(tokens) => Kind::NonBufferableTokensUsed {
+            }
+            notify::Kind::ScoringFailed(scoring) => scoring.into(),
+            notify::Kind::NonBufferableTokensUsed(tokens) => {
+                solvers_dto::notification::Kind::NonBufferableTokensUsed {
                     tokens: tokens.into_iter().map(|token| token.0.0).collect(),
-                },
-                notify::Kind::SolverAccountInsufficientBalance(required) => {
-                    Kind::SolverAccountInsufficientBalance {
-                        required: required.0,
-                    }
                 }
-                notify::Kind::DuplicatedSolutionId => Kind::DuplicatedSolutionId,
-                notify::Kind::DriverError(reason) => Kind::DriverError { reason },
-                notify::Kind::Settled(kind) => match kind {
-                    notify::Settlement::Success(hash) => Kind::Success {
-                        transaction: hash.0,
-                    },
-                    notify::Settlement::Revert(hash) => Kind::Revert {
-                        transaction: hash.0,
-                    },
-                    notify::Settlement::SimulationRevert => Kind::Cancelled,
-                    notify::Settlement::Fail => Kind::Fail,
-                    notify::Settlement::Expired => Kind::Expired,
+            }
+            notify::Kind::SolverAccountInsufficientBalance(required) => {
+                solvers_dto::notification::Kind::SolverAccountInsufficientBalance {
+                    required: required.0,
+                }
+            }
+            notify::Kind::DuplicatedSolutionId => {
+                solvers_dto::notification::Kind::DuplicatedSolutionId
+            }
+            notify::Kind::DriverError(reason) => {
+                solvers_dto::notification::Kind::DriverError { reason }
+            }
+            notify::Kind::Settled(kind) => match kind {
+                notify::Settlement::Success(hash) => solvers_dto::notification::Kind::Success {
+                    transaction: hash.0,
                 },
-                notify::Kind::PostprocessingTimedOut => Kind::PostprocessingTimedOut,
+                notify::Settlement::Revert(hash) => solvers_dto::notification::Kind::Revert {
+                    transaction: hash.0,
+                },
+                notify::Settlement::SimulationRevert => solvers_dto::notification::Kind::Cancelled,
+                notify::Settlement::Fail => solvers_dto::notification::Kind::Fail,
+                notify::Settlement::Expired => solvers_dto::notification::Kind::Expired,
             },
-        }
+            notify::Kind::PostprocessingTimedOut => {
+                solvers_dto::notification::Kind::PostprocessingTimedOut
+            }
+            notify::Kind::Banned { reason, until } => solvers_dto::notification::Kind::Banned {
+                reason: match reason {
+                    notify::BanReason::UnsettledConsecutiveAuctions => {
+                        solvers_dto::notification::BanReason::UnsettledConsecutiveAuctions
+                    }
+                    notify::BanReason::HighSettleFailureRate => {
+                        solvers_dto::notification::BanReason::HighSettleFailureRate
+                    }
+                },
+                until,
+            },
+        },
     }
 }
 
-impl From<notify::ScoreKind> for Kind {
+fn solution_id_from_domain(id: solution::Id) -> solvers_dto::notification::SolutionId {
+    match id.solutions().len() {
+        1 => solvers_dto::notification::SolutionId::Single(*id.solutions().first().unwrap()),
+        _ => solvers_dto::notification::SolutionId::Merged(id.solutions().to_vec()),
+    }
+}
+
+impl From<notify::ScoreKind> for solvers_dto::notification::Kind {
     fn from(value: notify::ScoreKind) -> Self {
         match value {
-            notify::ScoreKind::InvalidClearingPrices => Kind::InvalidClearingPrices,
-            notify::ScoreKind::InvalidExecutedAmount => Kind::InvalidExecutedAmount,
-            notify::ScoreKind::MissingPrice(token_address) => Kind::MissingPrice {
-                token_address: token_address.into(),
-            },
+            notify::ScoreKind::InvalidClearingPrices => {
+                solvers_dto::notification::Kind::InvalidClearingPrices
+            }
+            notify::ScoreKind::InvalidExecutedAmount => {
+                solvers_dto::notification::Kind::InvalidExecutedAmount
+            }
+            notify::ScoreKind::MissingPrice(token_address) => {
+                solvers_dto::notification::Kind::MissingPrice {
+                    token_address: token_address.into(),
+                }
+            }
         }
     }
-}
-
-#[serde_as]
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Notification {
-    auction_id: Option<String>,
-    solution_id: Option<SolutionId>,
-    #[serde(flatten)]
-    kind: Kind,
-}
-
-#[serde_as]
-#[derive(Debug, Serialize)]
-#[serde(untagged)]
-pub enum SolutionId {
-    Single(u64),
-    Merged(Vec<u64>),
-}
-
-impl SolutionId {
-    pub fn from_domain(id: solution::Id) -> Self {
-        match id.solutions().len() {
-            1 => SolutionId::Single(*id.solutions().first().unwrap()),
-            _ => SolutionId::Merged(id.solutions().to_vec()),
-        }
-    }
-}
-
-#[serde_as]
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase", tag = "kind")]
-pub enum Kind {
-    Timeout,
-    EmptySolution,
-    DuplicatedSolutionId,
-    #[serde(rename_all = "camelCase")]
-    SimulationFailed {
-        block: BlockNo,
-        tx: Tx,
-        succeeded_once: bool,
-    },
-    InvalidClearingPrices,
-    #[serde(rename_all = "camelCase")]
-    MissingPrice {
-        token_address: eth::H160,
-    },
-    InvalidExecutedAmount,
-    NonBufferableTokensUsed {
-        tokens: BTreeSet<eth::H160>,
-    },
-    SolverAccountInsufficientBalance {
-        #[serde_as(as = "serialize::U256")]
-        required: eth::U256,
-    },
-    Success {
-        transaction: eth::H256,
-    },
-    Revert {
-        transaction: eth::H256,
-    },
-    DriverError {
-        reason: String,
-    },
-    Cancelled,
-    Expired,
-    Fail,
-    PostprocessingTimedOut,
-}
-
-type BlockNo = u64;
-
-#[serde_as]
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Tx {
-    pub from: eth::H160,
-    pub to: eth::H160,
-    #[serde_as(as = "serialize::Hex")]
-    pub input: Vec<u8>,
-    #[serde_as(as = "serialize::U256")]
-    pub value: eth::U256,
-    pub access_list: AccessList,
 }

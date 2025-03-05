@@ -19,6 +19,7 @@ use {
     futures::future::try_join_all,
     itertools::Itertools,
     num::{BigRational, One},
+    solvers_dto::solution::Flashloan,
     std::{
         collections::{BTreeSet, HashMap, HashSet, hash_map::Entry},
         sync::atomic::{AtomicU64, Ordering},

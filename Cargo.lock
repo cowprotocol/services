@@ -285,6 +285,7 @@ dependencies = [
  "clap",
  "contracts",
  "cow-amm",
+ "dashmap",
  "database",
  "derive_more 1.0.0",
  "ethcontract",

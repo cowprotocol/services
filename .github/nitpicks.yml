@@ -1,6 +1,7 @@
 - markdown: |
     Reminder: Please update the DB Readme and comment whether migrations are reversible (include rollback scripts if applicable).
-    If new tables were added, update the [tables list](https://github.com/cowprotocol/services/blob/main/crates/database/src/lib.rs#L51-L87).
+    If creating new tables, update the [tables list](https://github.com/cowprotocol/services/blob/main/crates/database/src/lib.rs#L51-L87).
+    When adding a new index, consider using `CREATE INDEX CONCURRENTLY` for tables involved in the critical execution path.
   pathFilter:
     - "database/sql/**"
 
