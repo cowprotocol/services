@@ -1,6 +1,9 @@
 use {
     super::{Error, Ethereum},
-    crate::domain::{competition::order, eth},
+    crate::{
+        domain::{competition::order, eth},
+        infra::blockchain::Tx,
+    },
     contracts::BalancerV2Vault,
     futures::TryFutureExt,
 };
@@ -13,6 +16,7 @@ pub struct Erc20 {
     balances: contracts::support::Balances,
     vault_relayer: eth::ContractAddress,
     vault: eth::ContractAddress,
+    ethereum: Ethereum,
 }
 
 impl Erc20 {
@@ -23,6 +27,7 @@ impl Erc20 {
             balances: eth.contract_at(settlement),
             vault_relayer: eth.contracts().vault_relayer(),
             vault: eth.contracts().vault().address().into(),
+            ethereum: eth.clone(),
         }
     }
 
@@ -111,29 +116,47 @@ impl Erc20 {
         source: order::SellTokenBalance,
         interactions: &[eth::Interaction],
     ) -> Result<eth::TokenAmount, Error> {
+        let mut method = self.balances.balance(
+            (
+                self.balances.address(),
+                self.vault_relayer.into(),
+                self.vault.into(),
+            ),
+            trader.into(),
+            self.token.address(),
+            0.into(),
+            ethcontract::Bytes(source.hash().0),
+            interactions
+                .iter()
+                .map(|i| {
+                    (
+                        i.target.into(),
+                        i.value.into(),
+                        ethcontract::Bytes(i.call_data.0.clone()),
+                    )
+                })
+                .collect(),
+        );
+        let access_list_call = contracts::storage_accessible::call(
+            method.tx.to.unwrap(),
+            contracts::bytecode!(contracts::support::Balances),
+            method.tx.data.clone().unwrap(),
+        );
+        // Create the access list for the balance simulation
+        if let Some(from) = &access_list_call.from {
+            let access_list_tx = Tx {
+                from: *from,
+                to: access_list_call.to,
+                value: access_list_call.value,
+                data: access_list_call.data.clone(),
+                access_list: access_list_call.access_list,
+            };
+            let access_list = self.ethereum.create_access_list(access_list_tx).await.ok();
+            method.tx.access_list = access_list.map(Into::into);
+        }
         let (_, _, effective_balance, can_transfer) = contracts::storage_accessible::simulate(
             contracts::bytecode!(contracts::support::Balances),
-            self.balances.balance(
-                (
-                    self.balances.address(),
-                    self.vault_relayer.into(),
-                    self.vault.into(),
-                ),
-                trader.into(),
-                self.token.address(),
-                0.into(),
-                ethcontract::Bytes(source.hash().0),
-                interactions
-                    .iter()
-                    .map(|i| {
-                        (
-                            i.target.into(),
-                            i.value.into(),
-                            ethcontract::Bytes(i.call_data.0.clone()),
-                        )
-                    })
-                    .collect(),
-            ),
+            method,
         )
         .await?;
 

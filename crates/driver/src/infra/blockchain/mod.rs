@@ -4,10 +4,14 @@ use {
     chain::Chain,
     ethcontract::{dyns::DynWeb3, errors::ExecutionError},
     ethrpc::block_stream::CurrentBlockWatcher,
+    primitive_types::U256,
     std::{fmt, sync::Arc},
     thiserror::Error,
     url::Url,
-    web3::Transport,
+    web3::{
+        Transport,
+        types::{AccessList, Address, Bytes},
+    },
 };
 
 pub mod contracts;
@@ -68,6 +72,26 @@ struct Inner {
     contracts: Contracts,
     gas: Arc<GasPriceEstimator>,
     current_block: CurrentBlockWatcher,
+}
+
+pub struct Tx {
+    pub from: Address,
+    pub to: Option<Address>,
+    pub value: Option<U256>,
+    pub data: Option<Bytes>,
+    pub access_list: Option<AccessList>,
+}
+
+impl From<eth::Tx> for Tx {
+    fn from(tx: eth::Tx) -> Self {
+        Self {
+            from: tx.from.into(),
+            to: Some(tx.to.into()),
+            value: Some(tx.value.into()),
+            data: Some(tx.input.into()),
+            access_list: Some(tx.access_list.into()),
+        }
+    }
 }
 
 impl Ethereum {
@@ -147,13 +171,13 @@ impl Ethereum {
     }
 
     /// Create access list used by a transaction.
-    pub async fn create_access_list(&self, tx: eth::Tx) -> Result<eth::AccessList, Error> {
+    pub async fn create_access_list(&self, tx: Tx) -> Result<eth::AccessList, Error> {
         let tx = web3::types::TransactionRequest {
-            from: tx.from.into(),
-            to: Some(tx.to.into()),
-            value: Some(tx.value.into()),
-            data: Some(tx.input.into()),
-            access_list: Some(tx.access_list.into()),
+            from: tx.from,
+            to: tx.to,
+            value: tx.value,
+            data: tx.data,
+            access_list: tx.access_list,
             // Specifically set high gas because some nodes don't pick a sensible value if omitted.
             // And since we are only interested in access lists a very high value is fine.
             gas: Some(match self.inner.chain {
@@ -194,16 +218,16 @@ impl Ethereum {
     }
 
     /// Estimate gas used by a transaction.
-    pub async fn estimate_gas(&self, tx: &eth::Tx) -> Result<eth::Gas, Error> {
+    pub async fn estimate_gas(&self, tx: &Tx) -> Result<eth::Gas, Error> {
         self.web3
             .eth()
             .estimate_gas(
                 web3::types::CallRequest {
-                    from: Some(tx.from.into()),
-                    to: Some(tx.to.into()),
-                    value: Some(tx.value.into()),
-                    data: Some(tx.input.clone().into()),
-                    access_list: Some(tx.access_list.clone().into()),
+                    from: Some(tx.from),
+                    to: tx.to,
+                    value: tx.value,
+                    data: tx.data.clone(),
+                    access_list: tx.access_list.clone(),
                     gas_price: self.simulation_gas_price().await,
                     ..Default::default()
                 },
