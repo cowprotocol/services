@@ -138,7 +138,7 @@ impl Erc20 {
                 .collect(),
         );
         let access_list_call = contracts::storage_accessible::call(
-            method.tx.to.clone().unwrap(),
+            method.tx.to.unwrap(),
             contracts::bytecode!(contracts::support::Balances),
             method.tx.data.clone().unwrap(),
         );
