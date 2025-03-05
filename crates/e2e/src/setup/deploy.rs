@@ -52,6 +52,18 @@ impl Contracts {
             Ok(contract) => Some(contract),
         };
 
+        // TODO: use Contract::deployed() after contracts got deployed on mainnet
+        let flashloan_wrapper_aave =
+            AaveFlashLoanSolverWrapper::builder(web3, gp_settlement.address())
+                .deploy()
+                .await
+                .unwrap();
+        let flashloan_wrapper_maker =
+            ERC3156FlashLoanSolverWrapper::builder(web3, gp_settlement.address())
+                .deploy()
+                .await
+                .unwrap();
+
         Self {
             chain_id: network_id
                 .parse()
@@ -78,9 +90,8 @@ impl Contracts {
             hooks: HooksTrampoline::deployed(web3).await.unwrap(),
             gp_settlement,
             cow_amm_helper,
-            // TODO cleanup when contract is actually deployed
-            flashloan_wrapper_maker: ERC3156FlashLoanSolverWrapper::at(web3, Default::default()),
-            flashloan_wrapper_aave: AaveFlashLoanSolverWrapper::at(web3, Default::default()),
+            flashloan_wrapper_maker,
+            flashloan_wrapper_aave,
         }
     }
 
