@@ -197,8 +197,9 @@ async fn forked_mainnet_repay_debt_with_collateral_of_safe(web3: Web3) {
         }
     };
 
-    // pay 9 bps of flashloan fee to the AAVE pool
-    let flashloan_fee = (flashloan_amount * U256::from(9)).ceil_div(&10_000.into());
+    // pay some extra for the flashloan fee
+    let fee_bps = aave_pool.flashloan_premium_total().call().await.unwrap();
+    let flashloan_fee = (flashloan_amount * U256::from(fee_bps)).ceil_div(&10_000.into());
     let mut order = OrderCreation {
         sell_token: usdc.address(),
         sell_amount: collateral_amount,
@@ -267,7 +268,7 @@ async fn forked_mainnet_repay_debt_with_collateral_of_safe(web3: Web3) {
     tracing::info!("trader got majority of collateral back");
 
     let settlement_weth = balance(&web3, settlement.address(), weth.address()).await;
-    assert!(settlement_weth < 200_000_000u128.into());
+    assert!(settlement_weth < 100_000_000u128.into());
     tracing::info!("settlement contract only has dust amounts of WETH");
 
     assert!(balance(&web3, trader.address(), ausdc).await < 10_000.into());

@@ -192,7 +192,8 @@ pub fn tx(
             let (flashloan_wrapper, flash_fee_bps) = if flashloan.lender.0 == maker_lender {
                 (&contracts.flashloan_wrappers()[0], eth::U256::zero()) // MAKER
             } else if flashloan.lender.0 == aave_lender {
-                (&contracts.flashloan_wrappers()[1], eth::U256::from(9)) // AAVE
+                // TODO: ask AAVE to waive the current 5 BPS fee for our helper contract
+                (&contracts.flashloan_wrappers()[1], eth::U256::from(5)) // AAVE
             } else {
                 // TODO remove this together with configuration options
                 (&contracts.flashloan_wrappers()[0], eth::U256::zero()) // for driver tests to pass
