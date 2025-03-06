@@ -9,7 +9,12 @@ use {
         infra::{config::file::GasEstimatorType, mempool},
     },
     ethcontract::dyns::DynWeb3,
-    gas_estimation::{GasPriceEstimating, nativegasestimator::NativeGasEstimator},
+    gas_estimation::{
+        DEFAULT_GAS_LIMIT,
+        DEFAULT_TIME_LIMIT,
+        GasPriceEstimating,
+        nativegasestimator::NativeGasEstimator,
+    },
     std::{sync::Arc, time::Duration},
 };
 
@@ -81,7 +86,7 @@ impl GasPriceEstimator {
     /// case private submission networks are used.
     pub async fn estimate(&self, time_limit: Option<Duration>) -> Result<eth::GasPrice, Error> {
         self.gas
-            .estimate_with_limits(21000., time_limit.unwrap_or(Duration::from_secs(30)))
+            .estimate_with_limits(DEFAULT_GAS_LIMIT, time_limit.unwrap_or(DEFAULT_TIME_LIMIT))
             .await
             .map(|mut estimate| {
                 let estimate = match self.additional_tip {

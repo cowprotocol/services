@@ -214,9 +214,9 @@ impl Ethereum {
             .map_err(Into::into)
     }
 
-    /// Gas price can be evaluated in the context of a deadline until which the
-    /// transaction is supposed to be included onchain. The shorter deadline,
-    /// the higher gas price is needed.
+    /// The gas price is determined based on the deadline by which the
+    /// transaction must be included on-chain. A shorter deadline requires a
+    /// higher gas price to increase the likelihood of timely inclusion.
     pub async fn gas_price(&self, time_limit: Option<Duration>) -> Result<eth::GasPrice, Error> {
         self.inner.gas.estimate(time_limit).await
     }
