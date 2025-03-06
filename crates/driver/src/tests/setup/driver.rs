@@ -222,6 +222,7 @@ async fn create_config_file(
            gp-v2-settlement = "{}"
            weth = "{}"
            flashloan-wrappers = ["{}"]
+           flashloan-router = "{}"
 
            [submission]
            gas-price-cap = "1000000000000"
@@ -229,6 +230,7 @@ async fn create_config_file(
         hex_address(blockchain.settlement.address()),
         hex_address(blockchain.weth.address()),
         hex_address(blockchain.flashloan_wrapper.address()),
+        hex_address(blockchain.flashloan_router.address()),
     )
     .unwrap();
 
