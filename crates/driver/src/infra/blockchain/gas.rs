@@ -4,8 +4,10 @@
 /// private submission networks are used.
 use {
     super::Error,
-    crate::infra::config::file::GasEstimatorType,
-    crate::{domain::eth, infra::mempool},
+    crate::{
+        domain::eth,
+        infra::{config::file::GasEstimatorType, mempool},
+    },
     ethcontract::dyns::DynWeb3,
     gas_estimation::{GasPriceEstimating, nativegasestimator::NativeGasEstimator},
     std::sync::Arc,
@@ -18,7 +20,7 @@ type AdditionalTip = (MaxAdditionalTip, AdditionalTipPercentage);
 pub struct GasPriceEstimator {
     //TODO: remove visibility once boundary is removed
     pub(super) gas: Arc<dyn GasPriceEstimating>,
-    additional_tip: Option<AdditionalTip>,
+    additional_tip: AdditionalTip,
     max_fee_per_gas: eth::U256,
     min_priority_fee: eth::U256,
 }
@@ -51,7 +53,8 @@ impl GasPriceEstimator {
                     ..
                 } => (max_additional_tip, additional_tip_percentage),
             })
-            .next();
+            .next()
+            .unwrap_or((eth::U256::zero(), 0.));
         // Use the lowest max_fee_per_gas of all mempools as the max_fee_per_gas
         let max_fee_per_gas = mempools
             .iter()
@@ -81,24 +84,20 @@ impl GasPriceEstimator {
         self.gas
             .estimate()
             .await
-            .map(|mut estimate| {
-                let estimate = match self.additional_tip {
-                    Some((max_additional_tip, additional_tip_percentage)) => {
-                        let additional_tip = max_additional_tip
-                            .to_f64_lossy()
-                            .min(estimate.max_fee_per_gas * additional_tip_percentage);
-                        estimate.max_fee_per_gas += additional_tip;
-                        estimate.max_priority_fee_per_gas += additional_tip;
-                        estimate
-                    }
-                    None => estimate,
-                };
+            .map(|estimate| {
+                let (max, percentage) = self.additional_tip;
+                let additional_tip = max
+                    .to_f64_lossy()
+                    .min(estimate.max_fee_per_gas * percentage);
+
+                let tip = std::cmp::max(
+                    self.min_priority_fee + eth::U256::from_f64_lossy(additional_tip),
+                    eth::U256::from_f64_lossy(estimate.max_priority_fee_per_gas + additional_tip),
+                );
+
                 eth::GasPrice::new(
                     self.max_fee_per_gas.into(),
-                    std::cmp::max(
-                        self.min_priority_fee.into(),
-                        eth::U256::from_f64_lossy(estimate.max_priority_fee_per_gas).into(),
-                    ),
+                    tip.into(),
                     eth::U256::from_f64_lossy(estimate.base_fee_per_gas).into(),
                 )
             })
