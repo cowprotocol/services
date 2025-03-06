@@ -429,8 +429,15 @@ impl Competition {
                 .position(|s| s.solution().get() == solution_id && s.auction_id == auction_id)
                 .ok_or(Error::SolutionNotAvailable)?;
             // remove settlement to ensure we can't settle it twice by accident
-            lock.swap_remove_front(index)
-                .ok_or(Error::SolutionNotAvailable)?
+            let mut settlement = lock
+                .swap_remove_front(index)
+                .ok_or(Error::SolutionNotAvailable)?;
+            // refresh gas price to be up-to-date
+            self.eth
+                .gas_price()
+                .await
+                .map(|price| settlement.gas.price = price);
+            settlement
         };
 
         let executed = self
