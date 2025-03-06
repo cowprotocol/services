@@ -149,7 +149,9 @@ impl Competition {
         });
 
         let all_solutions = match self.solver.solution_merging() {
-            SolutionMerging::Allowed => merge(solutions, auction),
+            SolutionMerging::Allowed {
+                max_orders_per_merged_solution,
+            } => merge(solutions, auction, max_orders_per_merged_solution),
             SolutionMerging::Forbidden => solutions.collect(),
         };
 
@@ -497,7 +499,11 @@ const MAX_SOLUTIONS_TO_MERGE: usize = 10;
 
 /// Creates a vector with all possible combinations of the given solutions.
 /// The result is sorted descending by score.
-fn merge(solutions: impl Iterator<Item = Solution>, auction: &Auction) -> Vec<Solution> {
+fn merge(
+    solutions: impl Iterator<Item = Solution>,
+    auction: &Auction,
+    max_orders_per_merged_solution: usize,
+) -> Vec<Solution> {
     let mut merged: Vec<Solution> = Vec::new();
     // Limit the number of solutions to merge to avoid combinatorial explosion
     // (2^MAX_SOLUTIONS).
@@ -514,6 +520,10 @@ fn merge(solutions: impl Iterator<Item = Solution>, auction: &Auction) -> Vec<So
                 }
             }
         }
+
+        // Skip merged solutions with more than max_orders_per_merged_solution orders
+        extension.retain(|s| s.trades().len() <= max_orders_per_merged_solution);
+
         // At least insert the current solution
         extension.push(solution);
         merged.extend(extension);
