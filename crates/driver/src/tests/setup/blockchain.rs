@@ -324,17 +324,17 @@ impl Blockchain {
         )
         .await
         .unwrap();
-        let flashloan_wrapper = wait_for(
+        let flashloan_router = wait_for(
             &web3,
-            contracts::ERC3156FlashLoanSolverWrapper::builder(&web3, settlement.address())
+            contracts::FlashLoanRouter::builder(&web3, settlement.address())
                 .from(main_trader_account.clone())
                 .deploy(),
         )
         .await
         .unwrap();
-        let flashloan_router = wait_for(
+        let flashloan_wrapper = wait_for(
             &web3,
-            contracts::FlashLoanRouter::builder(&web3, settlement.address())
+            contracts::ERC3156FlashLoanSolverWrapper::builder(&web3, flashloan_router.address())
                 .from(main_trader_account.clone())
                 .deploy(),
         )
