@@ -2194,4 +2194,101 @@ mod tests {
             model::order::OrderKind::Sell,
         ));
     }
+
+    #[tokio::test]
+    async fn validate_quote_find_by_id() {
+        let mut order_quoter = MockOrderQuoting::new();
+        let quote_search_parameters = QuoteSearchParameters {
+            sell_token: H160([1; 20]),
+            buy_token: H160([2; 20]),
+            sell_amount: 3.into(),
+            buy_amount: 4.into(),
+            fee_amount: 0.into(),
+            kind: OrderKind::Buy,
+            signing_scheme: QuoteSigningScheme::Eip1271 {
+                onchain_order: false,
+                verification_gas_limit: default_verification_gas_limit(),
+            },
+            additional_gas: 0,
+            verification: Verification {
+                from: H160([0xf0; 20]),
+                receiver: H160([0xf0; 20]),
+                ..Default::default()
+            },
+        };
+        let quote_id = Some(42);
+        let quote_data = Quote {
+            id: quote_id,
+            ..Default::default()
+        };
+        order_quoter
+            .expect_find_quote()
+            .with(eq(quote_id), eq(quote_search_parameters.clone()))
+            .returning(move |_, _| Ok(quote_data.clone()));
+
+        let mut bad_token_detector = MockBadTokenDetecting::new();
+        let mut balance_fetcher = MockBalanceFetching::new();
+        bad_token_detector
+            .expect_detect()
+            .returning(|_| Ok(TokenQuality::Good));
+        balance_fetcher
+            .expect_can_transfer()
+            .returning(|_, _| Ok(()));
+
+        let mut signature_validating = MockSignatureValidating::new();
+        signature_validating
+            .expect_validate_signature_and_get_additional_gas()
+            .returning(|_| Ok(default_verification_gas_limit()));
+        let mut limit_order_counter = MockLimitOrderCounting::new();
+        limit_order_counter.expect_count().returning(|_| Ok(0u64));
+
+        let validator = OrderValidator::new(
+            dummy_contract!(WETH9, [0xef; 20]),
+            Arc::new(order_validation::banned::Users::none()),
+            OrderValidPeriodConfiguration {
+                min: Duration::from_secs(1),
+                max_market: Duration::from_secs(100),
+                max_limit: Duration::from_secs(200),
+            },
+            false,
+            Arc::new(bad_token_detector),
+            dummy_contract!(HooksTrampoline, [0xcf; 20]),
+            Arc::new(order_quoter),
+            Arc::new(balance_fetcher),
+            Arc::new(signature_validating),
+            Arc::new(limit_order_counter),
+            0,
+            Arc::new(MockCodeFetching::new()),
+            Default::default(),
+            u64::MAX,
+        );
+
+        let creation = OrderCreation {
+            valid_to: time::now_in_epoch_seconds() + 10,
+            sell_token: H160([1; 20]),
+            buy_token: H160([2; 20]),
+            buy_amount: U256::from(4),
+            sell_amount: U256::from(3),
+            fee_amount: U256::from(0),
+            signature: Signature::Eip1271(vec![1, 2, 3]),
+            app_data: OrderCreationAppData::Full {
+                full: "{}".to_string(),
+            },
+            from: Some(H160([0xf0; 20])),
+            receiver: Some(H160([0xf0; 20])),
+            quote_id,
+            ..Default::default()
+        };
+        let (_, returned_quote_id) = validator
+            .validate_and_construct_order(
+                creation.clone(),
+                &Default::default(),
+                Default::default(),
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(quote_id, returned_quote_id);
+    }
 }
