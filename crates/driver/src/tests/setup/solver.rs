@@ -466,7 +466,7 @@ impl Solver {
                 move |axum::extract::State(state): axum::extract::State<State>,
                  axum::extract::Json(req): axum::extract::Json<serde_json::Value>| async move {
                     let effective_gas_price = eth
-                        .gas_price()
+                        .gas_price(None)
                         .await
                         .unwrap()
                         .effective()

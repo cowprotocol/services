@@ -19,10 +19,12 @@ use {
     },
     futures::{StreamExt, stream::FuturesUnordered},
     itertools::Itertools,
+    num::Zero,
     std::{
         cmp::Reverse,
         collections::{HashMap, HashSet, VecDeque},
         sync::{Arc, Mutex},
+        time::Duration,
     },
     tap::TapFallible,
     tokio::sync::{mpsc, oneshot},
@@ -422,7 +424,7 @@ impl Competition {
         solution_id: u64,
         submission_deadline: BlockNo,
     ) -> Result<Settled, Error> {
-        let settlement = {
+        let mut settlement = {
             let mut lock = self.settlements.lock().unwrap();
             let index = lock
                 .iter()
@@ -432,6 +434,19 @@ impl Competition {
             lock.swap_remove_front(index)
                 .ok_or(Error::SolutionNotAvailable)?
         };
+
+        // When settling, the gas price must be carefully chosen to ensure the
+        // transaction is included in a block before the deadline.
+        let time_limit = time_limit(&self.eth, submission_deadline);
+        // refresh gas price to be up-to-date
+        if let Ok(gas_price) = self.eth.gas_price(time_limit).await {
+            tracing::debug!(
+                ?time_limit,
+                ?gas_price,
+                "time limit used for refreshed gas price"
+            );
+            settlement.gas.price = gas_price;
+        }
 
         let executed = self
             .mempools
@@ -529,6 +544,24 @@ fn merge(solutions: impl Iterator<Item = Solution>, auction: &Auction) -> Vec<So
     merged
 }
 
+/// Returns the aimed time limit for bringing the solution onchain.
+fn time_limit(eth: &Ethereum, submission_deadline: BlockNo) -> Option<Duration> {
+    let current_block = eth.current_block().borrow().number;
+    let blocks_until_deadline: u32 = (submission_deadline.checked_sub(current_block))?
+        .try_into()
+        .ok()?;
+    if blocks_until_deadline.is_zero() {
+        return None;
+    }
+    let time_limit = eth
+        .chain()
+        .block_time_in_ms()
+        .checked_mul(blocks_until_deadline)?;
+    // Using the above time limit, solutions are expected to be settled before the
+    // deadline. For safety, let's aim to settle the solution earlier (half that
+    // time):
+    time_limit.checked_div(2)
+}
 struct SettleRequest {
     auction_id: auction::Id,
     solution_id: u64,

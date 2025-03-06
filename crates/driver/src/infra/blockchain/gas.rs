@@ -4,11 +4,13 @@
 /// private submission networks are used.
 use {
     super::Error,
-    crate::infra::config::file::GasEstimatorType,
-    crate::{domain::eth, infra::mempool},
+    crate::{
+        domain::eth,
+        infra::{config::file::GasEstimatorType, mempool},
+    },
     ethcontract::dyns::DynWeb3,
     gas_estimation::{GasPriceEstimating, nativegasestimator::NativeGasEstimator},
-    std::sync::Arc,
+    std::{sync::Arc, time::Duration},
 };
 
 type MaxAdditionalTip = eth::U256;
@@ -77,9 +79,9 @@ impl GasPriceEstimator {
     /// If additional tip is configured, it will be added to the gas price. This
     /// is to increase the chance of a transaction being included in a block, in
     /// case private submission networks are used.
-    pub async fn estimate(&self) -> Result<eth::GasPrice, Error> {
+    pub async fn estimate(&self, time_limit: Option<Duration>) -> Result<eth::GasPrice, Error> {
         self.gas
-            .estimate()
+            .estimate_with_limits(21000., time_limit.unwrap_or(Duration::from_secs(30)))
             .await
             .map(|mut estimate| {
                 let estimate = match self.additional_tip {
