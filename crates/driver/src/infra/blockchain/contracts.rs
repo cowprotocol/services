@@ -1,6 +1,7 @@
 use {
     crate::{boundary, domain::eth, infra::blockchain::Ethereum},
     chain::Chain,
+    contracts::FlashLoanRouter,
     ethcontract::dyns::DynWeb3,
     ethrpc::block_stream::CurrentBlockWatcher,
     thiserror::Error,
@@ -20,6 +21,9 @@ pub struct Contracts {
 
     /// Each lender potentially has different solver wrapper.
     flashloan_wrappers: Vec<contracts::IFlashLoanSolverWrapper>,
+    /// Single router that supports multiple flashloans in the
+    /// same settlement.
+    flashloan_router: FlashLoanRouter,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -28,6 +32,7 @@ pub struct Addresses {
     pub weth: Option<eth::ContractAddress>,
     pub cow_amms: Vec<CowAmmConfig>,
     pub flashloan_wrappers: Vec<eth::ContractAddress>,
+    pub flashloan_router: Option<eth::ContractAddress>,
 }
 
 impl Contracts {
@@ -95,6 +100,13 @@ impl Contracts {
                 )
             })
             .collect();
+        let flashloan_router = contracts::FlashLoanRouter::at(
+            web3,
+            address_for(
+                contracts::FlashLoanRouter::raw_contract(),
+                addresses.flashloan_router,
+            ),
+        );
 
         Ok(Self {
             settlement,
@@ -104,6 +116,7 @@ impl Contracts {
             settlement_domain_separator,
             cow_amm_registry,
             flashloan_wrappers,
+            flashloan_router,
         })
     }
 
@@ -137,6 +150,10 @@ impl Contracts {
 
     pub fn flashloan_wrappers(&self) -> &[contracts::IFlashLoanSolverWrapper] {
         &self.flashloan_wrappers
+    }
+
+    pub fn flashloan_router(&self) -> &contracts::FlashLoanRouter {
+        &self.flashloan_router
     }
 }
 
