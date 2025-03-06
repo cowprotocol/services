@@ -422,7 +422,7 @@ impl Competition {
         solution_id: u64,
         submission_deadline: BlockNo,
     ) -> Result<Settled, Error> {
-        let settlement = {
+        let mut settlement = {
             let mut lock = self.settlements.lock().unwrap();
             let index = lock
                 .iter()
@@ -432,6 +432,11 @@ impl Competition {
             lock.swap_remove_front(index)
                 .ok_or(Error::SolutionNotAvailable)?
         };
+
+        // refresh gas price to be up-to-date
+        if let Ok(gas_price) = self.eth.gas_price().await {
+            settlement.gas.price = gas_price;
+        }
 
         let executed = self
             .mempools
