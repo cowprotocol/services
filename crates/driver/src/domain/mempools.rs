@@ -228,15 +228,16 @@ impl Mempools {
             input: Default::default(),
             access_list: Default::default(),
         };
+        let new_gas_price = pending * gas_price_bump_factor;
         let gas = competition::solution::settlement::Gas {
             estimate: CANCELLATION_GAS_AMOUNT.into(),
             limit: CANCELLATION_GAS_AMOUNT.into(),
-            price: pending * gas_price_bump_factor,
+            price: new_gas_price,
         };
         tracing::debug!(
             blocks_elapsed = ?blocks_elapsed,
             original_gas_price = ?pending,
-            new_gas_price = ?(pending * gas_price_bump_factor),
+            new_gas_price = ?new_gas_price,
             bump_factor = ?gas_price_bump_factor,
             "Cancelling transaction with adjusted gas price"
         );
