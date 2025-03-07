@@ -6,32 +6,32 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-app-data = { path = "../app-data" }
+app-data = { workspace = true }
 anyhow = { workspace = true }
-autopilot = { path = "../autopilot" }
+autopilot = { workspace = true }
 axum = { workspace = true }
 bigdecimal = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
-contracts = { path = "../contracts" }
-database = { path = "../database" }
-driver = { path = "../driver" }
+contracts = { workspace = true }
+database = { workspace = true }
+driver = { workspace = true }
 ethcontract = { workspace = true }
-ethrpc = { path = "../ethrpc" }
+ethrpc = { workspace = true }
 hex = { workspace = true }
 hex-literal = { workspace = true }
-model = { path = "../model", features = ["e2e"] }
-number = { path = "../number" }
-observe = { path = "../observe" }
-orderbook = { path = "../orderbook", features = ["e2e"] }
+model = { workspace = true, features = ["e2e"] }
+number = { workspace = true }
+observe = { workspace = true }
+orderbook = { workspace = true, features = ["e2e"] }
 reqwest = { workspace = true, features = ["blocking"] }
 secp256k1 = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-shared = { path = "../shared" }
-solver = { path = "../solver" }
-solvers = { path = "../solvers" }
-solvers-dto = { path = "../solvers-dto" }
+shared = { workspace = true }
+solver = { workspace = true }
+solvers = { workspace = true }
+solvers-dto = { workspace = true }
 sqlx = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["macros", "process"] }
@@ -41,7 +41,7 @@ web3 = { workspace = true, features = ["http"] }
 
 [dev-dependencies]
 futures = { workspace = true }
-refunder = { path = "../refunder" }
+refunder = { workspace = true }
 
 [lints]
 workspace = true
