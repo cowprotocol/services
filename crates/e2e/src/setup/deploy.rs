@@ -6,6 +6,7 @@ use {
         CoWSwapEthFlow,
         CowAmmLegacyHelper,
         ERC3156FlashLoanSolverWrapper,
+        FlashLoanRouter,
         GPv2AllowListAuthentication,
         GPv2Settlement,
         HooksTrampoline,
@@ -33,6 +34,7 @@ pub struct Contracts {
     pub cow_amm_helper: Option<CowAmmLegacyHelper>,
     pub flashloan_wrapper_maker: ERC3156FlashLoanSolverWrapper,
     pub flashloan_wrapper_aave: AaveFlashLoanSolverWrapper,
+    pub flashloan_router: FlashLoanRouter,
 }
 
 impl Contracts {
@@ -53,13 +55,17 @@ impl Contracts {
         };
 
         // TODO: use Contract::deployed() after contracts got deployed on mainnet
+        let flashloan_router = FlashLoanRouter::builder(web3, gp_settlement.address())
+            .deploy()
+            .await
+            .unwrap();
         let flashloan_wrapper_aave =
-            AaveFlashLoanSolverWrapper::builder(web3, gp_settlement.address())
+            AaveFlashLoanSolverWrapper::builder(web3, flashloan_router.address())
                 .deploy()
                 .await
                 .unwrap();
         let flashloan_wrapper_maker =
-            ERC3156FlashLoanSolverWrapper::builder(web3, gp_settlement.address())
+            ERC3156FlashLoanSolverWrapper::builder(web3, flashloan_router.address())
                 .deploy()
                 .await
                 .unwrap();
@@ -92,6 +98,7 @@ impl Contracts {
             cow_amm_helper,
             flashloan_wrapper_maker,
             flashloan_wrapper_aave,
+            flashloan_router,
         }
     }
 
@@ -177,9 +184,11 @@ impl Contracts {
         let ethflow = deploy!(CoWSwapEthFlow(gp_settlement.address(), weth.address()));
         let ethflow_secondary = deploy!(CoWSwapEthFlow(gp_settlement.address(), weth.address()));
         let hooks = deploy!(HooksTrampoline(gp_settlement.address()));
+        let flashloan_router = deploy!(FlashLoanRouter(gp_settlement.address()));
         let flashloan_wrapper_maker =
-            deploy!(ERC3156FlashLoanSolverWrapper(gp_settlement.address()));
-        let flashloan_wrapper_aave = deploy!(AaveFlashLoanSolverWrapper(gp_settlement.address()));
+            deploy!(ERC3156FlashLoanSolverWrapper(flashloan_router.address()));
+        let flashloan_wrapper_aave =
+            deploy!(AaveFlashLoanSolverWrapper(flashloan_router.address()));
 
         Self {
             chain_id: network_id
@@ -199,6 +208,7 @@ impl Contracts {
             cow_amm_helper: None,
             flashloan_wrapper_maker,
             flashloan_wrapper_aave,
+            flashloan_router,
         }
     }
 

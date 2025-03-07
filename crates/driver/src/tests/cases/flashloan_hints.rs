@@ -26,9 +26,12 @@ async fn solutions_with_flashloan() {
     let app_data = AppData::Full(Box::new(protocol_app_data_into_validated(
         protocol_app_data,
     )));
-    let order = ab_order().app_data(app_data);
+
+    let settlement = H160([5; 20]);
+    let order = ab_order().app_data(app_data).receiver(Some(settlement));
 
     let test = setup()
+        .settlement_address(&settlement)
         .pool(ab_pool())
         .order(order.clone())
         .solution(ab_solution().flashloan(flashloan_into_dto(flashloan)))
@@ -57,9 +60,11 @@ async fn solutions_without_flashloan() {
     let app_data = AppData::Full(Box::new(protocol_app_data_into_validated(
         protocol_app_data,
     )));
-    let order = ab_order().app_data(app_data);
+    let settlement = H160([5; 20]);
+    let order = ab_order().app_data(app_data).receiver(Some(settlement));
 
     let test = setup()
+        .settlement_address(&settlement)
         .pool(ab_pool())
         .order(order.clone())
         .solution(ab_solution())

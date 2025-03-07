@@ -27,6 +27,9 @@ pub enum Error {
     InvalidClearingPrice(eth::TokenAddress),
     #[error(transparent)]
     Math(#[from] Math),
+    // TODO: remove when contracts are deployed everywhere
+    #[error("flashloan support disabled")]
+    FlashloanSupportDisabled,
 }
 
 pub fn tx(
@@ -177,7 +180,7 @@ pub fn tx(
 
     // Add all interactions needed to move flash loaned tokens around
     // These interactions are executed before all other pre-interactions
-    let encoded_flashloans: Vec<_> = solution
+    let flashloans: Vec<_> = solution
         .flashloans
         .iter()
         // Necessary pre-interactions get prepended to the settlement. So to initiate
@@ -261,7 +264,12 @@ pub fn tx(
                 flashloan_wrapper,
             ));
 
-            (flashloan, flashloan_wrapper)
+            (
+                flashloan.amount.0,
+                flashloan_wrapper.address(),
+                flashloan.lender.0,
+                flashloan.token.0.0,
+            )
         })
         .collect();
 
@@ -304,27 +312,19 @@ pub fn tx(
         .into_inner();
 
     // Encode the auction id into the calldata
-    let mut calldata = tx.data.unwrap().0;
-    calldata.extend(auction.id().ok_or(Error::MissingAuctionId)?.to_be_bytes());
+    let mut settle_calldata = tx.data.unwrap().0;
+    settle_calldata.extend(auction.id().ok_or(Error::MissingAuctionId)?.to_be_bytes());
 
-    // TODO: support multiple flashloans in 1 settlement
     // Target and calldata depend on whether a flashloan is used
-    let (to, calldata) = match encoded_flashloans.first() {
-        Some((flashloan, flashloan_wrapper)) => {
-            let calldata = flashloan_wrapper
-                .flash_loan_and_settle(
-                    flashloan.lender.into(),
-                    (flashloan.token.into(), flashloan.amount.into()),
-                    ethcontract::Bytes(calldata),
-                )
-                .tx
-                .data
-                .unwrap()
-                .0;
-
-            (flashloan_wrapper.address().into(), calldata)
-        }
-        None => (contracts.settlement().address().into(), calldata),
+    let (to, calldata) = if flashloans.is_empty() {
+        (contracts.settlement().address().into(), settle_calldata)
+    } else {
+        let router = contracts
+            .flashloan_router()
+            .ok_or(Error::FlashloanSupportDisabled)?;
+        let call = router.flash_loan_and_settle(flashloans, ethcontract::Bytes(settle_calldata));
+        let calldata = call.tx.data.unwrap().0;
+        (router.address().into(), calldata)
     };
 
     Ok(eth::Tx {

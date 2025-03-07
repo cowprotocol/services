@@ -147,6 +147,9 @@ impl Solver {
                 "signature": if config.quote { "0x".to_string() } else { format!("0x{}", hex::encode(quote.order_signature(config.blockchain))) },
                 "signingScheme": if config.quote { "eip1271" } else { "eip712" },
             });
+            if let Some(receiver) = quote.order.receiver {
+                order["receiver"] = json!(hex_address(receiver));
+            }
             if let Some(flashloan) = quote.order.app_data.flashloan() {
                 order["flashloanHint"] = json!(FlashloanHint {
                     lender: flashloan.lender.unwrap(),
@@ -450,6 +453,7 @@ impl Solver {
                 weth: Some(config.blockchain.weth.address().into()),
                 cow_amms: vec![],
                 flashloan_wrappers: vec![config.blockchain.flashloan_wrapper.address().into()],
+                flashloan_router: Some(config.blockchain.flashloan_wrapper.address().into()),
             },
             gas,
             None,

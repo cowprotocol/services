@@ -375,6 +375,10 @@ struct ContractsConfig {
     /// Currently Maker and Aave lenders are supported.
     #[serde(default)]
     flashloan_wrappers: Vec<eth::H160>,
+
+    /// Flashloan router to support taking out multiple flashloans
+    /// in the same settlement.
+    flashloan_router: Option<eth::H160>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

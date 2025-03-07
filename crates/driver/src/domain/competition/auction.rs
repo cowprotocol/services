@@ -215,7 +215,8 @@ impl AuctionProcessor {
                     )
                 });
 
-            Self::update_orders(&mut balances, &mut app_data_by_hash, &mut orders);
+            let settlement = eth.contracts().settlement().address().into();
+            Self::update_orders(&mut balances, &mut app_data_by_hash, &mut orders, &settlement);
 
             tracing::debug!(auction_id = new_id.0, time =? start.elapsed(), "auction preprocessing done");
             orders
@@ -284,6 +285,7 @@ impl AuctionProcessor {
         balances: &mut Balances,
         app_data_by_hash: &mut HashMap<order::app_data::AppDataHash, app_data::ValidatedAppData>,
         orders: &mut Vec<order::Order>,
+        settlement: &eth::Address,
     ) {
         // The auction that we receive from the `autopilot` assumes that there
         // is sufficient balance to completely cover all the orders. **This is
@@ -298,8 +300,11 @@ impl AuctionProcessor {
             if let Some(fetched_app_data) = app_data_by_hash.get(&order.app_data.hash()) {
                 order.app_data = fetched_app_data.clone().into();
                 if order.app_data.flashloan().is_some() {
-                    // assume all the necessary tokens will come from the flashloan
-                    return true;
+                    // If an order requires a flashloan we assume all the necessary
+                    // sell tokens will come from there. But the receiver must be the
+                    // settlement contract because that is how the driver expects
+                    // the flashloan to be repaid for now.
+                    return order.receiver.as_ref() == Some(settlement);
                 }
             }
 

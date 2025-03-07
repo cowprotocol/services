@@ -1,6 +1,7 @@
 use {
     crate::{boundary, domain::eth, infra::blockchain::Ethereum},
     chain::Chain,
+    contracts::FlashLoanRouter,
     ethcontract::dyns::DynWeb3,
     ethrpc::block_stream::CurrentBlockWatcher,
     thiserror::Error,
@@ -20,6 +21,11 @@ pub struct Contracts {
 
     /// Each lender potentially has different solver wrapper.
     flashloan_wrappers: Vec<contracts::IFlashLoanSolverWrapper>,
+    /// Single router that supports multiple flashloans in the
+    /// same settlement.
+    // TODO: make this non-optional when contracts are deployed
+    // everywhere
+    flashloan_router: Option<FlashLoanRouter>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -28,6 +34,7 @@ pub struct Addresses {
     pub weth: Option<eth::ContractAddress>,
     pub cow_amms: Vec<CowAmmConfig>,
     pub flashloan_wrappers: Vec<eth::ContractAddress>,
+    pub flashloan_router: Option<eth::ContractAddress>,
 }
 
 impl Contracts {
@@ -96,6 +103,17 @@ impl Contracts {
             })
             .collect();
 
+        // TODO: use `address_for()` once contracts are deployed
+        let flashloan_router = addresses
+            .flashloan_router
+            .or_else(|| {
+                contracts::FlashLoanRouter::raw_contract()
+                    .networks
+                    .get(&chain.id().to_string())
+                    .map(|deployment| eth::ContractAddress(deployment.address))
+            })
+            .map(|address| contracts::FlashLoanRouter::at(web3, address.0));
+
         Ok(Self {
             settlement,
             vault_relayer,
@@ -104,6 +122,7 @@ impl Contracts {
             settlement_domain_separator,
             cow_amm_registry,
             flashloan_wrappers,
+            flashloan_router,
         })
     }
 
@@ -137,6 +156,10 @@ impl Contracts {
 
     pub fn flashloan_wrappers(&self) -> &[contracts::IFlashLoanSolverWrapper] {
         &self.flashloan_wrappers
+    }
+
+    pub fn flashloan_router(&self) -> Option<&contracts::FlashLoanRouter> {
+        self.flashloan_router.as_ref()
     }
 }
 
