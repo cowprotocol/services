@@ -235,9 +235,9 @@ impl Mempools {
             price: new_gas_price,
         };
         tracing::debug!(
-            blocks_elapsed = ?blocks_elapsed,
+            ?blocks_elapsed,
             original_gas_price = ?pending,
-            new_gas_price = ?new_gas_price,
+            ?new_gas_price,
             bump_factor = ?gas_price_bump_factor,
             "Cancelling transaction with adjusted gas price"
         );
