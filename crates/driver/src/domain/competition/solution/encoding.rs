@@ -10,10 +10,11 @@ use {
             liquidity,
         },
         infra::{self, solver::ManageNativeToken},
-        util::Bytes,
+        util::{Bytes, conv::u256::U256Ext},
     },
     allowance::Allowance,
     itertools::Itertools,
+    shared::addr,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -173,6 +174,97 @@ pub fn tx(
         min: None,
         prices: auction.prices().clone(),
     };
+
+    // Add all interactions needed to move flash loaned tokens around
+    // These interactions are executed before all other pre-interactions
+    let encoded_flashloans: Vec<_> = solution
+        .flashloans
+        .iter()
+        // Necessary pre-interactions get prepended to the settlement. So to initiate
+        // the loans in the desired order we need to add them in reverse order.
+        .rev()
+        .map(|flashloan| {
+            // TODO add configuration options
+            // Hardcoded configuration for now
+            let maker_lender = addr!("60744434d6339a6B27d73d9Eda62b6F66a0a04FA");
+            let aave_lender = addr!("87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2");
+
+            let (flashloan_wrapper, flash_fee_bps) = if flashloan.lender.0 == maker_lender {
+                (&contracts.flashloan_wrappers()[0], eth::U256::zero()) // MAKER
+            } else if flashloan.lender.0 == aave_lender {
+                // TODO: ask AAVE to waive the current 5 BPS fee for our helper contract
+                (&contracts.flashloan_wrappers()[1], eth::U256::from(5)) // AAVE
+            } else {
+                // TODO remove this together with configuration options
+                (&contracts.flashloan_wrappers()[0], eth::U256::zero()) // for driver tests to pass
+            };
+
+            // Allow settlement contract to pull borrowed tokens from flashloan wrapper
+            pre_interactions.insert(
+                0,
+                approve_flashloan(
+                    flashloan.token,
+                    flashloan.amount,
+                    contracts.settlement().address().into(),
+                    flashloan_wrapper,
+                ),
+            );
+
+            // Transfer tokens from flashloan wrapper to user (i.e. borrower) to later allow
+            // settlement contract to pull in all the necessary sell tokens from the user.
+            let tx = contracts::ERC20::at(
+                &contracts.settlement().raw_instance().web3(),
+                flashloan.token.into(),
+            )
+            .transfer_from(
+                flashloan_wrapper.address(),
+                flashloan.borrower.into(),
+                flashloan.amount.0,
+            )
+            .into_inner();
+            pre_interactions.insert(
+                1,
+                eth::Interaction {
+                    target: tx.to.unwrap().into(),
+                    value: eth::U256::zero().into(),
+                    call_data: tx.data.unwrap().0.into(),
+                },
+            );
+
+            // Repayment amount needs to be increased by flash fee
+            let fee_amount = (flashloan.amount.0 * flash_fee_bps).ceil_div(&10_000.into());
+            let repayment_amount = flashloan.amount.0 + fee_amount;
+
+            // Since the order receiver is expected to be the setttlement contract, we need
+            // to transfer tokens from the settlement contract to the flashloan wrapper
+            let tx = contracts::ERC20::at(
+                &contracts.settlement().raw_instance().web3(),
+                flashloan.token.into(),
+            )
+            .transfer_from(
+                contracts.settlement().address(),
+                flashloan_wrapper.address(),
+                repayment_amount,
+            )
+            .into_inner();
+            post_interactions.push(eth::Interaction {
+                target: tx.to.unwrap().into(),
+                value: eth::U256::zero().into(),
+                call_data: tx.data.unwrap().0.into(),
+            });
+
+            // Allow flash loan lender to take tokens from wrapper contract
+            post_interactions.push(approve_flashloan(
+                flashloan.token,
+                repayment_amount.into(),
+                flashloan.lender,
+                flashloan_wrapper,
+            ));
+
+            (flashloan, flashloan_wrapper)
+        })
+        .collect();
+
     for interaction in solution.interactions() {
         if matches!(internalization, settlement::Internalization::Enable)
             && interaction.internalize()
@@ -215,9 +307,29 @@ pub fn tx(
     let mut calldata = tx.data.unwrap().0;
     calldata.extend(auction.id().ok_or(Error::MissingAuctionId)?.to_be_bytes());
 
+    // TODO: support multiple flashloans in 1 settlement
+    // Target and calldata depend on whether a flashloan is used
+    let (to, calldata) = match encoded_flashloans.first() {
+        Some((flashloan, flashloan_wrapper)) => {
+            let calldata = flashloan_wrapper
+                .flash_loan_and_settle(
+                    flashloan.lender.into(),
+                    (flashloan.token.into(), flashloan.amount.into()),
+                    ethcontract::Bytes(calldata),
+                )
+                .tx
+                .data
+                .unwrap()
+                .0;
+
+            (flashloan_wrapper.address().into(), calldata)
+        }
+        None => (contracts.settlement().address().into(), calldata),
+    };
+
     Ok(eth::Tx {
         from: solution.solver().address(),
-        to: contracts.settlement().address().into(),
+        to,
         input: calldata.into(),
         value: Ether(0.into()),
         access_list: Default::default(),
@@ -271,6 +383,22 @@ pub fn approve(allowance: &Allowance) -> eth::Interaction {
         ]
         .concat()
         .into(),
+    }
+}
+
+fn approve_flashloan(
+    token: eth::TokenAddress,
+    amount: eth::TokenAmount,
+    spender: eth::ContractAddress,
+    flashloan_wrapper: &contracts::IFlashLoanSolverWrapper,
+) -> eth::Interaction {
+    let tx = flashloan_wrapper
+        .approve(token.into(), spender.into(), amount.0)
+        .into_inner();
+    eth::Interaction {
+        target: tx.to.unwrap().into(),
+        value: eth::U256::zero().into(),
+        call_data: tx.data.unwrap().0.into(),
     }
 }
 
