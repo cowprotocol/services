@@ -415,7 +415,7 @@ impl From<CodeDigest> for [u8; 32] {
 #[derive(Debug, Clone)]
 pub struct Flashloan {
     pub lender: ContractAddress,
-    pub borrower: ContractAddress,
+    pub borrower: Address,
     pub token: TokenAddress,
     pub amount: TokenAmount,
 }
