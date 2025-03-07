@@ -1,9 +1,11 @@
 use {
     contracts::{
+        AaveFlashLoanSolverWrapper,
         BalancerV2Authorizer,
         BalancerV2Vault,
         CoWSwapEthFlow,
         CowAmmLegacyHelper,
+        ERC3156FlashLoanSolverWrapper,
         GPv2AllowListAuthentication,
         GPv2Settlement,
         HooksTrampoline,
@@ -29,6 +31,8 @@ pub struct Contracts {
     pub ethflows: Vec<CoWSwapEthFlow>,
     pub hooks: HooksTrampoline,
     pub cow_amm_helper: Option<CowAmmLegacyHelper>,
+    pub flashloan_wrapper_maker: ERC3156FlashLoanSolverWrapper,
+    pub flashloan_wrapper_aave: AaveFlashLoanSolverWrapper,
 }
 
 impl Contracts {
@@ -47,6 +51,18 @@ impl Contracts {
             Err(err) => panic!("failed to find deployed contract: {:?}", err),
             Ok(contract) => Some(contract),
         };
+
+        // TODO: use Contract::deployed() after contracts got deployed on mainnet
+        let flashloan_wrapper_aave =
+            AaveFlashLoanSolverWrapper::builder(web3, gp_settlement.address())
+                .deploy()
+                .await
+                .unwrap();
+        let flashloan_wrapper_maker =
+            ERC3156FlashLoanSolverWrapper::builder(web3, gp_settlement.address())
+                .deploy()
+                .await
+                .unwrap();
 
         Self {
             chain_id: network_id
@@ -74,6 +90,8 @@ impl Contracts {
             hooks: HooksTrampoline::deployed(web3).await.unwrap(),
             gp_settlement,
             cow_amm_helper,
+            flashloan_wrapper_maker,
+            flashloan_wrapper_aave,
         }
     }
 
@@ -159,6 +177,9 @@ impl Contracts {
         let ethflow = deploy!(CoWSwapEthFlow(gp_settlement.address(), weth.address()));
         let ethflow_secondary = deploy!(CoWSwapEthFlow(gp_settlement.address(), weth.address()));
         let hooks = deploy!(HooksTrampoline(gp_settlement.address()));
+        let flashloan_wrapper_maker =
+            deploy!(ERC3156FlashLoanSolverWrapper(gp_settlement.address()));
+        let flashloan_wrapper_aave = deploy!(AaveFlashLoanSolverWrapper(gp_settlement.address()));
 
         Self {
             chain_id: network_id
@@ -176,6 +197,8 @@ impl Contracts {
             hooks,
             // Current helper contract only works in forked tests
             cow_amm_helper: None,
+            flashloan_wrapper_maker,
+            flashloan_wrapper_aave,
         }
     }
 

@@ -35,6 +35,7 @@ pub struct Blockchain {
     pub tokens: HashMap<&'static str, contracts::ERC20Mintable>,
     pub weth: contracts::WETH9,
     pub settlement: contracts::GPv2Settlement,
+    pub flashloan_wrapper: contracts::ERC3156FlashLoanSolverWrapper,
     pub ethflow: Option<ContractAddress>,
     pub domain_separator: boundary::DomainSeparator,
     pub node: Node,
@@ -319,6 +320,14 @@ impl Blockchain {
                 .initialize_manager(main_trader_account.address())
                 .from(main_trader_account.clone())
                 .send(),
+        )
+        .await
+        .unwrap();
+        let flashloan_wrapper = wait_for(
+            &web3,
+            contracts::ERC3156FlashLoanSolverWrapper::builder(&web3, settlement.address())
+                .from(main_trader_account.clone())
+                .deploy(),
         )
         .await
         .unwrap();
@@ -630,6 +639,7 @@ impl Blockchain {
             web3_url: node.url(),
             node,
             pairs,
+            flashloan_wrapper,
         }
     }
 
