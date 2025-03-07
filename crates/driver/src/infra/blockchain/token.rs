@@ -143,17 +143,15 @@ impl Erc20 {
             method.tx.data.clone().unwrap(),
         );
         // Create the access list for the balance simulation
-        if let Some(from) = &access_list_call.from {
-            let access_list_tx = Tx {
-                from: *from,
-                to: access_list_call.to,
-                value: access_list_call.value,
-                data: access_list_call.data.clone(),
-                access_list: access_list_call.access_list,
-            };
-            let access_list = self.ethereum.create_access_list(access_list_tx).await.ok();
-            method.tx.access_list = access_list.map(Into::into);
-        }
+        let access_list_tx = Tx {
+            from: access_list_call.from.unwrap_or_default(),
+            to: access_list_call.to,
+            value: Some(0.into()),
+            data: access_list_call.data.clone(),
+            access_list: access_list_call.access_list,
+        };
+        let access_list = self.ethereum.create_access_list(access_list_tx).await.ok();
+        method.tx.access_list = access_list.map(Into::into);
         let (_, _, effective_balance, can_transfer) = contracts::storage_accessible::simulate(
             contracts::bytecode!(contracts::support::Balances),
             method,

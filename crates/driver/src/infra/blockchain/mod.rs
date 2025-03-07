@@ -74,6 +74,7 @@ struct Inner {
     current_block: CurrentBlockWatcher,
 }
 
+#[derive(Debug)]
 pub struct Tx {
     pub from: Address,
     pub to: Option<Address>,
