@@ -1,5 +1,4 @@
-use shared::addr;
-use crate::tests;
+use {crate::tests, shared::addr};
 
 /// Test that the example configuration file is valid by checking that the
 /// driver does not crash when started with this file.
