@@ -27,6 +27,9 @@ pub enum Error {
     InvalidClearingPrice(eth::TokenAddress),
     #[error(transparent)]
     Math(#[from] Math),
+    // TODO: remove when contracts are deployed everywhere
+    #[error("flashloan support disabled")]
+    FlashloanSupportDisabled,
 }
 
 pub fn tx(
@@ -316,7 +319,9 @@ pub fn tx(
     let (to, calldata) = if flashloans.is_empty() {
         (contracts.settlement().address().into(), settle_calldata)
     } else {
-        let router = contracts.flashloan_router();
+        let router = contracts
+            .flashloan_router()
+            .ok_or(Error::FlashloanSupportDisabled)?;
         let call = router.flash_loan_and_settle(flashloans, ethcontract::Bytes(settle_calldata));
         let calldata = call.tx.data.unwrap().0;
         (router.address().into(), calldata)

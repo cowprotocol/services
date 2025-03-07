@@ -23,7 +23,9 @@ pub struct Contracts {
     flashloan_wrappers: Vec<contracts::IFlashLoanSolverWrapper>,
     /// Single router that supports multiple flashloans in the
     /// same settlement.
-    flashloan_router: FlashLoanRouter,
+    // TODO: make this non-optional when contracts are deployed
+    // everywhere
+    flashloan_router: Option<FlashLoanRouter>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -100,13 +102,17 @@ impl Contracts {
                 )
             })
             .collect();
-        let flashloan_router = contracts::FlashLoanRouter::at(
-            web3,
-            address_for(
-                contracts::FlashLoanRouter::raw_contract(),
-                addresses.flashloan_router,
-            ),
-        );
+
+        // TODO: use `address_for()` once contracts are deployed
+        let flashloan_router = addresses
+            .flashloan_router
+            .or_else(|| {
+                contracts::FlashLoanRouter::raw_contract()
+                    .networks
+                    .get(&chain.id().to_string())
+                    .map(|deployment| eth::ContractAddress(deployment.address))
+            })
+            .map(|address| contracts::FlashLoanRouter::at(web3, address.0));
 
         Ok(Self {
             settlement,
@@ -152,8 +158,8 @@ impl Contracts {
         &self.flashloan_wrappers
     }
 
-    pub fn flashloan_router(&self) -> &contracts::FlashLoanRouter {
-        &self.flashloan_router
+    pub fn flashloan_router(&self) -> Option<&contracts::FlashLoanRouter> {
+        self.flashloan_router.as_ref()
     }
 }
 
