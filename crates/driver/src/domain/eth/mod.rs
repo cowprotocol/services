@@ -17,7 +17,7 @@ pub use {
     eip712::DomainSeparator,
     gas::{EffectiveGasPrice, FeePerGas, Gas, GasPrice},
     number::nonzero::U256 as NonZeroU256,
-    primitive_types::{H160, H256, U256},
+    primitive_types::{H160, H256, U256, U512},
 };
 
 // TODO This module is getting a little hectic with all kinds of different
@@ -410,4 +410,12 @@ impl From<CodeDigest> for [u8; 32] {
     fn from(value: CodeDigest) -> Self {
         value.0.0
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct Flashloan {
+    pub lender: ContractAddress,
+    pub borrower: Address,
+    pub token: TokenAddress,
+    pub amount: TokenAmount,
 }

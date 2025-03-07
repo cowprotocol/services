@@ -37,7 +37,7 @@ use {
             SellTokenSource,
             VerificationError,
         },
-        quote::{OrderQuoteSide, QuoteSigningScheme, SellAmount},
+        quote::{OrderQuoteSide, QuoteId, QuoteSigningScheme, SellAmount},
         signature::{self, Signature, SigningScheme, hashed_eip712_message},
         time,
     },
@@ -94,7 +94,7 @@ pub trait OrderValidating: Send + Sync {
         domain_separator: &DomainSeparator,
         settlement_contract: H160,
         full_app_data_override: Option<String>,
-    ) -> Result<(Order, Option<Quote>), ValidationError>;
+    ) -> Result<(Order, Option<QuoteId>), ValidationError>;
 }
 
 #[derive(Debug)]
@@ -547,7 +547,7 @@ impl OrderValidating for OrderValidator {
         domain_separator: &DomainSeparator,
         settlement_contract: H160,
         full_app_data_override: Option<String>,
-    ) -> Result<(Order, Option<Quote>), ValidationError> {
+    ) -> Result<(Order, Option<QuoteId>), ValidationError> {
         // Happens before signature verification because a miscalculated app data hash
         // by the API user would lead to being unable to validate the signature below.
         let app_data = self.validate_app_data(&order.app_data, &full_app_data_override)?;
@@ -747,6 +747,11 @@ impl OrderValidating for OrderValidator {
                     | OrderCreationAppData::Full { full } => Some(full),
                     OrderCreationAppData::Hash { .. } => full_app_data_override,
                 },
+                quote: quote
+                    .as_ref()
+                    .map(|q| q.try_to_model_order_quote())
+                    .transpose()
+                    .map_err(ValidationError::Other)?,
                 ..Default::default()
             },
             signature: order.signature.clone(),
@@ -754,7 +759,7 @@ impl OrderValidating for OrderValidator {
             interactions: app_data.interactions,
         };
 
-        Ok((order, quote))
+        Ok((order, quote.and_then(|q| q.id)))
     }
 }
 
@@ -1422,11 +1427,11 @@ mod tests {
             fee_amount: U256::zero(),
             ..creation.clone()
         };
-        let (order, quote) = validator
+        let (order, _) = validator
             .validate_and_construct_order(creation_, &domain_separator, Default::default(), None)
             .await
             .unwrap();
-        assert!(quote.is_some());
+        assert!(order.metadata.quote.is_some());
         assert!(order.metadata.class.is_limit());
 
         let creation_ = OrderCreation {
@@ -1437,11 +1442,11 @@ mod tests {
             },
             ..creation
         };
-        let (order, quote) = validator
+        let (order, _) = validator
             .validate_and_construct_order(creation_, &domain_separator, Default::default(), None)
             .await
             .unwrap();
-        assert!(quote.is_some());
+        assert!(order.metadata.quote.is_some());
         assert!(order.metadata.class.is_limit());
     }
 
@@ -2188,5 +2193,102 @@ mod tests {
             },
             model::order::OrderKind::Sell,
         ));
+    }
+
+    #[tokio::test]
+    async fn validate_quote_find_by_id() {
+        let mut order_quoter = MockOrderQuoting::new();
+        let quote_search_parameters = QuoteSearchParameters {
+            sell_token: H160([1; 20]),
+            buy_token: H160([2; 20]),
+            sell_amount: 3.into(),
+            buy_amount: 4.into(),
+            fee_amount: 0.into(),
+            kind: OrderKind::Buy,
+            signing_scheme: QuoteSigningScheme::Eip1271 {
+                onchain_order: false,
+                verification_gas_limit: default_verification_gas_limit(),
+            },
+            additional_gas: 0,
+            verification: Verification {
+                from: H160([0xf0; 20]),
+                receiver: H160([0xf0; 20]),
+                ..Default::default()
+            },
+        };
+        let quote_id = Some(42);
+        let quote_data = Quote {
+            id: quote_id,
+            ..Default::default()
+        };
+        order_quoter
+            .expect_find_quote()
+            .with(eq(quote_id), eq(quote_search_parameters.clone()))
+            .returning(move |_, _| Ok(quote_data.clone()));
+
+        let mut bad_token_detector = MockBadTokenDetecting::new();
+        let mut balance_fetcher = MockBalanceFetching::new();
+        bad_token_detector
+            .expect_detect()
+            .returning(|_| Ok(TokenQuality::Good));
+        balance_fetcher
+            .expect_can_transfer()
+            .returning(|_, _| Ok(()));
+
+        let mut signature_validating = MockSignatureValidating::new();
+        signature_validating
+            .expect_validate_signature_and_get_additional_gas()
+            .returning(|_| Ok(default_verification_gas_limit()));
+        let mut limit_order_counter = MockLimitOrderCounting::new();
+        limit_order_counter.expect_count().returning(|_| Ok(0u64));
+
+        let validator = OrderValidator::new(
+            dummy_contract!(WETH9, [0xef; 20]),
+            Arc::new(order_validation::banned::Users::none()),
+            OrderValidPeriodConfiguration {
+                min: Duration::from_secs(1),
+                max_market: Duration::from_secs(100),
+                max_limit: Duration::from_secs(200),
+            },
+            false,
+            Arc::new(bad_token_detector),
+            dummy_contract!(HooksTrampoline, [0xcf; 20]),
+            Arc::new(order_quoter),
+            Arc::new(balance_fetcher),
+            Arc::new(signature_validating),
+            Arc::new(limit_order_counter),
+            0,
+            Arc::new(MockCodeFetching::new()),
+            Default::default(),
+            u64::MAX,
+        );
+
+        let creation = OrderCreation {
+            valid_to: time::now_in_epoch_seconds() + 10,
+            sell_token: H160([1; 20]),
+            buy_token: H160([2; 20]),
+            buy_amount: U256::from(4),
+            sell_amount: U256::from(3),
+            fee_amount: U256::from(0),
+            signature: Signature::Eip1271(vec![1, 2, 3]),
+            app_data: OrderCreationAppData::Full {
+                full: "{}".to_string(),
+            },
+            from: Some(H160([0xf0; 20])),
+            receiver: Some(H160([0xf0; 20])),
+            quote_id,
+            ..Default::default()
+        };
+        let (_, returned_quote_id) = validator
+            .validate_and_construct_order(
+                creation.clone(),
+                &Default::default(),
+                Default::default(),
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(quote_id, returned_quote_id);
     }
 }
