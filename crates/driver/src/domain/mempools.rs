@@ -220,7 +220,6 @@ impl Mempools {
         solver: &Solver,
         blocks_elapsed: u64,
     ) -> Result<TxId, Error> {
-        let gas_price_bump_factor = GAS_PRICE_BUMP.powi(blocks_elapsed.max(1) as i32);
         let cancellation = eth::Tx {
             from: solver.address(),
             to: solver.address(),
@@ -228,6 +227,7 @@ impl Mempools {
             input: Default::default(),
             access_list: Default::default(),
         };
+        let gas_price_bump_factor = GAS_PRICE_BUMP.powi(blocks_elapsed.max(1) as i32);
         let new_gas_price = pending * gas_price_bump_factor;
         let gas = competition::solution::settlement::Gas {
             estimate: CANCELLATION_GAS_AMOUNT.into(),
