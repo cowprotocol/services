@@ -16,8 +16,7 @@ use {
     futures::{FutureExt, StreamExt, future::select_ok},
     std::ops::Sub,
     thiserror::Error,
-    tracing::Instrument,
-    web3::types::BlockNumber,
+    tracing::Instrument
 };
 
 /// Factor by how much a transaction fee needs to be increased to override a
