@@ -513,7 +513,7 @@ impl FullOrder {
         if self.sum_sell.is_zero() {
             return false;
         }
-        let total_amount = &self.sum_sell - &self.executed_fee;
+        let total_amount = &self.sum_sell - &self.sum_fee;
         total_amount == self.sell_amount
     }
 }
