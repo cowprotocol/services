@@ -7,7 +7,6 @@ use {
     },
     crate::{
         account_balances::{BalanceFetching, Query},
-        db_order_conversions::order_kind_from,
         fee::FeeParameters,
         order_validation::PreOrderData,
         price_estimation::{Estimate, QuoteVerificationMode, Verification},
@@ -93,6 +92,29 @@ pub struct Quote {
     pub fee_amount: U256,
 }
 
+/// Converts this Quote to model OrderQuote.
+impl TryInto<model::order::OrderQuote> for Quote {
+    type Error = anyhow::Error;
+
+    fn try_into(self) -> Result<model::order::OrderQuote, Self::Error> {
+        Ok(model::order::OrderQuote {
+            gas_amount: bigdecimal::BigDecimal::from_f64(self.data.fee_parameters.gas_amount)
+                .context("gas amount is not a valid BigDecimal")?,
+            gas_price: bigdecimal::BigDecimal::from_f64(self.data.fee_parameters.gas_price)
+                .context("gas price is not a valid BigDecimal")?,
+            sell_token_price: bigdecimal::BigDecimal::from_f64(
+                self.data.fee_parameters.sell_token_price,
+            )
+            .context("sell token price is not a valid BigDecimal")?,
+            sell_amount: self.sell_amount,
+            buy_amount: self.buy_amount,
+            solver: self.data.solver,
+            verified: self.data.verified,
+            metadata: serde_json::to_value(&self.data.metadata)?,
+        })
+    }
+}
+
 impl Quote {
     /// Creates a new `Quote`.
     pub fn new(id: Option<QuoteId>, data: QuoteData) -> Self {
@@ -138,25 +160,6 @@ impl Quote {
             .unwrap_or(U256::MAX);
 
         self
-    }
-
-    /// Converts this Quote to model OrderQuote.
-    pub fn try_to_model_order_quote(&self) -> Result<model::order::OrderQuote> {
-        Ok(model::order::OrderQuote {
-            gas_amount: bigdecimal::BigDecimal::from_f64(self.data.fee_parameters.gas_amount)
-                .context("gas amount is not a valid BigDecimal")?,
-            gas_price: bigdecimal::BigDecimal::from_f64(self.data.fee_parameters.gas_price)
-                .context("gas price is not a valid BigDecimal")?,
-            sell_token_price: bigdecimal::BigDecimal::from_f64(
-                self.data.fee_parameters.sell_token_price,
-            )
-            .context("sell token price is not a valid BigDecimal")?,
-            sell_amount: self.sell_amount,
-            buy_amount: self.buy_amount,
-            solver: self.data.solver,
-            verified: self.data.verified,
-            metadata: serde_json::to_value(&self.data.metadata)?,
-        })
     }
 }
 
@@ -211,7 +214,7 @@ impl TryFrom<QuoteRow> for QuoteData {
                 gas_price: row.gas_price,
                 sell_token_price: row.sell_token_price,
             },
-            kind: order_kind_from(row.order_kind),
+            kind: row.order_kind.into(),
             expiration: row.expiration_timestamp,
             quote_kind: row.quote_kind,
             solver: H160(row.solver.0),

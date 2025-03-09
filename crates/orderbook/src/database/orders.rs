@@ -2,55 +2,27 @@ use {
     super::Postgres,
     crate::dto::TokenMetadata,
     anyhow::{Context as _, Result},
-    app_data::AppDataHash,
     async_trait::async_trait,
     bigdecimal::ToPrimitive,
     chrono::{DateTime, Utc},
     database::{
         byte_array::ByteArray,
         order_events::{OrderEvent, OrderEventLabel, insert_order_event},
-        orders::{self, FullOrder, OrderKind as DbOrderKind},
+        orders::{self, OrderKind as DbOrderKind},
     },
     ethcontract::H256,
     futures::{FutureExt, StreamExt, stream::TryStreamExt},
     model::{
-        order::{
-            EthflowData,
-            Interactions,
-            OnchainOrderData,
-            Order,
-            OrderClass,
-            OrderData,
-            OrderMetadata,
-            OrderStatus,
-            OrderUid,
-        },
-        signature::Signature,
+        order::{Order, OrderUid},
         time::now_in_epoch_seconds,
     },
-    num::Zero,
-    number::conversions::{big_decimal_to_big_uint, big_decimal_to_u256, u256_to_big_decimal},
+    number::conversions::{big_decimal_to_u256, u256_to_big_decimal},
     primitive_types::{H160, U256},
     shared::{
-        db_order_conversions::{
-            buy_token_destination_from,
-            buy_token_destination_into,
-            extract_interactions,
-            onchain_order_placement_error_from,
-            order_class_from,
-            order_class_into,
-            order_kind_from,
-            order_kind_into,
-            order_quote_into_model,
-            sell_token_source_from,
-            sell_token_source_into,
-            signing_scheme_from,
-            signing_scheme_into,
-        },
         fee::FeeParameters,
         order_validation::{Amounts, LimitOrderCounting, is_order_outside_market_price},
     },
-    sqlx::{Connection, PgConnection, types::BigDecimal},
+    sqlx::{Connection, PgConnection},
     std::convert::TryInto,
 };
 
@@ -165,14 +137,14 @@ async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), Insert
         valid_to: order.data.valid_to as i64,
         app_data: ByteArray(order.data.app_data.0),
         fee_amount: u256_to_big_decimal(&order.data.fee_amount),
-        kind: order_kind_into(order.data.kind),
-        class: order_class_into(&order.metadata.class),
+        kind: order.data.kind.into(),
+        class: (&order.metadata.class).into(),
         partially_fillable: order.data.partially_fillable,
         signature: order.signature.to_bytes(),
-        signing_scheme: signing_scheme_into(order.signature.scheme()),
+        signing_scheme: order.signature.scheme().into(),
         settlement_contract: ByteArray(order.metadata.settlement_contract.0),
-        sell_token_balance: sell_token_source_into(order.data.sell_token_balance),
-        buy_token_balance: buy_token_destination_into(order.data.buy_token_balance),
+        sell_token_balance: order.data.sell_token_balance.into(),
+        buy_token_balance: order.data.buy_token_balance.into(),
         cancellation_timestamp: None,
     };
 
@@ -299,19 +271,24 @@ impl OrderStoring for Postgres {
         match orders::single_full_order_with_quote(&mut ex, &ByteArray(uid.0)).await? {
             Some(order_with_quote) => {
                 let (order, quote) = order_with_quote.into_order_and_quote();
-                Some(full_order_with_quote_into_model_order(
-                    order,
-                    quote.as_ref(),
-                ))
+                let mut order: Order = Order::try_from(&order)?;
+                if let Some(quote) = quote {
+                    order.metadata.with_quote(&quote)?;
+                }
+                Ok(Some(order))
             }
             None => {
-                // try to find the order in the JIT orders table
-                database::jit_orders::get_by_id(&mut ex, &ByteArray(uid.0))
-                    .await?
-                    .map(full_order_into_model_order)
+                // Try to find the order in the JIT orders table
+                if let Some(jit_order) =
+                    database::jit_orders::get_by_id(&mut ex, &ByteArray(uid.0)).await?
+                {
+                    let order: Order = Order::try_from(&jit_order)?;
+                    Ok(Some(order))
+                } else {
+                    Ok(None)
+                }
             }
         }
-        .transpose()
     }
 
     async fn orders_for_tx(&self, tx_hash: &H256) -> Result<Vec<Order>> {
@@ -344,7 +321,7 @@ impl OrderStoring for Postgres {
             limit.map(|l| i64::try_from(l).unwrap_or(i64::MAX)),
         )
         .map(|result| match result {
-            Ok(order) => full_order_into_model_order(order),
+            Ok(order) => Order::try_from(&order),
             Err(err) => Err(anyhow::Error::from(err)),
         })
         .try_collect()
@@ -375,7 +352,7 @@ impl Postgres {
         let mut ex = self.pool.acquire().await?;
         database::orders::full_orders_in_tx(&mut ex, &ByteArray(tx_hash.0))
             .map(|result| match result {
-                Ok(order) => full_order_into_model_order(order),
+                Ok(order) => Order::try_from(&order),
                 Err(err) => Err(anyhow::Error::from(err)),
             })
             .try_collect()
@@ -393,7 +370,7 @@ impl Postgres {
         database::jit_orders::get_by_tx(&mut ex, &ByteArray(tx_hash.0))
             .await?
             .into_iter()
-            .map(full_order_into_model_order)
+            .map(|order| Order::try_from(&order))
             .collect::<Result<Vec<_>>>()
     }
 
@@ -487,141 +464,11 @@ impl LimitOrderCounting for Postgres {
     }
 }
 
-fn calculate_status(order: &FullOrder) -> OrderStatus {
-    match order.kind {
-        DbOrderKind::Buy => {
-            if is_buy_order_filled(&order.buy_amount, &order.sum_buy) {
-                return OrderStatus::Fulfilled;
-            }
-        }
-        DbOrderKind::Sell => {
-            if is_sell_order_filled(&order.sell_amount, &order.sum_sell, &order.sum_fee) {
-                return OrderStatus::Fulfilled;
-            }
-        }
-    }
-    if order.invalidated {
-        return OrderStatus::Cancelled;
-    }
-    if order.valid_to() < Utc::now().timestamp() {
-        return OrderStatus::Expired;
-    }
-    if order.presignature_pending {
-        return OrderStatus::PresignaturePending;
-    }
-    OrderStatus::Open
-}
-
-fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
-    full_order_with_quote_into_model_order(order, None)
-}
-
-/// If quote is provided, then it is used to extract quote metadata field value.
-fn full_order_with_quote_into_model_order(
-    order: FullOrder,
-    quote: Option<&orders::Quote>,
-) -> Result<Order> {
-    let status = calculate_status(&order);
-    let pre_interactions = extract_interactions(&order, database::orders::ExecutionTime::Pre)?;
-    let post_interactions = extract_interactions(&order, database::orders::ExecutionTime::Post)?;
-    let ethflow_data = if let Some((refund_tx, user_valid_to)) = order.ethflow_data {
-        Some(EthflowData {
-            user_valid_to,
-            refund_tx_hash: refund_tx.map(|hash| H256(hash.0)),
-        })
-    } else {
-        None
-    };
-    let onchain_user = order.onchain_user.map(|onchain_user| H160(onchain_user.0));
-    let class = order_class_from(&order);
-    let onchain_placement_error = onchain_order_placement_error_from(&order);
-    let onchain_order_data = onchain_user.map(|onchain_user| OnchainOrderData {
-        sender: onchain_user,
-        placement_error: onchain_placement_error,
-    });
-    let metadata = OrderMetadata {
-        creation_date: order.creation_timestamp,
-        owner: H160(order.owner.0),
-        uid: OrderUid(order.uid.0),
-        available_balance: Default::default(),
-        executed_buy_amount: big_decimal_to_big_uint(&order.sum_buy)
-            .context("executed buy amount is not an unsigned integer")?,
-        executed_sell_amount: big_decimal_to_big_uint(&order.sum_sell)
-            .context("executed sell amount is not an unsigned integer")?,
-        // Executed fee amounts and sell amounts before fees are capped by
-        // order's fee and sell amounts, and thus can always fit in a `U256`
-        // - as it is limited by the order format.
-        executed_sell_amount_before_fees: big_decimal_to_u256(&(order.sum_sell - &order.sum_fee))
-            .context(
-            "executed sell amount before fees does not fit in a u256",
-        )?,
-        executed_fee_amount: big_decimal_to_u256(&order.sum_fee)
-            .context("executed fee amount is not a valid u256")?,
-        executed_fee: big_decimal_to_u256(&order.executed_fee)
-            .context("executed fee is not a valid u256")?,
-        executed_fee_token: H160(order.executed_fee_token.0),
-        invalidated: order.invalidated,
-        status,
-        is_liquidity_order: class == OrderClass::Liquidity,
-        class,
-        settlement_contract: H160(order.settlement_contract.0),
-        ethflow_data,
-        onchain_user,
-        onchain_order_data,
-        full_app_data: order
-            .full_app_data
-            .map(String::from_utf8)
-            .transpose()
-            .context("full app data isn't utf-8")?,
-        quote: quote.map(order_quote_into_model).transpose()?,
-    };
-    let data = OrderData {
-        sell_token: H160(order.sell_token.0),
-        buy_token: H160(order.buy_token.0),
-        receiver: order.receiver.map(|address| H160(address.0)),
-        sell_amount: big_decimal_to_u256(&order.sell_amount).context("sell_amount is not U256")?,
-        buy_amount: big_decimal_to_u256(&order.buy_amount).context("buy_amount is not U256")?,
-        valid_to: order.valid_to.try_into().context("valid_to is not u32")?,
-        app_data: AppDataHash(order.app_data.0),
-        fee_amount: big_decimal_to_u256(&order.fee_amount).context("fee_amount is not U256")?,
-        kind: order_kind_from(order.kind),
-        partially_fillable: order.partially_fillable,
-        sell_token_balance: sell_token_source_from(order.sell_token_balance),
-        buy_token_balance: buy_token_destination_from(order.buy_token_balance),
-    };
-    let signing_scheme = signing_scheme_from(order.signing_scheme);
-    let signature = Signature::from_bytes(signing_scheme, &order.signature)?;
-    Ok(Order {
-        metadata,
-        data,
-        signature,
-        interactions: Interactions {
-            pre: pre_interactions,
-            post: post_interactions,
-        },
-    })
-}
-
-fn is_sell_order_filled(
-    amount: &BigDecimal,
-    executed_amount: &BigDecimal,
-    executed_fee: &BigDecimal,
-) -> bool {
-    if executed_amount.is_zero() {
-        return false;
-    }
-    let total_amount = executed_amount - executed_fee;
-    total_amount == *amount
-}
-
-fn is_buy_order_filled(amount: &BigDecimal, executed_amount: &BigDecimal) -> bool {
-    !executed_amount.is_zero() && *amount == *executed_amount
-}
-
 #[cfg(test)]
 mod tests {
     use {
         super::*,
+        bigdecimal::BigDecimal,
         chrono::Duration,
         database::{
             byte_array::ByteArray,
@@ -636,7 +483,7 @@ mod tests {
         },
         model::{
             interaction::InteractionData,
-            order::{Order, OrderData, OrderMetadata, OrderStatus, OrderUid},
+            order::{Interactions, Order, OrderData, OrderMetadata, OrderStatus, OrderUid},
             signature::{Signature, SigningScheme},
         },
         primitive_types::U256,
@@ -684,177 +531,163 @@ mod tests {
         };
 
         // Open - sell (filled - 0%)
-        assert_eq!(calculate_status(&order_row()), OrderStatus::Open);
+        let status: OrderStatus = (&order_row()).into();
+        assert_eq!(status, OrderStatus::Open);
 
         // Open - sell (almost filled - 99.99%)
-        assert_eq!(
-            calculate_status(&FullOrder {
-                kind: DbOrderKind::Sell,
-                sell_amount: BigDecimal::from(10_000),
-                sum_sell: BigDecimal::from(9_999),
-                ..order_row()
-            }),
-            OrderStatus::Open
-        );
+        let status: OrderStatus = (&FullOrder {
+            kind: DbOrderKind::Sell,
+            sell_amount: BigDecimal::from(10_000),
+            sum_sell: BigDecimal::from(9_999),
+            ..order_row()
+        })
+            .into();
+        assert_eq!(status, OrderStatus::Open);
 
         // Open - with presignature
-        assert_eq!(
-            calculate_status(&FullOrder {
-                signing_scheme: DbSigningScheme::PreSign,
-                presignature_pending: false,
-                ..order_row()
-            }),
-            OrderStatus::Open
-        );
+        let status: OrderStatus = (&FullOrder {
+            signing_scheme: DbSigningScheme::PreSign,
+            presignature_pending: false,
+            ..order_row()
+        })
+            .into();
+        assert_eq!(status, OrderStatus::Open);
 
         // PresignaturePending - without presignature
-        assert_eq!(
-            calculate_status(&FullOrder {
-                signing_scheme: DbSigningScheme::PreSign,
-                presignature_pending: true,
-                ..order_row()
-            }),
-            OrderStatus::PresignaturePending
-        );
+        let status: OrderStatus = (&FullOrder {
+            signing_scheme: DbSigningScheme::PreSign,
+            presignature_pending: true,
+            ..order_row()
+        })
+            .into();
+        assert_eq!(status, OrderStatus::PresignaturePending);
 
         // Filled - sell (filled - 100%)
-        assert_eq!(
-            calculate_status(&FullOrder {
-                kind: DbOrderKind::Sell,
-                sell_amount: BigDecimal::from(2),
-                sum_sell: BigDecimal::from(3),
-                sum_fee: BigDecimal::from(1),
-                ..order_row()
-            }),
-            OrderStatus::Fulfilled
-        );
+        let status: OrderStatus = (&FullOrder {
+            kind: DbOrderKind::Sell,
+            sell_amount: BigDecimal::from(2),
+            sum_sell: BigDecimal::from(3),
+            sum_fee: BigDecimal::from(1),
+            ..order_row()
+        })
+            .into();
+        assert_eq!(status, OrderStatus::Fulfilled);
 
         // Open - buy (filled - 0%)
-        assert_eq!(
-            calculate_status(&FullOrder {
-                kind: DbOrderKind::Buy,
-                buy_amount: BigDecimal::from(1),
-                sum_buy: BigDecimal::from(0),
-                ..order_row()
-            }),
-            OrderStatus::Open
-        );
+        let status: OrderStatus = (&FullOrder {
+            kind: DbOrderKind::Buy,
+            buy_amount: BigDecimal::from(1),
+            sum_buy: BigDecimal::from(0),
+            ..order_row()
+        })
+            .into();
+        assert_eq!(status, OrderStatus::Open);
 
         // Open - buy (almost filled - 99.99%)
-        assert_eq!(
-            calculate_status(&FullOrder {
-                kind: DbOrderKind::Buy,
-                buy_amount: BigDecimal::from(10_000),
-                sum_buy: BigDecimal::from(9_999),
-                ..order_row()
-            }),
-            OrderStatus::Open
-        );
+        let status: OrderStatus = (&FullOrder {
+            kind: DbOrderKind::Buy,
+            buy_amount: BigDecimal::from(10_000),
+            sum_buy: BigDecimal::from(9_999),
+            ..order_row()
+        })
+            .into();
+        assert_eq!(status, OrderStatus::Open);
 
         // Filled - buy (filled - 100%)
-        assert_eq!(
-            calculate_status(&FullOrder {
-                kind: DbOrderKind::Buy,
-                buy_amount: BigDecimal::from(1),
-                sum_buy: BigDecimal::from(1),
-                ..order_row()
-            }),
-            OrderStatus::Fulfilled
-        );
+        let status: OrderStatus = (&FullOrder {
+            kind: DbOrderKind::Buy,
+            buy_amount: BigDecimal::from(1),
+            sum_buy: BigDecimal::from(1),
+            ..order_row()
+        })
+            .into();
+        assert_eq!(status, OrderStatus::Fulfilled);
 
         // Cancelled - no fills - sell
-        assert_eq!(
-            calculate_status(&FullOrder {
-                invalidated: true,
-                ..order_row()
-            }),
-            OrderStatus::Cancelled
-        );
+        let status: OrderStatus = (&FullOrder {
+            invalidated: true,
+            ..order_row()
+        })
+            .into();
+        assert_eq!(status, OrderStatus::Cancelled);
 
         // Cancelled - partial fill - sell
-        assert_eq!(
-            calculate_status(&FullOrder {
-                kind: DbOrderKind::Sell,
-                sell_amount: BigDecimal::from(2),
-                sum_sell: BigDecimal::from(1),
-                sum_fee: BigDecimal::default(),
-                invalidated: true,
-                ..order_row()
-            }),
-            OrderStatus::Cancelled
-        );
+        let status: OrderStatus = (&FullOrder {
+            kind: DbOrderKind::Sell,
+            sell_amount: BigDecimal::from(2),
+            sum_sell: BigDecimal::from(1),
+            sum_fee: BigDecimal::default(),
+            invalidated: true,
+            ..order_row()
+        })
+            .into();
+        assert_eq!(status, OrderStatus::Cancelled);
 
         // Cancelled - partial fill - buy
-        assert_eq!(
-            calculate_status(&FullOrder {
-                kind: DbOrderKind::Buy,
-                buy_amount: BigDecimal::from(2),
-                sum_buy: BigDecimal::from(1),
-                invalidated: true,
-                ..order_row()
-            }),
-            OrderStatus::Cancelled
-        );
+        let status: OrderStatus = (&FullOrder {
+            kind: DbOrderKind::Buy,
+            buy_amount: BigDecimal::from(2),
+            sum_buy: BigDecimal::from(1),
+            invalidated: true,
+            ..order_row()
+        })
+            .into();
+        assert_eq!(status, OrderStatus::Cancelled);
 
         // Expired - no fills
         let valid_to_yesterday = Utc::now() - Duration::days(1);
 
-        assert_eq!(
-            calculate_status(&FullOrder {
-                invalidated: false,
-                valid_to: valid_to_yesterday.timestamp(),
-                ..order_row()
-            }),
-            OrderStatus::Expired
-        );
+        let status: OrderStatus = (&FullOrder {
+            invalidated: false,
+            valid_to: valid_to_yesterday.timestamp(),
+            ..order_row()
+        })
+            .into();
+        assert_eq!(status, OrderStatus::Expired);
 
         // Expired - partial fill - sell
-        assert_eq!(
-            calculate_status(&FullOrder {
-                kind: DbOrderKind::Sell,
-                sell_amount: BigDecimal::from(2),
-                sum_sell: BigDecimal::from(1),
-                invalidated: false,
-                valid_to: valid_to_yesterday.timestamp(),
-                ..order_row()
-            }),
-            OrderStatus::Expired
-        );
+        let status: OrderStatus = (&FullOrder {
+            kind: DbOrderKind::Sell,
+            sell_amount: BigDecimal::from(2),
+            sum_sell: BigDecimal::from(1),
+            invalidated: false,
+            valid_to: valid_to_yesterday.timestamp(),
+            ..order_row()
+        })
+            .into();
+        assert_eq!(status, OrderStatus::Expired);
 
         // Expired - partial fill - buy
-        assert_eq!(
-            calculate_status(&FullOrder {
-                kind: DbOrderKind::Buy,
-                buy_amount: BigDecimal::from(2),
-                sum_buy: BigDecimal::from(1),
-                invalidated: false,
-                valid_to: valid_to_yesterday.timestamp(),
-                ..order_row()
-            }),
-            OrderStatus::Expired
-        );
+        let status: OrderStatus = (&FullOrder {
+            kind: DbOrderKind::Buy,
+            buy_amount: BigDecimal::from(2),
+            sum_buy: BigDecimal::from(1),
+            invalidated: false,
+            valid_to: valid_to_yesterday.timestamp(),
+            ..order_row()
+        })
+            .into();
+        assert_eq!(status, OrderStatus::Expired);
 
         // Expired - with pending presignature
-        assert_eq!(
-            calculate_status(&FullOrder {
-                signing_scheme: DbSigningScheme::PreSign,
-                invalidated: false,
-                valid_to: valid_to_yesterday.timestamp(),
-                presignature_pending: true,
-                ..order_row()
-            }),
-            OrderStatus::Expired
-        );
+        let status: OrderStatus = (&FullOrder {
+            signing_scheme: DbSigningScheme::PreSign,
+            invalidated: false,
+            valid_to: valid_to_yesterday.timestamp(),
+            presignature_pending: true,
+            ..order_row()
+        })
+            .into();
+        assert_eq!(status, OrderStatus::Expired);
 
         // Expired - for ethflow orders
-        assert_eq!(
-            calculate_status(&FullOrder {
-                invalidated: false,
-                ethflow_data: Some((None, valid_to_yesterday.timestamp())),
-                ..order_row()
-            }),
-            OrderStatus::Expired
-        );
+        let status: OrderStatus = (&FullOrder {
+            invalidated: false,
+            ethflow_data: Some((None, valid_to_yesterday.timestamp())),
+            ..order_row()
+        })
+            .into();
+        assert_eq!(status, OrderStatus::Expired);
     }
 
     #[tokio::test]
@@ -1126,7 +959,7 @@ mod tests {
             },
             metadata: OrderMetadata {
                 uid,
-                quote: Some(quote.try_to_model_order_quote().unwrap()),
+                quote: Some(quote.clone().try_into().unwrap()),
                 ..Default::default()
             },
             interactions: Interactions {
@@ -1141,7 +974,7 @@ mod tests {
         let single_order = db.single_order(&uid).await.unwrap().unwrap();
         assert_eq!(
             single_order.metadata.quote,
-            Some(quote.try_to_model_order_quote().unwrap())
+            Some(quote.clone().try_into().unwrap())
         );
         assert_eq!(single_order, order);
     }
@@ -1192,7 +1025,7 @@ mod tests {
             },
             metadata: OrderMetadata {
                 uid,
-                quote: Some(quote.try_to_model_order_quote().unwrap()),
+                quote: Some(quote.clone().try_into().unwrap()),
                 ..Default::default()
             },
             ..Default::default()
@@ -1204,7 +1037,7 @@ mod tests {
 
         assert_eq!(
             single_order.metadata.quote,
-            Some(quote.try_to_model_order_quote().unwrap())
+            Some(quote.clone().try_into().unwrap())
         );
         assert_eq!(single_order, order);
     }
