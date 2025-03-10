@@ -264,6 +264,10 @@ struct SolverConfig {
     #[serde(default)]
     merge_solutions: bool,
 
+    /// Maximum number of orders allowed to be contained in a merged solution.
+    #[serde(default = "default_number_of_orders_per_merged_solution")]
+    max_orders_per_merged_solution: usize,
+
     /// S3 configuration for storing the auctions in the form they are sent to
     /// the solver engine
     #[serde(default)]
@@ -636,12 +640,35 @@ fn default_response_size_limit_max_bytes() -> usize {
     30_000_000
 }
 
-#[derive(Clone, Debug, Deserialize, Default)]
+fn default_number_of_orders_per_merged_solution() -> usize {
+    3
+}
+
+#[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub enum GasEstimatorType {
-    #[default]
-    Native,
+    Native {
+        // Effective reward value to be selected from each individual block
+        // Example: 20 means 20% of the transactions with the lowest gas price will be analyzed
+        max_reward_percentile: usize,
+        // Economical priority fee to be selected from sorted individual block reward percentiles
+        // This constitutes the part of priority fee that doesn't depend on the time_limit
+        min_block_percentile: f64,
+        // Urgent priority fee to be selected from sorted individual block reward percentiles
+        // This constitutes the part of priority fee that depends on the time_limit
+        max_block_percentile: f64,
+    },
     Web3,
+}
+
+impl Default for GasEstimatorType {
+    fn default() -> Self {
+        GasEstimatorType::Native {
+            max_reward_percentile: 20,
+            min_block_percentile: 30.,
+            max_block_percentile: 60.,
+        }
+    }
 }
 
 /// Defines various strategies to prioritize orders.
