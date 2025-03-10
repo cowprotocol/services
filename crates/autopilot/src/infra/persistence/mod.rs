@@ -484,10 +484,9 @@ impl Persistence {
                 after_timestamp,
             )
             .map(|result| match result {
-                Ok(order) => {
-                    let converted_order: Result<model::order::Order, _> = (&order).try_into();
-                    converted_order.map(|order| (domain::OrderUid(order.metadata.uid.0), order))
-                }
+                Ok(order) => (&order).try_into().map(|order: model::order::Order| {
+                    (domain::OrderUid(order.metadata.uid.0), order)
+                }),
                 Err(err) => Err(anyhow::Error::from(err)),
             })
             .try_collect()
