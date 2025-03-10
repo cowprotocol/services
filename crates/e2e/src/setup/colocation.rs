@@ -164,10 +164,13 @@ factory = "{:?}"
         r#"
 app-data-fetching-enabled = true
 orderbook-url = "http://localhost:8080"
+flashloans-enabled = true
 
 [contracts]
 gp-v2-settlement = "{:?}"
 weth = "{:?}"
+flashloan-wrappers = ["{:?}","{:?}"]  # Maker, Aave
+flashloan-router = "{:?}"
 {cow_amms}
 
 {solvers}
@@ -185,6 +188,9 @@ mempool = "public"
 "#,
         contracts.gp_settlement.address(),
         contracts.weth.address(),
+        contracts.flashloan_wrapper_maker.address(),
+        contracts.flashloan_wrapper_aave.address(),
+        contracts.flashloan_router.address(),
     ));
     let args = vec![
         "driver".to_string(),
