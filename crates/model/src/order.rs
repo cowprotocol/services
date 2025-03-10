@@ -71,20 +71,20 @@ pub struct Order {
     pub interactions: Interactions,
 }
 
-impl TryFrom<&DbFullOrder> for Order {
+impl TryFrom<DbFullOrder> for Order {
     type Error = anyhow::Error;
 
-    fn try_from(order: &DbFullOrder) -> Result<Self, Self::Error> {
+    fn try_from(order: DbFullOrder) -> Result<Self, Self::Error> {
         let signing_scheme = order.signing_scheme.into();
         let signature = Signature::from_bytes(signing_scheme, &order.signature)?;
 
         Ok(Self {
-            metadata: order.try_into()?,
-            data: order.try_into()?,
+            metadata: (&order).try_into()?,
+            data: (&order).try_into()?,
             signature,
             interactions: Interactions {
-                pre: InteractionData::extract_interactions_from(order, ExecutionTime::Pre)?,
-                post: InteractionData::extract_interactions_from(order, ExecutionTime::Post)?,
+                pre: InteractionData::extract_interactions_from(&order, ExecutionTime::Pre)?, /* Borrow `order` for interactions */
+                post: InteractionData::extract_interactions_from(&order, ExecutionTime::Post)?, /* Borrow `order` for interactions */
             },
         })
     }

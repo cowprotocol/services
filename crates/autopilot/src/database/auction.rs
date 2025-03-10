@@ -77,7 +77,7 @@ impl Postgres {
         let orders: HashMap<domain::OrderUid, Order> =
             database::orders::solvable_orders(&mut ex, i64::from(min_valid_to))
                 .map(|result| match result {
-                    Ok(order) => (&order)
+                    Ok(order) => order
                         .try_into()
                         .map(|order: Order| (domain::OrderUid(order.metadata.uid.0), order)),
                     Err(err) => Err(anyhow::Error::from(err)),

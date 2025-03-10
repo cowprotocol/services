@@ -271,7 +271,7 @@ impl OrderStoring for Postgres {
         match orders::single_full_order_with_quote(&mut ex, &ByteArray(uid.0)).await? {
             Some(order_with_quote) => {
                 let (order, quote) = order_with_quote.into_order_and_quote();
-                let mut order: Order = Order::try_from(&order)?;
+                let mut order: Order = Order::try_from(order)?;
                 if let Some(quote) = quote {
                     order.metadata.with_quote(&quote)?;
                 }
@@ -282,7 +282,7 @@ impl OrderStoring for Postgres {
                 if let Some(jit_order) =
                     database::jit_orders::get_by_id(&mut ex, &ByteArray(uid.0)).await?
                 {
-                    let order: Order = Order::try_from(&jit_order)?;
+                    let order: Order = Order::try_from(jit_order)?;
                     Ok(Some(order))
                 } else {
                     Ok(None)
@@ -321,7 +321,7 @@ impl OrderStoring for Postgres {
             limit.map(|l| i64::try_from(l).unwrap_or(i64::MAX)),
         )
         .map(|result| match result {
-            Ok(order) => Order::try_from(&order),
+            Ok(order) => Order::try_from(order),
             Err(err) => Err(anyhow::Error::from(err)),
         })
         .try_collect()
@@ -352,7 +352,7 @@ impl Postgres {
         let mut ex = self.pool.acquire().await?;
         database::orders::full_orders_in_tx(&mut ex, &ByteArray(tx_hash.0))
             .map(|result| match result {
-                Ok(order) => Order::try_from(&order),
+                Ok(order) => Order::try_from(order),
                 Err(err) => Err(anyhow::Error::from(err)),
             })
             .try_collect()
@@ -370,7 +370,7 @@ impl Postgres {
         database::jit_orders::get_by_tx(&mut ex, &ByteArray(tx_hash.0))
             .await?
             .into_iter()
-            .map(|order| Order::try_from(&order))
+            .map(Order::try_from)
             .collect::<Result<Vec<_>>>()
     }
 

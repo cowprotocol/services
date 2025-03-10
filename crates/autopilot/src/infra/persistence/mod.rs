@@ -484,7 +484,7 @@ impl Persistence {
                 after_timestamp,
             )
             .map(|result| match result {
-                Ok(order) => (&order).try_into().map(|order: model::order::Order| {
+                Ok(order) => order.try_into().map(|order: model::order::Order| {
                     (domain::OrderUid(order.metadata.uid.0), order)
                 }),
                 Err(err) => Err(anyhow::Error::from(err)),
