@@ -1,6 +1,7 @@
 use {
     crate::{boundary, domain::eth, infra::blockchain::Ethereum},
     chain::Chain,
+    contracts::FlashLoanRouter,
     ethcontract::dyns::DynWeb3,
     ethrpc::block_stream::CurrentBlockWatcher,
     thiserror::Error,
@@ -17,6 +18,14 @@ pub struct Contracts {
     /// The domain separator for settlement contract used for signing orders.
     settlement_domain_separator: eth::DomainSeparator,
     cow_amm_registry: cow_amm::Registry,
+
+    /// Each lender potentially has different solver wrapper.
+    flashloan_wrappers: Vec<contracts::IFlashLoanSolverWrapper>,
+    /// Single router that supports multiple flashloans in the
+    /// same settlement.
+    // TODO: make this non-optional when contracts are deployed
+    // everywhere
+    flashloan_router: Option<FlashLoanRouter>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -24,6 +33,8 @@ pub struct Addresses {
     pub settlement: Option<eth::ContractAddress>,
     pub weth: Option<eth::ContractAddress>,
     pub cow_amms: Vec<CowAmmConfig>,
+    pub flashloan_wrappers: Vec<eth::ContractAddress>,
+    pub flashloan_router: Option<eth::ContractAddress>,
 }
 
 impl Contracts {
@@ -78,6 +89,31 @@ impl Contracts {
         }
         cow_amm_registry.spawn_maintenance_task(block_stream);
 
+        let flashloan_wrappers = addresses
+            .flashloan_wrappers
+            .iter()
+            .map(|address| {
+                contracts::IFlashLoanSolverWrapper::at(
+                    web3,
+                    address_for(
+                        contracts::IFlashLoanSolverWrapper::raw_contract(),
+                        Some(*address),
+                    ),
+                )
+            })
+            .collect();
+
+        // TODO: use `address_for()` once contracts are deployed
+        let flashloan_router = addresses
+            .flashloan_router
+            .or_else(|| {
+                contracts::FlashLoanRouter::raw_contract()
+                    .networks
+                    .get(&chain.id().to_string())
+                    .map(|deployment| eth::ContractAddress(deployment.address))
+            })
+            .map(|address| contracts::FlashLoanRouter::at(web3, address.0));
+
         Ok(Self {
             settlement,
             vault_relayer,
@@ -85,6 +121,8 @@ impl Contracts {
             weth,
             settlement_domain_separator,
             cow_amm_registry,
+            flashloan_wrappers,
+            flashloan_router,
         })
     }
 
@@ -114,6 +152,14 @@ impl Contracts {
 
     pub fn cow_amm_registry(&self) -> &cow_amm::Registry {
         &self.cow_amm_registry
+    }
+
+    pub fn flashloan_wrappers(&self) -> &[contracts::IFlashLoanSolverWrapper] {
+        &self.flashloan_wrappers
+    }
+
+    pub fn flashloan_router(&self) -> Option<&contracts::FlashLoanRouter> {
+        self.flashloan_router.as_ref()
     }
 }
 

@@ -11,6 +11,7 @@ use {
     },
     anyhow::{Result, anyhow},
     app_data::{AppDataHash, hash_full_app_data},
+    bigdecimal::BigDecimal,
     chrono::{DateTime, offset::Utc},
     derive_more::Debug as DeriveDebug,
     hex_literal::hex,
@@ -691,6 +692,10 @@ pub struct OrderMetadata {
     /// Full app data that `OrderData::app_data` is a hash of. Can be None if
     /// the backend doesn't know about the full app data.
     pub full_app_data: Option<String>,
+    /// If the order was created with a quote, then this field contains that
+    /// quote data for reference.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quote: Option<OrderQuote>,
 }
 
 // uid as 56 bytes: 32 for orderDigest, 20 for ownerAddress and 4 for validTo
@@ -962,6 +967,26 @@ impl BuyTokenDestination {
             Self::Internal => Self::INTERNAL,
         }
     }
+}
+
+/// A quote from which particular order was created.
+#[serde_as]
+#[derive(Eq, PartialEq, Clone, Default, Deserialize, Serialize, DeriveDebug)]
+#[serde(rename_all = "camelCase")]
+pub struct OrderQuote {
+    #[serde_as(as = "DisplayFromStr")]
+    pub gas_amount: BigDecimal,
+    #[serde_as(as = "DisplayFromStr")]
+    pub gas_price: BigDecimal,
+    #[serde_as(as = "DisplayFromStr")]
+    pub sell_token_price: BigDecimal,
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub sell_amount: U256,
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub buy_amount: U256,
+    pub solver: H160,
+    pub verified: bool,
+    pub metadata: serde_json::Value,
 }
 
 #[cfg(test)]
