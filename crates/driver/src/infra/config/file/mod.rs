@@ -264,6 +264,10 @@ struct SolverConfig {
     #[serde(default)]
     merge_solutions: bool,
 
+    /// Maximum number of orders allowed to be contained in a merged solution.
+    #[serde(default = "default_number_of_orders_per_merged_solution")]
+    max_orders_per_merged_solution: usize,
+
     /// S3 configuration for storing the auctions in the form they are sent to
     /// the solver engine
     #[serde(default)]
@@ -634,6 +638,10 @@ fn default_http_timeout() -> Duration {
 
 fn default_response_size_limit_max_bytes() -> usize {
     30_000_000
+}
+
+fn default_number_of_orders_per_merged_solution() -> usize {
+    3
 }
 
 #[derive(Clone, Debug, Deserialize, Default)]
