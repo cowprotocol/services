@@ -166,6 +166,9 @@ app-data-fetching-enabled = true
 orderbook-url = "http://localhost:8080"
 flashloans-enabled = true
 
+[gas-estimator]
+estimator = "web3"
+
 [contracts]
 gp-v2-settlement = "{:?}"
 weth = "{:?}"
