@@ -19,8 +19,8 @@ pub struct Metrics {
     /// The results of the mempool submission.
     #[metric(labels("mempool", "result"))]
     pub mempool_submission: prometheus::IntCounterVec,
-    /// The number of blocks passed between the first time submission was atempted and the error
-    /// detection.
+    /// The number of blocks passed between the first time submission was
+    /// atempted and the error detection.
     #[metric(labels("mempool", "error"))]
     pub mempool_submission_error_blocks_passed: prometheus::HistogramVec,
     /// How many tokens detected by specific solver and strategy.
