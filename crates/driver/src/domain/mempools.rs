@@ -117,9 +117,9 @@ impl Mempools {
                     ?err,
                     "settlement tx simulation reverted before submitting to the mempool"
                 );
-                return Err(Error::SimulationRevert(
-                    self.ethereum.current_block().borrow().number,
-                ));
+                return Err(Error::SimulationRevert {
+                    block_number: self.ethereum.current_block().borrow().number,
+                });
             } else {
                 tracing::warn!(
                     ?err,
@@ -187,7 +187,9 @@ impl Mempools {
                                     ?err,
                                     "tx started failing in mempool, cancelling"
                                 );
-                                return Err(Error::SimulationRevert(block.number));
+                                return Err(Error::SimulationRevert {
+                                    block_number: block.number,
+                                });
                             } else {
                                 tracing::warn!(?hash, ?err, "couldn't re-simulate tx");
                             }
@@ -266,8 +268,8 @@ pub enum Error {
         tx_id: eth::TxId,
         block_number: BlockNo,
     },
-    #[error("Simulation started reverting during submission, block number: {0:?}")]
-    SimulationRevert(BlockNo),
+    #[error("Simulation started reverting during submission, block number: {block_number}")]
+    SimulationRevert { block_number: BlockNo },
     #[error(
         "Settlement did not get included in time: submitted at block: {submitted_at_block}, \
          submission deadline: {submission_deadline}, tx: {tx_id:?}"
