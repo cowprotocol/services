@@ -106,7 +106,7 @@ impl Mempools {
         // settlement. This way we only run iterations in blocks that can potentially
         // include the settlement.
         let mut block_stream = into_stream(self.ethereum.current_block().clone());
-        let block = block_stream.next().await;
+        block_stream.next().await;
 
         // The tx is simulated before submitting the solution to the competition, but a
         // delay between that and the actual execution can cause the simulation to be
@@ -117,7 +117,9 @@ impl Mempools {
                     ?err,
                     "settlement tx simulation reverted before submitting to the mempool"
                 );
-                return Err(Error::SimulationRevert(block.map(|block| block.number)));
+                return Err(Error::SimulationRevert {
+                    block_number: self.ethereum.current_block().borrow().number,
+                });
             } else {
                 tracing::warn!(
                     ?err,
@@ -185,7 +187,9 @@ impl Mempools {
                                     ?err,
                                     "tx started failing in mempool, cancelling"
                                 );
-                                return Err(Error::SimulationRevert(Some(block.number)));
+                                return Err(Error::SimulationRevert {
+                                    block_number: block.number,
+                                });
                             } else {
                                 tracing::warn!(?hash, ?err, "couldn't re-simulate tx");
                             }
@@ -264,8 +268,8 @@ pub enum Error {
         tx_id: eth::TxId,
         block_number: BlockNo,
     },
-    #[error("Simulation started reverting during submission, block number: {0:?}")]
-    SimulationRevert(Option<BlockNo>),
+    #[error("Simulation started reverting during submission, block number: {block_number}")]
+    SimulationRevert { block_number: BlockNo },
     #[error(
         "Settlement did not get included in time: submitted at block: {submitted_at_block}, \
          submission deadline: {submission_deadline}, tx: {tx_id:?}"
