@@ -5,7 +5,10 @@ use {
     primitive_types::{H160, U256},
     serde::{Deserialize, Deserializer, Serialize, Serializer, de},
     serde_with::serde_as,
-    std::{fmt, fmt::Display},
+    std::{
+        fmt::{self, Display},
+        slice::Iter,
+    },
 };
 
 /// The minimum valid empty app data JSON string.
@@ -26,7 +29,7 @@ pub struct ProtocolAppData {
     pub hooks: Hooks,
     pub signer: Option<H160>,
     pub replaced_order: Option<ReplacedOrder>,
-    pub partner_fee: Option<PartnerFee>,
+    pub partner_fee: PartnerFees,
     pub flashloan: Option<Flashloan>,
 }
 
@@ -239,6 +242,60 @@ impl<'de> Deserialize<'de> for OrderUid {
     }
 }
 
+/// A list containing all the partner fees
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[cfg_attr(
+    any(test, feature = "test_helpers"),
+    derive(Serialize),
+    serde(transparent)
+)]
+pub struct PartnerFees(Vec<PartnerFee>);
+
+impl PartnerFees {
+    pub fn iter(&self) -> Iter<'_, PartnerFee> {
+        self.0.iter()
+    }
+}
+
+impl<'de> Deserialize<'de> for PartnerFees {
+    fn deserialize<D>(deserializer: D) -> Result<PartnerFees, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        // First try to deserialize as a normal JSON Value
+        let opt = Option::<serde_json::Value>::deserialize(deserializer)?;
+
+        match opt {
+            // Field is not present at all
+            None => Ok(PartnerFees(Vec::new())),
+
+            // Field is present but null
+            Some(serde_json::Value::Null) => Ok(PartnerFees(Vec::new())),
+
+            // Field is an object (single PartnerFee)
+            Some(obj @ serde_json::Value::Object(_)) => {
+                let fee = serde_json::from_value::<PartnerFee>(obj).map_err(de::Error::custom)?;
+                Ok(PartnerFees(vec![fee]))
+            }
+
+            // Field is an array (multiple PartnerFees)
+            Some(serde_json::Value::Array(arr)) => {
+                let fees = arr
+                    .into_iter()
+                    .map(serde_json::from_value::<PartnerFee>)
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(de::Error::custom)?;
+                Ok(PartnerFees(fees))
+            }
+
+            // Other types are invalid
+            _ => Err(de::Error::custom(
+                "Expected null, single PartnerFee object, or array of PartnerFee objects",
+            )),
+        }
+    }
+}
+
 /// The legacy `backend` app data object.
 #[derive(Debug, Default, Deserialize)]
 #[cfg_attr(any(test, feature = "test_helpers"), derive(Clone, Serialize))]
@@ -253,7 +310,7 @@ impl From<BackendAppData> for ProtocolAppData {
             hooks: value.hooks,
             signer: None,
             replaced_order: None,
-            partner_fee: None,
+            partner_fee: PartnerFees::default(),
             flashloan: None,
         }
     }
@@ -382,6 +439,76 @@ mod tests {
             "#,
             ProtocolAppData {
                 signer: Some(H160([0x42; 20])),
+                ..Default::default()
+            },
+        );
+
+        assert_app_data!(
+            r#"
+                {
+                    "appCode": "CoW Swap",
+                    "environment": "production",
+                    "metadata": {
+                        "quote": {
+                            "slippageBips": "50"
+                        },
+                        "orderClass": {
+                            "orderClass": "market"
+                        },
+                        "partnerFee": {
+                            "bps": 100,
+                            "recipient": "0x0202020202020202020202020202020202020202"
+                        }
+                    },
+                    "version": "0.9.0"
+                }
+            "#,
+            ProtocolAppData {
+                partner_fee: PartnerFees(vec![PartnerFee {
+                    bps: 100,
+                    recipient: H160([2; 20]),
+                }]),
+                ..Default::default()
+            },
+        );
+
+        assert_app_data!(
+            r#"
+                {
+                    "appCode": "CoW Swap",
+                    "environment": "production",
+                    "metadata": {
+                        "quote": {
+                            "slippageBips": "50"
+                        },
+                        "orderClass": {
+                            "orderClass": "market"
+                        },
+                        "partnerFee": [
+                            {
+                                "bps": 100,
+                                "recipient": "0x0202020202020202020202020202020202020202"
+                            },
+                            {
+                                "bps": 1000,
+                                "recipient": "0x0101010101010101010101010101010101010101"
+                            }
+                        ]
+                    },
+                    "version": "0.9.0"
+                }
+            "#,
+            ProtocolAppData {
+                partner_fee: PartnerFees(vec![
+                    PartnerFee {
+                        bps: 100,
+                        recipient: H160([2; 20]),
+                    },
+                    PartnerFee {
+                        bps: 1000,
+                        recipient: H160([1; 20]),
+                    },
+                ]),
                 ..Default::default()
             },
         );

@@ -86,20 +86,25 @@ impl ProtocolFees {
             .full_app_data
             .as_ref()
             .and_then(|full_app_data| {
-                Validator::new(usize::MAX)
-                    .validate(full_app_data.as_bytes())
-                    .ok()?
-                    .protocol
-                    .partner_fee
-                    .map(|partner_fee| Policy::Volume {
-                        factor: FeeFactor::try_from_capped(
-                            partner_fee.bps.into_f64() / 10_000.0,
-                            self.max_partner_fee.into(),
-                        )
-                        .unwrap(),
-                    })
+                Some(
+                    Validator::new(usize::MAX)
+                        .validate(full_app_data.as_bytes())
+                        .ok()?
+                        .protocol
+                        .partner_fee
+                        .iter()
+                        .map(|partner_fee| Policy::Volume {
+                            factor: FeeFactor::try_from_capped(
+                                partner_fee.bps.into_f64() / 10_000.0,
+                                self.max_partner_fee.into(),
+                            )
+                            .unwrap(),
+                        })
+                        .collect::<Vec<_>>(),
+                )
             })
             .into_iter()
+            .flatten()
             .collect::<Vec<_>>();
 
         if surplus_capturing_jit_order_owners.contains(&order.metadata.owner.into()) {
