@@ -15,7 +15,7 @@ use {
     app_data::Validator,
     derive_more::Into,
     primitive_types::{H160, U256},
-    prometheus::core::Number,
+    rust_decimal::{Decimal, prelude::ToPrimitive},
     std::{collections::HashSet, str::FromStr},
 };
 
@@ -73,6 +73,42 @@ impl ProtocolFees {
         }
     }
 
+    /// Returns the capped aggregated partner fee
+    fn get_partner_fee(order: &boundary::Order, max_partner_fee: f64) -> Vec<Policy> {
+        order
+            .metadata
+            .full_app_data
+            .as_ref()
+            .and_then(|full_app_data| {
+                Validator::new(usize::MAX)
+                    .validate(full_app_data.as_bytes())
+                    .ok()?
+                    .protocol
+                    .partner_fee
+                    .iter()
+                    .flat_map(|partner_fee| {
+                        Decimal::ONE.checked_add(
+                            Decimal::from(partner_fee.bps).checked_div(Decimal::from(10_000))?,
+                        )
+                    })
+                    .try_fold(Decimal::ONE, |acc, factor| acc.checked_mul(factor))
+                    .and_then(|compounded_factor| compounded_factor.checked_sub(Decimal::ONE))
+                    .filter(|&compounded_percentage| compounded_percentage > Decimal::ZERO)
+                    .map(|compounded_percentage| {
+                        Some(Policy::Volume {
+                            factor: FeeFactor::try_from_capped(
+                                compounded_percentage.to_f64()?,
+                                max_partner_fee,
+                            )
+                            .unwrap(),
+                        })
+                    })
+            })
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+    }
+
     /// Converts an order from the boundary layer to the domain layer, applying
     /// protocol fees if necessary.
     pub fn apply(
@@ -81,31 +117,7 @@ impl ProtocolFees {
         quote: Option<domain::Quote>,
         surplus_capturing_jit_order_owners: &[eth::Address],
     ) -> domain::Order {
-        let partner_fee = order
-            .metadata
-            .full_app_data
-            .as_ref()
-            .and_then(|full_app_data| {
-                Some(
-                    Validator::new(usize::MAX)
-                        .validate(full_app_data.as_bytes())
-                        .ok()?
-                        .protocol
-                        .partner_fee
-                        .iter()
-                        .map(|partner_fee| Policy::Volume {
-                            factor: FeeFactor::try_from_capped(
-                                partner_fee.bps.into_f64() / 10_000.0,
-                                self.max_partner_fee.into(),
-                            )
-                            .unwrap(),
-                        })
-                        .collect::<Vec<_>>(),
-                )
-            })
-            .into_iter()
-            .flatten()
-            .collect::<Vec<_>>();
+        let partner_fee = Self::get_partner_fee(&order, self.max_partner_fee.into());
 
         if surplus_capturing_jit_order_owners.contains(&order.metadata.owner.into()) {
             return boundary::order::to_domain(order, partner_fee, quote);
@@ -270,5 +282,192 @@ impl Quote {
             fee: value.fee.into(),
             solver: value.solver.into(),
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use {super::*, model::order::OrderMetadata};
+
+    #[test]
+    fn test_get_partner_fee_valid_multiple_fees() {
+        // Scenario: Multiple partner fees, with valid values.
+        let order = boundary::Order {
+            metadata: OrderMetadata {
+                full_app_data: Some(
+                    r#"
+                {
+                    "appCode": "CoW Swap",
+                    "environment": "production",
+                    "metadata": {
+                        "partnerFee": [
+                            {
+                                "bps": 500,
+                                "recipient": "0x0202020202020202020202020202020202020202"
+                            },
+                            {
+                                "bps": 2000,
+                                "recipient": "0x0101010101010101010101010101010101010101"
+                            }
+                        ]
+                    },
+                    "version": "0.9.0"
+                }
+            "#
+                    .to_string(),
+                ),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let max_partner_fee = 0.1; // 10%
+        let result = ProtocolFees::get_partner_fee(&order, max_partner_fee);
+
+        // Expected: The compounded percentage (1 + 0.05) * (1 + 0.20) - 1 = 0.26
+        let expected_fee = Policy::Volume {
+            factor: FeeFactor::try_from_capped(0.26, max_partner_fee).unwrap(),
+        };
+
+        assert_eq!(result, vec![expected_fee]);
+    }
+
+    #[test]
+    fn test_get_partner_fee_single_fee() {
+        // Scenario: Single partner fee, with valid value.
+        let order = boundary::Order {
+            metadata: OrderMetadata {
+                full_app_data: Some(
+                    r#"
+                {
+                    "appCode": "CoW Swap",
+                    "environment": "production",
+                    "metadata": {
+                        "partnerFee": [
+                            {
+                                "bps": 1000,
+                                "recipient": "0x0202020202020202020202020202020202020202"
+                            }
+                        ]
+                    },
+                    "version": "0.9.0"
+                }
+            "#
+                    .to_string(),
+                ),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let max_partner_fee = 0.1; // 10%
+        let result = ProtocolFees::get_partner_fee(&order, max_partner_fee);
+
+        // Expected: The percentage fee is (1 + 0.10) - 1 = 0.10
+        let expected_fee = Policy::Volume {
+            factor: FeeFactor::try_from_capped(0.10, max_partner_fee).unwrap(),
+        };
+
+        assert_eq!(result, vec![expected_fee]);
+    }
+
+    #[test]
+    fn test_get_partner_fee_no_fee_with_empty_vector() {
+        // Scenario: No partner fees are provided in the order (with an empty vector)
+        let order = boundary::Order {
+            metadata: OrderMetadata {
+                full_app_data: Some(
+                    r#"
+                {
+                    "appCode": "CoW Swap",
+                    "environment": "production",
+                    "metadata": {
+                        "partnerFee": []
+                    },
+                    "version": "0.9.0"
+                }
+            "#
+                    .to_string(),
+                ),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let max_partner_fee = 0.1; // 10%
+        let result = ProtocolFees::get_partner_fee(&order, max_partner_fee);
+
+        // Expected: No partner fees should result in an empty vector.
+        assert_eq!(result, vec![]);
+    }
+
+    #[test]
+    fn test_get_partner_fee_no_fee_at_all() {
+        // Scenario: No partner fees are provided in the order (not present)
+        let order = boundary::Order {
+            metadata: OrderMetadata {
+                full_app_data: Some(
+                    r#"
+                {
+                    "appCode": "CoW Swap",
+                    "environment": "production",
+                    "version": "0.9.0"
+                }
+            "#
+                    .to_string(),
+                ),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let max_partner_fee = 0.1; // 10%
+        let result = ProtocolFees::get_partner_fee(&order, max_partner_fee);
+
+        // Expected: No partner fees should result in an empty vector.
+        assert_eq!(result, vec![]);
+    }
+
+    #[test]
+    fn test_get_partner_fee_exceed_max_fee() {
+        // Scenario: Partner fees that would exceed the max allowed fee
+        let order = boundary::Order {
+            metadata: OrderMetadata {
+                full_app_data: Some(
+                    r#"
+                {
+                    "appCode": "CoW Swap",
+                    "environment": "production",
+                    "metadata": {
+                        "partnerFee": [
+                            {
+                                "bps": 1000,
+                                "recipient": "0x0202020202020202020202020202020202020202"
+                            },
+                            {
+                                "bps": 2000,
+                                "recipient": "0x0101010101010101010101010101010101010101"
+                            }
+                        ]
+                    },
+                    "version": "0.9.0"
+                }
+            "#
+                    .to_string(),
+                ),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let max_partner_fee = 0.1; // 10%
+        let result = ProtocolFees::get_partner_fee(&order, max_partner_fee);
+
+        // Expected: The compounded fee is capped at 10%.
+        let expected_fee = Policy::Volume {
+            factor: FeeFactor::try_from_capped(0.10, max_partner_fee).unwrap(),
+        };
+
+        assert_eq!(result, vec![expected_fee]);
     }
 }
