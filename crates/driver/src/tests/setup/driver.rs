@@ -71,7 +71,7 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
     let mut quotes = test.quoted_orders.clone();
     quotes.shuffle(&mut rand::thread_rng());
     for quote in quotes.iter() {
-        orders_json.push(json!({
+        let mut order = json!({
             "uid": quote.order_uid(&test.blockchain),
             "sellToken": hex_address(test.blockchain.get_token(quote.order.sell_token)),
             "buyToken": hex_address(test.blockchain.get_token(quote.order.buy_token)),
@@ -111,7 +111,11 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
             "signingScheme": "eip712",
             "signature": format!("0x{}", hex::encode(quote.order_signature(&test.blockchain))),
             "quote": quote.order.quote,
-        }));
+        });
+        if let Some(receiver) = quote.order.receiver {
+            order["receiver"] = json!(hex_address(receiver));
+        }
+        orders_json.push(order);
     }
     for trade in test.trades.iter() {
         match trade {
@@ -221,12 +225,16 @@ async fn create_config_file(
         r#"[contracts]
            gp-v2-settlement = "{}"
            weth = "{}"
+           flashloan-wrappers = ["{}"]
+           flashloan-router = "{}"
 
            [submission]
            gas-price-cap = "1000000000000"
            "#,
         hex_address(blockchain.settlement.address()),
-        hex_address(blockchain.weth.address())
+        hex_address(blockchain.weth.address()),
+        hex_address(blockchain.flashloan_wrapper.address()),
+        hex_address(blockchain.flashloan_router.address()),
     )
     .unwrap();
 

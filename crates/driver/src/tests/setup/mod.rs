@@ -299,7 +299,7 @@ impl Order {
         }
     }
 
-    fn receiver(self, receiver: Option<H160>) -> Self {
+    pub fn receiver(self, receiver: Option<H160>) -> Self {
         Self { receiver, ..self }
     }
 }
@@ -842,8 +842,8 @@ impl Setup {
     }
 
     /// Ensure that the settlement contract is deployed to a specific address.
-    pub fn settlement_address(mut self, address: &str) -> Self {
-        self.settlement_address = Some(address.parse().unwrap());
+    pub fn settlement_address(mut self, address: &H160) -> Self {
+        self.settlement_address = Some(*address);
         self
     }
 

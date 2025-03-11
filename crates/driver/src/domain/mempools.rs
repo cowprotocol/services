@@ -14,6 +14,7 @@ use {
     anyhow::Context,
     ethrpc::block_stream::into_stream,
     futures::{FutureExt, StreamExt, future::select_ok},
+    std::ops::Sub,
     thiserror::Error,
     tracing::Instrument,
 };
@@ -150,10 +151,12 @@ impl Mempools {
                         })
                     }
                     TxStatus::Pending => {
+                        let blocks_elapsed = block.number.sub(submitted_at_block);
+
                         // Check if the current block reached the submission deadline block number
                         if block.number >= submission_deadline {
                             let cancellation_tx_hash = self
-                                .cancel(mempool, settlement.gas.price, solver)
+                                .cancel(mempool, settlement.gas.price, solver, blocks_elapsed)
                                 .await
                                 .context("cancellation tx due to deadline failed")?;
                             tracing::info!(
@@ -173,7 +176,7 @@ impl Mempools {
                         if let Err(err) = self.ethereum.estimate_gas(&tx.clone().into()).await {
                             if err.is_revert() {
                                 let cancellation_tx_hash = self
-                                    .cancel(mempool, settlement.gas.price, solver)
+                                    .cancel(mempool, settlement.gas.price, solver, blocks_elapsed)
                                     .await
                                     .context("cancellation tx due to revert failed")?;
                                 tracing::info!(
@@ -214,6 +217,7 @@ impl Mempools {
         mempool: &infra::mempool::Mempool,
         pending: eth::GasPrice,
         solver: &Solver,
+        blocks_elapsed: u64,
     ) -> Result<TxId, Error> {
         let cancellation = eth::Tx {
             from: solver.address(),
@@ -222,11 +226,21 @@ impl Mempools {
             input: Default::default(),
             access_list: Default::default(),
         };
+        let gas_price_bump_factor = GAS_PRICE_BUMP.powi(blocks_elapsed.max(1) as i32);
+        let new_gas_price = pending * gas_price_bump_factor;
         let gas = competition::solution::settlement::Gas {
             estimate: CANCELLATION_GAS_AMOUNT.into(),
             limit: CANCELLATION_GAS_AMOUNT.into(),
-            price: pending * GAS_PRICE_BUMP,
+            price: new_gas_price,
         };
+        tracing::debug!(
+            ?blocks_elapsed,
+            original_gas_price = ?pending,
+            ?new_gas_price,
+            bump_factor = ?gas_price_bump_factor,
+            "Cancelling transaction with adjusted gas price"
+        );
+
         mempool.submit(cancellation, gas, solver).await
     }
 }
