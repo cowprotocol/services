@@ -258,7 +258,7 @@ impl IntoWarpReply for AddOrderError {
                 super::error("InvalidAppData", err.to_string()),
                 StatusCode::BAD_REQUEST,
             ),
-            err @ AddOrderError::InvalidReplacement => reply::with_status(
+            AddOrderError::InvalidReplacement(err) => reply::with_status(
                 super::error("InvalidReplacement", err.to_string()),
                 StatusCode::UNAUTHORIZED,
             ),

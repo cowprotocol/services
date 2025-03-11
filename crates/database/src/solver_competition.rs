@@ -52,9 +52,10 @@ GROUP BY sc.id
     sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
 }
 
-pub async fn load_latest_competition(
+pub async fn load_latest_competitions(
     ex: &mut PgConnection,
-) -> Result<Option<LoadCompetition>, sqlx::Error> {
+    latest_competitions_count: u32,
+) -> Result<Vec<LoadCompetition>, sqlx::Error> {
     const QUERY: &str = r#"
 SELECT sc.json, sc.id, COALESCE(ARRAY_AGG(s.tx_hash) FILTER (WHERE so.block_number IS NOT NULL), '{}') AS tx_hashes
 FROM solver_competitions sc
@@ -66,9 +67,19 @@ LEFT OUTER JOIN settlement_observations so
     AND s.log_index = so.log_index
 GROUP BY sc.id
 ORDER BY sc.id DESC
-LIMIT 1
+LIMIT $1
     ;"#;
-    sqlx::query_as(QUERY).fetch_optional(ex).await
+    sqlx::query_as(QUERY)
+        .bind(i64::from(latest_competitions_count))
+        .fetch_all(ex).await
+}
+
+pub async fn load_latest_competition(
+    ex: &mut PgConnection,
+) -> Result<Option<LoadCompetition>, sqlx::Error> {
+    let competitions = load_latest_competitions(ex, 1).await?;
+    let latest = competitions.into_iter().next();
+    Ok(latest)
 }
 
 pub async fn load_by_tx_hash(

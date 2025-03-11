@@ -32,6 +32,16 @@ pub trait SolverCompetitionStoring: Send + Sync {
     async fn load_latest_competition(
         &self,
     ) -> Result<SolverCompetitionAPI, crate::solver_competition::LoadSolverCompetitionError>;
+
+    /// Retrieves the solver competitions for the most recent auctions.
+    ///
+    /// Returns the latest solver competitions. 
+    /// It may return fewer results than specified by `latest_competitions_count` 
+    /// if not enough solver competitions are found.
+    async fn load_latest_competitions(
+        &self,
+        latest_competitions_count: u32,
+    ) -> Result<Vec<SolverCompetitionAPI>, crate::solver_competition::LoadSolverCompetitionError>;
 }
 
 /// Possible errors when loading a solver competition by ID.
