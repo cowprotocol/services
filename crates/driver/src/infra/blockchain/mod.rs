@@ -7,7 +7,7 @@ use {
     std::{fmt, sync::Arc, time::Duration},
     thiserror::Error,
     url::Url,
-    web3::Transport,
+    web3::{Transport, types::CallRequest},
 };
 
 pub mod contracts;
@@ -147,36 +147,34 @@ impl Ethereum {
     }
 
     /// Create access list used by a transaction.
-    pub async fn create_access_list(&self, tx: eth::Tx) -> Result<eth::AccessList, Error> {
-        let tx = web3::types::TransactionRequest {
-            from: tx.from.into(),
-            to: Some(tx.to.into()),
-            value: Some(tx.value.into()),
-            data: Some(tx.input.into()),
-            access_list: Some(tx.access_list.into()),
-            // Specifically set high gas because some nodes don't pick a sensible value if omitted.
-            // And since we are only interested in access lists a very high value is fine.
-            gas: Some(match self.inner.chain {
-                // Arbitrum has an exceptionally high block gas limit (1,125,899,906,842,624),
-                // making it unsuitable for this use case. To address this, we use a
-                // fixed gas limit of 100,000,000, which is sufficient
-                // for all solution types, while avoiding the "insufficient funds for gas * price +
-                // value" error that could occur when a large amount of ETH is
-                // needed to simulate the transaction, due to high transaction gas limit.
-                //
-                // If a new network is added, ensure its block gas limit is checked and handled
-                // appropriately to maintain compatibility with this logic.
-                Chain::ArbitrumOne => 100_000_000.into(),
-                Chain::Mainnet => self.block_gas_limit().0,
-                Chain::Goerli => self.block_gas_limit().0,
-                Chain::Gnosis => self.block_gas_limit().0,
-                Chain::Sepolia => self.block_gas_limit().0,
-                Chain::Base => self.block_gas_limit().0,
-                Chain::Hardhat => self.block_gas_limit().0,
-            }),
-            gas_price: self.simulation_gas_price().await,
-            ..Default::default()
-        };
+    pub async fn create_access_list<T>(&self, tx: T) -> Result<eth::AccessList, Error>
+    where
+        CallRequest: From<T>,
+    {
+        let mut tx: CallRequest = tx.into();
+        // Specifically set high gas because some nodes don't pick a sensible value if
+        // omitted. And since we are only interested in access lists a very high
+        // value is fine.
+        tx.gas = Some(match self.inner.chain {
+            // Arbitrum has an exceptionally high block gas limit (1,125,899,906,842,624),
+            // making it unsuitable for this use case. To address this, we use a
+            // fixed gas limit of 100,000,000, which is sufficient
+            // for all solution types, while avoiding the "insufficient funds for gas * price +
+            // value" error that could occur when a large amount of ETH is
+            // needed to simulate the transaction, due to high transaction gas limit.
+            //
+            // If a new network is added, ensure its block gas limit is checked and handled
+            // appropriately to maintain compatibility with this logic.
+            Chain::ArbitrumOne => 100_000_000.into(),
+            Chain::Mainnet => self.block_gas_limit().0,
+            Chain::Goerli => self.block_gas_limit().0,
+            Chain::Gnosis => self.block_gas_limit().0,
+            Chain::Sepolia => self.block_gas_limit().0,
+            Chain::Base => self.block_gas_limit().0,
+            Chain::Hardhat => self.block_gas_limit().0,
+        });
+        tx.gas_price = self.simulation_gas_price().await;
+
         let json = self
             .web3
             .transport()
