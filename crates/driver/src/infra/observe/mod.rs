@@ -348,6 +348,35 @@ pub fn mempool_executed(
         .mempool_submission
         .with_label_values(&[&mempool.to_string(), result])
         .inc();
+
+    // For some of the errors we are interested in observing the exact block numbers
+    // passed since the first submission.
+    let blocks_passed = match res {
+        Ok(_) => None,
+        Err(mempools::Error::Revert {
+            tx_id: _,
+            submitted_at_block,
+            block_number,
+        }) => Some(block_number.saturating_sub(*submitted_at_block)),
+        Err(mempools::Error::SimulationRevert {
+            submitted_at_block,
+            block_number,
+        }) => Some(block_number.saturating_sub(*submitted_at_block)),
+        Err(mempools::Error::Expired {
+            tx_id: _,
+            submitted_at_block,
+            submission_deadline,
+        }) => Some(submission_deadline.saturating_sub(*submitted_at_block)),
+        Err(mempools::Error::Other(_)) => None,
+        Err(mempools::Error::Disabled) => None,
+    };
+
+    if let Some(blocks_passed) = blocks_passed {
+        metrics::get()
+            .mempool_submission_error_blocks_passed
+            .with_label_values(&[&mempool.to_string(), result])
+            .observe(blocks_passed as f64);
+    }
 }
 
 /// Observe that an invalid DTO was received.
