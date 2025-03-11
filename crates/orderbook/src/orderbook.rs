@@ -404,22 +404,25 @@ impl Orderbook {
             .scheme()
             .try_to_ecdsa_scheme()
             .ok_or(AddOrderError::InvalidReplacement(
-                OrderReplacementError::InvalidSignature
+                OrderReplacementError::InvalidSignature,
             ))?;
 
         // Verify that the new order is a valid replacement order by checking
         // that both the old and new orders have the same signer.
         if validated_new_order.metadata.owner != old_order.metadata.owner {
             return Err(AddOrderError::InvalidReplacement(
-                OrderReplacementError::WrongOwner
+                OrderReplacementError::WrongOwner,
             ));
         }
 
         // Verify that the old order is not being actively bid on by solvers,
         // to prevent the possible double spending of both orders.
-        if self.order_is_actively_bid_on(old_order.metadata.uid).await? {
+        if self
+            .order_is_actively_bid_on(old_order.metadata.uid)
+            .await?
+        {
             return Err(AddOrderError::InvalidReplacement(
-                OrderReplacementError::OldOrderActivelyBidOn
+                OrderReplacementError::OldOrderActivelyBidOn,
             ));
         }
 
@@ -436,7 +439,10 @@ impl Orderbook {
     async fn order_is_actively_bid_on(&self, order_uid: OrderUid) -> Result<bool> {
         // The number of past solver competitions we want to look back at
         const COMPETITIONS_COUNT: u32 = 2;
-        let latest_competitions = self.database.load_latest_competitions(COMPETITIONS_COUNT).await?;
+        let latest_competitions = self
+            .database
+            .load_latest_competitions(COMPETITIONS_COUNT)
+            .await?;
 
         let order_is_bid_on = latest_competitions
             .into_iter()

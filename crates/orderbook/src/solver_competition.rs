@@ -35,9 +35,10 @@ pub trait SolverCompetitionStoring: Send + Sync {
 
     /// Retrieves the solver competitions for the most recent auctions.
     ///
-    /// Returns the latest solver competitions. 
-    /// It may return fewer results than specified by `latest_competitions_count` 
-    /// if not enough solver competitions are found.
+    /// Returns the latest solver competitions.
+    /// It may return fewer results than specified by
+    /// `latest_competitions_count` if not enough solver competitions are
+    /// found.
     async fn load_latest_competitions(
         &self,
         latest_competitions_count: u32,

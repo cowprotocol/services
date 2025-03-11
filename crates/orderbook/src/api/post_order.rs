@@ -1,6 +1,6 @@
 use {
     crate::{
-        api::{error, extract_payload, ApiReply, IntoWarpReply},
+        api::{ApiReply, IntoWarpReply, error, extract_payload},
         orderbook::{AddOrderError, OrderReplacementError, Orderbook},
     },
     anyhow::Result,
@@ -17,7 +17,10 @@ use {
     },
     std::{convert::Infallible, sync::Arc},
     warp::{
-        hyper::StatusCode, reply::{self, with_status}, Filter, Rejection
+        Filter,
+        Rejection,
+        hyper::StatusCode,
+        reply::{self, with_status},
     },
 };
 
@@ -272,10 +275,7 @@ impl IntoWarpReply for OrderReplacementError {
                 StatusCode::BAD_REQUEST,
             ),
             OrderReplacementError::WrongOwner => with_status(
-                super::error(
-                    "WrongOwner",
-                    "Old and new orders have different signers",
-                ),
+                super::error("WrongOwner", "Old and new orders have different signers"),
                 StatusCode::UNAUTHORIZED,
             ),
             OrderReplacementError::OldOrderActivelyBidOn => with_status(
@@ -288,7 +288,7 @@ impl IntoWarpReply for OrderReplacementError {
             OrderReplacementError::Other(err) => {
                 tracing::error!(?err, "replace_order");
                 crate::api::internal_error_reply()
-            },
+            }
         }
     }
 }

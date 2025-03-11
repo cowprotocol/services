@@ -97,18 +97,21 @@ impl SolverCompetitionStoring for Postgres {
 
         let mut ex = self.pool.acquire().await.map_err(anyhow::Error::from)?;
 
-        let latest_competitions = database::solver_competition::load_latest_competitions(&mut ex, latest_competitions_count)
-            .await
-            .context("solver_competition::load_latest_competitions")?
-            .into_iter()
-            .map(|row| {
-                deserialize_solver_competition(
-                    row.json,
-                    row.id,
-                    row.tx_hashes.iter().map(|hash| H256(hash.0)).collect(),
-                )
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        let latest_competitions = database::solver_competition::load_latest_competitions(
+            &mut ex,
+            latest_competitions_count,
+        )
+        .await
+        .context("solver_competition::load_latest_competitions")?
+        .into_iter()
+        .map(|row| {
+            deserialize_solver_competition(
+                row.json,
+                row.id,
+                row.tx_hashes.iter().map(|hash| H256(hash.0)).collect(),
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
 
         Ok(latest_competitions)
     }

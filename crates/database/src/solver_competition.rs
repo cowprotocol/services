@@ -71,7 +71,8 @@ LIMIT $1
     ;"#;
     sqlx::query_as(QUERY)
         .bind(i64::from(latest_competitions_count))
-        .fetch_all(ex).await
+        .fetch_all(ex)
+        .await
 }
 
 pub async fn load_latest_competition(
