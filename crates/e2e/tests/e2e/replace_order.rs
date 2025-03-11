@@ -149,7 +149,7 @@ async fn try_replace_active_order_test(web3: Web3) {
     );
     let response = services.create_order(&new_order).await;
     let (error_code, _) = response.err().unwrap();
-    assert_eq!(error_code, StatusCode::UNAUTHORIZED);
+    assert_eq!(error_code, StatusCode::BAD_REQUEST);
 }
 
 async fn try_replace_someone_else_order_test(web3: Web3) {

@@ -283,7 +283,7 @@ impl IntoWarpReply for OrderReplacementError {
                     "OldOrderActivelyBidOn",
                     "The old order is being actively bid on in recent auctions",
                 ),
-                StatusCode::UNAUTHORIZED,
+                StatusCode::BAD_REQUEST,
             ),
             OrderReplacementError::Other(err) => {
                 tracing::error!(?err, "replace_order");
