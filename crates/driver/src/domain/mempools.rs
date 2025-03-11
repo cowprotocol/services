@@ -111,7 +111,7 @@ impl Mempools {
         // The tx is simulated before submitting the solution to the competition, but a
         // delay between that and the actual execution can cause the simulation to be
         // invalid which doesn't make sense to submit to the mempool anymore.
-        if let Err(err) = self.ethereum.estimate_gas(&tx.clone().into()).await {
+        if let Err(err) = self.ethereum.estimate_gas(tx).await {
             if err.is_revert() {
                 tracing::info!(
                     ?err,
@@ -173,7 +173,7 @@ impl Mempools {
                             });
                         }
                         // Check if transaction still simulates
-                        if let Err(err) = self.ethereum.estimate_gas(&tx.clone().into()).await {
+                        if let Err(err) = self.ethereum.estimate_gas(tx).await {
                             if err.is_revert() {
                                 let cancellation_tx_hash = self
                                     .cancel(mempool, settlement.gas.price, solver, blocks_elapsed)

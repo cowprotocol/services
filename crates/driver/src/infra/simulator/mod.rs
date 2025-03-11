@@ -96,12 +96,12 @@ impl Simulator {
             }
             Inner::Ethereum => self
                 .eth
-                .create_access_list(tx.clone().into())
+                .create_access_list(tx.clone())
                 .await
                 .map_err(with(tx.clone(), block))?,
             Inner::Enso(_) => self
                 .eth
-                .create_access_list(tx.clone().into())
+                .create_access_list(tx.clone())
                 .await
                 .map_err(with(tx.clone(), block))?,
         };
@@ -125,7 +125,7 @@ impl Simulator {
             }
             Inner::Ethereum => self
                 .eth
-                .estimate_gas(&tx.clone().into())
+                .estimate_gas(tx)
                 .await
                 .map_err(with(tx.clone(), block))?,
             Inner::Enso(enso) => enso

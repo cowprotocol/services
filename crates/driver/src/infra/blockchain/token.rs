@@ -1,9 +1,6 @@
 use {
     super::{Error, Ethereum},
-    crate::{
-        domain::{competition::order, eth},
-        infra::blockchain::Tx,
-    },
+    crate::domain::{competition::order, eth},
     contracts::BalancerV2Vault,
     futures::TryFutureExt,
 };
@@ -137,20 +134,17 @@ impl Erc20 {
                 })
                 .collect(),
         );
+        // Create the access list for the balance simulation
         let access_list_call = contracts::storage_accessible::call(
             method.tx.to.unwrap(),
             contracts::bytecode!(contracts::support::Balances),
             method.tx.data.clone().unwrap(),
         );
-        // Create the access list for the balance simulation
-        let access_list_tx = Tx {
-            from: access_list_call.from.unwrap_or_default(),
-            to: access_list_call.to,
-            value: Some(0.into()),
-            data: access_list_call.data.clone(),
-            access_list: access_list_call.access_list,
-        };
-        let access_list = self.ethereum.create_access_list(access_list_tx).await.ok();
+        let access_list = self
+            .ethereum
+            .create_access_list(access_list_call)
+            .await
+            .ok();
         method.tx.access_list = access_list.map(Into::into);
         let (_, _, effective_balance, can_transfer) = contracts::storage_accessible::simulate(
             contracts::bytecode!(contracts::support::Balances),

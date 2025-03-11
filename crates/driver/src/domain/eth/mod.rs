@@ -6,6 +6,7 @@ use {
         collections::{HashMap, HashSet},
         ops::{Div, Mul, Sub},
     },
+    web3::types::CallRequest,
 };
 
 pub mod allowance;
@@ -358,6 +359,23 @@ pub struct Tx {
     pub value: Ether,
     pub input: Bytes<Vec<u8>>,
     pub access_list: AccessList,
+}
+
+impl From<Tx> for CallRequest {
+    fn from(value: Tx) -> Self {
+        Self {
+            from: Some(value.from.into()),
+            to: Some(value.to.into()),
+            gas: None,
+            gas_price: None,
+            value: Some(value.value.into()),
+            data: Some(value.input.into()),
+            transaction_type: None,
+            access_list: Some(value.access_list.into()),
+            max_fee_per_gas: None,
+            max_priority_fee_per_gas: None,
+        }
+    }
 }
 
 impl std::fmt::Debug for Tx {
