@@ -846,7 +846,7 @@ fn main() {
             .add_network_str(GNOSIS, "0xA818b4F111Ccac7AA31D0BCc0806d64F2E0737D7")
             .add_network_str(ARBITRUM_ONE, "0xf1D7CC64Fb4452F05c498126312eBE29f30Fbcf9")
             .add_network_str(BASE, "0x8909Dc15e40173Ff4699343b6eB8132c65e18eC6")
-        // Not available on Sepolia
+            .add_network_str(SEPOLIA, "0xF62c03E08ada871A0bEb309762E260a7a6a880E6")
     });
     generate_contract_with_config("UniswapV2Router02", |builder| {
         // <https://docs.uniswap.org/contracts/v2/reference/smart-contracts/router-02>
@@ -856,7 +856,7 @@ fn main() {
             .add_network_str(GNOSIS, "0x1C232F01118CB8B424793ae03F870aa7D0ac7f77")
             .add_network_str(ARBITRUM_ONE, "0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24")
             .add_network_str(BASE, "0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24")
-        // Not available on Sepolia
+            .add_network_str(SEPOLIA, "0xeE567Fe1712Faf6149d80dA1E6934E354124CfE3")
     });
     generate_contract_with_config("UniswapV3SwapRouter", |builder| {
         // <https://github.com/Uniswap/v3-periphery/blob/697c2474757ea89fec12a4e6db16a574fe259610/deploys.md>

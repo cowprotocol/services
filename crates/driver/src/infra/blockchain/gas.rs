@@ -9,7 +9,10 @@ use {
         infra::{config::file::GasEstimatorType, mempool},
     },
     ethcontract::dyns::DynWeb3,
-    gas_estimation::{GasPriceEstimating, nativegasestimator::NativeGasEstimator},
+    gas_estimation::{
+        GasPriceEstimating,
+        nativegasestimator::{NativeGasEstimator, Params},
+    },
     std::sync::Arc,
 };
 
@@ -32,10 +35,22 @@ impl GasPriceEstimator {
         mempools: &[mempool::Config],
     ) -> Result<Self, Error> {
         let gas: Arc<dyn GasPriceEstimating> = match gas_estimator_type {
-            GasEstimatorType::Native => Arc::new(
-                NativeGasEstimator::new(web3.transport().clone(), None)
-                    .await
-                    .map_err(Error::GasPrice)?,
+            GasEstimatorType::Native {
+                max_reward_percentile,
+                max_block_percentile,
+                min_block_percentile,
+            } => Arc::new(
+                NativeGasEstimator::new(
+                    web3.transport().clone(),
+                    Some(Params {
+                        max_reward_percentile: *max_reward_percentile,
+                        max_block_percentile: *max_block_percentile,
+                        min_block_percentile: *min_block_percentile,
+                        ..Default::default()
+                    }),
+                )
+                .await
+                .map_err(Error::GasPrice)?,
             ),
             GasEstimatorType::Web3 => Arc::new(web3.clone()),
         };

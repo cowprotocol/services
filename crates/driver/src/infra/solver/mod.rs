@@ -300,7 +300,9 @@ impl Solver {
 /// of the same solver to produce an overall better solution.
 #[derive(Debug, Clone, Copy)]
 pub enum SolutionMerging {
-    Allowed,
+    Allowed {
+        max_orders_per_merged_solution: usize,
+    },
     Forbidden,
 }
 

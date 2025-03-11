@@ -91,7 +91,10 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                 fee_handler: solver_config.fee_handler,
                 quote_using_limit_orders: solver_config.quote_using_limit_orders,
                 merge_solutions: match solver_config.merge_solutions {
-                    true => SolutionMerging::Allowed,
+                    true => SolutionMerging::Allowed {
+                        max_orders_per_merged_solution: solver_config
+                            .max_orders_per_merged_solution,
+                    },
                     false => SolutionMerging::Forbidden,
                 },
                 s3: solver_config.s3.map(Into::into),
