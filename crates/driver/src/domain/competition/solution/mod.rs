@@ -290,10 +290,20 @@ impl Solution {
             .any(|trade| self.trade_count_for_scorable(trade, surplus_capturing_jit_order_owners))
     }
 
-    pub fn merge(&self, other: &Self) -> Result<Self, error::Merge> {
+    pub fn merge(
+        &self,
+        other: &Self,
+        max_orders_per_merged_solution: usize,
+    ) -> Result<Self, error::Merge> {
         // We can only merge solutions from the same solver
         if self.solver.account().address() != other.solver.account().address() {
             return Err(error::Merge::Incompatible("Solvers"));
+        }
+
+        // Skip merging the solutions if the expected merged solution has more orders
+        // than allowed
+        if self.trades.len() + other.trades().len() > max_orders_per_merged_solution {
+            return Err(error::Merge::MoreOrdersThanAllowed);
         }
 
         // Solutions should not settle the same order twice
@@ -310,7 +320,7 @@ impl Solution {
 
         // To avoid precision issues, make sure we always scale up settlements
         if factor < BigRational::one() {
-            return other.merge(self);
+            return other.merge(self, max_orders_per_merged_solution);
         }
 
         // Scale prices
@@ -589,6 +599,8 @@ pub mod error {
         DuplicateTrade,
         #[error("incongruent prices")]
         IncongruentPrices,
+        #[error("too many orders")]
+        MoreOrdersThanAllowed,
         #[error("math error: {0:?}")]
         Math(anyhow::Error),
     }
