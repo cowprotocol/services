@@ -29,6 +29,7 @@ use {
     futures::{StreamExt, TryStreamExt},
     number::conversions::{big_decimal_to_u256, u256_to_big_decimal, u256_to_big_uint},
     primitive_types::H256,
+    shared::db_order_conversions::full_order_into_model_order,
     std::{
         collections::{HashMap, HashSet},
         ops::DerefMut,
@@ -484,7 +485,7 @@ impl Persistence {
                 after_timestamp,
             )
             .map(|result| match result {
-                Ok(order) => shared::db_order_conversions::full_order_into_model_order(order, None)
+                Ok(order) => full_order_into_model_order(order, None)
                     .map(|order| (domain::OrderUid(order.metadata.uid.0), order)),
                 Err(err) => Err(anyhow::Error::from(err)),
             })
