@@ -2,7 +2,7 @@ use {
     e2e::{setup::*, tx}, ethcontract::prelude::U256, model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind, OrderStatus},
         signature::EcdsaSigningScheme,
-    }, orderbook::{api::IntoWarpReply, orderbook::{AddOrderError, OrderReplacementError}}, reqwest::StatusCode, secp256k1::SecretKey, shared::ethrpc::Web3, warp::reply::Reply, web3::signing::SecretKeyRef
+    }, orderbook::{api::IntoWarpReply, orderbook::OrderReplacementError}, reqwest::StatusCode, secp256k1::SecretKey, shared::ethrpc::Web3, warp::reply::Reply, web3::signing::SecretKeyRef
 };
 
 #[tokio::test]

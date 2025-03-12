@@ -217,6 +217,7 @@ pub struct Orderbook {
     database: crate::database::Postgres,
     order_validator: Arc<dyn OrderValidating>,
     app_data: Arc<crate::app_data::Registry>,
+    active_order_competition_threshold: u32,
 }
 
 impl Orderbook {
@@ -227,6 +228,7 @@ impl Orderbook {
         database: crate::database::Postgres,
         order_validator: Arc<dyn OrderValidating>,
         app_data: Arc<crate::app_data::Registry>,
+        active_order_competition_threshold: u32,
     ) -> Self {
         Metrics::initialize();
         Self {
@@ -235,6 +237,7 @@ impl Orderbook {
             database,
             order_validator,
             app_data,
+            active_order_competition_threshold,
         }
     }
 
@@ -437,11 +440,9 @@ impl Orderbook {
     }
 
     async fn order_is_actively_bid_on(&self, order_uid: OrderUid) -> Result<bool> {
-        // The number of past solver competitions we want to look back at
-        const COMPETITIONS_COUNT: u32 = 2;
         let latest_competitions = self
             .database
-            .load_latest_competitions(COMPETITIONS_COUNT)
+            .load_latest_competitions(self.active_order_competition_threshold)
             .await?;
 
         let order_is_bid_on = latest_competitions
@@ -646,6 +647,7 @@ mod tests {
             domain_separator: Default::default(),
             settlement_contract: H160([0xba; 20]),
             app_data,
+            active_order_competition_threshold: Default::default()
         };
 
         // Different owner
