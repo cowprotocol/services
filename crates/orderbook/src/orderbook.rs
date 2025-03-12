@@ -205,7 +205,7 @@ pub enum OrderReplacementError {
     InvalidSignature,
     #[error("signer does not match older order owner")]
     WrongOwner,
-    #[error("old order is being actively bid on")]
+    #[error("old order is actively being bid on")]
     OldOrderActivelyBidOn,
     #[error(transparent)]
     Other(#[from] anyhow::Error),
