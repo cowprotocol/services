@@ -449,12 +449,10 @@ impl Orderbook {
             .into_iter()
             .flat_map(|competition| competition.common.solutions)
             .flat_map(|solution| solution.orders)
-            .map(|order|
-                match order {
-                    solver_competition::Order::Colocated { id, .. } => id,
-                    solver_competition::Order::Legacy { id, ..} => id,
-                }
-            )
+            .map(|order| match order {
+                solver_competition::Order::Colocated { id, .. } => id,
+                solver_competition::Order::Legacy { id, .. } => id,
+            })
             .any(|uid| uid == order_uid);
 
         Ok(order_is_bid_on)
@@ -647,7 +645,7 @@ mod tests {
             domain_separator: Default::default(),
             settlement_contract: H160([0xba; 20]),
             app_data,
-            active_order_competition_threshold: Default::default()
+            active_order_competition_threshold: Default::default(),
         };
 
         // Different owner

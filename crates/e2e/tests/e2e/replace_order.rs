@@ -1,8 +1,16 @@
 use {
-    e2e::{setup::*, tx}, ethcontract::prelude::U256, model::{
+    e2e::{setup::*, tx},
+    ethcontract::prelude::U256,
+    model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind, OrderStatus},
         signature::EcdsaSigningScheme,
-    }, orderbook::{api::IntoWarpReply, orderbook::OrderReplacementError}, reqwest::StatusCode, secp256k1::SecretKey, shared::ethrpc::Web3, warp::reply::Reply, web3::signing::SecretKeyRef
+    },
+    orderbook::{api::IntoWarpReply, orderbook::OrderReplacementError},
+    reqwest::StatusCode,
+    secp256k1::SecretKey,
+    shared::ethrpc::Web3,
+    warp::reply::Reply,
+    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -133,19 +141,18 @@ async fn try_replace_active_order_test(web3: Web3) {
     );
     let response = services.create_order(&new_order).await;
     let (error_code, error_message) = response.err().unwrap();
-    
+
     assert_eq!(error_code, StatusCode::BAD_REQUEST);
 
-    let expected_response =  OrderReplacementError::OldOrderActivelyBidOn
+    let expected_response = OrderReplacementError::OldOrderActivelyBidOn
         .into_warp_reply()
         .into_response()
         .into_body();
-    let expected_body_bytes = warp::hyper::body::to_bytes(expected_response).await.unwrap();
+    let expected_body_bytes = warp::hyper::body::to_bytes(expected_response)
+        .await
+        .unwrap();
     let expected_body = String::from_utf8(expected_body_bytes.to_vec()).unwrap();
-    assert_eq!(
-        error_message,
-        expected_body
-    );
+    assert_eq!(error_message, expected_body);
 }
 
 async fn try_replace_someone_else_order_test(web3: Web3) {

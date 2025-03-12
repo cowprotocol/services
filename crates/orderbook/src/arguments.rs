@@ -233,7 +233,11 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(f, "app_data_size_limit: {}", app_data_size_limit)?;
         writeln!(f, "max_gas_per_order: {}", max_gas_per_order)?;
-        writeln!(f, "active_order_competition_threshold: {}", active_order_competition_threshold)?;
+        writeln!(
+            f,
+            "active_order_competition_threshold: {}",
+            active_order_competition_threshold
+        )?;
 
         Ok(())
     }
