@@ -12,9 +12,9 @@ use {
     tokio::sync::{Mutex, mpsc},
 };
 
-/// Checks the DB by searching for solvers that won N last consecutive auctions
-/// and either never settled any of them or their settlement success rate is
-/// lower than `min_settlement_success_rate`.
+/// Tracks the solver settlement statistics and decides whether the solver
+/// should be banned based on the failure rate and consecutive failed
+/// settlements.
 #[derive(Clone)]
 pub(super) struct SolverValidator(Arc<Inner>);
 
@@ -29,6 +29,7 @@ struct Inner {
     competitions_tracker: Mutex<CompetitionsTracker>,
 }
 
+/// Keeps track of the solver's competition submission statistics.
 #[derive(Clone, Debug, Default)]
 struct SolverCompetitionStats {
     total: u32,

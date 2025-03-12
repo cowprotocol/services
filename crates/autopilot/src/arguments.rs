@@ -253,8 +253,7 @@ pub struct Arguments {
 
 #[derive(Debug, clap::Parser)]
 pub struct DbBasedSolverParticipationGuardConfig {
-    /// The number of settlements a solver remains banned after being
-    /// blacklisted.
+    /// The number of settlements a solver skips after being banned.
     #[clap(long, env, default_value = "10")]
     pub solver_ban_settlements_count: u32,
 
@@ -278,7 +277,8 @@ pub struct NonSettlingSolversFinderConfig {
     )]
     pub enabled: bool,
 
-    /// The number of last auctions to check solver participation eligibility.
+    /// For how many last consecutive auctions a solver should not settle to get
+    /// banned.
     #[clap(
         id = "non_settling_last_auctions_participation_count",
         long = "non-settling-last-auctions-participation-count",

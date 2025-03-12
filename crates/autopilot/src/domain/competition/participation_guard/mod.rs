@@ -1,5 +1,5 @@
-mod db;
 mod onchain;
+mod statistics;
 
 use {
     crate::{
@@ -31,7 +31,7 @@ impl SolverParticipationGuard {
         let mut validators: Vec<Box<dyn SolverValidator + Send + Sync>> = Vec::new();
 
         let current_block = eth.current_block().clone();
-        let database_solver_participation_validator = db::SolverValidator::new(
+        let database_solver_participation_validator = statistics::SolverValidator::new(
             persistence,
             current_block,
             competition_updates_receiver,
