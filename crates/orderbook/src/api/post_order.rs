@@ -281,7 +281,7 @@ impl IntoWarpReply for OrderReplacementError {
             OrderReplacementError::OldOrderActivelyBidOn => with_status(
                 super::error(
                     "OldOrderActivelyBidOn",
-                    "The old order is being actively bid on in recent auctions",
+                    "The old order is actively beign bid on in recent auctions",
                 ),
                 StatusCode::BAD_REQUEST,
             ),
