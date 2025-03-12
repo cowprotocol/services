@@ -140,7 +140,7 @@ pub struct Arguments {
 
     /// The number of past solver competitions to look back at to determine
     /// whether an order is actively being bid on.
-    #[clap(long, env, default_value = "2")]
+    #[clap(long, env, default_value = "5")]
     pub active_order_competition_threshold: u32,
 }
 
