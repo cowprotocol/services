@@ -1,14 +1,8 @@
 use {
-    e2e::{setup::*, tx},
-    ethcontract::prelude::U256,
-    model::{
+    e2e::{setup::*, tx}, ethcontract::prelude::U256, model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind, OrderStatus},
         signature::EcdsaSigningScheme,
-    },
-    reqwest::StatusCode,
-    secp256k1::SecretKey,
-    shared::ethrpc::Web3,
-    web3::signing::SecretKeyRef,
+    }, orderbook::{api::IntoWarpReply, orderbook::{AddOrderError, OrderReplacementError}}, reqwest::StatusCode, secp256k1::SecretKey, shared::ethrpc::Web3, warp::reply::Reply, web3::signing::SecretKeyRef
 };
 
 #[tokio::test]
@@ -107,19 +101,6 @@ async fn try_replace_active_order_test(web3: Web3) {
     onchain.mint_block().await;
     let order_id = services.create_order(&order).await.unwrap();
 
-    let app_data = format!(
-        r#"{{
-              "version":"1.1.0",
-                  "metadata":{{
-                      "replacedOrder":{{
-                          "uid":"{}"
-                      }},
-                      "customStuff": 20
-                  }}
-              }}"#,
-        order_id
-    );
-
     tracing::info!("Waiting for the old order to be executed");
     wait_for_condition(TIMEOUT, || async {
         let balance_after = token_a.balance_of(trader.address()).call().await.unwrap();
@@ -138,7 +119,10 @@ async fn try_replace_active_order_test(web3: Web3) {
         kind: OrderKind::Sell,
         partially_fillable: false,
         app_data: OrderCreationAppData::Full {
-            full: app_data.clone(),
+            full: format!(
+                r#"{{"version":"1.1.0","metadata":{{"replacedOrder":{{"uid":"{}"}}}}}}"#,
+                order_id
+            ),
         },
         ..Default::default()
     }
@@ -148,8 +132,20 @@ async fn try_replace_active_order_test(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
     let response = services.create_order(&new_order).await;
-    let (error_code, _) = response.err().unwrap();
+    let (error_code, error_message) = response.err().unwrap();
+    
     assert_eq!(error_code, StatusCode::BAD_REQUEST);
+
+    let expected_response =  OrderReplacementError::OldOrderActivelyBidOn
+        .into_warp_reply()
+        .into_response()
+        .into_body();
+    let expected_body_bytes = warp::hyper::body::to_bytes(expected_response).await.unwrap();
+    let expected_body = String::from_utf8(expected_body_bytes.to_vec()).unwrap();
+    assert_eq!(
+        error_message,
+        expected_body
+    );
 }
 
 async fn try_replace_someone_else_order_test(web3: Web3) {
