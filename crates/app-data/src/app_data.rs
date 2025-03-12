@@ -262,32 +262,51 @@ impl<'de> Deserialize<'de> for PartnerFees {
     where
         D: Deserializer<'de>,
     {
+        PartnerFeeHelper::deserialize(deserializer).map(|v| v.into_partner_fees())
+    }
+}
+
+enum PartnerFeeHelper {
+    Empty,
+    Single(PartnerFee),
+    Multiple(Vec<PartnerFee>),
+}
+
+impl PartnerFeeHelper {
+    fn into_partner_fees(self) -> PartnerFees {
+        match self {
+            PartnerFeeHelper::Empty => PartnerFees(vec![]),
+            PartnerFeeHelper::Single(partner_fee) => PartnerFees(vec![partner_fee]),
+            PartnerFeeHelper::Multiple(partner_fees) => PartnerFees(partner_fees),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for PartnerFeeHelper {
+    fn deserialize<D>(deserializer: D) -> Result<PartnerFeeHelper, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
         // First try to deserialize as a normal JSON Value
         let opt = Option::<serde_json::Value>::deserialize(deserializer)?;
 
         match opt {
-            // Field is not present at all
-            None => Ok(PartnerFees(Vec::new())),
-
-            // Field is present but null
-            Some(serde_json::Value::Null) => Ok(PartnerFees(Vec::new())),
-
+            // Field is not present at all or is null
+            None | Some(serde_json::Value::Null) => Ok(PartnerFeeHelper::Empty),
             // Field is an object (single PartnerFee)
             Some(obj @ serde_json::Value::Object(_)) => {
                 let fee = serde_json::from_value::<PartnerFee>(obj).map_err(de::Error::custom)?;
-                Ok(PartnerFees(vec![fee]))
+                Ok(PartnerFeeHelper::Single(fee))
             }
 
-            // Field is an array (multiple PartnerFees)
             Some(serde_json::Value::Array(arr)) => {
                 let fees = arr
                     .into_iter()
                     .map(serde_json::from_value::<PartnerFee>)
                     .collect::<Result<Vec<_>, _>>()
                     .map_err(de::Error::custom)?;
-                Ok(PartnerFees(fees))
+                Ok(PartnerFeeHelper::Multiple(fees))
             }
-
             // Other types are invalid
             _ => Err(de::Error::custom(
                 "Expected null, single PartnerFee object, or array of PartnerFee objects",
