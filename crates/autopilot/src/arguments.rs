@@ -253,26 +253,16 @@ pub struct Arguments {
 
 #[derive(Debug, clap::Parser)]
 pub struct DbBasedSolverParticipationGuardConfig {
-    /// Enables or disables the solver participation guard
-    #[clap(
-        id = "db_enabled",
-        long = "db-based-solver-participation-guard-enabled",
-        env = "DB_BASED_SOLVER_PARTICIPATION_GUARD_ENABLED",
-        default_value = "true"
-    )]
-    pub enabled: bool,
-
-    /// Sets the duration for which the solver remains blacklisted.
-    /// Technically, the time-to-live for the solver participation blacklist
-    /// cache.
-    #[clap(long, env, default_value = "5m", value_parser = humantime::parse_duration)]
-    pub solver_blacklist_cache_ttl: Duration,
+    /// The number of settlements a solver remains banned after being
+    /// blacklisted.
+    #[clap(long, env, default_value = "10")]
+    pub solver_ban_settlements_count: u32,
 
     #[clap(flatten)]
-    pub non_settling_solvers_finder_config: NonSettlingSolversFinderConfig,
+    pub non_settling_solvers_finder: NonSettlingSolversFinderConfig,
 
     #[clap(flatten)]
-    pub low_settling_solvers_finder_config: LowSettlingSolversFinderConfig,
+    pub low_settling_solvers_finder: LowSettlingSolversFinderConfig,
 }
 
 #[derive(Debug, clap::Parser)]

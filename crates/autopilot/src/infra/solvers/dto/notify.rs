@@ -1,17 +1,10 @@
-use {
-    chrono::{DateTime, Utc},
-    serde::Serialize,
-    serde_with::serde_as,
-};
+use {serde::Serialize, serde_with::serde_as};
 
 #[serde_as]
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Request {
-    Banned {
-        reason: BanReason,
-        until: DateTime<Utc>,
-    },
+    Banned { reason: BanReason },
 }
 
 #[serde_as]

@@ -2,7 +2,11 @@ mod db;
 mod onchain;
 
 use {
-    crate::{arguments::DbBasedSolverParticipationGuardConfig, domain::eth, infra},
+    crate::{
+        arguments::DbBasedSolverParticipationGuardConfig,
+        domain::{competition, eth},
+        infra,
+    },
     std::sync::Arc,
 };
 
@@ -20,7 +24,7 @@ impl SolverParticipationGuard {
     pub fn new(
         eth: infra::Ethereum,
         persistence: infra::Persistence,
-        competition_updates_receiver: tokio::sync::mpsc::UnboundedReceiver<()>,
+        competition_updates_receiver: tokio::sync::mpsc::UnboundedReceiver<competition::Metadata>,
         db_based_validator_config: DbBasedSolverParticipationGuardConfig,
         drivers: impl IntoIterator<Item = Arc<infra::Driver>>,
     ) -> Self {

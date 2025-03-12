@@ -109,3 +109,20 @@ pub enum SolutionError {
     #[error("the solver got deny listed")]
     SolverDenyListed,
 }
+
+#[derive(Debug)]
+pub struct Metadata {
+    pub auction_id: auction::Id,
+    pub solver: eth::Address,
+    pub settled: bool,
+}
+
+impl From<database::solver_competition::Metadata> for Metadata {
+    fn from(metadata: database::solver_competition::Metadata) -> Self {
+        Self {
+            auction_id: metadata.auction_id,
+            solver: eth::Address::from(eth::H160(metadata.solver.0)),
+            settled: metadata.settled,
+        }
+    }
+}
