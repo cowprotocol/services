@@ -23,11 +23,11 @@ pub struct State {
     /// Counter for `/settle` requests.
     settle_counter: Arc<Mutex<usize>>,
     /// Function that decides whether to return an error or redirect
-    settle_decision_fn: Arc<Mutex<Box<DecisionFn>>>,
+    should_error_on_settle: Arc<Mutex<Box<DecisionFn>>>,
     /// Counter for `/solve` requests.
     solve_counter: Arc<Mutex<usize>>,
     /// Function that decides whether to return an error or redirect
-    solve_decision_fn: Arc<Mutex<Box<DecisionFn>>>,
+    should_error_on_solve: Arc<Mutex<Box<DecisionFn>>>,
 }
 
 impl Default for Proxy {
@@ -37,10 +37,10 @@ impl Default for Proxy {
                 "http://localhost:11088/test_solver/".parse().unwrap(),
             )),
             settle_counter: Default::default(),
-            // By default, just redirect to the upstream.
-            settle_decision_fn: Arc::new(Mutex::new(Box::new(|_counter| false))),
             solve_counter: Default::default(),
-            solve_decision_fn: Arc::new(Mutex::new(Box::new(|_counter| false))),
+            // By default, just redirect to the upstream.
+            should_error_on_settle: Arc::new(Mutex::new(Box::new(|_counter| false))),
+            should_error_on_solve: Arc::new(Mutex::new(Box::new(|_counter| false))),
         };
 
         let app = axum::Router::new()
@@ -73,14 +73,14 @@ impl Proxy {
     where
         F: Fn(usize) -> bool + Send + Sync + 'static,
     {
-        *self.state.settle_decision_fn.lock().unwrap() = Box::new(func);
+        *self.state.should_error_on_settle.lock().unwrap() = Box::new(func);
     }
 
     pub fn error_on_solve_when<F>(&self, func: F)
     where
         F: Fn(usize) -> bool + Send + Sync + 'static,
     {
-        *self.state.solve_decision_fn.lock().unwrap() = Box::new(func);
+        *self.state.should_error_on_solve.lock().unwrap() = Box::new(func);
     }
 
     pub fn get_settle_counter(&self) -> usize {
@@ -92,7 +92,7 @@ async fn settle(axum::extract::State(state): axum::extract::State<State>) -> imp
     {
         let mut counter = state.settle_counter.lock().unwrap();
         *counter += 1;
-        let should_error = state.settle_decision_fn.lock().unwrap()(*counter);
+        let should_error = state.should_error_on_settle.lock().unwrap()(*counter);
         if should_error {
             tracing::debug!(?counter, "returning error for /settle request");
             return (
@@ -118,7 +118,7 @@ async fn solve(axum::extract::State(state): axum::extract::State<State>) -> impl
     {
         let mut counter = state.solve_counter.lock().unwrap();
         *counter += 1;
-        let should_error = state.solve_decision_fn.lock().unwrap()(*counter);
+        let should_error = state.should_error_on_solve.lock().unwrap()(*counter);
         if should_error {
             tracing::debug!(?counter, "returning error for /solve request");
             return (
