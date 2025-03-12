@@ -446,7 +446,14 @@ impl Orderbook {
 
         let order_is_bid_on = latest_competitions
             .into_iter()
-            .flat_map(|competition| competition.common.auction.orders)
+            .flat_map(|competition| competition.common.solutions)
+            .flat_map(|solution| solution.orders)
+            .map(|order|
+                match order {
+                    solver_competition::Order::Colocated { id, .. } => id,
+                    solver_competition::Order::Legacy { id, ..} => id,
+                }
+            )
             .any(|uid| uid == order_uid);
 
         Ok(order_is_bid_on)
