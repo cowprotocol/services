@@ -25,13 +25,16 @@ async fn local_node_try_replace_someone_else_order() {
     run_test(try_replace_someone_else_order_test).await;
 }
 
+// TODO: The test is not ideal, as we actually want to test the replacement of
+// active orders as soon as they are being bid on, even before they are
+// executed. For that we would need the ability to mock the driver in e2e tests.
 #[tokio::test]
 #[ignore]
-async fn local_node_try_replace_active_order() {
-    run_test(try_replace_active_order_test).await;
+async fn local_node_try_replace_executed_order() {
+    run_test(try_replace_executed_order_test).await;
 }
 
-async fn try_replace_active_order_test(web3: Web3) {
+async fn try_replace_executed_order_test(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(to_wei(1)).await;
