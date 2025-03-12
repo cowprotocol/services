@@ -39,8 +39,17 @@ impl SolverCompetitionStats {
     fn increment(&mut self, success: bool, high_failure_threshold: f64) {
         if success {
             self.total += 1;
+            // Recover fast in case the solver is banned.
+            if self.failed > 0 {
+                // Keep the failure rate at the threshold level, so the solver is
+                // able to participate again. And at the same time, on the next failure it gets
+                // banned again.
+                while self.failure_rate() >= high_failure_threshold {
+                    self.total += 1;
+                }
+            }
         } else if !success && self.failure_rate() <= high_failure_threshold {
-            // Keep the failure rate at the threshold level, so the solver is
+            // Keep the failure rate at the same level, so the solver is
             // able to recover fast with a single successful settlement.
             self.failed += 1;
             self.total += 1;
@@ -345,5 +354,134 @@ impl super::SolverValidator for SolverValidator {
         }
 
         Ok(true)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use {super::*, maplit::hashset};
+
+    #[test]
+    fn test_solver_competition_stats() {
+        let mut stats = SolverCompetitionStats {
+            total: 1,
+            failed: 1,
+        };
+        let threshold = 0.3;
+
+        // Initially, the failure rate should be 100%
+        assert_eq!(stats.failure_rate(), 1.0);
+
+        // After the first success, the natural rate becomes 50%, but the implementation
+        // tries to keep it slightly below the threshold.
+        stats.increment(true, threshold);
+        assert!(stats.failure_rate() < threshold);
+
+        // The next failure should make the rate above the threshold again.
+        stats.increment(false, threshold);
+        assert!(stats.failure_rate() > threshold);
+
+        // The same should happen for very high numbers.
+        stats = SolverCompetitionStats {
+            total: 10000,
+            failed: 10000,
+        };
+        assert_eq!(stats.failure_rate(), 1.0);
+        stats.increment(true, threshold);
+        // The natural rate is ~0,99990001, but the implementation tries to keep it
+        // below the threshold.
+        assert!(stats.failure_rate() < threshold);
+        // As close as on the next failure the rate is above the threshold.
+        stats.increment(false, threshold);
+        assert!(stats.failure_rate() > threshold);
+
+        // Increment only total on success.
+        stats = SolverCompetitionStats {
+            total: 0,
+            failed: 0,
+        };
+        stats.increment(true, threshold);
+        assert_eq!(stats.total, 1);
+        assert_eq!(stats.failed, 0);
+
+        // Increment both counters on failure.
+        stats = SolverCompetitionStats {
+            total: 0,
+            failed: 0,
+        };
+        stats.increment(false, threshold);
+        assert_eq!(stats.total, 1);
+        assert_eq!(stats.failed, 1);
+
+        // Keep the stats at the same level once the threshold is reached.
+        stats = SolverCompetitionStats {
+            total: 10,
+            failed: 8,
+        };
+        let threshold = 0.5;
+        stats.increment(false, threshold);
+        assert_eq!(stats.total, 10);
+        assert_eq!(stats.failed, 8);
+
+        // Based on the above, should never happen, but still checks the division by 0.
+        stats = SolverCompetitionStats {
+            total: 0,
+            failed: 10000,
+        };
+        assert_eq!(stats.failure_rate(), 0.0);
+        stats = SolverCompetitionStats {
+            total: 100,
+            failed: 0,
+        };
+        assert_eq!(stats.failure_rate(), 0.0);
+    }
+
+    fn mock_solver(id: u8) -> eth::Address {
+        eth::Address(eth::H160([id; 20]))
+    }
+
+    fn mock_metadata(
+        solver: eth::Address,
+        settled: bool,
+        auction_id: auction::Id,
+    ) -> competition::Metadata {
+        competition::Metadata {
+            solver,
+            settled,
+            auction_id,
+        }
+    }
+
+    #[test]
+    fn test_competitions_tracker_updates_queue() {
+        let solver_a = mock_solver(1);
+        let solver_b = mock_solver(2);
+
+        let mut tracker = CompetitionsTracker::new(8, 0.3, 2, 2);
+
+        tracker.update(mock_metadata(solver_a, true, 1));
+        tracker.update(mock_metadata(solver_b, true, 1));
+        tracker.update(mock_metadata(solver_a, false, 2));
+        tracker.update(mock_metadata(solver_b, false, 2));
+        tracker.update(mock_metadata(solver_a, false, 3));
+        tracker.update(mock_metadata(solver_b, true, 3));
+        tracker.update(mock_metadata(solver_a, false, 4));
+        tracker.update(mock_metadata(solver_b, false, 4));
+
+        assert_eq!(
+            tracker.find_consecutive_failed_solvers(),
+            hashset![solver_a]
+        );
+        assert_eq!(
+            tracker.find_high_failure_solvers(),
+            hashset![solver_a, solver_b]
+        );
+
+        // Recover from the failure state.
+        tracker.update(mock_metadata(solver_a, true, 5));
+        tracker.update(mock_metadata(solver_b, true, 5));
+
+        assert!(tracker.find_consecutive_failed_solvers().is_empty());
+        assert!(tracker.find_high_failure_solvers().is_empty());
     }
 }
