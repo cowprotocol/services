@@ -1,10 +1,12 @@
 use {
+    crate::order_status::calculate_status,
     anyhow::{Context, Result},
     app_data::AppDataHash,
     bigdecimal::BigDecimal,
     database::{
         onchain_broadcasted_orders::OnchainOrderPlacementError as DbOnchainOrderPlacementError,
         orders::{
+            self,
             BuyTokenDestination as DbBuyTokenDestination,
             ExecutionTime,
             FullOrder as FullOrderDb,
@@ -29,7 +31,6 @@ use {
             OrderKind,
             OrderMetadata,
             OrderQuote,
-            OrderStatus,
             OrderUid,
             SellTokenSource,
         },
@@ -39,12 +40,11 @@ use {
     number::conversions::{big_decimal_to_big_uint, big_decimal_to_u256},
 };
 
-pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result<Order> {
-    let status = if order.presignature_pending {
-        OrderStatus::PresignaturePending
-    } else {
-        OrderStatus::Open
-    };
+pub fn full_order_into_model_order(
+    order: orders::FullOrder,
+    quote: Option<&orders::Quote>,
+) -> Result<Order> {
+    let status = calculate_status(&order);
     let pre_interactions = extract_interactions(&order, ExecutionTime::Pre)?;
     let post_interactions = extract_interactions(&order, ExecutionTime::Post)?;
     let ethflow_data = if let Some((refund_tx, user_valid_to)) = order.ethflow_data {
@@ -98,7 +98,7 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
             .map(String::from_utf8)
             .transpose()
             .context("full app data isn't utf-8")?,
-        quote: None,
+        quote: quote.map(order_quote_into_model).transpose()?,
     };
     let data = OrderData {
         sell_token: H160(order.sell_token.0),

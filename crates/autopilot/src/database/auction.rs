@@ -7,7 +7,6 @@ use {
     model::{order::Order, quote::QuoteId},
     num::ToPrimitive,
     shared::{
-        db_order_conversions::full_order_into_model_order,
         event_storing_helpers::{create_db_search_parameters, create_quote_row},
         order_quoting::{QuoteData, QuoteSearchParameters, QuoteStoring},
     },
@@ -78,8 +77,10 @@ impl Postgres {
         let orders: HashMap<domain::OrderUid, Order> =
             database::orders::solvable_orders(&mut ex, i64::from(min_valid_to))
                 .map(|result| match result {
-                    Ok(order) => full_order_into_model_order(order)
-                        .map(|order| (domain::OrderUid(order.metadata.uid.0), order)),
+                    Ok(order) => {
+                        shared::db_order_conversions::full_order_into_model_order(order, None)
+                            .map(|order| (domain::OrderUid(order.metadata.uid.0), order))
+                    }
                     Err(err) => Err(anyhow::Error::from(err)),
                 })
                 .try_collect()

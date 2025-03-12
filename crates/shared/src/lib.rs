@@ -23,6 +23,7 @@ pub mod http_solver;
 pub mod interaction;
 pub mod maintenance;
 pub mod order_quoting;
+pub mod order_status;
 pub mod order_validation;
 pub mod price_estimation;
 pub mod recent_block_cache;

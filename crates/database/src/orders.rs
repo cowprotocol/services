@@ -7,6 +7,7 @@ use {
         onchain_broadcasted_orders::OnchainOrderPlacementError,
         order_events::{OrderEvent, OrderEventLabel, insert_order_event},
     },
+    bigdecimal::Zero,
     futures::stream::BoxStream,
     sqlx::{
         PgConnection,
@@ -502,6 +503,18 @@ impl FullOrder {
             return valid_to;
         }
         self.valid_to
+    }
+
+    pub fn is_buy_order_filled(&self) -> bool {
+        !self.sum_buy.is_zero() && self.buy_amount == self.sum_buy
+    }
+
+    pub fn is_sell_order_filled(&self) -> bool {
+        if self.sum_sell.is_zero() {
+            return false;
+        }
+        let total_amount = &self.sum_sell - &self.sum_fee;
+        total_amount == self.sell_amount
     }
 }
 
