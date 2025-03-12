@@ -75,47 +75,37 @@ impl ProtocolFees {
 
     /// Returns the capped aggregated partner fee
     fn get_partner_fee(order: &boundary::Order, max_partner_fee: f64) -> Vec<Policy> {
-        order
-            .metadata
-            .full_app_data
-            .as_ref()
-            .and_then(|full_app_data| {
-                Validator::new(usize::MAX)
-                    .validate(full_app_data.as_bytes())
-                    .ok()
-                    .map(|validated| {
-                        let mut accumulated = Decimal::ZERO;
-                        let max_partner_fee = Decimal::try_from(max_partner_fee).ok()?;
+        let Ok(max_partner_fee) = Decimal::try_from(max_partner_fee) else {
+            return vec![];
+        };
+        let Some(full_app_data) = order.metadata.full_app_data.as_ref() else {
+            return vec![];
+        };
+        let Ok(validated) = Validator::new(usize::MAX).validate(full_app_data.as_bytes()) else {
+            return vec![];
+        };
 
-                        Some(
-                            validated
-                                .protocol
-                                .partner_fee
-                                .iter()
-                                .filter_map(move |partner_fee| {
-                                    // Convert bps to decimal percentage
-                                    let fee_decimal = Decimal::from(partner_fee.bps)
-                                        .checked_div(Decimal::from(10_000))?;
+        let mut accumulated = Decimal::ZERO;
 
-                                    // Create policy and update accumulator
-                                    let factor = FeeFactor::try_from_capped(
-                                        fee_decimal,
-                                        max_partner_fee,
-                                        accumulated,
-                                    )
-                                    .ok()?;
+        validated
+            .protocol
+            .partner_fee
+            .iter()
+            .filter_map(move |partner_fee| {
+                // Convert bps to decimal percentage
+                let fee_decimal =
+                    Decimal::from(partner_fee.bps).checked_div(Decimal::from(10_000))?;
 
-                                    // Update the accumulated value for the next iteration
-                                    accumulated += fee_decimal.min(max_partner_fee - accumulated);
+                // Create policy and update accumulator
+                let factor =
+                    FeeFactor::try_from_capped(fee_decimal, max_partner_fee, accumulated).ok()?;
 
-                                    Some(Policy::Volume { factor })
-                                })
-                                .collect::<Vec<_>>(),
-                        )
-                    })
+                // Update the accumulated value for the next iteration
+                accumulated += fee_decimal.min(max_partner_fee - accumulated);
+
+                Some(Policy::Volume { factor })
             })
-            .flatten()
-            .unwrap_or_default()
+            .collect::<Vec<_>>()
     }
 
     /// Converts an order from the boundary layer to the domain layer, applying
