@@ -4,7 +4,6 @@ use {
         setup::{
             self,
             Db,
-            ExtraServiceArgs,
             MintableToken,
             OnchainComponents,
             Services,
@@ -36,12 +35,12 @@ async fn local_node_non_settling_solver() {
     run_test(non_settling_solver).await;
 }
 
-// #[tokio::test]
-// #[ignore]
-// async fn local_node_low_settling_solver() {
-//     run_test(low_settling_solver).await;
-// }
-//
+#[tokio::test]
+#[ignore]
+async fn local_node_low_settling_solver() {
+    run_test(low_settling_solver).await;
+}
+
 #[tokio::test]
 #[ignore]
 async fn local_node_not_allowed_solver() {
@@ -55,11 +54,6 @@ async fn non_settling_solver(web3: Web3) {
     let (trader_a, token_a, token_b) = setup(&mut onchain, &solver_a).await;
 
     let services = Services::new(&onchain).await;
-    let _args = ExtraServiceArgs {
-        // The solver gets banned for 2 settlements.
-        autopilot: vec!["--solver-ban-settlements-count=2".to_string()],
-        ..Default::default()
-    };
     // Start the upstream driver
     colocation::start_driver(
         onchain.contracts(),
@@ -109,6 +103,8 @@ async fn non_settling_solver(web3: Web3) {
                 "--solver-ban-settlements-count=2".to_string(),
                 // The solver gets banned after 2 consecutive failures.
                 "--non-settling-last-auctions-participation-count=2".to_string(),
+                // Disable the low-settling strategy to test another non-settling properly.
+                "--low-settling-solvers-blacklisting-enabled=false".to_string(),
             ],
         )
         .await;
@@ -155,6 +151,9 @@ async fn non_settling_solver(web3: Web3) {
 
     // Now we wait until the second solver wins the next competition.
     // During this time, the first solver should be banned.
+    let settlements_before = fetch_latest_settlement_solver_addresses(services.db())
+        .await
+        .len();
     wait_for_settlement(
         &onchain,
         &trader_a,
@@ -162,6 +161,7 @@ async fn non_settling_solver(web3: Web3) {
         &solver_b.address(),
         &services,
         balance_before,
+        settlements_before,
     )
     .await
     .unwrap();
@@ -199,78 +199,171 @@ async fn non_settling_solver(web3: Web3) {
     .await
     .unwrap();
 }
-//
-// async fn low_settling_solver(web3: Web3) {
-//     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
-//
-//     let [solver, solver_b] = onchain.make_solvers(to_wei(1)).await;
-//     let (trader_a, token_a, token_b) = setup(&mut onchain, &solver).await;
-//
-//     let services = Services::new(&onchain).await;
-//     let args = ExtraServiceArgs {
-//         autopilot: vec![
-//             // The solver gets banned for 40s.
-//             "--solver-ban-settlements-count=2".to_string(),
-//             // The solver is banned if the failure settlement rate is above
-// 55%.             "--solver-max-settlement-failure-rate=0.55".to_string(),
-//         ],
-//         ..Default::default()
-//     };
-//     services.start_protocol_with_args(args, solver).await;
-//
-//     // Create 5 orders, to easily test 60% of them failing, which is 3/5.
-//     for _ in 0..5 {
-//         execute_order(&onchain, &trader_a, &token_a, &token_b, &services)
-//             .await
-//             .unwrap();
-//     }
-//
-//     let pool = services.db();
-//     let settled_auction_ids = fetch_last_settled_auction_ids(pool).await;
-//     assert_eq!(settled_auction_ids.len(), 5);
-//     // Build 6 blocks to make sure the submission deadline is passed, which
-// is 5 by     // default.
-//     for _ in 0..=5 {
-//         onchain.mint_block().await;
-//     }
-//
-//     // Simulate low settling rate by replacing the solver for the 60% of the
-//     // settlements.
-//     let random_auctions = settled_auction_ids
-//         .iter()
-//         .enumerate()
-//         .filter_map(|(i, id)| (i % 2 == 0).then_some(*id))
-//         .collect::<Vec<_>>();
-//     replace_solver_for_auction_ids(pool, &random_auctions,
-// &solver_b.address()).await;     // The competition still passes since the
-// stats are updated only on the next     // settlement result.
-//     // let now = Instant::now();
-//     assert!(
-//         execute_order(&onchain, &trader_a, &token_a, &token_b, &services)
-//             .await
-//             .is_ok()
-//     );
-//     // Now, the stat is updated, and the solver is banned.
-//     assert!(
-//         execute_order(&onchain, &trader_a, &token_a, &token_b, &services)
-//             .await
-//             .is_err()
-//     );
-//
-//     // // 40 seconds is the cache TTL, and 5 seconds is added to compensate
-// any     // // possible delays.
-//     // let sleep_timeout_secs = 40 - now.elapsed().as_secs() + 5;
-//     // println!(
-//     //     "Sleeping for {} seconds to reset the solver participation guard
-//     // cache",     sleep_timeout_secs
-//     // );
-//     // tokio::time::sleep(tokio::time::Duration::from_secs(sleep_timeout_secs)).
-//     // await; // The cache is reset, and the solver is allowed to
-//     // participate again. execute_order(&onchain, &trader_a, &token_a,
-//     // &token_b, &services)     .await
-//     //     .unwrap();
-// }
-//
+
+async fn low_settling_solver(web3: Web3) {
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+
+    let [solver_a, solver_b] = onchain.make_solvers(to_wei(1)).await;
+    let (trader_a, token_a, token_b) = setup(&mut onchain, &solver_a).await;
+
+    let services = Services::new(&onchain).await;
+    // Start the upstream driver
+    colocation::start_driver(
+        onchain.contracts(),
+        vec![
+            colocation::start_baseline_solver(
+                "test_solver".into(),
+                solver_a.clone(),
+                onchain.contracts().weth.address(),
+                vec![],
+                1,
+                true,
+            )
+            .await,
+            colocation::start_baseline_solver(
+                "test_solver_2".into(),
+                solver_b.clone(),
+                onchain.contracts().weth.address(),
+                vec![],
+                1,
+                true,
+            )
+            .await,
+        ],
+        colocation::LiquidityProvider::UniswapV2,
+        false,
+    );
+    // The proxy drivers that forward requests to an upstream driver with some
+    // additional logic.
+    let proxy_driver_a = Arc::new(setup::driver::Proxy::default());
+    let proxy_driver_b = Arc::new(setup::driver::Proxy::default());
+    proxy_driver_b.set_upstream_base_url("http://localhost:11088/test_solver_2/".parse().unwrap());
+    services
+        .start_autopilot(
+            None,
+            vec![
+                format!(
+                    "--drivers=test_solver|{}|{}|requested-timeout-on-problems,\
+                     test_solver_2|{}|{}|requested-timeout-on-problems",
+                    proxy_driver_a.url,
+                    hex::encode(solver_a.address()),
+                    proxy_driver_b.url,
+                    hex::encode(solver_b.address())
+                ),
+                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
+                    .to_string(),
+                // The solver gets banned for 2 settlements.
+                "--solver-ban-settlements-count=2".to_string(),
+                // Disable the non-settling strategy to test another one properly.
+                "--non-settling-solvers-blacklisting-enabled=false".to_string(),
+                // The solver is banned if the failure settlement rate is above 70%.
+                "--solver-max-settlement-failure-rate=0.7".to_string(),
+            ],
+        )
+        .await;
+
+    services
+        .start_api(vec![
+            "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
+        ])
+        .await;
+
+    // That way the solver is able to settle at least 2 non-consecutive auctions.
+    proxy_driver_a.error_on_settle_when(|counter| counter % 2 != 0 || counter > 5);
+    // Exclude the second solver from the competition, so only the first solver wins
+    // competitions and settles them.
+    proxy_driver_b.error_on_solve_when(|_| true);
+
+    for _ in 0..2 {
+        execute_order(
+            &onchain,
+            &trader_a,
+            &token_a,
+            &token_b,
+            &solver_a.address(),
+            &services,
+        )
+        .await
+        .unwrap();
+    }
+
+    // Since the first solver settled 2 times, to reach the 70% failure rate, we
+    // need to wait for at least 7 attempts in total((1 - 2/7) > 70%).
+    let balance_before = token_b.balance_of(trader_a.address()).call().await.unwrap();
+    let settlements_before = fetch_latest_settlement_solver_addresses(services.db())
+        .await
+        .len();
+    place_order(&onchain, &trader_a, &token_a, &token_b, &services).await;
+    {
+        let proxy_driver_a = proxy_driver_a.clone();
+        wait_for_condition(TIMEOUT, || async {
+            onchain.mint_block().await;
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            proxy_driver_a.get_settle_counter() >= 7
+        })
+        .await
+        .unwrap();
+    }
+
+    // The first solver is banned now.
+    // Enable the second solver to participate in the next 2 competitions.
+    let settlements_before = {
+        let current_settlements_count = fetch_latest_settlement_solver_addresses(services.db())
+            .await
+            .len();
+        assert_eq!(current_settlements_count, settlements_before);
+        current_settlements_count
+    };
+    // The first solver should be banned at this point. The settle can be enabled,
+    // which won't take any effect until unbanned.
+    proxy_driver_a.error_on_settle_when(|_| false);
+    // Include the second solver in the competition to proceed with other
+    // settlements.
+    proxy_driver_b.error_on_solve_when(|_| false);
+
+    // Now we wait until the second solver wins the next competition.
+    wait_for_settlement(
+        &onchain,
+        &trader_a,
+        &token_b,
+        &solver_b.address(),
+        &services,
+        balance_before,
+        settlements_before,
+    )
+    .await
+    .unwrap();
+
+    // The second solver is expected to settle one more auction to make the first
+    // solver unbanned.
+    execute_order(
+        &onchain,
+        &trader_a,
+        &token_a,
+        &token_b,
+        &solver_b.address(),
+        &services,
+    )
+    .await
+    .unwrap();
+
+    // After 2 settlements, the first solver should be unbanned.
+    // Disable the second one from participating in the competition.
+    proxy_driver_b.error_on_solve_when(|_| true);
+
+    // The first solver settles.
+    execute_order(
+        &onchain,
+        &trader_a,
+        &token_a,
+        &token_b,
+        &solver_a.address(),
+        &services,
+    )
+    .await
+    .unwrap();
+}
+
 async fn not_allowed_solver(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
@@ -415,6 +508,9 @@ async fn execute_order(
     services: &Services<'_>,
 ) -> anyhow::Result<()> {
     let balance_before = token_b.balance_of(trader_a.address()).call().await.unwrap();
+    let settlements_before = fetch_latest_settlement_solver_addresses(services.db())
+        .await
+        .len();
 
     place_order(onchain, trader_a, token_a, token_b, services).await;
 
@@ -425,6 +521,7 @@ async fn execute_order(
         expected_solver,
         services,
         balance_before,
+        settlements_before,
     )
     .await
 }
@@ -436,17 +533,18 @@ async fn wait_for_settlement(
     expected_solver: &H160,
     services: &Services<'_>,
     balance_before: U256,
+    settlements_before: usize,
 ) -> anyhow::Result<()> {
     tracing::info!("Waiting for a settlement");
     wait_for_condition(TIMEOUT.mul_f32(1.5), || async {
         onchain.mint_block().await;
         let balance_after = token_b.balance_of(trader_a.address()).call().await.unwrap();
         let balance_changes = balance_after.checked_sub(balance_before).unwrap() >= to_wei(5);
-        let settled_solver = fetch_latest_settlement_solver_addresses(services.db())
-            .await
+        let new_settlements = fetch_latest_settlement_solver_addresses(services.db()).await;
+        let settled_solver = new_settlements
             .first()
             .is_some_and(|solver| solver == expected_solver);
-        balance_changes && settled_solver
+        balance_changes && settled_solver && new_settlements.len() > settlements_before
     })
     .await
 }

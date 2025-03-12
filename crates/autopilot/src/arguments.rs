@@ -1,7 +1,7 @@
 use {
     crate::{domain::fee::FeeFactor, infra},
     anyhow::{Context, anyhow, ensure},
-    clap::ValueEnum,
+    clap::{ArgAction, ValueEnum},
     primitive_types::{H160, U256},
     shared::{
         arguments::{display_list, display_option},
@@ -272,7 +272,9 @@ pub struct NonSettlingSolversFinderConfig {
         id = "non_settling_solvers_blacklisting_enabled",
         long = "non-settling-solvers-blacklisting-enabled",
         env = "NON_SETTLING_SOLVERS_BLACKLISTING_ENABLED",
-        default_value = "true"
+        default_value = "true",
+        action = ArgAction::Set, // allow to provide the value in the command args
+        value_parser = clap::value_parser!(bool) // required for the above
     )]
     pub enabled: bool,
 
@@ -293,7 +295,9 @@ pub struct LowSettlingSolversFinderConfig {
         id = "low_settling_solvers_blacklisting_enabled",
         long = "low-settling-solvers-blacklisting-enabled",
         env = "LOW_SETTLING_SOLVERS_BLACKLISTING_ENABLED",
-        default_value = "true"
+        default_value = "true",
+        action = ArgAction::Set, // allow to provide the value in the command args
+        value_parser = clap::value_parser!(bool) // required for the above
     )]
     pub enabled: bool,
 

@@ -36,10 +36,14 @@ struct SolverCompetitionStats {
 }
 
 impl SolverCompetitionStats {
-    fn increment(&mut self, success: bool) {
-        self.total += 1;
-        if !success {
+    fn increment(&mut self, success: bool, high_failure_threshold: f64) {
+        if success {
+            self.total += 1;
+        } else if !success && self.failure_rate() <= high_failure_threshold {
+            // Keep the failure rate at the threshold level, so the solver is
+            // able to recover fast with a single successful settlement.
             self.failed += 1;
+            self.total += 1;
         }
     }
 
@@ -117,12 +121,9 @@ impl CompetitionsTracker {
 
         if !add {
             stats.decrement(metadata.settled);
-        } else if stats.failure_rate() <= self.high_failure_threshold {
-            // Keep the failure rate at the threshold level, so the solver is
-            // able to recover fast with a single successful settlement.
-            stats.increment(metadata.settled);
+        } else {
+            stats.increment(metadata.settled, self.high_failure_threshold);
         }
-        tracing::info!("newlog updated stats={:?}", stats);
     }
 
     fn find_high_failure_solvers(&self) -> HashSet<eth::Address> {
