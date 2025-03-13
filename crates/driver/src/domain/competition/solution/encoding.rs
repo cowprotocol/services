@@ -14,7 +14,6 @@ use {
     },
     allowance::Allowance,
     itertools::Itertools,
-    shared::addr,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -186,12 +185,8 @@ pub fn tx(
         // Necessary pre-interactions get prepended to the settlement. So to initiate
         // the loans in the desired order we need to add them in reverse order.
         .rev()
-        .map(|flashloan| {
-            let flashloan_wrapper = contracts.flashloan_wrapper_by_lender().get(&flashloan.lender).cloned().unwrap_or_else(|| {
-                // for driver tests to pass
-                let maker_lender = eth::ContractAddress(addr!("60744434d6339a6B27d73d9Eda62b6F66a0a04FA"));
-                contracts.flashloan_wrapper_by_lender().get(&maker_lender).unwrap().clone()
-            });
+        .filter_map(|flashloan| {
+            let flashloan_wrapper = contracts.flashloan_wrapper_by_lender().get(&flashloan.lender)?;
 
             // Allow settlement contract to pull borrowed tokens from flashloan wrapper
             pre_interactions.insert(
@@ -255,12 +250,12 @@ pub fn tx(
                 &flashloan_wrapper.contract,
             ));
 
-            (
+            Some((
                 flashloan.amount.0,
                 flashloan_wrapper.contract.address(),
                 flashloan.lender.0,
                 flashloan.token.0.0,
-            )
+            ))
         })
         .collect();
 

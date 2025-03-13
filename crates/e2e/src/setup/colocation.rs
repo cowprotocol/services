@@ -172,8 +172,15 @@ estimator = "web3"
 [contracts]
 gp-v2-settlement = "{:?}"
 weth = "{:?}"
-flashloan-wrappers = ["{:?}","{:?}"]  # Maker, Aave
 flashloan-router = "{:?}"
+
+[contracts.flashloan-wrapper-by-lender."{:?}"] # Maker
+address = "0x60744434d6339a6B27d73d9Eda62b6F66a0a04FA"
+
+[contracts.flashloan-wrapper-by-lender."{:?}"] # Aave
+address = "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2"
+fee = "5"
+
 {cow_amms}
 
 {solvers}
@@ -191,9 +198,9 @@ mempool = "public"
 "#,
         contracts.gp_settlement.address(),
         contracts.weth.address(),
+        contracts.flashloan_router.address(),
         contracts.flashloan_wrapper_maker.address(),
         contracts.flashloan_wrapper_aave.address(),
-        contracts.flashloan_router.address(),
     ));
     let args = vec![
         "driver".to_string(),
