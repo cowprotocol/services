@@ -3,7 +3,7 @@ mod statistics;
 
 use {
     crate::{
-        arguments::DbBasedSolverParticipationGuardConfig,
+        arguments::StatisticsBasedSolverParticipationGuardConfig,
         domain::{competition, eth},
         infra,
     },
@@ -25,7 +25,7 @@ impl SolverParticipationGuard {
         eth: infra::Ethereum,
         persistence: infra::Persistence,
         competition_updates_receiver: tokio::sync::mpsc::UnboundedReceiver<competition::Metadata>,
-        db_based_validator_config: DbBasedSolverParticipationGuardConfig,
+        solver_participation_guard_config: StatisticsBasedSolverParticipationGuardConfig,
         drivers: impl IntoIterator<Item = Arc<infra::Driver>>,
     ) -> Self {
         let mut validators: Vec<Box<dyn SolverValidator + Send + Sync>> = Vec::new();
@@ -35,7 +35,7 @@ impl SolverParticipationGuard {
             persistence,
             current_block,
             competition_updates_receiver,
-            db_based_validator_config,
+            solver_participation_guard_config,
             drivers
                 .into_iter()
                 .map(|driver| (driver.submission_address, driver.clone()))

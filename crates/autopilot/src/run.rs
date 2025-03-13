@@ -596,7 +596,7 @@ pub async fn run(args: Arguments) {
         eth.clone(),
         persistence.clone(),
         competition_updates_receiver,
-        args.db_based_solver_participation_guard,
+        args.stats_based_solver_participation_guard,
         drivers.iter().cloned(),
     );
 

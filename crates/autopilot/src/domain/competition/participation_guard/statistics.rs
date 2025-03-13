@@ -1,6 +1,6 @@
 use {
     crate::{
-        arguments::DbBasedSolverParticipationGuardConfig,
+        arguments::StatisticsBasedSolverParticipationGuardConfig,
         domain::{Metrics, auction, competition, eth},
         infra::{self, solvers::dto},
     },
@@ -24,7 +24,12 @@ struct Inner {
     /// settlements still need to skip before the solver can participate in
     /// the competition again.
     banned_solvers: dashmap::DashMap<eth::Address, u32>,
-    config: DbBasedSolverParticipationGuardConfig,
+    /// Disable the banning mechanism when the number of remaining active
+    /// solvers hits this value. This is crucial to prevent the protocol from
+    /// blocking itself by banning all the solvers since the recover
+    /// mechanism requires new competitions.
+    min_active_solvers_count: u32,
+    config: StatisticsBasedSolverParticipationGuardConfig,
     drivers_by_address: HashMap<eth::Address, Arc<infra::Driver>>,
     competitions_tracker: Mutex<CompetitionsTracker>,
 }
@@ -184,27 +189,28 @@ impl SolverValidator {
         persistence: infra::Persistence,
         current_block: CurrentBlockWatcher,
         competition_updates_receiver: mpsc::UnboundedReceiver<competition::Metadata>,
-        db_based_validator_config: DbBasedSolverParticipationGuardConfig,
+        solver_participation_guard_config: StatisticsBasedSolverParticipationGuardConfig,
         drivers_by_address: HashMap<eth::Address, Arc<infra::Driver>>,
     ) -> Self {
         let settlements_tracker = CompetitionsTracker::new(
-            db_based_validator_config
+            solver_participation_guard_config
                 .low_settling_solvers_finder
                 .last_auctions_participation_count,
-            db_based_validator_config
+            solver_participation_guard_config
                 .low_settling_solvers_finder
                 .solver_max_settlement_failure_rate,
-            db_based_validator_config
+            solver_participation_guard_config
                 .low_settling_solvers_finder
                 .min_wins_threshold,
-            db_based_validator_config
+            solver_participation_guard_config
                 .non_settling_solvers_finder
                 .last_auctions_participation_count,
         );
         let self_ = Self(Arc::new(Inner {
             persistence,
             banned_solvers: Default::default(),
-            config: db_based_validator_config,
+            min_active_solvers_count: solver_participation_guard_config.min_active_solvers_count,
+            config: solver_participation_guard_config,
             drivers_by_address,
             competitions_tracker: Mutex::new(settlements_tracker),
         }));
@@ -309,9 +315,10 @@ impl SolverValidator {
             .banned_solvers
             .iter()
             .fold(0, |acc, entry| acc + (*entry.value() > 0) as u32);
-        let at_least_two_remaining = (total_solvers_count - banned_solvers_count) > 1;
+        let have_active_solvers =
+            (total_solvers_count - banned_solvers_count) > self.0.min_active_solvers_count;
         let banning_allowed =
-            ban_mechanism_enabled && driver.requested_timeout_on_problems && at_least_two_remaining;
+            ban_mechanism_enabled && driver.requested_timeout_on_problems && have_active_solvers;
 
         if pending == 0 {
             // The metric is updated regardless the config is enabled to track the
@@ -321,10 +328,10 @@ impl SolverValidator {
                 .with_label_values(&[driver.name.as_ref(), ban_reason.as_str()])
                 .inc();
 
-            if !at_least_two_remaining {
+            if !have_active_solvers {
                 tracing::info!(
                     solver = ?driver.name,
-                    "solver is not banned because there are no other active solvers left"
+                    "solver is not banned because the active solvers count has reached the threshold"
                 );
             }
 

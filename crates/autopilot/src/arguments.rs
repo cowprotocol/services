@@ -248,14 +248,18 @@ pub struct Arguments {
 
     /// Configuration for the solver participation guard.
     #[clap(flatten)]
-    pub db_based_solver_participation_guard: DbBasedSolverParticipationGuardConfig,
+    pub stats_based_solver_participation_guard: StatisticsBasedSolverParticipationGuardConfig,
 }
 
 #[derive(Debug, clap::Parser)]
-pub struct DbBasedSolverParticipationGuardConfig {
+pub struct StatisticsBasedSolverParticipationGuardConfig {
     /// The number of settlements a solver skips after being banned.
     #[clap(long, env, default_value = "10")]
     pub solver_ban_settlements_count: u32,
+
+    /// The minimum number of active solvers to stop the banning mechanism.
+    #[clap(long, env, default_value = "1")]
+    pub min_active_solvers_count: u32,
 
     #[clap(flatten)]
     pub non_settling_solvers_finder: NonSettlingSolversFinderConfig,
@@ -369,7 +373,7 @@ impl std::fmt::Display for Arguments {
             max_winners_per_auction,
             archive_node_url,
             max_solutions_per_solver,
-            db_based_solver_participation_guard,
+            stats_based_solver_participation_guard: db_based_solver_participation_guard,
         } = self;
 
         write!(f, "{}", shared)?;
