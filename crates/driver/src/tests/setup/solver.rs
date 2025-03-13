@@ -14,7 +14,7 @@ use {
             self,
             Ethereum,
             blockchain::contracts::Addresses,
-            config::file::{FeeHandler, FlashloanWrapperData},
+            config::file::{FeeHandler, FlashloanWrapperConfig},
         },
         tests::{hex_address, setup::blockchain::Trade},
     },
@@ -451,25 +451,23 @@ impl Solver {
             .await
             .unwrap(),
         );
-        let flashloan_wrapper_by_lender = config
+        let flashloan_wrappers = config
             .solutions
             .iter()
             .flat_map(|solution| solution.flashloans.clone())
-            .map(|flashloan| {
-                let flashloan_wrapper_data = FlashloanWrapperData {
-                    address: config.blockchain.flashloan_wrapper.address(),
-                    fee: Default::default(),
-                };
-                (flashloan.lender, flashloan_wrapper_data)
+            .map(|flashloan| FlashloanWrapperConfig {
+                lender: flashloan.lender,
+                helper_contract: config.blockchain.flashloan_wrapper.address(),
+                fee_in_bps: Default::default(),
             })
-            .collect::<HashMap<_, _>>();
+            .collect();
         let eth = Ethereum::new(
             rpc,
             Addresses {
                 settlement: Some(config.blockchain.settlement.address().into()),
                 weth: Some(config.blockchain.weth.address().into()),
                 cow_amms: vec![],
-                flashloan_wrapper_by_lender,
+                flashloan_wrappers,
                 flashloan_router: Some(config.blockchain.flashloan_wrapper.address().into()),
             },
             gas,

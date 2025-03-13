@@ -227,8 +227,9 @@ async fn create_config_file(
            weth = "{}"
            flashloan-router = "{}"
 
-           [contracts.flashloan-wrapper-by-lender."0x0000000000000000000000000000000000000000"]
-           address = "{}"
+           [[contracts.flashloan-wrappers]]
+           lender = "0x0000000000000000000000000000000000000000"
+           helper-contract = "{}"
 
            [submission]
            gas-price-cap = "1000000000000"

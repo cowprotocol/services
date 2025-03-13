@@ -186,7 +186,7 @@ pub fn tx(
         // the loans in the desired order we need to add them in reverse order.
         .rev()
         .filter_map(|flashloan| {
-            let flashloan_wrapper = contracts.flashloan_wrapper_by_lender().get(&flashloan.lender)?;
+            let flashloan_wrapper = contracts.flashloan_wrapper_by_lender(&flashloan.lender)?;
 
             // Allow settlement contract to pull borrowed tokens from flashloan wrapper
             pre_interactions.insert(
