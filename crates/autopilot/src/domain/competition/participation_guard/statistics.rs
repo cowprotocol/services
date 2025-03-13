@@ -24,11 +24,11 @@ struct Inner {
     /// settlements still need to skip before the solver can participate in
     /// the competition again.
     banned_solvers: dashmap::DashMap<eth::Address, u32>,
-    /// Disable the banning mechanism when the number of remaining active
-    /// solvers hits this value. This is crucial to prevent the protocol from
-    /// blocking itself by banning all the solvers since the recover
+    /// Stop banning solvers when the number of remaining active
+    /// solvers hits this threshold. This is crucial to prevent the protocol
+    /// from blocking itself by banning all the solvers since the recover
     /// mechanism requires new competitions.
-    min_active_solvers_count: u32,
+    min_active_solvers_threshold: u32,
     config: StatisticsBasedSolverParticipationGuardConfig,
     drivers_by_address: HashMap<eth::Address, Arc<infra::Driver>>,
     competitions_tracker: Mutex<CompetitionsTracker>,
@@ -209,7 +209,8 @@ impl SolverValidator {
         let self_ = Self(Arc::new(Inner {
             persistence,
             banned_solvers: Default::default(),
-            min_active_solvers_count: solver_participation_guard_config.min_active_solvers_count,
+            min_active_solvers_threshold: solver_participation_guard_config
+                .min_active_solvers_threshold,
             config: solver_participation_guard_config,
             drivers_by_address,
             competitions_tracker: Mutex::new(settlements_tracker),
@@ -316,7 +317,7 @@ impl SolverValidator {
             .iter()
             .fold(0, |acc, entry| acc + (*entry.value() > 0) as u32);
         let have_active_solvers =
-            (total_solvers_count - banned_solvers_count) > self.0.min_active_solvers_count;
+            (total_solvers_count - banned_solvers_count) > self.0.min_active_solvers_threshold;
         let banning_allowed =
             ban_mechanism_enabled && driver.requested_timeout_on_problems && have_active_solvers;
 

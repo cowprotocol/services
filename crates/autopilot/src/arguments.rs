@@ -259,7 +259,7 @@ pub struct StatisticsBasedSolverParticipationGuardConfig {
 
     /// The minimum number of active solvers to stop the banning mechanism.
     #[clap(long, env, default_value = "1")]
-    pub min_active_solvers_count: u32,
+    pub min_active_solvers_threshold: u32,
 
     #[clap(flatten)]
     pub non_settling_solvers_finder: NonSettlingSolversFinderConfig,
