@@ -104,7 +104,7 @@ impl Contracts {
             .flashloan_wrappers
             .iter()
             .map(|wrapper_config| {
-                let wrapper = contracts::IFlashLoanSolverWrapper::at(
+                let helper_contract = contracts::IFlashLoanSolverWrapper::at(
                     web3,
                     address_for(
                         contracts::IFlashLoanSolverWrapper::raw_contract(),
@@ -112,7 +112,7 @@ impl Contracts {
                     ),
                 );
                 let wrapper_data = FlashloanWrapperData {
-                    helper_contract: wrapper,
+                    helper_contract,
                     fee_in_bps: wrapper_config.fee_in_bps,
                 };
                 (wrapper_config.lender.into(), wrapper_data)
