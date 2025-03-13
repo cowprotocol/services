@@ -303,7 +303,15 @@ impl SolverValidator {
                 self.0.config.non_settling_solvers_finder.enabled
             }
         };
-        let banning_allowed = ban_mechanism_enabled && driver.requested_timeout_on_problems;
+        let total_solvers_count = self.0.drivers_by_address.len() as u32;
+        let banned_solvers_count = self
+            .0
+            .banned_solvers
+            .iter()
+            .fold(0, |acc, entry| acc + (*entry.value() > 0) as u32);
+        let at_least_two_remaining = (total_solvers_count - banned_solvers_count) > 1;
+        let banning_allowed =
+            ban_mechanism_enabled && driver.requested_timeout_on_problems && at_least_two_remaining;
 
         if pending == 0 {
             // The metric is updated regardless the config is enabled to track the
@@ -312,6 +320,13 @@ impl SolverValidator {
                 .banned_solver
                 .with_label_values(&[driver.name.as_ref(), ban_reason.as_str()])
                 .inc();
+
+            if !at_least_two_remaining {
+                tracing::info!(
+                    solver = ?driver.name,
+                    "solver is not banned because there are no other active solvers left"
+                );
+            }
 
             if banning_allowed {
                 self.0
