@@ -187,20 +187,11 @@ pub fn tx(
         // the loans in the desired order we need to add them in reverse order.
         .rev()
         .map(|flashloan| {
-            // TODO add configuration options
-            // Hardcoded configuration for now
-            let maker_lender = addr!("60744434d6339a6B27d73d9Eda62b6F66a0a04FA");
-            let aave_lender = addr!("87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2");
-
-            let (flashloan_wrapper, flash_fee_bps) = if flashloan.lender.0 == maker_lender {
-                (&contracts.flashloan_wrappers()[0], eth::U256::zero()) // MAKER
-            } else if flashloan.lender.0 == aave_lender {
-                // TODO: ask AAVE to waive the current 5 BPS fee for our helper contract
-                (&contracts.flashloan_wrappers()[1], eth::U256::from(5)) // AAVE
-            } else {
-                // TODO remove this together with configuration options
-                (&contracts.flashloan_wrappers()[0], eth::U256::zero()) // for driver tests to pass
-            };
+            let flashloan_wrapper = contracts.flashloan_wrapper_by_lender().get(&flashloan.lender).cloned().unwrap_or_else(|| {
+                // for driver tests to pass
+                let maker_lender = eth::ContractAddress(addr!("60744434d6339a6B27d73d9Eda62b6F66a0a04FA"));
+                contracts.flashloan_wrapper_by_lender().get(&maker_lender).unwrap().clone()
+            });
 
             // Allow settlement contract to pull borrowed tokens from flashloan wrapper
             pre_interactions.insert(
@@ -209,7 +200,7 @@ pub fn tx(
                     flashloan.token,
                     flashloan.amount,
                     contracts.settlement().address().into(),
-                    flashloan_wrapper,
+                    &flashloan_wrapper.contract,
                 ),
             );
 
@@ -220,7 +211,7 @@ pub fn tx(
                 flashloan.token.into(),
             )
             .transfer_from(
-                flashloan_wrapper.address(),
+                flashloan_wrapper.contract.address(),
                 flashloan.borrower.into(),
                 flashloan.amount.0,
             )
@@ -235,7 +226,7 @@ pub fn tx(
             );
 
             // Repayment amount needs to be increased by flash fee
-            let fee_amount = (flashloan.amount.0 * flash_fee_bps).ceil_div(&10_000.into());
+            let fee_amount = (flashloan.amount.0 * flashloan_wrapper.fee).ceil_div(&10_000.into());
             let repayment_amount = flashloan.amount.0 + fee_amount;
 
             // Since the order receiver is expected to be the setttlement contract, we need
@@ -246,7 +237,7 @@ pub fn tx(
             )
             .transfer_from(
                 contracts.settlement().address(),
-                flashloan_wrapper.address(),
+                flashloan_wrapper.contract.address(),
                 repayment_amount,
             )
             .into_inner();
@@ -261,12 +252,12 @@ pub fn tx(
                 flashloan.token,
                 repayment_amount.into(),
                 flashloan.lender,
-                flashloan_wrapper,
+                &flashloan_wrapper.contract,
             ));
 
             (
                 flashloan.amount.0,
-                flashloan_wrapper.address(),
+                flashloan_wrapper.contract.address(),
                 flashloan.lender.0,
                 flashloan.token.0.0,
             )

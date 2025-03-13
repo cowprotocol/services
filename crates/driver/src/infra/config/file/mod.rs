@@ -375,14 +375,22 @@ struct ContractsConfig {
     #[serde(default)]
     cow_amms: Vec<CowAmmConfig>,
 
-    /// Flashloan wrapper addresses. Note that each lender has it's own wrapper.
+    /// Flashloan wrapper addresses with fee grouped by the lender address.
+    /// Note that each lender has it's own wrapper.
     /// Currently Maker and Aave lenders are supported.
     #[serde(default)]
-    flashloan_wrappers: Vec<eth::H160>,
+    flashloan_wrapper_by_lender: HashMap<eth::H160, FlashloanWrapperData>,
 
     /// Flashloan router to support taking out multiple flashloans
     /// in the same settlement.
     flashloan_router: Option<eth::H160>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct FlashloanWrapperData {
+    pub address: eth::H160,
+    #[serde(default)]
+    pub fee: eth::U256,
 }
 
 #[derive(Debug, Clone, Deserialize)]
