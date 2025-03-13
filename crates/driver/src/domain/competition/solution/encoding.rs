@@ -200,7 +200,7 @@ pub fn tx(
                 flashloan.token,
                 flashloan.amount,
                 contracts.settlement().address().into(),
-                &flashloan_wrapper.contract,
+                &flashloan_wrapper.helper_contract,
             ),
         );
 
@@ -211,7 +211,7 @@ pub fn tx(
             flashloan.token.into(),
         )
         .transfer_from(
-            flashloan_wrapper.contract.address(),
+            flashloan_wrapper.helper_contract.address(),
             flashloan.borrower.into(),
             flashloan.amount.0,
         )
@@ -226,7 +226,8 @@ pub fn tx(
         );
 
         // Repayment amount needs to be increased by flash fee
-        let fee_amount = (flashloan.amount.0 * flashloan_wrapper.fee).ceil_div(&10_000.into());
+        let fee_amount =
+            (flashloan.amount.0 * flashloan_wrapper.fee_in_bps).ceil_div(&10_000.into());
         let repayment_amount = flashloan.amount.0 + fee_amount;
 
         // Since the order receiver is expected to be the setttlement contract, we need
@@ -237,7 +238,7 @@ pub fn tx(
         )
         .transfer_from(
             contracts.settlement().address(),
-            flashloan_wrapper.contract.address(),
+            flashloan_wrapper.helper_contract.address(),
             repayment_amount,
         )
         .into_inner();
@@ -252,12 +253,12 @@ pub fn tx(
             flashloan.token,
             repayment_amount.into(),
             flashloan.lender,
-            &flashloan_wrapper.contract,
+            &flashloan_wrapper.helper_contract,
         ));
 
         flashloans.push((
             flashloan.amount.0,
-            flashloan_wrapper.contract.address(),
+            flashloan_wrapper.helper_contract.address(),
             flashloan.lender.0,
             flashloan.token.0.0,
         ))

@@ -35,8 +35,8 @@ pub struct Contracts {
 
 #[derive(Debug, Clone)]
 pub struct FlashloanWrapperData {
-    pub contract: contracts::IFlashLoanSolverWrapper,
-    pub fee: eth::U256,
+    pub helper_contract: contracts::IFlashLoanSolverWrapper,
+    pub fee_in_bps: eth::U256,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -112,8 +112,8 @@ impl Contracts {
                     ),
                 );
                 let wrapper_data = FlashloanWrapperData {
-                    contract: wrapper,
-                    fee: wrapper_config.fee_in_bps,
+                    helper_contract: wrapper,
+                    fee_in_bps: wrapper_config.fee_in_bps,
                 };
                 (wrapper_config.lender.into(), wrapper_data)
             })
