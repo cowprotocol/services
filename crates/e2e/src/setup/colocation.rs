@@ -174,11 +174,11 @@ gp-v2-settlement = "{:?}"
 weth = "{:?}"
 flashloan-router = "{:?}"
 
-[contracts.flashloan-wrapper-by-lender."{:?}"] # Maker
-address = "0x60744434d6339a6B27d73d9Eda62b6F66a0a04FA"
+[contracts.flashloan-wrapper-by-lender."0x60744434d6339a6B27d73d9Eda62b6F66a0a04FA"] # Maker
+address = "{:?}"
 
-[contracts.flashloan-wrapper-by-lender."{:?}"] # Aave
-address = "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2"
+[contracts.flashloan-wrapper-by-lender."0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2"] # Aave
+address = "{:?}"
 fee = "5"
 
 {cow_amms}
