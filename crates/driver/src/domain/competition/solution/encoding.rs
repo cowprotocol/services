@@ -190,7 +190,7 @@ pub fn tx(
         .rev()
     {
         let flashloan_wrapper = contracts
-            .flashloan_wrapper_by_lender(&flashloan.lender)
+            .get_flashloan_wrapper(&flashloan.lender)
             .ok_or(Error::UnknownFlashloanLender(flashloan.lender.0))?;
 
         // Allow settlement contract to pull borrowed tokens from flashloan wrapper

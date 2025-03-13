@@ -170,7 +170,7 @@ impl Contracts {
         &self.cow_amm_registry
     }
 
-    pub fn flashloan_wrapper_by_lender(
+    pub fn get_flashloan_wrapper(
         &self,
         lender: &eth::ContractAddress,
     ) -> Option<&FlashloanWrapperData> {
