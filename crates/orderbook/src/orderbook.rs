@@ -5,7 +5,7 @@ use {
             trades::{TradeFilter, TradeRetrieving},
         },
         dto,
-        solver_competition::{Identifier, SolverCompetitionStoring},
+        solver_competition::{Identifier, LoadSolverCompetitionError, SolverCompetitionStoring},
     },
     anyhow::{Context, Result},
     app_data::{AppDataHash, Validator},
@@ -489,7 +489,10 @@ impl Orderbook {
             .context("get_user_orders error")
     }
 
-    pub async fn get_order_status(&self, uid: &OrderUid) -> Result<Option<dto::order::Status>> {
+    pub async fn get_order_status(
+        &self,
+        uid: &OrderUid,
+    ) -> Result<Option<dto::order::Status>, Error> {
         let solutions = |competition: SolverCompetitionAPI| {
             competition
                 .common
@@ -516,8 +519,12 @@ impl Orderbook {
         };
 
         let latest_competition = async {
-            let competition = self.database.load_latest_competition().await?;
-            Ok::<_, anyhow::Error>(solutions(competition))
+            let competition = self
+                .database
+                .load_latest_competition()
+                .await
+                .map_err(Into::into)?;
+            Ok::<_, Error>(solutions(competition))
         };
 
         // Once an order was executed we always want to return `Traded` with the
@@ -561,6 +568,23 @@ impl Orderbook {
             OrderEventLabel::Invalid => dto::order::Status::Open,
         };
         Ok(Some(status))
+    }
+}
+
+#[derive(Error, Debug)]
+pub(crate) enum Error {
+    #[error("solver competition not found")]
+    NotFound,
+    #[error(transparent)]
+    Other(#[from] anyhow::Error),
+}
+
+impl From<LoadSolverCompetitionError> for Error {
+    fn from(value: LoadSolverCompetitionError) -> Self {
+        match value {
+            LoadSolverCompetitionError::NotFound => Self::NotFound,
+            LoadSolverCompetitionError::Other(err) => Self::Other(err),
+        }
     }
 }
 
