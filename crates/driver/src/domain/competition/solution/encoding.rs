@@ -14,7 +14,6 @@ use {
     },
     allowance::Allowance,
     itertools::Itertools,
-    shared::addr,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -30,6 +29,8 @@ pub enum Error {
     // TODO: remove when contracts are deployed everywhere
     #[error("flashloan support disabled")]
     FlashloanSupportDisabled,
+    #[error("no flashloan helper configured for lender: {0}")]
+    UnsupportedFlashloanLender(eth::H160),
 }
 
 pub fn tx(
@@ -180,27 +181,16 @@ pub fn tx(
 
     // Add all interactions needed to move flash loaned tokens around
     // These interactions are executed before all other pre-interactions
-    let flashloans: Vec<_> = solution
+    let flashloans = solution
         .flashloans
         .iter()
         // Necessary pre-interactions get prepended to the settlement. So to initiate
         // the loans in the desired order we need to add them in reverse order.
         .rev()
         .map(|flashloan| {
-            // TODO add configuration options
-            // Hardcoded configuration for now
-            let maker_lender = addr!("60744434d6339a6B27d73d9Eda62b6F66a0a04FA");
-            let aave_lender = addr!("87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2");
-
-            let (flashloan_wrapper, flash_fee_bps) = if flashloan.lender.0 == maker_lender {
-                (&contracts.flashloan_wrappers()[0], eth::U256::zero()) // MAKER
-            } else if flashloan.lender.0 == aave_lender {
-                // TODO: ask AAVE to waive the current 5 BPS fee for our helper contract
-                (&contracts.flashloan_wrappers()[1], eth::U256::from(5)) // AAVE
-            } else {
-                // TODO remove this together with configuration options
-                (&contracts.flashloan_wrappers()[0], eth::U256::zero()) // for driver tests to pass
-            };
+            let flashloan_wrapper = contracts
+                .get_flashloan_wrapper(&flashloan.lender)
+                .ok_or(Error::UnsupportedFlashloanLender(flashloan.lender.0))?;
 
             // Allow settlement contract to pull borrowed tokens from flashloan wrapper
             pre_interactions.insert(
@@ -209,7 +199,7 @@ pub fn tx(
                     flashloan.token,
                     flashloan.amount,
                     contracts.settlement().address().into(),
-                    flashloan_wrapper,
+                    &flashloan_wrapper.helper_contract,
                 ),
             );
 
@@ -220,7 +210,7 @@ pub fn tx(
                 flashloan.token.into(),
             )
             .transfer_from(
-                flashloan_wrapper.address(),
+                flashloan_wrapper.helper_contract.address(),
                 flashloan.borrower.into(),
                 flashloan.amount.0,
             )
@@ -235,7 +225,8 @@ pub fn tx(
             );
 
             // Repayment amount needs to be increased by flash fee
-            let fee_amount = (flashloan.amount.0 * flash_fee_bps).ceil_div(&10_000.into());
+            let fee_amount =
+                (flashloan.amount.0 * flashloan_wrapper.fee_in_bps).ceil_div(&10_000.into());
             let repayment_amount = flashloan.amount.0 + fee_amount;
 
             // Since the order receiver is expected to be the setttlement contract, we need
@@ -246,7 +237,7 @@ pub fn tx(
             )
             .transfer_from(
                 contracts.settlement().address(),
-                flashloan_wrapper.address(),
+                flashloan_wrapper.helper_contract.address(),
                 repayment_amount,
             )
             .into_inner();
@@ -261,17 +252,16 @@ pub fn tx(
                 flashloan.token,
                 repayment_amount.into(),
                 flashloan.lender,
-                flashloan_wrapper,
+                &flashloan_wrapper.helper_contract,
             ));
 
-            (
+            Ok((
                 flashloan.amount.0,
-                flashloan_wrapper.address(),
+                flashloan_wrapper.helper_contract.address(),
                 flashloan.lender.0,
                 flashloan.token.0.0,
-            )
-        })
-        .collect();
+            ))
+        }).collect::<Result<Vec<(eth::U256, eth::H160, eth::H160, eth::H160)>, Error>>()?;
 
     for interaction in solution.interactions() {
         if matches!(internalization, settlement::Internalization::Enable)
