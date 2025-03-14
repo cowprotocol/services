@@ -266,13 +266,11 @@ impl<'de> Deserialize<'de> for PartnerFees {
         #[derive(Deserialize)]
         #[serde(untagged)]
         enum Helper {
-            Empty,
             Single(PartnerFee),
             Multiple(Vec<PartnerFee>),
         }
 
         match Helper::deserialize(deserializer)? {
-            Helper::Empty => Ok(PartnerFees(vec![])),
             Helper::Single(fee) => Ok(PartnerFees(vec![fee])),
             Helper::Multiple(fees) => Ok(PartnerFees(fees)),
         }
