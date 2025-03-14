@@ -356,21 +356,21 @@ pub fn mempool_executed(
             submitted_at_block,
             included_in_block,
             ..
-        }) => Some(("success", &submitted_at_block.0, &included_in_block.0)),
+        }) => Some(("Success", &submitted_at_block.0, &included_in_block.0)),
         Err(mempools::Error::Revert {
             tx_id: _,
             submitted_at_block,
             reverted_at_block,
-        }) => Some(("revert", submitted_at_block, reverted_at_block)),
+        }) => Some(("Revert", submitted_at_block, reverted_at_block)),
         Err(mempools::Error::SimulationRevert {
             submitted_at_block,
             reverted_at_block,
-        }) => Some(("revert", submitted_at_block, reverted_at_block)),
+        }) => Some(("Revert", submitted_at_block, reverted_at_block)),
         Err(mempools::Error::Expired {
             tx_id: _,
             submitted_at_block,
             submission_deadline,
-        }) => Some(("timeout", submitted_at_block, submission_deadline)),
+        }) => Some(("Expired", submitted_at_block, submission_deadline)),
         Err(mempools::Error::Other(_)) => None,
         Err(mempools::Error::Disabled) => None,
     };
