@@ -1,9 +1,12 @@
 use {
-    crate::{api::ApiReply, orderbook::Orderbook},
+    crate::{
+        api::ApiReply,
+        orderbook::{self, Orderbook},
+    },
     anyhow::Result,
     model::order::OrderUid,
     std::{convert::Infallible, sync::Arc},
-    warp::{Filter, Rejection, hyper::StatusCode},
+    warp::{Filter, Rejection, hyper::StatusCode, reply},
 };
 
 fn get_status_request() -> impl Filter<Extract = (OrderUid,), Error = Rejection> + Clone {
@@ -23,6 +26,10 @@ pub fn get_status(
                 }
                 Ok(None) => warp::reply::with_status(
                     super::error("OrderNotFound", "Order not located in database"),
+                    StatusCode::NOT_FOUND,
+                ),
+                Err(orderbook::Error::NotFound) => reply::with_status(
+                    super::error("NotFound", "Order status was not found"),
                     StatusCode::NOT_FOUND,
                 ),
                 Err(err) => {
