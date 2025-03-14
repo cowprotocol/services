@@ -906,9 +906,9 @@ components:
           allOf:
             - $ref: "#/components/schemas/BigUint"
         executedFeeAmount:
-          description: The total amount of the user signed `fee` that have been
-          executed for this order. This value is only non-negative for very
-          old orders.
+          description: >
+            [DEPRECATED] The total amount of the user signed `fee` that have been
+            executed for this order. This value is only non-negative for very old orders.
           allOf:
             - $ref: "#/components/schemas/BigUint"
         invalidated:
@@ -950,8 +950,9 @@ components:
           allOf:
             - $ref: "#/components/schemas/OnchainOrderData"
         executedFee:
-          description: Total fee charged for execution of the order. Contains network fee and protocol fees.
-          This takes into account the historic static fee signed by the user and the new dynamic fee computed by solvers.
+          description: >
+            Total fee charged for execution of the order. Contains network fee and protocol fees.
+            This takes into account the historic static fee signed by the user and the new dynamic fee computed by solvers.
           allOf:
             - $ref: "#/components/schemas/BigUint"
           nullable: false
