@@ -76,11 +76,7 @@ impl ProtocolFees {
     /// Returns the capped aggregated partner fee
     fn get_partner_fee(order: &boundary::Order, max_partner_fee: f64) -> Vec<Policy> {
         /// Convert a fee into a `FeeFactor` capping its value
-        fn try_fee_factor_from_capped(
-            value: Decimal,
-            cap: Decimal,
-            accumulated: Decimal,
-        ) -> anyhow::Result<FeeFactor> {
+        fn fee_factor_from_capped(value: Decimal, cap: Decimal, accumulated: Decimal) -> FeeFactor {
             // Calculate how much more we can compound before hitting the cap.
             //
             // When dealing with fee factors or percentages in compounding operations:
@@ -100,9 +96,7 @@ impl ProtocolFees {
             // to the percentage form (0.xx) that our FeeFactor expects.
             let remaining_factor =
                 (Decimal::ONE + cap) / (Decimal::ONE + accumulated) - Decimal::ONE;
-            Ok(FeeFactor(f64::try_from(
-                value.max(Decimal::ZERO).min(remaining_factor),
-            )?))
+            FeeFactor(f64::try_from(value.max(Decimal::ZERO).min(remaining_factor)).unwrap())
         }
 
         let Ok(max_partner_fee) = Decimal::try_from(max_partner_fee) else {
@@ -121,18 +115,17 @@ impl ProtocolFees {
             .protocol
             .partner_fee
             .iter()
-            .filter_map(move |partner_fee| {
+            .map(move |partner_fee| {
                 // Convert bps to decimal percentage
                 let fee_decimal = Decimal::from(partner_fee.bps) / Decimal::from(10_000);
 
                 // Create policy and update accumulator
-                let factor =
-                    try_fee_factor_from_capped(fee_decimal, max_partner_fee, accumulated).ok()?;
+                let factor = fee_factor_from_capped(fee_decimal, max_partner_fee, accumulated);
 
                 // Update the accumulated value for the next iteration
                 accumulated += fee_decimal.min(max_partner_fee - accumulated);
 
-                Some(Policy::Volume { factor })
+                Policy::Volume { factor }
             })
             .collect::<Vec<_>>()
     }
