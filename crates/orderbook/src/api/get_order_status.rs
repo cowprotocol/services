@@ -29,7 +29,7 @@ pub fn get_status(
                     StatusCode::NOT_FOUND,
                 ),
                 Err(orderbook::Error::NotFound) => reply::with_status(
-                    super::error("NotFound", "Competition was not found"),
+                    super::error("NotFound", "Order status was not found"),
                     StatusCode::NOT_FOUND,
                 ),
                 Err(err) => {
