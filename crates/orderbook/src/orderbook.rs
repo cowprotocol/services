@@ -523,7 +523,7 @@ impl Orderbook {
                 .database
                 .load_latest_competition()
                 .await
-                .map_err(Into::into)?;
+                .map_err(Into::<Error>::into)?;
             Ok::<_, Error>(solutions(competition))
         };
 
@@ -572,7 +572,7 @@ impl Orderbook {
 }
 
 #[derive(Error, Debug)]
-pub(crate) enum Error {
+pub enum Error {
     #[error("solver competition not found")]
     NotFound,
     #[error(transparent)]
