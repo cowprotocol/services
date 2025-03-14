@@ -120,7 +120,7 @@ impl Mempools {
                 let block = self.ethereum.current_block().borrow().number;
                 return Err(Error::SimulationRevert {
                     submitted_at_block: block,
-                    block_number: block,
+                    reverted_at_block: block,
                 });
             } else {
                 tracing::warn!(
@@ -152,7 +152,7 @@ impl Mempools {
                         return Err(Error::Revert {
                             tx_id: hash.clone(),
                             submitted_at_block,
-                            block_number: block.number,
+                            reverted_at_block: block.number,
                         })
                     }
                     TxStatus::Pending => {
@@ -192,7 +192,7 @@ impl Mempools {
                                 );
                                 return Err(Error::SimulationRevert {
                                     submitted_at_block,
-                                    block_number: block.number,
+                                    reverted_at_block: block.number,
                                 });
                             } else {
                                 tracing::warn!(?hash, ?err, "couldn't re-simulate tx");
@@ -267,16 +267,16 @@ pub enum RevertProtection {
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("Mined reverted transaction: {tx_id:?}, block number: {block_number}")]
+    #[error("Mined reverted transaction: {tx_id:?}, block number: {reverted_at_block}")]
     Revert {
         tx_id: eth::TxId,
         submitted_at_block: BlockNo,
-        block_number: BlockNo,
+        reverted_at_block: BlockNo,
     },
-    #[error("Simulation started reverting during submission, block number: {block_number}")]
+    #[error("Simulation started reverting during submission, block number: {reverted_at_block}")]
     SimulationRevert {
         submitted_at_block: BlockNo,
-        block_number: BlockNo,
+        reverted_at_block: BlockNo,
     },
     #[error(
         "Settlement did not get included in time: submitted at block: {submitted_at_block}, \

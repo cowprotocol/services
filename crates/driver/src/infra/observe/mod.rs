@@ -356,12 +356,12 @@ pub fn mempool_executed(
         Err(mempools::Error::Revert {
             tx_id: _,
             submitted_at_block,
-            block_number,
-        }) => Some(block_number.saturating_sub(*submitted_at_block)),
+            reverted_at_block,
+        }) => Some(reverted_at_block.saturating_sub(*submitted_at_block)),
         Err(mempools::Error::SimulationRevert {
             submitted_at_block,
-            block_number,
-        }) => Some(block_number.saturating_sub(*submitted_at_block)),
+            reverted_at_block,
+        }) => Some(reverted_at_block.saturating_sub(*submitted_at_block)),
         Err(mempools::Error::Expired {
             tx_id: _,
             submitted_at_block,
