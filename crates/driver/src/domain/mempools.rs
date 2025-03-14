@@ -117,9 +117,10 @@ impl Mempools {
                     ?err,
                     "settlement tx simulation reverted before submitting to the mempool"
                 );
+                let block = self.ethereum.current_block().borrow().number;
                 return Err(Error::SimulationRevert {
-                    submitted_at_block: self.ethereum.current_block().borrow().number,
-                    block_number: self.ethereum.current_block().borrow().number,
+                    submitted_at_block: block,
+                    block_number: block,
                 });
             } else {
                 tracing::warn!(
