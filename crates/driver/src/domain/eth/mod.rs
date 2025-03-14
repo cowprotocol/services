@@ -344,9 +344,9 @@ pub struct TxId(pub H256);
 
 pub enum TxStatus {
     /// The transaction has been included and executed successfully.
-    Executed,
+    Executed { block: BlockNo },
     /// The transaction has been included but execution failed.
-    Reverted,
+    Reverted { block: BlockNo },
     /// The transaction has not been included yet.
     Pending,
 }

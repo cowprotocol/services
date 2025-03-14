@@ -16,7 +16,7 @@ use {
                 solution::{self, Settlement},
             },
             eth::{self, Gas},
-            mempools,
+            mempools::{self, SubmissionSuccess},
             quote::{self, Quote},
             time::{Deadline, Remaining},
         },
@@ -311,12 +311,12 @@ pub fn solver_response(endpoint: &Url, res: Result<&str, &http::Error>) {
 pub fn mempool_executed(
     mempool: &Mempool,
     settlement: &Settlement,
-    res: &Result<eth::TxId, mempools::Error>,
+    res: &Result<SubmissionSuccess, mempools::Error>,
 ) {
     match res {
-        Ok(txid) => {
+        Ok(submission) => {
             tracing::info!(
-                ?txid,
+                txid = ?submission.tx_hash,
                 %mempool,
                 ?settlement,
                 "sending transaction via mempool succeeded",
@@ -352,30 +352,35 @@ pub fn mempool_executed(
     // For some of the errors we are interested in observing the exact block numbers
     // passed since the first submission.
     let blocks_passed = match res {
-        Ok(_) => None,
+        Ok(SubmissionSuccess {
+            submitted_at_block,
+            included_in_block,
+            ..
+        }) => Some(("success", &submitted_at_block.0, &included_in_block.0)),
         Err(mempools::Error::Revert {
             tx_id: _,
             submitted_at_block,
             reverted_at_block,
-        }) => Some(reverted_at_block.saturating_sub(*submitted_at_block)),
+        }) => Some(("revert", submitted_at_block, reverted_at_block)),
         Err(mempools::Error::SimulationRevert {
             submitted_at_block,
             reverted_at_block,
-        }) => Some(reverted_at_block.saturating_sub(*submitted_at_block)),
+        }) => Some(("revert", submitted_at_block, reverted_at_block)),
         Err(mempools::Error::Expired {
             tx_id: _,
             submitted_at_block,
             submission_deadline,
-        }) => Some(submission_deadline.saturating_sub(*submitted_at_block)),
+        }) => Some(("timeout", submitted_at_block, submission_deadline)),
         Err(mempools::Error::Other(_)) => None,
         Err(mempools::Error::Disabled) => None,
     };
 
-    if let Some(blocks_passed) = blocks_passed {
+    if let Some((label, start, end)) = blocks_passed {
+        let blocks_passed = end.saturating_sub(*start);
         metrics::get()
-            .mempool_submission_error_blocks_passed
-            .with_label_values(&[&mempool.to_string(), result])
-            .observe(blocks_passed as f64);
+            .mempool_submission_results_blocks_passed
+            .with_label_values(&[&mempool.to_string(), label])
+            .inc_by(blocks_passed);
     }
 }
 

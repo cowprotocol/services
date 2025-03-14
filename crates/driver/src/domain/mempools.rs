@@ -49,7 +49,7 @@ impl Mempools {
         settlement: &Settlement,
         submission_deadline: BlockNo,
     ) -> Result<eth::TxId, Error> {
-        let (tx_hash, _remaining_futures) =
+        let (submission, _remaining_futures) =
             select_ok(self.mempools.iter().cloned().map(|mempool| {
                 async move {
                     let result = self
@@ -63,7 +63,7 @@ impl Mempools {
             }))
             .await?;
 
-        Ok(tx_hash)
+        Ok(submission.tx_hash)
     }
 
     /// Defines if the mempools are configured in a way that guarantees that
@@ -90,7 +90,7 @@ impl Mempools {
         solver: &Solver,
         settlement: &Settlement,
         submission_deadline: BlockNo,
-    ) -> Result<eth::TxId, Error> {
+    ) -> Result<SubmissionSuccess, Error> {
         // Don't submit risky transactions if revert protection is
         // enabled and the settlement may revert in this mempool.
         if settlement.may_revert()
@@ -147,12 +147,16 @@ impl Mempools {
                         TxStatus::Pending
                     });
                 match receipt {
-                    TxStatus::Executed => return Ok(hash.clone()),
-                    TxStatus::Reverted => {
+                    TxStatus::Executed { block } => return Ok(SubmissionSuccess {
+                        tx_hash: hash.clone(),
+                        submitted_at_block: submitted_at_block.into(),
+                        included_in_block: block,
+                    }),
+                    TxStatus::Reverted { block } => {
                         return Err(Error::Revert {
                             tx_id: hash.clone(),
                             submitted_at_block,
-                            reverted_at_block: block.number,
+                            reverted_at_block: block.into(),
                         })
                     }
                     TxStatus::Pending => {
@@ -210,9 +214,14 @@ impl Mempools {
         if result.is_err() {
             // Do one last attempt to see if the transaction was confirmed (in case of race
             // conditions or misclassified errors like `OrderFilled` simulation failures).
-            if let Ok(TxStatus::Executed) = self.ethereum.transaction_status(&hash).await {
-                tracing::info!(?hash, "Found confirmed transaction, ignoring error");
-                return Ok(hash);
+            if let Ok(TxStatus::Executed { block }) = self.ethereum.transaction_status(&hash).await
+            {
+                tracing::info!(?hash, ?block, "Found confirmed transaction, ignoring error");
+                return Ok(SubmissionSuccess {
+                    tx_hash: hash,
+                    included_in_block: block,
+                    submitted_at_block: submitted_at_block.into(),
+                });
             }
         }
         result
@@ -251,6 +260,14 @@ impl Mempools {
 
         mempool.submit(cancellation, gas, solver).await
     }
+}
+
+pub struct SubmissionSuccess {
+    pub tx_hash: eth::TxId,
+    /// At which block we started to submit the transaction.
+    pub included_in_block: eth::BlockNo,
+    /// In which block the transaction actually appeared onchain.
+    pub submitted_at_block: eth::BlockNo,
 }
 
 #[derive(Debug, Error)]
