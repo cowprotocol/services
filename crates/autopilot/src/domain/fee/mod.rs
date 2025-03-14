@@ -75,6 +75,36 @@ impl ProtocolFees {
 
     /// Returns the capped aggregated partner fee
     fn get_partner_fee(order: &boundary::Order, max_partner_fee: f64) -> Vec<Policy> {
+        /// Convert a fee into a `FeeFactor` capping its value
+        fn try_fee_factor_from_capped(
+            value: Decimal,
+            cap: Decimal,
+            accumulated: Decimal,
+        ) -> anyhow::Result<FeeFactor> {
+            // Calculate how much more we can compound before hitting the cap.
+            //
+            // When dealing with fee factors or percentages in compounding operations:
+            // - We use (1 + x) where x is the percentage as a decimal (e.g., 5% = 0.05 →
+            //   1.05)
+            // - This is because applying a fee means multiplying by (1 + fee_rate)
+            //
+            // The total accumulated factor can't exceed (1 + cap), and we've
+            // already accumulated to (1 + accumulated), then:
+            //
+            // 1. Current value with accumulated fees: (1 + accumulated)
+            // 2. Maximum allowed value: (1 + cap)
+            // 3. To find the remaining factor we can apply: (1 + cap) / (1 + accumulated) -
+            //    1
+            //
+            // The subtraction of 1 at the end converts back from the multiplier form (1.xx)
+            // to the percentage form (0.xx) that our FeeFactor expects.
+            let remaining_factor =
+                (Decimal::ONE + cap) / (Decimal::ONE + accumulated) - Decimal::ONE;
+            Ok(FeeFactor(f64::try_from(
+                value.max(Decimal::ZERO).min(remaining_factor),
+            )?))
+        }
+
         let Ok(max_partner_fee) = Decimal::try_from(max_partner_fee) else {
             return vec![];
         };
@@ -93,12 +123,11 @@ impl ProtocolFees {
             .iter()
             .filter_map(move |partner_fee| {
                 // Convert bps to decimal percentage
-                let fee_decimal =
-                    Decimal::from(partner_fee.bps).checked_div(Decimal::from(10_000))?;
+                let fee_decimal = Decimal::from(partner_fee.bps) / Decimal::from(10_000);
 
                 // Create policy and update accumulator
                 let factor =
-                    FeeFactor::try_from_capped(fee_decimal, max_partner_fee, accumulated).ok()?;
+                    try_fee_factor_from_capped(fee_decimal, max_partner_fee, accumulated).ok()?;
 
                 // Update the accumulated value for the next iteration
                 accumulated += fee_decimal.min(max_partner_fee - accumulated);
@@ -233,21 +262,6 @@ pub enum Policy {
 
 #[derive(Debug, Clone, Copy, PartialEq, Into)]
 pub struct FeeFactor(f64);
-
-impl FeeFactor {
-    /// Convert a fee into a `FeeFactor` capping its value
-    pub fn try_from_capped(
-        value: Decimal,
-        cap: Decimal,
-        accumulated: Decimal,
-    ) -> anyhow::Result<Self> {
-        // Calculate how much more we can add before hitting the cap
-        let remaining_factor = (Decimal::ONE + cap) / (Decimal::ONE + accumulated) - Decimal::ONE;
-        Ok(Self(
-            value.max(Decimal::ZERO).min(remaining_factor).try_into()?,
-        ))
-    }
-}
 
 /// TryFrom implementation for the cases we want to enforce the constrain [0, 1)
 impl TryFrom<f64> for FeeFactor {
