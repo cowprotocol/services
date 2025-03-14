@@ -160,7 +160,7 @@ impl Settlement {
             simulator,
         )
         .await?;
-        let price = eth.gas_price().await?;
+        let price = eth.gas_price(None).await?;
         let gas = Gas::new(gas, eth.block_gas_limit(), price)?;
 
         // Ensure that the solver has sufficient balance for the settlement to be mined.
