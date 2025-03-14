@@ -29,6 +29,7 @@ pub struct ProtocolAppData {
     pub hooks: Hooks,
     pub signer: Option<H160>,
     pub replaced_order: Option<ReplacedOrder>,
+    #[serde(default)]
     pub partner_fee: PartnerFees,
     pub flashloan: Option<Flashloan>,
 }
@@ -258,59 +259,22 @@ impl PartnerFees {
 }
 
 impl<'de> Deserialize<'de> for PartnerFees {
-    fn deserialize<D>(deserializer: D) -> Result<PartnerFees, D::Error>
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        PartnerFeeHelper::deserialize(deserializer).map(|v| v.into_partner_fees())
-    }
-}
-
-enum PartnerFeeHelper {
-    Empty,
-    Single(PartnerFee),
-    Multiple(Vec<PartnerFee>),
-}
-
-impl PartnerFeeHelper {
-    fn into_partner_fees(self) -> PartnerFees {
-        match self {
-            PartnerFeeHelper::Empty => PartnerFees(vec![]),
-            PartnerFeeHelper::Single(partner_fee) => PartnerFees(vec![partner_fee]),
-            PartnerFeeHelper::Multiple(partner_fees) => PartnerFees(partner_fees),
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Helper {
+            Empty,
+            Single(PartnerFee),
+            Multiple(Vec<PartnerFee>),
         }
-    }
-}
 
-impl<'de> Deserialize<'de> for PartnerFeeHelper {
-    fn deserialize<D>(deserializer: D) -> Result<PartnerFeeHelper, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        // First try to deserialize as a normal JSON Value
-        let opt = Option::<serde_json::Value>::deserialize(deserializer)?;
-
-        match opt {
-            // Field is not present at all or is null
-            None | Some(serde_json::Value::Null) => Ok(PartnerFeeHelper::Empty),
-            // Field is an object (single PartnerFee)
-            Some(obj @ serde_json::Value::Object(_)) => {
-                let fee = serde_json::from_value::<PartnerFee>(obj).map_err(de::Error::custom)?;
-                Ok(PartnerFeeHelper::Single(fee))
-            }
-
-            Some(serde_json::Value::Array(arr)) => {
-                let fees = arr
-                    .into_iter()
-                    .map(serde_json::from_value::<PartnerFee>)
-                    .collect::<Result<Vec<_>, _>>()
-                    .map_err(de::Error::custom)?;
-                Ok(PartnerFeeHelper::Multiple(fees))
-            }
-            // Other types are invalid
-            _ => Err(de::Error::custom(
-                "Expected null, single PartnerFee object, or array of PartnerFee objects",
-            )),
+        match Helper::deserialize(deserializer)? {
+            Helper::Empty => Ok(PartnerFees(vec![])),
+            Helper::Single(fee) => Ok(PartnerFees(vec![fee])),
+            Helper::Multiple(fees) => Ok(PartnerFees(fees)),
         }
     }
 }
