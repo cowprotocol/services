@@ -1,7 +1,7 @@
 use {
+    ::driver::domain::eth::NonZeroU256,
     app_data::AppDataHash,
     contracts::ERC20,
-    driver::domain::eth::NonZeroU256,
     e2e::{
         nodes::forked_node::ForkedNodeApi,
         setup::{colocation::SolverEngine, mock::Mock, *},
