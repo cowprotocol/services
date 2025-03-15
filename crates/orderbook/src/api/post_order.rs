@@ -1,7 +1,7 @@
 use {
     crate::{
         api::{ApiReply, IntoWarpReply, error, extract_payload},
-        orderbook::{AddOrderError, Orderbook},
+        orderbook::{AddOrderError, OrderReplacementError, Orderbook},
     },
     anyhow::Result,
     model::{
@@ -258,14 +258,37 @@ impl IntoWarpReply for AddOrderError {
                 super::error("InvalidAppData", err.to_string()),
                 StatusCode::BAD_REQUEST,
             ),
-            err @ AddOrderError::InvalidReplacement => reply::with_status(
-                super::error("InvalidReplacement", err.to_string()),
-                StatusCode::UNAUTHORIZED,
-            ),
+            AddOrderError::InvalidReplacement(err) => err.into_warp_reply(),
             AddOrderError::MetadataSerializationFailed(err) => reply::with_status(
                 super::error("MetadataSerializationFailed", err.to_string()),
                 StatusCode::INTERNAL_SERVER_ERROR,
             ),
+        }
+    }
+}
+
+impl IntoWarpReply for OrderReplacementError {
+    fn into_warp_reply(self) -> super::ApiReply {
+        match self {
+            OrderReplacementError::InvalidSignature => with_status(
+                super::error("InvalidSignature", "Malformed signature"),
+                StatusCode::BAD_REQUEST,
+            ),
+            OrderReplacementError::WrongOwner => with_status(
+                super::error("WrongOwner", "Old and new orders have different signers"),
+                StatusCode::UNAUTHORIZED,
+            ),
+            OrderReplacementError::OldOrderActivelyBidOn => with_status(
+                super::error(
+                    "OldOrderActivelyBidOn",
+                    "The old order is actively beign bid on in recent auctions",
+                ),
+                StatusCode::BAD_REQUEST,
+            ),
+            OrderReplacementError::Other(err) => {
+                tracing::error!(?err, "replace_order");
+                crate::api::internal_error_reply()
+            }
         }
     }
 }
