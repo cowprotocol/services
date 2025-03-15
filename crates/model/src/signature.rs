@@ -1,6 +1,7 @@
 use {
     crate::{DomainSeparator, quote::QuoteSigningScheme},
     anyhow::{Context as _, Result, ensure},
+    database::orders::SigningScheme as DbSigningScheme,
     primitive_types::{H160, H256},
     serde::{Deserialize, Serialize, de},
     std::{
@@ -62,6 +63,28 @@ pub enum Signature {
     /// onchain transaction is also signed, it proves that the user indeed
     /// signed the order.
     PreSign,
+}
+
+impl From<DbSigningScheme> for SigningScheme {
+    fn from(scheme: DbSigningScheme) -> Self {
+        match scheme {
+            DbSigningScheme::Eip712 => SigningScheme::Eip712,
+            DbSigningScheme::EthSign => SigningScheme::EthSign,
+            DbSigningScheme::Eip1271 => SigningScheme::Eip1271,
+            DbSigningScheme::PreSign => SigningScheme::PreSign,
+        }
+    }
+}
+
+impl From<SigningScheme> for DbSigningScheme {
+    fn from(scheme: SigningScheme) -> Self {
+        match scheme {
+            SigningScheme::Eip712 => DbSigningScheme::Eip712,
+            SigningScheme::EthSign => DbSigningScheme::EthSign,
+            SigningScheme::Eip1271 => DbSigningScheme::Eip1271,
+            SigningScheme::PreSign => DbSigningScheme::PreSign,
+        }
+    }
 }
 
 impl Default for Signature {

@@ -3186,6 +3186,7 @@ dependencies = [
  "bigdecimal",
  "bytes-hex",
  "chrono",
+ "database",
  "derive_more 1.0.0",
  "hex",
  "hex-literal",

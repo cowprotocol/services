@@ -1,8 +1,5 @@
 use {
-    crate::{
-        db_order_conversions::order_kind_into,
-        order_quoting::{QuoteData, QuoteSearchParameters, quote_kind_from_signing_scheme},
-    },
+    crate::order_quoting::{QuoteData, QuoteSearchParameters, quote_kind_from_signing_scheme},
     anyhow::Result,
     chrono::{DateTime, Utc},
     database::{
@@ -22,7 +19,7 @@ pub fn create_quote_row(data: QuoteData) -> Result<DbQuote> {
         gas_amount: data.fee_parameters.gas_amount,
         gas_price: data.fee_parameters.gas_price,
         sell_token_price: data.fee_parameters.sell_token_price,
-        order_kind: order_kind_into(data.kind),
+        order_kind: data.kind.into(),
         expiration_timestamp: data.expiration,
         quote_kind: data.quote_kind,
         solver: ByteArray(data.solver.0),
@@ -41,7 +38,7 @@ pub fn create_db_search_parameters(
         sell_amount_0: u256_to_big_decimal(&params.sell_amount),
         sell_amount_1: u256_to_big_decimal(&(params.sell_amount + params.fee_amount)),
         buy_amount: u256_to_big_decimal(&params.buy_amount),
-        kind: order_kind_into(params.kind),
+        kind: params.kind.into(),
         expiration,
         quote_kind: quote_kind_from_signing_scheme(&params.signing_scheme),
     }
