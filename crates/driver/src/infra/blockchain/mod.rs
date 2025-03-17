@@ -249,11 +249,11 @@ impl Ethereum {
                 }) => {
                     if status.is_zero() {
                         eth::TxStatus::Reverted {
-                            block: eth::BlockNo(block.as_u64()),
+                            block_number: eth::BlockNo(block.as_u64()),
                         }
                     } else {
                         eth::TxStatus::Executed {
-                            block: eth::BlockNo(block.as_u64()),
+                            block_number: eth::BlockNo(block.as_u64()),
                         }
                     }
                 }

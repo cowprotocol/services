@@ -147,16 +147,16 @@ impl Mempools {
                         TxStatus::Pending
                     });
                 match receipt {
-                    TxStatus::Executed { block } => return Ok(SubmissionSuccess {
+                    TxStatus::Executed { block_number } => return Ok(SubmissionSuccess {
                         tx_hash: hash.clone(),
                         submitted_at_block: submitted_at_block.into(),
-                        included_in_block: block,
+                        included_in_block: block_number,
                     }),
-                    TxStatus::Reverted { block } => {
+                    TxStatus::Reverted { block_number } => {
                         return Err(Error::Revert {
                             tx_id: hash.clone(),
                             submitted_at_block,
-                            reverted_at_block: block.into(),
+                            reverted_at_block: block_number.into(),
                         })
                     }
                     TxStatus::Pending => {
@@ -214,12 +214,17 @@ impl Mempools {
         if result.is_err() {
             // Do one last attempt to see if the transaction was confirmed (in case of race
             // conditions or misclassified errors like `OrderFilled` simulation failures).
-            if let Ok(TxStatus::Executed { block }) = self.ethereum.transaction_status(&hash).await
+            if let Ok(TxStatus::Executed { block_number }) =
+                self.ethereum.transaction_status(&hash).await
             {
-                tracing::info!(?hash, ?block, "Found confirmed transaction, ignoring error");
+                tracing::info!(
+                    ?hash,
+                    ?block_number,
+                    "Found confirmed transaction, ignoring error"
+                );
                 return Ok(SubmissionSuccess {
                     tx_hash: hash,
-                    included_in_block: block,
+                    included_in_block: block_number,
                     submitted_at_block: submitted_at_block.into(),
                 });
             }
