@@ -16,7 +16,7 @@ use {
                 solution::{self, Settlement},
             },
             eth::{self, Gas},
-            mempools,
+            mempools::{self, SubmissionSuccess},
             quote::{self, Quote},
             time::{Deadline, Remaining},
         },
@@ -311,12 +311,12 @@ pub fn solver_response(endpoint: &Url, res: Result<&str, &http::Error>) {
 pub fn mempool_executed(
     mempool: &Mempool,
     settlement: &Settlement,
-    res: &Result<eth::TxId, mempools::Error>,
+    res: &Result<SubmissionSuccess, mempools::Error>,
 ) {
     match res {
-        Ok(txid) => {
+        Ok(submission) => {
             tracing::info!(
-                ?txid,
+                txid = ?submission.tx_hash,
                 %mempool,
                 ?settlement,
                 "sending transaction via mempool succeeded",
@@ -348,6 +348,40 @@ pub fn mempool_executed(
         .mempool_submission
         .with_label_values(&[&mempool.to_string(), result])
         .inc();
+
+    // For some of the errors we are interested in observing the exact block numbers
+    // passed since the first submission.
+    let blocks_passed = match res {
+        Ok(SubmissionSuccess {
+            submitted_at_block,
+            included_in_block,
+            ..
+        }) => Some(("Success", &submitted_at_block.0, &included_in_block.0)),
+        Err(mempools::Error::Revert {
+            tx_id: _,
+            submitted_at_block,
+            reverted_at_block,
+        }) => Some(("Revert", submitted_at_block, reverted_at_block)),
+        Err(mempools::Error::SimulationRevert {
+            submitted_at_block,
+            reverted_at_block,
+        }) => Some(("Revert", submitted_at_block, reverted_at_block)),
+        Err(mempools::Error::Expired {
+            tx_id: _,
+            submitted_at_block,
+            submission_deadline,
+        }) => Some(("Expired", submitted_at_block, submission_deadline)),
+        Err(mempools::Error::Other(_)) => None,
+        Err(mempools::Error::Disabled) => None,
+    };
+
+    if let Some((label, start, end)) = blocks_passed {
+        let blocks_passed = end.saturating_sub(*start);
+        metrics::get()
+            .mempool_submission_results_blocks_passed
+            .with_label_values(&[&mempool.to_string(), label])
+            .inc_by(blocks_passed);
+    }
 }
 
 /// Observe that an invalid DTO was received.
