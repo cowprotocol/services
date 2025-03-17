@@ -21,13 +21,7 @@ pub fn get_status(
         async move {
             let status = orderbook.get_order_status(&uid).await;
             Result::<_, Infallible>::Ok(match status {
-                Ok(Some(status)) => {
-                    warp::reply::with_status(warp::reply::json(&status), StatusCode::OK)
-                }
-                Ok(None) => warp::reply::with_status(
-                    super::error("OrderNotFound", "Order not located in database"),
-                    StatusCode::NOT_FOUND,
-                ),
+                Ok(status) => warp::reply::with_status(warp::reply::json(&status), StatusCode::OK),
                 Err(orderbook::Error::NotFound) => reply::with_status(
                     super::error("NotFound", "Order status was not found"),
                     StatusCode::NOT_FOUND,

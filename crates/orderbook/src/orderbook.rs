@@ -489,10 +489,7 @@ impl Orderbook {
             .context("get_user_orders error")
     }
 
-    pub async fn get_order_status(
-        &self,
-        uid: &OrderUid,
-    ) -> Result<Option<dto::order::Status>, Error> {
+    pub async fn get_order_status(&self, uid: &OrderUid) -> Result<dto::order::Status, Error> {
         let solutions = |competition: SolverCompetitionAPI| {
             competition
                 .common
@@ -546,17 +543,17 @@ impl Orderbook {
                     .database
                     .load_competition(Identifier::Transaction(tx_hash))
                     .await?;
-                return Ok(Some(dto::order::Status::Traded(solutions(competition))));
+                return Ok(dto::order::Status::Traded(solutions(competition)));
             }
             // order executed but not fully indexed and processed
             Some(None) => {
-                return Ok(Some(dto::order::Status::Traded(latest_competition.await?)));
+                return Ok(dto::order::Status::Traded(latest_competition.await?));
             }
             None => (),
         }
 
         let latest_event = self.database.latest_order_event(uid).await?;
-        let status = match latest_event.context("no event")?.label {
+        let status = match latest_event.ok_or(Error::NotFound)?.label {
             OrderEventLabel::Ready => dto::order::Status::Active,
             OrderEventLabel::Created => dto::order::Status::Scheduled,
             OrderEventLabel::Considered => dto::order::Status::Solved(latest_competition.await?),
@@ -567,7 +564,7 @@ impl Orderbook {
             OrderEventLabel::Filtered => dto::order::Status::Open,
             OrderEventLabel::Invalid => dto::order::Status::Open,
         };
-        Ok(Some(status))
+        Ok(status)
     }
 }
 
