@@ -75,30 +75,6 @@ impl ProtocolFees {
 
     /// Returns the capped aggregated partner fee
     fn get_partner_fee(order: &boundary::Order, max_partner_fee: f64) -> Vec<Policy> {
-        /// Convert a fee into a `FeeFactor` capping its value
-        fn fee_factor_from_capped(value: Decimal, cap: Decimal, accumulated: Decimal) -> FeeFactor {
-            // Calculate how much more we can compound before hitting the cap.
-            //
-            // When dealing with fee factors or percentages in compounding operations:
-            // - We use (1 + x) where x is the percentage as a decimal (e.g., 5% = 0.05 →
-            //   1.05)
-            // - This is because applying a fee means multiplying by (1 + fee_rate)
-            //
-            // The total accumulated factor can't exceed (1 + cap), and we've
-            // already accumulated to (1 + accumulated), then:
-            //
-            // 1. Current value with accumulated fees: (1 + accumulated)
-            // 2. Maximum allowed value: (1 + cap)
-            // 3. To find the remaining factor we can apply: (1 + cap) / (1 + accumulated) -
-            //    1
-            //
-            // The subtraction of 1 at the end converts back from the multiplier form (1.xx)
-            // to the percentage form (0.xx) that our FeeFactor expects.
-            let remaining_factor =
-                (Decimal::ONE + cap) / (Decimal::ONE + accumulated) - Decimal::ONE;
-            FeeFactor(f64::try_from(value.max(Decimal::ZERO).min(remaining_factor)).unwrap())
-        }
-
         let Ok(max_partner_fee) = Decimal::try_from(max_partner_fee) else {
             return vec![];
         };
@@ -109,7 +85,11 @@ impl ProtocolFees {
             return vec![];
         };
 
-        let mut accumulated = Decimal::ZERO;
+        // `max_partner_fee` is basd on 0 (e.g. 30% == 0.3) but to make the math
+        // nicer we base it on 1 (e.g. 30% == 1.3). That allows us to easily compound
+        // fee factors by multiplying them.
+        let max_partner_fee = max_partner_fee + Decimal::ONE;
+        let mut compounded_fee_factor = Decimal::ONE;
 
         validated
             .protocol
@@ -119,13 +99,19 @@ impl ProtocolFees {
                 // Convert bps to decimal percentage
                 let fee_decimal = Decimal::from(partner_fee.bps) / Decimal::from(10_000);
 
-                // Create policy and update accumulator
-                let factor = fee_factor_from_capped(fee_decimal, max_partner_fee, accumulated);
+                // Calculate how much more we can compound before hitting the fee cap by
+                // rewriting the formula: `max_partner_fee == accumulated * remaining_fee`
+                // The math uses factors based on 1 but the returned value returned should be a
+                // factor based on 0 (e.g. 30% == 0.3) so we subtract 1 at the end.
+                let remaining_factor = (max_partner_fee / compounded_fee_factor) - Decimal::ONE;
+                let fee_factor_capped = fee_decimal.max(Decimal::ZERO).min(remaining_factor);
 
-                // Update the accumulated value for the next iteration
-                accumulated += fee_decimal.min(max_partner_fee - accumulated);
+                // Update the compounded value for the next iteration
+                compounded_fee_factor += fee_factor_capped;
 
-                Policy::Volume { factor }
+                Policy::Volume {
+                    factor: FeeFactor(fee_factor_capped.try_into().unwrap()),
+                }
             })
             .collect::<Vec<_>>()
     }
