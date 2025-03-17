@@ -37,7 +37,7 @@ use {
             SellTokenSource,
             VerificationError,
         },
-        quote::{OrderQuoteSide, QuoteId, QuoteSigningScheme, SellAmount},
+        quote::{OrderQuoteSide, QuoteSigningScheme, SellAmount},
         signature::{self, Signature, SigningScheme, hashed_eip712_message},
         time,
     },
@@ -94,7 +94,7 @@ pub trait OrderValidating: Send + Sync {
         domain_separator: &DomainSeparator,
         settlement_contract: H160,
         full_app_data_override: Option<String>,
-    ) -> Result<(Order, Option<QuoteId>), ValidationError>;
+    ) -> Result<(Order, Option<Quote>), ValidationError>;
 }
 
 #[derive(Debug)]
@@ -547,7 +547,7 @@ impl OrderValidating for OrderValidator {
         domain_separator: &DomainSeparator,
         settlement_contract: H160,
         full_app_data_override: Option<String>,
-    ) -> Result<(Order, Option<QuoteId>), ValidationError> {
+    ) -> Result<(Order, Option<Quote>), ValidationError> {
         // Happens before signature verification because a miscalculated app data hash
         // by the API user would lead to being unable to validate the signature below.
         let app_data = self.validate_app_data(&order.app_data, &full_app_data_override)?;
@@ -759,7 +759,7 @@ impl OrderValidating for OrderValidator {
             interactions: app_data.interactions,
         };
 
-        Ok((order, quote.and_then(|q| q.id)))
+        Ok((order, quote))
     }
 }
 
@@ -2289,6 +2289,6 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(quote_id, returned_quote_id);
+        assert_eq!(quote_id, returned_quote_id.and_then(|quote| quote.id));
     }
 }
