@@ -29,7 +29,7 @@ pub fn post_quote(
                 .await
                 .map_err(OrderQuoteErrorWrapper);
             if let Err(err) = &result {
-                tracing::warn!(?err, ?request, "post_quote error");
+                tracing::debug!(?err, ?request, "post_quote error");
             }
             Result::<_, Infallible>::Ok(convert_json_response(result))
         }

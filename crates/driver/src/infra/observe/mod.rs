@@ -78,7 +78,7 @@ pub fn solutions(
         .iter()
         .any(|s| !s.is_empty(surplus_capturing_jit_order_owners))
     {
-        tracing::info!(?solutions, "computed solutions");
+        tracing::debug!(?solutions, "computed solutions");
     } else {
         tracing::debug!("no solutions");
     }
@@ -155,7 +155,7 @@ pub fn scoring_failed(solver: &solver::Name, err: &solution::error::Scoring) {
 
 /// Observe the settlement score.
 pub fn score(settlement: &Settlement, score: &eth::Ether) {
-    tracing::info!(
+    tracing::debug!(
         solution = ?settlement.solution(),
         score = ?score,
         "scored settlement"
@@ -165,7 +165,7 @@ pub fn score(settlement: &Settlement, score: &eth::Ether) {
 // Observe that the winning settlement started failing upon arrival of a new
 // block
 pub fn winner_voided(block: BlockInfo, err: &simulator::RevertError) {
-    tracing::warn!(block = block.number, ?err, "solution reverts on new block");
+    tracing::debug!(block = block.number, ?err, "solution reverts on new block");
 }
 
 pub fn revealing() {
@@ -220,7 +220,7 @@ pub fn settled(solver: &solver::Name, result: &Result<competition::Settled, comp
 pub fn solved(solver: &solver::Name, result: &Result<Option<Solved>, competition::Error>) {
     match result {
         Ok(Some(solved)) => {
-            tracing::info!(?solved, "solved auction");
+            tracing::debug!(?solved, "solved auction");
             metrics::get()
                 .solutions
                 .with_label_values(&[solver.as_str(), "Success"])
@@ -234,7 +234,7 @@ pub fn solved(solver: &solver::Name, result: &Result<Option<Solved>, competition
                 .inc();
         }
         Err(err) => {
-            tracing::warn!(?err, "failed to solve auction");
+            tracing::debug!(?err, "failed to solve auction");
             metrics::get()
                 .solutions
                 .with_label_values(&[solver.as_str(), competition_error(err)])
@@ -247,14 +247,14 @@ pub fn solved(solver: &solver::Name, result: &Result<Option<Solved>, competition
 pub fn quoted(solver: &solver::Name, order: &quote::Order, result: &Result<Quote, quote::Error>) {
     match result {
         Ok(quote) => {
-            tracing::info!(?order, ?quote, "quoted order");
+            tracing::debug!(?order, ?quote, "quoted order");
             metrics::get()
                 .quotes
                 .with_label_values(&[solver.as_str(), "Success"])
                 .inc();
         }
         Err(err) => {
-            tracing::warn!(?order, ?err, "failed to quote order");
+            tracing::debug!(?order, ?err, "failed to quote order");
             metrics::get()
                 .quotes
                 .with_label_values(&[
