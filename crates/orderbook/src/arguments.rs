@@ -137,6 +137,11 @@ pub struct Arguments {
     /// The maximum gas amount a single order can use for getting settled.
     #[clap(long, env, default_value = "8000000")]
     pub max_gas_per_order: u64,
+
+    /// The number of past solver competitions to look back at to determine
+    /// whether an order is actively being bid on.
+    #[clap(long, env, default_value = "5")]
+    pub active_order_competition_threshold: u32,
 }
 
 impl std::fmt::Display for Arguments {
@@ -167,6 +172,7 @@ impl std::fmt::Display for Arguments {
             app_data_size_limit,
             db_url,
             max_gas_per_order,
+            active_order_competition_threshold,
         } = self;
 
         write!(f, "{}", shared)?;
@@ -227,6 +233,11 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(f, "app_data_size_limit: {}", app_data_size_limit)?;
         writeln!(f, "max_gas_per_order: {}", max_gas_per_order)?;
+        writeln!(
+            f,
+            "active_order_competition_threshold: {}",
+            active_order_competition_threshold
+        )?;
 
         Ok(())
     }

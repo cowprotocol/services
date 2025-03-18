@@ -75,7 +75,7 @@ impl SolverCompetitionStoring for Postgres {
         let mut ex = self.pool.acquire().await.map_err(anyhow::Error::from)?;
         database::solver_competition::load_latest_competition(&mut ex)
             .await
-            .context("solver_competition::load_latest")?
+            .context("solver_competition::load_latest_competition")?
             .map(|row| {
                 deserialize_solver_competition(
                     row.json,
@@ -84,6 +84,36 @@ impl SolverCompetitionStoring for Postgres {
                 )
             })
             .ok_or(LoadSolverCompetitionError::NotFound)?
+    }
+
+    async fn load_latest_competitions(
+        &self,
+        latest_competitions_count: u32,
+    ) -> Result<Vec<SolverCompetitionAPI>, LoadSolverCompetitionError> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["load_latest_competitions"])
+            .start_timer();
+
+        let mut ex = self.pool.acquire().await.map_err(anyhow::Error::from)?;
+
+        let latest_competitions = database::solver_competition::load_latest_competitions(
+            &mut ex,
+            latest_competitions_count,
+        )
+        .await
+        .context("solver_competition::load_latest_competitions")?
+        .into_iter()
+        .map(|row| {
+            deserialize_solver_competition(
+                row.json,
+                row.id,
+                row.tx_hashes.iter().map(|hash| H256(hash.0)).collect(),
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(latest_competitions)
     }
 }
 

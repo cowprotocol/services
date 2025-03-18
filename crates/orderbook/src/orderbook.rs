@@ -130,8 +130,8 @@ pub enum AddOrderError {
     Database(#[from] anyhow::Error),
     #[error("invalid appData format")]
     InvalidAppData(#[source] anyhow::Error),
-    #[error("the new order is not a valid replacement for the old one")]
-    InvalidReplacement,
+    #[error("the new order is not a valid replacement for the old one: {0}")]
+    InvalidReplacement(#[source] OrderReplacementError),
     #[error(
         "contract app data {contract_app_data:?} is associated with full app data {existing:?} \
          which is different from the provided {provided:?}"
@@ -199,12 +199,25 @@ pub enum OrderCancellationError {
     Other(#[from] anyhow::Error),
 }
 
+#[derive(Debug, Error)]
+pub enum OrderReplacementError {
+    #[error("invalid signature")]
+    InvalidSignature,
+    #[error("signer does not match older order owner")]
+    WrongOwner,
+    #[error("old order is actively being bid on")]
+    OldOrderActivelyBidOn,
+    #[error(transparent)]
+    Other(#[from] anyhow::Error),
+}
+
 pub struct Orderbook {
     domain_separator: DomainSeparator,
     settlement_contract: H160,
     database: crate::database::Postgres,
     order_validator: Arc<dyn OrderValidating>,
     app_data: Arc<crate::app_data::Registry>,
+    active_order_competition_threshold: u32,
 }
 
 impl Orderbook {
@@ -215,6 +228,7 @@ impl Orderbook {
         database: crate::database::Postgres,
         order_validator: Arc<dyn OrderValidating>,
         app_data: Arc<crate::app_data::Registry>,
+        active_order_competition_threshold: u32,
     ) -> Self {
         Metrics::initialize();
         Self {
@@ -223,6 +237,7 @@ impl Orderbook {
             database,
             order_validator,
             app_data,
+            active_order_competition_threshold,
         }
     }
 
@@ -391,12 +406,27 @@ impl Orderbook {
             .signature
             .scheme()
             .try_to_ecdsa_scheme()
-            .ok_or(AddOrderError::InvalidReplacement)?;
+            .ok_or(AddOrderError::InvalidReplacement(
+                OrderReplacementError::InvalidSignature,
+            ))?;
 
         // Verify that the new order is a valid replacement order by checking
         // that both the old and new orders have the same signer.
         if validated_new_order.metadata.owner != old_order.metadata.owner {
-            return Err(AddOrderError::InvalidReplacement);
+            return Err(AddOrderError::InvalidReplacement(
+                OrderReplacementError::WrongOwner,
+            ));
+        }
+
+        // Verify that the old order is not being actively bid on by solvers,
+        // to prevent the possible double spending of both orders.
+        if self
+            .order_is_actively_bid_on(old_order.metadata.uid)
+            .await?
+        {
+            return Err(AddOrderError::InvalidReplacement(
+                OrderReplacementError::OldOrderActivelyBidOn,
+            ));
         }
 
         self.database
@@ -407,6 +437,25 @@ impl Orderbook {
         Metrics::on_order_operation(&validated_new_order, OrderOperation::Created);
 
         Ok(())
+    }
+
+    async fn order_is_actively_bid_on(&self, order_uid: OrderUid) -> Result<bool> {
+        let latest_competitions = self
+            .database
+            .load_latest_competitions(self.active_order_competition_threshold)
+            .await?;
+
+        let order_is_bid_on = latest_competitions
+            .into_iter()
+            .flat_map(|competition| competition.common.solutions)
+            .flat_map(|solution| solution.orders)
+            .map(|order| match order {
+                solver_competition::Order::Colocated { id, .. } => id,
+                solver_competition::Order::Legacy { id, .. } => id,
+            })
+            .any(|uid| uid == order_uid);
+
+        Ok(order_is_bid_on)
     }
 
     pub async fn get_order(&self, uid: &OrderUid) -> Result<Option<Order>> {
@@ -596,6 +645,7 @@ mod tests {
             domain_separator: Default::default(),
             settlement_contract: H160([0xba; 20]),
             app_data,
+            active_order_competition_threshold: Default::default(),
         };
 
         // Different owner
@@ -613,7 +663,9 @@ mod tests {
                     ..Default::default()
                 },)
                 .await,
-            Err(AddOrderError::InvalidReplacement)
+            Err(AddOrderError::InvalidReplacement(
+                OrderReplacementError::WrongOwner
+            ))
         ));
 
         // Different replacedOrder
@@ -651,7 +703,9 @@ mod tests {
                     ..Default::default()
                 },)
                 .await,
-            Err(AddOrderError::InvalidReplacement)
+            Err(AddOrderError::InvalidReplacement(
+                OrderReplacementError::InvalidSignature
+            ))
         ));
 
         // Stars align...

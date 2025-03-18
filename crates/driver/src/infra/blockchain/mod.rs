@@ -247,12 +247,17 @@ impl Ethereum {
             .map(|result| match result {
                 Some(web3::types::TransactionReceipt {
                     status: Some(status),
+                    block_number: Some(block),
                     ..
                 }) => {
                     if status.is_zero() {
-                        eth::TxStatus::Reverted
+                        eth::TxStatus::Reverted {
+                            block_number: eth::BlockNo(block.as_u64()),
+                        }
                     } else {
-                        eth::TxStatus::Executed
+                        eth::TxStatus::Executed {
+                            block_number: eth::BlockNo(block.as_u64()),
+                        }
                     }
                 }
                 _ => eth::TxStatus::Pending,
