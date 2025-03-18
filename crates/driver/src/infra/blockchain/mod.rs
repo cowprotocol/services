@@ -4,7 +4,7 @@ use {
     chain::Chain,
     ethcontract::{dyns::DynWeb3, errors::ExecutionError},
     ethrpc::block_stream::CurrentBlockWatcher,
-    std::{fmt, sync::Arc},
+    std::{fmt, sync::Arc, time::Duration},
     thiserror::Error,
     url::Url,
     web3::{Transport, types::CallRequest},
@@ -212,8 +212,11 @@ impl Ethereum {
             .map_err(Into::into)
     }
 
-    pub async fn gas_price(&self) -> Result<eth::GasPrice, Error> {
-        self.inner.gas.estimate().await
+    /// The gas price is determined based on the deadline by which the
+    /// transaction must be included on-chain. A shorter deadline requires a
+    /// higher gas price to increase the likelihood of timely inclusion.
+    pub async fn gas_price(&self, time_limit: Option<Duration>) -> Result<eth::GasPrice, Error> {
+        self.inner.gas.estimate(time_limit).await
     }
 
     pub fn block_gas_limit(&self) -> eth::Gas {
@@ -272,7 +275,7 @@ impl Ethereum {
         // the node specific fallback value instead of failing the whole call.
         self.inner
             .gas
-            .estimate()
+            .estimate(None)
             .await
             .ok()
             .map(|gas| gas.effective().0.0)
