@@ -460,7 +460,7 @@ impl Solver {
                 helper_contract: config.blockchain.flashloan_wrapper.address(),
                 fee_in_bps: Default::default(),
             })
-            .collect();
+            .collect::<Vec<_>>();
         let eth = Ethereum::new(
             rpc,
             Addresses {
