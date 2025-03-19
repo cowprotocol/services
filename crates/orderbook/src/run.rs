@@ -394,6 +394,7 @@ pub async fn run(args: Arguments) {
         postgres.clone(),
         order_validator.clone(),
         app_data.clone(),
+        args.active_order_competition_threshold,
     ));
 
     check_database_connection(orderbook.as_ref()).await;
