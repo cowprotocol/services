@@ -129,8 +129,9 @@ pub struct Config {
     pub settle_queue_size: usize,
     /// Whether flashloan hints should be sent to the solver.
     pub flashloans_enabled: bool,
-    /// If no lender is specified in flashloan hint, use default one
-    pub flashloan_default_lender: eth::Address,
+    /// If no lender is specified in flashloan hint, use default one (if
+    /// specified)
+    pub flashloan_default_lender: Option<eth::Address>,
 }
 
 impl Solver {

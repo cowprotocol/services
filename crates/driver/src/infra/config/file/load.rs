@@ -137,7 +137,7 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                 },
                 settle_queue_size: solver_config.settle_queue_size,
                 flashloans_enabled: config.flashloans_enabled,
-                flashloan_default_lender: eth::Address(config.flashloans_default_lender),
+                flashloan_default_lender: config.flashloans_default_lender.map(Into::into),
             }
         }))
         .await,
