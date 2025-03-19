@@ -24,7 +24,7 @@ pub fn new(
     fee_handler: FeeHandler,
     solver_native_token: ManageNativeToken,
     flashloans_enabled: bool,
-    flashloan_default_lender: Option<eth::Address>,
+    flashloan_default_lender: Option<eth::ContractAddress>,
 ) -> solvers_dto::auction::Auction {
     let mut tokens: HashMap<eth::H160, _> = auction
         .tokens()

@@ -81,10 +81,6 @@ struct Config {
     /// Whether the flashloans feature is enabled.
     #[serde(default)]
     flashloans_enabled: bool,
-
-    /// If no lender is specified in flashloan hint, use this default lender.
-    #[serde(default)]
-    flashloans_default_lender: Option<eth::H160>,
 }
 
 #[serde_as]
@@ -382,6 +378,10 @@ struct ContractsConfig {
     /// Flashloan router to support taking out multiple flashloans
     /// in the same settlement.
     flashloan_router: Option<eth::H160>,
+
+    /// Address of the default flashloan lender that should be used as lender,
+    /// for all flashloans that don't have a specific lender set.
+    flashloan_default_lender: Option<eth::H160>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
