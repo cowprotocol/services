@@ -378,6 +378,10 @@ struct ContractsConfig {
     /// Flashloan router to support taking out multiple flashloans
     /// in the same settlement.
     flashloan_router: Option<eth::H160>,
+
+    /// Address of the default flashloan lender that should be used as lender,
+    /// for all flashloans that don't have a specific lender set.
+    flashloan_default_lender: Option<eth::H160>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

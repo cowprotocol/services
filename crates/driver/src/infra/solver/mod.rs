@@ -231,7 +231,7 @@ impl Solver {
             self.config.fee_handler,
             self.config.solver_native_token,
             self.config.flashloans_enabled,
-            self.eth.contracts().default_flashloan_lender(),
+            self.eth.contracts().flashloan_default_lender(),
         );
         // Only auctions with IDs are real auctions (/quote requests don't have an ID,
         // and it makes no sense to store them)
