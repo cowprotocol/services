@@ -177,6 +177,10 @@ impl Contracts {
         self.flashloan_wrapper_by_lender.get(lender)
     }
 
+    pub fn default_flashloan_lender(&self) -> Option<eth::ContractAddress> {
+        self.flashloan_wrapper_by_lender.keys().next().copied()
+    }
+
     pub fn flashloan_router(&self) -> Option<&contracts::FlashLoanRouter> {
         self.flashloan_router.as_ref()
     }

@@ -81,10 +81,6 @@ struct Config {
     /// Whether the flashloans feature is enabled.
     #[serde(default)]
     flashloans_enabled: bool,
-
-    /// If no lender is specified in flashloan hint, use this default lender.
-    #[serde(default)]
-    flashloans_default_lender: Option<eth::H160>,
 }
 
 #[serde_as]
