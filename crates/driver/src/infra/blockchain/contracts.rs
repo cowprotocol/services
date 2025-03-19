@@ -121,7 +121,7 @@ impl Contracts {
                 };
                 (wrapper_config.lender.into(), wrapper_data)
             })
-            .collect::<HashMap<_, _>>();
+            .collect();
 
         // TODO: use `address_for()` once contracts are deployed
         let flashloan_router = addresses
