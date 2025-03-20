@@ -31,6 +31,9 @@ pub struct Contracts {
     // TODO: make this non-optional when contracts are deployed
     // everywhere
     flashloan_router: Option<FlashLoanRouter>,
+    /// Default lender to use for flashloans, if flashloan doesn't have a lender
+    /// specified.
+    flashloan_default_lender: Option<eth::ContractAddress>,
 }
 
 #[derive(Debug, Clone)]
@@ -46,6 +49,7 @@ pub struct Addresses {
     pub cow_amms: Vec<CowAmmConfig>,
     pub flashloan_wrappers: Vec<config::file::FlashloanWrapperConfig>,
     pub flashloan_router: Option<eth::ContractAddress>,
+    pub flashloan_default_lender: Option<eth::ContractAddress>,
 }
 
 impl Contracts {
@@ -139,6 +143,7 @@ impl Contracts {
             cow_amm_registry,
             flashloan_wrapper_by_lender,
             flashloan_router,
+            flashloan_default_lender: addresses.flashloan_default_lender,
         })
     }
 
@@ -175,6 +180,10 @@ impl Contracts {
         lender: &eth::ContractAddress,
     ) -> Option<&FlashloanWrapperData> {
         self.flashloan_wrapper_by_lender.get(lender)
+    }
+
+    pub fn flashloan_default_lender(&self) -> Option<eth::ContractAddress> {
+        self.flashloan_default_lender
     }
 
     pub fn flashloan_router(&self) -> Option<&contracts::FlashLoanRouter> {
