@@ -489,7 +489,10 @@ impl Orderbook {
             .context("get_user_orders error")
     }
 
-    pub async fn get_order_status(&self, uid: &OrderUid) -> Result<dto::order::Status, Error> {
+    pub async fn get_order_status(
+        &self,
+        uid: &OrderUid,
+    ) -> Result<dto::order::Status, OrderStatusError> {
         let solutions = |competition: SolverCompetitionAPI| {
             competition
                 .common
@@ -520,8 +523,8 @@ impl Orderbook {
                 .database
                 .load_latest_competition()
                 .await
-                .map_err(Into::<Error>::into)?;
-            Ok::<_, Error>(solutions(competition))
+                .map_err(Into::<OrderStatusError>::into)?;
+            Ok::<_, OrderStatusError>(solutions(competition))
         };
 
         // Once an order was executed we always want to return `Traded` with the
@@ -553,7 +556,7 @@ impl Orderbook {
         }
 
         let latest_event = self.database.latest_order_event(uid).await?;
-        let status = match latest_event.ok_or(Error::NotFound)?.label {
+        let status = match latest_event.ok_or(OrderStatusError::NotFound)?.label {
             OrderEventLabel::Ready => dto::order::Status::Active,
             OrderEventLabel::Created => dto::order::Status::Scheduled,
             OrderEventLabel::Considered => dto::order::Status::Solved(latest_competition.await?),
@@ -569,14 +572,14 @@ impl Orderbook {
 }
 
 #[derive(Error, Debug)]
-pub enum Error {
-    #[error("solver competition not found")]
+pub enum OrderStatusError {
+    #[error("order status not found")]
     NotFound,
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
 
-impl From<LoadSolverCompetitionError> for Error {
+impl From<LoadSolverCompetitionError> for OrderStatusError {
     fn from(value: LoadSolverCompetitionError) -> Self {
         match value {
             LoadSolverCompetitionError::NotFound => Self::NotFound,
