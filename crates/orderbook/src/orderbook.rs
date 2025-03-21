@@ -31,6 +31,7 @@ use {
     primitive_types::H160,
     shared::{
         fee::FeeParameters,
+        order_quoting::Quote,
         order_validation::{
             Amounts,
             OrderValidating,
@@ -211,6 +212,21 @@ pub enum OrderReplacementError {
     Other(#[from] anyhow::Error),
 }
 
+#[derive(Debug)]
+pub struct QuoteMetadata {
+    pub id: Option<QuoteId>,
+    pub solver: H160,
+}
+
+impl From<&Quote> for QuoteMetadata {
+    fn from(value: &Quote) -> Self {
+        Self {
+            id: value.id,
+            solver: value.data.solver,
+        }
+    }
+}
+
 pub struct Orderbook {
     domain_separator: DomainSeparator,
     settlement_contract: H160,
@@ -244,7 +260,7 @@ impl Orderbook {
     pub async fn add_order(
         &self,
         payload: OrderCreation,
-    ) -> Result<(OrderUid, Option<QuoteId>), AddOrderError> {
+    ) -> Result<(OrderUid, Option<QuoteMetadata>), AddOrderError> {
         let full_app_data_override = match payload.app_data {
             OrderCreationAppData::Hash { hash } => self.app_data.find(&hash).await?,
             _ => None,
@@ -254,7 +270,7 @@ impl Orderbook {
             .get_replaced_order(&payload, full_app_data_override.as_deref())
             .await?;
 
-        let (order, quote_id) = self
+        let (order, quote) = self
             .order_validator
             .validate_and_construct_order(
                 payload,
@@ -277,7 +293,7 @@ impl Orderbook {
             Metrics::on_order_operation(&order, OrderOperation::Created);
         }
 
-        Ok((order_uid, quote_id))
+        Ok((order_uid, quote.as_ref().map(QuoteMetadata::from)))
     }
 
     /// Finds an order for cancellation.
