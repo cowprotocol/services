@@ -749,7 +749,7 @@ impl OrderValidating for OrderValidator {
                 },
                 quote: quote
                     .as_ref()
-                    .map(|q| q.try_to_model_order_quote())
+                    .map(|q| q.clone().try_into())
                     .transpose()
                     .map_err(ValidationError::Other)?,
                 ..Default::default()
