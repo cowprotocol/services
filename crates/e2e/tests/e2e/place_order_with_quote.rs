@@ -1,5 +1,5 @@
 use {
-    driver::domain::eth::NonZeroU256,
+    ::driver::domain::eth::NonZeroU256,
     e2e::{nodes::local_node::TestNodeApi, setup::*, tx, tx_value},
     ethcontract::U256,
     model::{

@@ -2,7 +2,7 @@ use {
     crate::{
         boundary,
         database::{Postgres, order_events::store_order_events},
-        domain::{self, eth},
+        domain::{self, competition, eth},
         infra::persistence::dto::AuctionId,
     },
     anyhow::Context,
@@ -850,61 +850,32 @@ impl Persistence {
         Ok(())
     }
 
-    /// Finds solvers that won `last_auctions_count` consecutive auctions but
-    /// never settled any of them. The current block is used to prevent
-    /// selecting auctions with deadline after the current block since they
-    /// still can be settled.
-    pub async fn find_non_settling_solvers(
+    /// Fetches the metadata of the last `last_auctions_count` competitions.
+    /// The current block is used to filter out competitions that are still
+    /// ongoing.
+    pub async fn fetch_last_competitions_metadata(
         &self,
         last_auctions_count: u32,
         current_block: u64,
-    ) -> anyhow::Result<Vec<eth::Address>> {
+    ) -> anyhow::Result<Vec<competition::Metadata>> {
         let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
         let _timer = Metrics::get()
             .database_queries
-            .with_label_values(&["find_non_settling_solvers"])
+            .with_label_values(&["fetch_last_competitions_data"])
             .start_timer();
 
-        Ok(database::solver_competition::find_non_settling_solvers(
-            &mut ex,
-            last_auctions_count,
-            current_block,
+        Ok(
+            database::solver_competition::fetch_last_competitions_metadata(
+                &mut ex,
+                last_auctions_count,
+                current_block,
+            )
+            .await
+            .context("solver_competition::fetch_last_competitions_data")?
+            .into_iter()
+            .map(competition::Metadata::from)
+            .collect(),
         )
-        .await
-        .context("failed to fetch non-settling solvers")?
-        .into_iter()
-        .map(|solver| eth::Address(solver.0.into()))
-        .collect())
-    }
-
-    /// Finds solvers that have a failure settling rate above the given
-    /// ratio. The current block is used to prevent selecting auctions with
-    /// deadline after the current block since they still can be settled.
-    pub async fn find_low_settling_solvers(
-        &self,
-        last_auctions_count: u32,
-        current_block: u64,
-        max_failure_rate: f64,
-        min_wins_threshold: u32,
-    ) -> anyhow::Result<Vec<eth::Address>> {
-        let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
-        let _timer = Metrics::get()
-            .database_queries
-            .with_label_values(&["find_low_settling_solvers"])
-            .start_timer();
-
-        Ok(database::solver_competition::find_low_settling_solvers(
-            &mut ex,
-            last_auctions_count,
-            current_block,
-            max_failure_rate,
-            min_wins_threshold,
-        )
-        .await
-        .context("solver_competition::find_low_settling_solvers")?
-        .into_iter()
-        .map(|solver| eth::Address(solver.0.into()))
-        .collect())
     }
 }
 
