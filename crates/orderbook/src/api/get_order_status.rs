@@ -1,9 +1,12 @@
 use {
-    crate::{api::ApiReply, orderbook::Orderbook},
+    crate::{
+        api::ApiReply,
+        orderbook::{OrderStatusError, Orderbook},
+    },
     anyhow::Result,
     model::order::OrderUid,
     std::{convert::Infallible, sync::Arc},
-    warp::{Filter, Rejection, hyper::StatusCode},
+    warp::{Filter, Rejection, hyper::StatusCode, reply},
 };
 
 fn get_status_request() -> impl Filter<Extract = (OrderUid,), Error = Rejection> + Clone {
@@ -18,11 +21,9 @@ pub fn get_status(
         async move {
             let status = orderbook.get_order_status(&uid).await;
             Result::<_, Infallible>::Ok(match status {
-                Ok(Some(status)) => {
-                    warp::reply::with_status(warp::reply::json(&status), StatusCode::OK)
-                }
-                Ok(None) => warp::reply::with_status(
-                    super::error("OrderNotFound", "Order not located in database"),
+                Ok(status) => warp::reply::with_status(warp::reply::json(&status), StatusCode::OK),
+                Err(OrderStatusError::NotFound) => reply::with_status(
+                    super::error("NotFound", "Order status was not found"),
                     StatusCode::NOT_FOUND,
                 ),
                 Err(err) => {
