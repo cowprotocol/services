@@ -1,9 +1,14 @@
 use {
     crate::{AppDataHash, Hooks, app_data_hash::hash_full_app_data},
     anyhow::{Context, Result, anyhow},
+    number::serialization::HexOrDecimalU256,
     primitive_types::{H160, U256},
     serde::{Deserialize, Deserializer, Serialize, Serializer, de},
-    std::{fmt, fmt::Display},
+    serde_with::serde_as,
+    std::{
+        fmt::{self, Display},
+        slice::Iter,
+    },
 };
 
 /// The minimum valid empty app data JSON string.
@@ -24,7 +29,8 @@ pub struct ProtocolAppData {
     pub hooks: Hooks,
     pub signer: Option<H160>,
     pub replaced_order: Option<ReplacedOrder>,
-    pub partner_fee: Option<PartnerFee>,
+    #[serde(default)]
+    pub partner_fee: PartnerFees,
     pub flashloan: Option<Flashloan>,
 }
 
@@ -32,6 +38,7 @@ pub struct ProtocolAppData {
 /// use of flashloans to settle the associated order.
 /// Since using flashloans introduces a bunch of complexities
 /// all these hints are not binding for the solver.
+#[serde_as]
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
 #[cfg_attr(any(test, feature = "test_helpers"), derive(Serialize))]
 pub struct Flashloan {
@@ -43,6 +50,7 @@ pub struct Flashloan {
     /// Which token to flashloan.
     pub token: H160,
     /// How much of the token to flashloan.
+    #[serde_as(as = "HexOrDecimalU256")]
     pub amount: U256,
 }
 
@@ -235,6 +243,40 @@ impl<'de> Deserialize<'de> for OrderUid {
     }
 }
 
+/// A list containing all the partner fees
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[cfg_attr(
+    any(test, feature = "test_helpers"),
+    derive(Serialize),
+    serde(transparent)
+)]
+pub struct PartnerFees(Vec<PartnerFee>);
+
+impl PartnerFees {
+    pub fn iter(&self) -> Iter<'_, PartnerFee> {
+        self.0.iter()
+    }
+}
+
+impl<'de> Deserialize<'de> for PartnerFees {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Helper {
+            Single(PartnerFee),
+            Multiple(Vec<PartnerFee>),
+        }
+
+        match Helper::deserialize(deserializer)? {
+            Helper::Single(fee) => Ok(PartnerFees(vec![fee])),
+            Helper::Multiple(fees) => Ok(PartnerFees(fees)),
+        }
+    }
+}
+
 /// The legacy `backend` app data object.
 #[derive(Debug, Default, Deserialize)]
 #[cfg_attr(any(test, feature = "test_helpers"), derive(Clone, Serialize))]
@@ -249,7 +291,7 @@ impl From<BackendAppData> for ProtocolAppData {
             hooks: value.hooks,
             signer: None,
             replaced_order: None,
-            partner_fee: None,
+            partner_fee: PartnerFees::default(),
             flashloan: None,
         }
     }
@@ -378,6 +420,76 @@ mod tests {
             "#,
             ProtocolAppData {
                 signer: Some(H160([0x42; 20])),
+                ..Default::default()
+            },
+        );
+
+        assert_app_data!(
+            r#"
+                {
+                    "appCode": "CoW Swap",
+                    "environment": "production",
+                    "metadata": {
+                        "quote": {
+                            "slippageBips": "50"
+                        },
+                        "orderClass": {
+                            "orderClass": "market"
+                        },
+                        "partnerFee": {
+                            "bps": 100,
+                            "recipient": "0x0202020202020202020202020202020202020202"
+                        }
+                    },
+                    "version": "0.9.0"
+                }
+            "#,
+            ProtocolAppData {
+                partner_fee: PartnerFees(vec![PartnerFee {
+                    bps: 100,
+                    recipient: H160([2; 20]),
+                }]),
+                ..Default::default()
+            },
+        );
+
+        assert_app_data!(
+            r#"
+                {
+                    "appCode": "CoW Swap",
+                    "environment": "production",
+                    "metadata": {
+                        "quote": {
+                            "slippageBips": "50"
+                        },
+                        "orderClass": {
+                            "orderClass": "market"
+                        },
+                        "partnerFee": [
+                            {
+                                "bps": 100,
+                                "recipient": "0x0202020202020202020202020202020202020202"
+                            },
+                            {
+                                "bps": 1000,
+                                "recipient": "0x0101010101010101010101010101010101010101"
+                            }
+                        ]
+                    },
+                    "version": "0.9.0"
+                }
+            "#,
+            ProtocolAppData {
+                partner_fee: PartnerFees(vec![
+                    PartnerFee {
+                        bps: 100,
+                        recipient: H160([2; 20]),
+                    },
+                    PartnerFee {
+                        bps: 1000,
+                        recipient: H160([1; 20]),
+                    },
+                ]),
                 ..Default::default()
             },
         );

@@ -91,7 +91,10 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                 fee_handler: solver_config.fee_handler,
                 quote_using_limit_orders: solver_config.quote_using_limit_orders,
                 merge_solutions: match solver_config.merge_solutions {
-                    true => SolutionMerging::Allowed,
+                    true => SolutionMerging::Allowed {
+                        max_orders_per_merged_solution: solver_config
+                            .max_orders_per_merged_solution,
+                    },
                     false => SolutionMerging::Forbidden,
                 },
                 s3: solver_config.s3.map(Into::into),
@@ -134,7 +137,6 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                 },
                 settle_queue_size: solver_config.settle_queue_size,
                 flashloans_enabled: config.flashloans_enabled,
-                flashloan_default_lender: eth::Address(config.flashloans_default_lender),
             }
         }))
         .await,
@@ -375,6 +377,25 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                     helper: cfg.helper,
                 })
                 .collect(),
+            flashloan_default_lender: {
+                // Make sure flashloan default lender exists in the flashloan wrappers
+                if let Some(default_lender) = config.contracts.flashloan_default_lender {
+                    if !config
+                        .contracts
+                        .flashloan_wrappers
+                        .iter()
+                        .any(|wrapper| wrapper.lender == default_lender)
+                    {
+                        panic!(
+                            "Flashloan default lender {:?} not found in flashloan wrappers",
+                            default_lender
+                        );
+                    }
+                }
+                config.contracts.flashloan_default_lender.map(Into::into)
+            },
+            flashloan_wrappers: config.contracts.flashloan_wrappers,
+            flashloan_router: config.contracts.flashloan_router.map(Into::into),
         },
         disable_access_list_simulation: config.disable_access_list_simulation,
         disable_gas_simulation: config.disable_gas_simulation.map(Into::into),

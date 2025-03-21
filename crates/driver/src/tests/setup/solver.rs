@@ -10,7 +10,12 @@ use {
             eth,
             time::{self},
         },
-        infra::{self, Ethereum, blockchain::contracts::Addresses, config::file::FeeHandler},
+        infra::{
+            self,
+            Ethereum,
+            blockchain::contracts::Addresses,
+            config::file::{FeeHandler, FlashloanWrapperConfig},
+        },
         tests::{hex_address, setup::blockchain::Trade},
     },
     ethereum_types::H160,
@@ -147,6 +152,9 @@ impl Solver {
                 "signature": if config.quote { "0x".to_string() } else { format!("0x{}", hex::encode(quote.order_signature(config.blockchain))) },
                 "signingScheme": if config.quote { "eip1271" } else { "eip712" },
             });
+            if let Some(receiver) = quote.order.receiver {
+                order["receiver"] = json!(hex_address(receiver));
+            }
             if let Some(flashloan) = quote.order.app_data.flashloan() {
                 order["flashloanHint"] = json!(FlashloanHint {
                     lender: flashloan.lender.unwrap(),
@@ -443,12 +451,25 @@ impl Solver {
             .await
             .unwrap(),
         );
+        let flashloan_wrappers = config
+            .solutions
+            .iter()
+            .flat_map(|solution| solution.flashloans.clone())
+            .map(|flashloan| FlashloanWrapperConfig {
+                lender: flashloan.lender,
+                helper_contract: config.blockchain.flashloan_wrapper.address(),
+                fee_in_bps: Default::default(),
+            })
+            .collect::<Vec<_>>();
         let eth = Ethereum::new(
             rpc,
             Addresses {
                 settlement: Some(config.blockchain.settlement.address().into()),
                 weth: Some(config.blockchain.weth.address().into()),
                 cow_amms: vec![],
+                flashloan_default_lender: flashloan_wrappers.first().map(|w| w.lender.into()),
+                flashloan_wrappers,
+                flashloan_router: Some(config.blockchain.flashloan_wrapper.address().into()),
             },
             gas,
             None,
@@ -466,7 +487,7 @@ impl Solver {
                 move |axum::extract::State(state): axum::extract::State<State>,
                  axum::extract::Json(req): axum::extract::Json<serde_json::Value>| async move {
                     let effective_gas_price = eth
-                        .gas_price()
+                        .gas_price(None)
                         .await
                         .unwrap()
                         .effective()

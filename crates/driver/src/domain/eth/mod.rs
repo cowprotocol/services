@@ -6,6 +6,7 @@ use {
         collections::{HashMap, HashSet},
         ops::{Div, Mul, Sub},
     },
+    web3::types::CallRequest,
 };
 
 pub mod allowance;
@@ -17,7 +18,7 @@ pub use {
     eip712::DomainSeparator,
     gas::{EffectiveGasPrice, FeePerGas, Gas, GasPrice},
     number::nonzero::U256 as NonZeroU256,
-    primitive_types::{H160, H256, U256},
+    primitive_types::{H160, H256, U256, U512},
 };
 
 // TODO This module is getting a little hectic with all kinds of different
@@ -343,9 +344,9 @@ pub struct TxId(pub H256);
 
 pub enum TxStatus {
     /// The transaction has been included and executed successfully.
-    Executed,
+    Executed { block_number: BlockNo },
     /// The transaction has been included but execution failed.
-    Reverted,
+    Reverted { block_number: BlockNo },
     /// The transaction has not been included yet.
     Pending,
 }
@@ -358,6 +359,23 @@ pub struct Tx {
     pub value: Ether,
     pub input: Bytes<Vec<u8>>,
     pub access_list: AccessList,
+}
+
+impl From<Tx> for CallRequest {
+    fn from(value: Tx) -> Self {
+        Self {
+            from: Some(value.from.into()),
+            to: Some(value.to.into()),
+            gas: None,
+            gas_price: None,
+            value: Some(value.value.into()),
+            data: Some(value.input.into()),
+            transaction_type: None,
+            access_list: Some(value.access_list.into()),
+            max_fee_per_gas: None,
+            max_priority_fee_per_gas: None,
+        }
+    }
 }
 
 impl std::fmt::Debug for Tx {
@@ -410,4 +428,12 @@ impl From<CodeDigest> for [u8; 32] {
     fn from(value: CodeDigest) -> Self {
         value.0.0
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct Flashloan {
+    pub lender: ContractAddress,
+    pub borrower: Address,
+    pub token: TokenAddress,
+    pub amount: TokenAmount,
 }

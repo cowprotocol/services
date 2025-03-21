@@ -14,6 +14,7 @@ use {
     anyhow::Context,
     ethrpc::block_stream::into_stream,
     futures::{FutureExt, StreamExt, future::select_ok},
+    std::ops::Sub,
     thiserror::Error,
     tracing::Instrument,
 };
@@ -48,7 +49,7 @@ impl Mempools {
         settlement: &Settlement,
         submission_deadline: BlockNo,
     ) -> Result<eth::TxId, Error> {
-        let (tx_hash, _remaining_futures) =
+        let (submission, _remaining_futures) =
             select_ok(self.mempools.iter().cloned().map(|mempool| {
                 async move {
                     let result = self
@@ -62,7 +63,7 @@ impl Mempools {
             }))
             .await?;
 
-        Ok(tx_hash)
+        Ok(submission.tx_hash)
     }
 
     /// Defines if the mempools are configured in a way that guarantees that
@@ -89,7 +90,7 @@ impl Mempools {
         solver: &Solver,
         settlement: &Settlement,
         submission_deadline: BlockNo,
-    ) -> Result<eth::TxId, Error> {
+    ) -> Result<SubmissionSuccess, Error> {
         // Don't submit risky transactions if revert protection is
         // enabled and the settlement may revert in this mempool.
         if settlement.may_revert()
@@ -105,7 +106,7 @@ impl Mempools {
         // settlement. This way we only run iterations in blocks that can potentially
         // include the settlement.
         let mut block_stream = into_stream(self.ethereum.current_block().clone());
-        let block = block_stream.next().await;
+        block_stream.next().await;
 
         // The tx is simulated before submitting the solution to the competition, but a
         // delay between that and the actual execution can cause the simulation to be
@@ -116,7 +117,11 @@ impl Mempools {
                     ?err,
                     "settlement tx simulation reverted before submitting to the mempool"
                 );
-                return Err(Error::SimulationRevert(block.map(|block| block.number)));
+                let block = self.ethereum.current_block().borrow().number;
+                return Err(Error::SimulationRevert {
+                    submitted_at_block: block,
+                    reverted_at_block: block,
+                });
             } else {
                 tracing::warn!(
                     ?err,
@@ -142,18 +147,25 @@ impl Mempools {
                         TxStatus::Pending
                     });
                 match receipt {
-                    TxStatus::Executed => return Ok(hash.clone()),
-                    TxStatus::Reverted => {
+                    TxStatus::Executed { block_number } => return Ok(SubmissionSuccess {
+                        tx_hash: hash.clone(),
+                        submitted_at_block: submitted_at_block.into(),
+                        included_in_block: block_number,
+                    }),
+                    TxStatus::Reverted { block_number } => {
                         return Err(Error::Revert {
                             tx_id: hash.clone(),
-                            block_number: block.number,
+                            submitted_at_block,
+                            reverted_at_block: block_number.into(),
                         })
                     }
                     TxStatus::Pending => {
+                        let blocks_elapsed = block.number.sub(submitted_at_block);
+
                         // Check if the current block reached the submission deadline block number
                         if block.number >= submission_deadline {
                             let cancellation_tx_hash = self
-                                .cancel(mempool, settlement.gas.price, solver)
+                                .cancel(mempool, settlement.gas.price, solver, blocks_elapsed)
                                 .await
                                 .context("cancellation tx due to deadline failed")?;
                             tracing::info!(
@@ -173,7 +185,7 @@ impl Mempools {
                         if let Err(err) = self.ethereum.estimate_gas(tx).await {
                             if err.is_revert() {
                                 let cancellation_tx_hash = self
-                                    .cancel(mempool, settlement.gas.price, solver)
+                                    .cancel(mempool, settlement.gas.price, solver, blocks_elapsed)
                                     .await
                                     .context("cancellation tx due to revert failed")?;
                                 tracing::info!(
@@ -182,7 +194,10 @@ impl Mempools {
                                     ?err,
                                     "tx started failing in mempool, cancelling"
                                 );
-                                return Err(Error::SimulationRevert(Some(block.number)));
+                                return Err(Error::SimulationRevert {
+                                    submitted_at_block,
+                                    reverted_at_block: block.number,
+                                });
                             } else {
                                 tracing::warn!(?hash, ?err, "couldn't re-simulate tx");
                             }
@@ -199,9 +214,19 @@ impl Mempools {
         if result.is_err() {
             // Do one last attempt to see if the transaction was confirmed (in case of race
             // conditions or misclassified errors like `OrderFilled` simulation failures).
-            if let Ok(TxStatus::Executed) = self.ethereum.transaction_status(&hash).await {
-                tracing::info!(?hash, "Found confirmed transaction, ignoring error");
-                return Ok(hash);
+            if let Ok(TxStatus::Executed { block_number }) =
+                self.ethereum.transaction_status(&hash).await
+            {
+                tracing::info!(
+                    ?hash,
+                    ?block_number,
+                    "Found confirmed transaction, ignoring error"
+                );
+                return Ok(SubmissionSuccess {
+                    tx_hash: hash,
+                    included_in_block: block_number,
+                    submitted_at_block: submitted_at_block.into(),
+                });
             }
         }
         result
@@ -214,6 +239,7 @@ impl Mempools {
         mempool: &infra::mempool::Mempool,
         pending: eth::GasPrice,
         solver: &Solver,
+        blocks_elapsed: u64,
     ) -> Result<TxId, Error> {
         let cancellation = eth::Tx {
             from: solver.address(),
@@ -222,13 +248,31 @@ impl Mempools {
             input: Default::default(),
             access_list: Default::default(),
         };
+        let gas_price_bump_factor = GAS_PRICE_BUMP.powi(blocks_elapsed.max(1) as i32);
+        let new_gas_price = pending * gas_price_bump_factor;
         let gas = competition::solution::settlement::Gas {
             estimate: CANCELLATION_GAS_AMOUNT.into(),
             limit: CANCELLATION_GAS_AMOUNT.into(),
-            price: pending * GAS_PRICE_BUMP,
+            price: new_gas_price,
         };
+        tracing::debug!(
+            ?blocks_elapsed,
+            original_gas_price = ?pending,
+            ?new_gas_price,
+            bump_factor = ?gas_price_bump_factor,
+            "Cancelling transaction with adjusted gas price"
+        );
+
         mempool.submit(cancellation, gas, solver).await
     }
+}
+
+pub struct SubmissionSuccess {
+    pub tx_hash: eth::TxId,
+    /// At which block we started to submit the transaction.
+    pub included_in_block: eth::BlockNo,
+    /// In which block the transaction actually appeared onchain.
+    pub submitted_at_block: eth::BlockNo,
 }
 
 #[derive(Debug, Error)]
@@ -245,13 +289,17 @@ pub enum RevertProtection {
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("Mined reverted transaction: {tx_id:?}, block number: {block_number}")]
+    #[error("Mined reverted transaction: {tx_id:?}, block number: {reverted_at_block}")]
     Revert {
         tx_id: eth::TxId,
-        block_number: BlockNo,
+        submitted_at_block: BlockNo,
+        reverted_at_block: BlockNo,
     },
-    #[error("Simulation started reverting during submission, block number: {0:?}")]
-    SimulationRevert(Option<BlockNo>),
+    #[error("Simulation started reverting during submission, block number: {reverted_at_block}")]
+    SimulationRevert {
+        submitted_at_block: BlockNo,
+        reverted_at_block: BlockNo,
+    },
     #[error(
         "Settlement did not get included in time: submitted at block: {submitted_at_block}, \
          submission deadline: {submission_deadline}, tx: {tx_id:?}"

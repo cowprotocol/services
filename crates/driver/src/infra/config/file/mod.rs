@@ -5,7 +5,7 @@ use {
     serde::{Deserialize, Deserializer, Serialize},
     serde_with::serde_as,
     solver::solver::Arn,
-    std::{collections::HashMap, str::FromStr, time::Duration},
+    std::{collections::HashMap, time::Duration},
 };
 
 mod load;
@@ -81,10 +81,6 @@ struct Config {
     /// Whether the flashloans feature is enabled.
     #[serde(default)]
     flashloans_enabled: bool,
-
-    /// If no lender is specified in flashloan hint, use this default lender.
-    #[serde(default = "default_flashloans_lender")]
-    flashloans_default_lender: eth::H160,
 }
 
 #[serde_as]
@@ -264,6 +260,10 @@ struct SolverConfig {
     #[serde(default)]
     merge_solutions: bool,
 
+    /// Maximum number of orders allowed to be contained in a merged solution.
+    #[serde(default = "default_number_of_orders_per_merged_solution")]
+    max_orders_per_merged_solution: usize,
+
     /// S3 configuration for storing the auctions in the form they are sent to
     /// the solver engine
     #[serde(default)]
@@ -370,6 +370,31 @@ struct ContractsConfig {
     /// rebalancing orders for.
     #[serde(default)]
     cow_amms: Vec<CowAmmConfig>,
+
+    /// Flashloan wrapper-related configs.
+    #[serde(default)]
+    flashloan_wrappers: Vec<FlashloanWrapperConfig>,
+
+    /// Flashloan router to support taking out multiple flashloans
+    /// in the same settlement.
+    flashloan_router: Option<eth::H160>,
+
+    /// Address of the default flashloan lender that should be used as lender,
+    /// for all flashloans that don't have a specific lender set.
+    flashloan_default_lender: Option<eth::H160>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct FlashloanWrapperConfig {
+    /// Flashloan lender smart contract address.
+    pub lender: eth::H160,
+    /// Flashloan helper contract address.
+    /// Currently Maker and Aave lenders are supported.
+    pub helper_contract: eth::H160,
+    /// Flashloan fee in bps.
+    #[serde(default)]
+    pub fee_in_bps: eth::U256,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -627,12 +652,52 @@ fn default_response_size_limit_max_bytes() -> usize {
     30_000_000
 }
 
-#[derive(Clone, Debug, Deserialize, Default)]
+fn default_number_of_orders_per_merged_solution() -> usize {
+    3
+}
+
+#[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(tag = "estimator")]
 pub enum GasEstimatorType {
-    #[default]
-    Native,
+    #[serde(rename_all = "kebab-case")]
+    Native {
+        // Effective reward value to be selected from each individual block
+        // Example: 20 means 20% of the transactions with the lowest gas price will be analyzed
+        #[serde(default = "default_max_reward_percentile")]
+        max_reward_percentile: usize,
+        // Economical priority fee to be selected from sorted individual block reward percentiles
+        // This constitutes the part of priority fee that doesn't depend on the time_limit
+        #[serde(default = "default_min_block_percentile")]
+        min_block_percentile: f64,
+        // Urgent priority fee to be selected from sorted individual block reward percentiles
+        // This constitutes the part of priority fee that depends on the time_limit
+        #[serde(default = "default_max_block_percentile")]
+        max_block_percentile: f64,
+    },
     Web3,
+}
+
+impl Default for GasEstimatorType {
+    fn default() -> Self {
+        GasEstimatorType::Native {
+            max_reward_percentile: default_max_reward_percentile(),
+            min_block_percentile: default_min_block_percentile(),
+            max_block_percentile: default_max_block_percentile(),
+        }
+    }
+}
+
+fn default_max_reward_percentile() -> usize {
+    20
+}
+
+fn default_min_block_percentile() -> f64 {
+    30.
+}
+
+fn default_max_block_percentile() -> f64 {
+    60.
 }
 
 /// Defines various strategies to prioritize orders.
@@ -686,11 +751,6 @@ fn default_max_order_age() -> Option<Duration> {
 
 fn default_simulation_bad_token_max_age() -> Duration {
     Duration::from_secs(600)
-}
-
-// SKY lending DAI token
-fn default_flashloans_lender() -> eth::H160 {
-    eth::H160::from_str("0x60744434d6339a6B27d73d9Eda62b6F66a0a04FA").unwrap()
 }
 
 #[serde_as]
