@@ -308,13 +308,18 @@ pub fn post_order(
     create_order_request().and_then(move |order: OrderCreation| {
         let orderbook = orderbook.clone();
         async move {
-            let result = orderbook.add_order(order.clone()).await;
-            match &result {
-                Ok((order_uid, quote_id)) => {
-                    tracing::debug!(%order_uid, ?quote_id, "order created")
-                }
-                Err(err) => tracing::debug!(?order, ?err, "error creating order"),
-            }
+            let result = orderbook
+                .add_order(order.clone())
+                .await
+                .map(|(order_uid, quote_metadata)| {
+                    let quote_id = quote_metadata.as_ref().and_then(|q| q.id);
+                    let quote_solver = quote_metadata.as_ref().map(|q| q.solver);
+                    tracing::debug!(%order_uid, ?quote_id, ?quote_solver, "order created");
+                    (order_uid, quote_metadata.and_then(|quote| quote.id))
+                })
+                .inspect_err(|err| {
+                    tracing::debug!(?order, ?err, "error creating order");
+                });
 
             Result::<_, Infallible>::Ok(create_order_response(result))
         }
