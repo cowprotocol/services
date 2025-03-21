@@ -312,7 +312,9 @@ pub fn post_order(
                 .add_order(order.clone())
                 .await
                 .map(|(order_uid, quote_metadata)| {
-                    tracing::debug!(%order_uid, ?quote_metadata, "order created");
+                    let quote_id = quote_metadata.as_ref().and_then(|q| q.id);
+                    let quote_solver = quote_metadata.as_ref().map(|q| q.solver);
+                    tracing::debug!(%order_uid, ?quote_id, ?quote_solver, "order created");
                     (order_uid, quote_metadata.and_then(|quote| quote.id))
                 })
                 .inspect_err(|err| {
