@@ -748,7 +748,7 @@ components:
           description: "see `OrderParameters::validTo`"
           type: integer
         feeAmount:
-          description: "see `OrderParameters::feeAmount`"
+          description: "Deprecated: must be zero"
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
         kind:
