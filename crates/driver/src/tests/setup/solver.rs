@@ -460,13 +460,14 @@ impl Solver {
                 helper_contract: config.blockchain.flashloan_wrapper.address(),
                 fee_in_bps: Default::default(),
             })
-            .collect();
+            .collect::<Vec<_>>();
         let eth = Ethereum::new(
             rpc,
             Addresses {
                 settlement: Some(config.blockchain.settlement.address().into()),
                 weth: Some(config.blockchain.weth.address().into()),
                 cow_amms: vec![],
+                flashloan_default_lender: flashloan_wrappers.first().map(|w| w.lender.into()),
                 flashloan_wrappers,
                 flashloan_router: Some(config.blockchain.flashloan_wrapper.address().into()),
             },
@@ -486,7 +487,7 @@ impl Solver {
                 move |axum::extract::State(state): axum::extract::State<State>,
                  axum::extract::Json(req): axum::extract::Json<serde_json::Value>| async move {
                     let effective_gas_price = eth
-                        .gas_price()
+                        .gas_price(None)
                         .await
                         .unwrap()
                         .effective()

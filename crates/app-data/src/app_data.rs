@@ -5,7 +5,10 @@ use {
     primitive_types::{H160, U256},
     serde::{Deserialize, Deserializer, Serialize, Serializer, de},
     serde_with::serde_as,
-    std::{fmt, fmt::Display},
+    std::{
+        fmt::{self, Display},
+        slice::Iter,
+    },
 };
 
 /// The minimum valid empty app data JSON string.
@@ -26,7 +29,8 @@ pub struct ProtocolAppData {
     pub hooks: Hooks,
     pub signer: Option<H160>,
     pub replaced_order: Option<ReplacedOrder>,
-    pub partner_fee: Option<PartnerFee>,
+    #[serde(default)]
+    pub partner_fee: PartnerFees,
     pub flashloan: Option<Flashloan>,
 }
 
@@ -239,6 +243,40 @@ impl<'de> Deserialize<'de> for OrderUid {
     }
 }
 
+/// A list containing all the partner fees
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[cfg_attr(
+    any(test, feature = "test_helpers"),
+    derive(Serialize),
+    serde(transparent)
+)]
+pub struct PartnerFees(Vec<PartnerFee>);
+
+impl PartnerFees {
+    pub fn iter(&self) -> Iter<'_, PartnerFee> {
+        self.0.iter()
+    }
+}
+
+impl<'de> Deserialize<'de> for PartnerFees {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Helper {
+            Single(PartnerFee),
+            Multiple(Vec<PartnerFee>),
+        }
+
+        match Helper::deserialize(deserializer)? {
+            Helper::Single(fee) => Ok(PartnerFees(vec![fee])),
+            Helper::Multiple(fees) => Ok(PartnerFees(fees)),
+        }
+    }
+}
+
 /// The legacy `backend` app data object.
 #[derive(Debug, Default, Deserialize)]
 #[cfg_attr(any(test, feature = "test_helpers"), derive(Clone, Serialize))]
@@ -253,7 +291,7 @@ impl From<BackendAppData> for ProtocolAppData {
             hooks: value.hooks,
             signer: None,
             replaced_order: None,
-            partner_fee: None,
+            partner_fee: PartnerFees::default(),
             flashloan: None,
         }
     }
@@ -382,6 +420,76 @@ mod tests {
             "#,
             ProtocolAppData {
                 signer: Some(H160([0x42; 20])),
+                ..Default::default()
+            },
+        );
+
+        assert_app_data!(
+            r#"
+                {
+                    "appCode": "CoW Swap",
+                    "environment": "production",
+                    "metadata": {
+                        "quote": {
+                            "slippageBips": "50"
+                        },
+                        "orderClass": {
+                            "orderClass": "market"
+                        },
+                        "partnerFee": {
+                            "bps": 100,
+                            "recipient": "0x0202020202020202020202020202020202020202"
+                        }
+                    },
+                    "version": "0.9.0"
+                }
+            "#,
+            ProtocolAppData {
+                partner_fee: PartnerFees(vec![PartnerFee {
+                    bps: 100,
+                    recipient: H160([2; 20]),
+                }]),
+                ..Default::default()
+            },
+        );
+
+        assert_app_data!(
+            r#"
+                {
+                    "appCode": "CoW Swap",
+                    "environment": "production",
+                    "metadata": {
+                        "quote": {
+                            "slippageBips": "50"
+                        },
+                        "orderClass": {
+                            "orderClass": "market"
+                        },
+                        "partnerFee": [
+                            {
+                                "bps": 100,
+                                "recipient": "0x0202020202020202020202020202020202020202"
+                            },
+                            {
+                                "bps": 1000,
+                                "recipient": "0x0101010101010101010101010101010101010101"
+                            }
+                        ]
+                    },
+                    "version": "0.9.0"
+                }
+            "#,
+            ProtocolAppData {
+                partner_fee: PartnerFees(vec![
+                    PartnerFee {
+                        bps: 100,
+                        recipient: H160([2; 20]),
+                    },
+                    PartnerFee {
+                        bps: 1000,
+                        recipient: H160([1; 20]),
+                    },
+                ]),
                 ..Default::default()
             },
         );

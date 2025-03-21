@@ -10,10 +10,12 @@ use {
     },
     ethcontract::dyns::DynWeb3,
     gas_estimation::{
+        DEFAULT_GAS_LIMIT,
+        DEFAULT_TIME_LIMIT,
         GasPriceEstimating,
         nativegasestimator::{NativeGasEstimator, Params},
     },
-    std::sync::Arc,
+    std::{sync::Arc, time::Duration},
 };
 
 type MaxAdditionalTip = eth::U256;
@@ -95,9 +97,9 @@ impl GasPriceEstimator {
     /// If additional tip is configured, it will be added to the gas price. This
     /// is to increase the chance of a transaction being included in a block, in
     /// case private submission networks are used.
-    pub async fn estimate(&self) -> Result<eth::GasPrice, Error> {
+    pub async fn estimate(&self, time_limit: Option<Duration>) -> Result<eth::GasPrice, Error> {
         self.gas
-            .estimate()
+            .estimate_with_limits(DEFAULT_GAS_LIMIT, time_limit.unwrap_or(DEFAULT_TIME_LIMIT))
             .await
             .map(|estimate| {
                 let (max, percentage) = self.additional_tip;
