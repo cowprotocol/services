@@ -1,7 +1,7 @@
 use {
     crate::{
         api::ApiReply,
-        orderbook::{self, Orderbook},
+        orderbook::{OrderStatusError, Orderbook},
     },
     anyhow::Result,
     model::order::OrderUid,
@@ -22,7 +22,7 @@ pub fn get_status(
             let status = orderbook.get_order_status(&uid).await;
             Result::<_, Infallible>::Ok(match status {
                 Ok(status) => warp::reply::with_status(warp::reply::json(&status), StatusCode::OK),
-                Err(orderbook::Error::NotFound) => reply::with_status(
+                Err(OrderStatusError::NotFound) => reply::with_status(
                     super::error("NotFound", "Order status was not found"),
                     StatusCode::NOT_FOUND,
                 ),
