@@ -24,7 +24,7 @@ pub fn new(
     fee_handler: FeeHandler,
     solver_native_token: ManageNativeToken,
     flashloans_enabled: bool,
-    flashloan_default_lender: eth::Address,
+    flashloan_default_lender: Option<eth::ContractAddress>,
 ) -> solvers_dto::auction::Auction {
     let mut tokens: HashMap<eth::H160, _> = auction
         .tokens()
@@ -155,13 +155,15 @@ pub fn new(
                     app_data: AppDataHash(order.app_data.hash().0.into()),
                     flashloan_hint: flashloans_enabled
                         .then(|| {
-                            order.app_data.flashloan().map(|flashloan| {
-                                solvers_dto::auction::FlashloanHint {
-                                    lender: flashloan.lender.unwrap_or(flashloan_default_lender.0),
+                            order.app_data.flashloan().and_then(|flashloan| {
+                                let lender =
+                                    flashloan.lender.or(flashloan_default_lender.map(|l| l.0));
+                                lender.map(|lender| solvers_dto::auction::FlashloanHint {
+                                    lender,
                                     borrower: flashloan.borrower.unwrap_or(order.uid.owner().0),
                                     token: flashloan.token,
                                     amount: flashloan.amount,
-                                }
+                                })
                             })
                         })
                         .flatten(),

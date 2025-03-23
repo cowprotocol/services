@@ -235,8 +235,7 @@ pub fn tx(
                 &contracts.settlement().raw_instance().web3(),
                 flashloan.token.into(),
             )
-            .transfer_from(
-                contracts.settlement().address(),
+            .transfer(
                 flashloan_wrapper.helper_contract.address(),
                 repayment_amount,
             )
