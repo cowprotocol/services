@@ -126,7 +126,7 @@ async fn refunder_tx(web3: Web3) {
         web3,
         vec![ethflow_contract.clone(), ethflow_contract_2.clone()],
         validity_duration as i64 / 2,
-        10u64,
+        10i64,
         refunder.account().clone(),
     );
 
