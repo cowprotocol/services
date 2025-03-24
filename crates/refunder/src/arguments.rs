@@ -33,12 +33,12 @@ pub struct Arguments {
     /// Minimum *required* price deviation from quote (in basis points),
     /// for an order to be eligible for refunding.
     /// Negative values mean the order was placed with a better-than-quote price
-    /// (more executable). For example:
+    /// (less executable). For example:
     ///   - A value of `-10` allows refunding orders up to 0.10% better than
-    ///     quote
+    ///     quote(price improvement)
     ///   - A value of `0` requires the order to be at least equal to quote
     ///   - A value of `190` (default) allows refunding only orders with ≥1.9%
-    ///     worse price
+    ///     slippage
     #[clap(long, env, default_value = "190")]
     pub min_price_deviation_bps: i64,
 
