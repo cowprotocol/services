@@ -75,7 +75,7 @@ impl std::fmt::Display for Arguments {
             http_client,
             ethrpc,
             min_validity_duration,
-            min_price_deviation_bps: min_slippage_bps,
+            min_price_deviation_bps,
             node_url,
             chain_id,
             ethflow_contracts,
@@ -89,7 +89,7 @@ impl std::fmt::Display for Arguments {
         write!(f, "{}", ethrpc)?;
         write!(f, "{}", logging)?;
         writeln!(f, "min_validity_duration: {:?}", min_validity_duration)?;
-        writeln!(f, "min_slippage_bps: {}", min_slippage_bps)?;
+        writeln!(f, "min_price_deviation_bps: {}", min_price_deviation_bps)?;
         let _intentionally_ignored = db_url;
         writeln!(f, "db_url: SECRET")?;
         writeln!(f, "node_url: {}", node_url)?;
