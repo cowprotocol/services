@@ -30,12 +30,15 @@ pub struct Arguments {
     )]
     pub min_validity_duration: Duration,
 
-    /// Minimum slippage an order must have, in order
-    /// to be eligble for refunding
-    /// Front-end will place orders with a default slippage of 2%
-    /// hence, we are requiring as a default 190 bps or 1.9 %
+    /// Minimum *required* price deviation from quote (in basis points),
+    /// for an order to be eligible for refunding.
+    /// Negative values mean the order was placed with a better-than-quote price (more executable).
+    /// For example:
+    ///   - A value of `-10` allows refunding orders up to 0.10% better than quote
+    ///   - A value of `0` requires the order to be at least equal to quote
+    ///   - A value of `190` (default) allows refunding only orders with ≥1.9% worse price
     #[clap(long, env, default_value = "190")]
-    pub min_slippage_bps: u64,
+    pub min_price_deviation_bps: i64,
 
     /// Url of the Postgres database. By default connects to locally running
     /// postgres.
@@ -70,7 +73,7 @@ impl std::fmt::Display for Arguments {
             http_client,
             ethrpc,
             min_validity_duration,
-            min_slippage_bps,
+            min_price_deviation_bps: min_slippage_bps,
             node_url,
             chain_id,
             ethflow_contracts,

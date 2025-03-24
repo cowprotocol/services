@@ -26,7 +26,7 @@ pub struct RefundService {
     pub web3: Web3,
     pub ethflow_contracts: Vec<CoWSwapEthFlow>,
     pub min_validity_duration: i64,
-    pub min_slippage: f64,
+    pub min_price_deviation: f64,
     pub submitter: Submitter,
 }
 
@@ -43,7 +43,7 @@ impl RefundService {
         web3: Web3,
         ethflow_contracts: Vec<CoWSwapEthFlow>,
         min_validity_duration: i64,
-        min_slippage_bps: u64,
+        min_price_deviation_bps: i64,
         account: Account,
     ) -> Self {
         RefundService {
@@ -51,7 +51,7 @@ impl RefundService {
             web3: web3.clone(),
             ethflow_contracts,
             min_validity_duration,
-            min_slippage: min_slippage_bps as f64 / 10000f64,
+            min_price_deviation: min_price_deviation_bps as f64 / 10000f64,
             submitter: Submitter {
                 web3: web3.clone(),
                 account,
@@ -81,7 +81,7 @@ impl RefundService {
             &mut ex,
             block_time,
             self.min_validity_duration,
-            self.min_slippage,
+            self.min_price_deviation,
         )
         .await
         .map_err(|err| {

@@ -68,7 +68,7 @@ pub async fn run(args: arguments::Arguments) {
         web3,
         ethflow_contracts,
         i64::try_from(args.min_validity_duration.as_secs()).unwrap_or(i64::MAX),
-        args.min_slippage_bps,
+        args.min_price_deviation_bps,
         refunder_account,
     );
     loop {

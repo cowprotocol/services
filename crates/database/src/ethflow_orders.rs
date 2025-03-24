@@ -114,7 +114,7 @@ pub async fn refundable_orders(
     ex: &mut PgConnection,
     since_valid_to: i64,
     min_validity_duration: i64,
-    min_slippage: f64,
+    min_price_deviation: f64,
 ) -> Result<Vec<EthOrderPlacement>, sqlx::Error> {
     // condition (1.0 - o.buy_amount / GREATEST(oq.buy_amount,1)) >= $3 is added to
     // skip refunding orders that have unrealistic slippage set. Those orders are
@@ -145,7 +145,7 @@ AND eo.valid_to - extract(epoch from creation_timestamp)::int > $2
     sqlx::query_as(QUERY)
         .bind(since_valid_to)
         .bind(min_validity_duration)
-        .bind(min_slippage)
+        .bind(min_price_deviation)
         .fetch_all(ex)
         .await
 }
