@@ -44,7 +44,7 @@ macro_rules! logging_args_with_default_filter {
                 let Self {
                     log_filter,
                     log_stderr_threshold,
-                    log_use_json_format
+                    log_use_json_format,
                 } = self;
 
                 writeln!(f, "log_filter: {}", log_filter)?;
