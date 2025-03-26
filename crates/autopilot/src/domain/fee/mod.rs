@@ -184,6 +184,8 @@ impl ProtocolFees {
             .filter_map(|fee_policy| {
                 Self::protocol_fee_into_policy(&order, &order_, &quote_, fee_policy)
             })
+            .flat_map(|policy| Self::variant_fee_apply(&order, &quote, policy))
+            .chain(partner_fees)
             // Volume fees can only be taken by waiting for the market price to
             // become sufficienly better than the order's limit price that we can
             // take the volume fee cut without violating the order's limit price
@@ -197,14 +199,12 @@ impl ProtocolFees {
             .sorted_by(|a, b| {
                 // function sorts in ascending order so items with priority 0 will
                 // appear before items with priority 1.
-                let prio = |policy: &policy::Policy| match policy {
-                    policy::Policy::Volume(_) => 0,
+                let prio = |policy: &Policy| match policy {
+                    Policy::Volume{..} => 0,
                     _ => 1,
                 };
                 prio(a).cmp(&prio(b))
             })
-            .flat_map(|policy| Self::variant_fee_apply(&order, &quote, policy))
-            .chain(partner_fees)
             .collect::<Vec<_>>();
 
         boundary::order::to_domain(order, protocol_fees, Some(quote))
