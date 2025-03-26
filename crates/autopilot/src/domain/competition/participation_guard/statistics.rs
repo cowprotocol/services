@@ -189,29 +189,26 @@ impl SolverValidator {
         persistence: infra::Persistence,
         current_block: CurrentBlockWatcher,
         competition_updates_receiver: mpsc::UnboundedReceiver<competition::Metadata>,
-        solver_participation_guard_config: StatisticsBasedSolverParticipationGuardConfig,
+        config: StatisticsBasedSolverParticipationGuardConfig,
         drivers_by_address: HashMap<eth::Address, Arc<infra::Driver>>,
     ) -> Self {
         let settlements_tracker = CompetitionsTracker::new(
-            solver_participation_guard_config
+            config
                 .low_settling_solvers_finder
                 .last_auctions_participation_count,
-            solver_participation_guard_config
+            config
                 .low_settling_solvers_finder
                 .solver_max_settlement_failure_rate,
-            solver_participation_guard_config
-                .low_settling_solvers_finder
-                .min_wins_threshold,
-            solver_participation_guard_config
+            config.low_settling_solvers_finder.min_wins_threshold,
+            config
                 .non_settling_solvers_finder
                 .last_auctions_participation_count,
         );
         let self_ = Self(Arc::new(Inner {
             persistence,
             banned_solvers: Default::default(),
-            min_active_solvers_threshold: solver_participation_guard_config
-                .min_active_solvers_threshold,
-            config: solver_participation_guard_config,
+            min_active_solvers_threshold: config.min_active_solvers_threshold,
+            config,
             drivers_by_address,
             competitions_tracker: Mutex::new(settlements_tracker),
         }));
@@ -315,7 +312,8 @@ impl SolverValidator {
             .0
             .banned_solvers
             .iter()
-            .fold(0, |acc, entry| acc + (*entry.value() > 0) as u32);
+            .filter(|entry| *entry.value() > 0)
+            .count() as u32;
         let have_active_solvers =
             (total_solvers_count - banned_solvers_count) > self.0.min_active_solvers_threshold;
         let banning_allowed =

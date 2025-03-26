@@ -861,7 +861,7 @@ impl Persistence {
         let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
         let _timer = Metrics::get()
             .database_queries
-            .with_label_values(&["fetch_last_competitions_data"])
+            .with_label_values(&["fetch_last_competitions_metadata"])
             .start_timer();
 
         Ok(
@@ -871,7 +871,7 @@ impl Persistence {
                 current_block,
             )
             .await
-            .context("solver_competition::fetch_last_competitions_data")?
+            .context("solver_competition::fetch_last_competitions_metadata")?
             .into_iter()
             .map(competition::Metadata::from)
             .collect(),
