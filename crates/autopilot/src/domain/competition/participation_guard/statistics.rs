@@ -92,9 +92,9 @@ struct CompetitionsTracker {
     /// to make is possible for solver to recover with a single successful
     /// settlement.
     high_failure_threshold: f64,
-    /// The minimum number of competitions the solver should win to be
-    /// considered as low-settling.
-    min_won_competitions: u32,
+    /// The minimum number of won competitions required before a solver
+    /// is evaluated for low-settling behavior.
+    min_wins_for_evaluation: u32,
     /// The number of consecutive failed settlements to consider the solver as
     /// non-settling.
     non_settling_threshold: u32,
@@ -106,14 +106,14 @@ impl CompetitionsTracker {
     fn new(
         max_size: u32,
         high_failure_threshold: f64,
-        min_winning_competitions: u32,
+        min_wins_for_evaluation: u32,
         non_settling_threshold: u32,
     ) -> Self {
         Self {
             queue: VecDeque::with_capacity(max_size as usize),
             max_cache_size: max_size as usize,
             high_failure_threshold,
-            min_won_competitions: min_winning_competitions,
+            min_wins_for_evaluation,
             non_settling_threshold,
             solver_stats: Default::default(),
         }
@@ -145,7 +145,7 @@ impl CompetitionsTracker {
         self.solver_stats
             .iter()
             .filter_map(|(solver, stats)| {
-                (stats.total >= self.min_won_competitions
+                (stats.total >= self.min_wins_for_evaluation
                     && stats.failure_rate() > self.high_failure_threshold)
                     .then_some(*solver)
             })
@@ -154,7 +154,7 @@ impl CompetitionsTracker {
 
     fn reached_high_failure_rate(&self, solver: &eth::Address) -> bool {
         self.solver_stats.get(solver).is_some_and(|stats| {
-            stats.total >= self.min_won_competitions
+            stats.total >= self.min_wins_for_evaluation
                 && stats.failure_rate() > self.high_failure_threshold
         })
     }
@@ -199,7 +199,7 @@ impl SolverValidator {
             config
                 .low_settling_solvers_finder
                 .solver_max_settlement_failure_rate,
-            config.low_settling_solvers_finder.min_wins_threshold,
+            config.low_settling_solvers_finder.min_wins_for_evaluation,
             config
                 .non_settling_solvers_finder
                 .last_auctions_participation_count,
