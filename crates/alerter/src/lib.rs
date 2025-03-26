@@ -381,7 +381,7 @@ struct Arguments {
 
     /// Whether to use JSON format for the logs.
     #[clap(long, env, default_value = "false")]
-    pub log_use_json_format: bool,
+    pub use_json_logs: bool,
 }
 
 pub async fn start(args: impl Iterator<Item = String>) {
@@ -389,7 +389,7 @@ pub async fn start(args: impl Iterator<Item = String>) {
     observe::tracing::initialize(
         "alerter=debug",
         tracing::Level::ERROR.into(),
-        args.log_use_json_format,
+        args.use_json_logs,
     );
     observe::panic_hook::install();
     observe::metrics::setup_registry(Some("gp_v2_alerter".to_string()), None);

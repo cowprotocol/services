@@ -19,7 +19,7 @@ pub struct Args {
 
     /// Whether to use JSON format for the logs.
     #[clap(long, env, default_value = "false")]
-    pub log_use_json_format: bool,
+    pub use_json_logs: bool,
 
     /// The node RPC API endpoint.
     #[clap(long, env)]

@@ -53,7 +53,7 @@ pub async fn start(args: impl Iterator<Item = String>) {
     observe::tracing::initialize(
         args.shared.logging.log_filter.as_str(),
         args.shared.logging.log_stderr_threshold,
-        args.shared.logging.log_use_json_format,
+        args.shared.logging.use_json_logs,
     );
     tracing::info!("running order book with validated arguments:\n{}", args);
     observe::panic_hook::install();
