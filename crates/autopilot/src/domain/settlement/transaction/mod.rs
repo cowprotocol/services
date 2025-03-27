@@ -24,21 +24,41 @@ pub struct Transaction {
     pub gas: eth::Gas,
     /// The effective gas price of the transaction.
     pub gas_price: eth::EffectiveGasPrice,
+    /// The solver (submission address)
+    pub solver: eth::Address,
     /// Encoded trades that were settled by the transaction.
     pub trades: Vec<EncodedTrade>,
 }
 
 impl Transaction {
-    pub fn try_new(
+    pub async fn try_new(
         transaction: &eth::Transaction,
         domain_separator: &eth::DomainSeparator,
         settlement_contract: eth::Address,
+        authenticator: &contracts::GPv2AllowListAuthentication,
     ) -> Result<Self, Error> {
-        // find trace call to settlement contract
-        let calldata = find_settlement_trace(&transaction.trace_calls, settlement_contract).map(|trace| trace.input.clone())
-            // all transactions emitting settlement events should have a /settle call, 
+        // Find trace call to settlement contract
+        let (calldata, path) = find_settlement_trace_and_path(&transaction.trace_calls, settlement_contract).map(|(trace, path)| (trace.input.clone(), path.clone()))
+            // All transactions emitting settlement events should have a /settle call, 
             // otherwise it's an execution client bug
             .ok_or(Error::MissingCalldata)?;
+
+        // Find solver (submission address)
+        // In cases of solvers using EOA to submit solutions, the address is the sender
+        // of the transaction. In cases of solvers using a smart contract to
+        // submit solutions, the address is deducted from the calldata.
+        let mut solver = None;
+        for call in path {
+            if authenticator
+                .is_solver(call.from.into())
+                .call()
+                .await
+                .map_err(Error::Authentication)?
+            {
+                solver = Some(call.from);
+                break;
+            }
+        }
 
         /// Number of bytes that may be appended to the calldata to store an
         /// auction id.
@@ -63,6 +83,7 @@ impl Transaction {
             timestamp: transaction.timestamp,
             gas: transaction.gas,
             gas_price: transaction.gas_price,
+            solver: solver.ok_or(Error::MissingSolver)?,
             trades: {
                 let tokenized::Tokenized {
                     tokens,
@@ -128,20 +149,24 @@ impl Transaction {
     }
 }
 
-fn find_settlement_trace(
+fn find_settlement_trace_and_path(
     call_frame: &eth::CallFrame,
     settlement_contract: eth::Address,
-) -> Option<&eth::CallFrame> {
+) -> Option<(&eth::CallFrame, Vec<&eth::CallFrame>)> {
     // Use a queue (VecDeque) to keep track of frames to process
     let mut queue = std::collections::VecDeque::new();
-    queue.push_back(call_frame);
+    queue.push_back((call_frame, vec![call_frame]));
 
-    while let Some(call_frame) = queue.pop_front() {
+    while let Some((call_frame, path_so_far)) = queue.pop_front() {
         if is_settlement_trace(call_frame, settlement_contract) {
-            return Some(call_frame);
+            return Some((call_frame, path_so_far));
         }
-        // Add all nested calls to the queue
-        queue.extend(&call_frame.calls);
+        // Add all nested calls to the queue with the updated path
+        for sub_call in &call_frame.calls {
+            let mut new_path = path_so_far.clone();
+            new_path.push(sub_call);
+            queue.push_back((sub_call, new_path));
+        }
     }
 
     None
@@ -194,6 +219,8 @@ pub struct ClearingPrices {
 pub enum Error {
     #[error("settle calldata must exist for all transactions emitting settlement event")]
     MissingCalldata,
+    #[error("solver address must be deductible from calldata")]
+    MissingSolver,
     #[error("missing auction id")]
     MissingAuctionId,
     #[error(transparent)]
@@ -202,4 +229,6 @@ pub enum Error {
     OrderUidRecover(tokenized::error::Uid),
     #[error("failed to recover signature {0}")]
     SignatureRecover(#[source] anyhow::Error),
+    #[error("failed to check authentication {0}")]
+    Authentication(#[source] ethcontract::errors::MethodError),
 }

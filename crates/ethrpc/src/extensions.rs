@@ -124,6 +124,8 @@ impl<T: Transport> Debug<T> {
 /// Taken from alloy::rpc::types::trace::geth::CallFrame
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
 pub struct CallFrame {
+    /// The address of that initiated the call.
+    pub from: primitive_types::H160,
     /// The address of the contract that was called.
     #[serde(default)]
     pub to: Option<primitive_types::H160>,

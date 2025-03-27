@@ -315,6 +315,8 @@ pub struct TradeEvent {
 /// Call frames of a transaction.
 #[derive(Clone, Debug, Default)]
 pub struct CallFrame {
+    /// The address of that initiated the call.
+    pub from: Address,
     /// The address of the contract that was called.
     pub to: Option<Address>,
     /// Calldata input.

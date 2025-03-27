@@ -34,6 +34,8 @@ pub struct Settlement {
     block: eth::BlockNo,
     /// The associated auction.
     auction: Auction,
+    /// The solver (submission address)
+    solver: eth::Address, // TODO add
     /// Trades that were settled by the transaction.
     trades: Vec<Trade>,
 }
@@ -148,6 +150,7 @@ impl Settlement {
             block: settled.block,
             gas: settled.gas,
             gas_price: settled.gas_price,
+            solver: settled.solver,
             trades,
             auction,
         })

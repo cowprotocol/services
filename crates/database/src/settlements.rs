@@ -46,6 +46,7 @@ pub async fn update_settlement_auction(
     block_number: i64,
     log_index: i64,
     auction_id: i64,
+    // also update solver
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
 UPDATE settlements

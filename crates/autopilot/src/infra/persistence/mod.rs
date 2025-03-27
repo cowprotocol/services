@@ -656,6 +656,7 @@ impl Persistence {
             block_number,
             log_index,
             auction_id,
+            // take solver from settlement
         )
         .await?;
 
