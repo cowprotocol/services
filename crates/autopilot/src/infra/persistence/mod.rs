@@ -3,7 +3,7 @@ use {
         boundary,
         database::{Postgres, order_events::store_order_events},
         domain::{self, competition, eth},
-        infra::persistence::dto::AuctionId,
+        infra::persistence::dto::{AuctionId, quote::competition_metadata_into_domain},
     },
     anyhow::Context,
     bigdecimal::ToPrimitive,
@@ -873,7 +873,7 @@ impl Persistence {
             .await
             .context("solver_competition::fetch_last_competitions_metadata")?
             .into_iter()
-            .map(competition::Metadata::from)
+            .map(competition_metadata_into_domain)
             .collect(),
         )
     }
