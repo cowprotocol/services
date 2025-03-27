@@ -220,10 +220,10 @@ impl Solution {
         }
     }
 
-    /// JIT score calculation as per CIP38
+    /// JIT score calculation.
     pub fn scoring(
         &self,
-        prices: &auction::Prices,
+        native_prices: &auction::Prices,
         surplus_capturing_jit_order_owners: &HashSet<eth::Address>,
     ) -> Result<eth::Ether, error::Scoring> {
         let mut trades = Vec::with_capacity(self.trades.len());
@@ -257,7 +257,7 @@ impl Solution {
         }
 
         let scoring = scoring::Scoring::new(trades);
-        scoring.score(prices).map_err(error::Scoring::from)
+        scoring.score(native_prices).map_err(error::Scoring::from)
     }
 
     /// Approval interactions necessary for encoding the settlement.

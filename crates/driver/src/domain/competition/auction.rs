@@ -116,7 +116,9 @@ impl Auction {
         self.deadline
     }
 
-    pub fn prices(&self) -> Prices {
+    /// Prices used to convert token amounts to an equivalent amount of the
+    /// native asset (e.g. ETH on ethereum, or xdai on gnosis chain).
+    pub fn native_prices(&self) -> Prices {
         self.tokens
             .0
             .iter()
@@ -620,7 +622,7 @@ pub struct Token {
 /// The price of a token in wei. This represents how much wei is needed to buy
 /// 10**18 of another token.
 #[derive(Debug, Clone, Copy)]
-pub struct Price(eth::Ether);
+pub struct Price(pub eth::Ether);
 
 impl Price {
     /// The base Ether amount for pricing.

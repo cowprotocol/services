@@ -1,4 +1,9 @@
-use {crate::domain::eth, anyhow::Result, bigdecimal::Zero};
+use {
+    crate::domain::eth,
+    anyhow::Result,
+    bigdecimal::Zero,
+    num::{CheckedMul, FromPrimitive},
+};
 
 pub trait U256Ext: Sized {
     fn to_big_int(&self) -> num::BigInt;
@@ -7,6 +12,7 @@ pub trait U256Ext: Sized {
 
     fn checked_ceil_div(&self, other: &Self) -> Option<Self>;
     fn ceil_div(&self, other: &Self) -> Self;
+    fn mul_f64(&self, factor: f64) -> Option<Self>;
 
     fn from_big_int(input: &num::BigInt) -> Result<Self>;
     fn from_big_uint(input: &num::BigUint) -> Result<Self>;
@@ -36,6 +42,13 @@ impl U256Ext for eth::U256 {
     fn ceil_div(&self, other: &Self) -> Self {
         self.checked_ceil_div(other)
             .expect("ceiling division arithmetic error")
+    }
+
+    fn mul_f64(&self, factor: f64) -> Option<Self> {
+        let result = self
+            .to_big_rational()
+            .checked_mul(&num::BigRational::from_f64(factor)?)?;
+        Self::from_big_rational(&result).ok()
     }
 
     fn from_big_int(input: &num::BigInt) -> Result<eth::U256> {

@@ -219,7 +219,7 @@ impl Competition {
                 observe::scoring(&settlement);
                 (
                     settlement.score(
-                        &auction.prices(),
+                        &auction.native_prices(),
                         auction.surplus_capturing_jit_order_owners(),
                     ),
                     settlement,
@@ -541,7 +541,7 @@ fn merge(
         Reverse(
             solution
                 .scoring(
-                    &auction.prices(),
+                    &auction.native_prices(),
                     auction.surplus_capturing_jit_order_owners(),
                 )
                 .map(|score| score.0)
