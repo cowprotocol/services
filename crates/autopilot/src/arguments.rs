@@ -1,7 +1,7 @@
 use {
     crate::{domain::fee::FeeFactor, infra},
     anyhow::{Context, anyhow, ensure},
-    clap::ValueEnum,
+    clap::{ArgAction, ValueEnum},
     primitive_types::{H160, U256},
     shared::{
         arguments::{display_list, display_option},
@@ -248,31 +248,24 @@ pub struct Arguments {
 
     /// Configuration for the solver participation guard.
     #[clap(flatten)]
-    pub db_based_solver_participation_guard: DbBasedSolverParticipationGuardConfig,
+    pub stats_based_solver_participation_guard: StatisticsBasedSolverParticipationGuardConfig,
 }
 
 #[derive(Debug, clap::Parser)]
-pub struct DbBasedSolverParticipationGuardConfig {
-    /// Enables or disables the solver participation guard
-    #[clap(
-        id = "db_enabled",
-        long = "db-based-solver-participation-guard-enabled",
-        env = "DB_BASED_SOLVER_PARTICIPATION_GUARD_ENABLED",
-        default_value = "true"
-    )]
-    pub enabled: bool,
+pub struct StatisticsBasedSolverParticipationGuardConfig {
+    /// The number of settlements a solver skips after being banned.
+    #[clap(long, env, default_value = "10")]
+    pub solver_ban_settlements_count: u32,
 
-    /// Sets the duration for which the solver remains blacklisted.
-    /// Technically, the time-to-live for the solver participation blacklist
-    /// cache.
-    #[clap(long, env, default_value = "5m", value_parser = humantime::parse_duration)]
-    pub solver_blacklist_cache_ttl: Duration,
+    /// The minimum number of active solvers to stop the banning mechanism.
+    #[clap(long, env, default_value = "1")]
+    pub min_active_solvers_threshold: u32,
 
     #[clap(flatten)]
-    pub non_settling_solvers_finder_config: NonSettlingSolversFinderConfig,
+    pub non_settling_solvers_finder: NonSettlingSolversFinderConfig,
 
     #[clap(flatten)]
-    pub low_settling_solvers_finder_config: LowSettlingSolversFinderConfig,
+    pub low_settling_solvers_finder: LowSettlingSolversFinderConfig,
 }
 
 #[derive(Debug, clap::Parser)]
@@ -282,11 +275,14 @@ pub struct NonSettlingSolversFinderConfig {
         id = "non_settling_solvers_blacklisting_enabled",
         long = "non-settling-solvers-blacklisting-enabled",
         env = "NON_SETTLING_SOLVERS_BLACKLISTING_ENABLED",
-        default_value = "true"
+        default_value = "true",
+        action = ArgAction::Set, // allow to provide the value in the command args
+        value_parser = clap::value_parser!(bool) // required for the above
     )]
     pub enabled: bool,
 
-    /// The number of last auctions to check solver participation eligibility.
+    /// For how many last consecutive auctions a solver should not settle to get
+    /// banned.
     #[clap(
         id = "non_settling_last_auctions_participation_count",
         long = "non-settling-last-auctions-participation-count",
@@ -303,7 +299,9 @@ pub struct LowSettlingSolversFinderConfig {
         id = "low_settling_solvers_blacklisting_enabled",
         long = "low-settling-solvers-blacklisting-enabled",
         env = "LOW_SETTLING_SOLVERS_BLACKLISTING_ENABLED",
-        default_value = "true"
+        default_value = "true",
+        action = ArgAction::Set, // allow to provide the value in the command args
+        value_parser = clap::value_parser!(bool) // required for the above
     )]
     pub enabled: bool,
 
@@ -318,12 +316,12 @@ pub struct LowSettlingSolversFinderConfig {
 
     /// The minimum number of winning solutions to start considering the solver.
     #[clap(
-        id = "low_settling_min_wins_threshold",
-        long = "low-settling-min-wins-threshold",
-        env = "LOW_SETTLING_MIN_WINS_THRESHOLD",
+        id = "low_settling_min_wins_for_evaluation",
+        long = "low-settling-min-wins-for-evaluation",
+        env = "LOW_SETTLING_MIN_WINS_FOR_EVALUATION",
         default_value = "3"
     )]
-    pub min_wins_threshold: u32,
+    pub min_wins_for_evaluation: u32,
 
     /// A max failure rate for a solver to remain eligible for
     /// participation in the competition. Otherwise, the solver will be
@@ -375,7 +373,7 @@ impl std::fmt::Display for Arguments {
             max_winners_per_auction,
             archive_node_url,
             max_solutions_per_solver,
-            db_based_solver_participation_guard,
+            stats_based_solver_participation_guard: db_based_solver_participation_guard,
         } = self;
 
         write!(f, "{}", shared)?;
