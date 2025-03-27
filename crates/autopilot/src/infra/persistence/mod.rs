@@ -855,7 +855,7 @@ impl Persistence {
     /// ongoing.
     pub async fn fetch_last_competitions_metadata(
         &self,
-        last_auctions_count: u32,
+        fetch_limit: u32,
         current_block: u64,
     ) -> anyhow::Result<Vec<competition::Metadata>> {
         let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
@@ -867,7 +867,7 @@ impl Persistence {
         Ok(
             database::solver_competition::fetch_last_competitions_metadata(
                 &mut ex,
-                last_auctions_count,
+                fetch_limit,
                 current_block,
             )
             .await

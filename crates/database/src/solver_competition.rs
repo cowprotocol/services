@@ -118,7 +118,7 @@ pub struct Metadata {
 
 pub async fn fetch_last_competitions_metadata(
     ex: &mut PgConnection,
-    last_auctions_count: u32,
+    fetch_limit: u32,
     current_block: u64,
 ) -> Result<Vec<Metadata>, sqlx::Error> {
     const QUERY: &str = r#"
@@ -140,7 +140,7 @@ LEFT JOIN settlements s ON la.auction_id = s.auction_id
 
     sqlx::query_as(QUERY)
         .bind(sqlx::types::BigDecimal::from(current_block))
-        .bind(i64::from(last_auctions_count))
+        .bind(i64::from(fetch_limit))
         .fetch_all(ex)
         .await
 }
