@@ -81,6 +81,10 @@ struct Config {
     /// Whether the flashloans feature is enabled.
     #[serde(default)]
     flashloans_enabled: bool,
+
+    /// Time at which the buy order scoring change should go into
+    /// effect (based on `deadline` in `/solve` request).
+    buy_order_scoring_change_cutover: chrono::DateTime<chrono::Utc>,
 }
 
 #[serde_as]

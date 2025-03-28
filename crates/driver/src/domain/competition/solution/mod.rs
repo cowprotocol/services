@@ -225,6 +225,7 @@ impl Solution {
         &self,
         native_prices: &auction::Prices,
         surplus_capturing_jit_order_owners: &HashSet<eth::Address>,
+        use_new_score_logic: bool,
     ) -> Result<eth::Ether, error::Scoring> {
         let mut trades = Vec::with_capacity(self.trades.len());
         for trade in self.trades().iter().filter(|trade| {
@@ -256,8 +257,8 @@ impl Solution {
             ))
         }
 
-        let scoring = scoring::Scoring::new(trades);
-        scoring.score(native_prices).map_err(error::Scoring::from)
+        scoring::compute_score(&trades, native_prices, use_new_score_logic)
+            .map_err(error::Scoring::from)
     }
 
     /// Approval interactions necessary for encoding the settlement.

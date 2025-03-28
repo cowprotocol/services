@@ -29,36 +29,18 @@ use {
     },
 };
 
-/// Scoring contains trades with values as they are expected by the settlement
-/// contracts. This means that executed amounts and custom clearing prices have
-/// the same values here and after being mined onchain. This allows us to use
-/// the same math for calculating surplus and fees in the driver and in the
-/// autopilot.
-#[derive(Debug, Clone)]
-pub struct Scoring {
-    trades: Vec<Trade>,
-}
-
-impl Scoring {
-    pub fn new(trades: Vec<Trade>) -> Self {
-        Self { trades }
-    }
-
-    /// Score of a settlement as per CIP38
-    ///
-    /// Score of a settlement is a sum of scores of all user trades in the
-    /// settlement. Score is defined as an order's surplus plus its protocol
-    /// fee.
-    ///
-    /// Settlement score is valid only if all trade scores are valid.
-    ///
-    /// Denominated in NATIVE token
-    pub fn score(&self, native_prices: &auction::Prices) -> Result<eth::Ether, Error> {
-        self.trades
-            .iter()
-            .map(|trade| trade.score_old(native_prices))
-            .sum()
-    }
+pub fn compute_score(
+    trades: &[Trade],
+    native_prices: &auction::Prices,
+    use_new_logic: bool,
+) -> Result<eth::Ether, Error> {
+    trades
+        .iter()
+        .map(|trade| match use_new_logic {
+            true => trade.score(native_prices),
+            false => trade.score_old(native_prices),
+        })
+        .sum()
 }
 
 // Trade represents a single trade in a settlement.
@@ -439,7 +421,10 @@ impl Trade {
             Side::Buy => factor / (1.0 + factor),
         };
 
-        let multiplied = executed_in_surplus_token.0.mul_f64(factor).ok_or(Error::Math(Math::Overflow))?;
+        let multiplied = executed_in_surplus_token
+            .0
+            .mul_f64(factor)
+            .ok_or(Error::Math(Math::Overflow))?;
         Ok(multiplied.into())
     }
 }
