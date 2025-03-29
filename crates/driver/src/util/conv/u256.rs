@@ -7,7 +7,7 @@ pub trait U256Ext: Sized {
 
     fn checked_ceil_div(&self, other: &Self) -> Option<Self>;
     fn ceil_div(&self, other: &Self) -> Self;
-    fn mul_f64(&self, factor: f64) -> Option<Self>;
+    fn checked_mul_f64(&self, factor: f64) -> Option<Self>;
 
     fn from_big_int(input: &num::BigInt) -> Result<Self>;
     fn from_big_uint(input: &num::BigUint) -> Result<Self>;
@@ -39,7 +39,7 @@ impl U256Ext for eth::U256 {
             .expect("ceiling division arithmetic error")
     }
 
-    fn mul_f64(&self, factor: f64) -> Option<Self> {
+    fn checked_mul_f64(&self, factor: f64) -> Option<Self> {
         // `factor` is first multiplied by the conversion factor to convert
         // it to integer, to avoid rounding to 0. Then, the result is divided
         // by the conversion factor to convert it back to the original scale.

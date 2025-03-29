@@ -127,7 +127,7 @@ pub struct TokenAmount(pub U256);
 impl TokenAmount {
     /// Applies a factor to the token amount.
     pub fn apply_factor(&self, factor: f64) -> Option<Self> {
-        Some(self.0.mul_f64(factor)?.into())
+        Some(self.0.checked_mul_f64(factor)?.into())
     }
 }
 

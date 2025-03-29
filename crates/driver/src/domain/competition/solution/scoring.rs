@@ -377,7 +377,7 @@ impl Trade {
         //     fee = surplus_after_fee * factor / (1 - factor)
         let multiplied = surplus
             .0
-            .mul_f64(factor / (1.0 - factor))
+            .checked_mul_f64(factor / (1.0 - factor))
             .ok_or(Error::Math(Math::Overflow))?;
         Ok(multiplied.into())
     }
@@ -423,7 +423,7 @@ impl Trade {
 
         let multiplied = executed_in_surplus_token
             .0
-            .mul_f64(factor)
+            .checked_mul_f64(factor)
             .ok_or(Error::Math(Math::Overflow))?;
         Ok(multiplied.into())
     }
