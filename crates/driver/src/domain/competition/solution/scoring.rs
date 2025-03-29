@@ -494,7 +494,5 @@ mod tests {
         let new_score = trade.score(&native_prices).unwrap();
         // TODO: double check, this seems super low...
         assert_eq!(new_score.0, 911.into());
-
-        panic!("miep");
     }
 }
