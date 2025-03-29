@@ -456,11 +456,11 @@ mod tests {
         // using the original scoring mechanism.
         let trade = Trade {
             signed_sell: eth::Asset {
-                token: weth.clone().into(),
+                token: weth.into(),
                 amount: 9865986634773384514560000000000000u128.into(),
             },
             signed_buy: eth::Asset {
-                token: bnkr.clone().into(),
+                token: bnkr.into(),
                 amount: 4025333872768468868566822740u128.into(),
             },
             side: Side::Buy,
@@ -474,13 +474,10 @@ mod tests {
 
         let native_prices: HashMap<_, _> = [
             (
-                weth.clone().into(),
+                weth.into(),
                 Price(eth::Ether(1000000000000000000u128.into())),
             ),
-            (
-                bnkr.clone().into(),
-                Price(eth::Ether(113181296327u128.into())),
-            ),
+            (bnkr.into(), Price(eth::Ether(113181296327u128.into()))),
         ]
         .into_iter()
         .collect();
