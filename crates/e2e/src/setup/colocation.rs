@@ -162,6 +162,7 @@ factory = "{:?}"
 
     let config_file = config_tmp_file(format!(
         r#"
+buy-order-scoring-change-cutover = "2026-03-27T15:04:50.410Z"
 app-data-fetching-enabled = true
 orderbook-url = "http://localhost:8080"
 flashloans-enabled = true
