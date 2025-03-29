@@ -1,8 +1,4 @@
-use {
-    crate::domain::eth,
-    anyhow::Result,
-    bigdecimal::Zero,
-};
+use {crate::domain::eth, anyhow::Result, bigdecimal::Zero};
 
 pub trait U256Ext: Sized {
     fn to_big_int(&self) -> num::BigInt;
@@ -43,17 +39,19 @@ impl U256Ext for eth::U256 {
             .expect("ceiling division arithmetic error")
     }
 
-   /// The factor is first multiplied by 10^18 to convert it to integer, to
-   /// avoid rounding to 0. Then, the token amount is divided by 10^18 to
-   /// convert it back to the original scale.
-   ///
-   /// The higher the conversion factor (10^18) the precision is higher. E.g.
-   /// 0.123456789123456789 will be converted to 123456789123456789.
-   // TODO: replace with implementation that uses bigrationals under the hood
-   // (requires a few adjustments to amounts in tests)
-   fn mul_f64(&self, factor: f64) -> Option<Self> {
-        let multiplied = self.checked_mul(Self::from_f64_lossy(factor * 1000000000000000000.))?
-            / Self::from(1000000000000000000u128);
+    fn mul_f64(&self, factor: f64) -> Option<Self> {
+        // `factor` is first multiplied by the conversion factor to convert
+        // it to integer, to avoid rounding to 0. Then, the result is divided
+        // by the conversion factor to convert it back to the original scale.
+        //
+        // The higher the conversion factor (10^18) the precision is higher. E.g.
+        // 0.123456789123456789 will be converted to 123456789123456789.
+        // TODO: consider doing the computation with `BigRational` instead but
+        // that requires to double check and adjust a few tests due to tiny
+        // changes in rounding.
+        const CONVERSION_FACTOR: f64 = 1_000_000_000_000_000_000.;
+        let multiplied = self.checked_mul(Self::from_f64_lossy(factor * CONVERSION_FACTOR))?
+            / Self::from_f64_lossy(CONVERSION_FACTOR);
         Some(multiplied)
     }
 
