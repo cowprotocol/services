@@ -438,3 +438,63 @@ pub enum Error {
     #[error("scoring: failed to calculate custom price for the applied fee policy {0:?}")]
     Scoring(#[source] error::Scoring),
 }
+
+#[cfg(test)]
+mod tests {
+    use {super::*, auction::Price, shared::addr, std::collections::HashMap};
+
+    /// Tests that the new score computation limits the score of certain
+    /// buy orders to a reasonable amount.
+    /// Data based is on this
+    /// [auction](https://api.cow.fi/base/api/v1/solver_competition/by_tx_hash/0xe3ef02493255f17c0abd2ff88c34682d35f0de4f4875a4653104e3453473d8d9).
+    #[test]
+    fn score_problematic_buy_order() {
+        let weth = addr!("4200000000000000000000000000000000000006");
+        let bnkr = addr!("22af33fe49fd1fa80c7149773dde5890d3c76f3b");
+
+        // Buy order which results in an unreasonably high score
+        // using the original scoring mechanism.
+        let trade = Trade {
+            signed_sell: eth::Asset {
+                token: weth.clone().into(),
+                amount: 9865986634773384514560000000000000u128.into(),
+            },
+            signed_buy: eth::Asset {
+                token: bnkr.clone().into(),
+                amount: 4025333872768468868566822740u128.into(),
+            },
+            side: Side::Buy,
+            executed: order::TargetAmount(8050667745u128.into()),
+            custom_price: CustomClearingPrices {
+                sell: 874045870u128.into(),
+                buy: 8050667745u128.into(),
+            },
+            policies: vec![],
+        };
+
+        let native_prices: HashMap<_, _> = [
+            (
+                weth.clone().into(),
+                Price(eth::Ether(1000000000000000000u128.into())),
+            ),
+            (
+                bnkr.clone().into(),
+                Price(eth::Ether(113181296327u128.into())),
+            ),
+        ]
+        .into_iter()
+        .collect();
+
+        let old_score = trade.score_old(&native_prices).unwrap();
+        // the actual score of the solution was 19729793891650888
+        // (~0.02 ETH) but our result is slightly different
+        // because we ignored fees.
+        assert_eq!(old_score.0, 19731899115084598u128.into());
+
+        let new_score = trade.score(&native_prices).unwrap();
+        // TODO: double check, this seems super low...
+        assert_eq!(new_score.0, 911.into());
+
+        panic!("miep");
+    }
+}
