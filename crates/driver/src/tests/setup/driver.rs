@@ -206,7 +206,7 @@ async fn create_config_file(
     let mut file = tempfile::NamedTempFile::new().unwrap();
     writeln!(
         file,
-        "buy-order-scoring-change-cutover = \"2026-03-27T15:04:50.410Z\""
+        "buy-order-scoring-change-cutover = \"1970-03-27T15:04:50.410Z\""
     )
     .unwrap();
     let simulation = if config.enable_simulation {
