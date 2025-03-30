@@ -67,7 +67,8 @@ impl Observer {
             Ok(transaction) => {
                 let separator = self.eth.contracts().settlement_domain_separator();
                 let settlement_contract = self.eth.contracts().settlement().address().into();
-                settlement::Transaction::try_new(&transaction, separator, settlement_contract)
+                let authenticator = self.eth.contracts().authenticator();
+                settlement::Transaction::try_new(&transaction, separator, settlement_contract, authenticator).await
             }
             Err(err) => {
                 tracing::warn!(hash = ?event.transaction, ?err, "no tx found");
@@ -103,8 +104,12 @@ impl Observer {
                     settlement::transaction::Error::MissingAuctionId
                     | settlement::transaction::Error::Decoding(_)
                     | settlement::transaction::Error::SignatureRecover(_)
-                    | settlement::transaction::Error::OrderUidRecover(_) => {
+                    | settlement::transaction::Error::OrderUidRecover(_)
+                    | settlement::transaction::Error::MissingSolver => {
                         tracing::warn!(hash = ?event.transaction, ?err, "invalid settlement transaction")
+                    }
+                    settlement::transaction::Error::Authentication(_) => {
+                        tracing::warn!(hash = ?event.transaction, ?err, "failed authentication")
                     }
                 }
                 // default values so we don't get stuck on invalid settlement transactions

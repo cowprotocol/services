@@ -32,6 +32,8 @@ pub struct Settlement {
     gas_price: eth::EffectiveGasPrice,
     /// The block number of the block that contains the settlement transaction.
     block: eth::BlockNo,
+    /// The solver (submission address)
+    solver: eth::Address,
     /// The associated auction.
     auction: Auction,
     /// Trades that were settled by the transaction.
@@ -39,6 +41,11 @@ pub struct Settlement {
 }
 
 impl Settlement {
+    /// The solver (submission address)
+    pub fn solver(&self) -> eth::Address {
+        self.solver
+    }
+    
     /// The gas used by the settlement.
     pub fn gas(&self) -> eth::Gas {
         self.gas
@@ -148,6 +155,7 @@ impl Settlement {
             block: settled.block,
             gas: settled.gas,
             gas_price: settled.gas_price,
+            solver: settled.solver,
             trades,
             auction,
         })
@@ -232,16 +240,14 @@ pub struct ExecutionEnded {
 #[cfg(test)]
 mod tests {
     use {
-        crate::domain::{self, auction, eth},
-        hex_literal::hex,
-        std::collections::{HashMap, HashSet},
+        crate::domain::{self, auction, eth}, ethcontract::contract::Deploy, hex_literal::hex, std::collections::{HashMap, HashSet}
     };
 
     // https://etherscan.io/tx/0x030623e438f28446329d8f4ff84db897907fcac59b9943b31b7be66f23c877af
     // A transfer transaction that emits a settlement event, but it's not actually a
     // swap.
-    #[test]
-    fn not_a_swap() {
+    #[tokio::test]
+    async fn not_a_swap() {
         let calldata = hex!(
             "
         13d79a0b
@@ -451,6 +457,14 @@ mod tests {
         let settlement_contract = eth::Address(eth::H160::from_slice(&hex!(
             "9008d19f58aabd9ed0d60971565aa8510560ab41"
         )));
+        let authenticator = wait_for(
+            &web3,
+            contracts::GPv2AllowListAuthentication::builder(&web3)
+                .from(main_trader_account.clone())
+                .deploy(),
+        )
+        .await
+        .unwrap();
         let transaction = super::transaction::Transaction::try_new(
             &domain::eth::Transaction {
                 trace_calls: domain::eth::CallFrame {
@@ -462,8 +476,9 @@ mod tests {
             },
             &domain_separator,
             settlement_contract,
+            authenticator,
         )
-        .unwrap_err();
+        .await.unwrap_err();
 
         // These transfer transactions don't have the auction_id attached so overall bad
         // calldata is expected
