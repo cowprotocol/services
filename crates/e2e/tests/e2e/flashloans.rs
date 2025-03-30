@@ -1,27 +1,14 @@
 use {
-    contracts::{ERC20, IAavePool},
-    e2e::{
+    autopilot::domain::eth, contracts::{IAavePool, ERC20}, database::{byte_array::ByteArray, Address}, e2e::{
         nodes::forked_node::ForkedNodeApi,
         setup::{
-            OnchainComponents,
-            Services,
-            TIMEOUT,
-            run_forked_test_with_block_number,
-            safe::Safe,
-            to_wei,
-            to_wei_with_exp,
-            wait_for_condition,
+            run_forked_test_with_block_number, safe::Safe, to_wei, to_wei_with_exp, wait_for_condition, Db, OnchainComponents, Services, TIMEOUT
         },
         tx,
-    },
-    ethcontract::{H160, U256},
-    ethrpc::Web3,
-    model::{
+    }, ethcontract::{H160, U256}, ethrpc::Web3, model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind},
-        signature::{Signature, hashed_eip712_message},
-    },
-    shared::{addr, conversions::U256Ext},
-    std::time::Duration,
+        signature::{hashed_eip712_message, Signature},
+    }, shared::{addr, conversions::U256Ext}, sqlx::Row, std::time::Duration
 };
 
 #[tokio::test]
@@ -237,7 +224,7 @@ async fn forked_mainnet_repay_debt_with_collateral_of_safe(web3: Web3) {
     }
 
     let services = Services::new(&onchain).await;
-    services.start_protocol(solver).await;
+    services.start_protocol(solver.clone()).await;
 
     assert_eq!(
         balance(&web3, trader.address(), usdc.address()).await,
@@ -276,9 +263,38 @@ async fn forked_mainnet_repay_debt_with_collateral_of_safe(web3: Web3) {
 
     assert!(balance(&web3, trader.address(), ausdc).await < 10_000.into());
     tracing::info!("trader only has dust of aUSDC");
+
+    // Check that the solver address is stored in the settlement table
+    let pool = services.db();
+    let solver_address = autopilot::domain::eth::Address(solver.address());
+    let settler_is_solver = || async {
+        onchain.mint_block().await;
+        let last_solver = fetch_last_settled_auction_solver(pool).await;
+        if let Some(last_solver_address) = last_solver {
+            let last_solver_eth_address = autopilot::domain::eth::Address(last_solver_address.0.into());
+            return last_solver_eth_address == solver_address;
+        }
+
+        false
+    };
+    wait_for_condition(TIMEOUT, settler_is_solver)
+        .await
+        .unwrap();
 }
 
 async fn balance(web3: &Web3, owner: H160, token: H160) -> U256 {
     let token = ERC20::at(web3, token);
     token.balance_of(owner).call().await.unwrap()
+}
+
+async fn fetch_last_settled_auction_solver(pool: &Db) -> Option<Address> {
+    sqlx::query("SELECT solver FROM settlements ORDER BY auction_id DESC")
+        .fetch_all(pool)
+        .await
+        .unwrap()
+        .first()
+        .map(|row| {
+            let solver: Address = row.try_get(0).unwrap();
+            solver
+        })
 }
