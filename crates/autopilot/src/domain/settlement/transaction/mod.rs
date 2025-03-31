@@ -12,21 +12,21 @@ mod tokenized;
 /// The following trait allows to implement custom solver authentication logic
 /// for transactions.
 #[async_trait::async_trait]
-pub trait TransactionAuthenticator {
+pub trait Authenticator {
     /// Determines whether the provided address is an authenticated solver.
-    async fn is_solver(&self, prospective_solver: ethcontract::Address) -> Result<bool, Error>;
+    async fn is_solver(&self, prospective_solver: eth::Address) -> Result<bool, Error>;
 }
 
 /// Solver authentication using a `GPv2AllowListAuthentication` smart contract
 #[derive(Clone)]
-pub struct ContractTransactionAuthenticator(pub contracts::GPv2AllowListAuthentication);
+pub struct ContractAuthenticator(pub contracts::GPv2AllowListAuthentication);
 
 #[async_trait::async_trait]
-impl TransactionAuthenticator for ContractTransactionAuthenticator {
-    async fn is_solver(&self, prospective_solver: ethcontract::Address) -> Result<bool, Error> {
+impl Authenticator for ContractAuthenticator {
+    async fn is_solver(&self, prospective_solver: eth::Address) -> Result<bool, Error> {
         Ok(self
             .0
-            .is_solver(prospective_solver)
+            .is_solver(prospective_solver.into())
             .call()
             .await
             .map_err(Error::Authentication)?)
@@ -55,7 +55,7 @@ pub struct Transaction {
 }
 
 impl Transaction {
-    pub async fn try_new<T: TransactionAuthenticator + Clone>(
+    pub async fn try_new<T: Authenticator + Clone>(
         transaction: &eth::Transaction,
         domain_separator: &eth::DomainSeparator,
         settlement_contract: eth::Address,
@@ -74,7 +74,7 @@ impl Transaction {
         // submit solutions, the address is deducted from the calldata.
         let mut solver = None;
         for call in path {
-            if authenticator.is_solver(call.from.into()).await? {
+            if authenticator.is_solver(call.from).await? {
                 solver = Some(call.from);
                 break;
             }

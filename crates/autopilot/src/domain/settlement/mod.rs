@@ -32,7 +32,7 @@ pub struct Settlement {
     gas_price: eth::EffectiveGasPrice,
     /// The block number of the block that contains the settlement transaction.
     block: eth::BlockNo,
-    /// The solver (submission address)
+    /// The solver (is different from `tx.from` for smart contract solvers)
     solver: eth::Address,
     /// The associated auction.
     auction: Auction,
@@ -41,7 +41,6 @@ pub struct Settlement {
 }
 
 impl Settlement {
-    /// The solver (submission address)
     pub fn solver(&self) -> eth::Address {
         self.solver
     }
@@ -240,7 +239,6 @@ pub struct ExecutionEnded {
 #[cfg(test)]
 mod tests {
     use {
-        super::transaction::TransactionAuthenticator,
         crate::domain::{self, auction, eth},
         hex_literal::hex,
         std::collections::{HashMap, HashSet},
@@ -250,10 +248,10 @@ mod tests {
     struct MockAuthenticator;
 
     #[async_trait::async_trait]
-    impl TransactionAuthenticator for MockAuthenticator {
+    impl super::transaction::Authenticator for MockAuthenticator {
         async fn is_solver(
             &self,
-            _prospective_solver: ethcontract::Address,
+            _prospective_solver: eth::Address,
         ) -> Result<bool, super::transaction::Error> {
             return Ok(true);
         }
@@ -485,7 +483,7 @@ mod tests {
             },
             &domain_separator,
             settlement_contract,
-            &MockAuthenticator {},
+            &MockAuthenticator,
         )
         .await
         .unwrap_err();
@@ -594,7 +592,7 @@ mod tests {
             },
             &domain_separator,
             settlement_contract,
-            &MockAuthenticator {},
+            &MockAuthenticator,
         )
         .await
         .unwrap();
@@ -740,7 +738,7 @@ mod tests {
             },
             &domain_separator,
             settlement_contract,
-            &MockAuthenticator {},
+            &MockAuthenticator,
         )
         .await
         .unwrap();
@@ -918,7 +916,7 @@ mod tests {
             },
             &domain_separator,
             settlement_contract,
-            &MockAuthenticator {},
+            &MockAuthenticator,
         )
         .await
         .unwrap();
@@ -1102,7 +1100,7 @@ mod tests {
             },
             &domain_separator,
             settlement_contract,
-            &MockAuthenticator {},
+            &MockAuthenticator,
         )
         .await
         .unwrap();

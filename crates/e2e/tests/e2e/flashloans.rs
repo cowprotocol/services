@@ -282,17 +282,9 @@ async fn forked_mainnet_repay_debt_with_collateral_of_safe(web3: Web3) {
 
     // Check that the solver address is stored in the settlement table
     let pool = services.db();
-    let solver_address = autopilot::domain::eth::Address(solver.address());
     let settler_is_solver = || async {
-        onchain.mint_block().await;
         let last_solver = fetch_last_settled_auction_solver(pool).await;
-        if let Some(last_solver_address) = last_solver {
-            let last_solver_eth_address =
-                autopilot::domain::eth::Address(last_solver_address.0.into());
-            return last_solver_eth_address == solver_address;
-        }
-
-        false
+        last_solver.is_some_and(|address| address.0 == solver.address().0)
     };
     wait_for_condition(TIMEOUT, settler_is_solver)
         .await

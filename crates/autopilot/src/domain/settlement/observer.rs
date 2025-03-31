@@ -12,7 +12,7 @@
 
 use {
     crate::{
-        domain::settlement::{self, transaction::ContractTransactionAuthenticator},
+        domain::settlement::{self, transaction::ContractAuthenticator},
         infra,
     },
     anyhow::{Result, anyhow},
@@ -22,15 +22,14 @@ use {
 pub struct Observer {
     eth: infra::Ethereum,
     persistence: infra::Persistence,
-    authenticator: ContractTransactionAuthenticator,
+    authenticator: ContractAuthenticator,
 }
 
 impl Observer {
     /// Creates a new Observer and asynchronously schedules the first update
     /// run.
     pub fn new(eth: infra::Ethereum, persistence: infra::Persistence) -> Self {
-        let authenticator =
-            ContractTransactionAuthenticator(eth.contracts().authenticator().clone());
+        let authenticator = ContractAuthenticator(eth.contracts().authenticator().clone());
         Self {
             eth,
             persistence,
