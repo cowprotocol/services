@@ -45,7 +45,7 @@ impl Settlement {
     pub fn solver(&self) -> eth::Address {
         self.solver
     }
-    
+
     /// The gas used by the settlement.
     pub fn gas(&self) -> eth::Gas {
         self.gas
@@ -240,18 +240,21 @@ pub struct ExecutionEnded {
 #[cfg(test)]
 mod tests {
     use {
-        super::transaction::TransactionAuthenticator, crate::domain::{self, auction, eth}, hex_literal::hex, std::collections::{HashMap, HashSet}
+        super::transaction::TransactionAuthenticator,
+        crate::domain::{self, auction, eth},
+        hex_literal::hex,
+        std::collections::{HashMap, HashSet},
     };
 
     #[derive(Clone)]
     struct MockAuthenticator;
-    
+
     #[async_trait::async_trait]
     impl TransactionAuthenticator for MockAuthenticator {
         async fn is_solver(
             &self,
             _prospective_solver: ethcontract::Address,
-        ) -> Result<bool, super::transaction::Error>  {
+        ) -> Result<bool, super::transaction::Error> {
             return Ok(true);
         }
     }
@@ -484,7 +487,8 @@ mod tests {
             settlement_contract,
             &MockAuthenticator {},
         )
-        .await.unwrap_err();
+        .await
+        .unwrap_err();
 
         // These transfer transactions don't have the auction_id attached so overall bad
         // calldata is expected

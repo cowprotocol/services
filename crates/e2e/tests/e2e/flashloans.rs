@@ -1,14 +1,30 @@
 use {
-    contracts::{IAavePool, ERC20}, database::Address, e2e::{
+    contracts::{ERC20, IAavePool},
+    database::Address,
+    e2e::{
         nodes::forked_node::ForkedNodeApi,
         setup::{
-            run_forked_test_with_block_number, safe::Safe, to_wei, to_wei_with_exp, wait_for_condition, Db, OnchainComponents, Services, TIMEOUT
+            Db,
+            OnchainComponents,
+            Services,
+            TIMEOUT,
+            run_forked_test_with_block_number,
+            safe::Safe,
+            to_wei,
+            to_wei_with_exp,
+            wait_for_condition,
         },
         tx,
-    }, ethcontract::{H160, U256}, ethrpc::Web3, model::{
+    },
+    ethcontract::{H160, U256},
+    ethrpc::Web3,
+    model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind},
-        signature::{hashed_eip712_message, Signature},
-    }, shared::{addr, conversions::U256Ext}, sqlx::Row, std::time::Duration
+        signature::{Signature, hashed_eip712_message},
+    },
+    shared::{addr, conversions::U256Ext},
+    sqlx::Row,
+    std::time::Duration,
 };
 
 #[tokio::test]
@@ -271,7 +287,8 @@ async fn forked_mainnet_repay_debt_with_collateral_of_safe(web3: Web3) {
         onchain.mint_block().await;
         let last_solver = fetch_last_settled_auction_solver(pool).await;
         if let Some(last_solver_address) = last_solver {
-            let last_solver_eth_address = autopilot::domain::eth::Address(last_solver_address.0.into());
+            let last_solver_eth_address =
+                autopilot::domain::eth::Address(last_solver_address.0.into());
             return last_solver_eth_address == solver_address;
         }
 
