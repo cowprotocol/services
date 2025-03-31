@@ -67,13 +67,7 @@ impl Transaction {
         // In cases of solvers using EOA to submit solutions, the address is the sender
         // of the transaction. In cases of solvers using a smart contract to
         // submit solutions, the address is deducted from the calldata.
-        let mut solver = None;
-        for call in path {
-            if authenticator.is_valid_solver(call.from).await? {
-                solver = Some(call.from);
-                break;
-            }
-        }
+        let solver = find_solver_address(authenticator, path).await?;
 
         /// Number of bytes that may be appended to the calldata to store an
         /// auction id.
@@ -194,6 +188,28 @@ fn is_settlement_trace(trace: &eth::CallFrame, settlement_contract: eth::Address
     });
     trace.to.unwrap_or_default() == settlement_contract
         && trace.input.0.starts_with(&*SETTLE_FUNCTION_SELECTOR)
+}
+
+async fn find_solver_address<T: Authenticator>(
+    authenticator: &T,
+    path: Vec<&eth::CallFrame>,
+) -> Result<Option<eth::Address>, Error> {
+    let valid_solvers: Vec<Option<eth::Address>> =
+        // The RPC calls to check each address can be done in parallel as they are cheap
+        futures::future::join_all(path.iter().map(|call| async {
+            match authenticator.is_valid_solver(call.from).await {
+                Ok(true) => Ok(Some(call.from)),
+                Ok(false) => Ok(None),
+                Err(e) => Err(e),
+            }
+        }))
+        .await
+        .into_iter()
+        .collect::<Result<_, _>>()?;
+
+    // The actual solver that triggered the transaction will be the first
+    // authenticated address in the call stack
+    Ok(valid_solvers.into_iter().flatten().next())
 }
 
 /// Trade containing onchain observable data specific to a settlement
