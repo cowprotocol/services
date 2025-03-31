@@ -9,6 +9,34 @@ use {
 
 mod tokenized;
 
+/// The following trait allows to implement custom solver authentication logic for transactions.
+#[async_trait::async_trait]
+pub trait TransactionAuthenticator {
+    /// Determines whether the provided address is an authenticated solver.
+    async fn is_solver(
+        &self,
+        prospective_solver: ethcontract::Address,
+    ) -> Result<bool, Error>;
+}
+
+/// Solver authentication using a `GPv2AllowListAuthentication` smart contract 
+#[derive(Clone)]
+pub struct ContractTransactionAuthenticator(pub contracts::GPv2AllowListAuthentication);
+
+#[async_trait::async_trait]
+impl TransactionAuthenticator for ContractTransactionAuthenticator {
+    async fn is_solver(
+        &self,
+        prospective_solver: ethcontract::Address,
+    ) -> Result<bool, Error> {
+        Ok(self.0
+            .is_solver(prospective_solver)
+            .call()
+            .await
+            .map_err(Error::Authentication)?)
+    }
+}
+
 /// An on-chain transaction that settled a solution.
 #[derive(Debug, Clone)]
 pub struct Transaction {
@@ -31,11 +59,11 @@ pub struct Transaction {
 }
 
 impl Transaction {
-    pub async fn try_new(
+    pub async fn try_new<T: TransactionAuthenticator + Clone>(
         transaction: &eth::Transaction,
         domain_separator: &eth::DomainSeparator,
         settlement_contract: eth::Address,
-        authenticator: &contracts::GPv2AllowListAuthentication,
+        authenticator: &T,
     ) -> Result<Self, Error> {
         // Find trace call to settlement contract
         let (calldata, path) = find_settlement_trace_and_path(&transaction.trace_calls, settlement_contract)
@@ -52,9 +80,7 @@ impl Transaction {
         for call in path {
             if authenticator
                 .is_solver(call.from.into())
-                .call()
-                .await
-                .map_err(Error::Authentication)?
+                .await?
             {
                 solver = Some(call.from);
                 break;

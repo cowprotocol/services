@@ -11,8 +11,8 @@
 // used etc.
 
 use {
-    crate::{domain::settlement, infra},
-    anyhow::{Result, anyhow},
+    crate::{domain::settlement::{self, transaction::ContractTransactionAuthenticator}, infra},
+    anyhow::{anyhow, Result},
 };
 
 #[derive(Clone)]
@@ -67,8 +67,8 @@ impl Observer {
             Ok(transaction) => {
                 let separator = self.eth.contracts().settlement_domain_separator();
                 let settlement_contract = self.eth.contracts().settlement().address().into();
-                let authenticator = self.eth.contracts().authenticator();
-                settlement::Transaction::try_new(&transaction, separator, settlement_contract, authenticator).await
+                let authenticator = ContractTransactionAuthenticator(self.eth.contracts().authenticator().clone());
+                settlement::Transaction::try_new(&transaction, separator, settlement_contract, &authenticator).await
             }
             Err(err) => {
                 tracing::warn!(hash = ?event.transaction, ?err, "no tx found");

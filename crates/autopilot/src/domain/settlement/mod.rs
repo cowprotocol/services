@@ -240,30 +240,20 @@ pub struct ExecutionEnded {
 #[cfg(test)]
 mod tests {
     use {
-        crate::domain::{self, auction, eth}, contracts::GPv2AllowListAuthentication, ethcontract::{contract::Deploy, Account, TransactionCondition}, ethrpc::mock::{self, MockTransport}, hex_literal::hex, itertools::any, mockall::predicate::{always, eq}, std::collections::{HashMap, HashSet}, web3::types::CallRequest
+        super::transaction::TransactionAuthenticator, crate::domain::{self, auction, eth}, contracts::GPv2AllowListAuthentication, ethcontract::{contract::Deploy, Account, BlockNumber, TransactionCondition}, ethrpc::mock::{self, MockTransport}, hex_literal::hex, itertools::any, mockall::predicate::{always, eq}, serde_json::json, std::collections::{HashMap, HashSet}, web3::types::{CallRequest, U64}
     };
 
-    async fn build_authenticator(web3: &web3::Web3<MockTransport>) -> contracts::GPv2AllowListAuthentication {
-        web3.transport()
-            .mock()
-            .expect_execute()
-            .with(
-                eq("eth_call".to_owned()),
-                always(),
-            )
-            .returning(move |_method, _params| {
-                Ok(serde_json::Value::Bool(true))
-            });
-            
-        let solver = eth::Address(eth::H160::from_slice(&hex!(
-            "423cEc87f19F0778f549846e0801ee267a917935"
-        )));  
-        let solver_account = Account::Local(solver.into(), Some(TransactionCondition::Block(100)));
-        contracts::GPv2AllowListAuthentication::builder(&web3)
-            .from(solver_account)
-            .deploy()
-            .await
-            .unwrap()
+    #[derive(Clone)]
+    struct MockAuthenticator;
+    
+    #[async_trait::async_trait]
+    impl TransactionAuthenticator for MockAuthenticator {
+        async fn is_solver(
+            &self,
+            _prospective_solver: ethcontract::Address,
+        ) -> Result<bool, super::transaction::Error>  {
+            return Ok(true);
+        }
     }
 
     // https://etherscan.io/tx/0x030623e438f28446329d8f4ff84db897907fcac59b9943b31b7be66f23c877af
@@ -480,8 +470,6 @@ mod tests {
         let settlement_contract = eth::Address(eth::H160::from_slice(&hex!(
             "9008d19f58aabd9ed0d60971565aa8510560ab41"
         )));
-        let web3 = mock::web3();
-        let authenticator = build_authenticator(&web3).await;
 
         let transaction = super::transaction::Transaction::try_new(
             &domain::eth::Transaction {
@@ -494,7 +482,7 @@ mod tests {
             },
             &domain_separator,
             settlement_contract,
-            &authenticator,
+            &MockAuthenticator {},
         )
         .await.unwrap_err();
 
@@ -505,7 +493,7 @@ mod tests {
             super::transaction::Error::Decoding(_)
         ));
     }
-/*
+
     // https://etherscan.io/tx/0xc48dc0d43ffb43891d8c3ad7bcf05f11465518a2610869b20b0b4ccb61497634
     #[tokio::test]
     async fn settlement() {
@@ -591,7 +579,6 @@ mod tests {
         let settlement_contract = eth::Address(eth::H160::from_slice(&hex!(
             "9008d19f58aabd9ed0d60971565aa8510560ab41"
         )));
-        let authenticator = build_authenticator().await;
         let transaction = super::transaction::Transaction::try_new(
             &domain::eth::Transaction {
                 trace_calls: domain::eth::CallFrame {
@@ -603,7 +590,7 @@ mod tests {
             },
             &domain_separator,
             settlement_contract,
-            &authenticator,
+            &MockAuthenticator {},
         )
         .await
         .unwrap();
@@ -738,7 +725,6 @@ mod tests {
         let settlement_contract = eth::Address(eth::H160::from_slice(&hex!(
             "9008d19f58aabd9ed0d60971565aa8510560ab41"
         )));
-        let authenticator = build_authenticator().await;
         let transaction = super::transaction::Transaction::try_new(
             &domain::eth::Transaction {
                 trace_calls: domain::eth::CallFrame {
@@ -750,7 +736,7 @@ mod tests {
             },
             &domain_separator,
             settlement_contract,
-            &authenticator,
+            &MockAuthenticator {},
         )
         .await
         .unwrap();
@@ -917,7 +903,6 @@ mod tests {
         let settlement_contract = eth::Address(eth::H160::from_slice(&hex!(
             "9008d19f58aabd9ed0d60971565aa8510560ab41"
         )));
-        let authenticator = build_authenticator().await;
         let transaction = super::transaction::Transaction::try_new(
             &domain::eth::Transaction {
                 trace_calls: domain::eth::CallFrame {
@@ -929,7 +914,7 @@ mod tests {
             },
             &domain_separator,
             settlement_contract,
-            &authenticator,
+            &MockAuthenticator {},
         )
         .await
         .unwrap();
@@ -1102,7 +1087,6 @@ mod tests {
         let settlement_contract = eth::Address(eth::H160::from_slice(&hex!(
             "9008d19f58aabd9ed0d60971565aa8510560ab41"
         )));
-        let authenticator = build_authenticator().await;
         let transaction = super::transaction::Transaction::try_new(
             &domain::eth::Transaction {
                 trace_calls: domain::eth::CallFrame {
@@ -1114,7 +1098,7 @@ mod tests {
             },
             &domain_separator,
             settlement_contract,
-            &authenticator,
+            &MockAuthenticator {},
         )
         .await
         .unwrap();
@@ -1168,5 +1152,4 @@ mod tests {
                 .is_empty()
         );
     }
-     */
 }
