@@ -1,5 +1,5 @@
 use {
-    autopilot::domain::eth, contracts::{IAavePool, ERC20}, database::{byte_array::ByteArray, Address}, e2e::{
+    contracts::{IAavePool, ERC20}, database::Address, e2e::{
         nodes::forked_node::ForkedNodeApi,
         setup::{
             run_forked_test_with_block_number, safe::Safe, to_wei, to_wei_with_exp, wait_for_condition, Db, OnchainComponents, Services, TIMEOUT

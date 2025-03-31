@@ -240,7 +240,7 @@ pub struct ExecutionEnded {
 #[cfg(test)]
 mod tests {
     use {
-        super::transaction::TransactionAuthenticator, crate::domain::{self, auction, eth}, contracts::GPv2AllowListAuthentication, ethcontract::{contract::Deploy, Account, BlockNumber, TransactionCondition}, ethrpc::mock::{self, MockTransport}, hex_literal::hex, itertools::any, mockall::predicate::{always, eq}, serde_json::json, std::collections::{HashMap, HashSet}, web3::types::{CallRequest, U64}
+        super::transaction::TransactionAuthenticator, crate::domain::{self, auction, eth}, hex_literal::hex, std::collections::{HashMap, HashSet}
     };
 
     #[derive(Clone)]
