@@ -14,18 +14,13 @@ mod tokenized;
 #[async_trait::async_trait]
 pub trait Authenticator {
     /// Determines whether the provided address is an authenticated solver.
-    async fn is_solver(&self, prospective_solver: eth::Address) -> Result<bool, Error>;
+    async fn is_valid_solver(&self, prospective_solver: eth::Address) -> Result<bool, Error>;
 }
 
-/// Solver authentication using a `GPv2AllowListAuthentication` smart contract
-#[derive(Clone)]
-pub struct ContractAuthenticator(pub contracts::GPv2AllowListAuthentication);
-
 #[async_trait::async_trait]
-impl Authenticator for ContractAuthenticator {
-    async fn is_solver(&self, prospective_solver: eth::Address) -> Result<bool, Error> {
+impl Authenticator for contracts::GPv2AllowListAuthentication {
+    async fn is_valid_solver(&self, prospective_solver: eth::Address) -> Result<bool, Error> {
         Ok(self
-            .0
             .is_solver(prospective_solver.into())
             .call()
             .await
@@ -74,7 +69,7 @@ impl Transaction {
         // submit solutions, the address is deducted from the calldata.
         let mut solver = None;
         for call in path {
-            if authenticator.is_solver(call.from).await? {
+            if authenticator.is_valid_solver(call.from).await? {
                 solver = Some(call.from);
                 break;
             }

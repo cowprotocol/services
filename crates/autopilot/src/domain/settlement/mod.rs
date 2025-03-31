@@ -249,7 +249,7 @@ mod tests {
 
     #[async_trait::async_trait]
     impl super::transaction::Authenticator for MockAuthenticator {
-        async fn is_solver(
+        async fn is_valid_solver(
             &self,
             _prospective_solver: eth::Address,
         ) -> Result<bool, super::transaction::Error> {
