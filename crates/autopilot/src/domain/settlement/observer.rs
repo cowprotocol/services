@@ -22,13 +22,20 @@ use {
 pub struct Observer {
     eth: infra::Ethereum,
     persistence: infra::Persistence,
+    authenticator: ContractTransactionAuthenticator,
 }
 
 impl Observer {
     /// Creates a new Observer and asynchronously schedules the first update
     /// run.
     pub fn new(eth: infra::Ethereum, persistence: infra::Persistence) -> Self {
-        Self { eth, persistence }
+        let authenticator =
+            ContractTransactionAuthenticator(eth.contracts().authenticator().clone());
+        Self {
+            eth,
+            persistence,
+            authenticator,
+        }
     }
 
     /// Fetches all the available missing data needed for bookkeeping.
@@ -70,13 +77,11 @@ impl Observer {
             Ok(transaction) => {
                 let separator = self.eth.contracts().settlement_domain_separator();
                 let settlement_contract = self.eth.contracts().settlement().address().into();
-                let authenticator =
-                    ContractTransactionAuthenticator(self.eth.contracts().authenticator().clone());
                 settlement::Transaction::try_new(
                     &transaction,
                     separator,
                     settlement_contract,
-                    &authenticator,
+                    &self.authenticator,
                 )
                 .await
             }
