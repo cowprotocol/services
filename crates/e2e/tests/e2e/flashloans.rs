@@ -1,8 +1,10 @@
 use {
     contracts::{ERC20, IAavePool},
+    database::Address,
     e2e::{
         nodes::forked_node::ForkedNodeApi,
         setup::{
+            Db,
             OnchainComponents,
             Services,
             TIMEOUT,
@@ -21,6 +23,7 @@ use {
         signature::{Signature, hashed_eip712_message},
     },
     shared::{addr, conversions::U256Ext},
+    sqlx::Row,
     std::time::Duration,
 };
 
@@ -237,7 +240,7 @@ async fn forked_mainnet_repay_debt_with_collateral_of_safe(web3: Web3) {
     }
 
     let services = Services::new(&onchain).await;
-    services.start_protocol(solver).await;
+    services.start_protocol(solver.clone()).await;
 
     assert_eq!(
         balance(&web3, trader.address(), usdc.address()).await,
@@ -276,9 +279,28 @@ async fn forked_mainnet_repay_debt_with_collateral_of_safe(web3: Web3) {
 
     assert!(balance(&web3, trader.address(), ausdc).await < 10_000.into());
     tracing::info!("trader only has dust of aUSDC");
+
+    // Check that the solver address is stored in the settlement table
+    let pool = services.db();
+    let settler_is_solver = || async {
+        let last_solver = fetch_last_settled_auction_solver(pool).await;
+        last_solver.is_some_and(|address| address.0 == solver.address().0)
+    };
+    wait_for_condition(TIMEOUT, settler_is_solver)
+        .await
+        .unwrap();
 }
 
 async fn balance(web3: &Web3, owner: H160, token: H160) -> U256 {
     let token = ERC20::at(web3, token);
     token.balance_of(owner).call().await.unwrap()
+}
+
+async fn fetch_last_settled_auction_solver(pool: &Db) -> Option<Address> {
+    sqlx::query("SELECT solver FROM settlements ORDER BY auction_id DESC")
+        .fetch_all(pool)
+        .await
+        .unwrap()
+        .first()
+        .map(|row| row.try_get(0).unwrap())
 }

@@ -165,6 +165,7 @@ fn into_domain(
 impl From<ethrpc::extensions::CallFrame> for eth::CallFrame {
     fn from(frame: ethrpc::extensions::CallFrame) -> Self {
         eth::CallFrame {
+            from: frame.from.into(),
             to: frame.to.map(Into::into),
             input: frame.input.0.into(),
             calls: frame.calls.into_iter().map(Into::into).collect(),

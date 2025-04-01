@@ -32,6 +32,8 @@ pub struct Settlement {
     gas_price: eth::EffectiveGasPrice,
     /// The block number of the block that contains the settlement transaction.
     block: eth::BlockNo,
+    /// The solver (is different from `tx.from` for smart contract solvers)
+    solver: eth::Address,
     /// The associated auction.
     auction: Auction,
     /// Trades that were settled by the transaction.
@@ -39,6 +41,10 @@ pub struct Settlement {
 }
 
 impl Settlement {
+    pub fn solver(&self) -> eth::Address {
+        self.solver
+    }
+
     /// The gas used by the settlement.
     pub fn gas(&self) -> eth::Gas {
         self.gas
@@ -148,6 +154,7 @@ impl Settlement {
             block: settled.block,
             gas: settled.gas,
             gas_price: settled.gas_price,
+            solver: settled.solver,
             trades,
             auction,
         })
@@ -233,15 +240,30 @@ pub struct ExecutionEnded {
 mod tests {
     use {
         crate::domain::{self, auction, eth},
+        ethcontract::BlockId,
         hex_literal::hex,
         std::collections::{HashMap, HashSet},
     };
 
+    #[derive(Clone)]
+    struct MockAuthenticator;
+
+    #[async_trait::async_trait]
+    impl super::transaction::Authenticator for MockAuthenticator {
+        async fn is_valid_solver(
+            &self,
+            _prospective_solver: eth::Address,
+            _block: BlockId,
+        ) -> Result<bool, super::transaction::Error> {
+            return Ok(true);
+        }
+    }
+
     // https://etherscan.io/tx/0x030623e438f28446329d8f4ff84db897907fcac59b9943b31b7be66f23c877af
     // A transfer transaction that emits a settlement event, but it's not actually a
     // swap.
-    #[test]
-    fn not_a_swap() {
+    #[tokio::test]
+    async fn not_a_swap() {
         let calldata = hex!(
             "
         13d79a0b
@@ -451,6 +473,7 @@ mod tests {
         let settlement_contract = eth::Address(eth::H160::from_slice(&hex!(
             "9008d19f58aabd9ed0d60971565aa8510560ab41"
         )));
+
         let transaction = super::transaction::Transaction::try_new(
             &domain::eth::Transaction {
                 trace_calls: domain::eth::CallFrame {
@@ -462,7 +485,9 @@ mod tests {
             },
             &domain_separator,
             settlement_contract,
+            &MockAuthenticator,
         )
+        .await
         .unwrap_err();
 
         // These transfer transactions don't have the auction_id attached so overall bad
@@ -474,8 +499,8 @@ mod tests {
     }
 
     // https://etherscan.io/tx/0xc48dc0d43ffb43891d8c3ad7bcf05f11465518a2610869b20b0b4ccb61497634
-    #[test]
-    fn settlement() {
+    #[tokio::test]
+    async fn settlement() {
         let calldata = hex!(
             "
         13d79a0b
@@ -569,7 +594,9 @@ mod tests {
             },
             &domain_separator,
             settlement_contract,
+            &MockAuthenticator,
         )
+        .await
         .unwrap();
 
         let order_uid = transaction.trades[0].uid;
@@ -614,8 +641,8 @@ mod tests {
     }
 
     // https://etherscan.io/tx/0x688508eb59bd20dc8c0d7c0c0b01200865822c889f0fcef10113e28202783243
-    #[test]
-    fn settlement_with_protocol_fee() {
+    #[tokio::test]
+    async fn settlement_with_protocol_fee() {
         let calldata = hex!(
             "
         13d79a0b
@@ -713,7 +740,9 @@ mod tests {
             },
             &domain_separator,
             settlement_contract,
+            &MockAuthenticator,
         )
+        .await
         .unwrap();
 
         let prices: auction::Prices = From::from([
@@ -763,8 +792,8 @@ mod tests {
     }
 
     // https://etherscan.io/tx/0x24ea2ea3d70db3e864935008d14170389bda124c786ca90dfb745278db9d24ee
-    #[test]
-    fn settlement_with_cow_amm() {
+    #[tokio::test]
+    async fn settlement_with_cow_amm() {
         let calldata = hex!(
             "
         13d79a0b
@@ -889,7 +918,9 @@ mod tests {
             },
             &domain_separator,
             settlement_contract,
+            &MockAuthenticator,
         )
+        .await
         .unwrap();
 
         let prices: auction::Prices = From::from([
@@ -929,8 +960,8 @@ mod tests {
     // A special case where the user order and a liquidity order trade the common
     // token, where liquidity order is supposed to be executed at its limit price
     // and without fees.
-    #[test]
-    fn settlement_with_liquidity_order_and_user_order() {
+    #[tokio::test]
+    async fn settlement_with_liquidity_order_and_user_order() {
         let calldata = hex!(
             "
         13d79a0b
@@ -1071,7 +1102,9 @@ mod tests {
             },
             &domain_separator,
             settlement_contract,
+            &MockAuthenticator,
         )
+        .await
         .unwrap();
 
         let prices: auction::Prices = From::from([
