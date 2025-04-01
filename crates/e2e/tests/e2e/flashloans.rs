@@ -302,8 +302,5 @@ async fn fetch_last_settled_auction_solver(pool: &Db) -> Option<Address> {
         .await
         .unwrap()
         .first()
-        .map(|row| {
-            let solver: Address = row.try_get(0).unwrap();
-            solver
-        })
+        .map(|row| row.try_get(0).unwrap())
 }

@@ -50,11 +50,11 @@ pub struct Transaction {
 }
 
 impl Transaction {
-    pub async fn try_new<T: Authenticator + Clone>(
+    pub async fn try_new(
         transaction: &eth::Transaction,
         domain_separator: &eth::DomainSeparator,
         settlement_contract: eth::Address,
-        authenticator: &T,
+        authenticator: &impl Authenticator,
     ) -> Result<Self, Error> {
         // Find trace call to settlement contract
         let (calldata, path) = find_settlement_trace_and_path(&transaction.trace_calls, settlement_contract)
@@ -66,7 +66,7 @@ impl Transaction {
         // Find solver (submission address)
         // In cases of solvers using EOA to submit solutions, the address is the sender
         // of the transaction. In cases of solvers using a smart contract to
-        // submit solutions, the address is deducted from the calldata.
+        // submit solutions, the address is deduced from the calldata.
         let solver = find_solver_address(authenticator, path).await?;
 
         /// Number of bytes that may be appended to the calldata to store an
@@ -190,13 +190,13 @@ fn is_settlement_trace(trace: &eth::CallFrame, settlement_contract: eth::Address
         && trace.input.0.starts_with(&*SETTLE_FUNCTION_SELECTOR)
 }
 
-async fn find_solver_address<T: Authenticator>(
-    authenticator: &T,
+async fn find_solver_address(
+    authenticator: &impl Authenticator,
     path: Vec<&eth::CallFrame>,
 ) -> Result<Option<eth::Address>, Error> {
     let valid_solvers: Vec<Option<eth::Address>> =
         // The RPC calls to check each address can be done in parallel as they are cheap
-        futures::future::join_all(path.iter().map(|call| async {
+        futures::future::join_all(path.into_iter().map(|call| async {
             match authenticator.is_valid_solver(call.from).await {
                 Ok(true) => Ok(Some(call.from)),
                 Ok(false) => Ok(None),
