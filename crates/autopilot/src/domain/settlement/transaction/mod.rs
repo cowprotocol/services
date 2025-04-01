@@ -3,7 +3,7 @@ use {
         boundary,
         domain::{self, auction::order, eth},
     },
-    ethcontract::common::FunctionExt,
+    ethcontract::{BlockId, common::FunctionExt},
     std::sync::LazyLock,
 };
 
@@ -14,14 +14,28 @@ mod tokenized;
 #[async_trait::async_trait]
 pub trait Authenticator {
     /// Determines whether the provided address is an authenticated solver.
-    async fn is_valid_solver(&self, prospective_solver: eth::Address) -> Result<bool, Error>;
+    async fn is_valid_solver(
+        &self,
+        prospective_solver: eth::Address,
+        block: BlockId,
+    ) -> Result<bool, Error>;
 }
 
 #[async_trait::async_trait]
 impl Authenticator for contracts::GPv2AllowListAuthentication {
-    async fn is_valid_solver(&self, prospective_solver: eth::Address) -> Result<bool, Error> {
+    async fn is_valid_solver(
+        &self,
+        prospective_solver: eth::Address,
+        block: BlockId,
+    ) -> Result<bool, Error> {
+        // It's technically possible that some time passes between the transaction
+        // happening and us indexing it. If the transaction was malicious and
+        // the solver got deny listed by the circuit breaker because of it we wouldn't
+        // find an eligible caller in the callstack. To avoid this case the
+        // underlying call needs to happen on the same block the transaction happened.
         Ok(self
             .is_solver(prospective_solver.into())
+            .block(block)
             .call()
             .await
             .map_err(Error::Authentication)?)
@@ -67,7 +81,8 @@ impl Transaction {
         // In cases of solvers using EOA to submit solutions, the address is the sender
         // of the transaction. In cases of solvers using a smart contract to
         // submit solutions, the address is deduced from the calldata.
-        let solver = find_solver_address(authenticator, callers).await?;
+        let block = BlockId::Number(transaction.block.0.into());
+        let solver = find_solver_address(authenticator, callers, block).await?;
 
         /// Number of bytes that may be appended to the calldata to store an
         /// auction id.
@@ -193,11 +208,12 @@ fn is_settlement_trace(trace: &eth::CallFrame, settlement_contract: eth::Address
 async fn find_solver_address(
     authenticator: &impl Authenticator,
     callers: Vec<eth::Address>,
+    block: BlockId,
 ) -> Result<Option<eth::Address>, Error> {
     let valid_solvers: Vec<Option<eth::Address>> =
         // The RPC calls to check each address can be done in parallel as they are cheap
         futures::future::join_all(callers.into_iter().map(|caller| async move {
-            match authenticator.is_valid_solver(caller).await {
+            match authenticator.is_valid_solver(caller, block).await {
                 Ok(true) => Ok(Some(caller)),
                 Ok(false) => Ok(None),
                 Err(e) => Err(e),
