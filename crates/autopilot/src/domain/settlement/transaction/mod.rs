@@ -57,7 +57,7 @@ impl Transaction {
         authenticator: &impl Authenticator,
     ) -> Result<Self, Error> {
         // Find trace call to settlement contract
-        let (calldata, path) = find_settlement_trace_and_path(&transaction.trace_calls, settlement_contract)
+        let (calldata, callers) = find_settlement_trace_and_callers(&transaction.trace_calls, settlement_contract)
             .map(|(trace, path)| (trace.input.clone(), path.clone()))
             // All transactions emitting settlement events should have a /settle call, 
             // otherwise it's an execution client bug
@@ -67,7 +67,7 @@ impl Transaction {
         // In cases of solvers using EOA to submit solutions, the address is the sender
         // of the transaction. In cases of solvers using a smart contract to
         // submit solutions, the address is deduced from the calldata.
-        let solver = find_solver_address(authenticator, path).await?;
+        let solver = find_solver_address(authenticator, callers).await?;
 
         /// Number of bytes that may be appended to the calldata to store an
         /// auction id.
@@ -158,23 +158,23 @@ impl Transaction {
     }
 }
 
-fn find_settlement_trace_and_path(
+fn find_settlement_trace_and_callers(
     call_frame: &eth::CallFrame,
     settlement_contract: eth::Address,
-) -> Option<(&eth::CallFrame, Vec<&eth::CallFrame>)> {
+) -> Option<(&eth::CallFrame, Vec<eth::Address>)> {
     // Use a queue (VecDeque) to keep track of frames to process
     let mut queue = std::collections::VecDeque::new();
-    queue.push_back((call_frame, vec![call_frame]));
+    queue.push_back((call_frame, vec![call_frame.from]));
 
-    while let Some((call_frame, path_so_far)) = queue.pop_front() {
+    while let Some((call_frame, callers_so_far)) = queue.pop_front() {
         if is_settlement_trace(call_frame, settlement_contract) {
-            return Some((call_frame, path_so_far));
+            return Some((call_frame, callers_so_far));
         }
-        // Add all nested calls to the queue with the updated path
+        // Add all nested calls to the queue with the updated caller
         for sub_call in &call_frame.calls {
-            let mut new_path = path_so_far.clone();
-            new_path.push(sub_call);
-            queue.push_back((sub_call, new_path));
+            let mut new_callers = callers_so_far.clone();
+            new_callers.push(sub_call.from);
+            queue.push_back((sub_call, new_callers));
         }
     }
 
@@ -192,13 +192,13 @@ fn is_settlement_trace(trace: &eth::CallFrame, settlement_contract: eth::Address
 
 async fn find_solver_address(
     authenticator: &impl Authenticator,
-    path: Vec<&eth::CallFrame>,
+    callers: Vec<eth::Address>,
 ) -> Result<Option<eth::Address>, Error> {
     let valid_solvers: Vec<Option<eth::Address>> =
         // The RPC calls to check each address can be done in parallel as they are cheap
-        futures::future::join_all(path.into_iter().map(|call| async {
-            match authenticator.is_valid_solver(call.from).await {
-                Ok(true) => Ok(Some(call.from)),
+        futures::future::join_all(callers.into_iter().map(|caller| async move {
+            match authenticator.is_valid_solver(caller).await {
+                Ok(true) => Ok(Some(caller)),
                 Ok(false) => Ok(None),
                 Err(e) => Err(e),
             }
