@@ -39,8 +39,8 @@ impl Trade {
     ///
     /// [CIP-38](https://forum.cow.fi/t/cip-38-solver-computed-fees-rank-by-surplus/2061>) as the
     /// base of the score computation.
-    /// [CIP-XX](TODO) as the latest revision to avoid edge cases for certain
-    /// buy orders.
+    /// [Draft CIP](https://forum.cow.fi/t/cip-draft-updating-score-definition-for-buy-orders/2930)
+    /// as the latest revision to avoid edge cases for certain buy orders.
     ///
     /// Denominated in NATIVE token
     pub fn score(&self, auction: &settlement::Auction) -> Result<eth::Ether, Error> {
