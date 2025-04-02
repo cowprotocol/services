@@ -163,8 +163,6 @@ impl Trade {
 
     /// Surplus based on custom clearing prices returns the surplus after all
     /// fees have been applied and calculated over the price limits.
-    ///
-    /// Denominated in SURPLUS token
     fn surplus_over(&self, price_limits: PriceLimits) -> Result<eth::SurplusTokenAmount, Math> {
         match self.side {
             Side::Buy => {
@@ -352,7 +350,7 @@ impl Trade {
         Ok(self.surplus_over(limit_price)?)
     }
 
-    /// Protocol fee as a cut of surplus, denominated in SURPLUS token
+    /// Protocol fee as a cut of surplus.
     fn fee(
         &self,
         surplus: eth::SurplusTokenAmount,
@@ -382,7 +380,7 @@ impl Trade {
         Ok(multiplied.into())
     }
 
-    /// Protocol fee as a cut of the trade volume, denominated in SURPLUS token
+    /// Protocol fee as a cut of the trade volume.
     fn volume_fee(&self, factor: f64) -> Result<eth::SurplusTokenAmount, Error> {
         // Volume fee is specified as a `factor` from raw volume (before fee). Since
         // this module works with trades that already have the protocol fee applied, we
