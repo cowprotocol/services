@@ -666,10 +666,12 @@ impl Persistence {
             let fee = settlement.fee_in_ether();
             let fee_breakdown = settlement.fee_breakdown();
             let jit_orders = settlement.jit_orders();
+            let solver: database::Address = ByteArray(settlement.solver().0.0);
 
             tracing::debug!(
                 ?auction_id,
                 hash = ?event.transaction,
+                ?solver,
                 ?gas,
                 ?gas_price,
                 ?surplus,
@@ -678,6 +680,14 @@ impl Persistence {
                 ?jit_orders,
                 "settlement update",
             );
+
+            database::settlements::update_settlement_solver(
+                &mut ex,
+                block_number,
+                log_index,
+                solver,
+            )
+            .await?;
 
             database::settlement_observations::upsert(
                 &mut ex,

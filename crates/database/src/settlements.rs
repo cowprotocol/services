@@ -61,6 +61,26 @@ WHERE block_number = $2 AND log_index = $3
         .map(|_| ())
 }
 
+pub async fn update_settlement_solver(
+    ex: &mut PgConnection,
+    block_number: i64,
+    log_index: i64,
+    solver: Address,
+) -> Result<(), sqlx::Error> {
+    const QUERY: &str = r#"
+UPDATE settlements
+SET solver = $1
+WHERE block_number = $2 AND log_index = $3
+    ;"#;
+    sqlx::query(QUERY)
+        .bind(solver)
+        .bind(block_number)
+        .bind(log_index)
+        .execute(ex)
+        .await
+        .map(|_| ())
+}
+
 /// Deletes all database data that referenced the deleted settlement events.
 pub async fn delete(
     ex: &mut PgTransaction<'_>,

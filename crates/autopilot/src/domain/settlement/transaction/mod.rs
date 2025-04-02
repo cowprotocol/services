@@ -3,11 +3,44 @@ use {
         boundary,
         domain::{self, auction::order, eth},
     },
-    ethcontract::common::FunctionExt,
+    ethcontract::{BlockId, common::FunctionExt},
     std::sync::LazyLock,
 };
 
 mod tokenized;
+
+/// The following trait allows to implement custom solver authentication logic
+/// for transactions.
+#[async_trait::async_trait]
+pub trait Authenticator {
+    /// Determines whether the provided address is an authenticated solver.
+    async fn is_valid_solver(
+        &self,
+        prospective_solver: eth::Address,
+        block: BlockId,
+    ) -> Result<bool, Error>;
+}
+
+#[async_trait::async_trait]
+impl Authenticator for contracts::GPv2AllowListAuthentication {
+    async fn is_valid_solver(
+        &self,
+        prospective_solver: eth::Address,
+        block: BlockId,
+    ) -> Result<bool, Error> {
+        // It's technically possible that some time passes between the transaction
+        // happening and us indexing it. If the transaction was malicious and
+        // the solver got deny listed by the circuit breaker because of it we wouldn't
+        // find an eligible caller in the callstack. To avoid this case the
+        // underlying call needs to happen on the same block the transaction happened.
+        Ok(self
+            .is_solver(prospective_solver.into())
+            .block(block)
+            .call()
+            .await
+            .map_err(Error::Authentication)?)
+    }
+}
 
 /// An on-chain transaction that settled a solution.
 #[derive(Debug, Clone)]
@@ -24,21 +57,32 @@ pub struct Transaction {
     pub gas: eth::Gas,
     /// The effective gas price of the transaction.
     pub gas_price: eth::EffectiveGasPrice,
+    /// The solver (submission address)
+    pub solver: eth::Address,
     /// Encoded trades that were settled by the transaction.
     pub trades: Vec<EncodedTrade>,
 }
 
 impl Transaction {
-    pub fn try_new(
+    pub async fn try_new(
         transaction: &eth::Transaction,
         domain_separator: &eth::DomainSeparator,
         settlement_contract: eth::Address,
+        authenticator: &impl Authenticator,
     ) -> Result<Self, Error> {
-        // find trace call to settlement contract
-        let calldata = find_settlement_trace(&transaction.trace_calls, settlement_contract).map(|trace| trace.input.clone())
-            // all transactions emitting settlement events should have a /settle call, 
+        // Find trace call to settlement contract
+        let (calldata, callers) = find_settlement_trace_and_callers(&transaction.trace_calls, settlement_contract)
+            .map(|(trace, path)| (trace.input.clone(), path.clone()))
+            // All transactions emitting settlement events should have a /settle call, 
             // otherwise it's an execution client bug
             .ok_or(Error::MissingCalldata)?;
+
+        // Find solver (submission address)
+        // In cases of solvers using EOA to submit solutions, the address is the sender
+        // of the transaction. In cases of solvers using a smart contract to
+        // submit solutions, the address is deduced from the calldata.
+        let block = BlockId::Number(transaction.block.0.into());
+        let solver = find_solver_address(authenticator, callers, block).await?;
 
         /// Number of bytes that may be appended to the calldata to store an
         /// auction id.
@@ -63,6 +107,7 @@ impl Transaction {
             timestamp: transaction.timestamp,
             gas: transaction.gas,
             gas_price: transaction.gas_price,
+            solver: solver.ok_or(Error::MissingSolver)?,
             trades: {
                 let tokenized::Tokenized {
                     tokens,
@@ -128,20 +173,24 @@ impl Transaction {
     }
 }
 
-fn find_settlement_trace(
+fn find_settlement_trace_and_callers(
     call_frame: &eth::CallFrame,
     settlement_contract: eth::Address,
-) -> Option<&eth::CallFrame> {
+) -> Option<(&eth::CallFrame, Vec<eth::Address>)> {
     // Use a queue (VecDeque) to keep track of frames to process
     let mut queue = std::collections::VecDeque::new();
-    queue.push_back(call_frame);
+    queue.push_back((call_frame, vec![call_frame.from]));
 
-    while let Some(call_frame) = queue.pop_front() {
+    while let Some((call_frame, callers_so_far)) = queue.pop_front() {
         if is_settlement_trace(call_frame, settlement_contract) {
-            return Some(call_frame);
+            return Some((call_frame, callers_so_far));
         }
-        // Add all nested calls to the queue
-        queue.extend(&call_frame.calls);
+        // Add all nested calls to the queue with the updated caller
+        for sub_call in &call_frame.calls {
+            let mut new_callers = callers_so_far.clone();
+            new_callers.push(sub_call.from);
+            queue.push_back((sub_call, new_callers));
+        }
     }
 
     None
@@ -154,6 +203,29 @@ fn is_settlement_trace(trace: &eth::CallFrame, settlement_contract: eth::Address
     });
     trace.to.unwrap_or_default() == settlement_contract
         && trace.input.0.starts_with(&*SETTLE_FUNCTION_SELECTOR)
+}
+
+async fn find_solver_address(
+    authenticator: &impl Authenticator,
+    callers: Vec<eth::Address>,
+    block: BlockId,
+) -> Result<Option<eth::Address>, Error> {
+    let valid_solvers: Vec<Option<eth::Address>> =
+        // The RPC calls to check each address can be done in parallel as they are cheap
+        futures::future::join_all(callers.into_iter().map(|caller| async move {
+            match authenticator.is_valid_solver(caller, block).await {
+                Ok(true) => Ok(Some(caller)),
+                Ok(false) => Ok(None),
+                Err(e) => Err(e),
+            }
+        }))
+        .await
+        .into_iter()
+        .collect::<Result<_, _>>()?;
+
+    // The actual solver that triggered the transaction will be the first
+    // authenticated address in the call stack
+    Ok(valid_solvers.into_iter().flatten().next())
 }
 
 /// Trade containing onchain observable data specific to a settlement
@@ -194,6 +266,8 @@ pub struct ClearingPrices {
 pub enum Error {
     #[error("settle calldata must exist for all transactions emitting settlement event")]
     MissingCalldata,
+    #[error("solver address must be deductible from calldata")]
+    MissingSolver,
     #[error("missing auction id")]
     MissingAuctionId,
     #[error(transparent)]
@@ -202,4 +276,6 @@ pub enum Error {
     OrderUidRecover(tokenized::error::Uid),
     #[error("failed to recover signature {0}")]
     SignatureRecover(#[source] anyhow::Error),
+    #[error("failed to check authentication {0}")]
+    Authentication(#[source] ethcontract::errors::MethodError),
 }

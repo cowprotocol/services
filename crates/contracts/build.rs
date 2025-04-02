@@ -635,6 +635,49 @@ fn main() {
     });
     generate_contract("BalancerV2LiquidityBootstrappingPool");
     generate_contract("BalancerV2ComposableStablePool");
+    generate_contract_with_config("BalancerV3BatchRouter", |builder| {
+        builder
+            .add_network(
+                MAINNET,
+                Network {
+                    address: addr("0x136f1EFcC3f8f88516B9E94110D56FDBfB1778d1"),
+                    // <https://etherscan.io/tx/0x41cb8619fb92dd532eb09b0e81fd4ce1c6006a10924893f02909e36a317777f3>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(21339510)),
+                },
+            )
+            .add_network(
+                GNOSIS,
+                Network {
+                    address: addr("0xe2fa4e1d17725e72dcdAfe943Ecf45dF4B9E285b"),
+                    // <https://gnosisscan.io/tx/0xeafddbace9f445266f851ef1d92928e3d01a4622a1a6780b41ac52d5872f12ab>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(37377506)),
+                },
+            )
+            .add_network(
+                SEPOLIA,
+                Network {
+                    address: addr("0xC85b652685567C1B074e8c0D4389f83a2E458b1C"),
+                    // <https://sepolia.etherscan.io/tx/0x95ed8e1aaaa7bdc5881f3c8fc5a4914a66639bee52987c3a1ea88545083b0681>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(7219301)),
+                },
+            )
+            .add_network(
+                ARBITRUM_ONE,
+                Network {
+                    address: addr("0xaD89051bEd8d96f045E8912aE1672c6C0bF8a85E"),
+                    // <https://arbiscan.io/tx/0xa7968c6bc0775208ffece789c6e5d09b0eea5f2c3ed2806e9bd94fb0b978ff0f>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(297828544)),
+                },
+            )
+            .add_network(
+                BASE,
+                Network {
+                    address: addr("0x85a80afee867aDf27B50BdB7b76DA70f1E853062"),
+                    // <https://basescan.org/tx/0x47b81146714630ce50445bfa28872a36973acedf785317ca423498810ec8e76c>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(25347205)),
+                },
+            )
+    });
     generate_contract_with_config("BaoswapRouter", |builder| {
         builder.add_network_str(GNOSIS, "0x6093AeBAC87d62b1A5a4cEec91204e35020E38bE")
     });
