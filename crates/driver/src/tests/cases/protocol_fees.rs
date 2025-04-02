@@ -1394,7 +1394,7 @@ async fn price_improvement_fee_partial_buy_in_market_order_capped() {
         },
         // Surplus is 20 ETH worth of sell tokens, converted to buy tokens using the order's
         // limit price (50 / 75 = 66.6%) this leaves us with a score of 13.3 ETH.
-        expected_score: 13.3333333333333333.ether().into_wei(),
+        expected_score: 13.333333333333333.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
