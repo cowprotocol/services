@@ -190,7 +190,7 @@ jobs:
 
   run-flaky-test:
     # to debug a flaky test set `if` to true and configure the flaky test in the `run` step
-    if: ${{ false }}
+    if: ${{ true }}
     timeout-minutes: 60
     runs-on: ubuntu-latest
     env:
