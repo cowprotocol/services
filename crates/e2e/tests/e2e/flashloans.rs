@@ -251,12 +251,10 @@ async fn forked_mainnet_repay_debt_with_collateral_of_safe(web3: Web3) {
     let uid = services.create_order(&order).await.unwrap();
     tracing::info!(?uid, "placed order");
 
-    // mine a block to kick off an auction
-    onchain.mint_block().await;
-
     // Drive solution
     tracing::info!("Waiting for trade to get indexed.");
     wait_for_condition(TIMEOUT, || async {
+        onchain.mint_block().await;
         let executed_fee = services
             .get_order(&uid)
             .await
