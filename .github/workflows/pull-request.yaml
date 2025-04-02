@@ -199,6 +199,8 @@ jobs:
       CARGO_PROFILE_TEST_DEBUG: 0
       CARGO_TERM_COLOR: always
       TOML_TRACE_ERROR: 1
+      FORK_URL_MAINNET: ${{ secrets.FORK_URL_MAINNET }}
+      FORK_URL_GNOSIS: ${{ secrets.FORK_URL_GNOSIS }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -219,7 +221,7 @@ jobs:
           attempt=1
           while true; do
             echo "Running test attempt #$attempt"
-            if ! cargo nextest run -p e2e local_node --test-threads 1 --failure-output final --run-ignored ignored-only; then
+            if ! cargo nextest run -p e2e forked_node_mainnet_repay_debt_with_collateral_of_safe --test-threads 1 --failure-output final --run-ignored ignored-only; then
               exit 1
             fi
             attempt=$((attempt+1))
