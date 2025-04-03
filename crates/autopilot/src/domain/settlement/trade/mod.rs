@@ -72,7 +72,13 @@ impl Trade {
         let trade = math::Trade::from(self);
         let total = trade.fee_in_sell_token()?;
         let protocol = trade.protocol_fees(auction)?;
-        Ok(FeeBreakdown { total, protocol })
+        Ok(FeeBreakdown {
+            total: eth::Asset {
+                token: self.sell_token(),
+                amount: total.into(),
+            },
+            protocol,
+        })
     }
 
     pub fn sell_token(&self) -> eth::TokenAddress {
