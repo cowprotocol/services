@@ -378,11 +378,19 @@ struct Arguments {
 
     #[clap(long, env)]
     zero_ex_api_key: String,
+
+    /// Whether to use JSON format for the logs.
+    #[clap(long, env, default_value = "false")]
+    pub use_json_logs: bool,
 }
 
 pub async fn start(args: impl Iterator<Item = String>) {
     let args = Arguments::parse_from(args);
-    observe::tracing::initialize("alerter=debug", tracing::Level::ERROR.into());
+    observe::tracing::initialize(
+        "alerter=debug",
+        tracing::Level::ERROR.into(),
+        args.use_json_logs,
+    );
     observe::panic_hook::install();
     observe::metrics::setup_registry(Some("gp_v2_alerter".to_string()), None);
     tracing::info!("running alerter with {:#?}", args);
