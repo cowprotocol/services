@@ -124,7 +124,7 @@ pub fn new(
                     partially_fillable: order.is_partial(),
                     class: match order.kind {
                         order::Kind::Market => solvers_dto::auction::Class::Market,
-                        order::Kind::Limit { .. } => solvers_dto::auction::Class::Limit,
+                        order::Kind::Limit => solvers_dto::auction::Class::Limit,
                     },
                     pre_interactions: order
                         .pre_interactions

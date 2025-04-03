@@ -828,7 +828,7 @@ impl Blockchain {
                         calldata: match solution.calldata {
                             super::Calldata::Valid { additional_bytes } => transfer_interaction
                                 .into_iter()
-                                .chain(std::iter::repeat(0xab).take(additional_bytes))
+                                .chain(std::iter::repeat_n(0xab, additional_bytes))
                                 .collect(),
                             super::Calldata::Invalid => vec![1, 2, 3, 4, 5],
                         },
