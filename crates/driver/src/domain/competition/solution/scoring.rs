@@ -86,8 +86,8 @@ impl Trade {
     ///
     /// [CIP-38](https://forum.cow.fi/t/cip-38-solver-computed-fees-rank-by-surplus/2061>) as the
     /// base of the score computation.
-    /// [CIP-XX](TODO) as the latest revision to avoid edge cases for certain
-    /// buy orders.
+    /// [Draft CIP](https://forum.cow.fi/t/cip-draft-updating-score-definition-for-buy-orders/2930)
+    /// as the latest revision to avoid edge cases for certain buy orders./
     ///
     /// Denominated in NATIVE token
     fn score(&self, native_prices: &auction::Prices) -> Result<eth::Ether, Error> {
@@ -487,7 +487,6 @@ mod tests {
         assert_eq!(old_score.0, 19731899115084598u128.into());
 
         let new_score = trade.score(&native_prices).unwrap();
-        // TODO: double check, this seems super low...
         assert_eq!(new_score.0, 911.into());
     }
 }
