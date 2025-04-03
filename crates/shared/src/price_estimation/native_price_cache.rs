@@ -237,7 +237,7 @@ fn should_cache(result: &Result<f64, PriceEstimationError>) -> bool {
     // We don't want to cache errors that we consider transient
     match result {
         Ok(_)
-        | Err(PriceEstimationError::NoLiquidity { .. })
+        | Err(PriceEstimationError::NoLiquidity)
         | Err(PriceEstimationError::UnsupportedToken { .. })
         | Err(PriceEstimationError::EstimatorInternal(_)) => true,
         Err(PriceEstimationError::ProtocolInternal(_)) | Err(PriceEstimationError::RateLimited) => {
