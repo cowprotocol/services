@@ -109,3 +109,10 @@ pub enum SolutionError {
     #[error("the solver got deny listed")]
     SolverDenyListed,
 }
+
+#[derive(Debug, Clone)]
+pub struct Metadata {
+    pub auction_id: auction::Id,
+    pub solver: eth::Address,
+    pub settled: bool,
+}

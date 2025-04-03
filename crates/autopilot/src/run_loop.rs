@@ -75,7 +75,7 @@ pub struct RunLoop {
     /// Maintenance tasks that should run before every runloop to have
     /// the most recent data available.
     maintenance: Arc<Maintenance>,
-    competition_updates_sender: tokio::sync::mpsc::UnboundedSender<()>,
+    competition_updates_sender: tokio::sync::mpsc::UnboundedSender<competition::Metadata>,
 }
 
 impl RunLoop {
@@ -90,7 +90,7 @@ impl RunLoop {
         trusted_tokens: AutoUpdatingTokenList,
         liveness: Arc<Liveness>,
         maintenance: Arc<Maintenance>,
-        competition_updates_sender: tokio::sync::mpsc::UnboundedSender<()>,
+        competition_updates_sender: tokio::sync::mpsc::UnboundedSender<competition::Metadata>,
     ) -> Self {
         Self {
             config,
@@ -326,7 +326,7 @@ impl RunLoop {
             tracing::info!(driver = %driver_.name, solution = %solution_id, "settling");
             let submission_start = Instant::now();
 
-            match self_
+            let result = self_
                 .settle(
                     &driver_,
                     solution_id,
@@ -335,8 +335,20 @@ impl RunLoop {
                     auction_id,
                     block_deadline,
                 )
-                .await
+                .await;
+
+            if let Err(err) = self_
+                .competition_updates_sender
+                .send(competition::Metadata {
+                    auction_id,
+                    solver,
+                    settled: result.is_ok(),
+                })
             {
+                tracing::error!(?err, "failed to notify solver participation guard");
+            }
+
+            match result {
                 Ok(tx_hash) => {
                     Metrics::settle_ok(
                         &driver_,
@@ -467,7 +479,7 @@ impl RunLoop {
             competition_table,
         };
 
-        match futures::try_join!(
+        if let Err(err) = futures::try_join!(
             self.persistence
                 .save_auction(auction, block_deadline)
                 .map_err(|e| e.0.context("failed to save auction")),
@@ -475,18 +487,9 @@ impl RunLoop {
                 .save_solutions(auction.id, solutions)
                 .map_err(|e| e.0.context("failed to save solutions")),
         ) {
-            Ok(_) => {
-                // Notify the solver participation guard that the proposed solutions have been
-                // saved.
-                if let Err(err) = self.competition_updates_sender.send(()) {
-                    tracing::error!(?err, "failed to notify solver participation guard");
-                }
-            }
-            Err(err) => {
-                // Don't error if saving of auction and solution fails, until stable.
-                // Various edge cases with JIT orders verifiable only in production.
-                tracing::warn!(?err, "failed to save new competition data");
-            }
+            // Don't error if saving of auction and solution fails, until stable.
+            // Various edge cases with JIT orders verifiable only in production.
+            tracing::warn!(?err, "failed to save new competition data");
         }
 
         tracing::trace!(?competition, "saving competition");
@@ -750,8 +753,8 @@ impl RunLoop {
     {
         let can_participate = self.solver_participation_guard.can_participate(&driver.submission_address).await.map_err(|err| {
             tracing::error!(?err, driver = %driver.name, ?driver.submission_address, "solver participation check failed");
-                SolveError::SolverDenyListed
-            }
+            SolveError::SolverDenyListed
+        }
         )?;
 
         // Do not send the request to the driver if the solver is deny-listed
