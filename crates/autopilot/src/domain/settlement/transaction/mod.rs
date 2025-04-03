@@ -4,7 +4,7 @@ use {
         domain::{self, auction::order, eth},
     },
     ethcontract::{BlockId, common::FunctionExt},
-    std::sync::LazyLock,
+    std::{collections::HashSet, sync::LazyLock},
 };
 
 mod tokenized;
@@ -210,8 +210,17 @@ async fn find_solver_address(
     callers: Vec<eth::Address>,
     block: BlockId,
 ) -> Result<Option<eth::Address>, Error> {
+    let mut checked_callers = HashSet::new();
     for caller in &callers {
-        if authenticator.is_valid_solver(caller.0.into(), block).await? {
+        if !checked_callers.insert(caller) {
+            // skip caller if we already checked it
+            continue;
+        }
+
+        if authenticator
+            .is_valid_solver(caller.0.into(), block)
+            .await?
+        {
             return Ok(Some(*caller));
         }
     }
