@@ -81,6 +81,7 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
             &eth,
         ),
         eth,
+        buy_order_scoring_change_cutover: config.buy_order_scoring_change_cutover,
         addr: args.addr,
         addr_sender,
     }

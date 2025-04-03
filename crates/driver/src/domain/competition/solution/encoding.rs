@@ -176,7 +176,7 @@ pub fn tx(
         max: solution.solver().slippage().absolute.map(Ether::into),
         // TODO configure min slippage
         min: None,
-        prices: auction.prices().clone(),
+        prices: auction.native_prices().clone(),
     };
 
     // Add all interactions needed to move flash loaned tokens around

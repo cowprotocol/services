@@ -14,18 +14,20 @@ use {
 /// solvers deadline.
 #[derive(Copy, Clone, Debug, Default)]
 pub struct Deadline {
+    auction: chrono::DateTime<chrono::Utc>,
     driver: chrono::DateTime<chrono::Utc>,
     solvers: chrono::DateTime<chrono::Utc>,
 }
 
 impl Deadline {
     pub fn new(deadline: chrono::DateTime<chrono::Utc>, timeouts: Timeouts) -> Self {
-        let deadline = deadline - timeouts.http_delay;
+        let driver_deadline = deadline - timeouts.http_delay;
         let deadline = Self {
-            driver: deadline,
+            auction: deadline,
+            driver: driver_deadline,
             solvers: {
                 let now = infra::time::now();
-                let duration = deadline - now;
+                let duration = driver_deadline - now;
                 now + duration * (timeouts.solving_share_of_deadline.get() * 100.0).round() as i32
                     / 100
             },
@@ -44,6 +46,14 @@ impl Deadline {
     /// driver is reached.
     pub fn solvers(self) -> chrono::DateTime<chrono::Utc> {
         self.solvers
+    }
+
+    /// Deadline communicated in the request coming from the autopilot.
+    /// This can be used to coordinate changes in the protocol.
+    /// (e.g. if the deadline is later than a specific date a new CIP
+    /// goes into effect)
+    pub fn auction(self) -> chrono::DateTime<chrono::Utc> {
+        self.auction
     }
 }
 
