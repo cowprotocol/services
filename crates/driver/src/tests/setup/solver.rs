@@ -146,7 +146,7 @@ impl Solver {
                 "class": match quote.order.kind {
                     _ if config.quote => "market",
                     order::Kind::Market => "market",
-                    order::Kind::Limit { .. } => "limit",
+                    order::Kind::Limit => "limit",
                 },
                 "appData": app_data::AppDataHash(quote.order.app_data.hash().0.0),
                 "signature": if config.quote { "0x".to_string() } else { format!("0x{}", hex::encode(quote.order_signature(config.blockchain))) },
@@ -169,7 +169,7 @@ impl Solver {
                     match quote.order.kind {
                         _ if config.quote => json!([]),
                         order::Kind::Market => json!([]),
-                        order::Kind::Limit { .. } => {
+                        order::Kind::Limit => {
                             let fee_policies_json: Vec<serde_json::Value> = quote
                                 .order
                                 .fee_policy
