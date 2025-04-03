@@ -104,8 +104,8 @@ async fn cow_amm_jit(web3: Web3) {
         .await
         .unwrap();
 
-    let oracle_data: Vec<_> = std::iter::repeat(0u8)
-        .take(12) // pad with 12 zeros in the front to end up with 32 bytes
+    // pad with 12 zeros in the front to end up with 32 bytes
+    let oracle_data: Vec<_> = std::iter::repeat_n(0u8, 12)
         .chain(pair.as_bytes().to_vec())
         .collect();
     const APP_DATA: [u8; 32] = [12u8; 32];
@@ -695,8 +695,8 @@ async fn cow_amm_opposite_direction(web3: Web3) {
         .await
         .unwrap();
 
-    let oracle_data: Vec<_> = std::iter::repeat(0u8)
-        .take(12) // pad with 12 zeros to end up with 32 bytes
+    // pad with 12 zeros to end up with 32 bytes
+    let oracle_data: Vec<_> = std::iter::repeat_n(0u8, 12)
         .chain(pair.as_bytes().to_vec())
         .collect();
     const APP_DATA: [u8; 32] = [12u8; 32];

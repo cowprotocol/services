@@ -79,7 +79,7 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
             "buyAmount": quote.buy_amount().to_string(),
             "protocolFees": match quote.order.kind {
                 order::Kind::Market => json!([]),
-                        order::Kind::Limit { .. } => {
+                        order::Kind::Limit => {
                             let fee_policies_json: Vec<serde_json::Value> = quote
                                 .order
                                 .fee_policy
@@ -105,7 +105,7 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
             "postInteractions": [],
             "class": match quote.order.kind {
                 order::Kind::Market => "market",
-                order::Kind::Limit { .. } => "limit",
+                order::Kind::Limit => "limit",
             },
             "appData": app_data::AppDataHash(quote.order.app_data.hash().0 .0),
             "signingScheme": "eip712",

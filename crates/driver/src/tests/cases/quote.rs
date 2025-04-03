@@ -41,7 +41,7 @@ async fn with_jit_order() {
             .kind(kind)
             .pre_interaction(setup::blockchain::Interaction {
                 address: ab_order().owner,
-                calldata: std::iter::repeat(0xab).take(32).collect(),
+                calldata: std::iter::repeat_n(0xab, 32).collect(),
                 inputs: Default::default(),
                 outputs: Default::default(),
                 internalize: false,
