@@ -329,9 +329,12 @@ impl Solver {
                         return None;
                     }
                     let reference = &data.protocol.reference_solution;
+                    tracing::error!("WE GOT HERE!!");
 
                     // TODO hook instance
-                    let trampoline = addr!("01DcB88678aedD0C4cC9552B20F4718550250574");
+                    // let trampoline = addr!("01DcB88678aedD0C4cC9552B20F4718550250574");
+                    // switch back to real address for the sepolia test
+                    let trampoline = addr!("b7f8bc63bbcad18155201308c8f3540b07f84f5e");
                     let hook = HooksTrampoline::at(&web3, trampoline);
                     let reference = hook
                         .execute(
@@ -359,7 +362,7 @@ impl Solver {
                         .unwrap()
                         .0;
 
-                    let (out_amount, _gas) = verifier
+                    let res = verifier
                         .simulate_interaction(
                             o.signature.signer.into(),
                             self.config.account.address(),
@@ -409,8 +412,10 @@ impl Solver {
                                 })
                                 .collect(),
                         )
-                        .await
-                        .ok()?;
+                        .await;
+
+                    let (out_amount, gas) = res.unwrap();
+                    tracing::error!(?out_amount, ?gas);
 
                     let (sell_amount, buy_amount) = match o.side {
                         Side::Sell => (o.sell.amount.0, out_amount),

@@ -184,6 +184,7 @@ impl Contracts {
         let ethflow = deploy!(CoWSwapEthFlow(gp_settlement.address(), weth.address()));
         let ethflow_secondary = deploy!(CoWSwapEthFlow(gp_settlement.address(), weth.address()));
         let hooks = deploy!(HooksTrampoline(gp_settlement.address()));
+        tracing::error!(addr = ?hooks.address(), "trampoline");
         let flashloan_router = deploy!(FlashLoanRouter(gp_settlement.address()));
         let flashloan_wrapper_maker =
             deploy!(ERC3156FlashLoanSolverWrapper(flashloan_router.address()));

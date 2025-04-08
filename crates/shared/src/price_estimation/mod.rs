@@ -541,6 +541,7 @@ pub struct Estimate {
     pub verified: bool,
     /// Data associated with this estimation.
     pub execution: QuoteExecution,
+    pub out_interaction: U256,
 }
 
 impl Estimate {

@@ -68,6 +68,7 @@ impl PriceEstimating for SanitizedPriceEstimator {
                     solver: Default::default(),
                     verified: true,
                     execution: Default::default(),
+                    out_interaction: 0.into(),
                 };
                 tracing::debug!(?query, ?estimation, "generate trivial price estimation");
                 return Ok(estimation);
@@ -81,6 +82,7 @@ impl PriceEstimating for SanitizedPriceEstimator {
                     solver: Default::default(),
                     verified: true,
                     execution: Default::default(),
+                    out_interaction: 0.into(),
                 };
                 tracing::debug!(?query, ?estimation, "generate trivial unwrap estimation");
                 return Ok(estimation);
@@ -94,6 +96,7 @@ impl PriceEstimating for SanitizedPriceEstimator {
                     solver: Default::default(),
                     verified: true,
                     execution: Default::default(),
+                    out_interaction: 0.into(),
                 };
                 tracing::debug!(?query, ?estimation, "generate trivial wrap estimation");
                 return Ok(estimation);

@@ -139,7 +139,7 @@ impl TradeVerifier {
                 },
                 TradeKind::Legacy(LegacyTrade {
                     out_amount: match order.kind {
-                        OrderKind::Sell => 0.into(),
+                        OrderKind::Sell => 1.into(),
                         OrderKind::Buy => U256::MAX,
                     },
                     gas_estimate: None,
@@ -149,7 +149,7 @@ impl TradeVerifier {
                 }),
             )
             .await?;
-        Ok((res.out_amount, res.gas))
+        Ok((res.out_interaction, res.gas))
     }
 
     async fn verify_inner(
@@ -198,7 +198,7 @@ impl TradeVerifier {
             self.settlement.address(),
         )?;
 
-        let settlement = add_balance_queries(settlement, query, &verification, &solver);
+        let settlement = add_balance_queries(settlement, query, &verification, &solver, self.settlement.address());
 
         let settlement = self
             .settlement
@@ -261,6 +261,7 @@ impl TradeVerifier {
                         pre_interactions: map_interactions_data(&trade.pre_interactions()),
                         jit_orders: trade.jit_orders(),
                     },
+                    out_interaction: 0.into(),
                 };
                 tracing::warn!(
                     ?estimate,
@@ -303,7 +304,7 @@ impl TradeVerifier {
             }
         }
 
-        tracing::debug!(
+        tracing::error!(
             tokens_lost = ?summary.tokens_lost,
             gas_diff = ?trade.gas_estimate().unwrap_or_default().abs_diff(summary.gas_used.as_u64()),
             time = ?start.elapsed(),
@@ -314,6 +315,7 @@ impl TradeVerifier {
             out_diff = ?out_amount.abs_diff(summary.out_amount),
             ?query,
             ?verification,
+            out_interaction = ?summary.out_amount_interaction,
             "verified quote",
         );
 
@@ -462,10 +464,11 @@ impl TradeVerifying for TradeVerifier {
                 &query.kind,
             )
             .context("failed to compute trade out amount")?;
-        match self
+        let res = self
             .verify_inner(query, verification.clone(), &trade, &out_amount)
-            .await
-        {
+            .await;
+        tracing::error!(?res, "returned something");
+        match res {
             Ok(verified) => Ok(verified),
             Err(Error::SimulationFailed(err)) => match trade.gas_estimate() {
                 Some(gas) => {
@@ -479,6 +482,7 @@ impl TradeVerifying for TradeVerifier {
                             pre_interactions: map_interactions_data(&trade.pre_interactions()),
                             jit_orders: trade.jit_orders(),
                         },
+                        out_interaction: 0.into(),
                     };
                     tracing::warn!(
                         ?err,
@@ -738,6 +742,7 @@ fn add_balance_queries(
     query: &PriceQuery,
     verification: &Verification,
     solver: &Solver,
+    settlement_addr: H160,
 ) -> EncodedSettlement {
     let (token, owner) = match query.kind {
         // track how much `buy_token` the `receiver` actually got
@@ -761,8 +766,20 @@ fn add_balance_queries(
         .expect("data gets populated by function call above")
         .0;
     let interaction = (solver.address(), 0.into(), Bytes(query_balance_call));
+
+    let query_balance_call2 = solver
+        .methods()
+        .store_balance(query.buy_token, settlement_addr, true)
+        .tx
+        .data
+        .expect("data gets populated by function call above")
+        .0;
+    let interaction2 = (solver.address(), 0.into(), Bytes(query_balance_call2));
+
     // query balance query at the end of pre-interactions
     settlement.interactions[0].push(interaction.clone());
+    settlement.interactions[0].push(interaction2.clone());
+    settlement.interactions[1].push(interaction2.clone());
     // query balance right after we payed out all `buy_token`
     settlement.interactions[2].insert(0, interaction);
     settlement
@@ -776,6 +793,7 @@ struct SettleOutput {
     /// `out_amount` perceived by the trader (sell token for buy orders or buy
     /// token for sell order)
     out_amount: U256,
+    out_amount_interaction: U256,
     /// Tokens difference of the settlement contract before and after the trade.
     tokens_lost: HashMap<H160, BigRational>,
 }
@@ -802,8 +820,11 @@ impl SettleOutput {
         }
 
         let trader_balance_before = balances[i];
-        let trader_balance_after = balances[i + 1];
-        i += 2;
+        let settle_balance_before = balances[i + 1];
+        let settle_balance_after = balances[i + 2];
+        let trader_balance_after = balances[i + 3];
+        tracing::error!(?settle_balance_before, ?settle_balance_after);
+        i += 4;
 
         // Get settlement contract balances after the trade
         for token in tokens_vec.iter() {
@@ -821,11 +842,13 @@ impl SettleOutput {
             OrderKind::Buy => trader_balance_before.checked_sub(trader_balance_after),
         };
         let out_amount = out_amount.context("underflow during out_amount computation")?;
+        let out_amount_interaction = settle_balance_after - settle_balance_before;
 
         Ok(SettleOutput {
             gas_used,
             out_amount,
             tokens_lost,
+            out_amount_interaction,
         })
     }
 }
@@ -873,6 +896,7 @@ fn ensure_quote_accuracy(
             pre_interactions: map_interactions_data(&trade.pre_interactions()),
             jit_orders: trade.jit_orders(),
         },
+        out_interaction: summary.out_amount_interaction,
     })
 }
 

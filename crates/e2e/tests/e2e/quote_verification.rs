@@ -199,6 +199,7 @@ async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
             pre_interactions: vec![],
             jit_orders: vec![],
         },
+        out_interaction: 0.into(),
     };
 
     // `tx_origin: 0x0000` is currently used to bypass quote verification due to an

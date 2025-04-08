@@ -2,10 +2,10 @@ use {
     contracts::ERC20,
     driver::domain::eth::NonZeroU256,
     e2e::{nodes::forked_node::ForkedNodeApi, setup::*, tx},
-    ethcontract::{H160, prelude::U256},
+    ethcontract::{prelude::U256, H160},
     fee::{FeePolicyOrderClass, ProtocolFee, ProtocolFeesConfig},
     model::{
-        order::{OrderClass, OrderCreation, OrderKind},
+        order::{OrderClass, OrderCreation, OrderCreationAppData, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::EcdsaSigningScheme,
     },
@@ -142,6 +142,8 @@ async fn single_limit_order_test(web3: Web3) {
         token_a.approve(onchain.contracts().allowance, to_wei(10))
     );
 
+    token_b.mint(onchain.contracts().gp_settlement.address(), to_wei(10)).await;
+
     // Place Orders
     let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
@@ -153,6 +155,22 @@ async fn single_limit_order_test(web3: Web3) {
         buy_amount: to_wei(5),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
+        app_data: OrderCreationAppData::Full {
+            full: r#"{
+                "version": "0.9.0",
+                "appCode": "CoW Swap",
+                "environment": "barn",
+                "metadata": {
+                    "referenceSolution": [
+                        {
+                            "target": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+                            "callData": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+                            "value": "0"
+                        }
+                    ]
+                }
+            }"#.to_string(),
+        },
         ..Default::default()
     }
     .sign(

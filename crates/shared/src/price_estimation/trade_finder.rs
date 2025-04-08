@@ -90,6 +90,7 @@ impl Inner {
             solver: quote.solver,
             verified: false,
             execution: quote.execution,
+            out_interaction: 0.into(),
         })
     }
 }
