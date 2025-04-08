@@ -14,7 +14,9 @@ SELL_AMOUNT="1000000000000000000"  # 1 ETH
 SLIPPAGE=2  # 2%
 COW_SETTLMENT_CONTRACT="0x9008D19f58AAbD9eD0D60971565AA8510560ab41"
 COW_VAULT_RELAYER_CONTRACT="0xC92E8bdf79f0507f65a392b0ab4667716BFE0110"
-APPDATA='{"version":"1.3.0","metadata":{}}'
+REFERENCE_SOLUTION=$(uv run --script transaction_to_interaction/transaction_to_interaction.py)
+APPDATA='{"version":"1.3.0","metadata":{"referenceSolution": '"$REFERENCE_SOLUTION"'}}'
+echo $APPDATA
 MAXUINT256="115792089237316195423570985008687907853269984665640564039457584007913129639935"
 
 # Following private key is only used for testing purposes in a local environment.
