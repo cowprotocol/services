@@ -30,7 +30,7 @@ use {
     anyhow::Result,
     app_data::AppDataHash,
     cached::SizedCache,
-    contracts::HooksTrampoline,
+    contracts::{ERC20, HooksTrampoline},
     derive_more::{From, Into},
     model::order::{OrderData, OrderKind},
     num::BigRational,
@@ -350,6 +350,15 @@ impl Solver {
                         .data
                         .unwrap();
 
+                    let sell_token = ERC20::at(&web3, o.sell.token.0.0);
+
+                    let transfer_call = sell_token
+                        .transfer(trampoline, o.sell.amount.0)
+                        .tx
+                        .data
+                        .unwrap()
+                        .0;
+
                     let (out_amount, _gas) = verifier
                         .simulate_interaction(
                             o.signature.signer.into(),
@@ -379,11 +388,18 @@ impl Solver {
                                     data: i.call_data.0.clone(),
                                 })
                                 .collect(),
-                            &shared::trade_finding::Interaction {
-                                target: trampoline,
-                                value: 0.into(),
-                                data: reference.clone().0.clone(),
-                            },
+                            vec![
+                                shared::trade_finding::Interaction {
+                                    target: sell_token.address(),
+                                    value: 0.into(),
+                                    data: transfer_call.clone(),
+                                },
+                                shared::trade_finding::Interaction {
+                                    target: trampoline,
+                                    value: 0.into(),
+                                    data: reference.clone().0.clone(),
+                                },
+                            ],
                             o.post_interactions
                                 .iter()
                                 .map(|i| shared::trade_finding::Interaction {
@@ -415,21 +431,32 @@ impl Solver {
                         // TODO: transfer sell amounts into trampoline
                         // TODO: adjust interactions to actually work with trampoline contract
                         // TODO: recover funds from trampoline
-                        interactions: vec![Interaction::Custom(Custom {
-                            target: trampoline.into(),
-                            value: 0.into(),
-                            call_data: Bytes(reference.0.clone()),
-                            allowances: vec![],
-                            inputs: vec![eth::Asset {
-                                token: o.sell.token,
-                                amount: sell_amount.into(),
-                            }],
-                            outputs: vec![eth::Asset {
-                                token: o.buy.token,
-                                amount: buy_amount.into(),
-                            }],
-                            internalize: false,
-                        })],
+                        interactions: vec![
+                            Interaction::Custom(Custom {
+                                target: o.sell.token.into(),
+                                value: 0.into(),
+                                call_data: Bytes(transfer_call.clone()),
+                                allowances: vec![],
+                                inputs: vec![],
+                                outputs: vec![],
+                                internalize: false,
+                            }),
+                            Interaction::Custom(Custom {
+                                target: trampoline.into(),
+                                value: 0.into(),
+                                call_data: Bytes(reference.0.clone()),
+                                allowances: vec![],
+                                inputs: vec![eth::Asset {
+                                    token: o.sell.token,
+                                    amount: sell_amount.into(),
+                                }],
+                                outputs: vec![eth::Asset {
+                                    token: o.buy.token,
+                                    amount: buy_amount.into(),
+                                }],
+                                internalize: false,
+                            }),
+                        ],
                         post_interactions: o.post_interactions.clone(),
                         solver: self.clone(),
                         weth: self.eth.contracts().weth().address().into(),

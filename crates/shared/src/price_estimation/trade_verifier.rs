@@ -115,7 +115,7 @@ impl TradeVerifier {
         solver: H160,
         order: &OrderData,
         pre_interactions: Vec<Interaction>,
-        interaction: &Interaction,
+        interactions: Vec<Interaction>,
         post_interactions: Vec<Interaction>,
     ) -> Result<(U256, u64)> {
         let res = self
@@ -143,7 +143,7 @@ impl TradeVerifier {
                         OrderKind::Buy => U256::MAX,
                     },
                     gas_estimate: None,
-                    interactions: vec![interaction.clone()],
+                    interactions,
                     solver,
                     tx_origin: None,
                 }),
