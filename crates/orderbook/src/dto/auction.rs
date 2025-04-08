@@ -23,7 +23,7 @@ pub struct Auction {
 pub type AuctionId = i64;
 
 #[serde_as]
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AuctionWithId {
     /// Increments whenever the backend updates the auction.

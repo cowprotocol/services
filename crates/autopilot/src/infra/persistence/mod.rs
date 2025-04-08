@@ -66,8 +66,9 @@ impl Persistence {
     pub async fn replace_current_auction(
         &self,
         auction: &domain::RawAuctionData,
+        deadline: DateTime<Utc>,
     ) -> Result<domain::auction::Id, DatabaseError> {
-        let auction = dto::auction::from_domain(auction.clone());
+        let auction = dto::auction::from_domain(auction.clone(), deadline);
         self.postgres
             .replace_current_auction(&auction)
             .await

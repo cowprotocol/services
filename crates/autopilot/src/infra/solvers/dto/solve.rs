@@ -10,18 +10,11 @@ use {
     primitive_types::{H160, U256},
     serde::{Deserialize, Serialize},
     serde_with::{DisplayFromStr, serde_as},
-    std::{
-        collections::{HashMap, HashSet},
-        time::Duration,
-    },
+    std::collections::{HashMap, HashSet},
 };
 
 impl Request {
-    pub fn new(
-        auction: &domain::Auction,
-        trusted_tokens: &HashSet<H160>,
-        time_limit: Duration,
-    ) -> Self {
+    pub fn new(auction: &domain::Auction, trusted_tokens: &HashSet<H160>) -> Self {
         Self {
             id: auction.id,
             orders: auction
@@ -45,7 +38,7 @@ impl Request {
                 }))
                 .unique_by(|token| token.address)
                 .collect(),
-            deadline: Utc::now() + chrono::Duration::from_std(time_limit).unwrap(),
+            deadline: auction.deadline,
             surplus_capturing_jit_order_owners: auction
                 .surplus_capturing_jit_order_owners
                 .iter()

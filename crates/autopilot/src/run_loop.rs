@@ -26,6 +26,7 @@ use {
     },
     ::observe::metrics,
     anyhow::Result,
+    chrono::Utc,
     database::order_events::OrderEventLabel,
     ethcontract::U256,
     ethrpc::block_stream::BlockInfo,
@@ -204,7 +205,12 @@ impl RunLoop {
         };
         let auction = self.remove_in_flight_orders(auction).await;
 
-        let id = match self.persistence.replace_current_auction(&auction).await {
+        let deadline = Utc::now() + chrono::Duration::from_std(self.config.solve_deadline).unwrap();
+        let id = match self
+            .persistence
+            .replace_current_auction(&auction, deadline)
+            .await
+        {
             Ok(id) => {
                 Metrics::auction(id);
                 id
@@ -228,6 +234,7 @@ impl RunLoop {
             orders: auction.orders,
             prices: auction.prices,
             surplus_capturing_jit_order_owners: auction.surplus_capturing_jit_order_owners,
+            deadline,
         })
     }
 
@@ -512,11 +519,7 @@ impl RunLoop {
     /// Runs the solver competition, making all configured drivers participate.
     /// Returns all fair solutions sorted by their score (best to worst).
     async fn competition(&self, auction: &domain::Auction) -> Vec<competition::Participant> {
-        let request = solve::Request::new(
-            auction,
-            &self.trusted_tokens.all(),
-            self.config.solve_deadline,
-        );
+        let request = solve::Request::new(auction, &self.trusted_tokens.all());
         let request = &request;
 
         let mut solutions = futures::future::join_all(

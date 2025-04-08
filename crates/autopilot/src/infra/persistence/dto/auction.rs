@@ -4,6 +4,7 @@ use {
         domain,
         domain::{auction::Price, eth},
     },
+    chrono::{DateTime, Utc},
     number::serialization::HexOrDecimalU256,
     primitive_types::{H160, U256},
     serde::{Deserialize, Serialize},
@@ -11,7 +12,7 @@ use {
     std::collections::BTreeMap,
 };
 
-pub fn from_domain(auction: domain::RawAuctionData) -> RawAuctionData {
+pub fn from_domain(auction: domain::RawAuctionData, deadline: DateTime<Utc>) -> RawAuctionData {
     RawAuctionData {
         block: auction.block,
         orders: auction
@@ -29,6 +30,7 @@ pub fn from_domain(auction: domain::RawAuctionData) -> RawAuctionData {
             .into_iter()
             .map(Into::into)
             .collect(),
+        deadline,
     }
 }
 
@@ -42,6 +44,7 @@ pub struct RawAuctionData {
     pub prices: BTreeMap<H160, U256>,
     #[serde(default)]
     pub surplus_capturing_jit_order_owners: Vec<H160>,
+    pub deadline: DateTime<Utc>,
 }
 
 pub type AuctionId = i64;
@@ -80,6 +83,7 @@ impl Auction {
                 .into_iter()
                 .map(Into::into)
                 .collect(),
+            deadline: self.auction.deadline,
         })
     }
 }
