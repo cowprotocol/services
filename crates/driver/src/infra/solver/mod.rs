@@ -5,7 +5,16 @@ use {
             competition::{
                 auction::{self, Auction},
                 bad_tokens,
-                solution::{self, Solution},
+                order::{self, Partial, Side, app_data::AppData},
+                solution::{
+                    self,
+                    Id,
+                    Interaction,
+                    Solution,
+                    Trade,
+                    interaction::Custom,
+                    trade::{Fee, Fulfillment},
+                },
             },
             eth,
             liquidity,
@@ -16,13 +25,28 @@ use {
             config::file::FeeHandler,
             persistence::{Persistence, S3},
         },
-        util,
+        util::{self, Bytes},
     },
     anyhow::Result,
+    app_data::AppDataHash,
+    cached::SizedCache,
+    contracts::HooksTrampoline,
     derive_more::{From, Into},
+    model::order::{OrderData, OrderKind},
     num::BigRational,
     reqwest::header::HeaderName,
-    std::{collections::HashMap, time::Duration},
+    shared::{
+        addr,
+        price_estimation::trade_verifier::{
+            TradeVerifier,
+            balance_overrides::{BalanceOverrides, detector::Detector},
+        },
+    },
+    std::{
+        collections::HashMap,
+        sync::{Arc, Mutex},
+        time::Duration,
+    },
     tap::TapFallible,
     thiserror::Error,
     tracing::Instrument,
@@ -93,6 +117,7 @@ pub struct Solver {
     config: Config,
     eth: Ethereum,
     persistence: Persistence,
+    verifier: Arc<TradeVerifier>,
 }
 
 #[derive(Debug, Clone)]
@@ -133,6 +158,30 @@ pub struct Config {
 
 impl Solver {
     pub async fn try_new(config: Config, eth: Ethereum) -> Result<Self> {
+        let web3 = eth.web3();
+        let overrides = Arc::new(BalanceOverrides {
+            hardcoded: Default::default(),
+            detector: Some((
+                Detector::new(Arc::new(web3.clone()), 50),
+                Mutex::new(SizedCache::with_size(100)),
+            )),
+        });
+
+        let verifier: Arc<TradeVerifier> = Arc::new(
+            TradeVerifier::new(
+                web3.clone(),
+                Arc::new(web3.clone()),
+                Arc::new(web3.clone()),
+                overrides,
+                eth.current_block().clone(),
+                eth.contracts().settlement().address(),
+                eth.contracts().weth().address(),
+                100.into(),
+            )
+            .await
+            .unwrap(),
+        );
+
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert(
             reqwest::header::CONTENT_TYPE,
@@ -154,6 +203,7 @@ impl Solver {
             config,
             eth,
             persistence,
+            verifier,
         })
     }
 
@@ -257,13 +307,143 @@ impl Solver {
         let res = res?;
         let res: solvers_dto::solution::Solutions = serde_json::from_str(&res)
             .tap_err(|err| tracing::warn!(res, ?err, "failed to parse solver response"))?;
-        let solutions = dto::Solutions::from(res).into_domain(
+        let mut solutions = dto::Solutions::from(res).into_domain(
             auction,
             liquidity,
             weth,
             self.clone(),
             &self.config,
         )?;
+
+        // TODO add all the reference solutions
+        let mut reference_solutions: Vec<Solution> =
+            futures::future::join_all(auction.orders().iter().enumerate().map(|(i, o)| {
+                let verifier = self.verifier.clone();
+                let web3 = self.eth.web3().clone();
+
+                async move {
+                    let AppData::Full(data) = &o.app_data else {
+                        return None;
+                    };
+                    if data.protocol.reference_solution.is_empty() {
+                        return None;
+                    }
+                    let reference = &data.protocol.reference_solution;
+
+                    // TODO hook instance
+                    let trampoline = addr!("01DcB88678aedD0C4cC9552B20F4718550250574");
+                    let hook = HooksTrampoline::at(&web3, trampoline);
+                    let reference = hook
+                        .execute(
+                            reference
+                                .iter()
+                                .map(|i| {
+                                    (
+                                        i.target,
+                                        ethcontract::tokens::Bytes(i.call_data.clone()),
+                                        i.value,
+                                    )
+                                })
+                                .collect::<Vec<_>>(),
+                        )
+                        .tx
+                        .data
+                        .unwrap();
+
+                    let (out_amount, _gas) = verifier
+                        .simulate_interaction(
+                            o.signature.signer.into(),
+                            self.config.account.address(),
+                            &OrderData {
+                                sell_token: o.sell.token.0.0,
+                                buy_token: o.buy.token.0.0,
+                                receiver: o.receiver.map(Into::into),
+                                sell_amount: o.sell.amount.0,
+                                buy_amount: o.buy.amount.0,
+                                valid_to: o.valid_to.0,
+                                app_data: AppDataHash(o.app_data.hash().0.0),
+                                fee_amount: 0.into(),
+                                kind: match o.side {
+                                    Side::Sell => OrderKind::Sell,
+                                    Side::Buy => OrderKind::Buy,
+                                },
+                                partially_fillable: matches!(o.partial, Partial::Yes { .. }),
+                                sell_token_balance: Default::default(),
+                                buy_token_balance: Default::default(),
+                            },
+                            o.pre_interactions
+                                .iter()
+                                .map(|i| shared::trade_finding::Interaction {
+                                    target: i.target.0,
+                                    value: i.value.0,
+                                    data: i.call_data.0.clone(),
+                                })
+                                .collect(),
+                            &shared::trade_finding::Interaction {
+                                target: trampoline,
+                                value: 0.into(),
+                                data: reference.clone().0.clone(),
+                            },
+                            o.post_interactions
+                                .iter()
+                                .map(|i| shared::trade_finding::Interaction {
+                                    target: i.target.0,
+                                    value: i.value.0,
+                                    data: i.call_data.0.clone(),
+                                })
+                                .collect(),
+                        )
+                        .await
+                        .ok()?;
+
+                    let (sell_amount, buy_amount) = match o.side {
+                        Side::Sell => (o.sell.amount.0, out_amount),
+                        Side::Buy => (out_amount, o.buy.amount.0),
+                    };
+
+                    let sol = Solution {
+                        id: Id::new(10_000 + i as u64),
+                        trades: vec![Trade::Fulfillment(Fulfillment {
+                            order: o.clone(),
+                            executed: o.target(),
+                            fee: Fee::Dynamic(order::SellAmount(0.into())),
+                        })],
+                        prices: [(o.sell.token, buy_amount), (o.buy.token, sell_amount)]
+                            .into_iter()
+                            .collect(),
+                        pre_interactions: o.pre_interactions.clone(),
+                        // TODO: transfer sell amounts into trampoline
+                        // TODO: adjust interactions to actually work with trampoline contract
+                        // TODO: recover funds from trampoline
+                        interactions: vec![Interaction::Custom(Custom {
+                            target: trampoline.into(),
+                            value: 0.into(),
+                            call_data: Bytes(reference.0.clone()),
+                            allowances: vec![],
+                            inputs: vec![eth::Asset {
+                                token: o.sell.token,
+                                amount: sell_amount.into(),
+                            }],
+                            outputs: vec![eth::Asset {
+                                token: o.buy.token,
+                                amount: buy_amount.into(),
+                            }],
+                            internalize: false,
+                        })],
+                        post_interactions: o.post_interactions.clone(),
+                        solver: self.clone(),
+                        weth: self.eth.contracts().weth().address().into(),
+                        gas: None,
+                        flashloans: vec![],
+                    };
+                    Some(sol)
+                }
+            }))
+            .await
+            .into_iter()
+            .flatten()
+            .collect();
+        solutions.append(&mut reference_solutions);
 
         super::observe::solutions(&solutions, auction.surplus_capturing_jit_order_owners());
         Ok(solutions)

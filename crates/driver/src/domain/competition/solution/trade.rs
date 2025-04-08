@@ -122,12 +122,12 @@ impl Trade {
 /// A trade which fulfills an order from the auction.
 #[derive(Debug, Clone)]
 pub struct Fulfillment {
-    order: competition::Order,
+    pub order: competition::Order,
     /// The amount executed by this fulfillment. See [`order::Partial`]. If the
     /// order is not partial, the executed amount must equal the amount from the
     /// order.
-    executed: order::TargetAmount,
-    fee: Fee,
+    pub executed: order::TargetAmount,
+    pub fee: Fee,
 }
 
 impl Fulfillment {

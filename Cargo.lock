@@ -1828,6 +1828,7 @@ dependencies = [
  "axum",
  "bigdecimal",
  "bytes-hex",
+ "cached",
  "chain",
  "chrono",
  "clap",

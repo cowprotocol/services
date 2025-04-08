@@ -15,9 +15,17 @@ use {
             tokens,
         },
     },
+    cached::SizedCache,
     error::Error,
     futures::Future,
-    std::{net::SocketAddr, sync::Arc},
+    shared::price_estimation::trade_verifier::{
+        TradeVerifier,
+        balance_overrides::{BalanceOverrides, detector::Detector},
+    },
+    std::{
+        net::SocketAddr,
+        sync::{Arc, Mutex},
+    },
     tokio::sync::oneshot,
 };
 
@@ -60,6 +68,30 @@ impl Api {
             &self.eth,
             order_priority_strategies,
             app_data_retriever,
+        );
+
+        let web3 = self.eth.web3();
+        let overrides = Arc::new(BalanceOverrides {
+            hardcoded: Default::default(),
+            detector: Some((
+                Detector::new(Arc::new(web3.clone()), 50),
+                Mutex::new(SizedCache::with_size(100)),
+            )),
+        });
+
+        let verifier: Arc<TradeVerifier> = Arc::new(
+            TradeVerifier::new(
+                web3.clone(),
+                Arc::new(web3.clone()),
+                Arc::new(web3.clone()),
+                overrides,
+                self.eth.current_block().clone(),
+                self.eth.contracts().settlement().address(),
+                self.eth.contracts().weth().address(),
+                100.into(),
+            )
+            .await
+            .unwrap(),
         );
 
         // Add the metrics and healthz endpoints.
@@ -107,6 +139,7 @@ impl Api {
                     self.simulator.clone(),
                     self.mempools.clone(),
                     Arc::new(bad_tokens),
+                    verifier.clone(),
                 ),
                 liquidity: self.liquidity.clone(),
                 tokens: tokens.clone(),

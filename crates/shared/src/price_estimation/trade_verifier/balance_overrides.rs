@@ -1,4 +1,4 @@
-mod detector;
+pub mod detector;
 
 use {
     self::detector::{DetectionError, Detector},
@@ -233,10 +233,10 @@ pub struct BalanceOverrides {
     /// These take priority over the auto-detection mechanism and are excluded
     /// from the cache in order to prevent them from getting cleaned up by
     /// the caching policy.
-    hardcoded: HashMap<Address, Strategy>,
+    pub hardcoded: HashMap<Address, Strategy>,
     /// The balance override detector and its cache. Set to `None` if
     /// auto-detection is not enabled.
-    detector: Option<(Detector, DetectorCache)>,
+    pub detector: Option<(Detector, DetectorCache)>,
 }
 
 impl BalanceOverrides {

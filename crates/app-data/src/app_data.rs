@@ -32,7 +32,8 @@ pub struct ProtocolAppData {
     #[serde(default)]
     pub partner_fee: PartnerFees,
     pub flashloan: Option<Flashloan>,
-    pub reference_solution: Option<ReferenceSolution>,
+    #[serde(default)]
+    pub reference_solution: Vec<ReferenceSolution>,
 }
 
 /// A reference solution a user submits to help out a solver
@@ -43,11 +44,11 @@ pub struct ProtocolAppData {
 #[cfg_attr(any(test, feature = "test_helpers"), derive(Serialize))]
 #[serde(rename_all = "camelCase")]
 pub struct ReferenceSolution {
-    target: H160,
+    pub target: H160,
     #[serde_as(as = "HexOrDecimalU256")]
-    value: U256,
+    pub value: U256,
     #[serde(with = "bytes_hex")]
-    call_data: Vec<u8>,
+    pub call_data: Vec<u8>,
 }
 
 /// Contains information to hint at how a solver could make
@@ -309,7 +310,7 @@ impl From<BackendAppData> for ProtocolAppData {
             replaced_order: None,
             partner_fee: PartnerFees::default(),
             flashloan: None,
-            reference_solution: None,
+            reference_solution: Default::default(),
         }
     }
 }

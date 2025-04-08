@@ -45,16 +45,16 @@ type Prices = HashMap<eth::TokenAddress, eth::U256>;
 /// [`competition::Auction`]. See also [`settlement::Settlement`].
 #[derive(Clone)]
 pub struct Solution {
-    id: Id,
-    trades: Vec<Trade>,
-    prices: Prices,
-    pre_interactions: Vec<eth::Interaction>,
-    interactions: Vec<Interaction>,
-    post_interactions: Vec<eth::Interaction>,
-    solver: Solver,
-    weth: eth::WethAddress,
-    gas: Option<eth::Gas>,
-    flashloans: Vec<Flashloan>,
+    pub id: Id,
+    pub trades: Vec<Trade>,
+    pub prices: Prices,
+    pub pre_interactions: Vec<eth::Interaction>,
+    pub interactions: Vec<Interaction>,
+    pub post_interactions: Vec<eth::Interaction>,
+    pub solver: Solver,
+    pub weth: eth::WethAddress,
+    pub gas: Option<eth::Gas>,
+    pub flashloans: Vec<Flashloan>,
 }
 
 impl Solution {

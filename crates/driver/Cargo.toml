@@ -18,6 +18,7 @@ path = "src/main.rs"
 app-data = { workspace = true }
 bytes-hex = { workspace = true }
 chain = { workspace = true }
+cached = { workspace = true }
 s3 = { workspace = true }
 async-trait = { workspace = true }
 axum = { workspace = true }

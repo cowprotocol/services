@@ -10,6 +10,7 @@ use {
         interaction::EncodedInteraction,
         trade_finding::{
             Interaction,
+            LegacyTrade,
             QuoteExecution,
             TradeKind,
             external::dto::{self, JitOrder},
@@ -68,6 +69,12 @@ pub struct TradeVerifier {
     domain_separator: DomainSeparator,
 }
 
+impl std::fmt::Debug for TradeVerifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str("TradeVerifier")
+    }
+}
+
 impl TradeVerifier {
     const DEFAULT_GAS: u64 = 8_000_000;
     const SPARDOSE: H160 = addr!("0000000000000000000000000000000000020000");
@@ -98,6 +105,51 @@ impl TradeVerifier {
             web3,
             domain_separator,
         })
+    }
+
+    /// Takes an interaction and computes how many sell tokens it takes
+    /// and buy tokens it returns.
+    pub async fn simulate_interaction(
+        &self,
+        from: H160,
+        solver: H160,
+        order: &OrderData,
+        pre_interactions: Vec<Interaction>,
+        interaction: &Interaction,
+        post_interactions: Vec<Interaction>,
+    ) -> Result<(U256, u64)> {
+        let res = self
+            .verify(
+                &PriceQuery {
+                    sell_token: order.sell_token,
+                    buy_token: order.buy_token,
+                    kind: order.kind,
+                    in_amount: match order.kind {
+                        OrderKind::Sell => order.sell_amount.try_into().unwrap(),
+                        OrderKind::Buy => order.buy_amount.try_into().unwrap(),
+                    },
+                },
+                &Verification {
+                    from,
+                    receiver: order.receiver.unwrap_or(from),
+                    pre_interactions,
+                    post_interactions,
+                    sell_token_source: order.sell_token_balance,
+                    buy_token_destination: order.buy_token_balance,
+                },
+                TradeKind::Legacy(LegacyTrade {
+                    out_amount: match order.kind {
+                        OrderKind::Sell => 0.into(),
+                        OrderKind::Buy => U256::MAX,
+                    },
+                    gas_estimate: None,
+                    interactions: vec![interaction.clone()],
+                    solver,
+                    tx_origin: None,
+                }),
+            )
+            .await?;
+        Ok((res.out_amount, res.gas))
     }
 
     async fn verify_inner(

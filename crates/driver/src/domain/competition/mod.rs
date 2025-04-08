@@ -20,6 +20,7 @@ use {
     futures::{StreamExt, stream::FuturesUnordered},
     itertools::Itertools,
     num::Zero,
+    shared::price_estimation::trade_verifier::TradeVerifier,
     std::{
         cmp::Reverse,
         collections::{HashMap, HashSet, VecDeque},
@@ -61,6 +62,7 @@ pub struct Competition {
     pub settlements: Mutex<VecDeque<Settlement>>,
     pub bad_tokens: Arc<bad_tokens::Detector>,
     settle_queue: mpsc::Sender<SettleRequest>,
+    pub verifier: Arc<TradeVerifier>,
 }
 
 impl Competition {
@@ -71,6 +73,7 @@ impl Competition {
         simulator: Simulator,
         mempools: Mempools,
         bad_tokens: Arc<bad_tokens::Detector>,
+        verifier: Arc<TradeVerifier>,
     ) -> Arc<Self> {
         let (settle_sender, settle_receiver) = mpsc::channel(solver.settle_queue_size());
 
@@ -83,6 +86,7 @@ impl Competition {
             settlements: Default::default(),
             settle_queue: settle_sender,
             bad_tokens,
+            verifier,
         });
 
         let competition_clone = Arc::clone(&competition);
