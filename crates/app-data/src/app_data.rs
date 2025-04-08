@@ -32,6 +32,22 @@ pub struct ProtocolAppData {
     #[serde(default)]
     pub partner_fee: PartnerFees,
     pub flashloan: Option<Flashloan>,
+    pub reference_solution: Option<ReferenceSolution>,
+}
+
+/// A reference solution a user submits to help out a solver
+/// support your trade. This tx needs to work in an unpriviliged
+/// context (e.g. HooksTrampoline contract).
+#[serde_as]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
+#[cfg_attr(any(test, feature = "test_helpers"), derive(Serialize))]
+#[serde(rename_all = "camelCase")]
+pub struct ReferenceSolution {
+    target: H160,
+    #[serde_as(as = "HexOrDecimalU256")]
+    value: U256,
+    #[serde(with = "bytes_hex")]
+    call_data: Vec<u8>,
 }
 
 /// Contains information to hint at how a solver could make
@@ -293,6 +309,7 @@ impl From<BackendAppData> for ProtocolAppData {
             replaced_order: None,
             partner_fee: PartnerFees::default(),
             flashloan: None,
+            reference_solution: None,
         }
     }
 }
