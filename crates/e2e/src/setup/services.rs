@@ -8,6 +8,7 @@ use {
         wait_for_condition,
     },
     app_data::{AppDataDocument, AppDataHash},
+    autopilot::infra::persistence::dto,
     clap::Parser,
     ethcontract::{H160, H256},
     model::{
@@ -16,7 +17,6 @@ use {
         solver_competition::SolverCompetitionAPI,
         trade::Trade,
     },
-    orderbook::dto,
     reqwest::{Client, StatusCode, Url},
     shared::ethrpc::Web3,
     sqlx::Connection,
@@ -357,7 +357,7 @@ impl<'a> Services<'a> {
     /// Fetches the current auction. Don't use this as a synchronization
     /// mechanism in tests because that is prone to race conditions
     /// which would make tests flaky.
-    pub async fn get_auction(&self) -> dto::AuctionWithId {
+    pub async fn get_auction(&self) -> dto::Auction {
         let response = self
             .http
             .get(format!("{API_HOST}{AUCTION_ENDPOINT}"))
@@ -494,7 +494,7 @@ impl<'a> Services<'a> {
     pub async fn get_order_status(
         &self,
         uid: &OrderUid,
-    ) -> Result<dto::order::Status, (StatusCode, String)> {
+    ) -> Result<orderbook::dto::order::Status, (StatusCode, String)> {
         let response = self
             .http
             .get(format!("{API_HOST}{}", order_status_endpoint(uid)))
@@ -506,7 +506,9 @@ impl<'a> Services<'a> {
         let body = response.text().await.unwrap();
 
         match status {
-            StatusCode::OK => Ok(serde_json::from_str::<dto::order::Status>(&body).unwrap()),
+            StatusCode::OK => {
+                Ok(serde_json::from_str::<orderbook::dto::order::Status>(&body).unwrap())
+            }
             code => Err((code, body)),
         }
     }
