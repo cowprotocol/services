@@ -1,6 +1,5 @@
 use {
     super::{Order, eth},
-    chrono::{DateTime, Utc},
     std::collections::HashMap,
 };
 
@@ -28,7 +27,6 @@ pub struct Auction {
     pub orders: Vec<Order>,
     pub prices: Prices,
     pub surplus_capturing_jit_order_owners: Vec<eth::Address>,
-    pub deadline: DateTime<Utc>,
 }
 
 impl PartialEq for Auction {
