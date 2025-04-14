@@ -152,8 +152,9 @@ async fn surplus_protocol_fee_jit_order_from_surplus_capturing_owner_not_capped(
                     side: Side::Buy,
                 },
             },
-            // Score is 20 x 2 since there are two orders with score 20 (user order + JIT order)
-            expected_score: 40.ether().into_wei(),
+            // Surplus is 40 ETH worth of sell tokens, converted to buy tokens using the order's
+            // limit price (50 / 60 = 80%) this leaves us with a score of 32 ETH.
+            expected_score: 32.ether().into_wei(),
         },
     };
 
@@ -190,8 +191,9 @@ async fn surplus_protocol_fee_jit_order_not_capped() {
                     side: Side::Buy,
                 },
             },
-            // Score is 20 since the JIT order is not from a surplus capturing owner
-            expected_score: 20.ether().into_wei(),
+            // Surplus is 20 ETH worth of sell tokens, converted to buy tokens using the order's
+            // limit price (40 / 50 = 80%) this leaves us with a score of 16 ETH.
+            expected_score: 16.ether().into_wei(),
         },
     };
 
