@@ -1059,6 +1059,51 @@ fn main() {
 
     // Test Contract for using up a specified amount of gas.
     generate_contract("GasHog");
+
+    // Contract for Uniswap's Permit2 contract.
+    generate_contract_with_config("Permit2", |builder| {
+        builder
+        .add_network(
+            MAINNET,
+            Network {
+                address: addr("0x000000000022D473030F116dDEE9F6B43aC78BA3"),
+                // <https://etherscan.io/tx/0xf2f1fe96c16ee674bb7fcee166be52465a418927d124f5f1d231b36eae65d377>
+                deployment_information: Some(DeploymentInformation::BlockNumber(15986406)),
+            },
+        )
+        .add_network(
+            GNOSIS,
+            Network {
+                address: addr("0x000000000022D473030F116dDEE9F6B43aC78BA3"),
+                // <https://gnosisscan.io/tx/0x3ba511410edc92cafe94bd100e25adb37981499d17947a3d64c8523fbfd31864>
+                deployment_information: Some(DeploymentInformation::BlockNumber(27338672)),
+            },
+        )
+        .add_network(
+            SEPOLIA,
+            Network {
+                address: addr("0x000000000022D473030F116dDEE9F6B43aC78BA3"),
+                // <https://sepolia.etherscan.io/tx/0x363df5deeead44d8fd38425f3986e3e81946a6c59d8b68fe33926cc700713173>
+                deployment_information: Some(DeploymentInformation::BlockNumber(2356287)),
+            },
+        )
+        .add_network(
+            ARBITRUM_ONE,
+            Network {
+                address: addr("0x000000000022D473030F116dDEE9F6B43aC78BA3"),
+                // <https://arbiscan.io/tx/0xe244dafca8211ed6fb123efaa5075b7d5813749718412ca435c872afd0e2ea82>
+                deployment_information: Some(DeploymentInformation::BlockNumber(38692735)),
+            },
+        )
+        .add_network(
+            BASE,
+            Network {
+                address: addr("0x000000000022D473030F116dDEE9F6B43aC78BA3"),
+                // <https://basescan.org/tx/0x26fbdea9a47ba8e21676bc6b6a72a19dded1a0c270e96d5236886ca9c5000d3f>
+                deployment_information: Some(DeploymentInformation::BlockNumber(1425180)),
+            },
+        )
+    });
 }
 
 fn generate_contract(name: &str) {
