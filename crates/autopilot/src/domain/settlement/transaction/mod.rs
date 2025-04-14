@@ -4,7 +4,7 @@ use {
         domain::{self, auction::order, eth},
     },
     ethcontract::{BlockId, common::FunctionExt},
-    std::sync::LazyLock,
+    std::{collections::HashSet, sync::LazyLock},
 };
 
 mod tokenized;
@@ -210,22 +210,21 @@ async fn find_solver_address(
     callers: Vec<eth::Address>,
     block: BlockId,
 ) -> Result<Option<eth::Address>, Error> {
-    let valid_solvers: Vec<Option<eth::Address>> =
-        // The RPC calls to check each address can be done in parallel as they are cheap
-        futures::future::join_all(callers.into_iter().map(|caller| async move {
-            match authenticator.is_valid_solver(caller, block).await {
-                Ok(true) => Ok(Some(caller)),
-                Ok(false) => Ok(None),
-                Err(e) => Err(e),
-            }
-        }))
-        .await
-        .into_iter()
-        .collect::<Result<_, _>>()?;
+    let mut checked_callers = HashSet::new();
+    for caller in &callers {
+        if !checked_callers.insert(caller) {
+            // skip caller if we already checked it
+            continue;
+        }
 
-    // The actual solver that triggered the transaction will be the first
-    // authenticated address in the call stack
-    Ok(valid_solvers.into_iter().flatten().next())
+        if authenticator
+            .is_valid_solver(caller.0.into(), block)
+            .await?
+        {
+            return Ok(Some(*caller));
+        }
+    }
+    Ok(None)
 }
 
 /// Trade containing onchain observable data specific to a settlement

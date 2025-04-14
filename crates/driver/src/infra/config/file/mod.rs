@@ -81,6 +81,11 @@ struct Config {
     /// Whether the flashloans feature is enabled.
     #[serde(default)]
     flashloans_enabled: bool,
+
+    /// Time at which the buy order scoring change should go into
+    /// effect (based on `deadline` in `/solve` request).
+    #[serde(default = "default_buy_order_scoring_change_cutover")]
+    buy_order_scoring_change_cutover: chrono::DateTime<chrono::Utc>,
 }
 
 #[serde_as]
@@ -884,4 +889,10 @@ fn default_metrics_bad_token_detector_freeze_time() -> Duration {
 /// With this default, the approximate size of the cache will be ~1.6 MB.
 fn default_app_data_cache_size() -> u64 {
     2000
+}
+
+/// Time when the solution score computation is supposed to change
+/// according to [CIP-65](https://snapshot.box/#/s:cow.eth/proposal/0xd172281444c48254398881c57a57a2acbf0802a385e6c94384fd358b943aa4f4).
+fn default_buy_order_scoring_change_cutover() -> chrono::DateTime<chrono::Utc> {
+    "2025-04-16T12:00:00Z".parse().unwrap()
 }
