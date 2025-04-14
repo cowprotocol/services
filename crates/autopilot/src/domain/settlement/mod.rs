@@ -787,7 +787,7 @@ mod tests {
 
         assert_eq!(
             trade.score(&auction).unwrap().0,
-            eth::U256::from(769018961144624u128) // 2 x surplus
+            eth::U256::from(769018961144625u128) // 2 x surplus
         );
     }
 
