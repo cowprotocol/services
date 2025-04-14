@@ -127,7 +127,13 @@ impl Fulfillment {
             }
             FeePolicy::Volume { factor } => {
                 let fee_from_volume = self.fee_from_volume(prices, *factor)?;
-                tracing::debug!(uid=?self.order().uid, ?fee_from_volume, executed=?self.executed(), surplus_fee=?self.surplus_fee(), "calculated protocol fee");
+                tracing::debug!(
+                    uid = ?self.order().uid,
+                    ?fee_from_volume,
+                    executed = ?self.executed(),
+                    surplus_fee = ?self.surplus_fee(),
+                    "calculated protocol fee"
+                );
                 Ok(fee_from_volume)
             }
         }
@@ -149,7 +155,15 @@ impl Fulfillment {
         let fee_from_volume = self.fee_from_volume(prices, max_volume_factor)?;
         // take the smaller of the two
         let protocol_fee = std::cmp::min(fee_from_surplus, fee_from_volume);
-        tracing::debug!(uid=?self.order().uid, ?fee_from_surplus, ?fee_from_volume, ?protocol_fee, executed=?self.executed(), surplus_fee=?self.surplus_fee(), "calculated protocol fee");
+        tracing::debug!(
+            uid = ?self.order().uid,
+            ?fee_from_surplus,
+            ?fee_from_volume,
+            ?protocol_fee,
+            executed = ?self.executed(),
+            surplus_fee = ?self.surplus_fee(),
+            "calculated protocol fee"
+        );
         Ok(protocol_fee)
     }
 

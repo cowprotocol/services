@@ -404,5 +404,6 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
         archive_node_url: config.archive_node_url,
         simulation_bad_token_max_age: config.simulation_bad_token_max_age,
         app_data_fetching: config.app_data_fetching,
+        buy_order_scoring_change_cutover: config.buy_order_scoring_change_cutover,
     }
 }

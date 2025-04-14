@@ -61,6 +61,10 @@ pub struct Competition {
     pub settlements: Mutex<VecDeque<Settlement>>,
     pub bad_tokens: Arc<bad_tokens::Detector>,
     settle_queue: mpsc::Sender<SettleRequest>,
+    /// If the auction deadline is later than this timestamp the score
+    /// for buy orders will be computed based on the latest rules.
+    // TODO: remove after the cutover happened
+    pub buy_order_scoring_change_cutover: chrono::DateTime<chrono::Utc>,
 }
 
 impl Competition {
@@ -71,6 +75,7 @@ impl Competition {
         simulator: Simulator,
         mempools: Mempools,
         bad_tokens: Arc<bad_tokens::Detector>,
+        cip_12123_cutover: chrono::DateTime<chrono::Utc>,
     ) -> Arc<Self> {
         let (settle_sender, settle_receiver) = mpsc::channel(solver.settle_queue_size());
 
@@ -83,6 +88,7 @@ impl Competition {
             settlements: Default::default(),
             settle_queue: settle_sender,
             bad_tokens,
+            buy_order_scoring_change_cutover: cip_12123_cutover,
         });
 
         let competition_clone = Arc::clone(&competition);
@@ -150,10 +156,17 @@ impl Competition {
             }
         });
 
+        let use_new_scoring_logic =
+            auction.deadline().auction() >= self.buy_order_scoring_change_cutover;
         let all_solutions = match self.solver.solution_merging() {
             SolutionMerging::Allowed {
                 max_orders_per_merged_solution,
-            } => merge(solutions, auction, max_orders_per_merged_solution),
+            } => merge(
+                solutions,
+                auction,
+                max_orders_per_merged_solution,
+                use_new_scoring_logic,
+            ),
             SolutionMerging::Forbidden => solutions.collect(),
         };
 
@@ -219,8 +232,9 @@ impl Competition {
                 observe::scoring(&settlement);
                 (
                     settlement.score(
-                        &auction.prices(),
+                        &auction.native_prices(),
                         auction.surplus_capturing_jit_order_owners(),
+                        use_new_scoring_logic,
                     ),
                     settlement,
                 )
@@ -513,6 +527,7 @@ fn merge(
     solutions: impl Iterator<Item = Solution>,
     auction: &Auction,
     max_orders_per_merged_solution: usize,
+    use_new_scoring_logic: bool,
 ) -> Vec<Solution> {
     let mut merged: Vec<Solution> = Vec::new();
     // Limit the number of solutions to merge to avoid combinatorial explosion
@@ -541,8 +556,9 @@ fn merge(
         Reverse(
             solution
                 .scoring(
-                    &auction.prices(),
+                    &auction.native_prices(),
                     auction.surplus_capturing_jit_order_owners(),
+                    use_new_scoring_logic,
                 )
                 .map(|score| score.0)
                 .unwrap_or_default(),
