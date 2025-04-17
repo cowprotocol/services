@@ -10,9 +10,10 @@ use {
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::EcdsaSigningScheme,
     },
+    number::conversions::{big_decimal_to_u256, u256_to_big_decimal},
     secp256k1::SecretKey,
     shared::ethrpc::Web3,
-    web3::signing::SecretKeyRef,
+    web3::signing::{Key, SecretKeyRef},
 };
 
 #[tokio::test]
@@ -467,6 +468,30 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
     .unwrap();
     assert_eq!(solver_a_winning_solutions.len(), 1);
     assert_eq!(solver_b_winning_solutions.len(), 1);
+    assert_eq!(solver_a_winning_solutions[0].orders.len(), 1);
+    assert_eq!(solver_b_winning_solutions[0].orders.len(), 1);
+    let solver_a_order = solver_a_winning_solutions[0].orders[0].clone();
+    let actual_order_a = OrderCreation {
+        sell_token: H160(solver_a_order.sell_token.0),
+        sell_amount: big_decimal_to_u256(&solver_a_order.limit_sell).unwrap(),
+        buy_token: H160(solver_a_order.buy_token.0),
+        buy_amount: big_decimal_to_u256(&solver_a_order.limit_buy).unwrap(),
+        valid_to: order_a.valid_to,
+        kind: OrderKind::Sell,
+        ..Default::default()
+    };
+    assert_eq!(order_a, actual_order_a);
+    let solver_order_b = solver_b_winning_solutions[0].orders[0].clone();
+    let actual_order_b = OrderCreation {
+        sell_token: H160(solver_order_b.sell_token.0),
+        sell_amount: big_decimal_to_u256(&solver_order_b.limit_sell).unwrap(),
+        buy_token: H160(solver_order_b.buy_token.0),
+        buy_amount: big_decimal_to_u256(&solver_order_b.limit_buy).unwrap(),
+        valid_to: order_b.valid_to,
+        kind: OrderKind::Sell,
+        ..Default::default()
+    };
+    assert_eq!(order_b, actual_order_b);
 }
 
 async fn too_many_limit_orders_test(web3: Web3) {
