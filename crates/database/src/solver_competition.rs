@@ -453,8 +453,9 @@ async fn fetch_solutions_by_condition(
             .push(order);
     }
 
+    // Order by uid to return the solutions in the same order as they were inserted.
     let mut solutions = solutions_map.into_values().collect::<Vec<_>>();
-    solutions.sort_by_key(|s| s.uid);
+    solutions.sort_by_key(|solution| solution.uid);
     Ok(solutions)
 }
 

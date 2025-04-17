@@ -438,7 +438,7 @@ Indexes:
 Stores data and metadata of [`Settlement`](https://github.com/cowprotocol/contracts/blob/main/src/contracts/GPv2Settlement.sol#L67-L68) events emitted from the settlement contract.
 
  Column        | Type   | Nullable | Details
----------------|--------|------|--------
+---------------|--------|----------|--------
  block\_number | bigint | not null | block in which the settlement happened
  log\_index    | bigint | not null | index in which the event was emitted
  solver        | bytea  | nullable | public address of the executing solver
