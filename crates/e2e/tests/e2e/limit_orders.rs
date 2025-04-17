@@ -476,8 +476,10 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
         sell_amount: big_decimal_to_u256(&solver_a_order.limit_sell).unwrap(),
         buy_token: H160(solver_a_order.buy_token.0),
         buy_amount: big_decimal_to_u256(&solver_a_order.limit_buy).unwrap(),
-        valid_to: order_a.valid_to,
         kind: OrderKind::Sell,
+        // Copy these fields from the original object
+        valid_to: order_a.valid_to,
+        signature: order_a.signature.clone(),
         ..Default::default()
     };
     assert_eq!(order_a, actual_order_a);
@@ -487,8 +489,10 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
         sell_amount: big_decimal_to_u256(&solver_order_b.limit_sell).unwrap(),
         buy_token: H160(solver_order_b.buy_token.0),
         buy_amount: big_decimal_to_u256(&solver_order_b.limit_buy).unwrap(),
-        valid_to: order_b.valid_to,
         kind: OrderKind::Sell,
+        // Copy these fields from the original object
+        valid_to: order_b.valid_to,
+        signature: order_b.signature.clone(),
         ..Default::default()
     };
     assert_eq!(order_b, actual_order_b);
