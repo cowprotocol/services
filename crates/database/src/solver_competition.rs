@@ -633,6 +633,7 @@ mod tests {
                 uid: 2,
                 id: 1.into(),
                 solver: ByteArray([2u8; 20]), // from solver 2
+                is_winner: true,
                 orders: vec![
                     Order {
                         uid: ByteArray([1u8; 56]),
@@ -658,6 +659,11 @@ mod tests {
 
         // first two solutions should be identical
         assert_eq!(solutions[0..2], fetched_solutions[0..2]);
+
+        let solver_winning_solutions = fetch_solver_winning_solutions(&mut db, 0, ByteArray([2u8; 20])).await.unwrap();
+        // The solver has 2 solutions, but only one of them is winning
+        assert_eq!(solver_winning_solutions.len(), 1);
+        assert_eq!(solver_winning_solutions[0].uid, 2);
 
         let proposed_jit_orders =
             sqlx::query("SELECT order_uid FROM proposed_jit_orders ORDER BY order_uid")

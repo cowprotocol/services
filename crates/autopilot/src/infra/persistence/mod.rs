@@ -686,6 +686,7 @@ impl Persistence {
                 block_number,
                 log_index,
                 solver,
+                settlement.solution_uid(),
             )
             .await?;
 

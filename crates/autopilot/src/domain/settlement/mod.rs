@@ -69,6 +69,11 @@ impl Settlement {
         self.gas_price
     }
 
+    /// The solution UID associated with this settlement.
+    pub fn solution_uid(&self) -> i64 {
+        self.solution_uid
+    }
+
     /// Total surplus for all trades in the settlement.
     pub fn surplus_in_ether(&self) -> eth::Ether {
         self.trades
