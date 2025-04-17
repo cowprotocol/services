@@ -10,10 +10,10 @@ use {
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::EcdsaSigningScheme,
     },
-    number::conversions::{big_decimal_to_u256, u256_to_big_decimal},
+    number::conversions::big_decimal_to_u256,
     secp256k1::SecretKey,
     shared::ethrpc::Web3,
-    web3::signing::{Key, SecretKeyRef},
+    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
