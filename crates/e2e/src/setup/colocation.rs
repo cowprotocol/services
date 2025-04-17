@@ -213,7 +213,7 @@ mempool = "public"
 
     tokio::task::spawn(async move {
         let _config_file = config_file;
-        driver::run(args.into_iter(), None).await;
+        ::driver::run(args.into_iter(), None).await;
     })
 }
 

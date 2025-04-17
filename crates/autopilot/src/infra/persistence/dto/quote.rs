@@ -37,6 +37,16 @@ pub fn into_domain(quote: boundary::database::orders::Quote) -> Result<domain::Q
     })
 }
 
+pub fn competition_metadata_into_domain(
+    metadata: boundary::database::solver_competition::Metadata,
+) -> domain::competition::Metadata {
+    domain::competition::Metadata {
+        auction_id: metadata.auction_id,
+        solver: eth::Address::from(eth::H160(metadata.solver.0)),
+        settled: metadata.settled,
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum QuoteError {
     #[error("BigRational amount overflow")]

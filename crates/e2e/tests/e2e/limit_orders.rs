@@ -1,6 +1,6 @@
 use {
+    ::driver::domain::eth::NonZeroU256,
     contracts::ERC20,
-    driver::domain::eth::NonZeroU256,
     e2e::{nodes::forked_node::ForkedNodeApi, setup::*, tx},
     ethcontract::{H160, prelude::U256},
     fee::{FeePolicyOrderClass, ProtocolFee, ProtocolFeesConfig},

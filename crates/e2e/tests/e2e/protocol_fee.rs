@@ -1,5 +1,5 @@
 use {
-    driver::domain::eth::NonZeroU256,
+    ::driver::domain::eth::NonZeroU256,
     e2e::{
         assert_approximately_eq,
         setup::{fee::*, *},
