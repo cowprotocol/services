@@ -154,7 +154,7 @@ impl PoolsCheckpointHandler {
         // liquidity
         registered_pools
             .pools
-            .sort_unstable_by(|a, b| a.total_volume_usd.partial_cmp(&b.total_volume_usd).unwrap());
+            .sort_unstable_by(|a, b| a.volume_usd.partial_cmp(&b.volume_usd).unwrap());
         let pool_ids = registered_pools
             .pools
             .clone()
