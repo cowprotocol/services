@@ -152,11 +152,9 @@ impl PoolsCheckpointHandler {
         // can't fetch the state of all pools in constructor for performance reasons,
         // so let's fetch the top `max_pools_to_initialize_cache` pools with the highest
         // liquidity
-        registered_pools.pools.sort_unstable_by(|a, b| {
-            a.total_value_locked_eth
-                .partial_cmp(&b.total_value_locked_eth)
-                .unwrap()
-        });
+        registered_pools
+            .pools
+            .sort_unstable_by(|a, b| a.total_volume_usd.partial_cmp(&b.total_volume_usd).unwrap());
         let pool_ids = registered_pools
             .pools
             .clone()
