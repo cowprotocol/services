@@ -231,6 +231,8 @@ fn order_to_key(order: &database::solver_competition::Order) -> OrderMatchKey {
     }
 }
 
+/// Finds a winning solution UID for a given set of trades by comparing the
+/// order UID and the sell/buy token with their limit prices.
 pub fn find_winning_solution_uid(
     solver_winning_solutions: &[Solution],
     settled_trades: &[EncodedTrade],
