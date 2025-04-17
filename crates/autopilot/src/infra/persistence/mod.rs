@@ -916,6 +916,28 @@ impl Persistence {
         .map(|solver| eth::Address(solver.0.into()))
         .collect())
     }
+
+    pub async fn get_solver_winning_solutions(
+        &self,
+        auction_id: domain::auction::Id,
+        solver: eth::Address,
+    ) -> Result<Vec<Solution>, DatabaseError> {
+        let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["fetch_solver_winning_solutions"])
+            .start_timer();
+
+        Ok(
+            database::solver_competition::fetch_solver_winning_solutions(
+                &mut ex,
+                auction_id,
+                ByteArray(solver.0.0),
+            )
+            .await
+            .context("solver_competition::fetch_solver_winning_solutions")?,
+        )
+    }
 }
 
 #[derive(prometheus_metric_storage::MetricStorage)]
