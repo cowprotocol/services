@@ -175,8 +175,9 @@ impl Settlement {
             // TODO: remove once https://github.com/cowprotocol/services/issues/2848 is resolved and ~270 days are passed since bumping.
             return Err(Error::WrongEnvironment);
         }
-        
-        // Do that check only if we are sure the settlement is from the current environment.
+
+        // Do that check only if we are sure the settlement is from the current
+        // environment.
         let settled_trades = settled.trades;
         let Some(solution_uid) =
             find_winning_solution_uid(&solver_winning_solutions, &settled_trades)
