@@ -164,12 +164,6 @@ impl Settlement {
                     .map_err(Error::from)
             }
         )?;
-        let settled_trades = settled.trades;
-        let Some(solution_uid) =
-            find_winning_solution_uid(&solver_winning_solutions, &settled_trades)
-        else {
-            return Err(Error::InconsistentData(InconsistentData::SolutionNotFound));
-        };
 
         if settled.block > auction.block + max_settlement_age(chain) {
             // A settled transaction references a VERY old auction.
@@ -181,6 +175,14 @@ impl Settlement {
             // TODO: remove once https://github.com/cowprotocol/services/issues/2848 is resolved and ~270 days are passed since bumping.
             return Err(Error::WrongEnvironment);
         }
+        
+        // Do that check only if we are sure the settlement is from the current environment.
+        let settled_trades = settled.trades;
+        let Some(solution_uid) =
+            find_winning_solution_uid(&solver_winning_solutions, &settled_trades)
+        else {
+            return Err(Error::InconsistentData(InconsistentData::SolutionNotFound));
+        };
 
         let trades = settled_trades
             .into_iter()
