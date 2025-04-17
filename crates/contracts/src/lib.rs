@@ -101,6 +101,7 @@ include_contracts! {
     IUniswapV3Factory;
     IZeroEx;
     PancakeRouter;
+    Permit2;
     ChainalysisOracle;
     SushiSwapRouter;
     SwaprRouter;
