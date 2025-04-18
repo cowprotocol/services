@@ -47,14 +47,22 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        let input = vec![Score {
-            auction_id: 1,
-            solver: ByteArray([2; 20]),
-            reference_score: 9.into(),
-        }];
+        let input = vec![
+            Score {
+                auction_id: 1,
+                solver: ByteArray([2; 20]),
+                reference_score: 9.into(),
+            },
+            Score {
+                auction_id: 1,
+                solver: ByteArray([3; 20]),
+                reference_score: 10.into(),
+            },
+        ];
         insert(&mut db, &input).await.unwrap();
 
         let output = fetch(&mut db, 1).await.unwrap();
-        assert_eq!(input, output);
+        assert!(output.contains(&input[0]));
+        assert!(output.contains(&input[1]));
     }
 }
