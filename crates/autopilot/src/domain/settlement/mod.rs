@@ -172,7 +172,7 @@ impl Settlement {
             return Err(Error::WrongEnvironment);
         }
 
-        // Do that check only if we are sure the settlement is from the current
+        // Check this only if we are sure the settlement is from the current
         // environment.
         let settled_trades = settled.trades;
         let Some(solution_uid) =
