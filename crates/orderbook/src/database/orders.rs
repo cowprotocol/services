@@ -540,19 +540,6 @@ fn full_order_with_quote_into_model_order(
         placement_error: onchain_placement_error,
     });
 
-    // We don't want to make the quote's execution plan public as long as an order
-    // is still fillable. Otherwise solvers can just try to copy the execution
-    // plan which could lead to undesirable behavior of quoters.
-    let mut quote = quote.map(order_quote_into_model).transpose()?;
-    if !matches!(
-        status,
-        OrderStatus::Fulfilled | OrderStatus::Expired | OrderStatus::Cancelled
-    ) {
-        if let Some(quote) = quote.as_mut() {
-            quote.metadata = Default::default();
-        }
-    }
-
     let metadata = OrderMetadata {
         creation_date: order.creation_timestamp,
         owner: H160(order.owner.0),
@@ -587,7 +574,9 @@ fn full_order_with_quote_into_model_order(
             .map(String::from_utf8)
             .transpose()
             .context("full app data isn't utf-8")?,
-        quote,
+        quote: quote
+            .map(|q| order_quote_into_model(q, status))
+            .transpose()?,
     };
     let data = OrderData {
         sell_token: H160(order.sell_token.0),
