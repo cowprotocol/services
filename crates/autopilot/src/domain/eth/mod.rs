@@ -245,7 +245,7 @@ impl num::Zero for TokenAmount {
 
 /// An asset on the Ethereum blockchain. Represents a particular amount of a
 /// particular token.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub struct Asset {
     pub amount: TokenAmount,
     pub token: TokenAddress,
