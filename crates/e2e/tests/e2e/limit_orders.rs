@@ -165,7 +165,10 @@ async fn single_limit_order_test(web3: Web3) {
 
     // we hide the quote's execution plan while the order is still fillable
     let order = services.get_order(&order_id).await.unwrap();
-    assert_eq!(order.metadata.quote.unwrap().metadata, serde_json::Value::default());
+    assert_eq!(
+        order.metadata.quote.unwrap().metadata,
+        serde_json::Value::default()
+    );
 
     onchain.mint_block().await;
     let limit_order = services.get_order(&order_id).await.unwrap();
