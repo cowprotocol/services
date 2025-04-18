@@ -419,7 +419,7 @@ Indexes:
 
 ### reference\_scores
 
-Stores the best and second best solution quality (score) of every auction promised by solvers for [CIP-20](https://snapshot.org/#/cow.eth/proposal/0x2d3f9bd1ea72dca84b03e97dda3efc1f4a42a772c54bd2037e8b62e7d09a491f) reward computation.
+Stores reference scores of the winning solvers.
 
  Column           | Type     | Nullable | Details
 ------------------|----------|----------|--------
