@@ -69,7 +69,7 @@ impl super::Postgres {
 
         database::reference_scores::insert(&mut ex, &reference_scores)
             .await
-            .context("settlement_scores::insert")?;
+            .context("reference_scores::insert")?;
 
         database::auction_participants::insert(
             &mut ex,

@@ -10,7 +10,7 @@ use {
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::EcdsaSigningScheme,
     },
-    number::conversions::big_decimal_to_big_uint,
+    number::conversions::{big_decimal_to_big_uint, u256_to_big_decimal},
     secp256k1::SecretKey,
     shared::ethrpc::Web3,
     web3::signing::SecretKeyRef,
@@ -495,14 +495,33 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
     let reference_scores = database::reference_scores::fetch(&mut ex, competition.auction_id)
         .await
         .unwrap();
-    reference_scores
+    let total_score = competition
+        .common
+        .solutions
+        .iter()
+        .filter_map(|s| s.is_winner.then_some(s.score).flatten())
+        .map(|s| s.score())
+        .reduce(U256::saturating_add)
+        .unwrap();
+    let total_score = u256_to_big_decimal(&total_score);
+    let expected_solution_a_ref_score = &total_score - &solver_a_winning_solutions[0].score;
+    let solver_a_ref_score = reference_scores
         .iter()
         .find(|score| score.solver == ByteArray(solver_a.address().0))
         .unwrap();
-    reference_scores
+    assert_eq!(
+        solver_a_ref_score.reference_score,
+        expected_solution_a_ref_score
+    );
+    let expected_solution_b_ref_score = &total_score - &solver_b_winning_solutions[0].score;
+    let solver_b_ref_score = reference_scores
         .iter()
         .find(|score| score.solver == ByteArray(solver_b.address().0))
         .unwrap();
+    assert_eq!(
+        solver_b_ref_score.reference_score,
+        expected_solution_b_ref_score
+    );
 }
 
 async fn too_many_limit_orders_test(web3: Web3) {

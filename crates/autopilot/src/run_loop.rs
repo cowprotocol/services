@@ -365,7 +365,7 @@ impl RunLoop {
                     .is_winner()
                     .then_some(participant.solution().score().get().0)
             })
-            .reduce(|a, b| a.checked_add(b).unwrap_or_default())
+            .reduce(U256::saturating_add)
         else {
             return Default::default();
         };
