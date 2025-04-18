@@ -18,15 +18,11 @@ mod trade;
 mod transaction;
 use {
     crate::{
-        domain::{
-            OrderUid,
-            eth::{TokenAddress, TokenAmount},
-            settlement::transaction::EncodedTrade,
-        },
+        domain::{OrderUid, settlement::transaction::EncodedTrade},
         infra::persistence::dto::AuctionId,
     },
     chain::Chain,
-    database::solver_competition::Solution,
+    database::{orders::OrderKind, solver_competition::Solution},
     number::conversions::big_decimal_to_u256,
 };
 pub use {auction::Auction, observer::Observer, trade::Trade, transaction::Transaction};
@@ -202,31 +198,25 @@ impl Settlement {
     }
 }
 
-#[derive(Hash, Eq, PartialEq)]
+#[derive(Debug, Hash, Eq, PartialEq)]
 struct OrderMatchKey {
     uid: OrderUid,
-    sell: eth::Asset,
-    buy: eth::Asset,
+    executed: eth::U256,
 }
 
 fn trade_to_key(trade: &EncodedTrade) -> OrderMatchKey {
     OrderMatchKey {
         uid: trade.uid,
-        sell: trade.sell,
-        buy: trade.buy,
+        executed: trade.executed.0,
     }
 }
 
 fn order_to_key(order: &database::solver_competition::Order) -> OrderMatchKey {
     OrderMatchKey {
         uid: OrderUid(order.uid.0),
-        sell: eth::Asset {
-            amount: TokenAmount(big_decimal_to_u256(&order.limit_sell).unwrap_or_default()),
-            token: TokenAddress(eth::H160(order.sell_token.0)),
-        },
-        buy: eth::Asset {
-            amount: TokenAmount(big_decimal_to_u256(&order.limit_buy).unwrap_or_default()),
-            token: TokenAddress(eth::H160(order.buy_token.0)),
+        executed: match order.side {
+            OrderKind::Sell => big_decimal_to_u256(&order.executed_sell).unwrap_or_default(),
+            OrderKind::Buy => big_decimal_to_u256(&order.executed_buy).unwrap_or_default(),
         },
     }
 }
