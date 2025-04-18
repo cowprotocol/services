@@ -490,6 +490,19 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
         big_decimal_to_big_uint(&solver_order_b.executed_buy).unwrap(),
         order_b_settled.metadata.executed_buy_amount
     );
+
+    // Ensure all the reference scores are indexed
+    let reference_scores = database::reference_scores::fetch(&mut ex, competition.auction_id)
+        .await
+        .unwrap();
+    reference_scores
+        .iter()
+        .find(|score| score.solver == ByteArray(solver_a.address().0))
+        .unwrap();
+    reference_scores
+        .iter()
+        .find(|score| score.solver == ByteArray(solver_b.address().0))
+        .unwrap();
 }
 
 async fn too_many_limit_orders_test(web3: Web3) {

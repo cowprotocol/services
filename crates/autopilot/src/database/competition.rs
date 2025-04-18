@@ -6,7 +6,7 @@ use {
         auction_participants::Participant,
         auction_prices::AuctionPrice,
         byte_array::ByteArray,
-        settlement_scores::Score,
+        reference_scores::Score,
         surplus_capturing_jit_order_owners,
     },
     derive_more::Debug,
@@ -19,9 +19,7 @@ use {
 #[derive(Clone, Default, Debug)]
 pub struct Competition {
     pub auction_id: AuctionId,
-    pub winner: H160,
-    pub winning_score: U256,
-    pub reference_score: U256,
+    pub reference_scores: Vec<ReferenceScore>,
     /// Addresses to which the CIP20 participation rewards will be payed out.
     /// Usually the same as the solver addresses.
     pub participants: HashSet<H160>,
@@ -32,6 +30,12 @@ pub struct Competition {
     pub block_deadline: u64,
     pub competition_simulation_block: u64,
     pub competition_table: SolverCompetitionDB,
+}
+
+#[derive(Clone, Default, Debug)]
+pub struct ReferenceScore {
+    pub solver: H160,
+    pub reference_score: U256,
 }
 
 impl super::Postgres {
@@ -53,25 +57,19 @@ impl super::Postgres {
         .await
         .context("solver_competition::save_solver_competition")?;
 
-        database::settlement_scores::insert(
-            &mut ex,
-            Score {
+        let reference_scores = competition
+            .reference_scores
+            .iter()
+            .map(|score| Score {
                 auction_id: competition.auction_id,
-                winner: ByteArray(competition.winner.0),
-                winning_score: u256_to_big_decimal(&competition.winning_score),
-                reference_score: u256_to_big_decimal(&competition.reference_score),
-                block_deadline: competition
-                    .block_deadline
-                    .try_into()
-                    .context("convert block deadline")?,
-                simulation_block: competition
-                    .competition_simulation_block
-                    .try_into()
-                    .context("convert simulation block")?,
-            },
-        )
-        .await
-        .context("settlement_scores::insert")?;
+                solver: ByteArray(score.solver.0),
+                reference_score: u256_to_big_decimal(&score.reference_score),
+            })
+            .collect::<Vec<_>>();
+
+        database::reference_scores::insert(&mut ex, &reference_scores)
+            .await
+            .context("settlement_scores::insert")?;
 
         database::auction_participants::insert(
             &mut ex,
