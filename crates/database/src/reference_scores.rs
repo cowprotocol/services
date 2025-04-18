@@ -13,7 +13,7 @@ pub struct Score {
 }
 
 pub async fn insert(ex: &mut PgTransaction<'_>, scores: &[Score]) -> Result<(), sqlx::Error> {
-    const QUERY: &str = r#"INSERT INTO reference_scores (auction_id, solver, reference_score) "#;
+    const QUERY: &str = "INSERT INTO reference_scores (auction_id, solver, reference_score) ";
 
     let mut query_builder = QueryBuilder::new(QUERY);
     query_builder.push_values(scores, |mut builder, score| {
