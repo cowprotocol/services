@@ -1124,12 +1124,13 @@ mod tests {
         let uid = OrderUid([0x42; 56]);
         let order = Order {
             data: OrderData {
-                valid_to: u32::MAX,
+                valid_to: 0,
                 ..Default::default()
             },
             metadata: OrderMetadata {
                 uid,
                 quote: Some(quote.try_to_model_order_quote().unwrap()),
+                status: OrderStatus::Expired,
                 ..Default::default()
             },
             interactions: Interactions {
@@ -1190,12 +1191,13 @@ mod tests {
         let uid = OrderUid([0x42; 56]);
         let order = Order {
             data: OrderData {
-                valid_to: u32::MAX,
+                valid_to: 0,
                 ..Default::default()
             },
             metadata: OrderMetadata {
                 uid,
                 quote: Some(quote.try_to_model_order_quote().unwrap()),
+                status: OrderStatus::Expired,
                 ..Default::default()
             },
             ..Default::default()
