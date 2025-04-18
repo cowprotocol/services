@@ -22,6 +22,10 @@ pub struct Metrics {
     /// statistics.
     #[metric(labels("solver", "reason"))]
     pub banned_solver: prometheus::IntCounterVec,
+
+    /// Tracks settlements that couldn't be matched to the database solutions.
+    #[metric(labels("solver"))]
+    pub inconsistent_settlements: prometheus::IntCounterVec,
 }
 
 impl Metrics {

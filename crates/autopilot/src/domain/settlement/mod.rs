@@ -18,7 +18,7 @@ mod trade;
 mod transaction;
 use {
     crate::{
-        domain::{OrderUid, settlement::transaction::EncodedTrade},
+        domain::{Metrics, OrderUid, settlement::transaction::EncodedTrade},
         infra::persistence::dto::AuctionId,
     },
     chain::Chain,
@@ -178,6 +178,10 @@ impl Settlement {
         let Some(solution_uid) =
             find_winning_solution_uid(&solver_winning_solutions, &settled_trades)
         else {
+            Metrics::get()
+                .inconsistent_settlements
+                .with_label_values(&[&format!("{:?}", settled.solver.0)])
+                .inc();
             return Err(Error::InconsistentData(InconsistentData::SolutionNotFound));
         };
 
