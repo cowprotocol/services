@@ -539,6 +539,7 @@ fn full_order_with_quote_into_model_order(
         sender: onchain_user,
         placement_error: onchain_placement_error,
     });
+
     let metadata = OrderMetadata {
         creation_date: order.creation_timestamp,
         owner: H160(order.owner.0),
@@ -573,7 +574,9 @@ fn full_order_with_quote_into_model_order(
             .map(String::from_utf8)
             .transpose()
             .context("full app data isn't utf-8")?,
-        quote: quote.map(order_quote_into_model).transpose()?,
+        quote: quote
+            .map(|q| order_quote_into_model(q, status))
+            .transpose()?,
     };
     let data = OrderData {
         sell_token: H160(order.sell_token.0),
@@ -1121,12 +1124,13 @@ mod tests {
         let uid = OrderUid([0x42; 56]);
         let order = Order {
             data: OrderData {
-                valid_to: u32::MAX,
+                valid_to: 0,
                 ..Default::default()
             },
             metadata: OrderMetadata {
                 uid,
                 quote: Some(quote.try_to_model_order_quote().unwrap()),
+                status: OrderStatus::Expired,
                 ..Default::default()
             },
             interactions: Interactions {
@@ -1187,12 +1191,13 @@ mod tests {
         let uid = OrderUid([0x42; 56]);
         let order = Order {
             data: OrderData {
-                valid_to: u32::MAX,
+                valid_to: 0,
                 ..Default::default()
             },
             metadata: OrderMetadata {
                 uid,
                 quote: Some(quote.try_to_model_order_quote().unwrap()),
+                status: OrderStatus::Expired,
                 ..Default::default()
             },
             ..Default::default()
