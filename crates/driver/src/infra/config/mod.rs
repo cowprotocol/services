@@ -31,5 +31,4 @@ pub struct Config {
     pub archive_node_url: Option<Url>,
     pub simulation_bad_token_max_age: Duration,
     pub app_data_fetching: AppDataFetching,
-    pub buy_order_scoring_change_cutover: chrono::DateTime<chrono::Utc>,
 }

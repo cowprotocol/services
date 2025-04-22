@@ -32,15 +32,8 @@ use {
 pub fn compute_score(
     trades: &[Trade],
     native_prices: &auction::Prices,
-    use_new_logic: bool,
 ) -> Result<eth::Ether, Error> {
-    trades
-        .iter()
-        .map(|trade| match use_new_logic {
-            true => trade.score(native_prices),
-            false => trade.score_old(native_prices),
-        })
-        .sum()
+    trades.iter().map(|trade| trade.score(native_prices)).sum()
 }
 
 // Trade represents a single trade in a settlement.
@@ -124,38 +117,6 @@ impl Trade {
 
                 // Afterwards we convert the buy token surplus to the native token.
                 native_price_buy.in_eth(surplus_in_buy_tokens.into())
-            }
-        };
-        Ok(score)
-    }
-
-    /// Score defined as (surplus + protocol fees) per CIP-38.
-    ///
-    /// [CIP-38](https://forum.cow.fi/t/cip-38-solver-computed-fees-rank-by-surplus/2061>) as the
-    ///
-    /// Denominated in NATIVE token
-    // TODO: replace once we completely switch to new method.
-    fn score_old(&self, native_prices: &auction::Prices) -> Result<eth::Ether, Error> {
-        tracing::debug!("Scoring trade {:?}", self);
-
-        let surplus_in_surplus_token = self
-            .user_surplus()?
-            .0
-            .checked_add(self.fees()?.0)
-            .ok_or(Error::Math(Math::Overflow))?;
-
-        let score = match self.side {
-            Side::Sell => {
-                let native_price_buy = native_prices
-                    .get(&self.signed_buy.token)
-                    .ok_or(Error::MissingPrice(self.signed_buy.token))?;
-                native_price_buy.in_eth(eth::TokenAmount(surplus_in_surplus_token))
-            }
-            Side::Buy => {
-                let native_price_sell = native_prices
-                    .get(&self.signed_sell.token)
-                    .ok_or(Error::MissingPrice(self.signed_sell.token))?;
-                native_price_sell.in_eth(eth::TokenAmount(surplus_in_surplus_token))
             }
         };
         Ok(score)
@@ -480,13 +441,7 @@ mod tests {
         .into_iter()
         .collect();
 
-        let old_score = trade.score_old(&native_prices).unwrap();
-        // the actual score of the solution was 19729793891650888
-        // (~0.02 ETH) but our result is slightly different
-        // because we ignored fees.
-        assert_eq!(old_score.0, 19731899115084598u128.into());
-
-        let new_score = trade.score(&native_prices).unwrap();
-        assert_eq!(new_score.0, 911.into());
+        let score = trade.score(&native_prices).unwrap();
+        assert_eq!(score.0, 911.into());
     }
 }
