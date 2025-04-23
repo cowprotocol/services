@@ -5,10 +5,12 @@ use {
     std::collections::HashMap,
 };
 
+mod auction_mechanism;
 mod participant;
 mod participation_guard;
 
 pub use {
+    auction_mechanism::{AuctionMechanism, SingleWinnerAuctionMechanism},
     participant::{Participant, Ranked, Unranked},
     participation_guard::SolverParticipationGuard,
 };
