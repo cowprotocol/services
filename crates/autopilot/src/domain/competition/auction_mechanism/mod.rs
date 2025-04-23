@@ -6,6 +6,19 @@ use {
     std::collections::{HashMap, HashSet},
 };
 
+#[derive(Debug, thiserror::Error)]
+#[error("no winners found")]
+pub struct NoWinners;
+
+#[derive(Clone, Default, Debug)]
+pub struct ComputedScores {
+    // TODO: for now we specify a single winner as the database still expectes it
+    // After https://github.com/cowprotocol/services/issues/3350, it will no longer be necessary and we will be able to return only the vec or ReferenceScore
+    pub winner: H160,
+    pub winning_score: U256,
+    pub reference_scores: Vec<ReferenceScore>,
+}
+
 #[derive(Clone, Default, Debug)]
 pub struct ReferenceScore {
     pub solver: H160,
@@ -20,12 +33,12 @@ pub trait AuctionMechanism {
         auction: &Auction,
         solutions: &[Participant<Unranked>],
     ) -> Vec<Participant<Unranked>>;
-    fn select_winners(&self, solutions: Vec<Participant<Unranked>>) -> Vec<Participant>;
+    fn select_winners(&self, solutions: &[Participant<Unranked>]) -> Vec<Participant>;
     fn compute_scores(
         &self,
-        winners: Vec<Participant<Unranked>>,
-        filtered_solutions: Vec<Participant<Unranked>>,
-    ) -> Vec<ReferenceScore>;
+        winners: &[Participant],
+        solutions: &[Participant],
+    ) -> Result<ComputedScores, NoWinners>;
 }
 
 pub struct SingleWinnerAuctionMechanism {
@@ -183,7 +196,7 @@ impl AuctionMechanism for SingleWinnerAuctionMechanism {
             .collect()
     }
 
-    fn select_winners(&self, solutions: Vec<Participant<Unranked>>) -> Vec<Participant> {
+    fn select_winners(&self, solutions: &[Participant<Unranked>]) -> Vec<Participant> {
         // Winners are selected one by one, starting from the best solution,
         // until `max_winners_per_auction` are selected. The solution is a winner
         // if it swaps tokens that are not yet swapped by any previously processed
@@ -192,7 +205,7 @@ impl AuctionMechanism for SingleWinnerAuctionMechanism {
         let mut already_swapped_tokens = HashSet::new();
         let mut winners = 0;
         solutions
-            .into_iter()
+            .iter()
             .map(|participant| {
                 let swapped_tokens = participant
                     .solution()
@@ -212,16 +225,37 @@ impl AuctionMechanism for SingleWinnerAuctionMechanism {
                 already_swapped_tokens.extend(swapped_tokens);
                 winners += usize::from(is_winner);
 
-                participant.rank(is_winner)
+                participant.clone().rank(is_winner)
             })
             .collect()
     }
 
     fn compute_scores(
         &self,
-        _winners: Vec<Participant<Unranked>>,
-        _filtered_solutions: Vec<Participant<Unranked>>,
-    ) -> Vec<ReferenceScore> {
-        todo!()
+        winners: &[Participant],
+        _solutions: &[Participant],
+    ) -> Result<ComputedScores, NoWinners> {
+        let Some(winning_solution) = winners
+            .iter()
+            .find(|participant| participant.is_winner())
+            .map(|participant| participant.solution())
+        else {
+            return Err(NoWinners);
+        };
+        let winner = winning_solution.solver().into();
+        let winning_score = winning_solution.score().get().0;
+        let reference_score = winners
+            .get(1)
+            .map(|participant| participant.solution().score().get().0)
+            .unwrap_or_default();
+
+        Ok(ComputedScores {
+            winner,
+            winning_score,
+            reference_scores: vec![ReferenceScore {
+                solver: winner,
+                reference_score,
+            }],
+        })
     }
 }

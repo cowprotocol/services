@@ -10,7 +10,12 @@ mod participant;
 mod participation_guard;
 
 pub use {
-    auction_mechanism::{AuctionMechanism, SingleWinnerAuctionMechanism},
+    auction_mechanism::{
+        AuctionMechanism,
+        ComputedScores,
+        ReferenceScore,
+        SingleWinnerAuctionMechanism,
+    },
     participant::{Participant, Ranked, Unranked},
     participation_guard::SolverParticipationGuard,
 };

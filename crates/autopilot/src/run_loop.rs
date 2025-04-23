@@ -8,6 +8,7 @@ use {
             competition::{
                 self,
                 AuctionMechanism,
+                ComputedScores,
                 Solution,
                 SolutionError,
                 SolverParticipationGuard,
@@ -368,20 +369,16 @@ impl<T: AuctionMechanism + Send + Sync + 'static> RunLoop<T> {
         let start = Instant::now();
         // TODO: Support multiple winners
         // https://github.com/cowprotocol/services/issues/3021
-        let Some(winning_solution) = solutions
-            .iter()
-            .find(|participant| participant.is_winner())
-            .map(|participant| participant.solution())
-        else {
-            return Err(anyhow::anyhow!("no winners found"));
-        };
-        let winner = winning_solution.solver().into();
-        let winning_score = winning_solution.score().get().0;
-        let reference_score = solutions
-            // todo multiple winners per auction
-            .get(1)
-            .map(|participant| participant.solution().score().get().0)
+        let ComputedScores {
+            winner,
+            winning_score,
+            reference_scores,
+        } = self.auction_mechanism.compute_scores(solutions, &[])?;
+        let reference_score = reference_scores
+            .first()
+            .map(|s| s.reference_score)
             .unwrap_or_default();
+
         let participants = solutions
             .iter()
             .map(|participant| participant.solution().solver().into())
@@ -531,8 +528,8 @@ impl<T: AuctionMechanism + Send + Sync + 'static> RunLoop<T> {
         .collect::<Vec<_>>();
 
         let filtered_solutions = self.auction_mechanism.filter_solutions(auction, &solutions);
-        
-        self.auction_mechanism.select_winners(filtered_solutions)
+
+        self.auction_mechanism.select_winners(&filtered_solutions)
     }
 
     /// Sends a `/solve` request to the driver and manages all error cases and
