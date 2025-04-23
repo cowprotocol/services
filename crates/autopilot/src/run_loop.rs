@@ -531,40 +531,8 @@ impl<T: AuctionMechanism + Send + Sync + 'static> RunLoop<T> {
         .collect::<Vec<_>>();
 
         let filtered_solutions = self.auction_mechanism.filter_solutions(auction, &solutions);
-
-        // Winners are selected one by one, starting from the best solution,
-        // until `max_winners_per_auction` are selected. The solution is a winner
-        // if it swaps tokens that are not yet swapped by any previously processed
-        // solution.
-        let wrapped_native_token = self.eth.contracts().wrapped_native_token();
-        let mut already_swapped_tokens = HashSet::new();
-        let mut winners = 0;
-        let solutions = filtered_solutions
-            .into_iter()
-            .map(|participant| {
-                let swapped_tokens = participant
-                    .solution()
-                    .orders()
-                    .iter()
-                    .flat_map(|(_, order)| {
-                        [
-                            order.sell.token.as_erc20(wrapped_native_token),
-                            order.buy.token.as_erc20(wrapped_native_token),
-                        ]
-                    })
-                    .collect::<HashSet<_>>();
-
-                let is_winner = swapped_tokens.is_disjoint(&already_swapped_tokens)
-                    && winners < self.config.max_winners_per_auction;
-
-                already_swapped_tokens.extend(swapped_tokens);
-                winners += usize::from(is_winner);
-
-                participant.rank(is_winner)
-            })
-            .collect();
-
-        solutions
+        
+        self.auction_mechanism.select_winners(filtered_solutions)
     }
 
     /// Sends a `/solve` request to the driver and manages all error cases and

@@ -1,9 +1,9 @@
 use {
     super::{Participant, TradedOrder, Unranked},
-    crate::domain::Auction,
+    crate::{domain::Auction, infra},
     primitive_types::{H160, U256},
     rand::seq::SliceRandom,
-    std::collections::HashMap,
+    std::collections::{HashMap, HashSet},
 };
 
 #[derive(Clone, Default, Debug)]
@@ -20,7 +20,7 @@ pub trait AuctionMechanism {
         auction: &Auction,
         solutions: &[Participant<Unranked>],
     ) -> Vec<Participant<Unranked>>;
-    fn select_winners(&self, solutions: Vec<Participant<Unranked>>) -> Vec<Participant<Unranked>>;
+    fn select_winners(&self, solutions: Vec<Participant<Unranked>>) -> Vec<Participant>;
     fn compute_scores(
         &self,
         winners: Vec<Participant<Unranked>>,
@@ -29,16 +29,12 @@ pub trait AuctionMechanism {
 }
 
 pub struct SingleWinnerAuctionMechanism {
-    max_solutions_per_solver: usize,
+    pub eth: infra::Ethereum,
+    pub max_solutions_per_solver: usize,
+    pub max_winners_per_auction: usize,
 }
 
 impl SingleWinnerAuctionMechanism {
-    pub fn new(max_solutions_per_solver: usize) -> Self {
-        Self {
-            max_solutions_per_solver,
-        }
-    }
-
     /// Returns true if solution is fair to other solutions
     fn is_solution_fair(
         solution: &Participant<Unranked>,
@@ -187,8 +183,38 @@ impl AuctionMechanism for SingleWinnerAuctionMechanism {
             .collect()
     }
 
-    fn select_winners(&self, _solutions: Vec<Participant<Unranked>>) -> Vec<Participant<Unranked>> {
-        todo!()
+    fn select_winners(&self, solutions: Vec<Participant<Unranked>>) -> Vec<Participant> {
+        // Winners are selected one by one, starting from the best solution,
+        // until `max_winners_per_auction` are selected. The solution is a winner
+        // if it swaps tokens that are not yet swapped by any previously processed
+        // solution.
+        let wrapped_native_token = self.eth.contracts().wrapped_native_token();
+        let mut already_swapped_tokens = HashSet::new();
+        let mut winners = 0;
+        solutions
+            .into_iter()
+            .map(|participant| {
+                let swapped_tokens = participant
+                    .solution()
+                    .orders()
+                    .iter()
+                    .flat_map(|(_, order)| {
+                        [
+                            order.sell.token.as_erc20(wrapped_native_token),
+                            order.buy.token.as_erc20(wrapped_native_token),
+                        ]
+                    })
+                    .collect::<HashSet<_>>();
+
+                let is_winner = swapped_tokens.is_disjoint(&already_swapped_tokens)
+                    && winners < self.max_winners_per_auction;
+
+                already_swapped_tokens.extend(swapped_tokens);
+                winners += usize::from(is_winner);
+
+                participant.rank(is_winner)
+            })
+            .collect()
     }
 
     fn compute_scores(

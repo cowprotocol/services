@@ -604,8 +604,11 @@ pub async fn run(args: Arguments) {
         drivers.iter().cloned(),
     );
 
-    let auction_mechanism =
-        SingleWinnerAuctionMechanism::new(run_loop_config.max_winners_per_auction);
+    let auction_mechanism = SingleWinnerAuctionMechanism {
+        eth: eth.clone(),
+        max_solutions_per_solver: run_loop_config.max_solutions_per_solver,
+        max_winners_per_auction: run_loop_config.max_winners_per_auction,
+    };
 
     let run = RunLoop::new(
         run_loop_config,
