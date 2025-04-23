@@ -373,7 +373,7 @@ impl<T: AuctionMechanism + Send + Sync + 'static> RunLoop<T> {
             winner,
             winning_score,
             reference_scores,
-        } = self.auction_mechanism.compute_scores(solutions, &[])?;
+        } = self.auction_mechanism.compute_scores(solutions)?;
         let reference_score = reference_scores
             .first()
             .map(|s| s.reference_score)
@@ -528,7 +528,6 @@ impl<T: AuctionMechanism + Send + Sync + 'static> RunLoop<T> {
         .collect::<Vec<_>>();
 
         let filtered_solutions = self.auction_mechanism.filter_solutions(auction, &solutions);
-
         self.auction_mechanism.select_winners(&filtered_solutions)
     }
 

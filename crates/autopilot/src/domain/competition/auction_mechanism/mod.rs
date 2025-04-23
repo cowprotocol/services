@@ -34,11 +34,7 @@ pub trait AuctionMechanism {
         solutions: &[Participant<Unranked>],
     ) -> Vec<Participant<Unranked>>;
     fn select_winners(&self, solutions: &[Participant<Unranked>]) -> Vec<Participant>;
-    fn compute_scores(
-        &self,
-        winners: &[Participant],
-        solutions: &[Participant],
-    ) -> Result<ComputedScores, NoWinners>;
+    fn compute_scores(&self, solutions: &[Participant]) -> Result<ComputedScores, NoWinners>;
 }
 
 pub struct SingleWinnerAuctionMechanism {
@@ -230,12 +226,8 @@ impl AuctionMechanism for SingleWinnerAuctionMechanism {
             .collect()
     }
 
-    fn compute_scores(
-        &self,
-        winners: &[Participant],
-        _solutions: &[Participant],
-    ) -> Result<ComputedScores, NoWinners> {
-        let Some(winning_solution) = winners
+    fn compute_scores(&self, solutions: &[Participant]) -> Result<ComputedScores, NoWinners> {
+        let Some(winning_solution) = solutions
             .iter()
             .find(|participant| participant.is_winner())
             .map(|participant| participant.solution())
@@ -244,7 +236,7 @@ impl AuctionMechanism for SingleWinnerAuctionMechanism {
         };
         let winner = winning_solution.solver().into();
         let winning_score = winning_solution.score().get().0;
-        let reference_score = winners
+        let reference_score = solutions
             .get(1)
             .map(|participant| participant.solution().score().get().0)
             .unwrap_or_default();
