@@ -28,12 +28,19 @@ pub struct ReferenceScore {
 /// The following trait allows to implement custom auction mechanism logic
 /// for competitions.
 pub trait AuctionMechanism {
+    /// Filters out invalid or unfair solutions.
     fn filter_solutions(
         &self,
         auction: &Auction,
         solutions: &[Participant<Unranked>],
     ) -> Vec<Participant<Unranked>>;
+
+    /// Selects the winners from a list of unranked solutions.
+    ///
+    /// Returns the list of solutions with the winners marked.
     fn select_winners(&self, solutions: &[Participant<Unranked>]) -> Vec<Participant>;
+
+    /// Computes the scores of all provided solutions.
     fn compute_scores(&self, solutions: &[Participant]) -> Result<ComputedScores, NoWinners>;
 }
 
