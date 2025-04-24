@@ -350,26 +350,6 @@ async fn save_jit_orders(
     Ok(())
 }
 
-pub async fn fetch(
-    ex: &mut PgConnection,
-    auction_id: AuctionId,
-) -> Result<Vec<Solution>, sqlx::Error> {
-    const WHERE_CLAUSE: &str = "WHERE ps.auction_id = $1";
-
-    fetch_solutions_by_condition(ex, WHERE_CLAUSE, |q| q.bind(auction_id)).await
-}
-
-pub async fn fetch_solver_winning_solutions(
-    ex: &mut PgConnection,
-    auction_id: AuctionId,
-    solver: Address,
-) -> Result<Vec<Solution>, sqlx::Error> {
-    const WHERE_CLAUSE: &str =
-        "WHERE ps.auction_id = $1 AND ps.solver = $2 AND ps.is_winner = TRUE";
-
-    fetch_solutions_by_condition(ex, WHERE_CLAUSE, |q| q.bind(auction_id).bind(solver)).await
-}
-
 #[derive(sqlx::FromRow)]
 struct SolutionRow {
     uid: i64,
@@ -390,7 +370,7 @@ struct SolutionRow {
 }
 
 const BASE_SOLUTIONS_QUERY: &str = r#"
-    SELECT 
+    SELECT
         ps.uid, ps.id, ps.solver, ps.is_winner, ps.score, ps.price_tokens, ps.price_values,
         pse.order_uid, pse.executed_sell, pse.executed_buy,
         COALESCE(pjo.sell_token, o.sell_token) AS sell_token,
@@ -407,22 +387,32 @@ const BASE_SOLUTIONS_QUERY: &str = r#"
         ON pse.order_uid = o.uid
 "#;
 
-async fn fetch_solutions_by_condition(
+pub async fn fetch(
     ex: &mut PgConnection,
-    where_clause: &str,
-    bind_params: impl FnOnce(
-        sqlx::query::QueryAs<'_, sqlx::Postgres, SolutionRow, sqlx::postgres::PgArguments>,
-    ) -> sqlx::query::QueryAs<
-        '_,
-        sqlx::Postgres,
-        SolutionRow,
-        sqlx::postgres::PgArguments,
-    >,
+    auction_id: AuctionId,
 ) -> Result<Vec<Solution>, sqlx::Error> {
-    let query_str = format!("{BASE_SOLUTIONS_QUERY} {where_clause}");
-    let query = sqlx::query_as::<_, SolutionRow>(&query_str);
-    let rows = bind_params(query).fetch_all(ex).await?;
+    let query_str = format!("{BASE_SOLUTIONS_QUERY} WHERE ps.auction_id = $1");
+    let query = sqlx::query_as::<_, SolutionRow>(&query_str).bind(auction_id);
 
+    map_rows_to_solutions(query.fetch_all(ex).await?)
+}
+
+pub async fn fetch_solver_winning_solutions(
+    ex: &mut PgConnection,
+    auction_id: AuctionId,
+    solver: Address,
+) -> Result<Vec<Solution>, sqlx::Error> {
+    let query_str = format!(
+        r#"{BASE_SOLUTIONS_QUERY} WHERE ps.auction_id = $1 AND ps.solver = $2 AND ps.is_winner = TRUE"#
+    );
+    let query = sqlx::query_as::<_, SolutionRow>(&query_str)
+        .bind(auction_id)
+        .bind(solver);
+
+    map_rows_to_solutions(query.fetch_all(ex).await?)
+}
+
+fn map_rows_to_solutions(rows: Vec<SolutionRow>) -> Result<Vec<Solution>, sqlx::Error> {
     let mut solutions_map = std::collections::HashMap::new();
 
     for row in rows {
