@@ -5,10 +5,13 @@
 
 use {
     crate::{
-        domain::{self, eth},
-        infra,
+        domain::{self, Metrics, OrderUid, eth, settlement::transaction::EncodedTrade},
+        infra::{self, persistence::dto::AuctionId},
     },
+    chain::Chain,
     chrono::{DateTime, Utc},
+    database::{orders::OrderKind, solver_competition::Solution},
+    number::conversions::big_decimal_to_u256,
     std::collections::{HashMap, HashSet},
 };
 
@@ -16,15 +19,6 @@ mod auction;
 mod observer;
 mod trade;
 mod transaction;
-use {
-    crate::{
-        domain::{Metrics, OrderUid, settlement::transaction::EncodedTrade},
-        infra::persistence::dto::AuctionId,
-    },
-    chain::Chain,
-    database::{orders::OrderKind, solver_competition::Solution},
-    number::conversions::big_decimal_to_u256,
-};
 pub use {auction::Auction, observer::Observer, trade::Trade, transaction::Transaction};
 
 /// A settled transaction together with the `Auction`, for which it was executed
