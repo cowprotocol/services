@@ -5,10 +5,20 @@
 
 use {
     crate::{
-        domain::{self, eth},
-        infra,
+        domain::{
+            self,
+            Metrics,
+            OrderUid,
+            auction::order,
+            eth,
+            settlement::transaction::EncodedTrade,
+        },
+        infra::{self, persistence::dto::AuctionId},
     },
+    chain::Chain,
     chrono::{DateTime, Utc},
+    database::{orders::OrderKind, solver_competition::Solution},
+    number::conversions::big_decimal_to_u256,
     std::collections::{HashMap, HashSet},
 };
 
@@ -16,15 +26,6 @@ mod auction;
 mod observer;
 mod trade;
 mod transaction;
-use {
-    crate::{
-        domain::{OrderUid, settlement::transaction::EncodedTrade},
-        infra::persistence::dto::AuctionId,
-    },
-    chain::Chain,
-    database::{orders::OrderKind, solver_competition::Solution},
-    number::conversions::big_decimal_to_u256,
-};
 pub use {auction::Auction, observer::Observer, trade::Trade, transaction::Transaction};
 
 /// A settled transaction together with the `Auction`, for which it was executed
@@ -172,16 +173,20 @@ impl Settlement {
             return Err(Error::WrongEnvironment);
         }
 
-        // Do that check only if we are sure the settlement is from the current
+        // Check this only if we are sure the settlement is from the current
         // environment.
-        let settled_trades = settled.trades;
         let Some(solution_uid) =
-            find_winning_solution_uid(&solver_winning_solutions, &settled_trades)
+            find_winning_solution_uid(&solver_winning_solutions, &settled.trades)
         else {
+            Metrics::get()
+                .inconsistent_settlements
+                .with_label_values(&[&format!("{:?}", settled.solver.0)])
+                .inc();
             return Err(Error::InconsistentData(InconsistentData::SolutionNotFound));
         };
 
-        let trades = settled_trades
+        let trades = settled
+            .trades
             .into_iter()
             .map(|trade| Trade::new(trade, &auction, settled.timestamp))
             .collect();
@@ -201,12 +206,17 @@ impl Settlement {
 #[derive(Debug, Hash, Eq, PartialEq)]
 struct OrderMatchKey {
     uid: OrderUid,
+    token: eth::TokenAddress,
     executed: eth::U256,
 }
 
 fn trade_to_key(trade: &EncodedTrade) -> OrderMatchKey {
     OrderMatchKey {
         uid: trade.uid,
+        token: match trade.side {
+            order::Side::Sell => trade.sell.token,
+            order::Side::Buy => trade.buy.token,
+        },
         executed: trade.executed.0,
     }
 }
@@ -214,6 +224,10 @@ fn trade_to_key(trade: &EncodedTrade) -> OrderMatchKey {
 fn order_to_key(order: &database::solver_competition::Order) -> OrderMatchKey {
     OrderMatchKey {
         uid: OrderUid(order.uid.0),
+        token: match order.side {
+            OrderKind::Sell => eth::H160(order.sell_token.0).into(),
+            OrderKind::Buy => eth::H160(order.buy_token.0).into(),
+        },
         executed: match order.side {
             OrderKind::Sell => big_decimal_to_u256(&order.executed_sell).unwrap_or_default(),
             OrderKind::Buy => big_decimal_to_u256(&order.executed_buy).unwrap_or_default(),
@@ -223,7 +237,7 @@ fn order_to_key(order: &database::solver_competition::Order) -> OrderMatchKey {
 
 /// Finds a winning solution UID for a given set of trades by comparing the
 /// order UID and the sell/buy token with their executed amounts.
-pub fn find_winning_solution_uid(
+fn find_winning_solution_uid(
     solver_winning_solutions: &[Solution],
     settled_trades: &[EncodedTrade],
 ) -> Option<i64> {

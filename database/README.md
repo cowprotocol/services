@@ -438,7 +438,7 @@ Stores data and metadata of [`Settlement`](https://github.com/cowprotocol/contra
 ---------------|--------|----------|--------
  block\_number | bigint | not null | block in which the settlement happened
  log\_index    | bigint | not null | index in which the event was emitted
- solver        | bytea  | nullable | public address of the executing solver
+ solver        | bytea  | not null | public address of the executing solver
  tx\_hash      | bytea  | not null | transaction hash in which the settlement got executed
  tx\_from      | bytea  | nullable | address that submitted the transaction (same as `solver`)
  tx\_nonce     | bigint | nullable | nonce that was used to submit the transaction
