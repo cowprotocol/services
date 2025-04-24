@@ -57,7 +57,6 @@ SELECT sc.json, sc.id, COALESCE(ARRAY_AGG(s.tx_hash) FILTER (WHERE s.solution_ui
 FROM solver_competitions sc
 -- outer joins because the data might not have been indexed yet
 LEFT OUTER JOIN settlements s ON sc.id = s.auction_id
--- exclude settlements from another environment for which observation is guaranteed to not exist
 GROUP BY sc.id
 ORDER BY sc.id DESC
 LIMIT $1
