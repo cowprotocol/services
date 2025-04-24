@@ -399,24 +399,6 @@ Solvers report orders they solved on each competition. Orders that don't exist i
 Indexes:
 - PRIMARY KEY: btree(`auction_id`, `solution_uid`, `order_uid`)
 
-### settlement\_observations
-
-During the solver competition solvers promise a solution of a certain quality. If the settlement that eventually gets executed on-chain is worse than what was promised solvers can get slashed. This table stores the quality of the solution that was actually observed on-chain. (see [CIP-20](https://snapshot.org/#/cow.eth/proposal/0x2d3f9bd1ea72dca84b03e97dda3efc1f4a42a772c54bd2037e8b62e7d09a491f))
-This table is not read by the backend service but is meant for other services, such as the circuit breaker, to verify the quality of promised solutions.
-
- Column                | Type    | Nullable | Details
------------------------|---------|----------|--------
- block\_number         | bigint  | not null | block in which the settlement happened
- log\_index            | bigint  | not null | index of the [`Settlement`](https://github.com/cowprotocol/contracts/blob/main/src/contracts/GPv2Settlement.sol#L67-L68) event
- gas\_used             | numeric | not null | amount of gas the settlement consumed
- effective\_gas\_price | numeric | not null | effective gas price (basically the [EIP-1559](https://eips.ethereum.org/EIPS/eip-1559) gas price reduced to a single value)
- surplus               | numeric | not null | amount of tokens users received more than their limit price converted to ETH
- fee                   | numeric | not null | total amount of fees collected in the auction
-
-Indexes:
-- PRIMARY KEY: btree(`block_number`, `log_index`)
-- settlements\_auction\_id: btree(`auction_id`)
-
 ### reference\_scores
 
 Stores reference scores of the winning solvers.
