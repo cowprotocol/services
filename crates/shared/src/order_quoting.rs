@@ -17,7 +17,6 @@ use {
     chrono::{DateTime, Duration, Utc},
     database::quotes::{Quote as QuoteRow, QuoteKind},
     ethcontract::{H160, U256},
-    futures::TryFutureExt as _,
     gas_estimation::GasPriceEstimating,
     model::{
         interaction::InteractionData,
@@ -248,13 +247,33 @@ pub enum CalculateQuoteError {
     SellAmountDoesNotCoverFee { fee_amount: U256 },
 
     #[error("failed to estimate price")]
-    Price(#[from] PriceEstimationError),
+    Price(#[from] PriceEstimationContextError),
 
     #[error("failed to verify quote")]
     QuoteNotVerified,
 
     #[error(transparent)]
     Other(#[from] anyhow::Error),
+}
+
+#[derive(Debug, Error)]
+#[error("estimator {kind:?} failed: {source}")]
+pub struct PriceEstimationContextError {
+    pub kind: EstimatorKind,
+    #[source]
+    pub source: PriceEstimationError,
+}
+
+#[derive(Debug, Error)]
+pub enum EstimatorKind {
+    #[error("Gas")]
+    Gas,
+    #[error("Regular")]
+    Regular,
+    #[error("Native (sell)")]
+    NativeSell,
+    #[error("Native (buy)")]
+    NativeBuy,
 }
 
 #[derive(Error, Debug)]
@@ -419,17 +438,53 @@ impl OrderQuoter {
 
         let trade_query = Arc::new(parameters.to_price_query());
         let (gas_estimate, trade_estimate, sell_token_price, _) = futures::try_join!(
-            self.gas_estimator
-                .estimate()
-                .map_err(PriceEstimationError::ProtocolInternal),
-            self.price_estimator.estimate(trade_query.clone()),
-            self.native_price_estimator
-                .estimate_native_price(parameters.sell_token),
+            async {
+                match self.gas_estimator.estimate().await {
+                    Ok(estimate) => Ok(estimate),
+                    Err(err) => Err(CalculateQuoteError::Price(PriceEstimationContextError {
+                        kind: EstimatorKind::Gas,
+                        source: PriceEstimationError::ProtocolInternal(err),
+                    })),
+                }
+            },
+            async {
+                match self.price_estimator.estimate(trade_query.clone()).await {
+                    Ok(estimate) => Ok(estimate),
+                    Err(err) => Err(CalculateQuoteError::Price(PriceEstimationContextError {
+                        kind: EstimatorKind::Regular,
+                        source: err,
+                    })),
+                }
+            },
+            async {
+                match self
+                    .native_price_estimator
+                    .estimate_native_price(parameters.sell_token)
+                    .await
+                {
+                    Ok(price) => Ok(price),
+                    Err(err) => Err(CalculateQuoteError::Price(PriceEstimationContextError {
+                        kind: EstimatorKind::NativeSell,
+                        source: err,
+                    })),
+                }
+            },
             // We don't care about the native price of the buy_token for the quote but we need it
             // when we build the auction. To prevent creating orders which we can't settle later on
             // we make the native buy_token price a requirement here as well.
-            self.native_price_estimator
-                .estimate_native_price(parameters.buy_token),
+            async {
+                match self
+                    .native_price_estimator
+                    .estimate_native_price(parameters.buy_token)
+                    .await
+                {
+                    Ok(price) => Ok(price),
+                    Err(err) => Err(CalculateQuoteError::Price(PriceEstimationContextError {
+                        kind: EstimatorKind::NativeBuy,
+                        source: err,
+                    })),
+                }
+            },
         )?;
 
         let (quoted_sell_amount, quoted_buy_amount) = match &parameters.side {
@@ -1316,7 +1371,10 @@ mod tests {
 
         assert!(matches!(
             quoter.calculate_quote(parameters).await.unwrap_err(),
-            CalculateQuoteError::Price(PriceEstimationError::NoLiquidity),
+            CalculateQuoteError::Price(PriceEstimationContextError {
+                kind: EstimatorKind::NativeBuy,
+                source: PriceEstimationError::NoLiquidity
+            }),
         ));
     }
 
@@ -1711,8 +1769,8 @@ mod tests {
          "preInteractions":[
          {"target":"0x0303030303030303030303030303030303030303","value":"3","callData":"0x03"},
          {"target":"0x0404040404040404040404040404040404040404","value":"4","callData":"0x04"}],
-         "jitOrders":[{"appData": "0x0000000000000000000000000000000000000000000000000000000000000000", 
-            "buyAmount": "20", "buyToken": "0x0404040404040404040404040404040404040404", "buyTokenDestination": "internal", 
+         "jitOrders":[{"appData": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "buyAmount": "20", "buyToken": "0x0404040404040404040404040404040404040404", "buyTokenDestination": "internal",
             "executedAmount": "11", "partiallyFillable": false, "receiver": "0x0606060606060606060606060606060606060606",
             "sellAmount": "10", "sellToken": "0x0505050505050505050505050505050505050505", "sellTokenSource": "external",
             "side": "sell", "signature": "0x01010101010101010101010101010101", "signingScheme": "eip712", "validTo": 1734084318}]
@@ -1742,13 +1800,13 @@ mod tests {
         "preInteractions":[
         {"target":"0x0303030303030303030303030303030303030303","value":"3","callData":"0x03"},
         {"target":"0x0404040404040404040404040404040404040404","value":"4","callData":"0x04"}],
-        "jitOrders":[{"appData": "0x0000000000000000000000000000000000000000000000000000000000000000", 
-            "buyAmount": "20", "buyToken": "0x0404040404040404040404040404040404040404", "buyTokenDestination": "internal", 
+        "jitOrders":[{"appData": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "buyAmount": "20", "buyToken": "0x0404040404040404040404040404040404040404", "buyTokenDestination": "internal",
             "executedAmount": "11", "partiallyFillable": false, "receiver": "0x0606060606060606060606060606060606060606",
             "sellAmount": "10", "sellToken": "0x0505050505050505050505050505050505050505", "sellTokenSource": "external",
             "side": "sell", "signature": "0x01010101010101010101010101010101", "signingScheme": "eip712", "validTo": 1734084318},
-            {"appData": "0x0ddeb6e4a814908832cc25d11311c514e7efe6af3c9bafeb0d241129cf7f4d83", 
-            "buyAmount": "100", "buyToken": "0x0606060606060606060606060606060606060606", "buyTokenDestination": "erc20", 
+            {"appData": "0x0ddeb6e4a814908832cc25d11311c514e7efe6af3c9bafeb0d241129cf7f4d83",
+            "buyAmount": "100", "buyToken": "0x0606060606060606060606060606060606060606", "buyTokenDestination": "erc20",
             "executedAmount": "99", "partiallyFillable": true, "receiver": "0x0303030303030303030303030303030303030303",
             "sellAmount": "10", "sellToken": "0x0101010101010101010101010101010101010101", "sellTokenSource": "erc20",
             "side": "buy", "signature": "0x01010101010101010101010101010101", "signingScheme": "eip1271", "validTo": 1734085109}]

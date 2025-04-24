@@ -6,6 +6,7 @@ use {
         order_quoting::{
             CalculateQuoteError,
             OrderQuoting,
+            PriceEstimationContextError,
             Quote,
             QuoteParameters,
             QuoteSearchParameters,
@@ -177,17 +178,18 @@ impl From<VerificationError> for ValidationError {
 impl From<CalculateQuoteError> for ValidationError {
     fn from(err: CalculateQuoteError) -> Self {
         match err {
-            CalculateQuoteError::Price(PriceEstimationError::UnsupportedToken {
-                token,
-                reason,
+            CalculateQuoteError::Price(PriceEstimationContextError {
+                source: PriceEstimationError::UnsupportedToken { token, reason },
+                ..
             }) => {
                 ValidationError::Partial(PartialValidationError::UnsupportedToken { token, reason })
             }
-            CalculateQuoteError::Other(err)
-            | CalculateQuoteError::Price(PriceEstimationError::ProtocolInternal(err)) => {
-                ValidationError::Other(err)
-            }
-            CalculateQuoteError::Price(err) => ValidationError::PriceForQuote(err),
+            CalculateQuoteError::Price(PriceEstimationContextError {
+                source: PriceEstimationError::ProtocolInternal(err),
+                ..
+            })
+            | CalculateQuoteError::Other(err) => ValidationError::Other(err),
+            CalculateQuoteError::Price(err) => ValidationError::PriceForQuote(err.source),
             CalculateQuoteError::QuoteNotVerified => ValidationError::QuoteNotVerified,
             // This should never happen because we only calculate quotes with
             // `SellAmount::AfterFee`, meaning that the sell amount does not
@@ -199,7 +201,6 @@ impl From<CalculateQuoteError> for ValidationError {
         }
     }
 }
-
 #[mockall::automock]
 #[async_trait]
 pub trait LimitOrderCounting: Send + Sync {
