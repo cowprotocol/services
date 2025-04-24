@@ -201,6 +201,7 @@ impl From<CalculateQuoteError> for ValidationError {
         }
     }
 }
+
 #[mockall::automock]
 #[async_trait]
 pub trait LimitOrderCounting: Send + Sync {
