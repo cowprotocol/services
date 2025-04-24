@@ -54,7 +54,7 @@ pub struct CalculateQuoteErrorWrapper(CalculateQuoteError);
 impl IntoWarpReply for CalculateQuoteErrorWrapper {
     fn into_warp_reply(self) -> ApiReply {
         match self.0 {
-            CalculateQuoteError::Price(err) => err.source.into_warp_reply(),
+            CalculateQuoteError::Price { source, .. } => source.into_warp_reply(),
             CalculateQuoteError::SellAmountDoesNotCoverFee { fee_amount } => {
                 warp::reply::with_status(
                     rich_error(

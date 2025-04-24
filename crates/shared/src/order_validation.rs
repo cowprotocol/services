@@ -6,7 +6,6 @@ use {
         order_quoting::{
             CalculateQuoteError,
             OrderQuoting,
-            PriceEstimationContextError,
             Quote,
             QuoteParameters,
             QuoteSearchParameters,
@@ -178,18 +177,18 @@ impl From<VerificationError> for ValidationError {
 impl From<CalculateQuoteError> for ValidationError {
     fn from(err: CalculateQuoteError) -> Self {
         match err {
-            CalculateQuoteError::Price(PriceEstimationContextError {
+            CalculateQuoteError::Price {
                 source: PriceEstimationError::UnsupportedToken { token, reason },
                 ..
-            }) => {
+            } => {
                 ValidationError::Partial(PartialValidationError::UnsupportedToken { token, reason })
             }
-            CalculateQuoteError::Price(PriceEstimationContextError {
+            CalculateQuoteError::Price {
                 source: PriceEstimationError::ProtocolInternal(err),
                 ..
-            })
+            }
             | CalculateQuoteError::Other(err) => ValidationError::Other(err),
-            CalculateQuoteError::Price(err) => ValidationError::PriceForQuote(err.source),
+            CalculateQuoteError::Price { source, .. } => ValidationError::PriceForQuote(source),
             CalculateQuoteError::QuoteNotVerified => ValidationError::QuoteNotVerified,
             // This should never happen because we only calculate quotes with
             // `SellAmount::AfterFee`, meaning that the sell amount does not

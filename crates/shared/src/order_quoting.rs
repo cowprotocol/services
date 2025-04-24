@@ -246,8 +246,11 @@ pub enum CalculateQuoteError {
     #[error("sell amount does not cover fee")]
     SellAmountDoesNotCoverFee { fee_amount: U256 },
 
-    #[error("failed to estimate price")]
-    Price(#[from] PriceEstimationContextError),
+    #[error("estimator {estimator_kind:?} failed: {source}")]
+    Price {
+        estimator_kind: EstimatorKind,
+        source: PriceEstimationError,
+    },
 
     #[error("failed to verify quote")]
     QuoteNotVerified,
@@ -256,12 +259,13 @@ pub enum CalculateQuoteError {
     Other(#[from] anyhow::Error),
 }
 
-#[derive(Debug, Error)]
-#[error("estimator {kind:?} failed: {source}")]
-pub struct PriceEstimationContextError {
-    pub kind: EstimatorKind,
-    #[source]
-    pub source: PriceEstimationError,
+impl From<(EstimatorKind, PriceEstimationError)> for CalculateQuoteError {
+    fn from((estimator_kind, source): (EstimatorKind, PriceEstimationError)) -> Self {
+        Self::Price {
+            estimator_kind,
+            source,
+        }
+    }
 }
 
 #[derive(Debug, Error)]
@@ -274,16 +278,6 @@ pub enum EstimatorKind {
     NativeSell,
     #[error("Native (buy)")]
     NativeBuy,
-}
-
-trait PriceEstimationErrorExt {
-    fn context(self, kind: EstimatorKind) -> PriceEstimationContextError;
-}
-
-impl PriceEstimationErrorExt for PriceEstimationError {
-    fn context(self, kind: EstimatorKind) -> PriceEstimationContextError {
-        PriceEstimationContextError { kind, source: self }
-    }
 }
 
 #[derive(Error, Debug)]
@@ -450,20 +444,23 @@ impl OrderQuoter {
         let (gas_estimate, trade_estimate, sell_token_price, _) = futures::try_join!(
             async {
                 self.gas_estimator.estimate().await.map_err(|err| {
-                    PriceEstimationError::ProtocolInternal(err).context(EstimatorKind::Gas)
+                    CalculateQuoteError::from((
+                        EstimatorKind::Gas,
+                        PriceEstimationError::ProtocolInternal(err),
+                    ))
                 })
             },
             async {
                 self.price_estimator
                     .estimate(trade_query.clone())
                     .await
-                    .map_err(|err| err.context(EstimatorKind::Regular))
+                    .map_err(|err| CalculateQuoteError::from((EstimatorKind::Regular, err)))
             },
             async {
                 self.native_price_estimator
                     .estimate_native_price(parameters.sell_token)
                     .await
-                    .map_err(|err| err.context(EstimatorKind::NativeSell))
+                    .map_err(|err| CalculateQuoteError::from((EstimatorKind::NativeSell, err)))
             },
             // We don't care about the native price of the buy_token for the quote but we need it
             // when we build the auction. To prevent creating orders which we can't settle later on
@@ -472,7 +469,7 @@ impl OrderQuoter {
                 self.native_price_estimator
                     .estimate_native_price(parameters.buy_token)
                     .await
-                    .map_err(|err| err.context(EstimatorKind::NativeBuy))
+                    .map_err(|err| CalculateQuoteError::from((EstimatorKind::NativeBuy, err)))
             },
         )?;
 
@@ -1360,10 +1357,10 @@ mod tests {
 
         assert!(matches!(
             quoter.calculate_quote(parameters).await.unwrap_err(),
-            CalculateQuoteError::Price(PriceEstimationContextError {
-                kind: EstimatorKind::NativeBuy,
+            CalculateQuoteError::Price {
+                estimator_kind: EstimatorKind::NativeBuy,
                 source: PriceEstimationError::NoLiquidity
-            }),
+            },
         ));
     }
 
