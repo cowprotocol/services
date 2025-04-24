@@ -87,7 +87,7 @@ WITH competition AS (
     JOIN settlements s ON sc.id = s.auction_id
     WHERE s.solution_uid IS NOT NULL AND s.tx_hash = $1
 )
-SELECT sc.json, sc.id, COALESCE(ARRAY_AGG(s.tx_hash) FILTER (WHERE ps.uid IS NOT NULL), '{}') AS tx_hashes
+SELECT sc.json, sc.id, COALESCE(ARRAY_AGG(s.tx_hash) FILTER (WHERE s.solution_uid IS NOT NULL), '{}') AS tx_hashes
 FROM solver_competitions sc
 JOIN settlements s ON sc.id = s.auction_id
 WHERE sc.id = (SELECT id FROM competition) AND s.solution_uid IS NOT NULL
