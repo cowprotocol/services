@@ -168,9 +168,8 @@ impl Settlement {
 
         // Check this only if we are sure the settlement is from the current
         // environment.
-        let settled_trades = settled.trades;
         let Some(solution_uid) =
-            find_winning_solution_uid(&solver_winning_solutions, &settled_trades)
+            find_winning_solution_uid(&solver_winning_solutions, &settled.trades)
         else {
             Metrics::get()
                 .inconsistent_settlements
@@ -179,7 +178,8 @@ impl Settlement {
             return Err(Error::InconsistentData(InconsistentData::SolutionNotFound));
         };
 
-        let trades = settled_trades
+        let trades = settled
+            .trades
             .into_iter()
             .map(|trade| Trade::new(trade, &auction, settled.timestamp))
             .collect();
@@ -221,7 +221,7 @@ fn order_to_key(order: &database::solver_competition::Order) -> OrderMatchKey {
 
 /// Finds a winning solution UID for a given set of trades by comparing the
 /// order UID and the sell/buy token with their executed amounts.
-pub fn find_winning_solution_uid(
+fn find_winning_solution_uid(
     solver_winning_solutions: &[Solution],
     settled_trades: &[EncodedTrade],
 ) -> Option<i64> {
