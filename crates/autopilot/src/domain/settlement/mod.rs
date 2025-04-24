@@ -21,6 +21,8 @@ mod trade;
 mod transaction;
 pub use {auction::Auction, observer::Observer, trade::Trade, transaction::Transaction};
 
+use crate::domain::auction::order;
+
 /// A settled transaction together with the `Auction`, for which it was executed
 /// on-chain.
 ///
@@ -199,12 +201,17 @@ impl Settlement {
 #[derive(Debug, Hash, Eq, PartialEq)]
 struct OrderMatchKey {
     uid: OrderUid,
+    token: eth::TokenAddress,
     executed: eth::U256,
 }
 
 fn trade_to_key(trade: &EncodedTrade) -> OrderMatchKey {
     OrderMatchKey {
         uid: trade.uid,
+        token: match trade.side {
+            order::Side::Sell => trade.sell.token,
+            order::Side::Buy => trade.buy.token,
+        },
         executed: trade.executed.0,
     }
 }
@@ -212,6 +219,10 @@ fn trade_to_key(trade: &EncodedTrade) -> OrderMatchKey {
 fn order_to_key(order: &database::solver_competition::Order) -> OrderMatchKey {
     OrderMatchKey {
         uid: OrderUid(order.uid.0),
+        token: match order.side {
+            OrderKind::Sell => eth::H160(order.sell_token.0).into(),
+            OrderKind::Buy => eth::H160(order.buy_token.0).into(),
+        },
         executed: match order.side {
             OrderKind::Sell => big_decimal_to_u256(&order.executed_sell).unwrap_or_default(),
             OrderKind::Buy => big_decimal_to_u256(&order.executed_buy).unwrap_or_default(),
