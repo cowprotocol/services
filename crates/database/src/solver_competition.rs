@@ -478,7 +478,7 @@ mod tests {
         assert!(load_by_id(&mut db, 1).await.unwrap().is_none());
 
         // insert three settlement events for the same auction id, with one of them not
-        // having observation (in practice usually meaning it's from different
+        // having solution UID (in practice, usually meaning it's from a different
         // environment)
         crate::events::insert_settlement(
             &mut db,
@@ -526,6 +526,13 @@ mod tests {
             .await
             .unwrap();
         crate::settlements::update_settlement_auction(&mut db, 0, 2, 0)
+            .await
+            .unwrap();
+
+        crate::settlements::update_settlement_solver(&mut db, 0, 0, Default::default(), 0)
+            .await
+            .unwrap();
+        crate::settlements::update_settlement_solver(&mut db, 0, 1, Default::default(), 1)
             .await
             .unwrap();
 
