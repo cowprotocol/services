@@ -1,7 +1,7 @@
 use {
+    ::driver::domain::eth::H160,
     chrono::{NaiveDateTime, Utc},
     contracts::{ERC20, IZeroEx, i_zero_ex::Contract},
-    driver::domain::eth::H160,
     e2e::{
         api::zeroex::{Eip712TypedZeroExOrder, ZeroExApi},
         assert_approximately_eq,
