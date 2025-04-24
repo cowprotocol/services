@@ -530,18 +530,6 @@ mod tests {
             .await
             .unwrap();
 
-        let solutions = vec![Solution {
-            uid: 0,
-            id: 0.into(),
-            solver: Default::default(),
-            is_winner: true,
-            score: Default::default(),
-            orders: Default::default(),
-            price_tokens: Default::default(),
-            price_values: Default::default(),
-        }];
-        save_solutions(&mut db, 0, &solutions).await.unwrap();
-
         // load by id works, and finds two hashes
         let value_ = load_by_id(&mut db, 0).await.unwrap().unwrap();
         assert!(value_.tx_hashes.len() == 2);
