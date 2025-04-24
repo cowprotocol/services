@@ -5,7 +5,14 @@
 
 use {
     crate::{
-        domain::{self, Metrics, OrderUid, eth, settlement::transaction::EncodedTrade},
+        domain::{
+            self,
+            Metrics,
+            OrderUid,
+            auction::order,
+            eth,
+            settlement::transaction::EncodedTrade,
+        },
         infra::{self, persistence::dto::AuctionId},
     },
     chain::Chain,
@@ -20,8 +27,6 @@ mod observer;
 mod trade;
 mod transaction;
 pub use {auction::Auction, observer::Observer, trade::Trade, transaction::Transaction};
-
-use crate::domain::auction::order;
 
 /// A settled transaction together with the `Auction`, for which it was executed
 /// on-chain.
