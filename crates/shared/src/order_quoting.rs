@@ -439,51 +439,48 @@ impl OrderQuoter {
         let trade_query = Arc::new(parameters.to_price_query());
         let (gas_estimate, trade_estimate, sell_token_price, _) = futures::try_join!(
             async {
-                match self.gas_estimator.estimate().await {
-                    Ok(estimate) => Ok(estimate),
-                    Err(err) => Err(CalculateQuoteError::Price(PriceEstimationContextError {
+                self.gas_estimator.estimate().await.map_err(|err| {
+                    CalculateQuoteError::Price(PriceEstimationContextError {
                         kind: EstimatorKind::Gas,
                         source: PriceEstimationError::ProtocolInternal(err),
-                    })),
-                }
+                    })
+                })
             },
             async {
-                match self.price_estimator.estimate(trade_query.clone()).await {
-                    Ok(estimate) => Ok(estimate),
-                    Err(err) => Err(CalculateQuoteError::Price(PriceEstimationContextError {
-                        kind: EstimatorKind::Regular,
-                        source: err,
-                    })),
-                }
+                self.price_estimator
+                    .estimate(trade_query.clone())
+                    .await
+                    .map_err(|err| {
+                        CalculateQuoteError::Price(PriceEstimationContextError {
+                            kind: EstimatorKind::Regular,
+                            source: err,
+                        })
+                    })
             },
             async {
-                match self
-                    .native_price_estimator
+                self.native_price_estimator
                     .estimate_native_price(parameters.sell_token)
                     .await
-                {
-                    Ok(price) => Ok(price),
-                    Err(err) => Err(CalculateQuoteError::Price(PriceEstimationContextError {
-                        kind: EstimatorKind::NativeSell,
-                        source: err,
-                    })),
-                }
+                    .map_err(|err| {
+                        CalculateQuoteError::Price(PriceEstimationContextError {
+                            kind: EstimatorKind::NativeSell,
+                            source: err,
+                        })
+                    })
             },
             // We don't care about the native price of the buy_token for the quote but we need it
             // when we build the auction. To prevent creating orders which we can't settle later on
             // we make the native buy_token price a requirement here as well.
             async {
-                match self
-                    .native_price_estimator
+                self.native_price_estimator
                     .estimate_native_price(parameters.buy_token)
                     .await
-                {
-                    Ok(price) => Ok(price),
-                    Err(err) => Err(CalculateQuoteError::Price(PriceEstimationContextError {
-                        kind: EstimatorKind::NativeBuy,
-                        source: err,
-                    })),
-                }
+                    .map_err(|err| {
+                        CalculateQuoteError::Price(PriceEstimationContextError {
+                            kind: EstimatorKind::NativeBuy,
+                            source: err,
+                        })
+                    })
             },
         )?;
 
