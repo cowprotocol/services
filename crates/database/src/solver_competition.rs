@@ -38,7 +38,7 @@ pub async fn load_by_id(
     id: AuctionId,
 ) -> Result<Option<LoadCompetition>, sqlx::Error> {
     const QUERY: &str = r#"
-SELECT sc.json, sc.id, COALESCE(ARRAY_AGG(s.tx_hash) FILTER (WHERE ps.solution_uid IS NOT NULL), '{}') AS tx_hashes
+SELECT sc.json, sc.id, COALESCE(ARRAY_AGG(s.tx_hash) FILTER (WHERE ps.uid IS NOT NULL), '{}') AS tx_hashes
 FROM solver_competitions sc
 -- outer joins because the data might not have been indexed yet
 LEFT OUTER JOIN settlements s ON sc.id = s.auction_id
@@ -57,7 +57,7 @@ pub async fn load_latest_competitions(
     latest_competitions_count: u32,
 ) -> Result<Vec<LoadCompetition>, sqlx::Error> {
     const QUERY: &str = r#"
-SELECT sc.json, sc.id, COALESCE(ARRAY_AGG(s.tx_hash) FILTER (WHERE ps.solution_uid IS NOT NULL), '{}') AS tx_hashes
+SELECT sc.json, sc.id, COALESCE(ARRAY_AGG(s.tx_hash) FILTER (WHERE ps.uid IS NOT NULL), '{}') AS tx_hashes
 FROM solver_competitions sc
 -- outer joins because the data might not have been indexed yet
 LEFT OUTER JOIN settlements s ON sc.id = s.auction_id
@@ -92,15 +92,15 @@ WITH competition AS (
     SELECT sc.id
     FROM solver_competitions sc
     JOIN settlements s ON sc.id = s.auction_id
-    JOIN proposed_solutions ps 
+    JOIN proposed_solutions ps
         ON s.auction_id = ps.auction_id
         AND s.solution_uid = ps.uid
     WHERE s.tx_hash = $1
 )
-SELECT sc.json, sc.id, COALESCE(ARRAY_AGG(s.tx_hash) FILTER (WHERE ps.solution_uid IS NOT NULL), '{}') AS tx_hashes
+SELECT sc.json, sc.id, COALESCE(ARRAY_AGG(s.tx_hash) FILTER (WHERE ps.uid IS NOT NULL), '{}') AS tx_hashes
 FROM solver_competitions sc
 JOIN settlements s ON sc.id = s.auction_id
-JOIN proposed_solutions ps 
+JOIN proposed_solutions ps
     ON s.auction_id = ps.auction_id
     AND s.solution_uid = ps.uid
 WHERE sc.id = (SELECT id FROM competition)
