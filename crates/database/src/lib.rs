@@ -18,7 +18,6 @@ pub mod orders;
 pub mod quotes;
 pub mod reference_scores;
 pub mod settlement_executions;
-pub mod settlement_observations;
 pub mod settlements;
 pub mod solver_competition;
 pub mod surplus_capturing_jit_order_owners;
@@ -72,7 +71,6 @@ pub const TABLES: &[&str] = &[
     "proposed_solutions",
     "quotes",
     "settlement_executions",
-    "settlement_observations",
     "reference_scores",
     "settlements",
     "solver_competitions",

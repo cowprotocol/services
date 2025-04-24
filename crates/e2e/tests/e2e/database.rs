@@ -43,7 +43,6 @@ pub struct AuctionTransaction {
 #[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub struct Cip20Data {
-    pub observations: Vec<database::settlement_observations::Observation>,
     pub txs: Vec<AuctionTransaction>,
     pub participants: Vec<database::auction_participants::Participant>,
     pub prices: Vec<database::auction_prices::AuctionPrice>,
@@ -72,12 +71,6 @@ SELECT * FROM settlements WHERE auction_id = $1";
         .await
         .ok()?;
 
-    let observations = database::settlement_observations::fetch(
-        &mut db,
-        &txs.iter().map(|tx| tx.tx_hash).collect::<Vec<_>>(),
-    )
-    .await
-    .ok()?;
     let participants = database::auction_participants::fetch(&mut db, auction_id)
         .await
         .unwrap();
@@ -93,7 +86,6 @@ SELECT * FROM settlements WHERE auction_id = $1";
         .json;
 
     Some(Cip20Data {
-        observations,
         txs,
         participants,
         prices,
