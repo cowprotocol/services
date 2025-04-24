@@ -34,7 +34,6 @@ pub struct Api {
     pub mempools: Mempools,
     pub addr: SocketAddr,
     pub bad_token_detector: bad_tokens::simulation::Detector,
-    pub buy_order_scoring_change_cutover: chrono::DateTime<chrono::Utc>,
     /// If this channel is specified, the bound address will be sent to it. This
     /// allows the driver to bind to 0.0.0.0:0 during testing.
     pub addr_sender: Option<oneshot::Sender<SocketAddr>>,
@@ -108,7 +107,6 @@ impl Api {
                     self.simulator.clone(),
                     self.mempools.clone(),
                     Arc::new(bad_tokens),
-                    self.buy_order_scoring_change_cutover,
                 ),
                 liquidity: self.liquidity.clone(),
                 tokens: tokens.clone(),
