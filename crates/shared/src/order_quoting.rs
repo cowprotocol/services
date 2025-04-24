@@ -443,24 +443,28 @@ impl OrderQuoter {
         let trade_query = Arc::new(parameters.to_price_query());
         let (gas_estimate, trade_estimate, sell_token_price, _) = futures::try_join!(
             async {
-                self.gas_estimator.estimate().await.map_err(|err| {
-                    CalculateQuoteError::from((
-                        EstimatorKind::Gas,
-                        PriceEstimationError::ProtocolInternal(err),
-                    ))
-                })
+                self.gas_estimator
+                    .estimate()
+                    .await
+                    .map_err(|err| -> CalculateQuoteError {
+                        (
+                            EstimatorKind::Gas,
+                            PriceEstimationError::ProtocolInternal(err),
+                        )
+                            .into()
+                    })
             },
             async {
                 self.price_estimator
                     .estimate(trade_query.clone())
                     .await
-                    .map_err(|err| CalculateQuoteError::from((EstimatorKind::Regular, err)))
+                    .map_err(|err| (EstimatorKind::Regular, err).into())
             },
             async {
                 self.native_price_estimator
                     .estimate_native_price(parameters.sell_token)
                     .await
-                    .map_err(|err| CalculateQuoteError::from((EstimatorKind::NativeSell, err)))
+                    .map_err(|err| (EstimatorKind::NativeSell, err).into())
             },
             // We don't care about the native price of the buy_token for the quote but we need it
             // when we build the auction. To prevent creating orders which we can't settle later on
@@ -469,7 +473,7 @@ impl OrderQuoter {
                 self.native_price_estimator
                     .estimate_native_price(parameters.buy_token)
                     .await
-                    .map_err(|err| CalculateQuoteError::from((EstimatorKind::NativeBuy, err)))
+                    .map_err(|err| (EstimatorKind::NativeBuy, err).into())
             },
         )?;
 
