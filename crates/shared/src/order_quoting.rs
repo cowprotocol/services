@@ -246,7 +246,7 @@ pub enum CalculateQuoteError {
     #[error("sell amount does not cover fee")]
     SellAmountDoesNotCoverFee { fee_amount: U256 },
 
-    #[error("estimator {estimator_kind:?} failed: {source}")]
+    #[error("{estimator_kind:?} estimator failed: {source}")]
     Price {
         estimator_kind: EstimatorKind,
         source: PriceEstimationError,
