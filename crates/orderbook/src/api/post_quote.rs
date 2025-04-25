@@ -9,6 +9,7 @@ use {
     reqwest::StatusCode,
     shared::order_quoting::CalculateQuoteError,
     std::{convert::Infallible, sync::Arc},
+    thiserror::Error,
     warp::{Filter, Rejection},
 };
 
@@ -29,14 +30,15 @@ pub fn post_quote(
                 .await
                 .map_err(OrderQuoteErrorWrapper);
             if let Err(err) = &result {
-                tracing::warn!(?err, ?request, "post_quote error");
+                tracing::warn!(%err, ?request, "post_quote error");
             }
             Result::<_, Infallible>::Ok(convert_json_response(result))
         }
     })
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
+#[error(transparent)]
 pub struct OrderQuoteErrorWrapper(pub OrderQuoteError);
 impl IntoWarpReply for OrderQuoteErrorWrapper {
     fn into_warp_reply(self) -> ApiReply {
