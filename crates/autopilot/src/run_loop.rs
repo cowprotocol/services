@@ -367,6 +367,7 @@ impl RunLoop {
             })
             .reduce(U256::saturating_add)
         else {
+            // The solution is empty
             return Default::default();
         };
 
