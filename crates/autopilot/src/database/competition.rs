@@ -32,6 +32,9 @@ pub struct Competition {
     pub competition_table: SolverCompetitionDB,
 }
 
+/// Contains the reference score per solver, defined as the difference between
+/// the total score for the auction and the combined score of all winning
+/// solutions submitted by that solver for the same auction.
 #[derive(Clone, Default, Debug)]
 pub struct ReferenceScores(HashMap<H160, U256>);
 
