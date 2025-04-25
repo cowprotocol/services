@@ -383,12 +383,14 @@ impl RunLoop {
                     .reduce(U256::saturating_add)
                     .unwrap_or_default();
 
-                match reference_scores.insert(solver.0, total_score.saturating_sub(score)) {
-                    Some(_) => Err(anyhow::anyhow!(
-                        "found driver with non-unique submission address: {solver}"
-                    )),
-                    None => Ok(()),
-                }
+                anyhow::ensure!(
+                    reference_scores
+                        .insert(solver.0, total_score.saturating_sub(score))
+                        .is_none(),
+                    "found driver with non-unique submission address: {solver}"
+                );
+
+                Ok(())
             })?;
 
         Ok(reference_scores)
