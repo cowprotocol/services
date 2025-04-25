@@ -1,6 +1,6 @@
 use {
     crate::{
-        database::competition::{Competition, ReferenceScore},
+        database::competition::{Competition, ReferenceScores},
         domain::{
             self,
             OrderUid,
@@ -357,7 +357,8 @@ impl RunLoop {
         tokio::spawn(settle_fut);
     }
 
-    fn compute_reference_scores(solutions: &[competition::Participant]) -> Vec<ReferenceScore> {
+    fn compute_reference_scores(solutions: &[competition::Participant]) -> Result<ReferenceScores> {
+        let mut reference_scores = ReferenceScores::default();
         let Some(total_score) = solutions
             .iter()
             .filter_map(|participant| {
@@ -367,7 +368,8 @@ impl RunLoop {
             })
             .reduce(U256::saturating_add)
         else {
-            return Default::default();
+            // The solution is empty
+            return Ok(reference_scores);
         };
 
         solutions
@@ -375,18 +377,23 @@ impl RunLoop {
             .filter(|participant| participant.is_winner())
             .group_by(|participant| participant.driver().submission_address)
             .into_iter()
-            .map(|(solver, solutions)| {
+            .try_for_each(|(solver, solutions)| {
                 let score = solutions
                     .map(|participant| participant.solution().score().get().0)
-                    .reduce(|a, b| a.checked_add(b).unwrap_or_default())
+                    .reduce(U256::saturating_add)
                     .unwrap_or_default();
 
-                ReferenceScore {
-                    solver: solver.0,
-                    reference_score: total_score.saturating_sub(score),
-                }
-            })
-            .collect()
+                anyhow::ensure!(
+                    reference_scores
+                        .insert(solver.0, total_score.saturating_sub(score))
+                        .is_none(),
+                    "found driver with non-unique submission address: {solver}"
+                );
+
+                Ok(())
+            })?;
+
+        Ok(reference_scores)
     }
 
     async fn post_processing(
@@ -397,7 +404,23 @@ impl RunLoop {
         block_deadline: u64,
     ) -> Result<()> {
         let start = Instant::now();
-        let reference_scores = Self::compute_reference_scores(solutions);
+        // TODO: Needs to be removed once external teams fully migrated to the
+        // reference_scores table
+        let Some(winning_solution) = solutions
+            .iter()
+            .find(|participant| participant.is_winner())
+            .map(|participant| participant.solution())
+        else {
+            return Err(anyhow::anyhow!("no winners found"));
+        };
+        let winner = winning_solution.solver().into();
+        let winning_score = winning_solution.score().get().0;
+        let reference_score = solutions
+            .get(1)
+            .map(|participant| participant.solution().score().get().0)
+            .unwrap_or_default();
+
+        let reference_scores = Self::compute_reference_scores(solutions)?;
         if reference_scores.is_empty() {
             return Err(anyhow::anyhow!("no winners found"));
         }
@@ -473,6 +496,9 @@ impl RunLoop {
         };
         let competition = Competition {
             auction_id: auction.id,
+            winner,
+            winning_score,
+            reference_score,
             reference_scores,
             participants,
             prices: auction

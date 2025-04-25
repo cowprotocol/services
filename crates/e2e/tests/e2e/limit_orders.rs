@@ -1,4 +1,5 @@
 use {
+    crate::database::AuctionTransaction,
     contracts::ERC20,
     database::byte_array::ByteArray,
     driver::domain::eth::NonZeroU256,
@@ -13,6 +14,7 @@ use {
     number::conversions::{big_decimal_to_big_uint, u256_to_big_decimal},
     secp256k1::SecretKey,
     shared::ethrpc::Web3,
+    std::ops::DerefMut,
     web3::signing::SecretKeyRef,
 };
 
@@ -490,6 +492,20 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
         big_decimal_to_big_uint(&solver_order_b.executed_buy).unwrap(),
         order_b_settled.metadata.executed_buy_amount
     );
+
+    let settlements_query = "SELECT * FROM settlements WHERE auction_id = $1";
+    let settlements: Vec<AuctionTransaction> = sqlx::query_as(settlements_query)
+        .bind(competition.auction_id)
+        .fetch_all(ex.deref_mut())
+        .await
+        .unwrap();
+    assert_eq!(settlements.len(), 2);
+    assert!(settlements.iter().any(|settlement| settlement.solver
+        == ByteArray(solver_a.address().0)
+        && settlement.solution_uid == solver_a_winning_solutions[0].uid));
+    assert!(settlements.iter().any(|settlement| settlement.solver
+        == ByteArray(solver_b.address().0)
+        && settlement.solution_uid == solver_b_winning_solutions[0].uid));
 
     // Ensure all the reference scores are indexed
     let reference_scores = database::reference_scores::fetch(&mut ex, competition.auction_id)
