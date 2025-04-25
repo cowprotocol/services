@@ -439,7 +439,7 @@ Stores data and metadata of [`Settlement`](https://github.com/cowprotocol/contra
  solver        | bytea  | not null | public address of the executing solver
  tx\_hash      | bytea  | not null | transaction hash in which the settlement got executed
  auction\_id    | bigint | nullable | corresponding auction ID that initiated the settlement
- solution\_uid  | bigint | nullable | corresponding winning solver's solution UID
+ solution\_uid  | bigint | nullable | corresponding winning solver's solution UID, which also used to identify settlements from the current environment
 
 Indexes:
 - PRIMARY KEY: btree(`block_number`,`log_index`)
