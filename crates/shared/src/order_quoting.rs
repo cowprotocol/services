@@ -268,15 +268,11 @@ impl From<(EstimatorKind, PriceEstimationError)> for CalculateQuoteError {
     }
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug)]
 pub enum EstimatorKind {
-    #[error("Gas")]
     Gas,
-    #[error("Regular")]
     Regular,
-    #[error("Native (sell)")]
     NativeSell,
-    #[error("Native (buy)")]
     NativeBuy,
 }
 
