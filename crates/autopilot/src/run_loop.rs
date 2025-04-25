@@ -1,6 +1,6 @@
 use {
     crate::{
-        database::competition::Competition,
+        database::competition::{Competition, ReferenceScores},
         domain::{
             self,
             OrderUid,
@@ -357,6 +357,45 @@ impl RunLoop {
         tokio::spawn(settle_fut);
     }
 
+    fn compute_reference_scores(solutions: &[competition::Participant]) -> Result<ReferenceScores> {
+        let mut reference_scores = ReferenceScores::default();
+        let Some(total_score) = solutions
+            .iter()
+            .filter_map(|participant| {
+                participant
+                    .is_winner()
+                    .then_some(participant.solution().score().get().0)
+            })
+            .reduce(U256::saturating_add)
+        else {
+            // The solution is empty
+            return Ok(reference_scores);
+        };
+
+        solutions
+            .iter()
+            .filter(|participant| participant.is_winner())
+            .group_by(|participant| participant.driver().submission_address)
+            .into_iter()
+            .try_for_each(|(solver, solutions)| {
+                let score = solutions
+                    .map(|participant| participant.solution().score().get().0)
+                    .reduce(U256::saturating_add)
+                    .unwrap_or_default();
+
+                anyhow::ensure!(
+                    reference_scores
+                        .insert(solver.0, total_score.saturating_sub(score))
+                        .is_none(),
+                    "found driver with non-unique submission address: {solver}"
+                );
+
+                Ok(())
+            })?;
+
+        Ok(reference_scores)
+    }
+
     async fn post_processing(
         &self,
         auction: &domain::Auction,
@@ -365,8 +404,8 @@ impl RunLoop {
         block_deadline: u64,
     ) -> Result<()> {
         let start = Instant::now();
-        // TODO: Support multiple winners
-        // https://github.com/cowprotocol/services/issues/3021
+        // TODO: Needs to be removed once external teams fully migrated to the
+        // reference_scores table
         let Some(winning_solution) = solutions
             .iter()
             .find(|participant| participant.is_winner())
@@ -377,10 +416,15 @@ impl RunLoop {
         let winner = winning_solution.solver().into();
         let winning_score = winning_solution.score().get().0;
         let reference_score = solutions
-            // todo multiple winners per auction
             .get(1)
             .map(|participant| participant.solution().score().get().0)
             .unwrap_or_default();
+
+        let reference_scores = Self::compute_reference_scores(solutions)?;
+        if reference_scores.is_empty() {
+            return Err(anyhow::anyhow!("no winners found"));
+        }
+
         let participants = solutions
             .iter()
             .map(|participant| participant.solution().solver().into())
@@ -455,6 +499,7 @@ impl RunLoop {
             winner,
             winning_score,
             reference_score,
+            reference_scores,
             participants,
             prices: auction
                 .prices
