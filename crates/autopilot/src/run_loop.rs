@@ -378,7 +378,7 @@ impl RunLoop {
             .map(|(solver, solutions)| {
                 let score = solutions
                     .map(|participant| participant.solution().score().get().0)
-                    .reduce(|a, b| a.checked_add(b).unwrap_or_default())
+                    .reduce(U256::saturating_add)
                     .unwrap_or_default();
 
                 ReferenceScore {
