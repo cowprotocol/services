@@ -435,7 +435,7 @@ Indexes:
 
 ### reference\_scores
 
-Stores reference scores of the winning solvers.
+Stores the reference score per solver, defined as the difference between the total score for the auction and the combined score of all winning solutions submitted by that solver for the same auction.
 
  Column           | Type     | Nullable | Details
 ------------------|----------|----------|--------
