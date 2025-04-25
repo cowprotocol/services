@@ -1,6 +1,6 @@
 use {
     crate::{
-        database::competition::{Competition, ReferenceScore},
+        database::competition::{Competition, ReferenceScores},
         domain::{
             self,
             OrderUid,
@@ -357,7 +357,8 @@ impl RunLoop {
         tokio::spawn(settle_fut);
     }
 
-    fn compute_reference_scores(solutions: &[competition::Participant]) -> Vec<ReferenceScore> {
+    fn compute_reference_scores(solutions: &[competition::Participant]) -> Result<ReferenceScores> {
+        let mut reference_scores = ReferenceScores::default();
         let Some(total_score) = solutions
             .iter()
             .filter_map(|participant| {
@@ -368,7 +369,7 @@ impl RunLoop {
             .reduce(U256::saturating_add)
         else {
             // The solution is empty
-            return Default::default();
+            return Ok(reference_scores);
         };
 
         solutions
@@ -376,18 +377,21 @@ impl RunLoop {
             .filter(|participant| participant.is_winner())
             .group_by(|participant| participant.driver().submission_address)
             .into_iter()
-            .map(|(solver, solutions)| {
+            .try_for_each(|(solver, solutions)| {
                 let score = solutions
                     .map(|participant| participant.solution().score().get().0)
                     .reduce(U256::saturating_add)
                     .unwrap_or_default();
 
-                ReferenceScore {
-                    solver: solver.0,
-                    reference_score: total_score.saturating_sub(score),
+                match reference_scores.insert(solver.0, total_score.saturating_sub(score)) {
+                    Some(_) => Err(anyhow::anyhow!(
+                        "found driver with non-unique submission address: {solver}"
+                    )),
+                    None => Ok(()),
                 }
-            })
-            .collect()
+            })?;
+
+        Ok(reference_scores)
     }
 
     async fn post_processing(
@@ -398,7 +402,7 @@ impl RunLoop {
         block_deadline: u64,
     ) -> Result<()> {
         let start = Instant::now();
-        let reference_scores = Self::compute_reference_scores(solutions);
+        let reference_scores = Self::compute_reference_scores(solutions)?;
         if reference_scores.is_empty() {
             return Err(anyhow::anyhow!("no winners found"));
         }

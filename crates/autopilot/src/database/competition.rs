@@ -13,13 +13,13 @@ use {
     model::solver_competition::SolverCompetitionDB,
     number::conversions::u256_to_big_decimal,
     primitive_types::{H160, U256},
-    std::collections::{BTreeMap, HashSet},
+    std::collections::{BTreeMap, HashMap, HashSet, hash_map::Iter},
 };
 
 #[derive(Clone, Default, Debug)]
 pub struct Competition {
     pub auction_id: AuctionId,
-    pub reference_scores: Vec<ReferenceScore>,
+    pub reference_scores: ReferenceScores,
     /// Addresses to which the CIP20 participation rewards will be payed out.
     /// Usually the same as the solver addresses.
     pub participants: HashSet<H160>,
@@ -33,9 +33,20 @@ pub struct Competition {
 }
 
 #[derive(Clone, Default, Debug)]
-pub struct ReferenceScore {
-    pub solver: H160,
-    pub reference_score: U256,
+pub struct ReferenceScores(HashMap<H160, U256>);
+
+impl ReferenceScores {
+    pub fn iter(&self) -> Iter<'_, H160, U256> {
+        self.0.iter()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn insert(&mut self, solver: H160, reference_score: U256) -> Option<U256> {
+        self.0.insert(solver, reference_score)
+    }
 }
 
 impl super::Postgres {
@@ -60,10 +71,10 @@ impl super::Postgres {
         let reference_scores = competition
             .reference_scores
             .iter()
-            .map(|score| Score {
+            .map(|(solver, reference_score)| Score {
                 auction_id: competition.auction_id,
-                solver: ByteArray(score.solver.0),
-                reference_score: u256_to_big_decimal(&score.reference_score),
+                solver: ByteArray(solver.0),
+                reference_score: u256_to_big_decimal(reference_score),
             })
             .collect::<Vec<_>>();
 
