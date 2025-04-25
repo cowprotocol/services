@@ -19,6 +19,10 @@ pub enum Chain {
     ArbitrumOne = 42161,
     Base = 8453,
     Hardhat = 31337,
+    Bnb = 56,
+    Avalanche = 43114,
+    Optimism = 10,
+    Polygon = 137,
 }
 
 impl Chain {
@@ -39,15 +43,25 @@ impl Chain {
             Self::ArbitrumOne => "Arbitrum One",
             Self::Base => "Base",
             Self::Hardhat => "Hardhat",
+            Self::Bnb => "BNB Smart Chain",
+            Self::Avalanche => "Avalanche",
+            Self::Optimism => "Optimism",
+            Self::Polygon => "Polygon",
         }
     }
 
     /// The default amount in native tokens atoms to use for price estimation
     pub fn default_amount_to_estimate_native_prices_with(&self) -> U256 {
         match &self {
-            Self::Mainnet | Self::Goerli | Self::Sepolia | Self::ArbitrumOne | Self::Base => {
-                10u128.pow(17).into()
-            }
+            Self::Mainnet
+            | Self::Goerli
+            | Self::Sepolia
+            | Self::ArbitrumOne
+            | Self::Base
+            | Self::Bnb
+            | Self::Avalanche
+            | Self::Optimism
+            | Self::Polygon => 10u128.pow(17).into(),
             Self::Gnosis => 10u128.pow(18).into(),
             Self::Hardhat => {
                 panic!("unsupported chain for default amount to estimate native prices with")
@@ -65,6 +79,10 @@ impl Chain {
             Self::ArbitrumOne => Duration::from_millis(250),
             Self::Base => Duration::from_millis(2_000),
             Self::Hardhat => Duration::from_millis(12_000), // Arbitrary reasonable value
+            Self::Bnb => Duration::from_millis(3_000),
+            Self::Avalanche => Duration::from_millis(2_000),
+            Self::Optimism => Duration::from_millis(2_000),
+            Self::Polygon => Duration::from_millis(2_000),
         }
     }
 
@@ -89,6 +107,10 @@ impl TryFrom<u64> for Chain {
             x if x == Self::ArbitrumOne as u64 => Self::ArbitrumOne,
             x if x == Self::Base as u64 => Self::Base,
             x if x == Self::Hardhat as u64 => Self::Hardhat,
+            x if x == Self::Bnb as u64 => Self::Bnb,
+            x if x == Self::Avalanche as u64 => Self::Avalanche,
+            x if x == Self::Optimism as u64 => Self::Optimism,
+            x if x == Self::Polygon as u64 => Self::Polygon,
             _ => Err(ChainIdNotSupported)?,
         };
         Ok(network)
