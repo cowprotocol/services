@@ -73,7 +73,7 @@ pub const TABLES: &[&str] = &[
     "quotes",
     "reference_scores",
     "settlement_executions",
-    "reference_scores",
+    "settlement_scores",
     "settlements",
     "solver_competitions",
     "surplus_capturing_jit_order_owners",
