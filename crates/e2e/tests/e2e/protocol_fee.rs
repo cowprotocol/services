@@ -38,6 +38,12 @@ async fn local_node_combined_protocol_fees() {
     run_test(combined_protocol_fees).await;
 }
 
+#[tokio::test]
+#[ignore]
+async fn local_node_surplus_partner_fee() {
+    run_test(surplus_partner_fee).await;
+}
+
 async fn combined_protocol_fees(web3: Web3) {
     let limit_surplus_policy = ProtocolFee {
         policy: FeePolicyKind::Surplus {
@@ -363,6 +369,219 @@ async fn combined_protocol_fees(web3: Web3) {
         partner_fee_executed_fee_in_buy_token,
         partner_fee_order_token_balance
     );
+}
+
+async fn surplus_partner_fee(web3: Web3) {
+    let partner_fee_app_data = OrderCreationAppData::Full {
+        full: json!({
+            "version": "1.1.0",
+            "metadata": {
+                "partnerFee": {
+                    "surplusBps": 100,
+                    "maxVolumeBps": 100,
+                    "recipient": "0xb6BAd41ae76A11D10f7b0E664C5007b908bC77C9",
+                }
+            }
+        })
+        .to_string(),
+    };
+
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+
+    let [solver] = onchain.make_solvers(to_wei(200)).await;
+    let [trader] = onchain.make_accounts(to_wei(200)).await;
+    let [token] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(to_wei(20), to_wei(20))
+        .await;
+
+    token.mint(solver.address(), to_wei(1000)).await;
+    tx!(
+        solver.account(),
+        token.approve(
+            onchain.contracts().uniswap_v2_router.address(),
+            to_wei(1000)
+        )
+    );
+    tx!(
+        trader.account(),
+        token.approve(onchain.contracts().uniswap_v2_router.address(), to_wei(100))
+    );
+    tx!(
+        trader.account(),
+        onchain
+            .contracts()
+            .weth
+            .approve(onchain.contracts().allowance, to_wei(100))
+    );
+    tx_value!(
+        trader.account(),
+        to_wei(100),
+        onchain.contracts().weth.deposit()
+    );
+    tx!(
+        solver.account(),
+        onchain
+            .contracts()
+            .weth
+            .approve(onchain.contracts().uniswap_v2_router.address(), to_wei(200))
+    );
+
+    let services = Services::new(&onchain).await;
+    services
+        .start_protocol_with_args(
+            ExtraServiceArgs {
+                autopilot: vec![
+                    "--fee-policy-max-partner-fee=0.02".to_string(),
+                ],
+                ..Default::default()
+            },
+            solver,
+        )
+        .await;
+
+    tracing::info!("Acquiring quotes.");
+    let quote_valid_to = model::time::now_in_epoch_seconds() + 300;
+    let sell_amount = to_wei(10);
+    let quote_before = get_quote(
+            &services,
+            onchain.contracts().weth.address(),
+            token.address(),
+            OrderKind::Sell,
+            sell_amount,
+            quote_valid_to,
+        )
+        .await
+        .unwrap();
+
+    let order = OrderCreation {
+        sell_amount,
+        // to make sure the order is in-market
+        buy_amount: quote_before.quote.buy_amount * 2 / 3,
+        app_data: partner_fee_app_data.clone(),
+        ..sell_order_from_quote(&quote_before)
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+    );
+
+    tracing::info!("Rebalancing AMM pools for market & limit order.");
+    onchain
+        .mint_token_to_weth_uni_v2_pool(&token, to_wei(1000))
+        .await;
+
+    tracing::info!("Waiting for liquidity state to update");
+    wait_for_condition(TIMEOUT, || async {
+        // Mint blocks until we evict the cached liquidity and fetch the new state.
+        onchain.mint_block().await;
+        let new_quote = get_quote(
+            &services,
+            onchain.contracts().weth.address(),
+            token.address(),
+            OrderKind::Sell,
+            sell_amount,
+            model::time::now_in_epoch_seconds() + 300,
+        )
+        .await
+        .unwrap();
+        // Only proceed with test once the quote changes significantly (2x) to avoid
+        // progressing due to tiny fluctuations in gas price which would lead to
+        // errors down the line.
+        new_quote.quote.buy_amount > quote_before.quote.buy_amount * 2
+    })
+    .await
+    .expect("Timeout waiting for eviction of the cached liquidity");
+
+    let quote_after = get_quote(
+            &services,
+            onchain.contracts().weth.address(),
+            token.address(),
+            OrderKind::Sell,
+            sell_amount,
+            quote_valid_to,
+        )
+        .await
+        .unwrap();
+
+    let order_uid = services.create_order(&order).await.unwrap();
+
+    onchain.mint_block().await;
+
+    tracing::info!("Waiting for orders to trade.");
+    let metadata_updated = || async {
+        onchain.mint_block().await;
+        services.get_order(&order_uid).await.is_ok_and(|order| !order.metadata.executed_fee.is_zero())
+    };
+    wait_for_condition(TIMEOUT, metadata_updated)
+        .await
+        .expect("Timeout waiting for the orders to trade");
+
+    tracing::info!("Checking executions...");
+    let order = services
+        .get_order(&order_uid)
+        .await
+        .unwrap();
+    tracing::error!(?order);
+    // let market_executed_fee_in_buy_token =
+    //     fee_in_buy_token(&market_price_improvement_order, &market_quote_after.quote);
+    // let market_quote_diff = market_quote_after
+    //     .quote
+    //     .buy_amount
+    //     .saturating_sub(market_quote_before.quote.buy_amount);
+    // // see `market_price_improvement_policy.factor`, which is 0.3
+    // assert!(market_executed_fee_in_buy_token >= market_quote_diff * 3 / 10);
+
+    // let partner_fee_order = services.get_order(&partner_fee_order_uid).await.unwrap();
+    // let partner_fee_executed_fee_in_buy_token =
+    //     fee_in_buy_token(&partner_fee_order, &partner_fee_quote_after.quote);
+    // assert!(
+    //     // see `--fee-policy-max-partner-fee` autopilot config argument, which is 0.02
+    //     partner_fee_executed_fee_in_buy_token >= partner_fee_quote.quote.buy_amount * 2 / 100
+    // );
+    // let limit_quote_diff = partner_fee_quote_after
+    //     .quote
+    //     .buy_amount
+    //     .saturating_sub(partner_fee_order.data.buy_amount);
+    // // see `limit_surplus_policy.factor`, which is 0.3
+    // assert!(partner_fee_executed_fee_in_buy_token >= limit_quote_diff * 3 / 10);
+
+    // let limit_surplus_order = services.get_order(&limit_surplus_order_uid).await.unwrap();
+    // let limit_executed_fee_in_buy_token =
+    //     fee_in_buy_token(&limit_surplus_order, &limit_quote_after.quote);
+    // let limit_quote_diff = limit_quote_after
+    //     .quote
+    //     .buy_amount
+    //     .saturating_sub(limit_surplus_order.data.buy_amount);
+    // // see `limit_surplus_policy.factor`, which is 0.3
+    // assert!(limit_executed_fee_in_buy_token >= limit_quote_diff * 3 / 10);
+
+    // let [
+    //     market_order_token_balance,
+    //     limit_order_token_balance,
+    //     partner_fee_order_token_balance,
+    // ] = futures::future::try_join_all(
+    //     [
+    //         &market_order_token,
+    //         &limit_order_token,
+    //         &partner_fee_order_token,
+    //     ]
+    //     .map(|token| {
+    //         token
+    //             .balance_of(onchain.contracts().gp_settlement.address())
+    //             .call()
+    //     }),
+    // )
+    // .await
+    // .unwrap()
+    // .try_into()
+    // .expect("Expected exactly four elements");
+    // assert_approximately_eq!(market_executed_fee_in_buy_token, market_order_token_balance);
+    // assert_approximately_eq!(limit_executed_fee_in_buy_token, limit_order_token_balance);
+    // assert_approximately_eq!(
+    //     partner_fee_executed_fee_in_buy_token,
+    //     partner_fee_order_token_balance
+    // );
 }
 
 async fn get_quote(

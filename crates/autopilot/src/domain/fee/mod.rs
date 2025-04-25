@@ -74,7 +74,11 @@ impl ProtocolFees {
     }
 
     /// Returns the capped aggregated partner fee
-    fn get_partner_fee(order: &boundary::Order, max_partner_fee: f64) -> Vec<Policy> {
+    fn get_partner_fee(
+        order: &boundary::Order,
+        quote: &domain::Quote,
+        max_partner_fee: f64,
+    ) -> Vec<Policy> {
         /// Convert a fee into a `FeeFactor` capping its value
         fn fee_factor_from_capped(value: Decimal, cap: Decimal, accumulated: Decimal) -> FeeFactor {
             // Calculate how much more we can compound before hitting the cap.
@@ -111,21 +115,63 @@ impl ProtocolFees {
 
         let mut accumulated = Decimal::ZERO;
 
+        let outside_market_price =
+            boundary::is_order_outside_market_price(&order.into(), &quote.into(), order.data.kind);
+
         validated
             .protocol
             .partner_fee
             .iter()
             .map(move |partner_fee| {
-                // Convert bps to decimal percentage
-                let fee_decimal = Decimal::from(partner_fee.bps) / Decimal::from(10_000);
+                /// Number of basis points that make up 100%.
+                const MAX_BPS: u32 = 10_000;
 
-                // Create policy and update accumulator
-                let factor = fee_factor_from_capped(fee_decimal, max_partner_fee, accumulated);
+                match partner_fee.policy {
+                    app_data::FeePolicy::Volume { bps } => {
+                        // Convert bps to decimal percentage
+                        let fee_decimal = Decimal::from(bps) / Decimal::from(MAX_BPS);
+                        // Create policy and update accumulator
+                        let factor =
+                            fee_factor_from_capped(fee_decimal, max_partner_fee, accumulated);
+                        // Update the accumulated value for the next iteration
+                        accumulated += fee_decimal.min(max_partner_fee - accumulated);
+                        Policy::Volume { factor }
+                    }
+                    app_data::FeePolicy::Surplus {
+                        bps,
+                        max_volume_bps,
+                    } => {
+                        // Convert bps to decimal percentage
+                        let fee_decimal = Decimal::from(max_volume_bps) / Decimal::from(MAX_BPS);
 
-                // Update the accumulated value for the next iteration
-                accumulated += fee_decimal.min(max_partner_fee - accumulated);
+                        // Compute max_volume_factor limited by the global volume cap.
+                        let max_volume_factor =
+                            fee_factor_from_capped(fee_decimal, max_partner_fee, accumulated);
 
-                Policy::Volume { factor }
+                        // clamp `bps` to a reasonable value
+                        let bps = u32::try_from(bps.min(u64::from(MAX_BPS) - 1)).unwrap();
+                        let factor = f64::from(bps) / f64::from(MAX_BPS);
+                        let factor = FeeFactor::try_from(factor)
+                            .expect("value was clamped to the required range");
+
+                        match outside_market_price {
+                            true => Policy::Surplus {
+                                factor,
+                                max_volume_factor,
+                            },
+                            false => Policy::PriceImprovement {
+                                factor,
+                                max_volume_factor,
+                                quote: Quote {
+                                    buy_amount: quote.buy_amount.into(),
+                                    sell_amount: quote.sell_amount.into(),
+                                    solver: quote.solver.into(),
+                                    fee: quote.fee.into(),
+                                },
+                            },
+                        }
+                    }
+                }
             })
             .collect::<Vec<_>>()
     }
@@ -138,21 +184,9 @@ impl ProtocolFees {
         quote: Option<domain::Quote>,
         surplus_capturing_jit_order_owners: &[eth::Address],
     ) -> domain::Order {
-        let partner_fee = Self::get_partner_fee(&order, self.max_partner_fee.into());
-
-        if surplus_capturing_jit_order_owners.contains(&order.metadata.owner.into()) {
-            return boundary::order::to_domain(order, partner_fee, quote);
-        }
-
-        let order_ = boundary::Amounts {
-            sell: order.data.sell_amount,
-            buy: order.data.buy_amount,
-            fee: order.data.fee_amount,
-        };
-
         // In case there is no quote, we assume 0 buy amount so that the order ends up
         // being considered out of market price.
-        let quote = quote.unwrap_or(domain::Quote {
+        let reference_quote = quote.clone().unwrap_or(domain::Quote {
             order_uid: order.metadata.uid.into(),
             sell_amount: order.data.sell_amount.into(),
             buy_amount: U256::zero().into(),
@@ -160,29 +194,29 @@ impl ProtocolFees {
             solver: H160::zero().into(),
         });
 
-        let quote_ = boundary::Amounts {
-            sell: quote.sell_amount.into(),
-            buy: quote.buy_amount.into(),
-            fee: quote.fee.into(),
-        };
+        let partner_fee =
+            Self::get_partner_fee(&order, &reference_quote, self.max_partner_fee.into());
+        if !partner_fee.is_empty() {
+            tracing::error!(?partner_fee);
+        }
 
-        self.apply_policies(order, quote, order_, quote_, partner_fee)
+        if surplus_capturing_jit_order_owners.contains(&order.metadata.owner.into()) {
+            return boundary::order::to_domain(order, partner_fee, quote);
+        }
+
+        self.apply_policies(order, reference_quote, partner_fee)
     }
 
     fn apply_policies(
         &self,
         order: boundary::Order,
         quote: domain::Quote,
-        order_: boundary::Amounts,
-        quote_: boundary::Amounts,
         partner_fees: Vec<Policy>,
     ) -> domain::Order {
         let protocol_fees = self
             .fee_policies
             .iter()
-            .filter_map(|fee_policy| {
-                Self::protocol_fee_into_policy(&order, &order_, &quote_, fee_policy)
-            })
+            .filter_map(|fee_policy| Self::protocol_fee_into_policy(&order, &quote, fee_policy))
             .flat_map(|policy| Self::variant_fee_apply(&order, &quote, policy))
             .chain(partner_fees)
             .collect::<Vec<_>>();
@@ -203,12 +237,11 @@ impl ProtocolFees {
 
     fn protocol_fee_into_policy<'a>(
         order: &boundary::Order,
-        order_: &boundary::Amounts,
-        quote_: &boundary::Amounts,
+        quote: &domain::Quote,
         protocol_fee: &'a ProtocolFee,
     ) -> Option<&'a policy::Policy> {
         let outside_market_price =
-            boundary::is_order_outside_market_price(order_, quote_, order.data.kind);
+            boundary::is_order_outside_market_price(&order.into(), &quote.into(), order.data.kind);
         match (outside_market_price, &protocol_fee.order_class) {
             (_, OrderClass::Any) => Some(&protocol_fee.policy),
             (true, OrderClass::Limit) => Some(&protocol_fee.policy),
@@ -336,7 +369,7 @@ mod test {
         };
 
         let max_partner_fee = 0.3; // 30%
-        let result = ProtocolFees::get_partner_fee(&order, max_partner_fee);
+        let result = ProtocolFees::get_partner_fee(&order, &Default::default(), max_partner_fee);
 
         // Expected: The compounded percentage (1 + 0.05) * (1 + 0.20) - 1 = 0.26 < 0.3
         // (not capped)
@@ -377,7 +410,7 @@ mod test {
         };
 
         let max_partner_fee = 0.3; // 30%
-        let result = ProtocolFees::get_partner_fee(&order, max_partner_fee);
+        let result = ProtocolFees::get_partner_fee(&order, &Default::default(), max_partner_fee);
 
         // Expected: Empty vector since there are no partner fees
         assert_eq!(result, vec![]);
@@ -412,7 +445,7 @@ mod test {
         };
 
         let max_partner_fee = 0.3; // 30%
-        let result = ProtocolFees::get_partner_fee(&order, max_partner_fee);
+        let result = ProtocolFees::get_partner_fee(&order, &Default::default(), max_partner_fee);
 
         // Expected: Empty vector since the only fee has 0 bps
         assert_eq!(
@@ -456,7 +489,7 @@ mod test {
         };
 
         let max_partner_fee = 0.0; // 0%
-        let result = ProtocolFees::get_partner_fee(&order, max_partner_fee);
+        let result = ProtocolFees::get_partner_fee(&order, &Default::default(), max_partner_fee);
 
         // Expected: All fees are capped to zero but still appear
         assert_eq!(
@@ -501,7 +534,7 @@ mod test {
         };
 
         let max_partner_fee = 0.3; // 30%
-        let result = ProtocolFees::get_partner_fee(&order, max_partner_fee);
+        let result = ProtocolFees::get_partner_fee(&order, &Default::default(), max_partner_fee);
 
         // Expected: Single fee capped at 0.3 (instead of 0.5)
         assert_eq!(
@@ -545,7 +578,7 @@ mod test {
         };
 
         let max_partner_fee = 0.3; // 30%
-        let result = ProtocolFees::get_partner_fee(&order, max_partner_fee);
+        let result = ProtocolFees::get_partner_fee(&order, &Default::default(), max_partner_fee);
 
         // Expected: With compounding:
         // First fee: 0.1
@@ -601,7 +634,7 @@ mod test {
         };
 
         let max_partner_fee = 0.3; // 30%
-        let result = ProtocolFees::get_partner_fee(&order, max_partner_fee);
+        let result = ProtocolFees::get_partner_fee(&order, &Default::default(), max_partner_fee);
 
         // Expected: With compounding, fees accumulate as follows:
         // First fee: 0.1
