@@ -38,6 +38,7 @@ pub struct AuctionTransaction {
     pub solver: Address,
     // index of the `Settlement` event
     pub log_index: i64,
+    pub solution_uid: i64,
 }
 
 #[allow(dead_code)]

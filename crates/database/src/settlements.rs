@@ -66,14 +66,16 @@ pub async fn update_settlement_solver(
     block_number: i64,
     log_index: i64,
     solver: Address,
+    solution_uid: i64,
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
 UPDATE settlements
-SET solver = $1
-WHERE block_number = $2 AND log_index = $3
+SET solver = $1, solution_uid = $2
+WHERE block_number = $3 AND log_index = $4
     ;"#;
     sqlx::query(QUERY)
         .bind(solver)
+        .bind(solution_uid)
         .bind(block_number)
         .bind(log_index)
         .execute(ex)
