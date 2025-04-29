@@ -115,9 +115,6 @@ impl ProtocolFees {
 
         let mut accumulated = Decimal::ZERO;
 
-        let outside_market_price =
-            boundary::is_order_outside_market_price(&order.into(), &quote.into(), order.data.kind);
-
         validated
             .protocol
             .partner_fee
@@ -154,20 +151,36 @@ impl ProtocolFees {
                         let factor = FeeFactor::try_from(factor)
                             .expect("value was clamped to the required range");
 
-                        match outside_market_price {
-                            true => Policy::Surplus {
-                                factor,
-                                max_volume_factor,
-                            },
-                            false => Policy::PriceImprovement {
-                                factor,
-                                max_volume_factor,
-                                quote: Quote {
-                                    buy_amount: quote.buy_amount.into(),
-                                    sell_amount: quote.sell_amount.into(),
-                                    solver: quote.solver.into(),
-                                    fee: quote.fee.into(),
-                                },
+                        Policy::Surplus {
+                            factor,
+                            max_volume_factor,
+                        }
+                    }
+                    app_data::FeePolicy::PriceImprovement {
+                        bps,
+                        max_volume_bps,
+                    } => {
+                        // Convert bps to decimal percentage
+                        let fee_decimal = Decimal::from(max_volume_bps) / Decimal::from(MAX_BPS);
+
+                        // Compute max_volume_factor limited by the global volume cap.
+                        let max_volume_factor =
+                            fee_factor_from_capped(fee_decimal, max_partner_fee, accumulated);
+
+                        // clamp `bps` to a reasonable value
+                        let bps = u32::try_from(bps.min(u64::from(MAX_BPS) - 1)).unwrap();
+                        let factor = f64::from(bps) / f64::from(MAX_BPS);
+                        let factor = FeeFactor::try_from(factor)
+                            .expect("value was clamped to the required range");
+
+                        Policy::PriceImprovement {
+                            factor,
+                            max_volume_factor,
+                            quote: Quote {
+                                sell_amount: quote.sell_amount.into(),
+                                buy_amount: quote.buy_amount.into(),
+                                fee: quote.fee.into(),
+                                solver: quote.solver.into(),
                             },
                         }
                     }

@@ -430,9 +430,7 @@ async fn surplus_partner_fee(web3: Web3) {
     services
         .start_protocol_with_args(
             ExtraServiceArgs {
-                autopilot: vec![
-                    "--fee-policy-max-partner-fee=0.02".to_string(),
-                ],
+                autopilot: vec!["--fee-policy-max-partner-fee=0.02".to_string()],
                 ..Default::default()
             },
             solver,
@@ -443,15 +441,15 @@ async fn surplus_partner_fee(web3: Web3) {
     let quote_valid_to = model::time::now_in_epoch_seconds() + 300;
     let sell_amount = to_wei(10);
     let quote_before = get_quote(
-            &services,
-            onchain.contracts().weth.address(),
-            token.address(),
-            OrderKind::Sell,
-            sell_amount,
-            quote_valid_to,
-        )
-        .await
-        .unwrap();
+        &services,
+        onchain.contracts().weth.address(),
+        token.address(),
+        OrderKind::Sell,
+        sell_amount,
+        quote_valid_to,
+    )
+    .await
+    .unwrap();
 
     let order = OrderCreation {
         sell_amount,
@@ -494,15 +492,15 @@ async fn surplus_partner_fee(web3: Web3) {
     .expect("Timeout waiting for eviction of the cached liquidity");
 
     let quote_after = get_quote(
-            &services,
-            onchain.contracts().weth.address(),
-            token.address(),
-            OrderKind::Sell,
-            sell_amount,
-            quote_valid_to,
-        )
-        .await
-        .unwrap();
+        &services,
+        onchain.contracts().weth.address(),
+        token.address(),
+        OrderKind::Sell,
+        sell_amount,
+        quote_valid_to,
+    )
+    .await
+    .unwrap();
 
     let order_uid = services.create_order(&order).await.unwrap();
 
@@ -511,42 +509,45 @@ async fn surplus_partner_fee(web3: Web3) {
     tracing::info!("Waiting for orders to trade.");
     let metadata_updated = || async {
         onchain.mint_block().await;
-        services.get_order(&order_uid).await.is_ok_and(|order| !order.metadata.executed_fee.is_zero())
+        services
+            .get_order(&order_uid)
+            .await
+            .is_ok_and(|order| !order.metadata.executed_fee.is_zero())
     };
     wait_for_condition(TIMEOUT, metadata_updated)
         .await
         .expect("Timeout waiting for the orders to trade");
 
     tracing::info!("Checking executions...");
-    let order = services
-        .get_order(&order_uid)
-        .await
-        .unwrap();
+    let order = services.get_order(&order_uid).await.unwrap();
     tracing::error!(?order);
     // let market_executed_fee_in_buy_token =
-    //     fee_in_buy_token(&market_price_improvement_order, &market_quote_after.quote);
-    // let market_quote_diff = market_quote_after
-    //     .quote
+    //     fee_in_buy_token(&market_price_improvement_order,
+    // &market_quote_after.quote); let market_quote_diff =
+    // market_quote_after     .quote
     //     .buy_amount
     //     .saturating_sub(market_quote_before.quote.buy_amount);
     // // see `market_price_improvement_policy.factor`, which is 0.3
     // assert!(market_executed_fee_in_buy_token >= market_quote_diff * 3 / 10);
 
-    // let partner_fee_order = services.get_order(&partner_fee_order_uid).await.unwrap();
+    // let partner_fee_order =
+    // services.get_order(&partner_fee_order_uid).await.unwrap();
     // let partner_fee_executed_fee_in_buy_token =
     //     fee_in_buy_token(&partner_fee_order, &partner_fee_quote_after.quote);
     // assert!(
-    //     // see `--fee-policy-max-partner-fee` autopilot config argument, which is 0.02
-    //     partner_fee_executed_fee_in_buy_token >= partner_fee_quote.quote.buy_amount * 2 / 100
-    // );
+    //     // see `--fee-policy-max-partner-fee` autopilot config argument,
+    // which is 0.02     partner_fee_executed_fee_in_buy_token >=
+    // partner_fee_quote.quote.buy_amount * 2 / 100 );
     // let limit_quote_diff = partner_fee_quote_after
     //     .quote
     //     .buy_amount
     //     .saturating_sub(partner_fee_order.data.buy_amount);
     // // see `limit_surplus_policy.factor`, which is 0.3
-    // assert!(partner_fee_executed_fee_in_buy_token >= limit_quote_diff * 3 / 10);
+    // assert!(partner_fee_executed_fee_in_buy_token >= limit_quote_diff * 3 /
+    // 10);
 
-    // let limit_surplus_order = services.get_order(&limit_surplus_order_uid).await.unwrap();
+    // let limit_surplus_order =
+    // services.get_order(&limit_surplus_order_uid).await.unwrap();
     // let limit_executed_fee_in_buy_token =
     //     fee_in_buy_token(&limit_surplus_order, &limit_quote_after.quote);
     // let limit_quote_diff = limit_quote_after
@@ -576,8 +577,9 @@ async fn surplus_partner_fee(web3: Web3) {
     // .unwrap()
     // .try_into()
     // .expect("Expected exactly four elements");
-    // assert_approximately_eq!(market_executed_fee_in_buy_token, market_order_token_balance);
-    // assert_approximately_eq!(limit_executed_fee_in_buy_token, limit_order_token_balance);
+    // assert_approximately_eq!(market_executed_fee_in_buy_token,
+    // market_order_token_balance); assert_approximately_eq!
+    // (limit_executed_fee_in_buy_token, limit_order_token_balance);
     // assert_approximately_eq!(
     //     partner_fee_executed_fee_in_buy_token,
     //     partner_fee_order_token_balance

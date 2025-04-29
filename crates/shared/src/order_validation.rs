@@ -910,6 +910,16 @@ pub struct Amounts {
     pub fee: U256,
 }
 
+impl From<&model::order::Order> for Amounts {
+    fn from(order: &model::order::Order) -> Self {
+        Self {
+            sell: order.data.sell_amount,
+            buy: order.data.buy_amount,
+            fee: order.data.fee_amount,
+        }
+    }
+}
+
 /// Checks whether or not an order's limit price is outside the market price
 /// specified by the quote.
 pub fn is_order_outside_market_price(

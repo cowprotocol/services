@@ -70,10 +70,23 @@ pub struct PartnerFee {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum FeePolicy {
-    /// Fees should be captured from an order's surplus (depending on the
-    /// order's type measured against the order's limit price or quote
-    /// associated with the order creation).
+    /// Fees should be captured from the difference between execution price
+    /// and the orders' limit price (i.e. improvement over the price signed
+    /// by the user).
     Surplus {
+        /// How many bps of surplus should be captured as fees.
+        bps: u64,
+        /// How many bps of the total volume may be captured at most. Under some
+        /// conditions there can be a lot of surplus so to not charge egrigious
+        /// amounts there is a cap. Note that there is also a cap enforced by
+        /// the protocol so effectively the partner can only lower the
+        /// limit here.
+        max_volume_bps: u64,
+    },
+    /// Fees should be captured from the difference between execution price
+    /// and the price of the order's reference quote (i.e. improvement over the
+    /// promised price).
+    PriceImprovement {
         /// How many bps of surplus should be captured as fees.
         bps: u64,
         /// How many bps of the total volume may be captured at most. Under some
@@ -109,13 +122,18 @@ impl<'de> Deserialize<'de> for FeePolicy {
                 surplus_bps: u64,
                 max_volume_bps: u64,
             },
+            #[serde(rename_all = "camelCase")]
+            PriceImprovement {
+                price_improvement_bps: u64,
+                max_volume_bps: u64,
+            },
+            #[serde(rename_all = "camelCase")]
+            Volume { volume_bps: u64 },
             // Originally only volume fees were allowed and they used the field `bps`.
             // To stay backwards compatible with old appdata we still support this old
             // format.
             #[serde(rename_all = "camelCase")]
             VolumeOld { bps: u64 },
-            #[serde(rename_all = "camelCase")]
-            Volume { volume_bps: u64 },
         }
 
         match Helper::deserialize(deserializer)? {
@@ -124,6 +142,13 @@ impl<'de> Deserialize<'de> for FeePolicy {
                 max_volume_bps,
             } => Ok(FeePolicy::Surplus {
                 bps: surplus_bps,
+                max_volume_bps,
+            }),
+            Helper::PriceImprovement {
+                price_improvement_bps,
+                max_volume_bps,
+            } => Ok(FeePolicy::PriceImprovement {
+                bps: price_improvement_bps,
                 max_volume_bps,
             }),
             Helper::Volume { volume_bps } => Ok(FeePolicy::Volume { bps: volume_bps }),
@@ -145,6 +170,10 @@ impl serde::Serialize for FeePolicy {
                 surplus_bps: u64,
                 max_volume_bps: u64,
             },
+            PriceImprovement {
+                price_improvement_bps: u64,
+                max_volume_bps: u64,
+            },
             Volume {
                 volume_bps: u64,
             },
@@ -157,6 +186,13 @@ impl serde::Serialize for FeePolicy {
                 max_volume_bps,
             } => Helper::Surplus {
                 surplus_bps: *bps,
+                max_volume_bps: *max_volume_bps,
+            },
+            Self::PriceImprovement {
+                bps,
+                max_volume_bps,
+            } => Helper::PriceImprovement {
+                price_improvement_bps: *bps,
                 max_volume_bps: *max_volume_bps,
             },
         };
@@ -576,6 +612,11 @@ mod tests {
                                 "surplusBps": 100,
                                 "maxVolumeBps": 100,
                                 "recipient": "0x0101010101010101010101010101010101010101"
+                            },
+                            {
+                                "priceImprovementBps": 100,
+                                "maxVolumeBps": 100,
+                                "recipient": "0x0101010101010101010101010101010101010101"
                             }
                         ]
                     },
@@ -596,6 +637,13 @@ mod tests {
                     },
                     PartnerFee {
                         policy: FeePolicy::Surplus {
+                            bps: 100,
+                            max_volume_bps: 100
+                        },
+                        recipient: H160([1; 20]),
+                    },
+                    PartnerFee {
+                        policy: FeePolicy::PriceImprovement {
                             bps: 100,
                             max_volume_bps: 100
                         },
