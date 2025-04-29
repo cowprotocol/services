@@ -12,19 +12,15 @@ use {
     model::solver_competition::SolverCompetitionDB,
     number::conversions::u256_to_big_decimal,
     primitive_types::{H160, U256},
-    std::collections::{BTreeMap, HashMap, HashSet, hash_map::Iter},
+    std::collections::{BTreeMap, HashSet},
 };
 
 #[derive(Clone, Default, Debug)]
 pub struct Competition {
     pub auction_id: AuctionId,
-    // TODO: deprecated
     pub winner: H160,
-    // TODO: deprecated
     pub winning_score: U256,
-    // TODO: deprecated
     pub reference_score: U256,
-    pub reference_scores: ReferenceScores,
     /// Addresses to which the CIP20 participation rewards will be payed out.
     /// Usually the same as the solver addresses.
     pub participants: HashSet<H160>,
@@ -35,26 +31,6 @@ pub struct Competition {
     pub block_deadline: u64,
     pub competition_simulation_block: u64,
     pub competition_table: SolverCompetitionDB,
-}
-
-/// Contains the reference score per solver, defined as the difference between
-/// the total score for the auction and the combined score of all winning
-/// solutions submitted by that solver for the same auction.
-#[derive(Clone, Default, Debug)]
-pub struct ReferenceScores(HashMap<H160, U256>);
-
-impl ReferenceScores {
-    pub fn iter(&self) -> Iter<'_, H160, U256> {
-        self.0.iter()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    pub fn insert(&mut self, solver: H160, reference_score: U256) -> Option<U256> {
-        self.0.insert(solver, reference_score)
-    }
 }
 
 impl super::Postgres {
@@ -98,17 +74,12 @@ impl super::Postgres {
         .await
         .context("settlement_scores::insert")?;
 
-        let reference_scores = competition
-            .reference_scores
-            .iter()
-            .map(
-                |(solver, reference_score)| database::reference_scores::Score {
-                    auction_id: competition.auction_id,
-                    solver: ByteArray(solver.0),
-                    reference_score: u256_to_big_decimal(reference_score),
-                },
-            )
-            .collect::<Vec<_>>();
+        // TODO: support multiple winners
+        let reference_scores = vec![database::reference_scores::Score {
+            auction_id: competition.auction_id,
+            solver: ByteArray(competition.winner.0),
+            reference_score: u256_to_big_decimal(&competition.reference_score),
+        }];
 
         database::reference_scores::insert(&mut ex, &reference_scores)
             .await
