@@ -18,6 +18,7 @@ use {
     chain::Chain,
     chrono::{DateTime, Utc},
     database::{orders::OrderKind, solver_competition::Solution},
+    futures::TryFutureExt,
     number::conversions::big_decimal_to_u256,
     std::collections::{HashMap, HashSet},
 };
@@ -148,18 +149,12 @@ impl Settlement {
         chain: &Chain,
     ) -> Result<Self, Error> {
         let (auction, solver_winning_solutions) = tokio::try_join!(
-            async {
-                persistence
-                    .get_auction(settled.auction_id)
-                    .await
-                    .map_err(Error::from)
-            },
-            async {
-                persistence
-                    .get_solver_winning_solutions(settled.auction_id, settled.solver)
-                    .await
-                    .map_err(Error::from)
-            }
+            persistence
+                .get_auction(settled.auction_id)
+                .map_err(Error::from),
+            persistence
+                .get_solver_winning_solutions(settled.auction_id, settled.solver)
+                .map_err(Error::from),
         )?;
 
         if settled.block > auction.block + max_settlement_age(chain) {

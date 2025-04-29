@@ -166,6 +166,14 @@ async fn single_limit_order_test(web3: Web3) {
     );
     let balance_before = token_b.balance_of(trader_a.address()).call().await.unwrap();
     let order_id = services.create_order(&order).await.unwrap();
+
+    // we hide the quote's execution plan while the order is still fillable
+    let order = services.get_order(&order_id).await.unwrap();
+    assert_eq!(
+        order.metadata.quote.unwrap().metadata,
+        serde_json::Value::default()
+    );
+
     onchain.mint_block().await;
     let limit_order = services.get_order(&order_id).await.unwrap();
     assert_eq!(limit_order.metadata.class, OrderClass::Limit);
@@ -175,6 +183,15 @@ async fn single_limit_order_test(web3: Web3) {
     wait_for_condition(TIMEOUT, || async {
         let balance_after = token_b.balance_of(trader_a.address()).call().await.unwrap();
         balance_after.checked_sub(balance_before).unwrap() >= to_wei(5)
+    })
+    .await
+    .unwrap();
+
+    wait_for_condition(TIMEOUT, || async {
+        // after the order got filled we are able to see the quote's execution plan
+        let order = services.get_order(&order_id).await.unwrap();
+        tracing::error!(?order);
+        order.metadata.quote.unwrap().metadata != serde_json::Value::default()
     })
     .await
     .unwrap();
