@@ -435,7 +435,7 @@ Indexes:
 
 ### reference\_scores
 
-Stores the reference score per solver, defined as the difference between the total score for the auction and the combined score of all winning solutions submitted by that solver for the same auction.
+Stores the reference score per solver, defined as the difference between the total score for the auction and the total score of the auction if the reference solver had not participated. This can roughly be understood as a measurement of how much the participation of a given solver improved the overall outcome of the auction.
 
  Column           | Type     | Nullable | Details
 ------------------|----------|----------|--------
