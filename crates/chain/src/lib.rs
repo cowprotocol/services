@@ -59,10 +59,9 @@ impl Chain {
             | Self::ArbitrumOne
             | Self::Base
             | Self::Bnb
-            | Self::Avalanche
-            | Self::Optimism
-            | Self::Polygon => 10u128.pow(17).into(),
-            Self::Gnosis => 10u128.pow(18).into(),
+            | Self::Optimism => 10u128.pow(17).into(),
+            Self::Gnosis | Self::Avalanche => 10u128.pow(18).into(),
+            Self::Polygon => 10u128.pow(20).into(),
             Self::Hardhat => {
                 panic!("unsupported chain for default amount to estimate native prices with")
             }
