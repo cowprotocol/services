@@ -5,7 +5,6 @@ use {
         infra,
     },
     primitive_types::U256,
-    rand::seq::SliceRandom,
     std::collections::{HashMap, HashSet},
 };
 
@@ -107,39 +106,12 @@ impl AuctionMechanism for SingleWinnerAuctionMechanism {
     fn filter_solutions(
         &self,
         auction: &Auction,
-        input_solutions: &[Participant<Unranked>],
+        solutions: &[Participant<Unranked>],
     ) -> Vec<Participant<Unranked>> {
-        // Shuffle so that sorting randomly splits ties.
-        let mut solutions = input_solutions.to_vec();
-        solutions.shuffle(&mut rand::thread_rng());
-
-        // Sort descending by score
-        solutions.sort_unstable_by_key(|participant| {
-            std::cmp::Reverse(participant.solution().score().get().0)
-        });
-
-        // Filter out solutions that don't come from their corresponding submission
-        // address
-        let mut filtered = solutions
-            .into_iter()
-            .filter(|participant| {
-                let submission_address = participant.driver().submission_address;
-                let is_solution_from_driver = participant.solution().solver() == submission_address;
-                if !is_solution_from_driver {
-                    tracing::warn!(
-                        driver = participant.driver().name,
-                        ?submission_address,
-                        "the solution received is not from the driver submission address"
-                    );
-                }
-                is_solution_from_driver
-            })
-            .collect::<Vec<_>>();
-
         // Limit the number of accepted solutions per solver. Do not alter the ordering
         // of solutions
         let mut counter = HashMap::new();
-        filtered.retain(|participant| {
+        solutions.to_vec().retain(|participant| {
             let driver = participant.driver().name.clone();
             let count = counter.entry(driver).or_insert(0);
             *count += 1;
@@ -147,11 +119,11 @@ impl AuctionMechanism for SingleWinnerAuctionMechanism {
         });
 
         // Fairness check
-        filtered
+        solutions
             .iter()
             .enumerate()
             .filter_map(|(index, participant)| {
-                if Self::is_solution_fair(participant, &filtered[index..], auction) {
+                if Self::is_solution_fair(participant, &solutions[index..], auction) {
                     Some(participant.clone())
                 } else {
                     tracing::warn!(

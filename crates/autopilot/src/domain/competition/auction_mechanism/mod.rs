@@ -28,7 +28,7 @@ pub struct ReferenceScore {
 
 /// The following trait allows to implement custom auction mechanism logic
 /// for competitions.
-pub trait AuctionMechanism {
+pub trait AuctionMechanism: Send + Sync {
     /// Filters out invalid or unfair solutions.
     fn filter_solutions(
         &self,

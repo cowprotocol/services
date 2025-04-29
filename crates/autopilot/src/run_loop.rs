@@ -39,6 +39,7 @@ use {
         SolverSettlement,
     },
     primitive_types::H256,
+    rand::seq::SliceRandom,
     shared::token_list::AutoUpdatingTokenList,
     std::{
         collections::HashSet,
@@ -61,7 +62,7 @@ pub struct Config {
     pub max_solutions_per_solver: usize,
 }
 
-pub struct RunLoop<T: AuctionMechanism + Send + Sync + 'static> {
+pub struct RunLoop {
     config: Config,
     eth: infra::Ethereum,
     persistence: infra::Persistence,
@@ -75,10 +76,10 @@ pub struct RunLoop<T: AuctionMechanism + Send + Sync + 'static> {
     /// the most recent data available.
     maintenance: Arc<Maintenance>,
     competition_updates_sender: tokio::sync::mpsc::UnboundedSender<()>,
-    auction_mechanism: T,
+    auction_mechanism: Box<dyn AuctionMechanism>,
 }
 
-impl<T: AuctionMechanism + Send + Sync + 'static> RunLoop<T> {
+impl RunLoop {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         config: Config,
@@ -91,7 +92,7 @@ impl<T: AuctionMechanism + Send + Sync + 'static> RunLoop<T> {
         liveness: Arc<Liveness>,
         maintenance: Arc<Maintenance>,
         competition_updates_sender: tokio::sync::mpsc::UnboundedSender<()>,
-        auction_mechanism: T,
+        auction_mechanism: Box<dyn AuctionMechanism>,
     ) -> Self {
         Self {
             config,
@@ -527,6 +528,34 @@ impl<T: AuctionMechanism + Send + Sync + 'static> RunLoop<T> {
         .flatten()
         .collect::<Vec<_>>();
 
+        // Shuffle so that sorting randomly splits ties.
+        let mut solutions = solutions.to_vec();
+        solutions.shuffle(&mut rand::thread_rng());
+
+        // Sort descending by score
+        solutions.sort_unstable_by_key(|participant| {
+            std::cmp::Reverse(participant.solution().score().get().0)
+        });
+
+        // Filter out solutions that don't come from their corresponding submission
+        // address
+        let solutions = solutions
+            .into_iter()
+            .filter(|participant| {
+                let submission_address = participant.driver().submission_address;
+                let is_solution_from_driver = participant.solution().solver() == submission_address;
+                if !is_solution_from_driver {
+                    tracing::warn!(
+                        driver = participant.driver().name,
+                        ?submission_address,
+                        "the solution received is not from the driver submission address"
+                    );
+                }
+                is_solution_from_driver
+            })
+            .collect::<Vec<_>>();
+
+        // Apply specific auction mechanism logic
         let filtered_solutions = self.auction_mechanism.filter_solutions(auction, &solutions);
         self.auction_mechanism.select_winners(&filtered_solutions)
     }
