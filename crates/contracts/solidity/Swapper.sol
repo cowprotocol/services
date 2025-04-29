@@ -30,7 +30,7 @@ contract Swapper {
     /// @param buy - the asset being bought in the swap.
     /// @param allowance - the required ERC-20 allowance for the swap; the
     /// approval will be me made on behalf of the settlement contract.
-    /// @param call - the call for executing the swap.
+    /// @param calls - the calls for executing the swap.
     ///
     /// @return gasUsed - the cumulative gas used for executing the simulated
     /// settlement.
@@ -39,7 +39,7 @@ contract Swapper {
         Asset calldata sell,
         Asset calldata buy,
         Allowance calldata allowance,
-        Interaction calldata call
+        Interaction[] calldata calls
     ) external returns (
         uint256 gasUsed
     ) {
@@ -97,8 +97,7 @@ contract Swapper {
                 (allowance.spender, allowance.amount)
             );
         }
-        interactions[1] = new Interaction[](1);
-        interactions[1][0] = call;
+        interactions[1] = calls;
 
         gasUsed = address(settlement).doMeteredCallNoReturn(
             abi.encodeCall(
