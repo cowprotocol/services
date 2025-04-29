@@ -539,6 +539,8 @@ impl RunLoop {
 
         // Filter out solutions that don't come from their corresponding submission
         // address
+        // TODO: this might have to be revised in the future when solvers can use
+        // different EOAs to submit solutions.
         let solutions = solutions
             .into_iter()
             .filter(|participant| {
