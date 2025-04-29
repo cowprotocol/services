@@ -404,22 +404,6 @@ impl RunLoop {
         block_deadline: u64,
     ) -> Result<()> {
         let start = Instant::now();
-        // TODO: Needs to be removed once external teams fully migrated to the
-        // reference_scores table
-        let Some(winning_solution) = solutions
-            .iter()
-            .find(|participant| participant.is_winner())
-            .map(|participant| participant.solution())
-        else {
-            return Err(anyhow::anyhow!("no winners found"));
-        };
-        let winner = winning_solution.solver().into();
-        let winning_score = winning_solution.score().get().0;
-        let reference_score = solutions
-            .get(1)
-            .map(|participant| participant.solution().score().get().0)
-            .unwrap_or_default();
-
         let reference_scores = Self::compute_reference_scores(solutions)?;
         if reference_scores.is_empty() {
             return Err(anyhow::anyhow!("no winners found"));
@@ -496,9 +480,6 @@ impl RunLoop {
         };
         let competition = Competition {
             auction_id: auction.id,
-            winner,
-            winning_score,
-            reference_score,
             reference_scores,
             participants,
             prices: auction

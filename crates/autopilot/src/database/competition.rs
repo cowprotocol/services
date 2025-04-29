@@ -18,12 +18,6 @@ use {
 #[derive(Clone, Default, Debug)]
 pub struct Competition {
     pub auction_id: AuctionId,
-    // TODO: deprecated
-    pub winner: H160,
-    // TODO: deprecated
-    pub winning_score: U256,
-    // TODO: deprecated
-    pub reference_score: U256,
     pub reference_scores: ReferenceScores,
     /// Addresses to which the CIP20 participation rewards will be payed out.
     /// Usually the same as the solver addresses.
@@ -75,28 +69,6 @@ impl super::Postgres {
         )
         .await
         .context("solver_competition::save_solver_competition")?;
-
-        // TODO: this is deprecated and needs to be removed once the solver team has
-        // switched to the reference_scores table
-        database::settlement_scores::insert(
-            &mut ex,
-            database::settlement_scores::Score {
-                auction_id: competition.auction_id,
-                winner: ByteArray(competition.winner.0),
-                winning_score: u256_to_big_decimal(&competition.winning_score),
-                reference_score: u256_to_big_decimal(&competition.reference_score),
-                block_deadline: competition
-                    .block_deadline
-                    .try_into()
-                    .context("convert block deadline")?,
-                simulation_block: competition
-                    .competition_simulation_block
-                    .try_into()
-                    .context("convert simulation block")?,
-            },
-        )
-        .await
-        .context("settlement_scores::insert")?;
 
         let reference_scores = competition
             .reference_scores
