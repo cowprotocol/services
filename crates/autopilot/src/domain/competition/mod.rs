@@ -14,7 +14,7 @@ pub use {
         AuctionMechanism,
         ComputedScores,
         ReferenceScore,
-        SingleWinnerAuctionMechanism,
+        SingleSurplusAuctionMechanism,
     },
     participant::{Participant, Ranked, Unranked},
     participation_guard::SolverParticipationGuard,

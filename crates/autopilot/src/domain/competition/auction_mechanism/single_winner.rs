@@ -8,13 +8,13 @@ use {
     std::collections::{HashMap, HashSet},
 };
 
-pub struct SingleWinnerAuctionMechanism {
+pub struct SingleSurplusAuctionMechanism {
     pub eth: infra::Ethereum,
     pub max_solutions_per_solver: usize,
     pub max_winners_per_auction: usize,
 }
 
-impl SingleWinnerAuctionMechanism {
+impl SingleSurplusAuctionMechanism {
     /// Returns true if solution is fair to other solutions
     fn is_solution_fair(
         solution: &Participant<Unranked>,
@@ -102,7 +102,7 @@ impl SingleWinnerAuctionMechanism {
     }
 }
 
-impl AuctionMechanism for SingleWinnerAuctionMechanism {
+impl AuctionMechanism for SingleSurplusAuctionMechanism {
     fn filter_solutions(
         &self,
         auction: &Auction,

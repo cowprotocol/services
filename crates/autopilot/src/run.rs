@@ -17,7 +17,7 @@ use {
         },
         domain::{
             self,
-            competition::{SingleWinnerAuctionMechanism, SolverParticipationGuard},
+            competition::{SingleSurplusAuctionMechanism, SolverParticipationGuard},
         },
         event_updater::EventUpdater,
         infra,
@@ -604,7 +604,7 @@ pub async fn run(args: Arguments) {
         drivers.iter().cloned(),
     );
 
-    let auction_mechanism = Box::new(SingleWinnerAuctionMechanism {
+    let auction_mechanism = Box::new(SingleSurplusAuctionMechanism {
         eth: eth.clone(),
         max_solutions_per_solver: run_loop_config.max_solutions_per_solver,
         max_winners_per_auction: run_loop_config.max_winners_per_auction,

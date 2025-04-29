@@ -1,6 +1,6 @@
 mod single_winner;
 
-pub use single_winner::SingleWinnerAuctionMechanism;
+pub use single_winner::SingleSurplusAuctionMechanism;
 use {
     super::{Participant, Unranked},
     crate::domain::Auction,
