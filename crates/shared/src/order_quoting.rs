@@ -447,16 +447,16 @@ impl OrderQuoter {
                 ))),
             self.price_estimator
                 .estimate(trade_query.clone())
-                .map_err(|err| CalculateQuoteError::from((EstimatorKind::Regular, err))),
+                .map_err(|err| (EstimatorKind::Regular, err).into()),
             self.native_price_estimator
                 .estimate_native_price(parameters.sell_token)
-                .map_err(|err| CalculateQuoteError::from((EstimatorKind::NativeSell, err))),
+                .map_err(|err| (EstimatorKind::NativeSell, err).into()),
             // We don't care about the native price of the buy_token for the quote but we need it
             // when we build the auction. To prevent creating orders which we can't settle later on
             // we make the native buy_token price a requirement here as well.
             self.native_price_estimator
                 .estimate_native_price(parameters.buy_token)
-                .map_err(|err| CalculateQuoteError::from((EstimatorKind::NativeBuy, err))),
+                .map_err(|err| (EstimatorKind::NativeBuy, err).into()),
         )?;
 
         let (quoted_sell_amount, quoted_buy_amount) = match &parameters.side {
