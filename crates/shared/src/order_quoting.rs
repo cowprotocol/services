@@ -271,9 +271,13 @@ impl From<(EstimatorKind, PriceEstimationError)> for CalculateQuoteError {
 
 #[derive(Debug)]
 pub enum EstimatorKind {
+    /// The gas price estimator.
     Gas,
+    /// Estimator for calculating the token pair price of an order.
     Regular,
+    /// Estimator for calculating the native token price of order's sell token.
     NativeSell,
+    /// Estimator for calculating the native token price of order's buy token.
     NativeBuy,
 }
 
