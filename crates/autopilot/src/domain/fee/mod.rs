@@ -79,8 +79,15 @@ impl ProtocolFees {
         quote: &domain::Quote,
         max_partner_fee: f64,
     ) -> Vec<Policy> {
+        /// Number of basis points that make up 100%.
+        const MAX_BPS: u32 = 10_000;
+
         /// Convert a fee into a `FeeFactor` capping its value
-        fn fee_factor_from_capped(value: Decimal, cap: Decimal, accumulated: Decimal) -> FeeFactor {
+        fn fee_factor_from_capped(
+            value: Decimal,
+            cap: Decimal,
+            accumulated: &mut Decimal,
+        ) -> FeeFactor {
             // Calculate how much more we can compound before hitting the cap.
             //
             // When dealing with fee factors or percentages in compounding operations:
@@ -99,8 +106,19 @@ impl ProtocolFees {
             // The subtraction of 1 at the end converts back from the multiplier form (1.xx)
             // to the percentage form (0.xx) that our FeeFactor expects.
             let remaining_factor =
-                (Decimal::ONE + cap) / (Decimal::ONE + accumulated) - Decimal::ONE;
+                (Decimal::ONE + cap) / (Decimal::ONE + *accumulated) - Decimal::ONE;
+
+            // update the `accumulated` value
+            *accumulated += value.min(cap - *accumulated);
+
             FeeFactor(f64::try_from(value.max(Decimal::ZERO).min(remaining_factor)).unwrap())
+        }
+
+        fn fee_factor_from_bps(bps: u64) -> FeeFactor {
+            // clamp `bps` to range expected by `FeeFactor`: [0, 1)
+            let bps = u32::try_from(bps.min(u64::from(MAX_BPS) - 1)).unwrap();
+            let factor = f64::from(bps) / f64::from(MAX_BPS);
+            FeeFactor::try_from(factor).expect("value was clamped to the required range")
         }
 
         let Ok(max_partner_fee) = Decimal::try_from(max_partner_fee) else {
@@ -120,18 +138,13 @@ impl ProtocolFees {
             .partner_fee
             .iter()
             .map(move |partner_fee| {
-                /// Number of basis points that make up 100%.
-                const MAX_BPS: u32 = 10_000;
-
                 match partner_fee.policy {
                     app_data::FeePolicy::Volume { bps } => {
                         // Convert bps to decimal percentage
                         let fee_decimal = Decimal::from(bps) / Decimal::from(MAX_BPS);
                         // Create policy and update accumulator
                         let factor =
-                            fee_factor_from_capped(fee_decimal, max_partner_fee, accumulated);
-                        // Update the accumulated value for the next iteration
-                        accumulated += fee_decimal.min(max_partner_fee - accumulated);
+                            fee_factor_from_capped(fee_decimal, max_partner_fee, &mut accumulated);
                         Policy::Volume { factor }
                     }
                     app_data::FeePolicy::Surplus {
@@ -143,15 +156,9 @@ impl ProtocolFees {
 
                         // Compute max_volume_factor limited by the global volume cap.
                         let max_volume_factor =
-                            fee_factor_from_capped(fee_decimal, max_partner_fee, accumulated);
-                        // Update the accumulated value for the next iteration
-                        accumulated += fee_decimal.min(max_partner_fee - accumulated);
+                            fee_factor_from_capped(fee_decimal, max_partner_fee, &mut accumulated);
 
-                        // clamp `bps` to a reasonable value
-                        let bps = u32::try_from(bps.min(u64::from(MAX_BPS) - 1)).unwrap();
-                        let factor = f64::from(bps) / f64::from(MAX_BPS);
-                        let factor = FeeFactor::try_from(factor)
-                            .expect("value was clamped to the required range");
+                        let factor = fee_factor_from_bps(bps);
 
                         Policy::Surplus {
                             factor,
@@ -167,15 +174,9 @@ impl ProtocolFees {
 
                         // Compute max_volume_factor limited by the global volume cap.
                         let max_volume_factor =
-                            fee_factor_from_capped(fee_decimal, max_partner_fee, accumulated);
-                        // Update the accumulated value for the next iteration
-                        accumulated += fee_decimal.min(max_partner_fee - accumulated);
+                            fee_factor_from_capped(fee_decimal, max_partner_fee, &mut accumulated);
 
-                        // clamp `bps` to a reasonable value
-                        let bps = u32::try_from(bps.min(u64::from(MAX_BPS) - 1)).unwrap();
-                        let factor = f64::from(bps) / f64::from(MAX_BPS);
-                        let factor = FeeFactor::try_from(factor)
-                            .expect("value was clamped to the required range");
+                        let factor = fee_factor_from_bps(bps);
 
                         Policy::PriceImprovement {
                             factor,
