@@ -177,17 +177,18 @@ impl From<VerificationError> for ValidationError {
 impl From<CalculateQuoteError> for ValidationError {
     fn from(err: CalculateQuoteError) -> Self {
         match err {
-            CalculateQuoteError::Price(PriceEstimationError::UnsupportedToken {
-                token,
-                reason,
-            }) => {
+            CalculateQuoteError::Price {
+                source: PriceEstimationError::UnsupportedToken { token, reason },
+                ..
+            } => {
                 ValidationError::Partial(PartialValidationError::UnsupportedToken { token, reason })
             }
-            CalculateQuoteError::Other(err)
-            | CalculateQuoteError::Price(PriceEstimationError::ProtocolInternal(err)) => {
-                ValidationError::Other(err)
+            CalculateQuoteError::Price {
+                source: PriceEstimationError::ProtocolInternal(err),
+                ..
             }
-            CalculateQuoteError::Price(err) => ValidationError::PriceForQuote(err),
+            | CalculateQuoteError::Other(err) => ValidationError::Other(err),
+            CalculateQuoteError::Price { source, .. } => ValidationError::PriceForQuote(source),
             CalculateQuoteError::QuoteNotVerified => ValidationError::QuoteNotVerified,
             // This should never happen because we only calculate quotes with
             // `SellAmount::AfterFee`, meaning that the sell amount does not

@@ -350,51 +350,69 @@ async fn save_jit_orders(
     Ok(())
 }
 
-#[allow(clippy::type_complexity)]
+#[derive(sqlx::FromRow)]
+struct SolutionRow {
+    uid: i64,
+    id: BigDecimal,
+    solver: Address,
+    is_winner: bool,
+    score: BigDecimal,
+    price_tokens: Vec<Address>,
+    price_values: Vec<BigDecimal>,
+    order_uid: OrderUid,
+    executed_sell: BigDecimal,
+    executed_buy: BigDecimal,
+    sell_token: Address,
+    buy_token: Address,
+    limit_sell: BigDecimal,
+    limit_buy: BigDecimal,
+    side: OrderKind,
+}
+
+const BASE_SOLUTIONS_QUERY: &str = r#"
+    SELECT
+        ps.uid, ps.id, ps.solver, ps.is_winner, ps.score, ps.price_tokens, ps.price_values,
+        pse.order_uid, pse.executed_sell, pse.executed_buy,
+        COALESCE(pjo.sell_token, o.sell_token) AS sell_token,
+        COALESCE(pjo.buy_token, o.buy_token) AS buy_token,
+        COALESCE(pjo.limit_sell, o.sell_amount) AS limit_sell,
+        COALESCE(pjo.limit_buy, o.buy_amount) AS limit_buy,
+        COALESCE(pjo.side, o.kind) AS side
+    FROM proposed_solutions ps
+    JOIN proposed_trade_executions pse
+        ON ps.auction_id = pse.auction_id AND ps.uid = pse.solution_uid
+    LEFT JOIN proposed_jit_orders pjo
+        ON pse.auction_id = pjo.auction_id AND pse.solution_uid = pjo.solution_uid AND pse.order_uid = pjo.order_uid
+    LEFT JOIN orders o
+        ON pse.order_uid = o.uid
+"#;
+
 pub async fn fetch(
     ex: &mut PgConnection,
     auction_id: AuctionId,
 ) -> Result<Vec<Solution>, sqlx::Error> {
-    const QUERY: &str = r#"
-        SELECT 
-            ps.uid, ps.id, ps.solver, ps.is_winner, ps.score, ps.price_tokens, ps.price_values,
-            pse.order_uid, pse.executed_sell, pse.executed_buy,
-            COALESCE(pjo.sell_token, o.sell_token) AS sell_token,
-            COALESCE(pjo.buy_token, o.buy_token) AS buy_token,
-            COALESCE(pjo.limit_sell, o.sell_amount) AS limit_sell,
-            COALESCE(pjo.limit_buy, o.buy_amount) AS limit_buy,
-            COALESCE(pjo.side, o.kind) AS side
-        FROM proposed_solutions ps
-        JOIN proposed_trade_executions pse
-            ON ps.auction_id = pse.auction_id AND ps.uid = pse.solution_uid
-        LEFT JOIN proposed_jit_orders pjo
-            ON pse.auction_id = pjo.auction_id AND pse.solution_uid = pjo.solution_uid AND pse.order_uid = pjo.order_uid
-        LEFT JOIN orders o
-            ON pse.order_uid = o.uid
-        WHERE ps.auction_id = $1
-    "#;
+    let query_str = format!("{BASE_SOLUTIONS_QUERY} WHERE ps.auction_id = $1");
+    let query = sqlx::query_as::<_, SolutionRow>(&query_str).bind(auction_id);
 
-    #[derive(sqlx::FromRow)]
-    struct Row {
-        uid: i64,
-        id: BigDecimal,
-        solver: Address,
-        is_winner: bool,
-        score: BigDecimal,
-        price_tokens: Vec<Address>,
-        price_values: Vec<BigDecimal>,
-        order_uid: OrderUid,
-        executed_sell: BigDecimal,
-        executed_buy: BigDecimal,
-        sell_token: Address,
-        buy_token: Address,
-        limit_sell: BigDecimal,
-        limit_buy: BigDecimal,
-        side: OrderKind,
-    }
+    map_rows_to_solutions(query.fetch_all(ex).await?)
+}
 
-    let rows: Vec<Row> = sqlx::query_as(QUERY).bind(auction_id).fetch_all(ex).await?;
+pub async fn fetch_solver_winning_solutions(
+    ex: &mut PgConnection,
+    auction_id: AuctionId,
+    solver: Address,
+) -> Result<Vec<Solution>, sqlx::Error> {
+    let query_str = format!(
+        r#"{BASE_SOLUTIONS_QUERY} WHERE ps.auction_id = $1 AND ps.solver = $2 AND ps.is_winner = TRUE"#
+    );
+    let query = sqlx::query_as::<_, SolutionRow>(&query_str)
+        .bind(auction_id)
+        .bind(solver);
 
+    map_rows_to_solutions(query.fetch_all(ex).await?)
+}
+
+fn map_rows_to_solutions(rows: Vec<SolutionRow>) -> Result<Vec<Solution>, sqlx::Error> {
     let mut solutions_map = std::collections::HashMap::new();
 
     for row in rows {
@@ -606,6 +624,7 @@ mod tests {
                 uid: 2,
                 id: 1.into(),
                 solver: ByteArray([2u8; 20]), // from solver 2
+                is_winner: true,
                 orders: vec![
                     Order {
                         uid: ByteArray([1u8; 56]),
@@ -631,6 +650,14 @@ mod tests {
 
         // first two solutions should be identical
         assert_eq!(solutions[0..2], fetched_solutions[0..2]);
+
+        let solver_winning_solutions =
+            fetch_solver_winning_solutions(&mut db, 0, ByteArray([2u8; 20]))
+                .await
+                .unwrap();
+        // The solver has 2 solutions, but only one of them is winning
+        assert_eq!(solver_winning_solutions.len(), 1);
+        assert_eq!(solver_winning_solutions[0].uid, 2);
 
         let proposed_jit_orders =
             sqlx::query("SELECT order_uid FROM proposed_jit_orders ORDER BY order_uid")
