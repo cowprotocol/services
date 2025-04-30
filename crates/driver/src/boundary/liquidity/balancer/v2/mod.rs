@@ -94,7 +94,7 @@ pub fn collector(
     Box::new(BackgroundInitLiquiditySource::new(
         "balancer-v2",
         init,
-        TEN_MINUTES, // retry interval
+        TEN_MINUTES,
         reinit_interval,
     )) as Box<_>
 }

@@ -118,7 +118,7 @@ pub fn collector(
     Box::new(BackgroundInitLiquiditySource::new(
         "uniswap-v3",
         init,
-        TEN_MINUTES, // retry interval
+        TEN_MINUTES,
         reinit_interval,
     )) as Box<_>
 }
