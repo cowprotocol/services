@@ -81,6 +81,7 @@ pub fn collector(
     config: &infra::liquidity::config::BalancerV2,
 ) -> Box<dyn LiquidityCollecting> {
     let eth = Arc::new(eth.with_metric_label("balancerV2".into()));
+    let reinit_interval = config.reinit_interval;
     let config = Arc::new(config.clone());
     let init = move || {
         let eth = eth.clone();
@@ -90,12 +91,11 @@ pub fn collector(
         async move { init_liquidity(&eth, &block_stream, block_retriever.clone(), &config).await }
     };
     const TEN_MINUTES: std::time::Duration = std::time::Duration::from_secs(10 * 60);
-    const ONE_HOUR: std::time::Duration = std::time::Duration::from_secs(60 * 60);
     Box::new(BackgroundInitLiquiditySource::new(
         "balancer-v2",
         init,
-        TEN_MINUTES,    // retry interval
-        Some(ONE_HOUR), // reinit interval
+        TEN_MINUTES, // retry interval
+        reinit_interval,
     )) as Box<_>
 }
 

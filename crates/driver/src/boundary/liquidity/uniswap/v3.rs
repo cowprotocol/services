@@ -107,6 +107,7 @@ pub fn collector(
 ) -> Box<dyn LiquidityCollecting> {
     let eth = Arc::new(eth.with_metric_label("uniswapV3".into()));
     let config = Arc::new(Clone::clone(config));
+    let reinit_interval = config.reinit_interval;
     let init = move || {
         let eth = eth.clone();
         let block_retriever = block_retriever.clone();
@@ -114,12 +115,11 @@ pub fn collector(
         async move { init_liquidity(&eth, block_retriever.clone(), &config).await }
     };
     const TEN_MINUTES: std::time::Duration = std::time::Duration::from_secs(10 * 60);
-    const ONE_HOUR: std::time::Duration = std::time::Duration::from_secs(60 * 60);
     Box::new(BackgroundInitLiquiditySource::new(
         "uniswap-v3",
         init,
-        TEN_MINUTES,    // retry interval
-        Some(ONE_HOUR), // reinit interval
+        TEN_MINUTES, // retry interval
+        reinit_interval,
     )) as Box<_>
 }
 
