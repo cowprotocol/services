@@ -242,13 +242,9 @@ impl Settlement {
         &self,
         prices: &auction::Prices,
         surplus_capturing_jit_order_owners: &HashSet<eth::Address>,
-        use_new_scoring_logic: bool,
     ) -> Result<eth::Ether, solution::error::Scoring> {
-        self.solution.scoring(
-            prices,
-            surplus_capturing_jit_order_owners,
-            use_new_scoring_logic,
-        )
+        self.solution
+            .scoring(prices, surplus_capturing_jit_order_owners)
     }
 
     /// The solution encoded in this settlement.
