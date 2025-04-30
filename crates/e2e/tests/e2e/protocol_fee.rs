@@ -371,16 +371,31 @@ async fn combined_protocol_fees(web3: Web3) {
     );
 }
 
+/// Tests that a partner can provide multiple partner fees and also use
+/// the `Surplus` and `PriceImprovement` fee policies. Also checks that
+/// the partner fees can not exceed the globally defined `--fee-policy-max-partner-fee`
+/// which defines how much of an order's volume may be captured in total
+/// by partner fees.
 async fn surplus_partner_fee(web3: Web3) {
+    // All these values are unreasonably high but result in easier math
+    // when it comes to limiting partner fees to the global volume cap.
+    const MAX_PARTNER_VOLUME_FEE: f64 = 0.375;
     let partner_fee_app_data = OrderCreationAppData::Full {
         full: json!({
             "version": "1.1.0",
             "metadata": {
-                "partnerFee": {
-                    "surplusBps": 100,
-                    "maxVolumeBps": 100,
-                    "recipient": "0xb6BAd41ae76A11D10f7b0E664C5007b908bC77C9",
-                }
+                "partnerFee": [
+                    {
+                        "surplusBps": 3_000, // 30%
+                        "maxVolumeBps": 2_500, // 25%
+                        "recipient": "0xb6BAd41ae76A11D10f7b0E664C5007b908bC77C9",
+                    },
+                    {
+                        "priceImprovementBps": 3_000, // 30%
+                        "maxVolumeBps": 1_500, // 15%
+                        "recipient": "0xb6BAd41ae76A11D10f7b0E664C5007b908bC77C9",
+                    },
+                ]
             }
         })
         .to_string(),
@@ -430,77 +445,30 @@ async fn surplus_partner_fee(web3: Web3) {
     services
         .start_protocol_with_args(
             ExtraServiceArgs {
-                autopilot: vec!["--fee-policy-max-partner-fee=0.02".to_string()],
+                autopilot: vec![format!(
+                    "--fee-policy-max-partner-fee={MAX_PARTNER_VOLUME_FEE}"
+                )],
                 ..Default::default()
             },
             solver,
         )
         .await;
 
-    tracing::info!("Acquiring quotes.");
-    let quote_valid_to = model::time::now_in_epoch_seconds() + 300;
-    let sell_amount = to_wei(10);
-    let quote_before = get_quote(
-        &services,
-        onchain.contracts().weth.address(),
-        token.address(),
-        OrderKind::Sell,
-        sell_amount,
-        quote_valid_to,
-    )
-    .await
-    .unwrap();
-
     let order = OrderCreation {
-        sell_amount,
-        // to make sure the order is in-market
-        buy_amount: quote_before.quote.buy_amount * 2 / 3,
+        sell_amount: to_wei(10),
+        sell_token: onchain.contracts().weth.address(),
+        // just set any low amount since it doesn't matter for this test
+        buy_amount: to_wei(1),
+        buy_token: token.address(),
         app_data: partner_fee_app_data.clone(),
-        ..sell_order_from_quote(&quote_before)
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        ..Default::default()
     }
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
-
-    tracing::info!("Rebalancing AMM pools for market & limit order.");
-    onchain
-        .mint_token_to_weth_uni_v2_pool(&token, to_wei(1000))
-        .await;
-
-    tracing::info!("Waiting for liquidity state to update");
-    wait_for_condition(TIMEOUT, || async {
-        // Mint blocks until we evict the cached liquidity and fetch the new state.
-        onchain.mint_block().await;
-        let new_quote = get_quote(
-            &services,
-            onchain.contracts().weth.address(),
-            token.address(),
-            OrderKind::Sell,
-            sell_amount,
-            model::time::now_in_epoch_seconds() + 300,
-        )
-        .await
-        .unwrap();
-        // Only proceed with test once the quote changes significantly (2x) to avoid
-        // progressing due to tiny fluctuations in gas price which would lead to
-        // errors down the line.
-        new_quote.quote.buy_amount > quote_before.quote.buy_amount * 2
-    })
-    .await
-    .expect("Timeout waiting for eviction of the cached liquidity");
-
-    let quote_after = get_quote(
-        &services,
-        onchain.contracts().weth.address(),
-        token.address(),
-        OrderKind::Sell,
-        sell_amount,
-        quote_valid_to,
-    )
-    .await
-    .unwrap();
 
     let order_uid = services.create_order(&order).await.unwrap();
 
@@ -519,71 +487,43 @@ async fn surplus_partner_fee(web3: Web3) {
         .expect("Timeout waiting for the orders to trade");
 
     tracing::info!("Checking executions...");
-    let order = services.get_order(&order_uid).await.unwrap();
-    tracing::error!(?order);
-    // let market_executed_fee_in_buy_token =
-    //     fee_in_buy_token(&market_price_improvement_order,
-    // &market_quote_after.quote); let market_quote_diff =
-    // market_quote_after     .quote
-    //     .buy_amount
-    //     .saturating_sub(market_quote_before.quote.buy_amount);
-    // // see `market_price_improvement_policy.factor`, which is 0.3
-    // assert!(market_executed_fee_in_buy_token >= market_quote_diff * 3 / 10);
+    let trades = services.get_trades(&order_uid).await.unwrap();
+    assert_eq!(trades.len(), 1);
+    let trade = &trades[0];
 
-    // let partner_fee_order =
-    // services.get_order(&partner_fee_order_uid).await.unwrap();
-    // let partner_fee_executed_fee_in_buy_token =
-    //     fee_in_buy_token(&partner_fee_order, &partner_fee_quote_after.quote);
-    // assert!(
-    //     // see `--fee-policy-max-partner-fee` autopilot config argument,
-    // which is 0.02     partner_fee_executed_fee_in_buy_token >=
-    // partner_fee_quote.quote.buy_amount * 2 / 100 );
-    // let limit_quote_diff = partner_fee_quote_after
-    //     .quote
-    //     .buy_amount
-    //     .saturating_sub(partner_fee_order.data.buy_amount);
-    // // see `limit_surplus_policy.factor`, which is 0.3
-    // assert!(partner_fee_executed_fee_in_buy_token >= limit_quote_diff * 3 /
-    // 10);
+    // Fee policies defined by the partner got applied for the
+    // executed trades.
+    assert_eq!(
+        trade.executed_protocol_fees[0].policy,
+        model::fee_policy::FeePolicy::Surplus {
+            factor: 0.3,
+            max_volume_factor: 0.25,
+        }
+    );
 
-    // let limit_surplus_order =
-    // services.get_order(&limit_surplus_order_uid).await.unwrap();
-    // let limit_executed_fee_in_buy_token =
-    //     fee_in_buy_token(&limit_surplus_order, &limit_quote_after.quote);
-    // let limit_quote_diff = limit_quote_after
-    //     .quote
-    //     .buy_amount
-    //     .saturating_sub(limit_surplus_order.data.buy_amount);
-    // // see `limit_surplus_policy.factor`, which is 0.3
-    // assert!(limit_executed_fee_in_buy_token >= limit_quote_diff * 3 / 10);
-
-    // let [
-    //     market_order_token_balance,
-    //     limit_order_token_balance,
-    //     partner_fee_order_token_balance,
-    // ] = futures::future::try_join_all(
-    //     [
-    //         &market_order_token,
-    //         &limit_order_token,
-    //         &partner_fee_order_token,
-    //     ]
-    //     .map(|token| {
-    //         token
-    //             .balance_of(onchain.contracts().gp_settlement.address())
-    //             .call()
-    //     }),
-    // )
-    // .await
-    // .unwrap()
-    // .try_into()
-    // .expect("Expected exactly four elements");
-    // assert_approximately_eq!(market_executed_fee_in_buy_token,
-    // market_order_token_balance); assert_approximately_eq!
-    // (limit_executed_fee_in_buy_token, limit_order_token_balance);
-    // assert_approximately_eq!(
-    //     partner_fee_executed_fee_in_buy_token,
-    //     partner_fee_order_token_balance
-    // );
+    // Fee policies exceeding the global partner fee cap have been
+    // capped to the maximum allowed value.
+    assert!(matches!(
+        trade.executed_protocol_fees[1].policy,
+        model::fee_policy::FeePolicy::PriceImprovement {
+            factor: 0.3,
+            // Note that the partner fee policy actually specified
+            // 0.15 here but that would exceed the total partner fee
+            // so it was capped to 0.1.
+            max_volume_factor: 0.1,
+            .. // we don't care about the quote here
+        }
+    ));
+    // The volume caps of all partner fees combined (applied after each other)
+    // are capped to the total volume cap for all partners. Note that we use
+    // "1. + factor" here because the factors start from 0 (e.g. 20% == 0.2)
+    // but the math only works with factors starting from 1 (e.g. 20% == 1.2).
+    assert_eq!(
+        trade.executed_protocol_fees.iter().fold(1., |acc, fee| {
+            acc * (1. + fee.policy.max_volume_factor())
+        }),
+        1. + MAX_PARTNER_VOLUME_FEE
+    );
 }
 
 async fn get_quote(

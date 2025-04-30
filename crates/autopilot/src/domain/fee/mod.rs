@@ -144,6 +144,8 @@ impl ProtocolFees {
                         // Compute max_volume_factor limited by the global volume cap.
                         let max_volume_factor =
                             fee_factor_from_capped(fee_decimal, max_partner_fee, accumulated);
+                        // Update the accumulated value for the next iteration
+                        accumulated += fee_decimal.min(max_partner_fee - accumulated);
 
                         // clamp `bps` to a reasonable value
                         let bps = u32::try_from(bps.min(u64::from(MAX_BPS) - 1)).unwrap();
@@ -166,6 +168,8 @@ impl ProtocolFees {
                         // Compute max_volume_factor limited by the global volume cap.
                         let max_volume_factor =
                             fee_factor_from_capped(fee_decimal, max_partner_fee, accumulated);
+                        // Update the accumulated value for the next iteration
+                        accumulated += fee_decimal.min(max_partner_fee - accumulated);
 
                         // clamp `bps` to a reasonable value
                         let bps = u32::try_from(bps.min(u64::from(MAX_BPS) - 1)).unwrap();
