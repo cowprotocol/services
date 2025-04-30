@@ -62,7 +62,7 @@ impl<L> BackgroundInitLiquiditySource<L> {
         label: &str,
         init: I,
         retry_init_timeout: Duration,
-        reinit_timeout: Option<Duration>,
+        reinit_interval: Option<Duration>,
     ) -> Self
     where
         I: Fn() -> F + Send + Sync + 'static,
@@ -95,7 +95,7 @@ impl<L> BackgroundInitLiquiditySource<L> {
                                 .with_label_values(&[&inner_label])
                                 .inc();
 
-                            match reinit_timeout {
+                            match reinit_interval {
                                 Some(timeout) => tokio::time::sleep(timeout).await,
                                 None => break,
                             }
