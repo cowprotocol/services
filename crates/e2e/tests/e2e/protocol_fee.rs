@@ -373,9 +373,9 @@ async fn combined_protocol_fees(web3: Web3) {
 
 /// Tests that a partner can provide multiple partner fees and also use
 /// the `Surplus` and `PriceImprovement` fee policies. Also checks that
-/// the partner fees can not exceed the globally defined `--fee-policy-max-partner-fee`
-/// which defines how much of an order's volume may be captured in total
-/// by partner fees.
+/// the partner fees can not exceed the globally defined
+/// `--fee-policy-max-partner-fee` which defines how much of an order's volume
+/// may be captured in total by partner fees.
 async fn surplus_partner_fee(web3: Web3) {
     // All these values are unreasonably high but result in easier math
     // when it comes to limiting partner fees to the global volume cap.
