@@ -90,10 +90,12 @@ pub fn collector(
         async move { init_liquidity(&eth, &block_stream, block_retriever.clone(), &config).await }
     };
     const TEN_MINUTES: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+    const ONE_HOUR: std::time::Duration = std::time::Duration::from_secs(60 * 60);
     Box::new(BackgroundInitLiquiditySource::new(
         "balancer-v2",
         init,
-        TEN_MINUTES,
+        TEN_MINUTES,    // retry interval
+        Some(ONE_HOUR), // reinit interval
     )) as Box<_>
 }
 
