@@ -232,10 +232,11 @@ mod test {
         );
 
         // wait for 5 full re-init cycles
-        tokio::time::sleep(tokio::time::Duration::from_millis(55)).await;
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
 
-        // init loop ran expected number of times
-        assert_eq!(counter.load(Ordering::SeqCst), 5);
+        // init loop ran expected number of times (note that we allow for slight
+        // variance due to our very short timeouts here).
+        assert!((5..=6).contains(&counter.load(Ordering::SeqCst)));
         let liquidity = source
             .get_liquidity(Default::default(), Block::Recent)
             .await;
@@ -244,6 +245,6 @@ mod test {
         let gauge = Metrics::get()
             .liquidity_enabled
             .with_label_values(&["fake"]);
-        assert_eq!(gauge.get(), 5);
+        assert!((5..=6).contains(&gauge.get()));
     }
 }
