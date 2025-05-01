@@ -731,6 +731,13 @@ async fn test_submit_quote(
     // environment assert_ne!(response.quote.fee_amount, 0.into());
     // Amount is reasonable (±10% from real price)
     let approx_output: U256 = response.quote.sell_amount * DAI_PER_ETH;
+    println!("newlog: approx_output = {approx_output}");
+    println!(
+        "newlog: response.quote.buy_amount = {}",
+        response.quote.buy_amount
+    );
+    println!("newlog: expected min = {}", approx_output * 9u64 / 10);
+    println!("newlog: expected max = {}", approx_output * 11u64 / 10);
     // assert!(response.quote.buy_amount.gt(&(approx_output * 9u64 / 10)));
     // assert!(response.quote.buy_amount.lt(&(approx_output * 11u64 / 10)));
 
