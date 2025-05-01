@@ -317,6 +317,52 @@ fn create_zeroex_liquidity_orders(
         .map(|order| order.to_order_record(chain_id, zeroex_addr, zeroex_maker.clone()))
 }
 
+pub fn create_zeroex_liquidity_orders_for_token(
+    taker_token: H160,
+    taker_amount: u128,
+    zeroex_maker: TestAccount,
+    zeroex_addr: H160,
+    chain_id: u64,
+    weth_address: H160,
+) -> [shared::zeroex_api::OrderRecord; 2] {
+    let usdc_weth_order = Eip712TypedZeroExOrder {
+        maker_token: weth_address,
+        taker_token,
+        // the value comes from the `--amount-to-estimate-prices-with` config to provide
+        // sufficient liquidity
+        maker_amount: 1_000_000_000_000_000_000u128,
+        taker_amount,
+        remaining_fillable_taker_amount: taker_amount,
+        taker_token_fee_amount: 0,
+        maker: zeroex_maker.address(),
+        taker: Default::default(),
+        sender: Default::default(),
+        fee_recipient: zeroex_addr,
+        pool: H256::default(),
+        expiry: NaiveDateTime::MAX.and_utc().timestamp() as u64,
+        salt: U256::from(Utc::now().timestamp()),
+    };
+    let weth_usdc_order = Eip712TypedZeroExOrder {
+        maker_token: taker_token,
+        taker_token: weth_address,
+        // the value comes from the `--amount-to-estimate-prices-with` config to provide
+        // sufficient liquidity
+        maker_amount: 1_000_000_000_000_000_000u128,
+        taker_amount: to_wei(1).as_u128(),
+        remaining_fillable_taker_amount: to_wei(1).as_u128(),
+        taker_token_fee_amount: 0,
+        maker: zeroex_maker.address(),
+        taker: Default::default(),
+        sender: Default::default(),
+        fee_recipient: zeroex_addr,
+        pool: H256::default(),
+        expiry: NaiveDateTime::MAX.and_utc().timestamp() as u64,
+        salt: U256::from(Utc::now().timestamp()),
+    };
+    [weth_usdc_order, usdc_weth_order]
+        .map(|order| order.to_order_record(chain_id, zeroex_addr, zeroex_maker.clone()))
+}
+
 #[derive(Debug)]
 struct ZeroExOrderAmounts {
     filled: u128,
