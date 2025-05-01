@@ -1,9 +1,14 @@
 use {
     anyhow::bail,
     autopilot::database::onchain_order_events::ethflow_events::WRAP_ALL_SELECTOR,
-    contracts::{CoWSwapEthFlow, ERC20Mintable, WETH9},
+    contracts::{CoWSwapEthFlow, ERC20, ERC20Mintable, WETH9},
     database::order_events::OrderEventLabel,
-    e2e::{nodes::local_node::TestNodeApi, setup::*, tx, tx_value},
+    e2e::{
+        nodes::{forked_node::ForkedNodeApi, local_node::TestNodeApi},
+        setup::*,
+        tx,
+        tx_value,
+    },
     ethcontract::{Account, Bytes, H160, H256, U256, transaction::TransactionResult},
     ethrpc::{Web3, block_stream::timestamp_of_current_block_in_seconds},
     hex_literal::hex,
@@ -39,14 +44,42 @@ use {
     },
     reqwest::Client,
     shared::signature_validator::check_erc1271_result,
+    web3::types::TransactionRequest,
 };
 
 const DAI_PER_ETH: u32 = 1_000;
+
+const FORK_BLOCK_POLYGON: u64 = 70948400;
+const FORK_BLOCK_MAINNET: u64 = 18477910;
 
 #[tokio::test]
 #[ignore]
 async fn local_node_eth_flow_tx() {
     run_test(eth_flow_tx).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn forked_node_mainnet_eth_flow_tx() {
+    run_forked_test_with_block_number(
+        forked_mainnet_eth_flow_tx,
+        std::env::var("FORK_URL_MAINNET")
+            .expect("FORK_URL_POLYGON must be set to run forked tests"),
+        FORK_BLOCK_MAINNET,
+    )
+    .await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn forked_node_polygon_eth_flow_tx() {
+    run_forked_test_with_block_number(
+        forked_polygon_eth_flow_tx,
+        std::env::var("FORK_URL_POLYGON")
+            .expect("FORK_URL_POLYGON must be set to run forked tests"),
+        FORK_BLOCK_POLYGON,
+    )
+    .await;
 }
 
 #[tokio::test]
@@ -74,6 +107,222 @@ async fn eth_flow_tx(web3: Web3) {
 
     // Get a quote from the services
     let buy_token = dai.address();
+    let receiver = H160([0x42; 20]);
+    let sell_amount = to_wei(1);
+    let intent = EthFlowTradeIntent {
+        sell_amount,
+        buy_token,
+        receiver,
+    };
+
+    let services = Services::new(&onchain).await;
+    services.start_protocol(solver).await;
+
+    let quote: OrderQuoteResponse = test_submit_quote(
+        &services,
+        &intent.to_quote_request(trader.account().address(), &onchain.contracts().weth),
+    )
+    .await;
+
+    let valid_to = chrono::offset::Utc::now().timestamp() as u32
+        + timestamp_of_current_block_in_seconds(&web3).await.unwrap()
+        + 3600;
+    let ethflow_order =
+        ExtendedEthFlowOrder::from_quote(&quote, valid_to).include_slippage_bps(300);
+
+    let ethflow_contract = onchain.contracts().ethflows.first().unwrap();
+    submit_order(
+        &ethflow_order,
+        trader.account(),
+        onchain.contracts(),
+        ethflow_contract,
+    )
+    .await;
+
+    test_order_availability_in_api(
+        &services,
+        &ethflow_order,
+        &trader.address(),
+        onchain.contracts(),
+        ethflow_contract,
+    )
+    .await;
+
+    tracing::info!("waiting for trade");
+
+    test_order_was_settled(&ethflow_order, &web3).await;
+
+    // make sure the fee was charged for zero fee limit orders
+    let fee_charged = || async {
+        onchain.mint_block().await;
+        let order = services
+            .get_order(
+                &ethflow_order
+                    .uid(onchain.contracts(), ethflow_contract)
+                    .await,
+            )
+            .await
+            .unwrap();
+        order.metadata.executed_fee > U256::zero()
+    };
+    wait_for_condition(TIMEOUT, fee_charged).await.unwrap();
+
+    test_trade_availability_in_api(
+        services.client(),
+        &ethflow_order,
+        &trader.address(),
+        onchain.contracts(),
+        ethflow_contract,
+    )
+    .await;
+}
+
+const POLYGON_WHALE: H160 = H160(hex_literal::hex!(
+    // "4F6F977aCDD1177DCD81aB83074855EcB9C2D49e" // holds WPOL
+    "4c569c1e541A19132AC893748E0ad54C7c989FF4" // holds POL
+));
+
+async fn forked_polygon_eth_flow_tx(web3: Web3) {
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+
+    let [solver] = onchain.make_solvers_forked(to_wei(2)).await;
+    let [trader] = onchain.make_accounts(to_wei(2)).await;
+
+    let forked_node_api = web3.api::<ForkedNodeApi<_>>();
+
+    let some_token = ERC20::at(
+        &web3,
+        "0x8bc3ec2e7973e64be582a90b08cadd13457160fe"
+            .parse()
+            .unwrap(),
+    );
+
+    let native_w_token = ERC20::at(
+        &web3,
+        "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270"
+            .parse()
+            .unwrap(),
+    );
+
+    let native_token_whale = forked_node_api.impersonate(&POLYGON_WHALE).await.unwrap();
+
+    // Send some POL to the trader
+    web3.eth()
+        .send_transaction(TransactionRequest {
+            from: native_token_whale.address(),
+            to: Some(trader.address()),
+            value: Some(to_wei(1).into()),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+
+    // Get a quote from the services
+    let buy_token = some_token.address();
+    let receiver = H160([0x42; 20]);
+    let sell_amount = to_wei(1);
+    let intent = EthFlowTradeIntent {
+        sell_amount,
+        buy_token,
+        receiver,
+    };
+
+    let services = Services::new(&onchain).await;
+    services.start_protocol(solver).await;
+
+    let quote: OrderQuoteResponse = test_submit_quote(
+        &services,
+        &intent.to_quote_request_non_weth(trader.account().address(), native_w_token.address()),
+    )
+    .await;
+
+    let valid_to = chrono::offset::Utc::now().timestamp() as u32
+        + timestamp_of_current_block_in_seconds(&web3).await.unwrap()
+        + 3600;
+    let ethflow_order =
+        ExtendedEthFlowOrder::from_quote(&quote, valid_to).include_slippage_bps(300);
+
+    let ethflow_contract = onchain.contracts().ethflows.first().unwrap();
+    submit_order(
+        &ethflow_order,
+        trader.account(),
+        onchain.contracts(),
+        ethflow_contract,
+    )
+    .await;
+
+    test_order_availability_in_api(
+        &services,
+        &ethflow_order,
+        &trader.address(),
+        onchain.contracts(),
+        ethflow_contract,
+    )
+    .await;
+
+    tracing::info!("waiting for trade");
+
+    test_order_was_settled(&ethflow_order, &web3).await;
+
+    // make sure the fee was charged for zero fee limit orders
+    let fee_charged = || async {
+        onchain.mint_block().await;
+        let order = services
+            .get_order(
+                &ethflow_order
+                    .uid(onchain.contracts(), ethflow_contract)
+                    .await,
+            )
+            .await
+            .unwrap();
+        order.metadata.executed_fee > U256::zero()
+    };
+    wait_for_condition(TIMEOUT, fee_charged).await.unwrap();
+
+    test_trade_availability_in_api(
+        services.client(),
+        &ethflow_order,
+        &trader.address(),
+        onchain.contracts(),
+        ethflow_contract,
+    )
+    .await;
+}
+
+const WHALE_MAINNET: H160 = H160(hex_literal::hex!(
+    "C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" // ETH/WETH
+));
+
+async fn forked_mainnet_eth_flow_tx(web3: Web3) {
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+
+    let [solver] = onchain.make_solvers_forked(to_wei(2)).await;
+    let [trader] = onchain.make_accounts(to_wei(2)).await;
+
+    let forked_node_api = web3.api::<ForkedNodeApi<_>>();
+
+    let token_usdc = ERC20::at(
+        &web3,
+        "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+            .parse()
+            .unwrap(),
+    );
+
+    let native_token_whale = forked_node_api.impersonate(&WHALE_MAINNET).await.unwrap();
+
+    // Send some ETH to the trader
+    web3.eth()
+        .send_transaction(TransactionRequest {
+            from: native_token_whale.address(),
+            to: Some(trader.address()),
+            value: Some(to_wei(1).into()),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+
+    // Get a quote from the services
+    let buy_token = token_usdc.address();
     let receiver = H160([0x42; 20]);
     let sell_amount = to_wei(1);
     let intent = EthFlowTradeIntent {
@@ -688,6 +937,30 @@ impl EthFlowTradeIntent {
             from,
             // Even if the user sells ETH, we request a quote for WETH
             sell_token: weth.address(),
+            buy_token: self.buy_token,
+            receiver: Some(self.receiver),
+            validity: Validity::For(3600),
+            app_data: OrderCreationAppData::default(),
+            signing_scheme: QuoteSigningScheme::Eip1271 {
+                onchain_order: true,
+                verification_gas_limit: 0,
+            },
+            side: OrderQuoteSide::Sell {
+                sell_amount: model::quote::SellAmount::AfterFee {
+                    value: NonZeroU256::try_from(self.sell_amount).unwrap(),
+                },
+            },
+            buy_token_balance: BuyTokenDestination::Erc20,
+            sell_token_balance: SellTokenSource::Erc20,
+            price_quality: PriceQuality::Optimal,
+        }
+    }
+
+    pub fn to_quote_request_non_weth(&self, from: H160, sell_token: H160) -> OrderQuoteRequest {
+        OrderQuoteRequest {
+            from,
+            // Even if the user sells ETH, we request a quote for WETH
+            sell_token,
             buy_token: self.buy_token,
             receiver: Some(self.receiver),
             validity: Validity::For(3600),

@@ -108,14 +108,14 @@ fn main() {
                     deployment_information: Some(DeploymentInformation::BlockNumber(134607215)),
                 },
             )
-        // .add_network(
-        //     POLYGON,
-        //     Network {
-        //         address: addr("0x04501b9b1d52e67f6862d157e00d13419d2d6e95"),
-        //         // <https://polygonscan.com/tx/TODO>
-        //         deployment_information: Some(DeploymentInformation::BlockNumber(TODO)),
-        //     },
-        // )
+            .add_network(
+                POLYGON,
+                Network {
+                    address: addr("0x8dDCB45B74E51564528f96b87B27A49D1e2727d3"),
+                    // <https://polygonscan.com/tx/0x63cdfd0d8e738309b4d430a9d429613b26fc95974b61158157f1c92ccc620e00>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(70948400)),
+                },
+            )
     });
     generate_contract_with_config("CoWSwapOnchainOrders", |builder| {
         builder.contract_mod_override("cowswap_onchain_orders")
