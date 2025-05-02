@@ -199,6 +199,14 @@ async fn forked_mainnet_zeroex_eth_flow_tx(web3: Web3) {
         zeroex_maker.account(),
         token_cow.approve(zeroex.address(), amount * 4)
     );
+    tx!(
+        cow_whale,
+        token_cow.transfer(solver.address(), amount)
+    );
+    tx!(
+        cow_whale,
+        token_cow.approve(solver.address(), amount)
+    );
 
     let chain_id = web3.eth().chain_id().await.unwrap().as_u64();
     let zeroex_liquidity_orders = crate::liquidity::create_zeroex_liquidity_orders_for_token(
