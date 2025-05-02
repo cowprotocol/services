@@ -127,7 +127,18 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
     })
 }
 
-pub fn order_quote_into_model(quote: &database::orders::Quote) -> Result<OrderQuote> {
+pub fn order_quote_into_model(
+    quote: &database::orders::Quote,
+    status: model::order::OrderStatus,
+) -> Result<OrderQuote> {
+    let metadata = match status {
+        // We don't want to make the quote's execution plan public as long as an order
+        // is still fillable. Otherwise solvers can just try to copy the execution
+        // plan which could lead to undesirable behavior of quoters.
+        OrderStatus::Open | OrderStatus::PresignaturePending => Default::default(),
+        _ => quote.metadata.clone(),
+    };
+
     Ok(OrderQuote {
         gas_amount: BigDecimal::from_f64(quote.gas_amount).context("gas_amount is not U256")?,
         gas_price: BigDecimal::from_f64(quote.gas_price).context("gas_price is not U256")?,
@@ -137,7 +148,7 @@ pub fn order_quote_into_model(quote: &database::orders::Quote) -> Result<OrderQu
         buy_amount: big_decimal_to_u256(&quote.buy_amount).context("buy_amount is not U256")?,
         solver: H160(quote.solver.0),
         verified: quote.verified,
-        metadata: quote.metadata.clone(),
+        metadata,
     })
 }
 

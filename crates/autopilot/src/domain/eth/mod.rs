@@ -1,6 +1,6 @@
 pub use primitive_types::{H160, H256, U256};
 use {
-    crate::domain,
+    crate::{domain, util::conv::U256Ext},
     derive_more::{Display, From, Into},
 };
 
@@ -71,23 +71,15 @@ pub struct TokenAmount(pub U256);
 
 impl TokenAmount {
     /// Applies a factor to the token amount.
-    ///
-    /// The factor is first multiplied by 10^18 to convert it to integer, to
-    /// avoid rounding to 0. Then, the token amount is divided by 10^18 to
-    /// convert it back to the original scale.
-    ///
-    /// The higher the conversion factor (10^18) the precision is higher. E.g.
-    /// 0.123456789123456789 will be converted to 123456789123456789.
     pub fn apply_factor(&self, factor: f64) -> Option<Self> {
-        Some(
-            (self
-                .0
-                .checked_mul(U256::from_f64_lossy(factor * 1000000000000000000.))?
-                / 1000000000000000000u128)
-                .into(),
-        )
+        Some(self.0.checked_mul_f64(factor)?.into())
     }
 }
+
+/// A value denominated in an order's surplus token (buy token for
+/// sell orders and sell token for buy orders).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, From, Into)]
+pub struct SurplusTokenAmount(pub U256);
 
 /// An ERC20 sell token amount.
 ///
@@ -253,7 +245,7 @@ impl num::Zero for TokenAmount {
 
 /// An asset on the Ethereum blockchain. Represents a particular amount of a
 /// particular token.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub struct Asset {
     pub amount: TokenAmount,
     pub token: TokenAddress,

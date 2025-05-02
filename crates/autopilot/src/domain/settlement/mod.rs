@@ -5,18 +5,28 @@
 
 use {
     crate::{
-        domain::{self, eth},
-        infra,
+        domain::{
+            self,
+            Metrics,
+            OrderUid,
+            auction::order,
+            eth,
+            settlement::transaction::EncodedTrade,
+        },
+        infra::{self, persistence::dto::AuctionId},
     },
+    chain::Chain,
     chrono::{DateTime, Utc},
-    std::collections::HashMap,
+    database::{orders::OrderKind, solver_competition::Solution},
+    futures::TryFutureExt,
+    number::conversions::big_decimal_to_u256,
+    std::collections::{HashMap, HashSet},
 };
 
 mod auction;
 mod observer;
 mod trade;
 mod transaction;
-use {crate::infra::persistence::dto::AuctionId, chain::Chain};
 pub use {auction::Auction, observer::Observer, trade::Trade, transaction::Transaction};
 
 /// A settled transaction together with the `Auction`, for which it was executed
@@ -34,6 +44,8 @@ pub struct Settlement {
     block: eth::BlockNo,
     /// The solver (is different from `tx.from` for smart contract solvers)
     solver: eth::Address,
+    /// The corresponding solver's winning solution UID.
+    solution_uid: i64,
     /// The associated auction.
     auction: Auction,
     /// Trades that were settled by the transaction.
@@ -53,6 +65,11 @@ impl Settlement {
     /// The effective gas price at the time of settlement.
     pub fn gas_price(&self) -> eth::EffectiveGasPrice {
         self.gas_price
+    }
+
+    /// The solution UID associated with this settlement.
+    pub fn solution_uid(&self) -> i64 {
+        self.solution_uid
     }
 
     /// Total surplus for all trades in the settlement.
@@ -131,7 +148,14 @@ impl Settlement {
         persistence: &infra::Persistence,
         chain: &Chain,
     ) -> Result<Self, Error> {
-        let auction = persistence.get_auction(settled.auction_id).await?;
+        let (auction, solver_winning_solutions) = tokio::try_join!(
+            persistence
+                .get_auction(settled.auction_id)
+                .map_err(Error::from),
+            persistence
+                .get_solver_winning_solutions(settled.auction_id, settled.solver)
+                .map_err(Error::from),
+        )?;
 
         if settled.block > auction.block + max_settlement_age(chain) {
             // A settled transaction references a VERY old auction.
@@ -144,6 +168,18 @@ impl Settlement {
             return Err(Error::WrongEnvironment);
         }
 
+        // Check this only if we are sure the settlement is from the current
+        // environment.
+        let Some(solution_uid) =
+            find_winning_solution_uid(&solver_winning_solutions, &settled.trades)
+        else {
+            Metrics::get()
+                .inconsistent_settlements
+                .with_label_values(&[&format!("{:?}", settled.solver.0)])
+                .inc();
+            return Err(Error::InconsistentData(InconsistentData::SolutionNotFound));
+        };
+
         let trades = settled
             .trades
             .into_iter()
@@ -155,10 +191,57 @@ impl Settlement {
             gas: settled.gas,
             gas_price: settled.gas_price,
             solver: settled.solver,
+            solution_uid,
             trades,
             auction,
         })
     }
+}
+
+#[derive(Debug, Hash, Eq, PartialEq)]
+struct OrderMatchKey {
+    uid: OrderUid,
+    token: eth::TokenAddress,
+    executed: eth::U256,
+}
+
+fn trade_to_key(trade: &EncodedTrade) -> OrderMatchKey {
+    OrderMatchKey {
+        uid: trade.uid,
+        token: match trade.side {
+            order::Side::Sell => trade.sell.token,
+            order::Side::Buy => trade.buy.token,
+        },
+        executed: trade.executed.0,
+    }
+}
+
+fn order_to_key(order: &database::solver_competition::Order) -> OrderMatchKey {
+    OrderMatchKey {
+        uid: OrderUid(order.uid.0),
+        token: match order.side {
+            OrderKind::Sell => eth::H160(order.sell_token.0).into(),
+            OrderKind::Buy => eth::H160(order.buy_token.0).into(),
+        },
+        executed: match order.side {
+            OrderKind::Sell => big_decimal_to_u256(&order.executed_sell).unwrap_or_default(),
+            OrderKind::Buy => big_decimal_to_u256(&order.executed_buy).unwrap_or_default(),
+        },
+    }
+}
+
+/// Finds a winning solution UID for a given set of trades by comparing the
+/// order UID and the sell/buy token with their executed amounts.
+fn find_winning_solution_uid(
+    solver_winning_solutions: &[Solution],
+    settled_trades: &[EncodedTrade],
+) -> Option<i64> {
+    let settled_keys: HashSet<_> = settled_trades.iter().map(trade_to_key).collect();
+
+    solver_winning_solutions.iter().find_map(|solution| {
+        let solution_keys: HashSet<_> = solution.orders.iter().map(order_to_key).collect();
+        (settled_keys == solution_keys).then_some(solution.uid)
+    })
 }
 
 /// How old (in terms of blocks) a settlement should be, to be considered as a
@@ -193,6 +276,8 @@ pub enum InconsistentData {
     InvalidFeePolicy(infra::persistence::dto::fee_policy::Error, domain::OrderUid),
     #[error("invalid fetched price from persistence layer for token: {0:?}")]
     InvalidPrice(eth::TokenAddress),
+    #[error("no solution exists for this settlement")]
+    SolutionNotFound,
 }
 
 impl From<infra::persistence::error::Auction> for Error {
@@ -787,7 +872,7 @@ mod tests {
 
         assert_eq!(
             trade.score(&auction).unwrap().0,
-            eth::U256::from(769018961144624u128) // 2 x surplus
+            eth::U256::from(769018961144625u128) // 2 x surplus
         );
     }
 

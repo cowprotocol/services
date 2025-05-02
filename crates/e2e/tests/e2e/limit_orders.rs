@@ -1,5 +1,7 @@
 use {
+    crate::database::AuctionTransaction,
     contracts::ERC20,
+    database::byte_array::ByteArray,
     driver::domain::eth::NonZeroU256,
     e2e::{nodes::forked_node::ForkedNodeApi, setup::*, tx},
     ethcontract::{H160, prelude::U256},
@@ -9,8 +11,10 @@ use {
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::EcdsaSigningScheme,
     },
+    number::conversions::big_decimal_to_big_uint,
     secp256k1::SecretKey,
     shared::ethrpc::Web3,
+    std::ops::DerefMut,
     web3::signing::SecretKeyRef,
 };
 
@@ -162,6 +166,14 @@ async fn single_limit_order_test(web3: Web3) {
     );
     let balance_before = token_b.balance_of(trader_a.address()).call().await.unwrap();
     let order_id = services.create_order(&order).await.unwrap();
+
+    // we hide the quote's execution plan while the order is still fillable
+    let order = services.get_order(&order_id).await.unwrap();
+    assert_eq!(
+        order.metadata.quote.unwrap().metadata,
+        serde_json::Value::default()
+    );
+
     onchain.mint_block().await;
     let limit_order = services.get_order(&order_id).await.unwrap();
     assert_eq!(limit_order.metadata.class, OrderClass::Limit);
@@ -171,6 +183,15 @@ async fn single_limit_order_test(web3: Web3) {
     wait_for_condition(TIMEOUT, || async {
         let balance_after = token_b.balance_of(trader_a.address()).call().await.unwrap();
         balance_after.checked_sub(balance_before).unwrap() >= to_wei(5)
+    })
+    .await
+    .unwrap();
+
+    wait_for_condition(TIMEOUT, || async {
+        // after the order got filled we are able to see the quote's execution plan
+        let order = services.get_order(&order_id).await.unwrap();
+        tracing::error!(?order);
+        order.metadata.quote.unwrap().metadata != serde_json::Value::default()
     })
     .await
     .unwrap();
@@ -448,6 +469,60 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
     assert!(order_a_settled.metadata.executed_fee > 0.into());
     let order_b_settled = services.get_order(&uid_b).await.unwrap();
     assert!(order_b_settled.metadata.executed_fee > 0.into());
+
+    let mut ex = services.db().acquire().await.unwrap();
+    let solver_a_winning_solutions = database::solver_competition::fetch_solver_winning_solutions(
+        &mut ex,
+        competition.auction_id,
+        ByteArray(solver_a.address().0),
+    )
+    .await
+    .unwrap();
+    let solver_b_winning_solutions = database::solver_competition::fetch_solver_winning_solutions(
+        &mut ex,
+        competition.auction_id,
+        ByteArray(solver_b.address().0),
+    )
+    .await
+    .unwrap();
+    assert_eq!(solver_a_winning_solutions.len(), 1);
+    assert_eq!(solver_b_winning_solutions.len(), 1);
+    assert_eq!(solver_a_winning_solutions[0].orders.len(), 1);
+    assert_eq!(solver_b_winning_solutions[0].orders.len(), 1);
+    let solver_a_order = solver_a_winning_solutions[0].orders[0].clone();
+    assert_eq!(solver_a_order.uid.0, order_a_settled.metadata.uid.0);
+    assert_eq!(
+        big_decimal_to_big_uint(&solver_a_order.executed_sell).unwrap(),
+        order_a_settled.metadata.executed_sell_amount
+    );
+    assert_eq!(
+        big_decimal_to_big_uint(&solver_a_order.executed_buy).unwrap(),
+        order_a_settled.metadata.executed_buy_amount
+    );
+    let solver_order_b = solver_b_winning_solutions[0].orders[0].clone();
+    assert_eq!(solver_order_b.uid.0, order_b_settled.metadata.uid.0);
+    assert_eq!(
+        big_decimal_to_big_uint(&solver_order_b.executed_sell).unwrap(),
+        order_b_settled.metadata.executed_sell_amount
+    );
+    assert_eq!(
+        big_decimal_to_big_uint(&solver_order_b.executed_buy).unwrap(),
+        order_b_settled.metadata.executed_buy_amount
+    );
+
+    let settlements_query = "SELECT * FROM settlements WHERE auction_id = $1";
+    let settlements: Vec<AuctionTransaction> = sqlx::query_as(settlements_query)
+        .bind(competition.auction_id)
+        .fetch_all(ex.deref_mut())
+        .await
+        .unwrap();
+    assert_eq!(settlements.len(), 2);
+    assert!(settlements.iter().any(|settlement| settlement.solver
+        == ByteArray(solver_a.address().0)
+        && settlement.solution_uid == solver_a_winning_solutions[0].uid));
+    assert!(settlements.iter().any(|settlement| settlement.solver
+        == ByteArray(solver_b.address().0)
+        && settlement.solution_uid == solver_b_winning_solutions[0].uid));
 }
 
 async fn too_many_limit_orders_test(web3: Web3) {

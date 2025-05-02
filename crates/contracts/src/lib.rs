@@ -90,7 +90,6 @@ include_contracts! {
     GnosisSafeCompatibilityFallbackHandler;
     GnosisSafeProxy;
     GnosisSafeProxyFactory;
-    Roles;
     HoneyswapRouter;
     HooksTrampoline;
     IAavePool;
@@ -101,6 +100,7 @@ include_contracts! {
     IUniswapV3Factory;
     IZeroEx;
     PancakeRouter;
+    Permit2;
     ChainalysisOracle;
     SushiSwapRouter;
     SwaprRouter;
