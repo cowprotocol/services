@@ -1,3 +1,4 @@
+use std::ops::Mul;
 use {
     crate::liquidity::USDT_WHALE,
     anyhow::bail,
@@ -48,6 +49,7 @@ use {
     shared::signature_validator::check_erc1271_result,
     web3::types::TransactionRequest,
 };
+use crate::liquidity::COW_WHALE;
 
 const DAI_PER_ETH: u32 = 1_000;
 
@@ -417,18 +419,17 @@ async fn forked_mainnet_zeroex_eth_flow_tx(web3: Web3) {
 
     let forked_node_api = web3.api::<ForkedNodeApi<_>>();
 
-    let token_usdc = ERC20::at(
+    let token_cow = ERC20::at(
         &web3,
-        "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+        "0xcA771eda0c70aA7d053aB1B25004559B918FE662"
             .parse()
             .unwrap(),
     );
 
     let native_token_whale = forked_node_api.impersonate(&WHALE_MAINNET).await.unwrap();
-    let usdc_whale = forked_node_api.impersonate(&USDT_WHALE).await.unwrap();
+    let cow_whale = forked_node_api.impersonate(&COW_WHALE).await.unwrap();
 
     let amount = to_wei(1);
-    let stable_amount = to_wei_with_exp(1, 11);
 
     // Send some ETH to the trader
     web3.eth()
@@ -457,19 +458,19 @@ async fn forked_mainnet_zeroex_eth_flow_tx(web3: Web3) {
     //     token_usdc.approve(zeroex.address(), amount)
     // );
     tx!(
-        usdc_whale,
-        token_usdc.transfer(zeroex_maker.address(), stable_amount)
+        cow_whale,
+        token_cow.transfer(zeroex_maker.address(), amount * 10)
     );
     tx!(
         zeroex_maker.account(),
         // With a lower amount 0x contract shows much lower fillable amount
-        token_usdc.approve(zeroex.address(), stable_amount)
+        token_cow.approve(zeroex.address(), amount * 10)
     );
 
     let chain_id = web3.eth().chain_id().await.unwrap().as_u64();
     let zeroex_liquidity_orders = crate::liquidity::create_zeroex_liquidity_orders_for_token(
-        token_usdc.address(),
-        stable_amount.as_u128(),
+        token_cow.address(),
+        amount.as_u128(),
         zeroex_maker.clone(),
         zeroex.address(),
         chain_id,
@@ -478,7 +479,7 @@ async fn forked_mainnet_zeroex_eth_flow_tx(web3: Web3) {
     let zeroex_api_port = ZeroExApi::new(zeroex_liquidity_orders.to_vec()).run().await;
 
     // Get a quote from the services
-    let buy_token = token_usdc.address();
+    let buy_token = token_cow.address();
     let receiver = H160([0x42; 20]);
     let intent = EthFlowTradeIntent {
         sell_amount: amount,
@@ -730,7 +731,8 @@ async fn test_submit_quote(
     // Ideally the fee would be nonzero, but this is not the case in the test
     // environment assert_ne!(response.quote.fee_amount, 0.into());
     // Amount is reasonable (±10% from real price)
-    let approx_output: U256 = response.quote.sell_amount * DAI_PER_ETH;
+    const ETH_PRICE_IN_USDC: u64 = 3_100;
+    let approx_output: U256 = response.quote.sell_amount.mul(ETH_PRICE_IN_USDC) / U256::exp10(18);
     println!("newlog: approx_output = {approx_output}");
     println!(
         "newlog: response.quote.buy_amount = {}",

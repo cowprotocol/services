@@ -40,6 +40,8 @@ use {
 /// The block number from which we will fetch state for the forked tests.
 pub const FORK_BLOCK: u64 = 18477910;
 pub const USDT_WHALE: H160 = H160(hex!("F977814e90dA44bFA03b6295A0616a897441aceC"));
+pub const COW_WHALE: H160 = H160(hex!("cA771eda0c70aA7d053aB1B25004559B918FE662"));
+
 
 #[tokio::test]
 #[ignore]
@@ -325,14 +327,21 @@ pub fn create_zeroex_liquidity_orders_for_token(
     chain_id: u64,
     weth_address: H160,
 ) -> [shared::zeroex_api::OrderRecord; 2] {
+    const ETH_PRICE_IN_USDC: u128 = 3_100;           //   3 100 USDC / ETH
+    const USDC_DECIMALS: usize       = 6;
+    const ETH_DECIMALS:  usize       = 18;
+    let one_eth      = U256::exp10(ETH_DECIMALS);    // 1e18
+    let usdc_amount  = U256::from(ETH_PRICE_IN_USDC)
+        * U256::exp10(USDC_DECIMALS); // 3_100e6
+
     let usdc_weth_order = Eip712TypedZeroExOrder {
         maker_token: weth_address,
         taker_token,
         // the value comes from the `--amount-to-estimate-prices-with` config to provide
         // sufficient liquidity
-        maker_amount: 1_000_000_000_000_000_000u128,
-        taker_amount,
-        remaining_fillable_taker_amount: taker_amount,
+        maker_amount: one_eth.as_u128(),
+        taker_amount: usdc_amount.as_u128(),
+        remaining_fillable_taker_amount: usdc_amount.as_u128(),
         taker_token_fee_amount: 0,
         maker: zeroex_maker.address(),
         taker: Default::default(),
@@ -345,11 +354,9 @@ pub fn create_zeroex_liquidity_orders_for_token(
     let weth_usdc_order = Eip712TypedZeroExOrder {
         maker_token: taker_token,
         taker_token: weth_address,
-        // the value comes from the `--amount-to-estimate-prices-with` config to provide
-        // sufficient liquidity
-        maker_amount: 1_000_000_000_000_000_000u128,
-        taker_amount: to_wei(1).as_u128(),
-        remaining_fillable_taker_amount: to_wei(1).as_u128(),
+        maker_amount: usdc_amount.as_u128(),
+        taker_amount: one_eth.as_u128(),
+        remaining_fillable_taker_amount: one_eth.as_u128(),
         taker_token_fee_amount: 0,
         maker: zeroex_maker.address(),
         taker: Default::default(),
