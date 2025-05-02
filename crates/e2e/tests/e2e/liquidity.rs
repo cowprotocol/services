@@ -329,11 +329,9 @@ pub fn create_zeroex_liquidity_orders_for_token(
     let usdc_weth_order = Eip712TypedZeroExOrder {
         maker_token: weth_address,
         taker_token,
-        // the value comes from the `--amount-to-estimate-prices-with` config to provide
-        // sufficient liquidity
-        maker_amount: 1_000_000_000_000_000_000u128,
-        taker_amount,
-        remaining_fillable_taker_amount: taker_amount,
+        maker_amount: taker_amount * 2,
+        taker_amount: taker_amount * 2,
+        remaining_fillable_taker_amount: taker_amount * 2,
         taker_token_fee_amount: 0,
         maker: zeroex_maker.address(),
         taker: Default::default(),

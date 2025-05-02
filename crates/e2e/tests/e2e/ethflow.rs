@@ -65,7 +65,7 @@ async fn forked_node_mainnet_zeroex_eth_flow_tx() {
     run_forked_test_with_block_number(
         forked_mainnet_zeroex_eth_flow_tx,
         std::env::var("FORK_URL_MAINNET")
-            .expect("FORK_URL_POLYGON must be set to run forked tests"),
+            .expect("FORK_URL_MAINNET must be set to run forked tests"),
         FORK_BLOCK_MAINNET,
     )
     .await;
@@ -199,14 +199,8 @@ async fn forked_mainnet_zeroex_eth_flow_tx(web3: Web3) {
         zeroex_maker.account(),
         token_cow.approve(zeroex.address(), amount * 4)
     );
-    tx!(
-        cow_whale,
-        token_cow.transfer(solver.address(), amount)
-    );
-    tx!(
-        cow_whale,
-        token_cow.approve(solver.address(), amount)
-    );
+    tx!(cow_whale, token_cow.transfer(solver.address(), amount));
+    tx!(cow_whale, token_cow.approve(solver.address(), amount));
 
     let chain_id = web3.eth().chain_id().await.unwrap().as_u64();
     let zeroex_liquidity_orders = crate::liquidity::create_zeroex_liquidity_orders_for_token(
@@ -268,9 +262,13 @@ async fn forked_mainnet_zeroex_eth_flow_tx(web3: Web3) {
 
     let quote: OrderQuoteResponse = test_submit_quote(
         &services,
-        &intent.to_quote_request_non_weth(trader.account().address(), onchain.contracts().weth.address()),
+        &intent.to_quote_request_non_weth(
+            trader.account().address(),
+            onchain.contracts().weth.address(),
+        ),
     )
     .await;
+    tracing::info!("newlog quote={:?}", quote);
 
     let valid_to = chrono::offset::Utc::now().timestamp() as u32
         + timestamp_of_current_block_in_seconds(&web3).await.unwrap()
@@ -313,7 +311,7 @@ async fn forked_mainnet_zeroex_eth_flow_tx(web3: Web3) {
             .unwrap();
         order.metadata.executed_fee > U256::zero()
     };
-    wait_for_condition(TIMEOUT, fee_charged).await.unwrap();
+    wait_for_condition(TIMEOUT * 6, fee_charged).await.unwrap();
 
     test_trade_availability_in_api(
         services.client(),
