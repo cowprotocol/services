@@ -171,10 +171,6 @@ const POLYGON_WHALE: H160 = H160(hex_literal::hex!(
     "4c569c1e541A19132AC893748E0ad54C7c989FF4" // holds POL
 ));
 
-const WETH_WHALE_MAINNET: H160 = H160(hex_literal::hex!(
-    "894d55be079e7e19fe526ac22b0786b7afe18e7e"
-));
-
 async fn forked_mainnet_zeroex_eth_flow_tx(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
@@ -191,29 +187,9 @@ async fn forked_mainnet_zeroex_eth_flow_tx(web3: Web3) {
             .parse()
             .unwrap(),
     );
-    let token_weth = ERC20::at(
-        &web3,
-        "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
-            .parse()
-            .unwrap(),
-    );
-
-    let weth_token_whale = forked_node_api
-        .impersonate(&WETH_WHALE_MAINNET)
-        .await
-        .unwrap();
     let cow_whale = forked_node_api.impersonate(&COW_WHALE).await.unwrap();
 
     let amount = to_wei(1);
-
-    tx!(
-        weth_token_whale,
-        token_weth.transfer(zeroex_maker.address(), amount * 4)
-    );
-    tx!(
-        zeroex_maker.account(),
-        token_weth.approve(zeroex.address(), amount * 4)
-    );
 
     tx!(
         cow_whale,
@@ -231,7 +207,7 @@ async fn forked_mainnet_zeroex_eth_flow_tx(web3: Web3) {
         zeroex_maker.clone(),
         zeroex.address(),
         chain_id,
-        token_weth.address(),
+        onchain.contracts().weth.address(),
     );
     let zeroex_api_port = ZeroExApi::new(zeroex_liquidity_orders.to_vec()).run().await;
 
@@ -251,7 +227,7 @@ async fn forked_mainnet_zeroex_eth_flow_tx(web3: Web3) {
             colocation::start_baseline_solver(
                 "test_solver".into(),
                 solver.clone(),
-                token_weth.address(),
+                onchain.contracts().weth.address(),
                 vec![],
                 1,
                 true,
@@ -284,7 +260,7 @@ async fn forked_mainnet_zeroex_eth_flow_tx(web3: Web3) {
 
     let quote: OrderQuoteResponse = test_submit_quote(
         &services,
-        &intent.to_quote_request_non_weth(trader.account().address(), token_weth.address()),
+        &intent.to_quote_request_non_weth(trader.account().address(), onchain.contracts().weth.address()),
     )
     .await;
 
