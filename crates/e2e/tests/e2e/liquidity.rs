@@ -42,7 +42,6 @@ pub const FORK_BLOCK: u64 = 18477910;
 pub const USDT_WHALE: H160 = H160(hex!("F977814e90dA44bFA03b6295A0616a897441aceC"));
 pub const COW_WHALE: H160 = H160(hex!("cA771eda0c70aA7d053aB1B25004559B918FE662"));
 
-
 #[tokio::test]
 #[ignore]
 async fn forked_node_zero_ex_liquidity_mainnet() {

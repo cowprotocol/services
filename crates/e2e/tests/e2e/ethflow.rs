@@ -231,7 +231,7 @@ async fn forked_mainnet_zeroex_eth_flow_tx(web3: Web3) {
         zeroex_maker.clone(),
         zeroex.address(),
         chain_id,
-        onchain.contracts().weth.address(),
+        token_weth.address(),
     );
     let zeroex_api_port = ZeroExApi::new(zeroex_liquidity_orders.to_vec()).run().await;
 
@@ -251,7 +251,7 @@ async fn forked_mainnet_zeroex_eth_flow_tx(web3: Web3) {
             colocation::start_baseline_solver(
                 "test_solver".into(),
                 solver.clone(),
-                onchain.contracts().weth.address(),
+                token_weth.address(),
                 vec![],
                 1,
                 true,
@@ -284,7 +284,7 @@ async fn forked_mainnet_zeroex_eth_flow_tx(web3: Web3) {
 
     let quote: OrderQuoteResponse = test_submit_quote(
         &services,
-        &intent.to_quote_request(trader.account().address(), &onchain.contracts().weth),
+        &intent.to_quote_request_non_weth(trader.account().address(), token_weth.address()),
     )
     .await;
 
@@ -909,7 +909,6 @@ impl EthFlowTradeIntent {
     pub fn to_quote_request_non_weth(&self, from: H160, sell_token: H160) -> OrderQuoteRequest {
         OrderQuoteRequest {
             from,
-            // Even if the user sells ETH, we request a quote for WETH
             sell_token,
             buy_token: self.buy_token,
             receiver: Some(self.receiver),
