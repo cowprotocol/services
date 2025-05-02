@@ -1,6 +1,5 @@
-use std::ops::Mul;
 use {
-    crate::liquidity::USDT_WHALE,
+    crate::liquidity::COW_WHALE,
     anyhow::bail,
     autopilot::database::onchain_order_events::ethflow_events::WRAP_ALL_SELECTOR,
     contracts::{CoWSwapEthFlow, ERC20, ERC20Mintable, IZeroEx, WETH9},
@@ -49,12 +48,11 @@ use {
     shared::signature_validator::check_erc1271_result,
     web3::types::TransactionRequest,
 };
-use crate::liquidity::COW_WHALE;
 
 const DAI_PER_ETH: u32 = 1_000;
 
 const FORK_BLOCK_POLYGON: u64 = 70948400;
-const FORK_BLOCK_MAINNET: u64 = 18477910;
+const FORK_BLOCK_MAINNET: u64 = 22395192;
 
 #[tokio::test]
 #[ignore]
@@ -421,7 +419,7 @@ async fn forked_mainnet_zeroex_eth_flow_tx(web3: Web3) {
 
     let token_cow = ERC20::at(
         &web3,
-        "0xcA771eda0c70aA7d053aB1B25004559B918FE662"
+        "0xdef1ca1fb7fbcdc777520aa7f396b4e015f497ab"
             .parse()
             .unwrap(),
     );
@@ -453,18 +451,25 @@ async fn forked_mainnet_zeroex_eth_flow_tx(web3: Web3) {
         .await
         .unwrap();
 
-    // tx!(
-    //     solver.account(),
-    //     token_usdc.approve(zeroex.address(), amount)
-    // );
     tx!(
-        cow_whale,
-        token_cow.transfer(zeroex_maker.address(), amount * 10)
+        native_token_whale,
+        onchain
+            .contracts()
+            .weth
+            .transfer(zeroex_maker.address(), amount)
     );
     tx!(
         zeroex_maker.account(),
-        // With a lower amount 0x contract shows much lower fillable amount
-        token_cow.approve(zeroex.address(), amount * 10)
+        onchain.contracts().weth.approve(zeroex.address(), amount)
+    );
+
+    tx!(
+        cow_whale,
+        token_cow.transfer(zeroex_maker.address(), amount)
+    );
+    tx!(
+        zeroex_maker.account(),
+        token_cow.approve(zeroex.address(), amount)
     );
 
     let chain_id = web3.eth().chain_id().await.unwrap().as_u64();
@@ -731,17 +736,9 @@ async fn test_submit_quote(
     // Ideally the fee would be nonzero, but this is not the case in the test
     // environment assert_ne!(response.quote.fee_amount, 0.into());
     // Amount is reasonable (±10% from real price)
-    const ETH_PRICE_IN_USDC: u64 = 3_100;
-    let approx_output: U256 = response.quote.sell_amount.mul(ETH_PRICE_IN_USDC) / U256::exp10(18);
-    println!("newlog: approx_output = {approx_output}");
-    println!(
-        "newlog: response.quote.buy_amount = {}",
-        response.quote.buy_amount
-    );
-    println!("newlog: expected min = {}", approx_output * 9u64 / 10);
-    println!("newlog: expected max = {}", approx_output * 11u64 / 10);
-    // assert!(response.quote.buy_amount.gt(&(approx_output * 9u64 / 10)));
-    // assert!(response.quote.buy_amount.lt(&(approx_output * 11u64 / 10)));
+    let approx_output: U256 = response.quote.sell_amount;
+    assert!(response.quote.buy_amount.gt(&(approx_output * 9u64 / 10)));
+    assert!(response.quote.buy_amount.lt(&(approx_output * 11u64 / 10)));
 
     let OrderQuoteSide::Sell {
         sell_amount:
