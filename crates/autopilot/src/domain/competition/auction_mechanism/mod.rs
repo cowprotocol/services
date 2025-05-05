@@ -14,7 +14,7 @@ pub struct NoWinners;
 #[derive(Clone, Default, Debug)]
 pub struct ComputedScores {
     // TODO: for now we specify a single winner as the database still expectes it
-    // After https://github.com/cowprotocol/services/issues/3350, it will no longer be necessary and we will be able to return only the vec or ReferenceScore
+    // After https://github.com/cowprotocol/services/issues/3350, it will no longer be necessary and we will be able to return only the vec of ReferenceScore
     pub winner: H160,
     pub winning_score: U256,
     pub reference_scores: Vec<ReferenceScore>,
