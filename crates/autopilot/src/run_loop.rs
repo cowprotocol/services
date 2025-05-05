@@ -368,8 +368,9 @@ impl RunLoop {
         block_deadline: u64,
     ) -> Result<()> {
         let start = Instant::now();
-        // TODO: Support multiple winners
-        // https://github.com/cowprotocol/services/issues/3021
+
+        // TODO: Needs to be removed once other teams fully migrated to the
+        // reference_scores table
         let ComputedScores {
             winner,
             winning_score,

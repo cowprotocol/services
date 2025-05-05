@@ -111,12 +111,17 @@ impl AuctionMechanism for SingleSurplusAuctionMechanism {
         // Limit the number of accepted solutions per solver. Do not alter the ordering
         // of solutions
         let mut counter = HashMap::new();
-        solutions.to_vec().retain(|participant| {
-            let driver = participant.driver().name.clone();
-            let count = counter.entry(driver).or_insert(0);
-            *count += 1;
-            *count <= self.max_solutions_per_solver
-        });
+
+        let solutions: Vec<_> = solutions
+            .iter()
+            .filter(|&participant| {
+                let driver = participant.driver().name.clone();
+                let count = counter.entry(driver).or_insert(0);
+                *count += 1;
+                *count <= self.max_solutions_per_solver
+            })
+            .cloned()
+            .collect();
 
         // Fairness check
         solutions
