@@ -60,16 +60,13 @@ pub fn defaults_for_network(chain: &Chain) -> Vec<BaselineSource> {
             BaselineSource::ZeroEx,
             BaselineSource::UniswapV3,
         ],
-        Chain::Base => vec![
+        Chain::Base | Chain::Bnb | Chain::Avalanche | Chain::Polygon | Chain::Optimism => vec![
             BaselineSource::UniswapV2,
             BaselineSource::SushiSwap,
-            BaselineSource::Swapr,
             BaselineSource::BalancerV2,
             BaselineSource::ZeroEx,
             BaselineSource::UniswapV3,
         ],
-        // @TODO: Fill this up in an upcoming PR
-        Chain::Bnb | Chain::Avalanche | Chain::Polygon | Chain::Optimism => vec![],
         Chain::Sepolia => vec![BaselineSource::TestnetUniswapV2],
         Chain::Hardhat => panic!("unsupported baseline sources for Hardhat"),
     }
