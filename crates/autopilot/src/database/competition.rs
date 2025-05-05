@@ -6,7 +6,6 @@ use {
         auction_participants::Participant,
         auction_prices::AuctionPrice,
         byte_array::ByteArray,
-        settlement_scores::Score,
         surplus_capturing_jit_order_owners,
     },
     derive_more::Debug,
@@ -53,9 +52,11 @@ impl super::Postgres {
         .await
         .context("solver_competition::save_solver_competition")?;
 
+        // TODO: this is deprecated and needs to be removed once the solver team has
+        // switched to the reference_scores table
         database::settlement_scores::insert(
             &mut ex,
-            Score {
+            database::settlement_scores::Score {
                 auction_id: competition.auction_id,
                 winner: ByteArray(competition.winner.0),
                 winning_score: u256_to_big_decimal(&competition.winning_score),
@@ -72,6 +73,17 @@ impl super::Postgres {
         )
         .await
         .context("settlement_scores::insert")?;
+
+        // TODO: support multiple winners
+        let reference_scores = vec![database::reference_scores::Score {
+            auction_id: competition.auction_id,
+            solver: ByteArray(competition.winner.0),
+            reference_score: u256_to_big_decimal(&competition.reference_score),
+        }];
+
+        database::reference_scores::insert(&mut ex, &reference_scores)
+            .await
+            .context("reference_scores::insert")?;
 
         database::auction_participants::insert(
             &mut ex,
