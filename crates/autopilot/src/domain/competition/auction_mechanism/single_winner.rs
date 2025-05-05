@@ -136,11 +136,11 @@ impl AuctionMechanism for SingleSurplusAuctionMechanism {
             .collect()
     }
 
+    /// Winners are selected one by one, starting from the best solution,
+    /// until `max_winners_per_auction` are selected. The solution is a winner
+    /// if it swaps tokens that are not yet swapped by any previously processed
+    /// solution.
     fn select_winners(&self, solutions: &[Participant<Unranked>]) -> Vec<Participant> {
-        // Winners are selected one by one, starting from the best solution,
-        // until `max_winners_per_auction` are selected. The solution is a winner
-        // if it swaps tokens that are not yet swapped by any previously processed
-        // solution.
         let wrapped_native_token = self.eth.contracts().wrapped_native_token();
         let mut already_swapped_tokens = HashSet::new();
         let mut winners = 0;
