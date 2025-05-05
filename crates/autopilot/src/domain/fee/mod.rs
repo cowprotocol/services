@@ -115,8 +115,8 @@ impl ProtocolFees {
         }
 
         fn fee_factor_from_bps(bps: u64) -> FeeFactor {
-            // clamp `bps` to range expected by `FeeFactor`: [0, 1)
-            let bps = u32::try_from(bps.min(u64::from(MAX_BPS) - 1)).unwrap();
+            let bps = u32::try_from(bps.min(u64::from(MAX_BPS) - 1))
+                .expect("value was clamped to range expected by FeeFactor: [0, 1)");
             let factor = f64::from(bps) / f64::from(MAX_BPS);
             FeeFactor::try_from(factor).expect("value was clamped to the required range")
         }
