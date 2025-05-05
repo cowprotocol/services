@@ -217,8 +217,10 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                         preset,
                         max_pools_to_initialize,
                         graph_url,
+                        reinit_interval,
                     } => liquidity::config::UniswapV3 {
                         max_pools_to_initialize,
+                        reinit_interval,
                         ..match preset {
                             file::UniswapV3Preset::UniswapV3 => {
                                 liquidity::config::UniswapV3::uniswap_v3(&graph_url, chain)
@@ -230,10 +232,12 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                         router,
                         max_pools_to_initialize,
                         graph_url,
+                        reinit_interval,
                     } => liquidity::config::UniswapV3 {
                         router: router.into(),
                         max_pools_to_initialize,
                         graph_url,
+                        reinit_interval,
                     },
                 })
                 .collect(),
@@ -247,8 +251,10 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                         preset,
                         pool_deny_list,
                         graph_url,
+                        reinit_interval,
                     } => liquidity::config::BalancerV2 {
                         pool_deny_list: pool_deny_list.clone(),
+                        reinit_interval,
                         ..match preset {
                             file::BalancerV2Preset::BalancerV2 => {
                                 liquidity::config::BalancerV2::balancer_v2(&graph_url, chain)
@@ -265,6 +271,7 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                         composable_stable,
                         pool_deny_list,
                         graph_url,
+                        reinit_interval,
                     } => liquidity::config::BalancerV2 {
                         vault: vault.into(),
                         weighted: weighted
@@ -286,6 +293,7 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                             .collect(),
                         pool_deny_list: pool_deny_list.clone(),
                         graph_url,
+                        reinit_interval,
                     },
                 })
                 .collect(),

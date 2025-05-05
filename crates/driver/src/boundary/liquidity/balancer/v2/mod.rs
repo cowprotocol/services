@@ -81,6 +81,7 @@ pub fn collector(
     config: &infra::liquidity::config::BalancerV2,
 ) -> Box<dyn LiquidityCollecting> {
     let eth = Arc::new(eth.with_metric_label("balancerV2".into()));
+    let reinit_interval = config.reinit_interval;
     let config = Arc::new(config.clone());
     let init = move || {
         let eth = eth.clone();
@@ -94,6 +95,7 @@ pub fn collector(
         "balancer-v2",
         init,
         TEN_MINUTES,
+        reinit_interval,
     )) as Box<_>
 }
 
