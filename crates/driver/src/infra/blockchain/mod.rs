@@ -171,6 +171,10 @@ impl Ethereum {
             Chain::Gnosis => self.block_gas_limit().0,
             Chain::Sepolia => self.block_gas_limit().0,
             Chain::Base => self.block_gas_limit().0,
+            Chain::Bnb => self.block_gas_limit().0,
+            Chain::Optimism => self.block_gas_limit().0,
+            Chain::Avalanche => self.block_gas_limit().0,
+            Chain::Polygon => self.block_gas_limit().0,
             Chain::Hardhat => self.block_gas_limit().0,
         });
         tx.gas_price = self.simulation_gas_price().await;
