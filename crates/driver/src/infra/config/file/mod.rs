@@ -545,6 +545,8 @@ enum UniswapV3Config {
 
         graph_url: Url,
 
+        /// How often the liquidity source should be reinitialized to get
+        /// access to new pools.
         #[serde(with = "humantime_serde", default = "default_reinit_interval")]
         reinit_interval: Option<Duration>,
     },
@@ -561,6 +563,8 @@ enum UniswapV3Config {
         /// The URL used to connect to uniswap v3 subgraph client.
         graph_url: Url,
 
+        /// How often the liquidity source should be reinitialized to get
+        /// access to new pools.
         #[serde(with = "humantime_serde", default = "default_reinit_interval")]
         reinit_interval: Option<Duration>,
     },
