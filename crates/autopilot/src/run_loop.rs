@@ -365,7 +365,7 @@ impl RunLoop {
         block_deadline: u64,
     ) -> Result<()> {
         let start = Instant::now();
-        // TODO: Needs to be removed once external teams fully migrated to the
+        // TODO: Needs to be removed once other teams fully migrated to the
         // reference_scores table
         let Some(winning_solution) = solutions
             .iter()
