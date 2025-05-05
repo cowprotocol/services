@@ -385,11 +385,20 @@ async fn surplus_partner_fee(web3: Web3) {
             "version": "1.1.0",
             "metadata": {
                 "partnerFee": [
+                    // this will use the entire `maxVolumeBps`
                     {
                         "surplusBps": 3_000, // 30%
                         "maxVolumeBps": 2_500, // 25%
                         "recipient": "0xb6BAd41ae76A11D10f7b0E664C5007b908bC77C9",
                     },
+                    // this will have the `maxVolumeBps` reduced (to stay below the cap)
+                    {
+                        "priceImprovementBps": 3_000, // 30%
+                        "maxVolumeBps": 1_500, // 15%
+                        "recipient": "0xb6BAd41ae76A11D10f7b0E664C5007b908bC77C9",
+                    },
+                    // this will have the `maxVolumeBps` set to 0 (prev policies already reach the
+                    // global cap)
                     {
                         "priceImprovementBps": 3_000, // 30%
                         "maxVolumeBps": 1_500, // 15%
@@ -491,6 +500,8 @@ async fn surplus_partner_fee(web3: Web3) {
     assert_eq!(trades.len(), 1);
     let trade = &trades[0];
 
+    assert_eq!(trade.executed_protocol_fees.len(), 3);
+
     // Fee policies defined by the partner got applied for the
     // executed trades.
     assert_eq!(
@@ -514,6 +525,21 @@ async fn surplus_partner_fee(web3: Web3) {
             .. // we don't care about the quote here
         }
     ));
+
+    // Fee policies exceeding the global partner fee cap have been
+    // capped to the maximum allowed value.
+    assert!(matches!(
+        trade.executed_protocol_fees[2].policy,
+        model::fee_policy::FeePolicy::PriceImprovement {
+            factor: 0.3,
+            // Note that the partner fee policy actually specified
+            // 0.15 here but since we already reached the cap the final
+            // fee policy is not allowed to capture any more fees.
+            max_volume_factor: 0.,
+            .. // we don't care about the quote here
+        }
+    ));
+
     // The volume caps of all partner fees combined (applied after each other)
     // are capped to the total volume cap for all partners. Note that we use
     // "1. + factor" here because the factors start from 0 (e.g. 20% == 0.2)
