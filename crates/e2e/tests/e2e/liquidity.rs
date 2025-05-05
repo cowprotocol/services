@@ -326,7 +326,7 @@ pub fn create_zeroex_liquidity_orders_for_token(
     chain_id: u64,
     weth_address: H160,
 ) -> [shared::zeroex_api::OrderRecord; 2] {
-    let usdc_weth_order = Eip712TypedZeroExOrder {
+    let taker_token_to_weth_order = Eip712TypedZeroExOrder {
         maker_token: weth_address,
         taker_token,
         maker_amount: taker_amount * 2,
@@ -341,7 +341,7 @@ pub fn create_zeroex_liquidity_orders_for_token(
         expiry: NaiveDateTime::MAX.and_utc().timestamp() as u64,
         salt: U256::from(Utc::now().timestamp()),
     };
-    let weth_usdc_order = Eip712TypedZeroExOrder {
+    let weth_to_taker_token_order = Eip712TypedZeroExOrder {
         maker_token: taker_token,
         taker_token: weth_address,
         maker_amount: 1_000_000_000_000_000_000u128,
@@ -356,7 +356,7 @@ pub fn create_zeroex_liquidity_orders_for_token(
         expiry: NaiveDateTime::MAX.and_utc().timestamp() as u64,
         salt: U256::from(Utc::now().timestamp()),
     };
-    [weth_usdc_order, usdc_weth_order]
+    [weth_to_taker_token_order, taker_token_to_weth_order]
         .map(|order| order.to_order_record(chain_id, zeroex_addr, zeroex_maker.clone()))
 }
 
