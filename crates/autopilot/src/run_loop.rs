@@ -8,7 +8,7 @@ use {
             competition::{
                 self,
                 AuctionMechanism,
-                ComputedScores,
+                CompetitionData,
                 Solution,
                 SolutionError,
                 SolverParticipationGuard,
@@ -243,11 +243,11 @@ impl RunLoop {
             .store_order_events(auction.orders.iter().map(|o| o.uid), OrderEventLabel::Ready);
 
         // Collect valid solutions from all drivers
-        let solutions = self.competition(&auction).await;
-        observe::solutions(&solutions);
-        if solutions.is_empty() {
+        let competition_data = self.competition(&auction).await;
+        observe::solutions(&competition_data.solutions);
+        if competition_data.is_empty() {
             return;
-        }
+        };
 
         let competition_simulation_block = self.eth.current_block().borrow().number;
         let block_deadline = competition_simulation_block + self.config.submission_deadline;
@@ -258,7 +258,7 @@ impl RunLoop {
             .post_processing(
                 &auction,
                 competition_simulation_block,
-                &solutions,
+                &competition_data,
                 block_deadline,
             )
             .await
@@ -268,7 +268,8 @@ impl RunLoop {
         }
 
         // Mark all winning orders as `Executing`
-        let winning_orders = solutions
+        let winning_orders = competition_data
+            .solutions
             .iter()
             .filter(|p| p.is_winner())
             .flat_map(|p| p.solution().order_ids().copied())
@@ -278,14 +279,16 @@ impl RunLoop {
 
         // Mark the rest as `Considered` for execution
         self.persistence.store_order_events(
-            solutions
+            competition_data
+                .solutions
                 .iter()
                 .flat_map(|p| p.solution().order_ids().copied())
                 .filter(|order_id| !winning_orders.contains(order_id)),
             OrderEventLabel::Considered,
         );
 
-        for winner in solutions
+        for winner in competition_data
+            .solutions
             .iter()
             .filter(|participant| participant.is_winner())
         {
@@ -301,7 +304,7 @@ impl RunLoop {
             )
             .await;
         }
-        observe::unsettled(&solutions, &auction);
+        observe::unsettled(&competition_data.solutions, &auction);
     }
 
     /// Starts settlement execution in a background task. The function is async
@@ -364,29 +367,19 @@ impl RunLoop {
         &self,
         auction: &domain::Auction,
         competition_simulation_block: u64,
-        solutions: &[competition::Participant],
+        competition_data: &CompetitionData,
         block_deadline: u64,
     ) -> Result<()> {
         let start = Instant::now();
 
-        // TODO: Needs to be removed once other teams fully migrated to the
-        // reference_scores table
-        let ComputedScores {
-            winner,
-            winning_score,
-            reference_scores,
-        } = self.auction_mechanism.compute_scores(solutions)?;
-        let reference_score = reference_scores
-            .first()
-            .map(|s| s.reference_score)
-            .unwrap_or_default();
-
-        let participants = solutions
+        let participants = competition_data
+            .solutions
             .iter()
             .map(|participant| participant.solution().solver().into())
             .collect::<HashSet<_>>();
         let mut fee_policies = Vec::new();
-        for order_id in solutions
+        for order_id in competition_data
+            .solutions
             .iter()
             .flat_map(|participant| participant.solution().order_ids())
             .unique()
@@ -420,7 +413,7 @@ impl RunLoop {
                     .map(|(key, value)| ((*key).into(), value.get().into()))
                     .collect(),
             },
-            solutions: solutions
+            solutions: competition_data.solutions
                 .iter()
                 // reverse as solver competition table is sorted from worst to best, so we need to keep the ordering for backwards compatibility
                 .rev()
@@ -429,7 +422,7 @@ impl RunLoop {
                     solver: participant.driver().name.clone(),
                     solver_address: participant.solution().solver().0,
                     score: Some(Score::Solver(participant.solution().score().get().0)),
-                    ranking: solutions.len() - index,
+                    ranking: competition_data.solutions.len() - index,
                     orders: participant
                         .solution()
                         .orders()
@@ -452,9 +445,10 @@ impl RunLoop {
         };
         let competition = Competition {
             auction_id: auction.id,
-            winner,
-            winning_score,
-            reference_score,
+            winner: competition_data.legacy_scores.winner,
+            winning_score: competition_data.legacy_scores.winning_score,
+            reference_score: competition_data.legacy_scores.reference_score,
+            reference_scores: competition_data.reference_scores.clone(),
             participants,
             prices: auction
                 .prices
@@ -472,7 +466,7 @@ impl RunLoop {
                 .save_auction(auction, block_deadline)
                 .map_err(|e| e.0.context("failed to save auction")),
             self.persistence
-                .save_solutions(auction.id, solutions)
+                .save_solutions(auction.id, &competition_data.solutions)
                 .map_err(|e| e.0.context("failed to save solutions")),
         ) {
             Ok(_) => {
@@ -511,7 +505,7 @@ impl RunLoop {
 
     /// Runs the solver competition, making all configured drivers participate.
     /// Returns all fair solutions sorted by their score (best to worst).
-    async fn competition(&self, auction: &domain::Auction) -> Vec<competition::Participant> {
+    async fn competition(&self, auction: &domain::Auction) -> competition::CompetitionData {
         let request = solve::Request::new(
             auction,
             &self.trusted_tokens.all(),
@@ -559,8 +553,8 @@ impl RunLoop {
             .collect::<Vec<_>>();
 
         // Apply specific auction mechanism logic
-        let filtered_solutions = self.auction_mechanism.filter_solutions(auction, &solutions);
-        self.auction_mechanism.select_winners(&filtered_solutions)
+        self.auction_mechanism
+            .compute_competition_data(auction, &solutions)
     }
 
     /// Sends a `/solve` request to the driver and manages all error cases and

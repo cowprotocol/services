@@ -11,13 +11,26 @@ use {
 #[error("no winners found")]
 pub struct NoWinners;
 
-#[derive(Clone, Default, Debug)]
-pub struct ComputedScores {
+#[derive(Default)]
+pub struct CompetitionData {
     // TODO: for now we specify a single winner as the database still expects it
     // After https://github.com/cowprotocol/services/issues/3350, it will no longer be necessary and we will be able to return only the vec of ReferenceScore
+    pub legacy_scores: LegacyScores,
+    pub solutions: Vec<Participant>,
+    pub reference_scores: Vec<ReferenceScore>,
+}
+
+impl CompetitionData {
+    pub fn is_empty(&self) -> bool {
+        self.solutions.is_empty()
+    }
+}
+
+#[derive(Default)]
+pub struct LegacyScores {
     pub winner: H160,
     pub winning_score: U256,
-    pub reference_scores: Vec<ReferenceScore>,
+    pub reference_score: U256,
 }
 
 #[derive(Clone, Default, Debug)]
@@ -39,8 +52,15 @@ pub trait AuctionMechanism: Send + Sync {
     /// Selects the winners from a list of unranked solutions.
     ///
     /// Returns the list of solutions with the winners marked.
-    fn select_winners(&self, solutions: &[Participant<Unranked>]) -> Vec<Participant>;
+    fn rank_solutions(&self, solutions: &[Participant<Unranked>]) -> Vec<Participant>;
 
-    /// Computes the scores of all provided solutions.
-    fn compute_scores(&self, solutions: &[Participant]) -> Result<ComputedScores, NoWinners>;
+    /// Computes competition data which includes:
+    /// - Filtered and ranked solutions
+    /// - Reference scores for each solver
+    /// - Legacy scores for the winner
+    fn compute_competition_data(
+        &self,
+        auction: &Auction,
+        solutions: &[Participant<Unranked>],
+    ) -> CompetitionData;
 }

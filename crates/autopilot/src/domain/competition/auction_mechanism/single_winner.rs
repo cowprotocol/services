@@ -1,9 +1,16 @@
 use {
-    super::{AuctionMechanism, ComputedScores, NoWinners, Participant, ReferenceScore, Unranked},
+    super::{AuctionMechanism, NoWinners, Participant, ReferenceScore, Unranked},
     crate::{
-        domain::{Auction, competition::TradedOrder},
+        domain::{
+            Auction,
+            competition::{
+                TradedOrder,
+                auction_mechanism::{CompetitionData, LegacyScores},
+            },
+        },
         infra,
     },
+    itertools::Itertools,
     primitive_types::U256,
     std::collections::{HashMap, HashSet},
 };
@@ -100,6 +107,28 @@ impl SingleSurplusAuctionMechanism {
             });
         !unfair
     }
+
+    fn compute_legacy_scores(&self, solutions: &[Participant]) -> Result<LegacyScores, NoWinners> {
+        let Some(winning_solution) = solutions
+            .iter()
+            .find(|participant| participant.is_winner())
+            .map(|participant| participant.solution())
+        else {
+            return Err(NoWinners);
+        };
+        let winner = winning_solution.solver().into();
+        let winning_score = winning_solution.score().get().0;
+        let reference_score = solutions
+            .get(1)
+            .map(|participant| participant.solution().score().get().0)
+            .unwrap_or_default();
+
+        Ok(LegacyScores {
+            winner,
+            winning_score,
+            reference_score,
+        })
+    }
 }
 
 impl AuctionMechanism for SingleSurplusAuctionMechanism {
@@ -145,7 +174,7 @@ impl AuctionMechanism for SingleSurplusAuctionMechanism {
     /// until `max_winners_per_auction` are selected. The solution is a winner
     /// if it swaps tokens that are not yet swapped by any previously processed
     /// solution.
-    fn select_winners(&self, solutions: &[Participant<Unranked>]) -> Vec<Participant> {
+    fn rank_solutions(&self, solutions: &[Participant<Unranked>]) -> Vec<Participant> {
         let wrapped_native_token = self.eth.contracts().wrapped_native_token();
         let mut already_swapped_tokens = HashSet::new();
         let mut winners = 0;
@@ -175,28 +204,46 @@ impl AuctionMechanism for SingleSurplusAuctionMechanism {
             .collect()
     }
 
-    fn compute_scores(&self, solutions: &[Participant]) -> Result<ComputedScores, NoWinners> {
-        let Some(winning_solution) = solutions
-            .iter()
-            .find(|participant| participant.is_winner())
-            .map(|participant| participant.solution())
-        else {
-            return Err(NoWinners);
-        };
-        let winner = winning_solution.solver().into();
-        let winning_score = winning_solution.score().get().0;
-        let reference_score = solutions
-            .get(1)
-            .map(|participant| participant.solution().score().get().0)
+    fn compute_competition_data(
+        &self,
+        auction: &Auction,
+        solutions: &[Participant<Unranked>],
+    ) -> CompetitionData {
+        let filtered_solutions = self.filter_solutions(auction, solutions);
+        let ranked_solutions = self.rank_solutions(&filtered_solutions);
+        let legacy_scores = self
+            .compute_legacy_scores(&ranked_solutions)
             .unwrap_or_default();
 
-        Ok(ComputedScores {
-            winner,
-            winning_score,
-            reference_scores: vec![ReferenceScore {
-                solver: winner,
-                reference_score,
-            }],
-        })
+        let reference_scores = ranked_solutions
+            .iter()
+            .filter(|participant| participant.is_winner())
+            .map(|participant| participant.driver().submission_address)
+            .unique()
+            .map(|solver| {
+                let solutions_without_solver = solutions
+                    .iter()
+                    .filter(|participant| participant.driver().submission_address != solver)
+                    .cloned()
+                    .collect::<Vec<_>>();
+                let filtered_solutions = self.filter_solutions(auction, &solutions_without_solver);
+                let winning_solutions = self.rank_solutions(&filtered_solutions);
+                let winning_score = self
+                    .compute_legacy_scores(&winning_solutions)
+                    .ok()
+                    .map(|scores| scores.winning_score)
+                    .unwrap_or_default();
+                ReferenceScore {
+                    solver: solver.0,
+                    reference_score: winning_score,
+                }
+            })
+            .collect::<Vec<_>>();
+
+        CompetitionData {
+            legacy_scores,
+            solutions: ranked_solutions,
+            reference_scores,
+        }
     }
 }

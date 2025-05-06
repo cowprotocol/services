@@ -12,7 +12,7 @@ mod participation_guard;
 pub use {
     auction_mechanism::{
         AuctionMechanism,
-        ComputedScores,
+        CompetitionData,
         ReferenceScore,
         SingleSurplusAuctionMechanism,
     },
