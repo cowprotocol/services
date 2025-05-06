@@ -217,6 +217,7 @@ impl AuctionMechanism for SingleSurplusAuctionMechanism {
 
         let reference_scores = ranked_solutions
             .iter()
+            // Reference scores need to be collected only for winning solvers
             .filter(|participant| participant.is_winner())
             .map(|participant| participant.driver().submission_address)
             .unique()
