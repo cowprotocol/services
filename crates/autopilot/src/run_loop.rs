@@ -445,9 +445,7 @@ impl RunLoop {
         };
         let competition = Competition {
             auction_id: auction.id,
-            winner: competition_data.legacy_scores.winner,
-            winning_score: competition_data.legacy_scores.winning_score,
-            reference_score: competition_data.legacy_scores.reference_score,
+            legacy_scores: competition_data.legacy_scores.clone(),
             reference_scores: competition_data.reference_scores.clone(),
             participants,
             prices: auction

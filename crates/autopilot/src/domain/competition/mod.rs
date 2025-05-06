@@ -13,6 +13,7 @@ pub use {
     auction_mechanism::{
         AuctionMechanism,
         CompetitionData,
+        LegacyScores,
         ReferenceScores,
         SingleSurplusAuctionMechanism,
     },

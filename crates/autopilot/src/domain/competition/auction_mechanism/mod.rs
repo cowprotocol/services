@@ -27,7 +27,9 @@ impl CompetitionData {
     }
 }
 
-#[derive(Default)]
+/// Legacy scores support only a single winner. This structure remains to avoid
+/// breaking changes in the database schema. Will be removed in the future.
+#[derive(Clone, Default, Debug)]
 pub struct LegacyScores {
     pub winner: H160,
     pub winning_score: U256,
