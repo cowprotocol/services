@@ -5,6 +5,7 @@ use {
     super::{Participant, Unranked},
     crate::domain::Auction,
     primitive_types::{H160, U256},
+    std::collections::{HashMap, hash_map::Iter},
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -17,7 +18,7 @@ pub struct CompetitionData {
     // After https://github.com/cowprotocol/services/issues/3350, it will no longer be necessary and we will be able to return only the vec of ReferenceScore
     pub legacy_scores: LegacyScores,
     pub solutions: Vec<Participant>,
-    pub reference_scores: Vec<ReferenceScore>,
+    pub reference_scores: ReferenceScores,
 }
 
 impl CompetitionData {
@@ -33,10 +34,14 @@ pub struct LegacyScores {
     pub reference_score: U256,
 }
 
+/// Contains reference scores per solver address.
 #[derive(Clone, Default, Debug)]
-pub struct ReferenceScore {
-    pub solver: H160,
-    pub reference_score: U256,
+pub struct ReferenceScores(HashMap<H160, U256>);
+
+impl ReferenceScores {
+    pub fn iter(&self) -> Iter<'_, H160, U256> {
+        self.0.iter()
+    }
 }
 
 /// The following trait allows to implement custom auction mechanism logic

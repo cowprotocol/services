@@ -1,11 +1,11 @@
 use {
-    super::{AuctionMechanism, NoWinners, Participant, ReferenceScore, Unranked},
+    super::{AuctionMechanism, NoWinners, Participant, Unranked},
     crate::{
         domain::{
             Auction,
             competition::{
                 TradedOrder,
-                auction_mechanism::{CompetitionData, LegacyScores},
+                auction_mechanism::{CompetitionData, LegacyScores, ReferenceScores},
             },
         },
         infra,
@@ -233,17 +233,14 @@ impl AuctionMechanism for SingleSurplusAuctionMechanism {
                     .ok()
                     .map(|scores| scores.winning_score)
                     .unwrap_or_default();
-                ReferenceScore {
-                    solver: solver.0,
-                    reference_score: winning_score,
-                }
+                (solver.0, winning_score)
             })
-            .collect::<Vec<_>>();
+            .collect::<HashMap<_, _>>();
 
         CompetitionData {
             legacy_scores,
             solutions: ranked_solutions,
-            reference_scores,
+            reference_scores: ReferenceScores(reference_scores),
         }
     }
 }

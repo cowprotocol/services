@@ -1,5 +1,5 @@
 use {
-    crate::domain::competition::ReferenceScore,
+    crate::domain::competition::ReferenceScores,
     anyhow::Context,
     database::{
         Address,
@@ -22,7 +22,7 @@ pub struct Competition {
     pub winner: H160,
     pub winning_score: U256,
     pub reference_score: U256,
-    pub reference_scores: Vec<ReferenceScore>,
+    pub reference_scores: ReferenceScores,
     /// Addresses to which the CIP20 participation rewards will be payed out.
     /// Usually the same as the solver addresses.
     pub participants: HashSet<H160>,
@@ -79,11 +79,13 @@ impl super::Postgres {
         let reference_scores = competition
             .reference_scores
             .iter()
-            .map(|score| database::reference_scores::Score {
-                auction_id: competition.auction_id,
-                solver: ByteArray(score.solver.0),
-                reference_score: u256_to_big_decimal(&score.reference_score),
-            })
+            .map(
+                |(solver, reference_score)| database::reference_scores::Score {
+                    auction_id: competition.auction_id,
+                    solver: ByteArray(solver.0),
+                    reference_score: u256_to_big_decimal(reference_score),
+                },
+            )
             .collect::<Vec<_>>();
 
         database::reference_scores::insert(&mut ex, &reference_scores)

@@ -13,7 +13,7 @@ pub use {
     auction_mechanism::{
         AuctionMechanism,
         CompetitionData,
-        ReferenceScore,
+        ReferenceScores,
         SingleSurplusAuctionMechanism,
     },
     participant::{Participant, Ranked, Unranked},
