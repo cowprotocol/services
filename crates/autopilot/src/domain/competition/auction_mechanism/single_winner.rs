@@ -222,13 +222,12 @@ impl AuctionMechanism for SingleSurplusAuctionMechanism {
             .map(|participant| participant.driver().submission_address)
             .unique()
             .map(|solver| {
-                let solutions_without_solver = solutions
+                let solutions_without_solver = filtered_solutions
                     .iter()
                     .filter(|participant| participant.driver().submission_address != solver)
                     .cloned()
                     .collect::<Vec<_>>();
-                let filtered_solutions = self.filter_solutions(auction, &solutions_without_solver);
-                let winning_solutions = self.rank_solutions(&filtered_solutions);
+                let winning_solutions = self.rank_solutions(&solutions_without_solver);
                 let winning_score = self
                     .compute_legacy_scores(&winning_solutions)
                     .ok()
