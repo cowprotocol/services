@@ -7,6 +7,7 @@ use {
                 TradedOrder,
                 auction_mechanism::{CompetitionData, LegacyScores, ReferenceScores},
             },
+            eth::Address,
         },
         infra,
     },
@@ -129,6 +130,33 @@ impl SingleSurplusAuctionMechanism {
             reference_score,
         })
     }
+
+    /// Computes the reference score for a given solver. The reference score is
+    /// the sum of all winning solution scores after excluding
+    /// solutions of the given solver.
+    fn compute_reference_score(
+        &self,
+        filtered_solutions: &[Participant<Unranked>],
+        solver: Address,
+    ) -> U256 {
+        let solutions_without_solver = filtered_solutions
+            .iter()
+            .filter(|participant| participant.driver().submission_address != solver)
+            .cloned()
+            .collect::<Vec<_>>();
+        let reference_score = self
+            .rank_solutions(&solutions_without_solver)
+            .into_iter()
+            .filter_map(|participant| {
+                participant
+                    .is_winner()
+                    .then_some(participant.solution().score.0.0)
+            })
+            .reduce(U256::saturating_add)
+            .unwrap_or_default();
+
+        reference_score
+    }
 }
 
 impl AuctionMechanism for SingleSurplusAuctionMechanism {
@@ -222,18 +250,8 @@ impl AuctionMechanism for SingleSurplusAuctionMechanism {
             .map(|participant| participant.driver().submission_address)
             .unique()
             .map(|solver| {
-                let solutions_without_solver = filtered_solutions
-                    .iter()
-                    .filter(|participant| participant.driver().submission_address != solver)
-                    .cloned()
-                    .collect::<Vec<_>>();
-                let winning_solutions = self.rank_solutions(&solutions_without_solver);
-                let winning_score = self
-                    .compute_legacy_scores(&winning_solutions)
-                    .ok()
-                    .map(|scores| scores.winning_score)
-                    .unwrap_or_default();
-                (solver.0, winning_score)
+                let reference_score = self.compute_reference_score(&filtered_solutions, solver);
+                (solver.0, reference_score)
             })
             .collect::<HashMap<_, _>>();
 
