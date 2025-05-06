@@ -548,6 +548,21 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
         solver_b_reference_score.reference_score,
         solver_a_winning_solutions[0].score
     );
+
+    // Ensure the new scores are computed the same way
+    let settlement_scores = database::settlement_scores::fetch(&mut ex, competition.auction_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(H160(settlement_scores.winner.0), solver_a.address());
+    assert_eq!(
+        settlement_scores.reference_score,
+        solver_b_winning_solutions[0].score
+    );
+    assert_eq!(
+        settlement_scores.winning_score,
+        solver_a_winning_solutions[0].score
+    );
 }
 
 async fn too_many_limit_orders_test(web3: Web3) {
