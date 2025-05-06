@@ -12,7 +12,6 @@ use {
 #[error("no winners found")]
 pub struct NoWinners;
 
-#[derive(Default)]
 pub struct CompetitionData {
     // TODO: for now we specify a single winner as the database still expects it
     // After https://github.com/cowprotocol/services/issues/3350, it will no longer be necessary and we will be able to return only the vec of ReferenceScore
