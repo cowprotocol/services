@@ -365,8 +365,8 @@ impl RunLoop {
         block_deadline: u64,
     ) -> Result<()> {
         let start = Instant::now();
-        // TODO: Support multiple winners
-        // https://github.com/cowprotocol/services/issues/3021
+        // TODO: Needs to be removed once other teams fully migrated to the
+        // reference_scores table
         let Some(winning_solution) = solutions
             .iter()
             .find(|participant| participant.is_winner())
@@ -377,10 +377,10 @@ impl RunLoop {
         let winner = winning_solution.solver().into();
         let winning_score = winning_solution.score().get().0;
         let reference_score = solutions
-            // todo multiple winners per auction
             .get(1)
             .map(|participant| participant.solution().score().get().0)
             .unwrap_or_default();
+
         let participants = solutions
             .iter()
             .map(|participant| participant.solution().solver().into())
