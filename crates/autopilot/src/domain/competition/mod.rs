@@ -12,8 +12,9 @@ mod participation_guard;
 pub use {
     auction_mechanism::{
         AuctionMechanism,
-        ComputedScores,
-        ReferenceScore,
+        CompetitionData,
+        LegacyScores,
+        ReferenceScores,
         SingleSurplusAuctionMechanism,
     },
     participant::{Participant, Ranked, Unranked},

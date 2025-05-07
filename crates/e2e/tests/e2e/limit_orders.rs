@@ -528,8 +528,41 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
     let reference_scores = database::reference_scores::fetch(&mut ex, competition.auction_id)
         .await
         .unwrap();
-    // TODO: support multiple winners
-    assert_eq!(reference_scores.len(), 1);
+    assert_eq!(reference_scores.len(), 2);
+
+    let solver_a_reference_score = reference_scores
+        .iter()
+        .find(|score| H160(score.solver.0) == solver_a.address())
+        .unwrap();
+    // The reference score for solver_a is the score of solver_b's winning solution
+    assert_eq!(
+        solver_a_reference_score.reference_score,
+        solver_b_winning_solutions[0].score
+    );
+    let solver_b_reference_score = reference_scores
+        .iter()
+        .find(|score| H160(score.solver.0) == solver_b.address())
+        .unwrap();
+    // and vice versa
+    assert_eq!(
+        solver_b_reference_score.reference_score,
+        solver_a_winning_solutions[0].score
+    );
+
+    // Ensure the new scores are computed the same way
+    let settlement_scores = database::settlement_scores::fetch(&mut ex, competition.auction_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(H160(settlement_scores.winner.0), solver_a.address());
+    assert_eq!(
+        settlement_scores.reference_score,
+        solver_b_winning_solutions[0].score
+    );
+    assert_eq!(
+        settlement_scores.winning_score,
+        solver_a_winning_solutions[0].score
+    );
 }
 
 async fn too_many_limit_orders_test(web3: Web3) {

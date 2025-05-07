@@ -1,4 +1,5 @@
 use {
+    crate::domain::competition::{LegacyScores, ReferenceScores},
     anyhow::Context,
     database::{
         Address,
@@ -18,9 +19,8 @@ use {
 #[derive(Clone, Default, Debug)]
 pub struct Competition {
     pub auction_id: AuctionId,
-    pub winner: H160,
-    pub winning_score: U256,
-    pub reference_score: U256,
+    pub legacy_scores: LegacyScores,
+    pub reference_scores: ReferenceScores,
     /// Addresses to which the CIP20 participation rewards will be payed out.
     /// Usually the same as the solver addresses.
     pub participants: HashSet<H160>,
@@ -58,9 +58,9 @@ impl super::Postgres {
             &mut ex,
             database::settlement_scores::Score {
                 auction_id: competition.auction_id,
-                winner: ByteArray(competition.winner.0),
-                winning_score: u256_to_big_decimal(&competition.winning_score),
-                reference_score: u256_to_big_decimal(&competition.reference_score),
+                winner: ByteArray(competition.legacy_scores.winner.0),
+                winning_score: u256_to_big_decimal(&competition.legacy_scores.winning_score),
+                reference_score: u256_to_big_decimal(&competition.legacy_scores.reference_score),
                 block_deadline: competition
                     .block_deadline
                     .try_into()
@@ -74,12 +74,17 @@ impl super::Postgres {
         .await
         .context("settlement_scores::insert")?;
 
-        // TODO: support multiple winners
-        let reference_scores = vec![database::reference_scores::Score {
-            auction_id: competition.auction_id,
-            solver: ByteArray(competition.winner.0),
-            reference_score: u256_to_big_decimal(&competition.reference_score),
-        }];
+        let reference_scores = competition
+            .reference_scores
+            .iter()
+            .map(
+                |(solver, reference_score)| database::reference_scores::Score {
+                    auction_id: competition.auction_id,
+                    solver: ByteArray(solver.0),
+                    reference_score: u256_to_big_decimal(reference_score),
+                },
+            )
+            .collect::<Vec<_>>();
 
         database::reference_scores::insert(&mut ex, &reference_scores)
             .await
