@@ -124,6 +124,10 @@ impl Competition {
                     notify::solver_timeout(&self.solver, auction.id());
                 }
             })?;
+        
+        if !solutions.is_empty() {
+            tracing::info!("newlog solutions={:?}", solutions);
+        }
 
         observe::postprocessing(&solutions, auction.deadline().driver());
 
@@ -156,6 +160,8 @@ impl Competition {
             } => merge(solutions, auction, max_orders_per_merged_solution),
             SolutionMerging::Forbidden => solutions.collect(),
         };
+        
+        tracing::info!("newlog all_solutions={:?}", all_solutions);
 
         // Encode solutions into settlements (streamed).
         let encoded = all_solutions
@@ -211,6 +217,8 @@ impl Competition {
             observe::postprocessing_timed_out(&settlements);
             notify::postprocessing_timed_out(&self.solver, auction.id())
         }
+
+        tracing::info!("newlog settlements={:?}", settlements);
 
         // Score the settlements.
         let scores = settlements

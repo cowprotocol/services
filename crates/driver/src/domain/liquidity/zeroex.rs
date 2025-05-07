@@ -48,6 +48,7 @@ pub struct ZeroExSignature {
 
 impl LimitOrder {
     pub fn to_interaction(&self, input: &liquidity::MaxInput) -> anyhow::Result<eth::Interaction> {
+        tracing::info!("newlog order={:?}", self.order);
         let method = self.zeroex.fill_or_kill_limit_order(
             (
                 self.order.maker_token,

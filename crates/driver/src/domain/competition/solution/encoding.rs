@@ -164,6 +164,8 @@ pub fn tx(
 
         trades.push(trade);
     }
+    
+    tracing::info!("newlog trades={:?}", trades);
 
     // Encode allowances
     for approval in approvals {
@@ -400,6 +402,7 @@ fn unwrap(amount: eth::TokenAmount, weth: &contracts::WETH9) -> eth::Interaction
     }
 }
 
+#[derive(Debug)]
 struct Trade {
     sell_token_index: eth::U256,
     buy_token_index: eth::U256,
@@ -421,6 +424,7 @@ struct Price {
     buy_price: eth::U256,
 }
 
+#[derive(Debug)]
 struct Flags {
     side: order::Side,
     partially_fillable: bool,

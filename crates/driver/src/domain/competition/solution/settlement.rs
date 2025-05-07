@@ -93,23 +93,28 @@ impl Settlement {
         }
 
         // Encode the solution into a settlement.
+        tracing::info!("newlog encoding a");
+        let a = encoding::tx(
+            auction,
+            &solution,
+            eth.contracts(),
+            solution.approvals(eth, Internalization::Enable).await?,
+            Internalization::Enable,
+            solver_native_token,
+        )?;
+        tracing::info!("newlog encoding a");
+        let b = encoding::tx(
+            auction,
+            &solution,
+            eth.contracts(),
+            solution.approvals(eth, Internalization::Disable).await?,
+            Internalization::Disable,
+            solver_native_token,
+        )?;
+        tracing::info!("newlog encoding done");
         let tx = SettlementTx {
-            internalized: encoding::tx(
-                auction,
-                &solution,
-                eth.contracts(),
-                solution.approvals(eth, Internalization::Enable).await?,
-                Internalization::Enable,
-                solver_native_token,
-            )?,
-            uninternalized: encoding::tx(
-                auction,
-                &solution,
-                eth.contracts(),
-                solution.approvals(eth, Internalization::Disable).await?,
-                Internalization::Disable,
-                solver_native_token,
-            )?,
+            internalized: a,
+            uninternalized: b,
             may_revert: solution.revertable(),
         };
         Self::new(auction.id().unwrap(), solution, tx, eth, simulator).await
@@ -148,6 +153,7 @@ impl Settlement {
             Result::<_, Error>::Ok(simulator.access_list(&tx).await?)
         }))
         .await?;
+        tracing::info!("newlog partial_access_lists");
         let partial_access_list = partial_access_lists
             .into_iter()
             .fold(eth::AccessList::default(), |acc, list| acc.merge(list));
@@ -160,8 +166,11 @@ impl Settlement {
             simulator,
         )
         .await?;
+        tracing::info!("newlog access_list");
         let price = eth.gas_price(None).await?;
+        tracing::info!("newlog price");
         let gas = Gas::new(gas, eth.block_gas_limit(), price)?;
+        tracing::info!("newlog gas");
 
         // Ensure that the solver has sufficient balance for the settlement to be mined.
         if eth.balance(solution.solver().address()).await? < gas.required_balance() {
@@ -169,6 +178,10 @@ impl Settlement {
                 gas.required_balance(),
             ));
         }
+
+        tracing::info!("newlog eth balance");
+        
+        tracing::info!("newlog simulating interactions");
 
         // Is at least one interaction internalized?
         if solution
@@ -190,6 +203,8 @@ impl Settlement {
             )
             .await?;
         }
+
+        tracing::info!("newlog simulating interactions is ok");
 
         Ok(Self {
             auction_id,
