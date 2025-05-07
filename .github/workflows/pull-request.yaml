@@ -143,7 +143,7 @@ jobs:
         with:
           # the latest version introduced a bug caused forked node tests to fail
           # only switch back to latest stable version after it was fixed in anvil
-          version: nightly-54af8693b8fcc7a3f65136c1188e89661155955d
+          version: nightly-23191fbeccfcf901f7c28590cb962d9693373c21
       - uses: Swatinem/rust-cache@v2
       # Start the build process in the background. The following cargo test command will automatically
       # wait for the build process to be done before proceeding.
