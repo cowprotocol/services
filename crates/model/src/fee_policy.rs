@@ -22,6 +22,20 @@ pub enum FeePolicy {
     },
 }
 
+impl FeePolicy {
+    pub fn max_volume_factor(&self) -> f64 {
+        match self {
+            FeePolicy::Surplus {
+                max_volume_factor, ..
+            } => *max_volume_factor,
+            FeePolicy::PriceImprovement {
+                max_volume_factor, ..
+            } => *max_volume_factor,
+            FeePolicy::Volume { factor, .. } => *factor,
+        }
+    }
+}
+
 #[serde_as]
 #[derive(PartialEq, Clone, Debug, Serialize)]
 #[cfg_attr(any(test, feature = "e2e"), derive(serde::Deserialize))]
