@@ -71,7 +71,11 @@ async fn execute_rpc<T: DeserializeOwned>(
     request: &Request,
 ) -> Result<T, Web3Error> {
     let body = serde_json::to_string(&request)?;
-    tracing::info!(name = %inner.name, %id, %body, "executing request");
+    let log = format!("executing request - id: {id}, body: {body}");
+    tokio::task::spawn(async move {
+        tracing::info!(log);
+    });
+    // tracing::info!(name = %inner.name, %id, %body, "executing request");
     let mut request_builder = client
         .post(inner.url.clone())
         .header(header::CONTENT_TYPE, "application/json")
@@ -106,7 +110,10 @@ async fn execute_rpc<T: DeserializeOwned>(
     // Log the raw text before decoding to get more information on responses that
     // aren't valid json. Debug encoding so we don't get control characters like
     // newlines in the output.
-    tracing::info!(name = %inner.name, %id, body = %text.trim(), "received response");
+    let log = format!("received response - id: {id}, body: {}", text.trim());
+    tokio::task::spawn(async move {
+        tracing::info!(log);
+    });
     if !status.is_success() {
         return Err(Web3Error::Transport(TransportError::Message(format!(
             "HTTP error {status}"
