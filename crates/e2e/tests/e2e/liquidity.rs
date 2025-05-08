@@ -41,6 +41,7 @@ use {
 pub const FORK_BLOCK: u64 = 18477910;
 pub const USDT_WHALE: H160 = H160(hex!("F977814e90dA44bFA03b6295A0616a897441aceC"));
 pub const COW_WHALE: H160 = H160(hex!("cA771eda0c70aA7d053aB1B25004559B918FE662"));
+pub const SHIBA_WHALE: H160 = H160(hex!("6cC45F1Abb48e56AED35e2eA6749d7313fB9F1e9"));
 
 #[tokio::test]
 #[ignore]
