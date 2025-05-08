@@ -180,7 +180,7 @@ impl Settlement {
         }
 
         tracing::info!("newlog eth balance");
-        
+
         tracing::info!("newlog simulating interactions");
 
         // Is at least one interaction internalized?

@@ -124,7 +124,7 @@ impl Competition {
                     notify::solver_timeout(&self.solver, auction.id());
                 }
             })?;
-        
+
         if !solutions.is_empty() {
             tracing::info!("newlog solutions={:?}", solutions);
         }
@@ -160,7 +160,7 @@ impl Competition {
             } => merge(solutions, auction, max_orders_per_merged_solution),
             SolutionMerging::Forbidden => solutions.collect(),
         };
-        
+
         tracing::info!("newlog all_solutions={:?}", all_solutions);
 
         // Encode solutions into settlements (streamed).

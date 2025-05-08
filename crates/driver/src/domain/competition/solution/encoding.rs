@@ -164,7 +164,7 @@ pub fn tx(
 
         trades.push(trade);
     }
-    
+
     tracing::info!("newlog trades={:?}", trades);
 
     // Encode allowances

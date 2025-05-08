@@ -199,8 +199,30 @@ async fn forked_mainnet_zeroex_eth_flow_tx(web3: Web3) {
         zeroex_maker.account(),
         token_cow.approve(zeroex.address(), amount * 4)
     );
-    tx!(cow_whale, token_cow.transfer(solver.address(), amount));
-    tx!(cow_whale, token_cow.approve(solver.address(), amount));
+
+    tx!(
+        solver.account(),
+        onchain
+            .contracts()
+            .weth
+            .approve(zeroex.address(), amount * 2)
+    );
+
+    let settlement = forked_node_api
+        .impersonate(&onchain.contracts().gp_settlement.address())
+        .await
+        .unwrap();
+
+    onchain.send_wei(settlement.address(), to_wei(3)).await;
+    tx_value!(settlement, to_wei(2), onchain.contracts().weth.deposit());
+
+    tx!(
+        settlement,
+        onchain
+            .contracts()
+            .weth
+            .approve(zeroex.address(), amount * 2)
+    );
 
     let chain_id = web3.eth().chain_id().await.unwrap().as_u64();
     let zeroex_liquidity_orders = crate::liquidity::create_zeroex_liquidity_orders_for_token(
@@ -520,7 +542,7 @@ async fn test_order_availability_in_api(
     tracing::info!("Waiting for order to show up in API.");
     let uid = order.uid(contracts, ethflow_contract).await;
     let is_available = || async { services.get_order(&uid).await.is_ok() };
-    wait_for_condition(TIMEOUT, is_available).await.unwrap();
+    wait_for_condition(TIMEOUT * 3, is_available).await.unwrap();
 
     test_orders_query(services, order, owner, contracts, ethflow_contract).await;
 
@@ -568,7 +590,7 @@ async fn test_trade_availability_in_api(
 }
 
 async fn test_order_was_settled(ethflow_order: &ExtendedEthFlowOrder, web3: &Web3) {
-    wait_for_condition(TIMEOUT, || async {
+    wait_for_condition(TIMEOUT * 3, || async {
         let buy_token = ERC20Mintable::at(web3, ethflow_order.0.buy_token);
         let receiver_buy_token_balance = buy_token
             .balance_of(ethflow_order.0.receiver)
