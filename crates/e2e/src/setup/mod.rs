@@ -51,7 +51,7 @@ where
 {
     let start = std::time::Instant::now();
     while !condition().await.was_successful() {
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        tokio::time::sleep(Duration::from_millis(1000)).await;
         if start.elapsed() > timeout {
             return Err(anyhow!("timeout"));
         }
