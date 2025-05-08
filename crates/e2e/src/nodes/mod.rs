@@ -72,7 +72,7 @@ impl Node {
             const NEEDLE: &str = "Listening on ";
             let mut reader = tokio::io::BufReader::new(stdout).lines();
             while let Some(line) = reader.next_line().await.unwrap() {
-                tracing::trace!(line);
+                tracing::warn!(line);
                 if let Some(addr) = line.strip_prefix(NEEDLE) {
                     match sender.take() {
                         Some(sender) => sender.send(format!("http://{addr}")).unwrap(),
