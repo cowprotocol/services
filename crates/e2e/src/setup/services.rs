@@ -346,6 +346,7 @@ impl<'a> Services<'a> {
                 .fetch_one(db.deref_mut())
                 .await
                 .unwrap();
+            tracing::error!("-----------------THIS IS WHERE WE NORMALLY GET STUCK-------------------------");
             self.mint_block().await;
             count > 0
         };
