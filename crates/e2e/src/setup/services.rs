@@ -632,7 +632,8 @@ impl<'a> Services<'a> {
     }
 
     async fn mint_block(&self) {
-        tracing::info!("mining block");
+        let bt = std::backtrace::Backtrace::force_capture();
+        tracing::info!(?bt, "mining block");
         self.web3
             .transport()
             .execute("evm_mine", vec![])
