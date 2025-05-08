@@ -71,7 +71,7 @@ async fn execute_rpc<T: DeserializeOwned>(
     request: &Request,
 ) -> Result<T, Web3Error> {
     let body = serde_json::to_string(&request)?;
-    tracing::trace!(name = %inner.name, %id, %body, "executing request");
+    tracing::info!(name = %inner.name, %id, %body, "executing request");
     let mut request_builder = client
         .post(inner.url.clone())
         .header(header::CONTENT_TYPE, "application/json")

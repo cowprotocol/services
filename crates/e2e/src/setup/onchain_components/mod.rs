@@ -548,8 +548,7 @@ impl OnchainComponents {
     }
 
     pub async fn mint_block(&self) {
-        let bt = std::backtrace::Backtrace::force_capture();
-        tracing::info!(?bt, "mining block");
+        tracing::info!("mining block");
         self.web3
             .transport()
             .execute("evm_mine", vec![])
