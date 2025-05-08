@@ -38,6 +38,12 @@ async fn local_node_combined_protocol_fees() {
     run_test(combined_protocol_fees).await;
 }
 
+#[tokio::test]
+#[ignore]
+async fn local_node_surplus_partner_fee() {
+    run_test(surplus_partner_fee).await;
+}
+
 async fn combined_protocol_fees(web3: Web3) {
     let limit_surplus_policy = ProtocolFee {
         policy: FeePolicyKind::Surplus {
@@ -362,6 +368,187 @@ async fn combined_protocol_fees(web3: Web3) {
     assert_approximately_eq!(
         partner_fee_executed_fee_in_buy_token,
         partner_fee_order_token_balance
+    );
+}
+
+/// Tests that a partner can provide multiple partner fees and also use
+/// the `Surplus` and `PriceImprovement` fee policies. Also checks that
+/// the partner fees can not exceed the globally defined
+/// `--fee-policy-max-partner-fee` which defines how much of an order's volume
+/// may be captured in total by partner fees.
+async fn surplus_partner_fee(web3: Web3) {
+    // All these values are unreasonably high but result in easier math
+    // when it comes to limiting partner fees to the global volume cap.
+    const MAX_PARTNER_VOLUME_FEE: f64 = 0.375;
+    let partner_fee_app_data = OrderCreationAppData::Full {
+        full: json!({
+            "version": "1.1.0",
+            "metadata": {
+                "partnerFee": [
+                    // this will use the entire `maxVolumeBps`
+                    {
+                        "surplusBps": 3_000, // 30%
+                        "maxVolumeBps": 2_500, // 25%
+                        "recipient": "0xb6BAd41ae76A11D10f7b0E664C5007b908bC77C9",
+                    },
+                    // this will have the `maxVolumeBps` reduced (to stay below the cap)
+                    {
+                        "priceImprovementBps": 3_000, // 30%
+                        "maxVolumeBps": 1_500, // 15%
+                        "recipient": "0xb6BAd41ae76A11D10f7b0E664C5007b908bC77C9",
+                    },
+                    // this will have the `maxVolumeBps` set to 0 (prev policies already reach the
+                    // global cap)
+                    {
+                        "priceImprovementBps": 3_000, // 30%
+                        "maxVolumeBps": 1_500, // 15%
+                        "recipient": "0xb6BAd41ae76A11D10f7b0E664C5007b908bC77C9",
+                    },
+                ]
+            }
+        })
+        .to_string(),
+    };
+
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+
+    let [solver] = onchain.make_solvers(to_wei(200)).await;
+    let [trader] = onchain.make_accounts(to_wei(200)).await;
+    let [token] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(to_wei(20), to_wei(20))
+        .await;
+
+    token.mint(solver.address(), to_wei(1000)).await;
+    tx!(
+        solver.account(),
+        token.approve(
+            onchain.contracts().uniswap_v2_router.address(),
+            to_wei(1000)
+        )
+    );
+    tx!(
+        trader.account(),
+        token.approve(onchain.contracts().uniswap_v2_router.address(), to_wei(100))
+    );
+    tx!(
+        trader.account(),
+        onchain
+            .contracts()
+            .weth
+            .approve(onchain.contracts().allowance, to_wei(100))
+    );
+    tx_value!(
+        trader.account(),
+        to_wei(100),
+        onchain.contracts().weth.deposit()
+    );
+    tx!(
+        solver.account(),
+        onchain
+            .contracts()
+            .weth
+            .approve(onchain.contracts().uniswap_v2_router.address(), to_wei(200))
+    );
+
+    let services = Services::new(&onchain).await;
+    services
+        .start_protocol_with_args(
+            ExtraServiceArgs {
+                autopilot: vec![format!(
+                    "--fee-policy-max-partner-fee={MAX_PARTNER_VOLUME_FEE}"
+                )],
+                ..Default::default()
+            },
+            solver,
+        )
+        .await;
+
+    let order = OrderCreation {
+        sell_amount: to_wei(10),
+        sell_token: onchain.contracts().weth.address(),
+        // just set any low amount since it doesn't matter for this test
+        buy_amount: to_wei(1),
+        buy_token: token.address(),
+        app_data: partner_fee_app_data.clone(),
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+    );
+
+    let order_uid = services.create_order(&order).await.unwrap();
+
+    onchain.mint_block().await;
+
+    tracing::info!("Waiting for orders to trade.");
+    let metadata_updated = || async {
+        onchain.mint_block().await;
+        services
+            .get_order(&order_uid)
+            .await
+            .is_ok_and(|order| !order.metadata.executed_fee.is_zero())
+    };
+    wait_for_condition(TIMEOUT, metadata_updated)
+        .await
+        .expect("Timeout waiting for the orders to trade");
+
+    tracing::info!("Checking executions...");
+    let trades = services.get_trades(&order_uid).await.unwrap();
+    assert_eq!(trades.len(), 1);
+    let trade = &trades[0];
+
+    assert_eq!(trade.executed_protocol_fees.len(), 3);
+
+    // Fee policies defined by the partner got applied for the
+    // executed trades.
+    assert_eq!(
+        trade.executed_protocol_fees[0].policy,
+        model::fee_policy::FeePolicy::Surplus {
+            factor: 0.3,
+            max_volume_factor: 0.25,
+        }
+    );
+
+    // Fee policies exceeding the global partner fee cap have been
+    // capped to the maximum allowed value.
+    assert!(matches!(
+        trade.executed_protocol_fees[1].policy,
+        model::fee_policy::FeePolicy::PriceImprovement {
+            factor: 0.3,
+            // Note that the partner fee policy actually specified
+            // 0.15 here but that would exceed the total partner fee
+            // so it was capped to 0.1.
+            max_volume_factor: 0.1,
+            .. // we don't care about the quote here
+        }
+    ));
+
+    // Fee policies exceeding the global partner fee cap have been
+    // capped to the maximum allowed value.
+    assert!(matches!(
+        trade.executed_protocol_fees[2].policy,
+        model::fee_policy::FeePolicy::PriceImprovement {
+            factor: 0.3,
+            // Note that the partner fee policy actually specified
+            // 0.15 here but since we already reached the cap the final
+            // fee policy is not allowed to capture any more fees.
+            max_volume_factor: 0.,
+            .. // we don't care about the quote here
+        }
+    ));
+
+    // The volume caps of all partner fees combined (applied after each other)
+    // are capped to the total volume cap for all partners. Note that we use
+    // "1. + factor" here because the factors start from 0 (e.g. 20% == 0.2)
+    // but the math only works with factors starting from 1 (e.g. 20% == 1.2).
+    assert_eq!(
+        trade.executed_protocol_fees.iter().fold(1., |acc, fee| {
+            acc * (1. + fee.policy.max_volume_factor())
+        }),
+        1. + MAX_PARTNER_VOLUME_FEE
     );
 }
 
