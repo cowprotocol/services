@@ -504,9 +504,7 @@ async fn cow_amm_driver_support(web3: Web3) {
         ])
         .await;
 
-    tracing::error!("before mine block");
     onchain.mint_block().await;
-    tracing::error!("after mine block");
 
     // Place Orders
     let order = OrderCreation {
