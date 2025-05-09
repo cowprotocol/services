@@ -7,6 +7,7 @@ use {
 
 mod participant;
 mod participation_guard;
+pub mod winner_selection;
 
 pub use {
     participant::{Participant, Ranked, Unranked},
@@ -64,24 +65,6 @@ impl Solution {
     pub fn prices(&self) -> &HashMap<eth::TokenAddress, auction::Price> {
         &self.prices
     }
-
-    /// Returns the total scores for each directed token pair of the solution.
-    /// E.g. if a solution contains 3 orders like:
-    ///     sell A for B with a score of 10
-    ///     sell A for B with a score of 5
-    ///     sell B for C with a score of 5
-    /// it will return a map like:
-    ///     (A, B) => 15
-    ///     (B, C) => 5
-    pub fn aggregate_scores(&self, native_prices: ()) -> HashMap<(eth::TokenAddress, eth::TokenAddress), Score> {
-        let mut scores = HashMap::default();
-        for order in self.orders.values() {
-            // TODO compute score
-            let score = Default::default();
-            *scores.entry((order.sell.token, order.buy.token)).or_default() += score;
-        }
-        scores
-    }
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -97,7 +80,17 @@ pub struct TradedOrder {
     pub executed_buy: eth::TokenAmount,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Display, Default, derive_more::AddAssign, derive_more::Add)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    PartialOrd,
+    Display,
+    Default,
+    derive_more::AddAssign,
+    derive_more::Add,
+)]
 pub struct Score(pub eth::Ether);
 
 impl Score {
