@@ -1,5 +1,17 @@
-//! Picks the solution with the highest score as the winner. The reference score
-//! is the second highest score.
+//! Winner Selection:
+//! Simply picks the 1 solution with the highest overall score.
+//!
+//! Fairness Guarantees:
+//! This winner selection does not have any inherent fairness guarantees for
+//! individual orders. However, each order's execution is basically "insured" by
+//! EBBO (ethereum best bid offer) - that is an order should get executed at
+//! least as good as possible using very popular onchain liquidity sources. Each
+//! solver can opt-in to have their solutions invalidated if the estimated total
+//! EBBO violations would exceed a configurable threshold.
+//!
+//! Reference Score:
+//! The reference score is simply the second highest reported score of all
+//! solutions. If there is only 1 solution the reference score is 0.
 
 use {
     super::Arbitrator,

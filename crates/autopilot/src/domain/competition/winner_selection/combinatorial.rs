@@ -1,6 +1,25 @@
-//! Implements a winner selction algorithm which picks the set
-//! of orders which maximize surplus while enforcing uniform
-//! directional clearing prices.
+//! Winner Selection:
+//! Implements a winner selction algorithm which picks the **set** of solutions
+//! which maximize surplus while enforcing uniform **directional** clearing
+//! prices. That means all orders selling the same token must get executed at
+//! the same price for that token. But orders buying that same token may all be
+//! settled at a different (but still uniform) price. So effectively instead of
+//! allowing only 1 price for each token (uniform clearing price) each token may
+//! have 2 prices (one for selling it and another for buying it).
+//!
+//! Fairness Guarantees:
+//! A solution is only valid if it does not settle any order at a worse uniform
+//! directional clearing price than the best solution which only contains this
+//! uniform directional clearing price. In other words an order may only be
+//! batched with other orders if each order gets a better deal than executing
+//! it individually.
+//!
+//! Reference Score:
+//! Each solver S with a winning solution gets one reference score. The
+//! reference score is the total score of all winning solutions if the solver S
+//! had not participated in the competition.
+//! That is effectively a measurement of how much better each order got executed
+//! because solver S participated in the competition.
 
 use {
     super::Arbitrator,
