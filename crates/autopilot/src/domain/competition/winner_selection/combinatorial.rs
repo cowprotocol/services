@@ -24,7 +24,7 @@
 use {
     super::Arbitrator,
     crate::domain::{
-        Auction,
+        self,
         OrderUid,
         auction::{
             Prices,
@@ -104,9 +104,9 @@ impl Arbitrator for Config {
     fn filter_solutions(
         &self,
         mut solutions: Vec<Participant<Unranked>>,
-        auction: &Auction,
+        auction: &domain::Auction,
     ) -> Vec<Participant<Unranked>> {
-        let auction = Auction2::from(auction);
+        let auction = Auction::from(auction);
         let baseline_scores = compute_baseline_scores(&solutions, &auction);
         solutions.retain(|s| {
             let aggregated_scores = aggregate_scores(s.solution(), &auction);
@@ -163,7 +163,7 @@ impl Config {
 /// each token pair if one exists.
 fn compute_baseline_scores(
     participants: &[Participant<Unranked>],
-    auction: &Auction2,
+    auction: &Auction,
 ) -> HashMap<DirectedTokenPair, Score> {
     let mut baseline_solutions = HashMap::default();
     for participant in participants {
@@ -189,7 +189,7 @@ fn compute_baseline_scores(
 /// it will return a map like:
 ///     (A, B) => 15
 ///     (B, C) => 5
-fn aggregate_scores(solution: &Solution, auction: &Auction2) -> HashMap<DirectedTokenPair, Score> {
+fn aggregate_scores(solution: &Solution, auction: &Auction) -> HashMap<DirectedTokenPair, Score> {
     let mut scores = HashMap::default();
     for (uid, trade) in solution.orders() {
         if !auction.contributes_to_score(uid) {
@@ -247,14 +247,17 @@ fn aggregate_scores(solution: &Solution, auction: &Auction2) -> HashMap<Directed
     scores
 }
 
-struct Auction2<'a> {
+/// Relevant data from `domain::Auction` but with data structures
+/// optimized for the winner selection logic.
+/// Avoids clones whenever possible.
+struct Auction<'a> {
     /// Fee policies for **all** orders that were in the original auction.
     fee_policies: HashMap<OrderUid, &'a Vec<fee::Policy>>,
     surplus_capturing_jit_order_owners: HashSet<eth::Address>,
     native_prices: &'a Prices,
 }
 
-impl Auction2<'_> {
+impl Auction<'_> {
     /// Returns whether an order is allowed to capture surplus and
     /// therefore contributes to the total score of a solution.
     fn contributes_to_score(&self, uid: &OrderUid) -> bool {
@@ -265,8 +268,8 @@ impl Auction2<'_> {
     }
 }
 
-impl<'a> From<&'a Auction> for Auction2<'a> {
-    fn from(original: &'a Auction) -> Self {
+impl<'a> From<&'a domain::Auction> for Auction<'a> {
+    fn from(original: &'a domain::Auction) -> Self {
         Self {
             fee_policies: original
                 .orders
