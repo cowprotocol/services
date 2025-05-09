@@ -27,7 +27,7 @@ use {
     ::observe::metrics,
     anyhow::Result,
     database::order_events::OrderEventLabel,
-    ethcontract::U256,
+    ethcontract::{H160, U256},
     ethrpc::block_stream::BlockInfo,
     futures::{FutureExt, TryFutureExt},
     itertools::Itertools,
@@ -509,6 +509,223 @@ impl RunLoop {
         Ok(())
     }
 
+    async fn fetch_solutions(
+        &self,
+        auction: &domain::Auction,
+    ) -> Vec<competition::Participant<Unranked>> {
+        let request = solve::Request::new(
+            auction,
+            &self.trusted_tokens.all(),
+            self.config.solve_deadline,
+        );
+        let request = &request;
+
+        let mut solutions = futures::future::join_all(
+            self.drivers
+                .iter()
+                .map(|driver| self.solve(driver.clone(), request)),
+        )
+        .await
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+
+        let mut counter = HashMap::new();
+        solutions.retain(|participant| {
+            let submission_address = participant.driver().submission_address;
+            let is_solution_from_driver = participant.solution().solver() == submission_address;
+
+            // Filter out solutions that don't come from their corresponding submission
+            // address
+            if !is_solution_from_driver {
+                tracing::warn!(
+                    driver = participant.driver().name,
+                    ?submission_address,
+                    "the solution received is not from the driver submission address"
+                );
+                return false;
+            }
+
+            // limit number of solutions per solver
+            let driver = participant.driver().name.clone();
+            let count = counter.entry(driver).or_insert(0);
+            *count += 1;
+            *count <= self.config.max_solutions_per_solver
+        });
+
+        // Shuffle so that sorting randomly splits ties.
+        solutions.shuffle(&mut rand::thread_rng());
+        solutions
+    }
+
+    /// Filter out solutions that are not fair
+    async fn filter_solutions_old(
+        &self,
+        solutions: Vec<competition::Participant<Unranked>>,
+        auction: &domain::Auction,
+    ) -> Vec<competition::Participant<Unranked>> {
+        solutions
+            .iter()
+            .enumerate()
+            .filter_map(|(index, participant)| {
+                if Self::is_solution_fair(participant, &solutions[index..], auction) {
+                    Some(participant.clone())
+                } else {
+                    tracing::warn!(
+                        invalidated = participant.driver().name,
+                        "fairness check invalidated of solution"
+                    );
+                    None
+                }
+            })
+            .collect()
+    }
+
+    /// Drops all solutions where the score for any directed token pair is less than
+    /// what the baseline solution provides for that token pair.
+    /// If no baseline solution exists for a token pair a score of 0 is assumed.
+    fn filter_solutions_new(
+        &self,
+        solutions: Vec<competition::Participant<Unranked>>,
+    ) -> Vec<competition::Participant<Unranked>> {
+        // drops all solutions that have at least 1 trade execution which can't beat the best
+        // baseline trade execution for that directed token pair.
+        let mut best_single_solutions = HashMap::<(H160, H160), (usize, Score)>::default();
+        for solution in solutions {
+
+        }
+        todo!()
+    }
+
+    /// Let's call a solution that only trades 1 directed token pair a baseline solution.
+    /// Returns the best baseline solution (highest score) for each token pair if one
+    /// exists.
+    fn compute_baseline_solutions(solutions: &[competition::Participant<Unranked>]) -> HashMap<(eth::TokenAddress, eth::TokenAddress), &competition::Participant<Unranked>> {
+        let mut baseline_solutions = HashMap::default();
+        for solution in solutions {
+            let aggregate_scores = solution.solution().aggregate_scores(());
+            if aggregate_scores.len() != 1 {
+                // base solutions must contain exactly 1 directed token pair
+                continue;
+            }
+            let (token_pair, score) = aggregate_scores.into_iter().next().unwrap();
+            let current_best_score = baseline_solutions.entry(token_pair).or_default();
+            if score > *current_best_score {
+                *current_best_score = score;
+            }
+        }
+        baseline_solutions
+    }
+
+    fn mark_winners_old(
+        &self,
+        mut solutions: Vec<competition::Participant<Unranked>>,
+    ) -> Vec<competition::Participant> {
+        // The current system theoretically already supports multiple winners. However,
+        // it was never activated because the rewards mechanism was never
+        // decided. To make the migration easier we revert back to only allowing
+        // 1 winner. And that is simply the solution with the highest total
+        // score.
+        solutions.sort_unstable_by_key(|participant| {
+            std::cmp::Reverse(participant.solution().score().get().0)
+        });
+        solutions
+            .into_iter()
+            .enumerate()
+            .map(|(index, solution)| solution.rank(index == 0))
+            .collect()
+    }
+
+    fn mark_winners_new(
+        &self,
+        mut solutions: Vec<competition::Participant<Unranked>>,
+    ) -> Vec<competition::Participant> {
+        solutions.sort_unstable_by_key(|participant| {
+            std::cmp::Reverse(participant.solution().score().get().0)
+        });
+
+        // Winners are selected one by one, starting from the best solution,
+        // until `max_winners_per_auction` are selected. A solution can only
+        // win if none of the (sell_token, buy_token) pairs of the executed
+        // orders have been covered by any previously selected winning solution.
+        // In other words this enforces a uniform directional clearing price.
+        let wrapped_native_token = self.eth.contracts().wrapped_native_token();
+        let mut already_swapped_tokens_pairs = HashSet::new();
+        let mut winners = 0;
+        solutions
+            .into_iter()
+            .map(|participant| {
+                let swapped_token_pairs = participant
+                    .solution()
+                    .orders()
+                    .iter()
+                    .map(|(_, order)| {
+                        (
+                            order.sell.token.as_erc20(wrapped_native_token),
+                            order.buy.token.as_erc20(wrapped_native_token),
+                        )
+                    })
+                    .collect::<HashSet<_>>();
+
+                let is_winner = swapped_token_pairs.is_disjoint(&already_swapped_tokens_pairs)
+                    && winners < self.config.max_winners_per_auction;
+
+                already_swapped_tokens_pairs.extend(swapped_token_pairs);
+                winners += usize::from(is_winner);
+
+                participant.rank(is_winner)
+            })
+            .collect()
+    }
+
+    fn compute_reference_scores_new(
+        &self,
+        solutions: &[competition::Participant],
+    ) -> HashMap<eth::Address, competition::Score> {
+        let mut reference_scores = HashMap::default();
+
+        for solution in solutions {
+            let driver = solution.driver().submission_address;
+            if reference_scores.contains_key(&driver) {
+                // we already computed the reference score
+                continue;
+            }
+
+            let solutions_without_solver = solutions
+                .iter()
+                .filter(|s| s.driver().submission_address != driver)
+                .cloned()
+                .map(|solution| solution.unrank())
+                .collect();
+            let ranked = self.mark_winners_new(solutions_without_solver);
+            let score = ranked
+                .iter()
+                .filter(|s| s.is_winner())
+                .fold(U256::zero(), |acc, s| acc + s.solution().score().0);
+            let score = competition::Score::try_new(eth::Ether(score)).unwrap_or_default();
+            reference_scores.insert(driver, score);
+        }
+
+        reference_scores
+    }
+
+    async fn compute_reference_scores_old(
+        &self,
+        solutions: &[competition::Participant],
+    ) -> HashMap<eth::Address, competition::Score> {
+        // this will hold at most 1 score but the interface needs to support multiple
+        // scores to fit the interface
+        let mut reference_scores = HashMap::default();
+        if let Some(winner) = solutions.get(0) {
+            let runner_up = solutions
+                .get(1)
+                .map(|s| s.solution().score())
+                .unwrap_or_default();
+            reference_scores.insert(winner.driver().submission_address, runner_up);
+        }
+        reference_scores
+    }
+
     /// Runs the solver competition, making all configured drivers participate.
     /// Returns all fair solutions sorted by their score (best to worst).
     async fn competition(&self, auction: &domain::Auction) -> Vec<competition::Participant> {
@@ -531,6 +748,7 @@ impl RunLoop {
 
         // Shuffle so that sorting randomly splits ties.
         solutions.shuffle(&mut rand::thread_rng());
+
         solutions.sort_unstable_by_key(|participant| {
             std::cmp::Reverse(participant.solution().score().get().0)
         });
@@ -563,6 +781,7 @@ impl RunLoop {
             *count <= self.config.max_solutions_per_solver
         });
 
+        // this will be done differently with CA
         // Filter out solutions that are not fair
         let solutions = solutions
             .iter()
@@ -579,6 +798,7 @@ impl RunLoop {
                 }
             });
 
+        // this will be done differently with CA
         // Winners are selected one by one, starting from the best solution,
         // until `max_winners_per_auction` are selected. The solution is a winner
         // if it swaps tokens that are not yet swapped by any previously processed

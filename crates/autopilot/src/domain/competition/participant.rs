@@ -9,6 +9,8 @@ pub struct Participant<State = Ranked> {
 
 #[derive(Clone)]
 pub struct Unranked;
+
+#[derive(Clone)]
 pub struct Ranked {
     is_winner: bool,
 }
@@ -44,5 +46,13 @@ impl Participant<Unranked> {
 impl Participant<Ranked> {
     pub fn is_winner(&self) -> bool {
         self.state.is_winner
+    }
+
+    pub fn unrank(self) -> Participant<Unranked> {
+        Participant {
+            solution: self.solution,
+            driver: self.driver,
+            state: Unranked,
+        }
     }
 }
