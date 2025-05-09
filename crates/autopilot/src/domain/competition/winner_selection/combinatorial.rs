@@ -230,11 +230,8 @@ fn aggregate_scores(solution: &Solution, auction: &Auction2) -> HashMap<Directed
     scores
 }
 
-// TODO
-// * better name
-// * implement some reasonable caching
-//     * ideally avoid atleast the cloning of protocol fees
 struct Auction2 {
+    /// Fee policies for **all** orders that were in the original auction.
     fee_policies: HashMap<OrderUid, Vec<fee::Policy>>,
     surplus_capturing_jit_order_owners: HashSet<eth::Address>,
     native_prices: Prices,
@@ -269,8 +266,15 @@ impl From<&Auction> for Auction2 {
     }
 }
 
-// TODO:
-// actually compute the score for each order
-//     do we re-implement the score logic or write some wrapper around the
-// settlement crap?? figure out how non-surplus orders play into this (I suspect
-// they get ignored for everything?)
+// TODO
+// * figure out how non-surplus order should be treated (I assume they get
+//   ignored completely)
+// * see if the score computation can be re-used more elegantly
+// * better name for optimized Auction type
+// * perf improvements for optimized auction type
+//     * only compute once (maybe cache)
+//     * avoid cloning fee policies
+//     * should we make the optimized format the regular format and only convert
+//       for the
+//     serialization?
+// * see if reference score computation can avoid cloning all the solutions
