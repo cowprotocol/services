@@ -74,8 +74,12 @@ impl Arbitrator for Config {
 
         for participant in participants {
             let driver = participant.driver().submission_address;
+            if reference_scores.len() >= self.max_winners {
+                // all winners have been processed
+                return reference_scores;
+            }
             if reference_scores.contains_key(&driver) {
-                // we already computed the reference score
+                // this particular winner has already been processed
                 continue;
             }
 
