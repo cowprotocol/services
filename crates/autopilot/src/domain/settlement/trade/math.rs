@@ -4,33 +4,32 @@ use {
     crate::{
         domain::{
             self,
+            OrderUid,
             auction::{
                 self,
                 order::{self, Side},
             },
             eth,
             fee,
-            settlement::{
-                transaction::{ClearingPrices, Prices},
-                {self},
-            },
+            settlement::transaction::{ClearingPrices, Prices},
         },
         util::conv::U256Ext,
     },
     error::Math,
     num::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub},
+    std::collections::HashMap,
 };
 
 /// A trade containing bare minimum of onchain information required to calculate
 /// the surplus, fees and score.
 #[derive(Debug, Clone)]
-pub(super) struct Trade {
-    uid: domain::OrderUid,
-    sell: eth::Asset,
-    buy: eth::Asset,
-    side: order::Side,
-    executed: order::TargetAmount,
-    prices: Prices,
+pub struct Trade {
+    pub uid: domain::OrderUid,
+    pub sell: eth::Asset,
+    pub buy: eth::Asset,
+    pub side: order::Side,
+    pub executed: order::TargetAmount,
+    pub prices: Prices,
 }
 
 impl Trade {
@@ -43,15 +42,18 @@ impl Trade {
     /// as the latest revision to avoid edge cases for certain buy orders.
     ///
     /// Denominated in NATIVE token
-    pub fn score(&self, auction: &settlement::Auction) -> Result<eth::Ether, Error> {
-        let native_price_buy = auction
-            .prices
+    pub fn score(
+        &self,
+        fee_policies: &HashMap<OrderUid, Vec<fee::Policy>>,
+        native_prices: &domain::auction::Prices,
+    ) -> Result<eth::Ether, Error> {
+        let native_price_buy = native_prices
             .get(&self.buy.token)
             .ok_or(Error::MissingPrice(self.buy.token))?;
 
         let surplus_in_surplus_token = {
             let user_surplus = self.surplus_over_limit_price()?.0;
-            let fees: eth::U256 = self.protocol_fees(auction)?.into_iter().try_fold(
+            let fees: eth::U256 = self.protocol_fees(fee_policies)?.into_iter().try_fold(
                 eth::U256::zero(),
                 |acc, i| {
                     acc.checked_add(i.fee.amount.0)
@@ -208,10 +210,9 @@ impl Trade {
     /// Denominated in SURPLUS token
     pub fn protocol_fees(
         &self,
-        auction: &settlement::Auction,
+        fee_policies: &HashMap<OrderUid, Vec<fee::Policy>>,
     ) -> Result<Vec<ExecutedProtocolFee>, Error> {
-        let policies = auction
-            .orders
+        let policies = fee_policies
             .get(&self.uid)
             .map(|value| value.as_slice())
             .unwrap_or_default();

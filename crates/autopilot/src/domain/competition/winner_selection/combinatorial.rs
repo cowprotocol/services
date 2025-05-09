@@ -25,9 +25,18 @@ use {
     super::Arbitrator,
     crate::domain::{
         Auction,
-        auction::Prices,
+        OrderUid,
+        auction::{
+            Prices,
+            order::{self, TargetAmount},
+        },
         competition::{Participant, Score, Solution, Unranked},
         eth::{self, WrappedNativeToken},
+        fee,
+        settlement::{
+            math,
+            transaction::{self, ClearingPrices},
+        },
     },
     ethcontract::U256,
     std::collections::{HashMap, HashSet},
@@ -116,9 +125,10 @@ impl Arbitrator for Config {
         mut solutions: Vec<Participant<Unranked>>,
         auction: &Auction,
     ) -> Vec<Participant<Unranked>> {
-        let baseline_scores = compute_baseline_solutions(&solutions, &auction.prices);
+        let auction = Auction2::from(auction);
+        let baseline_scores = compute_baseline_solutions(&solutions, &auction);
         solutions.retain(|s| {
-            let aggregated_scores = aggregate_scores(s.solution(), &auction.prices);
+            let aggregated_scores = aggregate_scores(s.solution(), &auction);
             // only keep solutions where each order execution is at least as good as
             // the baseline solution
             aggregated_scores.iter().all(|(pair, score)| {
@@ -136,11 +146,11 @@ impl Arbitrator for Config {
 /// each token pair if one exists.
 fn compute_baseline_solutions(
     solutions: &[Participant<Unranked>],
-    prices: &Prices,
+    auction: &Auction2,
 ) -> HashMap<DirectedTokenPair, Score> {
     let mut baseline_solutions = HashMap::default();
     for solution in solutions {
-        let aggregate_scores = aggregate_scores(solution.solution(), prices);
+        let aggregate_scores = aggregate_scores(solution.solution(), auction);
         if aggregate_scores.len() != 1 {
             // base solutions must contain exactly 1 directed token pair
             continue;
@@ -162,19 +172,105 @@ fn compute_baseline_solutions(
 /// it will return a map like:
 ///     (A, B) => 15
 ///     (B, C) => 5
-fn aggregate_scores(
-    solution: &Solution,
-    native_prices: &Prices,
-) -> HashMap<DirectedTokenPair, Score> {
+fn aggregate_scores(solution: &Solution, auction: &Auction2) -> HashMap<DirectedTokenPair, Score> {
     let mut scores = HashMap::default();
-    for order in solution.orders().values() {
-        let token_pair = DirectedTokenPair {
-            sell: order.sell.token,
-            buy: order.buy.token,
+    for (uid, trade) in solution.orders() {
+        if !auction.contributes_to_score(uid) {
+            continue;
+        }
+
+        // TODO: this currently reuses the score computation logic from the
+        // settlement logic which is quite ugly. See if there is a better way
+        // to do this.
+        let trade = math::Trade {
+            uid: *uid,
+            sell: trade.sell,
+            buy: trade.buy,
+            side: trade.side,
+            executed: match trade.side {
+                order::Side::Buy => TargetAmount(trade.executed_buy.into()),
+                order::Side::Sell => TargetAmount(trade.executed_sell.into()),
+            },
+            // TODO: double check that these prices make sense
+            // do we need to always set `uniform` to executed when an order is not surplus
+            // capturing?
+            prices: transaction::Prices {
+                uniform: ClearingPrices {
+                    sell: solution
+                        .prices
+                        .get(&trade.sell.token)
+                        .map(|p| p.get().0)
+                        .unwrap_or_else(|| trade.sell.amount.0),
+                    buy: solution
+                        .prices
+                        .get(&trade.buy.token)
+                        .map(|p| p.get().0)
+                        .unwrap_or_else(|| trade.buy.amount.0),
+                },
+                custom: ClearingPrices {
+                    sell: trade.sell.amount.into(),
+                    buy: trade.buy.amount.into(),
+                },
+            },
         };
-        // TODO compute score
-        let score = Default::default();
-        *scores.entry(token_pair).or_default() += score;
+        let score = trade
+            .score(&auction.fee_policies, &auction.native_prices)
+            .unwrap();
+
+        // clearing prices can be looked up in the solution.prices
+        // custom prices are equal to the executed amounts
+        // then build a trade from it and compute the score
+        let token_pair = DirectedTokenPair {
+            sell: trade.sell.token,
+            buy: trade.buy.token,
+        };
+
+        *scores.entry(token_pair).or_default() += Score(score);
     }
     scores
 }
+
+// TODO
+// * better name
+// * implement some reasonable caching
+//     * ideally avoid atleast the cloning of protocol fees
+struct Auction2 {
+    fee_policies: HashMap<OrderUid, Vec<fee::Policy>>,
+    surplus_capturing_jit_order_owners: HashSet<eth::Address>,
+    native_prices: Prices,
+}
+
+impl Auction2 {
+    /// Returns whether an order is allowed to capture surplus and
+    /// therefore contributes to the total score of a solution.
+    fn contributes_to_score(&self, uid: &OrderUid) -> bool {
+        self.fee_policies.contains_key(uid)
+            || self
+                .surplus_capturing_jit_order_owners
+                .contains(&uid.owner())
+    }
+}
+
+impl From<&Auction> for Auction2 {
+    fn from(original: &Auction) -> Self {
+        Self {
+            fee_policies: original
+                .orders
+                .iter()
+                .map(|o| (o.uid, o.protocol_fees.clone()))
+                .collect(),
+            native_prices: original.prices.clone(),
+            surplus_capturing_jit_order_owners: original
+                .surplus_capturing_jit_order_owners
+                .iter()
+                .cloned()
+                .collect(),
+        }
+    }
+}
+
+// TODO:
+// actually compute the score for each order
+//     do we re-implement the score logic or write some wrapper around the
+// settlement crap?? figure out how non-surplus orders play into this (I suspect
+// they get ignored for everything?)
