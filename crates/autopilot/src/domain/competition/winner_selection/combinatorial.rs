@@ -66,33 +66,30 @@ impl Arbitrator for Config {
             .collect()
     }
 
-    fn compute_reference_scores(&self, solutions: &[Participant]) -> HashMap<eth::Address, Score> {
+    fn compute_reference_scores(
+        &self,
+        participants: &[Participant],
+    ) -> HashMap<eth::Address, Score> {
         let mut reference_scores = HashMap::default();
 
-        for solution in solutions {
-            let driver = solution.driver().submission_address;
+        for participant in participants {
+            let driver = participant.driver().submission_address;
             if reference_scores.contains_key(&driver) {
                 // we already computed the reference score
                 continue;
             }
 
-            let solutions_without_solver = solutions
+            let solutions_without_solver = participants
                 .iter()
-                .filter(|s| s.driver().submission_address != driver)
+                .filter(|p| p.driver().submission_address != driver)
                 .map(|p| p.solution());
-            let winners = self.pick_winners(solutions_without_solver);
 
-            let score = solutions
-                .iter()
-                // hack: Note that we passed an already filtered iterator
-                // into `pick_winners()`. To use the returned winner indices
-                // we therefore have to first filter the solutions iterator
-                // the same way and only enumerate afterwards.
-                // This hack was done to avoid cloning tons of solutions.
-                .filter(|s| s.driver().submission_address != driver)
+            let winners = self.pick_winners(solutions_without_solver.clone());
+
+            let score = solutions_without_solver
                 .enumerate()
-                .filter(|(index, _)| winners.contains(&index))
-                .fold(U256::zero(), |acc, (_, p)| acc + p.solution().score().0);
+                .filter(|(index, _)| winners.contains(index))
+                .fold(U256::zero(), |acc, (_, s)| acc + s.score().0);
             let score = Score::try_new(eth::Ether(score)).unwrap_or_default();
             reference_scores.insert(driver, score);
         }
@@ -124,8 +121,8 @@ impl Arbitrator for Config {
 impl Config {
     /// Returns indices of winning solutions.
     /// Assumes that `solutions` is sorted by score descendingly.
-    /// This is just a clunky helper function to avoid cloning solutions
-    /// many times in `compute_reference_scores()`.
+    /// This logic was moved into a helper function to avoid a ton of `.clone()`
+    /// operations in `compute_reference_scores()`.
     fn pick_winners<'a>(&self, solutions: impl Iterator<Item = &'a Solution>) -> HashSet<usize> {
         // Winners are selected one by one, starting from the best solution,
         // until `max_winners` are selected. A solution can only
