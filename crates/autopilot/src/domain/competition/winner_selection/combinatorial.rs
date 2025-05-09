@@ -54,41 +54,15 @@ struct DirectedTokenPair {
 }
 
 impl Arbitrator for Config {
-    fn mark_winners(&self, mut solutions: Vec<Participant<Unranked>>) -> Vec<Participant> {
-        solutions.sort_unstable_by_key(|participant| {
+    fn mark_winners(&self, mut participants: Vec<Participant<Unranked>>) -> Vec<Participant> {
+        participants.sort_unstable_by_key(|participant| {
             std::cmp::Reverse(participant.solution().score().get().0)
         });
-
-        // Winners are selected one by one, starting from the best solution,
-        // until `max_winners` are selected. A solution can only
-        // win if none of the (sell_token, buy_token) pairs of the executed
-        // orders have been covered by any previously selected winning solution.
-        // In other words this enforces a uniform directional clearing price.
-        let mut already_swapped_tokens_pairs = HashSet::new();
-        let mut winners = 0;
-        solutions
+        let winners = self.pick_winners(participants.iter().map(|p| p.solution()));
+        participants
             .into_iter()
-            .map(|participant| {
-                let swapped_token_pairs = participant
-                    .solution()
-                    .orders()
-                    .iter()
-                    .map(|(_, order)| {
-                        (
-                            order.sell.token.as_erc20(self.weth),
-                            order.buy.token.as_erc20(self.weth),
-                        )
-                    })
-                    .collect::<HashSet<_>>();
-
-                let is_winner = swapped_token_pairs.is_disjoint(&already_swapped_tokens_pairs)
-                    && winners < self.max_winners;
-
-                already_swapped_tokens_pairs.extend(swapped_token_pairs);
-                winners += usize::from(is_winner);
-
-                participant.rank(is_winner)
-            })
+            .enumerate()
+            .map(|(index, participant)| participant.rank(winners.contains(&index)))
             .collect()
     }
 
@@ -105,14 +79,20 @@ impl Arbitrator for Config {
             let solutions_without_solver = solutions
                 .iter()
                 .filter(|s| s.driver().submission_address != driver)
-                .cloned()
-                .map(|solution| solution.unrank())
-                .collect();
-            let ranked = self.mark_winners(solutions_without_solver);
-            let score = ranked
+                .map(|p| p.solution());
+            let winners = self.pick_winners(solutions_without_solver);
+
+            let score = solutions
                 .iter()
-                .filter(|s| s.is_winner())
-                .fold(U256::zero(), |acc, s| acc + s.solution().score().0);
+                // hack: Note that we passed an already filtered iterator
+                // into `pick_winners()`. To use the returned winner indices
+                // we therefore have to first filter the solutions iterator
+                // the same way and only enumerate afterwards.
+                // This hack was done to avoid cloning tons of solutions.
+                .filter(|s| s.driver().submission_address != driver)
+                .enumerate()
+                .filter(|(index, _)| winners.contains(&index))
+                .fold(U256::zero(), |acc, (_, p)| acc + p.solution().score().0);
             let score = Score::try_new(eth::Ether(score)).unwrap_or_default();
             reference_scores.insert(driver, score);
         }
@@ -138,6 +118,41 @@ impl Arbitrator for Config {
             })
         });
         solutions
+    }
+}
+
+impl Config {
+    /// Returns indices of winning solutions.
+    /// Assumes that `solutions` is sorted by score descendingly.
+    /// This is just a clunky helper function to avoid cloning solutions
+    /// many times in `compute_reference_scores()`.
+    fn pick_winners<'a>(&self, solutions: impl Iterator<Item = &'a Solution>) -> HashSet<usize> {
+        // Winners are selected one by one, starting from the best solution,
+        // until `max_winners` are selected. A solution can only
+        // win if none of the (sell_token, buy_token) pairs of the executed
+        // orders have been covered by any previously selected winning solution.
+        // In other words this enforces a uniform directional clearing price.
+        let mut already_swapped_tokens_pairs = HashSet::new();
+        let mut winners = HashSet::default();
+        solutions.enumerate().for_each(|(index, solution)| {
+            let swapped_token_pairs = solution
+                .orders()
+                .values()
+                .map(|order| DirectedTokenPair {
+                    sell: order.sell.token.as_erc20(self.weth),
+                    buy: order.buy.token.as_erc20(self.weth),
+                })
+                .collect::<HashSet<_>>();
+
+            let is_winner = swapped_token_pairs.is_disjoint(&already_swapped_tokens_pairs)
+                && winners.len() < self.max_winners;
+
+            if is_winner {
+                winners.insert(index);
+                already_swapped_tokens_pairs.extend(swapped_token_pairs);
+            }
+        });
+        winners
     }
 }
 
