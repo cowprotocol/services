@@ -7,10 +7,11 @@ use {
             auction::Id,
             competition::{
                 self,
+                AuctionMechanism,
+                ComputedScores,
                 Solution,
                 SolutionError,
                 SolverParticipationGuard,
-                TradedOrder,
                 Unranked,
             },
             eth::{self, TxId},
@@ -27,7 +28,6 @@ use {
     ::observe::metrics,
     anyhow::Result,
     database::order_events::OrderEventLabel,
-    ethcontract::U256,
     ethrpc::block_stream::BlockInfo,
     futures::{FutureExt, TryFutureExt},
     itertools::Itertools,
@@ -42,7 +42,7 @@ use {
     rand::seq::SliceRandom,
     shared::token_list::AutoUpdatingTokenList,
     std::{
-        collections::{HashMap, HashSet},
+        collections::HashSet,
         sync::Arc,
         time::{Duration, Instant},
     },
@@ -76,6 +76,7 @@ pub struct RunLoop {
     /// the most recent data available.
     maintenance: Arc<Maintenance>,
     competition_updates_sender: tokio::sync::mpsc::UnboundedSender<()>,
+    auction_mechanism: Box<dyn AuctionMechanism>,
 }
 
 impl RunLoop {
@@ -91,6 +92,7 @@ impl RunLoop {
         liveness: Arc<Liveness>,
         maintenance: Arc<Maintenance>,
         competition_updates_sender: tokio::sync::mpsc::UnboundedSender<()>,
+        auction_mechanism: Box<dyn AuctionMechanism>,
     ) -> Self {
         Self {
             config,
@@ -104,6 +106,7 @@ impl RunLoop {
             liveness,
             maintenance,
             competition_updates_sender,
+            auction_mechanism,
         }
     }
 
@@ -365,20 +368,17 @@ impl RunLoop {
         block_deadline: u64,
     ) -> Result<()> {
         let start = Instant::now();
+
         // TODO: Needs to be removed once other teams fully migrated to the
         // reference_scores table
-        let Some(winning_solution) = solutions
-            .iter()
-            .find(|participant| participant.is_winner())
-            .map(|participant| participant.solution())
-        else {
-            return Err(anyhow::anyhow!("no winners found"));
-        };
-        let winner = winning_solution.solver().into();
-        let winning_score = winning_solution.score().get().0;
-        let reference_score = solutions
-            .get(1)
-            .map(|participant| participant.solution().score().get().0)
+        let ComputedScores {
+            winner,
+            winning_score,
+            reference_scores,
+        } = self.auction_mechanism.compute_scores(solutions)?;
+        let reference_score = reference_scores
+            .first()
+            .map(|s| s.reference_score)
             .unwrap_or_default();
 
         let participants = solutions
@@ -519,7 +519,7 @@ impl RunLoop {
         );
         let request = &request;
 
-        let mut solutions = futures::future::join_all(
+        let solutions = futures::future::join_all(
             self.drivers
                 .iter()
                 .map(|driver| self.solve(driver.clone(), request)),
@@ -530,14 +530,19 @@ impl RunLoop {
         .collect::<Vec<_>>();
 
         // Shuffle so that sorting randomly splits ties.
+        let mut solutions = solutions.to_vec();
         solutions.shuffle(&mut rand::thread_rng());
+
+        // Sort descending by score
         solutions.sort_unstable_by_key(|participant| {
             std::cmp::Reverse(participant.solution().score().get().0)
         });
 
         // Filter out solutions that don't come from their corresponding submission
         // address
-        let mut solutions = solutions
+        // TODO: this might have to be revised in the future when solvers can use
+        // different EOAs to submit solutions.
+        let solutions = solutions
             .into_iter()
             .filter(|participant| {
                 let submission_address = participant.driver().submission_address;
@@ -553,151 +558,9 @@ impl RunLoop {
             })
             .collect::<Vec<_>>();
 
-        // Limit the number of accepted solutions per solver. Do not alter the ordering
-        // of solutions
-        let mut counter = HashMap::new();
-        solutions.retain(|participant| {
-            let driver = participant.driver().name.clone();
-            let count = counter.entry(driver).or_insert(0);
-            *count += 1;
-            *count <= self.config.max_solutions_per_solver
-        });
-
-        // Filter out solutions that are not fair
-        let solutions = solutions
-            .iter()
-            .enumerate()
-            .filter_map(|(index, participant)| {
-                if Self::is_solution_fair(participant, &solutions[index..], auction) {
-                    Some(participant)
-                } else {
-                    tracing::warn!(
-                        invalidated = participant.driver().name,
-                        "fairness check invalidated of solution"
-                    );
-                    None
-                }
-            });
-
-        // Winners are selected one by one, starting from the best solution,
-        // until `max_winners_per_auction` are selected. The solution is a winner
-        // if it swaps tokens that are not yet swapped by any previously processed
-        // solution.
-        let wrapped_native_token = self.eth.contracts().wrapped_native_token();
-        let mut already_swapped_tokens = HashSet::new();
-        let mut winners = 0;
-        let solutions = solutions
-            .cloned()
-            .map(|participant| {
-                let swapped_tokens = participant
-                    .solution()
-                    .orders()
-                    .iter()
-                    .flat_map(|(_, order)| {
-                        [
-                            order.sell.token.as_erc20(wrapped_native_token),
-                            order.buy.token.as_erc20(wrapped_native_token),
-                        ]
-                    })
-                    .collect::<HashSet<_>>();
-
-                let is_winner = swapped_tokens.is_disjoint(&already_swapped_tokens)
-                    && winners < self.config.max_winners_per_auction;
-
-                already_swapped_tokens.extend(swapped_tokens);
-                winners += usize::from(is_winner);
-
-                participant.rank(is_winner)
-            })
-            .collect();
-
-        solutions
-    }
-
-    /// Returns true if solution is fair to other solutions
-    fn is_solution_fair(
-        solution: &competition::Participant<Unranked>,
-        others: &[competition::Participant<Unranked>],
-        auction: &domain::Auction,
-    ) -> bool {
-        let Some(fairness_threshold) = solution.driver().fairness_threshold else {
-            return true;
-        };
-
-        // Returns the surplus difference in the buy token if `left`
-        // is better for the trader than `right`, or 0 otherwise.
-        // This takes differently partial fills into account.
-        let improvement_in_buy = |left: &TradedOrder, right: &TradedOrder| {
-            // If `left.sell / left.buy < right.sell / right.buy`, left is "better" as the
-            // trader either sells less or gets more. This can be reformulated as
-            // `right.sell * left.buy > left.sell * right.buy`.
-            let right_sell_left_buy = right.executed_sell.0.full_mul(left.executed_buy.0);
-            let left_sell_right_buy = left.executed_sell.0.full_mul(right.executed_buy.0);
-            let improvement = right_sell_left_buy
-                .checked_sub(left_sell_right_buy)
-                .unwrap_or_default();
-
-            // The difference divided by the original sell amount is the improvement in buy
-            // token. Casting to U256 is safe because the difference is smaller than the
-            // original product, which if re-divided by right.sell must fit in U256.
-            improvement
-                .checked_div(right.executed_sell.0.into())
-                .map(|v| U256::try_from(v).expect("improvement in buy fits in U256"))
-                .unwrap_or_default()
-        };
-
-        // Record best execution per order
-        let mut best_executions = HashMap::new();
-        for other in others {
-            for (uid, execution) in other.solution().orders() {
-                best_executions
-                    .entry(uid)
-                    .and_modify(|best_execution| {
-                        if !improvement_in_buy(execution, best_execution).is_zero() {
-                            *best_execution = *execution;
-                        }
-                    })
-                    .or_insert(*execution);
-            }
-        }
-
-        // Check if the solution contains an order whose execution in the
-        // solution is more than `fairness_threshold` worse than the
-        // order's best execution across all solutions
-        let unfair = solution
-            .solution()
-            .orders()
-            .iter()
-            .any(|(uid, current_execution)| {
-                let best_execution = best_executions.get(uid).expect("by construction above");
-                let improvement = improvement_in_buy(best_execution, current_execution);
-                if improvement.is_zero() {
-                    return false;
-                };
-                tracing::debug!(
-                    ?uid,
-                    ?improvement,
-                    ?best_execution,
-                    ?current_execution,
-                    "fairness check"
-                );
-                // Improvement is denominated in buy token, use buy price to normalize the
-                // difference into eth
-                let Some(order) = auction.orders.iter().find(|order| order.uid == *uid) else {
-                    // This can happen for jit orders
-                    tracing::debug!(?uid, "cannot ensure fairness, order not found in auction");
-                    return false;
-                };
-                let Some(buy_price) = auction.prices.get(&order.buy.token) else {
-                    tracing::warn!(
-                        ?order,
-                        "cannot ensure fairness, buy price not found in auction"
-                    );
-                    return false;
-                };
-                buy_price.in_eth(improvement.into()) > fairness_threshold
-            });
-        !unfair
+        // Apply specific auction mechanism logic
+        let filtered_solutions = self.auction_mechanism.filter_solutions(auction, &solutions);
+        self.auction_mechanism.select_winners(&filtered_solutions)
     }
 
     /// Sends a `/solve` request to the driver and manages all error cases and

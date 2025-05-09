@@ -15,7 +15,10 @@ use {
                 event_retriever::CoWSwapOnchainOrdersContract,
             },
         },
-        domain::{self, competition::SolverParticipationGuard},
+        domain::{
+            self,
+            competition::{SingleSurplusAuctionMechanism, SolverParticipationGuard},
+        },
         event_updater::EventUpdater,
         infra,
         maintenance::Maintenance,
@@ -601,6 +604,12 @@ pub async fn run(args: Arguments) {
         drivers.iter().cloned(),
     );
 
+    let auction_mechanism = Box::new(SingleSurplusAuctionMechanism {
+        eth: eth.clone(),
+        max_solutions_per_solver: run_loop_config.max_solutions_per_solver,
+        max_winners_per_auction: run_loop_config.max_winners_per_auction,
+    });
+
     let run = RunLoop::new(
         run_loop_config,
         eth,
@@ -612,6 +621,7 @@ pub async fn run(args: Arguments) {
         liveness.clone(),
         Arc::new(maintenance),
         competition_updates_sender,
+        auction_mechanism,
     );
     run.run_forever().await;
 }
