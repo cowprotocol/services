@@ -196,9 +196,6 @@ fn aggregate_scores(solution: &Solution, auction: &Auction) -> HashMap<DirectedT
             continue;
         }
 
-        // TODO: this currently reuses the score computation logic from the
-        // settlement logic which is quite ugly. See if there is a better way
-        // to do this.
         let trade = math::Trade {
             uid: *uid,
             sell: trade.sell,
@@ -287,14 +284,10 @@ impl<'a> From<&'a domain::Auction> for Auction<'a> {
 }
 
 // TODO
-// * figure out how non-surplus order should be treated (I assume they get
-//   ignored completely)
+// * double check comb auction algo details:
+//     * how to treat orders which should not get surplus
+//     * is the logic compatible with a max_winners config option?
 // * see if the score computation can be re-used more elegantly
-// * better name for optimized Auction type
-// * perf improvements for optimized auction type
-//     * only compute once (maybe cache)
-//     * should we make the optimized format the regular format and only convert
-//       for the
-//     serialization?
-// * see if reference score computation can avoid cloning all the solutions
-// * check if reference scores is compatible with limiting the number of winners
+//     * check if the current impl is even correct
+// * update solver competition logic with new scores
+// * store new data in the DB
