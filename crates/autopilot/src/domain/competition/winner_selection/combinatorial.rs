@@ -128,10 +128,14 @@ impl Config {
         // until `max_winners` are selected. A solution can only
         // win if none of the (sell_token, buy_token) pairs of the executed
         // orders have been covered by any previously selected winning solution.
-        // In other words this enforces a uniform directional clearing price.
+        // In other words this enforces a uniform **directional** clearing price.
         let mut already_swapped_tokens_pairs = HashSet::new();
         let mut winners = HashSet::default();
-        solutions.enumerate().for_each(|(index, solution)| {
+        for (index, solution) in solutions.enumerate() {
+            if winners.len() >= self.max_winners {
+                return winners;
+            }
+
             let swapped_token_pairs = solution
                 .orders()
                 .values()
@@ -141,14 +145,11 @@ impl Config {
                 })
                 .collect::<HashSet<_>>();
 
-            let is_winner = swapped_token_pairs.is_disjoint(&already_swapped_tokens_pairs)
-                && winners.len() < self.max_winners;
-
-            if is_winner {
+            if swapped_token_pairs.is_disjoint(&already_swapped_tokens_pairs) {
                 winners.insert(index);
                 already_swapped_tokens_pairs.extend(swapped_token_pairs);
             }
-        });
+        }
         winners
     }
 }
@@ -290,3 +291,4 @@ impl From<&Auction> for Auction2 {
 //       for the
 //     serialization?
 // * see if reference score computation can avoid cloning all the solutions
+// * check if reference scores is compatible with limiting the number of winners
