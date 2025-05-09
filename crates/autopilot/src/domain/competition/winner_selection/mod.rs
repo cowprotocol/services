@@ -8,7 +8,7 @@ use {
 };
 
 pub mod combinatorial;
-pub mod max_surplus;
+pub mod max_score;
 
 pub trait Arbitrator: Send + Sync + 'static {
     /// Marks which of the solutions have won.

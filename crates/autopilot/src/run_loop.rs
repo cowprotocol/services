@@ -96,7 +96,7 @@ impl RunLoop {
         Self {
             winner_selection: match config.max_winners_per_auction.get() {
                 0 => unreachable!(),
-                1 => Box::new(winner_selection::max_surplus::Config),
+                1 => Box::new(winner_selection::max_score::Config),
                 n => Box::new(winner_selection::combinatorial::Config {
                     max_winners: n,
                     weth: eth.contracts().wrapped_native_token(),

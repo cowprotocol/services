@@ -1,5 +1,5 @@
-//! Implements a winner selction algorithm which simply selects
-//! the solution with the highest score.
+//! Picks the solution with the highest score as the winner. The reference score
+//! is the second highest score.
 
 use {
     super::Arbitrator,
@@ -68,7 +68,7 @@ impl Arbitrator for Config {
     }
 }
 
-/// Returns true if solution is fair to other solutions
+/// Returns true if solution is fair to other solutions.
 fn is_solution_fair(
     solution: &Participant<Unranked>,
     others: &[Participant<Unranked>],
