@@ -888,6 +888,7 @@ impl Setup {
     pub async fn done(self) -> Test {
         observe::tracing::initialize_reentrant(
             "driver=trace,driver::tests::setup::blockchain=debug,warn",
+            false,
         );
 
         if let Some(name) = self.name.as_ref() {
