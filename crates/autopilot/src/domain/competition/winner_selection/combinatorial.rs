@@ -79,7 +79,7 @@ impl Arbitrator for Config {
                 return reference_scores;
             }
             if reference_scores.contains_key(&driver) {
-                // this particular winner has already been processed
+                // we already computed the reference score
                 continue;
             }
 
@@ -107,7 +107,7 @@ impl Arbitrator for Config {
         auction: &Auction,
     ) -> Vec<Participant<Unranked>> {
         let auction = Auction2::from(auction);
-        let baseline_scores = compute_baseline_solutions(&solutions, &auction);
+        let baseline_scores = compute_baseline_scores(&solutions, &auction);
         solutions.retain(|s| {
             let aggregated_scores = aggregate_scores(s.solution(), &auction);
             // only keep solutions where each order execution is at least as good as
@@ -161,13 +161,13 @@ impl Config {
 /// Let's call a solution that only trades 1 directed token pair a baseline
 /// solution. Returns the best baseline solution (highest score) for
 /// each token pair if one exists.
-fn compute_baseline_solutions(
-    solutions: &[Participant<Unranked>],
+fn compute_baseline_scores(
+    participants: &[Participant<Unranked>],
     auction: &Auction2,
 ) -> HashMap<DirectedTokenPair, Score> {
     let mut baseline_solutions = HashMap::default();
-    for solution in solutions {
-        let aggregate_scores = aggregate_scores(solution.solution(), auction);
+    for participant in participants {
+        let aggregate_scores = aggregate_scores(participant.solution(), auction);
         if aggregate_scores.len() != 1 {
             // base solutions must contain exactly 1 directed token pair
             continue;
@@ -231,7 +231,7 @@ fn aggregate_scores(solution: &Solution, auction: &Auction2) -> HashMap<Directed
             },
         };
         let score = trade
-            .score(&auction.fee_policies, &auction.native_prices)
+            .score(&auction.fee_policies, auction.native_prices)
             .unwrap();
 
         // clearing prices can be looked up in the solution.prices
@@ -247,14 +247,14 @@ fn aggregate_scores(solution: &Solution, auction: &Auction2) -> HashMap<Directed
     scores
 }
 
-struct Auction2 {
+struct Auction2<'a> {
     /// Fee policies for **all** orders that were in the original auction.
-    fee_policies: HashMap<OrderUid, Vec<fee::Policy>>,
+    fee_policies: HashMap<OrderUid, &'a Vec<fee::Policy>>,
     surplus_capturing_jit_order_owners: HashSet<eth::Address>,
-    native_prices: Prices,
+    native_prices: &'a Prices,
 }
 
-impl Auction2 {
+impl Auction2<'_> {
     /// Returns whether an order is allowed to capture surplus and
     /// therefore contributes to the total score of a solution.
     fn contributes_to_score(&self, uid: &OrderUid) -> bool {
@@ -265,15 +265,15 @@ impl Auction2 {
     }
 }
 
-impl From<&Auction> for Auction2 {
-    fn from(original: &Auction) -> Self {
+impl<'a> From<&'a Auction> for Auction2<'a> {
+    fn from(original: &'a Auction) -> Self {
         Self {
             fee_policies: original
                 .orders
                 .iter()
-                .map(|o| (o.uid, o.protocol_fees.clone()))
+                .map(|o| (o.uid, &o.protocol_fees))
                 .collect(),
-            native_prices: original.prices.clone(),
+            native_prices: &original.prices,
             surplus_capturing_jit_order_owners: original
                 .surplus_capturing_jit_order_owners
                 .iter()
@@ -290,7 +290,6 @@ impl From<&Auction> for Auction2 {
 // * better name for optimized Auction type
 // * perf improvements for optimized auction type
 //     * only compute once (maybe cache)
-//     * avoid cloning fee policies
 //     * should we make the optimized format the regular format and only convert
 //       for the
 //     serialization?

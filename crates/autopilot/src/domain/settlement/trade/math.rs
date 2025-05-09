@@ -44,7 +44,7 @@ impl Trade {
     /// Denominated in NATIVE token
     pub fn score(
         &self,
-        fee_policies: &HashMap<OrderUid, Vec<fee::Policy>>,
+        fee_policies: &HashMap<OrderUid, impl AsRef<[fee::Policy]>>,
         native_prices: &domain::auction::Prices,
     ) -> Result<eth::Ether, Error> {
         let native_price_buy = native_prices
@@ -210,11 +210,11 @@ impl Trade {
     /// Denominated in SURPLUS token
     pub fn protocol_fees(
         &self,
-        fee_policies: &HashMap<OrderUid, Vec<fee::Policy>>,
+        fee_policies: &HashMap<OrderUid, impl AsRef<[fee::Policy]>>,
     ) -> Result<Vec<ExecutedProtocolFee>, Error> {
         let policies = fee_policies
             .get(&self.uid)
-            .map(|value| value.as_slice())
+            .map(|value| value.as_ref())
             .unwrap_or_default();
         let mut current_trade = self.clone();
         let mut total = eth::SurplusTokenAmount::default();
