@@ -7,6 +7,7 @@ use {
 
 mod participant;
 mod participation_guard;
+pub mod winner_selection;
 
 pub use {
     participant::{Participant, Ranked, Unranked},
@@ -79,7 +80,7 @@ pub struct TradedOrder {
     pub executed_buy: eth::TokenAmount,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Display)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Display, Default)]
 pub struct Score(eth::Ether);
 
 impl Score {
