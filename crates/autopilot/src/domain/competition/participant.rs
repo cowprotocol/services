@@ -1,4 +1,8 @@
-use {super::{Score, Solution}, crate::infra, std::sync::Arc};
+use {
+    super::{Score, Solution},
+    crate::infra,
+    std::sync::Arc,
+};
 
 #[derive(Clone)]
 pub struct Participant<State = Ranked> {
