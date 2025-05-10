@@ -1,6 +1,6 @@
 use {
     crate::{
-        database::competition::Competition,
+        database::competition::{Competition, LegacyScore},
         domain::{
             self,
             OrderUid,
@@ -62,6 +62,12 @@ pub struct Config {
     pub max_solutions_per_solver: NonZeroUsize,
 }
 
+impl Config {
+    fn enable_combinatorial_auctions(&self) -> bool {
+        self.max_winners_per_auction.get() > 1
+    }
+}
+
 pub struct RunLoop {
     config: Config,
     eth: infra::Ethereum,
@@ -94,13 +100,12 @@ impl RunLoop {
         competition_updates_sender: tokio::sync::mpsc::UnboundedSender<()>,
     ) -> Self {
         Self {
-            winner_selection: match config.max_winners_per_auction.get() {
-                0 => unreachable!(),
-                1 => Box::new(winner_selection::max_score::Config),
-                n => Box::new(winner_selection::combinatorial::Config {
-                    max_winners: n,
+            winner_selection: match config.enable_combinatorial_auctions() {
+                true => Box::new(winner_selection::combinatorial::Config {
+                    max_winners: config.max_winners_per_auction.get(),
                     weth: eth.contracts().wrapped_native_token(),
                 }),
+                false => Box::new(winner_selection::max_score::Config),
             },
             config,
             eth,
@@ -379,19 +384,29 @@ impl RunLoop {
         let start = Instant::now();
         // TODO: Needs to be removed once other teams fully migrated to the
         // reference_scores table
-        let Some(winning_solution) = solutions
-            .iter()
-            .find(|participant| participant.is_winner())
-            .map(|participant| participant.solution())
-        else {
-            return Err(anyhow::anyhow!("no winners found"));
+        let legacy_score = {
+            let Some(winning_solution) = solutions
+                .iter()
+                .find(|participant| participant.is_winner())
+                .map(|participant| participant.solution())
+            else {
+                return Err(anyhow::anyhow!("no winners found"));
+            };
+            let winner = winning_solution.solver().into();
+            let winning_score = winning_solution.score().get().0;
+            let reference_score = solutions
+                .get(1)
+                .map(|participant| participant.solution().score().get().0)
+                .unwrap_or_default();
+            let score = LegacyScore {
+                winner,
+                winning_score,
+                reference_score,
+            };
+            self.config.enable_combinatorial_auctions().then_some(score)
         };
-        let winner = winning_solution.solver().into();
-        let winning_score = winning_solution.score().get().0;
-        let reference_score = solutions
-            .get(1)
-            .map(|participant| participant.solution().score().get().0)
-            .unwrap_or_default();
+
+        let reference_scores = self.winner_selection.compute_reference_scores(solutions);
 
         let participants = solutions
             .iter()
@@ -464,9 +479,8 @@ impl RunLoop {
         };
         let competition = Competition {
             auction_id: auction.id,
-            winner,
-            winning_score,
-            reference_score,
+            legacy: legacy_score,
+            reference_scores,
             participants,
             prices: auction
                 .prices

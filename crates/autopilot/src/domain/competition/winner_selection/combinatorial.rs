@@ -59,11 +59,13 @@ impl Arbitrator for Config {
             std::cmp::Reverse(participant.solution().score().get().0)
         });
         let winners = self.pick_winners(participants.iter().map(|p| p.solution()));
-        participants
+        let mut marked: Vec<_> = participants
             .into_iter()
             .enumerate()
             .map(|(index, participant)| participant.rank(winners.contains(&index)))
-            .collect()
+            .collect();
+        marked.sort_by_key(|participant| std::cmp::Reverse(participant.is_winner()));
+        marked
     }
 
     fn compute_reference_scores(
@@ -291,3 +293,9 @@ impl<'a> From<&'a domain::Auction> for Auction<'a> {
 //     * check if the current impl is even correct
 // * update solver competition logic with new scores
 // * store new data in the DB
+//
+// * split changes into multiple PRs
+//     * make score logic public (also update the interfaces)
+//     * introduce Arbitrate trait and move current logic
+//     * implement comb auctions logic
+//     * update solver competitions data and DB calls
