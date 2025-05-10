@@ -79,14 +79,11 @@ impl Arbitrator for Config {
 
     fn mark_winners(&self, participants: Vec<Participant<Unranked>>) -> Vec<Participant> {
         let winners = self.pick_winners(participants.iter().map(|p| p.solution()));
-        let mut marked: Vec<_> = participants
+        participants
             .into_iter()
             .enumerate()
             .map(|(index, participant)| participant.rank(winners.contains(&index)))
-            .collect();
-        // move winners to the front while preserving order between solutions
-        marked.sort_by_key(|participant| std::cmp::Reverse(participant.is_winner()));
-        marked
+            .collect()
     }
 
     fn compute_reference_scores(
