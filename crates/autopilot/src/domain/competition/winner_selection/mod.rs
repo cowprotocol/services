@@ -7,6 +7,7 @@ use {
     std::collections::HashMap,
 };
 
+pub mod combinatorial;
 pub mod max_score;
 
 /// Implements auction arbitration in 3 phases:
