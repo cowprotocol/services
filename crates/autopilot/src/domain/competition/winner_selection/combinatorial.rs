@@ -113,6 +113,8 @@ impl Arbitrator for Config {
             let score = solutions_without_solver
                 .enumerate()
                 .filter(|(index, _)| winners.contains(index))
+                // TODO: use the self computed scores instead of the solver
+                // provided scores?
                 .fold(U256::zero(), |acc, (_, s)| acc + s.score().0);
             let score = Score::try_new(eth::Ether(score)).unwrap_or_default();
             reference_scores.insert(solver, score);
