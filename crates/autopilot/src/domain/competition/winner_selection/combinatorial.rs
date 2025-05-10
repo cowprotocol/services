@@ -13,6 +13,9 @@
 //! uniform directional clearing price. In other words an order may only be
 //! batched with other orders if each order gets a better deal than executing
 //! it individually.
+//! Because these guarantees rely heavily on all relevant scores of each
+//! solution being computed, we'll discard solutions where that computation
+//! fails.
 //!
 //! Reference Score:
 //! Each solver S with a winning solution gets one reference score. The
@@ -29,7 +32,7 @@ use {
             Prices,
             order::{self, TargetAmount},
         },
-        competition::{Participant, Score, Solution, TradedOrder, Unranked},
+        competition::{Participant, Score, Solution, Unranked},
         eth::{self, WrappedNativeToken},
         fee,
         settlement::{
@@ -43,30 +46,26 @@ use {
     std::collections::{HashMap, HashSet},
 };
 
-pub struct Config {
-    pub max_winners: usize,
-    pub weth: WrappedNativeToken,
-}
-
-#[derive(Debug, Clone, Hash, Eq, PartialEq)]
-struct DirectedTokenPair {
-    sell: eth::TokenAddress,
-    buy: eth::TokenAddress,
-}
-
 impl Arbitrator for Config {
     fn filter_unfair_solutions(
         &self,
         mut participants: Vec<Participant<Unranked>>,
         auction: &domain::Auction,
     ) -> Vec<Participant<Unranked>> {
-        let auction = Auction::from(auction);
+        // Discard all solutions where we can't compute the aggregate scores
+        // accurately because the fairness guarantees heavily rely on them.
+        let scores_by_solution = scores_by_solution(&mut participants, auction);
         participants.sort_unstable_by_key(|participant| {
             std::cmp::Reverse(participant.solution().score().get().0)
         });
-        let baseline_scores = compute_baseline_scores(&participants, &auction);
+        let baseline_scores = compute_baseline_scores(&scores_by_solution);
         participants.retain(|p| {
-            let aggregated_scores = aggregate_scores(p, &auction);
+            let aggregated_scores = scores_by_solution
+                .get(&SolutionKey {
+                    driver: p.driver().submission_address,
+                    solution_id: p.solution().id(),
+                })
+                .expect("every remaining participant has an entry");
             // only keep solutions where each order execution is at least as good as
             // the baseline solution
             aggregated_scores.iter().all(|(pair, score)| {
@@ -97,19 +96,19 @@ impl Arbitrator for Config {
         let mut reference_scores = HashMap::default();
 
         for participant in participants {
-            let driver = participant.driver().submission_address;
+            let solver = participant.driver().submission_address;
             if reference_scores.len() >= self.max_winners {
                 // all winners have been processed
                 return reference_scores;
             }
-            if reference_scores.contains_key(&driver) {
-                // we already computed the reference score
+            if reference_scores.contains_key(&solver) {
+                // we already computed this solver's reference score
                 continue;
             }
 
             let solutions_without_solver = participants
                 .iter()
-                .filter(|p| p.driver().submission_address != driver)
+                .filter(|p| p.driver().submission_address != solver)
                 .map(|p| p.solution());
 
             let winners = self.pick_winners(solutions_without_solver.clone());
@@ -119,7 +118,7 @@ impl Arbitrator for Config {
                 .filter(|(index, _)| winners.contains(index))
                 .fold(U256::zero(), |acc, (_, s)| acc + s.score().0);
             let score = Score::try_new(eth::Ether(score)).unwrap_or_default();
-            reference_scores.insert(driver, score);
+            reference_scores.insert(solver, score);
         }
 
         reference_scores
@@ -165,23 +164,57 @@ impl Config {
 /// Let's call a solution that only trades 1 directed token pair a baseline
 /// solution. Returns the best baseline solution (highest score) for
 /// each token pair if one exists.
-fn compute_baseline_scores(
-    participants: &[Participant<Unranked>],
-    auction: &Auction,
-) -> HashMap<DirectedTokenPair, Score> {
-    let mut baseline_solutions = HashMap::default();
-    for participant in participants {
-        let aggregate_scores = aggregate_scores(participant, auction);
-        let Ok((token_pair, score)) = aggregate_scores.into_iter().exactly_one() else {
+fn compute_baseline_scores(scores_by_solution: &ScoresBySolution) -> ScoreByDirection {
+    let mut baseline_directional_scores = ScoreByDirection::default();
+    for scores in scores_by_solution.values() {
+        let Ok((token_pair, score)) = scores.iter().exactly_one() else {
             // base solutions must contain exactly 1 directed token pair
             continue;
         };
-        let current_best_score = baseline_solutions.entry(token_pair).or_default();
-        if score > *current_best_score {
-            *current_best_score = score;
+        let current_best_score = baseline_directional_scores
+            .entry(token_pair.clone())
+            .or_default();
+        if score > current_best_score {
+            *current_best_score = *score;
         }
     }
-    baseline_solutions
+    baseline_directional_scores
+}
+
+/// Computes the `DirectionalScores` for all solutions and discards
+/// solutions as invalid whenever that computation is not possible.
+/// Solutions get discarded because fairness guarantees heavily
+/// depend on these scores being accurate.
+fn scores_by_solution(
+    participants: &mut Vec<Participant<Unranked>>,
+    auction: &domain::Auction,
+) -> ScoresBySolution {
+    let auction = Auction::from(auction);
+    let mut scores = HashMap::default();
+
+    participants.retain(|p| match score_by_token_pair(p.solution(), &auction) {
+        Ok(score) => {
+            scores.insert(
+                SolutionKey {
+                    driver: p.driver().submission_address,
+                    solution_id: p.solution().id,
+                },
+                score,
+            );
+            true
+        }
+        Err(err) => {
+            tracing::warn!(
+                driver = p.driver().name,
+                ?err,
+                solution = ?p.solution(),
+                "discarding solution where scores could not be computed"
+            );
+            false
+        }
+    });
+
+    scores
 }
 
 /// Returns the total scores for each directed token pair of the solution.
@@ -192,72 +225,65 @@ fn compute_baseline_scores(
 /// it will return a map like:
 ///     (A, B) => 15
 ///     (B, C) => 5
-fn aggregate_scores(
-    participant: &Participant<Unranked>,
-    auction: &Auction,
-) -> HashMap<DirectedTokenPair, Score> {
+fn score_by_token_pair(solution: &Solution, auction: &Auction) -> Result<ScoreByDirection> {
     let mut scores = HashMap::default();
-    for (uid, trade) in participant.solution().orders() {
+    for (uid, trade) in solution.orders() {
         if !auction.contributes_to_score(uid) {
             continue;
         }
 
-        let score = match score(uid, trade, participant.solution().prices(), auction) {
-            Ok(score) => score,
-            Err(err) => {
-                tracing::warn!(driver = participant.driver().name, ?err, "ignoring order");
-                continue;
-            }
+        let uniform_sell_price = solution
+            .prices()
+            .get(&trade.sell.token)
+            .context("no uniform clearing price for sell token")?;
+        let uniform_buy_price = solution
+            .prices()
+            .get(&trade.buy.token)
+            .context("no uniform clearing price for buy token")?;
+
+        let trade = math::Trade {
+            uid: *uid,
+            sell: trade.sell,
+            buy: trade.buy,
+            side: trade.side,
+            executed: match trade.side {
+                order::Side::Buy => TargetAmount(trade.executed_buy.into()),
+                order::Side::Sell => TargetAmount(trade.executed_sell.into()),
+            },
+            prices: transaction::Prices {
+                // clearing prices are denominated in the same underlying
+                // unit so we assign sell to sell and buy to buy
+                uniform: ClearingPrices {
+                    sell: uniform_sell_price.get().into(),
+                    buy: uniform_buy_price.get().into(),
+                },
+                // for custom clearing prices we only need to know how
+                // much the traded tokens are worth relative to each
+                // other so we can simply use the swapped executed
+                // amounts here
+                custom: ClearingPrices {
+                    sell: trade.executed_buy.into(),
+                    buy: trade.executed_sell.into(),
+                },
+            },
         };
+        let score = trade
+            .score(&auction.fee_policies, auction.native_prices)
+            .context("failed to compute score")?;
 
         let token_pair = DirectedTokenPair {
             sell: trade.sell.token,
             buy: trade.buy.token,
         };
 
-        *scores.entry(token_pair).or_default() += score;
+        *scores.entry(token_pair).or_default() += Score(score);
     }
-    scores
+    Ok(scores)
 }
 
-fn score(uid: &OrderUid, trade: &TradedOrder, prices: &Prices, auction: &Auction) -> Result<Score> {
-    let uniform_sell_price = prices
-        .get(&trade.sell.token)
-        .context("no uniform clearing price for sell token")?;
-    let uniform_buy_price = prices
-        .get(&trade.buy.token)
-        .context("no uniform clearing price for buy token")?;
-
-    let trade = math::Trade {
-        uid: *uid,
-        sell: trade.sell,
-        buy: trade.buy,
-        side: trade.side,
-        executed: match trade.side {
-            order::Side::Buy => TargetAmount(trade.executed_buy.into()),
-            order::Side::Sell => TargetAmount(trade.executed_sell.into()),
-        },
-        prices: transaction::Prices {
-            // clearing prices are denominated in the same underlying
-            // unit so we assign sell to sell and buy to buy
-            uniform: ClearingPrices {
-                sell: uniform_sell_price.get().into(),
-                buy: uniform_buy_price.get().into(),
-            },
-            // for custom clearing prices we only need to know how
-            // much the traded tokens are worth relative to each
-            // other so we can simply use the swapped executed
-            // amounts here
-            custom: ClearingPrices {
-                sell: trade.executed_buy.into(),
-                buy: trade.executed_sell.into(),
-            },
-        },
-    };
-    let score = trade
-        .score(&auction.fee_policies, auction.native_prices)
-        .context("failed to compute score")?;
-    Ok(Score(score))
+pub struct Config {
+    pub max_winners: usize,
+    pub weth: WrappedNativeToken,
 }
 
 /// Relevant data from `domain::Auction` but with data structures
@@ -298,3 +324,25 @@ impl<'a> From<&'a domain::Auction> for Auction<'a> {
         }
     }
 }
+
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
+struct DirectedTokenPair {
+    sell: eth::TokenAddress,
+    buy: eth::TokenAddress,
+}
+
+/// Key to uniquely identify every solution.
+#[derive(PartialEq, Eq, std::hash::Hash)]
+struct SolutionKey {
+    driver: eth::Address,
+    solution_id: u64,
+}
+
+/// Scores of all trades in a solution aggregated by the directional
+/// token pair. E.g. all trades (WETH -> USDC) are aggregated into
+/// one value and all trades (USDC -> WETH) into another.
+type ScoreByDirection = HashMap<DirectedTokenPair, Score>;
+
+/// Mapping from solution to `DirectionalScores` for all solutions
+/// of the auction.
+type ScoresBySolution = HashMap<SolutionKey, ScoreByDirection>;
