@@ -58,10 +58,11 @@ impl Arbitrator for Config {
         mut participants: Vec<Participant<Unranked>>,
         auction: &domain::Auction,
     ) -> Vec<Participant<Unranked>> {
+        let auction = Auction::from(auction);
+        discard_solutions_with_missing_prices(&mut participants, &auction);
         participants.sort_unstable_by_key(|participant| {
             std::cmp::Reverse(participant.solution().score().get().0)
         });
-        let auction = Auction::from(auction);
         let baseline_scores = compute_baseline_scores(&participants, &auction);
         participants.retain(|s| {
             let aggregated_scores = aggregate_scores(s.solution(), &auction);
@@ -198,6 +199,15 @@ fn aggregate_scores(solution: &Solution, auction: &Auction) -> HashMap<DirectedT
             continue;
         }
 
+        let uniform_sell_price = solution
+            .prices
+            .get(&trade.sell.token)
+            .expect("filter step removed all solutions with missing prices");
+        let uniform_buy_price = solution
+            .prices
+            .get(&trade.buy.token)
+            .expect("filter step removed all solutions with missing prices");
+
         let trade = math::Trade {
             uid: *uid,
             sell: trade.sell,
@@ -207,25 +217,14 @@ fn aggregate_scores(solution: &Solution, auction: &Auction) -> HashMap<DirectedT
                 order::Side::Buy => TargetAmount(trade.executed_buy.into()),
                 order::Side::Sell => TargetAmount(trade.executed_sell.into()),
             },
-            // TODO: double check that these prices make sense
-            // do we need to always set `uniform` to executed when an order is not surplus
-            // capturing?
             prices: transaction::Prices {
                 uniform: ClearingPrices {
-                    sell: solution
-                        .prices
-                        .get(&trade.sell.token)
-                        .map(|p| p.get().0)
-                        .unwrap_or_else(|| trade.sell.amount.0),
-                    buy: solution
-                        .prices
-                        .get(&trade.buy.token)
-                        .map(|p| p.get().0)
-                        .unwrap_or_else(|| trade.buy.amount.0),
+                    sell: uniform_sell_price.get().into(),
+                    buy: uniform_buy_price.get().into(),
                 },
                 custom: ClearingPrices {
-                    sell: trade.sell.amount.into(),
-                    buy: trade.buy.amount.into(),
+                    sell: trade.executed_buy.into(),
+                    buy: trade.executed_sell.into(),
                 },
             },
         };
@@ -233,9 +232,6 @@ fn aggregate_scores(solution: &Solution, auction: &Auction) -> HashMap<DirectedT
             .score(&auction.fee_policies, auction.native_prices)
             .unwrap();
 
-        // clearing prices can be looked up in the solution.prices
-        // custom prices are equal to the executed amounts
-        // then build a trade from it and compute the score
         let token_pair = DirectedTokenPair {
             sell: trade.sell.token,
             buy: trade.buy.token,
@@ -244,6 +240,34 @@ fn aggregate_scores(solution: &Solution, auction: &Auction) -> HashMap<DirectedT
         *scores.entry(token_pair).or_default() += Score(score);
     }
     scores
+}
+
+/// For all surplus capturing orders we need to be able to compute the score it
+/// contributes to the solution. If the solution does not have a uniform
+/// clearing price for the buy or the sell token this is not possible. This
+/// function discards these solutions so the remaining logic may assume that all
+/// the necessary prices will be available.
+fn discard_solutions_with_missing_prices(
+    particiants: &mut Vec<Participant<Unranked>>,
+    auction: &Auction,
+) {
+    particiants.retain(|p| {
+        let uniform_clearing_prices = p.solution().prices();
+        p.solution().orders().iter().any(|(uid, trade)| {
+            let is_missing_prices = auction.contributes_to_score(uid)
+                && (uniform_clearing_prices.get(&trade.sell.token).is_some()
+                    || uniform_clearing_prices.get(&trade.buy.token).is_some());
+            if is_missing_prices {
+                tracing::warn!(
+                    driver = p.driver().name,
+                    solution = ?p.solution(),
+                    "discarding solution because it does not contain all necessary uniform clearing prices"
+                );
+            }
+
+            is_missing_prices
+        })
+    });
 }
 
 /// Relevant data from `domain::Auction` but with data structures
