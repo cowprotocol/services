@@ -11,8 +11,8 @@ pub mod combinatorial;
 pub mod max_score;
 
 pub trait Arbitrator: Send + Sync + 'static {
-    /// Picks winners and sorts all solutions where winners come before losers and
-    /// higher scores come before lower scores.
+    /// Picks winners and sorts all solutions where winners come before losers
+    /// and higher scores come before lower scores.
     fn mark_winners(&self, solutions: Vec<Participant<Unranked>>) -> Vec<Participant>;
 
     /// Computes the reference scores which are used to compute
