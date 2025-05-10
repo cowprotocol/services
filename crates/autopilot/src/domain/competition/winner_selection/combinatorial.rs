@@ -38,6 +38,7 @@ use {
         },
     },
     ethcontract::U256,
+    itertools::Itertools,
     std::collections::{HashMap, HashSet},
 };
 
@@ -171,11 +172,10 @@ fn compute_baseline_scores(
     let mut baseline_solutions = HashMap::default();
     for participant in participants {
         let aggregate_scores = aggregate_scores(participant.solution(), auction);
-        if aggregate_scores.len() != 1 {
+        let Ok((token_pair, score)) = aggregate_scores.into_iter().exactly_one() else {
             // base solutions must contain exactly 1 directed token pair
             continue;
-        }
-        let (token_pair, score) = aggregate_scores.into_iter().next().unwrap();
+        };
         let current_best_score = baseline_solutions.entry(token_pair).or_default();
         if score > *current_best_score {
             *current_best_score = score;
