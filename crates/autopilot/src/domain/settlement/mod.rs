@@ -26,8 +26,13 @@ use {
 mod auction;
 mod observer;
 mod trade;
-mod transaction;
-pub use {auction::Auction, observer::Observer, trade::Trade, transaction::Transaction};
+pub mod transaction;
+pub use {
+    auction::Auction,
+    observer::Observer,
+    trade::{Trade, math},
+    transaction::Transaction,
+};
 
 /// A settled transaction together with the `Auction`, for which it was executed
 /// on-chain.

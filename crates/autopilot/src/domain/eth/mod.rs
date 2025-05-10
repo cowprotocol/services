@@ -252,16 +252,22 @@ pub struct Asset {
 }
 
 /// An amount of native Ether tokens denominated in wei.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, From, Into, Display, Default)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    Ord,
+    PartialEq,
+    PartialOrd,
+    From,
+    Into,
+    Display,
+    Default,
+    derive_more::AddAssign,
+    derive_more::Add,
+)]
 pub struct Ether(pub U256);
-
-impl std::ops::Add for Ether {
-    type Output = Self;
-
-    fn add(self, rhs: Self) -> Self {
-        Self(self.0 + rhs.0)
-    }
-}
 
 impl num::Zero for Ether {
     fn zero() -> Self {

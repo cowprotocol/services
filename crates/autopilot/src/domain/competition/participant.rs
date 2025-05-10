@@ -9,6 +9,7 @@ pub struct Participant<State = Ranked> {
 
 #[derive(Clone)]
 pub struct Unranked;
+
 pub struct Ranked {
     is_winner: bool,
 }
