@@ -206,7 +206,7 @@ fn scores_by_solution(
                 },
                 score,
             );
-            p.mut_solution().set_computed_score(total_score);
+            p.set_computed_score(total_score);
             true
         }
         Err(err) => {

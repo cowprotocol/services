@@ -60,10 +60,6 @@ impl Solution {
         self.score
     }
 
-    pub fn set_computed_score(&mut self, score: Score) {
-        self.computed_score = Some(score);
-    }
-
     pub fn computed_score(&self) -> Option<&Score> {
         self.computed_score.as_ref()
     }

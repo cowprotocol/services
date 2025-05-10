@@ -1,4 +1,4 @@
-use {super::Solution, crate::infra, std::sync::Arc};
+use {super::{Score, Solution}, crate::infra, std::sync::Arc};
 
 #[derive(Clone)]
 pub struct Participant<State = Ranked> {
@@ -18,8 +18,8 @@ impl<T> Participant<T> {
         &self.solution
     }
 
-    pub fn mut_solution(&mut self) -> &mut Solution {
-        &mut self.solution
+    pub fn set_computed_score(&mut self, score: Score) {
+        self.solution.computed_score = Some(score);
     }
 
     pub fn driver(&self) -> &Arc<infra::Driver> {
