@@ -235,12 +235,12 @@ pub struct Arguments {
     #[clap(long, env, default_value = "1")]
     /// The maximum number of winners per auction. Each winner will be allowed
     /// to settle their winning orders at the same time.
-    pub max_winners_per_auction: usize,
+    pub max_winners_per_auction: NonZeroUsize,
 
     #[clap(long, env, default_value = "3")]
     /// The maximum allowed number of solutions to be proposed from a single
     /// solver, per auction.
-    pub max_solutions_per_solver: usize,
+    pub max_solutions_per_solver: NonZeroUsize,
 
     /// Archive node URL used to index CoW AMM
     #[clap(long, env)]

@@ -43,6 +43,7 @@ use {
     shared::token_list::AutoUpdatingTokenList,
     std::{
         collections::{HashMap, HashSet},
+        num::NonZeroUsize,
         sync::Arc,
         time::{Duration, Instant},
     },
@@ -58,8 +59,8 @@ pub struct Config {
     /// allowed to start before it has to re-synchronize to the blockchain
     /// by waiting for the next block to appear.
     pub max_run_loop_delay: Duration,
-    pub max_winners_per_auction: usize,
-    pub max_solutions_per_solver: usize,
+    pub max_winners_per_auction: NonZeroUsize,
+    pub max_solutions_per_solver: NonZeroUsize,
 }
 
 pub struct RunLoop {
@@ -560,7 +561,7 @@ impl RunLoop {
             let driver = participant.driver().name.clone();
             let count = counter.entry(driver).or_insert(0);
             *count += 1;
-            *count <= self.config.max_solutions_per_solver
+            *count <= self.config.max_solutions_per_solver.get()
         });
 
         // Filter out solutions that are not fair
@@ -602,7 +603,7 @@ impl RunLoop {
                     .collect::<HashSet<_>>();
 
                 let is_winner = swapped_tokens.is_disjoint(&already_swapped_tokens)
-                    && winners < self.config.max_winners_per_auction;
+                    && winners < self.config.max_winners_per_auction.get();
 
                 already_swapped_tokens.extend(swapped_tokens);
                 winners += usize::from(is_winner);
