@@ -20,9 +20,14 @@ type SolutionId = u64;
 pub struct Solution {
     id: SolutionId,
     solver: eth::Address,
+    /// Score reported by the solver in their response.
     score: Score,
     orders: HashMap<domain::OrderUid, TradedOrder>,
     prices: auction::Prices,
+    /// Score computed by the autopilot based on the solution
+    /// of the solver.
+    // TODO: refactor this to compute the score in the constructor
+    computed_score: Option<Score>,
 }
 
 impl Solution {
@@ -39,6 +44,7 @@ impl Solution {
             score,
             orders,
             prices,
+            computed_score: None,
         }
     }
 
@@ -52,6 +58,14 @@ impl Solution {
 
     pub fn score(&self) -> Score {
         self.score
+    }
+
+    pub fn set_computed_score(&mut self, score: Score) {
+        self.computed_score = Some(score);
+    }
+
+    pub fn computed_score(&self) -> Option<&Score> {
+        self.computed_score.as_ref()
     }
 
     pub fn order_ids(&self) -> impl Iterator<Item = &domain::OrderUid> + std::fmt::Debug {

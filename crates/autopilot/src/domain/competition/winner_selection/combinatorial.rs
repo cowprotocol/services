@@ -113,9 +113,12 @@ impl Arbitrator for Config {
             let score = solutions_without_solver
                 .enumerate()
                 .filter(|(index, _)| winners.contains(index))
-                // TODO: use the self computed scores instead of the solver
-                // provided scores?
-                .fold(U256::zero(), |acc, (_, s)| acc + s.score().0);
+                .fold(U256::zero(), |acc, (_, s)| {
+                    acc + s
+                        .computed_score()
+                        .expect("computed score was set for all solutions in filtering step")
+                        .0
+                });
             let score = Score::try_new(eth::Ether(score)).unwrap_or_default();
             reference_scores.insert(solver, score);
         }
@@ -191,8 +194,11 @@ fn scores_by_solution(
     let auction = Auction::from(auction);
     let mut scores = HashMap::default();
 
-    participants.retain(|p| match score_by_token_pair(p.solution(), &auction) {
+    participants.retain_mut(|p| match score_by_token_pair(p.solution(), &auction) {
         Ok(score) => {
+            let total_score = score
+                .values()
+                .fold(Default::default(), |acc, score| acc + *score);
             scores.insert(
                 SolutionKey {
                     driver: p.driver().submission_address,
@@ -200,6 +206,7 @@ fn scores_by_solution(
                 },
                 score,
             );
+            p.mut_solution().set_computed_score(total_score);
             true
         }
         Err(err) => {

@@ -18,6 +18,10 @@ impl<T> Participant<T> {
         &self.solution
     }
 
+    pub fn mut_solution(&mut self) -> &mut Solution {
+        &mut self.solution
+    }
+
     pub fn driver(&self) -> &Arc<infra::Driver> {
         &self.driver
     }
