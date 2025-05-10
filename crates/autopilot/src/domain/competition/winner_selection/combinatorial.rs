@@ -218,10 +218,16 @@ fn aggregate_scores(solution: &Solution, auction: &Auction) -> HashMap<DirectedT
                 order::Side::Sell => TargetAmount(trade.executed_sell.into()),
             },
             prices: transaction::Prices {
+                // clearing prices are denominated in the same underlying
+                // unit so we assign sell to sell and buy to buy
                 uniform: ClearingPrices {
                     sell: uniform_sell_price.get().into(),
                     buy: uniform_buy_price.get().into(),
                 },
+                // for custom clearing prices we only need to know how
+                // much the traded tokens are worth relative to each
+                // other so we can simply use the swapped executed
+                // amounts here
                 custom: ClearingPrices {
                     sell: trade.executed_buy.into(),
                     buy: trade.executed_sell.into(),
