@@ -62,6 +62,12 @@ pub struct Config {
     pub max_solutions_per_solver: NonZeroUsize,
 }
 
+impl Config {
+    fn single_winner(&self) -> bool {
+        self.max_winners_per_auction.get() == 1
+    }
+}
+
 pub struct RunLoop {
     config: Config,
     eth: infra::Ethereum,
@@ -94,7 +100,13 @@ impl RunLoop {
         competition_updates_sender: tokio::sync::mpsc::UnboundedSender<()>,
     ) -> Self {
         Self {
-            winner_selection: Box::new(winner_selection::max_score::Config),
+            winner_selection: match config.single_winner() {
+                true => Box::new(winner_selection::max_score::Config),
+                false => Box::new(winner_selection::combinatorial::Config {
+                    max_winners: config.max_winners_per_auction.get(),
+                    weth: eth.contracts().wrapped_native_token(),
+                }),
+            },
             config,
             eth,
             persistence,
@@ -388,7 +400,7 @@ impl RunLoop {
                 .get(1)
                 .map(|participant| participant.solution().score().get().0)
                 .unwrap_or_default();
-            Some(LegacyScore {
+            self.config.single_winner().then_some(LegacyScore {
                 winner,
                 winning_score,
                 reference_score,

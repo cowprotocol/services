@@ -80,7 +80,17 @@ pub struct TradedOrder {
     pub executed_buy: eth::TokenAmount,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Display, Default)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    PartialOrd,
+    Display,
+    Default,
+    derive_more::AddAssign,
+    derive_more::Add,
+)]
 pub struct Score(eth::Ether);
 
 impl Score {
