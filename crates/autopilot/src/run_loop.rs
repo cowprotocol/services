@@ -63,8 +63,8 @@ pub struct Config {
 }
 
 impl Config {
-    fn enable_combinatorial_auctions(&self) -> bool {
-        self.max_winners_per_auction.get() > 1
+    fn single_winner(&self) -> bool {
+        self.max_winners_per_auction.get() == 1
     }
 }
 
@@ -100,12 +100,12 @@ impl RunLoop {
         competition_updates_sender: tokio::sync::mpsc::UnboundedSender<()>,
     ) -> Self {
         Self {
-            winner_selection: match config.enable_combinatorial_auctions() {
-                true => Box::new(winner_selection::combinatorial::Config {
+            winner_selection: match config.single_winner() {
+                true => Box::new(winner_selection::max_score::Config),
+                false => Box::new(winner_selection::combinatorial::Config {
                     max_winners: config.max_winners_per_auction.get(),
                     weth: eth.contracts().wrapped_native_token(),
                 }),
-                false => Box::new(winner_selection::max_score::Config),
             },
             config,
             eth,
@@ -403,7 +403,7 @@ impl RunLoop {
                 winning_score,
                 reference_score,
             };
-            self.config.enable_combinatorial_auctions().then_some(score)
+            self.config.single_winner().then_some(score)
         };
 
         let reference_scores = self.winner_selection.compute_reference_scores(solutions);
