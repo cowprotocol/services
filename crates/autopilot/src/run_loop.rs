@@ -248,7 +248,9 @@ impl RunLoop {
             return;
         }
 
-        let solutions = self.winner_selection.filter_solutions(solutions, &auction);
+        let solutions = self
+            .winner_selection
+            .filter_unfair_solutions(solutions, &auction);
         let solutions = self.winner_selection.mark_winners(solutions);
 
         let competition_simulation_block = self.eth.current_block().borrow().number;

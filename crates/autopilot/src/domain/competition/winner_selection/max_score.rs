@@ -26,19 +26,42 @@ use {
 pub struct Config;
 
 impl Arbitrator for Config {
-    fn mark_winners(&self, mut solutions: Vec<Participant<Unranked>>) -> Vec<Participant> {
+    fn filter_unfair_solutions(
+        &self,
+        mut participants: Vec<Participant<Unranked>>,
+        auction: &Auction,
+    ) -> Vec<Participant<Unranked>> {
+        // sort by score descending
+        participants.sort_unstable_by_key(|participant| {
+            std::cmp::Reverse(participant.solution().score().get().0)
+        });
+        participants
+            .iter()
+            .enumerate()
+            .filter_map(|(index, participant)| {
+                if is_solution_fair(participant, &participants[index..], auction) {
+                    Some(participant.clone())
+                } else {
+                    tracing::warn!(
+                        invalidated = participant.driver().name,
+                        "fairness check invalidated of solution"
+                    );
+                    None
+                }
+            })
+            .collect()
+    }
+
+    fn mark_winners(&self, participants: Vec<Participant<Unranked>>) -> Vec<Participant> {
         // The current system theoretically already supports multiple winners. However,
         // it was never activated because the rewards mechanism was never
         // decided. To make the migration easier we revert back to only allowing
         // 1 winner. And that is simply the solution with the highest total
         // score.
-        solutions.sort_unstable_by_key(|participant| {
-            std::cmp::Reverse(participant.solution().score().get().0)
-        });
-        solutions
+        participants
             .into_iter()
             .enumerate()
-            .map(|(index, solution)| solution.rank(index == 0))
+            .map(|(index, participant)| participant.rank(index == 0))
             .collect()
     }
 
@@ -55,37 +78,15 @@ impl Arbitrator for Config {
         }
         reference_scores
     }
-
-    fn filter_solutions(
-        &self,
-        solutions: Vec<Participant<Unranked>>,
-        auction: &Auction,
-    ) -> Vec<Participant<Unranked>> {
-        solutions
-            .iter()
-            .enumerate()
-            .filter_map(|(index, participant)| {
-                if is_solution_fair(participant, &solutions[index..], auction) {
-                    Some(participant.clone())
-                } else {
-                    tracing::warn!(
-                        invalidated = participant.driver().name,
-                        "fairness check invalidated of solution"
-                    );
-                    None
-                }
-            })
-            .collect()
-    }
 }
 
 /// Returns true if solution is fair to other solutions.
 fn is_solution_fair(
-    solution: &Participant<Unranked>,
+    participant: &Participant<Unranked>,
     others: &[Participant<Unranked>],
     auction: &Auction,
 ) -> bool {
-    let Some(fairness_threshold) = solution.driver().fairness_threshold else {
+    let Some(fairness_threshold) = participant.driver().fairness_threshold else {
         return true;
     };
 
@@ -129,7 +130,7 @@ fn is_solution_fair(
     // Check if the solution contains an order whose execution in the
     // solution is more than `fairness_threshold` worse than the
     // order's best execution across all solutions
-    let unfair = solution
+    let unfair = participant
         .solution()
         .orders()
         .iter()
