@@ -53,16 +53,37 @@ struct DirectedTokenPair {
 }
 
 impl Arbitrator for Config {
-    fn mark_winners(&self, mut participants: Vec<Participant<Unranked>>) -> Vec<Participant> {
+    fn filter_unfair_solutions(
+        &self,
+        mut participants: Vec<Participant<Unranked>>,
+        auction: &domain::Auction,
+    ) -> Vec<Participant<Unranked>> {
         participants.sort_unstable_by_key(|participant| {
             std::cmp::Reverse(participant.solution().score().get().0)
         });
+        let auction = Auction::from(auction);
+        let baseline_scores = compute_baseline_scores(&participants, &auction);
+        participants.retain(|s| {
+            let aggregated_scores = aggregate_scores(s.solution(), &auction);
+            // only keep solutions where each order execution is at least as good as
+            // the baseline solution
+            aggregated_scores.iter().all(|(pair, score)| {
+                baseline_scores
+                    .get(pair)
+                    .is_none_or(|baseline| score >= baseline)
+            })
+        });
+        participants
+    }
+
+    fn mark_winners(&self, participants: Vec<Participant<Unranked>>) -> Vec<Participant> {
         let winners = self.pick_winners(participants.iter().map(|p| p.solution()));
         let mut marked: Vec<_> = participants
             .into_iter()
             .enumerate()
             .map(|(index, participant)| participant.rank(winners.contains(&index)))
             .collect();
+        // move winners to the front while preserving order between solutions
         marked.sort_by_key(|participant| std::cmp::Reverse(participant.is_winner()));
         marked
     }
@@ -100,26 +121,6 @@ impl Arbitrator for Config {
         }
 
         reference_scores
-    }
-
-    fn filter_solutions(
-        &self,
-        mut solutions: Vec<Participant<Unranked>>,
-        auction: &domain::Auction,
-    ) -> Vec<Participant<Unranked>> {
-        let auction = Auction::from(auction);
-        let baseline_scores = compute_baseline_scores(&solutions, &auction);
-        solutions.retain(|s| {
-            let aggregated_scores = aggregate_scores(s.solution(), &auction);
-            // only keep solutions where each order execution is at least as good as
-            // the baseline solution
-            aggregated_scores.iter().all(|(pair, score)| {
-                baseline_scores
-                    .get(pair)
-                    .is_none_or(|baseline| score >= baseline)
-            })
-        });
-        solutions
     }
 }
 
