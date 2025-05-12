@@ -56,7 +56,7 @@ impl Arbitrator for Config {
     ) -> Vec<Participant<Unranked>> {
         // Discard all solutions where we can't compute the aggregate scores
         // accurately because the fairness guarantees heavily rely on them.
-        let scores_by_solution = scores_by_solution(&mut participants, auction);
+        let scores_by_solution = compute_scores_by_solution(&mut participants, auction);
         participants.sort_unstable_by_key(|participant| {
             std::cmp::Reverse(participant.solution().score().get().0)
         });
@@ -185,7 +185,7 @@ fn compute_baseline_scores(scores_by_solution: &ScoresBySolution) -> ScoreByDire
 /// solutions as invalid whenever that computation is not possible.
 /// Solutions get discarded because fairness guarantees heavily
 /// depend on these scores being accurate.
-fn scores_by_solution(
+fn compute_scores_by_solution(
     participants: &mut Vec<Participant<Unranked>>,
     auction: &domain::Auction,
 ) -> ScoresBySolution {
