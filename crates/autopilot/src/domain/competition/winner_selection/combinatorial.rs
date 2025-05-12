@@ -80,11 +80,11 @@ impl Arbitrator for Config {
     }
 
     fn mark_winners(&self, participants: Vec<Participant<Unranked>>) -> Vec<Participant> {
-        let winners = self.pick_winners(participants.iter().map(|p| p.solution()));
+        let winner_indexes = self.pick_winners(participants.iter().map(|p| p.solution()));
         participants
             .into_iter()
             .enumerate()
-            .map(|(index, participant)| participant.rank(winners.contains(&index)))
+            .map(|(index, participant)| participant.rank(winner_indexes.contains(&index)))
             .collect()
     }
 
@@ -110,11 +110,11 @@ impl Arbitrator for Config {
                 .filter(|p| p.driver().submission_address != solver)
                 .map(|p| p.solution());
 
-            let winners = self.pick_winners(solutions_without_solver.clone());
+            let winner_indices = self.pick_winners(solutions_without_solver.clone());
 
             let score = solutions_without_solver
                 .enumerate()
-                .filter(|(index, _)| winners.contains(index))
+                .filter(|(index, _)| winner_indices.contains(index))
                 .filter_map(|(_, solution)| solution.computed_score)
                 .reduce(Score::add)
                 .unwrap_or_default();
