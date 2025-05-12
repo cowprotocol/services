@@ -41,9 +41,11 @@ use {
         },
     },
     anyhow::{Context, Result},
-    ethcontract::U256,
     itertools::Itertools,
-    std::collections::{HashMap, HashSet},
+    std::{
+        collections::{HashMap, HashSet},
+        ops::Add,
+    },
 };
 
 impl Arbitrator for Config {
@@ -113,13 +115,9 @@ impl Arbitrator for Config {
             let score = solutions_without_solver
                 .enumerate()
                 .filter(|(index, _)| winners.contains(index))
-                .fold(U256::zero(), |acc, (_, s)| {
-                    acc + s
-                        .computed_score()
-                        .expect("computed score was set for all solutions in filtering step")
-                        .0
-                });
-            let score = Score::try_new(eth::Ether(score)).unwrap_or_default();
+                .filter_map(|(_, solution)| solution.computed_score)
+                .reduce(Score::add)
+                .unwrap_or_default();
             reference_scores.insert(solver, score);
         }
 
