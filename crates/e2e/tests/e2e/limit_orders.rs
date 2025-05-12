@@ -529,8 +529,7 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
     let reference_scores = database::reference_scores::fetch(&mut ex, competition.auction_id)
         .await
         .unwrap();
-    // TODO: support multiple winners
-    assert_eq!(reference_scores.len(), 1);
+    assert_eq!(reference_scores.len(), 2);
 }
 
 async fn too_many_limit_orders_test(web3: Web3) {
