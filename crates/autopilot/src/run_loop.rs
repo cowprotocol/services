@@ -635,11 +635,12 @@ impl RunLoop {
         request: &solve::Request,
     ) -> Result<Vec<Result<competition::Solution, domain::competition::SolutionError>>, SolveError>
     {
-        let timeout = tokio::time::sleep(self.config.solve_deadline);
-        let send_request = driver.solve(request);
+        let timeout = tokio::time::sleep(self.config.solve_deadline).fuse();
+        let send_request = driver.solve(request).fuse();
         let check_allowed = self
             .solver_participation_guard
-            .can_participate(&driver.submission_address);
+            .can_participate(&driver.submission_address)
+            .fuse();
         tokio::pin!(timeout, send_request, check_allowed);
 
         let response = loop {
