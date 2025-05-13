@@ -350,3 +350,233 @@ type ScoreByDirection = HashMap<DirectedTokenPair, Score>;
 /// Mapping from solution to `DirectionalScores` for all solutions
 /// of the auction.
 type ScoresBySolution = HashMap<SolutionKey, ScoreByDirection>;
+
+#[cfg(test)]
+mod tests {
+    use {
+        crate::{
+            domain::{
+                Auction,
+                Order,
+                OrderUid,
+                auction::{
+                    Price,
+                    order::{self, AppDataHash},
+                },
+                competition::{
+                    Participant,
+                    Score,
+                    Solution,
+                    TradedOrder,
+                    winner_selection::Arbitrator,
+                },
+                eth,
+                fee::{self},
+            },
+            infra::Driver,
+        },
+        ethcontract::H160,
+        hex_literal::hex,
+        std::collections::HashMap,
+    };
+
+    // TODO: assert scores against the reference implementation
+    #[test]
+    #[ignore]
+    fn validate_against_historical_data() {
+        let arbitrator = super::Config {
+            max_winners: 10,
+            weth: H160::from_slice(&hex!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")).into(),
+        };
+
+        let order_uid = OrderUid(hex!("939f03db8a234102afb0d328be5bfd58b55f9cb9ba228f29ddaf9c72d471b521eae2411db903e35c25de88d15c64bcf78133f44f681d1344"));
+        let order_sell_asset = eth::Asset {
+            amount: eth::U256::from(32375066190000000000000000u128).into(),
+            token: H160::from_slice(&hex!("67466be17df832165f8c80a5a120ccc652bd7e69")).into(),
+        };
+        let order_buy_asset = eth::Asset {
+            amount: eth::U256::from(2161512119u128).into(),
+            token: H160::from_slice(&hex!("dac17f958d2ee523a2206206994597c13d831ec7")).into(),
+        };
+
+        /*
+            solver=baseline auction_id=12825008}: driver::infra::observe: solved auction solved=Solved
+                { id: Id { id: 2787, merged_solutions: [0] },
+                 score: Ether(21813202259686016),
+                 trades: {Uid(0x939f03db8a234102afb0d328be5bfd58b55f9cb9ba228f29ddaf9c72d471b521eae2411db903e35c25de88d15c64bcf78133f44f681d1344):
+                    Amounts { side: Sell,
+                        sell: Asset { amount: TokenAmount(32375066190000000000000000), token: TokenAddress(ContractAddress(0x67466be17df832165f8c80a5a120ccc652bd7e69)) },
+                        buy: Asset { amount: TokenAmount(2161512119), token: TokenAddress(ContractAddress(0xdac17f958d2ee523a2206206994597c13d831ec7)) },
+                        executed_sell: TokenAmount(32375066190000000000000000),
+                        executed_buy: TokenAmount(2206881314) }},
+                        prices: {
+                            TokenAddress(ContractAddress(0x67466be17df832165f8c80a5a120ccc652bd7e69)): TokenAmount(2206881314),
+                            TokenAddress(ContractAddress(0xdac17f958d2ee523a2206206994597c13d831ec7)): TokenAmount(32197996266469695053980358)},
+                            gas: Some(Gas(290923))
+        */
+        let baseline_trade_order = TradedOrder {
+            side: order::Side::Sell,
+            sell: order_sell_asset,
+            buy: order_buy_asset,
+            executed_sell: eth::U256::from(32375066190000000000000000u128).into(),
+            executed_buy: eth::U256::from(2206881314u128).into(),
+        };
+        let mut baseline_trade_orders: HashMap<OrderUid, TradedOrder> = HashMap::new();
+        baseline_trade_orders.insert(order_uid, baseline_trade_order);
+        let mut baseline_prices: HashMap<eth::TokenAddress, Price> = HashMap::new();
+        baseline_prices.insert(
+            H160::from_slice(&hex!("67466be17df832165f8c80a5a120ccc652bd7e69")).into(),
+            Price::try_new(eth::Ether(eth::U256::from(2206881314u128))).unwrap(),
+        );
+        baseline_prices.insert(
+            H160::from_slice(&hex!("dac17f958d2ee523a2206206994597c13d831ec7")).into(),
+            Price::try_new(eth::Ether(eth::U256::from(32197996266469695053980358u128))).unwrap(),
+        );
+        let baseline_solution = Solution::new(
+            0_u64,
+            H160::from_slice(&hex!("01246d541e732d7f15d164331711edff217e4665")).into(),
+            Score(eth::Ether(4518028373497143u128.into())),
+            baseline_trade_orders,
+            baseline_prices,
+        );
+
+        /*
+            solver=extzeroex-solve auction_id=12825008}: driver::infra::observe: solved auction solved=Solved
+                { id: Id { id: 1154, merged_solutions: [0] },
+                score: Ether(21037471695353421),
+                trades: {Uid(0x939f03db8a234102afb0d328be5bfd58b55f9cb9ba228f29ddaf9c72d471b521eae2411db903e35c25de88d15c64bcf78133f44f681d1344):
+                    Amounts { side: Sell,
+                        sell: Asset { amount: TokenAmount(32375066190000000000000000), token: TokenAddress(ContractAddress(0x67466be17df832165f8c80a5a120ccc652bd7e69)) },
+                        buy: Asset { amount: TokenAmount(2161512119), token: TokenAddress(ContractAddress(0xdac17f958d2ee523a2206206994597c13d831ec7)) },
+                        executed_sell: TokenAmount(32375066190000000000000000),
+                        executed_buy: TokenAmount(2205267875) }},
+                        prices: {
+                            TokenAddress(ContractAddress(0xdac17f958d2ee523a2206206994597c13d831ec7)): TokenAmount(32174456479260706991472089),
+                            TokenAddress(ContractAddress(0x67466be17df832165f8c80a5a120ccc652bd7e69)): TokenAmount(2205267875)},
+                            gas: Some(Gas(270515)) }
+        */
+        let zeroex_trade_order = TradedOrder {
+            side: order::Side::Sell,
+            sell: order_sell_asset,
+            buy: order_buy_asset,
+            executed_sell: eth::U256::from(32375066190000000000000000u128).into(),
+            executed_buy: eth::U256::from(2205267875u128).into(),
+        };
+        let mut zeroex_trade_orders: HashMap<OrderUid, TradedOrder> = HashMap::new();
+        zeroex_trade_orders.insert(order_uid, zeroex_trade_order);
+        let mut zeroex_prices: HashMap<eth::TokenAddress, Price> = HashMap::new();
+        zeroex_prices.insert(
+            H160::from_slice(&hex!("dac17f958d2ee523a2206206994597c13d831ec7")).into(),
+            Price::try_new(eth::Ether(eth::U256::from(32174456479260706991472089u128))).unwrap(),
+        );
+        zeroex_prices.insert(
+            H160::from_slice(&hex!("67466be17df832165f8c80a5a120ccc652bd7e69")).into(),
+            Price::try_new(eth::Ether(eth::U256::from(2205267875u128))).unwrap(),
+        );
+        let zeroex_solution = Solution::new(
+            0_u64,
+            H160::from_slice(&hex!("cc73072b53697911ff394ae01d3de59c9900b0b0")).into(),
+            Score(eth::Ether(21037471695353421u128.into())),
+            zeroex_trade_orders,
+            zeroex_prices,
+        );
+
+        /*
+        Auction 12825008 (staging/mainnet):
+            Proposed Solutions:
+                Solver: 0x01246d541e732d7f15d164331711edff217e4665, Score: 21813202259686016,
+                    Trades: ['0x67466be17df832165f8c80a5a120ccc652bd7e69->0xdac17f958d2ee523a2206206994597c13d831ec7(21813202259686016)']
+                Solver: 0xcc73072b53697911ff394ae01d3de59c9900b0b0, Score: 21037471695353421,
+                    Trades: ['0x67466be17df832165f8c80a5a120ccc652bd7e69->0xdac17f958d2ee523a2206206994597c13d831ec7(21037471695353421)']
+            Winners:
+                Solver: 0x01246d541e732d7f15d164331711edff217e4665, Score: 21813202259686016,
+            {'0x01246d541e732d7f15d164331711edff217e4665': 775730564332595}
+        */
+
+        let participants = vec![
+            Participant::new(
+                baseline_solution,
+                Driver::mock(
+                    "baseline".to_string(),
+                    eth::Address(H160::from_slice(&hex!(
+                        "01246d541e732d7f15d164331711edff217e4665"
+                    ))),
+                )
+                .into(),
+            ),
+            Participant::new(
+                zeroex_solution,
+                Driver::mock(
+                    "zeroex".to_string(),
+                    eth::Address(H160::from_slice(&hex!(
+                        "cc73072b53697911ff394ae01d3de59c9900b0b0"
+                    ))),
+                )
+                .into(),
+            ),
+        ];
+
+        // https://solver-instances.s3.eu-central-1.amazonaws.com/staging/mainnet/autopilot/12825008.json
+        let quote = crate::domain::Quote {
+            order_uid,
+            sell_amount: order_sell_asset.amount.into(),
+            buy_amount: order_buy_asset.amount,
+            fee: eth::SellTokenAmount(eth::U256::from(163770171364249433650790u128)),
+            solver: H160::from_slice(&hex!("08924194cedd747dc85025b2b30a98d3ae1ce21d")).into(),
+        };
+        let mut prices: HashMap<eth::TokenAddress, Price> = HashMap::new();
+        prices.insert(
+            H160::from_slice(&hex!("dac17f958d2ee523a2206206994597c13d831ec7")).into(),
+            Price::try_new(eth::Ether(eth::U256::from(480793239987749750742974464u128))).unwrap(),
+        );
+        prices.insert(
+            H160::from_slice(&hex!("67466be17df832165f8c80a5a120ccc652bd7e69")).into(),
+            Price::try_new(eth::Ether(eth::U256::from(32429355240u128))).unwrap(),
+        );
+        let auction = Auction {
+            id: 12825008,
+            block: 22441015,
+            orders: vec![Order {
+                uid: order_uid,
+                sell: order_sell_asset,
+                buy: order_buy_asset,
+                protocol_fees: vec![fee::Policy::PriceImprovement {
+                    factor: fee::FeeFactor::try_from(0.5).unwrap(),
+                    max_volume_factor: fee::FeeFactor::try_from(0.01).unwrap(),
+                    quote: fee::Quote {
+                        sell_amount: quote.sell_amount.into(),
+                        buy_amount: quote.buy_amount.into(),
+                        fee: quote.fee.into(),
+                        solver: quote.solver.into(),
+                    },
+                }],
+                side: order::Side::Sell,
+                receiver: Some(
+                    H160::from_slice(&hex!("eae2411db903e35c25de88d15c64bcf78133f44f")).into(),
+                ),
+                owner: H160::from_slice(&hex!("eae2411db903e35c25de88d15c64bcf78133f44f")).into(),
+                partially_fillable: false,
+                executed: eth::U256::zero().into(),
+                pre_interactions: vec![],
+                post_interactions: vec![],
+                sell_token_balance: order::SellTokenSource::Erc20,
+                buy_token_balance: order::BuyTokenDestination::Erc20,
+                app_data: AppDataHash(hex!(
+                    "6c3cbfa65faf7effd0042754a03cbe784973419b0c242b1f8772fdccc9b7e63f"
+                )),
+                created: Default::default(),
+                valid_to: Default::default(),
+                signature: order::Signature::PreSign,
+                quote: Some(quote),
+            }],
+            prices,
+            surplus_capturing_jit_order_owners: vec![],
+        };
+
+        let solutions = arbitrator.filter_unfair_solutions(participants, &auction);
+        let solutions = arbitrator.mark_winners(solutions);
+        let reference_scores = arbitrator.compute_reference_scores(&solutions);
+
+        eprintln!("{:?}", reference_scores)
+    }
+}

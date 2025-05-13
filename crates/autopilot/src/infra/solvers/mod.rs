@@ -77,6 +77,17 @@ impl Driver {
         })
     }
 
+    pub fn mock(name: String, submission_address: eth::Address) -> Self {
+        Self {
+            name,
+            url: Url::parse("http://localhost").unwrap(),
+            fairness_threshold: None,
+            submission_address,
+            requested_timeout_on_problems: false,
+            client: Client::new(),
+        }
+    }
+
     pub async fn solve(&self, request: &solve::Request) -> Result<solve::Response> {
         self.request_response("solve", request, None).await
     }
