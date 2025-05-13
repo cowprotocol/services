@@ -635,21 +635,36 @@ impl RunLoop {
         request: &solve::Request,
     ) -> Result<Vec<Result<competition::Solution, domain::competition::SolutionError>>, SolveError>
     {
-        let can_participate = self.solver_participation_guard.can_participate(&driver.submission_address).await.map_err(|err| {
-            tracing::error!(?err, driver = %driver.name, ?driver.submission_address, "solver participation check failed");
-                SolveError::SolverDenyListed
+        let timeout = tokio::time::sleep(self.config.solve_deadline);
+        let send_request = driver.solve(request);
+        let check_allowed = self
+            .solver_participation_guard
+            .can_participate(&driver.submission_address);
+        tokio::pin!(timeout, send_request, check_allowed);
+
+        let response = loop {
+            tokio::select! {
+                _ = &mut timeout => return Err(SolveError::Timeout),
+                is_allowed = &mut check_allowed => match is_allowed {
+                    Ok(false) => return Err(SolveError::SolverDenyListed),
+                    Ok(true) => (), // all good => continue with other tasks
+                    Err(err) => {
+                        tracing::error!(
+                            ?err,
+                            driver = %driver.name,
+                            ?driver.submission_address,
+                            "solver participation check failed"
+                        );
+                        return Err(SolveError::SolverDenyListed);
+                    },
+                },
+                response = &mut send_request => match response {
+                    Ok(response) => break response,
+                    Err(err) => return Err(SolveError::Failure(err)),
+                }
             }
-        )?;
+        };
 
-        // Do not send the request to the driver if the solver is deny-listed
-        if !can_participate {
-            return Err(SolveError::SolverDenyListed);
-        }
-
-        let response = tokio::time::timeout(self.config.solve_deadline, driver.solve(request))
-            .await
-            .map_err(|_| SolveError::Timeout)?
-            .map_err(SolveError::Failure)?;
         if response.solutions.is_empty() {
             return Err(SolveError::NoSolutions);
         }
