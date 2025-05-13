@@ -383,6 +383,7 @@ mod tests {
 
     #[test]
     #[ignore]
+    // Only one bid submitted results in one winner with reward equal to score
     fn single_bid() {
         let arbitrator = create_test_arbitrator();
 
@@ -392,8 +393,8 @@ mod tests {
         let token_d = create_address(3);
 
         // auction
-        let order_1 = create_order(0, token_a, 100, token_b, 100);
-        let order_2 = create_order(0, token_c, 100, token_d, 100);
+        let order_1 = create_order(1, token_a, 100, token_b, 100);
+        let order_2 = create_order(2, token_c, 100, token_d, 100);
         let prices = create_prices(vec![
             (token_a, 100),
             (token_b, 100),
@@ -432,6 +433,7 @@ mod tests {
 
     #[test]
     #[ignore]
+    // Two compatible batches are both selected as winners
     fn compatible_bids() {
         let arbitrator = create_test_arbitrator();
 
@@ -441,9 +443,9 @@ mod tests {
         let token_d = create_address(3);
 
         // auction
-        let order_1 = create_order(0, token_a, 100, token_b, 100);
-        let order_2 = create_order(0, token_c, 100, token_d, 100);
-        let order_3 = create_order(0, token_a, 100, token_c, 100);
+        let order_1 = create_order(1, token_a, 100, token_b, 100);
+        let order_2 = create_order(2, token_c, 100, token_d, 100);
+        let order_3 = create_order(3, token_a, 100, token_c, 100);
         let prices = create_prices(vec![
             (token_a, 100),
             (token_b, 100),
@@ -467,7 +469,7 @@ mod tests {
         let solver_1_solution = create_solution(0, solver_1, 200, solver_1_trades, solver_1_prices);
 
         // solution 2
-        let solver_2 = create_address(10);
+        let solver_2 = create_address(11);
         let solver_2_trades = create_trades(vec![(&order_3, 100, 200)]);
         let solver_2_prices = create_prices(vec![(token_a, 100), (token_c, 100)]);
         let solver_2_solution = create_solution(1, solver_2, 100, solver_2_trades, solver_2_prices);
@@ -480,6 +482,120 @@ mod tests {
         // select the winners
         let solutions = arbitrator.mark_winners(solutions);
         assert_eq!(solutions.len(), 2);
+
+        // compute reference scores
+        // FIXME: the scores are always 0
+        let reference_scores = arbitrator.compute_reference_scores(&solutions);
+        eprintln!("{:?}", reference_scores)
+    }
+
+    #[test]
+    #[ignore]
+    // Multiple compatible bids by a single solver are aggregated in rewards
+    fn multiple_solution_for_solver() {
+        let arbitrator = create_test_arbitrator();
+
+        let token_a = create_address(0);
+        let token_b = create_address(1);
+        let token_c = create_address(2);
+        let token_d = create_address(3);
+
+        // auction
+        let order_1 = create_order(1, token_a, 100, token_b, 100);
+        let order_2 = create_order(2, token_c, 100, token_d, 100);
+        let order_3 = create_order(3, token_a, 100, token_d, 100);
+        let prices = create_prices(vec![
+            (token_a, 100),
+            (token_b, 100),
+            (token_c, 100),
+            (token_d, 100),
+        ]);
+        let auction = create_auction(
+            vec![order_1.clone(), order_2.clone(), order_3.clone()],
+            prices,
+        );
+
+        // we are using the same solver for both solutions
+        let solver = create_address(10);
+
+        // solution 1
+        let solver_1_trades = create_trades(vec![(&order_1, 100, 200), (&order_2, 100, 200)]);
+        let solver_1_prices = create_prices(vec![
+            (token_a, 100),
+            (token_b, 50),
+            (token_c, 100),
+            (token_d, 50),
+        ]);
+        let solver_1_solution = create_solution(0, solver, 200, solver_1_trades, solver_1_prices);
+
+        // solution 2
+        let solver_2_trades = create_trades(vec![(&order_3, 100, 200)]);
+        let solver_2_prices = create_prices(vec![(token_a, 100), (token_d, 100)]);
+        let solver_2_solution = create_solution(1, solver, 100, solver_2_trades, solver_2_prices);
+
+        // filter solutions
+        let participants = vec![solver_1_solution, solver_2_solution];
+        let solutions = arbitrator.filter_unfair_solutions(participants, &auction);
+        assert_eq!(solutions.len(), 2);
+
+        // select the winners
+        let solutions = arbitrator.mark_winners(solutions);
+        assert_eq!(solutions.len(), 2);
+
+        // compute reference scores
+        // FIXME: the scores are always 0
+        let reference_scores = arbitrator.compute_reference_scores(&solutions);
+        eprintln!("{:?}", reference_scores)
+    }
+
+    #[test]
+    #[ignore]
+    // Incompatible bid does not win but reduces reward
+    fn incompatible_bids() {
+        let arbitrator = create_test_arbitrator();
+
+        let token_a = create_address(0);
+        let token_b = create_address(1);
+        let token_c = create_address(2);
+        let token_d = create_address(3);
+
+        // auction
+        let order_1 = create_order(1, token_a, 100, token_b, 100);
+        let order_2 = create_order(2, token_c, 100, token_d, 100);
+        let prices = create_prices(vec![
+            (token_a, 100),
+            (token_b, 100),
+            (token_c, 100),
+            (token_d, 100),
+        ]);
+        let auction = create_auction(vec![order_1.clone(), order_2.clone()], prices);
+
+        // solution 1, best batch
+        let solver_1 = create_address(10);
+        let solver_1_trades = create_trades(vec![(&order_1, 100, 200), (&order_2, 100, 200)]);
+        let solver_1_prices = create_prices(vec![
+            (token_a, 100),
+            (token_b, 50),
+            (token_c, 100),
+            (token_d, 50),
+        ]);
+        let solver_1_solution = create_solution(0, solver_1, 200, solver_1_trades, solver_1_prices);
+
+        // solution 2, incompatible batch
+        let solver_2 = create_address(11);
+        let solver_2_trades = create_trades(vec![(&order_1, 100, 200)]);
+        let solver_2_prices = create_prices(vec![(token_a, 100), (token_c, 100)]);
+        let solver_2_solution = create_solution(1, solver_2, 100, solver_2_trades, solver_2_prices);
+
+        // filter solutions
+        let participants = vec![solver_1_solution, solver_2_solution];
+        let solutions = arbitrator.filter_unfair_solutions(participants, &auction);
+        assert_eq!(solutions.len(), 1);
+        assert_eq!(solutions[0].driver().submission_address.0, solver_1);
+
+        // select the winners
+        let solutions = arbitrator.mark_winners(solutions);
+        assert_eq!(solutions.len(), 1);
 
         // compute reference scores
         // FIXME: the scores are always 0
