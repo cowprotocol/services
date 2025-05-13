@@ -648,7 +648,7 @@ impl RunLoop {
                 _ = &mut timeout => return Err(SolveError::Timeout),
                 is_allowed = &mut check_allowed => match is_allowed {
                     Ok(false) => return Err(SolveError::SolverDenyListed),
-                    Ok(true) => (), // all good => continue with other tasks
+                    Ok(true) => continue, // all good => continue with other tasks
                     Err(err) => {
                         tracing::error!(
                             ?err,
