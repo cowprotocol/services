@@ -704,6 +704,92 @@ mod tests {
 
     #[test]
     #[ignore]
+    // If reference winners generate more surplus than winners, rewards are set to
+    // zero
+    fn reference_better_than_winners() {
+        let arbitrator = create_test_arbitrator();
+
+        let token_a = create_address(0);
+        let token_b = create_address(1);
+        let token_c = create_address(2);
+        let token_d = create_address(3);
+        let token_e = create_address(2);
+        let token_f = create_address(3);
+
+        // auction
+        let order_1 = create_order(1, token_a, 100, token_b, 100);
+        let order_2 = create_order(2, token_c, 100, token_d, 100);
+        let order_3 = create_order(3, token_e, 100, token_f, 100);
+        let prices = create_prices(vec![
+            (token_a, 100),
+            (token_b, 100),
+            (token_c, 100),
+            (token_d, 100),
+            (token_e, 100),
+            (token_f, 100),
+        ]);
+        let auction = create_auction(
+            vec![order_1.clone(), order_2.clone(), order_3.clone()],
+            prices,
+        );
+
+        // solution 1, best batch
+        let solver_1 = create_address(10);
+        let solver_1_trades = create_trades(vec![
+            (&order_1, 100, 200),
+            (&order_2, 100, 200),
+            (&order_3, 100, 200),
+        ]);
+        let solver_1_prices = create_prices(vec![
+            (token_a, 100),
+            (token_b, 50),
+            (token_c, 100),
+            (token_d, 50),
+            (token_e, 100),
+            (token_f, 50),
+        ]);
+        let solver_1_solution = create_solution(0, solver_1, 300, solver_1_trades, solver_1_prices);
+
+        // solution 2, incompatible batch 1
+        let solver_2 = create_address(11);
+        let solver_2_trades = create_trades(vec![(&order_1, 100, 240), (&order_2, 100, 240)]);
+        let solver_2_prices = create_prices(vec![
+            (token_a, 100),
+            (token_c, 100),
+            (token_a, 100),
+            (token_c, 100),
+        ]);
+        let solver_2_solution = create_solution(1, solver_2, 280, solver_2_trades, solver_2_prices);
+
+        // solution 3, incompatible batch 2
+        let solver_3 = create_address(12);
+        let solver_3_trades = create_trades(vec![(&order_3, 100, 240)]);
+        let solver_3_prices = create_prices(vec![
+            (token_a, 100),
+            (token_c, 100),
+            (token_a, 100),
+            (token_c, 100),
+        ]);
+        let solver_3_solution = create_solution(1, solver_3, 280, solver_3_trades, solver_3_prices);
+
+        // filter solutions
+        let participants = vec![solver_1_solution, solver_2_solution, solver_3_solution];
+        let solutions = arbitrator.filter_unfair_solutions(participants, &auction);
+        assert_eq!(solutions.len(), 1);
+
+        // select the winners
+        let solutions = arbitrator.mark_winners(solutions);
+        assert_eq!(solutions.len(), 1);
+        assert_eq!(solutions[0].driver().submission_address.0, solver_1);
+
+        // compute reference scores
+        // FIXME: the scores are always 0, in this case it should be 380
+        let reference_scores = arbitrator.compute_reference_scores(&solutions);
+        eprintln!("{:?}", reference_scores)
+    }
+
+    #[test]
+    #[ignore]
     fn staging_mainnet_auction_12825008() {
         // https://solver-instances.s3.eu-central-1.amazonaws.com/staging/mainnet/autopilot/12825008.json
 
