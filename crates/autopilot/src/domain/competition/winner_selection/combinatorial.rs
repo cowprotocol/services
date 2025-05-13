@@ -381,7 +381,6 @@ mod tests {
         std::collections::HashMap,
     };
 
-    // FIXME: solutions are being filtered out
     #[test]
     #[ignore]
     fn single_bid() {
@@ -523,15 +522,9 @@ mod tests {
         buy_token: H160,
         buy_amount: u128,
     ) -> Order {
-        let mock_protocol_fees = vec![fee::Policy::PriceImprovement {
+        let mock_protocol_fees = vec![fee::Policy::Surplus {
             factor: fee::FeeFactor::try_from(0.0).unwrap(),
             max_volume_factor: fee::FeeFactor::try_from(0.0).unwrap(),
-            quote: fee::Quote {
-                sell_amount: eth::U256::zero(),
-                buy_amount: eth::U256::zero(),
-                fee: eth::U256::zero(),
-                solver: eth::H160::zero(),
-            },
         }];
 
         // build the UID of the order
