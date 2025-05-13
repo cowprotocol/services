@@ -177,17 +177,18 @@ impl From<VerificationError> for ValidationError {
 impl From<CalculateQuoteError> for ValidationError {
     fn from(err: CalculateQuoteError) -> Self {
         match err {
-            CalculateQuoteError::Price(PriceEstimationError::UnsupportedToken {
-                token,
-                reason,
-            }) => {
+            CalculateQuoteError::Price {
+                source: PriceEstimationError::UnsupportedToken { token, reason },
+                ..
+            } => {
                 ValidationError::Partial(PartialValidationError::UnsupportedToken { token, reason })
             }
-            CalculateQuoteError::Other(err)
-            | CalculateQuoteError::Price(PriceEstimationError::ProtocolInternal(err)) => {
-                ValidationError::Other(err)
+            CalculateQuoteError::Price {
+                source: PriceEstimationError::ProtocolInternal(err),
+                ..
             }
-            CalculateQuoteError::Price(err) => ValidationError::PriceForQuote(err),
+            | CalculateQuoteError::Other(err) => ValidationError::Other(err),
+            CalculateQuoteError::Price { source, .. } => ValidationError::PriceForQuote(source),
             CalculateQuoteError::QuoteNotVerified => ValidationError::QuoteNotVerified,
             // This should never happen because we only calculate quotes with
             // `SellAmount::AfterFee`, meaning that the sell amount does not
@@ -908,6 +909,16 @@ pub struct Amounts {
     pub sell: U256,
     pub buy: U256,
     pub fee: U256,
+}
+
+impl From<&model::order::Order> for Amounts {
+    fn from(order: &model::order::Order) -> Self {
+        Self {
+            sell: order.data.sell_amount,
+            buy: order.data.buy_amount,
+            fee: order.data.fee_amount,
+        }
+    }
 }
 
 /// Checks whether or not an order's limit price is outside the market price

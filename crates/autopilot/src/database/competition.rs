@@ -1,4 +1,5 @@
 use {
+    crate::domain::{competition::Score, eth},
     anyhow::Context,
     database::{
         Address,
@@ -12,19 +13,15 @@ use {
     model::solver_competition::SolverCompetitionDB,
     number::conversions::u256_to_big_decimal,
     primitive_types::{H160, U256},
-    std::collections::{BTreeMap, HashMap, HashSet, hash_map::Iter},
+    std::collections::{BTreeMap, HashMap, HashSet},
 };
 
 #[derive(Clone, Default, Debug)]
 pub struct Competition {
     pub auction_id: AuctionId,
-    // TODO: deprecated
-    pub winner: H160,
-    // TODO: deprecated
-    pub winning_score: U256,
-    // TODO: deprecated
-    pub reference_score: U256,
-    pub reference_scores: ReferenceScores,
+    // TODO: remove when `settlement_scores` table is no longer used
+    pub legacy: Option<LegacyScore>,
+    pub reference_scores: HashMap<eth::Address, Score>,
     /// Addresses to which the CIP20 participation rewards will be payed out.
     /// Usually the same as the solver addresses.
     pub participants: HashSet<H160>,
@@ -37,24 +34,15 @@ pub struct Competition {
     pub competition_table: SolverCompetitionDB,
 }
 
-/// Contains the reference score per solver, defined as the difference between
-/// the total score for the auction and the combined score of all winning
-/// solutions submitted by that solver for the same auction.
+/// Score containing the data relevant for the single winner auction algorithm
 #[derive(Clone, Default, Debug)]
-pub struct ReferenceScores(HashMap<H160, U256>);
-
-impl ReferenceScores {
-    pub fn iter(&self) -> Iter<'_, H160, U256> {
-        self.0.iter()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    pub fn insert(&mut self, solver: H160, reference_score: U256) -> Option<U256> {
-        self.0.insert(solver, reference_score)
-    }
+pub struct LegacyScore {
+    /// Single winner of the auction.
+    pub winner: H160,
+    /// Score of the winning solution.
+    pub winning_score: U256,
+    /// Score of the second best solution.
+    pub reference_score: U256,
 }
 
 impl super::Postgres {
@@ -77,38 +65,41 @@ impl super::Postgres {
         .context("solver_competition::save_solver_competition")?;
 
         // TODO: this is deprecated and needs to be removed once the solver team has
-        // switched to the reference_scores table
-        database::settlement_scores::insert(
-            &mut ex,
-            database::settlement_scores::Score {
-                auction_id: competition.auction_id,
-                winner: ByteArray(competition.winner.0),
-                winning_score: u256_to_big_decimal(&competition.winning_score),
-                reference_score: u256_to_big_decimal(&competition.reference_score),
-                block_deadline: competition
-                    .block_deadline
-                    .try_into()
-                    .context("convert block deadline")?,
-                simulation_block: competition
-                    .competition_simulation_block
-                    .try_into()
-                    .context("convert simulation block")?,
-            },
-        )
-        .await
-        .context("settlement_scores::insert")?;
-
-        let reference_scores = competition
-            .reference_scores
-            .iter()
-            .map(
-                |(solver, reference_score)| database::reference_scores::Score {
+        // switched to the reference_scores table.
+        // If we enable combinatorial auctions before that switch the solver rewards
+        // payout will be blocked until the switch happens since no data would be
+        // stored in the old format anymore.
+        if let Some(legacy) = &competition.legacy {
+            database::settlement_scores::insert(
+                &mut ex,
+                database::settlement_scores::Score {
                     auction_id: competition.auction_id,
-                    solver: ByteArray(solver.0),
-                    reference_score: u256_to_big_decimal(reference_score),
+                    winner: ByteArray(legacy.winner.0),
+                    winning_score: u256_to_big_decimal(&legacy.winning_score),
+                    reference_score: u256_to_big_decimal(&legacy.reference_score),
+                    block_deadline: competition
+                        .block_deadline
+                        .try_into()
+                        .context("convert block deadline")?,
+                    simulation_block: competition
+                        .competition_simulation_block
+                        .try_into()
+                        .context("convert simulation block")?,
                 },
             )
-            .collect::<Vec<_>>();
+            .await
+            .context("settlement_scores::insert")?;
+        }
+
+        let reference_scores: Vec<_> = competition
+            .reference_scores
+            .iter()
+            .map(|(solver, score)| database::reference_scores::Score {
+                auction_id: competition.auction_id,
+                solver: ByteArray(solver.0.0),
+                reference_score: u256_to_big_decimal(&score.get().0),
+            })
+            .collect();
 
         database::reference_scores::insert(&mut ex, &reference_scores)
             .await

@@ -107,6 +107,7 @@ pub fn collector(
 ) -> Box<dyn LiquidityCollecting> {
     let eth = Arc::new(eth.with_metric_label("uniswapV3".into()));
     let config = Arc::new(Clone::clone(config));
+    let reinit_interval = config.reinit_interval;
     let init = move || {
         let eth = eth.clone();
         let block_retriever = block_retriever.clone();
@@ -118,6 +119,7 @@ pub fn collector(
         "uniswap-v3",
         init,
         TEN_MINUTES,
+        reinit_interval,
     )) as Box<_>
 }
 

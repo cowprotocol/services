@@ -435,13 +435,13 @@ Indexes:
 
 ### reference\_scores
 
-Stores the reference score per solver, defined as the difference between the total score for the auction and the combined score of all winning solutions submitted by that solver for the same auction.
+Stores the reference score per solver, defined as the total score of the auction if the reference solver had not participated.
 
  Column           | Type     | Nullable | Details
 ------------------|----------|----------|--------
  auction\_id      | bigint   | not null | id of the auction the scores belong to
  solver           | bytea    | not null | public address of the winning solver
- reference\_score | numeric  | not null | score of the runner up solver. If only 1 solver submitted a valid solution this value is 0.
+ reference\_score | numeric  | not null | reference score value
 
 Indexes:
 - PRIMARY KEY: btree(`auction_id, solver`)

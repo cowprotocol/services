@@ -148,6 +148,10 @@ pub struct UniswapV3 {
 
     /// The URL used to connect to uniswap v3 subgraph client.
     pub graph_url: Url,
+
+    /// How often the liquidity source should be reinitialized to
+    /// become aware of new pools.
+    pub reinit_interval: Option<Duration>,
 }
 
 impl UniswapV3 {
@@ -158,6 +162,7 @@ impl UniswapV3 {
             router: deployment_address(contracts::UniswapV3SwapRouter::raw_contract(), chain)?,
             max_pools_to_initialize: 100,
             graph_url: graph_url.clone(),
+            reinit_interval: None,
         })
     }
 }
@@ -192,6 +197,10 @@ pub struct BalancerV2 {
 
     /// The base URL used to connect to balancer v2 subgraph client.
     pub graph_url: Url,
+
+    /// How often the liquidty source should be re-initialized to become
+    /// aware of new pools.
+    pub reinit_interval: Option<Duration>,
 }
 
 impl BalancerV2 {
@@ -231,6 +240,7 @@ impl BalancerV2 {
             ]),
             pool_deny_list: Vec::new(),
             graph_url: graph_url.clone(),
+            reinit_interval: None,
         })
     }
 }

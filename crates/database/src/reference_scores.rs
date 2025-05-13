@@ -15,6 +15,10 @@ pub struct Score {
 pub async fn insert(ex: &mut PgTransaction<'_>, scores: &[Score]) -> Result<(), sqlx::Error> {
     const QUERY: &str = "INSERT INTO reference_scores (auction_id, solver, reference_score) ";
 
+    if scores.is_empty() {
+        return Ok(());
+    }
+
     let mut query_builder = QueryBuilder::new(QUERY);
     query_builder.push_values(scores, |mut builder, score| {
         builder
@@ -46,6 +50,11 @@ mod tests {
         let mut db = PgConnection::connect("postgresql://").await.unwrap();
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let input = vec![];
+        insert(&mut db, &input).await.unwrap();
+        let output = fetch(&mut db, 1).await.unwrap();
+        assert!(output.is_empty());
 
         let input = vec![
             Score {

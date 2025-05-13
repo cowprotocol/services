@@ -26,7 +26,7 @@ impl BlockscoutTokenOwnerFinder {
             Chain::Sepolia => "https://eth-sepolia.blockscout.com/api",
             Chain::ArbitrumOne => "https://arbitrum.blockscout.com/api",
             Chain::Base => "https://base.blockscout.com/api",
-            Chain::Hardhat => anyhow::bail!("Hardhat chain not supported"),
+            _ => anyhow::bail!("Chain not supported"),
         };
 
         Ok(Self {
