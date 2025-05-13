@@ -605,6 +605,61 @@ mod tests {
 
     #[test]
     #[ignore]
+    // Unfair batch is filtered
+    fn fairness_filtering() {
+        let arbitrator = create_test_arbitrator();
+
+        let token_a = create_address(0);
+        let token_b = create_address(1);
+        let token_c = create_address(2);
+        let token_d = create_address(3);
+
+        // auction
+        let order_1 = create_order(1, token_a, 100, token_b, 100);
+        let order_2 = create_order(2, token_c, 100, token_d, 100);
+        let prices = create_prices(vec![
+            (token_a, 100),
+            (token_b, 100),
+            (token_c, 100),
+            (token_d, 100),
+        ]);
+        let auction = create_auction(vec![order_1.clone(), order_2.clone()], prices);
+
+        // solution 1, unfair batch
+        let solver_1 = create_address(10);
+        let solver_1_trades = create_trades(vec![(&order_1, 100, 200), (&order_2, 100, 200)]);
+        let solver_1_prices = create_prices(vec![
+            (token_a, 100),
+            (token_b, 50),
+            (token_c, 100),
+            (token_d, 50),
+        ]);
+        let solver_1_solution = create_solution(0, solver_1, 200, solver_1_trades, solver_1_prices);
+
+        // solution 2, filtering batch
+        let solver_2 = create_address(11);
+        let solver_2_trades = create_trades(vec![(&order_1, 100, 250)]);
+        let solver_2_prices = create_prices(vec![(token_a, 100), (token_b, 35)]);
+        let solver_2_solution = create_solution(1, solver_2, 150, solver_2_trades, solver_2_prices);
+
+        // filter solutions
+        let participants = vec![solver_1_solution, solver_2_solution];
+        let solutions = arbitrator.filter_unfair_solutions(participants, &auction);
+        // FIXME: this assert fails, the unfair batch is not filtered out
+        assert_eq!(solutions.len(), 1);
+
+        // select the winners
+        let solutions = arbitrator.mark_winners(solutions);
+        assert_eq!(solutions.len(), 1);
+
+        // compute reference scores
+        // FIXME: the scores are always 0
+        let reference_scores = arbitrator.compute_reference_scores(&solutions);
+        eprintln!("{:?}", reference_scores)
+    }
+
+    #[test]
+    #[ignore]
     fn staging_mainnet_auction_12825008() {
         // https://solver-instances.s3.eu-central-1.amazonaws.com/staging/mainnet/autopilot/12825008.json
 
@@ -617,7 +672,8 @@ mod tests {
                     Trades: ['0x67466be17df832165f8c80a5a120ccc652bd7e69->0xdac17f958d2ee523a2206206994597c13d831ec7(21037471695353421)']
             Winners:
                 Solver: 0x01246d541e732d7f15d164331711edff217e4665, Score: 21813202259686016,
-            {'0x01246d541e732d7f15d164331711edff217e4665': 775730564332595}
+            Rewards:
+                {'0x01246d541e732d7f15d164331711edff217e4665': 775730564332595}
         */
 
         let arbitrator = create_test_arbitrator();
