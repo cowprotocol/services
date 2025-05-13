@@ -368,9 +368,10 @@ mod tests {
                     Score,
                     Solution,
                     TradedOrder,
+                    Unranked,
                     winner_selection::Arbitrator,
                 },
-                eth::{self, Asset},
+                eth::{self, TokenAddress},
                 fee::{self},
             },
             infra::Driver,
@@ -384,186 +385,37 @@ mod tests {
     #[test]
     #[ignore]
     fn single_bid() {
-        let arbitrator = super::Config {
-            max_winners: 10,
-            weth: H160::from_slice(&hex!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")).into(),
-        };
+        let arbitrator = create_test_arbitrator();
 
-        let mock_protocol_fees = vec![fee::Policy::PriceImprovement {
-            factor: fee::FeeFactor::try_from(0.5).unwrap(),
-            max_volume_factor: fee::FeeFactor::try_from(0.01).unwrap(),
-            quote: fee::Quote {
-                sell_amount: eth::U256::zero(),
-                buy_amount: eth::U256::zero(),
-                fee: eth::U256::zero(),
-                solver: eth::H160::zero(),
-            },
-        }];
+        let token_a = create_address(0);
+        let token_b = create_address(1);
+        let token_c = create_address(2);
+        let token_d = create_address(3);
 
-        // order1
-        let token_a = H160::from_low_u64_le(0);
-        let token_b = H160::from_low_u64_le(1);
-        let order1_uid = OrderUid(hex!("1a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a"));
-        let order1_sell_asset = eth::Asset {
-            amount: eth::U256::from(0).into(),
-            token: token_a.into(),
-        };
-        let order1_buy_asset = eth::Asset {
-            amount: eth::U256::from(2161512119u128).into(),
-            token: token_b.into(),
-        };
-        let order_1 = Order {
-            uid: order1_uid,
-            sell: order1_sell_asset,
-            buy: order1_buy_asset,
-            protocol_fees: mock_protocol_fees.clone(),
-            side: order::Side::Sell,
-            receiver: Some(
-                H160::from_slice(&hex!("eae2411db903e35c25de88d15c64bcf78133f44f")).into(),
-            ),
-            owner: H160::from_slice(&hex!("eae2411db903e35c25de88d15c64bcf78133f44f")).into(),
-            partially_fillable: false,
-            executed: eth::U256::zero().into(),
-            pre_interactions: vec![],
-            post_interactions: vec![],
-            sell_token_balance: order::SellTokenSource::Erc20,
-            buy_token_balance: order::BuyTokenDestination::Erc20,
-            app_data: AppDataHash(hex!(
-                "6000000000000000000000000000000000000000000000000000000000000007"
-            )),
-            created: Default::default(),
-            valid_to: Default::default(),
-            signature: order::Signature::PreSign,
-            quote: None,
-        };
+        // auction
+        let order_1 = create_order(0, token_a, 100, token_b, 100);
+        let order_2 = create_order(0, token_c, 100, token_d, 100);
+        let prices = create_prices(vec![
+            (token_a, 100),
+            (token_b, 100),
+            (token_c, 100),
+            (token_d, 100),
+        ]);
+        let auction = create_auction(vec![order_1.clone(), order_2.clone()], prices);
 
-        // order 2
-        let token_c = H160::from_low_u64_le(2);
-        let token_d = H160::from_low_u64_le(3);
-        let order2_uid = OrderUid(hex!("2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a"));
-        let order2_sell_asset = eth::Asset {
-            amount: eth::U256::from(0).into(),
-            token: token_c.into(),
-        };
-        let order2_buy_asset = eth::Asset {
-            amount: eth::U256::from(2161512119u128).into(),
-            token: token_d.into(),
-        };
-        let order_2 = Order {
-            uid: order2_uid,
-            sell: order2_sell_asset,
-            buy: order2_buy_asset,
-            protocol_fees: mock_protocol_fees,
-            side: order::Side::Sell,
-            receiver: Some(
-                H160::from_slice(&hex!("eae2411db903e35c25de88d15c64bcf78133f44f")).into(),
-            ),
-            owner: H160::from_slice(&hex!("eae2411db903e35c25de88d15c64bcf78133f44f")).into(),
-            partially_fillable: false,
-            executed: eth::U256::zero().into(),
-            pre_interactions: vec![],
-            post_interactions: vec![],
-            sell_token_balance: order::SellTokenSource::Erc20,
-            buy_token_balance: order::BuyTokenDestination::Erc20,
-            app_data: AppDataHash(hex!(
-                "6000000000000000000000000000000000000000000000000000000000000007"
-            )),
-            created: Default::default(),
-            valid_to: Default::default(),
-            signature: order::Signature::PreSign,
-            quote: None,
-        };
+        // solution 1
+        let solver = create_address(10);
+        let trades = create_trades(vec![(&order_1, 100, 200), (&order_2, 100, 200)]);
+        let solver_prices = create_prices(vec![
+            (token_a, 100),
+            (token_b, 50),
+            (token_c, 100),
+            (token_d, 50),
+        ]);
+        let solution = create_solution(0, solver, 200, trades, solver_prices);
 
-        let mut prices: HashMap<eth::TokenAddress, Price> = HashMap::new();
-        prices.insert(
-            token_a.into(),
-            Price::try_new(eth::Ether(eth::U256::from(1u128))).unwrap(),
-        );
-        prices.insert(
-            token_b.into(),
-            Price::try_new(eth::Ether(eth::U256::from(1u128))).unwrap(),
-        );
-        prices.insert(
-            token_c.into(),
-            Price::try_new(eth::Ether(eth::U256::from(1u128))).unwrap(),
-        );
-        prices.insert(
-            token_d.into(),
-            Price::try_new(eth::Ether(eth::U256::from(1u128))).unwrap(),
-        );
-
-        let auction = Auction {
-            id: 1,
-            block: 1,
-            orders: vec![order_1.clone(), order_2.clone()],
-            prices,
-            surplus_capturing_jit_order_owners: vec![],
-        };
-
-        let mut solver1_trade_orders: HashMap<OrderUid, TradedOrder> = HashMap::new();
-        solver1_trade_orders.insert(
-            order_1.uid,
-            TradedOrder {
-                side: order::Side::Sell,
-                sell: Asset {
-                    amount: eth::U256::from(100).into(),
-                    token: token_a.into(),
-                },
-                buy: Asset {
-                    amount: eth::U256::from(100).into(),
-                    token: token_b.into(),
-                },
-                executed_sell: eth::U256::from(100).into(),
-                executed_buy: eth::U256::from(100).into(),
-            },
-        );
-        solver1_trade_orders.insert(
-            order_2.uid,
-            TradedOrder {
-                side: order::Side::Sell,
-                sell: Asset {
-                    amount: eth::U256::from(100).into(),
-                    token: token_c.into(),
-                },
-                buy: Asset {
-                    amount: eth::U256::from(100).into(),
-                    token: token_d.into(),
-                },
-                executed_sell: eth::U256::from(100).into(),
-                executed_buy: eth::U256::from(100).into(),
-            },
-        );
-
-        let mut solver_1_prices: HashMap<eth::TokenAddress, Price> = HashMap::new();
-        solver_1_prices.insert(
-            token_a.into(),
-            Price::try_new(eth::Ether(eth::U256::from(1u128))).unwrap(),
-        );
-        solver_1_prices.insert(
-            token_b.into(),
-            Price::try_new(eth::Ether(eth::U256::from(1u128))).unwrap(),
-        );
-        solver_1_prices.insert(
-            token_c.into(),
-            Price::try_new(eth::Ether(eth::U256::from(1u128))).unwrap(),
-        );
-        solver_1_prices.insert(
-            token_d.into(),
-            Price::try_new(eth::Ether(eth::U256::from(1u128))).unwrap(),
-        );
-
-        let solver1_solution = Solution::new(
-            0_u64,
-            eth::Address(H160::zero()),
-            Score(eth::Ether(200.into())),
-            solver1_trade_orders,
-            solver_1_prices,
-        );
-
-        let participants = vec![Participant::new(
-            solver1_solution,
-            Driver::mock("solver1".to_string(), eth::Address(H160::zero())).into(),
-        )];
+        // run the combinatorial auction logic
+        let participants = vec![solution];
 
         let solutions = arbitrator.filter_unfair_solutions(participants, &auction);
         eprintln!("after filter_unfair_solutions: {}", solutions.len());
@@ -573,6 +425,135 @@ mod tests {
 
         let reference_scores = arbitrator.compute_reference_scores(&solutions);
         eprintln!("{:?}", reference_scores)
+    }
+
+    fn create_test_arbitrator() -> super::Config {
+        super::Config {
+            max_winners: 10,
+            weth: H160::from_slice(&hex!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")).into(),
+        }
+    }
+
+    fn create_address(id: u64) -> H160 {
+        H160::from_low_u64_le(id)
+    }
+
+    fn create_order(
+        uid: usize,
+        sell_token: H160,
+        sell_amount: u128,
+        buy_token: H160,
+        buy_amount: u128,
+    ) -> Order {
+        let mock_protocol_fees = vec![fee::Policy::PriceImprovement {
+            factor: fee::FeeFactor::try_from(0.0).unwrap(),
+            max_volume_factor: fee::FeeFactor::try_from(0.0).unwrap(),
+            quote: fee::Quote {
+                sell_amount: eth::U256::zero(),
+                buy_amount: eth::U256::zero(),
+                fee: eth::U256::zero(),
+                solver: eth::H160::zero(),
+            },
+        }];
+
+        // build the UID of the order
+        let mut encoded_uid = [0u8; 56];
+        let uid_bytes = uid.to_le_bytes();
+        encoded_uid[..uid_bytes.len()].copy_from_slice(&uid_bytes);
+        let encoded_uid = OrderUid(encoded_uid);
+
+        Order {
+            uid: encoded_uid,
+            sell: eth::Asset {
+                amount: eth::U256::from(sell_amount).into(),
+                token: sell_token.into(),
+            },
+            buy: eth::Asset {
+                amount: eth::U256::from(buy_amount).into(),
+                token: buy_token.into(),
+            },
+            protocol_fees: mock_protocol_fees,
+            side: order::Side::Sell,
+            receiver: Some(H160::zero().into()),
+            owner: H160::zero().into(),
+            partially_fillable: false,
+            executed: eth::U256::zero().into(),
+            pre_interactions: vec![],
+            post_interactions: vec![],
+            sell_token_balance: order::SellTokenSource::Erc20,
+            buy_token_balance: order::BuyTokenDestination::Erc20,
+            app_data: AppDataHash(hex!(
+                "6000000000000000000000000000000000000000000000000000000000000007"
+            )),
+            created: Default::default(),
+            valid_to: Default::default(),
+            signature: order::Signature::PreSign,
+            quote: None,
+        }
+    }
+
+    fn create_prices(token_price_pairs: Vec<(H160, u64)>) -> HashMap<eth::TokenAddress, Price> {
+        token_price_pairs
+            .into_iter()
+            .map(|(token, price)| {
+                (
+                    token.into(),
+                    Price::try_new(eth::Ether(eth::U256::from(price))).unwrap(),
+                )
+            })
+            .collect()
+    }
+
+    fn create_auction(orders: Vec<Order>, prices: HashMap<eth::TokenAddress, Price>) -> Auction {
+        Auction {
+            id: 0,
+            block: 0,
+            orders,
+            prices,
+            surplus_capturing_jit_order_owners: vec![],
+        }
+    }
+
+    fn create_trades(input: Vec<(&Order, u128, u128)>) -> Vec<(OrderUid, TradedOrder)> {
+        input
+            .into_iter()
+            .map(|(order, sell, buy)| (order.uid, create_trade(order, sell, buy)))
+            .collect()
+    }
+
+    fn create_trade(order: &Order, executed_sell: u128, executed_buy: u128) -> TradedOrder {
+        TradedOrder {
+            side: order::Side::Sell,
+            sell: order.sell,
+            buy: order.buy,
+            executed_sell: eth::U256::from(executed_sell).into(),
+            executed_buy: eth::U256::from(executed_buy).into(),
+        }
+    }
+
+    fn create_solution(
+        solution_id: u64,
+        solver_address: H160,
+        score: u128,
+        trades: Vec<(OrderUid, TradedOrder)>,
+        prices: HashMap<TokenAddress, Price>,
+    ) -> Participant<Unranked> {
+        let trade_order_map: HashMap<OrderUid, TradedOrder> = trades.into_iter().collect();
+
+        let solver_address = eth::Address(solver_address);
+
+        let solution = Solution::new(
+            solution_id,
+            solver_address,
+            Score(eth::Ether(score.into())),
+            trade_order_map,
+            prices,
+        );
+
+        Participant::new(
+            solution,
+            Driver::mock(solver_address.to_string(), solver_address).into(),
+        )
     }
 
     // TODO: assert scores against the reference implementation
