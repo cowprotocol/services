@@ -660,6 +660,50 @@ mod tests {
 
     #[test]
     #[ignore]
+    // Multiple trades on the same (directed) token pair are aggregated for
+    // filtering
+    fn aggregation_on_token_pair() {
+        let arbitrator = create_test_arbitrator();
+
+        let token_a = create_address(0);
+        let token_b = create_address(1);
+
+        // auction
+        let order_1 = create_order(1, token_a, 100, token_b, 100);
+        let order_2 = create_order(2, token_a, 100, token_b, 100);
+        let prices = create_prices(vec![(token_a, 100), (token_b, 100)]);
+        let auction = create_auction(vec![order_1.clone(), order_2.clone()], prices);
+
+        // solution 1, batch with aggregation
+        let solver_1 = create_address(10);
+        let solver_1_trades = create_trades(vec![(&order_1, 100, 200), (&order_2, 100, 200)]);
+        let solver_1_prices = create_prices(vec![(token_a, 100), (token_b, 50)]);
+        let solver_1_solution = create_solution(0, solver_1, 200, solver_1_trades, solver_1_prices);
+
+        // solution 2, incompatible batch
+        let solver_2 = create_address(11);
+        let solver_2_trades = create_trades(vec![(&order_1, 100, 250)]);
+        let solver_2_prices = create_prices(vec![(token_a, 100), (token_b, 50)]);
+        let solver_2_solution = create_solution(1, solver_2, 150, solver_2_trades, solver_2_prices);
+
+        // filter solutions
+        let participants = vec![solver_1_solution, solver_2_solution];
+        let solutions = arbitrator.filter_unfair_solutions(participants, &auction);
+        assert_eq!(solutions.len(), 2);
+
+        // select the winners
+        let solutions = arbitrator.mark_winners(solutions);
+        // FIXME: this assert fails, only solver 1 should be the winner
+        assert_eq!(solutions.len(), 1);
+
+        // compute reference scores
+        // FIXME: the scores are always 0
+        let reference_scores = arbitrator.compute_reference_scores(&solutions);
+        eprintln!("{:?}", reference_scores)
+    }
+
+    #[test]
+    #[ignore]
     fn staging_mainnet_auction_12825008() {
         // https://solver-instances.s3.eu-central-1.amazonaws.com/staging/mainnet/autopilot/12825008.json
 
