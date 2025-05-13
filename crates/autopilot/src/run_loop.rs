@@ -635,35 +635,26 @@ impl RunLoop {
         request: &solve::Request,
     ) -> Result<Vec<Result<competition::Solution, domain::competition::SolutionError>>, SolveError>
     {
-        let timeout = tokio::time::sleep(self.config.solve_deadline).fuse();
-        let send_request = driver.solve(request).fuse();
         let check_allowed = self
             .solver_participation_guard
-            .can_participate(&driver.submission_address)
-            .fuse();
-        tokio::pin!(timeout, send_request, check_allowed);
+            .can_participate(&driver.submission_address);
+        let fetch_response = driver.solve(request);
+        let both = async { tokio::join!(check_allowed, fetch_response) };
 
-        let response = loop {
-            tokio::select! {
-                _ = &mut timeout => return Err(SolveError::Timeout),
-                is_allowed = &mut check_allowed => match is_allowed {
-                    Ok(false) => return Err(SolveError::SolverDenyListed),
-                    Ok(true) => continue, // all good => continue with other tasks
-                    Err(err) => {
-                        tracing::error!(
-                            ?err,
-                            driver = %driver.name,
-                            ?driver.submission_address,
-                            "solver participation check failed"
-                        );
-                        return Err(SolveError::SolverDenyListed);
-                    },
-                },
-                response = &mut send_request => match response {
-                    Ok(response) => break response,
-                    Err(err) => return Err(SolveError::Failure(err)),
-                }
+        let response = match tokio::time::timeout(self.config.solve_deadline, both).await {
+            Ok((Ok(true), Ok(response))) => response,
+            Err(_timeout) => return Err(SolveError::Timeout),
+            Ok((Ok(false), _)) => return Err(SolveError::SolverDenyListed),
+            Ok((Err(err), _)) => {
+                tracing::error!(
+                    ?err,
+                    driver = %driver.name,
+                    ?driver.submission_address,
+                    "solver participation check failed"
+                );
+                return Err(SolveError::SolverDenyListed);
             }
+            Ok((_, Err(err))) => return Err(SolveError::Failure(err)),
         };
 
         if response.solutions.is_empty() {
