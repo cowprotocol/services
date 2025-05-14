@@ -24,7 +24,7 @@ use {
         util::http,
     },
     ethrpc::block_stream::BlockInfo,
-    std::collections::{BTreeMap, HashMap, HashSet},
+    std::collections::{BTreeMap, HashSet},
     url::Url,
 };
 
