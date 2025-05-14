@@ -70,11 +70,12 @@ impl Arbitrator for Config {
                 .expect("every remaining participant has an entry");
             // only keep solutions where each order execution is at least as good as
             // the baseline solution
-            aggregated_scores.iter().all(|(pair, score)| {
-                baseline_scores
-                    .get(pair)
-                    .is_none_or(|baseline| score >= baseline)
-            })
+            aggregated_scores.len() == 1
+                || aggregated_scores.iter().all(|(pair, score)| {
+                    baseline_scores
+                        .get(pair)
+                        .is_none_or(|baseline| score >= baseline)
+                })
         });
         participants
     }
@@ -824,19 +825,8 @@ mod tests {
     #[ignore]
     fn staging_mainnet_auction_12825008() {
         // https://solver-instances.s3.eu-central-1.amazonaws.com/staging/mainnet/autopilot/12825008.json
-
-        /* From the reference implementation, the result should be:
-        Auction 12825008 (staging/mainnet):
-            Proposed Solutions:
-                Solver: 0x01246d541e732d7f15d164331711edff217e4665, Score: 21813202259686016,
-                    Trades: ['0x67466be17df832165f8c80a5a120ccc652bd7e69->0xdac17f958d2ee523a2206206994597c13d831ec7(21813202259686016)']
-                Solver: 0xcc73072b53697911ff394ae01d3de59c9900b0b0, Score: 21037471695353421,
-                    Trades: ['0x67466be17df832165f8c80a5a120ccc652bd7e69->0xdac17f958d2ee523a2206206994597c13d831ec7(21037471695353421)']
-            Winners:
-                Solver: 0x01246d541e732d7f15d164331711edff217e4665, Score: 21813202259686016,
-            Rewards:
-                {'0x01246d541e732d7f15d164331711edff217e4665': 775730564332595}
-        */
+        // The example is an auction with one order and two competing bids for it, one
+        // having a better score than the other
 
         let arbitrator = create_test_arbitrator();
 
@@ -845,7 +835,7 @@ mod tests {
         // corresponding to 0xdac17f958d2ee523a2206206994597c13d831ec7
         let token_b = create_address(1);
 
-        // auction
+        // auction has only one order
         let order_1 = create_order(0, token_a, 32375066190000000000000000, token_b, 2161512119);
         let prices = create_prices(vec![
             (token_a, 32429355240),
@@ -853,7 +843,7 @@ mod tests {
         ]);
         let auction = create_auction(vec![order_1.clone()], prices);
 
-        // solution 1 (baseline, should be the winner)
+        // solution 1 (baseline, the winner)
         let solver_1 = create_address(10);
         let solver_1_trades =
             create_trades(vec![(&order_1, 32375066190000000000000000, 2206881314)]);
@@ -888,17 +878,23 @@ mod tests {
         // run the combinatorial auction
         let participants = vec![solver_1_solution, solver_2_solution];
 
+        // both solutions are fair
         let solutions = arbitrator.filter_unfair_solutions(participants, &auction);
-        // FIXME: this fails, should it be 1 or 2?
         assert_eq!(solutions.len(), 2);
 
+        // check that solver_1 is the winner
         let solutions = arbitrator.mark_winners(solutions);
-        // FIXME: this fails, should it be 1 or 2?
-        assert_eq!(solutions.len(), 2);
+        let winners = solutions
+            .iter()
+            .filter(|s| s.is_winner())
+            .collect::<Vec<_>>();
+        assert_eq!(winners.len(), 1);
+        assert_eq!(winners[0].driver().submission_address.0, solver_1);
 
-        // FIXME: the scores are always 0
+        // check that solver_1 reference score is the expected value
         let reference_scores = arbitrator.compute_reference_scores(&solutions);
-        eprintln!("{:?}", reference_scores);
+        let winner_score = reference_scores.get(&eth::Address(solver_1)).unwrap();
+        assert_eq!(winner_score.0, eth::Ether(21037471695353421u128.into()));
     }
 
     fn create_test_arbitrator() -> super::Config {
