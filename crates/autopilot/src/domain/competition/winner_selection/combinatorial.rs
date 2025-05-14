@@ -382,7 +382,6 @@ mod tests {
     };
 
     #[test]
-    #[ignore]
     // Only one bid submitted results in one winner with reward equal to score
     fn single_bid() {
         let arbitrator = create_test_arbitrator();
@@ -426,9 +425,10 @@ mod tests {
         assert_eq!(solutions[0].driver().submission_address.0, solver);
 
         // compute reference scores
-        // FIXME: the scores are always 0
         let reference_scores = arbitrator.compute_reference_scores(&solutions);
-        eprintln!("{:?}", reference_scores)
+        assert_eq!(reference_scores.len(), 1);
+        let solver_score = reference_scores.get(&eth::Address(solver)).unwrap();
+        assert_eq!(solver_score.0, eth::Ether(0.into()));
     }
 
     #[test]
