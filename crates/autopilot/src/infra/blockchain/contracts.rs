@@ -1,4 +1,9 @@
-use {crate::domain, chain::Chain, ethcontract::dyns::DynWeb3, primitive_types::H160};
+use {
+    crate::domain,
+    chain::Chain,
+    ethcontract::{common::DeploymentInformation, dyns::DynWeb3},
+    primitive_types::H160,
+};
 
 #[derive(Debug, Clone)]
 pub struct Contracts {
@@ -26,14 +31,36 @@ impl Contracts {
                 .or_else(|| deployment_address(contract, chain))
                 .unwrap()
         };
-
-        let settlement = contracts::GPv2Settlement::at(
+        let mut settlement = contracts::GPv2Settlement::at(
             web3,
             address_for(
                 contracts::GPv2Settlement::raw_contract(),
                 addresses.settlement,
             ),
         );
+
+        if !settlement
+            .deployment_information()
+            .map(|deployment_information| {
+                if let DeploymentInformation::BlockNumber(_) = deployment_information {
+                    return true;
+                }
+                false
+            })
+            .unwrap_or_default()
+        {
+            settlement = contracts::GPv2Settlement::deployed(web3)
+                .await
+                .unwrap_or_else(|_| {
+                    contracts::GPv2Settlement::at(
+                        web3,
+                        address_for(
+                            contracts::GPv2Settlement::raw_contract(),
+                            addresses.settlement,
+                        ),
+                    )
+                });
+        }
 
         let weth = contracts::WETH9::at(
             web3,

@@ -393,6 +393,10 @@ pub async fn run(args: Arguments) {
     let settlement_contract_start_index =
         match eth.contracts().settlement().deployment_information() {
             Some(DeploymentInformation::BlockNumber(settlement_contract_start_index)) => {
+                tracing::info!(
+                    "Settlement contract deployment information found at: \
+                     {settlement_contract_start_index}"
+                );
                 settlement_contract_start_index
             }
             _ => {
@@ -411,7 +415,8 @@ pub async fn run(args: Arguments) {
         boundary::events::settlement::Indexer::new(
             db.clone(),
             settlement_observer,
-            settlement_contract_start_index,
+            // Start indexing a block before in order to detect the event
+            settlement_contract_start_index - 1,
         ),
         block_retriever.clone(),
         skip_event_sync_start,
