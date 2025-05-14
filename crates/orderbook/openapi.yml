@@ -687,7 +687,7 @@ components:
         appData:
           $ref: "#/components/schemas/AppDataHash"
         feeAmount:
-          description: feeRatio * sellAmount + minimal_fee in atoms.
+          description: sellAmount in atoms to cover network fees. Needs to be zero (and incorporated into the limit price) when placing the order
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
         kind:

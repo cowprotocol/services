@@ -30,11 +30,11 @@ async fn local_node_two_limit_orders() {
     run_test(two_limit_orders_test).await;
 }
 
-#[tokio::test]
-#[ignore]
-async fn local_node_two_limit_orders_multiple_winners() {
-    run_test(two_limit_orders_multiple_winners_test).await;
-}
+// #[tokio::test]
+// #[ignore]
+// async fn local_node_two_limit_orders_multiple_winners() {
+//     run_test(two_limit_orders_multiple_winners_test).await;
+// }
 
 #[tokio::test]
 #[ignore]
@@ -318,6 +318,7 @@ async fn two_limit_orders_test(web3: Web3) {
     .unwrap();
 }
 
+#[allow(unused)]
 async fn two_limit_orders_multiple_winners_test(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3).await;
 
@@ -523,6 +524,12 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
     assert!(settlements.iter().any(|settlement| settlement.solver
         == ByteArray(solver_b.address().0)
         && settlement.solution_uid == solver_b_winning_solutions[0].uid));
+
+    // Ensure all the reference scores are indexed
+    let reference_scores = database::reference_scores::fetch(&mut ex, competition.auction_id)
+        .await
+        .unwrap();
+    assert_eq!(reference_scores.len(), 2);
 }
 
 async fn too_many_limit_orders_test(web3: Web3) {

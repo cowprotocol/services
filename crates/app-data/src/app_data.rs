@@ -63,8 +63,142 @@ pub struct ReplacedOrder {
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
 #[cfg_attr(any(test, feature = "test_helpers"), derive(Serialize))]
 pub struct PartnerFee {
-    pub bps: u64,
+    #[serde(flatten)]
+    pub policy: FeePolicy,
     pub recipient: H160,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum FeePolicy {
+    /// Fees should be captured from the difference between execution price
+    /// and the orders' limit price (i.e. improvement over the price signed
+    /// by the user).
+    Surplus {
+        /// How many bps of surplus should be captured as fees.
+        bps: u64,
+        /// How many bps of the total volume may be captured at most. Under some
+        /// conditions there can be a lot of surplus so to not charge egrigious
+        /// amounts there is a cap. Note that there is also a cap enforced by
+        /// the protocol so effectively the partner can only lower the
+        /// limit here.
+        max_volume_bps: u64,
+    },
+    /// Fees should be captured from the difference between execution price
+    /// and the price of the order's reference quote (i.e. improvement over the
+    /// promised price).
+    PriceImprovement {
+        /// How many bps of surplus should be captured as fees.
+        bps: u64,
+        /// How many bps of the total volume may be captured at most. Under some
+        /// conditions there can be a lot of surplus so to not charge egrigious
+        /// amounts there is a cap. Note that there is also a cap enforced by
+        /// the protocol so effectively the partner can only lower the
+        /// limit here.
+        max_volume_bps: u64,
+    },
+    /// Fees should be captured from an order's entire volume.
+    /// In that case an order's execution must be so much better that
+    /// taking a cut from the volume will not end up violating the
+    /// order's limit price.
+    Volume { bps: u64 },
+}
+
+impl Default for FeePolicy {
+    fn default() -> Self {
+        Self::Volume { bps: 0 }
+    }
+}
+
+impl<'de> Deserialize<'de> for FeePolicy {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Helper {
+            #[serde(rename_all = "camelCase")]
+            Surplus {
+                surplus_bps: u64,
+                max_volume_bps: u64,
+            },
+            #[serde(rename_all = "camelCase")]
+            PriceImprovement {
+                price_improvement_bps: u64,
+                max_volume_bps: u64,
+            },
+            #[serde(rename_all = "camelCase")]
+            Volume { volume_bps: u64 },
+            // Originally only volume fees were allowed and they used the field `bps`.
+            // To stay backwards compatible with old appdata we still support this old
+            // format.
+            #[serde(rename_all = "camelCase")]
+            VolumeOld { bps: u64 },
+        }
+
+        match Helper::deserialize(deserializer)? {
+            Helper::Surplus {
+                surplus_bps,
+                max_volume_bps,
+            } => Ok(FeePolicy::Surplus {
+                bps: surplus_bps,
+                max_volume_bps,
+            }),
+            Helper::PriceImprovement {
+                price_improvement_bps,
+                max_volume_bps,
+            } => Ok(FeePolicy::PriceImprovement {
+                bps: price_improvement_bps,
+                max_volume_bps,
+            }),
+            Helper::Volume { volume_bps } => Ok(FeePolicy::Volume { bps: volume_bps }),
+            Helper::VolumeOld { bps } => Ok(FeePolicy::Volume { bps }),
+        }
+    }
+}
+
+#[cfg(any(test, feature = "test_helpers"))]
+impl serde::Serialize for FeePolicy {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
+        enum Helper {
+            Surplus {
+                surplus_bps: u64,
+                max_volume_bps: u64,
+            },
+            PriceImprovement {
+                price_improvement_bps: u64,
+                max_volume_bps: u64,
+            },
+            Volume {
+                volume_bps: u64,
+            },
+        }
+
+        let helper = match self {
+            Self::Volume { bps } => Helper::Volume { volume_bps: *bps },
+            Self::Surplus {
+                bps,
+                max_volume_bps,
+            } => Helper::Surplus {
+                surplus_bps: *bps,
+                max_volume_bps: *max_volume_bps,
+            },
+            Self::PriceImprovement {
+                bps,
+                max_volume_bps,
+            } => Helper::PriceImprovement {
+                price_improvement_bps: *bps,
+                max_volume_bps: *max_volume_bps,
+            },
+        };
+
+        helper.serialize(serializer)
+    }
 }
 
 #[derive(Clone)]
@@ -446,7 +580,7 @@ mod tests {
             "#,
             ProtocolAppData {
                 partner_fee: PartnerFees(vec![PartnerFee {
-                    bps: 100,
+                    policy: FeePolicy::Volume { bps: 100 },
                     recipient: H160([2; 20]),
                 }]),
                 ..Default::default()
@@ -471,7 +605,17 @@ mod tests {
                                 "recipient": "0x0202020202020202020202020202020202020202"
                             },
                             {
-                                "bps": 1000,
+                                "volumeBps": 1000,
+                                "recipient": "0x0101010101010101010101010101010101010101"
+                            },
+                            {
+                                "surplusBps": 100,
+                                "maxVolumeBps": 100,
+                                "recipient": "0x0101010101010101010101010101010101010101"
+                            },
+                            {
+                                "priceImprovementBps": 100,
+                                "maxVolumeBps": 100,
                                 "recipient": "0x0101010101010101010101010101010101010101"
                             }
                         ]
@@ -481,12 +625,28 @@ mod tests {
             "#,
             ProtocolAppData {
                 partner_fee: PartnerFees(vec![
+                    // this one was parsed from the old format for volume fees
                     PartnerFee {
-                        bps: 100,
+                        policy: FeePolicy::Volume { bps: 100 },
                         recipient: H160([2; 20]),
                     },
+                    // this one is using the new format
                     PartnerFee {
-                        bps: 1000,
+                        policy: FeePolicy::Volume { bps: 1000 },
+                        recipient: H160([1; 20]),
+                    },
+                    PartnerFee {
+                        policy: FeePolicy::Surplus {
+                            bps: 100,
+                            max_volume_bps: 100
+                        },
+                        recipient: H160([1; 20]),
+                    },
+                    PartnerFee {
+                        policy: FeePolicy::PriceImprovement {
+                            bps: 100,
+                            max_volume_bps: 100
+                        },
                         recipient: H160([1; 20]),
                     },
                 ]),

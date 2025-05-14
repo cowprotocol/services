@@ -417,7 +417,7 @@ Indexes:
 - PRIMARY KEY: btree(`block_number`, `log_index`)
 - settlements\_auction\_id: btree(`auction_id`)
 
-### settlement\_scores
+### settlement\_scores (deprecated)
 
 Stores the best and second best solution quality (score) of every auction promised by solvers for [CIP-20](https://snapshot.org/#/cow.eth/proposal/0x2d3f9bd1ea72dca84b03e97dda3efc1f4a42a772c54bd2037e8b62e7d09a491f) reward computation.
 
@@ -433,6 +433,19 @@ Stores the best and second best solution quality (score) of every auction promis
 Indexes:
 - PRIMARY KEY: btree(`auction_id`)
 
+### reference\_scores
+
+Stores the reference score per solver, defined as the total score of the auction if the reference solver had not participated.
+
+ Column           | Type     | Nullable | Details
+------------------|----------|----------|--------
+ auction\_id      | bigint   | not null | id of the auction the scores belong to
+ solver           | bytea    | not null | public address of the winning solver
+ reference\_score | numeric  | not null | reference score value
+
+Indexes:
+- PRIMARY KEY: btree(`auction_id, solver`)
+
 ### settlements
 
 Stores data and metadata of [`Settlement`](https://github.com/cowprotocol/contracts/blob/main/src/contracts/GPv2Settlement.sol#L67-L68) events emitted from the settlement contract.
@@ -443,14 +456,11 @@ Stores data and metadata of [`Settlement`](https://github.com/cowprotocol/contra
  log\_index    | bigint | not null | index in which the event was emitted
  solver        | bytea  | not null | public address of the executing solver
  tx\_hash      | bytea  | not null | transaction hash in which the settlement got executed
- tx\_from      | bytea  | nullable | address that submitted the transaction (same as `solver`)
- tx\_nonce     | bigint | nullable | nonce that was used to submit the transaction
  auction\_id    | bigint | nullable | corresponding auction ID that initiated the settlement
  solution\_uid  | bigint | nullable | corresponding winning solver's solution UID
 
 Indexes:
 - PRIMARY KEY: btree(`block_number`,`log_index`)
-- settlements\_tx\_from\_tx\_nonce: btree(`tx_from`, `tx_nonce`)
 - settlements\_tx\_hash: hash(`tx_hash`)
 - settlements\_auction\_id: btree(`auction_id`)
 

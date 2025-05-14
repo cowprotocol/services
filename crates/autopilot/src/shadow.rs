@@ -26,6 +26,7 @@ use {
     std::{
         cmp,
         collections::{HashMap, HashSet},
+        num::NonZeroUsize,
         sync::Arc,
         time::Duration,
     },
@@ -41,7 +42,7 @@ pub struct RunLoop {
     solve_deadline: Duration,
     liveness: Arc<Liveness>,
     current_block: CurrentBlockWatcher,
-    max_winners_per_auction: usize,
+    max_winners_per_auction: NonZeroUsize,
 }
 
 impl RunLoop {
@@ -52,7 +53,7 @@ impl RunLoop {
         solve_deadline: Duration,
         liveness: Arc<Liveness>,
         current_block: CurrentBlockWatcher,
-        max_winners_per_auction: usize,
+        max_winners_per_auction: NonZeroUsize,
     ) -> Self {
         Self {
             orderbook,
@@ -234,7 +235,7 @@ impl RunLoop {
                 if swapped_tokens.is_disjoint(&already_swapped_tokens) {
                     winners.push(participant);
                     already_swapped_tokens.extend(swapped_tokens);
-                    if winners.len() >= self.max_winners_per_auction {
+                    if winners.len() >= self.max_winners_per_auction.get() {
                         break;
                     }
                 }
