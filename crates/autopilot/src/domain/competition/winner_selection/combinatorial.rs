@@ -95,6 +95,7 @@ impl Arbitrator for Config {
         let mut reference_scores = HashMap::default();
 
         for participant in participants {
+            eprintln!("solutions_without_solver: {:#?}", participant.solution());
             let solver = participant.driver().submission_address;
             if reference_scores.len() >= self.max_winners {
                 // all winners have been processed
@@ -109,6 +110,10 @@ impl Arbitrator for Config {
                 .iter()
                 .filter(|p| p.driver().submission_address != solver)
                 .map(|p| p.solution());
+            eprintln!(
+                "solutions_without_solver: {}",
+                solutions_without_solver.clone().count()
+            );
 
             let winner_indices = self.pick_winners(solutions_without_solver.clone());
 
@@ -194,6 +199,7 @@ fn compute_scores_by_solution(
 
     participants.retain_mut(|p| match score_by_token_pair(p.solution(), &auction) {
         Ok(score) => {
+            eprintln!("compute_scores_by_solution - {:#?}", score);
             let total_score = score
                 .values()
                 .fold(Default::default(), |acc, score| acc + *score);
@@ -204,10 +210,15 @@ fn compute_scores_by_solution(
                 },
                 score,
             );
+            eprintln!(
+                "compute_scores_by_solution - set_computed_score {:?}",
+                total_score
+            );
             p.set_computed_score(total_score);
             true
         }
         Err(err) => {
+            eprintln!("compute_scores_by_solution - err - {:?}", err);
             tracing::warn!(
                 driver = p.driver().name,
                 ?err,
@@ -230,6 +241,7 @@ fn compute_scores_by_solution(
 ///     (A, B) => 15
 ///     (B, C) => 5
 fn score_by_token_pair(solution: &Solution, auction: &Auction) -> Result<ScoreByDirection> {
+    eprintln!("score_by_token_pair - solution: {:#?}", solution);
     let mut scores = HashMap::default();
     for (uid, trade) in solution.orders() {
         if !auction.contributes_to_score(uid) {
@@ -244,6 +256,15 @@ fn score_by_token_pair(solution: &Solution, auction: &Auction) -> Result<ScoreBy
             .prices()
             .get(&trade.buy.token)
             .context("no uniform clearing price for buy token")?;
+
+        eprintln!(
+            "score_by_token_pair - uniform_sell_price: {:?}",
+            uniform_sell_price
+        );
+        eprintln!(
+            "score_by_token_pair - uniform_buy_price: {:?}",
+            uniform_buy_price
+        );
 
         let trade = math::Trade {
             uid: *uid,
@@ -274,7 +295,7 @@ fn score_by_token_pair(solution: &Solution, auction: &Auction) -> Result<ScoreBy
         let score = trade
             .score(&auction.fee_policies, auction.native_prices)
             .context("failed to compute score")?;
-
+        eprintln!("score_by_token_pair - score: {:?}", score);
         let token_pair = DirectedTokenPair {
             sell: trade.sell.token,
             buy: trade.buy.token,
@@ -442,15 +463,19 @@ mod tests {
         let token_c = create_address(2);
         let token_d = create_address(3);
 
+        let amount = e18(1_000);
+        let price = amount; // to simplify
+        let surplus = e18(100);
+
         // auction
-        let order_1 = create_order(1, token_a, 100, token_b, 100);
-        let order_2 = create_order(2, token_c, 100, token_d, 100);
-        let order_3 = create_order(3, token_a, 100, token_c, 100);
+        let order_1 = create_order(1, token_a, amount, token_b, amount);
+        let order_2 = create_order(2, token_c, amount, token_d, amount);
+        let order_3 = create_order(3, token_a, amount, token_c, amount);
         let prices = create_prices(vec![
-            (token_a, 100),
-            (token_b, 100),
-            (token_c, 100),
-            (token_d, 100),
+            (token_a, price),
+            (token_b, price),
+            (token_c, price),
+            (token_d, price),
         ]);
         let auction = create_auction(
             vec![order_1.clone(), order_2.clone(), order_3.clone()],
@@ -459,20 +484,37 @@ mod tests {
 
         // solution 1
         let solver_1 = create_address(10);
-        let solver_1_trades = create_trades(vec![(&order_1, 100, 200), (&order_2, 100, 200)]);
-        let solver_1_prices = create_prices(vec![
-            (token_a, 100),
-            (token_b, 50),
-            (token_c, 100),
-            (token_d, 50),
+        let solver_1_trades = create_trades(vec![
+            (&order_1, amount, amount + surplus),
+            (&order_2, amount, amount + surplus),
         ]);
-        let solver_1_solution = create_solution(0, solver_1, 200, solver_1_trades, solver_1_prices);
+        let solver_1_prices = create_prices(vec![
+            (token_a, price),
+            (token_b, price - surplus),
+            (token_c, price),
+            (token_d, price - surplus),
+        ]);
+        let solver_1_score = surplus * 2;
+        let solver_1_solution = create_solution(
+            0,
+            solver_1,
+            solver_1_score,
+            solver_1_trades,
+            solver_1_prices,
+        );
 
         // solution 2
         let solver_2 = create_address(11);
-        let solver_2_trades = create_trades(vec![(&order_3, 100, 200)]);
-        let solver_2_prices = create_prices(vec![(token_a, 100), (token_c, 100)]);
-        let solver_2_solution = create_solution(1, solver_2, 100, solver_2_trades, solver_2_prices);
+        let solver_2_trades = create_trades(vec![(&order_3, amount, amount + surplus)]);
+        let solver_2_prices = create_prices(vec![(token_a, amount), (token_c, amount - surplus)]);
+        let solver_2_score = surplus;
+        let solver_2_solution = create_solution(
+            1,
+            solver_2,
+            solver_2_score,
+            solver_2_trades,
+            solver_2_prices,
+        );
 
         // filter solutions
         let participants = vec![solver_1_solution, solver_2_solution];
@@ -484,9 +526,20 @@ mod tests {
         assert_eq!(solutions.len(), 2);
 
         // compute reference scores
-        // FIXME: the scores are always 0
         let reference_scores = arbitrator.compute_reference_scores(&solutions);
-        eprintln!("{:?}", reference_scores)
+        assert_eq!(reference_scores.len(), 2);
+
+        // FIXME: the reference scores do not match the expected
+        let solver_1_reference_score = reference_scores.get(&eth::Address(solver_1)).unwrap();
+        assert_eq!(
+            solver_1_reference_score.0,
+            eth::Ether(solver_1_score.into())
+        );
+        let solver_2_reference_score = reference_scores.get(&eth::Address(solver_2)).unwrap();
+        assert_eq!(
+            solver_2_reference_score.0,
+            eth::Ether(solver_2_score.into())
+        );
     }
 
     #[test]
@@ -990,5 +1043,9 @@ mod tests {
             solution,
             Driver::mock(solver_address.to_string(), solver_address).into(),
         )
+    }
+
+    fn e18(value: u128) -> u128 {
+        value * 10u128.pow(18)
     }
 }

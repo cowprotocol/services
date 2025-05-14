@@ -50,6 +50,10 @@ impl Trade {
         let native_price_buy = native_prices
             .get(&self.buy.token)
             .ok_or(Error::MissingPrice(self.buy.token))?;
+        eprintln!(
+            "math.trade.score - native_price_buy: {:?}",
+            native_price_buy
+        );
 
         let surplus_in_surplus_token = {
             let user_surplus = self.surplus_over_limit_price()?.0;
@@ -64,6 +68,23 @@ impl Trade {
                 .checked_add(fees)
                 .ok_or(Error::Math(Math::Overflow))?
         };
+        eprintln!(
+            "math.trade.score - surplus_in_surplus_token: {:?}",
+            surplus_in_surplus_token
+        );
+
+        eprintln!(
+            "math.trade.score - eth::TokenAmount(surplus_in_surplus_token): {:?}",
+            eth::TokenAmount(surplus_in_surplus_token)
+        );
+        eprintln!(
+            "math.trade.score - native_price_buy: {:?}",
+            native_price_buy
+        );
+        eprintln!(
+            "math.trade.score - native_price_buy.in_eth: {:?}",
+            native_price_buy.in_eth(eth::TokenAmount(surplus_in_surplus_token))
+        );
 
         let score = match self.side {
             // `surplus` of sell orders is already in buy tokens so we simply convert it to ETH
@@ -89,6 +110,8 @@ impl Trade {
                 native_price_buy.in_eth(surplus_in_buy_tokens.into())
             }
         };
+
+        eprintln!("math.trade.score - score: {:?}", score);
 
         Ok(score)
     }
