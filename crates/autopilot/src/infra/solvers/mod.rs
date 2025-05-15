@@ -103,6 +103,7 @@ impl Driver {
             request = request.header("X-REQUEST-ID", request_id);
         }
 
+        tracing::debug!(solver = self.name, "sending request");
         let mut response = request.send().await.context("send")?;
         let status = response.status().as_u16();
         let body = response_body_with_size_limit(&mut response, RESPONSE_SIZE_LIMIT)
