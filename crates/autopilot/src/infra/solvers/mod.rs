@@ -77,7 +77,7 @@ impl Driver {
         })
     }
 
-    pub async fn solve(&self, request: &solve::Request) -> Result<solve::Response> {
+    pub async fn solve(&self, request: &String) -> Result<solve::Response> {
         self.request_response("solve", request, None).await
     }
 
@@ -136,7 +136,9 @@ impl Driver {
             body=%serde_json::to_string_pretty(request).unwrap(),
             "solver request",
         );
+        let start = std::time::Instant::now();
         let mut request = self.client.post(url.clone()).json(request);
+        tracing::debug!(elapsed = ?start.elapsed(), "serialized request");
 
         if let Some(timeout) = timeout {
             request = request.timeout(timeout);

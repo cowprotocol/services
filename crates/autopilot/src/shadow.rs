@@ -198,14 +198,13 @@ impl RunLoop {
     /// Runs the solver competition, making all configured drivers participate.
     async fn competition(&self, auction: &domain::Auction) -> Vec<Participant<'_>> {
         let request = solve::Request::new(auction, &self.trusted_tokens.all(), self.solve_deadline);
-        let request = &request;
+        let request = serde_json::to_string(&request).unwrap();
 
-        let mut participants =
-            futures::future::join_all(self.drivers.iter().map(|driver| async move {
-                let solution = self.participate(driver, request).await;
-                Participant { driver, solution }
-            }))
-            .await;
+        let mut participants = futures::future::join_all(self.drivers.iter().map(|driver| async {
+            let solution = self.participate(driver, &request).await;
+            Participant { driver, solution }
+        }))
+        .await;
 
         // Shuffle so that sorting randomly splits ties.
         participants.shuffle(&mut rand::thread_rng());
@@ -248,7 +247,7 @@ impl RunLoop {
     async fn participate(
         &self,
         driver: &infra::Driver,
-        request: &solve::Request,
+        request: &String,
     ) -> Result<Solution, Error> {
         let proposed = tokio::time::timeout(self.solve_deadline, driver.solve(request))
             .await
@@ -274,25 +273,10 @@ impl RunLoop {
             .map(|(order_uid, amounts)| (order_uid.into(), amounts.into_domain()))
             .collect();
 
-        let revealed = driver
-            .reveal(&reveal::Request {
-                solution_id,
-                auction_id: request.id,
-            })
-            .await
-            .map_err(Error::Reveal)?;
-        if !revealed
-            .calldata
-            .internalized
-            .ends_with(&request.id.to_be_bytes())
-        {
-            return Err(Error::Mismatch);
-        }
-
         Ok(Solution {
             score,
             account: submission_address,
-            calldata: revealed.calldata,
+            calldata: Default::default(),
             orders,
         })
     }

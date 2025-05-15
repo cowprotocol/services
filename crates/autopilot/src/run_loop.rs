@@ -547,12 +547,12 @@ impl RunLoop {
             &self.trusted_tokens.all(),
             self.config.solve_deadline,
         );
-        let request = &request;
+        let request = serde_json::to_string(&request).unwrap();
 
         let mut solutions = futures::future::join_all(
             self.drivers
                 .iter()
-                .map(|driver| self.solve(driver.clone(), request)),
+                .map(|driver| self.solve(driver.clone(), &request)),
         )
         .await
         .into_iter()
@@ -592,7 +592,7 @@ impl RunLoop {
     async fn solve(
         &self,
         driver: Arc<infra::Driver>,
-        request: &solve::Request,
+        request: &String,
     ) -> Vec<competition::Participant<Unranked>> {
         let start = Instant::now();
         let result = self.try_solve(&driver, request).await;
@@ -632,7 +632,7 @@ impl RunLoop {
     async fn try_solve(
         &self,
         driver: &infra::Driver,
-        request: &solve::Request,
+        request: &String,
     ) -> Result<Vec<Result<competition::Solution, domain::competition::SolutionError>>, SolveError>
     {
         let check_allowed = self
