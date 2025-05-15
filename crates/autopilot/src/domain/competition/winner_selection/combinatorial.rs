@@ -391,40 +391,49 @@ mod tests {
         let token_c = create_address(2);
         let token_d = create_address(3);
 
+        // amounts and price must be high enough so the math does not round them to 0
+        let amount = e15(1_000);
+        let surplus = e15(100);
+        let price = 1_000;
+
         // auction
-        let order_1 = create_order(1, token_a, 100, token_b, 100);
-        let order_2 = create_order(2, token_c, 100, token_d, 100);
+        let order_1 = create_order(1, token_a, amount, token_b, amount);
+        let order_2 = create_order(2, token_c, amount, token_d, amount);
         let prices = create_prices(vec![
-            (token_a, 100),
-            (token_b, 100),
-            (token_c, 100),
-            (token_d, 100),
+            (token_a, price),
+            (token_b, price),
+            (token_c, price),
+            (token_d, price),
         ]);
         let auction = create_auction(vec![order_1.clone(), order_2.clone()], prices);
 
         // solution 1
         let solver = create_address(10);
-        let trades = create_trades(vec![(&order_1, 100, 200), (&order_2, 100, 200)]);
-        let solver_prices = create_prices(vec![
-            (token_a, 100),
-            (token_b, 50),
-            (token_c, 100),
-            (token_d, 50),
+        let trades = create_trades(vec![
+            (&order_1, amount, amount + surplus),
+            (&order_2, amount, amount + surplus),
         ]);
-        let solution = create_solution(0, solver, 200.into(), trades, solver_prices);
+        let solver_prices = create_prices(vec![
+            (token_a, price),
+            (token_b, price),
+            (token_c, price),
+            (token_d, price),
+        ]);
+        let score = score_to_units(2 * surplus, price);
+        let solution = create_solution(0, solver, score, trades, solver_prices);
 
         // filter solutions
         let participants = vec![solution];
         let solutions = arbitrator.filter_unfair_solutions(participants, &auction);
         assert_eq!(solutions.len(), 1);
-        assert_eq!(solutions[0].driver().submission_address.0, solver);
 
         // select the winners
         let solutions = arbitrator.mark_winners(solutions);
-        assert_eq!(solutions.len(), 1);
-        assert_eq!(solutions[0].driver().submission_address.0, solver);
+        let winners = filter_winners(&solutions);
+        assert_eq!(winners.len(), 1);
 
-        // compute reference scores
+        // compute reference score. It must be 0 because it's the only solver that
+        // participated
         let reference_scores = arbitrator.compute_reference_scores(&solutions);
         assert_eq!(reference_scores.len(), 1);
         let solver_score = reference_scores.get(&eth::Address(solver)).unwrap();
@@ -509,9 +518,7 @@ mod tests {
         let reference_scores = arbitrator.compute_reference_scores(&solutions);
         assert_eq!(reference_scores.len(), 2);
 
-        // FIXME: the reference scores do not match the expected
-        eprint!("{}", amount + surplus);
-        eprintln!("{:?}", reference_scores);
+        // check that the reference scores are the expected
         let solver_1_reference_score = reference_scores.get(&eth::Address(solver_1)).unwrap();
         assert_eq!(solver_1_reference_score.0, eth::Ether(solver_2_score));
         let solver_2_reference_score = reference_scores.get(&eth::Address(solver_2)).unwrap();
