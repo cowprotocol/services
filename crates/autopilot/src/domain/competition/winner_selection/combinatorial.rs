@@ -393,22 +393,18 @@ mod tests {
         let token_c = create_address(2);
         let token_d = create_address(3);
 
-        // amounts and price must be high enough so the math does not round them to 0
-        let amount = e15(1_000);
-        let surplus = e15(100);
-
         // auction
-        let order_1 = create_order(1, token_a, amount, token_b, amount);
-        let order_2 = create_order(2, token_c, amount, token_d, amount);
+        let order_1 = create_order(1, token_a, e15(1_000), token_b, e15(1_000));
+        let order_2 = create_order(2, token_c, e15(1_000), token_d, e15(1_000));
         let auction = create_auction(vec![order_1.clone(), order_2.clone()], None);
 
         // solution 1
         let solver = create_address(10);
         let trades = create_trades(vec![
-            (&order_1, amount, amount + surplus),
-            (&order_2, amount, amount + surplus),
+            (&order_1, e15(1_000), e15(1_100)),
+            (&order_2, e15(1_000), e15(1_100)),
         ]);
-        let score = score_to_units(2 * surplus, None);
+        let score = score_to_units(e15(200), None);
         let solution = create_solution(0, solver, score, trades, None);
 
         // filter solutions
@@ -439,13 +435,10 @@ mod tests {
         let token_c = create_address(2);
         let token_d = create_address(3);
 
-        let amount = e15(1_000);
-        let surplus = e15(100);
-
         // auction
-        let order_1 = create_order(1, token_a, amount, token_b, amount);
-        let order_2 = create_order(2, token_c, amount, token_d, amount);
-        let order_3 = create_order(3, token_a, amount, token_c, amount);
+        let order_1 = create_order(1, token_a, e15(1_000), token_b, e15(1_000));
+        let order_2 = create_order(2, token_c, e15(1_000), token_d, e15(1_000));
+        let order_3 = create_order(3, token_a, e15(1_000), token_c, e15(1_000));
         let auction = create_auction(
             vec![order_1.clone(), order_2.clone(), order_3.clone()],
             None,
@@ -454,16 +447,16 @@ mod tests {
         // solution 1
         let solver_1 = create_address(10);
         let solver_1_trades = create_trades(vec![
-            (&order_1, amount, amount + surplus),
-            (&order_2, amount, amount + surplus),
+            (&order_1, e15(1_000), e15(1_100)),
+            (&order_2, e15(1_000), e15(1_100)),
         ]);
-        let solver_1_score = score_to_units(2 * surplus, None);
+        let solver_1_score = score_to_units(e15(200), None);
         let solver_1_solution = create_solution(0, solver_1, solver_1_score, solver_1_trades, None);
 
         // solution 2
         let solver_2 = create_address(11);
-        let solver_2_trades = create_trades(vec![(&order_3, amount, amount + surplus)]);
-        let solver_2_score = score_to_units(surplus, None);
+        let solver_2_trades = create_trades(vec![(&order_3, e15(1_000), e15(1_100))]);
+        let solver_2_score = score_to_units(e15(100), None);
         let solver_2_solution = create_solution(1, solver_2, solver_2_score, solver_2_trades, None);
 
         // filter solutions
@@ -482,9 +475,15 @@ mod tests {
 
         // check that the reference scores are the expected
         let solver_1_reference_score = reference_scores.get(&eth::Address(solver_1)).unwrap();
-        assert_eq!(solver_1_reference_score.0, eth::Ether(solver_2_score));
+        assert_eq!(
+            solver_1_reference_score.0,
+            eth::Ether(score_to_units(e15(100), None))
+        );
         let solver_2_reference_score = reference_scores.get(&eth::Address(solver_2)).unwrap();
-        assert_eq!(solver_2_reference_score.0, eth::Ether(solver_1_score));
+        assert_eq!(
+            solver_2_reference_score.0,
+            eth::Ether(score_to_units(e15(200), None))
+        );
     }
 
     #[test]
@@ -497,13 +496,10 @@ mod tests {
         let token_c = create_address(2);
         let token_d = create_address(3);
 
-        let amount = e15(1_000);
-        let surplus = e15(100);
-
         // auction
-        let order_1 = create_order(1, token_a, amount, token_b, amount);
-        let order_2 = create_order(2, token_c, amount, token_d, amount);
-        let order_3 = create_order(3, token_a, amount, token_d, amount);
+        let order_1 = create_order(1, token_a, e15(1_000), token_b, e15(1_000));
+        let order_2 = create_order(2, token_c, e15(1_000), token_d, e15(1_000));
+        let order_3 = create_order(3, token_a, e15(1_000), token_d, e15(1_000));
         let auction = create_auction(
             vec![order_1.clone(), order_2.clone(), order_3.clone()],
             None,
@@ -514,15 +510,15 @@ mod tests {
 
         // solution 1
         let solver_1_trades = create_trades(vec![
-            (&order_1, amount, amount + surplus),
-            (&order_2, amount, amount + surplus),
+            (&order_1, e15(1_000), e15(1_100)),
+            (&order_2, e15(1_000), e15(1_100)),
         ]);
-        let solver_1_score = score_to_units(2 * surplus, None);
+        let solver_1_score = score_to_units(e15(200), None);
         let solver_1_solution = create_solution(0, solver, solver_1_score, solver_1_trades, None);
 
         // solution 2
-        let solver_2_trades = create_trades(vec![(&order_3, amount, amount + surplus)]);
-        let solver_2_score = score_to_units(surplus, None);
+        let solver_2_trades = create_trades(vec![(&order_3, e15(1_000), e15(1_100))]);
+        let solver_2_score = score_to_units(e15(100), None);
         let solver_2_solution = create_solution(1, solver, solver_2_score, solver_2_trades, None);
 
         // filter solutions
@@ -553,27 +549,24 @@ mod tests {
         let token_c = create_address(2);
         let token_d = create_address(3);
 
-        let amount = e15(1_000);
-        let surplus = e15(100);
-
         // auction
-        let order_1 = create_order(1, token_a, amount, token_b, amount);
-        let order_2 = create_order(2, token_c, amount, token_d, amount);
+        let order_1 = create_order(1, token_a, e15(1_000), token_b, e15(1_000));
+        let order_2 = create_order(2, token_c, e15(1_000), token_d, e15(1_000));
         let auction = create_auction(vec![order_1.clone(), order_2.clone()], None);
 
         // solution 1, best batch
         let solver_1 = create_address(10);
         let solver_1_trades = create_trades(vec![
-            (&order_1, amount, amount + surplus),
-            (&order_2, amount, amount + surplus),
+            (&order_1, e15(1_000), e15(1_100)),
+            (&order_2, e15(1_000), e15(1_100)),
         ]);
-        let solver_1_score = score_to_units(2 * surplus, None);
+        let solver_1_score = score_to_units(e15(200), None);
         let solver_1_solution = create_solution(0, solver_1, solver_1_score, solver_1_trades, None);
 
         // solution 2, incompatible batch
         let solver_2 = create_address(11);
-        let solver_2_trades = create_trades(vec![(&order_1, amount, amount + surplus)]);
-        let solver_2_score = score_to_units(surplus, None);
+        let solver_2_trades = create_trades(vec![(&order_1, e15(1_000), e15(1_100))]);
+        let solver_2_score = score_to_units(e15(100), None);
         let solver_2_solution = create_solution(1, solver_2, solver_2_score, solver_2_trades, None);
 
         // filter solutions
@@ -591,9 +584,15 @@ mod tests {
         // compute reference scores
         let reference_scores = arbitrator.compute_reference_scores(&solutions);
         let solver_1_reference_score = reference_scores.get(&eth::Address(solver_1)).unwrap();
-        assert_eq!(solver_1_reference_score.0, eth::Ether(solver_2_score));
+        assert_eq!(
+            solver_1_reference_score.0,
+            eth::Ether(score_to_units(e15(100), None))
+        );
         let solver_2_reference_score = reference_scores.get(&eth::Address(solver_2)).unwrap();
-        assert_eq!(solver_2_reference_score.0, eth::Ether(solver_1_score));
+        assert_eq!(
+            solver_2_reference_score.0,
+            eth::Ether(score_to_units(e15(200), None))
+        );
     }
 
     #[test]
@@ -606,29 +605,24 @@ mod tests {
         let token_c = create_address(2);
         let token_d = create_address(3);
 
-        let amount = e15(1_000);
-        let surplus = e15(100);
-
         // auction
-        let order_1 = create_order(1, token_a, amount, token_b, amount);
-        let order_2 = create_order(2, token_c, amount, token_d, amount);
+        let order_1 = create_order(1, token_a, e15(1_000), token_b, e15(1_000));
+        let order_2 = create_order(2, token_c, e15(1_000), token_d, e15(1_000));
         let auction = create_auction(vec![order_1.clone(), order_2.clone()], None);
 
         // solution 1, unfair batch
         let solver_1 = create_address(10);
         let solver_1_trades = create_trades(vec![
-            (&order_1, amount, amount + surplus),
-            (&order_2, amount, amount + surplus),
+            (&order_1, e15(1_000), e15(1_100)),
+            (&order_2, e15(1_000), e15(1_100)),
         ]);
-        let solver_1_score = score_to_units(2 * surplus, None);
+        let solver_1_score = score_to_units(e15(200), None);
         let solver_1_solution = create_solution(0, solver_1, solver_1_score, solver_1_trades, None);
 
         // solution 2, filtering batch
         let solver_2 = create_address(11);
-        let solver_2_trades =
-            create_trades(vec![(&order_1, amount, amount + surplus + surplus / 2)]);
-        let solver_2_score = score_to_units(surplus + surplus / 2, None);
-        assert!(solver_2_score < solver_1_score);
+        let solver_2_trades = create_trades(vec![(&order_1, e15(1_000), e15(1_150))]);
+        let solver_2_score = score_to_units(e15(150), None);
         let solver_2_solution = create_solution(1, solver_2, solver_2_score, solver_2_trades, None);
 
         // filter solutions (the unfair solver was filtered out)
@@ -660,30 +654,25 @@ mod tests {
         let token_a = create_address(0);
         let token_b = create_address(1);
 
-        let amount = e15(1_000);
-        let surplus = e15(100);
-
         // auction
-        let order_1 = create_order(1, token_a, amount, token_b, amount);
-        let order_2 = create_order(2, token_a, amount, token_b, amount);
+        let order_1 = create_order(1, token_a, e15(1_000), token_b, e15(1_000));
+        let order_2 = create_order(2, token_a, e15(1_000), token_b, e15(1_000));
         let auction = create_auction(vec![order_1.clone(), order_2.clone()], None);
 
         // solution 1, batch with aggregation
         let solver_1 = create_address(10);
         let solver_1_trades = create_trades(vec![
-            (&order_1, amount, amount + surplus),
-            (&order_2, amount, amount + surplus),
+            (&order_1, e15(1_000), e15(1_100)),
+            (&order_2, e15(1_000), e15(1_100)),
         ]);
-        let solver_1_score = score_to_units(2 * surplus, None);
+        let solver_1_score = score_to_units(e15(200), None);
         let solver_1_solution = create_solution(0, solver_1, solver_1_score, solver_1_trades, None);
 
         // solution 2, incompatible batch
         let solver_2 = create_address(11);
-        let solver_2_trades =
-            create_trades(vec![(&order_1, amount, amount + surplus + surplus / 2)]);
-        let solver_2_score = score_to_units(surplus + surplus / 2, None);
-        assert!(solver_2_score < solver_1_score);
-        let solver_2_solution = create_solution(1, solver_2, 150.into(), solver_2_trades, None);
+        let solver_2_trades = create_trades(vec![(&order_1, e15(1_000), e15(1_150))]);
+        let solver_2_score = score_to_units(e15(150), None);
+        let solver_2_solution = create_solution(1, solver_2, solver_2_score, solver_2_trades, None);
 
         // filter solutions
         let participants = vec![solver_1_solution, solver_2_solution];
@@ -699,9 +688,15 @@ mod tests {
         // compute reference scores
         let reference_scores = arbitrator.compute_reference_scores(&solutions);
         let solver_1_reference_score = reference_scores.get(&eth::Address(solver_1)).unwrap();
-        assert_eq!(solver_1_reference_score.0, eth::Ether(solver_2_score));
+        assert_eq!(
+            solver_1_reference_score.0,
+            eth::Ether(score_to_units(e15(150), None))
+        );
         let solver_2_reference_score = reference_scores.get(&eth::Address(solver_2)).unwrap();
-        assert_eq!(solver_2_reference_score.0, eth::Ether(solver_1_score));
+        assert_eq!(
+            solver_2_reference_score.0,
+            eth::Ether(score_to_units(e15(200), None))
+        );
     }
 
     #[test]
