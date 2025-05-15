@@ -413,14 +413,8 @@ mod tests {
             (&order_1, amount, amount + surplus),
             (&order_2, amount, amount + surplus),
         ]);
-        let solver_prices = create_prices(vec![
-            (token_a, price),
-            (token_b, price),
-            (token_c, price),
-            (token_d, price),
-        ]);
         let score = score_to_units(2 * surplus, price);
-        let solution = create_solution(0, solver, score, trades, solver_prices);
+        let solution = create_solution(0, solver, score, trades, None);
 
         // filter solutions
         let participants = vec![solution];
@@ -475,33 +469,14 @@ mod tests {
             (&order_1, amount, amount + surplus),
             (&order_2, amount, amount + surplus),
         ]);
-        let solver_1_prices = create_prices(vec![
-            (token_a, price),
-            (token_b, price),
-            (token_c, price),
-            (token_d, price),
-        ]);
         let solver_1_score = score_to_units(2 * surplus, price);
-        let solver_1_solution = create_solution(
-            0,
-            solver_1,
-            solver_1_score,
-            solver_1_trades,
-            solver_1_prices,
-        );
+        let solver_1_solution = create_solution(0, solver_1, solver_1_score, solver_1_trades, None);
 
         // solution 2
         let solver_2 = create_address(11);
         let solver_2_trades = create_trades(vec![(&order_3, amount, amount + surplus)]);
-        let solver_2_prices = create_prices(vec![(token_a, amount), (token_c, amount)]);
         let solver_2_score = score_to_units(surplus, price);
-        let solver_2_solution = create_solution(
-            1,
-            solver_2,
-            solver_2_score,
-            solver_2_trades,
-            solver_2_prices,
-        );
+        let solver_2_solution = create_solution(1, solver_2, solver_2_score, solver_2_trades, None);
 
         // filter solutions
         let participants = vec![solver_1_solution, solver_2_solution];
@@ -561,22 +536,13 @@ mod tests {
             (&order_1, amount, amount + surplus),
             (&order_2, amount, amount + surplus),
         ]);
-        let solver_1_prices = create_prices(vec![
-            (token_a, 100),
-            (token_b, 50),
-            (token_c, 100),
-            (token_d, 50),
-        ]);
         let solver_1_score = score_to_units(2 * surplus, price);
-        let solver_1_solution =
-            create_solution(0, solver, solver_1_score, solver_1_trades, solver_1_prices);
+        let solver_1_solution = create_solution(0, solver, solver_1_score, solver_1_trades, None);
 
         // solution 2
         let solver_2_trades = create_trades(vec![(&order_3, amount, amount + surplus)]);
-        let solver_2_prices = create_prices(vec![(token_a, price), (token_d, price)]);
         let solver_2_score = score_to_units(surplus, price);
-        let solver_2_solution =
-            create_solution(1, solver, solver_2_score, solver_2_trades, solver_2_prices);
+        let solver_2_solution = create_solution(1, solver, solver_2_score, solver_2_trades, None);
 
         // filter solutions
         let participants = vec![solver_1_solution, solver_2_solution];
@@ -627,33 +593,14 @@ mod tests {
             (&order_1, amount, amount + surplus),
             (&order_2, amount, amount + surplus),
         ]);
-        let solver_1_prices = create_prices(vec![
-            (token_a, price),
-            (token_b, price),
-            (token_c, price),
-            (token_d, price),
-        ]);
         let solver_1_score = score_to_units(2 * surplus, price);
-        let solver_1_solution = create_solution(
-            0,
-            solver_1,
-            solver_1_score,
-            solver_1_trades,
-            solver_1_prices,
-        );
+        let solver_1_solution = create_solution(0, solver_1, solver_1_score, solver_1_trades, None);
 
         // solution 2, incompatible batch
         let solver_2 = create_address(11);
         let solver_2_trades = create_trades(vec![(&order_1, amount, amount + surplus)]);
-        let solver_2_prices = create_prices(vec![(token_a, price), (token_b, price)]);
         let solver_2_score = score_to_units(surplus, price);
-        let solver_2_solution = create_solution(
-            1,
-            solver_2,
-            solver_2_score,
-            solver_2_trades,
-            solver_2_prices,
-        );
+        let solver_2_solution = create_solution(1, solver_2, solver_2_score, solver_2_trades, None);
 
         // filter solutions
         let participants = vec![solver_1_solution, solver_2_solution];
@@ -706,35 +653,16 @@ mod tests {
             (&order_1, amount, amount + surplus),
             (&order_2, amount, amount + surplus),
         ]);
-        let solver_1_prices = create_prices(vec![
-            (token_a, price),
-            (token_b, price),
-            (token_c, price),
-            (token_d, price),
-        ]);
         let solver_1_score = score_to_units(2 * surplus, price);
-        let solver_1_solution = create_solution(
-            0,
-            solver_1,
-            solver_1_score,
-            solver_1_trades,
-            solver_1_prices,
-        );
+        let solver_1_solution = create_solution(0, solver_1, solver_1_score, solver_1_trades, None);
 
         // solution 2, filtering batch
         let solver_2 = create_address(11);
         let solver_2_trades =
             create_trades(vec![(&order_1, amount, amount + surplus + surplus / 2)]);
-        let solver_2_prices = create_prices(vec![(token_a, price), (token_b, price)]);
         let solver_2_score = score_to_units(surplus + surplus / 2, price);
         assert!(solver_2_score < solver_1_score);
-        let solver_2_solution = create_solution(
-            1,
-            solver_2,
-            solver_2_score,
-            solver_2_trades,
-            solver_2_prices,
-        );
+        let solver_2_solution = create_solution(1, solver_2, solver_2_score, solver_2_trades, None);
 
         // filter solutions (the unfair solver was filtered out)
         let participants = vec![solver_1_solution, solver_2_solution];
@@ -781,25 +709,16 @@ mod tests {
             (&order_1, amount, amount + surplus),
             (&order_2, amount, amount + surplus),
         ]);
-        let solver_1_prices = create_prices(vec![(token_a, price), (token_b, price)]);
         let solver_1_score = score_to_units(2 * surplus, price);
-        let solver_1_solution = create_solution(
-            0,
-            solver_1,
-            solver_1_score,
-            solver_1_trades,
-            solver_1_prices,
-        );
+        let solver_1_solution = create_solution(0, solver_1, solver_1_score, solver_1_trades, None);
 
         // solution 2, incompatible batch
         let solver_2 = create_address(11);
         let solver_2_trades =
             create_trades(vec![(&order_1, amount, amount + surplus + surplus / 2)]);
-        let solver_2_prices = create_prices(vec![(token_a, price), (token_b, price)]);
         let solver_2_score = score_to_units(surplus + surplus / 2, price);
         assert!(solver_2_score < solver_1_score);
-        let solver_2_solution =
-            create_solution(1, solver_2, 150.into(), solver_2_trades, solver_2_prices);
+        let solver_2_solution = create_solution(1, solver_2, 150.into(), solver_2_trades, None);
 
         // filter solutions
         let participants = vec![solver_1_solution, solver_2_solution];
@@ -858,22 +777,8 @@ mod tests {
             (&order_2, e15(1_000), e15(1_100)),
             (&order_3, e15(1_000), e15(1_100)),
         ]);
-        let solver_1_prices = create_prices(vec![
-            (token_a, price),
-            (token_b, price),
-            (token_c, price),
-            (token_d, price),
-            (token_e, price),
-            (token_f, price),
-        ]);
         let solver_1_score = score_to_units(e15(300), price);
-        let solver_1_solution = create_solution(
-            0,
-            solver_1,
-            solver_1_score,
-            solver_1_trades,
-            solver_1_prices,
-        );
+        let solver_1_solution = create_solution(0, solver_1, solver_1_score, solver_1_trades, None);
 
         // solution 2, incompatible batch 1
         let solver_2 = create_address(11);
@@ -881,33 +786,14 @@ mod tests {
             (&order_1, e15(1_000), e15(1_140)),
             (&order_2, e15(1_000), e15(1_140)),
         ]);
-        let solver_2_prices = create_prices(vec![
-            (token_a, price),
-            (token_b, price),
-            (token_c, price),
-            (token_d, price),
-        ]);
         let solver_2_score = score_to_units(e15(280), price);
-        let solver_2_solution = create_solution(
-            1,
-            solver_2,
-            solver_2_score,
-            solver_2_trades,
-            solver_2_prices,
-        );
+        let solver_2_solution = create_solution(1, solver_2, solver_2_score, solver_2_trades, None);
 
         // solution 3, incompatible batch 2
         let solver_3 = create_address(12);
         let solver_3_trades = create_trades(vec![(&order_3, e15(1_000), e15(1_100))]);
-        let solver_3_prices = create_prices(vec![(token_e, price), (token_f, price)]);
         let solver_3_score = score_to_units(e15(100), price);
-        let solver_3_solution = create_solution(
-            2,
-            solver_3,
-            solver_3_score,
-            solver_3_trades,
-            solver_3_prices,
-        );
+        let solver_3_solution = create_solution(2, solver_3, solver_3_score, solver_3_trades, None);
 
         // filter solutions
         let participants = vec![solver_1_solution, solver_2_solution, solver_3_solution];
@@ -973,7 +859,7 @@ mod tests {
             solver_1,
             21813202259686016u128.into(),
             solver_1_trades,
-            solver_1_prices,
+            Some(solver_1_prices),
         );
 
         // solution 2 (zeroex)
@@ -989,7 +875,7 @@ mod tests {
             solver_2,
             21037471695353421u128.into(),
             solver_2_trades,
-            solver_2_prices,
+            Some(solver_2_prices),
         );
 
         // run the combinatorial auction
@@ -1073,13 +959,12 @@ mod tests {
     fn create_prices(token_price_pairs: Vec<(H160, u128)>) -> HashMap<eth::TokenAddress, Price> {
         token_price_pairs
             .into_iter()
-            .map(|(token, price)| {
-                (
-                    token.into(),
-                    Price::try_new(eth::Ether(eth::U256::from(price))).unwrap(),
-                )
-            })
+            .map(|(token, price)| (token.into(), create_price(price)))
             .collect()
+    }
+
+    fn create_price(value: u128) -> Price {
+        Price::try_new(eth::Ether(eth::U256::from(value))).unwrap()
     }
 
     fn create_auction(orders: Vec<Order>, prices: HashMap<eth::TokenAddress, Price>) -> Auction {
@@ -1114,10 +999,20 @@ mod tests {
         solver_address: H160,
         score: eth::U256,
         trades: Vec<(OrderUid, TradedOrder)>,
-        prices: HashMap<TokenAddress, Price>,
+        prices: Option<HashMap<TokenAddress, Price>>,
     ) -> Participant<Unranked> {
-        let trade_order_map: HashMap<OrderUid, TradedOrder> = trades.into_iter().collect();
+        // The prices of the tokens do not affect the result but they keys must exist
+        // for every token of every trade
+        let prices = prices.unwrap_or({
+            let mut res = HashMap::new();
+            for (_, trade) in &trades {
+                res.insert(trade.buy.token, create_price(1));
+                res.insert(trade.sell.token, create_price(1));
+            }
+            res
+        });
 
+        let trade_order_map: HashMap<OrderUid, TradedOrder> = trades.into_iter().collect();
         let solver_address = eth::Address(solver_address);
 
         let solution = Solution::new(
