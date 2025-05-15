@@ -26,6 +26,7 @@ impl SolveRequest {
             .map(|token| token.address.into())
             .collect();
         let token_infos = tokens.get(&token_addresses).await;
+        tracing::debug!("fetched token info");
 
         competition::Auction::new(
             Some(self.id.try_into()?),

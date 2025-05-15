@@ -57,6 +57,7 @@ impl Auction {
         let tokens = Tokens(tokens.map(|token| (token.address, token)).collect());
 
         // Ensure that tokens are included for each order.
+        let start = std::time::Instant::now();
         let weth = eth.contracts().weth_address();
         if !orders.iter().all(|order| {
             tokens.0.contains_key(&order.buy.token.as_erc20(weth))
@@ -64,17 +65,23 @@ impl Auction {
         }) {
             return Err(Error::InvalidTokens);
         }
+        tracing::debug!(elapsed = ?start.elapsed(), "finished checking tokens");
+        let start = std::time::Instant::now();
 
         // Ensure that there are no orders with 0 amounts.
         if orders.iter().any(|order| order.available().is_zero()) {
             return Err(Error::InvalidAmounts);
         }
+        tracing::debug!(elapsed = ?start.elapsed(), "finished checking amounts");
+
+        let gas_price = eth.gas_price(None).await?;
+        tracing::debug!("fetched gas price");
 
         Ok(Self {
             id,
             orders,
             tokens,
-            gas_price: eth.gas_price(None).await?,
+            gas_price,
             deadline,
             surplus_capturing_jit_order_owners,
         })
