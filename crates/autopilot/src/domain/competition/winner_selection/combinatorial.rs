@@ -821,9 +821,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
-    // If reference winners generate more surplus than winners, rewards are set to
-    // zero
+    // Reference winners can generate more surplus than winners
     fn reference_better_than_winners() {
         let arbitrator = create_test_arbitrator();
 
@@ -831,20 +829,22 @@ mod tests {
         let token_b = create_address(1);
         let token_c = create_address(2);
         let token_d = create_address(3);
-        let token_e = create_address(2);
-        let token_f = create_address(3);
+        let token_e = create_address(4);
+        let token_f = create_address(5);
+
+        let price = 1_000;
 
         // auction
-        let order_1 = create_order(1, token_a, 100, token_b, 100);
-        let order_2 = create_order(2, token_c, 100, token_d, 100);
-        let order_3 = create_order(3, token_e, 100, token_f, 100);
+        let order_1 = create_order(1, token_a, e15(1_000), token_b, e15(1_000));
+        let order_2 = create_order(2, token_c, e15(1_000), token_d, e15(1_000));
+        let order_3 = create_order(3, token_e, e15(1_000), token_f, e15(1_000));
         let prices = create_prices(vec![
-            (token_a, 100),
-            (token_b, 100),
-            (token_c, 100),
-            (token_d, 100),
-            (token_e, 100),
-            (token_f, 100),
+            (token_a, price),
+            (token_b, price),
+            (token_c, price),
+            (token_d, price),
+            (token_e, price),
+            (token_f, price),
         ]);
         let auction = create_auction(
             vec![order_1.clone(), order_2.clone(), order_3.clone()],
@@ -854,59 +854,89 @@ mod tests {
         // solution 1, best batch
         let solver_1 = create_address(10);
         let solver_1_trades = create_trades(vec![
-            (&order_1, 100, 200),
-            (&order_2, 100, 200),
-            (&order_3, 100, 200),
+            (&order_1, e15(1_000), e15(1_100)),
+            (&order_2, e15(1_000), e15(1_100)),
+            (&order_3, e15(1_000), e15(1_100)),
         ]);
         let solver_1_prices = create_prices(vec![
-            (token_a, 100),
-            (token_b, 50),
-            (token_c, 100),
-            (token_d, 50),
-            (token_e, 100),
-            (token_f, 50),
+            (token_a, price),
+            (token_b, price),
+            (token_c, price),
+            (token_d, price),
+            (token_e, price),
+            (token_f, price),
         ]);
-        let solver_1_solution =
-            create_solution(0, solver_1, 300.into(), solver_1_trades, solver_1_prices);
+        let solver_1_score = score_to_units(e15(300), price);
+        let solver_1_solution = create_solution(
+            0,
+            solver_1,
+            solver_1_score,
+            solver_1_trades,
+            solver_1_prices,
+        );
 
         // solution 2, incompatible batch 1
         let solver_2 = create_address(11);
-        let solver_2_trades = create_trades(vec![(&order_1, 100, 240), (&order_2, 100, 240)]);
-        let solver_2_prices = create_prices(vec![
-            (token_a, 100),
-            (token_c, 100),
-            (token_a, 100),
-            (token_c, 100),
+        let solver_2_trades = create_trades(vec![
+            (&order_1, e15(1_000), e15(1_140)),
+            (&order_2, e15(1_000), e15(1_140)),
         ]);
-        let solver_2_solution =
-            create_solution(1, solver_2, 280.into(), solver_2_trades, solver_2_prices);
+        let solver_2_prices = create_prices(vec![
+            (token_a, price),
+            (token_b, price),
+            (token_c, price),
+            (token_d, price),
+        ]);
+        let solver_2_score = score_to_units(e15(280), price);
+        let solver_2_solution = create_solution(
+            1,
+            solver_2,
+            solver_2_score,
+            solver_2_trades,
+            solver_2_prices,
+        );
 
         // solution 3, incompatible batch 2
         let solver_3 = create_address(12);
-        let solver_3_trades = create_trades(vec![(&order_3, 100, 240)]);
-        let solver_3_prices = create_prices(vec![
-            (token_a, 100),
-            (token_c, 100),
-            (token_a, 100),
-            (token_c, 100),
-        ]);
-        let solver_3_solution =
-            create_solution(1, solver_3, 280.into(), solver_3_trades, solver_3_prices);
+        let solver_3_trades = create_trades(vec![(&order_3, e15(1_000), e15(1_100))]);
+        let solver_3_prices = create_prices(vec![(token_e, price), (token_f, price)]);
+        let solver_3_score = score_to_units(e15(100), price);
+        let solver_3_solution = create_solution(
+            2,
+            solver_3,
+            solver_3_score,
+            solver_3_trades,
+            solver_3_prices,
+        );
 
         // filter solutions
         let participants = vec![solver_1_solution, solver_2_solution, solver_3_solution];
         let solutions = arbitrator.filter_unfair_solutions(participants, &auction);
-        assert_eq!(solutions.len(), 1);
+        assert_eq!(solutions.len(), 3);
 
         // select the winners
         let solutions = arbitrator.mark_winners(solutions);
-        assert_eq!(solutions.len(), 1);
-        assert_eq!(solutions[0].driver().submission_address.0, solver_1);
+        let winners = filter_winners(&solutions);
+        assert_eq!(winners.len(), 1);
+        assert_eq!(winners[0].driver().submission_address.0, solver_1);
 
         // compute reference scores
-        // FIXME: the scores are always 0, in this case it should be 380
         let reference_scores = arbitrator.compute_reference_scores(&solutions);
-        eprintln!("{:?}", reference_scores)
+        let solver_1_reference_score = reference_scores.get(&eth::Address(solver_1)).unwrap();
+        assert_eq!(
+            solver_1_reference_score.0,
+            score_to_units(e15(380), price).into()
+        );
+        let solver_2_reference_score = reference_scores.get(&eth::Address(solver_2)).unwrap();
+        assert_eq!(
+            solver_2_reference_score.0,
+            score_to_units(e15(300), price).into()
+        );
+        let solver_3_reference_score = reference_scores.get(&eth::Address(solver_3)).unwrap();
+        assert_eq!(
+            solver_3_reference_score.0,
+            score_to_units(e15(300), price).into()
+        );
     }
 
     #[test]
@@ -1105,6 +1135,7 @@ mod tests {
     }
 
     fn e15(value: u128) -> u128 {
+        // adding decimal units to avoid the math rounding it down to 0
         value * 10u128.pow(15)
     }
 
