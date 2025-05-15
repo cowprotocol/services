@@ -87,14 +87,10 @@ impl Driver {
 
         let mut request = {
             let builder = self.client.post(url.clone());
-            // build request in a blocking thread because this takes a significant amount of
-            // time
-            tokio::task::spawn_blocking(move || {
-                let start = std::time::Instant::now();
-                let result = builder.json(&request);
-                tracing::debug!(elapsed = ?start.elapsed(), "serialized request");
-                result
-            })
+            // Build request in a blocking thread because this can easily take 30ms
+            // and would otherwise block the main task and delay requests to other
+            // drivers.
+            tokio::task::spawn_blocking(move || builder.json(&request))
             .await
             .context("failed to build request")?
         };
@@ -103,7 +99,6 @@ impl Driver {
             request = request.header("X-REQUEST-ID", request_id);
         }
 
-        tracing::debug!(solver = self.name, "sending request");
         let mut response = request.send().await.context("send")?;
         let status = response.status().as_u16();
         let body = response_body_with_size_limit(&mut response, RESPONSE_SIZE_LIMIT)
