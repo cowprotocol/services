@@ -611,7 +611,7 @@ pub mod error {
         #[error("boundary error: {0:?}")]
         Boundary(#[from] boundary::Error),
         #[error("simulation error: {0:?}")]
-        Simulation(#[from] simulator::Error),
+        Simulation(Box<simulator::Error>),
         #[error(
             "non bufferable tokens used: solution attempts to internalize tokens which are not \
              trusted"
@@ -627,6 +627,14 @@ pub mod error {
         DifferentSolvers,
         #[error("encoding error: {0:?}")]
         Encoding(#[from] encoding::Error),
+    }
+
+    // Custom conversion function because clippy wants us to box this
+    // particular error variant because it's so big.
+    impl From<simulator::Error> for Error {
+        fn from(value: simulator::Error) -> Self {
+            Self::Simulation(Box::new(value))
+        }
     }
 
     #[derive(Debug, thiserror::Error)]
