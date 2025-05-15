@@ -2,7 +2,7 @@ use {
     crate::{
         boundary,
         domain::{self, eth},
-        infra::persistence::{dto, dto::order::Order},
+        infra::persistence::dto::{self, order::Order},
     },
     chrono::{DateTime, Utc},
     itertools::Itertools,
@@ -12,9 +12,23 @@ use {
     serde_with::{DisplayFromStr, serde_as},
     std::{
         collections::{HashMap, HashSet},
+        sync::Arc,
         time::Duration,
     },
 };
+
+/// Cheaply clonable handle to an already JSON serialized
+/// request. The purpose of this is to make it ergonomic
+/// to serialize a request once and reuse the resulting
+/// string in multiple HTTP requests.
+#[derive(Clone, Debug, Serialize, derive_more::Display)]
+pub struct Request(Arc<serde_json::value::RawValue>);
+
+impl Request {
+    pub fn as_str(&self) -> &str {
+        self.0.get()
+    }
+}
 
 impl Request {
     pub fn new(
@@ -22,7 +36,7 @@ impl Request {
         trusted_tokens: &HashSet<H160>,
         time_limit: Duration,
     ) -> Self {
-        Self {
+        let helper = RequestHelper {
             id: auction.id,
             orders: auction
                 .orders
@@ -51,7 +65,10 @@ impl Request {
                 .iter()
                 .map(|address| address.0)
                 .collect::<Vec<_>>(),
-        }
+        };
+        Self(Arc::from(serde_json::value::to_raw_value(&helper).expect(
+            "only fails with non-string keys which we do not have",
+        )))
     }
 }
 
@@ -69,7 +86,7 @@ impl Response {
 #[serde_as]
 #[derive(Clone, Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Request {
+struct RequestHelper {
     #[serde_as(as = "DisplayFromStr")]
     pub id: i64,
     pub tokens: Vec<Token>,

@@ -77,8 +77,44 @@ impl Driver {
         })
     }
 
-    pub async fn solve(&self, request: &solve::Request) -> Result<solve::Response> {
-        self.request_response("solve", request).await
+    pub async fn solve(&self, request: solve::Request) -> Result<solve::Response> {
+        let url = util::join(&self.url, "solve");
+        tracing::trace!(
+            path = &url.path(),
+            body = %request,
+            "solver request",
+        );
+
+        let mut request = {
+            let builder = self.client.post(url.clone());
+            // build request in a blocking thread because this takes a significant amount of
+            // time
+            tokio::task::spawn_blocking(move || {
+                let start = std::time::Instant::now();
+                let result = builder.json(&request);
+                tracing::debug!(elapsed = ?start.elapsed(), "serialized request");
+                result
+            })
+            .await
+            .context("failed to build request")?
+        };
+
+        if let Some(request_id) = observe::request_id::from_current_span() {
+            request = request.header("X-REQUEST-ID", request_id);
+        }
+
+        let mut response = request.send().await.context("send")?;
+        let status = response.status().as_u16();
+        let body = response_body_with_size_limit(&mut response, RESPONSE_SIZE_LIMIT)
+            .await
+            .context("body")?;
+        let text = String::from_utf8_lossy(&body);
+        tracing::trace!(%status, body=%text, "solver response");
+        let context = || format!("url {url}, body {text:?}");
+        if status != 200 {
+            return Err(anyhow!("bad status {status}, {}", context()));
+        }
+        serde_json::from_slice(&body).with_context(|| format!("bad json {}", context()))
     }
 
     pub async fn reveal(&self, request: &reveal::Request) -> Result<reveal::Response> {
