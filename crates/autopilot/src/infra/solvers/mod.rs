@@ -78,42 +78,10 @@ impl Driver {
     }
 
     pub async fn solve(&self, request: solve::Request) -> Result<solve::Response> {
-        let url = util::join(&self.url, "solve");
-        tracing::trace!(
-            path = &url.path(),
-            body = %request,
-            "solver request",
-        );
-
-        let mut request = {
-            let builder = self.client.post(url.clone());
-            // Build request in a blocking thread because this can easily take 30ms
-            // and would otherwise block the main task and delay requests to other
-            // drivers.
-            tokio::task::spawn_blocking(move || builder.json(&request))
-                .await
-                .context("failed to build request")?
-        };
-
-        if let Some(request_id) = observe::request_id::from_current_span() {
-            request = request.header("X-REQUEST-ID", request_id);
-        }
-
-        let mut response = request.send().await.context("send")?;
-        let status = response.status().as_u16();
-        let body = response_body_with_size_limit(&mut response, RESPONSE_SIZE_LIMIT)
-            .await
-            .context("body")?;
-        let text = String::from_utf8_lossy(&body);
-        tracing::trace!(%status, body=%text, "solver response");
-        let context = || format!("url {url}, body {text:?}");
-        if status != 200 {
-            return Err(anyhow!("bad status {status}, {}", context()));
-        }
-        serde_json::from_slice(&body).with_context(|| format!("bad json {}", context()))
+        self.request_response("solve", request).await
     }
 
-    pub async fn reveal(&self, request: &reveal::Request) -> Result<reveal::Response> {
+    pub async fn reveal(&self, request: reveal::Request) -> Result<reveal::Response> {
         self.request_response("reveal", request).await
     }
 
@@ -149,25 +117,35 @@ impl Driver {
         Ok(())
     }
 
-    pub async fn notify(&self, request: &notify::Request) -> Result<()> {
+    pub async fn notify(&self, request: notify::Request) -> Result<()> {
         self.request_response("notify", request).await
     }
 
-    async fn request_response<Response>(
+    async fn request_response<Response, Request>(
         &self,
         path: &str,
-        request: &impl serde::Serialize,
+        request: Request,
     ) -> Result<Response>
     where
         Response: serde::de::DeserializeOwned,
+        Request: serde::Serialize + Send + Sync + 'static,
     {
         let url = util::join(&self.url, path);
         tracing::trace!(
             path=&url.path(),
-            body=%serde_json::to_string_pretty(request).unwrap(),
+            body=%serde_json::to_string_pretty(&request).unwrap(),
             "solver request",
         );
-        let mut request = self.client.post(url.clone()).json(request);
+        let mut request = {
+            let builder = self.client.post(url.clone());
+            // If the payload is very big then serializing it will block the
+            // executor a long time (mostly relevant for solve requests).
+            // That's why we always do it on a thread specifically for
+            // running blocking tasks.
+            tokio::task::spawn_blocking(move || builder.json(&request))
+                .await
+                .context("failed to build request")?
+        };
 
         if let Some(request_id) = observe::request_id::from_current_span() {
             request = request.header("X-REQUEST-ID", request_id);
@@ -217,6 +195,6 @@ pub fn notify_banned_solver(
         until: banned_until,
     };
     tokio::spawn(async move {
-        let _ = non_settling_driver.notify(&request).await;
+        let _ = non_settling_driver.notify(request).await;
     });
 }

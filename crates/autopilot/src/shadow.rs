@@ -277,7 +277,7 @@ impl RunLoop {
             .collect();
 
         let revealed = driver
-            .reveal(&reveal::Request {
+            .reveal(reveal::Request {
                 solution_id,
                 auction_id,
             })
