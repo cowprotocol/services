@@ -381,6 +381,8 @@ mod tests {
         std::collections::HashMap,
     };
 
+    const DEFAULT_TOKEN_PRICE: u128 = 1_000;
+
     #[test]
     // Only one bid submitted results in one winner with reward equal to score
     fn single_bid() {
@@ -394,18 +396,11 @@ mod tests {
         // amounts and price must be high enough so the math does not round them to 0
         let amount = e15(1_000);
         let surplus = e15(100);
-        let price = 1_000;
 
         // auction
         let order_1 = create_order(1, token_a, amount, token_b, amount);
         let order_2 = create_order(2, token_c, amount, token_d, amount);
-        let prices = create_prices(vec![
-            (token_a, price),
-            (token_b, price),
-            (token_c, price),
-            (token_d, price),
-        ]);
-        let auction = create_auction(vec![order_1.clone(), order_2.clone()], prices);
+        let auction = create_auction(vec![order_1.clone(), order_2.clone()], None);
 
         // solution 1
         let solver = create_address(10);
@@ -413,7 +408,7 @@ mod tests {
             (&order_1, amount, amount + surplus),
             (&order_2, amount, amount + surplus),
         ]);
-        let score = score_to_units(2 * surplus, price);
+        let score = score_to_units(2 * surplus, None);
         let solution = create_solution(0, solver, score, trades, None);
 
         // filter solutions
@@ -446,21 +441,14 @@ mod tests {
 
         let amount = e15(1_000);
         let surplus = e15(100);
-        let price = 1_000;
 
         // auction
         let order_1 = create_order(1, token_a, amount, token_b, amount);
         let order_2 = create_order(2, token_c, amount, token_d, amount);
         let order_3 = create_order(3, token_a, amount, token_c, amount);
-        let prices = create_prices(vec![
-            (token_a, price),
-            (token_b, price),
-            (token_c, price),
-            (token_d, price),
-        ]);
         let auction = create_auction(
             vec![order_1.clone(), order_2.clone(), order_3.clone()],
-            prices,
+            None,
         );
 
         // solution 1
@@ -469,13 +457,13 @@ mod tests {
             (&order_1, amount, amount + surplus),
             (&order_2, amount, amount + surplus),
         ]);
-        let solver_1_score = score_to_units(2 * surplus, price);
+        let solver_1_score = score_to_units(2 * surplus, None);
         let solver_1_solution = create_solution(0, solver_1, solver_1_score, solver_1_trades, None);
 
         // solution 2
         let solver_2 = create_address(11);
         let solver_2_trades = create_trades(vec![(&order_3, amount, amount + surplus)]);
-        let solver_2_score = score_to_units(surplus, price);
+        let solver_2_score = score_to_units(surplus, None);
         let solver_2_solution = create_solution(1, solver_2, solver_2_score, solver_2_trades, None);
 
         // filter solutions
@@ -511,21 +499,14 @@ mod tests {
 
         let amount = e15(1_000);
         let surplus = e15(100);
-        let price = 1_000;
 
         // auction
         let order_1 = create_order(1, token_a, amount, token_b, amount);
         let order_2 = create_order(2, token_c, amount, token_d, amount);
         let order_3 = create_order(3, token_a, amount, token_d, amount);
-        let prices = create_prices(vec![
-            (token_a, price),
-            (token_b, price),
-            (token_c, price),
-            (token_d, price),
-        ]);
         let auction = create_auction(
             vec![order_1.clone(), order_2.clone(), order_3.clone()],
-            prices,
+            None,
         );
 
         // we are using the same solver for both solutions
@@ -536,12 +517,12 @@ mod tests {
             (&order_1, amount, amount + surplus),
             (&order_2, amount, amount + surplus),
         ]);
-        let solver_1_score = score_to_units(2 * surplus, price);
+        let solver_1_score = score_to_units(2 * surplus, None);
         let solver_1_solution = create_solution(0, solver, solver_1_score, solver_1_trades, None);
 
         // solution 2
         let solver_2_trades = create_trades(vec![(&order_3, amount, amount + surplus)]);
-        let solver_2_score = score_to_units(surplus, price);
+        let solver_2_score = score_to_units(surplus, None);
         let solver_2_solution = create_solution(1, solver, solver_2_score, solver_2_trades, None);
 
         // filter solutions
@@ -574,18 +555,11 @@ mod tests {
 
         let amount = e15(1_000);
         let surplus = e15(100);
-        let price = 1_000;
 
         // auction
         let order_1 = create_order(1, token_a, amount, token_b, amount);
         let order_2 = create_order(2, token_c, amount, token_d, amount);
-        let prices = create_prices(vec![
-            (token_a, price),
-            (token_b, price),
-            (token_c, price),
-            (token_d, price),
-        ]);
-        let auction = create_auction(vec![order_1.clone(), order_2.clone()], prices);
+        let auction = create_auction(vec![order_1.clone(), order_2.clone()], None);
 
         // solution 1, best batch
         let solver_1 = create_address(10);
@@ -593,13 +567,13 @@ mod tests {
             (&order_1, amount, amount + surplus),
             (&order_2, amount, amount + surplus),
         ]);
-        let solver_1_score = score_to_units(2 * surplus, price);
+        let solver_1_score = score_to_units(2 * surplus, None);
         let solver_1_solution = create_solution(0, solver_1, solver_1_score, solver_1_trades, None);
 
         // solution 2, incompatible batch
         let solver_2 = create_address(11);
         let solver_2_trades = create_trades(vec![(&order_1, amount, amount + surplus)]);
-        let solver_2_score = score_to_units(surplus, price);
+        let solver_2_score = score_to_units(surplus, None);
         let solver_2_solution = create_solution(1, solver_2, solver_2_score, solver_2_trades, None);
 
         // filter solutions
@@ -634,18 +608,11 @@ mod tests {
 
         let amount = e15(1_000);
         let surplus = e15(100);
-        let price = 1_000;
 
         // auction
         let order_1 = create_order(1, token_a, amount, token_b, amount);
         let order_2 = create_order(2, token_c, amount, token_d, amount);
-        let prices = create_prices(vec![
-            (token_a, price),
-            (token_b, price),
-            (token_c, price),
-            (token_d, price),
-        ]);
-        let auction = create_auction(vec![order_1.clone(), order_2.clone()], prices);
+        let auction = create_auction(vec![order_1.clone(), order_2.clone()], None);
 
         // solution 1, unfair batch
         let solver_1 = create_address(10);
@@ -653,14 +620,14 @@ mod tests {
             (&order_1, amount, amount + surplus),
             (&order_2, amount, amount + surplus),
         ]);
-        let solver_1_score = score_to_units(2 * surplus, price);
+        let solver_1_score = score_to_units(2 * surplus, None);
         let solver_1_solution = create_solution(0, solver_1, solver_1_score, solver_1_trades, None);
 
         // solution 2, filtering batch
         let solver_2 = create_address(11);
         let solver_2_trades =
             create_trades(vec![(&order_1, amount, amount + surplus + surplus / 2)]);
-        let solver_2_score = score_to_units(surplus + surplus / 2, price);
+        let solver_2_score = score_to_units(surplus + surplus / 2, None);
         assert!(solver_2_score < solver_1_score);
         let solver_2_solution = create_solution(1, solver_2, solver_2_score, solver_2_trades, None);
 
@@ -695,13 +662,11 @@ mod tests {
 
         let amount = e15(1_000);
         let surplus = e15(100);
-        let price = 1_000;
 
         // auction
         let order_1 = create_order(1, token_a, amount, token_b, amount);
         let order_2 = create_order(2, token_a, amount, token_b, amount);
-        let prices = create_prices(vec![(token_a, price), (token_b, price)]);
-        let auction = create_auction(vec![order_1.clone(), order_2.clone()], prices);
+        let auction = create_auction(vec![order_1.clone(), order_2.clone()], None);
 
         // solution 1, batch with aggregation
         let solver_1 = create_address(10);
@@ -709,14 +674,14 @@ mod tests {
             (&order_1, amount, amount + surplus),
             (&order_2, amount, amount + surplus),
         ]);
-        let solver_1_score = score_to_units(2 * surplus, price);
+        let solver_1_score = score_to_units(2 * surplus, None);
         let solver_1_solution = create_solution(0, solver_1, solver_1_score, solver_1_trades, None);
 
         // solution 2, incompatible batch
         let solver_2 = create_address(11);
         let solver_2_trades =
             create_trades(vec![(&order_1, amount, amount + surplus + surplus / 2)]);
-        let solver_2_score = score_to_units(surplus + surplus / 2, price);
+        let solver_2_score = score_to_units(surplus + surplus / 2, None);
         assert!(solver_2_score < solver_1_score);
         let solver_2_solution = create_solution(1, solver_2, 150.into(), solver_2_trades, None);
 
@@ -751,23 +716,13 @@ mod tests {
         let token_e = create_address(4);
         let token_f = create_address(5);
 
-        let price = 1_000;
-
         // auction
         let order_1 = create_order(1, token_a, e15(1_000), token_b, e15(1_000));
         let order_2 = create_order(2, token_c, e15(1_000), token_d, e15(1_000));
         let order_3 = create_order(3, token_e, e15(1_000), token_f, e15(1_000));
-        let prices = create_prices(vec![
-            (token_a, price),
-            (token_b, price),
-            (token_c, price),
-            (token_d, price),
-            (token_e, price),
-            (token_f, price),
-        ]);
         let auction = create_auction(
             vec![order_1.clone(), order_2.clone(), order_3.clone()],
-            prices,
+            None,
         );
 
         // solution 1, best batch
@@ -777,7 +732,7 @@ mod tests {
             (&order_2, e15(1_000), e15(1_100)),
             (&order_3, e15(1_000), e15(1_100)),
         ]);
-        let solver_1_score = score_to_units(e15(300), price);
+        let solver_1_score = score_to_units(e15(300), None);
         let solver_1_solution = create_solution(0, solver_1, solver_1_score, solver_1_trades, None);
 
         // solution 2, incompatible batch 1
@@ -786,13 +741,13 @@ mod tests {
             (&order_1, e15(1_000), e15(1_140)),
             (&order_2, e15(1_000), e15(1_140)),
         ]);
-        let solver_2_score = score_to_units(e15(280), price);
+        let solver_2_score = score_to_units(e15(280), None);
         let solver_2_solution = create_solution(1, solver_2, solver_2_score, solver_2_trades, None);
 
         // solution 3, incompatible batch 2
         let solver_3 = create_address(12);
         let solver_3_trades = create_trades(vec![(&order_3, e15(1_000), e15(1_100))]);
-        let solver_3_score = score_to_units(e15(100), price);
+        let solver_3_score = score_to_units(e15(100), None);
         let solver_3_solution = create_solution(2, solver_3, solver_3_score, solver_3_trades, None);
 
         // filter solutions
@@ -811,17 +766,17 @@ mod tests {
         let solver_1_reference_score = reference_scores.get(&eth::Address(solver_1)).unwrap();
         assert_eq!(
             solver_1_reference_score.0,
-            score_to_units(e15(380), price).into()
+            score_to_units(e15(380), None).into()
         );
         let solver_2_reference_score = reference_scores.get(&eth::Address(solver_2)).unwrap();
         assert_eq!(
             solver_2_reference_score.0,
-            score_to_units(e15(300), price).into()
+            score_to_units(e15(300), None).into()
         );
         let solver_3_reference_score = reference_scores.get(&eth::Address(solver_3)).unwrap();
         assert_eq!(
             solver_3_reference_score.0,
-            score_to_units(e15(300), price).into()
+            score_to_units(e15(300), None).into()
         );
     }
 
@@ -844,7 +799,7 @@ mod tests {
             (token_a, 32429355240),
             (token_b, 480793239987749750742974464),
         ]);
-        let auction = create_auction(vec![order_1.clone()], prices);
+        let auction = create_auction(vec![order_1.clone()], Some(prices));
 
         // solution 1 (baseline, the winner)
         let solver_1 = create_address(10);
@@ -967,7 +922,21 @@ mod tests {
         Price::try_new(eth::Ether(eth::U256::from(value))).unwrap()
     }
 
-    fn create_auction(orders: Vec<Order>, prices: HashMap<eth::TokenAddress, Price>) -> Auction {
+    fn create_auction(
+        orders: Vec<Order>,
+        prices: Option<HashMap<eth::TokenAddress, Price>>,
+    ) -> Auction {
+        // Initialize the prices of the tokens if they are not specified
+        let prices = prices.unwrap_or({
+            let default_price = create_price(DEFAULT_TOKEN_PRICE);
+            let mut res = HashMap::new();
+            for order in &orders {
+                res.insert(order.buy.token, default_price);
+                res.insert(order.sell.token, default_price);
+            }
+            res
+        });
+
         Auction {
             id: 0,
             block: 0,
@@ -1034,7 +1003,8 @@ mod tests {
         value * 10u128.pow(15)
     }
 
-    fn score_to_units(score: u128, buy_token_price: u128) -> eth::U256 {
+    fn score_to_units(score: u128, buy_token_price: Option<u128>) -> eth::U256 {
+        let buy_token_price = buy_token_price.unwrap_or(DEFAULT_TOKEN_PRICE);
         eth::U256::from(score)
             // Scores must be denominated in buy token price
             .checked_mul(buy_token_price.into()).unwrap()
