@@ -432,8 +432,8 @@ mod tests {
         let winners = filter_winners(&solutions);
         assert_eq!(winners.len(), 1);
 
-        // compute reference score. It must be 0 because it's the only solver that
-        // participated
+        // compute reference score
+        // it must be 0 because it's the only solver that participated
         let reference_scores = arbitrator.compute_reference_scores(&solutions);
         assert_eq!(reference_scores.len(), 1);
         let solver_score = reference_scores.get(&eth::Address(solver)).unwrap();
@@ -441,7 +441,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     // Two compatible batches are both selected as winners
     fn compatible_bids() {
         let arbitrator = create_test_arbitrator();
@@ -526,7 +525,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     // Multiple compatible bids by a single solver are aggregated in rewards
     fn multiple_solution_for_solver() {
         let arbitrator = create_test_arbitrator();
@@ -536,15 +534,19 @@ mod tests {
         let token_c = create_address(2);
         let token_d = create_address(3);
 
+        let amount = e15(1_000);
+        let surplus = e15(100);
+        let price = 1_000;
+
         // auction
-        let order_1 = create_order(1, token_a, 100, token_b, 100);
-        let order_2 = create_order(2, token_c, 100, token_d, 100);
-        let order_3 = create_order(3, token_a, 100, token_d, 100);
+        let order_1 = create_order(1, token_a, amount, token_b, amount);
+        let order_2 = create_order(2, token_c, amount, token_d, amount);
+        let order_3 = create_order(3, token_a, amount, token_d, amount);
         let prices = create_prices(vec![
-            (token_a, 100),
-            (token_b, 100),
-            (token_c, 100),
-            (token_d, 100),
+            (token_a, price),
+            (token_b, price),
+            (token_c, price),
+            (token_d, price),
         ]);
         let auction = create_auction(
             vec![order_1.clone(), order_2.clone(), order_3.clone()],
@@ -555,21 +557,26 @@ mod tests {
         let solver = create_address(10);
 
         // solution 1
-        let solver_1_trades = create_trades(vec![(&order_1, 100, 200), (&order_2, 100, 200)]);
+        let solver_1_trades = create_trades(vec![
+            (&order_1, amount, amount + surplus),
+            (&order_2, amount, amount + surplus),
+        ]);
         let solver_1_prices = create_prices(vec![
             (token_a, 100),
             (token_b, 50),
             (token_c, 100),
             (token_d, 50),
         ]);
+        let solver_1_score = score_to_units(2 * surplus, price);
         let solver_1_solution =
-            create_solution(0, solver, 200.into(), solver_1_trades, solver_1_prices);
+            create_solution(0, solver, solver_1_score, solver_1_trades, solver_1_prices);
 
         // solution 2
-        let solver_2_trades = create_trades(vec![(&order_3, 100, 200)]);
-        let solver_2_prices = create_prices(vec![(token_a, 100), (token_d, 100)]);
+        let solver_2_trades = create_trades(vec![(&order_3, amount, amount + surplus)]);
+        let solver_2_prices = create_prices(vec![(token_a, price), (token_d, price)]);
+        let solver_2_score = score_to_units(surplus, price);
         let solver_2_solution =
-            create_solution(1, solver, 100.into(), solver_2_trades, solver_2_prices);
+            create_solution(1, solver, solver_2_score, solver_2_trades, solver_2_prices);
 
         // filter solutions
         let participants = vec![solver_1_solution, solver_2_solution];
@@ -578,12 +585,15 @@ mod tests {
 
         // select the winners
         let solutions = arbitrator.mark_winners(solutions);
-        assert_eq!(solutions.len(), 2);
+        let winners = filter_winners(&solutions);
+        assert_eq!(winners.len(), 2);
 
-        // compute reference scores
-        // FIXME: the scores are always 0
+        // compute reference score
+        // it must be 0 because it's the only solver that participated
         let reference_scores = arbitrator.compute_reference_scores(&solutions);
-        eprintln!("{:?}", reference_scores)
+        assert_eq!(reference_scores.len(), 1);
+        let solver_score = reference_scores.get(&eth::Address(solver)).unwrap();
+        assert_eq!(solver_score.0, eth::Ether(0.into()));
     }
 
     #[test]
@@ -836,7 +846,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn staging_mainnet_auction_12825008() {
         // https://solver-instances.s3.eu-central-1.amazonaws.com/staging/mainnet/autopilot/12825008.json
         // The example is an auction with one order and two competing bids for it, one
