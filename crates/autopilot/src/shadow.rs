@@ -198,10 +198,12 @@ impl RunLoop {
     /// Runs the solver competition, making all configured drivers participate.
     async fn competition(&self, auction: &domain::Auction) -> Vec<Participant<'_>> {
         let request = solve::Request::new(auction, &self.trusted_tokens.all(), self.solve_deadline);
-        let request = serde_json::to_string(&request).unwrap();
+        let request = Arc::new(serde_json::to_string(&request).unwrap());
 
         let mut participants = futures::future::join_all(self.drivers.iter().map(|driver| async {
-            let solution = self.participate(driver, &request).await;
+            let solution = self
+                .participate(&Arc::clone(driver), Arc::clone(&request))
+                .await;
             Participant { driver, solution }
         }))
         .await;
@@ -246,10 +248,10 @@ impl RunLoop {
     /// Computes a driver's solutions in the shadow competition.
     async fn participate(
         &self,
-        driver: &infra::Driver,
-        request: &String,
+        driver: &Arc<infra::Driver>,
+        request: Arc<String>,
     ) -> Result<Solution, Error> {
-        let proposed = tokio::time::timeout(self.solve_deadline, driver.solve(request))
+        let proposed = tokio::time::timeout(self.solve_deadline, Arc::clone(driver).solve(request))
             .await
             .map_err(|_| Error::Timeout)?
             .map_err(Error::Solve)?;

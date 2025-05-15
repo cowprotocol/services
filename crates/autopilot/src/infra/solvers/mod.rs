@@ -77,8 +77,10 @@ impl Driver {
         })
     }
 
-    pub async fn solve(&self, request: &String) -> Result<solve::Response> {
-        self.request_response("solve", request, None).await
+    pub async fn solve(self: Arc<Self>, request: Arc<String>) -> Result<solve::Response> {
+        tokio::task::spawn(async move { self.request_response("solve", &request, None).await })
+            .await
+            .unwrap()
     }
 
     pub async fn reveal(&self, request: &reveal::Request) -> Result<reveal::Response> {

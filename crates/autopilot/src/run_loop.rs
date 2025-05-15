@@ -547,12 +547,12 @@ impl RunLoop {
             &self.trusted_tokens.all(),
             self.config.solve_deadline,
         );
-        let request = serde_json::to_string(&request).unwrap();
+        let request = Arc::new(serde_json::to_string(&request).unwrap());
 
         let mut solutions = futures::future::join_all(
             self.drivers
                 .iter()
-                .map(|driver| self.solve(driver.clone(), &request)),
+                .map(|driver| self.solve(driver.clone(), Arc::clone(&request))),
         )
         .await
         .into_iter()
@@ -592,7 +592,7 @@ impl RunLoop {
     async fn solve(
         &self,
         driver: Arc<infra::Driver>,
-        request: &String,
+        request: Arc<String>,
     ) -> Vec<competition::Participant<Unranked>> {
         let start = Instant::now();
         let result = self.try_solve(&driver, request).await;
@@ -631,14 +631,14 @@ impl RunLoop {
     /// Sends `/solve` request to the driver and forwards errors to the caller.
     async fn try_solve(
         &self,
-        driver: &infra::Driver,
-        request: &String,
+        driver: &Arc<infra::Driver>,
+        request: Arc<String>,
     ) -> Result<Vec<Result<competition::Solution, domain::competition::SolutionError>>, SolveError>
     {
         let check_allowed = self
             .solver_participation_guard
             .can_participate(&driver.submission_address);
-        let fetch_response = driver.solve(request);
+        let fetch_response = Arc::clone(driver).solve(request);
         let both = async { tokio::join!(check_allowed, fetch_response) };
 
         let response = match tokio::time::timeout(self.config.solve_deadline, both).await {
