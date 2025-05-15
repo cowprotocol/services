@@ -757,7 +757,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     // Multiple trades on the same (directed) token pair are aggregated for
     // filtering
     fn aggregation_on_token_pair() {
@@ -766,23 +765,39 @@ mod tests {
         let token_a = create_address(0);
         let token_b = create_address(1);
 
+        let amount = e15(1_000);
+        let surplus = e15(100);
+        let price = 1_000;
+
         // auction
-        let order_1 = create_order(1, token_a, 100, token_b, 100);
-        let order_2 = create_order(2, token_a, 100, token_b, 100);
-        let prices = create_prices(vec![(token_a, 100), (token_b, 100)]);
+        let order_1 = create_order(1, token_a, amount, token_b, amount);
+        let order_2 = create_order(2, token_a, amount, token_b, amount);
+        let prices = create_prices(vec![(token_a, price), (token_b, price)]);
         let auction = create_auction(vec![order_1.clone(), order_2.clone()], prices);
 
         // solution 1, batch with aggregation
         let solver_1 = create_address(10);
-        let solver_1_trades = create_trades(vec![(&order_1, 100, 200), (&order_2, 100, 200)]);
-        let solver_1_prices = create_prices(vec![(token_a, 100), (token_b, 50)]);
-        let solver_1_solution =
-            create_solution(0, solver_1, 200.into(), solver_1_trades, solver_1_prices);
+        let solver_1_trades = create_trades(vec![
+            (&order_1, amount, amount + surplus),
+            (&order_2, amount, amount + surplus),
+        ]);
+        let solver_1_prices = create_prices(vec![(token_a, price), (token_b, price)]);
+        let solver_1_score = score_to_units(2 * surplus, price);
+        let solver_1_solution = create_solution(
+            0,
+            solver_1,
+            solver_1_score,
+            solver_1_trades,
+            solver_1_prices,
+        );
 
         // solution 2, incompatible batch
         let solver_2 = create_address(11);
-        let solver_2_trades = create_trades(vec![(&order_1, 100, 250)]);
-        let solver_2_prices = create_prices(vec![(token_a, 100), (token_b, 50)]);
+        let solver_2_trades =
+            create_trades(vec![(&order_1, amount, amount + surplus + surplus / 2)]);
+        let solver_2_prices = create_prices(vec![(token_a, price), (token_b, price)]);
+        let solver_2_score = score_to_units(surplus + surplus / 2, price);
+        assert!(solver_2_score < solver_1_score);
         let solver_2_solution =
             create_solution(1, solver_2, 150.into(), solver_2_trades, solver_2_prices);
 
@@ -793,13 +808,16 @@ mod tests {
 
         // select the winners
         let solutions = arbitrator.mark_winners(solutions);
-        // FIXME: this assert fails, only solver 1 should be the winner
-        assert_eq!(solutions.len(), 1);
+        let winners = filter_winners(&solutions);
+        assert_eq!(winners.len(), 1);
+        assert_eq!(winners[0].driver().submission_address.0, solver_1);
 
         // compute reference scores
-        // FIXME: the scores are always 0
         let reference_scores = arbitrator.compute_reference_scores(&solutions);
-        eprintln!("{:?}", reference_scores)
+        let solver_1_reference_score = reference_scores.get(&eth::Address(solver_1)).unwrap();
+        assert_eq!(solver_1_reference_score.0, eth::Ether(solver_2_score));
+        let solver_2_reference_score = reference_scores.get(&eth::Address(solver_2)).unwrap();
+        assert_eq!(solver_2_reference_score.0, eth::Ether(solver_1_score));
     }
 
     #[test]
