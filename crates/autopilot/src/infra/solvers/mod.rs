@@ -78,11 +78,11 @@ impl Driver {
     }
 
     pub async fn solve(&self, request: &solve::Request) -> Result<solve::Response> {
-        self.request_response("solve", request, None).await
+        self.request_response("solve", request).await
     }
 
     pub async fn reveal(&self, request: &reveal::Request) -> Result<reveal::Response> {
-        self.request_response("reveal", request, None).await
+        self.request_response("reveal", request).await
     }
 
     pub async fn settle(
@@ -118,14 +118,13 @@ impl Driver {
     }
 
     pub async fn notify(&self, request: &notify::Request) -> Result<()> {
-        self.request_response("notify", request, None).await
+        self.request_response("notify", request).await
     }
 
     async fn request_response<Response>(
         &self,
         path: &str,
         request: &impl serde::Serialize,
-        timeout: Option<std::time::Duration>,
     ) -> Result<Response>
     where
         Response: serde::de::DeserializeOwned,
@@ -138,9 +137,6 @@ impl Driver {
         );
         let mut request = self.client.post(url.clone()).json(request);
 
-        if let Some(timeout) = timeout {
-            request = request.timeout(timeout);
-        }
         if let Some(request_id) = observe::request_id::from_current_span() {
             request = request.header("X-REQUEST-ID", request_id);
         }
