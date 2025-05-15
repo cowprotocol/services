@@ -404,7 +404,7 @@ mod tests {
             (&order_1, amount(1_000), amount(1_100)),
             (&order_2, amount(1_000), amount(1_100)),
         ]);
-        let score = score_to_units(amount(200), None);
+        let score = score_to_units(amount(200));
         let solution = create_solution(0, solver, score, trades, None);
 
         // filter solutions
@@ -450,13 +450,13 @@ mod tests {
             (&order_1, amount(1_000), amount(1_100)),
             (&order_2, amount(1_000), amount(1_100)),
         ]);
-        let solver_1_score = score_to_units(amount(200), None);
+        let solver_1_score = score_to_units(amount(200));
         let solver_1_solution = create_solution(0, solver_1, solver_1_score, solver_1_trades, None);
 
         // solution 2
         let solver_2 = create_address(11);
         let solver_2_trades = create_trades(vec![(&order_3, amount(1_000), amount(1_100))]);
-        let solver_2_score = score_to_units(amount(100), None);
+        let solver_2_score = score_to_units(amount(100));
         let solver_2_solution = create_solution(1, solver_2, solver_2_score, solver_2_trades, None);
 
         // filter solutions
@@ -477,12 +477,12 @@ mod tests {
         let solver_1_reference_score = reference_scores.get(&eth::Address(solver_1)).unwrap();
         assert_eq!(
             solver_1_reference_score.0,
-            eth::Ether(score_to_units(amount(100), None))
+            eth::Ether(score_to_units(amount(100)))
         );
         let solver_2_reference_score = reference_scores.get(&eth::Address(solver_2)).unwrap();
         assert_eq!(
             solver_2_reference_score.0,
-            eth::Ether(score_to_units(amount(200), None))
+            eth::Ether(score_to_units(amount(200)))
         );
     }
 
@@ -513,12 +513,12 @@ mod tests {
             (&order_1, amount(1_000), amount(1_100)),
             (&order_2, amount(1_000), amount(1_100)),
         ]);
-        let solver_1_score = score_to_units(amount(200), None);
+        let solver_1_score = score_to_units(amount(200));
         let solver_1_solution = create_solution(0, solver, solver_1_score, solver_1_trades, None);
 
         // solution 2
         let solver_2_trades = create_trades(vec![(&order_3, amount(1_000), amount(1_100))]);
-        let solver_2_score = score_to_units(amount(100), None);
+        let solver_2_score = score_to_units(amount(100));
         let solver_2_solution = create_solution(1, solver, solver_2_score, solver_2_trades, None);
 
         // filter solutions
@@ -560,13 +560,13 @@ mod tests {
             (&order_1, amount(1_000), amount(1_100)),
             (&order_2, amount(1_000), amount(1_100)),
         ]);
-        let solver_1_score = score_to_units(amount(200), None);
+        let solver_1_score = score_to_units(amount(200));
         let solver_1_solution = create_solution(0, solver_1, solver_1_score, solver_1_trades, None);
 
         // solution 2, incompatible batch
         let solver_2 = create_address(11);
         let solver_2_trades = create_trades(vec![(&order_1, amount(1_000), amount(1_100))]);
-        let solver_2_score = score_to_units(amount(100), None);
+        let solver_2_score = score_to_units(amount(100));
         let solver_2_solution = create_solution(1, solver_2, solver_2_score, solver_2_trades, None);
 
         // filter solutions
@@ -586,12 +586,12 @@ mod tests {
         let solver_1_reference_score = reference_scores.get(&eth::Address(solver_1)).unwrap();
         assert_eq!(
             solver_1_reference_score.0,
-            eth::Ether(score_to_units(amount(100), None))
+            eth::Ether(score_to_units(amount(100)))
         );
         let solver_2_reference_score = reference_scores.get(&eth::Address(solver_2)).unwrap();
         assert_eq!(
             solver_2_reference_score.0,
-            eth::Ether(score_to_units(amount(200), None))
+            eth::Ether(score_to_units(amount(200)))
         );
     }
 
@@ -616,13 +616,13 @@ mod tests {
             (&order_1, amount(1_000), amount(1_100)),
             (&order_2, amount(1_000), amount(1_100)),
         ]);
-        let solver_1_score = score_to_units(amount(200), None);
+        let solver_1_score = score_to_units(amount(200));
         let solver_1_solution = create_solution(0, solver_1, solver_1_score, solver_1_trades, None);
 
         // solution 2, filtering batch
         let solver_2 = create_address(11);
         let solver_2_trades = create_trades(vec![(&order_1, amount(1_000), amount(1_150))]);
-        let solver_2_score = score_to_units(amount(150), None);
+        let solver_2_score = score_to_units(amount(150));
         let solver_2_solution = create_solution(1, solver_2, solver_2_score, solver_2_trades, None);
 
         // filter solutions (the unfair solver was filtered out)
@@ -665,13 +665,13 @@ mod tests {
             (&order_1, amount(1_000), amount(1_100)),
             (&order_2, amount(1_000), amount(1_100)),
         ]);
-        let solver_1_score = score_to_units(amount(200), None);
+        let solver_1_score = score_to_units(amount(200));
         let solver_1_solution = create_solution(0, solver_1, solver_1_score, solver_1_trades, None);
 
         // solution 2, incompatible batch
         let solver_2 = create_address(11);
         let solver_2_trades = create_trades(vec![(&order_1, amount(1_000), amount(1_150))]);
-        let solver_2_score = score_to_units(amount(150), None);
+        let solver_2_score = score_to_units(amount(150));
         let solver_2_solution = create_solution(1, solver_2, solver_2_score, solver_2_trades, None);
 
         // filter solutions
@@ -690,12 +690,12 @@ mod tests {
         let solver_1_reference_score = reference_scores.get(&eth::Address(solver_1)).unwrap();
         assert_eq!(
             solver_1_reference_score.0,
-            eth::Ether(score_to_units(amount(150), None))
+            score_to_units(amount(150)).into()
         );
         let solver_2_reference_score = reference_scores.get(&eth::Address(solver_2)).unwrap();
         assert_eq!(
             solver_2_reference_score.0,
-            eth::Ether(score_to_units(amount(200), None))
+            score_to_units(amount(200)).into()
         );
     }
 
@@ -727,7 +727,7 @@ mod tests {
             (&order_2, amount(1_000), amount(1_100)),
             (&order_3, amount(1_000), amount(1_100)),
         ]);
-        let solver_1_score = score_to_units(amount(300), None);
+        let solver_1_score = score_to_units(amount(300));
         let solver_1_solution = create_solution(0, solver_1, solver_1_score, solver_1_trades, None);
 
         // solution 2, incompatible batch 1
@@ -736,13 +736,13 @@ mod tests {
             (&order_1, amount(1_000), amount(1_140)),
             (&order_2, amount(1_000), amount(1_140)),
         ]);
-        let solver_2_score = score_to_units(amount(280), None);
+        let solver_2_score = score_to_units(amount(280));
         let solver_2_solution = create_solution(1, solver_2, solver_2_score, solver_2_trades, None);
 
         // solution 3, incompatible batch 2
         let solver_3 = create_address(12);
         let solver_3_trades = create_trades(vec![(&order_3, amount(1_000), amount(1_100))]);
-        let solver_3_score = score_to_units(amount(100), None);
+        let solver_3_score = score_to_units(amount(100));
         let solver_3_solution = create_solution(2, solver_3, solver_3_score, solver_3_trades, None);
 
         // filter solutions
@@ -761,17 +761,17 @@ mod tests {
         let solver_1_reference_score = reference_scores.get(&eth::Address(solver_1)).unwrap();
         assert_eq!(
             solver_1_reference_score.0,
-            score_to_units(amount(380), None).into()
+            score_to_units(amount(380)).into()
         );
         let solver_2_reference_score = reference_scores.get(&eth::Address(solver_2)).unwrap();
         assert_eq!(
             solver_2_reference_score.0,
-            score_to_units(amount(300), None).into()
+            score_to_units(amount(300)).into()
         );
         let solver_3_reference_score = reference_scores.get(&eth::Address(solver_3)).unwrap();
         assert_eq!(
             solver_3_reference_score.0,
-            score_to_units(amount(300), None).into()
+            score_to_units(amount(300)).into()
         );
     }
 
@@ -998,11 +998,10 @@ mod tests {
         value * 10u128.pow(15)
     }
 
-    fn score_to_units(score: u128, buy_token_price: Option<u128>) -> eth::U256 {
-        let buy_token_price = buy_token_price.unwrap_or(DEFAULT_TOKEN_PRICE);
+    fn score_to_units(score: u128) -> eth::U256 {
         eth::U256::from(score)
             // Scores must be denominated in buy token price
-            .checked_mul(buy_token_price.into()).unwrap()
+            .checked_mul(DEFAULT_TOKEN_PRICE.into()).unwrap()
             // and expresed in wei
             .checked_div(10_u128.pow(18).into()).unwrap()
     }
