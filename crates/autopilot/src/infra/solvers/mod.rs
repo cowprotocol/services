@@ -91,8 +91,8 @@ impl Driver {
             // and would otherwise block the main task and delay requests to other
             // drivers.
             tokio::task::spawn_blocking(move || builder.json(&request))
-            .await
-            .context("failed to build request")?
+                .await
+                .context("failed to build request")?
         };
 
         if let Some(request_id) = observe::request_id::from_current_span() {
