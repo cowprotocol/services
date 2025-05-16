@@ -32,7 +32,6 @@ struct Inner {
     base_url: Url,
     request_sharing:
         BoxRequestSharing<AppDataHash, Result<Option<app_data::ValidatedAppData>, FetchingError>>,
-    app_data_validator: app_data::Validator,
     cache: Cache<AppDataHash, Option<app_data::ValidatedAppData>>,
 }
 
@@ -42,7 +41,6 @@ impl AppDataRetriever {
             client: reqwest::Client::new(),
             base_url: orderbook_url,
             request_sharing: BoxRequestSharing::labelled("app_data".to_string()),
-            app_data_validator: app_data::Validator::new(usize::MAX),
             cache: Cache::new(cache_size),
         }))
     }
@@ -74,16 +72,14 @@ impl AppDataRetriever {
                                 .context("invalid app data document")?;
                         match appdata.full_app_data == app_data::EMPTY {
                             true => None, // empty app data
-                            false => Some(
-                                self_
-                                    .0
-                                    .app_data_validator
-                                    .validate(&appdata.full_app_data.into_bytes())?,
-                            ),
+                            false => Some(app_data::ValidatedAppData {
+                                hash: app_data::AppDataHash(app_data.0.0),
+                                protocol: app_data::parse(appdata.full_app_data.as_bytes())?,
+                                document: appdata.full_app_data,
+                            }),
                         }
                     }
                 };
-
                 self_
                     .0
                     .cache

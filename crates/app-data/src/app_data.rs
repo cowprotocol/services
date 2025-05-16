@@ -232,13 +232,7 @@ impl Validator {
         }
 
         let document = String::from_utf8(full_app_data.to_vec())?;
-        let root = serde_json::from_str::<Root>(&document).context("invalid app data json")?;
-        let protocol = root
-            .metadata
-            .or_else(|| root.backend.map(ProtocolAppData::from))
-            // If the key doesn't exist, default. Makes life easier for API
-            // consumers, who don't care about protocol app data.
-            .unwrap_or_default();
+        let protocol = parse(full_app_data)?;
 
         Ok(ValidatedAppData {
             hash: AppDataHash(hash_full_app_data(full_app_data)),
@@ -246,6 +240,17 @@ impl Validator {
             protocol,
         })
     }
+}
+
+pub fn parse(full_app_data: &[u8]) -> Result<ProtocolAppData> {
+    let root = serde_json::from_slice::<Root>(full_app_data).context("invalid app data json")?;
+    let parsed = root
+        .metadata
+        .or_else(|| root.backend.map(ProtocolAppData::from))
+        // If the key doesn't exist, default. Makes life easier for API
+        // consumers, who don't care about protocol app data.
+        .unwrap_or_default();
+    Ok(parsed)
 }
 
 /// The root app data JSON object.
