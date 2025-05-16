@@ -19,7 +19,7 @@ use {
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("invalid interaction: {0:?}")]
-    InvalidInteractionExecution(competition::solution::interaction::Liquidity),
+    InvalidInteractionExecution(Box<competition::solution::interaction::Liquidity>),
     #[error("missing auction id")]
     MissingAuctionId,
     #[error("invalid clearing price: {0:?}")]
@@ -353,7 +353,9 @@ pub fn liquidity_interaction(
             .ok(),
         liquidity::Kind::ZeroEx(limit_order) => limit_order.to_interaction(&input).ok(),
     }
-    .ok_or(Error::InvalidInteractionExecution(liquidity.clone()))
+    .ok_or(Error::InvalidInteractionExecution(Box::new(
+        liquidity.clone(),
+    )))
 }
 
 pub fn approve(allowance: &Allowance) -> eth::Interaction {
