@@ -390,20 +390,24 @@ pub async fn run(args: Arguments) {
         infra::persistence::Persistence::new(args.s3.into().unwrap(), Arc::new(db.clone())).await;
     let settlement_observer =
         crate::domain::settlement::Observer::new(eth.clone(), persistence.clone());
-    let settlement_contract_start_index =
-        match eth.contracts().settlement().deployment_information() {
-            Some(DeploymentInformation::BlockNumber(settlement_contract_start_index)) => {
-                settlement_contract_start_index
-            }
-            _ => {
-                // If the deployment information can't be found, start from 0 (default
-                // behaviour). For real contracts, the deployment information is specified
-                // for all the networks, but it isn't specified for the e2e tests which deploy
-                // the contracts from scratch
-                tracing::warn!("Settlement contract deployment information not found");
-                0
-            }
-        };
+    let settlement_contract_start_index = match contracts::GPv2Settlement::raw_contract()
+        .networks
+        .get(&chain_id.to_string())
+        .and_then(|v| v.deployment_information)
+    {
+        Some(DeploymentInformation::BlockNumber(block)) => {
+            tracing::debug!(block, "found settlement contract deployment");
+            block
+        }
+        _ => {
+            // If the deployment information can't be found, start from 0 (default
+            // behaviour). For real contracts, the deployment information is specified
+            // for all the networks, but it isn't specified for the e2e tests which deploy
+            // the contracts from scratch
+            tracing::warn!("Settlement contract deployment information not found");
+            0
+        }
+    };
     let settlement_event_indexer = EventUpdater::new(
         boundary::events::settlement::GPv2SettlementContract::new(
             eth.contracts().settlement().clone(),
