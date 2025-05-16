@@ -792,6 +792,55 @@ mod tests {
         test.validate();
     }
 
+    #[test]
+    fn staging_mainnet_auction_12825008() {
+        // https://solver-instances.s3.eu-central-1.amazonaws.com/staging/mainnet/autopilot/12825008.json
+        // The example is an auction with one order and two competing bids for it, one
+        // having a better score than the other
+
+        let test = TestCase {
+            tokens: vec![
+                // corresponding to 0x67466be17df832165f8c80a5a120ccc652bd7e69
+                ("Token A", create_address(0)),
+                // corresponding to 0xdac17f958d2ee523a2206206994597c13d831ec7
+                ("Token B", create_address(1)),
+            ],
+            auction: TestAuction {
+                orders: vec![(
+                    "Order 1",
+                    "Token A",
+                    32375066190000000000000000,
+                    "Token B",
+                    2161512119,
+                )],
+                prices: Some(vec![
+                    ("Token A", 32429355240),
+                    ("Token B", 480793239987749750742974464),
+                ]),
+            },
+            solutions: vec![
+                // solution 1 (baseline, the winner)
+                TestSolution {
+                    solver_id: "Solver 1",
+                    solution_id: "Solution 1",
+                    tradres: vec![("Order 1", 32375066190000000000000000, 2206881314)],
+                    score: 21813202259686016u128.into(),
+                },
+                // solution 2 (zeroex)
+                TestSolution {
+                    solver_id: "Solver 2",
+                    solution_id: "Solution 2",
+                    tradres: vec![("Order 1", 32375066190000000000000000, 2205267875)],
+                    score: 21037471695353421u128.into(),
+                },
+            ],
+            expected_fair_solutions: vec!["Solution 1", "Solution 2"],
+            expected_winners: vec!["Solution 1"],
+            expected_refernce_scores: vec![("Solver 1", 21037471695353421)],
+        };
+        test.validate();
+    }
+
     struct TestCase {
         // (id, address)
         pub tokens: Vec<(&'static str, H160)>,
@@ -806,8 +855,10 @@ mod tests {
         pub fn validate(&self) {
             let arbitrator = create_test_arbitrator();
 
+            // map (token id -> token address) for later reference during the test
             let token_map: HashMap<&'static str, H160> = self.tokens.clone().into_iter().collect();
 
+            // map (order id -> order) for later reference during the test
             let order_map: HashMap<&'static str, Order> = self
                 .auction
                 .orders
@@ -854,7 +905,10 @@ mod tests {
 
             let auction = create_auction(orders, prices);
 
+            // map (solver id -> solver address) for later reference during the test
             let mut solver_map = HashMap::new();
+
+            // map (solution id -> participant) for later reference during the test
             let mut solution_map = HashMap::new();
             for solution in &self.solutions {
                 // generate solver address deterministically from the id
@@ -922,78 +976,6 @@ mod tests {
         pub score: eth::U256,
     }
 
-    #[test]
-    fn staging_mainnet_auction_12825008() {
-        // https://solver-instances.s3.eu-central-1.amazonaws.com/staging/mainnet/autopilot/12825008.json
-        // The example is an auction with one order and two competing bids for it, one
-        // having a better score than the other
-
-        let arbitrator = create_test_arbitrator();
-
-        // corresponding to 0x67466be17df832165f8c80a5a120ccc652bd7e69
-        let token_a = create_address(0);
-        // corresponding to 0xdac17f958d2ee523a2206206994597c13d831ec7
-        let token_b = create_address(1);
-
-        // auction has only one order
-        let order_1 = create_order(0, token_a, 32375066190000000000000000, token_b, 2161512119);
-        let prices = create_prices(vec![
-            (token_a, 32429355240),
-            (token_b, 480793239987749750742974464),
-        ]);
-        let auction = create_auction(vec![order_1.clone()], Some(prices));
-
-        // solution 1 (baseline, the winner)
-        let solver_1 = create_address(10);
-        let solver_1_trades =
-            create_trades(vec![(&order_1, 32375066190000000000000000, 2206881314)]);
-        let solver_1_prices = create_prices(vec![
-            (token_a, 2206881314),
-            (token_b, 32197996266469695053980358),
-        ]);
-        let solver_1_solution = create_solution(
-            0,
-            solver_1,
-            21813202259686016u128.into(),
-            solver_1_trades,
-            Some(solver_1_prices),
-        );
-
-        // solution 2 (zeroex)
-        let solver_2 = create_address(11);
-        let solver_2_trades =
-            create_trades(vec![(&order_1, 32375066190000000000000000, 2205267875)]);
-        let solver_2_prices = create_prices(vec![
-            (token_a, 2205267875),
-            (token_b, 32174456479260706991472089),
-        ]);
-        let solver_2_solution = create_solution(
-            1,
-            solver_2,
-            21037471695353421u128.into(),
-            solver_2_trades,
-            Some(solver_2_prices),
-        );
-
-        // run the combinatorial auction
-        let participants = vec![solver_1_solution, solver_2_solution];
-
-        // both solutions are fair
-        let solutions = arbitrator.filter_unfair_solutions(participants, &auction);
-        assert_eq!(solutions.len(), 2);
-
-        // check that solver_1 is the winner
-        let solutions = arbitrator.mark_winners(solutions);
-        let winners = filter_winners(&solutions);
-        assert_eq!(winners.len(), 1);
-        assert_eq!(winners[0].driver().submission_address.0, solver_1);
-
-        // check that solver_1 reference score is the expected value
-        let reference_scores = arbitrator.compute_reference_scores(&solutions);
-        let winner_score = reference_scores.get(&eth::Address(solver_1)).unwrap();
-        assert_eq!(winner_score.0, eth::Ether(21037471695353421u128.into()));
-    }
-
     fn create_test_arbitrator() -> super::Config {
         super::Config {
             max_winners: 10,
@@ -1053,13 +1035,6 @@ mod tests {
         }
     }
 
-    fn create_prices(token_price_pairs: Vec<(H160, u128)>) -> HashMap<eth::TokenAddress, Price> {
-        token_price_pairs
-            .into_iter()
-            .map(|(token, price)| (token.into(), create_price(price)))
-            .collect()
-    }
-
     fn create_price(value: u128) -> Price {
         Price::try_new(eth::Ether(eth::U256::from(value))).unwrap()
     }
@@ -1086,13 +1061,6 @@ mod tests {
             prices,
             surplus_capturing_jit_order_owners: vec![],
         }
-    }
-
-    fn create_trades(input: Vec<(&Order, u128, u128)>) -> Vec<(OrderUid, TradedOrder)> {
-        input
-            .into_iter()
-            .map(|(order, sell, buy)| (order.uid, create_trade(order, sell, buy)))
-            .collect()
     }
 
     fn create_trade(order: &Order, executed_sell: u128, executed_buy: u128) -> TradedOrder {
