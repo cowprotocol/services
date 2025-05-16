@@ -195,13 +195,14 @@ impl RunLoop {
     }
 
     /// Runs the solver competition, making all configured drivers participate.
-    async fn competition(&self, auction: &domain::Auction) -> Vec<Participant<'_>> {
+    async fn competition(&self, auction: &domain::Auction) -> Vec<Participant> {
         let request = solve::Request::new(auction, &self.trusted_tokens.all(), self.solve_deadline);
-        let request = &request;
 
         let mut participants =
-            futures::future::join_all(self.drivers.iter().map(|driver| async move {
-                let solution = self.participate(driver, request).await;
+            futures::future::join_all(self.drivers.iter().cloned().map(|driver| async {
+                let solution = self
+                    .participate(Arc::clone(&driver), request.clone(), auction.id)
+                    .await;
                 Participant { driver, solution }
             }))
             .await;
@@ -221,7 +222,7 @@ impl RunLoop {
     /// until `max_winners_per_auction` are selected. The solution is a winner
     /// if it swaps tokens that are not yet swapped by any other already
     /// selected winner.
-    fn select_winners<'a>(&self, participants: &'a [Participant<'a>]) -> Vec<&'a Participant<'a>> {
+    fn select_winners<'a>(&self, participants: &'a [Participant]) -> Vec<&'a Participant> {
         let mut winners = Vec::new();
         let mut already_swapped_tokens = HashSet::new();
         for participant in participants.iter() {
@@ -246,8 +247,9 @@ impl RunLoop {
     /// Computes a driver's solutions in the shadow competition.
     async fn participate(
         &self,
-        driver: &infra::Driver,
-        request: &solve::Request,
+        driver: Arc<infra::Driver>,
+        request: solve::Request,
+        auction_id: i64,
     ) -> Result<Solution, Error> {
         let proposed = tokio::time::timeout(self.solve_deadline, driver.solve(request))
             .await
@@ -274,16 +276,16 @@ impl RunLoop {
             .collect();
 
         let revealed = driver
-            .reveal(&reveal::Request {
+            .reveal(reveal::Request {
                 solution_id,
-                auction_id: request.id,
+                auction_id,
             })
             .await
             .map_err(Error::Reveal)?;
         if !revealed
             .calldata
             .internalized
-            .ends_with(&request.id.to_be_bytes())
+            .ends_with(&auction_id.to_be_bytes())
         {
             return Err(Error::Mismatch);
         }
@@ -297,12 +299,12 @@ impl RunLoop {
     }
 }
 
-struct Participant<'a> {
-    driver: &'a infra::Driver,
+struct Participant {
+    driver: Arc<infra::Driver>,
     solution: Result<Solution, Error>,
 }
 
-impl Participant<'_> {
+impl Participant {
     fn score(&self) -> U256 {
         self.solution
             .as_ref()
