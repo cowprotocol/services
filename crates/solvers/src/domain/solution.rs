@@ -327,7 +327,7 @@ pub struct JitTrade {
 /// or running some custom logic.
 #[derive(Debug)]
 pub enum Interaction {
-    Liquidity(LiquidityInteraction),
+    Liquidity(Box<LiquidityInteraction>),
     Custom(CustomInteraction),
 }
 
