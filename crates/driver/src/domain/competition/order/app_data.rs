@@ -88,7 +88,7 @@ impl AppDataRetriever {
                                 validated.hash = app_data::AppDataHash(app_data.0.0);
 
                                 Some(validated)
-                            },
+                            }
                         }
                     }
                 };
