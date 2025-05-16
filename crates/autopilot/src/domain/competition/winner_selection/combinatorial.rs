@@ -378,7 +378,10 @@ mod tests {
         },
         ethcontract::H160,
         hex_literal::hex,
-        std::collections::HashMap,
+        std::{
+            collections::HashMap,
+            hash::{DefaultHasher, Hash, Hasher},
+        },
     };
 
     const DEFAULT_TOKEN_PRICE: u128 = 1_000;
@@ -386,393 +389,537 @@ mod tests {
     #[test]
     // Only one bid submitted results in one winner with reward equal to score
     fn single_bid() {
-        let arbitrator = create_test_arbitrator();
-
-        let token_a = create_address(0);
-        let token_b = create_address(1);
-        let token_c = create_address(2);
-        let token_d = create_address(3);
-
-        // auction
-        let order_1 = create_order(1, token_a, amount(1_000), token_b, amount(1_000));
-        let order_2 = create_order(2, token_c, amount(1_000), token_d, amount(1_000));
-        let auction = create_auction(vec![order_1.clone(), order_2.clone()], None);
-
-        // solution 1
-        let solver = create_address(10);
-        let trades = create_trades(vec![
-            (&order_1, amount(1_000), amount(1_100)),
-            (&order_2, amount(1_000), amount(1_100)),
-        ]);
-        let score = score_to_units(amount(200));
-        let solution = create_solution(0, solver, score, trades, None);
-
-        // filter solutions
-        let participants = vec![solution];
-        let solutions = arbitrator.filter_unfair_solutions(participants, &auction);
-        assert_eq!(solutions.len(), 1);
-
-        // select the winners
-        let solutions = arbitrator.mark_winners(solutions);
-        let winners = filter_winners(&solutions);
-        assert_eq!(winners.len(), 1);
-
-        // compute reference score
-        // it must be 0 because it's the only solver that participated
-        let reference_scores = arbitrator.compute_reference_scores(&solutions);
-        assert_eq!(reference_scores.len(), 1);
-        let solver_score = reference_scores.get(&eth::Address(solver)).unwrap();
-        assert_eq!(solver_score.0, eth::Ether(0.into()));
+        let test = TestCase {
+            tokens: vec![
+                ("Token A", create_address(0)),
+                ("Token B", create_address(1)),
+                ("Token C", create_address(2)),
+                ("Token D", create_address(3)),
+            ],
+            auction: TestAuction {
+                orders: vec![
+                    (
+                        "Order 1",
+                        "Token A",
+                        amount(1_000),
+                        "Token B",
+                        amount(1_000),
+                    ),
+                    (
+                        "Order 2",
+                        "Token C",
+                        amount(1_000),
+                        "Token D",
+                        amount(1_000),
+                    ),
+                ],
+                prices: None,
+            },
+            solutions: vec![TestSolution {
+                solver_id: "Solver 1",
+                solution_id: "Solution 1",
+                tradres: vec![
+                    ("Order 1", amount(1_000), amount(1_100)),
+                    ("Order 2", amount(1_000), amount(1_100)),
+                ],
+                score: score_to_units(amount(200)),
+            }],
+            expected_fair_solutions: vec!["Solution 1"],
+            expected_winners: vec!["Solution 1"],
+            expected_refernce_scores: vec![("Solver 1", 0)],
+        };
+        test.validate();
     }
 
     #[test]
-    // Two compatible batches are both selected as winners
+    // Only one bid submitted results in one winner with reward equal to score
     fn compatible_bids() {
-        let arbitrator = create_test_arbitrator();
-
-        let token_a = create_address(0);
-        let token_b = create_address(1);
-        let token_c = create_address(2);
-        let token_d = create_address(3);
-
-        // auction
-        let order_1 = create_order(1, token_a, amount(1_000), token_b, amount(1_000));
-        let order_2 = create_order(2, token_c, amount(1_000), token_d, amount(1_000));
-        let order_3 = create_order(3, token_a, amount(1_000), token_c, amount(1_000));
-        let auction = create_auction(
-            vec![order_1.clone(), order_2.clone(), order_3.clone()],
-            None,
-        );
-
-        // solution 1
-        let solver_1 = create_address(10);
-        let solver_1_trades = create_trades(vec![
-            (&order_1, amount(1_000), amount(1_100)),
-            (&order_2, amount(1_000), amount(1_100)),
-        ]);
-        let solver_1_score = score_to_units(amount(200));
-        let solver_1_solution = create_solution(0, solver_1, solver_1_score, solver_1_trades, None);
-
-        // solution 2
-        let solver_2 = create_address(11);
-        let solver_2_trades = create_trades(vec![(&order_3, amount(1_000), amount(1_100))]);
-        let solver_2_score = score_to_units(amount(100));
-        let solver_2_solution = create_solution(1, solver_2, solver_2_score, solver_2_trades, None);
-
-        // filter solutions
-        let participants = vec![solver_1_solution, solver_2_solution];
-        let solutions = arbitrator.filter_unfair_solutions(participants, &auction);
-        assert_eq!(solutions.len(), 2);
-
-        // select the winners
-        let solutions = arbitrator.mark_winners(solutions);
-        let winners = filter_winners(&solutions);
-        assert_eq!(winners.len(), 2);
-
-        // compute reference scores
-        let reference_scores = arbitrator.compute_reference_scores(&solutions);
-        assert_eq!(reference_scores.len(), 2);
-
-        // check that the reference scores are the expected
-        let solver_1_reference_score = reference_scores.get(&eth::Address(solver_1)).unwrap();
-        assert_eq!(
-            solver_1_reference_score.0,
-            eth::Ether(score_to_units(amount(100)))
-        );
-        let solver_2_reference_score = reference_scores.get(&eth::Address(solver_2)).unwrap();
-        assert_eq!(
-            solver_2_reference_score.0,
-            eth::Ether(score_to_units(amount(200)))
-        );
+        let test = TestCase {
+            tokens: vec![
+                ("Token A", create_address(0)),
+                ("Token B", create_address(1)),
+                ("Token C", create_address(2)),
+                ("Token D", create_address(3)),
+            ],
+            auction: TestAuction {
+                orders: vec![
+                    (
+                        "Order 1",
+                        "Token A",
+                        amount(1_000),
+                        "Token B",
+                        amount(1_000),
+                    ),
+                    (
+                        "Order 2",
+                        "Token C",
+                        amount(1_000),
+                        "Token D",
+                        amount(1_000),
+                    ),
+                    (
+                        "Order 3",
+                        "Token A",
+                        amount(1_000),
+                        "Token C",
+                        amount(1_000),
+                    ),
+                ],
+                prices: None,
+            },
+            solutions: vec![
+                TestSolution {
+                    solver_id: "Solver 1",
+                    solution_id: "Solution 1",
+                    tradres: vec![
+                        ("Order 1", amount(1_000), amount(1_100)),
+                        ("Order 2", amount(1_000), amount(1_100)),
+                    ],
+                    score: score_to_units(amount(200)),
+                },
+                TestSolution {
+                    solver_id: "Solver 2",
+                    solution_id: "Solution 2",
+                    tradres: vec![("Order 3", amount(1_000), amount(1_100))],
+                    score: score_to_units(amount(100)),
+                },
+            ],
+            expected_fair_solutions: vec!["Solution 1", "Solution 2"],
+            expected_winners: vec!["Solution 1", "Solution 2"],
+            expected_refernce_scores: vec![("Solver 1", 100), ("Solver 2", 200)],
+        };
+        test.validate();
     }
 
     #[test]
-    // Multiple compatible bids by a single solver are aggregated in rewards
+    // Only one bid submitted results in one winner with reward equal to score
     fn multiple_solution_for_solver() {
-        let arbitrator = create_test_arbitrator();
-
-        let token_a = create_address(0);
-        let token_b = create_address(1);
-        let token_c = create_address(2);
-        let token_d = create_address(3);
-
-        // auction
-        let order_1 = create_order(1, token_a, amount(1_000), token_b, amount(1_000));
-        let order_2 = create_order(2, token_c, amount(1_000), token_d, amount(1_000));
-        let order_3 = create_order(3, token_a, amount(1_000), token_d, amount(1_000));
-        let auction = create_auction(
-            vec![order_1.clone(), order_2.clone(), order_3.clone()],
-            None,
-        );
-
-        // we are using the same solver for both solutions
-        let solver = create_address(10);
-
-        // solution 1
-        let solver_1_trades = create_trades(vec![
-            (&order_1, amount(1_000), amount(1_100)),
-            (&order_2, amount(1_000), amount(1_100)),
-        ]);
-        let solver_1_score = score_to_units(amount(200));
-        let solver_1_solution = create_solution(0, solver, solver_1_score, solver_1_trades, None);
-
-        // solution 2
-        let solver_2_trades = create_trades(vec![(&order_3, amount(1_000), amount(1_100))]);
-        let solver_2_score = score_to_units(amount(100));
-        let solver_2_solution = create_solution(1, solver, solver_2_score, solver_2_trades, None);
-
-        // filter solutions
-        let participants = vec![solver_1_solution, solver_2_solution];
-        let solutions = arbitrator.filter_unfair_solutions(participants, &auction);
-        assert_eq!(solutions.len(), 2);
-
-        // select the winners
-        let solutions = arbitrator.mark_winners(solutions);
-        let winners = filter_winners(&solutions);
-        assert_eq!(winners.len(), 2);
-
-        // compute reference score
-        // it must be 0 because it's the only solver that participated
-        let reference_scores = arbitrator.compute_reference_scores(&solutions);
-        assert_eq!(reference_scores.len(), 1);
-        let solver_score = reference_scores.get(&eth::Address(solver)).unwrap();
-        assert_eq!(solver_score.0, eth::Ether(0.into()));
+        let test = TestCase {
+            tokens: vec![
+                ("Token A", create_address(0)),
+                ("Token B", create_address(1)),
+                ("Token C", create_address(2)),
+                ("Token D", create_address(3)),
+            ],
+            auction: TestAuction {
+                orders: vec![
+                    (
+                        "Order 1",
+                        "Token A",
+                        amount(1_000),
+                        "Token B",
+                        amount(1_000),
+                    ),
+                    (
+                        "Order 2",
+                        "Token C",
+                        amount(1_000),
+                        "Token D",
+                        amount(1_000),
+                    ),
+                    (
+                        "Order 3",
+                        "Token A",
+                        amount(1_000),
+                        "Token D",
+                        amount(1_000),
+                    ),
+                ],
+                prices: None,
+            },
+            solutions: vec![
+                // best batch
+                TestSolution {
+                    solver_id: "Solver 1",
+                    solution_id: "Solution 1",
+                    tradres: vec![
+                        ("Order 1", amount(1_000), amount(1_100)),
+                        ("Order 2", amount(1_000), amount(1_100)),
+                    ],
+                    score: score_to_units(amount(200)),
+                },
+                // compatible batch
+                TestSolution {
+                    solver_id: "Solver 1", // same solver
+                    solution_id: "Solution 2",
+                    tradres: vec![("Order 3", amount(1_000), amount(1_100))],
+                    score: score_to_units(amount(100)),
+                },
+            ],
+            expected_fair_solutions: vec!["Solution 1", "Solution 2"],
+            expected_winners: vec!["Solution 1", "Solution 2"],
+            expected_refernce_scores: vec![("Solver 1", 0)],
+        };
+        test.validate();
     }
 
     #[test]
     // Incompatible bid does not win but reduces reward
     fn incompatible_bids() {
-        let arbitrator = create_test_arbitrator();
-
-        let token_a = create_address(0);
-        let token_b = create_address(1);
-        let token_c = create_address(2);
-        let token_d = create_address(3);
-
-        // auction
-        let order_1 = create_order(1, token_a, amount(1_000), token_b, amount(1_000));
-        let order_2 = create_order(2, token_c, amount(1_000), token_d, amount(1_000));
-        let auction = create_auction(vec![order_1.clone(), order_2.clone()], None);
-
-        // solution 1, best batch
-        let solver_1 = create_address(10);
-        let solver_1_trades = create_trades(vec![
-            (&order_1, amount(1_000), amount(1_100)),
-            (&order_2, amount(1_000), amount(1_100)),
-        ]);
-        let solver_1_score = score_to_units(amount(200));
-        let solver_1_solution = create_solution(0, solver_1, solver_1_score, solver_1_trades, None);
-
-        // solution 2, incompatible batch
-        let solver_2 = create_address(11);
-        let solver_2_trades = create_trades(vec![(&order_1, amount(1_000), amount(1_100))]);
-        let solver_2_score = score_to_units(amount(100));
-        let solver_2_solution = create_solution(1, solver_2, solver_2_score, solver_2_trades, None);
-
-        // filter solutions
-        let participants = vec![solver_1_solution, solver_2_solution];
-        let solutions = arbitrator.filter_unfair_solutions(participants, &auction);
-        assert_eq!(solutions.len(), 2);
-        assert_eq!(solutions[0].driver().submission_address.0, solver_1);
-
-        // select the winners
-        let solutions = arbitrator.mark_winners(solutions);
-        let winners = filter_winners(&solutions);
-        assert_eq!(winners.len(), 1);
-        assert_eq!(winners[0].driver().submission_address.0, solver_1);
-
-        // compute reference scores
-        let reference_scores = arbitrator.compute_reference_scores(&solutions);
-        let solver_1_reference_score = reference_scores.get(&eth::Address(solver_1)).unwrap();
-        assert_eq!(
-            solver_1_reference_score.0,
-            eth::Ether(score_to_units(amount(100)))
-        );
-        let solver_2_reference_score = reference_scores.get(&eth::Address(solver_2)).unwrap();
-        assert_eq!(
-            solver_2_reference_score.0,
-            eth::Ether(score_to_units(amount(200)))
-        );
+        let test = TestCase {
+            tokens: vec![
+                ("Token A", create_address(0)),
+                ("Token B", create_address(1)),
+                ("Token C", create_address(2)),
+                ("Token D", create_address(3)),
+            ],
+            auction: TestAuction {
+                orders: vec![
+                    (
+                        "Order 1",
+                        "Token A",
+                        amount(1_000),
+                        "Token B",
+                        amount(1_000),
+                    ),
+                    (
+                        "Order 2",
+                        "Token C",
+                        amount(1_000),
+                        "Token D",
+                        amount(1_000),
+                    ),
+                ],
+                prices: None,
+            },
+            solutions: vec![
+                // best batch
+                TestSolution {
+                    solver_id: "Solver 1",
+                    solution_id: "Solution 1",
+                    tradres: vec![
+                        ("Order 1", amount(1_000), amount(1_100)),
+                        ("Order 2", amount(1_000), amount(1_100)),
+                    ],
+                    score: score_to_units(amount(200)),
+                },
+                // incompatible batch
+                TestSolution {
+                    solver_id: "Solver 2",
+                    solution_id: "Solution 2",
+                    tradres: vec![("Order 1", amount(1_000), amount(1_100))],
+                    score: score_to_units(amount(100)),
+                },
+            ],
+            expected_fair_solutions: vec!["Solution 1", "Solution 2"],
+            expected_winners: vec!["Solution 1"],
+            expected_refernce_scores: vec![("Solver 1", 100)],
+        };
+        test.validate();
     }
 
     #[test]
     // Unfair batch is filtered
     fn fairness_filtering() {
-        let arbitrator = create_test_arbitrator();
-
-        let token_a = create_address(0);
-        let token_b = create_address(1);
-        let token_c = create_address(2);
-        let token_d = create_address(3);
-
-        // auction
-        let order_1 = create_order(1, token_a, amount(1_000), token_b, amount(1_000));
-        let order_2 = create_order(2, token_c, amount(1_000), token_d, amount(1_000));
-        let auction = create_auction(vec![order_1.clone(), order_2.clone()], None);
-
-        // solution 1, unfair batch
-        let solver_1 = create_address(10);
-        let solver_1_trades = create_trades(vec![
-            (&order_1, amount(1_000), amount(1_100)),
-            (&order_2, amount(1_000), amount(1_100)),
-        ]);
-        let solver_1_score = score_to_units(amount(200));
-        let solver_1_solution = create_solution(0, solver_1, solver_1_score, solver_1_trades, None);
-
-        // solution 2, filtering batch
-        let solver_2 = create_address(11);
-        let solver_2_trades = create_trades(vec![(&order_1, amount(1_000), amount(1_150))]);
-        let solver_2_score = score_to_units(amount(150));
-        let solver_2_solution = create_solution(1, solver_2, solver_2_score, solver_2_trades, None);
-
-        // filter solutions (the unfair solver was filtered out)
-        let participants = vec![solver_1_solution, solver_2_solution];
-        let solutions = arbitrator.filter_unfair_solutions(participants, &auction);
-        assert_eq!(solutions.len(), 1);
-        assert_eq!(solutions[0].driver().submission_address.0, solver_2);
-
-        // select the winners
-        let solutions = arbitrator.mark_winners(solutions);
-        let winners = filter_winners(&solutions);
-        assert_eq!(winners.len(), 1);
-        assert_eq!(winners[0].driver().submission_address.0, solver_2);
-
-        // compute reference scores
-        // it must be 0 because the unfair solver got filtered out
-        let reference_scores = arbitrator.compute_reference_scores(&solutions);
-        assert_eq!(reference_scores.len(), 1);
-        let solver_score = reference_scores.get(&eth::Address(solver_2)).unwrap();
-        assert_eq!(solver_score.0, eth::Ether(0.into()));
+        let test = TestCase {
+            tokens: vec![
+                ("Token A", create_address(0)),
+                ("Token B", create_address(1)),
+                ("Token C", create_address(2)),
+                ("Token D", create_address(3)),
+            ],
+            auction: TestAuction {
+                orders: vec![
+                    (
+                        "Order 1",
+                        "Token A",
+                        amount(1_000),
+                        "Token B",
+                        amount(1_000),
+                    ),
+                    (
+                        "Order 2",
+                        "Token C",
+                        amount(1_000),
+                        "Token D",
+                        amount(1_000),
+                    ),
+                ],
+                prices: None,
+            },
+            solutions: vec![
+                // unfair batch
+                TestSolution {
+                    solver_id: "Solver 1",
+                    solution_id: "Solution 1",
+                    tradres: vec![
+                        ("Order 1", amount(1_000), amount(1_100)),
+                        ("Order 2", amount(1_000), amount(1_100)),
+                    ],
+                    score: score_to_units(amount(200)),
+                },
+                // filtering batch
+                TestSolution {
+                    solver_id: "Solver 2",
+                    solution_id: "Solution 2",
+                    tradres: vec![("Order 1", amount(1_000), amount(1_150))],
+                    score: score_to_units(amount(150)),
+                },
+            ],
+            expected_fair_solutions: vec!["Solution 2"],
+            expected_winners: vec!["Solution 2"],
+            expected_refernce_scores: vec![("Solver 2", 0)],
+        };
+        test.validate();
     }
 
     #[test]
     // Multiple trades on the same (directed) token pair are aggregated for
     // filtering
     fn aggregation_on_token_pair() {
-        let arbitrator = create_test_arbitrator();
-
-        let token_a = create_address(0);
-        let token_b = create_address(1);
-
-        // auction
-        let order_1 = create_order(1, token_a, amount(1_000), token_b, amount(1_000));
-        let order_2 = create_order(2, token_a, amount(1_000), token_b, amount(1_000));
-        let auction = create_auction(vec![order_1.clone(), order_2.clone()], None);
-
-        // solution 1, batch with aggregation
-        let solver_1 = create_address(10);
-        let solver_1_trades = create_trades(vec![
-            (&order_1, amount(1_000), amount(1_100)),
-            (&order_2, amount(1_000), amount(1_100)),
-        ]);
-        let solver_1_score = score_to_units(amount(200));
-        let solver_1_solution = create_solution(0, solver_1, solver_1_score, solver_1_trades, None);
-
-        // solution 2, incompatible batch
-        let solver_2 = create_address(11);
-        let solver_2_trades = create_trades(vec![(&order_1, amount(1_000), amount(1_150))]);
-        let solver_2_score = score_to_units(amount(150));
-        let solver_2_solution = create_solution(1, solver_2, solver_2_score, solver_2_trades, None);
-
-        // filter solutions
-        let participants = vec![solver_1_solution, solver_2_solution];
-        let solutions = arbitrator.filter_unfair_solutions(participants, &auction);
-        assert_eq!(solutions.len(), 2);
-
-        // select the winners
-        let solutions = arbitrator.mark_winners(solutions);
-        let winners = filter_winners(&solutions);
-        assert_eq!(winners.len(), 1);
-        assert_eq!(winners[0].driver().submission_address.0, solver_1);
-
-        // compute reference scores
-        let reference_scores = arbitrator.compute_reference_scores(&solutions);
-        let solver_1_reference_score = reference_scores.get(&eth::Address(solver_1)).unwrap();
-        assert_eq!(
-            solver_1_reference_score.0,
-            score_to_units(amount(150)).into()
-        );
-        let solver_2_reference_score = reference_scores.get(&eth::Address(solver_2)).unwrap();
-        assert_eq!(
-            solver_2_reference_score.0,
-            score_to_units(amount(200)).into()
-        );
+        let test = TestCase {
+            tokens: vec![
+                ("Token A", create_address(0)),
+                ("Token B", create_address(1)),
+            ],
+            auction: TestAuction {
+                orders: vec![
+                    (
+                        "Order 1",
+                        "Token A",
+                        amount(1_000),
+                        "Token B",
+                        amount(1_000),
+                    ),
+                    (
+                        "Order 2",
+                        "Token A",
+                        amount(1_000),
+                        "Token B",
+                        amount(1_000),
+                    ),
+                ],
+                prices: None,
+            },
+            solutions: vec![
+                // batch with aggregation
+                TestSolution {
+                    solver_id: "Solver 1",
+                    solution_id: "Solution 1",
+                    tradres: vec![
+                        ("Order 1", amount(1_000), amount(1_100)),
+                        ("Order 2", amount(1_000), amount(1_100)),
+                    ],
+                    score: score_to_units(amount(200)),
+                },
+                // incompatible batch
+                TestSolution {
+                    solver_id: "Solver 2",
+                    solution_id: "Solution 2",
+                    tradres: vec![("Order 1", amount(1_000), amount(1_150))],
+                    score: score_to_units(amount(150)),
+                },
+            ],
+            expected_fair_solutions: vec!["Solution 1", "Solution 2"],
+            expected_winners: vec!["Solution 1"],
+            expected_refernce_scores: vec![("Solver 1", 150)],
+        };
+        test.validate();
     }
 
     #[test]
     // Reference winners can generate more surplus than winners
     fn reference_better_than_winners() {
-        let arbitrator = create_test_arbitrator();
+        let test = TestCase {
+            tokens: vec![
+                ("Token A", create_address(0)),
+                ("Token B", create_address(1)),
+                ("Token C", create_address(2)),
+                ("Token D", create_address(3)),
+                ("Token E", create_address(4)),
+                ("Token F", create_address(5)),
+            ],
+            auction: TestAuction {
+                orders: vec![
+                    (
+                        "Order 1",
+                        "Token A",
+                        amount(1_000),
+                        "Token B",
+                        amount(1_000),
+                    ),
+                    (
+                        "Order 2",
+                        "Token C",
+                        amount(1_000),
+                        "Token D",
+                        amount(1_000),
+                    ),
+                    (
+                        "Order 3",
+                        "Token E",
+                        amount(1_000),
+                        "Token F",
+                        amount(1_000),
+                    ),
+                ],
+                prices: None,
+            },
+            solutions: vec![
+                // best batch
+                TestSolution {
+                    solver_id: "Solver 1",
+                    solution_id: "Solution 1",
+                    tradres: vec![
+                        ("Order 1", amount(1_000), amount(1_100)),
+                        ("Order 2", amount(1_000), amount(1_100)),
+                        ("Order 3", amount(1_000), amount(1_100)),
+                    ],
+                    score: score_to_units(amount(300)),
+                },
+                // incompatible batch 1
+                TestSolution {
+                    solver_id: "Solver 2",
+                    solution_id: "Solution 2",
+                    tradres: vec![
+                        ("Order 1", amount(1_000), amount(1_140)),
+                        ("Order 2", amount(1_000), amount(1_140)),
+                    ],
+                    score: score_to_units(amount(280)),
+                },
+                // incompatible batch 2
+                TestSolution {
+                    solver_id: "Solver 3",
+                    solution_id: "Solution 3",
+                    tradres: vec![("Order 3", amount(1_000), amount(1_100))],
+                    score: score_to_units(amount(100)),
+                },
+            ],
+            expected_fair_solutions: vec!["Solution 1", "Solution 2", "Solution 2"],
+            expected_winners: vec!["Solution 1"],
+            expected_refernce_scores: vec![("Solver 1", 380), ("Solver 2", 300), ("Solver 3", 300)],
+        };
+        test.validate();
+    }
 
-        let token_a = create_address(0);
-        let token_b = create_address(1);
-        let token_c = create_address(2);
-        let token_d = create_address(3);
-        let token_e = create_address(4);
-        let token_f = create_address(5);
+    struct TestCase {
+        // (id, address)
+        pub tokens: Vec<(&'static str, H160)>,
+        pub auction: TestAuction,
+        pub solutions: Vec<TestSolution>,
+        pub expected_fair_solutions: Vec<&'static str>, // solution_id
+        pub expected_winners: Vec<&'static str>,        // solution_id
+        pub expected_refernce_scores: Vec<(&'static str, u128)>, // (solver_id, reference_score)
+    }
 
-        // auction
-        let order_1 = create_order(1, token_a, amount(1_000), token_b, amount(1_000));
-        let order_2 = create_order(2, token_c, amount(1_000), token_d, amount(1_000));
-        let order_3 = create_order(3, token_e, amount(1_000), token_f, amount(1_000));
-        let auction = create_auction(
-            vec![order_1.clone(), order_2.clone(), order_3.clone()],
-            None,
-        );
+    impl TestCase {
+        pub fn validate(&self) {
+            let arbitrator = create_test_arbitrator();
 
-        // solution 1, best batch
-        let solver_1 = create_address(10);
-        let solver_1_trades = create_trades(vec![
-            (&order_1, amount(1_000), amount(1_100)),
-            (&order_2, amount(1_000), amount(1_100)),
-            (&order_3, amount(1_000), amount(1_100)),
-        ]);
-        let solver_1_score = score_to_units(amount(300));
-        let solver_1_solution = create_solution(0, solver_1, solver_1_score, solver_1_trades, None);
+            let token_map: HashMap<&'static str, H160> = self.tokens.clone().into_iter().collect();
 
-        // solution 2, incompatible batch 1
-        let solver_2 = create_address(11);
-        let solver_2_trades = create_trades(vec![
-            (&order_1, amount(1_000), amount(1_140)),
-            (&order_2, amount(1_000), amount(1_140)),
-        ]);
-        let solver_2_score = score_to_units(amount(280));
-        let solver_2_solution = create_solution(1, solver_2, solver_2_score, solver_2_trades, None);
+            let order_map: HashMap<&'static str, Order> = self
+                .auction
+                .orders
+                .clone()
+                .iter()
+                .map(
+                    |&(
+                        order_id,
+                        sell_token_id,
+                        sell_token_amount,
+                        buy_token_id,
+                        buy_token_amount,
+                    )| {
+                        let order_uid = hash(order_id);
+                        let buy_token = token_map.get(buy_token_id).unwrap();
+                        let sell_token = token_map.get(sell_token_id).unwrap();
+                        let order = create_order(
+                            order_uid,
+                            *sell_token,
+                            sell_token_amount,
+                            *buy_token,
+                            buy_token_amount,
+                        );
+                        (order_id, order)
+                    },
+                )
+                .collect();
 
-        // solution 3, incompatible batch 2
-        let solver_3 = create_address(12);
-        let solver_3_trades = create_trades(vec![(&order_3, amount(1_000), amount(1_100))]);
-        let solver_3_score = score_to_units(amount(100));
-        let solver_3_solution = create_solution(2, solver_3, solver_3_score, solver_3_trades, None);
+            let orders = order_map.values().cloned().collect();
+            let prices = match &self.auction.prices {
+                Some(prices) => {
+                    let price_map = prices
+                        .iter()
+                        .map(|(token_id, price)| {
+                            let token_address = TokenAddress(*token_map.get(token_id).unwrap());
+                            let price = create_price(*price);
+                            (token_address, price)
+                        })
+                        .collect();
+                    Some(price_map)
+                }
+                None => None,
+            };
 
-        // filter solutions
-        let participants = vec![solver_1_solution, solver_2_solution, solver_3_solution];
-        let solutions = arbitrator.filter_unfair_solutions(participants, &auction);
-        assert_eq!(solutions.len(), 3);
+            let auction = create_auction(orders, prices);
 
-        // select the winners
-        let solutions = arbitrator.mark_winners(solutions);
-        let winners = filter_winners(&solutions);
-        assert_eq!(winners.len(), 1);
-        assert_eq!(winners[0].driver().submission_address.0, solver_1);
+            let mut solver_map = HashMap::new();
+            let mut solution_map = HashMap::new();
+            for solution in &self.solutions {
+                // generate solver address deterministically from the id
+                let solver_uid = hash(solution.solver_id);
+                let solver_address = create_address(solver_uid);
+                solver_map.insert(solution.solver_id, solver_address);
 
-        // compute reference scores
-        let reference_scores = arbitrator.compute_reference_scores(&solutions);
-        let solver_1_reference_score = reference_scores.get(&eth::Address(solver_1)).unwrap();
-        assert_eq!(
-            solver_1_reference_score.0,
-            score_to_units(amount(380)).into()
-        );
-        let solver_2_reference_score = reference_scores.get(&eth::Address(solver_2)).unwrap();
-        assert_eq!(
-            solver_2_reference_score.0,
-            score_to_units(amount(300)).into()
-        );
-        let solver_3_reference_score = reference_scores.get(&eth::Address(solver_3)).unwrap();
-        assert_eq!(
-            solver_3_reference_score.0,
-            score_to_units(amount(300)).into()
-        );
+                let trades = solution
+                    .tradres
+                    .iter()
+                    .map(|(order_id, sell_token_amount, buy_token_amount)| {
+                        let order = order_map.get(order_id).unwrap();
+                        let trade = create_trade(order, *sell_token_amount, *buy_token_amount);
+                        (order.uid, trade)
+                    })
+                    .collect();
+
+                let solution_uid = hash(solution.solution_id);
+                solution_map.insert(
+                    solution.solution_id,
+                    create_solution(solution_uid, solver_address, solution.score, trades, None),
+                );
+            }
+
+            // filter solutions
+            let participants = solution_map.values().cloned().collect();
+            let solutions = arbitrator.filter_unfair_solutions(participants, &auction);
+            assert_eq!(solutions.len(), self.expected_fair_solutions.len());
+            for solution_id in self.expected_fair_solutions.clone() {
+                let solution_uid = solution_map.get(solution_id).unwrap().solution().id;
+                assert!(solutions.iter().any(|s| s.solution().id == solution_uid));
+            }
+
+            // select the winners
+            let solutions = arbitrator.mark_winners(solutions);
+            let winners = filter_winners(&solutions);
+            assert_eq!(winners.len(), self.expected_winners.len());
+            for solution_id in self.expected_winners.clone() {
+                let solution_uid = solution_map.get(solution_id).unwrap().solution().id;
+                assert!(winners.iter().any(|s| s.solution().id == solution_uid));
+            }
+
+            // compute reference score
+            let reference_scores = arbitrator.compute_reference_scores(&solutions);
+            for (solver_id, expected_score) in self.expected_refernce_scores.clone() {
+                let solver_address: eth::Address = (*solver_map.get(solver_id).unwrap()).into();
+                let score = reference_scores.get(&solver_address).unwrap();
+                assert_eq!(score.0, eth::Ether(expected_score.into()))
+            }
+        }
+    }
+
+    struct TestAuction {
+        // (id, buy_token_id, buy_amount, sell_token_id, sell_amount)
+        pub orders: Vec<(&'static str, &'static str, u128, &'static str, u128)>,
+        // (token_id, price)
+        pub prices: Option<Vec<(&'static str, u128)>>,
+    }
+
+    struct TestSolution {
+        pub solver_id: &'static str,
+        pub solution_id: &'static str,
+        // (order_id, buy_amount, sell_amount)
+        pub tradres: Vec<(&'static str, u128, u128)>,
+        pub score: eth::U256,
     }
 
     #[test]
@@ -859,7 +1006,7 @@ mod tests {
     }
 
     fn create_order(
-        uid: usize,
+        uid: u64,
         sell_token: H160,
         sell_amount: u128,
         buy_token: H160,
@@ -1008,5 +1155,11 @@ mod tests {
 
     fn filter_winners(solutions: &[Participant]) -> Vec<&Participant> {
         solutions.iter().filter(|s| s.is_winner()).collect()
+    }
+
+    fn hash(s: &'static str) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        s.hash(&mut hasher);
+        hasher.finish()
     }
 }
