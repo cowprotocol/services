@@ -126,7 +126,7 @@ impl SolvableOrdersCache {
         native_price_timeout: Duration,
         settlement_contract: H160,
     ) -> Arc<Self> {
-        let self_ = Arc::new(Self {
+        Arc::new(Self {
             min_order_validity_period,
             persistence,
             banned_users,
@@ -142,8 +142,7 @@ impl SolvableOrdersCache {
             cow_amm_registry,
             native_price_timeout,
             settlement_contract,
-        });
-        self_
+        })
     }
 
     pub async fn current_auction(&self) -> Option<domain::RawAuctionData> {
