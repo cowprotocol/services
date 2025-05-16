@@ -74,16 +74,24 @@ impl AppDataRetriever {
                                 .context("invalid app data document")?;
                         match appdata.full_app_data == app_data::EMPTY {
                             true => None, // empty app data
-                            false => Some(
-                                self_
+                            false => {
+                                let mut validated = self_
                                     .0
                                     .app_data_validator
-                                    .validate(&appdata.full_app_data.into_bytes())?,
-                            ),
+                                    .validate(&appdata.full_app_data.into_bytes())?;
+                                // There is at least 1 widely used appdata JSON that apparently
+                                // was stored with the wrong hash in the DB. Since the backend
+                                // is now the source of truth we need to keep using the hash
+                                // the backend thinks is correct. If we use the rehashed value
+                                // returned by `validate()` the driver will run into encoding
+                                // errors when building settlement calldata.
+                                validated.hash = app_data::AppDataHash(app_data.0.0);
+
+                                Some(validated)
+                            },
                         }
                     }
                 };
-
                 self_
                     .0
                     .cache
