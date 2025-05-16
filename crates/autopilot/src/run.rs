@@ -395,12 +395,9 @@ pub async fn run(args: Arguments) {
         .get(&chain_id.to_string())
         .and_then(|v| v.deployment_information)
     {
-        Some(DeploymentInformation::BlockNumber(settlement_contract_start_index)) => {
-            tracing::info!(
-                "Settlement contract deployment information found at: \
-                 {settlement_contract_start_index}"
-            );
-            settlement_contract_start_index
+        Some(DeploymentInformation::BlockNumber(block)) => {
+            tracing::debug!(block, "found settlement contract deployment");
+            block
         }
         _ => {
             // If the deployment information can't be found, start from 0 (default
