@@ -415,8 +415,7 @@ pub async fn run(args: Arguments) {
         boundary::events::settlement::Indexer::new(
             db.clone(),
             settlement_observer,
-            // Start indexing a block before in order to detect the event
-            settlement_contract_start_index - 1,
+            settlement_contract_start_index,
         ),
         block_retriever.clone(),
         skip_event_sync_start,
