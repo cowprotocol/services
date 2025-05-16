@@ -634,17 +634,24 @@ impl RunLoop {
         request: solve::Request,
     ) -> Result<Vec<Result<competition::Solution, domain::competition::SolutionError>>, SolveError>
     {
-        let check_allowed = self
-            .solver_participation_guard
-            .can_participate(&driver.submission_address);
-        let fetch_response = driver.solve(request);
-        let both = async { tokio::join!(check_allowed, fetch_response) };
+        let (can_participate, response) = {
+            let driver = driver.clone();
+            let guard = self.solver_participation_guard.clone();
+            let both = tokio::task::spawn(async move {
+                let fetch_response = driver.solve(request);
+                let check_allowed = guard.can_participate(&driver.submission_address);
+                tokio::join!(check_allowed, fetch_response)
+            });
+            tokio::time::timeout(self.config.solve_deadline, both)
+                .await
+                .map_err(|_| SolveError::Timeout)?
+                .map_err(|_| SolveError::Failure(anyhow::anyhow!("could not finish task")))?
+        };
 
-        let response = match tokio::time::timeout(self.config.solve_deadline, both).await {
-            Ok((Ok(true), Ok(response))) => response,
-            Err(_timeout) => return Err(SolveError::Timeout),
-            Ok((Ok(false), _)) => return Err(SolveError::SolverDenyListed),
-            Ok((Err(err), _)) => {
+        let response = match (can_participate, response) {
+            (Ok(true), Ok(response)) => response,
+            (Ok(false), _) => return Err(SolveError::SolverDenyListed),
+            (Err(err), _) => {
                 tracing::error!(
                     ?err,
                     driver = %driver.name,
@@ -653,7 +660,7 @@ impl RunLoop {
                 );
                 return Err(SolveError::SolverDenyListed);
             }
-            Ok((_, Err(err))) => return Err(SolveError::Failure(err)),
+            (_, Err(err)) => return Err(SolveError::Failure(err)),
         };
 
         if response.solutions.is_empty() {
