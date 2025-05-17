@@ -176,7 +176,7 @@ impl Erc20 {
                     .has_approved_relayer(trader.0, relayer.into())
                     .call()
                     .map_err(Error::from);
-                let allowance = self.allowance(trader, relayer.into());
+                let allowance = self.allowance(trader, vault.address().into());
                 let (balance, approved, allowance) =
                     futures::try_join!(balance, approved, allowance)?;
                 match approved {
