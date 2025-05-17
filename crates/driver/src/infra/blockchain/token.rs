@@ -1,7 +1,6 @@
 use {
     super::{Error, Ethereum},
     crate::domain::{competition::order, eth},
-    contracts::BalancerV2Vault,
     futures::TryFutureExt,
 };
 
@@ -10,20 +9,13 @@ use {
 /// https://eips.ethereum.org/EIPS/eip-20
 pub struct Erc20 {
     token: contracts::ERC20,
-    balances: contracts::support::Balances,
-    vault_relayer: eth::ContractAddress,
-    vault: eth::ContractAddress,
     ethereum: Ethereum,
 }
 
 impl Erc20 {
     pub(super) fn new(eth: &Ethereum, address: eth::TokenAddress) -> Self {
-        let settlement = eth.contracts().settlement().address().into();
         Self {
             token: eth.contract_at(address.into()),
-            balances: eth.contract_at(settlement),
-            vault_relayer: eth.contracts().vault_relayer(),
-            vault: eth.contracts().vault().address().into(),
             ethereum: eth.clone(),
         }
     }
@@ -113,11 +105,12 @@ impl Erc20 {
         source: order::SellTokenBalance,
         interactions: &[eth::Interaction],
     ) -> Result<eth::TokenAmount, Error> {
-        let mut method = self.balances.balance(
+        let balance_helper = self.ethereum.contracts().balance_helper();
+        let mut method = balance_helper.balance(
             (
-                self.balances.address(),
-                self.vault_relayer.into(),
-                self.vault.into(),
+                balance_helper.address(),
+                self.ethereum.contracts().vault_relayer().into(),
+                self.ethereum.contracts().vault().address(),
             ),
             trader.into(),
             self.token.address(),
@@ -166,24 +159,24 @@ impl Erc20 {
         source: order::SellTokenBalance,
     ) -> Result<eth::TokenAmount, Error> {
         use order::SellTokenBalance;
-        let web3 = self.token.raw_instance().web3();
 
+        let relayer = self.ethereum.contracts().vault_relayer();
         let usable_balance = match source {
             SellTokenBalance::Erc20 => {
                 let balance = self.balance(trader);
-                let allowance = self.allowance(trader, eth::Address(self.vault_relayer.0));
+                let allowance = self.allowance(trader, eth::Address(relayer.into()));
                 let (balance, allowance) = futures::try_join!(balance, allowance)?;
                 std::cmp::min(balance.0, allowance.0.amount)
             }
             SellTokenBalance::External => {
-                let vault = BalancerV2Vault::at(&web3, self.vault.0);
+                let vault = self.ethereum.contracts().vault();
                 let balance = self.balance(trader);
                 let approved = vault
                     .methods()
-                    .has_approved_relayer(trader.0, self.vault_relayer.0)
+                    .has_approved_relayer(trader.0, relayer.into())
                     .call()
                     .map_err(Error::from);
-                let allowance = self.allowance(trader, eth::Address(self.vault.0));
+                let allowance = self.allowance(trader, relayer.into());
                 let (balance, approved, allowance) =
                     futures::try_join!(balance, approved, allowance)?;
                 match approved {
@@ -192,7 +185,7 @@ impl Erc20 {
                 }
             }
             SellTokenBalance::Internal => {
-                let vault = BalancerV2Vault::at(&web3, self.vault.0);
+                let vault = self.ethereum.contracts().vault();
                 let balance = vault
                     .methods()
                     .get_internal_balance(trader.0, vec![self.token.address()])
@@ -200,7 +193,7 @@ impl Erc20 {
                     .map_err(Error::from);
                 let approved = vault
                     .methods()
-                    .has_approved_relayer(trader.0, self.vault_relayer.0)
+                    .has_approved_relayer(trader.0, relayer.into())
                     .call()
                     .map_err(Error::from);
                 let (balance, approved) = futures::try_join!(balance, approved)?;
