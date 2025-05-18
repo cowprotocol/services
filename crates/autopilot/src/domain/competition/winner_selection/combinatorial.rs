@@ -378,6 +378,9 @@ mod tests {
         },
         ethcontract::H160,
         hex_literal::hex,
+        serde::Deserialize,
+        serde_json::json,
+        serde_with::{DisplayFromStr, serde_as},
         std::{
             collections::HashMap,
             hash::{DefaultHasher, Hash, Hasher},
@@ -389,407 +392,316 @@ mod tests {
     #[test]
     // Only one bid submitted results in one winner with reward equal to score
     fn single_bid() {
-        let test = TestCase {
-            tokens: vec![
-                ("Token A", create_address(0)),
-                ("Token B", create_address(1)),
-                ("Token C", create_address(2)),
-                ("Token D", create_address(3)),
+        let case = json!({
+            "tokens": [
+                ["Token A", create_address(0)],
+                ["Token B", create_address(1)],
+                ["Token C", create_address(2)],
+                ["Token D", create_address(3)]
             ],
-            auction: TestAuction {
-                orders: vec![
-                    (
-                        "Order 1",
-                        "Token A",
-                        amount(1_000),
-                        "Token B",
-                        amount(1_000),
-                    ),
-                    (
-                        "Order 2",
-                        "Token C",
-                        amount(1_000),
-                        "Token D",
-                        amount(1_000),
-                    ),
-                ],
-                prices: None,
+            "auction": {
+                "orders": {
+                    "Order 1": ["Token A", amount(1_000).to_string(), "Token B", amount(1_000).to_string()],
+                    "Order 2": ["Token C", amount(1_000).to_string(), "Token D", amount(1_000).to_string()]
+                }
             },
-            solutions: vec![TestSolution {
-                solver_id: "Solver 1",
-                solution_id: "Solution 1",
-                tradres: vec![
-                    ("Order 1", amount(1_000), amount(1_100)),
-                    ("Order 2", amount(1_000), amount(1_100)),
-                ],
-                score: score_to_units(amount(200)),
-            }],
-            expected_fair_solutions: vec!["Solution 1"],
-            expected_winners: vec!["Solution 1"],
-            expected_refernce_scores: vec![("Solver 1", 0)],
-        };
-        test.validate();
+            "solutions": {
+                "Solution 1": {
+                    "solver": "Solver 1",
+                    "trades": {
+                        "Order 1": [amount(1_000).to_string(), amount(1_100).to_string()]
+                    },
+                    "score": score_to_units(amount(200)).to_string(),
+                }
+            },
+            "expected_fair_solutions": ["Solution 1"],
+            "expected_winners": ["Solution 1"],
+            "expected_reference_scores": {
+                "Solver 1": "0",
+            },
+        });
+        TestCase::from_json(case).validate();
     }
 
     #[test]
     // Only one bid submitted results in one winner with reward equal to score
     fn compatible_bids() {
-        let test = TestCase {
-            tokens: vec![
-                ("Token A", create_address(0)),
-                ("Token B", create_address(1)),
-                ("Token C", create_address(2)),
-                ("Token D", create_address(3)),
+        let case = json!({
+            "tokens": [
+                ["Token A", create_address(0)],
+                ["Token B", create_address(1)],
+                ["Token C", create_address(2)],
+                ["Token D", create_address(3)]
             ],
-            auction: TestAuction {
-                orders: vec![
-                    (
-                        "Order 1",
-                        "Token A",
-                        amount(1_000),
-                        "Token B",
-                        amount(1_000),
-                    ),
-                    (
-                        "Order 2",
-                        "Token C",
-                        amount(1_000),
-                        "Token D",
-                        amount(1_000),
-                    ),
-                    (
-                        "Order 3",
-                        "Token A",
-                        amount(1_000),
-                        "Token C",
-                        amount(1_000),
-                    ),
-                ],
-                prices: None,
+            "auction": {
+                "orders": {
+                    "Order 1": ["Token A", amount(1_000).to_string(), "Token B", amount(1_000).to_string()],
+                    "Order 2": ["Token C", amount(1_000).to_string(), "Token D", amount(1_000).to_string()],
+                    "Order 3": ["Token A", amount(1_000).to_string(), "Token C", amount(1_000).to_string()]
+                }
             },
-            solutions: vec![
-                TestSolution {
-                    solver_id: "Solver 1",
-                    solution_id: "Solution 1",
-                    tradres: vec![
-                        ("Order 1", amount(1_000), amount(1_100)),
-                        ("Order 2", amount(1_000), amount(1_100)),
-                    ],
-                    score: score_to_units(amount(200)),
+            "solutions": {
+                // best batch
+                "Solution 1": {
+                    "solver": "Solver 1",
+                    "trades": {
+                        "Order 1": [amount(1_000).to_string(), amount(1_100).to_string()],
+                        "Order 2": [amount(1_000).to_string(), amount(1_100).to_string()]
+                    },
+                    "score": score_to_units(amount(200)),
                 },
-                TestSolution {
-                    solver_id: "Solver 2",
-                    solution_id: "Solution 2",
-                    tradres: vec![("Order 3", amount(1_000), amount(1_100))],
-                    score: score_to_units(amount(100)),
-                },
-            ],
-            expected_fair_solutions: vec!["Solution 1", "Solution 2"],
-            expected_winners: vec!["Solution 1", "Solution 2"],
-            expected_refernce_scores: vec![("Solver 1", 100), ("Solver 2", 200)],
-        };
-        test.validate();
+                // compatible batch
+                "Solution 2": {
+                    "solver": "Solver 2",
+                    "trades": {
+                        "Order 3": [amount(1_000).to_string(), amount(1_100).to_string()],
+                    },
+                    "score": score_to_units(amount(100)).to_string(),
+                }
+            },
+            "expected_fair_solutions": ["Solution 1", "Solution 2"],
+            "expected_winners": ["Solution 1", "Solution 2"],
+            "expected_reference_scores": {
+                "Solver 1": "100",
+                "Solver 2": "200",
+            },
+        });
+        TestCase::from_json(case).validate();
     }
 
     #[test]
     // Only one bid submitted results in one winner with reward equal to score
     fn multiple_solution_for_solver() {
-        let test = TestCase {
-            tokens: vec![
-                ("Token A", create_address(0)),
-                ("Token B", create_address(1)),
-                ("Token C", create_address(2)),
-                ("Token D", create_address(3)),
+        let case = json!({
+            "tokens": [
+                ["Token A", create_address(0)],
+                ["Token B", create_address(1)],
+                ["Token C", create_address(2)],
+                ["Token D", create_address(3)]
             ],
-            auction: TestAuction {
-                orders: vec![
-                    (
-                        "Order 1",
-                        "Token A",
-                        amount(1_000),
-                        "Token B",
-                        amount(1_000),
-                    ),
-                    (
-                        "Order 2",
-                        "Token C",
-                        amount(1_000),
-                        "Token D",
-                        amount(1_000),
-                    ),
-                    (
-                        "Order 3",
-                        "Token A",
-                        amount(1_000),
-                        "Token D",
-                        amount(1_000),
-                    ),
-                ],
-                prices: None,
+            "auction": {
+                "orders": {
+                    "Order 1": ["Token A", amount(1_000).to_string(), "Token B", amount(1_000).to_string()],
+                    "Order 2": ["Token C", amount(1_000).to_string(), "Token D", amount(1_000).to_string()],
+                    "Order 3": ["Token A", amount(1_000).to_string(), "Token D", amount(1_000).to_string()]
+                }
             },
-            solutions: vec![
+            "solutions": {
                 // best batch
-                TestSolution {
-                    solver_id: "Solver 1",
-                    solution_id: "Solution 1",
-                    tradres: vec![
-                        ("Order 1", amount(1_000), amount(1_100)),
-                        ("Order 2", amount(1_000), amount(1_100)),
-                    ],
-                    score: score_to_units(amount(200)),
+                "Solution 1": {
+                    "solver": "Solver 1",
+                    "trades": {
+                        "Order 1": [amount(1_000).to_string(), amount(1_100).to_string()],
+                        "Order 2": [amount(1_000).to_string(), amount(1_100).to_string()]
+                    },
+                    "score": score_to_units(amount(200)),
                 },
                 // compatible batch
-                TestSolution {
-                    solver_id: "Solver 1", // same solver
-                    solution_id: "Solution 2",
-                    tradres: vec![("Order 3", amount(1_000), amount(1_100))],
-                    score: score_to_units(amount(100)),
-                },
-            ],
-            expected_fair_solutions: vec!["Solution 1", "Solution 2"],
-            expected_winners: vec!["Solution 1", "Solution 2"],
-            expected_refernce_scores: vec![("Solver 1", 0)],
-        };
-        test.validate();
+                "Solution 2": {
+                    "solver": "Solver 1", // same solver
+                    "trades": {
+                        "Order 3": [amount(1_000).to_string(), amount(1_100).to_string()],
+                    },
+                    "score": score_to_units(amount(100)).to_string(),
+                }
+            },
+            "expected_fair_solutions": ["Solution 1", "Solution 2"],
+            "expected_winners": ["Solution 1", "Solution 2"],
+            "expected_reference_scores": {
+                "Solver 1": "0",
+            },
+        });
+        TestCase::from_json(case).validate();
     }
 
     #[test]
     // Incompatible bid does not win but reduces reward
     fn incompatible_bids() {
-        let test = TestCase {
-            tokens: vec![
-                ("Token A", create_address(0)),
-                ("Token B", create_address(1)),
-                ("Token C", create_address(2)),
-                ("Token D", create_address(3)),
+        let case = json!({
+            "tokens": [
+                ["Token A", create_address(0)],
+                ["Token B", create_address(1)],
+                ["Token C", create_address(2)],
+                ["Token D", create_address(3)]
             ],
-            auction: TestAuction {
-                orders: vec![
-                    (
-                        "Order 1",
-                        "Token A",
-                        amount(1_000),
-                        "Token B",
-                        amount(1_000),
-                    ),
-                    (
-                        "Order 2",
-                        "Token C",
-                        amount(1_000),
-                        "Token D",
-                        amount(1_000),
-                    ),
-                ],
-                prices: None,
+            "auction": {
+                "orders": {
+                    "Order 1": ["Token A", amount(1_000).to_string(), "Token B", amount(1_000).to_string()],
+                    "Order 2": ["Token C", amount(1_000).to_string(), "Token D", amount(1_000).to_string()],
+                }
             },
-            solutions: vec![
+            "solutions": {
                 // best batch
-                TestSolution {
-                    solver_id: "Solver 1",
-                    solution_id: "Solution 1",
-                    tradres: vec![
-                        ("Order 1", amount(1_000), amount(1_100)),
-                        ("Order 2", amount(1_000), amount(1_100)),
-                    ],
-                    score: score_to_units(amount(200)),
+                "Solution 1": {
+                    "solver": "Solver 1",
+                    "trades": {
+                        "Order 1": [amount(1_000).to_string(), amount(1_100).to_string()],
+                        "Order 2": [amount(1_000).to_string(), amount(1_100).to_string()]
+                    },
+                    "score": score_to_units(amount(200)).to_string(),
                 },
-                // incompatible batch
-                TestSolution {
-                    solver_id: "Solver 2",
-                    solution_id: "Solution 2",
-                    tradres: vec![("Order 1", amount(1_000), amount(1_100))],
-                    score: score_to_units(amount(100)),
-                },
-            ],
-            expected_fair_solutions: vec!["Solution 1", "Solution 2"],
-            expected_winners: vec!["Solution 1"],
-            expected_refernce_scores: vec![("Solver 1", 100)],
-        };
-        test.validate();
+                // compatible batch
+                "Solution 2": {
+                    "solver": "Solver 2",
+                    "trades": {
+                        "Order 1": [amount(1_000).to_string(), amount(1_100).to_string()],
+                    },
+                    "score": score_to_units(amount(100)).to_string(),
+                }
+            },
+            "expected_fair_solutions": ["Solution 1", "Solution 2"],
+            "expected_winners": ["Solution 1"],
+            "expected_reference_scores": {
+                "Solver 1": "100",
+            },
+        });
+        TestCase::from_json(case).validate();
     }
 
     #[test]
     // Unfair batch is filtered
     fn fairness_filtering() {
-        let test = TestCase {
-            tokens: vec![
-                ("Token A", create_address(0)),
-                ("Token B", create_address(1)),
-                ("Token C", create_address(2)),
-                ("Token D", create_address(3)),
+        let case = json!({
+            "tokens": [
+                ["Token A", create_address(0)],
+                ["Token B", create_address(1)],
+                ["Token C", create_address(2)],
+                ["Token D", create_address(3)]
             ],
-            auction: TestAuction {
-                orders: vec![
-                    (
-                        "Order 1",
-                        "Token A",
-                        amount(1_000),
-                        "Token B",
-                        amount(1_000),
-                    ),
-                    (
-                        "Order 2",
-                        "Token C",
-                        amount(1_000),
-                        "Token D",
-                        amount(1_000),
-                    ),
-                ],
-                prices: None,
+            "auction": {
+                "orders": {
+                    "Order 1": ["Token A", amount(1_000).to_string(), "Token B", amount(1_000).to_string()],
+                    "Order 2": ["Token C", amount(1_000).to_string(), "Token D", amount(1_000).to_string()],
+                }
             },
-            solutions: vec![
+            "solutions": {
                 // unfair batch
-                TestSolution {
-                    solver_id: "Solver 1",
-                    solution_id: "Solution 1",
-                    tradres: vec![
-                        ("Order 1", amount(1_000), amount(1_100)),
-                        ("Order 2", amount(1_000), amount(1_100)),
-                    ],
-                    score: score_to_units(amount(200)),
+                "Solution 1": {
+                    "solver": "Solver 1",
+                    "trades": {
+                        "Order 1": [amount(1_000).to_string(), amount(1_100).to_string()],
+                        "Order 2": [amount(1_000).to_string(), amount(1_100).to_string()]
+                    },
+                    "score": score_to_units(amount(200)).to_string(),
                 },
                 // filtering batch
-                TestSolution {
-                    solver_id: "Solver 2",
-                    solution_id: "Solution 2",
-                    tradres: vec![("Order 1", amount(1_000), amount(1_150))],
-                    score: score_to_units(amount(150)),
-                },
-            ],
-            expected_fair_solutions: vec!["Solution 2"],
-            expected_winners: vec!["Solution 2"],
-            expected_refernce_scores: vec![("Solver 2", 0)],
-        };
-        test.validate();
+                "Solution 2": {
+                    "solver": "Solver 2",
+                    "trades": {
+                        "Order 1": [amount(1_000).to_string(), amount(1_150).to_string()],
+                    },
+                    "score": score_to_units(amount(150)).to_string(),
+                }
+            },
+            "expected_fair_solutions": ["Solution 2"],
+            "expected_winners": ["Solution 2"],
+            "expected_reference_scores": {
+                "Solver 2": "0",
+            },
+        });
+        TestCase::from_json(case).validate();
     }
 
     #[test]
     // Multiple trades on the same (directed) token pair are aggregated for
     // filtering
     fn aggregation_on_token_pair() {
-        let test = TestCase {
-            tokens: vec![
-                ("Token A", create_address(0)),
-                ("Token B", create_address(1)),
+        let case = json!({
+            "tokens": [
+                ["Token A", create_address(0)],
+                ["Token B", create_address(1)],
             ],
-            auction: TestAuction {
-                orders: vec![
-                    (
-                        "Order 1",
-                        "Token A",
-                        amount(1_000),
-                        "Token B",
-                        amount(1_000),
-                    ),
-                    (
-                        "Order 2",
-                        "Token A",
-                        amount(1_000),
-                        "Token B",
-                        amount(1_000),
-                    ),
-                ],
-                prices: None,
+            "auction": {
+                "orders": {
+                    "Order 1": ["Token A", amount(1_000).to_string(), "Token B", amount(1_000).to_string()],
+                    "Order 2": ["Token A", amount(1_000).to_string(), "Token B", amount(1_000).to_string()],
+                }
             },
-            solutions: vec![
+            "solutions": {
                 // batch with aggregation
-                TestSolution {
-                    solver_id: "Solver 1",
-                    solution_id: "Solution 1",
-                    tradres: vec![
-                        ("Order 1", amount(1_000), amount(1_100)),
-                        ("Order 2", amount(1_000), amount(1_100)),
-                    ],
-                    score: score_to_units(amount(200)),
+                "Solution 1": {
+                    "solver": "Solver 1",
+                    "trades": {
+                        "Order 1": [amount(1_000).to_string(), amount(1_100).to_string()],
+                        "Order 2": [amount(1_000).to_string(), amount(1_100).to_string()]
+                    },
+                    "score": score_to_units(amount(200)).to_string(),
                 },
                 // incompatible batch
-                TestSolution {
-                    solver_id: "Solver 2",
-                    solution_id: "Solution 2",
-                    tradres: vec![("Order 1", amount(1_000), amount(1_150))],
-                    score: score_to_units(amount(150)),
-                },
-            ],
-            expected_fair_solutions: vec!["Solution 1", "Solution 2"],
-            expected_winners: vec!["Solution 1"],
-            expected_refernce_scores: vec![("Solver 1", 150)],
-        };
-        test.validate();
+                "Solution 2": {
+                    "solver": "Solver 2",
+                    "trades": {
+                        "Order 1": [amount(1_000).to_string(), amount(1_150).to_string()],
+                    },
+                    "score": score_to_units(amount(150)).to_string(),
+                }
+            },
+            "expected_fair_solutions": ["Solution 1", "Solution 2"],
+            "expected_winners": ["Solution 1"],
+            "expected_reference_scores": {
+                "Solver 1": "150",
+            },
+        });
+        TestCase::from_json(case).validate();
     }
 
     #[test]
     // Reference winners can generate more surplus than winners
     fn reference_better_than_winners() {
-        let test = TestCase {
-            tokens: vec![
-                ("Token A", create_address(0)),
-                ("Token B", create_address(1)),
-                ("Token C", create_address(2)),
-                ("Token D", create_address(3)),
-                ("Token E", create_address(4)),
-                ("Token F", create_address(5)),
+        let case = json!({
+            "tokens": [
+                ["Token A", create_address(0)],
+                ["Token B", create_address(1)],
+                ["Token C", create_address(2)],
+                ["Token D", create_address(3)],
+                ["Token E", create_address(4)],
+                ["Token F", create_address(5)]
             ],
-            auction: TestAuction {
-                orders: vec![
-                    (
-                        "Order 1",
-                        "Token A",
-                        amount(1_000),
-                        "Token B",
-                        amount(1_000),
-                    ),
-                    (
-                        "Order 2",
-                        "Token C",
-                        amount(1_000),
-                        "Token D",
-                        amount(1_000),
-                    ),
-                    (
-                        "Order 3",
-                        "Token E",
-                        amount(1_000),
-                        "Token F",
-                        amount(1_000),
-                    ),
-                ],
-                prices: None,
+            "auction": {
+                "orders": {
+                    "Order 1": ["Token A", amount(1_000).to_string(), "Token B", amount(1_000).to_string()],
+                    "Order 2": ["Token C", amount(1_000).to_string(), "Token D", amount(1_000).to_string()],
+                    "Order 3": ["Token E", amount(1_000).to_string(), "Token F", amount(1_000).to_string()],
+                }
             },
-            solutions: vec![
+            "solutions": {
                 // best batch
-                TestSolution {
-                    solver_id: "Solver 1",
-                    solution_id: "Solution 1",
-                    tradres: vec![
-                        ("Order 1", amount(1_000), amount(1_100)),
-                        ("Order 2", amount(1_000), amount(1_100)),
-                        ("Order 3", amount(1_000), amount(1_100)),
-                    ],
-                    score: score_to_units(amount(300)),
+                "Solution 1": {
+                    "solver": "Solver 1",
+                    "trades": {
+                        "Order 1": [amount(1_000).to_string(), amount(1_100).to_string()],
+                        "Order 2": [amount(1_000).to_string(), amount(1_100).to_string()],
+                        "Order 3": [amount(1_000).to_string(), amount(1_100).to_string()]
+                    },
+                    "score": score_to_units(amount(300)),
                 },
                 // incompatible batch 1
-                TestSolution {
-                    solver_id: "Solver 2",
-                    solution_id: "Solution 2",
-                    tradres: vec![
-                        ("Order 1", amount(1_000), amount(1_140)),
-                        ("Order 2", amount(1_000), amount(1_140)),
-                    ],
-                    score: score_to_units(amount(280)),
+                "Solution 2": {
+                    "solver": "Solver 2",
+                    "trades": {
+                        "Order 1": [amount(1_000).to_string(), amount(1_140).to_string()],
+                        "Order 2": [amount(1_000).to_string(), amount(1_140).to_string()],
+                    },
+                    "score": score_to_units(amount(280)),
                 },
                 // incompatible batch 2
-                TestSolution {
-                    solver_id: "Solver 3",
-                    solution_id: "Solution 3",
-                    tradres: vec![("Order 3", amount(1_000), amount(1_100))],
-                    score: score_to_units(amount(100)),
-                },
-            ],
-            expected_fair_solutions: vec!["Solution 1", "Solution 2", "Solution 2"],
-            expected_winners: vec!["Solution 1"],
-            expected_refernce_scores: vec![("Solver 1", 380), ("Solver 2", 300), ("Solver 3", 300)],
-        };
-        test.validate();
+                "Solution 3": {
+                    "solver": "Solver 3",
+                    "trades": {
+                        "Order 3": [amount(1_000).to_string(), amount(1_100).to_string()],
+                    },
+                    "score": score_to_units(amount(100)).to_string(),
+                }
+            },
+            "expected_fair_solutions": ["Solution 1", "Solution 2",  "Solution 3"],
+            "expected_winners": ["Solution 1"],
+            "expected_reference_scores": {
+                "Solver 1": "380",
+                "Solver 2": "300",
+                "Solver 3": "300",
+            },
+        });
+        TestCase::from_json(case).validate();
     }
 
     #[test]
@@ -798,83 +710,86 @@ mod tests {
         // The example is an auction with one order and two competing bids for it, one
         // having a better score than the other
 
-        let test = TestCase {
-            tokens: vec![
+        let case = json!({
+            "tokens": [
                 // corresponding to 0x67466be17df832165f8c80a5a120ccc652bd7e69
-                ("Token A", create_address(0)),
+                ["Token A", create_address(0)],
                 // corresponding to 0xdac17f958d2ee523a2206206994597c13d831ec7
-                ("Token B", create_address(1)),
+                ["Token B", create_address(1)],
             ],
-            auction: TestAuction {
-                orders: vec![(
-                    "Order 1",
-                    "Token A",
-                    32375066190000000000000000,
-                    "Token B",
-                    2161512119,
-                )],
-                prices: Some(vec![
-                    ("Token A", 32429355240),
-                    ("Token B", 480793239987749750742974464),
-                ]),
+            "auction": {
+                "orders": {
+                    "Order 1": ["Token A", "32375066190000000000000000", "Token B", "2161512119"],
+                },
+                "prices": {
+                    "Token A": "32429355240",
+                    "Token B": "480793239987749750742974464",
+                }
             },
-            solutions: vec![
+            "solutions": {
                 // solution 1 (baseline, the winner)
-                TestSolution {
-                    solver_id: "Solver 1",
-                    solution_id: "Solution 1",
-                    tradres: vec![("Order 1", 32375066190000000000000000, 2206881314)],
-                    score: 21813202259686016u128.into(),
+                "Solution 1": {
+                    "solver": "Solver 1",
+                    "trades": {
+                        "Order 1": ["32375066190000000000000000", "2206881314"],
+                    },
+                    "score": "21813202259686016",
                 },
                 // solution 2 (zeroex)
-                TestSolution {
-                    solver_id: "Solver 2",
-                    solution_id: "Solution 2",
-                    tradres: vec![("Order 1", 32375066190000000000000000, 2205267875)],
-                    score: 21037471695353421u128.into(),
+                "Solution 2": {
+                    "solver": "Solver 2",
+                    "trades": {
+                        "Order 1": ["32375066190000000000000000", "2205267875"],
+                    },
+                    "score": "21037471695353421",
                 },
-            ],
-            expected_fair_solutions: vec!["Solution 1", "Solution 2"],
-            expected_winners: vec!["Solution 1"],
-            expected_refernce_scores: vec![("Solver 1", 21037471695353421)],
-        };
-        test.validate();
+            },
+            "expected_fair_solutions": ["Solution 1", "Solution 2"],
+            "expected_winners": ["Solution 1"],
+            "expected_reference_scores": {
+                "Solver 1": "21037471695353421",
+            },
+        });
+        TestCase::from_json(case).validate();
     }
 
-    struct TestCase {
-        // (id, address)
-        pub tokens: Vec<(&'static str, H160)>,
+    #[serde_as]
+    #[derive(Deserialize, Debug)]
+    pub struct TestCase {
+        pub tokens: Vec<(String, H160)>,
         pub auction: TestAuction,
-        pub solutions: Vec<TestSolution>,
-        pub expected_fair_solutions: Vec<&'static str>, // solution_id
-        pub expected_winners: Vec<&'static str>,        // solution_id
-        pub expected_refernce_scores: Vec<(&'static str, u128)>, // (solver_id, reference_score)
+        pub solutions: HashMap<String, TestSolution>,
+        pub expected_fair_solutions: Vec<String>,
+        pub expected_winners: Vec<String>,
+        #[serde_as(as = "HashMap<_, DisplayFromStr>")]
+        pub expected_reference_scores: HashMap<String, u128>,
     }
 
     impl TestCase {
+        pub fn from_json(value: serde_json::Value) -> Self {
+            serde_json::from_value(value).unwrap()
+        }
+
         pub fn validate(&self) {
             let arbitrator = create_test_arbitrator();
 
             // map (token id -> token address) for later reference during the test
-            let token_map: HashMap<&'static str, H160> = self.tokens.clone().into_iter().collect();
+            let token_map: HashMap<String, H160> = self.tokens.clone().into_iter().collect();
 
             // map (order id -> order) for later reference during the test
-            let order_map: HashMap<&'static str, Order> = self
+            let order_map: HashMap<String, Order> = self
                 .auction
                 .orders
                 .clone()
-                .iter()
+                .into_iter()
                 .map(
-                    |&(
+                    |(
                         order_id,
-                        sell_token_id,
-                        sell_token_amount,
-                        buy_token_id,
-                        buy_token_amount,
+                        TestOrder(sell_token, sell_token_amount, buy_token, buy_token_amount),
                     )| {
-                        let order_uid = hash(order_id);
-                        let buy_token = token_map.get(buy_token_id).unwrap();
-                        let sell_token = token_map.get(sell_token_id).unwrap();
+                        let order_uid = hash(&order_id);
+                        let sell_token = token_map.get(&sell_token).unwrap();
+                        let buy_token = token_map.get(&buy_token).unwrap();
                         let order = create_order(
                             order_uid,
                             *sell_token,
@@ -910,25 +825,27 @@ mod tests {
 
             // map (solution id -> participant) for later reference during the test
             let mut solution_map = HashMap::new();
-            for solution in &self.solutions {
+            for (solution_id, solution) in &self.solutions {
                 // generate solver address deterministically from the id
-                let solver_uid = hash(solution.solver_id);
+                let solver_uid = hash(&solution.solver);
                 let solver_address = create_address(solver_uid);
-                solver_map.insert(solution.solver_id, solver_address);
+                solver_map.insert(solution.solver.clone(), solver_address);
 
                 let trades = solution
-                    .tradres
+                    .trades
                     .iter()
-                    .map(|(order_id, sell_token_amount, buy_token_amount)| {
+                    .map(|(order_id, trade)| {
                         let order = order_map.get(order_id).unwrap();
-                        let trade = create_trade(order, *sell_token_amount, *buy_token_amount);
+                        let sell_token_amount = trade.0;
+                        let buy_token_amount = trade.1;
+                        let trade = create_trade(order, sell_token_amount, buy_token_amount);
                         (order.uid, trade)
                     })
                     .collect();
 
-                let solution_uid = hash(solution.solution_id);
+                let solution_uid = hash(solution_id);
                 solution_map.insert(
-                    solution.solution_id,
+                    solution_id,
                     create_solution(solution_uid, solver_address, solution.score, trades, None),
                 );
             }
@@ -938,7 +855,7 @@ mod tests {
             let solutions = arbitrator.filter_unfair_solutions(participants, &auction);
             assert_eq!(solutions.len(), self.expected_fair_solutions.len());
             for solution_id in self.expected_fair_solutions.clone() {
-                let solution_uid = solution_map.get(solution_id).unwrap().solution().id;
+                let solution_uid = solution_map.get(&solution_id).unwrap().solution().id;
                 assert!(solutions.iter().any(|s| s.solution().id == solution_uid));
             }
 
@@ -947,34 +864,51 @@ mod tests {
             let winners = filter_winners(&solutions);
             assert_eq!(winners.len(), self.expected_winners.len());
             for solution_id in self.expected_winners.clone() {
-                let solution_uid = solution_map.get(solution_id).unwrap().solution().id;
+                let solution_uid = solution_map.get(&solution_id).unwrap().solution().id;
                 assert!(winners.iter().any(|s| s.solution().id == solution_uid));
             }
 
             // compute reference score
             let reference_scores = arbitrator.compute_reference_scores(&solutions);
-            for (solver_id, expected_score) in self.expected_refernce_scores.clone() {
-                let solver_address: eth::Address = (*solver_map.get(solver_id).unwrap()).into();
+            for (solver_id, expected_score) in self.expected_reference_scores.clone() {
+                let solver_address: eth::Address = (*solver_map.get(&solver_id).unwrap()).into();
                 let score = reference_scores.get(&solver_address).unwrap();
                 assert_eq!(score.0, eth::Ether(expected_score.into()))
             }
         }
     }
 
-    struct TestAuction {
-        // (id, buy_token_id, buy_amount, sell_token_id, sell_amount)
-        pub orders: Vec<(&'static str, &'static str, u128, &'static str, u128)>,
-        // (token_id, price)
-        pub prices: Option<Vec<(&'static str, u128)>>,
+    #[serde_as]
+    #[derive(Deserialize, Debug)]
+    pub struct TestAuction {
+        pub orders: HashMap<String, TestOrder>,
+        #[serde(default)]
+        #[serde_as(as = "Option<HashMap<_, DisplayFromStr>>")]
+        pub prices: Option<HashMap<String, u128>>,
     }
 
-    struct TestSolution {
-        pub solver_id: &'static str,
-        pub solution_id: &'static str,
-        // (order_id, buy_amount, sell_amount)
-        pub tradres: Vec<(&'static str, u128, u128)>,
+    #[serde_as]
+    #[derive(Deserialize, Debug, Clone)]
+    pub struct TestOrder(
+        pub String,                                  // sell_token
+        #[serde_as(as = "DisplayFromStr")] pub u128, // sell_amount
+        pub String,                                  // buy_token
+        #[serde_as(as = "DisplayFromStr")] pub u128, // buy_amount
+    );
+
+    #[derive(Deserialize, Debug)]
+    pub struct TestSolution {
+        pub solver: String,
+        pub trades: HashMap<String, TestTrade>,
         pub score: eth::U256,
     }
+
+    #[serde_as]
+    #[derive(Deserialize, Debug)]
+    pub struct TestTrade(
+        #[serde_as(as = "DisplayFromStr")] pub u128,
+        #[serde_as(as = "DisplayFromStr")] pub u128,
+    );
 
     fn create_test_arbitrator() -> super::Config {
         super::Config {
@@ -1125,7 +1059,7 @@ mod tests {
         solutions.iter().filter(|s| s.is_winner()).collect()
     }
 
-    fn hash(s: &'static str) -> u64 {
+    fn hash(s: &str) -> u64 {
         let mut hasher = DefaultHasher::new();
         s.hash(&mut hasher);
         hasher.finish()
