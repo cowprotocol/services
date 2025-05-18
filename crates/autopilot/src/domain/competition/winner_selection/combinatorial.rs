@@ -761,6 +761,8 @@ mod tests {
         pub solutions: HashMap<String, TestSolution>,
         pub expected_fair_solutions: Vec<String>,
         pub expected_winners: Vec<String>,
+        // workaoround needed as JSON have a limitation on number size, so we accept numbers as
+        // String
         #[serde_as(as = "HashMap<_, DisplayFromStr>")]
         pub expected_reference_scores: HashMap<String, u128>,
     }
@@ -883,10 +885,13 @@ mod tests {
     pub struct TestAuction {
         pub orders: HashMap<String, TestOrder>,
         #[serde(default)]
+        // workaoround needed as JSON have a limitation on number size, so we accept numbers as
+        // String
         #[serde_as(as = "Option<HashMap<_, DisplayFromStr>>")]
         pub prices: Option<HashMap<String, u128>>,
     }
 
+    // Here we also need the workaoround to define the numbers as strings in JSON
     #[serde_as]
     #[derive(Deserialize, Debug, Clone)]
     pub struct TestOrder(
@@ -903,6 +908,7 @@ mod tests {
         pub score: eth::U256,
     }
 
+    // Here we also need the workaoround to define the numbers as strings in JSON
     #[serde_as]
     #[derive(Deserialize, Debug)]
     pub struct TestTrade(
