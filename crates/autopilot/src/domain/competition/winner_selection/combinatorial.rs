@@ -401,17 +401,17 @@ mod tests {
             ],
             "auction": {
                 "orders": {
-                    "Order 1": ["Token A", amount(1_000).to_string(), "Token B", amount(1_000).to_string()],
-                    "Order 2": ["Token C", amount(1_000).to_string(), "Token D", amount(1_000).to_string()]
+                    "Order 1": ["Token A", amount(1_000), "Token B", amount(1_000)],
+                    "Order 2": ["Token C", amount(1_000), "Token D", amount(1_000)]
                 }
             },
             "solutions": {
                 "Solution 1": {
                     "solver": "Solver 1",
                     "trades": {
-                        "Order 1": [amount(1_000).to_string(), amount(1_100).to_string()]
+                        "Order 1": [amount(1_000), amount(1_100)]
                     },
-                    "score": score_to_units(amount(200)).to_string(),
+                    "score": score(200),
                 }
             },
             "expected_fair_solutions": ["Solution 1"],
@@ -435,9 +435,9 @@ mod tests {
             ],
             "auction": {
                 "orders": {
-                    "Order 1": ["Token A", amount(1_000).to_string(), "Token B", amount(1_000).to_string()],
-                    "Order 2": ["Token C", amount(1_000).to_string(), "Token D", amount(1_000).to_string()],
-                    "Order 3": ["Token A", amount(1_000).to_string(), "Token C", amount(1_000).to_string()]
+                    "Order 1": ["Token A", amount(1_000), "Token B", amount(1_000)],
+                    "Order 2": ["Token C", amount(1_000), "Token D", amount(1_000)],
+                    "Order 3": ["Token A", amount(1_000), "Token C", amount(1_000)]
                 }
             },
             "solutions": {
@@ -445,18 +445,18 @@ mod tests {
                 "Solution 1": {
                     "solver": "Solver 1",
                     "trades": {
-                        "Order 1": [amount(1_000).to_string(), amount(1_100).to_string()],
-                        "Order 2": [amount(1_000).to_string(), amount(1_100).to_string()]
+                        "Order 1": [amount(1_000), amount(1_100)],
+                        "Order 2": [amount(1_000), amount(1_100)]
                     },
-                    "score": score_to_units(amount(200)),
+                    "score": score(200),
                 },
                 // compatible batch
                 "Solution 2": {
                     "solver": "Solver 2",
                     "trades": {
-                        "Order 3": [amount(1_000).to_string(), amount(1_100).to_string()],
+                        "Order 3": [amount(1_000), amount(1_100)],
                     },
-                    "score": score_to_units(amount(100)).to_string(),
+                    "score": score(100),
                 }
             },
             "expected_fair_solutions": ["Solution 1", "Solution 2"],
@@ -481,9 +481,9 @@ mod tests {
             ],
             "auction": {
                 "orders": {
-                    "Order 1": ["Token A", amount(1_000).to_string(), "Token B", amount(1_000).to_string()],
-                    "Order 2": ["Token C", amount(1_000).to_string(), "Token D", amount(1_000).to_string()],
-                    "Order 3": ["Token A", amount(1_000).to_string(), "Token D", amount(1_000).to_string()]
+                    "Order 1": ["Token A", amount(1_000), "Token B", amount(1_000)],
+                    "Order 2": ["Token C", amount(1_000), "Token D", amount(1_000)],
+                    "Order 3": ["Token A", amount(1_000), "Token D", amount(1_000)]
                 }
             },
             "solutions": {
@@ -491,18 +491,18 @@ mod tests {
                 "Solution 1": {
                     "solver": "Solver 1",
                     "trades": {
-                        "Order 1": [amount(1_000).to_string(), amount(1_100).to_string()],
-                        "Order 2": [amount(1_000).to_string(), amount(1_100).to_string()]
+                        "Order 1": [amount(1_000), amount(1_100)],
+                        "Order 2": [amount(1_000), amount(1_100)]
                     },
-                    "score": score_to_units(amount(200)),
+                    "score": score(200),
                 },
                 // compatible batch
                 "Solution 2": {
                     "solver": "Solver 1", // same solver
                     "trades": {
-                        "Order 3": [amount(1_000).to_string(), amount(1_100).to_string()],
+                        "Order 3": [amount(1_000), amount(1_100)],
                     },
-                    "score": score_to_units(amount(100)).to_string(),
+                    "score": score(100),
                 }
             },
             "expected_fair_solutions": ["Solution 1", "Solution 2"],
@@ -526,8 +526,8 @@ mod tests {
             ],
             "auction": {
                 "orders": {
-                    "Order 1": ["Token A", amount(1_000).to_string(), "Token B", amount(1_000).to_string()],
-                    "Order 2": ["Token C", amount(1_000).to_string(), "Token D", amount(1_000).to_string()],
+                    "Order 1": ["Token A", amount(1_000), "Token B", amount(1_000)],
+                    "Order 2": ["Token C", amount(1_000), "Token D", amount(1_000)],
                 }
             },
             "solutions": {
@@ -535,18 +535,18 @@ mod tests {
                 "Solution 1": {
                     "solver": "Solver 1",
                     "trades": {
-                        "Order 1": [amount(1_000).to_string(), amount(1_100).to_string()],
-                        "Order 2": [amount(1_000).to_string(), amount(1_100).to_string()]
+                        "Order 1": [amount(1_000), amount(1_100)],
+                        "Order 2": [amount(1_000), amount(1_100)]
                     },
-                    "score": score_to_units(amount(200)).to_string(),
+                    "score": score(200),
                 },
                 // compatible batch
                 "Solution 2": {
                     "solver": "Solver 2",
                     "trades": {
-                        "Order 1": [amount(1_000).to_string(), amount(1_100).to_string()],
+                        "Order 1": [amount(1_000), amount(1_100)],
                     },
-                    "score": score_to_units(amount(100)).to_string(),
+                    "score": score(100),
                 }
             },
             "expected_fair_solutions": ["Solution 1", "Solution 2"],
@@ -570,8 +570,8 @@ mod tests {
             ],
             "auction": {
                 "orders": {
-                    "Order 1": ["Token A", amount(1_000).to_string(), "Token B", amount(1_000).to_string()],
-                    "Order 2": ["Token C", amount(1_000).to_string(), "Token D", amount(1_000).to_string()],
+                    "Order 1": ["Token A", amount(1_000), "Token B", amount(1_000)],
+                    "Order 2": ["Token C", amount(1_000), "Token D", amount(1_000)],
                 }
             },
             "solutions": {
@@ -579,18 +579,18 @@ mod tests {
                 "Solution 1": {
                     "solver": "Solver 1",
                     "trades": {
-                        "Order 1": [amount(1_000).to_string(), amount(1_100).to_string()],
-                        "Order 2": [amount(1_000).to_string(), amount(1_100).to_string()]
+                        "Order 1": [amount(1_000), amount(1_100)],
+                        "Order 2": [amount(1_000), amount(1_100)]
                     },
-                    "score": score_to_units(amount(200)).to_string(),
+                    "score": score(200),
                 },
                 // filtering batch
                 "Solution 2": {
                     "solver": "Solver 2",
                     "trades": {
-                        "Order 1": [amount(1_000).to_string(), amount(1_150).to_string()],
+                        "Order 1": [amount(1_000), amount(1_150)],
                     },
-                    "score": score_to_units(amount(150)).to_string(),
+                    "score": score(150),
                 }
             },
             "expected_fair_solutions": ["Solution 2"],
@@ -613,8 +613,8 @@ mod tests {
             ],
             "auction": {
                 "orders": {
-                    "Order 1": ["Token A", amount(1_000).to_string(), "Token B", amount(1_000).to_string()],
-                    "Order 2": ["Token A", amount(1_000).to_string(), "Token B", amount(1_000).to_string()],
+                    "Order 1": ["Token A", amount(1_000), "Token B", amount(1_000)],
+                    "Order 2": ["Token A", amount(1_000), "Token B", amount(1_000)],
                 }
             },
             "solutions": {
@@ -622,18 +622,18 @@ mod tests {
                 "Solution 1": {
                     "solver": "Solver 1",
                     "trades": {
-                        "Order 1": [amount(1_000).to_string(), amount(1_100).to_string()],
-                        "Order 2": [amount(1_000).to_string(), amount(1_100).to_string()]
+                        "Order 1": [amount(1_000), amount(1_100)],
+                        "Order 2": [amount(1_000), amount(1_100)]
                     },
-                    "score": score_to_units(amount(200)).to_string(),
+                    "score": score(200),
                 },
                 // incompatible batch
                 "Solution 2": {
                     "solver": "Solver 2",
                     "trades": {
-                        "Order 1": [amount(1_000).to_string(), amount(1_150).to_string()],
+                        "Order 1": [amount(1_000), amount(1_150)],
                     },
-                    "score": score_to_units(amount(150)).to_string(),
+                    "score": score(150),
                 }
             },
             "expected_fair_solutions": ["Solution 1", "Solution 2"],
@@ -659,9 +659,9 @@ mod tests {
             ],
             "auction": {
                 "orders": {
-                    "Order 1": ["Token A", amount(1_000).to_string(), "Token B", amount(1_000).to_string()],
-                    "Order 2": ["Token C", amount(1_000).to_string(), "Token D", amount(1_000).to_string()],
-                    "Order 3": ["Token E", amount(1_000).to_string(), "Token F", amount(1_000).to_string()],
+                    "Order 1": ["Token A", amount(1_000), "Token B", amount(1_000)],
+                    "Order 2": ["Token C", amount(1_000), "Token D", amount(1_000)],
+                    "Order 3": ["Token E", amount(1_000), "Token F", amount(1_000)],
                 }
             },
             "solutions": {
@@ -669,28 +669,28 @@ mod tests {
                 "Solution 1": {
                     "solver": "Solver 1",
                     "trades": {
-                        "Order 1": [amount(1_000).to_string(), amount(1_100).to_string()],
-                        "Order 2": [amount(1_000).to_string(), amount(1_100).to_string()],
-                        "Order 3": [amount(1_000).to_string(), amount(1_100).to_string()]
+                        "Order 1": [amount(1_000), amount(1_100)],
+                        "Order 2": [amount(1_000), amount(1_100)],
+                        "Order 3": [amount(1_000), amount(1_100)]
                     },
-                    "score": score_to_units(amount(300)),
+                    "score": score(300),
                 },
                 // incompatible batch 1
                 "Solution 2": {
                     "solver": "Solver 2",
                     "trades": {
-                        "Order 1": [amount(1_000).to_string(), amount(1_140).to_string()],
-                        "Order 2": [amount(1_000).to_string(), amount(1_140).to_string()],
+                        "Order 1": [amount(1_000), amount(1_140)],
+                        "Order 2": [amount(1_000), amount(1_140)],
                     },
-                    "score": score_to_units(amount(280)),
+                    "score": score(280),
                 },
                 // incompatible batch 2
                 "Solution 3": {
                     "solver": "Solver 3",
                     "trades": {
-                        "Order 3": [amount(1_000).to_string(), amount(1_100).to_string()],
+                        "Order 3": [amount(1_000), amount(1_100)],
                     },
-                    "score": score_to_units(amount(100)).to_string(),
+                    "score": score(100),
                 }
             },
             "expected_fair_solutions": ["Solution 1", "Solution 2",  "Solution 3"],
@@ -1042,17 +1042,21 @@ mod tests {
         )
     }
 
-    fn amount(value: u128) -> u128 {
+    fn amount(value: u128) -> String {
         // adding decimal units to avoid the math rounding it down to 0
-        value * 10u128.pow(15)
+        (value * 10u128.pow(15)).to_string()
     }
 
-    fn score_to_units(score: u128) -> eth::U256 {
+    fn score(score: u128) -> String {
+        let score: u128 = amount(score)
+            .parse()
+            .expect("Failed to parse score as u128");
         eth::U256::from(score)
             // Scores must be denominated in buy token price
             .checked_mul(DEFAULT_TOKEN_PRICE.into()).unwrap()
             // and expresed in wei
             .checked_div(10_u128.pow(18).into()).unwrap()
+            .to_string()
     }
 
     fn filter_winners(solutions: &[Participant]) -> Vec<&Participant> {
