@@ -25,7 +25,7 @@ use {
         solvable_orders::SolvableOrdersCache,
     },
     ::observe::metrics,
-    anyhow::Result,
+    anyhow::{Context, Result},
     database::order_events::OrderEventLabel,
     ethrpc::block_stream::BlockInfo,
     futures::{FutureExt, TryFutureExt},
@@ -645,7 +645,8 @@ impl RunLoop {
             tokio::time::timeout(self.config.solve_deadline, both)
                 .await
                 .map_err(|_| SolveError::Timeout)?
-                .map_err(|_| SolveError::Failure(anyhow::anyhow!("could not finish task")))?
+                .context("could not finish the task")
+                .map_err(SolveError::Failure)?
         };
 
         let response = match (can_participate, response) {
