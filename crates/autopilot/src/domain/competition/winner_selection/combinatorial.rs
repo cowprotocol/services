@@ -69,7 +69,7 @@ impl Arbitrator for Config {
                 })
                 .expect("every remaining participant has an entry");
             // only keep solutions where each order execution is at least as good as
-            // the baseline solution
+            // the baseline solution (or when there is only one baseline solution)
             aggregated_scores.len() == 1
                 || aggregated_scores.iter().all(|(pair, score)| {
                     baseline_scores
