@@ -34,6 +34,7 @@ pub struct Contracts {
     /// Default lender to use for flashloans, if flashloan doesn't have a lender
     /// specified.
     flashloan_default_lender: Option<eth::ContractAddress>,
+    balance_helper: contracts::support::Balances,
 }
 
 #[derive(Debug, Clone)]
@@ -78,6 +79,7 @@ impl Contracts {
         let vault_relayer = settlement.methods().vault_relayer().call().await?.into();
         let vault =
             contracts::BalancerV2Vault::at(web3, settlement.methods().vault().call().await?);
+        let balance_helper = contracts::support::Balances::at(web3, settlement.address());
 
         let weth = contracts::WETH9::at(
             web3,
@@ -144,6 +146,7 @@ impl Contracts {
             flashloan_wrapper_by_lender,
             flashloan_router,
             flashloan_default_lender: addresses.flashloan_default_lender,
+            balance_helper,
         })
     }
 
@@ -188,6 +191,10 @@ impl Contracts {
 
     pub fn flashloan_router(&self) -> Option<&contracts::FlashLoanRouter> {
         self.flashloan_router.as_ref()
+    }
+
+    pub fn balance_helper(&self) -> &contracts::support::Balances {
+        &self.balance_helper
     }
 }
 
