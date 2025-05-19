@@ -380,7 +380,7 @@ mod tests {
         hex_literal::hex,
         serde::Deserialize,
         serde_json::json,
-        serde_with::{DisplayFromStr, serde_as},
+        serde_with::serde_as,
         std::{
             collections::HashMap,
             hash::{DefaultHasher, Hash, Hasher},
@@ -761,10 +761,8 @@ mod tests {
         pub solutions: HashMap<String, TestSolution>,
         pub expected_fair_solutions: Vec<String>,
         pub expected_winners: Vec<String>,
-        // workaround needed as JSON have a limitation on number size, so we accept numbers as
-        // String
-        #[serde_as(as = "HashMap<_, DisplayFromStr>")]
-        pub expected_reference_scores: HashMap<String, u128>,
+        #[serde_as(as = "HashMap<_, U256FromDecimalStr>")]
+        pub expected_reference_scores: HashMap<String, eth::U256>,
     }
 
     impl TestCase {
@@ -875,7 +873,7 @@ mod tests {
             for (solver_id, expected_score) in self.expected_reference_scores.clone() {
                 let solver_address: eth::Address = (*solver_map.get(&solver_id).unwrap()).into();
                 let score = reference_scores.get(&solver_address).unwrap();
-                assert_eq!(score.0, eth::Ether(expected_score.into()))
+                assert_eq!(score.0, eth::Ether(expected_score))
             }
         }
     }
@@ -885,20 +883,21 @@ mod tests {
     pub struct TestAuction {
         pub orders: HashMap<String, TestOrder>,
         #[serde(default)]
-        // workaround needed as JSON have a limitation on number size, so we accept numbers as
-        // String
-        #[serde_as(as = "Option<HashMap<_, DisplayFromStr>>")]
-        pub prices: Option<HashMap<String, u128>>,
+        #[serde_as(as = "Option<HashMap<_, U256FromDecimalStr>>")]
+        pub prices: Option<HashMap<String, eth::U256>>,
     }
 
-    // Here we also need the workaround to define the numbers as strings in JSON
     #[serde_as]
     #[derive(Deserialize, Debug, Clone)]
     pub struct TestOrder(
-        pub String,                                  // sell_token
-        #[serde_as(as = "DisplayFromStr")] pub u128, // sell_amount
-        pub String,                                  // buy_token
-        #[serde_as(as = "DisplayFromStr")] pub u128, // buy_amount
+        // sell_token
+        pub String,
+        // sell_amount
+        #[serde_as(as = "U256FromDecimalStr")] pub eth::U256,
+        // buy_token
+        pub String,
+        // buy_amount
+        #[serde_as(as = "U256FromDecimalStr")] pub eth::U256,
     );
 
     #[derive(Deserialize, Debug)]
@@ -908,12 +907,13 @@ mod tests {
         pub score: eth::U256,
     }
 
-    // Here we also need the workaround to define the numbers as strings in JSON
     #[serde_as]
     #[derive(Deserialize, Debug)]
     pub struct TestTrade(
-        #[serde_as(as = "DisplayFromStr")] pub u128,
-        #[serde_as(as = "DisplayFromStr")] pub u128,
+        // sell_amount
+        #[serde_as(as = "U256FromDecimalStr")] pub eth::U256,
+        // buy_amount
+        #[serde_as(as = "U256FromDecimalStr")] pub eth::U256,
     );
 
     fn create_test_arbitrator() -> super::Config {
@@ -930,9 +930,9 @@ mod tests {
     fn create_order(
         uid: u64,
         sell_token: H160,
-        sell_amount: u128,
+        sell_amount: eth::U256,
         buy_token: H160,
-        buy_amount: u128,
+        buy_amount: eth::U256,
     ) -> Order {
         let mock_protocol_fees = vec![fee::Policy::Surplus {
             factor: fee::FeeFactor::try_from(0.0).unwrap(),
@@ -948,11 +948,11 @@ mod tests {
         Order {
             uid: encoded_uid,
             sell: eth::Asset {
-                amount: eth::U256::from(sell_amount).into(),
+                amount: sell_amount.into(),
                 token: sell_token.into(),
             },
             buy: eth::Asset {
-                amount: eth::U256::from(buy_amount).into(),
+                amount: buy_amount.into(),
                 token: buy_token.into(),
             },
             protocol_fees: mock_protocol_fees,
@@ -975,8 +975,8 @@ mod tests {
         }
     }
 
-    fn create_price(value: u128) -> Price {
-        Price::try_new(eth::Ether(eth::U256::from(value))).unwrap()
+    fn create_price(value: eth::U256) -> Price {
+        Price::try_new(eth::Ether(value)).unwrap()
     }
 
     fn create_auction(
@@ -985,7 +985,7 @@ mod tests {
     ) -> Auction {
         // Initialize the prices of the tokens if they are not specified
         let prices = prices.unwrap_or({
-            let default_price = create_price(DEFAULT_TOKEN_PRICE);
+            let default_price = create_price(DEFAULT_TOKEN_PRICE.into());
             let mut res = HashMap::new();
             for order in &orders {
                 res.insert(order.buy.token, default_price);
@@ -1003,13 +1003,17 @@ mod tests {
         }
     }
 
-    fn create_trade(order: &Order, executed_sell: u128, executed_buy: u128) -> TradedOrder {
+    fn create_trade(
+        order: &Order,
+        executed_sell: eth::U256,
+        executed_buy: eth::U256,
+    ) -> TradedOrder {
         TradedOrder {
             side: order::Side::Sell,
             sell: order.sell,
             buy: order.buy,
-            executed_sell: eth::U256::from(executed_sell).into(),
-            executed_buy: eth::U256::from(executed_buy).into(),
+            executed_sell: executed_sell.into(),
+            executed_buy: executed_buy.into(),
         }
     }
 
@@ -1025,8 +1029,8 @@ mod tests {
         let prices = prices.unwrap_or({
             let mut res = HashMap::new();
             for (_, trade) in &trades {
-                res.insert(trade.buy.token, create_price(1));
-                res.insert(trade.sell.token, create_price(1));
+                res.insert(trade.buy.token, create_price(eth::U256::one()));
+                res.insert(trade.sell.token, create_price(eth::U256::one()));
             }
             res
         });
@@ -1073,5 +1077,21 @@ mod tests {
         let mut hasher = DefaultHasher::new();
         s.hash(&mut hasher);
         hasher.finish()
+    }
+
+    // Custom deserializer that uses `U256::from_dec_str` (decimal only).
+    // Needed because by default, U256 deserializer expects a hex string and we want
+    // the tests to use decimal
+    pub struct U256FromDecimalStr;
+
+    impl<'de> serde_with::DeserializeAs<'de, eth::U256> for U256FromDecimalStr {
+        fn deserialize_as<D>(deserializer: D) -> Result<eth::U256, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            let s = String::deserialize(deserializer)?;
+            eth::U256::from_dec_str(&s)
+                .map_err(|e| serde::de::Error::custom(format!("invalid decimal U256: {e}")))
+        }
     }
 }
