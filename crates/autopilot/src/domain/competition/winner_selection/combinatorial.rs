@@ -390,7 +390,7 @@ mod tests {
     const DEFAULT_TOKEN_PRICE: u128 = 1_000;
 
     #[test]
-    // Only one bid submitted results in one winner with reward equal to score
+    // Only one bid submitted results in one winner with reference score = 0
     fn single_bid() {
         let case = json!({
             "tokens": [
@@ -424,7 +424,7 @@ mod tests {
     }
 
     #[test]
-    // Only one bid submitted results in one winner with reward equal to score
+    // Two compatible batches are both selected as winners
     fn compatible_bids() {
         let case = json!({
             "tokens": [
@@ -470,7 +470,7 @@ mod tests {
     }
 
     #[test]
-    // Only one bid submitted results in one winner with reward equal to score
+    // Multiple compatible bids by a single solver are aggregated
     fn multiple_solution_for_solver() {
         let case = json!({
             "tokens": [
@@ -515,7 +515,7 @@ mod tests {
     }
 
     #[test]
-    // Incompatible bid does not win but reduces reward
+    // Incompatible bid does not win but increases the reference score of the winner
     fn incompatible_bids() {
         let case = json!({
             "tokens": [
