@@ -17,6 +17,10 @@ pub struct Args {
     )]
     pub log: String,
 
+    /// Whether to use JSON format for the logs.
+    #[clap(long, env, default_value = "false")]
+    pub use_json_logs: bool,
+
     /// The node RPC API endpoint.
     #[clap(long, env)]
     pub ethrpc: Url,

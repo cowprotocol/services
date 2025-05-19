@@ -547,12 +547,11 @@ impl RunLoop {
             &self.trusted_tokens.all(),
             self.config.solve_deadline,
         );
-        let request = &request;
 
         let mut solutions = futures::future::join_all(
             self.drivers
                 .iter()
-                .map(|driver| self.solve(driver.clone(), request)),
+                .map(|driver| self.solve(driver.clone(), request.clone())),
         )
         .await
         .into_iter()
@@ -592,10 +591,10 @@ impl RunLoop {
     async fn solve(
         &self,
         driver: Arc<infra::Driver>,
-        request: &solve::Request,
+        request: solve::Request,
     ) -> Vec<competition::Participant<Unranked>> {
         let start = Instant::now();
-        let result = self.try_solve(&driver, request).await;
+        let result = self.try_solve(Arc::clone(&driver), request).await;
         let solutions = match result {
             Ok(solutions) => {
                 Metrics::solve_ok(&driver, start.elapsed());
@@ -631,25 +630,32 @@ impl RunLoop {
     /// Sends `/solve` request to the driver and forwards errors to the caller.
     async fn try_solve(
         &self,
-        driver: &infra::Driver,
-        request: &solve::Request,
+        driver: Arc<infra::Driver>,
+        request: solve::Request,
     ) -> Result<Vec<Result<competition::Solution, domain::competition::SolutionError>>, SolveError>
     {
-        let can_participate = self.solver_participation_guard.can_participate(&driver.submission_address).await.map_err(|err| {
-            tracing::error!(?err, driver = %driver.name, ?driver.submission_address, "solver participation check failed");
-                SolveError::SolverDenyListed
+        let check_allowed = self
+            .solver_participation_guard
+            .can_participate(&driver.submission_address);
+        let fetch_response = driver.solve(request);
+        let both = async { tokio::join!(check_allowed, fetch_response) };
+
+        let response = match tokio::time::timeout(self.config.solve_deadline, both).await {
+            Ok((Ok(true), Ok(response))) => response,
+            Err(_timeout) => return Err(SolveError::Timeout),
+            Ok((Ok(false), _)) => return Err(SolveError::SolverDenyListed),
+            Ok((Err(err), _)) => {
+                tracing::error!(
+                    ?err,
+                    driver = %driver.name,
+                    ?driver.submission_address,
+                    "solver participation check failed"
+                );
+                return Err(SolveError::SolverDenyListed);
             }
-        )?;
+            Ok((_, Err(err))) => return Err(SolveError::Failure(err)),
+        };
 
-        // Do not send the request to the driver if the solver is deny-listed
-        if !can_participate {
-            return Err(SolveError::SolverDenyListed);
-        }
-
-        let response = tokio::time::timeout(self.config.solve_deadline, driver.solve(request))
-            .await
-            .map_err(|_| SolveError::Timeout)?
-            .map_err(SolveError::Failure)?;
         if response.solutions.is_empty() {
             return Err(SolveError::NoSolutions);
         }

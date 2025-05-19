@@ -169,13 +169,13 @@ impl Inner {
                     .segments
                     .iter()
                     .map(|segment| {
-                        solution::Interaction::Liquidity(solution::LiquidityInteraction {
+                        solution::Interaction::Liquidity(Box::new(solution::LiquidityInteraction {
                             liquidity: segment.liquidity.clone(),
                             input: segment.input,
                             output: segment.output,
                             // TODO does the baseline solver know about this optimization?
                             internalize: false,
-                        })
+                        }))
                     })
                     .collect();
 

@@ -15,8 +15,8 @@ use {
 /// Initializes tracing setup that is shared between the binaries.
 /// `env_filter` has similar syntax to env_logger. It is documented at
 /// https://docs.rs/tracing-subscriber/0.2.15/tracing_subscriber/filter/struct.EnvFilter.html
-pub fn initialize(env_filter: &str, stderr_threshold: LevelFilter) {
-    set_tracing_subscriber(env_filter, stderr_threshold);
+pub fn initialize(env_filter: &str, stderr_threshold: LevelFilter, use_json_format: bool) {
+    set_tracing_subscriber(env_filter, stderr_threshold, use_json_format);
     std::panic::set_hook(Box::new(tracing_panic_hook));
 }
 
@@ -24,17 +24,17 @@ pub fn initialize(env_filter: &str, stderr_threshold: LevelFilter) {
 /// are ignored.
 ///
 /// Useful for tests.
-pub fn initialize_reentrant(env_filter: &str) {
+pub fn initialize_reentrant(env_filter: &str, use_json_format: bool) {
     // The tracing subscriber below is global object so initializing it again in the
     // same process by a different thread would fail.
     static ONCE: Once = Once::new();
     ONCE.call_once(|| {
-        set_tracing_subscriber(env_filter, LevelFilter::ERROR);
+        set_tracing_subscriber(env_filter, LevelFilter::ERROR, use_json_format);
         std::panic::set_hook(Box::new(tracing_panic_hook));
     });
 }
 
-fn set_tracing_subscriber(env_filter: &str, stderr_threshold: LevelFilter) {
+fn set_tracing_subscriber(env_filter: &str, stderr_threshold: LevelFilter, use_json_format: bool) {
     let initial_filter = env_filter.to_string();
 
     // The `tracing` APIs are heavily generic to enable zero overhead. Unfortunately
@@ -51,22 +51,34 @@ fn set_tracing_subscriber(env_filter: &str, stderr_threshold: LevelFilter) {
     //    actually causing that but at this point I'm just happy if all the features
     //    work correctly.
     macro_rules! fmt_layer {
-        ($env_filter:expr_2021, $stderr_threshold:expr_2021) => {{
-            tracing_subscriber::fmt::layer()
-                .with_writer(
-                    std::io::stdout
-                        .with_min_level(
-                            $stderr_threshold
-                                .into_level()
-                                .unwrap_or(tracing::Level::ERROR),
-                        )
-                        .or_else(std::io::stderr),
+        ($env_filter:expr_2021, $stderr_threshold:expr_2021, $use_json_format:expr_2021) => {{
+            let writer = std::io::stdout
+                .with_min_level(
+                    $stderr_threshold
+                        .into_level()
+                        .unwrap_or(tracing::Level::ERROR),
                 )
-                .with_timer(UtcTime::new(format_description!(
-                    "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z"
-                )))
-                .with_ansi(atty::is(atty::Stream::Stdout))
-                .with_filter($env_filter)
+                .or_else(std::io::stderr);
+            let timer = UtcTime::new(format_description!(
+                "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z"
+            ));
+
+            if use_json_format {
+                // structured logging
+                tracing_subscriber::fmt::layer()
+                    .json()
+                    .with_writer(writer)
+                    .with_timer(timer)
+                    .with_filter($env_filter)
+                    .boxed()
+            } else {
+                tracing_subscriber::fmt::layer()
+                    .with_ansi(atty::is(atty::Stream::Stdout))
+                    .with_writer(writer)
+                    .with_timer(timer)
+                    .with_filter($env_filter)
+                    .boxed()
+            }
         }};
     }
 
@@ -81,7 +93,7 @@ fn set_tracing_subscriber(env_filter: &str, stderr_threshold: LevelFilter) {
 
         tracing_subscriber::registry()
             .with(console_subscriber::spawn())
-            .with(fmt_layer!(env_filter, stderr_threshold))
+            .with(fmt_layer!(env_filter, stderr_threshold, use_json_format))
             .with(RequestIdLayer)
             .init();
         tracing::info!("started programm with support for tokio-console");
@@ -97,7 +109,7 @@ fn set_tracing_subscriber(env_filter: &str, stderr_threshold: LevelFilter) {
             // Without this the subscriber ignores the next log after an `tracing::event!()` which
             // `sqlx` uses under the hood.
             .with(tracing::level_filters::LevelFilter::TRACE)
-            .with(fmt_layer!(env_filter, stderr_threshold))
+            .with(fmt_layer!(env_filter, stderr_threshold, use_json_format))
             .with(RequestIdLayer)
             .init();
         tracing::info!("started programm without support for tokio-console");

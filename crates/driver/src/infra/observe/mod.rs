@@ -24,7 +24,7 @@ use {
         util::http,
     },
     ethrpc::block_stream::BlockInfo,
-    std::collections::{HashMap, HashSet},
+    std::collections::{BTreeMap, HashSet},
     url::Url,
 };
 
@@ -32,8 +32,8 @@ pub mod metrics;
 
 /// Setup the observability. The log argument configures the tokio tracing
 /// framework.
-pub fn init(log: &str) {
-    observe::tracing::initialize_reentrant(log);
+pub fn init(log: &str, use_json_format: bool) {
+    observe::tracing::initialize_reentrant(log, use_json_format);
     metrics::init();
 }
 
@@ -49,7 +49,7 @@ pub fn fetching_liquidity() {
 
 /// Observe the fetched liquidity.
 pub fn fetched_liquidity(liquidity: &[Liquidity]) {
-    let mut grouped: HashMap<&'static str, usize> = Default::default();
+    let mut grouped: BTreeMap<&'static str, usize> = Default::default();
     for liquidity in liquidity {
         *grouped.entry((&liquidity.kind).into()).or_default() += 1;
     }
