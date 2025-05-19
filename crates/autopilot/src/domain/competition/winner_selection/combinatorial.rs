@@ -394,10 +394,10 @@ mod tests {
     fn single_bid() {
         let case = json!({
             "tokens": [
-                ["Token A", create_address(0)],
-                ["Token B", create_address(1)],
-                ["Token C", create_address(2)],
-                ["Token D", create_address(3)]
+                ["Token A", address(0)],
+                ["Token B", address(1)],
+                ["Token C", address(2)],
+                ["Token D", address(3)]
             ],
             "auction": {
                 "orders": {
@@ -428,10 +428,10 @@ mod tests {
     fn compatible_bids() {
         let case = json!({
             "tokens": [
-                ["Token A", create_address(0)],
-                ["Token B", create_address(1)],
-                ["Token C", create_address(2)],
-                ["Token D", create_address(3)]
+                ["Token A", address(0)],
+                ["Token B", address(1)],
+                ["Token C", address(2)],
+                ["Token D", address(3)]
             ],
             "auction": {
                 "orders": {
@@ -474,10 +474,10 @@ mod tests {
     fn multiple_solution_for_solver() {
         let case = json!({
             "tokens": [
-                ["Token A", create_address(0)],
-                ["Token B", create_address(1)],
-                ["Token C", create_address(2)],
-                ["Token D", create_address(3)]
+                ["Token A", address(0)],
+                ["Token B", address(1)],
+                ["Token C", address(2)],
+                ["Token D", address(3)]
             ],
             "auction": {
                 "orders": {
@@ -519,10 +519,10 @@ mod tests {
     fn incompatible_bids() {
         let case = json!({
             "tokens": [
-                ["Token A", create_address(0)],
-                ["Token B", create_address(1)],
-                ["Token C", create_address(2)],
-                ["Token D", create_address(3)]
+                ["Token A", address(0)],
+                ["Token B", address(1)],
+                ["Token C", address(2)],
+                ["Token D", address(3)]
             ],
             "auction": {
                 "orders": {
@@ -563,10 +563,10 @@ mod tests {
     fn fairness_filtering() {
         let case = json!({
             "tokens": [
-                ["Token A", create_address(0)],
-                ["Token B", create_address(1)],
-                ["Token C", create_address(2)],
-                ["Token D", create_address(3)]
+                ["Token A", address(0)],
+                ["Token B", address(1)],
+                ["Token C", address(2)],
+                ["Token D", address(3)]
             ],
             "auction": {
                 "orders": {
@@ -608,8 +608,8 @@ mod tests {
     fn aggregation_on_token_pair() {
         let case = json!({
             "tokens": [
-                ["Token A", create_address(0)],
-                ["Token B", create_address(1)],
+                ["Token A", address(0)],
+                ["Token B", address(1)],
             ],
             "auction": {
                 "orders": {
@@ -650,12 +650,12 @@ mod tests {
     fn reference_better_than_winners() {
         let case = json!({
             "tokens": [
-                ["Token A", create_address(0)],
-                ["Token B", create_address(1)],
-                ["Token C", create_address(2)],
-                ["Token D", create_address(3)],
-                ["Token E", create_address(4)],
-                ["Token F", create_address(5)]
+                ["Token A", address(0)],
+                ["Token B", address(1)],
+                ["Token C", address(2)],
+                ["Token D", address(3)],
+                ["Token E", address(4)],
+                ["Token F", address(5)]
             ],
             "auction": {
                 "orders": {
@@ -713,9 +713,9 @@ mod tests {
         let case = json!({
             "tokens": [
                 // corresponding to 0x67466be17df832165f8c80a5a120ccc652bd7e69
-                ["Token A", create_address(0)],
+                ["Token A", address(0)],
                 // corresponding to 0xdac17f958d2ee523a2206206994597c13d831ec7
-                ["Token B", create_address(1)],
+                ["Token B", address(1)],
             ],
             "auction": {
                 "orders": {
@@ -830,7 +830,7 @@ mod tests {
             for (solution_id, solution) in &self.solutions {
                 // generate solver address deterministically from the id
                 let solver_uid = hash(&solution.solver);
-                let solver_address = create_address(solver_uid);
+                let solver_address = address(solver_uid);
                 solver_map.insert(solution.solver.clone(), solver_address);
 
                 let trades = solution
@@ -923,7 +923,7 @@ mod tests {
         }
     }
 
-    fn create_address(id: u64) -> H160 {
+    fn address(id: u64) -> H160 {
         H160::from_low_u64_le(id)
     }
 
