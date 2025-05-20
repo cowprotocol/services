@@ -211,12 +211,21 @@ impl AuctionProcessor {
 
             let settlement = eth.contracts().settlement().address().into();
             let _timer2 = stage_timer("aggregate_and_sort");
-            Self::update_orders(&mut balances, &mut app_data_by_hash, &mut orders, &settlement);
+            {
+                let _timer3 = stage_timer("update_orders");
+                Self::update_orders(&mut balances, &mut app_data_by_hash, &mut orders, &settlement);
+            }
             // Only add the cow amm orders after we handled the orders that are already part
             // of the auction. That way fetching balances no longer depends on the the cow amm
             // future and we can run everything concurrently.
-            orders.extend(cow_amms);
-            sorting::sort_orders(&mut orders, &tokens, &solver, &order_comparators);
+            {
+                let _timer4 = stage_timer("extend_orders");
+                orders.extend(cow_amms);
+            }
+            {
+                let _timer5 = stage_timer("sort_orders");
+                sorting::sort_orders(&mut orders, &tokens, &solver, &order_comparators);
+            }
 
             tracing::debug!(auction_id = new_id.0, time =? start.elapsed(), "auction preprocessing done");
             orders
