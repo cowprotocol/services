@@ -857,7 +857,7 @@ mod tests {
             let participants = solution_map.values().cloned().collect();
             let solutions = arbitrator.filter_unfair_solutions(participants, &auction);
             assert_eq!(solutions.len(), self.expected_fair_solutions.len());
-            for solution_id in self.expected_fair_solutions.clone() {
+            for solution_id in &self.expected_fair_solutions {
                 let solution_uid = solution_map.get(&solution_id).unwrap().solution().id;
                 assert!(solutions.iter().any(|s| s.solution().id == solution_uid));
             }
@@ -866,14 +866,13 @@ mod tests {
             let solutions = arbitrator.mark_winners(solutions);
             let winners = filter_winners(&solutions);
             assert_eq!(winners.len(), self.expected_winners.len());
-            for solution_id in self.expected_winners.clone() {
+            for solution_id in &self.expected_winners {
                 let solution_uid = solution_map.get(&solution_id).unwrap().solution().id;
                 assert!(winners.iter().any(|s| s.solution().id == solution_uid));
             }
 
             // compute reference score
             let reference_scores = arbitrator.compute_reference_scores(&solutions);
-            eprintln!("{:?}", reference_scores);
             assert_eq!(reference_scores.len(), self.expected_reference_scores.len());
             for (solver_id, expected_score) in &self.expected_reference_scores {
                 let solver_address: eth::Address = (*solver_map.get(solver_id).unwrap()).into();
