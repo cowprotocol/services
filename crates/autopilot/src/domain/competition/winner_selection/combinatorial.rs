@@ -933,14 +933,8 @@ mod tests {
         buy_token: H160,
         buy_amount: eth::U256,
     ) -> Order {
-        // build the UID of the order
-        let mut encoded_uid = [0u8; 56];
-        let uid_bytes = uid.to_le_bytes();
-        encoded_uid[..uid_bytes.len()].copy_from_slice(&uid_bytes);
-        let encoded_uid = OrderUid(encoded_uid);
-
         Order {
-            uid: encoded_uid,
+            uid: create_order_uid(uid),
             sell: eth::Asset {
                 amount: sell_amount.into(),
                 token: sell_token.into(),
@@ -967,6 +961,14 @@ mod tests {
             signature: order::Signature::PreSign,
             quote: None,
         }
+    }
+
+    // Deterministically creates an OrderUid from a u64.
+    fn create_order_uid(uid: u64) -> OrderUid {
+        let mut encoded_uid = [0u8; 56];
+        let uid_bytes = uid.to_le_bytes();
+        encoded_uid[..uid_bytes.len()].copy_from_slice(&uid_bytes);
+        OrderUid(encoded_uid)
     }
 
     fn create_price(value: eth::U256) -> Price {
