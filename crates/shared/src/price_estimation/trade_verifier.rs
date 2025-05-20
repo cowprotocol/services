@@ -183,8 +183,9 @@ impl TradeVerifier {
 
         let output = self
             .simulator
-            .simulate(call, overrides, Some(block.number))
+            .simulate(call.clone(), overrides, Some(block.number))
             .await
+            .inspect_err(|_| tracing::warn!(?call, "newlog: resimulate with"))
             .context("failed to simulate quote")
             .map_err(Error::SimulationFailed);
 
