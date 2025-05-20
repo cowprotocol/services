@@ -805,27 +805,27 @@ mod tests {
     }
 
     #[test]
-    fn historical_data() {
+    fn fetch_solutions() {
         let start_auction_id = 12825008;
         let end_auction_id = 12825008;
         let res = fetch_trade_data(start_auction_id, end_auction_id);
-        eprintln!("{}", res);
+        eprintln!("{:?}", res);
     }
 
     #[test]
-    fn fetch_auction_orders() {
+    fn fetch_auction() {
         let start_auction_id = 12825008;
         let end_auction_id = 12825008;
         let res = fetch_auction_orders_data(start_auction_id, end_auction_id);
         eprintln!("{}", res);
     }
 
-    fn fetch_trade_data(start_auction_id: i64, end_auction_id: i64) -> String {
+    fn fetch_trade_data(start_auction_id: i64, end_auction_id: i64) -> HashMap<String, TestSolution> {
         use sqlx::PgPool;
         use dotenv::dotenv;
-        use serde_json::Value;
         use sqlx::Row;
         use sqlx::types::BigDecimal;
+        use std::collections::HashMap;
 
         // Load environment variables from .env file
         dotenv().ok();
@@ -893,55 +893,38 @@ mod tests {
                 .await 
             {
                 Ok(rows) => {
-                    let mut results = Vec::new();
+                    let mut solutions: HashMap<String, TestSolution> = HashMap::new();
+                    
                     for row in rows {
-                        let mut map = serde_json::Map::new();
+                        let solver = hex::encode(row.get::<[u8; 20], _>("solver"));
+                        let order_uid = hex::encode(row.get::<[u8; 56], _>("order_uid"));
                         
-                        if let Ok(v) = row.try_get::<i64, _>("auction_id") {
-                            map.insert("auction_id".to_string(), Value::Number(serde_json::Number::from(v)));
-                        }
-                        if let Ok(v) = row.try_get::<[u8; 56], _>("order_uid") {
-                            map.insert("order_uid".to_string(), Value::String(hex::encode(v)));
-                        }
-                        if let Ok(v) = row.try_get::<[u8; 20], _>("sell_token") {
-                            map.insert("sell_token".to_string(), Value::String(hex::encode(v)));
-                        }
-                        if let Ok(v) = row.try_get::<[u8; 20], _>("buy_token") {
-                            map.insert("buy_token".to_string(), Value::String(hex::encode(v)));
-                        }
-                        if let Ok(v) = row.try_get::<BigDecimal, _>("executed_sell_amount") {
-                            map.insert("executed_sell_amount".to_string(), Value::String(v.to_string()));
-                        }
-                        if let Ok(v) = row.try_get::<BigDecimal, _>("executed_buy_amount") {
-                            map.insert("executed_buy_amount".to_string(), Value::String(v.to_string()));
-                        }
-                        if let Ok(v) = row.try_get::<BigDecimal, _>("limit_sell_amount") {
-                            map.insert("limit_sell_amount".to_string(), Value::String(v.to_string()));
-                        }
-                        if let Ok(v) = row.try_get::<BigDecimal, _>("limit_buy_amount") {
-                            map.insert("limit_buy_amount".to_string(), Value::String(v.to_string()));
-                        }
-                        if let Ok(v) = row.try_get::<String, _>("kind") {
-                            map.insert("kind".to_string(), Value::String(v));
-                        }
-                        if let Ok(v) = row.try_get::<BigDecimal, _>("sell_token_price") {
-                            map.insert("sell_token_price".to_string(), Value::String(v.to_string()));
-                        }
-                        if let Ok(v) = row.try_get::<BigDecimal, _>("buy_token_price") {
-                            map.insert("buy_token_price".to_string(), Value::String(v.to_string()));
-                        }
-                        if let Ok(v) = row.try_get::<BigDecimal, _>("score") {
-                            map.insert("score".to_string(), Value::String(v.to_string()));
-                        }
-                        if let Ok(v) = row.try_get::<[u8; 20], _>("solver") {
-                            map.insert("solver".to_string(), Value::String(hex::encode(v)));
-                        }
+                        let mut trades = HashMap::new();
+                        trades.insert(
+                            order_uid,
+                            TestTrade(
+                                eth::U256::from_str_radix(&row.get::<BigDecimal, _>("executed_sell_amount").to_string(), 10).unwrap(),
+                                eth::U256::from_str_radix(&row.get::<BigDecimal, _>("executed_buy_amount").to_string(), 10).unwrap(),
+                            )
+                        );
 
-                        results.push(Value::Object(map));
+                        let score = eth::U256::from_str_radix(&row.get::<BigDecimal, _>("score").to_string(), 10).unwrap();
+                        
+                        solutions.insert(
+                            solver,
+                            TestSolution {
+                                solver: format!("Solver {}", solutions.len() + 1),
+                                trades,
+                                score,
+                            }
+                        );
                     }
-                    serde_json::to_string_pretty(&results).unwrap_or_else(|_| "Error serializing results".to_string())
+                    solutions
                 },
-                Err(e) => format!("Query error: {}", e)
+                Err(e) => {
+                    eprintln!("Query error: {}", e);
+                    HashMap::new()
+                }
             }
         })
     }
