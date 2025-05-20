@@ -372,7 +372,6 @@ mod tests {
                     winner_selection::Arbitrator,
                 },
                 eth::{self, TokenAddress},
-                fee::{self},
             },
             infra::Driver,
         },
@@ -934,11 +933,6 @@ mod tests {
         buy_token: H160,
         buy_amount: eth::U256,
     ) -> Order {
-        let mock_protocol_fees = vec![fee::Policy::Surplus {
-            factor: fee::FeeFactor::try_from(0.0).unwrap(),
-            max_volume_factor: fee::FeeFactor::try_from(0.0).unwrap(),
-        }];
-
         // build the UID of the order
         let mut encoded_uid = [0u8; 56];
         let uid_bytes = uid.to_le_bytes();
@@ -955,7 +949,7 @@ mod tests {
                 amount: buy_amount.into(),
                 token: buy_token.into(),
             },
-            protocol_fees: mock_protocol_fees,
+            protocol_fees: vec![],
             side: order::Side::Sell,
             receiver: Some(H160::zero().into()),
             owner: H160::zero().into(),
