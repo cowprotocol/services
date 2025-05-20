@@ -1054,13 +1054,16 @@ mod tests {
 
     fn amount(value: u128) -> String {
         // adding decimal units to avoid the math rounding it down to 0
-        (value * 10u128.pow(15)).to_string()
+        to_e15(value).to_string()
+    }
+
+    fn to_e15(value: u128) -> u128 {
+        value * 10u128.pow(15)
     }
 
     fn score(score: u128) -> String {
-        let score: u128 = amount(score)
-            .parse()
-            .expect("Failed to parse score as u128");
+        // adding decimal units to avoid the math rounding it down to 0
+        let score: u128 = to_e15(score);
         eth::U256::from(score)
             // Scores must be denominated in buy token price
             .checked_mul(DEFAULT_TOKEN_PRICE.into()).unwrap()
@@ -1073,6 +1076,8 @@ mod tests {
         solutions.iter().filter(|s| s.is_winner()).collect()
     }
 
+    // Used to generate deterministic identifiers (e.g., UIDs, addresses) from
+    // string descriptions.
     fn hash(s: &str) -> u64 {
         let mut hasher = DefaultHasher::new();
         s.hash(&mut hasher);
