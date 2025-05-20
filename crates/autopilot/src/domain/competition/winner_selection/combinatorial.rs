@@ -806,20 +806,16 @@ mod tests {
                 .collect();
 
             let orders = order_map.values().cloned().collect();
-            let prices = match &self.auction.prices {
-                Some(prices) => {
-                    let price_map = prices
-                        .iter()
-                        .map(|(token_id, price)| {
-                            let token_address = TokenAddress(*token_map.get(token_id).unwrap());
-                            let price = create_price(*price);
-                            (token_address, price)
-                        })
-                        .collect();
-                    Some(price_map)
-                }
-                None => None,
-            };
+            let prices = self.auction.prices.as_ref().map(|prices| {
+                prices
+                    .iter()
+                    .map(|(token_id, price)| {
+                        let token_address = TokenAddress(*token_map.get(token_id).unwrap());
+                        let price = create_price(*price);
+                        (token_address, price)
+                    })
+                    .collect()
+            });
 
             let auction = create_auction(orders, prices);
 
