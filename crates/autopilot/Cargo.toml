@@ -66,6 +66,7 @@ web3 = { workspace = true }
 mockall = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 dotenv = "0.15.0"
+serde-pickle = "1.2.0"
 
 [lints]
 workspace = true

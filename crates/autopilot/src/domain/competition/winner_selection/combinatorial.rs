@@ -806,8 +806,18 @@ mod tests {
 
     #[test]
     fn historical_data() {
+        let start_auction_id = 12825008;
+        let end_auction_id = 12825008;
+        let res = fetch_trade_data(start_auction_id, end_auction_id);
+        eprintln!("{}", res);
+    }
+
+    fn fetch_trade_data(start_auction_id: i64, end_auction_id: i64) -> String {
         use sqlx::PgPool;
         use dotenv::dotenv;
+        use serde_json::Value;
+        use sqlx::Row;
+        use sqlx::types::{BigDecimal};
 
         // Load environment variables from .env file
         dotenv().ok();
@@ -824,15 +834,108 @@ mod tests {
                 .await
                 .expect("Failed to create connection pool");
 
-            // Execute a simple query using sqlx
-            match sqlx::query_scalar::<_, String>("SELECT version()")
-                .fetch_one(&pool)
+            let query = format!(
+                "WITH trade_data AS (
+                    SELECT 
+                        ps.*,
+                        pte.order_uid,
+                        COALESCE(o.sell_token, pjo.sell_token) AS sell_token,
+                        COALESCE(o.buy_token, pjo.buy_token) AS buy_token,
+                        pte.executed_sell AS executed_sell_amount,
+                        pte.executed_buy AS executed_buy_amount,
+                        COALESCE(o.sell_amount, pjo.limit_sell) AS limit_sell_amount,
+                        COALESCE(o.buy_amount, pjo.limit_buy) AS limit_buy_amount,
+                        COALESCE(o.kind, pjo.side) AS kind
+                    FROM proposed_solutions ps
+                    LEFT JOIN proposed_trade_executions pte
+                        ON ps.auction_id = pte.auction_id 
+                        AND ps.uid = pte.solution_uid
+                    LEFT JOIN orders o
+                        ON pte.order_uid = o.uid
+                    LEFT JOIN proposed_jit_orders pjo
+                        ON ps.auction_id = pjo.auction_id
+                        AND ps.uid = pjo.solution_uid
+                        AND pte.order_uid = pjo.order_uid
+                    WHERE ps.auction_id BETWEEN {start_auction_id} AND {end_auction_id}
+                ),
+                trade_data_with_prices AS (
+                    SELECT 
+                        td.*,
+                        ap_sell.price AS sell_token_price,
+                        ap_buy.price AS buy_token_price,
+                        ps.solver
+                    FROM trade_data td
+                    JOIN auction_prices ap_sell
+                        ON td.auction_id = ap_sell.auction_id
+                        AND td.sell_token = ap_sell.token
+                    JOIN auction_prices ap_buy
+                        ON td.auction_id = ap_buy.auction_id
+                        AND td.buy_token = ap_buy.token
+                    JOIN proposed_solutions ps
+                        ON td.auction_id = ps.auction_id
+                        AND td.uid = ps.uid
+                )
+                SELECT *
+                FROM trade_data_with_prices;"
+            );
+
+            // Execute the provided query using sqlx
+            match sqlx::query(&query)
+                .fetch_all(&pool)
                 .await 
             {
-                Ok(version) => println!("Database version: {}", version),
-                Err(e) => eprintln!("Query error: {}", e)
+                Ok(rows) => {
+                    let mut results = Vec::new();
+                    for row in rows {
+                        let mut map = serde_json::Map::new();
+                        
+                        // Handle each column with its specific type
+                        if let Ok(v) = row.try_get::<i64, _>("auction_id") {
+                            map.insert("auction_id".to_string(), Value::Number(serde_json::Number::from(v)));
+                        }
+                        if let Ok(v) = row.try_get::<[u8; 56], _>("order_uid") {
+                            map.insert("order_uid".to_string(), Value::String(hex::encode(v)));
+                        }
+                        if let Ok(v) = row.try_get::<[u8; 20], _>("sell_token") {
+                            map.insert("sell_token".to_string(), Value::String(hex::encode(v)));
+                        }
+                        if let Ok(v) = row.try_get::<[u8; 20], _>("buy_token") {
+                            map.insert("buy_token".to_string(), Value::String(hex::encode(v)));
+                        }
+                        if let Ok(v) = row.try_get::<BigDecimal, _>("executed_sell_amount") {
+                            map.insert("executed_sell_amount".to_string(), Value::String(v.to_string()));
+                        }
+                        if let Ok(v) = row.try_get::<BigDecimal, _>("executed_buy_amount") {
+                            map.insert("executed_buy_amount".to_string(), Value::String(v.to_string()));
+                        }
+                        if let Ok(v) = row.try_get::<BigDecimal, _>("limit_sell_amount") {
+                            map.insert("limit_sell_amount".to_string(), Value::String(v.to_string()));
+                        }
+                        if let Ok(v) = row.try_get::<BigDecimal, _>("limit_buy_amount") {
+                            map.insert("limit_buy_amount".to_string(), Value::String(v.to_string()));
+                        }
+                        if let Ok(v) = row.try_get::<String, _>("kind") {
+                            map.insert("kind".to_string(), Value::String(v));
+                        }
+                        if let Ok(v) = row.try_get::<BigDecimal, _>("sell_token_price") {
+                            map.insert("sell_token_price".to_string(), Value::String(v.to_string()));
+                        }
+                        if let Ok(v) = row.try_get::<BigDecimal, _>("buy_token_price") {
+                            map.insert("buy_token_price".to_string(), Value::String(v.to_string()));
+                        }
+                        if let Ok(v) = row.try_get::<BigDecimal, _>("score") {
+                            map.insert("score".to_string(), Value::String(v.to_string()));
+                        }
+                        if let Ok(v) = row.try_get::<[u8; 20], _>("solver") {
+                            map.insert("solver".to_string(), Value::String(hex::encode(v)));
+                        }
+                        results.push(Value::Object(map));
+                    }
+                    serde_json::to_string_pretty(&results).unwrap_or_else(|_| "Error serializing results".to_string())
+                },
+                Err(e) => format!("Query error: {}", e)
             }
-        });
+        })
     }
 
     #[serde_as]
