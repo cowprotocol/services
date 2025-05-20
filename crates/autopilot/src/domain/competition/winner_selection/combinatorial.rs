@@ -401,8 +401,8 @@ mod tests {
             ],
             "auction": {
                 "orders": {
-                    "Order 1": ["Token A", amount(1_000), "Token B", amount(1_000)],
-                    "Order 2": ["Token C", amount(1_000), "Token D", amount(1_000)]
+                    "Order 1": ["sell", "Token A", amount(1_000), "Token B", amount(1_000)],
+                    "Order 2": ["sell", "Token C", amount(1_000), "Token D", amount(1_000)]
                 }
             },
             "solutions": {
@@ -435,9 +435,9 @@ mod tests {
             ],
             "auction": {
                 "orders": {
-                    "Order 1": ["Token A", amount(1_000), "Token B", amount(1_000)],
-                    "Order 2": ["Token C", amount(1_000), "Token D", amount(1_000)],
-                    "Order 3": ["Token A", amount(1_000), "Token C", amount(1_000)]
+                    "Order 1": ["sell", "Token A", amount(1_000), "Token B", amount(1_000)],
+                    "Order 2": ["sell", "Token C", amount(1_000), "Token D", amount(1_000)],
+                    "Order 3": ["sell", "Token A", amount(1_000), "Token C", amount(1_000)]
                 }
             },
             "solutions": {
@@ -481,9 +481,9 @@ mod tests {
             ],
             "auction": {
                 "orders": {
-                    "Order 1": ["Token A", amount(1_000), "Token B", amount(1_000)],
-                    "Order 2": ["Token C", amount(1_000), "Token D", amount(1_000)],
-                    "Order 3": ["Token A", amount(1_000), "Token D", amount(1_000)]
+                    "Order 1": ["sell", "Token A", amount(1_000), "Token B", amount(1_000)],
+                    "Order 2": ["sell", "Token C", amount(1_000), "Token D", amount(1_000)],
+                    "Order 3": ["sell", "Token A", amount(1_000), "Token D", amount(1_000)]
                 }
             },
             "solutions": {
@@ -526,8 +526,8 @@ mod tests {
             ],
             "auction": {
                 "orders": {
-                    "Order 1": ["Token A", amount(1_000), "Token B", amount(1_000)],
-                    "Order 2": ["Token C", amount(1_000), "Token D", amount(1_000)],
+                    "Order 1": ["sell", "Token A", amount(1_000), "Token B", amount(1_000)],
+                    "Order 2": ["sell", "Token C", amount(1_000), "Token D", amount(1_000)],
                 }
             },
             "solutions": {
@@ -571,8 +571,8 @@ mod tests {
             ],
             "auction": {
                 "orders": {
-                    "Order 1": ["Token A", amount(1_000), "Token B", amount(1_000)],
-                    "Order 2": ["Token C", amount(1_000), "Token D", amount(1_000)],
+                    "Order 1": ["sell", "Token A", amount(1_000), "Token B", amount(1_000)],
+                    "Order 2": ["sell", "Token C", amount(1_000), "Token D", amount(1_000)],
                 }
             },
             "solutions": {
@@ -614,8 +614,8 @@ mod tests {
             ],
             "auction": {
                 "orders": {
-                    "Order 1": ["Token A", amount(1_000), "Token B", amount(1_000)],
-                    "Order 2": ["Token A", amount(1_000), "Token B", amount(1_000)],
+                    "Order 1": ["sell", "Token A", amount(1_000), "Token B", amount(1_000)],
+                    "Order 2": ["sell", "Token A", amount(1_000), "Token B", amount(1_000)],
                 }
             },
             "solutions": {
@@ -661,9 +661,9 @@ mod tests {
             ],
             "auction": {
                 "orders": {
-                    "Order 1": ["Token A", amount(1_000), "Token B", amount(1_000)],
-                    "Order 2": ["Token C", amount(1_000), "Token D", amount(1_000)],
-                    "Order 3": ["Token E", amount(1_000), "Token F", amount(1_000)],
+                    "Order 1": ["sell", "Token A", amount(1_000), "Token B", amount(1_000)],
+                    "Order 2": ["sell", "Token C", amount(1_000), "Token D", amount(1_000)],
+                    "Order 3": ["sell", "Token E", amount(1_000), "Token F", amount(1_000)],
                 }
             },
             "solutions": {
@@ -721,7 +721,7 @@ mod tests {
             ],
             "auction": {
                 "orders": {
-                    "Order 1": ["Token A", "32375066190000000000000000", "Token B", "2161512119"],
+                    "Order 1": ["sell", "Token A", "32375066190000000000000000", "Token B", "2161512119"],
                 },
                 "prices": {
                     "Token A": "32429355240",
@@ -787,7 +787,7 @@ mod tests {
                 .map(
                     |(
                         order_id,
-                        TestOrder(sell_token, sell_token_amount, buy_token, buy_token_amount),
+                        TestOrder(side, sell_token, sell_token_amount, buy_token, buy_token_amount),
                     )| {
                         let order_uid = hash(order_id);
                         let sell_token = token_map.get(sell_token).unwrap();
@@ -798,6 +798,7 @@ mod tests {
                             *sell_token_amount,
                             *buy_token,
                             *buy_token_amount,
+                            *side,
                         );
                         (order_id.clone(), order)
                     },
@@ -889,6 +890,8 @@ mod tests {
     #[serde_as]
     #[derive(Deserialize, Debug, Clone)]
     struct TestOrder(
+        // side,
+        #[serde(deserialize_with = "deserialize_side")] pub order::Side,
         // sell_token
         pub String,
         // sell_amount
@@ -932,6 +935,7 @@ mod tests {
         sell_amount: eth::U256,
         buy_token: H160,
         buy_amount: eth::U256,
+        side: order::Side,
     ) -> Order {
         Order {
             uid: create_order_uid(uid),
@@ -944,7 +948,7 @@ mod tests {
                 token: buy_token.into(),
             },
             protocol_fees: vec![],
-            side: order::Side::Sell,
+            side,
             receiver: None,
             owner: Default::default(),
             partially_fillable: false,
@@ -1078,5 +1082,18 @@ mod tests {
         let mut hasher = DefaultHasher::new();
         s.hash(&mut hasher);
         hasher.finish()
+    }
+
+    // Needed to automatically deserialize order::Side in JSON test cases
+    fn deserialize_side<'de, D>(deserializer: D) -> Result<order::Side, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s: String = Deserialize::deserialize(deserializer)?;
+        match s.to_lowercase().as_str() {
+            "buy" => Ok(order::Side::Buy),
+            "sell" => Ok(order::Side::Sell),
+            _ => Err(serde::de::Error::custom(format!("Invalid side: {}", s))),
+        }
     }
 }
