@@ -470,6 +470,54 @@ mod tests {
     }
 
     #[test]
+    // Two compatible batches are both selected as winners, but this time the orders
+    // are "buy" orders
+    fn buy_orders() {
+        let case = json!({
+            "tokens": [
+                ["Token A", address(0)],
+                ["Token B", address(1)],
+                ["Token C", address(2)],
+                ["Token D", address(3)]
+            ],
+            "auction": {
+                "orders": {
+                    "Order 1": ["buy", "Token A", amount(1_000), "Token B", amount(1_000)],
+                    "Order 2": ["buy", "Token C", amount(1_000), "Token D", amount(1_000)],
+                    "Order 3": ["buy", "Token A", amount(1_000), "Token C", amount(1_000)]
+                }
+            },
+            "solutions": {
+                // best batch
+                "Solution 1": {
+                    "solver": "Solver 1",
+                    "trades": {
+                        // less sell tokens are used to get the expected buy tokens
+                        "Order 1": [amount(900), amount(1_000)],
+                        "Order 2": [amount(900), amount(1_000)]
+                    },
+                    "score": score(200),
+                },
+                // compatible batch
+                "Solution 2": {
+                    "solver": "Solver 2",
+                    "trades": {
+                        "Order 3": [amount(900), amount(1_000)],
+                    },
+                    "score": score(100),
+                }
+            },
+            "expected_fair_solutions": ["Solution 1", "Solution 2"],
+            "expected_winners": ["Solution 1", "Solution 2"],
+            "expected_reference_scores": {
+                "Solver 1": "100",
+                "Solver 2": "200",
+            },
+        });
+        TestCase::from_json(case).validate();
+    }
+
+    #[test]
     // Multiple compatible bids by a single solver are aggregated
     fn multiple_solution_for_solver() {
         let case = json!({
