@@ -812,12 +812,20 @@ mod tests {
         eprintln!("{}", res);
     }
 
+    #[test]
+    fn fetch_auction_orders() {
+        let start_auction_id = 12825008;
+        let end_auction_id = 12825008;
+        let res = fetch_auction_orders_data(start_auction_id, end_auction_id);
+        eprintln!("{}", res);
+    }
+
     fn fetch_trade_data(start_auction_id: i64, end_auction_id: i64) -> String {
         use sqlx::PgPool;
         use dotenv::dotenv;
         use serde_json::Value;
         use sqlx::Row;
-        use sqlx::types::{BigDecimal};
+        use sqlx::types::BigDecimal;
 
         // Load environment variables from .env file
         dotenv().ok();
@@ -889,7 +897,6 @@ mod tests {
                     for row in rows {
                         let mut map = serde_json::Map::new();
                         
-                        // Handle each column with its specific type
                         if let Ok(v) = row.try_get::<i64, _>("auction_id") {
                             map.insert("auction_id".to_string(), Value::Number(serde_json::Number::from(v)));
                         }
@@ -929,6 +936,91 @@ mod tests {
                         if let Ok(v) = row.try_get::<[u8; 20], _>("solver") {
                             map.insert("solver".to_string(), Value::String(hex::encode(v)));
                         }
+
+                        results.push(Value::Object(map));
+                    }
+                    serde_json::to_string_pretty(&results).unwrap_or_else(|_| "Error serializing results".to_string())
+                },
+                Err(e) => format!("Query error: {}", e)
+            }
+        })
+    }
+
+    fn fetch_auction_orders_data(start_auction_id: i64, end_auction_id: i64) -> String {
+        use sqlx::PgPool;
+        use dotenv::dotenv;
+        use serde_json::Value;
+        use sqlx::Row;
+        use sqlx::types::BigDecimal;
+
+        // Load environment variables from .env file
+        dotenv().ok();
+
+        // Create a simple async block to run the database query
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            // Get database URL from environment
+            let database_url = std::env::var("DATABASE_URL")
+                .expect("DATABASE_URL must be set in .env file");
+
+            // Create connection pool
+            let pool = PgPool::connect(&database_url)
+                .await
+                .expect("Failed to create connection pool");
+
+            let query = format!(
+                "WITH auction_orders AS (
+                    SELECT 
+                        ao.auction_id,
+                        unnest(ao.order_uids) as order_uid
+                    FROM auction_orders ao
+                    WHERE ao.auction_id BETWEEN {start_auction_id} AND {end_auction_id}
+                )
+                SELECT 
+                    ao.auction_id,
+                    ao.order_uid,
+                    o.kind as side,
+                    o.sell_token,
+                    o.buy_token,
+                    o.sell_amount,
+                    o.buy_amount
+                FROM auction_orders ao
+                JOIN orders o ON ao.order_uid = o.uid
+                ORDER BY ao.auction_id, ao.order_uid;"
+            );
+
+            // Execute the provided query using sqlx
+            match sqlx::query(&query)
+                .fetch_all(&pool)
+                .await 
+            {
+                Ok(rows) => {
+                    let mut results = Vec::new();
+                    for row in rows {
+                        let mut map = serde_json::Map::new();
+                        
+                        if let Ok(v) = row.try_get::<i64, _>("auction_id") {
+                            map.insert("auction_id".to_string(), Value::Number(serde_json::Number::from(v)));
+                        }
+                        if let Ok(v) = row.try_get::<[u8; 56], _>("order_uid") {
+                            map.insert("order_uid".to_string(), Value::String(hex::encode(v)));
+                        }
+                        if let Ok(v) = row.try_get::<String, _>("side") {
+                            map.insert("side".to_string(), Value::String(v));
+                        }
+                        if let Ok(v) = row.try_get::<[u8; 20], _>("sell_token") {
+                            map.insert("sell_token".to_string(), Value::String(hex::encode(v)));
+                        }
+                        if let Ok(v) = row.try_get::<[u8; 20], _>("buy_token") {
+                            map.insert("buy_token".to_string(), Value::String(hex::encode(v)));
+                        }
+                        if let Ok(v) = row.try_get::<BigDecimal, _>("sell_amount") {
+                            map.insert("sell_amount".to_string(), Value::String(v.to_string()));
+                        }
+                        if let Ok(v) = row.try_get::<BigDecimal, _>("buy_amount") {
+                            map.insert("buy_amount".to_string(), Value::String(v.to_string()));
+                        }
+
                         results.push(Value::Object(map));
                     }
                     serde_json::to_string_pretty(&results).unwrap_or_else(|_| "Error serializing results".to_string())
