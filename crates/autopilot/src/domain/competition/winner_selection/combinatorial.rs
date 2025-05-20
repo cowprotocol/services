@@ -777,7 +777,7 @@ mod tests {
             let arbitrator = create_test_arbitrator();
 
             // map (token id -> token address) for later reference during the test
-            let token_map: HashMap<String, H160> = self.tokens.clone().into_iter().collect();
+            let token_map: HashMap<String, H160> = self.tokens.iter().cloned().collect();
 
             // map (order id -> order) for later reference during the test
             let order_map: HashMap<String, Order> = self
