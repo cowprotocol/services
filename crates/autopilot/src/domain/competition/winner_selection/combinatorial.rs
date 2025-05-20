@@ -944,7 +944,8 @@ mod tests {
                         td.*,
                         ap_sell.price AS sell_token_price,
                         ap_buy.price AS buy_token_price,
-                        ps.solver
+                        ps.solver,
+                        ps.is_winner
                     FROM trade_data td
                     JOIN auction_prices ap_sell
                         ON td.auction_id = ap_sell.auction_id
@@ -971,6 +972,7 @@ mod tests {
                     for row in rows {
                         let solver = hex::encode(row.get::<[u8; 20], _>("solver"));
                         let order_uid = hex::encode(row.get::<[u8; 56], _>("order_uid"));
+                        let is_winner = row.get::<bool, _>("is_winner");
                         
                         let mut trades = HashMap::new();
                         trades.insert(
@@ -989,6 +991,7 @@ mod tests {
                                 solver: format!("Solver {}", solutions.len() + 1),
                                 trades,
                                 score,
+                                is_winner,
                             }
                         );
                     }
@@ -1209,13 +1212,6 @@ mod tests {
             for solution in &solutions {
                 eprintln!("Solution: {:#?}", solution.solution());
             }
-            /*
-            assert_eq!(solutions.len(), self.expected_fair_solutions.len());         
-            for solution_id in &self.expected_fair_solutions {
-                let solution_uid = solution_map.get(&solution_id).unwrap().solution().id;
-                assert!(solutions.iter().any(|s| s.solution().id == solution_uid));
-            }
-             */
 
             // select the winners
             let solutions = arbitrator.mark_winners(solutions);
@@ -1223,25 +1219,27 @@ mod tests {
             for winner in &winners {
                 eprintln!("Winner: {:#?}", winner.solution());
             }
-            /*
-            assert_eq!(winners.len(), self.expected_winners.len());
-            for solution_id in &self.expected_winners {
-                let solution_uid = solution_map.get(&solution_id).unwrap().solution().id;
-                assert!(winners.iter().any(|s| s.solution().id == solution_uid));
+
+            // Check that winners match the database
+            let db_winners: Vec<String> = self.solutions
+                .iter()
+                .filter(|(_, solution)| solution.is_winner)
+                .map(|(_, solution)| solution.solver.clone())
+                .collect();
+
+            assert_eq!(winners.len(), db_winners.len(), "Number of winners doesn't match database");
+            for winner in &winners {
+                let solver_name = winner.driver().name.clone();
+                assert!(db_winners.contains(&solver_name), 
+                    "Winner {} not found in database winners: {:?}", 
+                    solver_name, 
+                    db_winners
+                );
             }
-            */
 
             // compute reference score
             let reference_scores = arbitrator.compute_reference_scores(&solutions);
             eprintln!("Reference scores: {:#?}", reference_scores);
-            /*
-            assert_eq!(reference_scores.len(), self.expected_reference_scores.len());
-            for (solver_id, expected_score) in &self.expected_reference_scores {
-                let solver_address: eth::Address = (*solver_map.get(solver_id).unwrap()).into();
-                let score = reference_scores.get(&solver_address).unwrap();
-                assert_eq!(score.0, eth::Ether(*expected_score))
-            }
-            */
         }
     }
 
@@ -1274,6 +1272,8 @@ mod tests {
         pub solver: String,
         pub trades: HashMap<String, TestTrade>,
         pub score: eth::U256,
+        #[serde(default)]
+        pub is_winner: bool,
     }
 
     #[serde_as]
