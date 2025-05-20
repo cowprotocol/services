@@ -817,7 +817,7 @@ mod tests {
         let start_auction_id = 12825008;
         let end_auction_id = 12825008;
         let res = fetch_auction_orders_data(start_auction_id, end_auction_id);
-        eprintln!("{}", res);
+        eprintln!("{:#?}", res);
     }
 
     fn fetch_trade_data(start_auction_id: i64, end_auction_id: i64) -> HashMap<String, TestSolution> {
@@ -929,12 +929,12 @@ mod tests {
         })
     }
 
-    fn fetch_auction_orders_data(start_auction_id: i64, end_auction_id: i64) -> String {
+    fn fetch_auction_orders_data(start_auction_id: i64, end_auction_id: i64) -> TestAuction {
         use sqlx::PgPool;
         use dotenv::dotenv;
-        use serde_json::Value;
         use sqlx::Row;
         use sqlx::types::BigDecimal;
+        use std::collections::HashMap;
 
         // Load environment variables from .env file
         dotenv().ok();
@@ -962,13 +962,17 @@ mod tests {
                 SELECT 
                     ao.auction_id,
                     ao.order_uid,
-                    o.kind as side,
+                    o.kind::text as side,
                     o.sell_token,
                     o.buy_token,
                     o.sell_amount,
-                    o.buy_amount
+                    o.buy_amount,
+                    ap_sell.price as sell_token_price,
+                    ap_buy.price as buy_token_price
                 FROM auction_orders ao
                 JOIN orders o ON ao.order_uid = o.uid
+                JOIN auction_prices ap_sell ON ao.auction_id = ap_sell.auction_id AND o.sell_token = ap_sell.token
+                JOIN auction_prices ap_buy ON ao.auction_id = ap_buy.auction_id AND o.buy_token = ap_buy.token
                 ORDER BY ao.auction_id, ao.order_uid;"
             );
 
@@ -978,37 +982,57 @@ mod tests {
                 .await 
             {
                 Ok(rows) => {
-                    let mut results = Vec::new();
-                    for row in rows {
-                        let mut map = serde_json::Map::new();
-                        
-                        if let Ok(v) = row.try_get::<i64, _>("auction_id") {
-                            map.insert("auction_id".to_string(), Value::Number(serde_json::Number::from(v)));
-                        }
-                        if let Ok(v) = row.try_get::<[u8; 56], _>("order_uid") {
-                            map.insert("order_uid".to_string(), Value::String(hex::encode(v)));
-                        }
-                        if let Ok(v) = row.try_get::<String, _>("side") {
-                            map.insert("side".to_string(), Value::String(v));
-                        }
-                        if let Ok(v) = row.try_get::<[u8; 20], _>("sell_token") {
-                            map.insert("sell_token".to_string(), Value::String(hex::encode(v)));
-                        }
-                        if let Ok(v) = row.try_get::<[u8; 20], _>("buy_token") {
-                            map.insert("buy_token".to_string(), Value::String(hex::encode(v)));
-                        }
-                        if let Ok(v) = row.try_get::<BigDecimal, _>("sell_amount") {
-                            map.insert("sell_amount".to_string(), Value::String(v.to_string()));
-                        }
-                        if let Ok(v) = row.try_get::<BigDecimal, _>("buy_amount") {
-                            map.insert("buy_amount".to_string(), Value::String(v.to_string()));
-                        }
+                    let mut orders = HashMap::new();
+                    let mut prices = HashMap::new();
 
-                        results.push(Value::Object(map));
+                    for row in rows {
+                        let order_uid = hex::encode(row.get::<[u8; 56], _>("order_uid"));
+                        let sell_token = hex::encode(row.get::<[u8; 20], _>("sell_token"));
+                        let buy_token = hex::encode(row.get::<[u8; 20], _>("buy_token"));
+                        
+                        // Create order entry
+                        orders.insert(
+                            order_uid.clone(),
+                            TestOrder(
+                                match row.get::<String, _>("side").to_lowercase().as_str() {
+                                    "buy" => order::Side::Buy,
+                                    "sell" => order::Side::Sell,
+                                    _ => panic!("Invalid side value: {}", row.get::<String, _>("side")),
+                                },
+                                sell_token.clone(),
+                                eth::U256::from_str_radix(&row.get::<BigDecimal, _>("sell_amount").to_string(), 10).unwrap(),
+                                buy_token.clone(),
+                                eth::U256::from_str_radix(&row.get::<BigDecimal, _>("buy_amount").to_string(), 10).unwrap(),
+                            )
+                        );
+
+                        // Add token prices if not already present
+                        if !prices.contains_key(&sell_token) {
+                            prices.insert(
+                                sell_token,
+                                eth::U256::from_str_radix(&row.get::<BigDecimal, _>("sell_token_price").to_string(), 10).unwrap()
+                            );
+                        }
+                        if !prices.contains_key(&buy_token) {
+                            prices.insert(
+                                buy_token,
+                                eth::U256::from_str_radix(&row.get::<BigDecimal, _>("buy_token_price").to_string(), 10).unwrap()
+                            );
+                        }
                     }
-                    serde_json::to_string_pretty(&results).unwrap_or_else(|_| "Error serializing results".to_string())
+
+                    TestAuction {
+                        orders,
+                        prices: Some(prices),
+                    }
                 },
-                Err(e) => format!("Query error: {}", e)
+                Err(e) => {
+                    eprintln!("Query error: {}", e);
+                    TestAuction {
+                        orders: HashMap::new(),
+                        prices: None,
+                    }
+                }
             }
         })
     }
