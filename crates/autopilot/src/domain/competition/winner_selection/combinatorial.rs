@@ -382,8 +382,9 @@ mod tests {
         serde_json::json,
         serde_with::serde_as,
         std::{
-            collections::HashMap,
+            collections::{HashMap, HashSet},
             hash::{DefaultHasher, Hash, Hasher},
+            str::FromStr,
         },
     };
 
@@ -807,98 +808,50 @@ mod tests {
     #[test]
     fn staging_mainnet_auction_12825008_from_db() {
         let auction_id = 12825008;
-        
+
         // Fetch auction data
         let auction = fetch_auction_orders_data(auction_id, auction_id);
-        
+
         // Fetch solutions data
         let solutions = fetch_trade_data(auction_id, auction_id);
-        
-        // Build tokens list
-        let mut tokens = Vec::new();
-        let mut token_map = HashMap::new();
-        
+
+        let mut test_case = TestCase {
+            tokens: vec![],
+            auction,
+            solutions,
+            expected_fair_solutions: vec![],
+            expected_winners: vec![],
+            expected_reference_scores: HashMap::new(),
+        };
+
         // Collect unique tokens from orders
-        for (_, order) in &auction.orders {
-            let sell_token = order.1.clone();
-            let buy_token = order.3.clone();
-            
-            if !token_map.contains_key(&sell_token) {
-                let token_name = format!("Token {}", tokens.len());
-                tokens.push((token_name.clone(), sell_token.clone()));
-                token_map.insert(sell_token, token_name);
-            }
-            
-            if !token_map.contains_key(&buy_token) {
-                let token_name = format!("Token {}", tokens.len());
-                tokens.push((token_name.clone(), buy_token.clone()));
-                token_map.insert(buy_token, token_name);
-            }
+        let mut unique_tokens = HashSet::new();
+        for (_, order) in &test_case.auction.orders {
+            // sell token
+            unique_tokens.insert(order.1.clone());
+            // buy token
+            unique_tokens.insert(order.3.clone());
         }
-        
-        // Build test case
-        let test_case = json!({
-            "tokens": tokens,
-            "auction": {
-                "orders": auction.orders.iter().map(|(uid, order)| {
-                    (
-                        uid.clone(),
-                        json!([
-                            match order.0 {
-                                order::Side::Buy => "buy",
-                                order::Side::Sell => "sell",
-                            },
-                            token_map.get(&order.1).unwrap(),
-                            order.2.to_string(),
-                            token_map.get(&order.3).unwrap(),
-                            order.4.to_string()
-                        ])
-                    )
-                }).collect::<HashMap<_, _>>(),
-                "prices": auction.prices.as_ref().map(|prices| {
-                    prices.iter().map(|(token, price)| {
-                        (token_map.get(token).unwrap().clone(), price.to_string())
-                    }).collect::<HashMap<_, _>>()
-                })
-            },
-            "solutions": solutions.iter().map(|(solver, solution)| {
-                (
-                    format!("Solution {}", solutions.len()),
-                    json!({
-                        "solver": solution.solver,
-                        "trades": solution.trades.iter().map(|(uid, trade)| {
-                            (
-                                uid.clone(),
-                                json!([
-                                    trade.0.to_string(),
-                                    trade.1.to_string()
-                                ])
-                            )
-                        }).collect::<HashMap<_, _>>(),
-                        "score": solution.score.to_string()
-                    })
-                )
-            }).collect::<HashMap<_, _>>(),
-            "expected_fair_solutions": solutions.keys().map(|_| format!("Solution {}", solutions.len())).collect::<Vec<_>>(),
-            "expected_winners": solutions.keys().map(|_| format!("Solution {}", solutions.len())).collect::<Vec<_>>(),
-            "expected_reference_scores": solutions.iter().map(|(solver, _)| {
-                (solver.clone(), "0")
-            }).collect::<HashMap<_, _>>()
-        });
+        for token in unique_tokens {
+            test_case
+                .tokens
+                .push((token.clone(), H160::from_str(&token).unwrap()));
+        }
 
-        // Print the test case for inspection
-        eprintln!("{}", serde_json::to_string_pretty(&test_case).unwrap());
+        eprintln!("{:#?}", test_case);
 
-        // Create and validate the test case
-        TestCase::from_json(test_case).validate();
+        test_case.validate();
     }
 
-    fn fetch_trade_data(start_auction_id: i64, end_auction_id: i64) -> HashMap<String, TestSolution> {
-        use sqlx::PgPool;
-        use dotenv::dotenv;
-        use sqlx::Row;
-        use sqlx::types::BigDecimal;
-        use std::collections::HashMap;
+    fn fetch_trade_data(
+        start_auction_id: i64,
+        end_auction_id: i64,
+    ) -> HashMap<String, TestSolution> {
+        use {
+            dotenv::dotenv,
+            sqlx::{PgPool, Row, types::BigDecimal},
+            std::collections::HashMap,
+        };
 
         // Load environment variables from .env file
         dotenv().ok();
@@ -907,8 +860,8 @@ mod tests {
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
             // Get database URL from environment
-            let database_url = std::env::var("DATABASE_URL")
-                .expect("DATABASE_URL must be set in .env file");
+            let database_url =
+                std::env::var("DATABASE_URL").expect("DATABASE_URL must be set in .env file");
 
             // Create connection pool
             let pool = PgPool::connect(&database_url)
@@ -962,41 +915,50 @@ mod tests {
             );
 
             // Execute the provided query using sqlx
-            match sqlx::query(&query)
-                .fetch_all(&pool)
-                .await 
-            {
+            match sqlx::query(&query).fetch_all(&pool).await {
                 Ok(rows) => {
                     let mut solutions: HashMap<String, TestSolution> = HashMap::new();
-                    
+
                     for row in rows {
                         let solver = hex::encode(row.get::<[u8; 20], _>("solver"));
                         let order_uid = hex::encode(row.get::<[u8; 56], _>("order_uid"));
                         let is_winner = row.get::<bool, _>("is_winner");
-                        
+
                         let mut trades = HashMap::new();
                         trades.insert(
                             order_uid,
                             TestTrade(
-                                eth::U256::from_str_radix(&row.get::<BigDecimal, _>("executed_sell_amount").to_string(), 10).unwrap(),
-                                eth::U256::from_str_radix(&row.get::<BigDecimal, _>("executed_buy_amount").to_string(), 10).unwrap(),
-                            )
+                                eth::U256::from_str_radix(
+                                    &row.get::<BigDecimal, _>("executed_sell_amount").to_string(),
+                                    10,
+                                )
+                                .unwrap(),
+                                eth::U256::from_str_radix(
+                                    &row.get::<BigDecimal, _>("executed_buy_amount").to_string(),
+                                    10,
+                                )
+                                .unwrap(),
+                            ),
                         );
 
-                        let score = eth::U256::from_str_radix(&row.get::<BigDecimal, _>("score").to_string(), 10).unwrap();
-                        
+                        let score = eth::U256::from_str_radix(
+                            &row.get::<BigDecimal, _>("score").to_string(),
+                            10,
+                        )
+                        .unwrap();
+
                         solutions.insert(
-                            solver,
+                            solver.clone(),
                             TestSolution {
-                                solver: format!("Solver {}", solutions.len() + 1),
+                                solver,
                                 trades,
                                 score,
                                 is_winner,
-                            }
+                            },
                         );
                     }
                     solutions
-                },
+                }
                 Err(e) => {
                     eprintln!("Query error: {}", e);
                     HashMap::new()
@@ -1006,11 +968,11 @@ mod tests {
     }
 
     fn fetch_auction_orders_data(start_auction_id: i64, end_auction_id: i64) -> TestAuction {
-        use sqlx::PgPool;
-        use dotenv::dotenv;
-        use sqlx::Row;
-        use sqlx::types::BigDecimal;
-        use std::collections::HashMap;
+        use {
+            dotenv::dotenv,
+            sqlx::{PgPool, Row, types::BigDecimal},
+            std::collections::HashMap,
+        };
 
         // Load environment variables from .env file
         dotenv().ok();
@@ -1019,8 +981,8 @@ mod tests {
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
             // Get database URL from environment
-            let database_url = std::env::var("DATABASE_URL")
-                .expect("DATABASE_URL must be set in .env file");
+            let database_url =
+                std::env::var("DATABASE_URL").expect("DATABASE_URL must be set in .env file");
 
             // Create connection pool
             let pool = PgPool::connect(&database_url)
@@ -1047,16 +1009,15 @@ mod tests {
                     ap_buy.price as buy_token_price
                 FROM auction_orders ao
                 JOIN orders o ON ao.order_uid = o.uid
-                JOIN auction_prices ap_sell ON ao.auction_id = ap_sell.auction_id AND o.sell_token = ap_sell.token
-                JOIN auction_prices ap_buy ON ao.auction_id = ap_buy.auction_id AND o.buy_token = ap_buy.token
+                JOIN auction_prices ap_sell ON ao.auction_id = ap_sell.auction_id AND o.sell_token \
+                 = ap_sell.token
+                JOIN auction_prices ap_buy ON ao.auction_id = ap_buy.auction_id AND o.buy_token = \
+                 ap_buy.token
                 ORDER BY ao.auction_id, ao.order_uid;"
             );
 
             // Execute the provided query using sqlx
-            match sqlx::query(&query)
-                .fetch_all(&pool)
-                .await 
-            {
+            match sqlx::query(&query).fetch_all(&pool).await {
                 Ok(rows) => {
                     let mut orders = HashMap::new();
                     let mut prices = HashMap::new();
@@ -1065,7 +1026,7 @@ mod tests {
                         let order_uid = hex::encode(row.get::<[u8; 56], _>("order_uid"));
                         let sell_token = hex::encode(row.get::<[u8; 20], _>("sell_token"));
                         let buy_token = hex::encode(row.get::<[u8; 20], _>("buy_token"));
-                        
+
                         // Create order entry
                         orders.insert(
                             order_uid.clone(),
@@ -1073,26 +1034,45 @@ mod tests {
                                 match row.get::<String, _>("side").to_lowercase().as_str() {
                                     "buy" => order::Side::Buy,
                                     "sell" => order::Side::Sell,
-                                    _ => panic!("Invalid side value: {}", row.get::<String, _>("side")),
+                                    _ => panic!(
+                                        "Invalid side value: {}",
+                                        row.get::<String, _>("side")
+                                    ),
                                 },
                                 sell_token.clone(),
-                                eth::U256::from_str_radix(&row.get::<BigDecimal, _>("sell_amount").to_string(), 10).unwrap(),
+                                eth::U256::from_str_radix(
+                                    &row.get::<BigDecimal, _>("sell_amount").to_string(),
+                                    10,
+                                )
+                                .unwrap(),
                                 buy_token.clone(),
-                                eth::U256::from_str_radix(&row.get::<BigDecimal, _>("buy_amount").to_string(), 10).unwrap(),
-                            )
+                                eth::U256::from_str_radix(
+                                    &row.get::<BigDecimal, _>("buy_amount").to_string(),
+                                    10,
+                                )
+                                .unwrap(),
+                            ),
                         );
 
                         // Add token prices if not already present
                         if !prices.contains_key(&sell_token) {
                             prices.insert(
                                 sell_token,
-                                eth::U256::from_str_radix(&row.get::<BigDecimal, _>("sell_token_price").to_string(), 10).unwrap()
+                                eth::U256::from_str_radix(
+                                    &row.get::<BigDecimal, _>("sell_token_price").to_string(),
+                                    10,
+                                )
+                                .unwrap(),
                             );
                         }
                         if !prices.contains_key(&buy_token) {
                             prices.insert(
                                 buy_token,
-                                eth::U256::from_str_radix(&row.get::<BigDecimal, _>("buy_token_price").to_string(), 10).unwrap()
+                                eth::U256::from_str_radix(
+                                    &row.get::<BigDecimal, _>("buy_token_price").to_string(),
+                                    10,
+                                )
+                                .unwrap(),
                             );
                         }
                     }
@@ -1101,7 +1081,7 @@ mod tests {
                         orders,
                         prices: Some(prices),
                     }
-                },
+                }
                 Err(e) => {
                     eprintln!("Query error: {}", e);
                     TestAuction {
@@ -1182,9 +1162,7 @@ mod tests {
             // map (solution id -> participant) for later reference during the test
             let mut solution_map = HashMap::new();
             for (solution_id, solution) in &self.solutions {
-                // generate solver address deterministically from the id
-                let solver_uid = hash(&solution.solver);
-                let solver_address = address(solver_uid);
+                let solver_address = H160::from_str(&solution.solver).unwrap();
                 solver_map.insert(solution.solver.clone(), solver_address);
 
                 let trades = solution
@@ -1209,37 +1187,27 @@ mod tests {
             // filter solutions
             let participants = solution_map.values().cloned().collect();
             let solutions = arbitrator.filter_unfair_solutions(participants, &auction);
-            for solution in &solutions {
-                eprintln!("Solution: {:#?}", solution.solution());
-            }
 
             // select the winners
             let solutions = arbitrator.mark_winners(solutions);
             let winners = filter_winners(&solutions);
-            for winner in &winners {
-                eprintln!("Winner: {:#?}", winner.solution());
-            }
 
             // Check that winners match the database
-            let db_winners: Vec<String> = self.solutions
+            let expected_winners: Vec<H160> = self
+                .solutions
                 .iter()
                 .filter(|(_, solution)| solution.is_winner)
                 .map(|(_, solution)| solution.solver.clone())
+                .map(|solver| H160::from_str(&solver).unwrap())
                 .collect();
-
-            assert_eq!(winners.len(), db_winners.len(), "Number of winners doesn't match database");
+            assert_eq!(winners.len(), expected_winners.len());
             for winner in &winners {
-                let solver_name = winner.driver().name.clone();
-                assert!(db_winners.contains(&solver_name), 
-                    "Winner {} not found in database winners: {:?}", 
-                    solver_name, 
-                    db_winners
-                );
+                assert!(expected_winners.contains(&winner.driver().submission_address.0));
             }
 
             // compute reference score
-            let reference_scores = arbitrator.compute_reference_scores(&solutions);
-            eprintln!("Reference scores: {:#?}", reference_scores);
+            let _reference_scores = arbitrator.compute_reference_scores(&solutions);
+            //eprintln!("Reference scores: {:#?}", reference_scores);
         }
     }
 
