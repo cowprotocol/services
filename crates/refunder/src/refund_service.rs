@@ -28,6 +28,7 @@ pub struct RefundService {
     pub min_validity_duration: i64,
     pub min_price_deviation: f64,
     pub submitter: Submitter,
+    pub ignored_app_codes: Vec<String>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -44,6 +45,7 @@ impl RefundService {
         ethflow_contracts: Vec<CoWSwapEthFlow>,
         min_validity_duration: i64,
         min_price_deviation_bps: i64,
+        ignored_app_codes: Vec<String>,
         account: Account,
     ) -> Self {
         RefundService {
@@ -59,6 +61,7 @@ impl RefundService {
                 gas_parameters_of_last_tx: None,
                 nonce_of_last_submission: None,
             },
+            ignored_app_codes,
         }
     }
 
@@ -82,6 +85,7 @@ impl RefundService {
             block_time,
             self.min_validity_duration,
             self.min_price_deviation,
+            &self.ignored_app_codes,
         )
         .await
         .map_err(|err| {

@@ -67,6 +67,10 @@ pub struct Arguments {
     /// The port at which we serve our metrics
     #[clap(long, env, default_value = "9590")]
     pub metrics_port: u16,
+
+    /// The app codes for which we don't want to refund (e.g. infinex)
+    #[clap(long, env, use_value_delimiter = true)]
+    pub ignored_app_codes: Vec<String>,
 }
 
 impl std::fmt::Display for Arguments {
@@ -83,6 +87,7 @@ impl std::fmt::Display for Arguments {
             logging,
             db_url,
             refunder_pk,
+            ignored_app_codes,
         } = self;
 
         write!(f, "{}", http_client)?;
@@ -98,6 +103,7 @@ impl std::fmt::Display for Arguments {
         let _intentionally_ignored = refunder_pk;
         writeln!(f, "refunder_pk: SECRET")?;
         writeln!(f, "metrics_port: {}", metrics_port)?;
+        writeln!(f, "ignored_app_codes: {:?}", ignored_app_codes)?;
         Ok(())
     }
 }

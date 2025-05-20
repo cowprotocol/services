@@ -70,6 +70,7 @@ pub async fn run(args: arguments::Arguments) {
         ethflow_contracts,
         i64::try_from(args.min_validity_duration.as_secs()).unwrap_or(i64::MAX),
         args.min_price_deviation_bps,
+        args.ignored_app_codes,
         refunder_account,
     );
     loop {

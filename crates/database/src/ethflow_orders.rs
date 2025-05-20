@@ -115,6 +115,7 @@ pub async fn refundable_orders(
     since_valid_to: i64,
     min_validity_duration: i64,
     min_price_deviation: f64,
+    ignored_app_codes: &Vec<String>,
 ) -> Result<Vec<EthOrderPlacement>, sqlx::Error> {
     // condition (1.0 - o.buy_amount / GREATEST(oq.buy_amount,1)) >= $3 is added to
     // skip refunding orders that have unrealistic slippage set. Those orders are
@@ -132,6 +133,7 @@ INNER JOIN order_quotes oq on o.uid = oq.order_uid
 LEFT JOIN trades t on o.uid = t.order_uid
 LEFT JOIN onchain_order_invalidations o_inv on o.uid = o_inv.uid
 LEFT JOIN ethflow_refunds o_ref on o.uid = o_ref.order_uid
+LEFT JOIN app_data on contract_app_data = o.app_data
 WHERE 
 o_ref.tx_hash is null
 AND o_inv.uid is null
@@ -141,11 +143,13 @@ AND eo.valid_to < $1
 AND o.sell_amount = oq.sell_amount
 AND (1.0 - o.buy_amount / GREATEST(oq.buy_amount,1)) >= $3
 AND eo.valid_to - extract(epoch from creation_timestamp)::int > $2
+AND convert_from(app_data.full_app_data, 'utf-8')::json->>'appCode' not in ('', $4)
     "#;
     sqlx::query_as(QUERY)
         .bind(since_valid_to)
         .bind(min_validity_duration)
         .bind(min_price_deviation)
+        .bind(ignored_app_codes.join(", "))
         .fetch_all(ex)
         .await
 }
@@ -155,6 +159,7 @@ mod tests {
     use {
         super::*,
         crate::{
+            app_data,
             byte_array::ByteArray,
             events::{EventIndex, Trade, insert_trade},
             onchain_invalidations::insert_onchain_invalidation,
@@ -162,6 +167,7 @@ mod tests {
         },
         bigdecimal::BigDecimal,
         chrono::{TimeZone, Utc},
+        serde_json::json,
         sqlx::Connection,
     };
 
@@ -324,16 +330,24 @@ mod tests {
         let order_parts = create_standard_ethflow_order_parts(order_uid_1);
         insert_order_parts_in_db(&mut db, &order_parts).await;
         // all criteria are fulfilled
-        let orders = refundable_orders(&mut db, 5, 1, 0.01).await.unwrap();
+        let orders = refundable_orders(&mut db, 5, 1, 0.01, &vec![])
+            .await
+            .unwrap();
         assert_eq!(orders, vec![order_parts.eth_order.clone()]);
         // slippage is not fulfilled
-        let orders = refundable_orders(&mut db, 5, 1, 0.53).await.unwrap();
+        let orders = refundable_orders(&mut db, 5, 1, 0.53, &vec![])
+            .await
+            .unwrap();
         assert_eq!(orders, Vec::new());
         // min_validity is not fulfilled
-        let orders = refundable_orders(&mut db, 1, 1, 0.01).await.unwrap();
+        let orders = refundable_orders(&mut db, 1, 1, 0.01, &vec![])
+            .await
+            .unwrap();
         assert_eq!(orders, Vec::new());
         // min_duration is not fulfilled
-        let orders = refundable_orders(&mut db, 5, 3, 0.01).await.unwrap();
+        let orders = refundable_orders(&mut db, 5, 3, 0.01, &vec![])
+            .await
+            .unwrap();
         assert_eq!(orders, Vec::new());
         // order already settled
         let trade = Trade {
@@ -343,7 +357,9 @@ mod tests {
         insert_trade(&mut db, &EventIndex::default(), &trade)
             .await
             .unwrap();
-        let orders = refundable_orders(&mut db, 5, 1, 0.01).await.unwrap();
+        let orders = refundable_orders(&mut db, 5, 1, 0.01, &vec![])
+            .await
+            .unwrap();
         assert_eq!(orders, Vec::new());
         let order_uid_2 = ByteArray([2u8; 56]);
         let mut order_parts = create_standard_ethflow_order_parts(order_uid_2);
@@ -353,7 +369,9 @@ mod tests {
         });
         insert_order_parts_in_db(&mut db, &order_parts).await;
         // order was refunded
-        let orders = refundable_orders(&mut db, 5, 1, 0.01).await.unwrap();
+        let orders = refundable_orders(&mut db, 5, 1, 0.01, &vec![])
+            .await
+            .unwrap();
         assert_eq!(orders, Vec::new());
 
         let order_uid_3 = ByteArray([3u8; 56]);
@@ -361,7 +379,9 @@ mod tests {
         order_parts.order.sell_amount = BigDecimal::from(99u32);
         insert_order_parts_in_db(&mut db, &order_parts).await;
         // sell_amount is not fulfilled
-        let orders = refundable_orders(&mut db, 5, 1, 0.01).await.unwrap();
+        let orders = refundable_orders(&mut db, 5, 1, 0.01, &vec![])
+            .await
+            .unwrap();
         assert_eq!(orders, Vec::new());
 
         let order_uid_4 = ByteArray([4u8; 56]);
@@ -369,14 +389,18 @@ mod tests {
         order_parts.order.partially_fillable = true;
         insert_order_parts_in_db(&mut db, &order_parts).await;
         // no refundable orders as order is partially fillable
-        let orders = refundable_orders(&mut db, 5, 1, 0.001).await.unwrap();
+        let orders = refundable_orders(&mut db, 5, 1, 0.001, &vec![])
+            .await
+            .unwrap();
         assert_eq!(orders, Vec::new());
 
         let order_uid_5 = ByteArray([5u8; 56]);
         let order_parts = create_standard_ethflow_order_parts(order_uid_5);
         insert_order_parts_in_db(&mut db, &order_parts).await;
         // the newly created order should be found
-        let orders = refundable_orders(&mut db, 5, 1, 0.001).await.unwrap();
+        let orders = refundable_orders(&mut db, 5, 1, 0.001, &vec![])
+            .await
+            .unwrap();
         assert_eq!(orders, vec![order_parts.eth_order]);
         insert_onchain_invalidation(
             &mut db,
@@ -388,7 +412,9 @@ mod tests {
         )
         .await
         .unwrap();
-        let orders = refundable_orders(&mut db, 5, 1, 0.001).await.unwrap();
+        let orders = refundable_orders(&mut db, 5, 1, 0.001, &vec![])
+            .await
+            .unwrap();
         // but after invaldiation event, it should not longer be found
         assert_eq!(orders, Vec::new());
     }
@@ -429,13 +455,10 @@ mod tests {
                 .await
                 .unwrap();
             if i % 10u32 == 0 {
-                insert_refund_tx_hash(
-                    &mut db,
-                    &Refund {
-                        order_uid,
-                        ..Default::default()
-                    },
-                )
+                insert_refund_tx_hash(&mut db, &Refund {
+                    order_uid,
+                    ..Default::default()
+                })
                 .await
                 .unwrap()
             }
@@ -458,9 +481,70 @@ mod tests {
         }
 
         let now = std::time::Instant::now();
-        refundable_orders(&mut db, 1, 1, 1.0).await.unwrap();
+        refundable_orders(&mut db, 1, 1, 1.0, &vec![])
+            .await
+            .unwrap();
         let elapsed = now.elapsed();
         println!("{elapsed:?}");
         assert!(elapsed < std::time::Duration::from_secs(1));
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_refundable_order_ignored_appcodes() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        // used to compute unique order ids and app_data hashes from app_code string
+        fn string_to_fixed_bytes<const N: usize>(input: &str) -> [u8; N] {
+            let mut out = [0u8; N];
+            let bytes = input.as_bytes();
+            let len = bytes.len().min(N);
+            out[..len].copy_from_slice(&bytes[..len]);
+            out
+        }
+
+        let mut create_refundable_order = async |app_code: &str| {
+            let order = Order {
+                uid: ByteArray(string_to_fixed_bytes::<56>(app_code)),
+                // creation timestamp: 1s vs valid_to: 4s
+                creation_timestamp: Utc.timestamp_millis_opt(1_000).unwrap(),
+                sell_amount: BigDecimal::from(100u32),
+                buy_amount: BigDecimal::from(100u32),
+                app_data: ByteArray(string_to_fixed_bytes::<32>(app_code)),
+                ..Default::default()
+            };
+            let eth_order = EthOrderPlacement {
+                uid: order.uid,
+                valid_to: 4,
+            };
+            let quote = Quote {
+                order_uid: order.uid,
+                sell_amount: BigDecimal::from(100u32),
+                buy_amount: BigDecimal::from(200),
+                ..Default::default()
+            };
+            let app_data = json!({
+                "appCode": app_code,
+            });
+
+            insert_order(&mut db, &order).await.unwrap();
+            insert_or_overwrite_ethflow_order(&mut db, &eth_order)
+                .await
+                .unwrap();
+            insert_quote(&mut db, &quote).await.unwrap();
+            app_data::insert(&mut db, &order.app_data, &app_data.to_string().into_bytes())
+                .await
+                .unwrap();
+        };
+
+        create_refundable_order("bad integrator").await;
+        create_refundable_order("good integrator").await;
+
+        let orders = refundable_orders(&mut db, 5, 1, 0.001, &vec!["bad integrator".to_string()])
+            .await
+            .unwrap();
+        assert_eq!(orders.len(), 1);
     }
 }
