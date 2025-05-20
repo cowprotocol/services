@@ -4,15 +4,16 @@ use {
             competition::{auction::Tokens, order},
             eth,
         },
-        util,
+        util::{self, conv::u256::U256Ext},
     },
     chrono::{Duration, Utc},
+    num::{CheckedDiv, ToPrimitive},
     std::sync::Arc,
 };
 
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
 pub enum SortingKey {
-    BigRational(num::BigRational),
+    Float(OrdFloat),
     Timestamp(Option<util::Timestamp>),
     Bool(bool),
 }
@@ -27,9 +28,48 @@ pub trait SortingStrategy: Send + Sync {
 pub struct ExternalPrice;
 impl SortingStrategy for ExternalPrice {
     fn key(&self, order: &order::Order, tokens: &Tokens, _solver: &eth::H160) -> SortingKey {
-        SortingKey::BigRational(order.likelihood(tokens))
+        // The likelihood that this order will be fulfilled, based on token prices.
+        // A larger value means that the order is more likely to be fulfilled.
+        // This is used to prioritize orders when solving.
+        let chance_to_settle = match (
+            tokens.get(order.buy.token).price,
+            tokens.get(order.sell.token).price,
+        ) {
+            (Some(buy_price), Some(sell_price)) => {
+                let buy = buy_price.in_eth(order.buy.amount);
+                let sell = sell_price.in_eth(order.sell.amount);
+                sell.0
+                    .to_big_rational()
+                    .checked_div(&buy.0.to_big_rational())
+                    .and_then(|l| l.to_f64())
+                    .unwrap_or_default()
+            }
+            _ => 0.,
+        };
+        SortingKey::Float(OrdFloat(chance_to_settle))
     }
 }
+
+/// We use a wrapper around [f64] to make it sortable
+/// which is significantly faster than the
+/// [num::BigRational] we used before.
+pub struct OrdFloat(f64);
+impl PartialOrd for OrdFloat {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for OrdFloat {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.total_cmp(&other.0)
+    }
+}
+impl PartialEq for OrdFloat {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+impl Eq for OrdFloat {}
 
 /// Orders are sorted by their creation timestamp, with the most recent orders
 /// coming first. If `max_order_age` is set, only orders created within the
