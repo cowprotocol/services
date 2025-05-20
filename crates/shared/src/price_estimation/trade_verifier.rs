@@ -25,6 +25,7 @@ use {
         dummy_contract,
         support::{AnyoneAuthenticator, Solver, Spardose, Trader},
     },
+    database::byte_array::ByteArray,
     ethcontract::{Bytes, H160, U256, tokens::Tokenize},
     ethrpc::{Web3, block_stream::CurrentBlockWatcher, extensions::StateOverride},
     model::{
@@ -38,7 +39,10 @@ use {
         nonzero::U256 as NonZeroU256,
     },
     std::{collections::HashMap, sync::Arc},
-    web3::{ethabi::Token, types::CallRequest},
+    web3::{
+        ethabi::Token,
+        types::{BytesArray, CallRequest},
+    },
 };
 
 #[async_trait::async_trait]
@@ -220,8 +224,14 @@ impl TradeVerifier {
             }
         };
 
-        let mut summary = SettleOutput::decode(&output?, query.kind, &tokens)
+        let output = output?;
+
+        let mut summary = SettleOutput::decode(&output, query.kind, &tokens)
             .context("could not decode simulation output")
+            .inspect_err(|_| {
+                let output = hex::encode(&output);
+                tracing::warn!(?output, "newlog: could not decode simulation output")
+            })
             .map_err(Error::SimulationFailed)?;
 
         {
