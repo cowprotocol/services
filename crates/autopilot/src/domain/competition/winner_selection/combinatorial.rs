@@ -553,6 +553,7 @@ mod tests {
             "expected_winners": ["Solution 1"],
             "expected_reference_scores": {
                 "Solver 1": "100",
+                "Solver 2": "200",
             },
         });
         TestCase::from_json(case).validate();
@@ -640,6 +641,7 @@ mod tests {
             "expected_winners": ["Solution 1"],
             "expected_reference_scores": {
                 "Solver 1": "150",
+                "Solver 2": "200",
             },
         });
         TestCase::from_json(case).validate();
@@ -748,6 +750,7 @@ mod tests {
             "expected_winners": ["Solution 1"],
             "expected_reference_scores": {
                 "Solver 1": "21037471695353421",
+                "Solver 2": "21813202259686016"
             },
         });
         TestCase::from_json(case).validate();
@@ -755,7 +758,7 @@ mod tests {
 
     #[serde_as]
     #[derive(Deserialize, Debug)]
-    pub struct TestCase {
+    struct TestCase {
         pub tokens: Vec<(String, H160)>,
         pub auction: TestAuction,
         pub solutions: HashMap<String, TestSolution>,
@@ -870,17 +873,19 @@ mod tests {
 
             // compute reference score
             let reference_scores = arbitrator.compute_reference_scores(&solutions);
-            for (solver_id, expected_score) in self.expected_reference_scores.clone() {
-                let solver_address: eth::Address = (*solver_map.get(&solver_id).unwrap()).into();
+            eprintln!("{:?}", reference_scores);
+            assert_eq!(reference_scores.len(), self.expected_reference_scores.len());
+            for (solver_id, expected_score) in &self.expected_reference_scores {
+                let solver_address: eth::Address = (*solver_map.get(solver_id).unwrap()).into();
                 let score = reference_scores.get(&solver_address).unwrap();
-                assert_eq!(score.0, eth::Ether(expected_score))
+                assert_eq!(score.0, eth::Ether(*expected_score))
             }
         }
     }
 
     #[serde_as]
     #[derive(Deserialize, Debug)]
-    pub struct TestAuction {
+    struct TestAuction {
         pub orders: HashMap<String, TestOrder>,
         #[serde(default)]
         #[serde_as(as = "Option<HashMap<_, U256FromDecimalStr>>")]
@@ -889,7 +894,7 @@ mod tests {
 
     #[serde_as]
     #[derive(Deserialize, Debug, Clone)]
-    pub struct TestOrder(
+    struct TestOrder(
         // sell_token
         pub String,
         // sell_amount
@@ -901,7 +906,7 @@ mod tests {
     );
 
     #[derive(Deserialize, Debug)]
-    pub struct TestSolution {
+    struct TestSolution {
         pub solver: String,
         pub trades: HashMap<String, TestTrade>,
         pub score: eth::U256,
@@ -909,7 +914,7 @@ mod tests {
 
     #[serde_as]
     #[derive(Deserialize, Debug)]
-    pub struct TestTrade(
+    struct TestTrade(
         // sell_amount
         #[serde_as(as = "U256FromDecimalStr")] pub eth::U256,
         // buy_amount
@@ -1082,7 +1087,7 @@ mod tests {
     // Custom deserializer that uses `U256::from_dec_str` (decimal only).
     // Needed because by default, U256 deserializer expects a hex string and we want
     // the tests to use decimal
-    pub struct U256FromDecimalStr;
+    struct U256FromDecimalStr;
 
     impl<'de> serde_with::DeserializeAs<'de, eth::U256> for U256FromDecimalStr {
         fn deserialize_as<D>(deserializer: D) -> Result<eth::U256, D::Error>
