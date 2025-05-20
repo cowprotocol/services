@@ -24,7 +24,10 @@ use {
         util::http,
     },
     ethrpc::block_stream::BlockInfo,
-    std::collections::{BTreeMap, HashSet},
+    std::{
+        collections::{BTreeMap, HashSet},
+        time::Duration,
+    },
     url::Url,
 };
 
@@ -296,7 +299,12 @@ pub fn solver_request(endpoint: &Url, req: &str) {
 }
 
 /// Observe that a response was received from the solver.
-pub fn solver_response(endpoint: &Url, res: Result<&str, &http::Error>) {
+pub fn solver_response(
+    endpoint: &Url,
+    res: Result<&str, &http::Error>,
+    solver: &str,
+    compute_time: Duration,
+) {
     match res {
         Ok(res) => {
             tracing::trace!(%endpoint, %res, "received response from solver")
@@ -305,6 +313,10 @@ pub fn solver_response(endpoint: &Url, res: Result<&str, &http::Error>) {
             tracing::warn!(%endpoint, ?err, "failed to receive response from solver")
         }
     }
+    metrics::get()
+        .used_solve_time
+        .with_label_values(&[solver])
+        .observe(compute_time.as_secs_f64());
 }
 
 /// Observe the result of mempool transaction execution.
@@ -408,6 +420,14 @@ fn competition_error(err: &competition::Error) -> &'static str {
 
 pub fn deadline(deadline: &Deadline, timeouts: &Timeouts) {
     tracing::debug!(?deadline, ?timeouts, "computed deadline");
+}
+
+pub fn sending_solve_request(solver: &str, remaining_time: Duration) {
+    tracing::trace!(?remaining_time, "sending solve request");
+    metrics::get()
+        .remaining_solve_time
+        .with_label_values(&[solver])
+        .observe(remaining_time.as_secs_f64());
 }
 
 #[derive(Debug)]

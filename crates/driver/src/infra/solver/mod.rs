@@ -252,8 +252,15 @@ impl Solver {
         if let Some(id) = observe::request_id::from_current_span() {
             req = req.header("X-REQUEST-ID", id);
         }
+        super::observe::sending_solve_request(self.config.name.as_str(), timeout);
+        let started_at = std::time::Instant::now();
         let res = util::http::send(self.config.response_size_limit_max_bytes, req).await;
-        super::observe::solver_response(&url, res.as_deref());
+        super::observe::solver_response(
+            &url,
+            res.as_deref(),
+            self.config.name.as_str(),
+            started_at.elapsed(),
+        );
         let res = res?;
         let res: solvers_dto::solution::Solutions = serde_json::from_str(&res)
             .tap_err(|err| tracing::warn!(res, ?err, "failed to parse solver response"))?;
