@@ -804,6 +804,37 @@ mod tests {
         TestCase::from_json(case).validate();
     }
 
+    #[test]
+    fn historical_data() {
+        use sqlx::PgPool;
+        use dotenv::dotenv;
+
+        // Load environment variables from .env file
+        dotenv().ok();
+
+        // Create a simple async block to run the database query
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            // Get database URL from environment
+            let database_url = std::env::var("DATABASE_URL")
+                .expect("DATABASE_URL must be set in .env file");
+
+            // Create connection pool
+            let pool = PgPool::connect(&database_url)
+                .await
+                .expect("Failed to create connection pool");
+
+            // Execute a simple query using sqlx
+            match sqlx::query_scalar::<_, String>("SELECT version()")
+                .fetch_one(&pool)
+                .await 
+            {
+                Ok(version) => println!("Database version: {}", version),
+                Err(e) => eprintln!("Query error: {}", e)
+            }
+        });
+    }
+
     #[serde_as]
     #[derive(Deserialize, Debug)]
     struct TestCase {
