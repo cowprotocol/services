@@ -247,10 +247,7 @@ impl AuctionProcessor {
             return Default::default();
         };
 
-        let _timer = metrics::get()
-            .auction_preprocessing
-            .with_label_values(&["fetch_app_data"])
-            .start_timer();
+        let _timer = stage_timer("fetch_app_data");
 
         join_all(
             orders
