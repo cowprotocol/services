@@ -20,6 +20,7 @@ use {
     futures::future::{BoxFuture, FutureExt, Shared, join_all},
     itertools::Itertools,
     model::{order::OrderKind, signature::Signature},
+    prometheus::HistogramTimer,
     shared::signature_validator::{Contracts, SignatureValidating},
     std::{
         collections::{HashMap, HashSet},
@@ -196,29 +197,26 @@ impl AuctionProcessor {
         // Use spawn_blocking() because a lot of CPU bound computations are happening
         // and we don't want to block the runtime for too long.
         let fut = tokio::task::spawn_blocking(move || {
-            let _timer = metrics::get()
-                .auction_preprocessing
-                .with_label_values(&["total"])
-                .start_timer();
+            let _timer = stage_timer("total");
             let start = std::time::Instant::now();
-            {
-                let _timer = metrics::get()
-                    .auction_preprocessing
-                    .with_label_values(&["cow_amm_orders_and_sorting"])
-                    .start_timer();
-                orders.extend(rt.block_on(Self::cow_amm_orders(&eth, &tokens, &cow_amms, signature_validator.as_ref())));
-                sorting::sort_orders(&mut orders, &tokens, &solver, &order_comparators);
-            }
-            let (mut balances, mut app_data_by_hash) =
+
+            let (mut balances, mut app_data_by_hash, cow_amms) =
                 rt.block_on(async {
                     tokio::join!(
                         Self::fetch_balances(&eth, &orders),
                         Self::collect_orders_app_data(app_data_retriever, &orders),
+                        Self::cow_amm_orders(&eth, &tokens, &cow_amms, signature_validator.as_ref()),
                     )
                 });
 
             let settlement = eth.contracts().settlement().address().into();
+            let _timer2 = stage_timer("aggregate_and_sort");
             Self::update_orders(&mut balances, &mut app_data_by_hash, &mut orders, &settlement);
+            // Only add the cow amm orders after we handled the orders that are already part
+            // of the auction. That way fetching balances no longer depends on the the cow amm
+            // future and we can run everything concurrently.
+            orders.extend(cow_amms);
+            sorting::sort_orders(&mut orders, &tokens, &solver, &order_comparators);
 
             tracing::debug!(auction_id = new_id.0, time =? start.elapsed(), "auction preprocessing done");
             orders
@@ -372,6 +370,7 @@ impl AuctionProcessor {
 
     /// Fetches the tradable balance for every order owner.
     async fn fetch_balances(ethereum: &infra::Ethereum, orders: &[order::Order]) -> Balances {
+        let _timer = stage_timer("fetch_balances");
         let ethereum = ethereum.with_metric_label("orderBalances".into());
         let mut tokens: HashMap<_, _> = Default::default();
         // Collect trader/token/source/interaction tuples for fetching available
@@ -396,11 +395,6 @@ impl AuctionProcessor {
                 }
             })
             .collect::<Vec<_>>();
-
-        let _timer = metrics::get()
-            .auction_preprocessing
-            .with_label_values(&["fetch_balances"])
-            .start_timer();
 
         join_all(
             traders
@@ -432,6 +426,7 @@ impl AuctionProcessor {
         eligible_for_surplus: &HashSet<eth::Address>,
         signature_validator: &dyn SignatureValidating,
     ) -> Vec<Order> {
+        let _timer = stage_timer("cow_amm_orders");
         let cow_amms = eth.contracts().cow_amm_registry().amms().await;
         let domain_separator = eth.contracts().settlement_domain_separator();
         let domain_separator = model::DomainSeparator(domain_separator.0);
@@ -584,6 +579,13 @@ impl AuctionProcessor {
             app_data_retriever,
         })))
     }
+}
+
+fn stage_timer(stage: &str) -> HistogramTimer {
+    metrics::get()
+        .auction_preprocessing
+        .with_label_values(&[stage])
+        .start_timer()
 }
 
 /// The tokens that are used in an auction.
