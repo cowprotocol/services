@@ -378,6 +378,7 @@ mod tests {
         },
         ethcontract::H160,
         hex_literal::hex,
+        number::serialization::HexOrDecimalU256,
         serde::Deserialize,
         serde_json::json,
         serde_with::serde_as,
@@ -764,7 +765,7 @@ mod tests {
         pub solutions: HashMap<String, TestSolution>,
         pub expected_fair_solutions: Vec<String>,
         pub expected_winners: Vec<String>,
-        #[serde_as(as = "HashMap<_, U256FromDecimalStr>")]
+        #[serde_as(as = "HashMap<_, HexOrDecimalU256>")]
         pub expected_reference_scores: HashMap<String, eth::U256>,
     }
 
@@ -882,7 +883,7 @@ mod tests {
     struct TestAuction {
         pub orders: HashMap<String, TestOrder>,
         #[serde(default)]
-        #[serde_as(as = "Option<HashMap<_, U256FromDecimalStr>>")]
+        #[serde_as(as = "Option<HashMap<_, HexOrDecimalU256>>")]
         pub prices: Option<HashMap<String, eth::U256>>,
     }
 
@@ -892,11 +893,11 @@ mod tests {
         // sell_token
         pub String,
         // sell_amount
-        #[serde_as(as = "U256FromDecimalStr")] pub eth::U256,
+        #[serde_as(as = "HexOrDecimalU256")] pub eth::U256,
         // buy_token
         pub String,
         // buy_amount
-        #[serde_as(as = "U256FromDecimalStr")] pub eth::U256,
+        #[serde_as(as = "HexOrDecimalU256")] pub eth::U256,
     );
 
     #[derive(Deserialize, Debug)]
@@ -910,9 +911,9 @@ mod tests {
     #[derive(Deserialize, Debug)]
     struct TestTrade(
         // sell_amount
-        #[serde_as(as = "U256FromDecimalStr")] pub eth::U256,
+        #[serde_as(as = "HexOrDecimalU256")] pub eth::U256,
         // buy_amount
-        #[serde_as(as = "U256FromDecimalStr")] pub eth::U256,
+        #[serde_as(as = "HexOrDecimalU256")] pub eth::U256,
     );
 
     fn create_test_arbitrator() -> super::Config {
@@ -1076,21 +1077,5 @@ mod tests {
         let mut hasher = DefaultHasher::new();
         s.hash(&mut hasher);
         hasher.finish()
-    }
-
-    // Custom deserializer that uses `U256::from_dec_str` (decimal only).
-    // Needed because by default, U256 deserializer expects a hex string and we want
-    // the tests to use decimal
-    struct U256FromDecimalStr;
-
-    impl<'de> serde_with::DeserializeAs<'de, eth::U256> for U256FromDecimalStr {
-        fn deserialize_as<D>(deserializer: D) -> Result<eth::U256, D::Error>
-        where
-            D: serde::Deserializer<'de>,
-        {
-            let s = String::deserialize(deserializer)?;
-            eth::U256::from_dec_str(&s)
-                .map_err(|e| serde::de::Error::custom(format!("invalid decimal U256: {e}")))
-        }
     }
 }
