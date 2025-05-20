@@ -783,24 +783,23 @@ mod tests {
             let order_map: HashMap<String, Order> = self
                 .auction
                 .orders
-                .clone()
-                .into_iter()
+                .iter()
                 .map(
                     |(
                         order_id,
                         TestOrder(sell_token, sell_token_amount, buy_token, buy_token_amount),
                     )| {
-                        let order_uid = hash(&order_id);
-                        let sell_token = token_map.get(&sell_token).unwrap();
-                        let buy_token = token_map.get(&buy_token).unwrap();
+                        let order_uid = hash(order_id);
+                        let sell_token = token_map.get(sell_token).unwrap();
+                        let buy_token = token_map.get(buy_token).unwrap();
                         let order = create_order(
                             order_uid,
                             *sell_token,
-                            sell_token_amount,
+                            *sell_token_amount,
                             *buy_token,
-                            buy_token_amount,
+                            *buy_token_amount,
                         );
-                        (order_id, order)
+                        (order_id.clone(), order)
                     },
                 )
                 .collect();
