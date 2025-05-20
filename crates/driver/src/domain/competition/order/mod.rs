@@ -5,10 +5,9 @@ use {
         infra::{Ethereum, blockchain},
         util::{self, Bytes, conv::u256::U256Ext},
     },
-    bigdecimal::Zero,
     derive_more::{From, Into},
     model::order::{BuyTokenDestination, SellTokenSource},
-    num::CheckedDiv,
+    num::{CheckedDiv, ToPrimitive},
 };
 pub use {fees::FeePolicy, signature::Signature};
 
@@ -173,7 +172,7 @@ impl Order {
     /// The likelihood that this order will be fulfilled, based on token prices.
     /// A larger value means that the order is more likely to be fulfilled.
     /// This is used to prioritize orders when solving.
-    pub fn likelihood(&self, tokens: &auction::Tokens) -> num::BigRational {
+    pub fn likelihood(&self, tokens: &auction::Tokens) -> f64 {
         match (
             tokens.get(self.buy.token).price,
             tokens.get(self.sell.token).price,
@@ -184,9 +183,10 @@ impl Order {
                 sell.0
                     .to_big_rational()
                     .checked_div(&buy.0.to_big_rational())
-                    .unwrap_or_else(num::BigRational::zero)
+                    .and_then(|l| l.to_f64())
+                    .unwrap_or_default()
             }
-            _ => num::BigRational::zero(),
+            _ => 0.,
         }
     }
 }

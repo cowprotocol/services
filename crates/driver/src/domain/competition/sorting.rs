@@ -12,10 +12,28 @@ use {
 
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
 pub enum SortingKey {
-    BigRational(num::BigRational),
+    Float(OrdFloat),
     Timestamp(Option<util::Timestamp>),
     Bool(bool),
 }
+
+pub struct OrdFloat(f64);
+impl PartialOrd for OrdFloat {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for OrdFloat {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.total_cmp(&other.0)
+    }
+}
+impl PartialEq for OrdFloat {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+impl Eq for OrdFloat {}
 
 pub trait SortingStrategy: Send + Sync {
     fn key(&self, order: &order::Order, tokens: &Tokens, solver: &eth::H160) -> SortingKey;
@@ -27,7 +45,7 @@ pub trait SortingStrategy: Send + Sync {
 pub struct ExternalPrice;
 impl SortingStrategy for ExternalPrice {
     fn key(&self, order: &order::Order, tokens: &Tokens, _solver: &eth::H160) -> SortingKey {
-        SortingKey::BigRational(order.likelihood(tokens))
+        SortingKey::Float(OrdFloat(order.likelihood(tokens)))
     }
 }
 
