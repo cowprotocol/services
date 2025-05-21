@@ -175,7 +175,7 @@ impl Single {
                     buy,
                     buy_new
                 );
-                (sell, buy)
+                (sell, buy_new)
             }
         };
 
