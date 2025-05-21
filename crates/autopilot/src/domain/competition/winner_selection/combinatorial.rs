@@ -841,8 +841,8 @@ mod tests {
         let db_trade_data = fetch_trade_data(auction_start, auction_end);
         let db_auction_data = fetch_auction_orders_data(auction_start, auction_end);
 
-        // auction_id, winner, same winner as db, reference_score, error message
-        let mut results: Vec<(i64, String, bool, eth::U256, Option<String>)> = Vec::new();
+        // auction_id, winner, same winner as db, reference_score, num_winners, error message
+        let mut results: Vec<(i64, String, bool, eth::U256, usize, Option<String>)> = Vec::new();
 
         for auction_id in auction_start..=auction_end {
             let result = match (db_trade_data.get(&auction_id), db_auction_data.get(&auction_id)) {
@@ -872,27 +872,27 @@ mod tests {
 
                     match test_case.calculate_results(auction_id) {
                         Ok(result) => result,
-                        Err(e) => (auction_id, String::new(), false, eth::U256::zero(), Some(e.to_string())),
+                        Err(e) => (auction_id, String::new(), false, eth::U256::zero(), 0, Some(e.to_string())),
                     }
                 }
-                _ => (auction_id, String::new(), false, eth::U256::zero(), Some("Missing auction or trade data".to_string())),
+                _ => (auction_id, String::new(), false, eth::U256::zero(), 0, Some("Missing auction or trade data".to_string())),
             };
             results.push(result);
         }
 
         eprintln!("Results:");
-        for (auction_id, winner, same_winner, reference_score, error) in &results {
+        for (auction_id, winner, same_winner, reference_score, num_winners, error) in &results {
             if let Some(err) = error {
                 eprintln!("Auction {}: Error - {}", auction_id, err);
             } else {
-                eprintln!("Auction {}: Winner={}, Same as DB={}, Reference Score={}", 
-                    auction_id, winner, same_winner, reference_score);
+                eprintln!("Auction {}: Winner={}, Same as DB={}, Reference Score={}, Number of Winners={}", 
+                    auction_id, winner, same_winner, reference_score, num_winners);
             }
         }
     }
 
     impl TestCase {
-        pub fn calculate_results(&self, auction_id: i64) -> Result<(i64, String, bool, eth::U256, Option<String>), String> {
+        pub fn calculate_results(&self, auction_id: i64) -> Result<(i64, String, bool, eth::U256, usize, Option<String>), String> {
             let arbitrator = create_test_arbitrator();
 
             // map (token id -> token address) for later reference during the test
@@ -997,6 +997,7 @@ mod tests {
                 calculated_winner.clone(),
                 calculated_winner == db_winner,
                 reference_score,
+                winners.len(),
                 None,
             ))
         }
