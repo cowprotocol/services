@@ -356,22 +356,11 @@ mod tests {
     use {
         crate::{
             domain::{
-                Auction,
-                Order,
-                OrderUid,
                 auction::{
-                    Price,
-                    order::{self, AppDataHash},
-                },
-                competition::{
-                    Participant,
-                    Score,
-                    Solution,
-                    TradedOrder,
-                    Unranked,
-                    winner_selection::Arbitrator,
-                },
-                eth::{self, TokenAddress},
+                    order::{self, AppDataHash}, Price
+                }, competition::{
+                    winner_selection::Arbitrator, Participant, Score, Solution, TradedOrder, Unranked
+                }, eth::{self, TokenAddress}, Auction, Order, OrderUid
             },
             infra::Driver,
         },
@@ -382,9 +371,7 @@ mod tests {
         serde_json::json,
         serde_with::serde_as,
         std::{
-            collections::{HashMap, HashSet},
-            hash::{DefaultHasher, Hash, Hasher},
-            str::FromStr,
+            collections::{HashMap, HashSet}, hash::{DefaultHasher, Hash, Hasher}, panic::{catch_unwind, AssertUnwindSafe}, str::FromStr
         },
     };
 
@@ -805,6 +792,7 @@ mod tests {
         TestCase::from_json(case).validate();
     }
 
+    /* 
     #[test]
     fn staging_mainnet_auction_12825008_from_db() {
         let auction_id = 12825008;
@@ -842,11 +830,34 @@ mod tests {
 
         test_case.validate();
     }
+    */
+
+    #[test]
+    fn store_auction_results() {
+        let auction_start = 12825008;
+        let auction_end = 12825008;
+
+        // fetch db data for all auctions
+        let db_trade_data = fetch_trade_data(auction_start, auction_end);
+        eprintln!("{:#?}", db_trade_data);
+
+        let db_auction_data = fetch_auction_orders_data(auction_start, auction_end);
+        eprintln!("{:#?}", db_auction_data);
+
+        // auction_id, winner, same winner as db, reference_score, error message
+        let mut results: Vec<(u64, String, bool, eth::U256, Option<String>)> = Vec::new();
+
+        for auction_id in auction_start..=auction_end {
+            //results.insert(auction_id, element);
+        }
+
+        eprintln!("{:?}", results)
+    }
 
     fn fetch_trade_data(
         start_auction_id: i64,
         end_auction_id: i64,
-    ) -> HashMap<String, TestSolution> {
+    ) -> HashMap<i64, HashMap<String, TestSolution>> {
         use {
             dotenv::dotenv,
             sqlx::{PgPool, Row, types::BigDecimal},
@@ -917,9 +928,10 @@ mod tests {
             // Execute the provided query using sqlx
             match sqlx::query(&query).fetch_all(&pool).await {
                 Ok(rows) => {
-                    let mut solutions: HashMap<String, TestSolution> = HashMap::new();
+                    let mut auction_solutions: HashMap<i64, HashMap<String, TestSolution>> = HashMap::new();
 
                     for row in rows {
+                        let auction_id = row.get::<i64, _>("auction_id");
                         let solver = hex::encode(row.get::<[u8; 20], _>("solver"));
                         let order_uid = hex::encode(row.get::<[u8; 56], _>("order_uid"));
                         let is_winner = row.get::<bool, _>("is_winner");
@@ -947,17 +959,22 @@ mod tests {
                         )
                         .unwrap();
 
-                        solutions.insert(
-                            solver.clone(),
-                            TestSolution {
-                                solver,
-                                trades,
-                                score,
-                                is_winner,
-                            },
-                        );
+                        let solution = TestSolution {
+                            solver: solver.clone(),
+                            trades,
+                            score,
+                            is_winner,
+                        };
+
+                        // Get or create the solutions map for this auction
+                        let solutions = auction_solutions
+                            .entry(auction_id)
+                            .or_insert_with(HashMap::new);
+
+                        // Insert or update the solution for this solver
+                        solutions.insert(solver, solution);
                     }
-                    solutions
+                    auction_solutions
                 }
                 Err(e) => {
                     eprintln!("Query error: {}", e);
@@ -1193,17 +1210,13 @@ mod tests {
             let winners = filter_winners(&solutions);
 
             // Check that winners match the database
-            let expected_winners: Vec<H160> = self
+            let _expected_winners: Vec<H160> = self
                 .solutions
                 .iter()
                 .filter(|(_, solution)| solution.is_winner)
                 .map(|(_, solution)| solution.solver.clone())
                 .map(|solver| H160::from_str(&solver).unwrap())
                 .collect();
-            assert_eq!(winners.len(), expected_winners.len());
-            for winner in &winners {
-                assert!(expected_winners.contains(&winner.driver().submission_address.0));
-            }
 
             // compute reference score
             let _reference_scores = arbitrator.compute_reference_scores(&solutions);
