@@ -25,7 +25,6 @@ use {
         dummy_contract,
         support::{AnyoneAuthenticator, Solver, Spardose, Trader},
     },
-    database::byte_array::ByteArray,
     ethcontract::{Bytes, H160, U256, tokens::Tokenize},
     ethrpc::{Web3, block_stream::CurrentBlockWatcher, extensions::StateOverride},
     model::{
@@ -39,10 +38,7 @@ use {
         nonzero::U256 as NonZeroU256,
     },
     std::{collections::HashMap, sync::Arc},
-    web3::{
-        ethabi::Token,
-        types::{BytesArray, CallRequest},
-    },
+    web3::{ethabi::Token, types::CallRequest},
 };
 
 #[async_trait::async_trait]

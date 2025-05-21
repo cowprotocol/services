@@ -127,6 +127,11 @@ impl Single {
             interactions,
             gas,
         } = self;
+        tracing::info!(
+            "newlog baseline found a segment with input={:?}, output={:?}",
+            input,
+            output
+        );
 
         if (order.sell.token, order.buy.token) != (input.token, output.token) {
             return None;
@@ -159,6 +164,17 @@ impl Single {
                     sell.checked_sub(surplus_fee)?.checked_mul(output.amount)?,
                     input.amount,
                 )?;
+                let buy_new = sell
+                    .checked_sub(surplus_fee)?
+                    .checked_mul(output.amount)?
+                    .checked_div(input.amount)?;
+                tracing::info!(
+                    "newlog baseline calculated the following sell and buy amounts: sell={:?}, \
+                     buy={:?}, buy_new={:?}",
+                    sell,
+                    buy,
+                    buy_new
+                );
                 (sell, buy)
             }
         };
@@ -173,6 +189,7 @@ impl Single {
             order::Side::Buy => buy,
             order::Side::Sell => sell.checked_sub(surplus_fee)?,
         };
+        tracing::info!("newlog baseline executed is={:?}", executed);
         Some(Solution {
             id: Default::default(),
             prices: ClearingPrices::new([
