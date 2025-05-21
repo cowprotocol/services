@@ -846,39 +846,41 @@ mod tests {
         let mut results: Vec<(i64, String, bool, eth::U256, usize, Option<String>)> = Vec::new();
 
         for auction_id in auction_start..=auction_end {
-            let result = match (db_trade_data.get(&auction_id), db_auction_data.get(&auction_id)) {
-                (Some(solutions), Some(auction)) => {
-                    let mut test_case = TestCase {
-                        tokens: vec![],
-                        auction: auction.clone(),
-                        solutions: solutions.clone(),
-                        expected_fair_solutions: vec![],
-                        expected_winners: vec![],
-                        expected_reference_scores: HashMap::new(),
-                    };
+            // Skip if we don't have both auction and trade data
+            if !(db_trade_data.contains_key(&auction_id) && db_auction_data.contains_key(&auction_id)) {
+                continue;
+            }
 
-                    // Collect unique tokens from orders
-                    let mut unique_tokens = HashSet::new();
-                    for (_, order) in &test_case.auction.orders {
-                        // sell token
-                        unique_tokens.insert(order.1.clone());
-                        // buy token
-                        unique_tokens.insert(order.3.clone());
-                    }
-                    for token in unique_tokens {
-                        test_case
-                            .tokens
-                            .push((token.clone(), H160::from_str(&token).unwrap()));
-                    }
+            let solutions = db_trade_data.get(&auction_id).unwrap();
+            let auction = db_auction_data.get(&auction_id).unwrap();
 
-                    match test_case.calculate_results(auction_id) {
-                        Ok(result) => result,
-                        Err(e) => (auction_id, String::new(), false, eth::U256::zero(), 0, Some(e.to_string())),
-                    }
-                }
-                _ => (auction_id, String::new(), false, eth::U256::zero(), 0, Some("Missing auction or trade data".to_string())),
+            let mut test_case = TestCase {
+                tokens: vec![],
+                auction: auction.clone(),
+                solutions: solutions.clone(),
+                expected_fair_solutions: vec![],
+                expected_winners: vec![],
+                expected_reference_scores: HashMap::new(),
             };
-            results.push(result);
+
+            // Collect unique tokens from orders
+            let mut unique_tokens = HashSet::new();
+            for (_, order) in &test_case.auction.orders {
+                // sell token
+                unique_tokens.insert(order.1.clone());
+                // buy token
+                unique_tokens.insert(order.3.clone());
+            }
+            for token in unique_tokens {
+                test_case
+                    .tokens
+                    .push((token.clone(), H160::from_str(&token).unwrap()));
+            }
+
+            match test_case.calculate_results(auction_id) {
+                Ok(result) => results.push(result),
+                Err(e) => results.push((auction_id, String::new(), false, eth::U256::zero(), 0, Some(e))),
+            }
         }
 
         // Get data folder path
