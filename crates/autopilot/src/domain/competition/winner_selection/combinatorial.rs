@@ -839,19 +839,167 @@ mod tests {
 
         // fetch db data for all auctions
         let db_trade_data = fetch_trade_data(auction_start, auction_end);
-        eprintln!("{:#?}", db_trade_data);
-
         let db_auction_data = fetch_auction_orders_data(auction_start, auction_end);
-        eprintln!("{:#?}", db_auction_data);
 
         // auction_id, winner, same winner as db, reference_score, error message
-        let mut results: Vec<(u64, String, bool, eth::U256, Option<String>)> = Vec::new();
+        let mut results: Vec<(i64, String, bool, eth::U256, Option<String>)> = Vec::new();
 
         for auction_id in auction_start..=auction_end {
-            //results.insert(auction_id, element);
+            let result = match (db_trade_data.get(&auction_id), db_auction_data.get(&auction_id)) {
+                (Some(solutions), Some(auction)) => {
+                    let mut test_case = TestCase {
+                        tokens: vec![],
+                        auction: auction.clone(),
+                        solutions: solutions.clone(),
+                        expected_fair_solutions: vec![],
+                        expected_winners: vec![],
+                        expected_reference_scores: HashMap::new(),
+                    };
+
+                    // Collect unique tokens from orders
+                    let mut unique_tokens = HashSet::new();
+                    for (_, order) in &test_case.auction.orders {
+                        // sell token
+                        unique_tokens.insert(order.1.clone());
+                        // buy token
+                        unique_tokens.insert(order.3.clone());
+                    }
+                    for token in unique_tokens {
+                        test_case
+                            .tokens
+                            .push((token.clone(), H160::from_str(&token).unwrap()));
+                    }
+
+                    match test_case.calculate_results(auction_id) {
+                        Ok(result) => result,
+                        Err(e) => (auction_id, String::new(), false, eth::U256::zero(), Some(e.to_string())),
+                    }
+                }
+                _ => (auction_id, String::new(), false, eth::U256::zero(), Some("Missing auction or trade data".to_string())),
+            };
+            results.push(result);
         }
 
-        eprintln!("{:?}", results)
+        eprintln!("Results:");
+        for (auction_id, winner, same_winner, reference_score, error) in &results {
+            if let Some(err) = error {
+                eprintln!("Auction {}: Error - {}", auction_id, err);
+            } else {
+                eprintln!("Auction {}: Winner={}, Same as DB={}, Reference Score={}", 
+                    auction_id, winner, same_winner, reference_score);
+            }
+        }
+    }
+
+    impl TestCase {
+        pub fn calculate_results(&self, auction_id: i64) -> Result<(i64, String, bool, eth::U256, Option<String>), String> {
+            let arbitrator = create_test_arbitrator();
+
+            // map (token id -> token address) for later reference during the test
+            let token_map: HashMap<String, H160> = self.tokens.iter().cloned().collect();
+
+            // map (order id -> order) for later reference during the test
+            let order_map: HashMap<String, Order> = self
+                .auction
+                .orders
+                .iter()
+                .map(
+                    |(
+                        order_id,
+                        TestOrder(side, sell_token, sell_token_amount, buy_token, buy_token_amount),
+                    )| {
+                        let order_uid = hash(order_id);
+                        let sell_token = token_map.get(sell_token).unwrap();
+                        let buy_token = token_map.get(buy_token).unwrap();
+                        let order = create_order(
+                            order_uid,
+                            *sell_token,
+                            *sell_token_amount,
+                            *buy_token,
+                            *buy_token_amount,
+                            *side,
+                        );
+                        (order_id.clone(), order)
+                    },
+                )
+                .collect();
+
+            let orders = order_map.values().cloned().collect();
+            let prices = self.auction.prices.as_ref().map(|prices| {
+                prices
+                    .iter()
+                    .map(|(token_id, price)| {
+                        let token_address = TokenAddress(*token_map.get(token_id).unwrap());
+                        let price = create_price(*price);
+                        (token_address, price)
+                    })
+                    .collect()
+            });
+
+            let auction = create_auction(orders, prices);
+
+            // map (solver id -> solver address) for later reference during the test
+            let mut solver_map = HashMap::new();
+
+            // map (solution id -> participant) for later reference during the test
+            let mut solution_map = HashMap::new();
+            for (solution_id, solution) in &self.solutions {
+                let solver_address = H160::from_str(&solution.solver).unwrap();
+                solver_map.insert(solution.solver.clone(), solver_address);
+
+                let trades = solution
+                    .trades
+                    .iter()
+                    .map(|(order_id, trade)| {
+                        let order = order_map.get(order_id).unwrap();
+                        let sell_token_amount = trade.0;
+                        let buy_token_amount = trade.1;
+                        let trade = create_trade(order, sell_token_amount, buy_token_amount);
+                        (order.uid, trade)
+                    })
+                    .collect();
+
+                let solution_uid = hash(solution_id);
+                solution_map.insert(
+                    solution_id,
+                    create_solution(solution_uid, solver_address, solution.score, trades, None),
+                );
+            }
+
+            // filter solutions
+            let participants = solution_map.values().cloned().collect();
+            let solutions = arbitrator.filter_unfair_solutions(participants, &auction);
+
+            // select the winners
+            let solutions = arbitrator.mark_winners(solutions);
+            let winners = filter_winners(&solutions);
+
+            // Get the winner from our calculation
+            let calculated_winner = winners.first()
+                .map(|w| hex::encode(w.driver().submission_address.0))
+                .unwrap_or_default();
+
+            // Get the winner from the database
+            let db_winner = self.solutions.iter()
+                .find(|(_, solution)| solution.is_winner)
+                .map(|(_, solution)| solution.solver.clone())
+                .unwrap_or_default();
+
+            // compute reference score
+            let reference_scores = arbitrator.compute_reference_scores(&solutions);
+            let reference_score = reference_scores.values()
+                .next()
+                .map(|score| score.get().0)
+                .unwrap_or_default();
+
+            Ok((
+                auction_id,
+                calculated_winner.clone(),
+                calculated_winner == db_winner,
+                reference_score,
+                None,
+            ))
+        }
     }
 
     fn fetch_trade_data(
@@ -1227,7 +1375,7 @@ mod tests {
     }
 
     #[serde_as]
-    #[derive(Deserialize, Debug)]
+    #[derive(Deserialize, Debug, Clone)]
     struct TestAuction {
         pub orders: HashMap<String, TestOrder>,
         #[serde(default)]
@@ -1250,7 +1398,7 @@ mod tests {
         #[serde_as(as = "HexOrDecimalU256")] pub eth::U256,
     );
 
-    #[derive(Deserialize, Debug)]
+    #[derive(Deserialize, Debug, Clone)]
     struct TestSolution {
         pub solver: String,
         pub trades: HashMap<String, TestTrade>,
@@ -1260,7 +1408,7 @@ mod tests {
     }
 
     #[serde_as]
-    #[derive(Deserialize, Debug)]
+    #[derive(Deserialize, Debug, Clone)]
     struct TestTrade(
         // sell_amount
         #[serde_as(as = "HexOrDecimalU256")] pub eth::U256,
