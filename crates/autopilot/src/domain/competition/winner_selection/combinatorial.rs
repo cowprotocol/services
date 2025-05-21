@@ -834,7 +834,7 @@ mod tests {
 
     #[test]
     fn store_auction_results() {
-        let auction_start = 12825008;
+        let auction_start = 12820008;
         let auction_end = 12825008;
         let network = "mainnet-barn";
 
@@ -910,6 +910,7 @@ mod tests {
 
         // Print summary
         eprintln!("Results written to rust_results_{}_{}_{}.csv", network, auction_start, auction_end);
+        /*
         eprintln!("Summary:");
         for (auction_id, winner, same_winner, reference_score, num_winners, error) in &results {
             if let Some(err) = error {
@@ -919,6 +920,7 @@ mod tests {
                     auction_id, winner, same_winner, reference_score, num_winners);
             }
         }
+         */
     }
 
     impl TestCase {
@@ -1021,8 +1023,12 @@ mod tests {
 
                 // compute reference score
                 let reference_scores = arbitrator.compute_reference_scores(&solutions);
-                let reference_score = reference_scores.values()
-                    .next()
+                
+                let reference_score = winners.first()
+                    .and_then(|winner| {
+                        let score = reference_scores.get(&winner.driver().submission_address);
+                        score
+                    })
                     .map(|score| score.get().0)
                     .unwrap_or_default();
 
