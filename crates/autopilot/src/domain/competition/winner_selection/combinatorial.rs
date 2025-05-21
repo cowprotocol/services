@@ -907,6 +907,9 @@ mod tests {
 
         // Read Rust results
         let mut rust_results = HashMap::new();
+        let mut multi_winners = 0;
+        let mut db_mismatches = 0;
+        let mut total_rust_auctions = 0;
         let file = File::open(rust_file).expect("Failed to open Rust result file");
         let reader = BufReader::new(file);
         let mut rdr = ReaderBuilder::new()
@@ -917,7 +920,18 @@ mod tests {
             let record = result.expect("Failed to read Rust CSV record");
             let auction_id: i64 = record[0].parse().expect("Failed to parse auction_id");
             let winner = record[1].to_string();
+            let same_as_db = record[2].parse::<bool>().expect("Failed to parse same_as_db");
             let reference_score = record[3].to_string();
+            let num_winners: usize = record[4].parse().expect("Failed to parse num_winners");
+            
+            total_rust_auctions += 1;
+            if num_winners > 1 {
+                multi_winners += 1;
+            }
+            if !same_as_db {
+                db_mismatches += 1;
+            }
+            
             rust_results.insert(auction_id, (winner, reference_score));
         }
 
@@ -944,6 +958,11 @@ mod tests {
         eprintln!("\nComparison Summary:");
         eprintln!("Total auctions compared: {}", total_compared);
         eprintln!("Matching results: {} ({:.2}%)", matching, (matching as f64 / total_compared as f64) * 100.0);
+        
+        eprintln!("\nRust Implementation Statistics:");
+        eprintln!("Total Rust auctions: {}", total_rust_auctions);
+        eprintln!("Multi-winner auctions: {} ({:.2}%)", multi_winners, (multi_winners as f64 / total_rust_auctions as f64) * 100.0);
+        eprintln!("DB winner mismatches: {} ({:.2}%)", db_mismatches, (db_mismatches as f64 / total_rust_auctions as f64) * 100.0);
         
         if !differences.is_empty() {
             eprintln!("\nDifferences found:");
