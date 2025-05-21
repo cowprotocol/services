@@ -1057,7 +1057,7 @@ mod tests {
         executed_buy: eth::U256,
     ) -> TradedOrder {
         TradedOrder {
-            side: order::Side::Sell,
+            side: order.side,
             sell: order.sell,
             buy: order.buy,
             executed_sell: executed_sell.into(),
