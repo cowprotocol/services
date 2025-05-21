@@ -211,12 +211,15 @@ impl AuctionProcessor {
 
             let settlement = eth.contracts().settlement().address().into();
             let _timer2 = stage_timer("aggregate_and_sort");
-            Self::update_orders(&mut balances, &mut app_data_by_hash, &mut orders, &settlement);
-            // Only add the cow amm orders after we handled the orders that are already part
-            // of the auction. That way fetching balances no longer depends on the the cow amm
-            // future and we can run everything concurrently.
+
+            let cow_amm_lookup: HashSet<_> = cow_amms.iter().map(|o| o.uid).collect();
             orders.extend(cow_amms);
             sorting::sort_orders(&mut orders, &tokens, &solver, &order_comparators);
+            // This step filters out orders if the an owner doesn't have enough balances for all
+            // their orders with the same sell token. That means orders already need to be sorted
+            // from most relevant to least relevant so that we allocate balances for the most
+            // relevants first.
+            Self::update_orders(&mut balances, &mut app_data_by_hash, &mut orders, &settlement, &cow_amm_lookup);
 
             tracing::debug!(auction_id = new_id.0, time =? start.elapsed(), "auction preprocessing done");
             orders
@@ -278,11 +281,14 @@ impl AuctionProcessor {
 
     /// Removes orders that cannot be filled due to missing funds of the owner
     /// and updates the fetched app data.
+    /// It allocates available funds from left to right so the orders should
+    /// already be sorted by priority going in.
     fn update_orders(
         balances: &mut Balances,
         app_data_by_hash: &mut HashMap<order::app_data::AppDataHash, app_data::ValidatedAppData>,
         orders: &mut Vec<order::Order>,
         settlement: &eth::Address,
+        cow_amms: &HashSet<order::Uid>,
     ) {
         // The auction that we receive from the `autopilot` assumes that there
         // is sufficient balance to completely cover all the orders. **This is
@@ -293,6 +299,15 @@ impl AuctionProcessor {
         // down in case the available user balance is only enough to partially
         // cover the rest of the order.
         orders.retain_mut(|order| {
+            if cow_amms.contains(&order.uid) {
+                // cow amm orders already get constructed fully initialized
+                // so we don't have to handle them here anymore.
+                // Without this short circuiting logic they would get filtered
+                // out later because we don't bother fetching their balances
+                // for performance reasons.
+                return true;
+            }
+
             // Update order app data if it was fetched.
             if let Some(fetched_app_data) = app_data_by_hash.get(&order.app_data.hash()) {
                 order.app_data = fetched_app_data.clone().into();
