@@ -836,6 +836,7 @@ mod tests {
     fn store_auction_results() {
         let auction_start = 12825008;
         let auction_end = 12825008;
+        let network = "mainnet-barn";
 
         // fetch db data for all auctions
         let db_trade_data = fetch_trade_data(auction_start, auction_end);
@@ -880,7 +881,34 @@ mod tests {
             results.push(result);
         }
 
-        eprintln!("Results:");
+        // Get data folder path
+        let data_folder = std::env::var("DATA_FOLDER").expect("DATA_FOLDER must be set in .env file");
+
+        // Create CSV file
+        let file_name = format!("rust_results_{}_{}_{}.csv", network, auction_start, auction_end);
+        let file_path = std::path::Path::new(&data_folder).join(file_name);
+        let mut writer = csv::Writer::from_path(file_path).expect("Failed to create CSV file");
+
+        // Write header
+        writer.write_record(&["auction_id", "winner", "same_as_db", "reference_score", "num_winners", "error"]).expect("Failed to write CSV header");
+
+        // Write results
+        for (auction_id, winner, same_winner, reference_score, num_winners, error) in &results {
+            writer.write_record(&[
+                auction_id.to_string(),
+                winner.clone(),
+                same_winner.to_string(),
+                reference_score.to_string(),
+                num_winners.to_string(),
+                error.clone().unwrap_or_default(),
+            ]).expect("Failed to write CSV record");
+        }
+
+        writer.flush().expect("Failed to flush CSV writer");
+
+        // Print summary
+        eprintln!("Results written to rust_results_{}_{}_{}.csv", network, auction_start, auction_end);
+        eprintln!("Summary:");
         for (auction_id, winner, same_winner, reference_score, num_winners, error) in &results {
             if let Some(err) = error {
                 eprintln!("Auction {}: Error - {}", auction_id, err);
