@@ -984,7 +984,7 @@ mod tests {
         })
     }
 
-    fn fetch_auction_orders_data(start_auction_id: i64, end_auction_id: i64) -> TestAuction {
+    fn fetch_auction_orders_data(start_auction_id: i64, end_auction_id: i64) -> HashMap<i64, TestAuction> {
         use {
             dotenv::dotenv,
             sqlx::{PgPool, Row, types::BigDecimal},
@@ -1026,26 +1026,32 @@ mod tests {
                     ap_buy.price as buy_token_price
                 FROM auction_orders ao
                 JOIN orders o ON ao.order_uid = o.uid
-                JOIN auction_prices ap_sell ON ao.auction_id = ap_sell.auction_id AND o.sell_token \
-                 = ap_sell.token
-                JOIN auction_prices ap_buy ON ao.auction_id = ap_buy.auction_id AND o.buy_token = \
-                 ap_buy.token
+                JOIN auction_prices ap_sell ON ao.auction_id = ap_sell.auction_id AND o.sell_token = ap_sell.token
+                JOIN auction_prices ap_buy ON ao.auction_id = ap_buy.auction_id AND o.buy_token = ap_buy.token
                 ORDER BY ao.auction_id, ao.order_uid;"
             );
 
             // Execute the provided query using sqlx
             match sqlx::query(&query).fetch_all(&pool).await {
                 Ok(rows) => {
-                    let mut orders = HashMap::new();
-                    let mut prices = HashMap::new();
+                    let mut auction_data: HashMap<i64, TestAuction> = HashMap::new();
 
                     for row in rows {
+                        let auction_id = row.get::<i64, _>("auction_id");
                         let order_uid = hex::encode(row.get::<[u8; 56], _>("order_uid"));
                         let sell_token = hex::encode(row.get::<[u8; 20], _>("sell_token"));
                         let buy_token = hex::encode(row.get::<[u8; 20], _>("buy_token"));
 
+                        // Get or create the TestAuction for this auction_id
+                        let auction = auction_data
+                            .entry(auction_id)
+                            .or_insert_with(|| TestAuction {
+                                orders: HashMap::new(),
+                                prices: Some(HashMap::new()),
+                            });
+
                         // Create order entry
-                        orders.insert(
+                        auction.orders.insert(
                             order_uid.clone(),
                             TestOrder(
                                 match row.get::<String, _>("side").to_lowercase().as_str() {
@@ -1072,39 +1078,35 @@ mod tests {
                         );
 
                         // Add token prices if not already present
-                        if !prices.contains_key(&sell_token) {
-                            prices.insert(
-                                sell_token,
-                                eth::U256::from_str_radix(
-                                    &row.get::<BigDecimal, _>("sell_token_price").to_string(),
-                                    10,
-                                )
-                                .unwrap(),
-                            );
-                        }
-                        if !prices.contains_key(&buy_token) {
-                            prices.insert(
-                                buy_token,
-                                eth::U256::from_str_radix(
-                                    &row.get::<BigDecimal, _>("buy_token_price").to_string(),
-                                    10,
-                                )
-                                .unwrap(),
-                            );
+                        if let Some(prices) = &mut auction.prices {
+                            if !prices.contains_key(&sell_token) {
+                                prices.insert(
+                                    sell_token,
+                                    eth::U256::from_str_radix(
+                                        &row.get::<BigDecimal, _>("sell_token_price").to_string(),
+                                        10,
+                                    )
+                                    .unwrap(),
+                                );
+                            }
+                            if !prices.contains_key(&buy_token) {
+                                prices.insert(
+                                    buy_token,
+                                    eth::U256::from_str_radix(
+                                        &row.get::<BigDecimal, _>("buy_token_price").to_string(),
+                                        10,
+                                    )
+                                    .unwrap(),
+                                );
+                            }
                         }
                     }
 
-                    TestAuction {
-                        orders,
-                        prices: Some(prices),
-                    }
+                    auction_data
                 }
                 Err(e) => {
                     eprintln!("Query error: {}", e);
-                    TestAuction {
-                        orders: HashMap::new(),
-                        prices: None,
-                    }
+                    HashMap::new()
                 }
             }
         })
