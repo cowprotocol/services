@@ -921,113 +921,130 @@ mod tests {
 
     impl TestCase {
         pub fn calculate_results(&self, auction_id: i64) -> Result<(i64, String, bool, eth::U256, usize, Option<String>), String> {
-            let arbitrator = create_test_arbitrator();
+            use std::panic::{catch_unwind, AssertUnwindSafe};
+            use anyhow::Context;
 
-            // map (token id -> token address) for later reference during the test
-            let token_map: HashMap<String, H160> = self.tokens.iter().cloned().collect();
+            let result = catch_unwind(AssertUnwindSafe(|| -> anyhow::Result<_> {
+                let arbitrator = create_test_arbitrator();
 
-            // map (order id -> order) for later reference during the test
-            let order_map: HashMap<String, Order> = self
-                .auction
-                .orders
-                .iter()
-                .map(
-                    |(
-                        order_id,
-                        TestOrder(side, sell_token, sell_token_amount, buy_token, buy_token_amount),
-                    )| {
-                        let order_uid = hash(order_id);
-                        let sell_token = token_map.get(sell_token).unwrap();
-                        let buy_token = token_map.get(buy_token).unwrap();
-                        let order = create_order(
-                            order_uid,
-                            *sell_token,
-                            *sell_token_amount,
-                            *buy_token,
-                            *buy_token_amount,
-                            *side,
-                        );
-                        (order_id.clone(), order)
-                    },
-                )
-                .collect();
+                // map (token id -> token address) for later reference during the test
+                let token_map: HashMap<String, H160> = self.tokens.iter().cloned().collect();
 
-            let orders = order_map.values().cloned().collect();
-            let prices = self.auction.prices.as_ref().map(|prices| {
-                prices
+                // map (order id -> order) for later reference during the test
+                let order_map: HashMap<String, Order> = self
+                    .auction
+                    .orders
                     .iter()
-                    .map(|(token_id, price)| {
-                        let token_address = TokenAddress(*token_map.get(token_id).unwrap());
-                        let price = create_price(*price);
-                        (token_address, price)
-                    })
-                    .collect()
-            });
-
-            let auction = create_auction(orders, prices);
-
-            // map (solver id -> solver address) for later reference during the test
-            let mut solver_map = HashMap::new();
-
-            // map (solution id -> participant) for later reference during the test
-            let mut solution_map = HashMap::new();
-            for (solution_id, solution) in &self.solutions {
-                let solver_address = H160::from_str(&solution.solver).unwrap();
-                solver_map.insert(solution.solver.clone(), solver_address);
-
-                let trades = solution
-                    .trades
-                    .iter()
-                    .map(|(order_id, trade)| {
-                        let order = order_map.get(order_id).unwrap();
-                        let sell_token_amount = trade.0;
-                        let buy_token_amount = trade.1;
-                        let trade = create_trade(order, sell_token_amount, buy_token_amount);
-                        (order.uid, trade)
-                    })
+                    .map(
+                        |(
+                            order_id,
+                            TestOrder(side, sell_token, sell_token_amount, buy_token, buy_token_amount),
+                        )| {
+                            let order_uid = hash(order_id);
+                            let sell_token = token_map.get(sell_token).context("Missing sell_token in token_map").unwrap();
+                            let buy_token = token_map.get(buy_token).context("Missing buy_token in token_map").unwrap();
+                            let order = create_order(
+                                order_uid,
+                                *sell_token,
+                                *sell_token_amount,
+                                *buy_token,
+                                *buy_token_amount,
+                                *side,
+                            );
+                            (order_id.clone(), order)
+                        },
+                    )
                     .collect();
 
-                let solution_uid = hash(solution_id);
-                solution_map.insert(
-                    solution_id,
-                    create_solution(solution_uid, solver_address, solution.score, trades, None),
-                );
+                let orders = order_map.values().cloned().collect();
+                let prices = self.auction.prices.as_ref().map(|prices| {
+                    prices
+                        .iter()
+                        .map(|(token_id, price)| {
+                            let token_address = TokenAddress(*token_map.get(token_id).context("Missing token_id in token_map").unwrap());
+                            let price = create_price(*price);
+                            (token_address, price)
+                        })
+                        .collect()
+                });
+
+                let auction = create_auction(orders, prices);
+
+                // map (solver id -> solver address) for later reference during the test
+                let mut solver_map = HashMap::new();
+
+                // map (solution id -> participant) for later reference during the test
+                let mut solution_map = HashMap::new();
+                for (solution_id, solution) in &self.solutions {
+                    let solver_address = H160::from_str(&solution.solver).context("Invalid solver address").unwrap();
+                    solver_map.insert(solution.solver.clone(), solver_address);
+
+                    let trades = solution
+                        .trades
+                        .iter()
+                        .map(|(order_id, trade)| {
+                            let order = order_map.get(order_id).context("Missing order in order_map").unwrap();
+                            let sell_token_amount = trade.0;
+                            let buy_token_amount = trade.1;
+                            let trade = create_trade(order, sell_token_amount, buy_token_amount);
+                            (order.uid, trade)
+                        })
+                        .collect();
+
+                    let solution_uid = hash(solution_id);
+                    solution_map.insert(
+                        solution_id,
+                        create_solution(solution_uid, solver_address, solution.score, trades, None),
+                    );
+                }
+
+                // filter solutions
+                let participants = solution_map.values().cloned().collect();
+                let solutions = arbitrator.filter_unfair_solutions(participants, &auction);
+
+                // select the winners
+                let solutions = arbitrator.mark_winners(solutions);
+                let winners = filter_winners(&solutions);
+
+                // Get the winner from our calculation
+                let calculated_winner = winners.first()
+                    .map(|w| hex::encode(w.driver().submission_address.0))
+                    .unwrap_or_default();
+
+                // Get the winner from the database
+                let db_winner = self.solutions.iter()
+                    .find(|(_, solution)| solution.is_winner)
+                    .map(|(_, solution)| solution.solver.clone())
+                    .unwrap_or_default();
+
+                // compute reference score
+                let reference_scores = arbitrator.compute_reference_scores(&solutions);
+                let reference_score = reference_scores.values()
+                    .next()
+                    .map(|score| score.get().0)
+                    .unwrap_or_default();
+
+                Ok((
+                    auction_id,
+                    calculated_winner.clone(),
+                    calculated_winner == db_winner,
+                    reference_score,
+                    winners.len(),
+                    None,
+                ))
+            }));
+
+            match result {
+                Ok(Ok(val)) => Ok(val),
+                Ok(Err(e)) => Err(format!("Error: {e:?}")),
+                Err(e) => Err(match e.downcast_ref::<&str>() {
+                    Some(s) => s.to_string(),
+                    None => match e.downcast_ref::<String>() {
+                        Some(s) => s.clone(),
+                        None => "Unknown panic".to_string(),
+                    },
+                }),
             }
-
-            // filter solutions
-            let participants = solution_map.values().cloned().collect();
-            let solutions = arbitrator.filter_unfair_solutions(participants, &auction);
-
-            // select the winners
-            let solutions = arbitrator.mark_winners(solutions);
-            let winners = filter_winners(&solutions);
-
-            // Get the winner from our calculation
-            let calculated_winner = winners.first()
-                .map(|w| hex::encode(w.driver().submission_address.0))
-                .unwrap_or_default();
-
-            // Get the winner from the database
-            let db_winner = self.solutions.iter()
-                .find(|(_, solution)| solution.is_winner)
-                .map(|(_, solution)| solution.solver.clone())
-                .unwrap_or_default();
-
-            // compute reference score
-            let reference_scores = arbitrator.compute_reference_scores(&solutions);
-            let reference_score = reference_scores.values()
-                .next()
-                .map(|score| score.get().0)
-                .unwrap_or_default();
-
-            Ok((
-                auction_id,
-                calculated_winner.clone(),
-                calculated_winner == db_winner,
-                reference_score,
-                winners.len(),
-                None,
-            ))
         }
     }
 
