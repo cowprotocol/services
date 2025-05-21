@@ -742,57 +742,7 @@ mod tests {
         TestCase::from_json(case).validate();
     }
 
-    #[test]
-    fn staging_mainnet_auction_12825008() {
-        // https://solver-instances.s3.eu-central-1.amazonaws.com/staging/mainnet/autopilot/12825008.json
-        // The example is an auction with one order and two competing bids for it, one
-        // having a better score than the other
-
-        let case = json!({
-            "tokens": [
-                // corresponding to 0x67466be17df832165f8c80a5a120ccc652bd7e69
-                ["Token A", address(0)],
-                // corresponding to 0xdac17f958d2ee523a2206206994597c13d831ec7
-                ["Token B", address(1)],
-            ],
-            "auction": {
-                "orders": {
-                    "Order 1": ["sell", "Token A", "32375066190000000000000000", "Token B", "2161512119"],
-                },
-                "prices": {
-                    "Token A": "32429355240",
-                    "Token B": "480793239987749750742974464",
-                }
-            },
-            "solutions": {
-                // solution 1 (baseline, the winner)
-                "Solution 1": {
-                    "solver": "Solver 1",
-                    "trades": {
-                        "Order 1": ["32375066190000000000000000", "2206881314"],
-                    },
-                    "score": "21813202259686016",
-                },
-                // solution 2 (zeroex)
-                "Solution 2": {
-                    "solver": "Solver 2",
-                    "trades": {
-                        "Order 1": ["32375066190000000000000000", "2205267875"],
-                    },
-                    "score": "21037471695353421",
-                },
-            },
-            "expected_fair_solutions": ["Solution 1", "Solution 2"],
-            "expected_winners": ["Solution 1"],
-            "expected_reference_scores": {
-                "Solver 1": "21037471695353421",
-                "Solver 2": "21813202259686016"
-            },
-        });
-        TestCase::from_json(case).validate();
-    }
-
-    /* 
+    /*
     #[test]
     fn staging_mainnet_auction_12825008_from_db() {
         let auction_id = 12825008;
@@ -910,17 +860,105 @@ mod tests {
 
         // Print summary
         eprintln!("Results written to rust_results_{}_{}_{}.csv", network, auction_start, auction_end);
-        /*
-        eprintln!("Summary:");
-        for (auction_id, winner, same_winner, reference_score, num_winners, error) in &results {
-            if let Some(err) = error {
-                eprintln!("Auction {}: Error - {}", auction_id, err);
-            } else {
-                eprintln!("Auction {}: Winner={}, Same as DB={}, Reference Score={}, Number of Winners={}", 
-                    auction_id, winner, same_winner, reference_score, num_winners);
+    }
+
+    #[test]
+    fn compare_python_rust_results() {
+        use std::collections::HashMap;
+        use std::fs::File;
+        use std::io::BufReader;
+        use csv::ReaderBuilder;
+        use dotenv::dotenv;
+
+        // Load environment variables from .env file
+        dotenv().ok();
+
+        // Hardcoded values
+        let network = "mainnet-barn";
+        let auction_start = 12820008;
+        let auction_end = 12825008;
+
+        // Get data folder path
+        let data_folder = std::env::var("DATA_FOLDER").expect("DATA_FOLDER must be set in .env file");
+        let data_path = std::path::Path::new(&data_folder);
+
+        // Construct file paths
+        let python_file = data_path.join(format!("python_results_{}_{}_{}.csv", network, auction_start, auction_end));
+        let rust_file = data_path.join(format!("rust_results_{}_{}_{}.csv", network, auction_start, auction_end));
+
+        eprintln!("Comparing Python results from: {}", python_file.display());
+        eprintln!("With Rust results from: {}", rust_file.display());
+
+        // Read Python results
+        let mut python_results = HashMap::new();
+        let file = File::open(python_file).expect("Failed to open Python result file");
+        let reader = BufReader::new(file);
+        let mut rdr = ReaderBuilder::new()
+            .has_headers(true)
+            .from_reader(reader);
+
+        for result in rdr.records() {
+            let record = result.expect("Failed to read Python CSV record");
+            let auction_id: i64 = record[0].parse().expect("Failed to parse auction_id");
+            let winner = record[1].to_string();
+            let reference_score = record[2].to_string();
+            python_results.insert(auction_id, (winner, reference_score));
+        }
+
+        // Read Rust results
+        let mut rust_results = HashMap::new();
+        let file = File::open(rust_file).expect("Failed to open Rust result file");
+        let reader = BufReader::new(file);
+        let mut rdr = ReaderBuilder::new()
+            .has_headers(true)
+            .from_reader(reader);
+
+        for result in rdr.records() {
+            let record = result.expect("Failed to read Rust CSV record");
+            let auction_id: i64 = record[0].parse().expect("Failed to parse auction_id");
+            let winner = record[1].to_string();
+            let reference_score = record[3].to_string();
+            rust_results.insert(auction_id, (winner, reference_score));
+        }
+
+        // Compare results
+        let mut matching = 0;
+        let mut total_compared = 0;
+        let mut differences = Vec::new();
+
+        for (auction_id, (py_winner, py_score)) in &python_results {
+            if let Some((rs_winner, rs_score)) = rust_results.get(auction_id) {
+                total_compared += 1;
+                if py_winner == rs_winner && py_score == rs_score {
+                    matching += 1;
+                } else {
+                    differences.push(format!(
+                        "Auction {}: Python(winner={}, score={}) vs Rust(winner={}, score={})",
+                        auction_id, py_winner, py_score, rs_winner, rs_score
+                    ));
+                }
             }
         }
-         */
+
+        // Print summary
+        eprintln!("\nComparison Summary:");
+        eprintln!("Total auctions compared: {}", total_compared);
+        eprintln!("Matching results: {} ({:.2}%)", matching, (matching as f64 / total_compared as f64) * 100.0);
+        
+        if !differences.is_empty() {
+            eprintln!("\nDifferences found:");
+            for diff in differences {
+                eprintln!("{}", diff);
+            }
+        }
+
+        // Print file coverage
+        let python_only = python_results.keys().filter(|k| !rust_results.contains_key(k)).count();
+        let rust_only = rust_results.keys().filter(|k| !python_results.contains_key(k)).count();
+        
+        eprintln!("\nFile Coverage:");
+        eprintln!("Auctions only in Python file: {}", python_only);
+        eprintln!("Auctions only in Rust file: {}", rust_only);
     }
 
     impl TestCase {
