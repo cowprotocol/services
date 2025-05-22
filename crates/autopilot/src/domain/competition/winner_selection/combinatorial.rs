@@ -880,8 +880,8 @@ mod tests {
 
         //let auction_start = 10606372;
         //let auction_end = 10706372;
-        let auction_start = 10614520;
-        let auction_end = 10614540;
+        let auction_start = 10614525;
+        let auction_end = 10614525;
         let network = "mainnet-prod";
         const BATCH_SIZE: i64 = 1000; // Process 1000 auctions at a time
 
@@ -1731,5 +1731,57 @@ mod tests {
             "sell" => Ok(order::Side::Sell),
             _ => Err(serde::de::Error::custom(format!("Invalid side: {}", s))),
         }
+    }
+
+    /// Splits a solution into multiple solutions based on token pairs and applies efficiency loss.
+    /// This is equivalent to the Python implementation's compute_split_solution function.
+    fn compute_split_solution(
+        solution: &Participant<Unranked>,
+        efficiency_loss: f64,
+    ) -> Vec<Participant<Unranked>> {
+        let mut split_solutions = vec![solution.clone()];
+        
+        // Group trades by token pairs
+        let mut trades_by_pair: HashMap<(eth::TokenAddress, eth::TokenAddress), Vec<(OrderUid, TradedOrder)>> = HashMap::new();
+        for (uid, trade) in solution.solution().orders() {
+            let pair = (trade.sell.token, trade.buy.token);
+            trades_by_pair.entry(pair).or_default().push((*uid, trade.clone()));
+        }
+
+        // If we have multiple token pairs, create split solutions
+        if trades_by_pair.len() > 1 {
+            for (pair, trades) in trades_by_pair {
+                // Calculate adjusted score for this token pair
+                let score = trades.iter()
+                    .map(|(_, trade)| {
+                        let trade_score = trade.executed_buy.0
+                            .checked_sub(trade.executed_sell.0)
+                            .unwrap_or_default();
+                        // Convert U256 to u128 for the calculation
+                        let score_u128 = trade_score.as_u128();
+                        (score_u128 as f64 * (1.0 - efficiency_loss)) as u128
+                    })
+                    .sum::<u128>();
+
+                // Create new solution with just these trades
+                let solution_uid = hash(&format!("{}-{:?}", solution.solution().id(), pair));
+                let mut trade_map = HashMap::new();
+                for (uid, trade) in trades {
+                    trade_map.insert(uid, trade);
+                }
+
+                let split_solution = create_solution(
+                    solution_uid,
+                    solution.driver().submission_address.0,
+                    eth::U256::from(score),
+                    trade_map.into_iter().collect(),
+                    None,
+                );
+
+                split_solutions.push(split_solution);
+            }
+        }
+
+        split_solutions
     }
 }
