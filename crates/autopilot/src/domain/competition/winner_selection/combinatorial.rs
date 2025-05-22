@@ -710,8 +710,25 @@ mod tests {
                         let order_uid = hex::encode(row.get::<[u8; 56], _>("order_uid"));
                         let is_winner = row.get::<bool, _>("is_winner");
 
-                        let mut trades = HashMap::new();
-                        trades.insert(
+                        // Get or create the solutions map for this auction
+                        let solutions = auction_solutions
+                            .entry(auction_id)
+                            .or_insert_with(HashMap::new);
+
+                        // Get or create the solution for this solver
+                        let solution = solutions.entry(solver.clone()).or_insert_with(|| TestSolution {
+                            solver: solver.clone(),
+                            trades: HashMap::new(),
+                            score: eth::U256::from_str_radix(
+                                &row.get::<BigDecimal, _>("score").to_string(),
+                                10,
+                            )
+                            .unwrap(),
+                            is_winner,
+                        });
+
+                        // Add the trade to the solution's trades
+                        solution.trades.insert(
                             order_uid,
                             TestTrade(
                                 eth::U256::from_str_radix(
@@ -726,27 +743,6 @@ mod tests {
                                 .unwrap(),
                             ),
                         );
-
-                        let score = eth::U256::from_str_radix(
-                            &row.get::<BigDecimal, _>("score").to_string(),
-                            10,
-                        )
-                        .unwrap();
-
-                        let solution = TestSolution {
-                            solver: solver.clone(),
-                            trades,
-                            score,
-                            is_winner,
-                        };
-
-                        // Get or create the solutions map for this auction
-                        let solutions = auction_solutions
-                            .entry(auction_id)
-                            .or_insert_with(HashMap::new);
-
-                        // Insert or update the solution for this solver
-                        solutions.insert(solver, solution);
                     }
                     auction_solutions
                 }
