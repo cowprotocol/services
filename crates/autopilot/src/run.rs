@@ -651,14 +651,15 @@ async fn shadow_mode(args: Arguments) -> ! {
         .into_iter()
         .collect();
 
-    let trusted_tokens = {
-        let web3 = shared::ethrpc::web3(
-            &args.shared.ethrpc,
-            &http_factory,
-            &args.shared.node_url,
-            "base",
-        );
+    let web3 = shared::ethrpc::web3(
+        &args.shared.ethrpc,
+        &http_factory,
+        &args.shared.node_url,
+        "base",
+    );
+    let weth = contracts::WETH9::deployed(&web3).await.unwrap();
 
+    let trusted_tokens = {
         let chain_id = web3
             .eth()
             .chain_id()
@@ -700,6 +701,7 @@ async fn shadow_mode(args: Arguments) -> ! {
         liveness.clone(),
         current_block,
         args.max_winners_per_auction,
+        weth.address().into(),
     );
     shadow.run_forever().await;
 }
