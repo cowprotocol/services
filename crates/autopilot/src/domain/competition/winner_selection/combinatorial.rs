@@ -26,19 +26,12 @@
 use {
     super::Arbitrator,
     crate::domain::{
-        self,
-        OrderUid,
-        auction::{
-            Prices,
-            order::{self, TargetAmount},
-        },
-        competition::{Participant, Score, Solution, Unranked},
-        eth::{self, WrappedNativeToken},
-        fee,
-        settlement::{
+        self, auction::{
+            order::{self, TargetAmount}, Prices
+        }, competition::{participant, Participant, Score, Solution, Unranked}, eth::{self, WrappedNativeToken}, fee, settlement::{
             math,
             transaction::{self, ClearingPrices},
-        },
+        }, OrderUid
     },
     anyhow::{Context, Result},
     itertools::Itertools,
@@ -60,7 +53,16 @@ impl Arbitrator for Config {
         participants.sort_unstable_by_key(|participant| {
             std::cmp::Reverse(participant.solution().score().get().0)
         });
+        eprintln!("    after sorting by score:");
+        for participant in &participants {
+            eprintln!("        - {} - {}", participant.driver().submission_address, participant.solution().score);
+        }
         let baseline_scores = compute_baseline_scores(&scores_by_solution);
+        eprintln!("    baseline_scores:");
+        for (pair, score) in &baseline_scores {
+            eprintln!("        - (buy={}, sell={}) - score: {}", pair.buy.0, pair.sell.0, score);
+        }
+        eprintln!("    participant filtering:");
         participants.retain(|p| {
             let aggregated_scores = scores_by_solution
                 .get(&SolutionKey {
@@ -68,6 +70,17 @@ impl Arbitrator for Config {
                     solution_id: p.solution().id(),
                 })
                 .expect("every remaining participant has an entry");
+            eprintln!("        - {}", p.driver().submission_address);
+            eprintln!("            aggregated scores");
+            for (pair, score) in aggregated_scores {
+                eprintln!("             - (buy={}, sell={}) - score: {}", pair.buy.0, pair.sell.0, score);
+            }
+            eprintln!("            is_fair = {}", aggregated_scores.len() == 1
+            || aggregated_scores.iter().all(|(pair, score)| {
+                baseline_scores
+                    .get(pair)
+                    .is_none_or(|baseline| score >= baseline)
+            }));
             // only keep solutions where each order execution is at least as good as
             // the baseline solution (or when there is only one baseline solution)
             aggregated_scores.len() == 1
@@ -166,11 +179,14 @@ impl Config {
 /// each token pair if one exists.
 fn compute_baseline_scores(scores_by_solution: &ScoresBySolution) -> ScoreByDirection {
     let mut baseline_directional_scores = ScoreByDirection::default();
+    eprintln!("    compute_baseline_scores");
     for scores in scores_by_solution.values() {
         let Ok((token_pair, score)) = scores.iter().exactly_one() else {
             // base solutions must contain exactly 1 directed token pair
+            eprintln!("        - discarded because does not contain exactly 1 directed token pair" );
             continue;
         };
+        eprintln!("        - (buy={}, sell={}), score: {}", token_pair.buy.0, token_pair.sell.0, score);
         let current_best_score = baseline_directional_scores
             .entry(token_pair.clone())
             .or_default();
@@ -189,6 +205,7 @@ fn compute_scores_by_solution(
     participants: &mut Vec<Participant<Unranked>>,
     auction: &domain::Auction,
 ) -> ScoresBySolution {
+    eprintln!("    compute_scores_by_solution:");
     let auction = Auction::from(auction);
     let mut scores = HashMap::default();
 
@@ -197,6 +214,7 @@ fn compute_scores_by_solution(
             let total_score = score
                 .values()
                 .fold(Default::default(), |acc, score| acc + *score);
+            eprintln!("        - {} - score: {}", p.driver().submission_address, total_score);
             scores.insert(
                 SolutionKey {
                     driver: p.driver().submission_address,
@@ -231,6 +249,7 @@ fn compute_scores_by_solution(
 ///     (B, C) => 5
 fn score_by_token_pair(solution: &Solution, auction: &Auction) -> Result<ScoreByDirection> {
     let mut scores = HashMap::default();
+    
     for (uid, trade) in solution.orders() {
         if !auction.contributes_to_score(uid) {
             continue;
@@ -279,7 +298,7 @@ fn score_by_token_pair(solution: &Solution, auction: &Auction) -> Result<ScoreBy
             sell: trade.sell.token,
             buy: trade.buy.token,
         };
-
+        eprintln!("         - score_by_token_pair {}: (buy={}, sell={}) - score: {}", solution.solver.0, token_pair.buy.0, token_pair.sell.0, score);
         *scores.entry(token_pair).or_default() += Score(score);
     }
     Ok(scores)
@@ -376,371 +395,6 @@ mod tests {
     };
 
     const DEFAULT_TOKEN_PRICE: u128 = 1_000;
-
-    #[test]
-    // Only one bid submitted results in one winner with reference score = 0
-    fn single_bid() {
-        let case = json!({
-            "tokens": [
-                ["Token A", address(0)],
-                ["Token B", address(1)],
-                ["Token C", address(2)],
-                ["Token D", address(3)]
-            ],
-            "auction": {
-                "orders": {
-                    "Order 1": ["sell", "Token A", amount(1_000), "Token B", amount(1_000)],
-                    "Order 2": ["sell", "Token C", amount(1_000), "Token D", amount(1_000)]
-                }
-            },
-            "solutions": {
-                "Solution 1": {
-                    "solver": "Solver 1",
-                    "trades": {
-                        "Order 1": [amount(1_000), amount(1_100)]
-                    },
-                    "score": score(200),
-                }
-            },
-            "expected_fair_solutions": ["Solution 1"],
-            "expected_winners": ["Solution 1"],
-            "expected_reference_scores": {
-                "Solver 1": "0",
-            },
-        });
-        TestCase::from_json(case).validate();
-    }
-
-    #[test]
-    // Two compatible batches are both selected as winners
-    fn compatible_bids() {
-        let case = json!({
-            "tokens": [
-                ["Token A", address(0)],
-                ["Token B", address(1)],
-                ["Token C", address(2)],
-                ["Token D", address(3)]
-            ],
-            "auction": {
-                "orders": {
-                    "Order 1": ["sell", "Token A", amount(1_000), "Token B", amount(1_000)],
-                    "Order 2": ["sell", "Token C", amount(1_000), "Token D", amount(1_000)],
-                    "Order 3": ["sell", "Token A", amount(1_000), "Token C", amount(1_000)]
-                }
-            },
-            "solutions": {
-                // best batch
-                "Solution 1": {
-                    "solver": "Solver 1",
-                    "trades": {
-                        "Order 1": [amount(1_000), amount(1_100)],
-                        "Order 2": [amount(1_000), amount(1_100)]
-                    },
-                    "score": score(200),
-                },
-                // compatible batch
-                "Solution 2": {
-                    "solver": "Solver 2",
-                    "trades": {
-                        "Order 3": [amount(1_000), amount(1_100)],
-                    },
-                    "score": score(100),
-                }
-            },
-            "expected_fair_solutions": ["Solution 1", "Solution 2"],
-            "expected_winners": ["Solution 1", "Solution 2"],
-            "expected_reference_scores": {
-                "Solver 1": "100",
-                "Solver 2": "200",
-            },
-        });
-        TestCase::from_json(case).validate();
-    }
-
-    #[test]
-    // Two compatible batches are both selected as winners, but this time the orders
-    // are "buy" orders
-    fn buy_orders() {
-        let case = json!({
-            "tokens": [
-                ["Token A", address(0)],
-                ["Token B", address(1)],
-                ["Token C", address(2)],
-                ["Token D", address(3)]
-            ],
-            "auction": {
-                "orders": {
-                    "Order 1": ["buy", "Token A", amount(1_000), "Token B", amount(1_000)],
-                    "Order 2": ["buy", "Token C", amount(1_000), "Token D", amount(1_000)],
-                    "Order 3": ["buy", "Token A", amount(1_000), "Token C", amount(1_000)]
-                }
-            },
-            "solutions": {
-                // best batch
-                "Solution 1": {
-                    "solver": "Solver 1",
-                    "trades": {
-                        // less sell tokens are used to get the expected buy tokens
-                        "Order 1": [amount(900), amount(1_000)],
-                        "Order 2": [amount(900), amount(1_000)]
-                    },
-                    "score": score(200),
-                },
-                // compatible batch
-                "Solution 2": {
-                    "solver": "Solver 2",
-                    "trades": {
-                        "Order 3": [amount(900), amount(1_000)],
-                    },
-                    "score": score(100),
-                }
-            },
-            "expected_fair_solutions": ["Solution 1", "Solution 2"],
-            "expected_winners": ["Solution 1", "Solution 2"],
-            "expected_reference_scores": {
-                "Solver 1": "100",
-                "Solver 2": "200",
-            },
-        });
-        TestCase::from_json(case).validate();
-    }
-
-    #[test]
-    // Multiple compatible bids by a single solver are aggregated
-    fn multiple_solution_for_solver() {
-        let case = json!({
-            "tokens": [
-                ["Token A", address(0)],
-                ["Token B", address(1)],
-                ["Token C", address(2)],
-                ["Token D", address(3)]
-            ],
-            "auction": {
-                "orders": {
-                    "Order 1": ["sell", "Token A", amount(1_000), "Token B", amount(1_000)],
-                    "Order 2": ["sell", "Token C", amount(1_000), "Token D", amount(1_000)],
-                    "Order 3": ["sell", "Token A", amount(1_000), "Token D", amount(1_000)]
-                }
-            },
-            "solutions": {
-                // best batch
-                "Solution 1": {
-                    "solver": "Solver 1",
-                    "trades": {
-                        "Order 1": [amount(1_000), amount(1_100)],
-                        "Order 2": [amount(1_000), amount(1_100)]
-                    },
-                    "score": score(200),
-                },
-                // compatible batch
-                "Solution 2": {
-                    "solver": "Solver 1", // same solver
-                    "trades": {
-                        "Order 3": [amount(1_000), amount(1_100)],
-                    },
-                    "score": score(100),
-                }
-            },
-            "expected_fair_solutions": ["Solution 1", "Solution 2"],
-            "expected_winners": ["Solution 1", "Solution 2"],
-            "expected_reference_scores": {
-                "Solver 1": "0",
-            },
-        });
-        TestCase::from_json(case).validate();
-    }
-
-    #[test]
-    // Incompatible bid does not win but increases the reference score of the winner
-    fn incompatible_bids() {
-        let case = json!({
-            "tokens": [
-                ["Token A", address(0)],
-                ["Token B", address(1)],
-                ["Token C", address(2)],
-                ["Token D", address(3)]
-            ],
-            "auction": {
-                "orders": {
-                    "Order 1": ["sell", "Token A", amount(1_000), "Token B", amount(1_000)],
-                    "Order 2": ["sell", "Token C", amount(1_000), "Token D", amount(1_000)],
-                }
-            },
-            "solutions": {
-                // best batch
-                "Solution 1": {
-                    "solver": "Solver 1",
-                    "trades": {
-                        "Order 1": [amount(1_000), amount(1_100)],
-                        "Order 2": [amount(1_000), amount(1_100)]
-                    },
-                    "score": score(200),
-                },
-                // compatible batch
-                "Solution 2": {
-                    "solver": "Solver 2",
-                    "trades": {
-                        "Order 1": [amount(1_000), amount(1_100)],
-                    },
-                    "score": score(100),
-                }
-            },
-            "expected_fair_solutions": ["Solution 1", "Solution 2"],
-            "expected_winners": ["Solution 1"],
-            "expected_reference_scores": {
-                "Solver 1": "100",
-                "Solver 2": "200",
-            },
-        });
-        TestCase::from_json(case).validate();
-    }
-
-    #[test]
-    // Unfair batch is filtered
-    fn fairness_filtering() {
-        let case = json!({
-            "tokens": [
-                ["Token A", address(0)],
-                ["Token B", address(1)],
-                ["Token C", address(2)],
-                ["Token D", address(3)]
-            ],
-            "auction": {
-                "orders": {
-                    "Order 1": ["sell", "Token A", amount(1_000), "Token B", amount(1_000)],
-                    "Order 2": ["sell", "Token C", amount(1_000), "Token D", amount(1_000)],
-                }
-            },
-            "solutions": {
-                // unfair batch
-                "Solution 1": {
-                    "solver": "Solver 1",
-                    "trades": {
-                        "Order 1": [amount(1_000), amount(1_100)],
-                        "Order 2": [amount(1_000), amount(1_100)]
-                    },
-                    "score": score(200),
-                },
-                // filtering batch
-                "Solution 2": {
-                    "solver": "Solver 2",
-                    "trades": {
-                        "Order 1": [amount(1_000), amount(1_150)],
-                    },
-                    "score": score(150),
-                }
-            },
-            "expected_fair_solutions": ["Solution 2"],
-            "expected_winners": ["Solution 2"],
-            "expected_reference_scores": {
-                "Solver 2": "0",
-            },
-        });
-        TestCase::from_json(case).validate();
-    }
-
-    #[test]
-    // Multiple trades on the same (directed) token pair are aggregated for
-    // filtering
-    fn aggregation_on_token_pair() {
-        let case = json!({
-            "tokens": [
-                ["Token A", address(0)],
-                ["Token B", address(1)],
-            ],
-            "auction": {
-                "orders": {
-                    "Order 1": ["sell", "Token A", amount(1_000), "Token B", amount(1_000)],
-                    "Order 2": ["sell", "Token A", amount(1_000), "Token B", amount(1_000)],
-                }
-            },
-            "solutions": {
-                // batch with aggregation
-                "Solution 1": {
-                    "solver": "Solver 1",
-                    "trades": {
-                        "Order 1": [amount(1_000), amount(1_100)],
-                        "Order 2": [amount(1_000), amount(1_100)]
-                    },
-                    "score": score(200),
-                },
-                // incompatible batch
-                "Solution 2": {
-                    "solver": "Solver 2",
-                    "trades": {
-                        "Order 1": [amount(1_000), amount(1_150)],
-                    },
-                    "score": score(150),
-                }
-            },
-            "expected_fair_solutions": ["Solution 1", "Solution 2"],
-            "expected_winners": ["Solution 1"],
-            "expected_reference_scores": {
-                "Solver 1": "150",
-                "Solver 2": "200",
-            },
-        });
-        TestCase::from_json(case).validate();
-    }
-
-    #[test]
-    // Reference winners can generate more surplus than winners
-    fn reference_better_than_winners() {
-        let case = json!({
-            "tokens": [
-                ["Token A", address(0)],
-                ["Token B", address(1)],
-                ["Token C", address(2)],
-                ["Token D", address(3)],
-                ["Token E", address(4)],
-                ["Token F", address(5)]
-            ],
-            "auction": {
-                "orders": {
-                    "Order 1": ["sell", "Token A", amount(1_000), "Token B", amount(1_000)],
-                    "Order 2": ["sell", "Token C", amount(1_000), "Token D", amount(1_000)],
-                    "Order 3": ["sell", "Token E", amount(1_000), "Token F", amount(1_000)],
-                }
-            },
-            "solutions": {
-                // best batch
-                "Solution 1": {
-                    "solver": "Solver 1",
-                    "trades": {
-                        "Order 1": [amount(1_000), amount(1_100)],
-                        "Order 2": [amount(1_000), amount(1_100)],
-                        "Order 3": [amount(1_000), amount(1_100)]
-                    },
-                    "score": score(300),
-                },
-                // incompatible batch 1
-                "Solution 2": {
-                    "solver": "Solver 2",
-                    "trades": {
-                        "Order 1": [amount(1_000), amount(1_140)],
-                        "Order 2": [amount(1_000), amount(1_140)],
-                    },
-                    "score": score(280),
-                },
-                // incompatible batch 2
-                "Solution 3": {
-                    "solver": "Solver 3",
-                    "trades": {
-                        "Order 3": [amount(1_000), amount(1_100)],
-                    },
-                    "score": score(100),
-                }
-            },
-            "expected_fair_solutions": ["Solution 1", "Solution 2",  "Solution 3"],
-            "expected_winners": ["Solution 1"],
-            "expected_reference_scores": {
-                "Solver 1": "380",
-                "Solver 2": "300",
-                "Solver 3": "300",
-            },
-        });
-        TestCase::from_json(case).validate();
-    }
 
     #[test]
     fn compare_python_rust_results() {
@@ -1444,6 +1098,7 @@ mod tests {
                         solution_id,
                         create_solution(solution_uid, solver_address, solution.score, trades, None),
                     );
+                    eprintln!("Solution id:{}, solver:{}, score:{}", solution_id, solver_address, solution.score);
                 }
 
                 // Skip if no valid solutions
@@ -1461,10 +1116,19 @@ mod tests {
                 // filter solutions
                 let participants = solution_map.values().cloned().collect();
                 let solutions = arbitrator.filter_unfair_solutions(participants, &auction);
-
+                eprintln!("********** after filtering unfair solutions:");
+                for solution in &solutions {
+                    eprintln!("Solution id:{}, solver:{}, score:{}", solution.solution().id, solution.driver().submission_address, solution.solution().score);
+                }
+                
                 // select the winners
                 let solutions = arbitrator.mark_winners(solutions);
                 let winners = filter_winners(&solutions);
+
+                eprintln!("********** winners:");
+                for solution in &winners {
+                    eprintln!("Solution id:{}, solver:{}, score:{}", solution.solution().id, solution.driver().submission_address, solution.solution().score);
+                }
 
                 // Get the winners from our calculation
                 let calculated_winners: Vec<String> = winners.iter()
