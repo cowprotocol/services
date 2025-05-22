@@ -53,16 +53,20 @@ impl Arbitrator for Config {
         participants.sort_unstable_by_key(|participant| {
             std::cmp::Reverse(participant.solution().score().get().0)
         });
+        /*
         eprintln!("    after sorting by score:");
         for participant in &participants {
             eprintln!("        - {} - {}", participant.driver().submission_address, participant.solution().score);
         }
+         */
         let baseline_scores = compute_baseline_scores(&scores_by_solution);
+        /*
         eprintln!("    baseline_scores:");
         for (pair, score) in &baseline_scores {
             eprintln!("        - (buy={}, sell={}) - score: {}", pair.buy.0, pair.sell.0, score);
         }
         eprintln!("    participant filtering:");
+        */
         participants.retain(|p| {
             let aggregated_scores = scores_by_solution
                 .get(&SolutionKey {
@@ -70,6 +74,7 @@ impl Arbitrator for Config {
                     solution_id: p.solution().id(),
                 })
                 .expect("every remaining participant has an entry");
+            /* 
             eprintln!("        - {}", p.driver().submission_address);
             eprintln!("            aggregated scores");
             for (pair, score) in aggregated_scores {
@@ -81,6 +86,7 @@ impl Arbitrator for Config {
                     .get(pair)
                     .is_none_or(|baseline| score >= baseline)
             }));
+            */
             // only keep solutions where each order execution is at least as good as
             // the baseline solution (or when there is only one baseline solution)
             aggregated_scores.len() == 1
@@ -179,14 +185,14 @@ impl Config {
 /// each token pair if one exists.
 fn compute_baseline_scores(scores_by_solution: &ScoresBySolution) -> ScoreByDirection {
     let mut baseline_directional_scores = ScoreByDirection::default();
-    eprintln!("    compute_baseline_scores");
+    //eprintln!("    compute_baseline_scores");
     for scores in scores_by_solution.values() {
         let Ok((token_pair, score)) = scores.iter().exactly_one() else {
             // base solutions must contain exactly 1 directed token pair
-            eprintln!("        - discarded because does not contain exactly 1 directed token pair" );
+            //eprintln!("        - discarded because does not contain exactly 1 directed token pair" );
             continue;
         };
-        eprintln!("        - (buy={}, sell={}), score: {}", token_pair.buy.0, token_pair.sell.0, score);
+        //eprintln!("        - (buy={}, sell={}), score: {}", token_pair.buy.0, token_pair.sell.0, score);
         let current_best_score = baseline_directional_scores
             .entry(token_pair.clone())
             .or_default();
@@ -205,7 +211,7 @@ fn compute_scores_by_solution(
     participants: &mut Vec<Participant<Unranked>>,
     auction: &domain::Auction,
 ) -> ScoresBySolution {
-    eprintln!("    compute_scores_by_solution:");
+    //eprintln!("    compute_scores_by_solution:");
     let auction = Auction::from(auction);
     let mut scores = HashMap::default();
 
@@ -214,7 +220,7 @@ fn compute_scores_by_solution(
             let total_score = score
                 .values()
                 .fold(Default::default(), |acc, score| acc + *score);
-            eprintln!("        - {} - score: {}", p.driver().submission_address, total_score);
+            //eprintln!("        - {} - score: {}", p.driver().submission_address, total_score);
             scores.insert(
                 SolutionKey {
                     driver: p.driver().submission_address,
@@ -298,7 +304,7 @@ fn score_by_token_pair(solution: &Solution, auction: &Auction) -> Result<ScoreBy
             sell: trade.sell.token,
             buy: trade.buy.token,
         };
-        eprintln!("         - score_by_token_pair {}: (buy={}, sell={}) - score: {}", solution.solver.0, token_pair.buy.0, token_pair.sell.0, score);
+        //eprintln!("         - score_by_token_pair {}: (buy={}, sell={}) - score: {}", solution.solver.0, token_pair.buy.0, token_pair.sell.0, score);
         *scores.entry(token_pair).or_default() += Score(score);
     }
     Ok(scores)
@@ -548,7 +554,7 @@ mod tests {
         let mut writer = csv::Writer::from_path(file_path).expect("Failed to create CSV file");
 
         // Write header
-        writer.write_record(&["auction_id", "winner", "same_as_db", "reference_score", "num_winners", "error"])
+        writer.write_record(&["auction_id", "winner", "reference_score", "error"])
             .expect("Failed to write CSV header");
 
         // Process auctions in batches
@@ -604,15 +610,13 @@ mod tests {
 
                 match test_case.calculate_results(auction_id) {
                     Ok(result) => {
-                        let (auction_id, winners, same_winner, reference_scores, num_winners, error) = result;
+                        let (auction_id, winners, reference_scores, error) = result;
                         // Write one line per winner with their reference score
-                        for (winner, reference_score) in winners.iter().zip(reference_scores.iter()) {
+                        for (winner, reference_score) in reference_scores.iter() {
                             writer.write_record(&[
                                 auction_id.to_string(),
                                 winner.clone(),
-                                same_winner.to_string(),
                                 reference_score.to_string(),
-                                num_winners.to_string(),
                                 error.clone().unwrap_or_default(),
                             ]).expect("Failed to write CSV record");
                         }
@@ -621,8 +625,6 @@ mod tests {
                         writer.write_record(&[
                             auction_id.to_string(),
                             String::new(),
-                            false.to_string(),
-                            "0".to_string(),
                             "0".to_string(),
                             e,
                         ]).expect("Failed to write CSV record");
@@ -1011,7 +1013,7 @@ mod tests {
             let _reference_scores = arbitrator.compute_reference_scores(&solutions);
         }
 
-        pub fn calculate_results(&self, auction_id: i64) -> Result<(i64, Vec<String>, bool, Vec<eth::U256>, usize, Option<String>), String> {
+        pub fn calculate_results(&self, auction_id: i64) -> Result<(i64, Vec<String>, HashMap<String, eth::U256>, Option<String>), String> {
             use std::panic::{catch_unwind, AssertUnwindSafe};
             use anyhow::Context;
 
@@ -1094,7 +1096,7 @@ mod tests {
                         solution_id,
                         create_solution(solution_uid, solver_address, solution.score, trades, None),
                     );
-                    eprintln!("Solution id:{}, solver:{}, score:{}", solution_id, solver_address, solution.score);
+                    //eprintln!("Solution id:{}, solver:{}, score:{}", solution_id, solver_address, solution.score);
                 }
 
                 // Skip if no valid solutions
@@ -1102,9 +1104,7 @@ mod tests {
                     return Ok((
                         auction_id,
                         vec![],
-                        false,
-                        vec![],
-                        0,
+                        HashMap::new(),
                         Some("No valid solutions found".to_string()),
                     ));
                 }
@@ -1112,19 +1112,23 @@ mod tests {
                 // filter solutions
                 let participants = solution_map.values().cloned().collect();
                 let solutions = arbitrator.filter_unfair_solutions(participants, &auction);
+
+                /*
                 eprintln!("********** after filtering unfair solutions:");
                 for solution in &solutions {
                     eprintln!("Solution id:{}, solver:{}, score:{}", solution.solution().id, solution.driver().submission_address, solution.solution().score);
                 }
-                
+                */
                 // select the winners
                 let solutions = arbitrator.mark_winners(solutions);
                 let winners = filter_winners(&solutions);
 
+                /* 
                 eprintln!("********** winners:");
                 for solution in &winners {
                     eprintln!("Solution id:{}, solver:{}, score:{}", solution.solution().id, solution.driver().submission_address, solution.solution().score);
                 }
+                */
 
                 // Get the winners from our calculation
                 let calculated_winners: Vec<String> = winners.iter()
@@ -1132,7 +1136,7 @@ mod tests {
                     .collect();
 
                 // Get the winner from the database
-                let db_winner = self.solutions.iter()
+                let _db_winner = self.solutions.iter()
                     .find(|(_, solution)| solution.is_winner)
                     .map(|(_, solution)| solution.solver.clone())
                     .unwrap_or_default();
@@ -1140,20 +1144,26 @@ mod tests {
                 // compute reference scores
                 let reference_scores = arbitrator.compute_reference_scores(&solutions);
                 
-                let reference_scores: Vec<eth::U256> = winners.iter()
-                    .map(|winner| {
-                        reference_scores.get(&winner.driver().submission_address)
-                            .map(|score| score.get().0)
-                            .unwrap_or_default()
-                    })
-                    .collect();
+                
+                let mut winnner_reference_scores = HashMap::new();
+                for winner in winners {
+                    let score = reference_scores.get(&winner.driver().submission_address)
+                        .map(|score| score.get().0)
+                        .unwrap_or_default();
+                    winnner_reference_scores.insert(hex::encode(winner.driver().submission_address.0), score);
+                }
+
+                /*
+                eprintln!("********** reference scores:");
+                for (solver, score) in &winnner_reference_scores {
+                    eprintln!("solver:{}, score:{}", solver, score);
+                }
+                */
 
                 Ok((
                     auction_id,
-                    calculated_winners.clone(),
-                    calculated_winners.contains(&db_winner),
-                    reference_scores,
-                    winners.len(),
+                    calculated_winners,
+                    winnner_reference_scores,
                     None,
                 ))
             }));
