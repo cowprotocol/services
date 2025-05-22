@@ -266,6 +266,7 @@ pub struct Asset {
     Default,
     derive_more::AddAssign,
     derive_more::Add,
+    derive_more::Sub,
 )]
 pub struct Ether(pub U256);
 
