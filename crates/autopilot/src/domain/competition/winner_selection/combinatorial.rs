@@ -743,12 +743,145 @@ mod tests {
     }
 
     #[test]
+    fn compare_python_rust_results() {
+        use std::collections::HashMap;
+        use std::fs::File;
+        use std::io::BufReader;
+        use csv::ReaderBuilder;
+        use dotenv::dotenv;
+
+        // Load environment variables from .env file
+        dotenv().ok();
+
+        // Hardcoded values
+        let network = "mainnet-prod";
+        let auction_start = 10606372;
+        let auction_end = 10706372;
+
+        // Get data folder path
+        let data_folder = std::env::var("DATA_FOLDER").expect("DATA_FOLDER must be set in .env file");
+        let data_path = std::path::Path::new(&data_folder);
+
+        // Construct file paths
+        let python_file = data_path.join(format!("python_results_{}_{}_{}.csv", network, auction_start, auction_end));
+        let rust_file = data_path.join(format!("rust_results_{}_{}_{}.csv", network, auction_start, auction_end));
+
+        eprintln!("Comparing Python results from: {}", python_file.display());
+        eprintln!("With Rust results from: {}", rust_file.display());
+
+        // Read Python results
+        let mut python_results: HashMap<i64, Vec<(String, String)>> = HashMap::new();
+        let file = File::open(python_file).expect("Failed to open Python result file");
+        let reader = BufReader::new(file);
+        let mut rdr = ReaderBuilder::new()
+            .has_headers(true)
+            .from_reader(reader);
+
+        for result in rdr.records() {
+            let record = result.expect("Failed to read Python CSV record");
+            let auction_id: i64 = record[0].parse().expect("Failed to parse auction_id");
+            let winner = record[1].to_string();
+            let reference_score = record[2].to_string();
+            python_results
+                .entry(auction_id)
+                .or_default()
+                .push((winner, reference_score));
+        }
+
+        // Read Rust results
+        let mut rust_results: HashMap<i64, Vec<(String, String)>> = HashMap::new();
+        let mut multi_winners = 0;
+        let mut db_mismatches = 0;
+        let mut total_rust_auctions = 0;
+        let file = File::open(rust_file).expect("Failed to open Rust result file");
+        let reader = BufReader::new(file);
+        let mut rdr = ReaderBuilder::new()
+            .has_headers(true)
+            .from_reader(reader);
+
+        for result in rdr.records() {
+            let record = result.expect("Failed to read Rust CSV record");
+            let auction_id: i64 = record[0].parse().expect("Failed to parse auction_id");
+            let winner = record[1].to_string();
+            let same_as_db = record[2].parse::<bool>().expect("Failed to parse same_as_db");
+            let reference_score = record[3].to_string();
+            let num_winners: usize = record[4].parse().expect("Failed to parse num_winners");
+            
+            total_rust_auctions += 1;
+            if num_winners > 1 {
+                multi_winners += 1;
+            }
+            if !same_as_db {
+                db_mismatches += 1;
+            }
+            
+            rust_results
+                .entry(auction_id)
+                .or_default()
+                .push((winner, reference_score));
+        }
+
+        // Compare results
+        let mut matching = 0;
+        let mut total_compared = 0;
+        let mut differences = Vec::new();
+
+        for (auction_id, py_winners) in &python_results {
+            if let Some(rs_winners) = rust_results.get(auction_id) {
+                total_compared += 1;
+                
+                // Sort both lists to ensure consistent comparison
+                let mut py_winners = py_winners.clone();
+                let mut rs_winners = rs_winners.clone();
+                py_winners.sort();
+                rs_winners.sort();
+
+                if py_winners == rs_winners {
+                    matching += 1;
+                } else {
+                    differences.push(format!(
+                        "Auction {}: Python winners={:?} vs Rust winners={:?}",
+                        auction_id, py_winners, rs_winners
+                    ));
+                }
+            }
+        }
+
+        // Print summary
+        eprintln!("\nComparison Summary:");
+        eprintln!("Total auctions compared: {}", total_compared);
+        eprintln!("Matching results: {} ({:.2}%)", matching, (matching as f64 / total_compared as f64) * 100.0);
+        
+        eprintln!("\nRust Implementation Statistics:");
+        eprintln!("Total Rust auctions: {}", total_rust_auctions);
+        eprintln!("Multi-winner auctions: {} ({:.2}%)", multi_winners, (multi_winners as f64 / total_rust_auctions as f64) * 100.0);
+        eprintln!("DB winner mismatches: {} ({:.2}%)", db_mismatches, (db_mismatches as f64 / total_rust_auctions as f64) * 100.0);
+        
+        if !differences.is_empty() {
+            eprintln!("\nDifferences found:");
+            for diff in differences {
+                eprintln!("{}", diff);
+            }
+        }
+
+        // Print file coverage
+        let python_only = python_results.keys().filter(|k| !rust_results.contains_key(k)).count();
+        let rust_only = rust_results.keys().filter(|k| !python_results.contains_key(k)).count();
+        
+        eprintln!("\nFile Coverage:");
+        eprintln!("Auctions only in Python file: {}", python_only);
+        eprintln!("Auctions only in Rust file: {}", rust_only);
+    }
+
+    #[test]
     fn store_auction_results() {
         // Load environment variables from .env file
         dotenv::dotenv().ok();
 
-        let auction_start = 10606372;
-        let auction_end = 10706372;
+        //let auction_start = 10606372;
+        //let auction_end = 10706372;
+        let auction_start = 10614520;
+        let auction_end = 10614540;
         let network = "mainnet-prod";
         const BATCH_SIZE: i64 = 1000; // Process 1000 auctions at a time
 
@@ -817,15 +950,18 @@ mod tests {
 
                 match test_case.calculate_results(auction_id) {
                     Ok(result) => {
-                        let (auction_id, winner, same_winner, reference_score, num_winners, error) = result;
-                        writer.write_record(&[
-                            auction_id.to_string(),
-                            winner,
-                            same_winner.to_string(),
-                            reference_score.to_string(),
-                            num_winners.to_string(),
-                            error.unwrap_or_default(),
-                        ]).expect("Failed to write CSV record");
+                        let (auction_id, winners, same_winner, reference_scores, num_winners, error) = result;
+                        // Write one line per winner with their reference score
+                        for (winner, reference_score) in winners.iter().zip(reference_scores.iter()) {
+                            writer.write_record(&[
+                                auction_id.to_string(),
+                                winner.clone(),
+                                same_winner.to_string(),
+                                reference_score.to_string(),
+                                num_winners.to_string(),
+                                error.clone().unwrap_or_default(),
+                            ]).expect("Failed to write CSV record");
+                        }
                     },
                     Err(e) => {
                         writer.write_record(&[
@@ -1184,15 +1320,16 @@ mod tests {
                 let solver_address = H160::from_str(&solution.solver).unwrap();
                 solver_map.insert(solution.solver.clone(), solver_address);
 
-                let trades = solution
+                let trades: Vec<(OrderUid, TradedOrder)> = solution
                     .trades
                     .iter()
-                    .map(|(order_id, trade)| {
-                        let order = order_map.get(order_id).unwrap();
-                        let sell_token_amount = trade.0;
-                        let buy_token_amount = trade.1;
-                        let trade = create_trade(order, sell_token_amount, buy_token_amount);
-                        (order.uid, trade)
+                    .filter_map(|(order_id, trade)| {
+                        order_map.get(order_id).map(|order| {
+                            let sell_token_amount = trade.0;
+                            let buy_token_amount = trade.1;
+                            let trade = create_trade(order, sell_token_amount, buy_token_amount);
+                            (order.uid, trade)
+                        })
                     })
                     .collect();
 
@@ -1224,7 +1361,7 @@ mod tests {
             let _reference_scores = arbitrator.compute_reference_scores(&solutions);
         }
 
-        pub fn calculate_results(&self, auction_id: i64) -> Result<(i64, String, bool, eth::U256, usize, Option<String>), String> {
+        pub fn calculate_results(&self, auction_id: i64) -> Result<(i64, Vec<String>, bool, Vec<eth::U256>, usize, Option<String>), String> {
             use std::panic::{catch_unwind, AssertUnwindSafe};
             use anyhow::Context;
 
@@ -1288,11 +1425,12 @@ mod tests {
                         .trades
                         .iter()
                         .filter_map(|(order_id, trade)| {
-                            let order = order_map.get(order_id)?;
-                            let sell_token_amount = trade.0;
-                            let buy_token_amount = trade.1;
-                            let trade = create_trade(order, sell_token_amount, buy_token_amount);
-                            Some((order.uid, trade))
+                            order_map.get(order_id).map(|order| {
+                                let sell_token_amount = trade.0;
+                                let buy_token_amount = trade.1;
+                                let trade = create_trade(order, sell_token_amount, buy_token_amount);
+                                (order.uid, trade)
+                            })
                         })
                         .collect();
 
@@ -1312,9 +1450,9 @@ mod tests {
                 if solution_map.is_empty() {
                     return Ok((
                         auction_id,
-                        String::new(),
+                        vec![],
                         false,
-                        eth::U256::zero(),
+                        vec![],
                         0,
                         Some("No valid solutions found".to_string()),
                     ));
@@ -1328,10 +1466,10 @@ mod tests {
                 let solutions = arbitrator.mark_winners(solutions);
                 let winners = filter_winners(&solutions);
 
-                // Get the winner from our calculation
-                let calculated_winner = winners.first()
+                // Get the winners from our calculation
+                let calculated_winners: Vec<String> = winners.iter()
                     .map(|w| hex::encode(w.driver().submission_address.0))
-                    .unwrap_or_default();
+                    .collect();
 
                 // Get the winner from the database
                 let db_winner = self.solutions.iter()
@@ -1339,22 +1477,22 @@ mod tests {
                     .map(|(_, solution)| solution.solver.clone())
                     .unwrap_or_default();
 
-                // compute reference score
+                // compute reference scores
                 let reference_scores = arbitrator.compute_reference_scores(&solutions);
                 
-                let reference_score = winners.first()
-                    .and_then(|winner| {
-                        let score = reference_scores.get(&winner.driver().submission_address);
-                        score
+                let reference_scores: Vec<eth::U256> = winners.iter()
+                    .map(|winner| {
+                        reference_scores.get(&winner.driver().submission_address)
+                            .map(|score| score.get().0)
+                            .unwrap_or_default()
                     })
-                    .map(|score| score.get().0)
-                    .unwrap_or_default();
+                    .collect();
 
                 Ok((
                     auction_id,
-                    calculated_winner.clone(),
-                    calculated_winner == db_winner,
-                    reference_score,
+                    calculated_winners.clone(),
+                    calculated_winners.contains(&db_winner),
+                    reference_scores,
                     winners.len(),
                     None,
                 ))
@@ -1593,125 +1731,5 @@ mod tests {
             "sell" => Ok(order::Side::Sell),
             _ => Err(serde::de::Error::custom(format!("Invalid side: {}", s))),
         }
-    }
-
-    #[test]
-    fn compare_python_rust_results() {
-        use std::collections::HashMap;
-        use std::fs::File;
-        use std::io::BufReader;
-        use csv::ReaderBuilder;
-        use dotenv::dotenv;
-
-        // Load environment variables from .env file
-        dotenv().ok();
-
-        // Hardcoded values
-        let network = "mainnet-prod";
-        let auction_start = 10606372;
-        let auction_end = 10706372;
-
-        // Get data folder path
-        let data_folder = std::env::var("DATA_FOLDER").expect("DATA_FOLDER must be set in .env file");
-        let data_path = std::path::Path::new(&data_folder);
-
-        // Construct file paths
-        let python_file = data_path.join(format!("python_results_{}_{}_{}.csv", network, auction_start, auction_end));
-        let rust_file = data_path.join(format!("rust_results_{}_{}_{}.csv", network, auction_start, auction_end));
-
-        eprintln!("Comparing Python results from: {}", python_file.display());
-        eprintln!("With Rust results from: {}", rust_file.display());
-
-        // Read Python results
-        let mut python_results = HashMap::new();
-        let file = File::open(python_file).expect("Failed to open Python result file");
-        let reader = BufReader::new(file);
-        let mut rdr = ReaderBuilder::new()
-            .has_headers(true)
-            .from_reader(reader);
-
-        for result in rdr.records() {
-            let record = result.expect("Failed to read Python CSV record");
-            let auction_id: i64 = record[0].parse().expect("Failed to parse auction_id");
-            let winner = record[1].to_string();
-            let reference_score = record[2].to_string();
-            python_results.insert(auction_id, (winner, reference_score));
-        }
-
-        // Read Rust results
-        let mut rust_results = HashMap::new();
-        let mut multi_winners = 0;
-        let mut db_mismatches = 0;
-        let mut total_rust_auctions = 0;
-        let file = File::open(rust_file).expect("Failed to open Rust result file");
-        let reader = BufReader::new(file);
-        let mut rdr = ReaderBuilder::new()
-            .has_headers(true)
-            .from_reader(reader);
-
-        for result in rdr.records() {
-            let record = result.expect("Failed to read Rust CSV record");
-            let auction_id: i64 = record[0].parse().expect("Failed to parse auction_id");
-            let winner = record[1].to_string();
-            let same_as_db = record[2].parse::<bool>().expect("Failed to parse same_as_db");
-            let reference_score = record[3].to_string();
-            let num_winners: usize = record[4].parse().expect("Failed to parse num_winners");
-            
-            total_rust_auctions += 1;
-            if num_winners > 1 {
-                multi_winners += 1;
-            }
-            if !same_as_db {
-                db_mismatches += 1;
-            }
-            
-            rust_results.insert(auction_id, (winner, reference_score));
-        }
-
-        // Compare results
-        let mut matching = 0;
-        let mut total_compared = 0;
-        let mut differences = Vec::new();
-
-        for (auction_id, (py_winner, py_score)) in &python_results {
-            if let Some((rs_winner, rs_score)) = rust_results.get(auction_id) {
-                total_compared += 1;
-                if py_winner == rs_winner && py_score == rs_score {
-                    matching += 1;
-                } else {
-                    differences.push(format!(
-                        "Auction {}: Python(winner={}, score={}) vs Rust(winner={}, score={})",
-                        auction_id, py_winner, py_score, rs_winner, rs_score
-                    ));
-                }
-            }
-        }
-
-        // Print summary
-        eprintln!("\nComparison Summary:");
-        eprintln!("Total auctions compared: {}", total_compared);
-        eprintln!("Matching results: {} ({:.2}%)", matching, (matching as f64 / total_compared as f64) * 100.0);
-        
-        eprintln!("\nRust Implementation Statistics:");
-        eprintln!("Total Rust auctions: {}", total_rust_auctions);
-        eprintln!("Multi-winner auctions: {} ({:.2}%)", multi_winners, (multi_winners as f64 / total_rust_auctions as f64) * 100.0);
-        eprintln!("DB winner mismatches: {} ({:.2}%)", db_mismatches, (db_mismatches as f64 / total_rust_auctions as f64) * 100.0);
-        
-        /*
-        if !differences.is_empty() {
-            eprintln!("\nDifferences found:");
-            for diff in differences {
-                eprintln!("{}", diff);
-            }
-        }
-         */
-
-        // Print file coverage
-        let python_only = python_results.keys().filter(|k| !rust_results.contains_key(k)).count();
-        let rust_only = rust_results.keys().filter(|k| !python_results.contains_key(k)).count();
-        
-        eprintln!("\nFile Coverage:");
-        eprintln!("Auctions only in Python file: {}", python_only);
-        eprintln!("Auctions only in Rust file: {}", rust_only);
     }
 }
