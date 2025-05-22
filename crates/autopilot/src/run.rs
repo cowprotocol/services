@@ -1,6 +1,6 @@
 use {
     crate::{
-        arguments::Arguments,
+        arguments::{Account, Arguments},
         boundary,
         database::{
             Postgres,
@@ -26,7 +26,13 @@ use {
     chain::Chain,
     clap::Parser,
     contracts::{BalancerV2Vault, IUniswapV3Factory},
-    ethcontract::{BlockNumber, common::DeploymentInformation, dyns::DynWeb3, errors::DeployError},
+    ethcontract::{
+        BlockNumber,
+        H160,
+        common::DeploymentInformation,
+        dyns::DynWeb3,
+        errors::DeployError,
+    },
     ethrpc::block_stream::block_number_to_block_number_hash,
     futures::stream::StreamExt,
     model::DomainSeparator,
@@ -637,7 +643,15 @@ async fn shadow_mode(args: Arguments) -> ! {
                 driver.url,
                 driver.name.clone(),
                 driver.fairness_threshold.map(Into::into),
-                driver.submission_account,
+                // HACK: the auction logic expects all drivers
+                // to use a different submission address. But
+                // in the shadow environment all drivers use
+                // the same address to avoid creating new keys
+                // before a solver is actually ready.
+                // Luckily the shadow autopilot doesn't use
+                // this address for anything important so we
+                // can simply generate random addresses here.
+                Account::Address(H160::random()),
                 driver.requested_timeout_on_problems,
             )
             .await
