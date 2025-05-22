@@ -671,7 +671,9 @@ async fn shadow_mode(args: Arguments) -> ! {
         &args.shared.node_url,
         "base",
     );
-    let weth = contracts::WETH9::deployed(&web3).await.unwrap();
+    let weth = contracts::WETH9::deployed(&web3)
+        .await
+        .expect("couldn't find deployed WETH contract");
 
     let trusted_tokens = {
         let chain_id = web3
