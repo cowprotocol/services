@@ -742,375 +742,110 @@ mod tests {
         TestCase::from_json(case).validate();
     }
 
-    /*
-    #[test]
-    fn staging_mainnet_auction_12825008_from_db() {
-        let auction_id = 12825008;
-
-        // Fetch auction data
-        let auction = fetch_auction_orders_data(auction_id, auction_id);
-
-        // Fetch solutions data
-        let solutions = fetch_trade_data(auction_id, auction_id);
-
-        let mut test_case = TestCase {
-            tokens: vec![],
-            auction,
-            solutions,
-            expected_fair_solutions: vec![],
-            expected_winners: vec![],
-            expected_reference_scores: HashMap::new(),
-        };
-
-        // Collect unique tokens from orders
-        let mut unique_tokens = HashSet::new();
-        for (_, order) in &test_case.auction.orders {
-            // sell token
-            unique_tokens.insert(order.1.clone());
-            // buy token
-            unique_tokens.insert(order.3.clone());
-        }
-        for token in unique_tokens {
-            test_case
-                .tokens
-                .push((token.clone(), H160::from_str(&token).unwrap()));
-        }
-
-        eprintln!("{:#?}", test_case);
-
-        test_case.validate();
-    }
-    */
-
     #[test]
     fn store_auction_results() {
-        let auction_start = 12820008;
-        let auction_end = 12825008;
-        let network = "mainnet-barn";
+        // Load environment variables from .env file
+        dotenv::dotenv().ok();
 
-        // fetch db data for all auctions
-        let db_trade_data = fetch_trade_data(auction_start, auction_end);
-        let db_auction_data = fetch_auction_orders_data(auction_start, auction_end);
+        let auction_start = 10606372;
+        let auction_end = 10706372;
+        let network = "mainnet-prod";
+        const BATCH_SIZE: i64 = 1000; // Process 1000 auctions at a time
 
-        // auction_id, winner, same winner as db, reference_score, num_winners, error message
-        let mut results: Vec<(i64, String, bool, eth::U256, usize, Option<String>)> = Vec::new();
-
-        for auction_id in auction_start..=auction_end {
-            // Skip if we don't have both auction and trade data
-            if !(db_trade_data.contains_key(&auction_id) && db_auction_data.contains_key(&auction_id)) {
-                continue;
-            }
-
-            let solutions = db_trade_data.get(&auction_id).unwrap();
-            let auction = db_auction_data.get(&auction_id).unwrap();
-
-            let mut test_case = TestCase {
-                tokens: vec![],
-                auction: auction.clone(),
-                solutions: solutions.clone(),
-                expected_fair_solutions: vec![],
-                expected_winners: vec![],
-                expected_reference_scores: HashMap::new(),
-            };
-
-            // Collect unique tokens from orders
-            let mut unique_tokens = HashSet::new();
-            for (_, order) in &test_case.auction.orders {
-                // sell token
-                unique_tokens.insert(order.1.clone());
-                // buy token
-                unique_tokens.insert(order.3.clone());
-            }
-            for token in unique_tokens {
-                test_case
-                    .tokens
-                    .push((token.clone(), H160::from_str(&token).unwrap()));
-            }
-
-            match test_case.calculate_results(auction_id) {
-                Ok(result) => results.push(result),
-                Err(e) => results.push((auction_id, String::new(), false, eth::U256::zero(), 0, Some(e))),
-            }
-        }
-
+        eprintln!("Starting test with auction range {} to {}", auction_start, auction_end);
+        
         // Get data folder path
         let data_folder = std::env::var("DATA_FOLDER").expect("DATA_FOLDER must be set in .env file");
-
-        // Create CSV file
         let file_name = format!("rust_results_{}_{}_{}.csv", network, auction_start, auction_end);
         let file_path = std::path::Path::new(&data_folder).join(file_name);
         let mut writer = csv::Writer::from_path(file_path).expect("Failed to create CSV file");
 
         // Write header
-        writer.write_record(&["auction_id", "winner", "same_as_db", "reference_score", "num_winners", "error"]).expect("Failed to write CSV header");
+        writer.write_record(&["auction_id", "winner", "same_as_db", "reference_score", "num_winners", "error"])
+            .expect("Failed to write CSV header");
 
-        // Write results
-        for (auction_id, winner, same_winner, reference_score, num_winners, error) in &results {
-            writer.write_record(&[
-                auction_id.to_string(),
-                winner.clone(),
-                same_winner.to_string(),
-                reference_score.to_string(),
-                num_winners.to_string(),
-                error.clone().unwrap_or_default(),
-            ]).expect("Failed to write CSV record");
-        }
+        // Process auctions in batches
+        for batch_start in (auction_start..=auction_end).step_by(BATCH_SIZE as usize) {
+            let batch_end = std::cmp::min(batch_start + BATCH_SIZE - 1, auction_end);
+            eprintln!("Processing batch from {} to {}", batch_start, batch_end);
 
-        writer.flush().expect("Failed to flush CSV writer");
-
-        // Print summary
-        eprintln!("Results written to rust_results_{}_{}_{}.csv", network, auction_start, auction_end);
-    }
-
-    #[test]
-    fn compare_python_rust_results() {
-        use std::collections::HashMap;
-        use std::fs::File;
-        use std::io::BufReader;
-        use csv::ReaderBuilder;
-        use dotenv::dotenv;
-
-        // Load environment variables from .env file
-        dotenv().ok();
-
-        // Hardcoded values
-        let network = "mainnet-barn";
-        let auction_start = 12820008;
-        let auction_end = 12825008;
-
-        // Get data folder path
-        let data_folder = std::env::var("DATA_FOLDER").expect("DATA_FOLDER must be set in .env file");
-        let data_path = std::path::Path::new(&data_folder);
-
-        // Construct file paths
-        let python_file = data_path.join(format!("python_results_{}_{}_{}.csv", network, auction_start, auction_end));
-        let rust_file = data_path.join(format!("rust_results_{}_{}_{}.csv", network, auction_start, auction_end));
-
-        eprintln!("Comparing Python results from: {}", python_file.display());
-        eprintln!("With Rust results from: {}", rust_file.display());
-
-        // Read Python results
-        let mut python_results = HashMap::new();
-        let file = File::open(python_file).expect("Failed to open Python result file");
-        let reader = BufReader::new(file);
-        let mut rdr = ReaderBuilder::new()
-            .has_headers(true)
-            .from_reader(reader);
-
-        for result in rdr.records() {
-            let record = result.expect("Failed to read Python CSV record");
-            let auction_id: i64 = record[0].parse().expect("Failed to parse auction_id");
-            let winner = record[1].to_string();
-            let reference_score = record[2].to_string();
-            python_results.insert(auction_id, (winner, reference_score));
-        }
-
-        // Read Rust results
-        let mut rust_results = HashMap::new();
-        let mut multi_winners = 0;
-        let mut db_mismatches = 0;
-        let mut total_rust_auctions = 0;
-        let file = File::open(rust_file).expect("Failed to open Rust result file");
-        let reader = BufReader::new(file);
-        let mut rdr = ReaderBuilder::new()
-            .has_headers(true)
-            .from_reader(reader);
-
-        for result in rdr.records() {
-            let record = result.expect("Failed to read Rust CSV record");
-            let auction_id: i64 = record[0].parse().expect("Failed to parse auction_id");
-            let winner = record[1].to_string();
-            let same_as_db = record[2].parse::<bool>().expect("Failed to parse same_as_db");
-            let reference_score = record[3].to_string();
-            let num_winners: usize = record[4].parse().expect("Failed to parse num_winners");
+            // fetch db data for current batch
+            eprintln!("fetching trade data for batch");
+            let db_trade_data = fetch_trade_data(batch_start, batch_end);
+            eprintln!("Trade data fetched, got {} auctions", db_trade_data.len());
             
-            total_rust_auctions += 1;
-            if num_winners > 1 {
-                multi_winners += 1;
-            }
-            if !same_as_db {
-                db_mismatches += 1;
-            }
-            
-            rust_results.insert(auction_id, (winner, reference_score));
-        }
+            eprintln!("fetching auction data for batch");
+            let db_auction_data = fetch_auction_orders_data(batch_start, batch_end);
+            eprintln!("Auction data fetched, got {} auctions", db_auction_data.len());
 
-        // Compare results
-        let mut matching = 0;
-        let mut total_compared = 0;
-        let mut differences = Vec::new();
-
-        for (auction_id, (py_winner, py_score)) in &python_results {
-            if let Some((rs_winner, rs_score)) = rust_results.get(auction_id) {
-                total_compared += 1;
-                if py_winner == rs_winner && py_score == rs_score {
-                    matching += 1;
-                } else {
-                    differences.push(format!(
-                        "Auction {}: Python(winner={}, score={}) vs Rust(winner={}, score={})",
-                        auction_id, py_winner, py_score, rs_winner, rs_score
-                    ));
-                }
-            }
-        }
-
-        // Print summary
-        eprintln!("\nComparison Summary:");
-        eprintln!("Total auctions compared: {}", total_compared);
-        eprintln!("Matching results: {} ({:.2}%)", matching, (matching as f64 / total_compared as f64) * 100.0);
-        
-        eprintln!("\nRust Implementation Statistics:");
-        eprintln!("Total Rust auctions: {}", total_rust_auctions);
-        eprintln!("Multi-winner auctions: {} ({:.2}%)", multi_winners, (multi_winners as f64 / total_rust_auctions as f64) * 100.0);
-        eprintln!("DB winner mismatches: {} ({:.2}%)", db_mismatches, (db_mismatches as f64 / total_rust_auctions as f64) * 100.0);
-        
-        if !differences.is_empty() {
-            eprintln!("\nDifferences found:");
-            for diff in differences {
-                eprintln!("{}", diff);
-            }
-        }
-
-        // Print file coverage
-        let python_only = python_results.keys().filter(|k| !rust_results.contains_key(k)).count();
-        let rust_only = rust_results.keys().filter(|k| !python_results.contains_key(k)).count();
-        
-        eprintln!("\nFile Coverage:");
-        eprintln!("Auctions only in Python file: {}", python_only);
-        eprintln!("Auctions only in Rust file: {}", rust_only);
-    }
-
-    impl TestCase {
-        pub fn calculate_results(&self, auction_id: i64) -> Result<(i64, String, bool, eth::U256, usize, Option<String>), String> {
-            use std::panic::{catch_unwind, AssertUnwindSafe};
-            use anyhow::Context;
-
-            let result = catch_unwind(AssertUnwindSafe(|| -> anyhow::Result<_> {
-                let arbitrator = create_test_arbitrator();
-
-                // map (token id -> token address) for later reference during the test
-                let token_map: HashMap<String, H160> = self.tokens.iter().cloned().collect();
-
-                // map (order id -> order) for later reference during the test
-                let order_map: HashMap<String, Order> = self
-                    .auction
-                    .orders
-                    .iter()
-                    .map(
-                        |(
-                            order_id,
-                            TestOrder(side, sell_token, sell_token_amount, buy_token, buy_token_amount),
-                        )| {
-                            let order_uid = hash(order_id);
-                            let sell_token = token_map.get(sell_token).context("Missing sell_token in token_map").unwrap();
-                            let buy_token = token_map.get(buy_token).context("Missing buy_token in token_map").unwrap();
-                            let order = create_order(
-                                order_uid,
-                                *sell_token,
-                                *sell_token_amount,
-                                *buy_token,
-                                *buy_token_amount,
-                                *side,
-                            );
-                            (order_id.clone(), order)
-                        },
-                    )
-                    .collect();
-
-                let orders = order_map.values().cloned().collect();
-                let prices = self.auction.prices.as_ref().map(|prices| {
-                    prices
-                        .iter()
-                        .map(|(token_id, price)| {
-                            let token_address = TokenAddress(*token_map.get(token_id).context("Missing token_id in token_map").unwrap());
-                            let price = create_price(*price);
-                            (token_address, price)
-                        })
-                        .collect()
-                });
-
-                let auction = create_auction(orders, prices);
-
-                // map (solver id -> solver address) for later reference during the test
-                let mut solver_map = HashMap::new();
-
-                // map (solution id -> participant) for later reference during the test
-                let mut solution_map = HashMap::new();
-                for (solution_id, solution) in &self.solutions {
-                    let solver_address = H160::from_str(&solution.solver).context("Invalid solver address").unwrap();
-                    solver_map.insert(solution.solver.clone(), solver_address);
-
-                    let trades = solution
-                        .trades
-                        .iter()
-                        .map(|(order_id, trade)| {
-                            let order = order_map.get(order_id).context("Missing order in order_map").unwrap();
-                            let sell_token_amount = trade.0;
-                            let buy_token_amount = trade.1;
-                            let trade = create_trade(order, sell_token_amount, buy_token_amount);
-                            (order.uid, trade)
-                        })
-                        .collect();
-
-                    let solution_uid = hash(solution_id);
-                    solution_map.insert(
-                        solution_id,
-                        create_solution(solution_uid, solver_address, solution.score, trades, None),
-                    );
+            // Process each auction in the batch
+            for auction_id in batch_start..=batch_end {
+                if auction_id % 100 == 0 {
+                    eprintln!("Processing auction {}", auction_id);
                 }
 
-                // filter solutions
-                let participants = solution_map.values().cloned().collect();
-                let solutions = arbitrator.filter_unfair_solutions(participants, &auction);
+                // Skip if we don't have both auction and trade data
+                if !(db_trade_data.contains_key(&auction_id) && db_auction_data.contains_key(&auction_id)) {
+                    continue;
+                }
 
-                // select the winners
-                let solutions = arbitrator.mark_winners(solutions);
-                let winners = filter_winners(&solutions);
+                let solutions = db_trade_data.get(&auction_id).unwrap();
+                let auction = db_auction_data.get(&auction_id).unwrap();
 
-                // Get the winner from our calculation
-                let calculated_winner = winners.first()
-                    .map(|w| hex::encode(w.driver().submission_address.0))
-                    .unwrap_or_default();
+                let mut test_case = TestCase {
+                    tokens: vec![],
+                    auction: auction.clone(),
+                    solutions: solutions.clone(),
+                    expected_fair_solutions: vec![],
+                    expected_winners: vec![],
+                    expected_reference_scores: HashMap::new(),
+                };
 
-                // Get the winner from the database
-                let db_winner = self.solutions.iter()
-                    .find(|(_, solution)| solution.is_winner)
-                    .map(|(_, solution)| solution.solver.clone())
-                    .unwrap_or_default();
+                // Collect unique tokens from orders
+                let mut unique_tokens = HashSet::new();
+                for (_, order) in &test_case.auction.orders {
+                    // sell token
+                    unique_tokens.insert(order.1.clone());
+                    // buy token
+                    unique_tokens.insert(order.3.clone());
+                }
+                for token in unique_tokens {
+                    test_case
+                        .tokens
+                        .push((token.clone(), H160::from_str(&token).unwrap()));
+                }
 
-                // compute reference score
-                let reference_scores = arbitrator.compute_reference_scores(&solutions);
-                
-                let reference_score = winners.first()
-                    .and_then(|winner| {
-                        let score = reference_scores.get(&winner.driver().submission_address);
-                        score
-                    })
-                    .map(|score| score.get().0)
-                    .unwrap_or_default();
-
-                Ok((
-                    auction_id,
-                    calculated_winner.clone(),
-                    calculated_winner == db_winner,
-                    reference_score,
-                    winners.len(),
-                    None,
-                ))
-            }));
-
-            match result {
-                Ok(Ok(val)) => Ok(val),
-                Ok(Err(e)) => Err(format!("Error: {e:?}")),
-                Err(e) => Err(match e.downcast_ref::<&str>() {
-                    Some(s) => s.to_string(),
-                    None => match e.downcast_ref::<String>() {
-                        Some(s) => s.clone(),
-                        None => "Unknown panic".to_string(),
+                match test_case.calculate_results(auction_id) {
+                    Ok(result) => {
+                        let (auction_id, winner, same_winner, reference_score, num_winners, error) = result;
+                        writer.write_record(&[
+                            auction_id.to_string(),
+                            winner,
+                            same_winner.to_string(),
+                            reference_score.to_string(),
+                            num_winners.to_string(),
+                            error.unwrap_or_default(),
+                        ]).expect("Failed to write CSV record");
                     },
-                }),
+                    Err(e) => {
+                        writer.write_record(&[
+                            auction_id.to_string(),
+                            String::new(),
+                            false.to_string(),
+                            "0".to_string(),
+                            "0".to_string(),
+                            e,
+                        ]).expect("Failed to write CSV record");
+                    }
+                }
             }
+
+            // Flush after each batch to ensure data is written
+            writer.flush().expect("Failed to flush CSV writer");
+            eprintln!("Completed batch from {} to {}", batch_start, batch_end);
         }
+
+        eprintln!("Results written to rust_results_{}_{}_{}.csv", network, auction_start, auction_end);
     }
 
     fn fetch_trade_data(
@@ -1138,6 +873,7 @@ mod tests {
                 .await
                 .expect("Failed to create connection pool");
 
+            eprintln!("Executing trade data query...");
             let query = format!(
                 "WITH trade_data AS (
                     SELECT 
@@ -1161,32 +897,21 @@ mod tests {
                         AND ps.uid = pjo.solution_uid
                         AND pte.order_uid = pjo.order_uid
                     WHERE ps.auction_id BETWEEN {start_auction_id} AND {end_auction_id}
-                ),
-                trade_data_with_prices AS (
-                    SELECT 
-                        td.*,
-                        ap_sell.price AS sell_token_price,
-                        ap_buy.price AS buy_token_price,
-                        ps.solver,
-                        ps.is_winner
-                    FROM trade_data td
-                    JOIN auction_prices ap_sell
-                        ON td.auction_id = ap_sell.auction_id
-                        AND td.sell_token = ap_sell.token
-                    JOIN auction_prices ap_buy
-                        ON td.auction_id = ap_buy.auction_id
-                        AND td.buy_token = ap_buy.token
-                    JOIN proposed_solutions ps
-                        ON td.auction_id = ps.auction_id
-                        AND td.uid = ps.uid
                 )
                 SELECT *
-                FROM trade_data_with_prices;"
+                FROM trade_data;"
             );
 
-            // Execute the provided query using sqlx
-            match sqlx::query(&query).fetch_all(&pool).await {
-                Ok(rows) => {
+            // Execute the query with a timeout
+            let start = std::time::Instant::now();
+            let result = tokio::time::timeout(
+                std::time::Duration::from_secs(300),
+                sqlx::query(&query).fetch_all(&pool)
+            ).await;
+
+            match result {
+                Ok(Ok(rows)) => {
+                    eprintln!("Query completed in {:?}", start.elapsed());
                     let mut auction_solutions: HashMap<i64, HashMap<String, TestSolution>> = HashMap::new();
 
                     for row in rows {
@@ -1235,8 +960,12 @@ mod tests {
                     }
                     auction_solutions
                 }
-                Err(e) => {
+                Ok(Err(e)) => {
                     eprintln!("Query error: {}", e);
+                    HashMap::new()
+                }
+                Err(e) => {
+                    eprintln!("Query timeout: {}", e);
                     HashMap::new()
                 }
             }
@@ -1265,6 +994,7 @@ mod tests {
                 .await
                 .expect("Failed to create connection pool");
 
+            eprintln!("Executing auction data query...");
             let query = format!(
                 "WITH auction_orders AS (
                     SELECT 
@@ -1290,9 +1020,16 @@ mod tests {
                 ORDER BY ao.auction_id, ao.order_uid;"
             );
 
-            // Execute the provided query using sqlx
-            match sqlx::query(&query).fetch_all(&pool).await {
-                Ok(rows) => {
+            // Execute the query with a timeout
+            let start = std::time::Instant::now();
+            let result = tokio::time::timeout(
+                std::time::Duration::from_secs(300),
+                sqlx::query(&query).fetch_all(&pool)
+            ).await;
+
+            match result {
+                Ok(Ok(rows)) => {
+                    eprintln!("Query completed in {:?}", start.elapsed());
                     let mut auction_data: HashMap<i64, TestAuction> = HashMap::new();
 
                     for row in rows {
@@ -1363,8 +1100,12 @@ mod tests {
 
                     auction_data
                 }
-                Err(e) => {
+                Ok(Err(e)) => {
                     eprintln!("Query error: {}", e);
+                    HashMap::new()
+                }
+                Err(e) => {
+                    eprintln!("Query timeout: {}", e);
                     HashMap::new()
                 }
             }
@@ -1481,7 +1222,155 @@ mod tests {
 
             // compute reference score
             let _reference_scores = arbitrator.compute_reference_scores(&solutions);
-            //eprintln!("Reference scores: {:#?}", reference_scores);
+        }
+
+        pub fn calculate_results(&self, auction_id: i64) -> Result<(i64, String, bool, eth::U256, usize, Option<String>), String> {
+            use std::panic::{catch_unwind, AssertUnwindSafe};
+            use anyhow::Context;
+
+            let result = catch_unwind(AssertUnwindSafe(|| -> anyhow::Result<_> {
+                let arbitrator = create_test_arbitrator();
+
+                // map (token id -> token address) for later reference during the test
+                let token_map: HashMap<String, H160> = self.tokens.iter().cloned().collect();
+
+                // map (order id -> order) for later reference during the test
+                let order_map: HashMap<String, Order> = self
+                    .auction
+                    .orders
+                    .iter()
+                    .map(
+                        |(
+                            order_id,
+                            TestOrder(side, sell_token, sell_token_amount, buy_token, buy_token_amount),
+                        )| {
+                            let order_uid = hash(order_id);
+                            let sell_token = token_map.get(sell_token).context("Missing sell_token in token_map").unwrap();
+                            let buy_token = token_map.get(buy_token).context("Missing buy_token in token_map").unwrap();
+                            let order = create_order(
+                                order_uid,
+                                *sell_token,
+                                *sell_token_amount,
+                                *buy_token,
+                                *buy_token_amount,
+                                *side,
+                            );
+                            (order_id.clone(), order)
+                        },
+                    )
+                    .collect();
+
+                let orders = order_map.values().cloned().collect();
+                let prices = self.auction.prices.as_ref().map(|prices| {
+                    prices
+                        .iter()
+                        .map(|(token_id, price)| {
+                            let token_address = TokenAddress(*token_map.get(token_id).context("Missing token_id in token_map").unwrap());
+                            let price = create_price(*price);
+                            (token_address, price)
+                        })
+                        .collect()
+                });
+
+                let auction = create_auction(orders, prices);
+
+                // map (solver id -> solver address) for later reference during the test
+                let mut solver_map = HashMap::new();
+
+                // map (solution id -> participant) for later reference during the test
+                let mut solution_map = HashMap::new();
+                for (solution_id, solution) in &self.solutions {
+                    let solver_address = H160::from_str(&solution.solver).context("Invalid solver address").unwrap();
+                    solver_map.insert(solution.solver.clone(), solver_address);
+
+                    // Filter out trades with missing orders
+                    let trades: Vec<(OrderUid, TradedOrder)> = solution
+                        .trades
+                        .iter()
+                        .filter_map(|(order_id, trade)| {
+                            let order = order_map.get(order_id)?;
+                            let sell_token_amount = trade.0;
+                            let buy_token_amount = trade.1;
+                            let trade = create_trade(order, sell_token_amount, buy_token_amount);
+                            Some((order.uid, trade))
+                        })
+                        .collect();
+
+                    // Skip solutions with no valid trades
+                    if trades.is_empty() {
+                        continue;
+                    }
+
+                    let solution_uid = hash(solution_id);
+                    solution_map.insert(
+                        solution_id,
+                        create_solution(solution_uid, solver_address, solution.score, trades, None),
+                    );
+                }
+
+                // Skip if no valid solutions
+                if solution_map.is_empty() {
+                    return Ok((
+                        auction_id,
+                        String::new(),
+                        false,
+                        eth::U256::zero(),
+                        0,
+                        Some("No valid solutions found".to_string()),
+                    ));
+                }
+
+                // filter solutions
+                let participants = solution_map.values().cloned().collect();
+                let solutions = arbitrator.filter_unfair_solutions(participants, &auction);
+
+                // select the winners
+                let solutions = arbitrator.mark_winners(solutions);
+                let winners = filter_winners(&solutions);
+
+                // Get the winner from our calculation
+                let calculated_winner = winners.first()
+                    .map(|w| hex::encode(w.driver().submission_address.0))
+                    .unwrap_or_default();
+
+                // Get the winner from the database
+                let db_winner = self.solutions.iter()
+                    .find(|(_, solution)| solution.is_winner)
+                    .map(|(_, solution)| solution.solver.clone())
+                    .unwrap_or_default();
+
+                // compute reference score
+                let reference_scores = arbitrator.compute_reference_scores(&solutions);
+                
+                let reference_score = winners.first()
+                    .and_then(|winner| {
+                        let score = reference_scores.get(&winner.driver().submission_address);
+                        score
+                    })
+                    .map(|score| score.get().0)
+                    .unwrap_or_default();
+
+                Ok((
+                    auction_id,
+                    calculated_winner.clone(),
+                    calculated_winner == db_winner,
+                    reference_score,
+                    winners.len(),
+                    None,
+                ))
+            }));
+
+            match result {
+                Ok(Ok(val)) => Ok(val),
+                Ok(Err(e)) => Err(format!("Error: {e:?}")),
+                Err(e) => Err(match e.downcast_ref::<&str>() {
+                    Some(s) => s.to_string(),
+                    None => match e.downcast_ref::<String>() {
+                        Some(s) => s.clone(),
+                        None => "Unknown panic".to_string(),
+                    },
+                }),
+            }
         }
     }
 
@@ -1704,5 +1593,125 @@ mod tests {
             "sell" => Ok(order::Side::Sell),
             _ => Err(serde::de::Error::custom(format!("Invalid side: {}", s))),
         }
+    }
+
+    #[test]
+    fn compare_python_rust_results() {
+        use std::collections::HashMap;
+        use std::fs::File;
+        use std::io::BufReader;
+        use csv::ReaderBuilder;
+        use dotenv::dotenv;
+
+        // Load environment variables from .env file
+        dotenv().ok();
+
+        // Hardcoded values
+        let network = "mainnet-prod";
+        let auction_start = 10606372;
+        let auction_end = 10706372;
+
+        // Get data folder path
+        let data_folder = std::env::var("DATA_FOLDER").expect("DATA_FOLDER must be set in .env file");
+        let data_path = std::path::Path::new(&data_folder);
+
+        // Construct file paths
+        let python_file = data_path.join(format!("python_results_{}_{}_{}.csv", network, auction_start, auction_end));
+        let rust_file = data_path.join(format!("rust_results_{}_{}_{}.csv", network, auction_start, auction_end));
+
+        eprintln!("Comparing Python results from: {}", python_file.display());
+        eprintln!("With Rust results from: {}", rust_file.display());
+
+        // Read Python results
+        let mut python_results = HashMap::new();
+        let file = File::open(python_file).expect("Failed to open Python result file");
+        let reader = BufReader::new(file);
+        let mut rdr = ReaderBuilder::new()
+            .has_headers(true)
+            .from_reader(reader);
+
+        for result in rdr.records() {
+            let record = result.expect("Failed to read Python CSV record");
+            let auction_id: i64 = record[0].parse().expect("Failed to parse auction_id");
+            let winner = record[1].to_string();
+            let reference_score = record[2].to_string();
+            python_results.insert(auction_id, (winner, reference_score));
+        }
+
+        // Read Rust results
+        let mut rust_results = HashMap::new();
+        let mut multi_winners = 0;
+        let mut db_mismatches = 0;
+        let mut total_rust_auctions = 0;
+        let file = File::open(rust_file).expect("Failed to open Rust result file");
+        let reader = BufReader::new(file);
+        let mut rdr = ReaderBuilder::new()
+            .has_headers(true)
+            .from_reader(reader);
+
+        for result in rdr.records() {
+            let record = result.expect("Failed to read Rust CSV record");
+            let auction_id: i64 = record[0].parse().expect("Failed to parse auction_id");
+            let winner = record[1].to_string();
+            let same_as_db = record[2].parse::<bool>().expect("Failed to parse same_as_db");
+            let reference_score = record[3].to_string();
+            let num_winners: usize = record[4].parse().expect("Failed to parse num_winners");
+            
+            total_rust_auctions += 1;
+            if num_winners > 1 {
+                multi_winners += 1;
+            }
+            if !same_as_db {
+                db_mismatches += 1;
+            }
+            
+            rust_results.insert(auction_id, (winner, reference_score));
+        }
+
+        // Compare results
+        let mut matching = 0;
+        let mut total_compared = 0;
+        let mut differences = Vec::new();
+
+        for (auction_id, (py_winner, py_score)) in &python_results {
+            if let Some((rs_winner, rs_score)) = rust_results.get(auction_id) {
+                total_compared += 1;
+                if py_winner == rs_winner && py_score == rs_score {
+                    matching += 1;
+                } else {
+                    differences.push(format!(
+                        "Auction {}: Python(winner={}, score={}) vs Rust(winner={}, score={})",
+                        auction_id, py_winner, py_score, rs_winner, rs_score
+                    ));
+                }
+            }
+        }
+
+        // Print summary
+        eprintln!("\nComparison Summary:");
+        eprintln!("Total auctions compared: {}", total_compared);
+        eprintln!("Matching results: {} ({:.2}%)", matching, (matching as f64 / total_compared as f64) * 100.0);
+        
+        eprintln!("\nRust Implementation Statistics:");
+        eprintln!("Total Rust auctions: {}", total_rust_auctions);
+        eprintln!("Multi-winner auctions: {} ({:.2}%)", multi_winners, (multi_winners as f64 / total_rust_auctions as f64) * 100.0);
+        eprintln!("DB winner mismatches: {} ({:.2}%)", db_mismatches, (db_mismatches as f64 / total_rust_auctions as f64) * 100.0);
+        
+        /*
+        if !differences.is_empty() {
+            eprintln!("\nDifferences found:");
+            for diff in differences {
+                eprintln!("{}", diff);
+            }
+        }
+         */
+
+        // Print file coverage
+        let python_only = python_results.keys().filter(|k| !rust_results.contains_key(k)).count();
+        let rust_only = rust_results.keys().filter(|k| !python_results.contains_key(k)).count();
+        
+        eprintln!("\nFile Coverage:");
+        eprintln!("Auctions only in Python file: {}", python_only);
+        eprintln!("Auctions only in Rust file: {}", rust_only);
     }
 }
