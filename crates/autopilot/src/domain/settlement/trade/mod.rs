@@ -9,7 +9,7 @@ use {
     bigdecimal::Zero,
 };
 
-mod math;
+pub mod math;
 
 /// Trade type evaluated in a context of an Auction.
 #[derive(Clone, Debug)]
@@ -42,7 +42,7 @@ impl Trade {
 
     /// CIP38 score defined as surplus + protocol fee
     pub fn score(&self, auction: &super::Auction) -> Result<eth::Ether, math::Error> {
-        math::Trade::from(self).score(auction)
+        math::Trade::from(self).score(&auction.orders, &auction.prices)
     }
 
     /// Surplus of a trade.
@@ -71,7 +71,7 @@ impl Trade {
     pub fn fee_breakdown(&self, auction: &super::Auction) -> Result<FeeBreakdown, math::Error> {
         let trade = math::Trade::from(self);
         let total = trade.fee_in_sell_token()?;
-        let protocol = trade.protocol_fees(auction)?;
+        let protocol = trade.protocol_fees(&auction.orders)?;
         Ok(FeeBreakdown {
             total: eth::Asset {
                 token: self.sell_token(),

@@ -1,8 +1,5 @@
 use {
-    crate::{
-        domain::{auction, eth, liquidity, order},
-        util,
-    },
+    crate::domain::{auction, eth, liquidity, order},
     ethereum_types::{Address, U256},
     std::{collections::HashMap, slice},
 };
@@ -155,10 +152,10 @@ impl Single {
                     .amount
                     .checked_add(surplus_fee)?
                     .min(order.sell.amount);
-                let buy = util::math::div_ceil(
-                    sell.checked_sub(surplus_fee)?.checked_mul(output.amount)?,
-                    input.amount,
-                )?;
+                let buy = sell
+                    .checked_sub(surplus_fee)?
+                    .checked_mul(output.amount)?
+                    .checked_div(input.amount)?;
                 (sell, buy)
             }
         };
@@ -327,7 +324,7 @@ pub struct JitTrade {
 /// or running some custom logic.
 #[derive(Debug)]
 pub enum Interaction {
-    Liquidity(LiquidityInteraction),
+    Liquidity(Box<LiquidityInteraction>),
     Custom(CustomInteraction),
 }
 

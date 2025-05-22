@@ -1,14 +1,11 @@
 use {
-    super::auction,
     crate::{
         domain::eth,
         infra::{Ethereum, blockchain},
-        util::{self, Bytes, conv::u256::U256Ext},
+        util::{self, Bytes},
     },
-    bigdecimal::Zero,
     derive_more::{From, Into},
     model::order::{BuyTokenDestination, SellTokenSource},
-    num::CheckedDiv,
 };
 pub use {fees::FeePolicy, signature::Signature};
 
@@ -168,26 +165,6 @@ impl Order {
     /// partial limit orders.
     pub fn solver_determines_fee(&self) -> bool {
         matches!(self.kind, Kind::Limit)
-    }
-
-    /// The likelihood that this order will be fulfilled, based on token prices.
-    /// A larger value means that the order is more likely to be fulfilled.
-    /// This is used to prioritize orders when solving.
-    pub fn likelihood(&self, tokens: &auction::Tokens) -> num::BigRational {
-        match (
-            tokens.get(self.buy.token).price,
-            tokens.get(self.sell.token).price,
-        ) {
-            (Some(buy_price), Some(sell_price)) => {
-                let buy = buy_price.in_eth(self.buy.amount);
-                let sell = sell_price.in_eth(self.sell.amount);
-                sell.0
-                    .to_big_rational()
-                    .checked_div(&buy.0.to_big_rational())
-                    .unwrap_or_else(num::BigRational::zero)
-            }
-            _ => num::BigRational::zero(),
-        }
     }
 }
 

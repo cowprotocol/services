@@ -77,12 +77,12 @@ impl Driver {
         })
     }
 
-    pub async fn solve(&self, request: &solve::Request) -> Result<solve::Response> {
-        self.request_response("solve", request, None).await
+    pub async fn solve(&self, request: solve::Request) -> Result<solve::Response> {
+        self.request_response("solve", request).await
     }
 
-    pub async fn reveal(&self, request: &reveal::Request) -> Result<reveal::Response> {
-        self.request_response("reveal", request, None).await
+    pub async fn reveal(&self, request: reveal::Request) -> Result<reveal::Response> {
+        self.request_response("reveal", request).await
     }
 
     pub async fn settle(
@@ -117,30 +117,36 @@ impl Driver {
         Ok(())
     }
 
-    pub async fn notify(&self, request: &notify::Request) -> Result<()> {
-        self.request_response("notify", request, None).await
+    pub async fn notify(&self, request: notify::Request) -> Result<()> {
+        self.request_response("notify", request).await
     }
 
-    async fn request_response<Response>(
+    async fn request_response<Response, Request>(
         &self,
         path: &str,
-        request: &impl serde::Serialize,
-        timeout: Option<std::time::Duration>,
+        request: Request,
     ) -> Result<Response>
     where
         Response: serde::de::DeserializeOwned,
+        Request: serde::Serialize + Send + Sync + 'static,
     {
         let url = util::join(&self.url, path);
         tracing::trace!(
             path=&url.path(),
-            body=%serde_json::to_string_pretty(request).unwrap(),
+            body=%serde_json::to_string_pretty(&request).unwrap(),
             "solver request",
         );
-        let mut request = self.client.post(url.clone()).json(request);
+        let mut request = {
+            let builder = self.client.post(url.clone());
+            // If the payload is very big then serializing it will block the
+            // executor a long time (mostly relevant for solve requests).
+            // That's why we always do it on a thread specifically for
+            // running blocking tasks.
+            tokio::task::spawn_blocking(move || builder.json(&request))
+                .await
+                .context("failed to build request")?
+        };
 
-        if let Some(timeout) = timeout {
-            request = request.timeout(timeout);
-        }
         if let Some(request_id) = observe::request_id::from_current_span() {
             request = request.header("X-REQUEST-ID", request_id);
         }
@@ -189,6 +195,6 @@ pub fn notify_banned_solver(
         until: banned_until,
     };
     tokio::spawn(async move {
-        let _ = non_settling_driver.notify(&request).await;
+        let _ = non_settling_driver.notify(request).await;
     });
 }
