@@ -396,9 +396,9 @@ mod tests {
 
     const DEFAULT_TOKEN_PRICE: u128 = 1_000;
 
-    #[test]
+    #[tokio::test]
     // Only one bid submitted results in one winner with reference score = 0
-    fn single_bid() {
+    async fn single_bid() {
         let case = json!({
             "tokens": [
                 ["Token A", address(0)],
@@ -428,12 +428,12 @@ mod tests {
                 "Solver 1": "0",
             },
         });
-        TestCase::from_json(case).validate();
+        TestCase::from_json(case).validate().await;
     }
 
-    #[test]
+    #[tokio::test]
     // Two compatible batches are both selected as winners
-    fn compatible_bids() {
+    async fn compatible_bids() {
         let case = json!({
             "tokens": [
                 ["Token A", address(0)],
@@ -472,13 +472,13 @@ mod tests {
                 "Compatible batch solver": "200",
             },
         });
-        TestCase::from_json(case).validate();
+        TestCase::from_json(case).validate().await;
     }
 
-    #[test]
+    #[tokio::test]
     // Two compatible batches are both selected as winners, but this time the orders
     // are "buy" orders
-    fn buy_orders() {
+    async fn buy_orders() {
         let case = json!({
             "tokens": [
                 ["Token A", address(0)],
@@ -518,12 +518,12 @@ mod tests {
                 "Compatible batch solver": "200",
             },
         });
-        TestCase::from_json(case).validate();
+        TestCase::from_json(case).validate().await;
     }
 
-    #[test]
+    #[tokio::test]
     // Multiple compatible bids by a single solver are aggregated
-    fn multiple_solution_for_solver() {
+    async fn multiple_solution_for_solver() {
         let case = json!({
             "tokens": [
                 ["Token A", address(0)],
@@ -561,12 +561,12 @@ mod tests {
                 "Solver 1": "0",
             },
         });
-        TestCase::from_json(case).validate();
+        TestCase::from_json(case).validate().await;
     }
 
-    #[test]
+    #[tokio::test]
     // Incompatible bid does not win but increases the reference score of the winner
-    fn incompatible_bids() {
+    async fn incompatible_bids() {
         let case = json!({
             "tokens": [
                 ["Token A", address(0)],
@@ -603,12 +603,12 @@ mod tests {
                 "Best batch solver": "100",
             },
         });
-        TestCase::from_json(case).validate();
+        TestCase::from_json(case).validate().await;
     }
 
-    #[test]
+    #[tokio::test]
     // Unfair batch is filtered
-    fn fairness_filtering() {
+    async fn fairness_filtering() {
         let case = json!({
             "tokens": [
                 ["Token A", address(0)],
@@ -645,13 +645,13 @@ mod tests {
                 "Filtering batch solver": "0",
             },
         });
-        TestCase::from_json(case).validate();
+        TestCase::from_json(case).validate().await;
     }
 
-    #[test]
+    #[tokio::test]
     // Multiple trades on the same (directed) token pair are aggregated for
     // filtering
-    fn aggregation_on_token_pair() {
+    async fn aggregation_on_token_pair() {
         let case = json!({
             "tokens": [
                 ["Token A", address(0)],
@@ -686,12 +686,12 @@ mod tests {
                 "Batch with aggregation solver": "150",
             },
         });
-        TestCase::from_json(case).validate();
+        TestCase::from_json(case).validate().await;
     }
 
-    #[test]
+    #[tokio::test]
     // Reference winners can generate more surplus than winners
-    fn reference_better_than_winners() {
+    async fn reference_better_than_winners() {
         let case = json!({
             "tokens": [
                 ["Token A", address(0)],
@@ -740,11 +740,11 @@ mod tests {
                 "Best batch solver": "380",
             },
         });
-        TestCase::from_json(case).validate();
+        TestCase::from_json(case).validate().await;
     }
 
-    #[test]
-    fn staging_mainnet_auction_12825008() {
+    #[tokio::test]
+    async fn staging_mainnet_auction_12825008() {
         // https://solver-instances.s3.eu-central-1.amazonaws.com/staging/mainnet/autopilot/12825008.json
         // The example is an auction with one order and two competing bids for it, one
         // having a better score than the other
@@ -789,7 +789,7 @@ mod tests {
                 "Solver 1": "21037471695353421",
             },
         });
-        TestCase::from_json(case).validate();
+        TestCase::from_json(case).validate().await;
     }
 
     #[serde_as]
@@ -809,7 +809,7 @@ mod tests {
             serde_json::from_value(value).unwrap()
         }
 
-        pub fn validate(&self) {
+        pub async fn validate(&self) {
             let arbitrator = create_test_arbitrator();
 
             // map (token id -> token address) for later reference during the test
@@ -881,7 +881,8 @@ mod tests {
                 let solution_uid = hash(solution_id);
                 solution_map.insert(
                     solution_id,
-                    create_solution(solution_uid, solver_address, solution.score, trades, None),
+                    create_solution(solution_uid, solver_address, solution.score, trades, None)
+                        .await,
                 );
             }
 
@@ -1053,7 +1054,7 @@ mod tests {
         }
     }
 
-    fn create_solution(
+    async fn create_solution(
         solution_id: u64,
         solver_address: H160,
         score: eth::U256,
@@ -1082,10 +1083,17 @@ mod tests {
             prices,
         );
 
-        Participant::new(
-            solution,
-            Driver::mock(solver_address.to_string(), solver_address).into(),
+        let driver = Driver::try_new(
+            url::Url::parse("http://localhost").unwrap(),
+            solver_address.to_string(),
+            None,
+            crate::arguments::Account::Address(solver_address.0),
+            false,
         )
+        .await
+        .unwrap();
+
+        Participant::new(solution, std::sync::Arc::new(driver))
     }
 
     fn amount(value: u128) -> String {
