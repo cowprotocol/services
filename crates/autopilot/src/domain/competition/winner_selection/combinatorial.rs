@@ -416,7 +416,8 @@ mod tests {
                 "Solution 1": {
                     "solver": "Solver 1",
                     "trades": {
-                        "Order 1": [amount(1_000), amount(1_100)]
+                        "Order 1": [amount(1_000), amount(1_100)],
+                        "Order 2": [amount(1_000), amount(1_100)]
                     },
                     "score": score(200),
                 }
