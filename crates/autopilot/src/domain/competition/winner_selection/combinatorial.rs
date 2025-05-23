@@ -108,6 +108,10 @@ impl Arbitrator for Config {
                 // we already computed this solver's reference score
                 continue;
             }
+            if !participant.is_winner() {
+                // we only want to compute the reference score of winners
+                continue;
+            }
 
             let solutions_without_solver = participants
                 .iter()
@@ -604,7 +608,6 @@ mod tests {
             "expected_winners": ["Solution 1"],
             "expected_reference_scores": {
                 "Solver 1": "100",
-                "Solver 2": "200",
             },
         });
         TestCase::from_json(case).validate();
@@ -692,7 +695,6 @@ mod tests {
             "expected_winners": ["Solution 1"],
             "expected_reference_scores": {
                 "Solver 1": "150",
-                "Solver 2": "200",
             },
         });
         TestCase::from_json(case).validate();
@@ -750,8 +752,6 @@ mod tests {
             "expected_winners": ["Solution 1"],
             "expected_reference_scores": {
                 "Solver 1": "380",
-                "Solver 2": "300",
-                "Solver 3": "300",
             },
         });
         TestCase::from_json(case).validate();
@@ -801,7 +801,6 @@ mod tests {
             "expected_winners": ["Solution 1"],
             "expected_reference_scores": {
                 "Solver 1": "21037471695353421",
-                "Solver 2": "21813202259686016"
             },
         });
         TestCase::from_json(case).validate();
