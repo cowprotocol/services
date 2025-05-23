@@ -69,7 +69,10 @@ impl Arbitrator for Config {
                 })
                 .expect("every remaining participant has an entry");
             // only keep solutions where each order execution is at least as good as
-            // the baseline solution (or when there is only one baseline solution)
+            // the baseline solution.
+            // we only filter out unfair solutions with more than one token pair,
+            // to avoid reference scores set to 0.
+            // see https://github.com/fhenneke/comb_auctions/issues/2
             aggregated_scores.len() == 1
                 || aggregated_scores.iter().all(|(pair, score)| {
                     baseline_scores
