@@ -448,29 +448,27 @@ mod tests {
                 }
             },
             "solutions": {
-                // best batch
-                "Solution 1": {
-                    "solver": "Solver 1",
+                "Best batch": {
+                    "solver": "Best batch solver",
                     "trades": {
                         "Order 1": [amount(1_000), amount(1_100)],
                         "Order 2": [amount(1_000), amount(1_100)]
                     },
                     "score": score(200),
                 },
-                // compatible batch
-                "Solution 2": {
-                    "solver": "Solver 2",
+                "Compatible batch": {
+                    "solver": "Compatible batch solver",
                     "trades": {
                         "Order 3": [amount(1_000), amount(1_100)],
                     },
                     "score": score(100),
                 }
             },
-            "expected_fair_solutions": ["Solution 1", "Solution 2"],
-            "expected_winners": ["Solution 1", "Solution 2"],
+            "expected_fair_solutions": ["Best batch", "Compatible batch"],
+            "expected_winners": ["Best batch", "Compatible batch"],
             "expected_reference_scores": {
-                "Solver 1": "100",
-                "Solver 2": "200",
+                "Best batch solver": "100",
+                "Compatible batch solver": "200",
             },
         });
         TestCase::from_json(case).validate();
@@ -495,9 +493,8 @@ mod tests {
                 }
             },
             "solutions": {
-                // best batch
-                "Solution 1": {
-                    "solver": "Solver 1",
+                "Best batch": {
+                    "solver": "Best batch solver",
                     "trades": {
                         // less sell tokens are used to get the expected buy tokens
                         "Order 1": [amount(900), amount(1_000)],
@@ -505,20 +502,19 @@ mod tests {
                     },
                     "score": score(200),
                 },
-                // compatible batch
-                "Solution 2": {
-                    "solver": "Solver 2",
+                "Compatible batch": {
+                    "solver": "Compatible batch solver",
                     "trades": {
                         "Order 3": [amount(900), amount(1_000)],
                     },
                     "score": score(100),
                 }
             },
-            "expected_fair_solutions": ["Solution 1", "Solution 2"],
-            "expected_winners": ["Solution 1", "Solution 2"],
+            "expected_fair_solutions": ["Best batch", "Compatible batch"],
+            "expected_winners": ["Best batch", "Compatible batch"],
             "expected_reference_scores": {
-                "Solver 1": "100",
-                "Solver 2": "200",
+                "Best batch solver": "100",
+                "Compatible batch solver": "200",
             },
         });
         TestCase::from_json(case).validate();
@@ -542,8 +538,7 @@ mod tests {
                 }
             },
             "solutions": {
-                // best batch
-                "Solution 1": {
+                "Best batch": {
                     "solver": "Solver 1",
                     "trades": {
                         "Order 1": [amount(1_000), amount(1_100)],
@@ -551,8 +546,7 @@ mod tests {
                     },
                     "score": score(200),
                 },
-                // compatible batch
-                "Solution 2": {
+                "Compatible batch": {
                     "solver": "Solver 1", // same solver
                     "trades": {
                         "Order 3": [amount(1_000), amount(1_100)],
@@ -560,8 +554,8 @@ mod tests {
                     "score": score(100),
                 }
             },
-            "expected_fair_solutions": ["Solution 1", "Solution 2"],
-            "expected_winners": ["Solution 1", "Solution 2"],
+            "expected_fair_solutions": ["Best batch", "Compatible batch"],
+            "expected_winners": ["Best batch", "Compatible batch"],
             "expected_reference_scores": {
                 "Solver 1": "0",
             },
@@ -586,28 +580,26 @@ mod tests {
                 }
             },
             "solutions": {
-                // best batch
-                "Solution 1": {
-                    "solver": "Solver 1",
+                "Best batch": {
+                    "solver": "Best batch solver",
                     "trades": {
                         "Order 1": [amount(1_000), amount(1_100)],
                         "Order 2": [amount(1_000), amount(1_100)]
                     },
                     "score": score(200),
                 },
-                // compatible batch
-                "Solution 2": {
-                    "solver": "Solver 2",
+                "Compatible batch": {
+                    "solver": "Compatible batch solver",
                     "trades": {
                         "Order 1": [amount(1_000), amount(1_100)],
                     },
                     "score": score(100),
                 }
             },
-            "expected_fair_solutions": ["Solution 1", "Solution 2"],
-            "expected_winners": ["Solution 1"],
+            "expected_fair_solutions": ["Best batch", "Compatible batch"],
+            "expected_winners": ["Best batch"],
             "expected_reference_scores": {
-                "Solver 1": "100",
+                "Best batch solver": "100",
             },
         });
         TestCase::from_json(case).validate();
@@ -630,28 +622,26 @@ mod tests {
                 }
             },
             "solutions": {
-                // unfair batch
-                "Solution 1": {
-                    "solver": "Solver 1",
+                "Unfair batch": {
+                    "solver": "Unfair batch solver",
                     "trades": {
                         "Order 1": [amount(1_000), amount(1_100)],
                         "Order 2": [amount(1_000), amount(1_100)]
                     },
                     "score": score(200),
                 },
-                // filtering batch
-                "Solution 2": {
-                    "solver": "Solver 2",
+                "Filtering batch": {
+                    "solver": "Filtering batch solver",
                     "trades": {
                         "Order 1": [amount(1_000), amount(1_150)],
                     },
                     "score": score(150),
                 }
             },
-            "expected_fair_solutions": ["Solution 2"],
-            "expected_winners": ["Solution 2"],
+            "expected_fair_solutions": ["Filtering batch"],
+            "expected_winners": ["Filtering batch"],
             "expected_reference_scores": {
-                "Solver 2": "0",
+                "Filtering batch solver": "0",
             },
         });
         TestCase::from_json(case).validate();
@@ -673,28 +663,26 @@ mod tests {
                 }
             },
             "solutions": {
-                // batch with aggregation
-                "Solution 1": {
-                    "solver": "Solver 1",
+                "Batch with aggregation": {
+                    "solver": "Batch with aggregation solver",
                     "trades": {
                         "Order 1": [amount(1_000), amount(1_100)],
                         "Order 2": [amount(1_000), amount(1_100)]
                     },
                     "score": score(200),
                 },
-                // incompatible batch
-                "Solution 2": {
-                    "solver": "Solver 2",
+                "Incompatible batch": {
+                    "solver": "Incompatible batch solver",
                     "trades": {
                         "Order 1": [amount(1_000), amount(1_150)],
                     },
                     "score": score(150),
                 }
             },
-            "expected_fair_solutions": ["Solution 1", "Solution 2"],
-            "expected_winners": ["Solution 1"],
+            "expected_fair_solutions": ["Batch with aggregation", "Incompatible batch"],
+            "expected_winners": ["Batch with aggregation"],
             "expected_reference_scores": {
-                "Solver 1": "150",
+                "Batch with aggregation solver": "150",
             },
         });
         TestCase::from_json(case).validate();
@@ -720,9 +708,8 @@ mod tests {
                 }
             },
             "solutions": {
-                // best batch
-                "Solution 1": {
-                    "solver": "Solver 1",
+                "Best batch": {
+                    "solver": "Best batch solver",
                     "trades": {
                         "Order 1": [amount(1_000), amount(1_100)],
                         "Order 2": [amount(1_000), amount(1_100)],
@@ -730,28 +717,26 @@ mod tests {
                     },
                     "score": score(300),
                 },
-                // incompatible batch 1
-                "Solution 2": {
-                    "solver": "Solver 2",
+                "Incompatible batch 1": {
+                    "solver": "Incompatible batch 1 solver",
                     "trades": {
                         "Order 1": [amount(1_000), amount(1_140)],
                         "Order 2": [amount(1_000), amount(1_140)],
                     },
                     "score": score(280),
                 },
-                // incompatible batch 2
-                "Solution 3": {
-                    "solver": "Solver 3",
+                "Incompatible batch 2": {
+                    "solver": "Incompatible batch 2 solver",
                     "trades": {
                         "Order 3": [amount(1_000), amount(1_100)],
                     },
                     "score": score(100),
                 }
             },
-            "expected_fair_solutions": ["Solution 1", "Solution 2",  "Solution 3"],
-            "expected_winners": ["Solution 1"],
+            "expected_fair_solutions": ["Best batch", "Incompatible batch 1",  "Incompatible batch 2"],
+            "expected_winners": ["Best batch"],
             "expected_reference_scores": {
-                "Solver 1": "380",
+                "Best batch solver": "380",
             },
         });
         TestCase::from_json(case).validate();
