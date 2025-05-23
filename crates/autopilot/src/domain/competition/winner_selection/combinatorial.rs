@@ -123,12 +123,18 @@ impl Arbitrator for Config {
 
         for participant in participants {
             let solver = participant.driver().submission_address;
+            if !participant.is_winner() {
+                // we don't need reference scores for non-winners
+                continue; 
+            }
             if reference_scores.len() >= self.max_winners {
                 // all winners have been processed
+                //eprintln!("   ******** all winners have been processed {}", solver);
                 return reference_scores;
             }
             if reference_scores.contains_key(&solver) {
                 // we already computed this solver's reference score
+                //eprintln!("   ******** we already computed this solver's reference score {}", solver);
                 continue;
             }
 
@@ -138,6 +144,7 @@ impl Arbitrator for Config {
                 .map(|p| p.solution());
             let winner_indices = self.pick_winners(solutions_without_solver.clone());
 
+            /*
             eprintln!("   compute reference scores for {}", solver);
             eprintln!("        solutions_without_solver = {:?}", solutions_without_solver.clone().map(|s| s.solver.0).collect::<Vec<_>>());
             eprintln!("        solutions_without_solver = {:?}", winner_indices);
@@ -149,6 +156,8 @@ impl Arbitrator for Config {
                 .filter_map(|(_, solution)| solution.computed_score)
                 .collect::<Vec<_>>()
             );
+            */
+            
 
             let score = solutions_without_solver
                 .enumerate()
@@ -156,7 +165,7 @@ impl Arbitrator for Config {
                 .filter_map(|(_, solution)| solution.computed_score)
                 .reduce(Score::add)
                 .unwrap_or_default();
-            eprintln!("        score = {:?}", score);
+            //eprintln!("        score = {:?}", score);
             reference_scores.insert(solver, score);
         }
 
@@ -239,7 +248,7 @@ fn compute_scores_by_solution(
 
     participants.retain_mut(|p| match score_by_token_pair(p.solution(), &auction) {
         Ok(score) => {
-            let total_score = score
+            let total_score: Score = score
                 .values()
                 .fold(Default::default(), |acc, score| acc + *score);
             //eprintln!("        - {} - score: {}", p.driver().submission_address,
@@ -453,7 +462,10 @@ mod tests {
 
         // Hardcoded values
         let network = "mainnet-prod";
-        let auction_start = 10606372;
+        //let auction_start = 10606372;
+        //let auction_end = 10706372;
+
+        let auction_start = 10700372;
         let auction_end = 10706372;
 
         // Get data folder path
@@ -532,8 +544,8 @@ mod tests {
                             py_addr == rs_addr && {
                                 let py_u256 = eth::U256::from_dec_str(py_val).unwrap();
                                 let rs_u256 = eth::U256::from_dec_str(rs_val).unwrap();
-                                //u256_within_percent(&py_u256, &rs_u256)
-                                true
+                                u256_within_percent(&py_u256, &rs_u256)
+                                //true
                             }
                         },
                     );
@@ -612,9 +624,8 @@ mod tests {
         dotenv::dotenv().ok();
 
         //let auction_start = 10606372;
-        //let auction_end = 10706372;
-        let auction_start = 10697924;
-        let auction_end = 10697924;
+        let auction_start = 10700372;
+        let auction_end = 10706372;
         let network = "mainnet-prod";
         const BATCH_SIZE: i64 = 1000; // Process 1000 auctions at a time
 
@@ -647,7 +658,6 @@ mod tests {
             eprintln!("fetching trade data for batch");
             let db_trade_data = fetch_trade_data(batch_start, batch_end);
             eprintln!("Trade data fetched, got {} auctions", db_trade_data.len());
-            eprintln!("{:#?}", db_trade_data);
 
             eprintln!("fetching auction data for batch");
             let db_auction_data = fetch_auction_orders_data(batch_start, batch_end);
@@ -659,7 +669,7 @@ mod tests {
             // Process each auction in the batch
             for auction_id in batch_start..=batch_end {
                 if auction_id % 100 == 0 {
-                    eprintln!("Processing auction {}", auction_id);
+                    //eprintln!("Processing auction {}", auction_id);
                 }
 
                 // Skip if we don't have both auction and trade data
@@ -670,8 +680,8 @@ mod tests {
                 }
 
                 let solutions = db_trade_data.get(&auction_id).unwrap();
-                eprintln!("********** solutions");
-                eprintln!("{:#?}", solutions);
+                //eprintln!("********** solutions");
+                //eprintln!("{:#?}", solutions);
 
                 let auction = db_auction_data.get(&auction_id).unwrap();
 
@@ -1200,11 +1210,13 @@ mod tests {
                     )
                     .collect();
 
+                /*
                 eprintln!("****** auction orders");
                 eprintln!("{:?}", self.auction.orders.len());
 
                 eprintln!("****** order map");
                 eprintln!("{:?}", order_map.len());
+                */
 
                 let orders = order_map.values().cloned().collect();
                 let prices = self.auction.prices.as_ref().map(|prices| {
@@ -1237,8 +1249,8 @@ mod tests {
                     solver_map.insert(solution.solver.clone(), solver_address);
 
                     // Filter out trades with missing orders
-                    eprintln!("****** solution trades");
-                    eprintln!("{:?}", solution.trades);
+                    //eprintln!("****** solution trades");
+                    //eprintln!("{:?}", solution.trades);
                     let trades: Vec<(OrderUid, TradedOrder)> = solution
                         .trades
                         .iter()
@@ -1256,8 +1268,8 @@ mod tests {
 
                     // Skip solutions with no valid trades
                     if trades.is_empty() {
-                        eprintln!("****** trades empty");
-                        eprintln!("{:#?}", solution);
+                        //eprintln!("****** trades empty");
+                        //eprintln!("{:#?}", solution);
                         continue;
                     }
 
@@ -1266,8 +1278,11 @@ mod tests {
                         solution_id,
                         create_solution(solution_uid, solver_address, solution.score, trades, None),
                     );
+                    
+                    /*
                     eprintln!("Solution id:{}, solver:{}, score:{}",
                         solution_id, solver_address, solution.score);
+                    */
                 }
 
                 // Skip if no valid solutions
@@ -1284,22 +1299,23 @@ mod tests {
                 let participants = solution_map.values().cloned().collect();
                 let solutions = arbitrator.filter_unfair_solutions(participants, &auction);
 
-                
+                /*
                 eprintln!("********** after filtering unfair solutions:");
                 for solution in &solutions {
                     eprintln!("Solution id:{}, solver:{}, score:{}", solution.solution().id, solution.driver().submission_address, solution.solution().score);
                 }
+                */
                 
                 // select the winners
                 let solutions = arbitrator.mark_winners(solutions);
                 let winners = filter_winners(&solutions);
 
-                
+                /*
                 eprintln!("********** winners:");
                 for solution in &winners {
                     eprintln!("Solution id:{}, solver:{}, score:{}", solution.solution().id, solution.driver().submission_address, solution.solution().score);
                 }
-                
+                */
 
                 // Get the winners from our calculation
                 let calculated_winners: Vec<String> = winners
@@ -1316,7 +1332,7 @@ mod tests {
                     .unwrap_or_default();
 
                 // compute reference scores
-                let reference_scores = arbitrator.compute_reference_scores(&solutions);
+                let reference_scores = arbitrator.compute_reference_scores( &solutions);
 
                 let mut winnner_reference_scores = HashMap::new();
                 for winner in winners {
@@ -1328,11 +1344,12 @@ mod tests {
                         .insert(hex::encode(winner.driver().submission_address.0), score);
                 }
 
-                
+                /*
                 eprintln!("********** reference scores:");
                 for (solver, score) in &winnner_reference_scores {
                     eprintln!("solver:{}, score:{}", solver, score);
                 }
+                */
 
                 Ok((
                     auction_id,
