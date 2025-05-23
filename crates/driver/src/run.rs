@@ -139,7 +139,12 @@ fn simulator(config: &infra::Config, eth: &Ethereum) -> Simulator {
 }
 
 async fn ethrpc(args: &cli::Args) -> blockchain::Rpc {
-    blockchain::Rpc::try_new(&args.ethrpc)
+    let args = blockchain::RpcArgs {
+        url: args.ethrpc.clone(),
+        max_batch_size: args.ethrpc_max_batch_size,
+        max_concurrent_requests: args.ethrpc_max_concurrent_requests,
+    };
+    blockchain::Rpc::try_new(args)
         .await
         .expect("connect ethereum RPC")
 }

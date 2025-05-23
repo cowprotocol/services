@@ -25,6 +25,14 @@ pub struct Args {
     #[clap(long, env)]
     pub ethrpc: Url,
 
+    /// The amount of RPC calls to pack into a single RPC request.
+    #[clap(long, env, default_value = "20")]
+    pub ethrpc_max_batch_size: usize,
+
+    /// The maximum number of concurrent requests to the RPC node.
+    #[clap(long, env, default_value = "10")]
+    pub ethrpc_max_concurrent_requests: usize,
+
     /// Path to the driver configuration file. This file should be in TOML
     /// format. For an example see
     /// https://github.com/cowprotocol/services/blob/main/crates/driver/example.toml.
