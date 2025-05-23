@@ -431,12 +431,16 @@ impl Solver {
             .collect::<HashMap<_, _>>();
 
         let url = config.blockchain.web3_url.parse().unwrap();
-        let rpc = infra::blockchain::Rpc::try_new(&url).await.unwrap();
+        let rpc = infra::blockchain::Rpc::try_new(infra::blockchain::RpcArgs {
+            url,
+            max_batch_size: 20,
+            max_concurrent_requests: 10,
+        })
+        .await
+        .unwrap();
         let gas = Arc::new(
-            infra::blockchain::GasPriceEstimator::new(
-                rpc.web3(),
-                &Default::default(),
-                &[infra::mempool::Config {
+            infra::blockchain::GasPriceEstimator::new(rpc.web3(), &Default::default(), &[
+                infra::mempool::Config {
                     min_priority_fee: Default::default(),
                     gas_price_cap: eth::U256::MAX,
                     target_confirm_time: Default::default(),
@@ -446,8 +450,8 @@ impl Solver {
                         additional_tip_percentage: 0.,
                         revert_protection: infra::mempool::RevertProtection::Disabled,
                     },
-                }],
-            )
+                },
+            ])
             .await
             .unwrap(),
         );
