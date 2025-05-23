@@ -623,9 +623,11 @@ mod tests {
         // Load environment variables from .env file
         dotenv::dotenv().ok();
 
-        //let auction_start = 10606372;
-        let auction_start = 10700372;
-        let auction_end = 10706372;
+        //let auction_start = 10700372;
+        //let auction_end = 10706372;
+        let auction_start = 10703213;
+        let auction_end = 10703213;
+
         let network = "mainnet-prod";
         const BATCH_SIZE: i64 = 1000; // Process 1000 auctions at a time
 
@@ -1279,10 +1281,10 @@ mod tests {
                         create_solution(solution_uid, solver_address, solution.score, trades, None),
                     );
                     
-                    /*
+                    
                     eprintln!("Solution id:{}, solver:{}, score:{}",
                         solution_id, solver_address, solution.score);
-                    */
+                    
                 }
 
                 // Skip if no valid solutions
@@ -1299,23 +1301,23 @@ mod tests {
                 let participants = solution_map.values().cloned().collect();
                 let solutions = arbitrator.filter_unfair_solutions(participants, &auction);
 
-                /*
+                
                 eprintln!("********** after filtering unfair solutions:");
                 for solution in &solutions {
                     eprintln!("Solution id:{}, solver:{}, score:{}", solution.solution().id, solution.driver().submission_address, solution.solution().score);
                 }
-                */
+                
                 
                 // select the winners
                 let solutions = arbitrator.mark_winners(solutions);
                 let winners = filter_winners(&solutions);
 
-                /*
+                
                 eprintln!("********** winners:");
                 for solution in &winners {
                     eprintln!("Solution id:{}, solver:{}, score:{}", solution.solution().id, solution.driver().submission_address, solution.solution().score);
                 }
-                */
+                
 
                 // Get the winners from our calculation
                 let calculated_winners: Vec<String> = winners
@@ -1417,7 +1419,7 @@ mod tests {
 
     fn create_test_arbitrator() -> super::Config {
         super::Config {
-            max_winners: 10,
+            max_winners: 100,
             weth: H160::from_slice(&hex!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")).into(),
         }
     }
