@@ -138,12 +138,25 @@ impl Arbitrator for Config {
                 .map(|p| p.solution());
             let winner_indices = self.pick_winners(solutions_without_solver.clone());
 
+            eprintln!("   compute reference scores for {}", solver);
+            eprintln!("        solutions_without_solver = {:?}", solutions_without_solver.clone().map(|s| s.solver.0).collect::<Vec<_>>());
+            eprintln!("        solutions_without_solver = {:?}", winner_indices);
+            eprintln!("        computed_scores = {:?}",
+                solutions_without_solver
+                .clone()
+                .enumerate()
+                .filter(|(index, _)| winner_indices.contains(index))
+                .filter_map(|(_, solution)| solution.computed_score)
+                .collect::<Vec<_>>()
+            );
+
             let score = solutions_without_solver
                 .enumerate()
                 .filter(|(index, _)| winner_indices.contains(index))
                 .filter_map(|(_, solution)| solution.computed_score)
                 .reduce(Score::add)
                 .unwrap_or_default();
+            eprintln!("        score = {:?}", score);
             reference_scores.insert(solver, score);
         }
 
@@ -600,8 +613,8 @@ mod tests {
 
         //let auction_start = 10606372;
         //let auction_end = 10706372;
-        let auction_start = 10614525;
-        let auction_end = 10614525;
+        let auction_start = 10697924;
+        let auction_end = 10697924;
         let network = "mainnet-prod";
         const BATCH_SIZE: i64 = 1000; // Process 1000 auctions at a time
 
@@ -634,6 +647,7 @@ mod tests {
             eprintln!("fetching trade data for batch");
             let db_trade_data = fetch_trade_data(batch_start, batch_end);
             eprintln!("Trade data fetched, got {} auctions", db_trade_data.len());
+            eprintln!("{:#?}", db_trade_data);
 
             eprintln!("fetching auction data for batch");
             let db_auction_data = fetch_auction_orders_data(batch_start, batch_end);
@@ -656,6 +670,9 @@ mod tests {
                 }
 
                 let solutions = db_trade_data.get(&auction_id).unwrap();
+                eprintln!("********** solutions");
+                eprintln!("{:#?}", solutions);
+
                 let auction = db_auction_data.get(&auction_id).unwrap();
 
                 let mut test_case = TestCase {
@@ -878,23 +895,47 @@ mod tests {
                         unnest(ao.order_uids) as order_uid
                     FROM auction_orders ao
                     WHERE ao.auction_id BETWEEN {start_auction_id} AND {end_auction_id}
+                ),
+                all_orders AS (
+                    -- Regular orders
+                    SELECT 
+                        ao.auction_id,
+                        ao.order_uid,
+                        o.kind::text as side,
+                        o.sell_token,
+                        o.buy_token,
+                        o.sell_amount,
+                        o.buy_amount
+                    FROM auction_orders ao
+                    JOIN orders o ON ao.order_uid = o.uid
+                    UNION ALL
+                    -- JIT orders
+                    SELECT 
+                        pjo.auction_id,
+                        pjo.order_uid,
+                        pjo.side::text as side,
+                        pjo.sell_token,
+                        pjo.buy_token,
+                        pjo.limit_sell as sell_amount,
+                        pjo.limit_buy as buy_amount
+                    FROM proposed_jit_orders pjo
+                    WHERE pjo.auction_id BETWEEN {start_auction_id} AND {end_auction_id}
                 )
                 SELECT 
                     ao.auction_id,
                     ao.order_uid,
-                    o.kind::text as side,
-                    o.sell_token,
-                    o.buy_token,
-                    o.sell_amount,
-                    o.buy_amount,
+                    ao.side,
+                    ao.sell_token,
+                    ao.buy_token,
+                    ao.sell_amount,
+                    ao.buy_amount,
                     ap_sell.price as sell_token_price,
                     ap_buy.price as buy_token_price
-                FROM auction_orders ao
-                JOIN orders o ON ao.order_uid = o.uid
-                JOIN auction_prices ap_sell ON ao.auction_id = ap_sell.auction_id AND o.sell_token \
-                 = ap_sell.token
-                JOIN auction_prices ap_buy ON ao.auction_id = ap_buy.auction_id AND o.buy_token = \
-                 ap_buy.token
+                FROM all_orders ao
+                JOIN auction_prices ap_sell ON ao.auction_id = ap_sell.auction_id 
+                    AND ao.sell_token = ap_sell.token
+                JOIN auction_prices ap_buy ON ao.auction_id = ap_buy.auction_id 
+                    AND ao.buy_token = ap_buy.token
                 ORDER BY ao.auction_id, ao.order_uid;"
             );
 
@@ -1159,6 +1200,12 @@ mod tests {
                     )
                     .collect();
 
+                eprintln!("****** auction orders");
+                eprintln!("{:?}", self.auction.orders.len());
+
+                eprintln!("****** order map");
+                eprintln!("{:?}", order_map.len());
+
                 let orders = order_map.values().cloned().collect();
                 let prices = self.auction.prices.as_ref().map(|prices| {
                     prices
@@ -1190,6 +1237,8 @@ mod tests {
                     solver_map.insert(solution.solver.clone(), solver_address);
 
                     // Filter out trades with missing orders
+                    eprintln!("****** solution trades");
+                    eprintln!("{:?}", solution.trades);
                     let trades: Vec<(OrderUid, TradedOrder)> = solution
                         .trades
                         .iter()
@@ -1204,8 +1253,11 @@ mod tests {
                         })
                         .collect();
 
+
                     // Skip solutions with no valid trades
                     if trades.is_empty() {
+                        eprintln!("****** trades empty");
+                        eprintln!("{:#?}", solution);
                         continue;
                     }
 
@@ -1214,8 +1266,8 @@ mod tests {
                         solution_id,
                         create_solution(solution_uid, solver_address, solution.score, trades, None),
                     );
-                    //eprintln!("Solution id:{}, solver:{}, score:{}",
-                    // solution_id, solver_address, solution.score);
+                    eprintln!("Solution id:{}, solver:{}, score:{}",
+                        solution_id, solver_address, solution.score);
                 }
 
                 // Skip if no valid solutions
@@ -1232,22 +1284,22 @@ mod tests {
                 let participants = solution_map.values().cloned().collect();
                 let solutions = arbitrator.filter_unfair_solutions(participants, &auction);
 
-                /*
+                
                 eprintln!("********** after filtering unfair solutions:");
                 for solution in &solutions {
                     eprintln!("Solution id:{}, solver:{}, score:{}", solution.solution().id, solution.driver().submission_address, solution.solution().score);
                 }
-                */
+                
                 // select the winners
                 let solutions = arbitrator.mark_winners(solutions);
                 let winners = filter_winners(&solutions);
 
-                /*
+                
                 eprintln!("********** winners:");
                 for solution in &winners {
                     eprintln!("Solution id:{}, solver:{}, score:{}", solution.solution().id, solution.driver().submission_address, solution.solution().score);
                 }
-                */
+                
 
                 // Get the winners from our calculation
                 let calculated_winners: Vec<String> = winners
@@ -1276,12 +1328,11 @@ mod tests {
                         .insert(hex::encode(winner.driver().submission_address.0), score);
                 }
 
-                /*
+                
                 eprintln!("********** reference scores:");
                 for (solver, score) in &winnner_reference_scores {
                     eprintln!("solver:{}, score:{}", solver, score);
                 }
-                */
 
                 Ok((
                     auction_id,
