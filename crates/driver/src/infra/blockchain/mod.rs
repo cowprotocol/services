@@ -194,9 +194,10 @@ impl Ethereum {
         let json = self
             .web3
             .transport()
-            .execute("eth_createAccessList", vec![
-                serde_json::to_value(&tx).unwrap(),
-            ])
+            .execute(
+                "eth_createAccessList",
+                vec![serde_json::to_value(&tx).unwrap()],
+            )
             .await?;
         if let Some(err) = json.get("error") {
             return Err(Error::AccessList(err.to_owned()));
