@@ -408,16 +408,34 @@ mod tests {
             ],
             "auction": {
                 "orders": {
-                    "Order 1": ["sell", "Token A", amount(1_000), "Token B", amount(1_000)],
-                    "Order 2": ["sell", "Token C", amount(1_000), "Token D", amount(1_000)]
+                    "Order 1": {
+                        "side": "sell",
+                        "sell_token": "Token A",
+                        "sell_amount": amount(1_000),
+                        "buy_token": "Token B",
+                        "buy_amount": amount(1_000)
+                    },
+                    "Order 2": {
+                        "side": "sell",
+                        "sell_token": "Token C",
+                        "sell_amount": amount(1_000),
+                        "buy_token": "Token D",
+                        "buy_amount": amount(1_000)
+                    }
                 }
             },
             "solutions": {
                 "Solution 1": {
                     "solver": "Solver 1",
                     "trades": {
-                        "Order 1": [amount(1_000), amount(1_100)],
-                        "Order 2": [amount(1_000), amount(1_100)]
+                        "Order 1": {
+                            "sell_amount": amount(1_000),
+                            "buy_amount": amount(1_100)
+                        },
+                        "Order 2": {
+                            "sell_amount": amount(1_000),
+                            "buy_amount": amount(1_100)
+                        }
                     },
                     "score": score(200),
                 }
@@ -443,24 +461,51 @@ mod tests {
             ],
             "auction": {
                 "orders": {
-                    "Order 1": ["sell", "Token A", amount(1_000), "Token B", amount(1_000)],
-                    "Order 2": ["sell", "Token C", amount(1_000), "Token D", amount(1_000)],
-                    "Order 3": ["sell", "Token A", amount(1_000), "Token C", amount(1_000)]
+                    "Order 1": {
+                        "side": "sell",
+                        "sell_token": "Token A",
+                        "sell_amount": amount(1_000),
+                        "buy_token": "Token B",
+                        "buy_amount": amount(1_000)
+                    },
+                    "Order 2": {
+                        "side": "sell",
+                        "sell_token": "Token C",
+                        "sell_amount": amount(1_000),
+                        "buy_token": "Token D",
+                        "buy_amount": amount(1_000)
+                    },
+                    "Order 3": {
+                        "side": "sell",
+                        "sell_token": "Token A",
+                        "sell_amount": amount(1_000),
+                        "buy_token": "Token C",
+                        "buy_amount": amount(1_000)
+                    }
                 }
             },
             "solutions": {
                 "Best batch": {
                     "solver": "Best batch solver",
                     "trades": {
-                        "Order 1": [amount(1_000), amount(1_100)],
-                        "Order 2": [amount(1_000), amount(1_100)]
+                        "Order 1": {
+                            "sell_amount": amount(1_000),
+                            "buy_amount": amount(1_100)
+                        },
+                        "Order 2": {
+                            "sell_amount": amount(1_000),
+                            "buy_amount": amount(1_100)
+                        }
                     },
                     "score": score(200),
                 },
                 "Compatible batch": {
                     "solver": "Compatible batch solver",
                     "trades": {
-                        "Order 3": [amount(1_000), amount(1_100)],
+                        "Order 3": {
+                            "sell_amount": amount(1_000),
+                            "buy_amount": amount(1_100)
+                        }
                     },
                     "score": score(100),
                 }
@@ -488,25 +533,52 @@ mod tests {
             ],
             "auction": {
                 "orders": {
-                    "Order 1": ["buy", "Token A", amount(1_000), "Token B", amount(1_000)],
-                    "Order 2": ["buy", "Token C", amount(1_000), "Token D", amount(1_000)],
-                    "Order 3": ["buy", "Token A", amount(1_000), "Token C", amount(1_000)]
+                    "Order 1": {
+                        "side": "buy",
+                        "sell_token": "Token A",
+                        "sell_amount": amount(1_000),
+                        "buy_token": "Token B",
+                        "buy_amount": amount(1_000)
+                    },
+                    "Order 2": {
+                        "side": "buy",
+                        "sell_token": "Token C",
+                        "sell_amount": amount(1_000),
+                        "buy_token": "Token D",
+                        "buy_amount": amount(1_000)
+                    },
+                    "Order 3": {
+                        "side": "buy",
+                        "sell_token": "Token A",
+                        "sell_amount": amount(1_000),
+                        "buy_token": "Token C",
+                        "buy_amount": amount(1_000)
+                    }
                 }
             },
             "solutions": {
                 "Best batch": {
                     "solver": "Best batch solver",
                     "trades": {
-                        // less sell tokens are used to get the expected buy tokens
-                        "Order 1": [amount(900), amount(1_000)],
-                        "Order 2": [amount(900), amount(1_000)]
+                        // less sell tokens are used to get the expected buy tokens, that is the surplus
+                        "Order 1": {
+                            "sell_amount": amount(900),
+                            "buy_amount": amount(1_000)
+                        },
+                        "Order 2": {
+                            "sell_amount": amount(900),
+                            "buy_amount": amount(1_000)
+                        }
                     },
                     "score": score(200),
                 },
                 "Compatible batch": {
                     "solver": "Compatible batch solver",
                     "trades": {
-                        "Order 3": [amount(900), amount(1_000)],
+                        "Order 3": {
+                            "sell_amount": amount(900),
+                            "buy_amount": amount(1_000)
+                        }
                     },
                     "score": score(100),
                 }
@@ -533,24 +605,51 @@ mod tests {
             ],
             "auction": {
                 "orders": {
-                    "Order 1": ["sell", "Token A", amount(1_000), "Token B", amount(1_000)],
-                    "Order 2": ["sell", "Token C", amount(1_000), "Token D", amount(1_000)],
-                    "Order 3": ["sell", "Token A", amount(1_000), "Token D", amount(1_000)]
+                    "Order 1": {
+                        "side": "sell",
+                        "sell_token": "Token A",
+                        "sell_amount": amount(1_000),
+                        "buy_token": "Token B",
+                        "buy_amount": amount(1_000)
+                    },
+                    "Order 2": {
+                        "side": "sell",
+                        "sell_token": "Token C",
+                        "sell_amount": amount(1_000),
+                        "buy_token": "Token D",
+                        "buy_amount": amount(1_000)
+                    },
+                    "Order 3": {
+                        "side": "sell",
+                        "sell_token": "Token A",
+                        "sell_amount": amount(1_000),
+                        "buy_token": "Token D",
+                        "buy_amount": amount(1_000)
+                    }
                 }
             },
             "solutions": {
                 "Best batch": {
                     "solver": "Solver 1",
                     "trades": {
-                        "Order 1": [amount(1_000), amount(1_100)],
-                        "Order 2": [amount(1_000), amount(1_100)]
+                        "Order 1": {
+                            "sell_amount": amount(1_000),
+                            "buy_amount": amount(1_100)
+                        },
+                        "Order 2": {
+                            "sell_amount": amount(1_000),
+                            "buy_amount": amount(1_100)
+                        }
                     },
                     "score": score(200),
                 },
                 "Compatible batch": {
                     "solver": "Solver 1", // same solver
                     "trades": {
-                        "Order 3": [amount(1_000), amount(1_100)],
+                        "Order 3": {
+                            "sell_amount": amount(1_000),
+                            "buy_amount": amount(1_100)
+                        }
                     },
                     "score": score(100),
                 }
@@ -576,23 +675,44 @@ mod tests {
             ],
             "auction": {
                 "orders": {
-                    "Order 1": ["sell", "Token A", amount(1_000), "Token B", amount(1_000)],
-                    "Order 2": ["sell", "Token C", amount(1_000), "Token D", amount(1_000)],
+                    "Order 1": {
+                        "side": "sell",
+                        "sell_token": "Token A",
+                        "sell_amount": amount(1_000),
+                        "buy_token": "Token B",
+                        "buy_amount": amount(1_000)
+                    },
+                    "Order 2": {
+                        "side": "sell",
+                        "sell_token": "Token C",
+                        "sell_amount": amount(1_000),
+                        "buy_token": "Token D",
+                        "buy_amount": amount(1_000)
+                    },
                 }
             },
             "solutions": {
                 "Best batch": {
                     "solver": "Best batch solver",
                     "trades": {
-                        "Order 1": [amount(1_000), amount(1_100)],
-                        "Order 2": [amount(1_000), amount(1_100)]
+                        "Order 1": {
+                            "sell_amount": amount(1_000),
+                            "buy_amount": amount(1_100)
+                        },
+                        "Order 2": {
+                            "sell_amount": amount(1_000),
+                            "buy_amount": amount(1_100)
+                        }
                     },
                     "score": score(200),
                 },
                 "Compatible batch": {
                     "solver": "Compatible batch solver",
                     "trades": {
-                        "Order 1": [amount(1_000), amount(1_100)],
+                        "Order 1": {
+                            "sell_amount": amount(1_000),
+                            "buy_amount": amount(1_100)
+                        }
                     },
                     "score": score(100),
                 }
@@ -618,23 +738,44 @@ mod tests {
             ],
             "auction": {
                 "orders": {
-                    "Order 1": ["sell", "Token A", amount(1_000), "Token B", amount(1_000)],
-                    "Order 2": ["sell", "Token C", amount(1_000), "Token D", amount(1_000)],
+                    "Order 1": {
+                        "side": "sell",
+                        "sell_token": "Token A",
+                        "sell_amount": amount(1_000),
+                        "buy_token": "Token B",
+                        "buy_amount": amount(1_000)
+                    },
+                    "Order 2": {
+                        "side": "sell",
+                        "sell_token": "Token C",
+                        "sell_amount": amount(1_000),
+                        "buy_token": "Token D",
+                        "buy_amount": amount(1_000)
+                    },
                 }
             },
             "solutions": {
                 "Unfair batch": {
                     "solver": "Unfair batch solver",
                     "trades": {
-                        "Order 1": [amount(1_000), amount(1_100)],
-                        "Order 2": [amount(1_000), amount(1_100)]
+                        "Order 1": {
+                            "sell_amount": amount(1_000),
+                            "buy_amount": amount(1_100)
+                        },
+                        "Order 2": {
+                            "sell_amount": amount(1_000),
+                            "buy_amount": amount(1_100)
+                        }
                     },
                     "score": score(200),
                 },
                 "Filtering batch": {
                     "solver": "Filtering batch solver",
                     "trades": {
-                        "Order 1": [amount(1_000), amount(1_150)],
+                        "Order 1": {
+                            "sell_amount": amount(1_000),
+                            "buy_amount": amount(1_150)
+                        }
                     },
                     "score": score(150),
                 }
@@ -659,23 +800,44 @@ mod tests {
             ],
             "auction": {
                 "orders": {
-                    "Order 1": ["sell", "Token A", amount(1_000), "Token B", amount(1_000)],
-                    "Order 2": ["sell", "Token A", amount(1_000), "Token B", amount(1_000)],
+                    "Order 1": {
+                        "side": "sell",
+                        "sell_token": "Token A",
+                        "sell_amount": amount(1_000),
+                        "buy_token": "Token B",
+                        "buy_amount": amount(1_000)
+                    },
+                    "Order 2": {
+                        "side": "sell",
+                        "sell_token": "Token A",
+                        "sell_amount": amount(1_000),
+                        "buy_token": "Token B",
+                        "buy_amount": amount(1_000)
+                    }
                 }
             },
             "solutions": {
                 "Batch with aggregation": {
                     "solver": "Batch with aggregation solver",
                     "trades": {
-                        "Order 1": [amount(1_000), amount(1_100)],
-                        "Order 2": [amount(1_000), amount(1_100)]
+                        "Order 1": {
+                            "sell_amount": amount(1_000),
+                            "buy_amount": amount(1_100)
+                        },
+                        "Order 2": {
+                            "sell_amount": amount(1_000),
+                            "buy_amount": amount(1_100)
+                        }
                     },
                     "score": score(200),
                 },
                 "Incompatible batch": {
                     "solver": "Incompatible batch solver",
                     "trades": {
-                        "Order 1": [amount(1_000), amount(1_150)],
+                        "Order 1": {
+                            "sell_amount": amount(1_000),
+                            "buy_amount": amount(1_150)
+                        }
                     },
                     "score": score(150),
                 }
@@ -703,33 +865,69 @@ mod tests {
             ],
             "auction": {
                 "orders": {
-                    "Order 1": ["sell", "Token A", amount(1_000), "Token B", amount(1_000)],
-                    "Order 2": ["sell", "Token C", amount(1_000), "Token D", amount(1_000)],
-                    "Order 3": ["sell", "Token E", amount(1_000), "Token F", amount(1_000)],
+                    "Order 1": {
+                        "side": "sell",
+                        "sell_token": "Token A",
+                        "sell_amount": amount(1_000),
+                        "buy_token": "Token B",
+                        "buy_amount": amount(1_000)
+                    },
+                    "Order 2": {
+                        "side": "sell",
+                        "sell_token": "Token C",
+                        "sell_amount": amount(1_000),
+                        "buy_token": "Token D",
+                        "buy_amount": amount(1_000)
+                    },
+                    "Order 3": {
+                        "side": "sell",
+                        "sell_token": "Token E",
+                        "sell_amount": amount(1_000),
+                        "buy_token": "Token F",
+                        "buy_amount": amount(1_000)
+                    }
                 }
             },
             "solutions": {
                 "Best batch": {
                     "solver": "Best batch solver",
                     "trades": {
-                        "Order 1": [amount(1_000), amount(1_100)],
-                        "Order 2": [amount(1_000), amount(1_100)],
-                        "Order 3": [amount(1_000), amount(1_100)]
+                        "Order 1": {
+                            "sell_amount": amount(1_000),
+                            "buy_amount": amount(1_100)
+                        },
+                        "Order 2": {
+                            "sell_amount": amount(1_000),
+                            "buy_amount": amount(1_100)
+                        },
+                        "Order 3": {
+                            "sell_amount": amount(1_000),
+                            "buy_amount": amount(1_100)
+                        }
                     },
                     "score": score(300),
                 },
                 "Incompatible batch 1": {
                     "solver": "Incompatible batch 1 solver",
                     "trades": {
-                        "Order 1": [amount(1_000), amount(1_140)],
-                        "Order 2": [amount(1_000), amount(1_140)],
+                        "Order 1": {
+                            "sell_amount": amount(1_000),
+                            "buy_amount": amount(1_140)
+                        },
+                        "Order 2": {
+                            "sell_amount": amount(1_000),
+                            "buy_amount": amount(1_140)
+                        }
                     },
                     "score": score(280),
                 },
                 "Incompatible batch 2": {
                     "solver": "Incompatible batch 2 solver",
                     "trades": {
-                        "Order 3": [amount(1_000), amount(1_100)],
+                        "Order 3": {
+                            "sell_amount": amount(1_000),
+                            "buy_amount": amount(1_100)
+                        }
                     },
                     "score": score(100),
                 }
@@ -758,11 +956,17 @@ mod tests {
             ],
             "auction": {
                 "orders": {
-                    "Order 1": ["sell", "Token A", "32375066190000000000000000", "Token B", "2161512119"],
+                    "Order 1": {
+                        "side": "sell",
+                        "sell_token": "Token A",
+                        "sell_amount": "32375066190000000000000000",
+                        "buy_token": "Token B",
+                        "buy_amount": "2161512119"
+                    }
                 },
                 "prices": {
                     "Token A": "32429355240",
-                    "Token B": "480793239987749750742974464",
+                    "Token B": "480793239987749750742974464"
                 }
             },
             "solutions": {
@@ -770,18 +974,24 @@ mod tests {
                 "Solution 1": {
                     "solver": "Solver 1",
                     "trades": {
-                        "Order 1": ["32375066190000000000000000", "2206881314"],
+                        "Order 1": {
+                            "sell_amount": "32375066190000000000000000",
+                            "buy_amount": "2206881314"
+                        }
                     },
-                    "score": "21813202259686016",
+                    "score": "21813202259686016"
                 },
                 // solution 2 (zeroex)
                 "Solution 2": {
                     "solver": "Solver 2",
                     "trades": {
-                        "Order 1": ["32375066190000000000000000", "2205267875"],
+                        "Order 1": {
+                            "sell_amount": "32375066190000000000000000",
+                            "buy_amount": "2205267875"
+                        }
                     },
-                    "score": "21037471695353421",
-                },
+                    "score": "21037471695353421"
+                }
             },
             "expected_fair_solutions": ["Solution 1", "Solution 2"],
             "expected_winners": ["Solution 1"],
@@ -823,7 +1033,13 @@ mod tests {
                 .map(
                     |(
                         order_id,
-                        TestOrder(side, sell_token, sell_token_amount, buy_token, buy_token_amount),
+                        TestOrder {
+                            side,
+                            sell_token,
+                            sell_amount,
+                            buy_token,
+                            buy_amount,
+                        },
                     )| {
                         let order_uid = hash(order_id);
                         let sell_token = token_map.get(sell_token).unwrap();
@@ -831,9 +1047,9 @@ mod tests {
                         let order = create_order(
                             order_uid,
                             *sell_token,
-                            *sell_token_amount,
+                            *sell_amount,
                             *buy_token,
-                            *buy_token_amount,
+                            *buy_amount,
                             *side,
                         );
                         (order_id.clone(), order)
@@ -871,8 +1087,8 @@ mod tests {
                     .iter()
                     .map(|(order_id, trade)| {
                         let order = order_map.get(order_id).unwrap();
-                        let sell_token_amount = trade.0;
-                        let buy_token_amount = trade.1;
+                        let sell_token_amount = trade.sell_amount;
+                        let buy_token_amount = trade.buy_amount;
                         let trade = create_trade(order, sell_token_amount, buy_token_amount);
                         (order.uid, trade)
                     })
@@ -926,18 +1142,16 @@ mod tests {
 
     #[serde_as]
     #[derive(Deserialize, Debug, Clone)]
-    struct TestOrder(
-        // side,
-        #[serde(deserialize_with = "deserialize_side")] pub order::Side,
-        // sell_token
-        pub String,
-        // sell_amount
-        #[serde_as(as = "HexOrDecimalU256")] pub eth::U256,
-        // buy_token
-        pub String,
-        // buy_amount
-        #[serde_as(as = "HexOrDecimalU256")] pub eth::U256,
-    );
+    struct TestOrder {
+        #[serde(deserialize_with = "deserialize_side")]
+        pub side: order::Side,
+        pub sell_token: String,
+        #[serde_as(as = "HexOrDecimalU256")]
+        pub sell_amount: eth::U256,
+        pub buy_token: String,
+        #[serde_as(as = "HexOrDecimalU256")]
+        pub buy_amount: eth::U256,
+    }
 
     #[derive(Deserialize, Debug)]
     struct TestSolution {
@@ -948,12 +1162,12 @@ mod tests {
 
     #[serde_as]
     #[derive(Deserialize, Debug)]
-    struct TestTrade(
-        // sell_amount
-        #[serde_as(as = "HexOrDecimalU256")] pub eth::U256,
-        // buy_amount
-        #[serde_as(as = "HexOrDecimalU256")] pub eth::U256,
-    );
+    struct TestTrade {
+        #[serde_as(as = "HexOrDecimalU256")]
+        pub sell_amount: eth::U256,
+        #[serde_as(as = "HexOrDecimalU256")]
+        pub buy_amount: eth::U256,
+    }
 
     fn create_test_arbitrator() -> super::Config {
         super::Config {
