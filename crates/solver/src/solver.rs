@@ -28,30 +28,34 @@ impl FromStr for Arn {
 }
 
 impl BaselineSolvable for ConstantProductOrder {
-    fn get_amount_out(&self, out_token: H160, input: (U256, H160)) -> Option<U256> {
-        amm_to_pool(self).get_amount_out(out_token, input)
+    async fn get_amount_out(&self, out_token: H160, input: (U256, H160)) -> Option<U256> {
+        amm_to_pool(self).get_amount_out(out_token, input).await
     }
 
-    fn get_amount_in(&self, in_token: H160, output: (U256, H160)) -> Option<U256> {
-        amm_to_pool(self).get_amount_in(in_token, output)
+    async fn get_amount_in(&self, in_token: H160, output: (U256, H160)) -> Option<U256> {
+        amm_to_pool(self).get_amount_in(in_token, output).await
     }
 
-    fn gas_cost(&self) -> usize {
-        amm_to_pool(self).gas_cost()
+    async fn gas_cost(&self) -> usize {
+        amm_to_pool(self).gas_cost().await
     }
 }
 
 impl BaselineSolvable for WeightedProductOrder {
-    fn get_amount_out(&self, out_token: H160, input: (U256, H160)) -> Option<U256> {
-        amm_to_weighted_pool(self).get_amount_out(out_token, input)
+    async fn get_amount_out(&self, out_token: H160, input: (U256, H160)) -> Option<U256> {
+        amm_to_weighted_pool(self)
+            .get_amount_out(out_token, input)
+            .await
     }
 
-    fn get_amount_in(&self, in_token: H160, output: (U256, H160)) -> Option<U256> {
-        amm_to_weighted_pool(self).get_amount_in(in_token, output)
+    async fn get_amount_in(&self, in_token: H160, output: (U256, H160)) -> Option<U256> {
+        amm_to_weighted_pool(self)
+            .get_amount_in(in_token, output)
+            .await
     }
 
-    fn gas_cost(&self) -> usize {
-        amm_to_weighted_pool(self).gas_cost()
+    async fn gas_cost(&self) -> usize {
+        amm_to_weighted_pool(self).gas_cost().await
     }
 }
 

@@ -21,15 +21,23 @@ type PathCandidate = Vec<H160>;
 pub trait BaselineSolvable {
     // Given the desired output token, the amount and token input, return the
     // expected amount of output token.
-    fn get_amount_out(&self, out_token: H160, input: (U256, H160)) -> Option<U256>;
+    fn get_amount_out(
+        &self,
+        out_token: H160,
+        input: (U256, H160),
+    ) -> impl Future<Output = Option<U256>> + Send;
 
     // Given the input token, the amount and token we want output, return the
     // required amount of input token that needs to be provided.
-    fn get_amount_in(&self, in_token: H160, out: (U256, H160)) -> Option<U256>;
+    fn get_amount_in(
+        &self,
+        in_token: H160,
+        out: (U256, H160),
+    ) -> impl Future<Output = Option<U256>> + Send;
 
     // Returns the approximate amount of gas that using this piece of liquidity
     // would incur
-    fn gas_cost(&self) -> usize;
+    fn gas_cost(&self) -> impl Future<Output = usize> + Send;
 }
 
 pub struct Estimate<'a, V, L> {
@@ -40,12 +48,13 @@ pub struct Estimate<'a, V, L> {
 }
 
 impl<V, L: BaselineSolvable> Estimate<'_, V, L> {
-    pub fn gas_cost(&self) -> usize {
+    pub async fn gas_cost(&self) -> usize {
         // This could be more accurate by actually simulating the settlement (since
         // different tokens might have more or less expensive transfer costs)
         // For the standard OZ token the cost is roughly 110k for a direct trade, 170k
         // for a 1 hop trade, 230k for a 2 hop trade.
-        let cost_of_hops: usize = self.path.iter().map(|item| item.gas_cost()).sum();
+        let costs = self.path.iter().map(|p| p.gas_cost());
+        let cost_of_hops: usize = futures::future::join_all(costs).await.into_iter().sum();
         50_000 + cost_of_hops
     }
 }
@@ -53,70 +62,78 @@ impl<V, L: BaselineSolvable> Estimate<'_, V, L> {
 // Given a path and sell amount (first token of the path) estimates the buy
 // amount (last token of the path) and the path of liquidity that yields this
 // result Returns None if the path is invalid or pool information doesn't exist.
-pub fn estimate_buy_amount<'a, L: BaselineSolvable>(
+pub async fn estimate_buy_amount<'a, L: BaselineSolvable>(
     sell_amount: U256,
     path: &[H160],
     liquidity: &'a HashMap<TokenPair, Vec<L>>,
 ) -> Option<Estimate<'a, U256, L>> {
     let sell_token = path.first()?;
-    path.iter()
-        .skip(1)
-        .try_fold(
-            (sell_amount, *sell_token, Vec::new()),
-            |previous, current| {
-                let (amount, previous, mut path) = previous;
-                let (best_liquidity, amount) = liquidity
-                    .get(&TokenPair::new(*current, previous)?)?
-                    .iter()
-                    .filter_map(|liquidity| {
-                        Some((
-                            liquidity,
-                            liquidity.get_amount_out(*current, (amount, previous))?,
-                        ))
-                    })
-                    .max_by_key(|(_, amount)| *amount)?;
-                path.push(best_liquidity);
-                Some((amount, *current, path))
-            },
-        )
-        .map(|(amount, _, liquidity)| Estimate {
-            value: amount,
-            path: liquidity,
-        })
+
+    let mut previous = (sell_amount, *sell_token, Vec::new());
+
+    for current in path.iter().skip(1) {
+        let (amount, previous_token, mut path) = previous;
+        let pools = liquidity.get(&TokenPair::new(*current, previous_token)?)?;
+        let outputs = futures::future::join_all(pools.iter().map(|liquidity| async move {
+            let output = liquidity
+                .get_amount_out(*current, (amount, previous_token))
+                .await;
+            output.map(|output| (liquidity, output))
+        }))
+        .await;
+        let (best_liquidity, amount) = outputs
+            .into_iter()
+            .flatten()
+            .max_by_key(|(_, amount)| *amount)?;
+        path.push(best_liquidity);
+        previous = (amount, *current, path);
+    }
+
+    let (buy_amount, _, path) = previous;
+    Some(Estimate {
+        value: buy_amount,
+        path,
+    })
 }
 
 // Given a path and buy amount (last token of the path) estimates the sell
 // amount (first token of the path) and the path of liquidity that yields this
 // result Returns None if the path is invalid or pool information doesn't exist.
-pub fn estimate_sell_amount<'a, L: BaselineSolvable>(
+pub async fn estimate_sell_amount<'a, L: BaselineSolvable>(
     buy_amount: U256,
     path: &[H160],
     liquidity: &'a HashMap<TokenPair, Vec<L>>,
 ) -> Option<Estimate<'a, U256, L>> {
     let buy_token = path.last()?;
-    path.iter()
-        .rev()
-        .skip(1)
-        .try_fold((buy_amount, *buy_token, Vec::new()), |previous, current| {
-            let (amount, previous, mut path) = previous;
-            let (best_liquidity, amount) = liquidity
-                .get(&TokenPair::new(*current, previous)?)?
-                .iter()
-                .filter_map(|liquidity| {
-                    Some((
-                        liquidity,
-                        liquidity.get_amount_in(*current, (amount, previous))?,
-                    ))
-                })
-                .min_by_key(|(_, amount)| *amount)?;
-            path.push(best_liquidity);
-            Some((amount, *current, path))
-        })
-        .map(|(amount, _, liquidity)| Estimate {
-            value: amount,
-            // Since we reversed the path originally, we need to re-reverse it here.
-            path: liquidity.into_iter().rev().collect(),
-        })
+
+    let mut previous = (buy_amount, *buy_token, Vec::new());
+
+    for current in path.iter().rev().skip(1) {
+        let (amount, previous_token, mut path) = previous;
+        let pools = liquidity.get(&TokenPair::new(*current, previous_token)?)?;
+        let outputs = futures::future::join_all(pools.iter().map(|liquidity| async move {
+            let output = liquidity
+                .get_amount_in(*current, (amount, previous_token))
+                .await;
+            output.map(|output| (liquidity, output))
+        }))
+        .await;
+        let (best_liquidity, amount) = outputs
+            .into_iter()
+            .flatten()
+            .min_by_key(|(_, amount)| *amount)?;
+        path.push(best_liquidity);
+        previous = (amount, *current, path);
+    }
+
+    let (sell_amount, _, mut path) = previous;
+    // Since we reversed the path originally, we need to re-reverse it here.
+    path.reverse();
+
+    Some(Estimate {
+        value: sell_amount,
+        path,
+    })
 }
 
 pub struct BaseTokens {
@@ -327,8 +344,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_estimate_amount_returns_none_if_it_contains_pair_without_pool() {
+    #[tokio::test]
+    async fn test_estimate_amount_returns_none_if_it_contains_pair_without_pool() {
         let sell_token = H160::from_low_u64_be(1);
         let intermediate = H160::from_low_u64_be(2);
         let buy_token = H160::from_low_u64_be(3);
@@ -343,12 +360,16 @@ mod tests {
             pools[0].tokens => vec![pools[0]],
         };
 
-        assert!(estimate_buy_amount(1.into(), &path, &pools).is_none());
-        assert!(estimate_sell_amount(1.into(), &path, &pools).is_none());
+        assert!(estimate_buy_amount(1.into(), &path, &pools).await.is_none());
+        assert!(
+            estimate_sell_amount(1.into(), &path, &pools)
+                .await
+                .is_none()
+        );
     }
 
-    #[test]
-    fn test_estimate_amount() {
+    #[tokio::test]
+    async fn test_estimate_amount() {
         let sell_token = H160::from_low_u64_be(1);
         let intermediate = H160::from_low_u64_be(2);
         let buy_token = H160::from_low_u64_be(3);
@@ -372,20 +393,24 @@ mod tests {
         };
 
         assert_eq!(
-            estimate_buy_amount(10.into(), &path, &pools).unwrap().value,
+            estimate_buy_amount(10.into(), &path, &pools)
+                .await
+                .unwrap()
+                .value,
             2.into()
         );
 
         assert_eq!(
             estimate_sell_amount(10.into(), &path, &pools)
+                .await
                 .unwrap()
                 .value,
             105.into()
         );
     }
 
-    #[test]
-    fn test_estimate_sell_amount_returns_none_buying_too_much() {
+    #[tokio::test]
+    async fn test_estimate_sell_amount_returns_none_buying_too_much() {
         let sell_token = H160::from_low_u64_be(1);
         let intermediate = H160::from_low_u64_be(2);
         let buy_token = H160::from_low_u64_be(3);
@@ -408,11 +433,15 @@ mod tests {
             pools[1].tokens => vec![pools[1]],
         };
 
-        assert!(estimate_sell_amount(100.into(), &path, &pools).is_none());
+        assert!(
+            estimate_sell_amount(100.into(), &path, &pools)
+                .await
+                .is_none()
+        );
     }
 
-    #[test]
-    fn test_estimate_amount_multiple_pools() {
+    #[tokio::test]
+    async fn test_estimate_amount_multiple_pools() {
         let sell_token = H160::from_low_u64_be(1);
         let intermediate = H160::from_low_u64_be(2);
         let buy_token = H160::from_low_u64_be(3);
@@ -437,13 +466,17 @@ mod tests {
             second_pair => vec![second_hop_high_slippage, second_hop_low_slippage],
         };
 
-        let buy_estimate = estimate_buy_amount(1000.into(), &path, &pools).unwrap();
+        let buy_estimate = estimate_buy_amount(1000.into(), &path, &pools)
+            .await
+            .unwrap();
         assert_eq!(
             buy_estimate.path,
             [&first_hop_low_price, &second_hop_low_slippage]
         );
 
-        let sell_estimate = estimate_sell_amount(1000.into(), &path, &pools).unwrap();
+        let sell_estimate = estimate_sell_amount(1000.into(), &path, &pools)
+            .await
+            .unwrap();
         assert_eq!(
             sell_estimate.path,
             [&first_hop_low_price, &second_hop_low_slippage]
@@ -452,21 +485,25 @@ mod tests {
         // For the reverse path we now expect to use the higher price for the first hop,
         // but still low slippage for the second
         path.reverse();
-        let buy_estimate = estimate_buy_amount(1000.into(), &path, &pools).unwrap();
+        let buy_estimate = estimate_buy_amount(1000.into(), &path, &pools)
+            .await
+            .unwrap();
         assert_eq!(
             buy_estimate.path,
             [&second_hop_low_slippage, &first_hop_high_price]
         );
 
-        let sell_estimate = estimate_sell_amount(1000.into(), &path, &pools).unwrap();
+        let sell_estimate = estimate_sell_amount(1000.into(), &path, &pools)
+            .await
+            .unwrap();
         assert_eq!(
             sell_estimate.path,
             [&second_hop_low_slippage, &first_hop_high_price]
         );
     }
 
-    #[test]
-    fn test_estimate_amount_invalid_pool() {
+    #[tokio::test]
+    async fn test_estimate_amount_invalid_pool() {
         let sell_token = H160::from_low_u64_be(1);
         let buy_token = H160::from_low_u64_be(2);
         let pair = TokenPair::new(sell_token, buy_token).unwrap();
@@ -478,10 +515,14 @@ mod tests {
             pair => vec![valid_pool, invalid_pool],
         };
 
-        let buy_estimate = estimate_buy_amount(1000.into(), &path, &pools).unwrap();
+        let buy_estimate = estimate_buy_amount(1000.into(), &path, &pools)
+            .await
+            .unwrap();
         assert_eq!(buy_estimate.path, [&valid_pool]);
 
-        let sell_estimate = estimate_sell_amount(1000.into(), &path, &pools).unwrap();
+        let sell_estimate = estimate_sell_amount(1000.into(), &path, &pools)
+            .await
+            .unwrap();
         assert_eq!(sell_estimate.path, [&valid_pool]);
     }
 

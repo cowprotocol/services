@@ -33,7 +33,7 @@ impl<'a> Solver<'a> {
         }
     }
 
-    pub fn route(&self, request: solver::Request, max_hops: usize) -> Option<solver::Route<'a>> {
+    pub async fn route(&self, request: solver::Request, max_hops: usize) -> Option<solver::Route<'a>> {
         let candidates = self.base_tokens.path_candidates_with_hops(
             request.sell.token.0,
             request.buy.token.0,
@@ -229,32 +229,32 @@ enum LiquiditySource {
 }
 
 impl BaselineSolvable for OnchainLiquidity {
-    fn get_amount_out(&self, out_token: H160, input: (U256, H160)) -> Option<U256> {
+    async fn get_amount_out(&self, out_token: H160, input: (U256, H160)) -> Option<U256> {
         match &self.source {
-            LiquiditySource::ConstantProduct(pool) => pool.get_amount_out(out_token, input),
-            LiquiditySource::WeightedProduct(pool) => pool.get_amount_out(out_token, input),
-            LiquiditySource::Stable(pool) => pool.get_amount_out(out_token, input),
+            LiquiditySource::ConstantProduct(pool) => pool.get_amount_out(out_token, input).await,
+            LiquiditySource::WeightedProduct(pool) => pool.get_amount_out(out_token, input).await,
+            LiquiditySource::Stable(pool) => pool.get_amount_out(out_token, input).await,
             LiquiditySource::LimitOrder(limit_order) => {
-                limit_order.get_amount_out(out_token, input)
+                limit_order.get_amount_out(out_token, input).await
             }
         }
     }
 
-    fn get_amount_in(&self, in_token: H160, out: (U256, H160)) -> Option<U256> {
+    async fn get_amount_in(&self, in_token: H160, out: (U256, H160)) -> Option<U256> {
         match &self.source {
-            LiquiditySource::ConstantProduct(pool) => pool.get_amount_in(in_token, out),
-            LiquiditySource::WeightedProduct(pool) => pool.get_amount_in(in_token, out),
-            LiquiditySource::Stable(pool) => pool.get_amount_in(in_token, out),
-            LiquiditySource::LimitOrder(limit_order) => limit_order.get_amount_in(in_token, out),
+            LiquiditySource::ConstantProduct(pool) => pool.get_amount_in(in_token, out).await,
+            LiquiditySource::WeightedProduct(pool) => pool.get_amount_in(in_token, out).await,
+            LiquiditySource::Stable(pool) => pool.get_amount_in(in_token, out).await,
+            LiquiditySource::LimitOrder(limit_order) => limit_order.get_amount_in(in_token, out).await,
         }
     }
 
-    fn gas_cost(&self) -> usize {
+    async fn gas_cost(&self) -> usize {
         match &self.source {
-            LiquiditySource::ConstantProduct(pool) => pool.gas_cost(),
-            LiquiditySource::WeightedProduct(pool) => pool.gas_cost(),
-            LiquiditySource::Stable(pool) => pool.gas_cost(),
-            LiquiditySource::LimitOrder(limit_order) => limit_order.gas_cost(),
+            LiquiditySource::ConstantProduct(pool) => pool.gas_cost().await,
+            LiquiditySource::WeightedProduct(pool) => pool.gas_cost().await,
+            LiquiditySource::Stable(pool) => pool.gas_cost().await,
+            LiquiditySource::LimitOrder(limit_order) => limit_order.gas_cost().await,
         }
     }
 }

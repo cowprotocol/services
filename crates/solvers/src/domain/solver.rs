@@ -140,7 +140,7 @@ impl Inner {
                 None => {
                     // Estimate the price of the sell token in the native token
                     let native_price_request = self.native_price_request(&order);
-                    match boundary_solver.route(native_price_request, self.max_hops) {
+                    match boundary_solver.route(native_price_request, self.max_hops).await {
                         Some(route) => {
                             // how many units of buy_token are bought for one unit of sell_token
                             // (buy_amount / sell_amount).
@@ -164,7 +164,7 @@ impl Inner {
             let solution = self.requests_for_order(&order).find_map(|request| {
                 tracing::trace!(order =% order.uid, ?request, "finding route");
 
-                let route = boundary_solver.route(request, self.max_hops)?;
+                let route = boundary_solver.route(request, self.max_hops).await?;
                 let interactions = route
                     .segments
                     .iter()
