@@ -58,7 +58,15 @@ impl Arbitrator for Config {
         // accurately because the fairness guarantees heavily rely on them.
         let scores_by_solution = compute_scores_by_solution(&mut participants, auction);
         participants.sort_unstable_by_key(|participant| {
-            std::cmp::Reverse(participant.solution().score().get().0)
+            std::cmp::Reverse(
+                // we use the computed score to not trust the score provided by solvers
+                participant
+                    .solution()
+                    .computed_score()
+                    .expect("every remaining participant has a computed score")
+                    .get()
+                    .0,
+            )
         });
         let baseline_scores = compute_baseline_scores(&scores_by_solution);
         participants.retain(|p| {
@@ -425,6 +433,7 @@ mod tests {
                 }
             },
             "solutions": {
+                // score = 200
                 "Solution 1": {
                     "solver": "Solver 1",
                     "trades": {
@@ -436,8 +445,7 @@ mod tests {
                             "sell_amount": amount(1_000),
                             "buy_amount": amount(1_100)
                         }
-                    },
-                    "score": score(200),
+                    }
                 }
             },
             "expected_fair_solutions": ["Solution 1"],
@@ -485,6 +493,7 @@ mod tests {
                 }
             },
             "solutions": {
+                // score = 200
                 "Best batch": {
                     "solver": "Best batch solver",
                     "trades": {
@@ -496,9 +505,9 @@ mod tests {
                             "sell_amount": amount(1_000),
                             "buy_amount": amount(1_100)
                         }
-                    },
-                    "score": score(200),
+                    }
                 },
+                // score = 100
                 "Compatible batch": {
                     "solver": "Compatible batch solver",
                     "trades": {
@@ -506,8 +515,7 @@ mod tests {
                             "sell_amount": amount(1_000),
                             "buy_amount": amount(1_100)
                         }
-                    },
-                    "score": score(100),
+                    }
                 }
             },
             "expected_fair_solutions": ["Best batch", "Compatible batch"],
@@ -557,6 +565,7 @@ mod tests {
                 }
             },
             "solutions": {
+                // score = 200
                 "Best batch": {
                     "solver": "Best batch solver",
                     "trades": {
@@ -569,9 +578,9 @@ mod tests {
                             "sell_amount": amount(900),
                             "buy_amount": amount(1_000)
                         }
-                    },
-                    "score": score(200),
+                    }
                 },
+                // score = 100
                 "Compatible batch": {
                     "solver": "Compatible batch solver",
                     "trades": {
@@ -580,7 +589,6 @@ mod tests {
                             "buy_amount": amount(1_000)
                         }
                     },
-                    "score": score(100),
                 }
             },
             "expected_fair_solutions": ["Best batch", "Compatible batch"],
@@ -629,6 +637,7 @@ mod tests {
                 }
             },
             "solutions": {
+                // score = 200
                 "Best batch": {
                     "solver": "Solver 1",
                     "trades": {
@@ -641,8 +650,8 @@ mod tests {
                             "buy_amount": amount(1_100)
                         }
                     },
-                    "score": score(200),
                 },
+                // score = 100
                 "Compatible batch": {
                     "solver": "Solver 1", // same solver
                     "trades": {
@@ -651,7 +660,6 @@ mod tests {
                             "buy_amount": amount(1_100)
                         }
                     },
-                    "score": score(100),
                 }
             },
             "expected_fair_solutions": ["Best batch", "Compatible batch"],
@@ -692,6 +700,7 @@ mod tests {
                 }
             },
             "solutions": {
+                // score = 200
                 "Best batch": {
                     "solver": "Best batch solver",
                     "trades": {
@@ -703,9 +712,9 @@ mod tests {
                             "sell_amount": amount(1_000),
                             "buy_amount": amount(1_100)
                         }
-                    },
-                    "score": score(200),
+                    }
                 },
+                // score = 100
                 "Compatible batch": {
                     "solver": "Compatible batch solver",
                     "trades": {
@@ -713,8 +722,7 @@ mod tests {
                             "sell_amount": amount(1_000),
                             "buy_amount": amount(1_100)
                         }
-                    },
-                    "score": score(100),
+                    }
                 }
             },
             "expected_fair_solutions": ["Best batch", "Compatible batch"],
@@ -755,6 +763,7 @@ mod tests {
                 }
             },
             "solutions": {
+                // score = 200
                 "Unfair batch": {
                     "solver": "Unfair batch solver",
                     "trades": {
@@ -766,9 +775,9 @@ mod tests {
                             "sell_amount": amount(1_000),
                             "buy_amount": amount(1_100)
                         }
-                    },
-                    "score": score(200),
+                    }
                 },
+                // score = 150
                 "Filtering batch": {
                     "solver": "Filtering batch solver",
                     "trades": {
@@ -776,8 +785,7 @@ mod tests {
                             "sell_amount": amount(1_000),
                             "buy_amount": amount(1_150)
                         }
-                    },
-                    "score": score(150),
+                    }
                 }
             },
             "expected_fair_solutions": ["Filtering batch"],
@@ -817,6 +825,7 @@ mod tests {
                 }
             },
             "solutions": {
+                // score = 200
                 "Batch with aggregation": {
                     "solver": "Batch with aggregation solver",
                     "trades": {
@@ -828,9 +837,9 @@ mod tests {
                             "sell_amount": amount(1_000),
                             "buy_amount": amount(1_100)
                         }
-                    },
-                    "score": score(200),
+                    }
                 },
+                // score = 150
                 "Incompatible batch": {
                     "solver": "Incompatible batch solver",
                     "trades": {
@@ -838,8 +847,7 @@ mod tests {
                             "sell_amount": amount(1_000),
                             "buy_amount": amount(1_150)
                         }
-                    },
-                    "score": score(150),
+                    }
                 }
             },
             "expected_fair_solutions": ["Batch with aggregation", "Incompatible batch"],
@@ -889,6 +897,7 @@ mod tests {
                 }
             },
             "solutions": {
+                // score = 300
                 "Best batch": {
                     "solver": "Best batch solver",
                     "trades": {
@@ -904,9 +913,9 @@ mod tests {
                             "sell_amount": amount(1_000),
                             "buy_amount": amount(1_100)
                         }
-                    },
-                    "score": score(300),
+                    }
                 },
+                // score = 280
                 "Incompatible batch 1": {
                     "solver": "Incompatible batch 1 solver",
                     "trades": {
@@ -918,9 +927,9 @@ mod tests {
                             "sell_amount": amount(1_000),
                             "buy_amount": amount(1_140)
                         }
-                    },
-                    "score": score(280),
+                    }
                 },
+                // score = 100
                 "Incompatible batch 2": {
                     "solver": "Incompatible batch 2 solver",
                     "trades": {
@@ -928,8 +937,7 @@ mod tests {
                             "sell_amount": amount(1_000),
                             "buy_amount": amount(1_100)
                         }
-                    },
-                    "score": score(100),
+                    }
                 }
             },
             "expected_fair_solutions": ["Best batch", "Incompatible batch 1",  "Incompatible batch 2"],
@@ -971,6 +979,7 @@ mod tests {
             },
             "solutions": {
                 // solution 1 (baseline, the winner)
+                // score = 21813202259686016
                 "Solution 1": {
                     "solver": "Solver 1",
                     "trades": {
@@ -978,10 +987,10 @@ mod tests {
                             "sell_amount": "32375066190000000000000000",
                             "buy_amount": "2206881314"
                         }
-                    },
-                    "score": "21813202259686016"
+                    }
                 },
                 // solution 2 (zeroex)
+                // score = 21037471695353421
                 "Solution 2": {
                     "solver": "Solver 2",
                     "trades": {
@@ -989,8 +998,7 @@ mod tests {
                             "sell_amount": "32375066190000000000000000",
                             "buy_amount": "2205267875"
                         }
-                    },
-                    "score": "21037471695353421"
+                    }
                 }
             },
             "expected_fair_solutions": ["Solution 1", "Solution 2"],
@@ -1097,8 +1105,7 @@ mod tests {
                 let solution_uid = hash(solution_id);
                 solution_map.insert(
                     solution_id,
-                    create_solution(solution_uid, solver_address, solution.score, trades, None)
-                        .await,
+                    create_solution(solution_uid, solver_address, trades, None).await,
                 );
             }
 
@@ -1157,7 +1164,6 @@ mod tests {
     struct TestSolution {
         pub solver: String,
         pub trades: HashMap<String, TestTrade>,
-        pub score: eth::U256,
     }
 
     #[serde_as]
@@ -1271,7 +1277,6 @@ mod tests {
     async fn create_solution(
         solution_id: u64,
         solver_address: H160,
-        score: eth::U256,
         trades: Vec<(OrderUid, TradedOrder)>,
         prices: Option<HashMap<TokenAddress, Price>>,
     ) -> Participant<Unranked> {
@@ -1292,7 +1297,8 @@ mod tests {
         let solution = Solution::new(
             solution_id,
             solver_address,
-            Score(eth::Ether(score)),
+            // provided score does not matter as it's computed automatically by the arbitrator
+            Score(eth::Ether(eth::U256::zero())),
             trade_order_map,
             prices,
         );
@@ -1317,17 +1323,6 @@ mod tests {
 
     fn to_e15(value: u128) -> u128 {
         value * 10u128.pow(15)
-    }
-
-    fn score(score: u128) -> String {
-        // adding decimal units to avoid the math rounding it down to 0
-        let score: u128 = to_e15(score);
-        eth::U256::from(score)
-            // Scores must be denominated in buy token price
-            .checked_mul(DEFAULT_TOKEN_PRICE.into()).unwrap()
-            // and expresed in wei
-            .checked_div(10_u128.pow(18).into()).unwrap()
-            .to_string()
     }
 
     fn filter_winners(solutions: &[Participant]) -> Vec<&Participant> {
