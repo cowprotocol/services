@@ -58,7 +58,15 @@ impl Arbitrator for Config {
         // accurately because the fairness guarantees heavily rely on them.
         let scores_by_solution = compute_scores_by_solution(&mut participants, auction);
         participants.sort_unstable_by_key(|participant| {
-            std::cmp::Reverse(participant.solution().score().get().0)
+            std::cmp::Reverse(
+                // we use the computed score to not trust the score provided by solvers
+                participant
+                    .solution()
+                    .computed_score()
+                    .expect("every remaining participant has a computed score")
+                    .get()
+                    .0,
+            )
         });
         /*
         eprintln!("    after sorting by score:");
