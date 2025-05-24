@@ -6,6 +6,7 @@
 //! over separate paths.
 
 use {
+    super::solution::Solution,
     crate::{
         boundary,
         domain::{
@@ -101,7 +102,7 @@ impl Solver {
         let span = tracing::Span::current();
         let background_work = async move {
             let _entered = span.enter();
-            inner.solve(auction, sender);
+            inner.solve(auction, sender).await;
         };
 
         if tokio::time::timeout(remaining, tokio::spawn(background_work))
@@ -121,7 +122,7 @@ impl Solver {
 }
 
 impl Inner {
-    fn solve(
+    async fn solve(
         &self,
         auction: auction::Auction,
         sender: tokio::sync::mpsc::UnboundedSender<solution::Solution>,
@@ -140,7 +141,10 @@ impl Inner {
                 None => {
                     // Estimate the price of the sell token in the native token
                     let native_price_request = self.native_price_request(&order);
-                    match boundary_solver.route(native_price_request, self.max_hops).await {
+                    match boundary_solver
+                        .route(native_price_request, self.max_hops)
+                        .await
+                    {
                         Some(route) => {
                             // how many units of buy_token are bought for one unit of sell_token
                             // (buy_amount / sell_amount).
@@ -161,9 +165,7 @@ impl Inner {
                 }
             };
 
-            let solution = self.requests_for_order(&order).find_map(|request| {
-                tracing::trace!(order =% order.uid, ?request, "finding route");
-
+            let compute_solution = async |request| -> Option<Solution> {
                 let route = boundary_solver.route(request, self.max_hops).await?;
                 let interactions = route
                     .segments
@@ -207,10 +209,14 @@ impl Inner {
                     .with_id(solution::Id(i as u64))
                     .with_buffers_internalizations(&auction.tokens),
                 )
-            });
-            if let Some(solution) = solution {
-                if sender.send(solution).is_err() {
-                    tracing::debug!("deadline hit, receiver dropped");
+            };
+
+            for request in self.requests_for_order(&order) {
+                tracing::trace!(order =% order.uid, ?request, "finding route");
+                if let Some(solution) = compute_solution(request).await {
+                    if sender.send(solution).is_err() {
+                        tracing::debug!("deadline hit, receiver dropped");
+                    }
                     break;
                 }
             }
