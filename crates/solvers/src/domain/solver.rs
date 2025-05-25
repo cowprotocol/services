@@ -19,6 +19,7 @@ use {
         infra::metrics,
     },
     ethereum_types::U256,
+    ethrpc::Web3,
     std::{cmp, collections::HashSet, sync::Arc},
 };
 
@@ -66,11 +67,13 @@ struct Inner {
     /// The amount of the native token to use to estimate native price of a
     /// token
     native_token_price_estimation_amount: eth::U256,
+
+    web3: Web3,
 }
 
 impl Solver {
     /// Creates a new baseline solver for the specified configuration.
-    pub fn new(config: Config) -> Self {
+    pub fn new(config: Config, web3: Web3) -> Self {
         Self(Arc::new(Inner {
             weth: config.weth,
             base_tokens: config.base_tokens.into_iter().collect(),
@@ -78,6 +81,7 @@ impl Solver {
             max_partial_attempts: config.max_partial_attempts,
             solution_gas_offset: config.solution_gas_offset,
             native_token_price_estimation_amount: config.native_token_price_estimation_amount,
+            web3,
         }))
     }
 
@@ -127,8 +131,12 @@ impl Inner {
         auction: auction::Auction,
         sender: tokio::sync::mpsc::UnboundedSender<solution::Solution>,
     ) {
-        let boundary_solver =
-            boundary::baseline::Solver::new(&self.weth, &self.base_tokens, &auction.liquidity);
+        let boundary_solver = boundary::baseline::Solver::new(
+            &self.weth,
+            &self.base_tokens,
+            &auction.liquidity,
+            &self.web3,
+        );
 
         for (i, order) in auction.orders.into_iter().enumerate() {
             let sell_token = order.sell.token;

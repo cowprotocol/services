@@ -29,9 +29,15 @@ async fn run_with(args: cli::Args, bind: Option<oneshot::Sender<SocketAddr>>) {
     tracing::info!("running solver engine with {args:#?}");
 
     let solver = match args.command {
-        cli::Command::Baseline { config } => {
+        cli::Command::Baseline { config, node_url } => {
             let config = config::load(&config).await;
-            solver::Solver::new(config)
+            let web3 = ethrpc::web3(
+                Default::default(),
+                Default::default(),
+                &node_url,
+                "baseline",
+            );
+            solver::Solver::new(config, web3)
         }
     };
 
