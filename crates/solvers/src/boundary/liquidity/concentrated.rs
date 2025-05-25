@@ -15,6 +15,8 @@ pub struct Pool {
     pub tokens: TokenPair,
 }
 
+// Computes input or output amounts via eth_calls. The implementation was based
+// on these [docs](https://docs.uniswap.org/contracts/v3/reference/core/UniswapV3Pool#swap).
 impl BaselineSolvable for Pool {
     async fn get_amount_out(
         &self,
