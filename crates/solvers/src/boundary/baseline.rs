@@ -23,7 +23,7 @@ impl<'a> Solver<'a> {
         weth: &eth::WethAddress,
         base_tokens: &HashSet<eth::TokenAddress>,
         liquidity: &'a [liquidity::Liquidity],
-        web3: &Web3,
+        web3: Option<&Web3>,
     ) -> Self {
         Self {
             base_tokens: to_boundary_base_tokens(weth, base_tokens),
@@ -155,7 +155,7 @@ impl<'a> Solver<'a> {
 
 fn to_boundary_liquidity(
     liquidity: &[liquidity::Liquidity],
-    web3: &Web3,
+    web3: Option<&Web3>,
 ) -> HashMap<TokenPair, Vec<OnchainLiquidity>> {
     liquidity
         .iter()
@@ -228,6 +228,11 @@ fn to_boundary_liquidity(
                     }
                 }
                 liquidity::State::Concentrated(pool) => {
+                    let Some(web3) = web3 else {
+                        // liquidity sources that rely on an RPC are disabled
+                        return onchain_liquidity;
+                    };
+
                     let token_pair = to_boundary_token_pair(&pool.tokens);
                     onchain_liquidity
                         .entry(token_pair)

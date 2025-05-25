@@ -68,12 +68,14 @@ struct Inner {
     /// token
     native_token_price_estimation_amount: eth::U256,
 
-    web3: Web3,
+    /// If a provider is configured the solver will use liquidity sources which
+    /// rely on eth_calls to compute the input or output amounts.
+    web3: Option<Web3>,
 }
 
 impl Solver {
     /// Creates a new baseline solver for the specified configuration.
-    pub fn new(config: Config, web3: Web3) -> Self {
+    pub fn new(config: Config, web3: Option<Web3>) -> Self {
         Self(Arc::new(Inner {
             weth: config.weth,
             base_tokens: config.base_tokens.into_iter().collect(),
@@ -135,7 +137,7 @@ impl Inner {
             &self.weth,
             &self.base_tokens,
             &auction.liquidity,
-            &self.web3,
+            self.web3.as_ref(),
         );
 
         for (i, order) in auction.orders.into_iter().enumerate() {

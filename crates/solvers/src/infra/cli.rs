@@ -41,6 +41,6 @@ pub enum Command {
         config: PathBuf,
 
         #[clap(long, env)]
-        node_url: Url,
+        node_url: Option<Url>,
     },
 }

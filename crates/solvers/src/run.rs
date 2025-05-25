@@ -31,12 +31,8 @@ async fn run_with(args: cli::Args, bind: Option<oneshot::Sender<SocketAddr>>) {
     let solver = match args.command {
         cli::Command::Baseline { config, node_url } => {
             let config = config::load(&config).await;
-            let web3 = ethrpc::web3(
-                Default::default(),
-                Default::default(),
-                &node_url,
-                "baseline",
-            );
+            let web3 = node_url
+                .map(|url| ethrpc::web3(Default::default(), Default::default(), &url, "baseline"));
             solver::Solver::new(config, web3)
         }
     };
