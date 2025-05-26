@@ -1,5 +1,5 @@
 use {
-    crate::domain::{eth, liquidity},
+    crate::domain::liquidity,
     ethereum_types::U256,
     std::collections::BTreeMap,
 };
@@ -47,4 +47,4 @@ pub struct LiquidityNet(pub i128);
 /// Uniswap v3 was launched with 3 fee tiers (5, 30, 100 bps) but more could be
 /// added by the uniswap DAO.
 #[derive(Clone, Debug)]
-pub struct Fee(pub eth::Rational);
+pub struct Fee(pub u32);

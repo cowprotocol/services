@@ -2,7 +2,6 @@
 
 use {
     clap::{Parser, Subcommand},
-    reqwest::Url,
     std::{net::SocketAddr, path::PathBuf},
 };
 
@@ -39,8 +38,5 @@ pub enum Command {
     Baseline {
         #[clap(long, env)]
         config: PathBuf,
-
-        #[clap(long, env)]
-        node_url: Option<Url>,
     },
 }

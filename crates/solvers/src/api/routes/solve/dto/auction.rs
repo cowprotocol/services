@@ -6,6 +6,8 @@ use {
     },
     itertools::Itertools,
     solvers_dto::auction::*,
+    bigdecimal::FromPrimitive,
+    bigdecimal::ToPrimitive,
 };
 
 /// Converts a data transfer object into its domain object representation.
@@ -200,7 +202,7 @@ mod stable_pool {
 }
 
 mod concentrated_liquidity_pool {
-    use {super::*, itertools::Itertools};
+    use {super::*, bigdecimal::BigDecimal, itertools::Itertools, num::BigRational};
 
     pub fn to_domain(pool: &ConcentratedLiquidityPool) -> Result<liquidity::Liquidity, Error> {
         let tokens = {
@@ -214,6 +216,9 @@ mod concentrated_liquidity_pool {
             liquidity::TokenPair::new(a, b)
                 .ok_or("duplicate concentrated liquidity pool token address")?
         };
+
+        tracing::error!(fee = ?pool.fee);
+        let bps = BigDecimal::from_f32(1_000_000.).unwrap();
 
         Ok(liquidity::Liquidity {
             id: liquidity::Id(pool.id.clone()),
@@ -235,8 +240,7 @@ mod concentrated_liquidity_pool {
                     })
                     .collect(),
                 fee: liquidity::concentrated::Fee(
-                    conv::decimal_to_rational(&pool.fee)
-                        .ok_or("invalid concentrated liquidity pool fee")?,
+                    (pool.fee.clone() * bps).to_u32().ok_or("invalid concentrated liquidity pool fee")?
                 ),
             }),
         })

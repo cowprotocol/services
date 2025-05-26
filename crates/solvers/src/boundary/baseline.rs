@@ -84,10 +84,14 @@ impl<'a> Solver<'a> {
                         path,
                         &self.onchain_liquidity,
                     )
-                    .await?;
+                    .await;
+                    tracing::error!("computed buy amount");
+                    let buy = buy?;
                     let segments = self
                         .traverse_path(&buy.path, request.sell.token.0, request.sell.amount)
-                        .await?;
+                        .await;
+                    tracing::error!(?segments, "computed segments");
+                    let segments = segments?;
 
                     let sell = segments.first().map(|segment| segment.input.amount);
                     if sell.map(|sell| sell >= request.sell.amount) != Some(true) {
@@ -245,6 +249,7 @@ fn to_boundary_liquidity(
                                     web3: web3.clone(),
                                     address: liquidity.address,
                                     tokens: token_pair,
+                                    fee: pool.fee.0,
                                 },
                             ),
                         })

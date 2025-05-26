@@ -1,16 +1,7 @@
 use {
     super::{
-        PriceEstimateResult,
-        PriceEstimating,
-        Query,
-        trade_finder::TradeEstimator,
-        trade_verifier::TradeVerifying,
-    },
-    crate::trade_finding::external::ExternalTradeFinder,
-    ethrpc::block_stream::CurrentBlockWatcher,
-    rate_limit::RateLimiter,
-    reqwest::{Client, Url},
-    std::sync::Arc,
+        trade_finder::TradeEstimator, trade_verifier::TradeVerifying, PriceEstimateResult, PriceEstimating, Query
+    }, crate::trade_finding::external::ExternalTradeFinder, ethrpc::block_stream::CurrentBlockWatcher, futures::FutureExt, rate_limit::RateLimiter, reqwest::{Client, Url}, std::sync::Arc
 };
 
 pub struct ExternalPriceEstimator(TradeEstimator);
@@ -41,6 +32,10 @@ impl ExternalPriceEstimator {
 
 impl PriceEstimating for ExternalPriceEstimator {
     fn estimate(&self, query: Arc<Query>) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
-        self.0.estimate(query)
+        async move {
+            let res = self.0.estimate(query.clone()).await;
+            tracing::error!(?query, ?res, "solution in API");
+            res
+        }.boxed()
     }
 }

@@ -1327,6 +1327,7 @@ fn main() {
         // Not available on Gnosis Chain
     });
     generate_contract("UniswapV3Pool");
+    generate_contract("UniswapV3Quoter");
     generate_contract_with_config("WETH9", |builder| {
         // Note: the WETH address must be consistent with the one used by the ETH-flow
         // contract

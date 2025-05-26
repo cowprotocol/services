@@ -20,6 +20,7 @@ use {
     },
     ethereum_types::U256,
     ethrpc::Web3,
+    reqwest::Url,
     std::{cmp, collections::HashSet, sync::Arc},
 };
 
@@ -36,6 +37,7 @@ pub struct Config {
     pub max_partial_attempts: usize,
     pub solution_gas_offset: eth::SignedGas,
     pub native_token_price_estimation_amount: eth::U256,
+    pub node_url: Option<Url>,
 }
 
 struct Inner {
@@ -75,7 +77,11 @@ struct Inner {
 
 impl Solver {
     /// Creates a new baseline solver for the specified configuration.
-    pub fn new(config: Config, web3: Option<Web3>) -> Self {
+    pub fn new(config: Config) -> Self {
+        let web3 = config
+            .node_url
+            .map(|url| ethrpc::web3(Default::default(), Default::default(), &url, "baseline"));
+
         Self(Arc::new(Inner {
             weth: config.weth,
             base_tokens: config.base_tokens.into_iter().collect(),
@@ -222,8 +228,9 @@ impl Inner {
             };
 
             for request in self.requests_for_order(&order) {
-                tracing::trace!(order =% order.uid, ?request, "finding route");
+                tracing::error!(order =% order.uid, ?request, "finding route");
                 if let Some(solution) = compute_solution(request).await {
+                    tracing::error!("found solution");
                     if sender.send(solution).is_err() {
                         tracing::debug!("deadline hit, receiver dropped");
                     }

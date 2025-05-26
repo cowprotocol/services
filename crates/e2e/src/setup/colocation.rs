@@ -30,6 +30,7 @@ base-tokens = [{encoded_base_tokens}]
 max-hops = {max_hops}
 max-partial-attempts = 5
 native-token-price-estimation-amount = "100000000000000000"
+node-url = "http://localhost:8545"
         "#,
     ));
 
@@ -63,6 +64,7 @@ async fn start_solver(config_file: TempPath, solver_name: String) -> Url {
 
 pub enum LiquidityProvider {
     UniswapV2,
+    UniswapV3 { subgraph: Url },
     ZeroEx { api_port: u16 },
 }
 
@@ -88,6 +90,14 @@ http-timeout = "10s"
 "#,
                 format!("http://0.0.0.0:{}", api_port),
                 "no-api-key".to_string()
+            ),
+            Self::UniswapV3 { subgraph } => format!(
+                r#"
+[[liquidity.uniswap-v3]]
+preset = "uniswap-v3"
+graph-url = "{}"
+"#,
+                subgraph
             ),
         }
     }

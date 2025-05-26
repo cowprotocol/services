@@ -85,6 +85,7 @@ pub async fn estimate_buy_amount<'a, L: BaselineSolvable>(
             .into_iter()
             .flatten()
             .max_by_key(|(_, amount)| *amount)?;
+        tracing::error!(?current, "best liquidity for hop");
         path.push(best_liquidity);
         previous = (amount, *current, path);
     }
