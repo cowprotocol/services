@@ -171,7 +171,7 @@ pub async fn determine_ethflow_indexing_start(
         return *block_number_hash;
     }
 
-    find_last_indexed_block(
+    find_indexing_start_block(
         &db.pool,
         web3,
         crate::database::onchain_order_events::INDEX_NAME,
@@ -212,7 +212,7 @@ pub async fn determine_ethflow_refund_indexing_start(
         return *block_number_hash;
     }
 
-    let last_indexed_refund_block = find_last_indexed_block(
+    let last_indexed_refund_block = find_indexing_start_block(
         &db.pool,
         web3,
         crate::database::ethflow_events::event_storing::INDEX_NAME,
@@ -221,7 +221,7 @@ pub async fn determine_ethflow_refund_indexing_start(
     )
     .await
     .expect("Should be able to find last indexed refund block");
-    let last_indexed_settlement_block = find_last_indexed_block(
+    let last_indexed_settlement_block = find_indexing_start_block(
         &db.pool,
         web3,
         crate::boundary::events::settlement::INDEX_NAME,
@@ -238,14 +238,15 @@ pub async fn determine_ethflow_refund_indexing_start(
         .expect("Should be able to find a valid start block")
 }
 
-/// 1. Check the `last_indexed_blocks` table for the `index_name`.
+/// 1. Check the `last_indexed_blocks` table for the `index_name`. Use the next
+///    block as the starting point.
 /// 2. If no value found or the index is 0, use `fallback_start_block`, if
 ///    provided.
 /// 3. Fallback to the settlement deployment block number, if the `chain_id` is
 ///    provided.
 /// 4. Try to fetch the block number to ensure the node is able to continue
 ///    indexing.
-async fn find_last_indexed_block(
+async fn find_indexing_start_block(
     db: &PgPool,
     web3: &Web3,
     index_name: &str,
@@ -257,7 +258,7 @@ async fn find_last_indexed_block(
         .context("failed to read last indexed block from db")?;
 
     if last_indexed_block > 0 {
-        block_number_to_block_number_hash(web3, U64::from(last_indexed_block).into())
+        block_number_to_block_number_hash(web3, U64::from(last_indexed_block + 1).into())
             .await
             .map(Some)
             .ok_or_else(|| anyhow::anyhow!("failed to fetch block"))
