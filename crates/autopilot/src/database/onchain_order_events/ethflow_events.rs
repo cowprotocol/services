@@ -171,9 +171,16 @@ pub async fn determine_ethflow_indexing_start(
         return *block_number_hash;
     }
 
-    find_last_indexed_onchain_order_block(&db.pool, web3, chain_id, ethflow_indexing_start)
-        .await
-        .expect("Should be able to find last indexed onchain order block")
+    find_last_indexed_block(
+        &db.pool,
+        web3,
+        crate::database::onchain_order_events::INDEX_NAME,
+        ethflow_indexing_start,
+        Some(chain_id),
+    )
+    .await
+    .expect("Should be able to find last indexed onchain order block")
+    .unwrap_or_else(|| panic!("No last indexed block found for ethflow orders"))
 }
 
 /// Determines the starting block number and hash for indexing eth-flow refund
@@ -181,13 +188,15 @@ pub async fn determine_ethflow_indexing_start(
 ///
 /// This function computes the most appropriate starting block by evaluating
 /// several potential sources:
-/// 1. If `skip_event_sync_start` is provided, it uses this value directly and
+/// 0. If `skip_event_sync_start` is provided, it uses this value directly and
 ///    returns early.
-/// 2. Otherwise, it evaluates optional start blocks provided by
-///    `ethflow_indexing_start`, the last known block processed by the database,
-///    and a block determined by the chain's settlement deployment.
-/// 3. The function selects the block with the highest number among these
-///    sources.
+/// 1. If a corresponding record in the `last_indexed_blocks` exists, use this
+///    value.
+/// 2. Otherwise, use `ethflow_indexing_start` if it is provided.
+/// 3. Fallback to the settlement deployment block number if no other options
+///    are available.
+/// 4. Finally, try fetching the block using the provided `web3` instance to
+///    ensure the node is able to continue indexing.
 ///
 /// # Panics
 /// Note that this function is expected to be used at the start of the services
@@ -203,100 +212,67 @@ pub async fn determine_ethflow_refund_indexing_start(
         return *block_number_hash;
     }
 
-    let last_indexed_refund_block =
-        find_last_indexed_ethflow_refund_block(&db.pool, web3, ethflow_indexing_start)
-            .await
-            .expect("Should be able to find last indexed refund block");
-    let last_indexed_settlement_block =
-        find_last_indexed_settlement_block(&db.pool, web3, chain_id)
-            .await
-            .expect("Should be able to find last indexed settlement block");
-
-    vec![
-        last_indexed_refund_block,
-        Some(last_indexed_settlement_block),
-    ]
-    .into_iter()
-    .flatten()
-    .max_by_key(|(block_number, _)| *block_number)
-    .expect("Should be able to find a valid start block")
-}
-
-async fn find_last_indexed_ethflow_refund_block(
-    db: &PgPool,
-    web3: &Web3,
-    ethflow_indexing_start: Option<u64>,
-) -> Result<Option<BlockNumberHash>> {
-    let last_indexed_refund_block = crate::boundary::events::read_last_block_from_db(
-        db,
+    let last_indexed_refund_block = find_last_indexed_block(
+        &db.pool,
+        web3,
         crate::database::ethflow_events::event_storing::INDEX_NAME,
+        ethflow_indexing_start,
+        None,
     )
     .await
-    .context("failed to read last indexed ethflow refund block from db")?;
+    .expect("Should be able to find last indexed refund block");
+    let last_indexed_settlement_block = find_last_indexed_block(
+        &db.pool,
+        web3,
+        crate::boundary::events::settlement::INDEX_NAME,
+        None,
+        Some(chain_id),
+    )
+    .await
+    .expect("Should be able to find last indexed settlement block");
 
-    if last_indexed_refund_block > 0 {
-        block_number_to_block_number_hash(web3, last_indexed_refund_block.into())
+    vec![last_indexed_refund_block, last_indexed_settlement_block]
+        .into_iter()
+        .flatten()
+        .max_by_key(|(block_number, _)| *block_number)
+        .expect("Should be able to find a valid start block")
+}
+
+/// 1. Check the `last_indexed_blocks` table for the `index_name`.
+/// 2. If no value found or the index is 0, use `fallback_start_block`, if
+///    provided.
+/// 3. Fallback to the settlement deployment block number, if the `chain_id` is
+///    provided.
+/// 4. Try to fetch the block number to ensure the node is able to continue
+///    indexing.
+async fn find_last_indexed_block(
+    db: &PgPool,
+    web3: &Web3,
+    index_name: &str,
+    fallback_start_block: Option<u64>,
+    settlement_fallback_chain_id: Option<u64>,
+) -> Result<Option<BlockNumberHash>> {
+    let last_indexed_block = crate::boundary::events::read_last_block_from_db(db, index_name)
+        .await
+        .context("failed to read last indexed block from db")?;
+
+    if last_indexed_block > 0 {
+        block_number_to_block_number_hash(web3, U64::from(last_indexed_block).into())
             .await
-            .context("failed to fetch last indexed ethflow refund block")
             .map(Some)
-    } else if let Some(start_block) = ethflow_indexing_start {
+            .ok_or_else(|| anyhow::anyhow!("failed to fetch block"))
+    } else if let Some(start_block) = fallback_start_block {
         block_number_to_block_number_hash(web3, start_block.into())
             .await
-            .context("failed to fetch ethflow indexing start block")
             .map(Some)
+            .context("failed to fetch fallback indexing start block")
+    } else if let Some(chain_id) = settlement_fallback_chain_id {
+        settlement_deployment_block_number_hash(web3, chain_id)
+            .await
+            .map(Some)
+            .context("failed to fetch settlement deployment block")
     } else {
         Ok(None)
-    }
-}
-
-async fn find_last_indexed_settlement_block(
-    db: &PgPool,
-    web3: &Web3,
-    chain_id: u64,
-) -> Result<BlockNumberHash> {
-    let last_indexed_settlement_block = crate::boundary::events::read_last_block_from_db(
-        db,
-        crate::boundary::events::settlement::INDEX_NAME,
-    )
-    .await
-    .expect("failed to read last indexed settlement block from db");
-
-    if last_indexed_settlement_block > 0 {
-        block_number_to_block_number_hash(web3, U64::from(last_indexed_settlement_block).into())
-            .await
-            .ok_or_else(|| anyhow::anyhow!("failed to fetch last indexed settlement block"))
-    } else {
-        settlement_deployment_block_number_hash(web3, chain_id)
-            .await
-            .context("failed to fetch settlement deployment block")
-    }
-}
-
-async fn find_last_indexed_onchain_order_block(
-    db: &PgPool,
-    web3: &Web3,
-    chain_id: u64,
-    ethflow_indexing_start: Option<u64>,
-) -> Result<BlockNumberHash> {
-    let last_indexed_onchain_order_block = crate::boundary::events::read_last_block_from_db(
-        db,
-        crate::database::onchain_order_events::INDEX_NAME,
-    )
-    .await
-    .expect("failed to read last indexed onchain order block from db");
-
-    if last_indexed_onchain_order_block > 0 {
-        block_number_to_block_number_hash(web3, U64::from(last_indexed_onchain_order_block).into())
-            .await
-            .ok_or_else(|| anyhow::anyhow!("failed to fetch last indexed onchain order block"))
-    } else if let Some(start_block) = ethflow_indexing_start {
-        block_number_to_block_number_hash(web3, start_block.into())
-            .await
-            .context("failed to fetch ethflow indexing start block")
-    } else {
-        settlement_deployment_block_number_hash(web3, chain_id)
-            .await
-            .context("failed to fetch settlement deployment block")
     }
 }
 
