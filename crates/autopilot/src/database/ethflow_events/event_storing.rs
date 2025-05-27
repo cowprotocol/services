@@ -36,7 +36,7 @@ fn get_refunds(events: Vec<ethcontract::Event<EthFlowEvent>>) -> Result<Vec<Refu
 type EthFlowEvent = contracts::cowswap_eth_flow::Event;
 
 /// This name is used to store the latest indexed block in the db.
-const INDEX_NAME: &str = "ethflow_refunds";
+pub const INDEX_NAME: &str = "ethflow_refunds";
 
 #[async_trait::async_trait]
 impl EventStoring<EthFlowEvent> for Postgres {

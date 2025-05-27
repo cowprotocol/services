@@ -26,7 +26,7 @@ impl Indexer {
 }
 
 /// This name is used to store the latest indexed block in the db.
-const INDEX_NAME: &str = "settlements";
+pub const INDEX_NAME: &str = "settlements";
 
 #[async_trait::async_trait]
 impl EventStoring<contracts::gpv2_settlement::Event> for Indexer {
