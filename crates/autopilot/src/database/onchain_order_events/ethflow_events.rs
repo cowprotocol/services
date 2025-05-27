@@ -212,7 +212,7 @@ pub async fn determine_ethflow_refund_indexing_start(
         return *block_number_hash;
     }
 
-    let last_indexed_refund_block = find_indexing_start_block(
+    let ethflow_refund_indexing_start = find_indexing_start_block(
         &db.pool,
         web3,
         crate::database::ethflow_events::event_storing::INDEX_NAME,
@@ -221,7 +221,7 @@ pub async fn determine_ethflow_refund_indexing_start(
     )
     .await
     .expect("Should be able to find last indexed refund block");
-    let last_indexed_settlement_block = find_indexing_start_block(
+    let settlement_contract_indexing_start = find_indexing_start_block(
         &db.pool,
         web3,
         crate::boundary::events::settlement::INDEX_NAME,
@@ -231,11 +231,14 @@ pub async fn determine_ethflow_refund_indexing_start(
     .await
     .expect("Should be able to find last indexed settlement block");
 
-    vec![last_indexed_refund_block, last_indexed_settlement_block]
-        .into_iter()
-        .flatten()
-        .max_by_key(|(block_number, _)| *block_number)
-        .expect("Should be able to find a valid start block")
+    vec![
+        ethflow_refund_indexing_start,
+        settlement_contract_indexing_start,
+    ]
+    .into_iter()
+    .flatten()
+    .max_by_key(|(block_number, _)| *block_number)
+    .expect("Should be able to find a valid start block")
 }
 
 /// 1. Check the `last_indexed_blocks` table for the `index_name`. Use the next
