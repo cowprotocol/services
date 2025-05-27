@@ -1,7 +1,7 @@
 use {
     super::pair_provider::PairProvider,
     crate::{baseline_solver::BaselineSolvable, ethrpc::Web3, recent_block_cache::Block},
-    anyhow::Result,
+    anyhow::{Context, Result},
     cached::{Cached, TimedCache},
     contracts::{ERC20, IUniswapLikePair, errors::EthcontractErrorType},
     ethcontract::{BlockId, H160, U256, errors::MethodError},
@@ -304,7 +304,10 @@ pub fn handle_contract_error<T>(result: Result<T, MethodError>) -> Result<Option
 }
 
 fn handle_results(fetched_pool: FetchedPool, address: H160) -> Result<Option<Pool>> {
-    let reserves = handle_contract_error(fetched_pool.reserves)?;
+    let reserves = handle_contract_error(fetched_pool.reserves).context(format!(
+        "newlog error fetching reserves for pair {}",
+        address
+    ))?;
     let token0_balance = handle_contract_error(fetched_pool.token0_balance)?;
     let token1_balance = handle_contract_error(fetched_pool.token1_balance)?;
 
