@@ -148,7 +148,7 @@ where
 }
 
 /// This name is used to store the latest indexed block in the db.
-const INDEX_NAME: &str = "onchain_orders";
+pub const INDEX_NAME: &str = "onchain_orders";
 
 #[async_trait::async_trait]
 impl<T: Sync + Send + Clone, W: Sync + Send + Clone> EventStoring<ContractEvent>
