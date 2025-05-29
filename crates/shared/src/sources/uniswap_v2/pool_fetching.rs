@@ -262,12 +262,6 @@ impl PoolReading for DefaultPoolReader {
             tokio::runtime::Handle::current()
                 .block_on(async { self.web3.eth().block_number().await })
         });
-        tracing::warn!(
-            ?pair_address,
-            ?block,
-            ?current_block,
-            "newlog fetching pool reserves"
-        );
         let fetch_reserves = pair_contract.get_reserves().block(block).call();
 
         // Fetch ERC20 token balances of the pools to sanity check with reserves
