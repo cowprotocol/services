@@ -305,7 +305,7 @@ pub fn handle_contract_error<T>(result: Result<T, MethodError>) -> Result<Option
 
 fn handle_results(fetched_pool: FetchedPool, address: H160) -> Result<Option<Pool>> {
     let reserves = handle_contract_error(fetched_pool.reserves).context(format!(
-        "newlog error fetching reserves for pair {}",
+        "newlog error fetching reserves for pair {:?}",
         address
     ))?;
     let token0_balance = handle_contract_error(fetched_pool.token0_balance)?;
