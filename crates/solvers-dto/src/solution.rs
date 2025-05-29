@@ -1,5 +1,6 @@
 use {
     super::serialize,
+    crate::auction::FlashloanHint,
     number::serialization::HexOrDecimalU256,
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
@@ -28,8 +29,8 @@ pub struct Solution {
     pub post_interactions: Vec<Call>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub gas: Option<u64>,
-    #[serde(skip_serializing_if = "Vec::is_empty", default)]
-    pub flashloans: Vec<Flashloan>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub flashloans: Option<Vec<Flashloan>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -211,4 +212,15 @@ pub struct Flashloan {
     pub token: H160,
     #[serde_as(as = "HexOrDecimalU256")]
     pub amount: U256,
+}
+
+impl From<&FlashloanHint> for Flashloan {
+    fn from(value: &FlashloanHint) -> Self {
+        Self {
+            lender: value.lender,
+            borrower: value.borrower,
+            token: value.token,
+            amount: value.amount,
+        }
+    }
 }
