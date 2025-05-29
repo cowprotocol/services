@@ -288,6 +288,7 @@ impl PoolReading for DefaultPoolReader {
                     token1_balance,
                 },
                 pair_address,
+                block,
             )
         }
         .boxed()
@@ -313,10 +314,14 @@ pub fn handle_contract_error<T>(result: Result<T, MethodError>) -> Result<Option
     }
 }
 
-fn handle_results(fetched_pool: FetchedPool, address: H160) -> Result<Option<Pool>> {
+fn handle_results(
+    fetched_pool: FetchedPool,
+    address: H160,
+    block_id: BlockId,
+) -> Result<Option<Pool>> {
     let reserves = handle_contract_error(fetched_pool.reserves).context(format!(
-        "newlog error fetching reserves for pair {:?}",
-        address
+        "newlog error fetching reserves for pair {:?}, block_id= {:?}",
+        address, block_id,
     ))?;
     let token0_balance = handle_contract_error(fetched_pool.token0_balance)?;
     let token1_balance = handle_contract_error(fetched_pool.token1_balance)?;
@@ -377,6 +382,7 @@ mod tests {
     use {
         super::*,
         contracts::errors::{testing_contract_error, testing_node_error},
+        web3::types::BlockNumber,
     };
 
     #[test]
@@ -516,7 +522,14 @@ mod tests {
             token1_balance: Ok(1.into()),
         };
         let pool_address = Default::default();
-        assert!(handle_results(fetched_pool, pool_address).is_err());
+        assert!(
+            handle_results(
+                fetched_pool,
+                pool_address,
+                BlockId::Number(BlockNumber::Finalized)
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -529,9 +542,13 @@ mod tests {
         };
         let pool_address = Default::default();
         assert!(
-            handle_results(fetched_pool, pool_address)
-                .unwrap()
-                .is_none()
+            handle_results(
+                fetched_pool,
+                pool_address,
+                BlockId::Number(BlockNumber::Finalized)
+            )
+            .unwrap()
+            .is_none()
         )
     }
 }
