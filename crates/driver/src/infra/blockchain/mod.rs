@@ -20,21 +20,27 @@ pub use self::{contracts::Contracts, gas::GasPriceEstimator};
 pub struct Rpc {
     web3: DynWeb3,
     chain: Chain,
-    url: Url,
+    args: RpcArgs,
+}
+
+pub struct RpcArgs {
+    pub url: Url,
+    pub max_batch_size: usize,
+    pub max_concurrent_requests: usize,
 }
 
 impl Rpc {
     /// Instantiate an RPC client to an Ethereum (or Ethereum-compatible) node
     /// at the specifed URL.
-    pub async fn try_new(url: &url::Url) -> Result<Self, RpcError> {
-        let web3 = boundary::buffered_web3_client(url);
+    pub async fn try_new(args: RpcArgs) -> Result<Self, RpcError> {
+        let web3 = boundary::buffered_web3_client(
+            &args.url,
+            args.max_batch_size,
+            args.max_concurrent_requests,
+        );
         let chain = Chain::try_from(web3.eth().chain_id().await?)?;
 
-        Ok(Self {
-            web3,
-            chain,
-            url: url.clone(),
-        })
+        Ok(Self { web3, chain, args })
     }
 
     /// Returns the chain for the RPC connection.
@@ -83,19 +89,25 @@ impl Ethereum {
         gas: Arc<GasPriceEstimator>,
         archive_node_url: Option<&Url>,
     ) -> Self {
-        let Rpc { web3, chain, url } = rpc;
+        let Rpc { web3, chain, args } = rpc;
 
-        let current_block_stream =
-            ethrpc::block_stream::current_block_stream(url, std::time::Duration::from_millis(500))
-                .await
-                .expect("couldn't initialize current block stream");
+        let current_block_stream = ethrpc::block_stream::current_block_stream(
+            args.url.clone(),
+            std::time::Duration::from_millis(500),
+        )
+        .await
+        .expect("couldn't initialize current block stream");
 
         let contracts = Contracts::new(
             &web3,
             chain,
             addresses,
             current_block_stream.clone(),
-            archive_node_url,
+            archive_node_url.map(|url| RpcArgs {
+                url: url.clone(),
+                max_batch_size: args.max_batch_size,
+                max_concurrent_requests: args.max_concurrent_requests,
+            }),
         )
         .await
         .expect("could not initialize important smart contracts");

@@ -45,8 +45,12 @@ fn web3(eth: &Ethereum) -> Web3 {
 
 /// Builds a web3 client that buffers requests and sends them in a
 /// batch call.
-pub fn buffered_web3_client(ethrpc: &Url) -> Web3 {
-    web3_client(ethrpc, 20, 10)
+pub fn buffered_web3_client(
+    ethrpc: &Url,
+    max_batch_size: usize,
+    max_concurrent_requests: usize,
+) -> Web3 {
+    web3_client(ethrpc, max_batch_size, max_concurrent_requests)
 }
 
 /// Builds a web3 client that sends requests one by one.
