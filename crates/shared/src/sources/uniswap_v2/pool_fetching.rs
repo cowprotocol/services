@@ -258,6 +258,16 @@ impl PoolReading for DefaultPoolReader {
         let pair_address = self.pair_provider.pair_address(&pair);
 
         let pair_contract = IUniswapLikePair::at(&self.web3, pair_address);
+        let current_block = tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current()
+                .block_on(async { self.web3.eth().block_number().await })
+        });
+        tracing::warn!(
+            ?pair_address,
+            ?block,
+            ?current_block,
+            "newlog fetching pool reserves"
+        );
         let fetch_reserves = pair_contract.get_reserves().block(block).call();
 
         // Fetch ERC20 token balances of the pools to sanity check with reserves
