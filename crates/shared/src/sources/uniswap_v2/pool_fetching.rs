@@ -11,11 +11,13 @@ use {
     },
     model::TokenPair,
     num::rational::Ratio,
+    primitive_types::H256,
     std::{
         collections::HashSet,
         sync::{LazyLock, RwLock},
         time::Duration,
     },
+    web3::types::{BlockNumber, U64},
 };
 
 const POOL_SWAP_GAS_COST: usize = 60_000;
@@ -258,9 +260,16 @@ impl PoolReading for DefaultPoolReader {
         let pair_address = self.pair_provider.pair_address(&pair);
 
         let pair_contract = IUniswapLikePair::at(&self.web3, pair_address);
-        let current_block = tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current()
-                .block_on(async { self.web3.eth().block_number().await })
+        let (current_block, finalized_block, latest_block) = tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async {
+                tokio::join!(
+                    self.web3.eth().block_number(),
+                    self.web3
+                        .eth()
+                        .block(BlockId::Number(BlockNumber::Finalized)),
+                    self.web3.eth().block(BlockId::Number(BlockNumber::Latest))
+                )
+            })
         });
         let fetch_reserves = pair_contract.get_reserves().block(block).call();
 
@@ -283,6 +292,9 @@ impl PoolReading for DefaultPoolReader {
                 },
                 pair_address,
                 block,
+                current_block.ok(),
+                finalized_block.ok().flatten(),
+                latest_block.ok().flatten(),
             )
         }
         .boxed()
@@ -312,10 +324,14 @@ fn handle_results(
     fetched_pool: FetchedPool,
     address: H160,
     block_id: BlockId,
+    current_block: Option<U64>,
+    finalized_block: Option<web3::types::Block<H256>>,
+    latest_block: Option<web3::types::Block<H256>>,
 ) -> Result<Option<Pool>> {
     let reserves = handle_contract_error(fetched_pool.reserves).context(format!(
-        "newlog error fetching reserves for pair {:?}, block_id= {:?}",
-        address, block_id,
+        "newlog error fetching reserves for pair {:?}, block_id={:?}, current_block={:?}, \
+         finalized_block={:?}, latest_block={:?}",
+        address, block_id, current_block, finalized_block, latest_block,
     ))?;
     let token0_balance = handle_contract_error(fetched_pool.token0_balance)?;
     let token1_balance = handle_contract_error(fetched_pool.token1_balance)?;
@@ -520,7 +536,10 @@ mod tests {
             handle_results(
                 fetched_pool,
                 pool_address,
-                BlockId::Number(BlockNumber::Finalized)
+                BlockId::Number(BlockNumber::Finalized),
+                None,
+                None,
+                None,
             )
             .is_err()
         );
@@ -539,7 +558,10 @@ mod tests {
             handle_results(
                 fetched_pool,
                 pool_address,
-                BlockId::Number(BlockNumber::Finalized)
+                BlockId::Number(BlockNumber::Finalized),
+                None,
+                None,
+                None,
             )
             .unwrap()
             .is_none()
