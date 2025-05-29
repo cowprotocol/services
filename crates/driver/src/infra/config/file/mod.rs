@@ -81,6 +81,10 @@ struct Config {
     /// Whether the flashloans feature is enabled.
     #[serde(default)]
     flashloans_enabled: bool,
+
+    /// Defines if the liquidity needs to be fetched at a specific block.
+    #[serde(default)]
+    fetch_liquidity_at_block: Option<AtBlock>,
 }
 
 #[serde_as]
@@ -908,4 +912,12 @@ fn default_metrics_bad_token_detector_freeze_time() -> Duration {
 /// With this default, the approximate size of the cache will be ~1.6 MB.
 fn default_app_data_cache_size() -> u64 {
     2000
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(untagged, deny_unknown_fields)]
+enum AtBlock {
+    Recent,
+    Latest,
+    Finalized,
 }
