@@ -203,7 +203,7 @@ impl RunLoop {
                     .results
                     .with_label_values(&[&driver.name, "error"])
                     .inc();
-                tracing::debug!(driver = driver.name, ?err, "failed to fetch solutions");
+                tracing::debug!(driver = driver.name, %err, "failed to fetch solutions");
                 return vec![];
             }
         };
