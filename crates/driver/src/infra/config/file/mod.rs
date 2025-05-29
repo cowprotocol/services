@@ -81,10 +81,6 @@ struct Config {
     /// Whether the flashloans feature is enabled.
     #[serde(default)]
     flashloans_enabled: bool,
-
-    /// Defines if the liquidity needs to be fetched at a specific block.
-    #[serde(default)]
-    fetch_liquidity_at_block: Option<AtBlock>,
 }
 
 #[serde_as]
@@ -473,6 +469,10 @@ struct LiquidityConfig {
     /// Liquidity provided by 0x API.
     #[serde(default)]
     zeroex: Option<ZeroExConfig>,
+
+    /// Defines if the liquidity needs to be fetched at a specific block.
+    #[serde(default)]
+    fetch_at_block: Option<AtBlock>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
