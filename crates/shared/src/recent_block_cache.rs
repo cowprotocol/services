@@ -76,7 +76,7 @@ pub enum Block {
 impl From<Block> for BlockNumber {
     fn from(val: Block) -> Self {
         match val {
-            Block::Recent => BlockNumber::Latest,
+            Block::Recent => BlockNumber::Finalized,
             Block::Number(number) => BlockNumber::Number(number.into()),
         }
     }
