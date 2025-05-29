@@ -279,7 +279,6 @@ impl Solver {
 
     fn assemble_flashloan_hints(&self, auction: &Auction) -> HashMap<order::Uid, eth::Flashloan> {
         if !self.config.flashloans_enabled {
-            tracing::error!("abort because disabled");
             return Default::default();
         }
         let default_lender = self.eth.contracts().flashloan_default_lender();
