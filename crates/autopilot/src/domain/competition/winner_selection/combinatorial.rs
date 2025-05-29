@@ -57,6 +57,14 @@ impl Arbitrator for Config {
         // Discard all solutions where we can't compute the aggregate scores
         // accurately because the fairness guarantees heavily rely on them.
         let scores_by_solution = compute_scores_by_solution(&mut participants, auction);
+
+        /*
+        eprintln!("    before sorting by score:");
+        for participant in &participants {
+            eprintln!("        - {} - {}", participant.driver().submission_address, participant.solution().computed_score.unwrap());
+        }
+        */
+
         participants.sort_unstable_by_key(|participant| {
             std::cmp::Reverse(
                 // we use the computed score to not trust the score provided by solvers
@@ -68,12 +76,14 @@ impl Arbitrator for Config {
                     .0,
             )
         });
+        
         /*
         eprintln!("    after sorting by score:");
         for participant in &participants {
-            eprintln!("        - {} - {}", participant.driver().submission_address, participant.solution().score);
+            eprintln!("        - {} - {}", participant.driver().submission_address, participant.solution().computed_score.unwrap());
         }
-         */
+        */
+        
         let baseline_scores = compute_baseline_scores(&scores_by_solution);
         /*
         eprintln!("    baseline_scores:");
@@ -115,7 +125,15 @@ impl Arbitrator for Config {
     }
 
     fn mark_winners(&self, participants: Vec<Participant<Unranked>>) -> Vec<Participant> {
+        /*
+        eprintln!("********* before mark_winners");
+        for participant in &participants {
+            eprintln!("solver:{}, score:{}", participant.driver().submission_address.0, participant.solution().computed_score.unwrap());
+        }
+        */
         let winner_indexes = self.pick_winners(participants.iter().map(|p| p.solution()));
+        //eprintln!("********* after mark_winners");
+        //eprintln!("{:#?}", winner_indexes);
         participants
             .into_iter()
             .enumerate()
@@ -194,6 +212,7 @@ impl Config {
         // In other words this enforces a uniform **directional** clearing price.
         let mut already_swapped_tokens_pairs = HashSet::new();
         let mut winners = HashSet::default();
+        // eprintln!("******* pick_winners");
         for (index, solution) in solutions.enumerate() {
             if winners.len() >= self.max_winners {
                 return winners;
@@ -207,6 +226,14 @@ impl Config {
                     buy: order.buy.token.as_erc20(self.weth),
                 })
                 .collect::<HashSet<_>>();
+
+            /*
+            eprintln!("    solver: {}", solution.solver);
+            eprintln!("        - order_ids: {:?}", solution.order_ids().collect::<Vec<_>>());
+            eprintln!("        - swapped_token_pairs:{:?}", swapped_token_pairs);
+            eprintln!("        - already_swapped_tokens_pairs:{:?}", already_swapped_tokens_pairs);
+            eprintln!("        - is_disjoint: {}", swapped_token_pairs.is_disjoint(&already_swapped_tokens_pairs));
+            */
 
             if swapped_token_pairs.is_disjoint(&already_swapped_tokens_pairs) {
                 winners.insert(index);
@@ -259,8 +286,7 @@ fn compute_scores_by_solution(
             let total_score: Score = score
                 .values()
                 .fold(Default::default(), |acc, score| acc + *score);
-            //eprintln!("        - {} - score: {}", p.driver().submission_address,
-            // total_score);
+            eprintln!("        - {} - score: {}", p.driver().submission_address, total_score);
             scores.insert(
                 SolutionKey {
                     driver: p.driver().submission_address,
@@ -281,6 +307,13 @@ fn compute_scores_by_solution(
             false
         }
     });
+
+    /*
+    eprintln!("*****compute_scores_by_solution");
+    for (key, score) in &scores {
+        eprintln!("        - {} - {}", );
+    }
+    */
 
     scores
 }
@@ -470,11 +503,11 @@ mod tests {
 
         // Hardcoded values
         let network = "mainnet-prod";
-        //let auction_start = 10606372;
-        //let auction_end = 10706372;
-
-        let auction_start = 10700372;
+        let auction_start = 10606372;
         let auction_end = 10706372;
+
+        //let auction_start = 10607650;
+        //let auction_end = 10607650;
 
         // Get data folder path
         let data_folder =
@@ -491,8 +524,8 @@ mod tests {
             network, auction_start, auction_end
         ));
 
-        eprintln!("Comparing Python results from: {}", python_file.display());
-        eprintln!("With Rust results from: {}", rust_file.display());
+        //eprintln!("Comparing Python results from: {}", python_file.display());
+        //eprintln!("With Rust results from: {}", rust_file.display());
 
         // Read Python results
         let mut python_results: HashMap<i64, Vec<(String, String)>> = HashMap::new();
@@ -633,8 +666,9 @@ mod tests {
 
         //let auction_start = 10700372;
         //let auction_end = 10706372;
-        let auction_start = 10703213;
-        let auction_end = 10703213;
+        //let auction_start = 10606372;
+        let auction_start = 10607650;
+        let auction_end = 10607650;
 
         let network = "mainnet-prod";
         const BATCH_SIZE: i64 = 1000; // Process 1000 auctions at a time
@@ -977,6 +1011,7 @@ mod tests {
                         let order_uid = hex::encode(row.get::<[u8; 56], _>("order_uid"));
                         let sell_token = hex::encode(row.get::<[u8; 20], _>("sell_token"));
                         let buy_token = hex::encode(row.get::<[u8; 20], _>("buy_token"));
+                        //eprintln!("**** data: auction_id={auction_id}, sell_token={sell_token}, buy_token={buy_token}");
 
                         // Get or create the TestAuction for this auction_id
                         let auction =
@@ -1312,7 +1347,7 @@ mod tests {
                 
                 eprintln!("********** after filtering unfair solutions:");
                 for solution in &solutions {
-                    eprintln!("Solution id:{}, solver:{}, score:{}", solution.solution().id, solution.driver().submission_address, solution.solution().score);
+                    eprintln!("Solution id:{}, solver:{}, score:{}", solution.solution().id, solution.driver().submission_address, solution.solution().computed_score.unwrap());
                 }
                 
                 
@@ -1323,7 +1358,7 @@ mod tests {
                 
                 eprintln!("********** winners:");
                 for solution in &winners {
-                    eprintln!("Solution id:{}, solver:{}, score:{}", solution.solution().id, solution.driver().submission_address, solution.solution().score);
+                    eprintln!("Solution id:{}, solver:{}, score:{}", solution.solution().id, solution.driver().submission_address, solution.solution().computed_score.unwrap());
                 }
                 
 
@@ -1353,13 +1388,11 @@ mod tests {
                     winnner_reference_scores
                         .insert(hex::encode(winner.driver().submission_address.0), score);
                 }
-
-                /*
+                
                 eprintln!("********** reference scores:");
                 for (solver, score) in &winnner_reference_scores {
                     eprintln!("solver:{}, score:{}", solver, score);
-                }
-                */
+                } 
 
                 Ok((
                     auction_id,
