@@ -279,23 +279,23 @@ impl Solver {
 
     fn assemble_flashloan_hints(&self, auction: &Auction) -> HashMap<order::Uid, eth::Flashloan> {
         if !self.config.flashloans_enabled {
+            tracing::error!("abort because disabled");
             return Default::default();
         }
-        let Some(lender) = self.eth.contracts().flashloan_default_lender() else {
-            return Default::default();
-        };
+        let default_lender = self.eth.contracts().flashloan_default_lender();
 
         auction
             .orders()
             .iter()
             .flat_map(|order| {
-                let flashloan = order.app_data.flashloan().map(|f| eth::Flashloan {
-                    lender,
-                    borrower: f.borrower.unwrap_or(order.uid.owner().0).into(),
-                    token: f.token.into(),
-                    amount: f.amount.into(),
-                });
-                Some((order.uid, flashloan?))
+                let hint = order.app_data.flashloan()?;
+                let flashloan = eth::Flashloan {
+                    lender: hint.lender.or(default_lender.map(|l| l.0))?.into(),
+                    borrower: hint.borrower.unwrap_or(order.uid.owner().0).into(),
+                    token: hint.token.into(),
+                    amount: hint.amount.into(),
+                };
+                Some((order.uid, flashloan))
             })
             .collect()
     }
