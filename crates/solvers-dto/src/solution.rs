@@ -1,6 +1,5 @@
 use {
     super::serialize,
-    crate::auction::FlashloanHint,
     number::serialization::HexOrDecimalU256,
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
@@ -212,15 +211,4 @@ pub struct Flashloan {
     pub token: H160,
     #[serde_as(as = "HexOrDecimalU256")]
     pub amount: U256,
-}
-
-impl From<&FlashloanHint> for Flashloan {
-    fn from(value: &FlashloanHint) -> Self {
-        Self {
-            lender: value.lender,
-            borrower: value.borrower,
-            token: value.token,
-            amount: value.amount,
-        }
-    }
 }
