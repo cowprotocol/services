@@ -71,6 +71,7 @@ pub enum Block {
     /// date.
     Recent,
     Number(u64),
+    Finalized,
 }
 
 impl From<Block> for BlockNumber {
@@ -78,6 +79,7 @@ impl From<Block> for BlockNumber {
         match val {
             Block::Recent => BlockNumber::Latest,
             Block::Number(number) => BlockNumber::Number(number.into()),
+            Block::Finalized => BlockNumber::Finalized,
         }
     }
 }
@@ -283,7 +285,7 @@ where
 
     async fn fetch(&self, keys: impl IntoIterator<Item = K>, block: Block) -> Result<Vec<V>> {
         let block = match block {
-            Block::Recent => None,
+            Block::Recent | Block::Finalized => None,
             Block::Number(number) => Some(number),
         };
 
