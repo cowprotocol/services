@@ -12,6 +12,7 @@ use {
             time::Remaining,
         },
         infra::{
+            self,
             blockchain::Ethereum,
             config::file::FeeHandler,
             persistence::{Persistence, S3},
@@ -130,7 +131,7 @@ pub struct Config {
     /// Whether flashloan hints should be sent to the solver.
     pub flashloans_enabled: bool,
     /// Defines if the liquidity needs to be fetched at a specific block.
-    pub fetch_liquidity_at_block: Option<crate::infra::liquidity::AtBlock>,
+    pub fetch_liquidity_at_block: Option<infra::liquidity::AtBlock>,
 }
 
 impl Solver {
@@ -217,7 +218,7 @@ impl Solver {
         self.config.settle_queue_size
     }
 
-    pub fn fetch_liquidity_at_block(&self) -> Option<crate::infra::liquidity::AtBlock> {
+    pub fn fetch_liquidity_at_block(&self) -> Option<infra::liquidity::AtBlock> {
         self.config.fetch_liquidity_at_block.clone()
     }
 
