@@ -165,7 +165,7 @@ pub async fn determine_ethflow_indexing_start(
     ethflow_indexing_start: Option<u64>,
     web3: &Web3,
     chain_id: u64,
-    db: crate::database::Postgres,
+    db: &crate::database::Postgres,
 ) -> BlockNumberHash {
     if let Some(block_number_hash) = skip_event_sync_start {
         return *block_number_hash;
@@ -180,7 +180,7 @@ pub async fn determine_ethflow_indexing_start(
     )
     .await
     .expect("Should be able to find last indexed onchain order block")
-    .unwrap_or_else(|| panic!("No last indexed block found for ethflow orders"))
+    .expect("No last indexed block found for ethflow orders")
 }
 
 /// Determines the starting block number and hash for indexing eth-flow refund
