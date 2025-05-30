@@ -17,7 +17,7 @@ pub struct Solution {
     pub interactions: Vec<Interaction>,
     pub post_interactions: Vec<eth::Interaction>,
     pub gas: Option<eth::Gas>,
-    pub flashloans: Vec<Flashloan>,
+    pub flashloans: Option<Vec<Flashloan>>,
 }
 
 impl Solution {
@@ -180,17 +180,8 @@ impl Single {
             interactions,
             post_interactions: Default::default(),
             gas: Some(gas),
-            flashloans: order
-                .flashloan_hint
-                .clone()
-                .map(|hint| Flashloan {
-                    lender: hint.lender,
-                    borrower: hint.borrower,
-                    token: hint.token,
-                    amount: hint.amount,
-                })
-                .into_iter()
-                .collect(),
+            // rely on driver to fill in the blanks
+            flashloans: None,
             trades: vec![Trade::Fulfillment(Fulfillment::new(order, executed, fee)?)],
         })
     }

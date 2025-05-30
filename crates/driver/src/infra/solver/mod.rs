@@ -5,6 +5,7 @@ use {
             competition::{
                 auction::{self, Auction},
                 bad_tokens,
+                order,
                 solution::{self, Solution},
             },
             eth,
@@ -222,6 +223,7 @@ impl Solver {
         auction: &Auction,
         liquidity: &[liquidity::Liquidity],
     ) -> Result<Vec<Solution>, Error> {
+        let flashloan_hints = self.assemble_flashloan_hints(auction);
         // Fetch the solutions from the solver.
         let weth = self.eth.contracts().weth_address();
         let auction_dto = dto::auction::new(
@@ -230,8 +232,7 @@ impl Solver {
             weth,
             self.config.fee_handler,
             self.config.solver_native_token,
-            self.config.flashloans_enabled,
-            self.eth.contracts().flashloan_default_lender(),
+            &flashloan_hints,
         );
         // Only auctions with IDs are real auctions (/quote requests don't have an ID,
         // and it makes no sense to store them)
@@ -269,11 +270,33 @@ impl Solver {
             liquidity,
             weth,
             self.clone(),
-            &self.config,
+            &flashloan_hints,
         )?;
 
         super::observe::solutions(&solutions, auction.surplus_capturing_jit_order_owners());
         Ok(solutions)
+    }
+
+    fn assemble_flashloan_hints(&self, auction: &Auction) -> HashMap<order::Uid, eth::Flashloan> {
+        if !self.config.flashloans_enabled {
+            return Default::default();
+        }
+        let default_lender = self.eth.contracts().flashloan_default_lender();
+
+        auction
+            .orders()
+            .iter()
+            .flat_map(|order| {
+                let hint = order.app_data.flashloan()?;
+                let flashloan = eth::Flashloan {
+                    lender: hint.lender.or(default_lender.map(|l| l.0))?.into(),
+                    borrower: hint.borrower.unwrap_or(order.uid.owner().0).into(),
+                    token: hint.token.into(),
+                    amount: hint.amount.into(),
+                };
+                Some((order.uid, flashloan))
+            })
+            .collect()
     }
 
     /// Make a fire and forget POST request to notify the solver about an event.
@@ -298,6 +321,10 @@ impl Solver {
             }
         };
         tokio::task::spawn(future.in_current_span());
+    }
+
+    pub fn config(&self) -> &Config {
+        &self.config
     }
 }
 
