@@ -107,7 +107,9 @@ impl Competition {
                 self.liquidity
                     .fetch(
                         &auction.liquidity_pairs(),
-                        infra::liquidity::AtBlock::Latest,
+                        self.solver
+                            .fetch_liquidity_at_block()
+                            .unwrap_or(infra::liquidity::AtBlock::Latest),
                     )
                     .await
             }

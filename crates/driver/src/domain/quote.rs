@@ -91,7 +91,12 @@ impl Order {
         let liquidity = match solver.liquidity() {
             solver::Liquidity::Fetch => {
                 liquidity
-                    .fetch(&self.liquidity_pairs(), infra::liquidity::AtBlock::Recent)
+                    .fetch(
+                        &self.liquidity_pairs(),
+                        solver
+                            .fetch_liquidity_at_block()
+                            .unwrap_or(infra::liquidity::AtBlock::Recent),
+                    )
                     .await
             }
             solver::Liquidity::Skip => Default::default(),

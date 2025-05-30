@@ -469,6 +469,10 @@ struct LiquidityConfig {
     /// Liquidity provided by 0x API.
     #[serde(default)]
     zeroex: Option<ZeroExConfig>,
+
+    /// Defines if the liquidity needs to be fetched at a specific block.
+    #[serde(default)]
+    fetch_at_block: Option<AtBlock>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -908,4 +912,16 @@ fn default_metrics_bad_token_detector_freeze_time() -> Duration {
 /// With this default, the approximate size of the cache will be ~1.6 MB.
 fn default_app_data_cache_size() -> u64 {
     2000
+}
+
+/// Which block should be used to fetch the liquidity.
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(untagged, deny_unknown_fields)]
+enum AtBlock {
+    /// The Web3 client decides on its own which block is the latests.
+    Recent,
+    /// Use the latest block received by the `CurrentBlockWatcher`.
+    Latest,
+    /// Use the latest finalized block.
+    Finalized,
 }
