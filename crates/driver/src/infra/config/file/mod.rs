@@ -918,8 +918,6 @@ fn default_app_data_cache_size() -> u64 {
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 enum AtBlock {
-    /// The Web3 client decides on its own which block is the latests.
-    Recent,
     /// Use the latest block received by the `CurrentBlockWatcher`.
     Latest,
     /// Use the latest finalized block.

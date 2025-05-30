@@ -140,7 +140,6 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                 fetch_liquidity_at_block: config.liquidity.fetch_at_block.map(|at_block| {
                     match at_block {
                         file::AtBlock::Latest => liquidity::AtBlock::Latest,
-                        file::AtBlock::Recent => liquidity::AtBlock::Recent,
                         file::AtBlock::Finalized => liquidity::AtBlock::Finalized,
                     }
                 }),
