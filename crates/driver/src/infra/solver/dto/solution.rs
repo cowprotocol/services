@@ -209,7 +209,9 @@ impl Solutions {
                     solver.config().fee_handler,
                     auction.surplus_capturing_jit_order_owners(),
                     solution.flashloans
+                        // convert the flashloan info provided by the solver
                         .map(|f| f.iter().map(Into::into).collect())
+                        // or copy over the relevant flashloan hints from the solve request
                         .unwrap_or_else(|| solution.trades.iter()
                             .filter_map(|t| {
                             let solvers_dto::solution::Trade::Fulfillment(trade) = &t else {
