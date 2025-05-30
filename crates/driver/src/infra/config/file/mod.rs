@@ -472,6 +472,7 @@ struct LiquidityConfig {
 
     /// Defines at which block the liquidity needs to be fetched on /solve
     /// requests.
+    #[serde(default)]
     fetch_at_block: AtBlock,
 }
 
