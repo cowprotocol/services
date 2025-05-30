@@ -130,7 +130,8 @@ pub struct Config {
     pub settle_queue_size: usize,
     /// Whether flashloan hints should be sent to the solver.
     pub flashloans_enabled: bool,
-    /// Defines at which block the liquidity needs to be fetched.
+    /// Defines at which block the liquidity needs to be fetched on /solve
+    /// requests.
     pub fetch_liquidity_at_block: infra::liquidity::AtBlock,
 }
 

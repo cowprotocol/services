@@ -470,7 +470,8 @@ struct LiquidityConfig {
     #[serde(default)]
     zeroex: Option<ZeroExConfig>,
 
-    /// Defines if the liquidity needs to be fetched at a specific block.
+    /// Defines at which block the liquidity needs to be fetched on /solve
+    /// requests.
     fetch_at_block: AtBlock,
 }
 
