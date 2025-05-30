@@ -93,9 +93,7 @@ impl Order {
                 liquidity
                     .fetch(
                         &self.liquidity_pairs(),
-                        solver
-                            .fetch_liquidity_at_block()
-                            .unwrap_or(infra::liquidity::AtBlock::Recent),
+                        infra::liquidity::AtBlock::Recent,
                     )
                     .await
             }
