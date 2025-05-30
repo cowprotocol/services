@@ -6,7 +6,11 @@ use {
 
 // Follows 0x's contract implementation: <https://github.com/0xProject/protocol/blob/%400x/contracts-utils%404.8.52/contracts/utils/contracts/src/v06/LibMathV06.sol#L71-L83>
 impl BaselineSolvable for LimitOrder {
-    fn get_amount_out(&self, out_token: H160, (in_amount, in_token): (U256, H160)) -> Option<U256> {
+    async fn get_amount_out(
+        &self,
+        out_token: H160,
+        (in_amount, in_token): (U256, H160),
+    ) -> Option<U256> {
         if in_token != self.taker.token.0
             || out_token != self.maker.token.0
             || in_amount > self.taker.amount
@@ -19,7 +23,11 @@ impl BaselineSolvable for LimitOrder {
             .checked_div(self.taker.amount)
     }
 
-    fn get_amount_in(&self, in_token: H160, (out_amount, out_token): (U256, H160)) -> Option<U256> {
+    async fn get_amount_in(
+        &self,
+        in_token: H160,
+        (out_amount, out_token): (U256, H160),
+    ) -> Option<U256> {
         if out_token != self.maker.token.0
             || in_token != self.taker.token.0
             || out_amount > self.maker.amount
@@ -32,7 +40,7 @@ impl BaselineSolvable for LimitOrder {
             .checked_div(self.maker.amount)
     }
 
-    fn gas_cost(&self) -> usize {
+    async fn gas_cost(&self) -> usize {
         GAS_PER_ZEROEX_ORDER as usize
     }
 }
@@ -60,8 +68,8 @@ mod tests {
         LimitOrder { maker, taker, fee }
     }
 
-    #[test]
-    fn amount_out_in_round_trip() {
+    #[tokio::test]
+    async fn amount_out_in_round_trip() {
         let maker_amount = to_wei(300);
         let taker_amount = to_wei(100);
         let fee_amount = to_wei(10);
@@ -73,16 +81,18 @@ mod tests {
 
         let amount_out = order
             .get_amount_out(out_token, (desired_in_amount, in_token))
+            .await
             .unwrap();
         let amount_in = order
             .get_amount_in(in_token, (amount_out, out_token))
+            .await
             .unwrap();
 
         assert_eq!(amount_in, desired_in_amount);
     }
 
-    #[test]
-    fn amount_in_out_round_trip() {
+    #[tokio::test]
+    async fn amount_in_out_round_trip() {
         let maker_amount = to_wei(100);
         let taker_amount = to_wei(300);
         let fee_amount = to_wei(10);
@@ -94,16 +104,18 @@ mod tests {
 
         let amount_in = order
             .get_amount_in(in_token, (desired_out_amount, out_token))
+            .await
             .unwrap();
         let amount_out = order
             .get_amount_out(out_token, (amount_in, in_token))
+            .await
             .unwrap();
 
         assert_eq!(amount_out, desired_out_amount);
     }
 
-    #[test]
-    fn too_high_in_amount() {
+    #[tokio::test]
+    async fn too_high_in_amount() {
         let maker_amount = to_wei(300);
         let taker_amount = to_wei(100);
         let fee_amount = to_wei(10);
@@ -112,13 +124,13 @@ mod tests {
         let out_token = order.maker.token.0;
         let in_token = order.taker.token.0;
         let amount_in = taker_amount.checked_mul(U256::from(2)).unwrap();
-        let amount_out = order.get_amount_out(out_token, (amount_in, in_token));
+        let amount_out = order.get_amount_out(out_token, (amount_in, in_token)).await;
 
         assert!(amount_out.is_none());
     }
 
-    #[test]
-    fn too_high_out_amount() {
+    #[tokio::test]
+    async fn too_high_out_amount() {
         let maker_amount = to_wei(100);
         let taker_amount = to_wei(300);
         let fee_amount = to_wei(10);
@@ -127,13 +139,13 @@ mod tests {
         let out_token = order.maker.token.0;
         let in_token = order.taker.token.0;
         let amount_out = maker_amount.checked_mul(U256::from(2)).unwrap();
-        let amount_in = order.get_amount_in(in_token, (amount_out, out_token));
+        let amount_in = order.get_amount_in(in_token, (amount_out, out_token)).await;
 
         assert!(amount_in.is_none());
     }
 
-    #[test]
-    fn wrong_tokens() {
+    #[tokio::test]
+    async fn wrong_tokens() {
         let maker_amount = to_wei(100);
         let taker_amount = to_wei(100);
         let fee_amount = to_wei(10);
@@ -142,8 +154,8 @@ mod tests {
         let out_token = order.maker.token.0;
         let in_token = order.taker.token.0;
         let amount = to_wei(1);
-        let amount_in = order.get_amount_in(out_token, (amount, in_token));
-        let amount_out = order.get_amount_out(in_token, (amount, out_token));
+        let amount_in = order.get_amount_in(out_token, (amount, in_token)).await;
+        let amount_out = order.get_amount_out(in_token, (amount, out_token)).await;
 
         assert!(amount_in.is_none());
         assert!(amount_out.is_none());
