@@ -471,8 +471,7 @@ struct LiquidityConfig {
     zeroex: Option<ZeroExConfig>,
 
     /// Defines if the liquidity needs to be fetched at a specific block.
-    #[serde(default)]
-    fetch_at_block: Option<AtBlock>,
+    fetch_at_block: AtBlock,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -915,10 +914,11 @@ fn default_app_data_cache_size() -> u64 {
 }
 
 /// Which block should be used to fetch the liquidity.
-#[derive(Clone, Copy, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Clone, Copy, Debug, Deserialize, Default)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 enum AtBlock {
     /// Use the latest block received by the `CurrentBlockWatcher`.
+    #[default]
     Latest,
     /// Use the latest finalized block.
     Finalized,
