@@ -58,13 +58,29 @@ pub struct Config {
     /// allowed to start before it has to re-synchronize to the blockchain
     /// by waiting for the next block to appear.
     pub max_run_loop_delay: Duration,
+    pub combinatorial_auctions_cutover: Option<chrono::DateTime<chrono::Utc>>,
     pub max_winners_per_auction: NonZeroUsize,
     pub max_solutions_per_solver: NonZeroUsize,
 }
 
 impl Config {
     fn single_winner(&self) -> bool {
-        self.max_winners_per_auction.get() == 1
+        // Always single winner if max_winners is 1
+        if self.max_winners_per_auction.get() == 1 {
+            return true;
+        }
+
+        // Check cutover date conditions
+        match self.combinatorial_auctions_cutover {
+            // No cutover date means single winner
+            None => true,
+            // If there is a cutover date, check if the auction deadline is before it
+            Some(cutover) => {
+                let solve_deadline =
+                    chrono::Utc::now() + chrono::Duration::from_std(self.solve_deadline).unwrap();
+                solve_deadline < cutover
+            }
+        }
     }
 }
 
@@ -82,7 +98,6 @@ pub struct RunLoop {
     /// the most recent data available.
     maintenance: Arc<Maintenance>,
     competition_updates_sender: tokio::sync::mpsc::UnboundedSender<()>,
-    winner_selection: Box<dyn winner_selection::Arbitrator>,
 }
 
 impl RunLoop {
@@ -100,13 +115,6 @@ impl RunLoop {
         competition_updates_sender: tokio::sync::mpsc::UnboundedSender<()>,
     ) -> Self {
         Self {
-            winner_selection: match config.single_winner() {
-                true => Box::new(winner_selection::max_score::Config),
-                false => Box::new(winner_selection::combinatorial::Config {
-                    max_winners: config.max_winners_per_auction.get(),
-                    weth: eth.contracts().wrapped_native_token(),
-                }),
-            },
             config,
             eth,
             persistence,
@@ -260,10 +268,17 @@ impl RunLoop {
             return;
         }
 
-        let solutions = self
-            .winner_selection
-            .filter_unfair_solutions(solutions, &auction);
-        let solutions = self.winner_selection.mark_winners(solutions);
+        let winner_selection: Box<dyn winner_selection::Arbitrator> =
+            match self.config.single_winner() {
+                true => Box::new(winner_selection::max_score::Config),
+                false => Box::new(winner_selection::combinatorial::Config {
+                    max_winners: self.config.max_winners_per_auction.get(),
+                    weth: self.eth.contracts().wrapped_native_token(),
+                }),
+            };
+
+        let solutions = winner_selection.filter_unfair_solutions(solutions, &auction);
+        let solutions = winner_selection.mark_winners(solutions);
 
         let competition_simulation_block = self.eth.current_block().borrow().number;
         let block_deadline = competition_simulation_block + self.config.submission_deadline;
@@ -276,6 +291,7 @@ impl RunLoop {
                 competition_simulation_block,
                 &solutions,
                 block_deadline,
+                winner_selection,
             )
             .await
         {
@@ -382,6 +398,7 @@ impl RunLoop {
         competition_simulation_block: u64,
         solutions: &[competition::Participant],
         block_deadline: u64,
+        winner_selection: Box<dyn winner_selection::Arbitrator>,
     ) -> Result<()> {
         let start = Instant::now();
         // TODO: Needs to be removed once other teams fully migrated to the
@@ -407,7 +424,7 @@ impl RunLoop {
             })
         };
 
-        let reference_scores = self.winner_selection.compute_reference_scores(solutions);
+        let reference_scores = winner_selection.compute_reference_scores(solutions);
 
         let participants = solutions
             .iter()
