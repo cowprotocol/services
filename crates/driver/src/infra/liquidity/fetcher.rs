@@ -14,6 +14,7 @@ pub struct Fetcher {
 }
 
 /// Specifies at which block liquidity should be fetched.
+#[derive(Debug, Clone)]
 pub enum AtBlock {
     /// Fetches liquidity at a recent block. This will prefer reusing cached
     /// liquidity even if it is stale by a few blocks instead of fetching the
@@ -27,6 +28,9 @@ pub enum AtBlock {
     Recent,
     /// Fetches liquidity liquidity for the latest state of the blockchain.
     Latest,
+    /// Useful for chains that can't fetch liquidity on non-finalized
+    /// blocks(e.g. Avalanche).
+    Finalized,
 }
 
 impl Fetcher {
