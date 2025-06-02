@@ -268,14 +268,20 @@ impl RunLoop {
             return;
         }
 
-        let winner_selection: Box<dyn winner_selection::Arbitrator> =
-            match self.config.single_winner() {
-                true => Box::new(winner_selection::max_score::Config),
-                false => Box::new(winner_selection::combinatorial::Config {
-                    max_winners: self.config.max_winners_per_auction.get(),
-                    weth: self.eth.contracts().wrapped_native_token(),
-                }),
-            };
+        // Build the winner selection implementation.
+        // We only compute this once to ensure consistency throughout the entire
+        // auction.
+        let is_single_winner_selection = self.config.single_winner();
+        tracing::info!(auction_id = ?auction.id, ?is_single_winner_selection, "winner selection implementation");
+        let winner_selection: Box<dyn winner_selection::Arbitrator> = if is_single_winner_selection
+        {
+            Box::new(winner_selection::max_score::Config)
+        } else {
+            Box::new(winner_selection::combinatorial::Config {
+                max_winners: self.config.max_winners_per_auction.get(),
+                weth: self.eth.contracts().wrapped_native_token(),
+            })
+        };
 
         let solutions = winner_selection.filter_unfair_solutions(solutions, &auction);
         let solutions = winner_selection.mark_winners(solutions);
@@ -292,6 +298,7 @@ impl RunLoop {
                 &solutions,
                 block_deadline,
                 winner_selection,
+                is_single_winner_selection,
             )
             .await
         {
@@ -399,6 +406,7 @@ impl RunLoop {
         solutions: &[competition::Participant],
         block_deadline: u64,
         winner_selection: Box<dyn winner_selection::Arbitrator>,
+        is_single_winner_selection: bool,
     ) -> Result<()> {
         let start = Instant::now();
         // TODO: Needs to be removed once other teams fully migrated to the
@@ -417,7 +425,7 @@ impl RunLoop {
                 .get(1)
                 .map(|participant| participant.solution().score().get().0)
                 .unwrap_or_default();
-            self.config.single_winner().then_some(LegacyScore {
+            is_single_winner_selection.then_some(LegacyScore {
                 winner,
                 winning_score,
                 reference_score,
