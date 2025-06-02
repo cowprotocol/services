@@ -343,7 +343,7 @@ async fn cow_amm_jit(web3: Web3) {
         interactions: vec![],
         post_interactions: vec![],
         gas: None,
-        flashloans: vec![],
+        flashloans: None,
     }));
 
     // Drive solution
@@ -918,7 +918,7 @@ async fn cow_amm_opposite_direction(web3: Web3) {
             interactions: vec![],
             post_interactions: vec![],
             gas: None,
-            flashloans: vec![],
+            flashloans: None,
         }
     };
 
