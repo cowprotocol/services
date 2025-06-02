@@ -143,7 +143,7 @@ impl RunLoop {
             .reduce(std::ops::Add::add)
             .unwrap_or_default();
 
-        for participant in solutions.iter().filter(|p| p.is_winner()) {
+        for participant in solutions {
             let is_winner = participant.is_winner();
             let reference_score = scores.get(&participant.driver().submission_address);
             let driver = participant.driver();
@@ -156,6 +156,7 @@ impl RunLoop {
                 ?reference_score,
                 ?reward,
                 %is_winner,
+                "solution summary"
             );
             Metrics::get()
                 .performance_rewards
