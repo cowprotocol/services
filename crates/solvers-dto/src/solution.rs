@@ -28,8 +28,8 @@ pub struct Solution {
     pub post_interactions: Vec<Call>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub gas: Option<u64>,
-    #[serde(skip_serializing_if = "Vec::is_empty", default)]
-    pub flashloans: Vec<Flashloan>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub flashloans: Option<Vec<Flashloan>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
