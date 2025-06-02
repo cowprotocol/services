@@ -33,7 +33,7 @@ use {
 /// An auction is a set of orders that can be solved. The solvers calculate
 /// [`super::solution::Solution`]s by picking subsets of these orders and
 /// solving them.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Auction {
     /// See the [`Self::id`] method.
     id: Option<Id>,
@@ -137,17 +137,33 @@ impl Auction {
 }
 
 #[derive(Clone)]
-pub struct AuctionProcessor(Arc<Mutex<Inner>>);
+pub struct AuctionProcessor(Arc<Inner>);
 
 struct Inner {
-    auction: auction::Id,
-    fut: Shared<BoxFuture<'static, Vec<Order>>>,
+    aggregator: Arc<DataAggregator>,
+    control: Mutex<Control>,
+}
+
+struct DataAggregator {
     eth: infra::Ethereum,
     /// Order sorting strategies should be in the same order as the
     /// `order_priority_strategies` from the driver's config.
     order_sorting_strategies: Vec<Arc<dyn sorting::SortingStrategy>>,
     signature_validator: Arc<dyn SignatureValidating>,
     app_data_retriever: Option<order::app_data::AppDataRetriever>,
+}
+
+struct Control {
+    /// Auction for which the data aggregation task was spawned.
+    auction: auction::Id,
+    /// Data aggregation task.
+    fut: Shared<BoxFuture<'static, Arc<AggregatedData>>>,
+}
+
+struct AggregatedData {
+    balances: Balances,
+    app_data: HashMap<order::app_data::AppDataHash, app_data::ValidatedAppData>,
+    cow_amm_orders: Vec<Order>,
 }
 
 type BalanceGroup = (order::Trader, eth::TokenAddress, order::SellTokenBalance);
@@ -157,126 +173,66 @@ impl AuctionProcessor {
     /// Process the auction by prioritizing the orders and filtering out
     /// unfillable orders. Fetches full app data for each order and returns an
     /// auction with updated orders.
-    pub async fn prioritize(&self, auction: Auction, solver: &eth::H160) -> Auction {
-        Auction {
-            orders: self.prioritize_orders(&auction, solver).await,
-            ..auction
-        }
+    pub async fn prioritize(&self, auction: Arc<Auction>, solver: eth::H160) -> Auction {
+        let _timer = stage_timer("total");
+        let agg_data = Self::aggregate_data_for_auction(self.0.clone(), auction.clone()).await;
+        let mut auction = Arc::unwrap_or_clone(auction);
+
+        // This step filters out orders if the an owner doesn't have enough balances for
+        // all their orders with the same sell token. That means orders already
+        // need to be sorted from most relevant to least relevant so that we
+        // allocate balances for the most relevants first.
+        //
+        // Also use spawn_blocking() because a lot of CPU bound computations are
+        // happening and we don't want to block the runtime for too long.
+        let helpers = self.0.aggregator.clone();
+        tokio::task::spawn_blocking(move || {
+            let _timer = stage_timer("sort_and_update");
+            let settlement_contract = helpers.eth.contracts().settlement().address();
+            sorting::sort_orders(
+                &mut auction.orders,
+                &auction.tokens,
+                &solver,
+                &helpers.order_sorting_strategies,
+            );
+            Self::update_orders(auction, agg_data, &eth::Address(settlement_contract))
+        })
+        .await
+        .expect(
+            "Either runtime was shut down before spawning the task or no OS threads are \
+             available; no sense in handling those errors",
+        )
     }
 
-    fn prioritize_orders(
-        &self,
-        auction: &Auction,
-        solver: &eth::H160,
-    ) -> Shared<BoxFuture<'static, Vec<Order>>> {
+    /// Aggregates all the data that is needed to pre-process the given auction.
+    /// Uses a shared futures internally to make sure that the works happens
+    /// only once for all connected solvers to share.
+    fn aggregate_data_for_auction(
+        inner: Arc<Inner>,
+        auction: Arc<Auction>,
+    ) -> Shared<BoxFuture<'static, Arc<AggregatedData>>> {
         let new_id = auction
             .id()
             .expect("auctions used for quoting do not have to be prioritized");
 
-        let mut lock = self.0.lock().unwrap();
+        let mut lock = inner.control.lock().unwrap();
         let current_id = lock.auction;
         if new_id.0 < current_id.0 {
             tracing::error!(?current_id, ?new_id, "received an outdated auction");
         }
         if current_id.0 == new_id.0 {
-            tracing::debug!("await running prioritization task");
+            tracing::debug!("await running data aggregation task");
             return lock.fut.clone();
         }
 
-        let eth = lock.eth.clone();
+        let fut = inner.aggregator.clone().fetch_aggregated_data(auction);
+        let fut = fut.boxed().shared();
 
-        let rt = tokio::runtime::Handle::current();
-        let tokens: Tokens = auction.tokens().clone();
-        let signature_validator = lock.signature_validator.clone();
-        let cow_amms = auction.surplus_capturing_jit_order_owners.clone();
-        let mut orders = auction.orders.clone();
-        let solver = *solver;
-        let order_comparators = lock.order_sorting_strategies.clone();
-        let app_data_retriever = lock.app_data_retriever.clone();
-
-        // Use spawn_blocking() because a lot of CPU bound computations are happening
-        // and we don't want to block the runtime for too long.
-        let fut = tokio::task::spawn_blocking(move || {
-            let _timer = stage_timer("total");
-            let start = std::time::Instant::now();
-
-            let (mut balances, mut app_data_by_hash, cow_amms) =
-                rt.block_on(async {
-                    tokio::join!(
-                        Self::fetch_balances(&eth, &orders),
-                        Self::collect_orders_app_data(app_data_retriever, &orders),
-                        Self::cow_amm_orders(&eth, &tokens, &cow_amms, signature_validator.as_ref()),
-                    )
-                });
-
-            let settlement = eth.contracts().settlement().address().into();
-            let _timer2 = stage_timer("aggregate_and_sort");
-
-            let cow_amm_lookup: HashSet<_> = cow_amms.iter().map(|o| o.uid).collect();
-            orders.extend(cow_amms);
-            sorting::sort_orders(&mut orders, &tokens, &solver, &order_comparators);
-            // This step filters out orders if the an owner doesn't have enough balances for all
-            // their orders with the same sell token. That means orders already need to be sorted
-            // from most relevant to least relevant so that we allocate balances for the most
-            // relevants first.
-            Self::update_orders(&mut balances, &mut app_data_by_hash, &mut orders, &settlement, &cow_amm_lookup);
-
-            tracing::debug!(auction_id = new_id.0, time =? start.elapsed(), "auction preprocessing done");
-            orders
-        })
-            .map(|res| {
-                res.expect(
-                    "Either runtime was shut down before spawning the task or no OS threads are \
-         available; no sense in handling those errors",
-                )
-            })
-            .boxed()
-            .shared();
-
-        tracing::debug!("started new prioritization task");
+        tracing::debug!("started new data aggregation task");
         lock.auction = new_id;
         lock.fut = fut.clone();
 
         fut
-    }
-
-    /// Fetches the app data for all orders in the auction.
-    /// Returns a map from app data hash to the fetched app data.
-    async fn collect_orders_app_data(
-        app_data_retriever: Option<order::app_data::AppDataRetriever>,
-        orders: &[order::Order],
-    ) -> HashMap<order::app_data::AppDataHash, app_data::ValidatedAppData> {
-        let Some(app_data_retriever) = app_data_retriever else {
-            return Default::default();
-        };
-
-        let _timer = stage_timer("fetch_app_data");
-
-        join_all(
-            orders
-                .iter()
-                .map(|order| order.app_data.hash())
-                .unique()
-                .map(|app_data_hash| {
-                    let app_data_retriever = app_data_retriever.clone();
-                    async move {
-                        let fetched_app_data = app_data_retriever
-                            .get(&app_data_hash)
-                            .await
-                            .tap_err(|err| {
-                                tracing::warn!(?app_data_hash, ?err, "failed to fetch app data");
-                            })
-                            .ok()
-                            .flatten();
-
-                        (app_data_hash, fetched_app_data)
-                    }
-                }),
-        )
-        .await
-        .into_iter()
-        .filter_map(|(app_data_hash, app_data)| app_data.map(|app_data| (app_data_hash, app_data)))
-        .collect::<HashMap<_, _>>()
     }
 
     /// Removes orders that cannot be filled due to missing funds of the owner
@@ -284,12 +240,15 @@ impl AuctionProcessor {
     /// It allocates available funds from left to right so the orders should
     /// already be sorted by priority going in.
     fn update_orders(
-        balances: &mut Balances,
-        app_data_by_hash: &mut HashMap<order::app_data::AppDataHash, app_data::ValidatedAppData>,
-        orders: &mut Vec<order::Order>,
-        settlement: &eth::Address,
-        cow_amms: &HashSet<order::Uid>,
-    ) {
+        mut auction: Auction,
+        data: Arc<AggregatedData>,
+        settlement_contract: &eth::Address,
+    ) -> Auction {
+        // Clone balances since we only aggregate data once but each solver needs
+        // to use and modify the data individually.
+        let mut balances = data.balances.clone();
+        let cow_amms: HashSet<_> = data.cow_amm_orders.iter().map(|o| o.uid).collect();
+
         // The auction that we receive from the `autopilot` assumes that there
         // is sufficient balance to completely cover all the orders. **This is
         // not the case** (as the protocol should not chose which limit orders
@@ -298,7 +257,7 @@ impl AuctionProcessor {
         // to each order, and potentially scaling the order's `available` amount
         // down in case the available user balance is only enough to partially
         // cover the rest of the order.
-        orders.retain_mut(|order| {
+        auction.orders.retain_mut(|order| {
             if cow_amms.contains(&order.uid) {
                 // cow amm orders already get constructed fully initialized
                 // so we don't have to handle them here anymore.
@@ -309,14 +268,14 @@ impl AuctionProcessor {
             }
 
             // Update order app data if it was fetched.
-            if let Some(fetched_app_data) = app_data_by_hash.get(&order.app_data.hash()) {
+            if let Some(fetched_app_data) = data.app_data.get(&order.app_data.hash()) {
                 order.app_data = fetched_app_data.clone().into();
                 if order.app_data.flashloan().is_some() {
                     // If an order requires a flashloan we assume all the necessary
                     // sell tokens will come from there. But the receiver must be the
                     // settlement contract because that is how the driver expects
                     // the flashloan to be repaid for now.
-                    return order.receiver.as_ref() == Some(settlement);
+                    return order.receiver.as_ref() == Some(settlement_contract);
                 }
             }
 
@@ -378,12 +337,81 @@ impl AuctionProcessor {
 
             true
         });
+
+        auction
+    }
+
+    pub fn new(
+        eth: &infra::Ethereum,
+        order_priority_strategies: Vec<OrderPriorityStrategy>,
+        app_data_retriever: Option<order::app_data::AppDataRetriever>,
+    ) -> Self {
+        let eth = eth.with_metric_label("auctionPreProcessing".into());
+        let mut order_sorting_strategies = vec![];
+
+        for strategy in order_priority_strategies {
+            let comparator: Arc<dyn sorting::SortingStrategy> = match strategy {
+                OrderPriorityStrategy::ExternalPrice => Arc::new(sorting::ExternalPrice),
+                OrderPriorityStrategy::CreationTimestamp { max_order_age } => {
+                    Arc::new(sorting::CreationTimestamp {
+                        max_order_age: max_order_age.map(|t| Duration::from_std(t).unwrap()),
+                    })
+                }
+                OrderPriorityStrategy::OwnQuotes { max_order_age } => {
+                    Arc::new(sorting::OwnQuotes {
+                        max_order_age: max_order_age.map(|t| Duration::from_std(t).unwrap()),
+                    })
+                }
+            };
+            order_sorting_strategies.push(comparator);
+        }
+
+        let signature_validator = shared::signature_validator::validator(
+            eth.web3(),
+            Contracts {
+                settlement: eth.contracts().settlement().address(),
+                vault_relayer: eth.contracts().vault_relayer().0,
+            },
+        );
+
+        Self(Arc::new(Inner {
+            control: Mutex::new(Control {
+                auction: Id(0),
+                fut: futures::future::pending().boxed().shared(),
+            }),
+            aggregator: Arc::new(DataAggregator {
+                eth,
+                order_sorting_strategies,
+                signature_validator,
+                app_data_retriever,
+            }),
+        }))
+    }
+}
+
+impl DataAggregator {
+    async fn fetch_aggregated_data(self: Arc<Self>, auction: Arc<Auction>) -> Arc<AggregatedData> {
+        let _timer = stage_timer("aggregate data");
+        let start = std::time::Instant::now();
+
+        let (balances, app_data, cow_amm_orders) = tokio::join!(
+            self.fetch_balances(&auction.orders),
+            self.collect_orders_app_data(&auction.orders),
+            self.cow_amm_orders(&auction.tokens, &auction.surplus_capturing_jit_order_owners),
+        );
+        tracing::debug!(auction_id = ?auction.id(), time =? start.elapsed(), "auction preprocessing done");
+
+        Arc::new(AggregatedData {
+            balances,
+            app_data,
+            cow_amm_orders,
+        })
     }
 
     /// Fetches the tradable balance for every order owner.
-    async fn fetch_balances(ethereum: &infra::Ethereum, orders: &[order::Order]) -> Balances {
+    async fn fetch_balances(&self, orders: &[order::Order]) -> Balances {
         let _timer = stage_timer("fetch_balances");
-        let ethereum = ethereum.with_metric_label("orderBalances".into());
+        let ethereum = self.eth.with_metric_label("orderBalances".into());
         let mut tokens: HashMap<_, _> = Default::default();
         // Collect trader/token/source/interaction tuples for fetching available
         // balances. Note that we are pessimistic here, if a trader is selling
@@ -432,15 +460,53 @@ impl AuctionProcessor {
         .collect()
     }
 
+    /// Fetches the app data for all orders in the auction.
+    /// Returns a map from app data hash to the fetched app data.
+    async fn collect_orders_app_data(
+        &self,
+        orders: &[order::Order],
+    ) -> HashMap<order::app_data::AppDataHash, app_data::ValidatedAppData> {
+        let Some(app_data_retriever) = &self.app_data_retriever else {
+            return Default::default();
+        };
+
+        let _timer = stage_timer("fetch_app_data");
+
+        join_all(
+            orders
+                .iter()
+                .map(|order| order.app_data.hash())
+                .unique()
+                .map(|app_data_hash| {
+                    let app_data_retriever = app_data_retriever.clone();
+                    async move {
+                        let fetched_app_data = app_data_retriever
+                            .get(&app_data_hash)
+                            .await
+                            .tap_err(|err| {
+                                tracing::warn!(?app_data_hash, ?err, "failed to fetch app data");
+                            })
+                            .ok()
+                            .flatten();
+
+                        (app_data_hash, fetched_app_data)
+                    }
+                }),
+        )
+        .await
+        .into_iter()
+        .filter_map(|(app_data_hash, app_data)| app_data.map(|app_data| (app_data_hash, app_data)))
+        .collect::<HashMap<_, _>>()
+    }
+
     async fn cow_amm_orders(
-        eth: &Ethereum,
+        &self,
         tokens: &Tokens,
         eligible_for_surplus: &HashSet<eth::Address>,
-        signature_validator: &dyn SignatureValidating,
     ) -> Vec<Order> {
         let _timer = stage_timer("cow_amm_orders");
-        let cow_amms = eth.contracts().cow_amm_registry().amms().await;
-        let domain_separator = eth.contracts().settlement_domain_separator();
+        let cow_amms = self.eth.contracts().cow_amm_registry().amms().await;
+        let domain_separator = self.eth.contracts().settlement_domain_separator();
         let domain_separator = model::DomainSeparator(domain_separator.0);
         let results: Vec<_> = futures::future::join_all(
             cow_amms
@@ -467,14 +533,18 @@ impl AuctionProcessor {
                     Some((amm, prices))
                 })
                 .map(|(cow_amm, prices)| async move {
-                    (*cow_amm.address(), cow_amm.validated_template_order(prices, signature_validator, &domain_separator).await)
+                    let order = cow_amm.validated_template_order(
+                        prices,
+                        self.signature_validator.as_ref(),
+                        &domain_separator
+                    ).await;
+                    (*cow_amm.address(), order)
                 }),
         )
         .await;
 
         // Convert results to domain format.
-        let domain_separator =
-            model::DomainSeparator(eth.contracts().settlement_domain_separator().0);
+        let domain_separator = model::DomainSeparator(domain_separator.0);
         let orders: Vec<_> = results
             .into_iter()
             .filter_map(|(amm, result)| match result {
@@ -547,49 +617,6 @@ impl AuctionProcessor {
         }
 
         orders
-    }
-
-    pub fn new(
-        eth: &infra::Ethereum,
-        order_priority_strategies: Vec<OrderPriorityStrategy>,
-        app_data_retriever: Option<order::app_data::AppDataRetriever>,
-    ) -> Self {
-        let eth = eth.with_metric_label("auctionPreProcessing".into());
-        let mut order_sorting_strategies = vec![];
-
-        for strategy in order_priority_strategies {
-            let comparator: Arc<dyn sorting::SortingStrategy> = match strategy {
-                OrderPriorityStrategy::ExternalPrice => Arc::new(sorting::ExternalPrice),
-                OrderPriorityStrategy::CreationTimestamp { max_order_age } => {
-                    Arc::new(sorting::CreationTimestamp {
-                        max_order_age: max_order_age.map(|t| Duration::from_std(t).unwrap()),
-                    })
-                }
-                OrderPriorityStrategy::OwnQuotes { max_order_age } => {
-                    Arc::new(sorting::OwnQuotes {
-                        max_order_age: max_order_age.map(|t| Duration::from_std(t).unwrap()),
-                    })
-                }
-            };
-            order_sorting_strategies.push(comparator);
-        }
-
-        let signature_validator = shared::signature_validator::validator(
-            eth.web3(),
-            Contracts {
-                settlement: eth.contracts().settlement().address(),
-                vault_relayer: eth.contracts().vault_relayer().0,
-            },
-        );
-
-        Self(Arc::new(Mutex::new(Inner {
-            auction: Id(0),
-            fut: futures::future::pending().boxed().shared(),
-            eth,
-            order_sorting_strategies,
-            signature_validator,
-            app_data_retriever,
-        })))
     }
 }
 

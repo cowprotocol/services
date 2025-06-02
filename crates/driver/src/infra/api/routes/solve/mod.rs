@@ -34,7 +34,7 @@ async fn route(
         let competition = state.competition();
         let auction = state
             .pre_processor()
-            .prioritize(auction, &competition.solver.account().address())
+            .prioritize(auction.into(), competition.solver.account().address())
             .await;
         let result = competition.solve(auction).await;
         // Solving takes some time, so there is a chance for the settlement queue to
