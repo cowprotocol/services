@@ -97,11 +97,7 @@ impl Competition {
 
     /// Solve an auction as part of this competition.
     pub async fn solve(&self, auction: Auction) -> Result<Option<Solved>, Error> {
-        let auction = &self
-            .bad_tokens
-            .filter_unsupported_orders_in_auction(auction)
-            .await;
-
+        let auction = &self.without_unsupported_orders(auction).await;
         let liquidity = match self.solver.liquidity() {
             solver::Liquidity::Fetch => {
                 self.liquidity
@@ -502,6 +498,15 @@ impl Competition {
             }));
         }
         Ok(())
+    }
+
+    async fn without_unsupported_orders(&self, mut auction: Auction) -> Auction {
+        if !self.solver.config().flashloans_enabled {
+            auction.orders.retain(|o| o.app_data.flashloan().is_none());
+        }
+        self.bad_tokens
+            .filter_unsupported_orders_in_auction(auction)
+            .await
     }
 }
 
