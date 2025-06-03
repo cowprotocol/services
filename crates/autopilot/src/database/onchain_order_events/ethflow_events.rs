@@ -261,23 +261,25 @@ async fn find_indexing_start_block(
         .context("failed to read last indexed block from db")?;
 
     if last_indexed_block > 0 {
-        block_number_to_block_number_hash(web3, U64::from(last_indexed_block + 1).into())
+        return block_number_to_block_number_hash(web3, U64::from(last_indexed_block + 1).into())
             .await
             .map(Some)
-            .ok_or_else(|| anyhow::anyhow!("failed to fetch block"))
-    } else if let Some(start_block) = fallback_start_block {
-        block_number_to_block_number_hash(web3, start_block.into())
-            .await
-            .map(Some)
-            .context("failed to fetch fallback indexing start block")
-    } else if let Some(chain_id) = settlement_fallback_chain_id {
-        settlement_deployment_block_number_hash(web3, chain_id)
-            .await
-            .map(Some)
-            .context("failed to fetch settlement deployment block")
-    } else {
-        Ok(None)
+            .ok_or_else(|| anyhow::anyhow!("failed to fetch block"));
     }
+    if let Some(start_block) = fallback_start_block {
+        return block_number_to_block_number_hash(web3, start_block.into())
+            .await
+            .map(Some)
+            .context("failed to fetch fallback indexing start block");
+    }
+    if let Some(chain_id) = settlement_fallback_chain_id {
+        return settlement_deployment_block_number_hash(web3, chain_id)
+            .await
+            .map(Some)
+            .context("failed to fetch settlement deployment block");
+    }
+
+    Ok(None)
 }
 
 #[cfg(test)]
