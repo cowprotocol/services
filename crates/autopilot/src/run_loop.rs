@@ -74,12 +74,8 @@ impl Config {
         match self.combinatorial_auctions_cutover {
             // No cutover date means single winner
             None => true,
-            // If there is a cutover date, check if the auction deadline is before it
-            Some(cutover) => {
-                let solve_deadline =
-                    chrono::Utc::now() + chrono::Duration::from_std(self.solve_deadline).unwrap();
-                solve_deadline < cutover
-            }
+            // If there is a cutover date, check if we are past it
+            Some(cutover) => chrono::Utc::now() < cutover,
         }
     }
 }
