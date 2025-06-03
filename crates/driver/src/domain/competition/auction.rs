@@ -36,14 +36,14 @@ use {
 #[derive(Debug, Clone)]
 pub struct Auction {
     /// See the [`Self::id`] method.
-    id: Option<Id>,
+    pub(crate) id: Option<Id>,
     /// See the [`Self::orders`] method.
     pub(crate) orders: Vec<competition::Order>,
     /// The tokens that are used in the orders of this auction.
-    tokens: Tokens,
-    gas_price: eth::GasPrice,
-    deadline: time::Deadline,
-    surplus_capturing_jit_order_owners: HashSet<eth::Address>,
+    pub(crate) tokens: Tokens,
+    pub(crate) gas_price: eth::GasPrice,
+    pub(crate) deadline: time::Deadline,
+    pub(crate) surplus_capturing_jit_order_owners: HashSet<eth::Address>,
 }
 
 impl Auction {

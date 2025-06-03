@@ -41,6 +41,7 @@ mod sorting;
 pub use {
     auction::{Auction, AuctionProcessor},
     order::Order,
+    pre_processing::DataAggregator,
     solution::Solution,
 };
 
@@ -61,6 +62,7 @@ pub struct Competition {
     /// Cached solutions with the most recent solutions at the front.
     pub settlements: Mutex<VecDeque<Settlement>>,
     pub bad_tokens: Arc<bad_tokens::Detector>,
+    fetcher: Arc<pre_processing::DataAggregator>,
     settle_queue: mpsc::Sender<SettleRequest>,
 }
 
@@ -72,6 +74,7 @@ impl Competition {
         simulator: Simulator,
         mempools: Mempools,
         bad_tokens: Arc<bad_tokens::Detector>,
+        fetcher: Arc<DataAggregator>,
     ) -> Arc<Self> {
         let (settle_sender, settle_receiver) = mpsc::channel(solver.settle_queue_size());
 
@@ -84,6 +87,7 @@ impl Competition {
             settlements: Default::default(),
             settle_queue: settle_sender,
             bad_tokens,
+            fetcher,
         });
 
         let competition_clone = Arc::clone(&competition);
@@ -98,6 +102,16 @@ impl Competition {
 
     /// Solve an auction as part of this competition.
     pub async fn solve(&self, auction: Auction) -> Result<Option<Solved>, Error> {
+        let auction = Arc::new(auction);
+
+        let tasks = self.fetcher.get_tasks_for_auction(Arc::clone(&auction));
+        let auction = Arc::unwrap_or_clone(auction);
+        // 1. await cow amm orders
+        // 2. sort orders
+        // 3. await balances, appdata
+        // 4. update orders
+
+        // TODO make this another parallel task
         let auction = &self
             .bad_tokens
             .filter_unsupported_orders_in_auction(auction)

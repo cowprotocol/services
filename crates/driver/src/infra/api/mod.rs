@@ -59,8 +59,12 @@ impl Api {
         let pre_processor = domain::competition::AuctionProcessor::new(
             &self.eth,
             order_priority_strategies,
-            app_data_retriever,
+            app_data_retriever.clone(),
         );
+        let fetcher = Arc::new(domain::competition::DataAggregator::new(
+            self.eth.clone(),
+            app_data_retriever,
+        ));
 
         // Add the metrics and healthz endpoints.
         app = routes::metrics(app);
@@ -107,6 +111,7 @@ impl Api {
                     self.simulator.clone(),
                     self.mempools.clone(),
                     Arc::new(bad_tokens),
+                    fetcher.clone(),
                 ),
                 liquidity: self.liquidity.clone(),
                 tokens: tokens.clone(),

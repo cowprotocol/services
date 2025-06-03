@@ -32,10 +32,10 @@ async fn route(
             })?;
         tracing::debug!(elapsed = ?start.elapsed(), "auction task execution time");
         let competition = state.competition();
-        let auction = state
-            .pre_processor()
-            .prioritize(auction.into(), competition.solver.account().address())
-            .await;
+        // let auction = state
+        //     .pre_processor()
+        //     .prioritize(auction.into(), competition.solver.account().address())
+        //     .await;
         let result = competition.solve(auction).await;
         // Solving takes some time, so there is a chance for the settlement queue to
         // have capacity again.
