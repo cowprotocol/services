@@ -13,6 +13,7 @@ use {
             time::Remaining,
         },
         infra::{
+            self,
             blockchain::Ethereum,
             config::file::FeeHandler,
             persistence::{Persistence, S3},
@@ -130,6 +131,9 @@ pub struct Config {
     pub settle_queue_size: usize,
     /// Whether flashloan hints should be sent to the solver.
     pub flashloans_enabled: bool,
+    /// Defines at which block the liquidity needs to be fetched on /solve
+    /// requests.
+    pub fetch_liquidity_at_block: infra::liquidity::AtBlock,
 }
 
 impl Solver {
@@ -214,6 +218,10 @@ impl Solver {
 
     pub fn settle_queue_size(&self) -> usize {
         self.config.settle_queue_size
+    }
+
+    pub fn fetch_liquidity_at_block(&self) -> infra::liquidity::AtBlock {
+        self.config.fetch_liquidity_at_block.clone()
     }
 
     /// Make a POST request instructing the solver to solve an auction.

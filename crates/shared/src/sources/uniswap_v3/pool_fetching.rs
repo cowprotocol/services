@@ -338,7 +338,7 @@ impl PoolFetching for UniswapV3PoolFetcher {
         at_block: Block,
     ) -> Result<Vec<PoolInfo>> {
         let block_number = match at_block {
-            Block::Recent => self
+            Block::Recent | Block::Finalized => self
                 .events
                 .lock()
                 .await
