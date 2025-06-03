@@ -550,6 +550,7 @@ pub async fn run(args: Arguments) {
             args.ethflow_indexing_start,
             &web3,
             chain_id,
+            &db,
         )
         .await;
 
