@@ -160,7 +160,11 @@ fn check_final_reserves(
 }
 
 impl BaselineSolvable for Pool {
-    fn get_amount_out(&self, out_token: H160, (in_amount, in_token): (U256, H160)) -> Option<U256> {
+    async fn get_amount_out(
+        &self,
+        out_token: H160,
+        (in_amount, in_token): (U256, H160),
+    ) -> Option<U256> {
         self.get_amount_out(in_token, in_amount)
             .map(|(out_amount, token)| {
                 assert_eq!(token, out_token);
@@ -168,7 +172,11 @@ impl BaselineSolvable for Pool {
             })
     }
 
-    fn get_amount_in(&self, in_token: H160, (out_amount, out_token): (U256, H160)) -> Option<U256> {
+    async fn get_amount_in(
+        &self,
+        in_token: H160,
+        (out_amount, out_token): (U256, H160),
+    ) -> Option<U256> {
         self.get_amount_in(out_token, out_amount)
             .map(|(in_amount, token)| {
                 assert_eq!(token, in_token);
@@ -176,7 +184,7 @@ impl BaselineSolvable for Pool {
             })
     }
 
-    fn gas_cost(&self) -> usize {
+    async fn gas_cost(&self) -> usize {
         POOL_SWAP_GAS_COST
     }
 }

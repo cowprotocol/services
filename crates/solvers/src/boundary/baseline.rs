@@ -33,7 +33,11 @@ impl<'a> Solver<'a> {
         }
     }
 
-    pub fn route(&self, request: solver::Request, max_hops: usize) -> Option<solver::Route<'a>> {
+    pub async fn route(
+        &self,
+        request: solver::Request,
+        max_hops: usize,
+    ) -> Option<solver::Route<'a>> {
         let candidates = self.base_tokens.path_candidates_with_hops(
             request.sell.token.0,
             request.buy.token.0,
@@ -41,16 +45,17 @@ impl<'a> Solver<'a> {
         );
 
         let (segments, _) = match request.side {
-            order::Side::Buy => candidates
-                .iter()
-                .filter_map(|path| {
+            order::Side::Buy => {
+                let futures = candidates.iter().map(|path| async {
                     let sell = baseline_solver::estimate_sell_amount(
                         request.buy.amount,
                         path,
                         &self.onchain_liquidity,
-                    )?;
-                    let segments =
-                        self.traverse_path(&sell.path, request.sell.token.0, sell.value)?;
+                    )
+                    .await?;
+                    let segments = self
+                        .traverse_path(&sell.path, request.sell.token.0, sell.value)
+                        .await?;
 
                     let buy = segments.last().map(|segment| segment.output.amount);
                     if buy.map(|buy| buy >= request.buy.amount) != Some(true) {
@@ -63,18 +68,24 @@ impl<'a> Solver<'a> {
                     }
 
                     (sell.value <= request.sell.amount).then_some((segments, sell))
-                })
-                .min_by_key(|(_, sell)| sell.value)?,
-            order::Side::Sell => candidates
-                .iter()
-                .filter_map(|path| {
+                });
+                futures::future::join_all(futures)
+                    .await
+                    .into_iter()
+                    .flatten()
+                    .min_by_key(|(_, sell)| sell.value)?
+            }
+            order::Side::Sell => {
+                let futures = candidates.iter().map(|path| async {
                     let buy = baseline_solver::estimate_buy_amount(
                         request.sell.amount,
                         path,
                         &self.onchain_liquidity,
-                    )?;
-                    let segments =
-                        self.traverse_path(&buy.path, request.sell.token.0, request.sell.amount)?;
+                    )
+                    .await?;
+                    let segments = self
+                        .traverse_path(&buy.path, request.sell.token.0, request.sell.amount)
+                        .await?;
 
                     let sell = segments.first().map(|segment| segment.input.amount);
                     if sell.map(|sell| sell >= request.sell.amount) != Some(true) {
@@ -87,14 +98,19 @@ impl<'a> Solver<'a> {
                     }
 
                     (buy.value >= request.buy.amount).then_some((segments, buy))
-                })
-                .max_by_key(|(_, buy)| buy.value)?,
+                });
+                futures::future::join_all(futures)
+                    .await
+                    .into_iter()
+                    .flatten()
+                    .max_by_key(|(_, buy)| buy.value)?
+            }
         };
 
         solver::Route::new(segments)
     }
 
-    fn traverse_path(
+    async fn traverse_path(
         &self,
         path: &[&OnchainLiquidity],
         mut sell_token: H160,
@@ -111,7 +127,9 @@ impl<'a> Solver<'a> {
                 .token_pair
                 .other(&sell_token)
                 .expect("Inconsistent path");
-            let buy_amount = liquidity.get_amount_out(buy_token, (sell_amount, sell_token))?;
+            let buy_amount = liquidity
+                .get_amount_out(buy_token, (sell_amount, sell_token))
+                .await?;
 
             segments.push(solver::Segment {
                 liquidity: reference_liquidity,
@@ -123,7 +141,7 @@ impl<'a> Solver<'a> {
                     token: eth::TokenAddress(buy_token),
                     amount: buy_amount,
                 },
-                gas: eth::Gas(liquidity.gas_cost().into()),
+                gas: eth::Gas(liquidity.gas_cost().await.into()),
             });
 
             sell_token = buy_token;
@@ -229,32 +247,34 @@ enum LiquiditySource {
 }
 
 impl BaselineSolvable for OnchainLiquidity {
-    fn get_amount_out(&self, out_token: H160, input: (U256, H160)) -> Option<U256> {
+    async fn get_amount_out(&self, out_token: H160, input: (U256, H160)) -> Option<U256> {
         match &self.source {
-            LiquiditySource::ConstantProduct(pool) => pool.get_amount_out(out_token, input),
-            LiquiditySource::WeightedProduct(pool) => pool.get_amount_out(out_token, input),
-            LiquiditySource::Stable(pool) => pool.get_amount_out(out_token, input),
+            LiquiditySource::ConstantProduct(pool) => pool.get_amount_out(out_token, input).await,
+            LiquiditySource::WeightedProduct(pool) => pool.get_amount_out(out_token, input).await,
+            LiquiditySource::Stable(pool) => pool.get_amount_out(out_token, input).await,
             LiquiditySource::LimitOrder(limit_order) => {
-                limit_order.get_amount_out(out_token, input)
+                limit_order.get_amount_out(out_token, input).await
             }
         }
     }
 
-    fn get_amount_in(&self, in_token: H160, out: (U256, H160)) -> Option<U256> {
+    async fn get_amount_in(&self, in_token: H160, out: (U256, H160)) -> Option<U256> {
         match &self.source {
-            LiquiditySource::ConstantProduct(pool) => pool.get_amount_in(in_token, out),
-            LiquiditySource::WeightedProduct(pool) => pool.get_amount_in(in_token, out),
-            LiquiditySource::Stable(pool) => pool.get_amount_in(in_token, out),
-            LiquiditySource::LimitOrder(limit_order) => limit_order.get_amount_in(in_token, out),
+            LiquiditySource::ConstantProduct(pool) => pool.get_amount_in(in_token, out).await,
+            LiquiditySource::WeightedProduct(pool) => pool.get_amount_in(in_token, out).await,
+            LiquiditySource::Stable(pool) => pool.get_amount_in(in_token, out).await,
+            LiquiditySource::LimitOrder(limit_order) => {
+                limit_order.get_amount_in(in_token, out).await
+            }
         }
     }
 
-    fn gas_cost(&self) -> usize {
+    async fn gas_cost(&self) -> usize {
         match &self.source {
-            LiquiditySource::ConstantProduct(pool) => pool.gas_cost(),
-            LiquiditySource::WeightedProduct(pool) => pool.gas_cost(),
-            LiquiditySource::Stable(pool) => pool.gas_cost(),
-            LiquiditySource::LimitOrder(limit_order) => limit_order.gas_cost(),
+            LiquiditySource::ConstantProduct(pool) => pool.gas_cost().await,
+            LiquiditySource::WeightedProduct(pool) => pool.gas_cost().await,
+            LiquiditySource::Stable(pool) => pool.gas_cost().await,
+            LiquiditySource::LimitOrder(limit_order) => limit_order.gas_cost().await,
         }
     }
 }

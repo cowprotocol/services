@@ -21,6 +21,7 @@ clap = { workspace = true, features = ["derive", "env"] }
 derive_more = { workspace = true }
 ethereum-types = { workspace = true }
 ethrpc = { workspace = true }
+futures = { workspace = true }
 hex = { workspace = true }
 hyper = { workspace = true }
 itertools = { workspace = true }
