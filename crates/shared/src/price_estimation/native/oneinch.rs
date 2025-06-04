@@ -13,6 +13,7 @@ use {
     std::{
         collections::HashMap,
         sync::{Arc, Mutex},
+        time::Duration,
     },
     url::Url,
 };
@@ -88,7 +89,11 @@ impl OneInch {
 }
 
 impl NativePriceEstimating for OneInch {
-    fn estimate_native_price(&self, token: Token) -> BoxFuture<'_, NativePriceEstimateResult> {
+    fn estimate_native_price(
+        &self,
+        token: Token,
+        _timeout: Duration, // ignored since cache lookup take ms anyway
+    ) -> BoxFuture<'_, NativePriceEstimateResult> {
         async move {
             let prices = self.prices.lock().unwrap();
             prices
