@@ -64,6 +64,7 @@ struct Inner {
     /// It's very important that the 2 tokens have the same number of decimals.
     /// After startup this is a read only value.
     approximation_tokens: HashMap<H160, H160>,
+    quote_timeout: Duration,
 }
 
 struct UpdateTask {
@@ -172,6 +173,7 @@ impl Inner {
         &'a self,
         tokens: &'a [H160],
         max_age: Duration,
+        request_timeout: Duration,
     ) -> futures::stream::BoxStream<'a, (H160, NativePriceEstimateResult)> {
         let estimates = tokens.iter().map(move |token| async move {
             let current_accumulative_errors_count = {
@@ -190,7 +192,10 @@ impl Inner {
 
             let token_to_fetch = *self.approximation_tokens.get(token).unwrap_or(token);
 
-            let result = self.estimator.estimate_native_price(token_to_fetch).await;
+            let result = self
+                .estimator
+                .estimate_native_price(token_to_fetch, request_timeout)
+                .await;
 
             // update price in cache
             if should_cache(&result) {
@@ -268,7 +273,11 @@ impl UpdateTask {
         outdated_entries.truncate(self.update_size.unwrap_or(usize::MAX));
 
         if !outdated_entries.is_empty() {
-            let mut stream = inner.estimate_prices_and_update_cache(&outdated_entries, max_age);
+            let mut stream = inner.estimate_prices_and_update_cache(
+                &outdated_entries,
+                max_age,
+                inner.quote_timeout,
+            );
             while stream.next().await.is_some() {}
             metrics
                 .native_price_cache_background_updates
@@ -322,6 +331,7 @@ impl CachingNativePriceEstimator {
     /// recently used prices have a higher priority. If `update_size` is
     /// `Some(n)` at most `n` prices get updated per interval.
     /// If `update_size` is `None` no limit gets applied.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         estimator: Box<dyn NativePriceEstimating>,
         max_age: Duration,
@@ -330,6 +340,7 @@ impl CachingNativePriceEstimator {
         prefetch_time: Duration,
         concurrent_requests: usize,
         approximation_tokens: HashMap<H160, H160>,
+        quote_timeout: Duration,
     ) -> Self {
         let inner = Arc::new(Inner {
             estimator,
@@ -338,6 +349,7 @@ impl CachingNativePriceEstimator {
             max_age,
             concurrent_requests,
             approximation_tokens,
+            quote_timeout,
         });
 
         let update_task = UpdateTask {
@@ -402,9 +414,9 @@ impl CachingNativePriceEstimator {
             .filter(|t| !prices.contains_key(t))
             .copied()
             .collect();
-        let price_stream = self
-            .0
-            .estimate_prices_and_update_cache(&uncached_tokens, self.0.max_age);
+        let price_stream =
+            self.0
+                .estimate_prices_and_update_cache(&uncached_tokens, self.0.max_age, timeout);
 
         let _ = time::timeout(timeout, async {
             let mut price_stream = price_stream;
@@ -424,6 +436,7 @@ impl NativePriceEstimating for CachingNativePriceEstimator {
     fn estimate_native_price(
         &self,
         token: H160,
+        timeout: Duration,
     ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult> {
         async move {
             let cached = {
@@ -443,7 +456,7 @@ impl NativePriceEstimating for CachingNativePriceEstimator {
             }
 
             self.0
-                .estimate_prices_and_update_cache(&[token], self.0.max_age)
+                .estimate_prices_and_update_cache(&[token], self.0.max_age, timeout)
                 .next()
                 .await
                 .unwrap()
