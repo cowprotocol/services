@@ -97,18 +97,16 @@ impl Competition {
 
     /// Solve an auction as part of this competition.
     pub async fn solve(&self, auction: Auction) -> Result<Option<Solved>, Error> {
-        let auction = &self.without_unsupported_orders(auction).await;
-        let liquidity = match self.solver.liquidity() {
-            solver::Liquidity::Fetch => {
-                self.liquidity
-                    .fetch(
-                        &auction.liquidity_pairs(),
-                        self.solver.fetch_liquidity_at_block(),
-                    )
-                    .await
-            }
+        let pairs_to_fetch = match self.solver.liquidity() {
+            solver::Liquidity::Fetch => auction.liquidity_pairs(),
             solver::Liquidity::Skip => Default::default(),
         };
+        let (liquidity, auction) = tokio::join!(
+            self.liquidity
+                .fetch(&pairs_to_fetch, self.solver.fetch_liquidity_at_block()),
+            self.without_unsupported_orders(auction)
+        );
+        let auction = &auction;
 
         // Fetch the solutions from the solver.
         let solutions = self
