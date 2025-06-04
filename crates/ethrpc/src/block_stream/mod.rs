@@ -144,6 +144,7 @@ pub async fn current_block_stream(
 
             // If the block is exactly the same, ignore it.
             if previous_block.hash == block.hash {
+                update_stale_block_metrics(Instant::now().duration_since(block.observed_at));
                 continue;
             }
 
@@ -342,6 +343,9 @@ pub struct Metrics {
     /// How much a new block number differs from the current block number.
     #[metric(buckets(0., 1., 2., 4., 8., 25.), labels("sign"))]
     block_stream_update_delta: prometheus::HistogramVec,
+    
+    /// For how long the current block watcher has not seen a new block.
+    block_staleness_ms: prometheus::IntGauge,
 }
 
 /// Updates metrics about the difference of the new block number compared to the
@@ -357,6 +361,17 @@ fn update_block_metrics(current_block: u64, new_block: u64) {
     } else {
         metric.with_label_values(&["positive"]).observe(delta.abs());
     }
+}
+
+/// Records how long the current block watcher has not seen a new block.
+fn update_stale_block_metrics(
+    stale_duration: Duration,
+) {
+    let metric = &Metrics::instance(observe::metrics::get_storage_registry())
+        .unwrap()
+        .block_staleness_ms;
+
+    metric.set(stale_duration.as_millis() as i64);
 }
 
 /// Awaits and returns the next block that will be pushed into the stream.
