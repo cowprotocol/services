@@ -123,7 +123,12 @@ struct Metrics {
 mod tests {
     use {
         super::*,
-        crate::price_estimation::{Estimate, MockPriceEstimating, PriceEstimationError},
+        crate::price_estimation::{
+            Estimate,
+            HEALTHY_PRICE_ESTIMATION_TIME,
+            MockPriceEstimating,
+            PriceEstimationError,
+        },
         anyhow::anyhow,
         ethcontract::H160,
         model::order::OrderKind,
@@ -139,6 +144,7 @@ mod tests {
             in_amount: NonZeroU256::try_from(3).unwrap(),
             kind: OrderKind::Sell,
             block_dependent: false,
+            timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         });
 
         let mut estimator = MockPriceEstimating::new();

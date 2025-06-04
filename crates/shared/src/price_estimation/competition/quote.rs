@@ -180,7 +180,7 @@ mod tests {
         let mut native = MockNativePriceEstimating::new();
         native
             .expect_estimate_native_price()
-            .returning(move |_| async { Ok(0.5) }.boxed());
+            .returning(move |_, _| async { Ok(0.5) }.boxed());
         let gas = Arc::new(FakeGasPriceEstimator::new(GasPrice1559 {
             base_fee_per_gas: 2.0,
             max_fee_per_gas: 2.0,

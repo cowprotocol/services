@@ -314,7 +314,10 @@ mod metrics {
 mod tests {
     use {
         super::*,
-        crate::token_info::{MockTokenInfoFetching, TokenInfo},
+        crate::{
+            price_estimation::HEALTHY_PRICE_ESTIMATION_TIME,
+            token_info::{MockTokenInfoFetching, TokenInfo},
+        },
         std::env,
     };
 
@@ -403,7 +406,10 @@ mod tests {
         )
         .unwrap();
 
-        let estimated_price = instance.estimate_native_price(native_token).await.unwrap();
+        let estimated_price = instance
+            .estimate_native_price(native_token, HEALTHY_PRICE_ESTIMATION_TIME)
+            .await
+            .unwrap();
         // Since the WETH precise price against ETH is not always exact to 1.0 (it can
         // vary slightly)
         assert!((0.95..=1.05).contains(&estimated_price));
@@ -423,7 +429,10 @@ mod tests {
         )
         .unwrap();
 
-        let estimated_price = instance.estimate_native_price(native_token).await.unwrap();
+        let estimated_price = instance
+            .estimate_native_price(native_token, HEALTHY_PRICE_ESTIMATION_TIME)
+            .await
+            .unwrap();
         // Since the USDT precise price against XDAI is not always exact to 1.0
         // (it can vary slightly)
         assert!((0.95..=1.05).contains(&estimated_price));
@@ -444,7 +453,10 @@ mod tests {
         .unwrap();
 
         let estimated_price = instance
-            .fetch_native_prices(HashSet::from([usdt_token, usdc_token]))
+            .fetch_native_prices(
+                HashSet::from([usdt_token, usdc_token]),
+                HEALTHY_PRICE_ESTIMATION_TIME,
+            )
             .await
             .unwrap();
         let usdt_price = estimated_price.get(&usdt_token).unwrap().clone();
@@ -470,7 +482,10 @@ mod tests {
         .unwrap();
 
         let estimated_price = instance
-            .fetch_native_prices(HashSet::from([usdc, unknown_token]))
+            .fetch_native_prices(
+                HashSet::from([usdc, unknown_token]),
+                HEALTHY_PRICE_ESTIMATION_TIME,
+            )
             .await
             .unwrap();
         let usdc_price = estimated_price.get(&usdc).unwrap().clone();
@@ -511,9 +526,15 @@ mod tests {
         .unwrap();
 
         // usdc_price should be: ~1000000000000.0
-        let usdc_price = instance.estimate_native_price(usdc).await.unwrap();
+        let usdc_price = instance
+            .estimate_native_price(usdc, HEALTHY_PRICE_ESTIMATION_TIME)
+            .await
+            .unwrap();
         // wxdai_price should be: ~1.0
-        let wxdai_price = instance.estimate_native_price(wxdai).await.unwrap();
+        let wxdai_price = instance
+            .estimate_native_price(wxdai, HEALTHY_PRICE_ESTIMATION_TIME)
+            .await
+            .unwrap();
         dbg!(usdc_price, wxdai_price);
 
         // The `USDC` token only has 6 decimals whereas `wxDai` has 18. To make
@@ -559,9 +580,15 @@ mod tests {
         .unwrap();
 
         // usdc_price should be: ~0.001
-        let usdc_price = instance.estimate_native_price(usdc).await.unwrap();
+        let usdc_price = instance
+            .estimate_native_price(usdc, HEALTHY_PRICE_ESTIMATION_TIME)
+            .await
+            .unwrap();
         // wxdai_price should be: ~1.0
-        let wxdai_price = instance.estimate_native_price(wxdai).await.unwrap();
+        let wxdai_price = instance
+            .estimate_native_price(wxdai, HEALTHY_PRICE_ESTIMATION_TIME)
+            .await
+            .unwrap();
         dbg!(usdc_price, wxdai_price);
 
         // We pretended that `USDC` has 21 decimals now so we need to move it's price

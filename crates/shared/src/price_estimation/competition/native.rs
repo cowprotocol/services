@@ -58,7 +58,11 @@ fn compare_native_result(
 mod tests {
     use {
         super::*,
-        crate::price_estimation::{competition::PriceRanking, native::MockNativePriceEstimating},
+        crate::price_estimation::{
+            HEALTHY_PRICE_ESTIMATION_TIME,
+            competition::PriceRanking,
+            native::MockNativePriceEstimating,
+        },
     };
 
     fn native_price(native_price: f64) -> Result<f64, PriceEstimationError> {
@@ -82,7 +86,7 @@ mod tests {
             estimator
                 .expect_estimate_native_price()
                 .times(1)
-                .return_once(move |_| async move { estimate }.boxed());
+                .return_once(move |_, _| async move { estimate }.boxed());
             Arc::new(estimator)
         }
 
@@ -98,7 +102,9 @@ mod tests {
                 ranking.clone(),
             );
 
-        priority.estimate_native_price(Default::default()).await
+        priority
+            .estimate_native_price(Default::default(), HEALTHY_PRICE_ESTIMATION_TIME)
+            .await
     }
 
     /// If all estimators returned an error we return the one with the highest

@@ -874,7 +874,11 @@ mod tests {
         primitive_types::H160,
         shared::{
             bad_token::list_based::ListBasedDetector,
-            price_estimation::{PriceEstimationError, native::MockNativePriceEstimating},
+            price_estimation::{
+                HEALTHY_PRICE_ESTIMATION_TIME,
+                PriceEstimationError,
+                native::MockNativePriceEstimating,
+            },
             signature_validator::{MockSignatureValidating, SignatureValidationError},
         },
     };
@@ -903,18 +907,18 @@ mod tests {
         let mut native_price_estimator = MockNativePriceEstimating::new();
         native_price_estimator
             .expect_estimate_native_price()
-            .withf(move |token| *token == token1)
-            .returning(|_| async { Ok(2.) }.boxed());
+            .withf(move |token, _| *token == token1)
+            .returning(|_, _| async { Ok(2.) }.boxed());
         native_price_estimator
             .expect_estimate_native_price()
             .times(1)
-            .withf(move |token| *token == token2)
-            .returning(|_| async { Err(PriceEstimationError::NoLiquidity) }.boxed());
+            .withf(move |token, _| *token == token2)
+            .returning(|_, _| async { Err(PriceEstimationError::NoLiquidity) }.boxed());
         native_price_estimator
             .expect_estimate_native_price()
             .times(1)
-            .withf(move |token| *token == token3)
-            .returning(|_| async { Ok(0.25) }.boxed());
+            .withf(move |token, _| *token == token3)
+            .returning(|_, _| async { Ok(0.25) }.boxed());
 
         let native_price_estimator = CachingNativePriceEstimator::new(
             Box::new(native_price_estimator),
@@ -924,6 +928,7 @@ mod tests {
             Default::default(),
             3,
             Default::default(),
+            HEALTHY_PRICE_ESTIMATION_TIME,
         );
         let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
 
@@ -983,28 +988,28 @@ mod tests {
         let mut native_price_estimator = MockNativePriceEstimating::new();
         native_price_estimator
             .expect_estimate_native_price()
-            .withf(move |token| *token == token1)
-            .returning(|_| async { Ok(2.) }.boxed());
+            .withf(move |token, _| *token == token1)
+            .returning(|_, _| async { Ok(2.) }.boxed());
         native_price_estimator
             .expect_estimate_native_price()
             .times(1)
-            .withf(move |token| *token == token2)
-            .returning(|_| async { Err(PriceEstimationError::NoLiquidity) }.boxed());
+            .withf(move |token, _| *token == token2)
+            .returning(|_, _| async { Err(PriceEstimationError::NoLiquidity) }.boxed());
         native_price_estimator
             .expect_estimate_native_price()
             .times(1)
-            .withf(move |token| *token == token3)
-            .returning(|_| async { Ok(0.25) }.boxed());
+            .withf(move |token, _| *token == token3)
+            .returning(|_, _| async { Ok(0.25) }.boxed());
         native_price_estimator
             .expect_estimate_native_price()
             .times(1)
-            .withf(move |token| *token == token4)
-            .returning(|_| async { Ok(0.) }.boxed());
+            .withf(move |token, _| *token == token4)
+            .returning(|_, _| async { Ok(0.) }.boxed());
         native_price_estimator
             .expect_estimate_native_price()
             .times(1)
-            .withf(move |token| *token == token5)
-            .returning(|_| async { Ok(5.) }.boxed());
+            .withf(move |token, _| *token == token5)
+            .returning(|_, _| async { Ok(5.) }.boxed());
 
         let native_price_estimator = CachingNativePriceEstimator::new(
             Box::new(native_price_estimator),
@@ -1014,6 +1019,7 @@ mod tests {
             Default::default(),
             1,
             Default::default(),
+            HEALTHY_PRICE_ESTIMATION_TIME,
         );
         let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
 
@@ -1089,18 +1095,18 @@ mod tests {
         native_price_estimator
             .expect_estimate_native_price()
             .times(1)
-            .withf(move |token| *token == token3)
-            .returning(|_| async { Ok(3.) }.boxed());
+            .withf(move |token, _| *token == token3)
+            .returning(|_, _| async { Ok(3.) }.boxed());
         native_price_estimator
             .expect_estimate_native_price()
             .times(1)
-            .withf(move |token| *token == token_approx1)
-            .returning(|_| async { Ok(40.) }.boxed());
+            .withf(move |token, _| *token == token_approx1)
+            .returning(|_, _| async { Ok(40.) }.boxed());
         native_price_estimator
             .expect_estimate_native_price()
             .times(1)
-            .withf(move |token| *token == token_approx2)
-            .returning(|_| async { Ok(50.) }.boxed());
+            .withf(move |token, _| *token == token_approx2)
+            .returning(|_, _| async { Ok(50.) }.boxed());
 
         let native_price_estimator = CachingNativePriceEstimator::new(
             Box::new(native_price_estimator),
@@ -1111,6 +1117,7 @@ mod tests {
             3,
             // Set to use native price approximations for the following tokens
             HashMap::from([(token1, token_approx1), (token2, token_approx2)]),
+            HEALTHY_PRICE_ESTIMATION_TIME,
         );
         let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
 

@@ -771,7 +771,11 @@ mod tests {
         crate::{
             account_balances::MockBalanceFetching,
             gas_price_estimation::FakeGasPriceEstimator,
-            price_estimation::{MockPriceEstimating, native::MockNativePriceEstimating},
+            price_estimation::{
+                HEALTHY_PRICE_ESTIMATION_TIME,
+                MockPriceEstimating,
+                native::MockNativePriceEstimating,
+            },
         },
         chrono::Utc,
         ethcontract::H160,
@@ -832,6 +836,7 @@ mod tests {
             },
             signing_scheme: QuoteSigningScheme::Eip712,
             additional_gas: 0,
+            timeout: None,
         };
         let gas_price = GasPrice1559 {
             base_fee_per_gas: 1.5,
@@ -853,6 +858,7 @@ mod tests {
                     in_amount: NonZeroU256::try_from(100).unwrap(),
                     kind: OrderKind::Sell,
                     block_dependent: true,
+                    timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 }
             })
             .returning(|_| {
@@ -873,16 +879,16 @@ mod tests {
             .expect_estimate_native_price()
             .withf({
                 let sell_token = parameters.sell_token;
-                move |q| q == &sell_token
+                move |q, _| q == &sell_token
             })
-            .returning(|_| async { Ok(0.2) }.boxed());
+            .returning(|_, _| async { Ok(0.2) }.boxed());
         native_price_estimator
             .expect_estimate_native_price()
             .withf({
                 let buy_token = parameters.buy_token;
-                move |q| q == &buy_token
+                move |q, _| q == &buy_token
             })
-            .returning(|_| async { Ok(0.2) }.boxed());
+            .returning(|_, _| async { Ok(0.2) }.boxed());
 
         let gas_estimator = FakeGasPriceEstimator(Arc::new(Mutex::new(gas_price)));
 
@@ -917,6 +923,7 @@ mod tests {
             validity: super::Validity::default(),
             quote_verification: QuoteVerificationMode::Unverified,
             balance_fetcher: mock_balance_fetcher(),
+            default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };
 
         let quote = quoter.calculate_quote(parameters).await.unwrap();
@@ -970,6 +977,7 @@ mod tests {
                 verification_gas_limit: 1,
             },
             additional_gas: 2,
+            timeout: None,
         };
         let gas_price = GasPrice1559 {
             base_fee_per_gas: 1.5,
@@ -991,6 +999,7 @@ mod tests {
                     in_amount: NonZeroU256::try_from(100).unwrap(),
                     kind: OrderKind::Sell,
                     block_dependent: true,
+                    timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 }
             })
             .returning(|_| {
@@ -1011,16 +1020,16 @@ mod tests {
             .expect_estimate_native_price()
             .withf({
                 let sell_token = parameters.sell_token;
-                move |q| q == &sell_token
+                move |q, _| q == &sell_token
             })
-            .returning(|_| async { Ok(0.2) }.boxed());
+            .returning(|_, _| async { Ok(0.2) }.boxed());
         native_price_estimator
             .expect_estimate_native_price()
             .withf({
                 let buy_token = parameters.buy_token;
-                move |q| q == &buy_token
+                move |q, _| q == &buy_token
             })
-            .returning(|_| async { Ok(0.2) }.boxed());
+            .returning(|_, _| async { Ok(0.2) }.boxed());
 
         let gas_estimator = FakeGasPriceEstimator(Arc::new(Mutex::new(gas_price)));
 
@@ -1055,6 +1064,7 @@ mod tests {
             validity: Validity::default(),
             quote_verification: QuoteVerificationMode::Unverified,
             balance_fetcher: mock_balance_fetcher(),
+            default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };
 
         let quote = quoter.calculate_quote(parameters).await.unwrap();
@@ -1103,6 +1113,7 @@ mod tests {
             },
             signing_scheme: QuoteSigningScheme::Eip712,
             additional_gas: 0,
+            timeout: None,
         };
         let gas_price = GasPrice1559 {
             base_fee_per_gas: 1.5,
@@ -1124,6 +1135,7 @@ mod tests {
                     in_amount: NonZeroU256::try_from(42).unwrap(),
                     kind: OrderKind::Buy,
                     block_dependent: true,
+                    timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 }
             })
             .returning(|_| {
@@ -1144,16 +1156,16 @@ mod tests {
             .expect_estimate_native_price()
             .withf({
                 let sell_token = parameters.sell_token;
-                move |q| q == &sell_token
+                move |q, _| q == &sell_token
             })
-            .returning(|_| async { Ok(0.2) }.boxed());
+            .returning(|_, _| async { Ok(0.2) }.boxed());
         native_price_estimator
             .expect_estimate_native_price()
             .withf({
                 let buy_token = parameters.buy_token;
-                move |q| q == &buy_token
+                move |q, _| q == &buy_token
             })
-            .returning(|_| async { Ok(0.2) }.boxed());
+            .returning(|_, _| async { Ok(0.2) }.boxed());
 
         let gas_estimator = FakeGasPriceEstimator(Arc::new(Mutex::new(gas_price)));
 
@@ -1188,6 +1200,7 @@ mod tests {
             validity: Validity::default(),
             quote_verification: QuoteVerificationMode::Unverified,
             balance_fetcher: mock_balance_fetcher(),
+            default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };
 
         let quote = quoter.calculate_quote(parameters).await.unwrap();
@@ -1237,6 +1250,7 @@ mod tests {
             },
             signing_scheme: QuoteSigningScheme::Eip712,
             additional_gas: 0,
+            timeout: None,
         };
         let gas_price = GasPrice1559 {
             base_fee_per_gas: 1.,
@@ -1263,16 +1277,16 @@ mod tests {
             .expect_estimate_native_price()
             .withf({
                 let sell_token = parameters.sell_token;
-                move |q| q == &sell_token
+                move |q, _| q == &sell_token
             })
-            .returning(|_| async { Ok(1.) }.boxed());
+            .returning(|_, _| async { Ok(1.) }.boxed());
         native_price_estimator
             .expect_estimate_native_price()
             .withf({
                 let buy_token = parameters.buy_token;
-                move |q| q == &buy_token
+                move |q, _| q == &buy_token
             })
-            .returning(|_| async { Ok(1.) }.boxed());
+            .returning(|_, _| async { Ok(1.) }.boxed());
 
         let gas_estimator = FakeGasPriceEstimator(Arc::new(Mutex::new(gas_price)));
 
@@ -1285,6 +1299,7 @@ mod tests {
             validity: Validity::default(),
             quote_verification: QuoteVerificationMode::Unverified,
             balance_fetcher: mock_balance_fetcher(),
+            default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };
 
         assert!(matches!(
@@ -1309,6 +1324,7 @@ mod tests {
             },
             signing_scheme: QuoteSigningScheme::Eip712,
             additional_gas: 0,
+            timeout: None,
         };
         let gas_price = GasPrice1559 {
             base_fee_per_gas: 1.,
@@ -1335,16 +1351,16 @@ mod tests {
             .expect_estimate_native_price()
             .withf({
                 let sell_token = parameters.sell_token;
-                move |q| q == &sell_token
+                move |q, _| q == &sell_token
             })
-            .returning(|_| async { Ok(1.) }.boxed());
+            .returning(|_, _| async { Ok(1.) }.boxed());
         native_price_estimator
             .expect_estimate_native_price()
             .withf({
                 let buy_token = parameters.buy_token;
-                move |q| q == &buy_token
+                move |q, _| q == &buy_token
             })
-            .returning(|_| async { Err(PriceEstimationError::NoLiquidity) }.boxed());
+            .returning(|_, _| async { Err(PriceEstimationError::NoLiquidity) }.boxed());
 
         let gas_estimator = FakeGasPriceEstimator(Arc::new(Mutex::new(gas_price)));
 
@@ -1357,6 +1373,7 @@ mod tests {
             validity: Validity::default(),
             quote_verification: QuoteVerificationMode::Unverified,
             balance_fetcher: mock_balance_fetcher(),
+            default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };
 
         assert!(matches!(
@@ -1417,6 +1434,7 @@ mod tests {
             validity: Validity::default(),
             quote_verification: QuoteVerificationMode::Unverified,
             balance_fetcher: mock_balance_fetcher(),
+            default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };
 
         assert_eq!(
@@ -1499,6 +1517,7 @@ mod tests {
             validity: Validity::default(),
             quote_verification: QuoteVerificationMode::Unverified,
             balance_fetcher: mock_balance_fetcher(),
+            default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };
 
         assert_eq!(
@@ -1583,6 +1602,7 @@ mod tests {
             validity: Validity::default(),
             quote_verification: QuoteVerificationMode::Unverified,
             balance_fetcher: mock_balance_fetcher(),
+            default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };
 
         assert_eq!(
@@ -1655,6 +1675,7 @@ mod tests {
             validity: Validity::default(),
             quote_verification: QuoteVerificationMode::Unverified,
             balance_fetcher: mock_balance_fetcher(),
+            default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };
 
         assert!(matches!(
@@ -1685,6 +1706,7 @@ mod tests {
             validity: Validity::default(),
             quote_verification: QuoteVerificationMode::Unverified,
             balance_fetcher: mock_balance_fetcher(),
+            default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };
 
         assert!(matches!(

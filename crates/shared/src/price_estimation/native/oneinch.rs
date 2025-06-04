@@ -159,7 +159,10 @@ async fn get_current_prices(
 mod tests {
     use {
         super::*,
-        crate::token_info::{MockTokenInfoFetching, TokenInfo},
+        crate::{
+            price_estimation::HEALTHY_PRICE_ESTIMATION_TIME,
+            token_info::{MockTokenInfoFetching, TokenInfo},
+        },
         std::{env, str::FromStr},
     };
 
@@ -203,7 +206,10 @@ mod tests {
             prices: Arc::new(Mutex::new(prices)),
         };
         assert_eq!(
-            instance.estimate_native_price(native_token).await.unwrap(),
+            instance
+                .estimate_native_price(native_token, HEALTHY_PRICE_ESTIMATION_TIME)
+                .await
+                .unwrap(),
             1.
         );
 
@@ -212,7 +218,8 @@ mod tests {
         assert!(
             1. / instance
                 .estimate_native_price(
-                    H160::from_str("0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48").unwrap()
+                    H160::from_str("0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48").unwrap(),
+                    HEALTHY_PRICE_ESTIMATION_TIME,
                 )
                 .await
                 .unwrap()

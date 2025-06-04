@@ -147,7 +147,7 @@ mod tests {
         super::*,
         crate::{
             bad_token::{MockBadTokenDetecting, TokenQuality},
-            price_estimation::MockPriceEstimating,
+            price_estimation::{HEALTHY_PRICE_ESTIMATION_TIME, MockPriceEstimating},
         },
         model::order::OrderKind,
         number::nonzero::U256 as NonZeroU256,
@@ -182,6 +182,7 @@ mod tests {
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Buy,
                     block_dependent: false,
+                    timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Ok(Estimate {
                     out_amount: 1.into(),
@@ -202,6 +203,7 @@ mod tests {
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Buy,
                     block_dependent: false,
+                    timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Ok(Estimate {
                     out_amount: 1.into(),
@@ -222,6 +224,7 @@ mod tests {
                     in_amount: NonZeroU256::try_from(U256::MAX).unwrap(),
                     kind: OrderKind::Buy,
                     block_dependent: false,
+                    timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Err(PriceEstimationError::ProtocolInternal(anyhow::anyhow!(
                     "cost of converting native asset would overflow gas price"
@@ -238,6 +241,7 @@ mod tests {
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Buy,
                     block_dependent: false,
+                    timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Ok(Estimate {
                     out_amount: 1.into(),
@@ -259,6 +263,7 @@ mod tests {
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Sell,
                     block_dependent: false,
+                    timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Ok(Estimate {
                     out_amount: 1.into(),
@@ -277,6 +282,7 @@ mod tests {
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Sell,
                     block_dependent: false,
+                    timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Ok(Estimate {
                     out_amount: 1.into(),
@@ -295,6 +301,7 @@ mod tests {
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Sell,
                     block_dependent: false,
+                    timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Ok(Estimate {
                     out_amount: 1.into(),
@@ -314,6 +321,7 @@ mod tests {
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Sell,
                     block_dependent: false,
+                    timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Ok(Estimate {
                     out_amount: 1.into(),
@@ -333,6 +341,7 @@ mod tests {
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Buy,
                     block_dependent: false,
+                    timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Err(PriceEstimationError::UnsupportedToken {
                     token: BAD_TOKEN,
@@ -348,6 +357,7 @@ mod tests {
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Buy,
                     block_dependent: false,
+                    timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Err(PriceEstimationError::UnsupportedToken {
                     token: BAD_TOKEN,
