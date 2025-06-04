@@ -215,7 +215,8 @@ impl SolvableOrdersCache {
             let weth_price = self
                 .timed_future(
                     "weth_price_fetch",
-                    self.native_price_estimator.estimate_native_price(self.weth),
+                    self.native_price_estimator
+                        .estimate_native_price(self.weth, Default::default()),
                 )
                 .await
                 .expect("weth price fetching can never fail");

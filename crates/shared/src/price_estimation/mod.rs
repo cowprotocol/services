@@ -235,7 +235,7 @@ pub struct Arguments {
     )]
     pub quote_verification: QuoteVerificationMode,
 
-    /// Time solvers have to compute a quote
+    /// Default timeout for quote requests.
     #[clap(
         long,
         env,
@@ -497,6 +497,7 @@ pub struct Query {
     /// used to answer the query.
     #[serde(skip_serializing)]
     pub block_dependent: bool,
+    pub timeout: Duration,
 }
 
 /// Conditions under which a given price estimate needs to work in order to be

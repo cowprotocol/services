@@ -887,6 +887,7 @@ async fn get_or_create_quote(
                 verification: quote_search_parameters.verification.clone(),
                 signing_scheme: quote_search_parameters.signing_scheme,
                 additional_gas: quote_search_parameters.additional_gas,
+                timeout: None, // let &dyn OrderQuoting chose default
             };
 
             let quote = quoter.calculate_quote(parameters).await?;
@@ -2065,6 +2066,7 @@ mod tests {
                 verification,
                 signing_scheme: QuoteSigningScheme::Eip712,
                 additional_gas: 0,
+                timeout: None,
             }))
             .returning({
                 let quote_data = quote_data.clone();

@@ -5,7 +5,10 @@ use {
     model::order::OrderKind,
     number::nonzero::U256 as NonZeroU256,
     primitive_types::{H160, U256},
-    std::sync::{Arc, LazyLock},
+    std::{
+        sync::{Arc, LazyLock},
+        time::Duration,
+    },
 };
 
 mod coingecko;
@@ -48,6 +51,7 @@ pub trait NativePriceEstimating: Send + Sync {
     fn estimate_native_price(
         &self,
         token: H160,
+        timeout: Duration,
     ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult>;
 }
 
@@ -72,7 +76,7 @@ impl NativePriceEstimator {
         }
     }
 
-    fn query(&self, token: &H160) -> Query {
+    fn query(&self, token: &H160, timeout: Duration) -> Query {
         Query {
             sell_token: *token,
             buy_token: self.native_token,
@@ -80,6 +84,7 @@ impl NativePriceEstimator {
             kind: OrderKind::Buy,
             verification: Default::default(),
             block_dependent: false,
+            timeout,
         }
     }
 }

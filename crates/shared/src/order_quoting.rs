@@ -39,10 +39,14 @@ pub struct QuoteParameters {
     pub verification: Verification,
     pub signing_scheme: QuoteSigningScheme,
     pub additional_gas: u64,
+    pub timeout: Option<std::time::Duration>,
 }
 
 impl QuoteParameters {
-    fn to_price_query(&self) -> price_estimation::Query {
+    fn to_price_query(
+        &self,
+        default_quote_timeout: std::time::Duration,
+    ) -> price_estimation::Query {
         let (kind, in_amount) = match self.side {
             OrderQuoteSide::Sell {
                 sell_amount:
@@ -54,6 +58,11 @@ impl QuoteParameters {
             } => (OrderKind::Buy, buy_amount_after_fee),
         };
 
+        let timeout = self
+            .timeout
+            .unwrap_or(default_quote_timeout)
+            .min(default_quote_timeout);
+
         price_estimation::Query {
             verification: self.verification.clone(),
             sell_token: self.sell_token,
@@ -61,6 +70,7 @@ impl QuoteParameters {
             in_amount,
             kind,
             block_dependent: true,
+            timeout,
         }
     }
 
@@ -402,9 +412,11 @@ pub struct OrderQuoter {
     validity: Validity,
     balance_fetcher: Arc<dyn BalanceFetching>,
     quote_verification: QuoteVerificationMode,
+    default_quote_timeout: std::time::Duration,
 }
 
 impl OrderQuoter {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         price_estimator: Arc<dyn PriceEstimating>,
         native_price_estimator: Arc<dyn NativePriceEstimating>,
@@ -413,6 +425,7 @@ impl OrderQuoter {
         validity: Validity,
         balance_fetcher: Arc<dyn BalanceFetching>,
         quote_verification: QuoteVerificationMode,
+        default_quote_timeout: std::time::Duration,
     ) -> Self {
         Self {
             price_estimator,
@@ -423,6 +436,7 @@ impl OrderQuoter {
             validity,
             balance_fetcher,
             quote_verification,
+            default_quote_timeout,
         }
     }
 
@@ -441,7 +455,7 @@ impl OrderQuoter {
             _ => self.now.now() + self.validity.standard_quote,
         };
 
-        let trade_query = Arc::new(parameters.to_price_query());
+        let trade_query = Arc::new(parameters.to_price_query(self.default_quote_timeout));
         let (gas_estimate, trade_estimate, sell_token_price, _) = futures::try_join!(
             self.gas_estimator
                 .estimate()
@@ -453,13 +467,13 @@ impl OrderQuoter {
                 .estimate(trade_query.clone())
                 .map_err(|err| (EstimatorKind::Regular, err).into()),
             self.native_price_estimator
-                .estimate_native_price(parameters.sell_token)
+                .estimate_native_price(parameters.sell_token, trade_query.timeout)
                 .map_err(|err| (EstimatorKind::NativeSell, err).into()),
             // We don't care about the native price of the buy_token for the quote but we need it
             // when we build the auction. To prevent creating orders which we can't settle later on
             // we make the native buy_token price a requirement here as well.
             self.native_price_estimator
-                .estimate_native_price(parameters.buy_token)
+                .estimate_native_price(parameters.buy_token, trade_query.timeout)
                 .map_err(|err| (EstimatorKind::NativeBuy, err).into()),
         )?;
 
