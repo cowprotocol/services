@@ -282,6 +282,13 @@ impl RunLoop {
         let solutions = winner_selection.filter_unfair_solutions(solutions, &auction);
         let solutions = winner_selection.mark_winners(solutions);
 
+        // Count and record the number of winners
+        let num_winners = solutions.iter().filter(|p| p.is_winner()).count();
+        Metrics::get()
+            .auction_winners
+            .with_label_values(&[&num_winners.to_string()])
+            .inc();
+
         let competition_simulation_block = self.eth.current_block().borrow().number;
         let block_deadline = competition_simulation_block + self.config.submission_deadline;
 
@@ -907,6 +914,11 @@ enum SettleError {
 struct Metrics {
     /// Tracks the last executed auction.
     auction: prometheus::IntGauge,
+
+    /// Tracks the number of winners per auction.
+    /// Label value is the exact number of winners.
+    #[metric(labels("num_winners"))]
+    auction_winners: prometheus::IntCounterVec,
 
     /// Tracks the duration of successful driver `/solve` requests.
     #[metric(
