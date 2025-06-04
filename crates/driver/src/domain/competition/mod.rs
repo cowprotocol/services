@@ -409,6 +409,8 @@ impl Competition {
                     cancel_signal_clone,
                 );
                 let result = tokio::select! {
+                    // Check whether the sender is closed, which indicates that the client
+                    // has disconnected and the settlement task needs to be cancelled.
                     _ = response_sender.closed() => {
                         cancel_signal.notify_waiters();
                         Err(DeadlineExceeded.into())
