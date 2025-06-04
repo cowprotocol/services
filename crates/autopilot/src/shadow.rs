@@ -9,7 +9,11 @@
 
 use {
     crate::{
-        domain::{self, competition::TradedOrder},
+        domain::{
+            self,
+            competition::{Participant, Unranked, winner_selection},
+            eth::WrappedNativeToken,
+        },
         infra::{
             self,
             solvers::dto::{reveal, solve},
@@ -18,18 +22,11 @@ use {
         run_loop::observe,
     },
     ::observe::metrics,
+    anyhow::Context,
     ethrpc::block_stream::CurrentBlockWatcher,
-    number::nonzero::U256 as NonZeroU256,
-    primitive_types::{H160, U256},
-    rand::seq::SliceRandom,
+    itertools::Itertools,
     shared::token_list::AutoUpdatingTokenList,
-    std::{
-        cmp,
-        collections::{HashMap, HashSet},
-        num::NonZeroUsize,
-        sync::Arc,
-        time::Duration,
-    },
+    std::{num::NonZeroUsize, sync::Arc, time::Duration},
     tracing::Instrument,
 };
 
@@ -42,10 +39,11 @@ pub struct RunLoop {
     solve_deadline: Duration,
     liveness: Arc<Liveness>,
     current_block: CurrentBlockWatcher,
-    max_winners_per_auction: NonZeroUsize,
+    winner_selection: Box<dyn winner_selection::Arbitrator>,
 }
 
 impl RunLoop {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         orderbook: infra::shadow::Orderbook,
         drivers: Vec<Arc<infra::Driver>>,
@@ -54,8 +52,16 @@ impl RunLoop {
         liveness: Arc<Liveness>,
         current_block: CurrentBlockWatcher,
         max_winners_per_auction: NonZeroUsize,
+        weth: WrappedNativeToken,
     ) -> Self {
         Self {
+            winner_selection: match max_winners_per_auction.get() {
+                0 | 1 => Box::new(winner_selection::max_score::Config),
+                n => Box::new(winner_selection::combinatorial::Config {
+                    max_winners: n,
+                    weth,
+                }),
+            },
             orderbook,
             drivers,
             trusted_tokens,
@@ -64,7 +70,6 @@ impl RunLoop {
             solve_deadline,
             liveness,
             current_block,
-            max_winners_per_auction,
         }
     }
 
@@ -125,124 +130,58 @@ impl RunLoop {
             .set(i64::try_from(auction.orders.len()).unwrap_or(i64::MAX));
 
         let participants = self.competition(auction).await;
-        let winners = self.select_winners(&participants);
+        let solutions = self
+            .winner_selection
+            .filter_unfair_solutions(participants, auction);
+        let solutions = self.winner_selection.mark_winners(solutions);
+        let scores = self.winner_selection.compute_reference_scores(&solutions);
 
-        for (i, Participant { driver, solution }) in winners.iter().enumerate() {
-            let score = solution
-                .as_ref()
-                .map(|solution| solution.score.get())
+        let total_score = solutions
+            .iter()
+            .filter(|p| p.is_winner())
+            .map(|p| p.solution().score())
+            .reduce(std::ops::Add::add)
+            .unwrap_or_default();
+
+        for participant in solutions {
+            let is_winner = participant.is_winner();
+            let reference_score = scores.get(&participant.driver().submission_address);
+            let driver = participant.driver();
+            let reward = reference_score
+                .map(|reference| total_score - *reference)
                 .unwrap_or_default();
-            let reference_score = winners
-                .get(i + 1)
-                .map(|winner| winner.score())
-                .unwrap_or_else(|| {
-                    // If this was the last winning solution pick the first worse overall
-                    // solution that came from a different driver (or 0) as the reference score.
-                    participants
-                        .iter()
-                        .filter(|p| p.driver.name != driver.name)
-                        .filter_map(|p| p.solution.as_ref().ok())
-                        .map(|p| p.score.get())
-                        .find(|other_score| *other_score <= score)
-                        .unwrap_or_default()
-                });
-            let reward = score
-                .checked_sub(reference_score)
-                .expect("reference score unexpectedly larger than winner's score");
 
             tracing::info!(
                 driver =% driver.name,
-                %score,
-                %reward,
-                "winner"
+                ?reference_score,
+                ?reward,
+                %is_winner,
+                "solution summary"
             );
             Metrics::get()
                 .performance_rewards
                 .with_label_values(&[&driver.name])
-                .inc_by(reward.to_f64_lossy());
-            Metrics::get().wins.with_label_values(&[&driver.name]).inc();
-        }
-
-        let hex = |bytes: &[u8]| format!("0x{}", hex::encode(bytes));
-        for Participant { driver, solution } in participants {
-            match solution {
-                Ok(solution) => {
-                    let uninternalized = (solution.calldata.internalized
-                        != solution.calldata.uninternalized)
-                        .then(|| hex(&solution.calldata.uninternalized));
-
-                    tracing::debug!(
-                        driver =% driver.name,
-                        score =% solution.score,
-                        account =? solution.account,
-                        calldata =% hex(&solution.calldata.internalized),
-                        ?uninternalized,
-                        "participant"
-                    );
-                    Metrics::get()
-                        .results
-                        .with_label_values(&[&driver.name, "ok"])
-                        .inc();
-                }
-                Err(err) => {
-                    tracing::warn!(%err, driver =% driver.name, "driver error");
-                    Metrics::get()
-                        .results
-                        .with_label_values(&[&driver.name, err.label()])
-                        .inc();
-                }
-            };
+                .inc_by(reward.get().0.to_f64_lossy());
+            Metrics::get()
+                .wins
+                .with_label_values(&[&driver.name])
+                .inc_by(u64::from(is_winner))
         }
     }
 
     /// Runs the solver competition, making all configured drivers participate.
-    async fn competition(&self, auction: &domain::Auction) -> Vec<Participant> {
+    async fn competition(&self, auction: &domain::Auction) -> Vec<Participant<Unranked>> {
         let request = solve::Request::new(auction, &self.trusted_tokens.all(), self.solve_deadline);
 
-        let mut participants =
-            futures::future::join_all(self.drivers.iter().cloned().map(|driver| async {
-                let solution = self
-                    .participate(Arc::clone(&driver), request.clone(), auction.id)
-                    .await;
-                Participant { driver, solution }
-            }))
-            .await;
-
-        // Shuffle so that sorting randomly splits ties.
-        participants.shuffle(&mut rand::thread_rng());
-        participants.sort_unstable_by_key(|participant| cmp::Reverse(participant.score()));
-
-        participants
-    }
-
-    /// Chooses the winners from the given participants.
-    ///
-    /// Participants are already sorted by their score (best to worst).
-    ///
-    /// Winners are selected one by one, starting from the best solution,
-    /// until `max_winners_per_auction` are selected. The solution is a winner
-    /// if it swaps tokens that are not yet swapped by any other already
-    /// selected winner.
-    fn select_winners<'a>(&self, participants: &'a [Participant]) -> Vec<&'a Participant> {
-        let mut winners = Vec::new();
-        let mut already_swapped_tokens = HashSet::new();
-        for participant in participants.iter() {
-            if let Ok(solution) = &participant.solution {
-                let swapped_tokens = solution
-                    .orders()
-                    .iter()
-                    .flat_map(|(_, order)| [order.sell.token, order.buy.token])
-                    .collect::<HashSet<_>>();
-                if swapped_tokens.is_disjoint(&already_swapped_tokens) {
-                    winners.push(participant);
-                    already_swapped_tokens.extend(swapped_tokens);
-                    if winners.len() >= self.max_winners_per_auction.get() {
-                        break;
-                    }
-                }
-            }
-        }
-        winners
+        futures::future::join_all(
+            self.drivers
+                .iter()
+                .map(|driver| self.participate(Arc::clone(driver), request.clone(), auction.id)),
+        )
+        .await
+        .into_iter()
+        .flatten()
+        .collect()
     }
 
     /// Computes a driver's solutions in the shadow competition.
@@ -251,108 +190,70 @@ impl RunLoop {
         driver: Arc<infra::Driver>,
         request: solve::Request,
         auction_id: i64,
-    ) -> Result<Solution, Error> {
-        let proposed = tokio::time::timeout(self.solve_deadline, driver.solve(request))
-            .await
-            .map_err(|_| Error::Timeout)?
-            .map_err(Error::Solve)?;
-        let (score, solution_id, submission_address, orders) = proposed
-            .solutions
-            .into_iter()
-            .max_by_key(|solution| solution.score)
-            .map(|solution| {
-                (
-                    solution.score,
-                    solution.solution_id,
-                    solution.submission_address,
-                    solution.orders,
-                )
-            })
-            .ok_or(Error::NoSolutions)?;
+    ) -> Vec<Participant<Unranked>> {
+        let solutions = match self.fetch_solutions(&driver, request).await {
+            Ok(response) => {
+                Metrics::get()
+                    .results
+                    .with_label_values(&[&driver.name, "ok"])
+                    .inc();
+                response.into_domain()
+            }
+            Err(err) => {
+                Metrics::get()
+                    .results
+                    .with_label_values(&[&driver.name, "error"])
+                    .inc();
+                tracing::debug!(driver = driver.name, %err, "failed to fetch solutions");
+                return vec![];
+            }
+        };
 
-        let score = NonZeroU256::new(score).ok_or(Error::ZeroScore)?;
-        let orders = orders
-            .into_iter()
-            .map(|(order_uid, amounts)| (order_uid.into(), amounts.into_domain()))
-            .collect();
+        let (solutions, errs): (Vec<_>, Vec<_>) = solutions.into_iter().partition_result();
+        if !errs.is_empty() {
+            tracing::debug!(len = errs.len(), ?errs, "dropping solutions with errors");
+        }
 
-        let revealed = driver
-            .reveal(reveal::Request {
-                solution_id,
+        futures::future::join_all(solutions.iter().map(|s| async {
+            let response = driver.reveal(reveal::Request {
+                solution_id: s.id(),
                 auction_id,
             })
+            .await;
+            let calldata = match response {
+                Ok(response) => response.calldata.uninternalized,
+                Err(err) => {
+                    tracing::debug!(?err, driver = %driver.name, "failed to reveal calldata");
+                    return;
+                }
+            };
+
+            if !calldata.ends_with(&auction_id.to_be_bytes()) {
+                tracing::warn!(driver = %driver.name, "solver did append auction id to the calldata");
+            }
+            tracing::debug!(
+                driver = %driver.name,
+                calldata = format!("0x{}", hex::encode(calldata)),
+                "revealed calldata"
+            );
+        }))
+        .await;
+
+        solutions
+            .into_iter()
+            .map(|s| Participant::new(s, Arc::clone(&driver)))
+            .collect()
+    }
+
+    async fn fetch_solutions(
+        &self,
+        driver: &infra::Driver,
+        request: solve::Request,
+    ) -> Result<solve::Response, anyhow::Error> {
+        tokio::time::timeout(self.solve_deadline, driver.solve(request))
             .await
-            .map_err(Error::Reveal)?;
-        if !revealed
-            .calldata
-            .internalized
-            .ends_with(&auction_id.to_be_bytes())
-        {
-            return Err(Error::Mismatch);
-        }
-
-        Ok(Solution {
-            score,
-            account: submission_address,
-            calldata: revealed.calldata,
-            orders,
-        })
-    }
-}
-
-struct Participant {
-    driver: Arc<infra::Driver>,
-    solution: Result<Solution, Error>,
-}
-
-impl Participant {
-    fn score(&self) -> U256 {
-        self.solution
-            .as_ref()
-            .map(|solution| solution.score.get())
-            .unwrap_or_default()
-    }
-}
-
-struct Solution {
-    score: NonZeroU256,
-    account: H160,
-    calldata: reveal::Calldata,
-    orders: HashMap<domain::OrderUid, TradedOrder>,
-}
-
-impl Solution {
-    fn orders(&self) -> &HashMap<domain::OrderUid, TradedOrder> {
-        &self.orders
-    }
-}
-
-#[derive(Debug, thiserror::Error)]
-enum Error {
-    #[error("the solver timed out")]
-    Timeout,
-    #[error("driver did not propose any solutions")]
-    NoSolutions,
-    #[error("the proposed a 0-score solution")]
-    ZeroScore,
-    #[error("the solver's revealed solution does not match the auction")]
-    Mismatch,
-    #[error("solve error: {0}")]
-    Solve(anyhow::Error),
-    #[error("reveal error: {0}")]
-    Reveal(anyhow::Error),
-}
-
-impl Error {
-    fn label(&self) -> &str {
-        match self {
-            Error::Timeout => "timeout",
-            Error::NoSolutions => "no_solutions",
-            Error::ZeroScore => "zero_score",
-            Error::Mismatch => "mismatch",
-            Error::Solve(_) => "error",
-            Error::Reveal(_) => "error",
-        }
+            .context("timeout")?
+            .context("solve_request_failed")
     }
 }
 
@@ -375,7 +276,7 @@ struct Metrics {
 
     /// Tracks the winner of every auction.
     #[metric(labels("driver"))]
-    wins: prometheus::CounterVec,
+    wins: prometheus::IntCounterVec,
 }
 
 impl Metrics {

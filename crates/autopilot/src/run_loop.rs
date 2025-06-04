@@ -58,13 +58,25 @@ pub struct Config {
     /// allowed to start before it has to re-synchronize to the blockchain
     /// by waiting for the next block to appear.
     pub max_run_loop_delay: Duration,
+    pub combinatorial_auctions_cutover: Option<chrono::DateTime<chrono::Utc>>,
     pub max_winners_per_auction: NonZeroUsize,
     pub max_solutions_per_solver: NonZeroUsize,
 }
 
 impl Config {
     fn single_winner(&self) -> bool {
-        self.max_winners_per_auction.get() == 1
+        // Always single winner if max_winners is 1
+        if self.max_winners_per_auction.get() == 1 {
+            return true;
+        }
+
+        // Check cutover date conditions
+        match self.combinatorial_auctions_cutover {
+            // No cutover date means single winner
+            None => true,
+            // If there is a cutover date, check if we are past it
+            Some(cutover) => chrono::Utc::now() < cutover,
+        }
     }
 }
 
@@ -82,7 +94,6 @@ pub struct RunLoop {
     /// the most recent data available.
     maintenance: Arc<Maintenance>,
     competition_updates_sender: tokio::sync::mpsc::UnboundedSender<()>,
-    winner_selection: Box<dyn winner_selection::Arbitrator>,
 }
 
 impl RunLoop {
@@ -100,13 +111,6 @@ impl RunLoop {
         competition_updates_sender: tokio::sync::mpsc::UnboundedSender<()>,
     ) -> Self {
         Self {
-            winner_selection: match config.single_winner() {
-                true => Box::new(winner_selection::max_score::Config),
-                false => Box::new(winner_selection::combinatorial::Config {
-                    max_winners: config.max_winners_per_auction.get(),
-                    weth: eth.contracts().wrapped_native_token(),
-                }),
-            },
             config,
             eth,
             persistence,
@@ -260,10 +264,23 @@ impl RunLoop {
             return;
         }
 
-        let solutions = self
-            .winner_selection
-            .filter_unfair_solutions(solutions, &auction);
-        let solutions = self.winner_selection.mark_winners(solutions);
+        // Build the winner selection implementation.
+        // We only compute this once to ensure consistency throughout the entire
+        // auction.
+        let is_single_winner_selection = self.config.single_winner();
+        tracing::info!(auction_id = ?auction.id, ?is_single_winner_selection, "winner selection implementation");
+        let winner_selection: Box<dyn winner_selection::Arbitrator> = if is_single_winner_selection
+        {
+            Box::new(winner_selection::max_score::Config)
+        } else {
+            Box::new(winner_selection::combinatorial::Config {
+                max_winners: self.config.max_winners_per_auction.get(),
+                weth: self.eth.contracts().wrapped_native_token(),
+            })
+        };
+
+        let solutions = winner_selection.filter_unfair_solutions(solutions, &auction);
+        let solutions = winner_selection.mark_winners(solutions);
 
         let competition_simulation_block = self.eth.current_block().borrow().number;
         let block_deadline = competition_simulation_block + self.config.submission_deadline;
@@ -276,6 +293,8 @@ impl RunLoop {
                 competition_simulation_block,
                 &solutions,
                 block_deadline,
+                winner_selection,
+                is_single_winner_selection,
             )
             .await
         {
@@ -382,6 +401,8 @@ impl RunLoop {
         competition_simulation_block: u64,
         solutions: &[competition::Participant],
         block_deadline: u64,
+        winner_selection: Box<dyn winner_selection::Arbitrator>,
+        is_single_winner_selection: bool,
     ) -> Result<()> {
         let start = Instant::now();
         // TODO: Needs to be removed once other teams fully migrated to the
@@ -400,14 +421,14 @@ impl RunLoop {
                 .get(1)
                 .map(|participant| participant.solution().score().get().0)
                 .unwrap_or_default();
-            self.config.single_winner().then_some(LegacyScore {
+            is_single_winner_selection.then_some(LegacyScore {
                 winner,
                 winning_score,
                 reference_score,
             })
         };
 
-        let reference_scores = self.winner_selection.compute_reference_scores(solutions);
+        let reference_scores = winner_selection.compute_reference_scores(solutions);
 
         let participants = solutions
             .iter()
