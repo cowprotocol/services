@@ -8,16 +8,21 @@ use {
     futures::{FutureExt, future::BoxFuture},
     model::order::OrderKind,
     primitive_types::H160,
-    std::{cmp::Ordering, sync::Arc},
+    std::{cmp::Ordering, sync::Arc, time::Duration},
 };
 
 impl NativePriceEstimating for CompetitionEstimator<Arc<dyn NativePriceEstimating>> {
-    fn estimate_native_price(&self, token: H160) -> BoxFuture<'_, NativePriceEstimateResult> {
+    fn estimate_native_price(
+        &self,
+        token: H160,
+        timeout: Duration,
+    ) -> BoxFuture<'_, NativePriceEstimateResult> {
+        let timeout_per_stage = timeout / self.stages.len() as u32;
         async move {
             let results = self
-                .produce_results(token, Result::is_ok, |e, q| {
+                .produce_results(token, Result::is_ok, move |e, q| {
                     async move {
-                        let res = e.estimate_native_price(q).await;
+                        let res = e.estimate_native_price(q, timeout_per_stage).await;
                         if res.as_ref().is_ok_and(|price| is_price_malformed(*price)) {
                             let err = anyhow::anyhow!("estimator returned malformed price");
                             return Err(PriceEstimationError::EstimatorInternal(err));
