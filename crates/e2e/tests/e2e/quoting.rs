@@ -1,13 +1,25 @@
 use {
-    e2e::{setup::*, tx, tx_value},
+    e2e::{
+        setup::{colocation::SolverEngine, mock::Mock, *},
+        tx,
+        tx_value,
+    },
     ethcontract::prelude::U256,
+    futures::FutureExt,
     model::{
-        order::OrderCreationAppData,
+        order::{OrderCreation, OrderCreationAppData, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, QuoteSigningScheme, SellAmount},
+        signature::EcdsaSigningScheme,
     },
     number::nonzero::U256 as NonZeroU256,
+    secp256k1::SecretKey,
     serde_json::json,
     shared::ethrpc::Web3,
+    std::{
+        sync::Arc,
+        time::{Duration, Instant},
+    },
+    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -20,6 +32,12 @@ async fn local_node_test() {
 #[ignore]
 async fn local_node_uses_stale_liquidity() {
     run_test(uses_stale_liquidity).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn local_node_quote_timeout() {
+    run_test(quote_timeout).await;
 }
 
 // Test that quoting works as expected, specifically, that we can quote for a
@@ -222,4 +240,144 @@ async fn uses_stale_liquidity(web3: Web3) {
     })
     .await
     .unwrap();
+}
+
+/// Tests that the user can provide a timeout with their quote
+/// which gets respected.
+async fn quote_timeout(web3: Web3) {
+    tracing::info!("Setting up chain state.");
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+
+    let [solver] = onchain.make_solvers(to_wei(10)).await;
+    let [trader] = onchain.make_accounts(to_wei(2)).await;
+    let [sell_token] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
+        .await;
+
+    tracing::info!("Starting services.");
+    let services = Services::new(&onchain).await;
+
+    let mock_solver = Mock::default();
+
+    // Start system
+    colocation::start_driver(
+        onchain.contracts(),
+        vec![
+            SolverEngine {
+                name: "test_solver".into(),
+                account: solver.clone(),
+                endpoint: mock_solver.url.clone(),
+                base_tokens: vec![sell_token.address()],
+                merge_solutions: true,
+            },
+            SolverEngine {
+                name: "test_quoter".into(),
+                account: solver.clone(),
+                endpoint: mock_solver.url.clone(),
+                base_tokens: vec![sell_token.address()],
+                merge_solutions: true,
+            },
+        ],
+        colocation::LiquidityProvider::UniswapV2,
+        false,
+    );
+
+    services
+        .start_api(vec![
+            "--price-estimation-drivers=test_quoter|http://localhost:11088/test_quoter".to_string(),
+        ])
+        .await;
+
+    mock_solver.configure_solution_async(Arc::new(|| {
+        async {
+            // make the solver always exceeds the maximum allowed timeout
+            // (by default 500ms in e2e tests)
+            tokio::time::sleep(Duration::from_millis(800)).await;
+            // we only care about timeout management so no need to return
+            // a working solution
+            None
+        }
+        .boxed()
+    }));
+
+    let quote_request = |timeout| OrderQuoteRequest {
+        from: trader.address(),
+        sell_token: onchain.contracts().weth.address(),
+        buy_token: sell_token.address(),
+        side: OrderQuoteSide::Sell {
+            sell_amount: SellAmount::BeforeFee {
+                value: NonZeroU256::try_from(to_wei(1)).unwrap(),
+            },
+        },
+        timeout,
+        ..Default::default()
+    };
+
+    /// The default and maximum quote timeout enforced by the backend.
+    /// (configurable but always 500ms in e2e tests)
+    const MAX_QUOTE_TIME_MS: u64 = 500;
+
+    let assert_within_variance = |start_timestamp: Instant, target| {
+        const VARIANCE: u64 = 100; // small buffer to allow for variance in the test
+        const HTTP_BUFFER: u64 = 10;
+        let min = target - HTTP_BUFFER;
+        let max = min + VARIANCE;
+        let elapsed = start_timestamp.elapsed().as_millis() as u64;
+        tracing::debug!(target, actual = ?elapsed, "finished request");
+        assert!((min..max).contains(&elapsed));
+    };
+
+    // native token price requests are also capped to the max timeout
+    let start = std::time::Instant::now();
+    let _ = services.get_native_price(&sell_token.address()).await;
+    assert_within_variance(start, MAX_QUOTE_TIME_MS);
+
+    // not providing a timeout uses the backend's default timeout (500ms)
+    let start = std::time::Instant::now();
+    let _ = services.submit_quote(&quote_request(None)).await;
+    assert_within_variance(start, MAX_QUOTE_TIME_MS);
+
+    // timeouts below the max timeout get enforced correctly
+    let start = std::time::Instant::now();
+    let _ = services
+        .submit_quote(&quote_request(Some(Duration::from_millis(300))))
+        .await;
+    assert_within_variance(start, 300);
+
+    // user provided timeouts get capped at the backend's max timeout (500ms)
+    let start = std::time::Instant::now();
+    let _ = services
+        .submit_quote(&quote_request(Some(Duration::from_millis(10_000))))
+        .await;
+    assert_within_variance(start, MAX_QUOTE_TIME_MS);
+
+    // set up trader to pass balance checks during order creation
+    sell_token.mint(trader.address(), to_wei(1)).await;
+    tx!(
+        trader.account(),
+        sell_token.approve(onchain.contracts().allowance, to_wei(1))
+    );
+
+    let order = OrderCreation {
+        sell_token: sell_token.address(),
+        sell_amount: to_wei(1),
+        buy_token: Default::default(),
+        buy_amount: to_wei(1),
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        kind: OrderKind::Sell,
+        partially_fillable: true,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+    );
+
+    // order creation requests always use the default quote time
+    // to maximize the chance for the request to succeed because
+    // we return an error if we can't get a quote
+    let start = std::time::Instant::now();
+    let _ = services.create_order(&order).await;
+    assert_within_variance(start, MAX_QUOTE_TIME_MS);
 }
