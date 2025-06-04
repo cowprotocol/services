@@ -14,6 +14,7 @@ use {
     std::{
         collections::{HashMap, HashSet},
         sync::Arc,
+        time::Duration,
     },
     url::Url,
 };
@@ -95,6 +96,7 @@ impl CoinGecko {
     async fn bulk_fetch_denominated_in_eth(
         &self,
         tokens: &HashSet<Token>,
+        timeout: Duration,
     ) -> Result<HashMap<Token, f64>, PriceEstimationError> {
         let mut url = crate::url::join(&self.base_url, &self.chain);
         metrics::batch_size(tokens.len());
@@ -110,7 +112,7 @@ impl CoinGecko {
             .append_pair("vs_currencies", "eth")
             .append_pair("precision", "full");
 
-        let mut builder = self.client.get(url.clone());
+        let mut builder = self.client.get(url.clone()).timeout(timeout);
         if let Some(ref api_key) = self.api_key {
             builder = builder.header(Self::AUTHORIZATION, api_key)
         }
@@ -145,13 +147,14 @@ impl CoinGecko {
     async fn bulk_fetch_denominated_in_token(
         &self,
         mut tokens: HashSet<Token>,
+        timeout: Duration,
     ) -> Result<HashMap<H160, NativePriceEstimateResult>, PriceEstimationError> {
         tokens.insert(self.denominator.address);
 
         let tokens_vec: Vec<_> = tokens.iter().cloned().collect();
 
         let (prices_in_eth, infos) = tokio::try_join!(
-            self.bulk_fetch_denominated_in_eth(&tokens),
+            self.bulk_fetch_denominated_in_eth(&tokens, timeout),
             self.infos.get_token_infos(&tokens_vec).map(Result::Ok),
         )?;
 
@@ -224,8 +227,10 @@ impl NativePriceBatchFetching for CoinGecko {
     fn fetch_native_prices(
         &'_ self,
         tokens: HashSet<Token>,
+        timeout: Duration,
     ) -> BoxFuture<'_, Result<HashMap<H160, NativePriceEstimateResult>, PriceEstimationError>> {
-        self.bulk_fetch_denominated_in_token(tokens).boxed()
+        self.bulk_fetch_denominated_in_token(tokens, timeout)
+            .boxed()
     }
 
     fn max_batch_size(&self) -> usize {
@@ -239,9 +244,15 @@ impl NativePriceBatchFetching for CoinGecko {
 }
 
 impl NativePriceEstimating for CoinGecko {
-    fn estimate_native_price(&self, token: Token) -> BoxFuture<'_, NativePriceEstimateResult> {
+    fn estimate_native_price(
+        &self,
+        token: Token,
+        timeout: Duration,
+    ) -> BoxFuture<'_, NativePriceEstimateResult> {
         async move {
-            let prices = self.fetch_native_prices(HashSet::from([token])).await?;
+            let prices = self
+                .fetch_native_prices(HashSet::from([token]), timeout)
+                .await?;
             prices
                 .get(&token)
                 .ok_or(PriceEstimationError::NoLiquidity)?

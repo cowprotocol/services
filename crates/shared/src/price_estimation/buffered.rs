@@ -25,7 +25,6 @@ use {
 
 /// Buffered configuration.
 #[derive(Clone)]
-#[allow(dead_code)]
 pub struct Configuration {
     /// The maximum amount of concurrent batches to request.
     ///
@@ -53,6 +52,7 @@ pub trait NativePriceBatchFetching: Sync + Send + NativePriceEstimating {
     fn fetch_native_prices(
         &self,
         tokens: HashSet<H160>,
+        timeout: Duration,
     ) -> futures::future::BoxFuture<
         '_,
         Result<HashMap<H160, NativePriceEstimateResult>, PriceEstimationError>,
@@ -89,6 +89,7 @@ where
     fn estimate_native_price(
         &self,
         token: H160,
+        timeout: Duration,
     ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult> {
         async move {
             // We must subscribe before we send the request, so we get the `rx` pointing to
@@ -104,7 +105,7 @@ where
                 ))
             })?;
 
-            tokio::time::timeout(self.config.result_ready_timeout, async {
+            tokio::time::timeout(timeout, async {
                 loop {
                     match rx.recv().await {
                         Ok(value) => {
@@ -163,6 +164,7 @@ where
         requests: mpsc::UnboundedReceiver<H160>,
         results_sender: broadcast::Sender<NativePriceResult>,
     ) -> JoinHandle<()> {
+        let timeout = config.result_ready_timeout;
         tokio::task::spawn(batched_for_each(
             config,
             requests,
@@ -175,7 +177,8 @@ where
                         return;
                     }
                     let batch_map = batch.iter().cloned().collect::<HashSet<_>>();
-                    let results: Vec<_> = match inner.fetch_native_prices(batch_map).await {
+                    let results: Vec<_> = match inner.fetch_native_prices(batch_map, timeout).await
+                    {
                         Ok(results) => results
                             .into_iter()
                             .map(|(token, price)| NativePriceResult {

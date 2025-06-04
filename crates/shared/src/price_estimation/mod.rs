@@ -303,7 +303,6 @@ pub struct CoinGecko {
     clap::ArgGroup::new("coin_gecko_buffered")
     .requires_all(&[
         "coin_gecko_debouncing_time",
-        "coin_gecko_result_ready_timeout",
         "coin_gecko_broadcast_channel_capacity"
     ])
     .multiple(true)
@@ -315,10 +314,6 @@ pub struct CoinGeckoBuffered {
     /// The delay to start counting after receiving the first request.
     #[clap(long, env, value_parser = humantime::parse_duration, group = "coin_gecko_buffered")]
     pub coin_gecko_debouncing_time: Option<Duration>,
-
-    /// The timeout to wait for the result to be ready
-    #[clap(long, env, value_parser = humantime::parse_duration, group = "coin_gecko_buffered")]
-    pub coin_gecko_result_ready_timeout: Option<Duration>,
 
     /// Maximum capacity of the broadcast channel to store the CoinGecko native
     /// prices results
@@ -410,14 +405,6 @@ impl Display for Arguments {
         )?;
         writeln!(f, "coin_gecko_api_url: {}", coin_gecko.coin_gecko_url)?;
         writeln!(f, "coin_gecko_api_url: {}", coin_gecko.coin_gecko_url)?;
-        writeln!(
-            f,
-            "coin_gecko_result_ready_timeout: {:?}",
-            coin_gecko
-                .coin_gecko_buffered
-                .as_ref()
-                .map(|coin_gecko_buffered| coin_gecko_buffered.coin_gecko_result_ready_timeout),
-        )?;
         writeln!(
             f,
             "coin_gecko_debouncing_time: {:?}",
@@ -656,8 +643,6 @@ mod tests {
             "https://api.coingecko.com/api/v3/simple/token_price",
             "--coin-gecko-debouncing-time",
             "300ms",
-            "--coin-gecko-result-ready-timeout",
-            "600ms",
             "--coin-gecko-broadcast-channel-capacity",
             "50",
         ];
@@ -670,10 +655,6 @@ mod tests {
         assert_eq!(
             buffered.coin_gecko_debouncing_time.unwrap(),
             Duration::from_millis(300)
-        );
-        assert_eq!(
-            buffered.coin_gecko_result_ready_timeout.unwrap(),
-            Duration::from_millis(600)
         );
         assert_eq!(buffered.coin_gecko_broadcast_channel_capacity.unwrap(), 50);
     }
