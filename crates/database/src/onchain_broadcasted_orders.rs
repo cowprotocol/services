@@ -51,13 +51,6 @@ pub struct OnchainOrderPlacementRow {
     pub log_index: i64,
 }
 
-pub async fn last_block(ex: &mut PgConnection) -> Result<i64, sqlx::Error> {
-    const QUERY: &str = r#"
-        SELECT COALESCE(MAX(block_number), 0) FROM onchain_placed_orders;
-    "#;
-    sqlx::query_scalar(QUERY).fetch_one(ex).await
-}
-
 pub async fn mark_as_reorged(
     ex: &mut PgTransaction<'_>,
     mark_from_block_number: i64,
@@ -151,23 +144,6 @@ mod tests {
             crate::clear_DANGER_(&mut db).await.unwrap();
             round_trip_for_error(&mut db, Some(error)).await;
         }
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn postgres_last_block() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        let event_index = EventIndex {
-            block_number: 1,
-            log_index: 0,
-        };
-        append(&mut db, &[(event_index, OnchainOrderPlacement::default())])
-            .await
-            .unwrap();
-        assert_eq!(last_block(&mut db).await.unwrap(), 1);
     }
 
     #[tokio::test]

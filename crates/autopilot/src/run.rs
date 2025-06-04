@@ -1,6 +1,6 @@
 use {
     crate::{
-        arguments::Arguments,
+        arguments::{Account, Arguments},
         boundary,
         database::{
             Postgres,
@@ -26,7 +26,13 @@ use {
     chain::Chain,
     clap::Parser,
     contracts::{BalancerV2Vault, IUniswapV3Factory},
-    ethcontract::{BlockNumber, common::DeploymentInformation, dyns::DynWeb3, errors::DeployError},
+    ethcontract::{
+        BlockNumber,
+        H160,
+        common::DeploymentInformation,
+        dyns::DynWeb3,
+        errors::DeployError,
+    },
     ethrpc::block_stream::block_number_to_block_number_hash,
     futures::stream::StreamExt,
     model::DomainSeparator,
@@ -544,6 +550,7 @@ pub async fn run(args: Arguments) {
             args.ethflow_indexing_start,
             &web3,
             chain_id,
+            &db,
         )
         .await;
 
@@ -572,6 +579,7 @@ pub async fn run(args: Arguments) {
         max_settlement_transaction_wait: args.max_settlement_transaction_wait,
         solve_deadline: args.solve_deadline,
         max_run_loop_delay: args.max_run_loop_delay,
+        combinatorial_auctions_cutover: args.combinatorial_auctions_cutover,
         max_winners_per_auction: args.max_winners_per_auction,
         max_solutions_per_solver: args.max_solutions_per_solver,
     };
@@ -637,7 +645,15 @@ async fn shadow_mode(args: Arguments) -> ! {
                 driver.url,
                 driver.name.clone(),
                 driver.fairness_threshold.map(Into::into),
-                driver.submission_account,
+                // HACK: the auction logic expects all drivers
+                // to use a different submission address. But
+                // in the shadow environment all drivers use
+                // the same address to avoid creating new keys
+                // before a solver is actually ready.
+                // Luckily the shadow autopilot doesn't use
+                // this address for anything important so we
+                // can simply generate random addresses here.
+                Account::Address(H160::random()),
                 driver.requested_timeout_on_problems,
             )
             .await
@@ -651,14 +667,17 @@ async fn shadow_mode(args: Arguments) -> ! {
         .into_iter()
         .collect();
 
-    let trusted_tokens = {
-        let web3 = shared::ethrpc::web3(
-            &args.shared.ethrpc,
-            &http_factory,
-            &args.shared.node_url,
-            "base",
-        );
+    let web3 = shared::ethrpc::web3(
+        &args.shared.ethrpc,
+        &http_factory,
+        &args.shared.node_url,
+        "base",
+    );
+    let weth = contracts::WETH9::deployed(&web3)
+        .await
+        .expect("couldn't find deployed WETH contract");
 
+    let trusted_tokens = {
         let chain_id = web3
             .eth()
             .chain_id()
@@ -700,6 +719,7 @@ async fn shadow_mode(args: Arguments) -> ! {
         liveness.clone(),
         current_block,
         args.max_winners_per_auction,
+        weth.address().into(),
     );
     shadow.run_forever().await;
 }

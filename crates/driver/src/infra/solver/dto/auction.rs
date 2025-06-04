@@ -1,10 +1,9 @@
 use {
     crate::{
         domain::{
-            competition,
             competition::{
-                order,
-                order::{Side, fees, signature::Scheme},
+                self,
+                order::{self, Side, fees, signature::Scheme},
             },
             eth::{self},
             liquidity,
@@ -23,8 +22,7 @@ pub fn new(
     weth: eth::WethAddress,
     fee_handler: FeeHandler,
     solver_native_token: ManageNativeToken,
-    flashloans_enabled: bool,
-    flashloan_default_lender: Option<eth::ContractAddress>,
+    flashloan_hints: &HashMap<order::Uid, eth::Flashloan>,
 ) -> solvers_dto::auction::Auction {
     let mut tokens: HashMap<eth::H160, _> = auction
         .tokens()
@@ -153,20 +151,7 @@ pub fn new(
                             .collect(),
                     ),
                     app_data: AppDataHash(order.app_data.hash().0.into()),
-                    flashloan_hint: flashloans_enabled
-                        .then(|| {
-                            order.app_data.flashloan().and_then(|flashloan| {
-                                let lender =
-                                    flashloan.lender.or(flashloan_default_lender.map(|l| l.0));
-                                lender.map(|lender| solvers_dto::auction::FlashloanHint {
-                                    lender,
-                                    borrower: flashloan.borrower.unwrap_or(order.uid.owner().0),
-                                    token: flashloan.token,
-                                    amount: flashloan.amount,
-                                })
-                            })
-                        })
-                        .flatten(),
+                    flashloan_hint: flashloan_hints.get(&order.uid).map(Into::into),
                     signature: order.signature.data.clone().into(),
                     signing_scheme: match order.signature.scheme {
                         Scheme::Eip712 => solvers_dto::auction::SigningScheme::Eip712,

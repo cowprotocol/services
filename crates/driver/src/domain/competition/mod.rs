@@ -103,9 +103,8 @@ impl Competition {
         };
         let (liquidity, auction) = tokio::join!(
             self.liquidity
-                .fetch(&pairs_to_fetch, infra::liquidity::AtBlock::Latest),
-            self.bad_tokens
-                .filter_unsupported_orders_in_auction(auction),
+                .fetch(&pairs_to_fetch, self.solver.fetch_liquidity_at_block()),
+            self.without_unsupported_orders(auction)
         );
         let auction = &auction;
 
@@ -497,6 +496,15 @@ impl Competition {
             }));
         }
         Ok(())
+    }
+
+    async fn without_unsupported_orders(&self, mut auction: Auction) -> Auction {
+        if !self.solver.config().flashloans_enabled {
+            auction.orders.retain(|o| o.app_data.flashloan().is_none());
+        }
+        self.bad_tokens
+            .filter_unsupported_orders_in_auction(auction)
+            .await
     }
 }
 

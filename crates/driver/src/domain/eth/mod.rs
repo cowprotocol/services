@@ -2,6 +2,7 @@ use {
     crate::util::{Bytes, conv::u256::U256Ext},
     derive_more::{From, Into},
     itertools::Itertools,
+    solvers_dto::auction::FlashloanHint,
     std::{
         collections::{HashMap, HashSet},
         ops::{Div, Mul, Sub},
@@ -428,4 +429,27 @@ pub struct Flashloan {
     pub borrower: Address,
     pub token: TokenAddress,
     pub amount: TokenAmount,
+}
+
+impl From<&solvers_dto::solution::Flashloan> for Flashloan {
+    fn from(value: &solvers_dto::solution::Flashloan) -> Self {
+        Self {
+            lender: value.lender.into(),
+            borrower: value.borrower.into(),
+            token: value.token.into(),
+            amount: value.amount.into(),
+        }
+    }
+}
+
+#[allow(clippy::from_over_into)]
+impl Into<FlashloanHint> for &Flashloan {
+    fn into(self) -> FlashloanHint {
+        FlashloanHint {
+            lender: self.lender.into(),
+            borrower: self.borrower.into(),
+            token: self.token.into(),
+            amount: self.amount.into(),
+        }
+    }
 }
