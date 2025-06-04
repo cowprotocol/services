@@ -1548,6 +1548,13 @@ components:
                 Flag to signal whether the order is intended for on-chain order
                 placement. Only valid for non ECDSA-signed orders."
               default: false
+            timeout:
+              type: integer
+              description: >
+                User provided timeout in milliseconds. Can be used to reduce
+                the response time for quote requests if the default is too slow.
+                Note that reducing the timeout can result in worse quotes because
+                the reduced timeout might be too slow for some price estimators.
           required:
             - sellToken
             - buyToken
