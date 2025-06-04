@@ -334,6 +334,11 @@ pub struct OrderQuoteResponse {
     pub verified: bool,
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct NativeTokenPrice {
+    pub price: f64,
+}
+
 #[cfg(test)]
 mod tests {
     use {super::*, serde_json::json, testlib::assert_json_matches};

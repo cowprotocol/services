@@ -13,7 +13,7 @@ use {
     ethcontract::{H160, H256},
     model::{
         order::{Order, OrderCreation, OrderUid},
-        quote::{OrderQuoteRequest, OrderQuoteResponse},
+        quote::{NativeTokenPrice, OrderQuoteRequest, OrderQuoteResponse},
         solver_competition::SolverCompetitionAPI,
         trade::Trade,
     },
@@ -465,6 +465,26 @@ impl<'a> Services<'a> {
 
         let status = quoting.status();
         let body = quoting.text().await.unwrap();
+
+        match status {
+            StatusCode::OK => Ok(serde_json::from_str(&body).unwrap()),
+            code => Err((code, body)),
+        }
+    }
+
+    pub async fn get_native_price(
+        &self,
+        token: &H160,
+    ) -> Result<NativeTokenPrice, (StatusCode, String)> {
+        let response = self
+            .http
+            .get(format!("{API_HOST}/api/v1/token/{token:?}/native_price"))
+            .send()
+            .await
+            .unwrap();
+
+        let status = response.status();
+        let body = response.text().await.unwrap();
 
         match status {
             StatusCode::OK => Ok(serde_json::from_str(&body).unwrap()),

@@ -3,7 +3,12 @@ use {
     anyhow::Result,
     serde::{Serialize, de::DeserializeOwned},
     shared::price_estimation::{PriceEstimationError, native::NativePriceEstimating},
-    std::{convert::Infallible, fmt::Debug, sync::Arc, time::Instant},
+    std::{
+        convert::Infallible,
+        fmt::Debug,
+        sync::Arc,
+        time::{Duration, Instant},
+    },
     warp::{
         Filter,
         Rejection,
@@ -38,6 +43,7 @@ pub fn handle_all_routes(
     quotes: Arc<QuoteHandler>,
     app_data: Arc<app_data::Registry>,
     native_price_estimator: Arc<dyn NativePriceEstimating>,
+    quote_timeout: Duration,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
     // Note that we add a string with endpoint's name to all responses.
     // This string will be used later to report metrics.
@@ -94,7 +100,10 @@ pub fn handle_all_routes(
         ("v1/version", box_filter(version::version())),
         (
             "v1/get_native_price",
-            box_filter(get_native_price::get_native_price(native_price_estimator)),
+            box_filter(get_native_price::get_native_price(
+                native_price_estimator,
+                quote_timeout,
+            )),
         ),
         (
             "v1/get_app_data",
