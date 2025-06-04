@@ -385,7 +385,7 @@ impl Competition {
                 auction_id,
                 solution_id,
                 submission_deadline,
-                response_sender,
+                mut response_sender,
                 tracing_span,
             } = request;
             async {
@@ -400,9 +400,21 @@ impl Competition {
                 }
 
                 observe::settling();
-                let result = self
-                    .process_settle_request(auction_id, solution_id, submission_deadline)
-                    .await;
+                let cancel_signal = Arc::new(tokio::sync::Notify::new());
+                let cancel_signal_clone = cancel_signal.clone();
+                let settle_fut = self.process_settle_request(
+                    auction_id,
+                    solution_id,
+                    submission_deadline,
+                    cancel_signal_clone,
+                );
+                let result = tokio::select! {
+                    _ = response_sender.closed() => {
+                        cancel_signal.notify_waiters();
+                        Err(DeadlineExceeded.into())
+                    }
+                    res = settle_fut => res,
+                };
                 observe::settled(self.solver.name(), &result);
 
                 if let Err(err) = response_sender.send(result) {
@@ -419,6 +431,7 @@ impl Competition {
         auction_id: auction::Id,
         solution_id: u64,
         submission_deadline: BlockNo,
+        cancel_signal: Arc<tokio::sync::Notify>,
     ) -> Result<Settled, Error> {
         let mut settlement = {
             let mut lock = self.settlements.lock().unwrap();
@@ -446,7 +459,12 @@ impl Competition {
 
         let executed = self
             .mempools
-            .execute(&self.solver, &settlement, submission_deadline)
+            .execute(
+                &self.solver,
+                &settlement,
+                submission_deadline,
+                cancel_signal,
+            )
             .await;
         notify::executed(
             &self.solver,

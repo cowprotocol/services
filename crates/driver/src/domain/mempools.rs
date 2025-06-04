@@ -14,7 +14,7 @@ use {
     anyhow::Context,
     ethrpc::block_stream::into_stream,
     futures::{FutureExt, StreamExt, future::select_ok},
-    std::ops::Sub,
+    std::{ops::Sub, sync::Arc},
     thiserror::Error,
     tracing::Instrument,
 };
@@ -48,12 +48,20 @@ impl Mempools {
         solver: &Solver,
         settlement: &Settlement,
         submission_deadline: BlockNo,
+        cancel_signal: Arc<tokio::sync::Notify>,
     ) -> Result<eth::TxId, Error> {
         let (submission, _remaining_futures) =
             select_ok(self.mempools.iter().cloned().map(|mempool| {
+                let cancel_signal_clone = cancel_signal.clone();
                 async move {
                     let result = self
-                        .submit(&mempool, solver, settlement, submission_deadline)
+                        .submit(
+                            &mempool,
+                            solver,
+                            settlement,
+                            submission_deadline,
+                            cancel_signal_clone,
+                        )
                         .instrument(tracing::info_span!("mempool", kind = mempool.to_string()))
                         .await;
                     observe::mempool_executed(&mempool, settlement, &result);
@@ -90,6 +98,7 @@ impl Mempools {
         solver: &Solver,
         settlement: &Settlement,
         submission_deadline: BlockNo,
+        cancel_signal: Arc<tokio::sync::Notify>,
     ) -> Result<SubmissionSuccess, Error> {
         // Don't submit risky transactions if revert protection is
         // enabled and the settlement may revert in this mempool.
@@ -136,7 +145,18 @@ impl Mempools {
 
         // Wait for the transaction to be mined, expired or failing.
         let result = async {
-            while let Some(block) = block_stream.next().await {
+            loop {
+                let maybe_block = tokio::select! {
+                    _ = cancel_signal.notified() => {
+                        return Err(Error::Other(anyhow::anyhow!("Cancellation signal received")));
+                    }
+                    blk = block_stream.next() => blk,
+                };
+
+                let Some(block) = maybe_block else {
+                    return Err(Error::Other(anyhow::anyhow!("Block stream finished unexpectedly")));
+                };
+
                 tracing::debug!(?hash, current_block = ?block.number, "checking if tx is confirmed");
                 let receipt = self
                     .ethereum
@@ -205,9 +225,6 @@ impl Mempools {
                     }
                 }
             }
-            Err(Error::Other(anyhow::anyhow!(
-                "Block stream finished unexpectedly"
-            )))
         }
         .await;
 
