@@ -7,15 +7,16 @@ use {
         domain::{
             BlockNo,
             competition::solution::Settlement,
-            eth::{TxId, TxStatus},
+            eth::{GasPrice, TxId, TxStatus},
         },
         infra::{self, Ethereum, observe, solver::Solver},
     },
     anyhow::Context,
-    ethrpc::block_stream::into_stream,
+    ethrpc::block_stream::{BlockInfo, into_stream},
     futures::{FutureExt, StreamExt, future::select_ok},
-    std::{ops::Sub, sync::Arc},
+    std::{ops::Sub, pin::Pin, task::Poll},
     thiserror::Error,
+    tokio_stream::wrappers::WatchStream,
     tracing::Instrument,
 };
 
@@ -48,20 +49,12 @@ impl Mempools {
         solver: &Solver,
         settlement: &Settlement,
         submission_deadline: BlockNo,
-        cancel_signal: Arc<tokio::sync::Notify>,
     ) -> Result<eth::TxId, Error> {
         let (submission, _remaining_futures) =
             select_ok(self.mempools.iter().cloned().map(|mempool| {
-                let cancel_signal_clone = cancel_signal.clone();
                 async move {
                     let result = self
-                        .submit(
-                            &mempool,
-                            solver,
-                            settlement,
-                            submission_deadline,
-                            cancel_signal_clone,
-                        )
+                        .submit(&mempool, solver, settlement, submission_deadline)
                         .instrument(tracing::info_span!("mempool", kind = mempool.to_string()))
                         .await;
                     observe::mempool_executed(&mempool, settlement, &result);
@@ -98,7 +91,6 @@ impl Mempools {
         solver: &Solver,
         settlement: &Settlement,
         submission_deadline: BlockNo,
-        cancel_signal: Arc<tokio::sync::Notify>,
     ) -> Result<SubmissionSuccess, Error> {
         // Don't submit risky transactions if revert protection is
         // enabled and the settlement may revert in this mempool.
@@ -146,38 +138,18 @@ impl Mempools {
         // Wait for the transaction to be mined, expired or failing.
         let result = async {
             loop {
-                let maybe_block = tokio::select! {
-                    _ = cancel_signal.notified() => {
-                        let current_block = self.ethereum.current_block().borrow().number;
-                        let self_ = self.clone();
-                        let mempool = mempool.clone();
-                        let gas_price = settlement.gas.price;
-                        let solver = solver.clone();
-                        let hash = hash.clone();
-                        
-                        tokio::spawn(async move {
-                            let blocks_elapsed = current_block.sub(submitted_at_block);
-                            let cancellation_tx_hash = self_
-                                .cancel(&mempool, gas_price, &solver, blocks_elapsed)
-                                .await
-                                .inspect_err(|err| {
-                                    tracing::warn!(?err, "cancellation tx failed");
-                                });
-                            tracing::info!(
-                                settle_tx_hash = ?hash,
-                                deadline = submission_deadline,
-                                ?current_block,
-                                ?cancellation_tx_hash,
-                                "cancellation signal received",
-                            );
-                        });
-                        
-                        return Err(Error::Other(anyhow::anyhow!("Cancellation signal received")));
-                    }
-                    blk = block_stream.next() => blk,
-                };
-
-                let Some(block) = maybe_block else {
+                let next_block =
+                    NextBlockWithCancelOnDrop::new(
+                        &mut block_stream,
+                        self,
+                        mempool,
+                        settlement.gas.price,
+                        solver,
+                        &hash,
+                        submitted_at_block,
+                        submission_deadline
+                    );
+                let Some(block) = next_block.await else {
                     return Err(Error::Other(anyhow::anyhow!("Block stream finished unexpectedly")));
                 };
 
@@ -354,4 +326,90 @@ pub enum Error {
     Disabled,
     #[error("Failed to submit: {0:?}")]
     Other(#[from] anyhow::Error),
+}
+
+pub struct NextBlockWithCancelOnDrop<'a> {
+    stream: &'a mut WatchStream<BlockInfo>,
+    mempools: &'a Mempools,
+    completed: bool,
+    mempool: &'a infra::mempool::Mempool,
+    gas_price: GasPrice,
+    solver: &'a Solver,
+    hash: &'a TxId,
+    submitted_at_block: BlockNo,
+    submission_deadline: BlockNo,
+}
+
+impl<'a> NextBlockWithCancelOnDrop<'a> {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        stream: &'a mut WatchStream<BlockInfo>,
+        mempools: &'a Mempools,
+        mempool: &'a infra::mempool::Mempool,
+        gas_price: GasPrice,
+        solver: &'a Solver,
+        hash: &'a TxId,
+        submitted_at_block: BlockNo,
+        submission_deadline: BlockNo,
+    ) -> Self {
+        Self {
+            stream,
+            mempools,
+            mempool,
+            gas_price,
+            solver,
+            hash,
+            submitted_at_block,
+            submission_deadline,
+            completed: false,
+        }
+    }
+}
+
+impl Future for NextBlockWithCancelOnDrop<'_> {
+    type Output = Option<BlockInfo>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Self::Output> {
+        match StreamExt::poll_next_unpin(&mut self.stream, cx) {
+            Poll::Ready(item) => {
+                self.completed = true;
+                Poll::Ready(item)
+            }
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+impl Drop for NextBlockWithCancelOnDrop<'_> {
+    fn drop(&mut self) {
+        if self.completed {
+            return;
+        }
+
+        let current_block = self.mempools.ethereum.current_block().borrow().number;
+        let mempools = self.mempools.clone();
+        let mempool = self.mempool.clone();
+        let gas_price = self.gas_price;
+        let solver = self.solver.clone();
+        let hash = self.hash.clone();
+        let submitted_at_block = self.submitted_at_block;
+        let submission_deadline = self.submission_deadline;
+
+        tokio::task::spawn(async move {
+            let blocks_elapsed = current_block.sub(submitted_at_block);
+            let cancellation_tx_hash = mempools
+                .cancel(&mempool, gas_price, &solver, blocks_elapsed)
+                .await
+                .inspect_err(|err| {
+                    tracing::warn!(?err, "cancellation tx failed");
+                });
+            tracing::info!(
+                settle_tx_hash = ?hash,
+                deadline = submission_deadline,
+                ?current_block,
+                ?cancellation_tx_hash,
+                "cancellation signal received",
+            );
+        });
+    }
 }
