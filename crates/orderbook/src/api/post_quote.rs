@@ -108,6 +108,7 @@ mod tests {
         reqwest::StatusCode,
         serde_json::json,
         shared::order_quoting::CalculateQuoteError,
+        std::time::Duration,
         warp::{Reply, test::request},
     };
 
@@ -146,6 +147,7 @@ mod tests {
                     onchain_order: false
                 },
                 price_quality: PriceQuality::Optimal,
+                timeout: Default::default(),
             }
         );
     }
@@ -235,6 +237,33 @@ mod tests {
                         value: NonZeroU256::try_from(1337).unwrap()
                     },
                 },
+                ..Default::default()
+            }
+        );
+    }
+
+    #[test]
+    fn deserialize_small_timeout() {
+        assert_eq!(
+            serde_json::from_value::<OrderQuoteRequest>(json!({
+                "from": "0x0101010101010101010101010101010101010101",
+                "sellToken": "0x0202020202020202020202020202020202020202",
+                "buyToken": "0x0303030303030303030303030303030303030303",
+                "kind": "sell",
+                "sellAmountAfterFee": "1337",
+                "timeout": 1000,
+            }))
+            .unwrap(),
+            OrderQuoteRequest {
+                from: H160([0x01; 20]),
+                sell_token: H160([0x02; 20]),
+                buy_token: H160([0x03; 20]),
+                side: OrderQuoteSide::Sell {
+                    sell_amount: SellAmount::AfterFee {
+                        value: NonZeroU256::try_from(1337).unwrap()
+                    },
+                },
+                timeout: Some(Duration::from_millis(1000)),
                 ..Default::default()
             }
         );

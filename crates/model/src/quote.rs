@@ -9,8 +9,16 @@ use {
     chrono::{DateTime, Utc},
     number::{nonzero::U256 as NonZeroU256, serialization::HexOrDecimalU256},
     primitive_types::{H160, U256},
-    serde::{Deserialize, Deserializer, Serialize, Serializer, de, ser::SerializeStruct as _},
+    serde::{
+        Deserialize,
+        Deserializer,
+        Serialize,
+        Serializer,
+        de,
+        ser::{self, SerializeStruct as _},
+    },
     serde_with::serde_as,
+    std::time::Duration,
 };
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]
@@ -131,6 +139,12 @@ pub struct OrderQuoteRequest {
     pub signing_scheme: QuoteSigningScheme,
     #[serde(default)]
     pub price_quality: PriceQuality,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_timeout",
+        serialize_with = "serialize_timeout"
+    )]
+    pub timeout: Option<Duration>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq)]
@@ -246,6 +260,31 @@ where
     Ok(result)
 }
 
+fn serialize_timeout<S>(timeout: &Option<Duration>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let Some(timeout) = timeout else {
+        return serializer.serialize_none();
+    };
+    serializer.serialize_u32(
+        timeout
+            .as_millis()
+            .try_into()
+            .map_err(|_| ser::Error::custom("timeout only support u32"))?,
+    )
+}
+
+fn deserialize_timeout<'de, D>(deserializer: D) -> Result<Option<Duration>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let Some(millis) = Option::<u32>::deserialize(deserializer)? else {
+        return Ok(None);
+    };
+    Ok(Some(Duration::from_millis(millis.into())))
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(untagged)]
 pub enum SellAmount {
@@ -295,6 +334,11 @@ pub struct OrderQuoteResponse {
     pub verified: bool,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct NativeTokenPrice {
+    pub price: f64,
+}
+
 #[cfg(test)]
 mod tests {
     use {super::*, serde_json::json, testlib::assert_json_matches};
@@ -314,6 +358,7 @@ mod tests {
                 "sellTokenBalance": "erc20",
                 "buyTokenBalance": "erc20",
                 "signingScheme": "eip712",
+                "timeout": null,
                 "priceQuality": "optimal",
             })
         );
