@@ -389,9 +389,9 @@ impl Drop for NextBlockWithCancelOnDrop<'_> {
         let current_block = self.mempools.ethereum.current_block().borrow().number;
         let mempools = self.mempools.clone();
         let mempool = self.mempool.clone();
-        let gas_price = self.gas_price;
         let solver = self.solver.clone();
         let hash = self.hash.clone();
+        let gas_price = self.gas_price;
         let submitted_at_block = self.submitted_at_block;
         let submission_deadline = self.submission_deadline;
 
