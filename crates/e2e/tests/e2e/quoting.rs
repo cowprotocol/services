@@ -330,28 +330,32 @@ async fn quote_timeout(web3: Web3) {
 
     // native token price requests are also capped to the max timeout
     let start = std::time::Instant::now();
-    let _ = services.get_native_price(&sell_token.address()).await;
+    let res = services.get_native_price(&sell_token.address()).await;
+    assert!(res.unwrap_err().1.contains("NoLiquidity"));
     assert_within_variance(start, MAX_QUOTE_TIME_MS);
 
     // not providing a timeout uses the backend's default timeout (500ms)
     let start = std::time::Instant::now();
-    let _ = services.submit_quote(&quote_request(None)).await;
+    let res = services.submit_quote(&quote_request(None)).await;
+    assert!(res.unwrap_err().1.contains("NoLiquidity"));
     assert_within_variance(start, MAX_QUOTE_TIME_MS);
 
     // timeouts below the max timeout get enforced correctly
     let start = std::time::Instant::now();
-    let _ = services
+    let res = services
         .submit_quote(&quote_request(Some(Duration::from_millis(300))))
         .await;
+    assert!(res.unwrap_err().1.contains("NoLiquidity"));
     assert_within_variance(start, 300);
 
     // user provided timeouts get capped at the backend's max timeout (500ms)
     let start = std::time::Instant::now();
-    let _ = services
+    let res = services
         .submit_quote(&quote_request(Some(Duration::from_millis(
             MAX_QUOTE_TIME_MS * 2,
         ))))
         .await;
+    assert!(res.unwrap_err().1.contains("NoLiquidity"));
     assert_within_variance(start, MAX_QUOTE_TIME_MS);
 
     // set up trader to pass balance checks during order creation
@@ -381,6 +385,7 @@ async fn quote_timeout(web3: Web3) {
     // to maximize the chance for the request to succeed because
     // we return an error if we can't get a quote
     let start = std::time::Instant::now();
-    let _ = services.create_order(&order).await;
+    let res = services.create_order(&order).await;
+    assert!(res.unwrap_err().1.contains("NoLiquidity"));
     assert_within_variance(start, MAX_QUOTE_TIME_MS);
 }

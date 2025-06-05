@@ -334,7 +334,7 @@ pub struct OrderQuoteResponse {
     pub verified: bool,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct NativeTokenPrice {
     pub price: f64,
 }
