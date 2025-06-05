@@ -343,7 +343,7 @@ pub struct Metrics {
     /// How much a new block number differs from the current block number.
     #[metric(buckets(0., 1., 2., 4., 8., 25.), labels("sign"))]
     block_stream_update_delta: prometheus::HistogramVec,
-    
+
     /// For how long the current block watcher has not seen a new block.
     block_staleness_ms: prometheus::IntGauge,
 }
@@ -364,9 +364,7 @@ fn update_block_metrics(current_block: u64, new_block: u64) {
 }
 
 /// Records how long the current block watcher has not seen a new block.
-fn update_stale_block_metrics(
-    stale_duration: Duration,
-) {
+fn update_stale_block_metrics(stale_duration: Duration) {
     let metric = &Metrics::instance(observe::metrics::get_storage_registry())
         .unwrap()
         .block_staleness_ms;
