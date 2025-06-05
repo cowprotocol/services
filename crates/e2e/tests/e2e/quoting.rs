@@ -282,10 +282,14 @@ async fn quote_timeout(web3: Web3) {
         false,
     );
 
+    /// The default and maximum quote timeout enforced by the backend.
+    /// (configurable but always 500ms in e2e tests)
+    const MAX_QUOTE_TIME_MS: u64 = 500;
+
     services
         .start_api(vec![
             "--price-estimation-drivers=test_quoter|http://localhost:11088/test_quoter".to_string(),
-            "--quote-timeout=500ms".to_string(),
+            format!("--quote-timeout={MAX_QUOTE_TIME_MS}ms"),
         ])
         .await;
 
@@ -293,7 +297,7 @@ async fn quote_timeout(web3: Web3) {
         async {
             // make the solver always exceeds the maximum allowed timeout
             // (by default 500ms in e2e tests)
-            tokio::time::sleep(Duration::from_millis(800)).await;
+            tokio::time::sleep(Duration::from_millis(MAX_QUOTE_TIME_MS + 300)).await;
             // we only care about timeout management so no need to return
             // a working solution
             None
@@ -313,10 +317,6 @@ async fn quote_timeout(web3: Web3) {
         timeout,
         ..Default::default()
     };
-
-    /// The default and maximum quote timeout enforced by the backend.
-    /// (configurable but always 500ms in e2e tests)
-    const MAX_QUOTE_TIME_MS: u64 = 500;
 
     let assert_within_variance = |start_timestamp: Instant, target| {
         const VARIANCE: u64 = 100; // small buffer to allow for variance in the test
@@ -348,7 +348,9 @@ async fn quote_timeout(web3: Web3) {
     // user provided timeouts get capped at the backend's max timeout (500ms)
     let start = std::time::Instant::now();
     let _ = services
-        .submit_quote(&quote_request(Some(Duration::from_millis(10_000))))
+        .submit_quote(&quote_request(Some(Duration::from_millis(
+            MAX_QUOTE_TIME_MS * 2,
+        ))))
         .await;
     assert_within_variance(start, MAX_QUOTE_TIME_MS);
 
