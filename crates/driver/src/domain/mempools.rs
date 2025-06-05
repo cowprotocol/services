@@ -149,18 +149,29 @@ impl Mempools {
                 let maybe_block = tokio::select! {
                     _ = cancel_signal.notified() => {
                         let current_block = self.ethereum.current_block().borrow().number;
-                        let blocks_elapsed = current_block.sub(submitted_at_block);
-                        let cancellation_tx_hash = self
-                            .cancel(mempool, settlement.gas.price, solver, blocks_elapsed)
-                            .await
-                            .context("tx cancellation signal")?;
-                        tracing::info!(
-                            settle_tx_hash = ?hash,
-                            deadline = submission_deadline,
-                            current_block = self.ethereum.current_block().borrow().number,
-                            ?cancellation_tx_hash,
-                            "cancellation signal received",
-                        );
+                        let self_ = self.clone();
+                        let mempool = mempool.clone();
+                        let gas_price = settlement.gas.price;
+                        let solver = solver.clone();
+                        let hash = hash.clone();
+                        
+                        tokio::spawn(async move {
+                            let blocks_elapsed = current_block.sub(submitted_at_block);
+                            let cancellation_tx_hash = self_
+                                .cancel(&mempool, gas_price, &solver, blocks_elapsed)
+                                .await
+                                .inspect_err(|err| {
+                                    tracing::warn!(?err, "cancellation tx failed");
+                                });
+                            tracing::info!(
+                                settle_tx_hash = ?hash,
+                                deadline = submission_deadline,
+                                ?current_block,
+                                ?cancellation_tx_hash,
+                                "cancellation signal received",
+                            );
+                        });
+                        
                         return Err(Error::Other(anyhow::anyhow!("Cancellation signal received")));
                     }
                     blk = block_stream.next() => blk,
