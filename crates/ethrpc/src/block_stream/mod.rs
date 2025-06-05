@@ -142,9 +142,10 @@ pub async fn current_block_stream(
                 }
             };
 
+            update_current_block_metrics(block.number);
+
             // If the block is exactly the same, ignore it.
             if previous_block.hash == block.hash {
-                update_stale_block_metrics(Instant::now().duration_since(block.observed_at));
                 continue;
             }
 
@@ -344,8 +345,8 @@ pub struct Metrics {
     #[metric(buckets(0., 1., 2., 4., 8., 25.), labels("sign"))]
     block_stream_update_delta: prometheus::HistogramVec,
 
-    /// For how long the current block watcher has not seen a new block.
-    block_staleness_ms: prometheus::IntGauge,
+    /// Records newly observed block number.
+    last_block_number: prometheus::IntGauge,
 }
 
 /// Updates metrics about the difference of the new block number compared to the
@@ -363,13 +364,22 @@ fn update_block_metrics(current_block: u64, new_block: u64) {
     }
 }
 
-/// Records how long the current block watcher has not seen a new block.
-fn update_stale_block_metrics(stale_duration: Duration) {
+/// Records newly observed block number in the metrics.
+fn update_current_block_metrics(block_number: u64) {
     let metric = &Metrics::instance(observe::metrics::get_storage_registry())
         .unwrap()
-        .block_staleness_ms;
+        .last_block_number;
 
-    metric.set(stale_duration.as_millis() as i64);
+    match i64::try_from(block_number) {
+        Ok(num) => metric.set(num),
+        Err(err) => {
+            tracing::warn!(
+                ?err,
+                ?block_number,
+                "failed to set last block number metric, the block number is not a valid i64"
+            );
+        }
+    }
 }
 
 /// Awaits and returns the next block that will be pushed into the stream.
