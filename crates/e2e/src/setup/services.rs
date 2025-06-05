@@ -20,7 +20,11 @@ use {
     reqwest::{Client, StatusCode, Url},
     shared::ethrpc::Web3,
     sqlx::Connection,
-    std::{ops::DerefMut, time::Duration},
+    std::{
+        collections::{HashMap, hash_map::Entry},
+        ops::DerefMut,
+        time::Duration,
+    },
     web3::Transport,
 };
 
@@ -166,7 +170,9 @@ impl<'a> Services<'a> {
         .into_iter()
         .chain(self.api_autopilot_solver_arguments())
         .chain(Self::api_autopilot_arguments())
-        .chain(extra_args);
+        .chain(extra_args)
+        .collect();
+        let args = ignore_overwritten_cli_params(args);
 
         let args = autopilot::arguments::Arguments::try_parse_from(args).unwrap();
         tokio::task::spawn(autopilot::run(args));
@@ -176,19 +182,21 @@ impl<'a> Services<'a> {
     /// Start the api service in a background tasks.
     /// Wait until the service is responsive.
     pub async fn start_api(&self, extra_args: Vec<String>) {
-        let args = [
+        let args: Vec<_> = [
             "orderbook".to_string(),
             format!(
                 "--hooks-contract-address={:?}",
                 self.contracts.hooks.address()
             ),
-            "--quote-timeout=500ms".to_string(),
+            "--quote-timeout=10s".to_string(),
             "--quote-verification=enforce-when-possible".to_string(),
         ]
         .into_iter()
         .chain(self.api_autopilot_solver_arguments())
         .chain(Self::api_autopilot_arguments())
-        .chain(extra_args);
+        .chain(extra_args)
+        .collect();
+        let args = ignore_overwritten_cli_params(args);
 
         let args = orderbook::arguments::Arguments::try_parse_from(args).unwrap();
         tokio::task::spawn(orderbook::run(args));
@@ -690,3 +698,32 @@ pub async fn clear_database() {
 }
 
 pub type Db = sqlx::Pool<sqlx::Postgres>;
+
+/// Clap does not allow you to overwrite CLI arguments easily. This
+/// function loops over all provided arguments and only keeps the
+/// last one if there are multiples.
+fn ignore_overwritten_cli_params(mut params: Vec<String>) -> Vec<String> {
+    let mut defined_args = HashMap::new();
+    params.reverse(); // reverse to give later params higher priority
+    params.retain(move |param| {
+        let Some((arg, value)) = param.split_once('=') else {
+            return true; // keep anything we can't parse (e.g. program name)
+        };
+        match defined_args.entry(arg.to_string()) {
+            Entry::Occupied(val) => {
+                tracing::info!(
+                    ignored = ?param,
+                    kept = format!("{arg}={}", val.get()),
+                    "ignoring overwritten CLI argument"
+                );
+                false
+            }
+            Entry::Vacant(slot) => {
+                slot.insert(value.to_string());
+                true
+            }
+        }
+    });
+    params.reverse(); // reverse to restore original order again
+    params
+}
