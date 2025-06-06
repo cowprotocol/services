@@ -140,12 +140,12 @@ impl Mempools {
             loop {
                 let next_block =
                     NextBlockWithCancelOnDrop::new(
-                        self,
                         &mut block_stream,
+                        self,
                         mempool,
+                        settlement.gas.price,
                         solver,
                         &hash,
-                        settlement.gas.price,
                         submitted_at_block,
                         submission_deadline
                     );
@@ -331,24 +331,24 @@ pub enum Error {
 pub struct NextBlockWithCancelOnDrop<'a> {
     stream: &'a mut WatchStream<BlockInfo>,
     mempools: &'a Mempools,
+    completed: bool,
     mempool: &'a infra::mempool::Mempool,
     gas_price: GasPrice,
     solver: &'a Solver,
     hash: &'a TxId,
     submitted_at_block: BlockNo,
     submission_deadline: BlockNo,
-    completed: bool,
 }
 
 impl<'a> NextBlockWithCancelOnDrop<'a> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        mempools: &'a Mempools,
         stream: &'a mut WatchStream<BlockInfo>,
+        mempools: &'a Mempools,
         mempool: &'a infra::mempool::Mempool,
+        gas_price: GasPrice,
         solver: &'a Solver,
         hash: &'a TxId,
-        gas_price: GasPrice,
         submitted_at_block: BlockNo,
         submission_deadline: BlockNo,
     ) -> Self {
@@ -408,7 +408,7 @@ impl Drop for NextBlockWithCancelOnDrop<'_> {
                 deadline = submission_deadline,
                 ?current_block,
                 ?cancellation_tx_hash,
-                "settlement task was dropped",
+                "cancellation signal received",
             );
         });
     }
