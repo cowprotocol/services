@@ -9,7 +9,10 @@ use {
     futures::future::FutureExt,
     primitive_types::H160,
     prometheus::{HistogramVec, IntCounterVec},
-    std::{sync::Arc, time::Instant},
+    std::{
+        sync::Arc,
+        time::{Duration, Instant},
+    },
     tracing::Instrument,
 };
 
@@ -80,10 +83,14 @@ impl<T: PriceEstimating> PriceEstimating for InstrumentedPriceEstimator<T> {
 }
 
 impl<T: NativePriceEstimating> NativePriceEstimating for InstrumentedPriceEstimator<T> {
-    fn estimate_native_price(&self, token: H160) -> BoxFuture<'_, NativePriceEstimateResult> {
+    fn estimate_native_price(
+        &self,
+        token: H160,
+        timeout: Duration,
+    ) -> BoxFuture<'_, NativePriceEstimateResult> {
         async move {
             let start = Instant::now();
-            let estimate = self.inner.estimate_native_price(token).await;
+            let estimate = self.inner.estimate_native_price(token, timeout).await;
             self.metrics
                 .price_estimation_times
                 .with_label_values(&[self.name.as_str()])
@@ -116,7 +123,12 @@ struct Metrics {
 mod tests {
     use {
         super::*,
-        crate::price_estimation::{Estimate, MockPriceEstimating, PriceEstimationError},
+        crate::price_estimation::{
+            Estimate,
+            HEALTHY_PRICE_ESTIMATION_TIME,
+            MockPriceEstimating,
+            PriceEstimationError,
+        },
         anyhow::anyhow,
         ethcontract::H160,
         model::order::OrderKind,
@@ -132,6 +144,7 @@ mod tests {
             in_amount: NonZeroU256::try_from(3).unwrap(),
             kind: OrderKind::Sell,
             block_dependent: false,
+            timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         });
 
         let mut estimator = MockPriceEstimating::new();

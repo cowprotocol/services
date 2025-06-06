@@ -37,24 +37,15 @@ pub struct ExternalTradeFinder {
 
     /// Stream to retrieve latest block information for block-dependent queries.
     block_stream: CurrentBlockWatcher,
-
-    /// Timeout of the quote request to the driver.
-    timeout: std::time::Duration,
 }
 
 impl ExternalTradeFinder {
-    pub fn new(
-        driver: Url,
-        client: Client,
-        block_stream: CurrentBlockWatcher,
-        timeout: std::time::Duration,
-    ) -> Self {
+    pub fn new(driver: Url, client: Client, block_stream: CurrentBlockWatcher) -> Self {
         Self {
             quote_endpoint: crate::url::join(&driver, "quote"),
             sharing: RequestSharing::labelled(format!("tradefinder_{}", driver)),
             client,
             block_stream,
-            timeout,
         }
     }
 
@@ -67,18 +58,19 @@ impl ExternalTradeFinder {
                 buy_token: query.buy_token,
                 amount: query.in_amount.get(),
                 kind: query.kind,
-                deadline: chrono::Utc::now() + self.timeout,
+                deadline: chrono::Utc::now() + query.timeout,
             };
             let block_dependent = query.block_dependent;
             let id = observe::request_id::from_current_span();
-            let timeout = self.timeout;
             let client = self.client.clone();
             let quote_endpoint = self.quote_endpoint.clone();
             let block_hash = self.block_stream.borrow().hash;
+            let timeout = query.timeout;
 
             async move {
                 let mut request = client
                     .get(quote_endpoint)
+                    .timeout(timeout)
                     .query(&order)
                     .header(header::CONTENT_TYPE, "application/json")
                     .header(header::ACCEPT, "application/json");
