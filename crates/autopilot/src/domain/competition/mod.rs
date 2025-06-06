@@ -101,6 +101,8 @@ pub struct TradedOrder {
     derive_more::AddAssign,
     derive_more::Add,
     derive_more::Sub,
+    Eq,
+    Ord,
 )]
 pub struct Score(eth::Ether);
 
