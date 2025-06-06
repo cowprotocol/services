@@ -288,7 +288,10 @@ impl RunLoop {
         if let Some(num_winners_f64) = num_winners.to_f64() {
             Metrics::get().auction_winners.observe(num_winners_f64);
         } else {
-            tracing::error!("Failed to convert auction winner count ({}) to f64", num_winners);
+            tracing::error!(
+                "Failed to convert auction winner count ({}) to f64",
+                num_winners
+            );
         }
 
         let competition_simulation_block = self.eth.current_block().borrow().number;
