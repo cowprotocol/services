@@ -12,17 +12,19 @@ use {
     futures::future::{BoxFuture, FutureExt, TryFutureExt},
     model::order::OrderKind,
     primitive_types::{H160, U256},
-    std::{cmp::Ordering, sync::Arc},
+    std::{cmp::Ordering, sync::Arc, time::Duration},
 };
 
 impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
-    fn estimate(&self, query: Arc<Query>) -> BoxFuture<'_, PriceEstimateResult> {
+    fn estimate(&self, mut query: Arc<Query>) -> BoxFuture<'_, PriceEstimateResult> {
+        Arc::make_mut(&mut query).timeout /= self.stages.len() as u32;
+
         async move {
             let out_token = match query.kind {
                 OrderKind::Buy => query.sell_token,
                 OrderKind::Sell => query.buy_token,
             };
-            let get_context = self.ranking.provide_context(out_token);
+            let get_context = self.ranking.provide_context(out_token, query.timeout);
 
             // Filter out 0 gas cost estimate because they are obviously wrong and would
             // likely win the price competition which would lead to us paying huge
@@ -86,7 +88,11 @@ fn compare_quote(query: &Query, a: &Estimate, b: &Estimate, context: &RankingCon
 }
 
 impl PriceRanking {
-    async fn provide_context(&self, token: H160) -> Result<RankingContext, PriceEstimationError> {
+    async fn provide_context(
+        &self,
+        token: H160,
+        timeout: Duration,
+    ) -> Result<RankingContext, PriceEstimationError> {
         match self {
             PriceRanking::MaxOutAmount => Ok(RankingContext {
                 native_price: 1.0,
@@ -100,7 +106,7 @@ impl PriceRanking {
                     .map_ok(|gas| gas.effective_gas_price())
                     .map_err(PriceEstimationError::ProtocolInternal);
                 let (native_price, gas_price) =
-                    futures::try_join!(native.estimate_native_price(token), gas)?;
+                    futures::try_join!(native.estimate_native_price(token, timeout), gas)?;
 
                 Ok(RankingContext {
                     native_price,
@@ -174,7 +180,7 @@ mod tests {
         let mut native = MockNativePriceEstimating::new();
         native
             .expect_estimate_native_price()
-            .returning(move |_| async { Ok(0.5) }.boxed());
+            .returning(move |_, _| async { Ok(0.5) }.boxed());
         let gas = Arc::new(FakeGasPriceEstimator::new(GasPrice1559 {
             base_fee_per_gas: 2.0,
             max_fee_per_gas: 2.0,

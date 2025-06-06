@@ -18,6 +18,7 @@ database = { workspace = true }
 driver = { workspace = true }
 ethcontract = { workspace = true }
 ethrpc = { workspace = true }
+futures = { workspace = true }
 hex = { workspace = true }
 hex-literal = { workspace = true }
 model = { workspace = true, features = ["e2e"] }
@@ -40,7 +41,6 @@ warp = { workspace = true }
 web3 = { workspace = true, features = ["http"] }
 
 [dev-dependencies]
-futures = { workspace = true }
 refunder = { workspace = true }
 
 [lints]

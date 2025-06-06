@@ -5,7 +5,10 @@ use {
     model::order::OrderKind,
     number::nonzero::U256 as NonZeroU256,
     primitive_types::{H160, U256},
-    std::sync::{Arc, LazyLock},
+    std::{
+        sync::{Arc, LazyLock},
+        time::Duration,
+    },
 };
 
 mod coingecko;
@@ -48,6 +51,7 @@ pub trait NativePriceEstimating: Send + Sync {
     fn estimate_native_price(
         &self,
         token: H160,
+        timeout: Duration,
     ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult>;
 }
 
@@ -72,7 +76,7 @@ impl NativePriceEstimator {
         }
     }
 
-    fn query(&self, token: &H160) -> Query {
+    fn query(&self, token: &H160, timeout: Duration) -> Query {
         Query {
             sell_token: *token,
             buy_token: self.native_token,
@@ -80,6 +84,7 @@ impl NativePriceEstimator {
             kind: OrderKind::Buy,
             verification: Default::default(),
             block_dependent: false,
+            timeout,
         }
     }
 }
@@ -88,9 +93,10 @@ impl NativePriceEstimating for NativePriceEstimator {
     fn estimate_native_price(
         &self,
         token: H160,
+        timeout: Duration,
     ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult> {
         async move {
-            let query = Arc::new(self.query(&token));
+            let query = Arc::new(self.query(&token, timeout));
             let estimate = self.inner.estimate(query.clone()).await?;
             let price = estimate.price_in_buy_token_f64(&query);
             if is_price_malformed(price) {
@@ -112,7 +118,7 @@ pub(crate) fn is_price_malformed(price: f64) -> bool {
 mod tests {
     use {
         super::*,
-        crate::price_estimation::{Estimate, MockPriceEstimating},
+        crate::price_estimation::{Estimate, HEALTHY_PRICE_ESTIMATION_TIME, MockPriceEstimating},
         primitive_types::H160,
         std::str::FromStr,
     };
@@ -142,7 +148,7 @@ mod tests {
         };
 
         let result = native_price_estimator
-            .estimate_native_price(H160::from_low_u64_be(3))
+            .estimate_native_price(H160::from_low_u64_be(3), HEALTHY_PRICE_ESTIMATION_TIME)
             .await;
         assert_eq!(result.unwrap(), 1. / 0.123456789);
     }
@@ -163,7 +169,7 @@ mod tests {
         };
 
         let result = native_price_estimator
-            .estimate_native_price(H160::from_low_u64_be(2))
+            .estimate_native_price(H160::from_low_u64_be(2), HEALTHY_PRICE_ESTIMATION_TIME)
             .await;
         assert!(matches!(result, Err(PriceEstimationError::NoLiquidity)));
     }

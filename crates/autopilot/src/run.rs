@@ -459,6 +459,7 @@ pub async fn run(args: Arguments) {
         },
         balance_fetcher.clone(),
         args.price_estimation.quote_verification,
+        args.price_estimation.quote_timeout,
     ));
 
     let solvable_orders_cache = SolvableOrdersCache::new(

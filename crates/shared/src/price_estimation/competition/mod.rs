@@ -206,7 +206,13 @@ pub enum PriceRanking {
 mod tests {
     use {
         super::*,
-        crate::price_estimation::{Estimate, MockPriceEstimating, PriceEstimating, Query},
+        crate::price_estimation::{
+            Estimate,
+            HEALTHY_PRICE_ESTIMATION_TIME,
+            MockPriceEstimating,
+            PriceEstimating,
+            Query,
+        },
         anyhow::anyhow,
         futures::channel::oneshot::channel,
         model::order::OrderKind,
@@ -226,6 +232,7 @@ mod tests {
                 in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy,
                 block_dependent: false,
+                timeout: HEALTHY_PRICE_ESTIMATION_TIME,
             }),
             Arc::new(Query {
                 verification: Default::default(),
@@ -234,6 +241,7 @@ mod tests {
                 in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Sell,
                 block_dependent: false,
+                timeout: HEALTHY_PRICE_ESTIMATION_TIME,
             }),
             Arc::new(Query {
                 verification: Default::default(),
@@ -242,6 +250,7 @@ mod tests {
                 in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy,
                 block_dependent: false,
+                timeout: HEALTHY_PRICE_ESTIMATION_TIME,
             }),
             Arc::new(Query {
                 verification: Default::default(),
@@ -250,6 +259,7 @@ mod tests {
                 in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy,
                 block_dependent: false,
+                timeout: HEALTHY_PRICE_ESTIMATION_TIME,
             }),
             Arc::new(Query {
                 verification: Default::default(),
@@ -258,6 +268,7 @@ mod tests {
                 in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy,
                 block_dependent: false,
+                timeout: HEALTHY_PRICE_ESTIMATION_TIME,
             }),
         ];
         let estimates = [
@@ -347,6 +358,7 @@ mod tests {
             in_amount: NonZeroU256::try_from(1).unwrap(),
             kind: OrderKind::Buy,
             block_dependent: false,
+            timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         });
 
         fn estimate(amount: u64) -> Estimate {
@@ -407,6 +419,7 @@ mod tests {
             in_amount: NonZeroU256::try_from(1).unwrap(),
             kind: OrderKind::Sell,
             block_dependent: false,
+            timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         });
 
         fn estimate(amount: u64) -> Estimate {
@@ -483,6 +496,7 @@ mod tests {
             in_amount: NonZeroU256::try_from(1).unwrap(),
             kind: OrderKind::Sell,
             block_dependent: false,
+            timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         });
 
         fn estimate(amount: u64) -> Estimate {

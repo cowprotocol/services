@@ -82,6 +82,7 @@ impl QuoteHandler {
             },
             signing_scheme: request.signing_scheme,
             additional_gas: app_data.inner.protocol.hooks.gas_limit(),
+            timeout: request.timeout,
         };
 
         let quote = match request.price_quality {
