@@ -17,7 +17,7 @@ use {
         },
         util::Bytes,
     },
-    futures::{StreamExt, stream::FuturesUnordered},
+    futures::{StreamExt, future::Either, stream::FuturesUnordered},
     itertools::Itertools,
     num::Zero,
     std::{
@@ -400,15 +400,24 @@ impl Competition {
                 }
 
                 observe::settling();
-                let settle_fut =
-                    self.process_settle_request(auction_id, solution_id, submission_deadline);
-                let result = tokio::select! {
-                    // Check whether the sender is closed, which indicates that the client
-                    // has disconnected and the settlement task needs to be cancelled.
-                    _ = response_sender.closed() => {
-                        Err(DeadlineExceeded.into())
+                let settle_fut = Box::pin(self.process_settle_request(
+                    auction_id,
+                    solution_id,
+                    submission_deadline,
+                ));
+                let closed_fut = Box::pin(response_sender.closed());
+                let result = match futures::future::select(closed_fut, settle_fut).await {
+                    // Cancel the settlement task if the sender is closed (client likely
+                    // disconnected). This is a fallback to recover from issues
+                    // like a stuck driver (e.g., stalled block stream).
+                    Either::Left((_closed, settle_fut)) => {
+                        // Add a grace period to give driver the last chance to fetch the settlement
+                        // tx.
+                        tokio::time::timeout(Duration::from_secs(1), settle_fut)
+                            .await
+                            .unwrap_or_else(|_| Err(DeadlineExceeded.into()))
                     }
-                    res = settle_fut => res,
+                    Either::Right((res, _)) => res,
                 };
                 observe::settled(self.solver.name(), &result);
 
