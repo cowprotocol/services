@@ -37,6 +37,7 @@ use {
         SolverCompetitionDB,
         SolverSettlement,
     },
+    num::ToPrimitive,
     primitive_types::H256,
     rand::seq::SliceRandom,
     shared::token_list::AutoUpdatingTokenList,
@@ -284,7 +285,11 @@ impl RunLoop {
 
         // Count and record the number of winners
         let num_winners = solutions.iter().filter(|p| p.is_winner()).count();
-        Metrics::get().auction_winners.observe(num_winners as f64);
+        if let Some(num_winners_f64) = num_winners.to_f64() {
+            Metrics::get().auction_winners.observe(num_winners_f64);
+        } else {
+            tracing::error!("Failed to convert auction winner count ({}) to f64", num_winners);
+        }
 
         let competition_simulation_block = self.eth.current_block().borrow().number;
         let block_deadline = competition_simulation_block + self.config.submission_deadline;
