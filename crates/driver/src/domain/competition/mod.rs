@@ -400,12 +400,19 @@ impl Competition {
                 }
 
                 observe::settling();
-                let settle_fut =
-                    self.process_settle_request(auction_id, solution_id, submission_deadline);
+                let cancel_signal = Arc::new(tokio::sync::Notify::new());
+                let cancel_signal_clone = cancel_signal.clone();
+                let settle_fut = self.process_settle_request(
+                    auction_id,
+                    solution_id,
+                    submission_deadline,
+                    cancel_signal_clone,
+                );
                 let result = tokio::select! {
                     // Check whether the sender is closed, which indicates that the client
                     // has disconnected and the settlement task needs to be cancelled.
                     _ = response_sender.closed() => {
+                        cancel_signal.notify_waiters();
                         Err(DeadlineExceeded.into())
                     }
                     res = settle_fut => res,
@@ -426,6 +433,7 @@ impl Competition {
         auction_id: auction::Id,
         solution_id: u64,
         submission_deadline: BlockNo,
+        cancel_signal: Arc<tokio::sync::Notify>,
     ) -> Result<Settled, Error> {
         let mut settlement = {
             let mut lock = self.settlements.lock().unwrap();
@@ -453,7 +461,12 @@ impl Competition {
 
         let executed = self
             .mempools
-            .execute(&self.solver, &settlement, submission_deadline)
+            .execute(
+                &self.solver,
+                &settlement,
+                submission_deadline,
+                cancel_signal,
+            )
             .await;
         notify::executed(
             &self.solver,
