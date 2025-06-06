@@ -346,7 +346,7 @@ pub struct Metrics {
     block_stream_update_delta: prometheus::HistogramVec,
 
     /// Records newly observed block number.
-    last_block_number: prometheus::IntGauge,
+    last_block_number: prometheus::core::GenericGauge<prometheus::core::AtomicU64>,
 }
 
 /// Updates metrics about the difference of the new block number compared to the
@@ -370,16 +370,7 @@ fn update_current_block_metrics(block_number: u64) {
         .unwrap()
         .last_block_number;
 
-    match i64::try_from(block_number) {
-        Ok(num) => metric.set(num),
-        Err(err) => {
-            tracing::warn!(
-                ?err,
-                ?block_number,
-                "failed to set last block number metric, the block number is not a valid i64"
-            );
-        }
-    }
+    metric.set(block_number);
 }
 
 /// Awaits and returns the next block that will be pushed into the stream.
