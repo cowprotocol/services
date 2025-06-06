@@ -284,10 +284,7 @@ impl RunLoop {
 
         // Count and record the number of winners
         let num_winners = solutions.iter().filter(|p| p.is_winner()).count();
-        Metrics::get()
-            .auction_winners
-            .with_label_values(&[&num_winners.to_string()])
-            .inc();
+        Metrics::get().auction_winners.observe(num_winners as f64);
 
         let competition_simulation_block = self.eth.current_block().borrow().number;
         let block_deadline = competition_simulation_block + self.config.submission_deadline;
@@ -916,9 +913,8 @@ struct Metrics {
     auction: prometheus::IntGauge,
 
     /// Tracks the number of winners per auction.
-    /// Label value is the exact number of winners.
-    #[metric(labels("num_winners"))]
-    auction_winners: prometheus::IntCounterVec,
+    #[metric(buckets(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10))]
+    auction_winners: prometheus::Histogram,
 
     /// Tracks the duration of successful driver `/solve` requests.
     #[metric(
