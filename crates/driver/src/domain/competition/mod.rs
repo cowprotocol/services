@@ -17,7 +17,7 @@ use {
         },
         util::Bytes,
     },
-    futures::{StreamExt, stream::FuturesUnordered},
+    futures::{StreamExt, future::Either, stream::FuturesUnordered},
     itertools::Itertools,
     num::Zero,
     std::{
@@ -385,7 +385,7 @@ impl Competition {
                 auction_id,
                 solution_id,
                 submission_deadline,
-                response_sender,
+                mut response_sender,
                 tracing_span,
             } = request;
             async {
@@ -400,9 +400,25 @@ impl Competition {
                 }
 
                 observe::settling();
-                let result = self
-                    .process_settle_request(auction_id, solution_id, submission_deadline)
-                    .await;
+                let settle_fut = Box::pin(self.process_settle_request(
+                    auction_id,
+                    solution_id,
+                    submission_deadline,
+                ));
+                let closed_fut = Box::pin(response_sender.closed());
+                let result = match futures::future::select(closed_fut, settle_fut).await {
+                    // Cancel the settlement task if the sender is closed (client likely
+                    // disconnected). This is a fallback to recover from issues
+                    // like a stuck driver (e.g., stalled block stream).
+                    Either::Left((_closed, settle_fut)) => {
+                        // Add a grace period to give driver the last chance to fetch the settlement
+                        // tx.
+                        tokio::time::timeout(Duration::from_secs(1), settle_fut)
+                            .await
+                            .unwrap_or_else(|_| Err(DeadlineExceeded.into()))
+                    }
+                    Either::Right((res, _)) => res,
+                };
                 observe::settled(self.solver.name(), &result);
 
                 if let Err(err) = response_sender.send(result) {
