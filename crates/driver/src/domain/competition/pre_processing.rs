@@ -15,6 +15,7 @@ use {
     shared::signature_validator::SignatureValidating,
     std::{
         collections::HashMap,
+        future::Future,
         sync::{Arc, Mutex},
     },
     tap::TapFallible,
@@ -32,11 +33,12 @@ type Balances = HashMap<BalanceGroup, order::SellAmount>;
 /// tasks you can simply await only those and already start with your new task
 /// while the third task can continue in the background.
 #[derive(Clone, Debug)]
+// TODO: not used yet
+#[allow(dead_code)]
 pub struct DataFetchingTasks {
     balances: Shared<Arc<Balances>>,
     app_data: Shared<Arc<HashMap<order::app_data::AppDataHash, app_data::ValidatedAppData>>>,
     cow_amm_orders: Shared<Arc<Vec<Order>>>,
-
     // Also add token info fetching here
 }
 
@@ -127,21 +129,42 @@ impl DataAggregator {
     }
 
     fn assemble_tasks(&self, auction: Arc<Auction>) -> DataFetchingTasks {
-        // TODO actually spawn tasks from these... Ideally without dealing with errors
+        let balances =
+            Self::spawn_shared(Arc::clone(&self.utilities).fetch_balances(Arc::clone(&auction)));
+
+        let app_data = Self::spawn_shared(
+            Arc::clone(&self.utilities).collect_orders_app_data(Arc::clone(&auction)),
+        );
+
+        let cow_amm_orders =
+            Self::spawn_shared(Arc::clone(&self.utilities).cow_amm_orders(Arc::clone(&auction)));
+
         DataFetchingTasks {
-            balances: Arc::clone(&self.utilities)
-                .fetch_balances(Arc::clone(&auction))
-                .boxed()
-                .shared(),
-            app_data: Arc::clone(&self.utilities)
-                .collect_orders_app_data(Arc::clone(&auction))
-                .boxed()
-                .shared(),
-            cow_amm_orders: Arc::clone(&self.utilities)
-                .cow_amm_orders(auction)
-                .boxed()
-                .shared(),
+            balances,
+            app_data,
+            cow_amm_orders,
         }
+    }
+
+    /// Spawns an async task and returns a `Shared` handle to its result.
+    /// Errors are not handled as we are deferring all error handling to where
+    /// the shared future is awaited
+    fn spawn_shared<T>(fut: impl Future<Output = T> + Send + 'static) -> Shared<T>
+    where
+        T: Send + Sync + Clone + 'static,
+    {
+        let shared = fut.boxed().shared();
+
+        // Start the computation in the background
+        tokio::spawn({
+            let shared = shared.clone();
+            async move {
+                // Just await once to start the future
+                let _ = shared.await;
+            }
+        });
+
+        shared
     }
 }
 

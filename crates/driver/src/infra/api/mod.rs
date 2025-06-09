@@ -161,6 +161,7 @@ impl State {
         &self.0.tokens
     }
 
+    #[allow(dead_code)]
     fn pre_processor(&self) -> &domain::competition::AuctionProcessor {
         &self.0.pre_processor
     }
@@ -176,5 +177,7 @@ struct Inner {
     competition: Arc<domain::Competition>,
     liquidity: liquidity::Fetcher,
     tokens: tokens::Fetcher,
+    // TODO: use this
+    #[allow(dead_code)]
     pre_processor: domain::competition::AuctionProcessor,
 }

@@ -104,7 +104,8 @@ impl Competition {
     pub async fn solve(&self, auction: Auction) -> Result<Option<Solved>, Error> {
         let auction = Arc::new(auction);
 
-        let tasks = self.fetcher.get_tasks_for_auction(Arc::clone(&auction));
+        // TODO: use the tasks
+        let _tasks = self.fetcher.get_tasks_for_auction(Arc::clone(&auction));
         let auction = Arc::unwrap_or_clone(auction);
         // 1. await cow amm orders
         // 2. sort orders
