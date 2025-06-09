@@ -57,7 +57,7 @@ impl Arbitrator for Config {
         // Discard all solutions where we can't compute the aggregate scores
         // accurately because the fairness guarantees heavily rely on them.
         let scores_by_solution = compute_scores_by_solution(&mut participants, auction);
-        participants.sort_unstable_by_key(|participant| {
+        participants.sort_by_key(|participant| {
             std::cmp::Reverse(
                 // we use the computed score to not trust the score provided by solvers
                 participant
@@ -97,6 +97,14 @@ impl Arbitrator for Config {
             .into_iter()
             .enumerate()
             .map(|(index, participant)| participant.rank(winner_indexes.contains(&index)))
+            .sorted_by_key(|p| {
+                (
+                    // winners before non-winners
+                    std::cmp::Reverse(p.is_winner()),
+                    // high score before low score
+                    std::cmp::Reverse(p.solution().computed_score().cloned()),
+                )
+            })
             .collect()
     }
 
@@ -1121,10 +1129,16 @@ mod tests {
             // select the winners
             let solutions = arbitrator.mark_winners(solutions);
             let winners = filter_winners(&solutions);
+            assert!(winners.iter().is_sorted_by_key(|a| (
+                // winners before non-winners
+                std::cmp::Reverse(a.is_winner()),
+                // high score before low score
+                std::cmp::Reverse(a.solution().computed_score().unwrap())
+            )));
             assert_eq!(winners.len(), self.expected_winners.len());
-            for solution_id in &self.expected_winners {
-                let solution_uid = solution_map.get(&solution_id).unwrap().solution().id;
-                assert!(winners.iter().any(|s| s.solution().id == solution_uid));
+            for (actual, expected) in winners.iter().zip(&self.expected_winners) {
+                let solution_uid = solution_map.get(&expected).unwrap().solution().id;
+                assert_eq!(actual.solution().id, solution_uid);
             }
 
             // compute reference score
