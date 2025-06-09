@@ -25,7 +25,7 @@ pub trait Arbitrator: Send + Sync + 'static {
         auction: &Auction,
     ) -> Vec<Participant<Unranked>>;
 
-    /// Picks winners and sorts all solutions where winners come before losers
+    /// Picks winners and sorts all solutions where winners come before non-winners
     /// and higher scores come before lower scores.
     fn mark_winners(&self, participants: Vec<Participant<Unranked>>) -> Vec<Participant>;
 

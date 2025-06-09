@@ -99,7 +99,7 @@ impl Arbitrator for Config {
             .map(|(index, participant)| participant.rank(winner_indexes.contains(&index)))
             .sorted_by_key(|p| {
                 (
-                    // winners before losers
+                    // winners before non-winners
                     std::cmp::Reverse(p.is_winner()),
                     // high score before low score
                     std::cmp::Reverse(p.solution().computed_score().cloned()),
@@ -1130,7 +1130,7 @@ mod tests {
             let solutions = arbitrator.mark_winners(solutions);
             let winners = filter_winners(&solutions);
             assert!(winners.iter().is_sorted_by_key(|a| (
-                // winners before losers
+                // winners before non-winners
                 std::cmp::Reverse(a.is_winner()),
                 // high score before low score
                 std::cmp::Reverse(a.solution().computed_score().unwrap())
