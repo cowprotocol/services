@@ -13,7 +13,9 @@ use {
         util::{Bytes, conv::u256::U256Ext},
     },
     allowance::Allowance,
+    ethcontract::{H160, U256},
     itertools::Itertools,
+    std::collections::HashMap,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -31,6 +33,8 @@ pub enum Error {
     FlashloanSupportDisabled,
     #[error("no flashloan helper configured for lender: {0}")]
     UnsupportedFlashloanLender(eth::H160),
+    #[error("trades don't pay enough to cover flashloan repayments")]
+    FlashloanUnderFunded,
 }
 
 pub fn tx(
@@ -179,6 +183,8 @@ pub fn tx(
         prices: auction.native_prices().clone(),
     };
 
+    let mut flashloan_payments = flashloan_payments(solution, contracts.settlement().address());
+
     // Add all interactions needed to move flash loaned tokens around
     // These interactions are executed before all other pre-interactions
     let flashloans = solution
@@ -228,6 +234,10 @@ pub fn tx(
             let fee_amount =
                 (flashloan.amount.0 * flashloan_wrapper.fee_in_bps).ceil_div(&10_000.into());
             let repayment_amount = flashloan.amount.0 + fee_amount;
+
+            // deduct the repayment amount from the flashloan payments to make sure we are covered
+            let available_tokens = flashloan_payments.get_mut(&flashloan.token).ok_or(Error::FlashloanUnderFunded)?;
+            *available_tokens = available_tokens.checked_sub(repayment_amount).ok_or(Error::FlashloanUnderFunded)?;
 
             // Since the order receiver is expected to be the setttlement contract, we need
             // to transfer tokens from the settlement contract to the flashloan wrapper
@@ -323,6 +333,23 @@ pub fn tx(
         value: Ether(0.into()),
         access_list: Default::default(),
     })
+}
+
+/// Aggregates all payments directly to the settlement contract
+/// that can be used to repay flashloans.
+fn flashloan_payments(
+    solution: &super::Solution,
+    settlement: H160,
+) -> HashMap<eth::TokenAddress, U256> {
+    let mut amounts = HashMap::<eth::TokenAddress, U256>::default();
+    for trade in solution.trades() {
+        if trade.receiver().0 == settlement {
+            let proceeds = trade.buy();
+            let amount = amounts.entry(proceeds.token).or_default();
+            *amount = *amount + proceeds.amount;
+        }
+    }
+    amounts
 }
 
 pub fn liquidity_interaction(
