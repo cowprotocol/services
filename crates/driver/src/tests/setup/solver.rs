@@ -389,7 +389,18 @@ impl Solver {
                 "preInteractions": pre_interactions_json,
             });
             if !solution.flashloans.is_empty() {
-                solution_json["flashloans"] = json!(solution.flashloans);
+                solution_json["flashloans"] = serde_json::Value::Object(
+                    solution
+                        .flashloans
+                        .iter()
+                        .map(|(order, loan)| {
+                            (
+                                format!("{:?}", order.0),
+                                serde_json::to_value(loan).unwrap(),
+                            )
+                        })
+                        .collect(),
+                );
             }
             solutions_json.push(solution_json);
         }
@@ -461,7 +472,7 @@ impl Solver {
             .solutions
             .iter()
             .flat_map(|solution| solution.flashloans.clone())
-            .map(|flashloan| FlashloanWrapperConfig {
+            .map(|(_order, flashloan)| FlashloanWrapperConfig {
                 lender: flashloan.lender,
                 helper_contract: config.blockchain.flashloan_wrapper.address(),
                 fee_in_bps: Default::default(),
