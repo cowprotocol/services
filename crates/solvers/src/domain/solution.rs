@@ -17,7 +17,6 @@ pub struct Solution {
     pub interactions: Vec<Interaction>,
     pub post_interactions: Vec<eth::Interaction>,
     pub gas: Option<eth::Gas>,
-    pub flashloans: Option<Vec<Flashloan>>,
 }
 
 impl Solution {
@@ -180,8 +179,6 @@ impl Single {
             interactions,
             post_interactions: Default::default(),
             gas: Some(gas),
-            // rely on driver to fill in the blanks
-            flashloans: None,
             trades: vec![Trade::Fulfillment(Fulfillment::new(order, executed, fee)?)],
         })
     }
@@ -368,12 +365,3 @@ pub const SETTLEMENT: u64 = 7365;
 /// Value was computed by taking 52 percentile median of `transfer()` costs
 /// of the 90% most traded tokens by volume in the month of Oct. 2021.
 pub const ERC20_TRANSFER: u64 = 27_513;
-
-/// A flashloan that is required to execute a solution.
-#[derive(Debug, Clone)]
-pub struct Flashloan {
-    pub lender: eth::Address,
-    pub borrower: eth::Address,
-    pub token: eth::TokenAddress,
-    pub amount: eth::U256,
-}
