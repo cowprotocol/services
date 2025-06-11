@@ -38,7 +38,7 @@ impl Solutions {
                                 let order = auction
                                     .orders()
                                     .iter()
-                                    .find(|order| order.uid == fulfillment.order)
+                                    .find(|order| order.uid == fulfillment.order.0)
                                     // TODO this error should reference the UID
                                     .ok_or(super::Error(
                                         "invalid order UID specified in fulfillment".to_owned()
@@ -210,7 +210,7 @@ impl Solutions {
                     auction.surplus_capturing_jit_order_owners(),
                     solution.flashloans
                         // convert the flashloan info provided by the solver
-                        .map(|f| f.iter().map(Into::into).collect())
+                        .map(|f| f.iter().map(|(order, loan)|(order.into(), loan.into())).collect())
                         // or copy over the relevant flashloan hints from the solve request
                         .unwrap_or_else(|| solution.trades.iter()
                             .filter_map(|t| {
@@ -218,7 +218,11 @@ impl Solutions {
                                 // we don't have any flashloan data on JIT orders
                                 return None;
                             };
-                            flashloan_hints.get(&trade.order.into()).cloned()
+                            let uid = competition::order::Uid::from(&trade.order);
+                            Some((
+                                uid,
+                                flashloan_hints.get(&uid).cloned()?,
+                            ))
                         }).collect()),
                 )
                 .map_err(|err| match err {

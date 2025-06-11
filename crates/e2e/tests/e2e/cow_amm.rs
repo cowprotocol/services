@@ -334,7 +334,7 @@ async fn cow_amm_jit(web3: Web3) {
                 fee: Some(fee),
             }),
             solvers_dto::solution::Trade::Fulfillment(solvers_dto::solution::Fulfillment {
-                order: user_order_id.0,
+                order: solvers_dto::solution::OrderUid(user_order_id.0),
                 executed_amount: user_order.sell_amount - fee,
                 fee: Some(fee),
             }),
@@ -909,7 +909,7 @@ async fn cow_amm_opposite_direction(web3: Web3) {
                     fee: Some(fee_cow_amm),
                 }),
                 solvers_dto::solution::Trade::Fulfillment(solvers_dto::solution::Fulfillment {
-                    order: order_uid.0,
+                    order: solvers_dto::solution::OrderUid(order_uid.0),
                     executed_amount: executed_amount - fee_user,
                     fee: Some(fee_user),
                 }),
