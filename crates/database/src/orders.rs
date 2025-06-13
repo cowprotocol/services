@@ -300,7 +300,7 @@ INSERT INTO interactions (
     execution
 )
 VALUES ($1, $2, $3, $4, $5, $6)
-ON CONFLICT (order_uid, index) DO UPDATE
+ON CONFLICT (order_uid, index, execution) DO UPDATE
 SET target = $3,
 value = $4, data = $5
     "#;
@@ -826,6 +826,26 @@ SELECT DISTINCT order_uid FROM (
 "#;
 
     sqlx::query_as(QUERY).bind(after_block).fetch_all(ex).await
+}
+
+#[derive(Debug, sqlx::FromRow)]
+pub struct InteractionCount {
+    pub next_pre_interaction_index: i32,
+    pub next_post_interaction_index: i32,
+}
+
+pub async fn interaction_count(
+    db: &mut PgConnection,
+    order: OrderUid,
+) -> sqlx::Result<InteractionCount> {
+    const QUERY: &str = r#"
+SELECT
+  COALESCE(MAX(index) FILTER (WHERE execution = 'pre'), -1) + 1 AS next_pre_interaction_index,
+  COALESCE(MAX(index) FILTER (WHERE execution = 'post'), -1) + 1 AS next_post_interaction_index
+FROM interactions
+WHERE order_uid = $1
+"#;
+    sqlx::query_as(QUERY).bind(order).fetch_one(db).await
 }
 
 #[cfg(test)]
