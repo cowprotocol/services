@@ -29,8 +29,12 @@ pub struct Solution {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub gas: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub flashloans: Option<Vec<Flashloan>>,
+    pub flashloans: Option<HashMap<OrderUid, Flashloan>>,
 }
+
+#[serde_as]
+#[derive(Clone, Debug, Serialize, Deserialize, Hash, Eq, PartialEq)]
+pub struct OrderUid(#[serde_as(as = "serialize::Hex")] pub [u8; 56]);
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
@@ -43,8 +47,7 @@ pub enum Trade {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Fulfillment {
-    #[serde_as(as = "serialize::Hex")]
-    pub order: [u8; 56],
+    pub order: OrderUid,
     #[serde_as(as = "HexOrDecimalU256")]
     pub executed_amount: U256,
     #[serde(skip_serializing_if = "Option::is_none")]

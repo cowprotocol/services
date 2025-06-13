@@ -201,6 +201,12 @@ pub const UID_LEN: usize = 56;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Uid(pub Bytes<[u8; UID_LEN]>);
 
+impl From<&solvers_dto::solution::OrderUid> for Uid {
+    fn from(value: &solvers_dto::solution::OrderUid) -> Self {
+        Self(value.0.into())
+    }
+}
+
 impl Uid {
     pub fn owner(&self) -> eth::Address {
         self.parts().1.into()

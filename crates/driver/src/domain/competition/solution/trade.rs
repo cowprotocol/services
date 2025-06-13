@@ -117,6 +117,13 @@ impl Trade {
             buy: self.sell_amount(prices)?.into(),
         })
     }
+
+    pub fn receiver(&self) -> eth::Address {
+        match self {
+            Trade::Fulfillment(fulfillment) => fulfillment.order().receiver(),
+            Trade::Jit(jit) => jit.order().receiver,
+        }
+    }
 }
 
 /// A trade which fulfills an order from the auction.
