@@ -829,15 +829,15 @@ SELECT DISTINCT order_uid FROM (
 }
 
 #[derive(Debug, sqlx::FromRow)]
-pub struct InteractionCount {
+pub struct InteractionIndices {
     pub next_pre_interaction_index: i32,
     pub next_post_interaction_index: i32,
 }
 
-pub async fn interaction_count(
+pub async fn next_free_interaction_indices(
     db: &mut PgConnection,
     order: OrderUid,
-) -> sqlx::Result<InteractionCount> {
+) -> sqlx::Result<InteractionIndices> {
     const QUERY: &str = r#"
 SELECT
   COALESCE(MAX(index) FILTER (WHERE execution = 'pre'), -1) + 1 AS next_pre_interaction_index,

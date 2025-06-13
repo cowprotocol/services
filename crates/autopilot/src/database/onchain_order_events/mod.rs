@@ -731,7 +731,7 @@ async fn insert_order_hooks(
             continue; // no additional interactions to index
         }
 
-        let interactions_count = database::orders::interaction_count(db, order.uid)
+        let interactions_count = database::orders::next_free_interaction_indices(db, order.uid)
             .await
             .context("failed to fetch interaction count")?;
 
