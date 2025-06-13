@@ -203,6 +203,25 @@ async fn eth_flow_tx(web3: Web3) {
         .await
         .unwrap();
     assert_eq!(allowance, to_wei(10));
+
+    // Just to be super sure we assert that we indeed were not
+    // able to set an allowance on behalf of the settlement contract.
+    let settlement = onchain.contracts().gp_settlement.address();
+    let allowance = dai
+        .allowance(settlement, trader.address())
+        .call()
+        .await
+        .unwrap();
+    assert_eq!(allowance, 0.into());
+
+    let allowance = onchain
+        .contracts()
+        .weth
+        .allowance(settlement, trader.address())
+        .call()
+        .await
+        .unwrap();
+    assert_eq!(allowance, 0.into());
 }
 
 async fn eth_flow_without_quote(web3: Web3) {
