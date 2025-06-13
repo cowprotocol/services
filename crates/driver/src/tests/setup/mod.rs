@@ -575,7 +575,7 @@ pub enum Calldata {
 pub struct Solution {
     pub calldata: Calldata,
     pub orders: Vec<&'static str>,
-    pub flashloans: Vec<Flashloan>,
+    pub flashloans: HashMap<order::Uid, Flashloan>,
 }
 
 impl Solution {
@@ -618,8 +618,8 @@ impl Solution {
         }
     }
 
-    pub fn flashloan(mut self, flashloan: Flashloan) -> Self {
-        self.flashloans.push(flashloan);
+    pub fn flashloan(mut self, order: order::Uid, flashloan: Flashloan) -> Self {
+        self.flashloans.insert(order, flashloan);
         self
     }
 }

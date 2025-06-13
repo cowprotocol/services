@@ -160,7 +160,7 @@ async fn single_limit_order_test(web3: Web3) {
             solvers_dto::solution::Trade::Fulfillment(solvers_dto::solution::Fulfillment {
                 executed_amount: order.sell_amount,
                 fee: Some(0.into()),
-                order: order_id.0,
+                order: solvers_dto::solution::OrderUid(order_id.0),
             }),
         ],
         pre_interactions: vec![],

@@ -34,7 +34,9 @@ async fn solutions_with_flashloan() {
         .settlement_address(&settlement)
         .pool(ab_pool())
         .order(order.clone())
-        .solution(ab_solution().flashloan(flashloan_into_dto(flashloan)))
+        // This test is just about parsing the request JSON bodies so we don't care
+        // about the specific order uid here
+        .solution(ab_solution().flashloan(Default::default(), flashloan_into_dto(flashloan)))
         .done()
         .await;
 
