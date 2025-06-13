@@ -120,7 +120,7 @@ The settlement contract allows associating user provided interactions to be exec
  execution  | [enum](#executiontime) | not null | in which phase the interaction should be executed
 
 Indexes:
-- PRIMARY KEY: btree(`order_uid`)
+- PRIMARY KEY: btree(`order_uid`, `index`, `execution`)
 
 
 ### invalidations

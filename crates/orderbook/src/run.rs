@@ -129,7 +129,7 @@ pub async fn run(args: Arguments) {
         },
     };
 
-    let hooks_contract = match args.hooks_contract_address {
+    let hooks_contract = match args.shared.hooks_contract_address {
         Some(address) => HooksTrampoline::at(&web3, address),
         None => HooksTrampoline::deployed(&web3)
             .await

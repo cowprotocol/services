@@ -56,6 +56,7 @@ use {
             get_quote_and_check_fee,
         },
     },
+    sqlx::PgConnection,
     std::{collections::HashMap, sync::Arc},
     web3::types::U64,
 };
@@ -68,6 +69,7 @@ pub struct OnchainOrderParser<EventData: Send + Sync, EventRow: Send + Sync> {
     domain_separator: DomainSeparator,
     settlement_contract: H160,
     metrics: &'static Metrics,
+    trampoline: contracts::HooksTrampoline,
 }
 
 impl<EventData, EventRow> OnchainOrderParser<EventData, EventRow>
@@ -82,6 +84,7 @@ where
         custom_onchain_data_parser: Box<dyn OnchainOrderParsing<EventData, EventRow>>,
         domain_separator: DomainSeparator,
         settlement_contract: H160,
+        trampoline: contracts::HooksTrampoline,
     ) -> Self {
         OnchainOrderParser {
             db,
@@ -91,6 +94,7 @@ where
             domain_separator,
             settlement_contract,
             metrics: Metrics::get(),
+            trampoline,
         }
     }
 }
@@ -351,6 +355,10 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
         )
         .await
         .context("appending quotes for onchain orders failed")?;
+
+        insert_order_hooks(transaction, &orders, &self.trampoline)
+            .await
+            .context("failed to insert hooks")?;
 
         database::orders::insert_orders_and_ignore_conflicts(transaction, orders.as_slice())
             .await
@@ -678,6 +686,81 @@ fn extract_order_data_from_onchain_order_placement_event(
     };
     let order_uid = order_data.uid(&domain_separator, &owner);
     Ok((order_data, owner, signing_scheme, order_uid))
+}
+
+async fn insert_order_hooks(
+    db: &mut PgConnection,
+    orders: &[Order],
+    trampoline: &contracts::HooksTrampoline,
+) -> Result<()> {
+    let mut interactions_to_insert = vec![];
+
+    let execute_via_trampoline = |hooks: Vec<app_data::Hook>| {
+        trampoline
+            .execute(
+                hooks
+                    .into_iter()
+                    .map(|hook| {
+                        (
+                            hook.target,
+                            ethcontract::Bytes(hook.call_data.clone()),
+                            hook.gas_limit.into(),
+                        )
+                    })
+                    .collect(),
+            )
+            .tx
+            .data
+            .unwrap()
+            .0
+    };
+
+    for order in orders {
+        let appdata_json = database::app_data::fetch(db, &order.app_data)
+            .await
+            .context("failed to fetch appdata")?;
+        let Some(appdata_json) = appdata_json else {
+            tracing::debug!(order = ?order.uid, "appdata for order is unknown");
+            continue;
+        };
+        let Ok(parsed) = app_data::parse(&appdata_json) else {
+            tracing::debug!(appdata = %String::from_utf8_lossy(&appdata_json), "could not parse appdata");
+            continue;
+        };
+        if parsed.hooks.pre.is_empty() && parsed.hooks.post.is_empty() {
+            continue; // no additional interactions to index
+        }
+
+        let interactions_count = database::orders::next_free_interaction_indices(db, order.uid)
+            .await
+            .context("failed to fetch interaction count")?;
+
+        if !parsed.hooks.pre.is_empty() {
+            let interaction = database::orders::Interaction {
+                target: ByteArray(trampoline.address().0),
+                value: 0.into(),
+                data: execute_via_trampoline(parsed.hooks.pre),
+                index: interactions_count.next_pre_interaction_index,
+                execution: database::orders::ExecutionTime::Pre,
+            };
+            interactions_to_insert.push((order.uid, interaction));
+        }
+
+        if !parsed.hooks.post.is_empty() {
+            let interaction = database::orders::Interaction {
+                target: ByteArray(trampoline.address().0),
+                value: 0.into(),
+                data: execute_via_trampoline(parsed.hooks.post),
+                index: interactions_count.next_post_interaction_index,
+                execution: database::orders::ExecutionTime::Post,
+            };
+            interactions_to_insert.push((order.uid, interaction));
+        }
+    }
+
+    database::orders::insert_or_overwrite_interactions(db, &interactions_to_insert)
+        .await
+        .context("could not insert interactions for orders")
 }
 
 #[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
@@ -1159,6 +1242,7 @@ mod test {
                     insert_batch_size: NonZeroUsize::new(500).unwrap(),
                 },
             },
+            trampoline: contracts::HooksTrampoline::deployed(&web3).await.unwrap(),
             web3,
             quoter: Arc::new(order_quoter),
             custom_onchain_data_parser: Box::new(custom_onchain_order_parser),
