@@ -120,6 +120,7 @@ pub fn new(
                     receiver: order.receiver.map(Into::into),
                     owner: order.signature.signer.into(),
                     partially_fillable: order.is_partial(),
+                    created: order.created.into(),
                     class: match order.kind {
                         order::Kind::Market => solvers_dto::auction::Class::Market,
                         order::Kind::Limit => solvers_dto::auction::Class::Limit,
