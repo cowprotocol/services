@@ -38,6 +38,7 @@ pub struct Order {
     pub full_sell_amount: U256,
     #[serde_as(as = "HexOrDecimalU256")]
     pub buy_amount: U256,
+    pub created: u32,
     #[serde_as(as = "HexOrDecimalU256")]
     pub full_buy_amount: U256,
     #[serde(skip_serializing_if = "Option::is_none")]
