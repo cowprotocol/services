@@ -1683,7 +1683,7 @@ components:
           nullable: true
           allOf:
             - $ref: "#/components/schemas/TransactionHash"
-          description: Transaction hash of the settlement if executed.
+          description: Transaction hash of the settlement if settled, null if reverted or if solution did not win.
     NativePriceResponse:
       description: |
         The estimated native price for the token

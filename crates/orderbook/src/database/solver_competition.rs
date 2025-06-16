@@ -1,15 +1,8 @@
 use {
-    super::Postgres,
-    crate::solver_competition::{Identifier, LoadSolverCompetitionError, SolverCompetitionStoring},
-    anyhow::{Context, Result},
-    database::byte_array::ByteArray,
-    model::{
+    super::Postgres, crate::solver_competition::{Identifier, LoadSolverCompetitionError, SolverCompetitionStoring}, anyhow::{Context, Result}, database::{byte_array::ByteArray, solver_competition::LoadCompetition}, model::{
         auction::AuctionId,
         solver_competition::{SolverCompetitionAPI, SolverCompetitionDB},
-    },
-    primitive_types::{H160, H256, U256},
-    number::conversions::big_decimal_to_u256,
-    sqlx::types::JsonValue,
+    }, number::conversions::big_decimal_to_u256, primitive_types::{H160, H256, U256}, sqlx::types::JsonValue
 };
 
 fn deserialize_solver_competition(
@@ -43,6 +36,25 @@ fn deserialize_solver_competition(
     })
 }
 
+async fn load_and_deserialize_competition<'a>(
+    ex: &mut sqlx::PgConnection,
+    competition: LoadCompetition,
+) -> Result<SolverCompetitionAPI, LoadSolverCompetitionError> {
+    let settlement_txs = database::solver_competition::fetch_settlement_txs(ex, competition.id)
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .map(|t| (H256(t.tx_hash.0), H160(t.solver.0), big_decimal_to_u256(&t.score).unwrap_or_default()))
+        .collect();
+
+    deserialize_solver_competition(
+        competition.json,
+        competition.id,
+        competition.tx_hashes.iter().map(|hash| H256(hash.0)).collect(),
+        settlement_txs,
+    )
+}
+
 #[async_trait::async_trait]
 impl SolverCompetitionStoring for Postgres {
     async fn load_competition(
@@ -55,7 +67,7 @@ impl SolverCompetitionStoring for Postgres {
             .start_timer();
 
         let mut ex = self.pool.acquire().await.map_err(anyhow::Error::from)?;
-        let row = match id {
+        let competition = match id {
             Identifier::Id(id) => database::solver_competition::load_by_id(&mut ex, id)
                 .await
                 .context("solver_competition::load_by_id")?,
@@ -66,20 +78,8 @@ impl SolverCompetitionStoring for Postgres {
             }
         };
 
-        let row = row.ok_or(LoadSolverCompetitionError::NotFound)?;
-        let txs = database::solver_competition::fetch_settlement_txs(&mut ex, row.id)
-            .await
-            .unwrap_or_default()
-            .into_iter()
-            .map(|t| (H256(t.tx_hash.0), H160(t.solver.0), big_decimal_to_u256(&t.score).unwrap_or_default()))
-            .collect();
-
-        deserialize_solver_competition(
-            row.json,
-            row.id,
-            row.tx_hashes.iter().map(|hash| H256(hash.0)).collect(),
-            txs,
-        )
+        let competition = competition.ok_or(LoadSolverCompetitionError::NotFound)?;
+        load_and_deserialize_competition(&mut ex, competition).await
     }
 
     async fn load_latest_competition(
@@ -91,24 +91,12 @@ impl SolverCompetitionStoring for Postgres {
             .start_timer();
 
         let mut ex = self.pool.acquire().await.map_err(anyhow::Error::from)?;
-        let row = database::solver_competition::load_latest_competition(&mut ex)
+        let latest_competition = database::solver_competition::load_latest_competition(&mut ex)
             .await
             .context("solver_competition::load_latest_competition")?;
 
-        let row = row.ok_or(LoadSolverCompetitionError::NotFound)?;
-        let txs = database::solver_competition::fetch_settlement_txs(&mut ex, row.id)
-            .await
-            .unwrap_or_default()
-            .into_iter()
-            .map(|t| (H256(t.tx_hash.0), H160(t.solver.0), big_decimal_to_u256(&t.score).unwrap_or_default()))
-            .collect();
-
-        deserialize_solver_competition(
-            row.json,
-            row.id,
-            row.tx_hashes.iter().map(|hash| H256(hash.0)).collect(),
-            txs,
-        )
+        let latest_competition = latest_competition.ok_or(LoadSolverCompetitionError::NotFound)?;
+        load_and_deserialize_competition(&mut ex, latest_competition).await
     }
 
     async fn load_latest_competitions(
@@ -122,30 +110,19 @@ impl SolverCompetitionStoring for Postgres {
 
         let mut ex = self.pool.acquire().await.map_err(anyhow::Error::from)?;
 
-        let rows = database::solver_competition::load_latest_competitions(
+        let latest_competitions = database::solver_competition::load_latest_competitions(
             &mut ex,
             latest_competitions_count,
         )
         .await
         .context("solver_competition::load_latest_competitions")?;
 
-        let mut competitions = Vec::new();
-        for row in rows {
-            let txs = database::solver_competition::fetch_settlement_txs(&mut ex, row.id)
-                .await
-                .unwrap_or_default()
-                .into_iter()
-                .map(|t| (H256(t.tx_hash.0), H160(t.solver.0), big_decimal_to_u256(&t.score).unwrap_or_default()))
-                .collect();
-            competitions.push(deserialize_solver_competition(
-                row.json,
-                row.id,
-                row.tx_hashes.iter().map(|hash| H256(hash.0)).collect(),
-                txs,
-            )?);
+        let mut result = Vec::new();
+        for competition in latest_competitions {
+            result.push(load_and_deserialize_competition(&mut ex, competition).await?);
         }
 
-        Ok(competitions)
+        Ok(result)
     }
 }
 
