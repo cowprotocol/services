@@ -1,8 +1,15 @@
 use {
-    super::Postgres, crate::solver_competition::{Identifier, LoadSolverCompetitionError, SolverCompetitionStoring}, anyhow::{Context, Result}, database::{byte_array::ByteArray, solver_competition::LoadCompetition}, model::{
+    super::Postgres,
+    crate::solver_competition::{Identifier, LoadSolverCompetitionError, SolverCompetitionStoring},
+    anyhow::{Context, Result},
+    database::{byte_array::ByteArray, solver_competition::LoadCompetition},
+    model::{
         auction::AuctionId,
         solver_competition::{SolverCompetitionAPI, SolverCompetitionDB},
-    }, number::conversions::big_decimal_to_u256, primitive_types::{H160, H256, U256}, sqlx::types::JsonValue
+    },
+    number::conversions::big_decimal_to_u256,
+    primitive_types::{H160, H256, U256},
+    sqlx::types::JsonValue,
 };
 
 fn deserialize_solver_competition(
@@ -44,13 +51,23 @@ async fn load_and_deserialize_competition<'a>(
         .await
         .unwrap_or_default()
         .into_iter()
-        .map(|t| (H256(t.tx_hash.0), H160(t.solver.0), big_decimal_to_u256(&t.score).unwrap_or_default()))
+        .map(|t| {
+            (
+                H256(t.tx_hash.0),
+                H160(t.solver.0),
+                big_decimal_to_u256(&t.score).unwrap_or_default(),
+            )
+        })
         .collect();
 
     deserialize_solver_competition(
         competition.json,
         competition.id,
-        competition.tx_hashes.iter().map(|hash| H256(hash.0)).collect(),
+        competition
+            .tx_hashes
+            .iter()
+            .map(|hash| H256(hash.0))
+            .collect(),
         settlement_txs,
     )
 }
