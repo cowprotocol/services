@@ -503,7 +503,7 @@ impl RunLoop {
                         .map(|(token, price)| (token.0, price.get().into()))
                         .collect(),
                     is_winner: participant.is_winner(),
-                    tx_hash: /* How do I get the txhash here? */,
+                    tx_hash: None,
                 })
                 .collect(),
         };
