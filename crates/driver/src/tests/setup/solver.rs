@@ -133,6 +133,7 @@ impl Solver {
                 "buyAmount": buy_amount,
                 "fullBuyAmount": if config.quote { buy_amount } else { quote.buy_amount().to_string() },
                 "validTo": quote.order.valid_to,
+                "created": quote.order.created,
                 "owner": if config.quote { H160::zero() } else { quote.order.owner },
                 "preInteractions":  json!([]),
                 "postInteractions":  json!([]),
