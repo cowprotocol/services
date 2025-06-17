@@ -109,6 +109,69 @@ GROUP BY sc.id
     sqlx::query_as(QUERY).bind(tx_hash).fetch_optional(ex).await
 }
 
+/// Updates the solutions array with the settlement transaction hash for the
+/// matching solver and solution_uid.
+///
+/// Fetches only the `solutions` field from the JSON to avoid unnecessary
+/// deserialization and performs the read and write as part of a single
+/// transaction.
+pub async fn update_solution_tx_hash(
+    ex: &mut PgTransaction<'_>,
+    auction_id: AuctionId,
+    solver: Address,
+    solution_uid: i64,
+    tx_hash: TransactionHash,
+) -> Result<(), sqlx::Error> {
+    const LOCK_QUERY: &str = r#"
+        SELECT id FROM solver_competitions
+        WHERE id = $1
+        FOR UPDATE
+    "#;
+    sqlx::query(LOCK_QUERY)
+        .bind(auction_id)
+        .execute(ex.deref_mut())
+        .await?;
+
+    // Now safely fetch and update the solutions field
+    const SELECT_QUERY: &str = r#"
+        SELECT sc.json -> 'solutions' AS solutions
+        FROM solver_competitions sc
+        JOIN proposed_solutions ps ON sc.id = ps.auction_id
+        WHERE sc.id = $1 AND ps.solver = $2 AND ps.uid = $3
+    "#;
+
+    let solutions: JsonValue = sqlx::query_scalar(SELECT_QUERY)
+        .bind(auction_id)
+        .bind(solver)
+        .bind(solution_uid)
+        .fetch_one(ex.deref_mut())
+        .await?;
+
+    let tx_hex = format!("0x{}", hex::encode(tx_hash.0));
+
+    let mut value: serde_json::Value = solutions.clone();
+    let array = match value.as_array_mut() {
+        Some(array) => array,
+        None => return Ok(()), // Early exit if not an array
+    };
+    if array.len() != 1 {
+        return Err(sqlx::Error::Protocol(format!(
+            "Expected a solution that was settled to already exist in the DB."
+        )));
+    }
+    let solution = &mut array[0];
+    solution["txHash"] = serde_json::Value::String(tx_hex);
+
+    const UPDATE: &str =
+        "UPDATE solver_competitions SET json = jsonb_set(json, '{solutions}', $1) WHERE id = $2";
+    sqlx::query(UPDATE)
+        .bind(value)
+        .bind(auction_id)
+        .execute(ex.deref_mut())
+        .await
+        .map(|_| ())
+}
+
 /// Identifies solvers that have consistently failed to settle solutions in
 /// recent N auctions.
 ///

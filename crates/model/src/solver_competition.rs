@@ -54,6 +54,8 @@ pub struct SolverSettlement {
     pub orders: Vec<Order>,
     #[serde(default)]
     pub is_winner: bool,
+    #[serde(default)]
+    pub tx_hash: Option<H256>,
 }
 
 #[serde_as]
@@ -210,6 +212,7 @@ mod tests {
                         },
                     ],
                     is_winner: true,
+                    tx_hash: None,
                 }],
             },
         };

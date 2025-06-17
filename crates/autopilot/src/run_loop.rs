@@ -503,6 +503,7 @@ impl RunLoop {
                         .map(|(token, price)| (token.0, price.get().into()))
                         .collect(),
                     is_winner: participant.is_winner(),
+                    tx_hash: None,  // Will be filled if/when the tx hash for the settlement is available.
                 })
                 .collect(),
         };

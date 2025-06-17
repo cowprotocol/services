@@ -690,6 +690,15 @@ impl Persistence {
             )
             .await?;
 
+            database::solver_competition::update_solution_tx_hash(
+                &mut ex,
+                auction_id,
+                solver,
+                settlement.solution_uid(),
+                ByteArray(event.transaction.0.0),
+            )
+            .await?;
+
             database::settlement_observations::upsert(
                 &mut ex,
                 Observation {
