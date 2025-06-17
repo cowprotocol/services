@@ -85,11 +85,52 @@ async fn eth_flow_tx(web3: Web3) {
     let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
-    let quote: OrderQuoteResponse = test_submit_quote(
-        &services,
-        &intent.to_quote_request(trader.account().address(), &onchain.contracts().weth),
-    )
-    .await;
+    let approve_call_data = {
+        let bytes = dai.approve(trader.address(), to_wei(10)).tx.data.unwrap();
+        format!("0x{}", hex::encode(&bytes.0))
+    };
+
+    let hash = services
+        .put_app_data(
+            None,
+            &format!(
+                r#"{{
+    "metadata": {{
+         "hooks": {{
+             "pre": [
+                 {{
+                     "target": "{:?}",
+                     "callData": "{}",
+                     "gasLimit": "100000"
+                 }}
+             ],
+             "post": [
+                 {{
+                     "target": "{:?}",
+                     "callData": "{}",
+                     "gasLimit": "100000"
+                 }}
+             ]
+         }}
+    }}
+}}"#,
+                dai.address(),
+                approve_call_data,
+                onchain.contracts().weth.address(),
+                approve_call_data,
+            ),
+        )
+        .await
+        .unwrap();
+
+    let quote_request = OrderQuoteRequest {
+        app_data: OrderCreationAppData::Hash {
+            hash: app_data::AppDataHash(hex::decode(&hash[2..]).unwrap().try_into().unwrap()),
+        },
+        ..intent.to_quote_request(trader.account().address(), &onchain.contracts().weth)
+    };
+
+    let quote: OrderQuoteResponse = test_submit_quote(&services, &quote_request).await;
 
     let valid_to = chrono::offset::Utc::now().timestamp() as u32
         + timestamp_of_current_block_in_seconds(&web3).await.unwrap()
@@ -142,6 +183,45 @@ async fn eth_flow_tx(web3: Web3) {
         ethflow_contract,
     )
     .await;
+
+    // Pre and post interactions provided in the appdata got executed.
+    // Note that the allowance was set for the trampoline contract
+    // which proofs that the interactions were correctly sandboxed.
+    let trampoline = onchain.contracts().hooks.address();
+    let allowance = dai
+        .allowance(trampoline, trader.address())
+        .call()
+        .await
+        .unwrap();
+    assert_eq!(allowance, to_wei(10));
+
+    let allowance = onchain
+        .contracts()
+        .weth
+        .allowance(trampoline, trader.address())
+        .call()
+        .await
+        .unwrap();
+    assert_eq!(allowance, to_wei(10));
+
+    // Just to be super sure we assert that we indeed were not
+    // able to set an allowance on behalf of the settlement contract.
+    let settlement = onchain.contracts().gp_settlement.address();
+    let allowance = dai
+        .allowance(settlement, trader.address())
+        .call()
+        .await
+        .unwrap();
+    assert_eq!(allowance, 0.into());
+
+    let allowance = onchain
+        .contracts()
+        .weth
+        .allowance(settlement, trader.address())
+        .call()
+        .await
+        .unwrap();
+    assert_eq!(allowance, 0.into());
 }
 
 async fn eth_flow_without_quote(web3: Web3) {
@@ -503,7 +583,7 @@ async fn test_order_parameters(
     );
 
     // Requires wrapping first
-    assert_eq!(response.interactions.pre.len(), 1);
+    assert!(!response.interactions.pre.is_empty());
     assert_eq!(
         response.interactions.pre[0].target,
         ethflow_contract.address()

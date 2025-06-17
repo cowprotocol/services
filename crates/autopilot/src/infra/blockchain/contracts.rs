@@ -5,6 +5,7 @@ pub struct Contracts {
     settlement: contracts::GPv2Settlement,
     weth: contracts::WETH9,
     chainalysis_oracle: Option<contracts::ChainalysisOracle>,
+    trampoline: contracts::HooksTrampoline,
 
     /// The authenticator contract that decides which solver is allowed to
     /// submit settlements.
@@ -17,6 +18,7 @@ pub struct Contracts {
 pub struct Addresses {
     pub settlement: Option<H160>,
     pub weth: Option<H160>,
+    pub trampoline: Option<H160>,
 }
 
 impl Contracts {
@@ -38,6 +40,14 @@ impl Contracts {
         let weth = contracts::WETH9::at(
             web3,
             address_for(contracts::WETH9::raw_contract(), addresses.weth),
+        );
+
+        let trampoline = contracts::HooksTrampoline::at(
+            web3,
+            address_for(
+                contracts::HooksTrampoline::raw_contract(),
+                addresses.trampoline,
+            ),
         );
 
         let chainalysis_oracle = contracts::ChainalysisOracle::deployed(web3).await.ok();
@@ -66,11 +76,16 @@ impl Contracts {
             chainalysis_oracle,
             settlement_domain_separator,
             authenticator,
+            trampoline,
         }
     }
 
     pub fn settlement(&self) -> &contracts::GPv2Settlement {
         &self.settlement
+    }
+
+    pub fn trampoline(&self) -> &contracts::HooksTrampoline {
+        &self.trampoline
     }
 
     pub fn settlement_domain_separator(&self) -> &domain::eth::DomainSeparator {
