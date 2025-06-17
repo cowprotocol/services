@@ -186,6 +186,7 @@ pub async fn run(args: Arguments) {
     let contracts = infra::blockchain::contracts::Addresses {
         settlement: args.shared.settlement_contract_address,
         weth: args.shared.native_token_address,
+        trampoline: args.shared.hooks_contract_address,
     };
     let eth = ethereum(
         web3.clone(),
@@ -544,6 +545,7 @@ pub async fn run(args: Arguments) {
             Box::new(custom_ethflow_order_parser),
             DomainSeparator::new(chain_id, eth.contracts().settlement().address()),
             eth.contracts().settlement().address(),
+            eth.contracts().trampoline().clone(),
         );
 
         let ethflow_start_block = determine_ethflow_indexing_start(
