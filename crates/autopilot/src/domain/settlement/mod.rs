@@ -211,13 +211,26 @@ struct OrderMatchKey {
 }
 
 fn trade_to_key(trade: &EncodedTrade) -> OrderMatchKey {
+    let (token, executed) = match trade.side {
+        order::Side::Sell => (trade.sell.token, trade.sell.amount.0),
+        order::Side::Buy => (trade.buy.token, trade.buy.amount.0),
+    };
+
+    // The Settlement smart contract overrides the "executed" field in the Trade
+    // event when the order is not partially fillable, so we need to
+    // differentiate between both cases.
+    // https://github.com/cowprotocol/contracts/blob/main/src/contracts/GPv2Settlement.sol#L385-L386
+    // https://github.com/cowprotocol/contracts/blob/main/src/contracts/GPv2Settlement.sol#L407-L408
+    let executed = if trade.partially_fillable {
+        trade.executed.0
+    } else {
+        executed
+    };
+
     OrderMatchKey {
         uid: trade.uid,
-        token: match trade.side {
-            order::Side::Sell => trade.sell.token,
-            order::Side::Buy => trade.buy.token,
-        },
-        executed: trade.executed.0,
+        token,
+        executed,
     }
 }
 
