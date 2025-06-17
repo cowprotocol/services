@@ -1446,7 +1446,8 @@ mod tests {
         let expected_key = OrderMatchKey {
             uid: transaction.trades[0].uid,
             token: transaction.trades[0].sell.token,
-            // We don't expect the "executed" field here, as this is a non-fillable order
+            // We expect the order's sell amount instead of the faulty `executedAmount`
+            // provided by the solver because this is a fill-or-kill order.
             executed: transaction.trades[0].sell.amount.into(),
         };
 
