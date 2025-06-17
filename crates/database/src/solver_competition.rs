@@ -151,14 +151,13 @@ pub async fn update_solution_tx_hash(
 
     let mut value: serde_json::Value = solutions.clone();
     let array = match value.as_array_mut() {
-        Some(array) => array,
-        None => return Ok(()), // Early exit if not an array
+        Some(array) if array.len() == 1 => array,
+        _ => {
+            return Err(sqlx::Error::Protocol(
+                "Expected a single solution array element to update txHash".to_string(),
+            ));
+        }
     };
-    if array.len() != 1 {
-        return Err(sqlx::Error::Protocol(format!(
-            "Expected a solution that was settled to already exist in the DB."
-        )));
-    }
     let solution = &mut array[0];
     solution["txHash"] = serde_json::Value::String(tx_hex);
 
