@@ -1421,7 +1421,7 @@ mod tests {
         .to_vec();
 
         let domain_separator = eth::DomainSeparator(hex!(
-            "c078f884a2676e1345748b1feace7b0abee5d00ecadb6e574dcdd109a63e8943"
+            "8f05589c4b810bc2f706854508d66d447cd971f8354a4bb0b3471ceb0a466bc7"
         ));
         let settlement_contract = eth::Address(eth::H160::from_slice(&hex!(
             "9008d19f58aabd9ed0d60971565aa8510560ab41"
