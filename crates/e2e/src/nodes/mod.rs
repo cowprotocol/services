@@ -14,16 +14,10 @@ impl Node {
     /// Spawns a new node that is forked from the given URL at `block_number` or
     /// if not set, latest.
     pub async fn forked(fork: impl reqwest::IntoUrl, block_number: Option<u64>) -> Self {
-        let mut args = [
-            "--port",
-            "8545",
-            "--fork-url",
-            fork.as_str(),
-            "--no-storage-caching",
-        ]
-        .into_iter()
-        .map(String::from)
-        .collect::<Vec<_>>();
+        let mut args = ["--port", "8545", "--fork-url", fork.as_str()]
+            .into_iter()
+            .map(String::from)
+            .collect::<Vec<_>>();
 
         if let Some(block_number) = block_number {
             args.extend(["--fork-block-number".to_string(), block_number.to_string()]);
