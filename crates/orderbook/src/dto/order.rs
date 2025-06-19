@@ -93,7 +93,7 @@ pub struct SolutionInclusion {
     pub solver: String,
     /// The executed amounts for the order as proposed by the solver, included
     /// if the solution was for the desired order, or omitted otherwise.
-    pub executed_amounts: Option<ExecutedAmounts>,
+    pub executed_amounts: ExecutedAmounts,
 }
 
 #[derive(Serialize, PartialEq, Debug, Clone)]

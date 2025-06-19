@@ -113,5 +113,4 @@ async fn test(web3: Web3) {
     };
     assert_eq!(solutions.len(), 1);
     assert_eq!(solutions[0].solver, "test_solver");
-    assert!(solutions[0].executed_amounts.is_some());
 }

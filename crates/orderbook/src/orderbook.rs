@@ -514,7 +514,7 @@ impl Orderbook {
                 .common
                 .solutions
                 .into_iter()
-                .map(|solution| {
+                .filter_map(|solution| {
                     let executed_amounts = solution.orders.iter().find_map(|o| match o {
                         solver_competition::Order::Legacy { .. } => None,
                         solver_competition::Order::Colocated {
@@ -525,11 +525,11 @@ impl Orderbook {
                             sell: *sell_amount,
                             buy: *buy_amount,
                         }),
-                    });
-                    dto::order::SolutionInclusion {
+                    })?;
+                    Some(dto::order::SolutionInclusion {
                         solver: solution.solver,
                         executed_amounts,
-                    }
+                    })
                 })
                 .collect::<Vec<_>>()
         };
