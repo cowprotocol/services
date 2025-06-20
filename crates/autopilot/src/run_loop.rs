@@ -481,7 +481,7 @@ impl RunLoop {
                     .map(|(token, price)| (token.0, price.get().into()))
                     .collect(),
                 is_winner: participant.is_winner(),
-                was_filtered: participant.was_filtered(),
+                filtered_out: participant.filtered_out(),
             })
             .collect();
         // reverse as solver competition table is sorted from worst to best,

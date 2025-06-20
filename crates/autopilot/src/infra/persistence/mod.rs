@@ -153,7 +153,7 @@ impl Persistence {
                         id: u256_to_big_decimal(&participant.solution().id().into()),
                         solver: ByteArray(participant.solution().solver().0.0),
                         is_winner: participant.is_winner(),
-                        was_filtered: participant.was_filtered(),
+                        filtered_out: participant.filtered_out(),
                         score: u256_to_big_decimal(&participant.solution().score().get().0),
                         orders: participant
                             .solution()

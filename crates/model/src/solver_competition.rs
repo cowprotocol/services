@@ -55,7 +55,7 @@ pub struct SolverSettlement {
     #[serde(default)]
     pub is_winner: bool,
     #[serde(default)]
-    pub was_filtered: bool,
+    pub filtered_out: bool,
 }
 
 #[serde_as]
@@ -170,7 +170,7 @@ mod tests {
                         }
                     ],
                     "isWinner": true,
-                    "wasFiltered": false,
+                    "filteredOut": false,
                 },
             ],
         });
@@ -213,7 +213,7 @@ mod tests {
                         },
                     ],
                     is_winner: true,
-                    was_filtered: false,
+                    filtered_out: false,
                 }],
             },
         };

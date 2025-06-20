@@ -13,7 +13,7 @@ pub mod max_score;
 pub struct Ranking {
     /// Solutions that were discarded because they were malformed
     /// in some way or deemed unfair by the selection mechanism.
-    filtered: Vec<Participant<Ranked>>,
+    filtered_out: Vec<Participant<Ranked>>,
     /// Final ranking of the solutions that passed the fairness
     /// check. Winners come before non-winners and higher total
     /// scores come before lower scores.
@@ -23,7 +23,7 @@ pub struct Ranking {
 impl Ranking {
     /// All solutions including the ones that got filtered out.
     pub fn all(&self) -> impl Iterator<Item = &Participant<Ranked>> {
-        self.ranked.iter().chain(&self.filtered)
+        self.ranked.iter().chain(&self.filtered_out)
     }
 
     /// All solutions that won the right to get executed.
@@ -42,9 +42,9 @@ impl Ranking {
     }
 }
 
-pub struct FilteredSolutions {
+pub struct PartitionedSolutions {
     kept: Vec<Participant<Unranked>>,
-    filtered: Vec<Participant<Unranked>>,
+    discarded: Vec<Participant<Unranked>>,
 }
 
 /// Implements auction arbitration in 3 phases:
@@ -58,10 +58,10 @@ pub trait Arbitrator: Send + Sync + 'static {
     /// Runs the entire auction mechanism on the passed in solutions.
     fn arbitrate(&self, participants: Vec<Participant<Unranked>>, auction: &Auction) -> Ranking {
         let partitioned = self.partition_unfair_solutions(participants, auction);
-        let filtered = partitioned
-            .filtered
+        let filtered_out = partitioned
+            .discarded
             .into_iter()
-            .map(|participant| participant.rank(Ranked::Filtered))
+            .map(|participant| participant.rank(Ranked::FilteredOut))
             .collect();
 
         let mut ranked = self.mark_winners(partitioned.kept);
@@ -73,7 +73,7 @@ pub trait Arbitrator: Send + Sync + 'static {
                 std::cmp::Reverse(participant.solution().computed_score().cloned()),
             )
         });
-        Ranking { filtered, ranked }
+        Ranking { filtered_out, ranked }
     }
 
     /// Removes unfair solutions from the set of all solutions.
@@ -81,7 +81,7 @@ pub trait Arbitrator: Send + Sync + 'static {
         &self,
         participants: Vec<Participant<Unranked>>,
         auction: &Auction,
-    ) -> FilteredSolutions;
+    ) -> PartitionedSolutions;
 
     /// Picks winners and sorts all solutions where winners come before
     /// non-winners and higher scores come before lower scores.

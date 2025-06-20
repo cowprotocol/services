@@ -24,7 +24,7 @@
 //! That is effectively a measurement of how much better each order got executed
 //! because solver S participated in the competition.
 use {
-    super::{Arbitrator, FilteredSolutions, Ranking},
+    super::{Arbitrator, PartitionedSolutions, Ranking},
     crate::domain::{
         self,
         OrderUid,
@@ -53,7 +53,7 @@ impl Arbitrator for Config {
         &self,
         mut participants: Vec<Participant<Unranked>>,
         auction: &domain::Auction,
-    ) -> FilteredSolutions {
+    ) -> PartitionedSolutions {
         // Discard all solutions where we can't compute the aggregate scores
         // accurately because the fairness guarantees heavily rely on them.
         let scores_by_solution = compute_scores_by_solution(&mut participants, auction);
@@ -93,9 +93,9 @@ impl Arbitrator for Config {
                 Either::Right(p)
             }
         });
-        FilteredSolutions {
+        PartitionedSolutions {
             kept: fair,
-            filtered: unfair,
+            discarded: unfair,
         }
     }
 

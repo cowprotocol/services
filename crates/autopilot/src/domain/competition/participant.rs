@@ -16,7 +16,7 @@ pub struct Unranked;
 pub enum Ranked {
     Winner,
     NonWinner,
-    Filtered,
+    FilteredOut,
 }
 
 impl<T> Participant<T> {
@@ -56,7 +56,7 @@ impl Participant<Ranked> {
         matches!(self.state, Ranked::Winner)
     }
 
-    pub fn was_filtered(&self) -> bool {
-        matches!(self.state, Ranked::Filtered)
+    pub fn filtered_out(&self) -> bool {
+        matches!(self.state, Ranked::FilteredOut)
     }
 }

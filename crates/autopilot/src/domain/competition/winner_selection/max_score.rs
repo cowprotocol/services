@@ -13,7 +13,7 @@
 //! The reference score is simply the second highest reported score of all
 //! solutions. If there is only 1 solution the reference score is 0.
 use {
-    super::{Arbitrator, FilteredSolutions, Ranking},
+    super::{Arbitrator, PartitionedSolutions, Ranking},
     crate::domain::{
         Auction,
         competition::{Participant, Ranked, Score, TradedOrder, Unranked},
@@ -31,7 +31,7 @@ impl Arbitrator for Config {
         &self,
         mut participants: Vec<Participant<Unranked>>,
         auction: &Auction,
-    ) -> FilteredSolutions {
+    ) -> PartitionedSolutions {
         // sort by score descending
         participants.sort_unstable_by_key(|participant| {
             std::cmp::Reverse(participant.solution().score().get().0)
@@ -51,8 +51,8 @@ impl Arbitrator for Config {
                         Either::Right(participant.clone())
                     }
                 });
-        FilteredSolutions {
-            filtered: unfair,
+        PartitionedSolutions {
+            discarded: unfair,
             kept: fair,
         }
     }

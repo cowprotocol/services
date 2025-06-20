@@ -287,12 +287,12 @@ async fn fairness_check(web3: Web3) {
     assert_eq!(competition.common.solutions.len(), 2);
     let unfair_solution = &competition.common.solutions[0];
     assert_eq!(unfair_solution.solver, "solver1");
-    assert!(unfair_solution.was_filtered);
+    assert!(unfair_solution.filtered_out);
     assert!(!unfair_solution.is_winner);
 
     let fair_solution = &competition.common.solutions[1];
     assert_eq!(fair_solution.solver, "solver2");
-    assert!(!fair_solution.was_filtered);
+    assert!(!fair_solution.filtered_out);
     assert!(fair_solution.is_winner);
 }
 
@@ -638,12 +638,12 @@ async fn store_filtered_solutions(web3: Web3) {
 
     // check that JSON endpoint contains the filtered solution
     let bad_solution = &competition.common.solutions[0];
-    assert!(bad_solution.was_filtered);
+    assert!(bad_solution.filtered_out);
     assert!(!bad_solution.is_winner);
     assert_eq!(bad_solution.solver_address, bad_solver_account.address());
 
     let good_solution = &competition.common.solutions[1];
-    assert!(!good_solution.was_filtered);
+    assert!(!good_solution.filtered_out);
     assert!(good_solution.is_winner);
     assert_eq!(good_solution.solver_address, good_solver_account.address());
 
@@ -653,12 +653,12 @@ async fn store_filtered_solutions(web3: Web3) {
         .await
         .unwrap();
     assert!(
-        solutions.iter().any(|s| s.was_filtered
+        solutions.iter().any(|s| s.filtered_out
             && !s.is_winner
             && s.solver.0 == bad_solver_account.address().0)
     );
     assert!(
-        solutions.iter().any(|s| !s.was_filtered
+        solutions.iter().any(|s| !s.filtered_out
             && s.is_winner
             && s.solver.0 == good_solver_account.address().0)
     );
