@@ -73,7 +73,10 @@ pub trait Arbitrator: Send + Sync + 'static {
                 std::cmp::Reverse(participant.solution().computed_score().cloned()),
             )
         });
-        Ranking { filtered_out, ranked }
+        Ranking {
+            filtered_out,
+            ranked,
+        }
     }
 
     /// Removes unfair solutions from the set of all solutions.
