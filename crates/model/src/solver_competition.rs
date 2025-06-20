@@ -54,6 +54,8 @@ pub struct SolverSettlement {
     pub orders: Vec<Order>,
     #[serde(default)]
     pub is_winner: bool,
+    #[serde(default)]
+    pub was_filtered: bool,
 }
 
 #[serde_as]
@@ -168,6 +170,7 @@ mod tests {
                         }
                     ],
                     "isWinner": true,
+                    "wasFiltered": false,
                 },
             ],
         });
@@ -210,6 +213,7 @@ mod tests {
                         },
                     ],
                     is_winner: true,
+                    was_filtered: false,
                 }],
             },
         };
