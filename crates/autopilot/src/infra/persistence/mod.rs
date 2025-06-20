@@ -133,7 +133,7 @@ impl Persistence {
     pub async fn save_solutions(
         &self,
         auction_id: domain::auction::Id,
-        solutions: &[domain::competition::Participant],
+        solutions: impl Iterator<Item = &domain::competition::Participant>,
     ) -> Result<(), DatabaseError> {
         let _timer = Metrics::get()
             .database_queries
@@ -146,7 +146,6 @@ impl Persistence {
             &mut ex,
             auction_id,
             &solutions
-                .iter()
                 .enumerate()
                 .map(|(uid, participant)| {
                     let solution = Solution {
@@ -154,6 +153,7 @@ impl Persistence {
                         id: u256_to_big_decimal(&participant.solution().id().into()),
                         solver: ByteArray(participant.solution().solver().0.0),
                         is_winner: participant.is_winner(),
+                        was_filtered: participant.was_filtered(),
                         score: u256_to_big_decimal(&participant.solution().score().get().0),
                         orders: participant
                             .solution()
