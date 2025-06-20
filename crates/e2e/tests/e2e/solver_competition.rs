@@ -283,11 +283,17 @@ async fn fairness_check(web3: Web3) {
         .await
         .unwrap();
     tracing::info!(?competition, "competition");
-    assert_eq!(
-        competition.common.solutions.last().unwrap().solver,
-        "solver2"
-    );
-    assert_eq!(competition.common.solutions.len(), 1);
+
+    assert_eq!(competition.common.solutions.len(), 2);
+    let unfair_solution = &competition.common.solutions[0];
+    assert_eq!(unfair_solution.solver, "solver1");
+    assert!(unfair_solution.was_filtered);
+    assert!(!unfair_solution.is_winner);
+
+    let fair_solution = &competition.common.solutions[1];
+    assert_eq!(fair_solution.solver, "solver2");
+    assert!(!fair_solution.was_filtered);
+    assert!(fair_solution.is_winner);
 }
 
 async fn wrong_solution_submission_address(web3: Web3) {
