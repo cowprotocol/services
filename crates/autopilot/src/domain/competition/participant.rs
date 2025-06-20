@@ -13,8 +13,10 @@ pub struct Participant<State = Ranked> {
 
 #[derive(Clone)]
 pub struct Unranked;
-pub struct Ranked {
-    is_winner: bool,
+pub enum Ranked {
+    Winner,
+    NonWinner,
+    Filtered,
 }
 
 impl<T> Participant<T> {
@@ -40,9 +42,9 @@ impl Participant<Unranked> {
         }
     }
 
-    pub fn rank(self, is_winner: bool) -> Participant<Ranked> {
+    pub fn rank(self, rank: Ranked) -> Participant<Ranked> {
         Participant::<Ranked> {
-            state: Ranked { is_winner },
+            state: rank,
             solution: self.solution,
             driver: self.driver,
         }
@@ -51,6 +53,10 @@ impl Participant<Unranked> {
 
 impl Participant<Ranked> {
     pub fn is_winner(&self) -> bool {
-        self.state.is_winner
+        matches!(self.state, Ranked::Winner)
+    }
+
+    pub fn was_filtered(&self) -> bool {
+        matches!(self.state, Ranked::Filtered)
     }
 }

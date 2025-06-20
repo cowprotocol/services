@@ -24,7 +24,7 @@
 //! That is effectively a measurement of how much better each order got executed
 //! because solver S participated in the competition.
 use {
-    super::Arbitrator,
+    super::{Arbitrator, FilteredSolutions, Ranking},
     crate::domain::{
         self,
         OrderUid,
@@ -32,7 +32,7 @@ use {
             Prices,
             order::{self, TargetAmount},
         },
-        competition::{Participant, Score, Solution, Unranked},
+        competition::{Participant, Ranked, Score, Solution, Unranked},
         eth::{self, WrappedNativeToken},
         fee,
         settlement::{
@@ -41,7 +41,7 @@ use {
         },
     },
     anyhow::{Context, Result},
-    itertools::Itertools,
+    itertools::{Either, Itertools},
     std::{
         collections::{HashMap, HashSet},
         ops::Add,
@@ -49,11 +49,11 @@ use {
 };
 
 impl Arbitrator for Config {
-    fn filter_unfair_solutions(
+    fn partition_unfair_solutions(
         &self,
         mut participants: Vec<Participant<Unranked>>,
         auction: &domain::Auction,
-    ) -> Vec<Participant<Unranked>> {
+    ) -> FilteredSolutions {
         // Discard all solutions where we can't compute the aggregate scores
         // accurately because the fairness guarantees heavily rely on them.
         let scores_by_solution = compute_scores_by_solution(&mut participants, auction);
@@ -69,7 +69,7 @@ impl Arbitrator for Config {
             )
         });
         let baseline_scores = compute_baseline_scores(&scores_by_solution);
-        participants.retain(|p| {
+        let (fair, unfair) = participants.into_iter().partition_map(|p| {
             let aggregated_scores = scores_by_solution
                 .get(&SolutionKey {
                     driver: p.driver().submission_address,
@@ -81,14 +81,22 @@ impl Arbitrator for Config {
             // we only filter out unfair solutions with more than one token pair,
             // to avoid reference scores set to 0.
             // see https://github.com/fhenneke/comb_auctions/issues/2
-            aggregated_scores.len() == 1
+            if aggregated_scores.len() == 1
                 || aggregated_scores.iter().all(|(pair, score)| {
                     baseline_scores
                         .get(pair)
                         .is_none_or(|baseline| score >= baseline)
                 })
+            {
+                Either::Left(p)
+            } else {
+                Either::Right(p)
+            }
         });
-        participants
+        FilteredSolutions {
+            kept: fair,
+            filtered: unfair,
+        }
     }
 
     fn mark_winners(&self, participants: Vec<Participant<Unranked>>) -> Vec<Participant> {
@@ -96,25 +104,20 @@ impl Arbitrator for Config {
         participants
             .into_iter()
             .enumerate()
-            .map(|(index, participant)| participant.rank(winner_indexes.contains(&index)))
-            .sorted_by_key(|p| {
-                (
-                    // winners before non-winners
-                    std::cmp::Reverse(p.is_winner()),
-                    // high score before low score
-                    std::cmp::Reverse(p.solution().computed_score().cloned()),
-                )
+            .map(|(index, participant)| {
+                let rank = match winner_indexes.contains(&index) {
+                    true => Ranked::Winner,
+                    false => Ranked::NonWinner,
+                };
+                participant.rank(rank)
             })
             .collect()
     }
 
-    fn compute_reference_scores(
-        &self,
-        participants: &[Participant],
-    ) -> HashMap<eth::Address, Score> {
+    fn compute_reference_scores(&self, ranking: &Ranking) -> HashMap<eth::Address, Score> {
         let mut reference_scores = HashMap::default();
 
-        for participant in participants {
+        for participant in &ranking.ranked {
             let solver = participant.driver().submission_address;
             if reference_scores.len() >= self.max_winners {
                 // all winners have been processed
@@ -129,7 +132,8 @@ impl Arbitrator for Config {
                 continue;
             }
 
-            let solutions_without_solver = participants
+            let solutions_without_solver = ranking
+                .ranked
                 .iter()
                 .filter(|p| p.driver().submission_address != solver)
                 .map(|p| p.solution());
@@ -1119,16 +1123,19 @@ mod tests {
 
             // filter solutions
             let participants = solution_map.values().cloned().collect();
-            let solutions = arbitrator.filter_unfair_solutions(participants, &auction);
-            assert_eq!(solutions.len(), self.expected_fair_solutions.len());
+            let ranking = arbitrator.arbitrate(participants, &auction);
+            assert_eq!(ranking.ranked.len(), self.expected_fair_solutions.len());
             for solution_id in &self.expected_fair_solutions {
                 let solution_uid = solution_map.get(&solution_id).unwrap().solution().id;
-                assert!(solutions.iter().any(|s| s.solution().id == solution_uid));
+                assert!(
+                    ranking
+                        .ranked
+                        .iter()
+                        .any(|s| s.solution().id == solution_uid)
+                );
             }
 
-            // select the winners
-            let solutions = arbitrator.mark_winners(solutions);
-            let winners = filter_winners(&solutions);
+            let winners = filter_winners(&ranking.ranked);
             assert!(winners.iter().is_sorted_by_key(|a| (
                 // winners before non-winners
                 std::cmp::Reverse(a.is_winner()),
@@ -1142,7 +1149,7 @@ mod tests {
             }
 
             // compute reference score
-            let reference_scores = arbitrator.compute_reference_scores(&solutions);
+            let reference_scores = arbitrator.compute_reference_scores(&ranking);
             assert_eq!(reference_scores.len(), self.expected_reference_scores.len());
             for (solver_id, expected_score) in &self.expected_reference_scores {
                 let solver_address: eth::Address = (*solver_map.get(solver_id).unwrap()).into();

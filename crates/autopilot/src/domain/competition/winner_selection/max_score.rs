@@ -13,43 +13,48 @@
 //! The reference score is simply the second highest reported score of all
 //! solutions. If there is only 1 solution the reference score is 0.
 use {
-    super::Arbitrator,
+    super::{Arbitrator, FilteredSolutions, Ranking},
     crate::domain::{
         Auction,
-        competition::{Participant, Score, TradedOrder, Unranked},
+        competition::{Participant, Ranked, Score, TradedOrder, Unranked},
         eth,
     },
     ethcontract::U256,
+    itertools::{Either, Itertools},
     std::collections::HashMap,
 };
 
 pub struct Config;
 
 impl Arbitrator for Config {
-    fn filter_unfair_solutions(
+    fn partition_unfair_solutions(
         &self,
         mut participants: Vec<Participant<Unranked>>,
         auction: &Auction,
-    ) -> Vec<Participant<Unranked>> {
+    ) -> FilteredSolutions {
         // sort by score descending
         participants.sort_unstable_by_key(|participant| {
             std::cmp::Reverse(participant.solution().score().get().0)
         });
-        participants
-            .iter()
-            .enumerate()
-            .filter_map(|(index, participant)| {
-                if is_solution_fair(participant, &participants[index..], auction) {
-                    Some(participant.clone())
-                } else {
-                    tracing::warn!(
-                        invalidated = participant.driver().name,
-                        "fairness check invalidated of solution"
-                    );
-                    None
-                }
-            })
-            .collect()
+        let (fair, unfair) =
+            participants
+                .iter()
+                .enumerate()
+                .partition_map(|(index, participant)| {
+                    if is_solution_fair(participant, &participants[index..], auction) {
+                        Either::Left(participant.clone())
+                    } else {
+                        tracing::warn!(
+                            invalidated = participant.driver().name,
+                            "fairness check invalidated of solution"
+                        );
+                        Either::Right(participant.clone())
+                    }
+                });
+        FilteredSolutions {
+            filtered: unfair,
+            kept: fair,
+        }
     }
 
     fn mark_winners(&self, participants: Vec<Participant<Unranked>>) -> Vec<Participant> {
@@ -61,16 +66,23 @@ impl Arbitrator for Config {
         participants
             .into_iter()
             .enumerate()
-            .map(|(index, participant)| participant.rank(index == 0))
+            .map(|(index, participant)| {
+                let rank = match index == 0 {
+                    true => Ranked::Winner,
+                    false => Ranked::NonWinner,
+                };
+                participant.rank(rank)
+            })
             .collect()
     }
 
-    fn compute_reference_scores(&self, solutions: &[Participant]) -> HashMap<eth::Address, Score> {
+    fn compute_reference_scores(&self, ranking: &Ranking) -> HashMap<eth::Address, Score> {
         // this will hold at most 1 score but the interface needs to support multiple
         // scores to fit the interface
         let mut reference_scores = HashMap::default();
-        if let Some(winner) = solutions.first() {
-            let runner_up = solutions
+        if let Some(winner) = ranking.ranked.first() {
+            let runner_up = ranking
+                .ranked
                 .get(1)
                 .map(|s| s.solution().score())
                 .unwrap_or_default();
