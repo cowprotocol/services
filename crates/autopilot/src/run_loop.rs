@@ -630,11 +630,7 @@ impl RunLoop {
             }
             Err(err) => {
                 Metrics::solve_err(&driver, start.elapsed(), &err);
-                if matches!(err, SolveError::NoSolutions) {
-                    tracing::debug!(driver = %driver.name, "solver found no solution");
-                } else {
-                    tracing::warn!(?err, driver = %driver.name, "solve error");
-                }
+                tracing::debug!(?err, driver = %driver.name, "solver didn't provide solutions");
                 vec![]
             }
         };
