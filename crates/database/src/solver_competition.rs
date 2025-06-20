@@ -248,6 +248,7 @@ pub struct Solution {
     pub id: BigDecimal,
     pub solver: Address,
     pub is_winner: bool,
+    pub filtered_out: bool,
     pub score: BigDecimal,
     pub orders: Vec<Order>,
     // UCP prices
@@ -290,7 +291,7 @@ async fn save_solutions(
 ) -> Result<(), sqlx::Error> {
     let mut builder = QueryBuilder::new(
         r#"INSERT INTO proposed_solutions 
-        (auction_id, uid, id, solver, is_winner, score, price_tokens, price_values)"#,
+        (auction_id, uid, id, solver, is_winner, filtered_out, score, price_tokens, price_values)"#,
     );
 
     builder.push_values(solutions.iter(), |mut b, solution| {
@@ -299,6 +300,7 @@ async fn save_solutions(
             .push_bind(&solution.id)
             .push_bind(solution.solver)
             .push_bind(solution.is_winner)
+            .push_bind(solution.filtered_out)
             .push_bind(&solution.score)
             .push_bind(&solution.price_tokens)
             .push_bind(&solution.price_values);
@@ -379,6 +381,7 @@ struct SolutionRow {
     id: BigDecimal,
     solver: Address,
     is_winner: bool,
+    filtered_out: bool,
     score: BigDecimal,
     price_tokens: Vec<Address>,
     price_values: Vec<BigDecimal>,
@@ -394,7 +397,8 @@ struct SolutionRow {
 
 const BASE_SOLUTIONS_QUERY: &str = r#"
     SELECT
-        ps.uid, ps.id, ps.solver, ps.is_winner, ps.score, ps.price_tokens, ps.price_values,
+        ps.uid, ps.id, ps.solver, ps.is_winner, ps.filtered_out,
+        ps.score, ps.price_tokens, ps.price_values,
         pse.order_uid, pse.executed_sell, pse.executed_buy,
         COALESCE(pjo.sell_token, o.sell_token) AS sell_token,
         COALESCE(pjo.buy_token, o.buy_token) AS buy_token,
@@ -457,6 +461,7 @@ fn map_rows_to_solutions(rows: Vec<SolutionRow>) -> Result<Vec<Solution>, sqlx::
                 id: row.id,
                 solver: row.solver,
                 is_winner: row.is_winner,
+                filtered_out: row.filtered_out,
                 score: row.score,
                 orders: Vec::new(),
                 price_tokens: row.price_tokens,
@@ -757,6 +762,7 @@ mod tests {
                 id: solution_uid.into(),
                 solver: non_settling_solver,
                 is_winner: true,
+                filtered_out: false,
                 score: Default::default(),
                 orders: Default::default(),
                 price_tokens: Default::default(),
@@ -775,6 +781,7 @@ mod tests {
                 id: solution_uid.into(),
                 solver: ByteArray([2u8; 20]),
                 is_winner: auction_id != 2,
+                filtered_out: false,
                 score: Default::default(),
                 orders: Default::default(),
                 price_tokens: Default::default(),
@@ -798,6 +805,7 @@ mod tests {
                 id: solution_uid.into(),
                 solver: ByteArray([3u8; 20]),
                 is_winner: true,
+                filtered_out: false,
                 score: Default::default(),
                 orders: Default::default(),
                 price_tokens: Default::default(),
@@ -817,6 +825,7 @@ mod tests {
                 id: solution_uid.into(),
                 solver: ByteArray([4u8; 20]),
                 is_winner: true,
+                filtered_out: false,
                 score: Default::default(),
                 orders: Default::default(),
                 price_tokens: Default::default(),
@@ -909,6 +918,7 @@ mod tests {
                 id: auction_id.into(),
                 solver: low_settling_solver,
                 is_winner: true,
+                filtered_out: false,
                 score: Default::default(),
                 orders: Default::default(),
                 price_tokens: Default::default(),
@@ -942,6 +952,7 @@ mod tests {
                 id: auction_id.into(),
                 solver: non_settling_solver,
                 is_winner: true,
+                filtered_out: false,
                 score: Default::default(),
                 orders: Default::default(),
                 price_tokens: Default::default(),
@@ -961,6 +972,7 @@ mod tests {
                 id: auction_id.into(),
                 solver: settling_solver,
                 is_winner: true,
+                filtered_out: false,
                 score: Default::default(),
                 orders: Default::default(),
                 price_tokens: Default::default(),

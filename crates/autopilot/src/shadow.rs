@@ -129,21 +129,17 @@ impl RunLoop {
             .orders
             .set(i64::try_from(auction.orders.len()).unwrap_or(i64::MAX));
 
-        let participants = self.competition(auction).await;
-        let solutions = self
-            .winner_selection
-            .filter_unfair_solutions(participants, auction);
-        let solutions = self.winner_selection.mark_winners(solutions);
-        let scores = self.winner_selection.compute_reference_scores(&solutions);
+        let solutions = self.competition(auction).await;
+        let ranking = self.winner_selection.arbitrate(solutions, auction);
+        let scores = self.winner_selection.compute_reference_scores(&ranking);
 
-        let total_score = solutions
-            .iter()
-            .filter(|p| p.is_winner())
+        let total_score = ranking
+            .winners()
             .map(|p| p.solution().score())
             .reduce(std::ops::Add::add)
             .unwrap_or_default();
 
-        for participant in solutions {
+        for participant in ranking.ranked() {
             let is_winner = participant.is_winner();
             let reference_score = scores.get(&participant.driver().submission_address);
             let driver = participant.driver();

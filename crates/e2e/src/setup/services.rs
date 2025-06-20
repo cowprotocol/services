@@ -114,7 +114,7 @@ impl<'a> Services<'a> {
         ServicesBuilder::new()
     }
 
-    fn api_autopilot_arguments() -> impl Iterator<Item = String> + use<> {
+    fn api_autopilot_arguments(&self) -> impl Iterator<Item = String> + use<> {
         [
             "--native-price-estimators=test_quoter|http://localhost:11088/test_solver".to_string(),
             "--amount-to-estimate-prices-with=1000000000000000000".to_string(),
@@ -122,6 +122,10 @@ impl<'a> Services<'a> {
             "--simulation-node-url=http://localhost:8545".to_string(),
             "--native-price-cache-max-age=2s".to_string(),
             "--native-price-prefetch-time=500ms".to_string(),
+            format!(
+                "--hooks-contract-address={:?}",
+                self.contracts.hooks.address()
+            ),
         ]
         .into_iter()
     }
@@ -169,7 +173,7 @@ impl<'a> Services<'a> {
         ]
         .into_iter()
         .chain(self.api_autopilot_solver_arguments())
-        .chain(Self::api_autopilot_arguments())
+        .chain(self.api_autopilot_arguments())
         .chain(extra_args)
         .collect();
         let args = ignore_overwritten_cli_params(args);
@@ -184,16 +188,12 @@ impl<'a> Services<'a> {
     pub async fn start_api(&self, extra_args: Vec<String>) {
         let args: Vec<_> = [
             "orderbook".to_string(),
-            format!(
-                "--hooks-contract-address={:?}",
-                self.contracts.hooks.address()
-            ),
             "--quote-timeout=10s".to_string(),
             "--quote-verification=enforce-when-possible".to_string(),
         ]
         .into_iter()
         .chain(self.api_autopilot_solver_arguments())
-        .chain(Self::api_autopilot_arguments())
+        .chain(self.api_autopilot_arguments())
         .chain(extra_args)
         .collect();
         let args = ignore_overwritten_cli_params(args);

@@ -56,7 +56,7 @@ impl BadTokenDetecting for InstrumentedBadTokenDetector {
                 "error"
             }
             Ok(quality @ TokenQuality::Bad { .. }) => {
-                tracing::warn!("bad token detection for {:?} returned {:?}", token, quality);
+                tracing::debug!("bad token detection for {:?} returned {:?}", token, quality);
                 "bad"
             }
         };
