@@ -421,7 +421,7 @@ impl RunLoop {
             let winner = winning_solution.solver().into();
             let winning_score = winning_solution.score().get().0;
             let reference_score = ranking
-                .all()
+                .ranked()
                 .nth(1)
                 .map(|participant| participant.solution().score().get().0)
                 .unwrap_or_default();
