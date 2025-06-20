@@ -81,8 +81,6 @@ impl Inner {
                 .map_err(PriceEstimationError::EstimatorInternal);
         }
 
-        tracing::warn!("verified quote requested but no verifier configured");
-
         let quote = self.finder.get_quote(&query).await?;
         Ok(Estimate {
             out_amount: quote.out_amount,
