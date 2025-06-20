@@ -359,6 +359,7 @@ All solutions reported by solvers, that were part of a solver competition. A sol
  id            | numeric   | not null | id of the proposed solution as reported by the solver
  solver        | bytea     | not null | solver submission address
  is\_winner    | boolean   | not null | specifies if a solver that proposed this solution is required to execute the solution
+ was\_filtered | boolean   | not null | specifies whether the solutions was filtered out during the initial fairness checks of the winner selection
  score         | numeric   | not null | score of a solution, based on a scoring criteria used at the time of competition
  price\_tokens | bytea[]   | not null | tokens used in a solution, for which uniform prices are provided
  price\_values | numeric[] | not null | uniform prices for all tokens in `price\_tokens` list

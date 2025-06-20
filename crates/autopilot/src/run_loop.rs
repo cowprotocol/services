@@ -11,7 +11,7 @@ use {
                 SolutionError,
                 SolverParticipationGuard,
                 Unranked,
-                winner_selection,
+                winner_selection::{self, Ranking},
             },
             eth::{self, TxId},
             settlement::{ExecutionEnded, ExecutionStarted},
@@ -280,11 +280,10 @@ impl RunLoop {
             })
         };
 
-        let solutions = winner_selection.filter_unfair_solutions(solutions, &auction);
-        let solutions = winner_selection.mark_winners(solutions);
+        let ranking = winner_selection.arbitrate(solutions, &auction);
 
         // Count and record the number of winners
-        let num_winners = solutions.iter().filter(|p| p.is_winner()).count();
+        let num_winners = ranking.winners().count();
         if let Some(num_winners_f64) = num_winners.to_f64() {
             Metrics::get().auction_winners.observe(num_winners_f64);
         }
@@ -298,7 +297,7 @@ impl RunLoop {
             .post_processing(
                 &auction,
                 competition_simulation_block,
-                &solutions,
+                &ranking,
                 block_deadline,
                 winner_selection,
                 is_single_winner_selection,
@@ -310,9 +309,8 @@ impl RunLoop {
         }
 
         // Mark all winning orders as `Executing`
-        let winning_orders = solutions
-            .iter()
-            .filter(|p| p.is_winner())
+        let winning_orders = ranking
+            .winners()
             .flat_map(|p| p.solution().order_ids().copied())
             .collect::<HashSet<_>>();
         self.persistence
@@ -320,17 +318,14 @@ impl RunLoop {
 
         // Mark the rest as `Considered` for execution
         self.persistence.store_order_events(
-            solutions
-                .iter()
+            ranking
+                .non_winners()
                 .flat_map(|p| p.solution().order_ids().copied())
                 .filter(|order_id| !winning_orders.contains(order_id)),
             OrderEventLabel::Considered,
         );
 
-        for winner in solutions
-            .iter()
-            .filter(|participant| participant.is_winner())
-        {
+        for winner in ranking.winners() {
             let (driver, solution) = (winner.driver(), winner.solution());
             tracing::info!(driver = %driver.name, solution = %solution.id(), "winner");
 
@@ -343,7 +338,7 @@ impl RunLoop {
             )
             .await;
         }
-        observe::unsettled(&solutions, &auction);
+        observe::unsettled(&ranking, &auction);
     }
 
     /// Starts settlement execution in a background task. The function is async
@@ -406,26 +401,28 @@ impl RunLoop {
         &self,
         auction: &domain::Auction,
         competition_simulation_block: u64,
-        solutions: &[competition::Participant],
+        ranking: &Ranking,
         block_deadline: u64,
         winner_selection: Box<dyn winner_selection::Arbitrator>,
         is_single_winner_selection: bool,
     ) -> Result<()> {
         let start = Instant::now();
+        let reference_scores = winner_selection.compute_reference_scores(ranking);
         // TODO: Needs to be removed once other teams fully migrated to the
         // reference_scores table
         let legacy_score = {
-            let Some(winning_solution) = solutions
-                .iter()
-                .find(|participant| participant.is_winner())
+            let Some(winning_solution) = ranking
+                .winners()
+                .nth(0)
                 .map(|participant| participant.solution())
             else {
                 return Err(anyhow::anyhow!("no winners found"));
             };
             let winner = winning_solution.solver().into();
             let winning_score = winning_solution.score().get().0;
-            let reference_score = solutions
-                .get(1)
+            let reference_score = ranking
+                .ranked()
+                .nth(1)
                 .map(|participant| participant.solution().score().get().0)
                 .unwrap_or_default();
             is_single_winner_selection.then_some(LegacyScore {
@@ -435,15 +432,13 @@ impl RunLoop {
             })
         };
 
-        let reference_scores = winner_selection.compute_reference_scores(solutions);
-
-        let participants = solutions
-            .iter()
+        let participants = ranking
+            .all()
             .map(|participant| participant.solution().solver().into())
             .collect::<HashSet<_>>();
         let mut fee_policies = Vec::new();
-        for order_id in solutions
-            .iter()
+        for order_id in ranking
+            .ranked()
             .flat_map(|participant| participant.solution().order_ids())
             .unique()
         {
@@ -461,6 +456,38 @@ impl RunLoop {
             }
         }
 
+        let mut solutions: Vec<_> = ranking
+            .all()
+            .enumerate()
+            .map(|(index, participant)| SolverSettlement {
+                solver: participant.driver().name.clone(),
+                solver_address: participant.solution().solver().0,
+                score: Some(Score::Solver(participant.solution().score().get().0)),
+                ranking: index + 1,
+                orders: participant
+                    .solution()
+                    .orders()
+                    .iter()
+                    .map(|(id, order)| Order::Colocated {
+                        id: (*id).into(),
+                        sell_amount: order.executed_sell.into(),
+                        buy_amount: order.executed_buy.into(),
+                    })
+                    .collect(),
+                clearing_prices: participant
+                    .solution()
+                    .prices()
+                    .iter()
+                    .map(|(token, price)| (token.0, price.get().into()))
+                    .collect(),
+                is_winner: participant.is_winner(),
+                filtered_out: participant.filtered_out(),
+            })
+            .collect();
+        // reverse as solver competition table is sorted from worst to best,
+        // so we need to keep the ordering for backwards compatibility
+        solutions.reverse();
+
         let competition_table = SolverCompetitionDB {
             auction_start_block: auction.block,
             competition_simulation_block,
@@ -476,35 +503,7 @@ impl RunLoop {
                     .map(|(key, value)| ((*key).into(), value.get().into()))
                     .collect(),
             },
-            solutions: solutions
-                .iter()
-                // reverse as solver competition table is sorted from worst to best, so we need to keep the ordering for backwards compatibility
-                .rev()
-                .enumerate()
-                .map(|(index, participant)| SolverSettlement {
-                    solver: participant.driver().name.clone(),
-                    solver_address: participant.solution().solver().0,
-                    score: Some(Score::Solver(participant.solution().score().get().0)),
-                    ranking: solutions.len() - index,
-                    orders: participant
-                        .solution()
-                        .orders()
-                        .iter()
-                        .map(|(id, order)| Order::Colocated {
-                            id: (*id).into(),
-                            sell_amount: order.executed_sell.into(),
-                            buy_amount: order.executed_buy.into(),
-                        })
-                        .collect(),
-                    clearing_prices: participant
-                        .solution()
-                        .prices()
-                        .iter()
-                        .map(|(token, price)| (token.0, price.get().into()))
-                        .collect(),
-                    is_winner: participant.is_winner(),
-                })
-                .collect(),
+            solutions,
         };
         let competition = Competition {
             auction_id: auction.id,
@@ -527,7 +526,7 @@ impl RunLoop {
                 .save_auction(auction, block_deadline)
                 .map_err(|e| e.0.context("failed to save auction")),
             self.persistence
-                .save_solutions(auction.id, solutions)
+                .save_solutions(auction.id, ranking.all())
                 .map_err(|e| e.0.context("failed to save solutions")),
         ) {
             Ok(_) => {
@@ -944,9 +943,8 @@ struct Metrics {
     settle: prometheus::HistogramVec,
 
     /// Tracks the number of orders that were part of some but not the winning
-    /// solution together with the winning driver that did't include it.
-    #[metric(labels("ignored_by"))]
-    matched_unsettled: prometheus::IntCounterVec,
+    /// solutions.
+    matched_unsettled: prometheus::IntCounter,
 
     /// Tracks the number of orders that were settled together with the
     /// settling driver.
@@ -1046,14 +1044,11 @@ impl Metrics {
             .observe(elapsed.as_secs_f64());
     }
 
-    fn matched_unsettled(winning: &infra::Driver, unsettled: HashSet<&domain::OrderUid>) {
+    fn matched_unsettled(unsettled: HashSet<&domain::OrderUid>) {
         if !unsettled.is_empty() {
             tracing::debug!(?unsettled, "some orders were matched but not settled");
         }
-        Self::get()
-            .matched_unsettled
-            .with_label_values(&[&winning.name])
-            .inc_by(unsettled.len() as u64);
+        Self::get().matched_unsettled.inc_by(unsettled.len() as u64);
     }
 
     fn post_processed(elapsed: Duration) {
@@ -1081,7 +1076,10 @@ impl Metrics {
 
 pub mod observe {
     use {
-        crate::domain::{self, competition::Unranked},
+        crate::domain::{
+            self,
+            competition::{Unranked, winner_selection::Ranking},
+        },
         std::collections::HashSet,
     };
 
@@ -1128,20 +1126,14 @@ pub mod observe {
     }
 
     /// Records metrics for the matched but unsettled orders.
-    pub fn unsettled(solutions: &[domain::competition::Participant], auction: &domain::Auction) {
-        let Some(winner) = solutions.first() else {
-            // no solutions means nothing to report
-            return;
-        };
-
+    pub fn unsettled(ranking: &Ranking, auction: &domain::Auction) {
         let mut non_winning_orders = {
-            let winning_orders = solutions
-                .iter()
-                .filter(|p| p.is_winner())
+            let winning_orders = ranking
+                .winners()
                 .flat_map(|p| p.solution().order_ids())
                 .collect::<HashSet<_>>();
-            solutions
-                .iter()
+            ranking
+                .ranked()
                 .flat_map(|p| p.solution().order_ids())
                 .filter(|uid| !winning_orders.contains(uid))
                 .collect::<HashSet<_>>()
@@ -1150,6 +1142,6 @@ pub mod observe {
         // but only if they were part of the auction (filter out jit orders)
         let auction_uids = auction.orders.iter().map(|o| o.uid).collect::<HashSet<_>>();
         non_winning_orders.retain(|uid| auction_uids.contains(uid));
-        super::Metrics::matched_unsettled(winner.driver(), non_winning_orders);
+        super::Metrics::matched_unsettled(non_winning_orders);
     }
 }
