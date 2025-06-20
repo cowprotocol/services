@@ -481,6 +481,7 @@ impl RunLoop {
                     .map(|(token, price)| (token.0, price.get().into()))
                     .collect(),
                 is_winner: participant.is_winner(),
+                tx_hash: None,  // Will be filled eventually when we have tx hashes for the settlements.
                 filtered_out: participant.filtered_out(),
             })
             .collect();

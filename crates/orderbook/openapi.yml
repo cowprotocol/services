@@ -1678,6 +1678,12 @@ components:
         isWinner:
           type: boolean
           description: whether the solution is a winner (received the right to get executed) or not
+        txHash:
+          type: string
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/TransactionHash"
+          description: Transaction hash of the settlement if settled, null if reverted or if solution did not win.
     NativePriceResponse:
       description: |
         The estimated native price for the token

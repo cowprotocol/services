@@ -109,6 +109,29 @@ GROUP BY sc.id
     sqlx::query_as(QUERY).bind(tx_hash).fetch_optional(ex).await
 }
 
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct SettlementTx {
+    pub tx_hash: TransactionHash,
+    pub solver: Address,
+    pub score: BigDecimal,
+}
+
+pub async fn fetch_settlement_txs(
+    ex: &mut PgConnection,
+    auction_id: AuctionId,
+) -> Result<Vec<SettlementTx>, sqlx::Error> {
+    const QUERY: &str = r#"
+SELECT s.tx_hash, s.solver, ps.score
+FROM settlements s
+JOIN settlement_observations so
+    ON s.block_number = so.block_number AND s.log_index = so.log_index
+JOIN proposed_solutions ps
+    ON s.auction_id = ps.auction_id AND s.solution_uid = ps.uid
+WHERE s.auction_id = $1
+    ;"#;
+    sqlx::query_as(QUERY).bind(auction_id).fetch_all(ex).await
+}
+
 /// Identifies solvers that have consistently failed to settle solutions in
 /// recent N auctions.
 ///

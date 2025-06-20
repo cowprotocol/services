@@ -55,6 +55,7 @@ pub struct SolverSettlement {
     #[serde(default)]
     pub is_winner: bool,
     #[serde(default)]
+    pub tx_hash: Option<H256>,
     pub filtered_out: bool,
 }
 
