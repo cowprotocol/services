@@ -6,6 +6,7 @@ use {
             blockchain,
             config::file,
             liquidity,
+            notify,
             mempool,
             simulator,
             solver::{self, BadTokenDetection, SolutionMerging},
@@ -309,6 +310,18 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                     api_key: config.api_key,
                     http_timeout: config.http_timeout,
                 }),
+        },
+        liquidity_source_notifier: notify::liquidity_source::config::Config {
+            liquorice: config.liquidity_source_notifier.liquorice.map(|config| {
+                notify::liquidity_source::config::Liquorice {
+                    notification_url: config.notification_url.clone(),
+                    api_key: config.api_key.clone(),
+                    http_timeout: config.http_timeout,
+                    // TODO: doesn't seem that we need to ensure existence of the deployed contract here,
+                    //   but needs to be confirmed
+                    settlement_contract: eth::ContractAddress(config.settlement_contract),
+                }
+            }),
         },
         mempools: config
             .submission
