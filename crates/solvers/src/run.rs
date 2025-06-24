@@ -7,10 +7,8 @@ use {
     },
     clap::Parser,
     observe::config::{ObserveConfig, TracingConfig},
-    opentelemetry::trace::TraceContextExt,
     std::net::SocketAddr,
     tokio::sync::oneshot,
-    tracing_opentelemetry::OpenTelemetrySpanExt,
 };
 
 pub async fn start(args: impl IntoIterator<Item = String>) {
