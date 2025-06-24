@@ -617,12 +617,18 @@ mod tests {
 
         for repr in [
             &NativePriceEstimator::Driver(
-                ExternalSolver::from_str("baseline|http://localhost:1234/|0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2").unwrap(),
+                ExternalSolver::from_str(
+                    "baseline|http://localhost:1234/|0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+                )
+                .unwrap(),
             )
             .to_string(),
             &NativePriceEstimator::OneInchSpotPriceApi.to_string(),
             "one|http://localhost:1111/,two|http://localhost:2222/;three|http://localhost:3333/,four|http://localhost:4444/",
-            &format!("one|http://localhost:1111/,two|http://localhost:2222/;{},four|http://localhost:4444/", NativePriceEstimator::OneInchSpotPriceApi),
+            &format!(
+                "one|http://localhost:1111/,two|http://localhost:2222/;{},four|http://localhost:4444/",
+                NativePriceEstimator::OneInchSpotPriceApi
+            ),
         ] {
             assert_eq!(stringified(&parsed(repr).unwrap()), repr);
         }

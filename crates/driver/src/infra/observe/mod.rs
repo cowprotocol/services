@@ -24,6 +24,7 @@ use {
         util::http,
     },
     ethrpc::block_stream::BlockInfo,
+    observe::config::{ObserveConfig, TracingConfig},
     std::{
         collections::{BTreeMap, HashSet},
         time::Duration,
@@ -36,7 +37,13 @@ pub mod metrics;
 /// Setup the observability. The log argument configures the tokio tracing
 /// framework.
 pub fn init(log: &str, use_json_format: bool) {
-    observe::tracing::initialize_reentrant(log, use_json_format);
+    let obs_config = ObserveConfig::new(
+        log,
+        tracing::Level::ERROR.into(),
+        use_json_format,
+        TracingConfig::default(),
+    );
+    observe::tracing::initialize_reentrant(&obs_config);
     metrics::init();
 }
 

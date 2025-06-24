@@ -36,7 +36,10 @@ use {
     ethrpc::block_stream::block_number_to_block_number_hash,
     futures::stream::StreamExt,
     model::DomainSeparator,
-    observe::metrics::LivenessChecking,
+    observe::{
+        config::{ObserveConfig, TracingConfig},
+        metrics::LivenessChecking,
+    },
     shared::{
         account_balances,
         bad_token::{
@@ -125,11 +128,13 @@ async fn ethereum(
 
 pub async fn start(args: impl Iterator<Item = String>) {
     let args = Arguments::parse_from(args);
-    observe::tracing::initialize(
+    let obs_config = ObserveConfig::new(
         args.shared.logging.log_filter.as_str(),
         args.shared.logging.log_stderr_threshold,
         args.shared.logging.use_json_logs,
+        TracingConfig::default(),
     );
+    observe::tracing::initialize(&obs_config);
     observe::panic_hook::install();
     tracing::info!("running autopilot with validated arguments:\n{}", args);
     observe::metrics::setup_registry(Some("gp_v2_autopilot".into()), None);

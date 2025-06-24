@@ -10,6 +10,7 @@ use {
     crate::nodes::{NODE_HOST, Node},
     anyhow::{Result, anyhow},
     ethcontract::futures::FutureExt,
+    observe::config::{ObserveConfig, TracingConfig},
     shared::ethrpc::{Web3, create_test_transport},
     std::{
         future::Future,
@@ -183,7 +184,13 @@ async fn run<F, Fut, T>(
     Fut: Future<Output = ()>,
     T: AsRef<str>,
 {
-    observe::tracing::initialize_reentrant(&with_default_filters(filters).join(","), false);
+    let obs_config = ObserveConfig::new(
+        &with_default_filters(filters).join(","),
+        tracing::Level::ERROR.into(),
+        false,
+        TracingConfig::default(),
+    );
+    observe::tracing::initialize_reentrant(&obs_config);
     observe::panic_hook::install();
 
     // The mutex guarantees that no more than a test at a time is running on

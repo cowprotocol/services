@@ -141,11 +141,25 @@ impl<S: Subscriber + for<'lookup> LookupSpan<'lookup>> Layer<S> for RequestIdLay
 
 #[cfg(test)]
 mod test {
-    use {super::*, tracing::Instrument};
+    use {
+        super::*,
+        crate::config::{ObserveConfig, TracingConfig},
+        tracing::Instrument,
+    };
+
+    fn init_tracing(env_filter: &str) {
+        let obs_config = ObserveConfig::new(
+            env_filter,
+            tracing::Level::ERROR.into(),
+            false,
+            TracingConfig::default(),
+        );
+        crate::tracing::initialize_reentrant(&obs_config);
+    }
 
     #[tokio::test]
     async fn request_id_from_current_span() {
-        crate::tracing::initialize_reentrant("error", false);
+        init_tracing("error");
         async {
             assert_eq!(
                 Some("test".to_string()),
@@ -158,7 +172,7 @@ mod test {
 
     #[tokio::test]
     async fn request_id_not_set() {
-        crate::tracing::initialize_reentrant("debug", false);
+        init_tracing("debug");
         async {
             assert_eq!(None, crate::request_id::from_current_span());
         }
@@ -167,7 +181,7 @@ mod test {
 
     #[tokio::test]
     async fn request_id_from_ancestor_span() {
-        crate::tracing::initialize_reentrant("error", false);
+        init_tracing("error");
         async {
             async {
                 async {
@@ -189,7 +203,7 @@ mod test {
 
     #[tokio::test]
     async fn request_id_from_first_ancestor_span() {
-        crate::tracing::initialize_reentrant("error", false);
+        init_tracing("error");
         async {
             async {
                 async {
@@ -211,7 +225,7 @@ mod test {
 
     #[tokio::test]
     async fn request_id_within_spawned_task() {
-        crate::tracing::initialize_reentrant("error", false);
+        init_tracing("error");
         async {
             tokio::spawn(
                 async {
