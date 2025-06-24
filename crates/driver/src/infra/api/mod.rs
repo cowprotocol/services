@@ -11,6 +11,7 @@ use {
             Simulator,
             config::file::OrderPriorityStrategy,
             liquidity,
+            notify,
             solver::{Solver, Timeouts},
             tokens,
         },
@@ -30,6 +31,7 @@ const REQUEST_BODY_LIMIT: usize = 10 * 1024 * 1024;
 pub struct Api {
     pub solvers: Vec<Solver>,
     pub liquidity: liquidity::Fetcher,
+    pub liquidity_source_notifier: notify::liquidity_source::Notifier,
     pub simulator: Simulator,
     pub eth: Ethereum,
     pub mempools: Mempools,
