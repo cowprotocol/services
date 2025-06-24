@@ -13,6 +13,7 @@ use {
     std::time::Duration,
     url::Url,
 };
+use crate::infra::notify;
 
 pub mod file;
 
@@ -23,6 +24,7 @@ pub struct Config {
     pub disable_gas_simulation: Option<eth::Gas>,
     pub solvers: Vec<solver::Config>,
     pub liquidity: liquidity::Config,
+    pub liquidity_source_notifier: notify::liquidity_source::Config,
     pub simulator: Option<simulator::Config>,
     pub gas_estimator: GasEstimatorType,
     pub mempools: Vec<mempool::Config>,

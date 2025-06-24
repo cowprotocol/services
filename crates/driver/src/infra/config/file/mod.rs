@@ -49,6 +49,9 @@ struct Config {
     /// Use Enso for transaction simulation.
     enso: Option<EnsoConfig>,
 
+    /// Liquidity source notifier configuration.
+    liquidity_source_notifier: LiquiditySourceNotifier,
+
     #[serde(rename = "solver")]
     solvers: Vec<SolverConfig>,
 
@@ -690,6 +693,30 @@ fn default_response_size_limit_max_bytes() -> usize {
 fn default_number_of_orders_per_merged_solution() -> usize {
     3
 }
+
+/// A configuration for sending notifications to liquidity sources.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct LiquiditySourceNotifier {
+    pub liquorice: Option<LiquoriceConfig>
+}
+
+/// Liquorice API configuration for notifications.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct LiquoriceConfig {
+    /// The URL to post notifications to
+    pub notification_url: String,
+    /// API key for the Liquorice API
+    pub api_key: String,
+    /// The HTTP timeout for requests to the Liquorice API
+    #[serde(with = "humantime_serde", default = "default_http_timeout")]
+    pub http_timeout: Duration,
+    /// The address of the Liquorice settlement contract to detect
+    /// relevant interactions
+    pub settlement_contract: eth::H160,
+}
+
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
