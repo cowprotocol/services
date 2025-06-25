@@ -64,7 +64,6 @@ impl Api {
         let pre_processor = domain::competition::AuctionProcessor::new(
             &self.eth,
             order_priority_strategies,
-            app_data_retriever,
             fetcher.clone(),
         );
         

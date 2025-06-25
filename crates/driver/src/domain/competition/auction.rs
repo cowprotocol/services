@@ -14,19 +14,15 @@ use {
             config::file::OrderPriorityStrategy,
             observe::{self, metrics},
         },
-        util::{self, Bytes},
+        util::{self},
     },
-    chrono::{Duration, Utc},
-    futures::future::{BoxFuture, FutureExt, Shared, join_all},
-    itertools::Itertools,
-    model::{order::OrderKind, signature::Signature},
+    chrono::Duration,
+    futures::future::{BoxFuture, FutureExt, Shared},
     prometheus::HistogramTimer,
-    shared::signature_validator::{Contracts, SignatureValidating},
     std::{
         collections::{HashMap, HashSet},
         sync::{Arc, Mutex},
     },
-    tap::TapFallible,
     thiserror::Error,
 };
 use crate::domain::competition::pre_processing;
@@ -150,8 +146,6 @@ struct DataAggregator {
     /// Order sorting strategies should be in the same order as the
     /// `order_priority_strategies` from the driver's config.
     order_sorting_strategies: Vec<Arc<dyn sorting::SortingStrategy>>,
-    signature_validator: Arc<dyn SignatureValidating>,
-    app_data_retriever: Option<order::app_data::AppDataRetriever>,
     fetcher: Arc<pre_processing::DataAggregator>,
 }
 
@@ -163,9 +157,9 @@ struct Control {
 }
 
 struct AggregatedData {
-    balances: Balances,
-    app_data: HashMap<order::app_data::AppDataHash, app_data::ValidatedAppData>,
-    cow_amm_orders: Vec<Order>,
+    balances: Arc<Balances>,
+    app_data: Arc<HashMap<order::app_data::AppDataHash, app_data::ValidatedAppData>>,
+    cow_amm_orders: Arc<Vec<Order>>,
 }
 
 type BalanceGroup = (order::Trader, eth::TokenAddress, order::SellTokenBalance);
@@ -248,7 +242,7 @@ impl AuctionProcessor {
     ) -> Auction {
         // Clone balances since we only aggregate data once but each solver needs
         // to use and modify the data individually.
-        let mut balances = data.balances.clone();
+        let mut balances = data.balances.as_ref().clone();
         let cow_amms: HashSet<_> = data.cow_amm_orders.iter().map(|o| o.uid).collect();
 
         // The auction that we receive from the `autopilot` assumes that there
@@ -346,7 +340,6 @@ impl AuctionProcessor {
     pub fn new(
         eth: &infra::Ethereum,
         order_priority_strategies: Vec<OrderPriorityStrategy>,
-        app_data_retriever: Option<order::app_data::AppDataRetriever>,
         fetcher: Arc<pre_processing::DataAggregator>,
     ) -> Self {
         let eth = eth.with_metric_label("auctionPreProcessing".into());
@@ -369,14 +362,6 @@ impl AuctionProcessor {
             order_sorting_strategies.push(comparator);
         }
 
-        let signature_validator = shared::signature_validator::validator(
-            eth.web3(),
-            Contracts {
-                settlement: eth.contracts().settlement().address(),
-                vault_relayer: eth.contracts().vault_relayer().0,
-            },
-        );
-
         Self(Arc::new(Inner {
             control: Mutex::new(Control {
                 auction: Id(0),
@@ -385,8 +370,6 @@ impl AuctionProcessor {
             aggregator: Arc::new(DataAggregator {
                 eth,
                 order_sorting_strategies,
-                signature_validator,
-                app_data_retriever,
                 fetcher,
             }),
         }))
@@ -398,10 +381,12 @@ impl DataAggregator {
         let _timer = stage_timer("aggregate data");
         let start = std::time::Instant::now();
 
+        let tasks = self.fetcher.get_tasks_for_auction(auction.clone());
+
         let (balances, app_data, cow_amm_orders) = tokio::join!(
-            self.fetch_balances(&auction.orders),
-            self.collect_orders_app_data(&auction.orders),
-            self.cow_amm_orders(&auction.tokens, &auction.surplus_capturing_jit_order_owners),
+            tasks.balances,
+            tasks.app_data,
+            tasks.cow_amm_orders,
         );
         tracing::debug!(auction_id = ?auction.id(), time =? start.elapsed(), "auction preprocessing done");
 
@@ -410,217 +395,6 @@ impl DataAggregator {
             app_data,
             cow_amm_orders,
         })
-    }
-
-    /// Fetches the tradable balance for every order owner.
-    async fn fetch_balances(&self, orders: &[order::Order]) -> Balances {
-        let _timer = stage_timer("fetch_balances");
-        let ethereum = self.eth.with_metric_label("orderBalances".into());
-        let mut tokens: HashMap<_, _> = Default::default();
-        // Collect trader/token/source/interaction tuples for fetching available
-        // balances. Note that we are pessimistic here, if a trader is selling
-        // the same token with the same source in two different orders using a
-        // different set of pre-interactions, then we fetch the balance as if no
-        // pre-interactions were specified. This is done to avoid creating
-        // dependencies between orders (i.e. order 1 is required for executing
-        // order 2) which we currently cannot express with the solver interface.
-        let traders = orders
-            .iter()
-            .group_by(|order| (order.trader(), order.sell.token, order.sell_token_balance))
-            .into_iter()
-            .map(|((trader, token, source), mut orders)| {
-                let first = orders.next().expect("group contains at least 1 order");
-                let mut others = orders;
-                tokens.entry(token).or_insert_with(|| ethereum.erc20(token));
-                if others.all(|order| order.pre_interactions == first.pre_interactions) {
-                    (trader, token, source, &first.pre_interactions[..])
-                } else {
-                    (trader, token, source, Default::default())
-                }
-            })
-            .collect::<Vec<_>>();
-
-        join_all(
-            traders
-                .into_iter()
-                .map(|(trader, token, source, interactions)| {
-                    let token_contract = tokens.get(&token);
-                    let token_contract = token_contract.expect("all tokens were created earlier");
-                    let fetch_balance =
-                        token_contract.tradable_balance(trader.into(), source, interactions);
-
-                    async move {
-                        let balance = fetch_balance.await;
-                        (
-                            (trader, token, source),
-                            balance.map(order::SellAmount::from).ok(),
-                        )
-                    }
-                }),
-        )
-        .await
-        .into_iter()
-        .filter_map(|(key, value)| Some((key, value?)))
-        .collect()
-    }
-
-    /// Fetches the app data for all orders in the auction.
-    /// Returns a map from app data hash to the fetched app data.
-    async fn collect_orders_app_data(
-        &self,
-        orders: &[order::Order],
-    ) -> HashMap<order::app_data::AppDataHash, app_data::ValidatedAppData> {
-        let Some(app_data_retriever) = &self.app_data_retriever else {
-            return Default::default();
-        };
-
-        let _timer = stage_timer("fetch_app_data");
-
-        join_all(
-            orders
-                .iter()
-                .map(|order| order.app_data.hash())
-                .unique()
-                .map(|app_data_hash| {
-                    let app_data_retriever = app_data_retriever.clone();
-                    async move {
-                        let fetched_app_data = app_data_retriever
-                            .get(&app_data_hash)
-                            .await
-                            .tap_err(|err| {
-                                tracing::warn!(?app_data_hash, ?err, "failed to fetch app data");
-                            })
-                            .ok()
-                            .flatten();
-
-                        (app_data_hash, fetched_app_data)
-                    }
-                }),
-        )
-        .await
-        .into_iter()
-        .filter_map(|(app_data_hash, app_data)| app_data.map(|app_data| (app_data_hash, app_data)))
-        .collect::<HashMap<_, _>>()
-    }
-
-    async fn cow_amm_orders(
-        &self,
-        tokens: &Tokens,
-        eligible_for_surplus: &HashSet<eth::Address>,
-    ) -> Vec<Order> {
-        let _timer = stage_timer("cow_amm_orders");
-        let cow_amms = self.eth.contracts().cow_amm_registry().amms().await;
-        let domain_separator = self.eth.contracts().settlement_domain_separator();
-        let domain_separator = model::DomainSeparator(domain_separator.0);
-        let results: Vec<_> = futures::future::join_all(
-            cow_amms
-                .into_iter()
-                // Only generate orders for cow amms the auction told us about.
-                // Otherwise the solver would expect the order to get surplus but
-                // the autopilot would actually not count it.
-                .filter(|amm| eligible_for_surplus.contains(&eth::Address(*amm.address())))
-                // Only generate orders where the auction provided the required
-                // reference prices. Otherwise there will be an error during the
-                // surplus calculation which will also result in 0 surplus for
-                // this order.
-                .filter_map(|amm| {
-                    let prices = amm
-                        .traded_tokens()
-                        .iter()
-                        .map(|t| {
-                            tokens
-                                .get(eth::TokenAddress(eth::ContractAddress(*t)))
-                                .price
-                                .map(|p| p.0.0)
-                        })
-                        .collect::<Option<Vec<_>>>()?;
-                    Some((amm, prices))
-                })
-                .map(|(cow_amm, prices)| async move {
-                    let order = cow_amm.validated_template_order(
-                        prices,
-                        self.signature_validator.as_ref(),
-                        &domain_separator
-                    ).await;
-                    (*cow_amm.address(), order)
-                }),
-        )
-        .await;
-
-        // Convert results to domain format.
-        let domain_separator = model::DomainSeparator(domain_separator.0);
-        let orders: Vec<_> = results
-            .into_iter()
-            .filter_map(|(amm, result)| match result {
-                Ok(template) => Some(Order {
-                    uid: template.order.uid(&domain_separator, &amm).0.into(),
-                    receiver: template.order.receiver.map(|addr| addr.into()),
-                    created: u32::try_from(Utc::now().timestamp())
-                        .unwrap_or(u32::MIN)
-                        .into(),
-                    valid_to: template.order.valid_to.into(),
-                    buy: eth::Asset {
-                        amount: template.order.buy_amount.into(),
-                        token: template.order.buy_token.into(),
-                    },
-                    sell: eth::Asset {
-                        amount: template.order.sell_amount.into(),
-                        token: template.order.sell_token.into(),
-                    },
-                    kind: order::Kind::Limit,
-                    side: template.order.kind.into(),
-                    app_data: order::app_data::AppDataHash(Bytes(template.order.app_data.0)).into(),
-                    buy_token_balance: template.order.buy_token_balance.into(),
-                    sell_token_balance: template.order.sell_token_balance.into(),
-                    partial: match template.order.partially_fillable {
-                        true => order::Partial::Yes {
-                            available: match template.order.kind {
-                                OrderKind::Sell => order::TargetAmount(template.order.sell_amount),
-                                OrderKind::Buy => order::TargetAmount(template.order.buy_amount),
-                            },
-                        },
-                        false => order::Partial::No,
-                    },
-                    pre_interactions: template
-                        .pre_interactions
-                        .into_iter()
-                        .map(Into::into)
-                        .collect(),
-                    post_interactions: template
-                        .post_interactions
-                        .into_iter()
-                        .map(Into::into)
-                        .collect(),
-                    signature: match template.signature {
-                        Signature::Eip1271(bytes) => order::Signature {
-                            scheme: order::signature::Scheme::Eip1271,
-                            data: Bytes(bytes),
-                            signer: amm.into(),
-                        },
-                        _ => {
-                            tracing::warn!(
-                                signature = ?template.signature,
-                                ?amm,
-                                "signature for cow amm order has incorrect scheme"
-                            );
-                            return None;
-                        }
-                    },
-                    protocol_fees: vec![],
-                    quote: None,
-                }),
-                Err(err) => {
-                    tracing::warn!(?err, ?amm, "failed to generate template order for cow amm");
-                    None
-                }
-            })
-            .collect();
-
-        if !orders.is_empty() {
-            tracing::debug!(?orders, "generated cow amm template orders");
-        }
-
-        orders
     }
 }
 
