@@ -53,13 +53,13 @@ pub struct LoadCompetition {
 }
 
 #[derive(sqlx::FromRow)]
-pub struct Settlement {
+struct Settlement {
     solution_uid: i64,
     tx_hash: TransactionHash,
 }
 
 #[derive(sqlx::FromRow)]
-pub struct Auction {
+struct Auction {
     order_uids: Vec<OrderUid>,
     price_tokens: Vec<Address>,
     price_values: Vec<BigDecimal>,
@@ -67,7 +67,7 @@ pub struct Auction {
 }
 
 #[derive(sqlx::FromRow)]
-pub struct Solution2 {
+struct Solution2 {
     solver: Address,
     uid: i64,
     is_winner: bool,
@@ -78,7 +78,7 @@ pub struct Solution2 {
 }
 
 #[derive(sqlx::FromRow)]
-pub struct Trade {
+struct Trade {
     solution_uid: i64,
     order_uid: OrderUid,
     executed_sell: BigDecimal,
@@ -86,7 +86,7 @@ pub struct Trade {
 }
 
 #[derive(sqlx::FromRow)]
-pub struct ReferenceScore {
+struct ReferenceScore {
     solver: Address,
     reference_score: BigDecimal,
 }
@@ -94,6 +94,7 @@ pub struct ReferenceScore {
 pub struct Response {
     auction_id: i64,
     transaction_hashes: Vec<TransactionHash>,
+    reference_scores: HashMap<Address, BigDecimal>,
     auction_start_block: i64,
     auction: AuctionRes,
     solutions: Vec<SolutionRes>,
@@ -158,6 +159,7 @@ pub async fn load_by_id_v2(
         .bind(id)
         .fetch_all(ex.deref_mut())
         .await?;
+
     let mut trades: HashMap<i64, Vec<OrderRes>> = {
         let mut grouped_trades = HashMap::<i64, Vec<OrderRes>>::default();
         for trade in trades {
@@ -211,6 +213,7 @@ pub async fn load_by_id_v2(
     Ok(Some(Response {
         auction_id: id,
         transaction_hashes: settlements.values().cloned().collect(),
+        reference_scores,
         auction_start_block: auction.block,
         auction: AuctionRes {
             prices: native_prices,
