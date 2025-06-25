@@ -64,6 +64,7 @@ impl Api {
         let fetcher = Arc::new(domain::competition::DataAggregator::new(
             self.eth.clone(),
             app_data_retriever,
+            self.liquidity.clone(),
         ));
 
         // Add the metrics and healthz endpoints.

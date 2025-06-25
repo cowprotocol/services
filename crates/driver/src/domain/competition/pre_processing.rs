@@ -1,7 +1,7 @@
 use {
     super::{Auction, Order, auction, order},
     crate::{
-        domain::eth,
+        domain::{eth, liquidity},
         infra::{self, observe::metrics},
         util::Bytes,
     },
@@ -36,9 +36,10 @@ type Balances = HashMap<BalanceGroup, order::SellAmount>;
 // TODO: not used yet
 #[allow(dead_code)]
 pub struct DataFetchingTasks {
-    balances: Shared<Arc<Balances>>,
-    app_data: Shared<Arc<HashMap<order::app_data::AppDataHash, app_data::ValidatedAppData>>>,
-    cow_amm_orders: Shared<Arc<Vec<Order>>>,
+    pub balances: Shared<Arc<Balances>>,
+    pub app_data: Shared<Arc<HashMap<order::app_data::AppDataHash, app_data::ValidatedAppData>>>,
+    pub cow_amm_orders: Shared<Arc<Vec<Order>>>,
+    pub liquidity: Shared<Arc<Vec<liquidity::Liquidity>>>,
     // Also add token info fetching here
 }
 
@@ -47,6 +48,7 @@ pub struct Utilities {
     eth: infra::Ethereum,
     signature_validator: Arc<dyn SignatureValidating>,
     app_data_retriever: Option<order::app_data::AppDataRetriever>,
+    liquidity_fetcher: infra::liquidity::Fetcher,
 }
 
 impl std::fmt::Debug for Utilities {
@@ -102,6 +104,7 @@ impl DataAggregator {
     pub fn new(
         eth: infra::Ethereum,
         app_data_retriever: Option<order::app_data::AppDataRetriever>,
+        liquidity_fetcher: infra::liquidity::Fetcher,
     ) -> Self {
         let signature_validator = shared::signature_validator::validator(
             eth.web3(),
@@ -116,6 +119,7 @@ impl DataAggregator {
                 eth,
                 signature_validator,
                 app_data_retriever,
+                liquidity_fetcher,
             }),
             control: Mutex::new(ControlBlock {
                 auction: auction::Id(0),
@@ -123,6 +127,7 @@ impl DataAggregator {
                     balances: futures::future::pending().boxed().shared(),
                     app_data: futures::future::pending().boxed().shared(),
                     cow_amm_orders: futures::future::pending().boxed().shared(),
+                    liquidity: futures::future::pending().boxed().shared(),
                 },
             }),
         }
@@ -139,10 +144,13 @@ impl DataAggregator {
         let cow_amm_orders =
             Self::spawn_shared(Arc::clone(&self.utilities).cow_amm_orders(Arc::clone(&auction)));
 
+        let liquidity = Self::spawn_shared(Arc::clone(&self.utilities).fetch_liquidity(Arc::clone(&auction)));
+
         DataFetchingTasks {
             balances,
             app_data,
             cow_amm_orders,
+            liquidity,
         }
     }
 
@@ -379,5 +387,15 @@ impl Utilities {
         }
 
         Arc::new(orders)
+    }
+
+    async fn fetch_liquidity(self: Arc<Self>, auction: Arc<Auction>) -> Arc<Vec<liquidity::Liquidity>> {
+        let _timer = metrics::get().processing_stage_timer("fetch_liquidity");
+        let pairs = auction.liquidity_pairs();
+        Arc::new(
+            self.liquidity_fetcher
+                .fetch(&pairs, infra::liquidity::AtBlock::Latest)
+                .await
+        )
     }
 }

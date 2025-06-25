@@ -104,13 +104,8 @@ impl Competition {
     pub async fn solve(&self, auction: Auction) -> Result<Option<Solved>, Error> {
         let auction = Arc::new(auction);
 
-        // TODO: use the tasks
-        let _tasks = self.fetcher.get_tasks_for_auction(Arc::clone(&auction));
+        let tasks = self.fetcher.get_tasks_for_auction(Arc::clone(&auction));
         let auction = Arc::unwrap_or_clone(auction);
-        // 1. await cow amm orders
-        // 2. sort orders
-        // 3. await balances, appdata
-        // 4. update orders
 
         // TODO make this another parallel task
         let auction = &self
@@ -118,17 +113,10 @@ impl Competition {
             .filter_unsupported_orders_in_auction(auction)
             .await;
 
-        let liquidity = match self.solver.liquidity() {
-            solver::Liquidity::Fetch => {
-                self.liquidity
-                    .fetch(
-                        &auction.liquidity_pairs(),
-                        infra::liquidity::AtBlock::Latest,
-                    )
-                    .await
-            }
-            solver::Liquidity::Skip => Default::default(),
-        };
+            let liquidity = match self.solver.liquidity() {
+                solver::Liquidity::Fetch => tasks.liquidity.await,
+                solver::Liquidity::Skip => Arc::new(Vec::new()),
+            };
 
         // Fetch the solutions from the solver.
         let solutions = self
