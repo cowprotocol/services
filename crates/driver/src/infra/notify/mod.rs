@@ -3,8 +3,8 @@ use {
     crate::domain::competition::{auction, solution},
 };
 
-mod notification;
 pub mod liquidity_sources;
+mod notification;
 
 pub use notification::{
     BanReason,

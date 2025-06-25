@@ -1,10 +1,14 @@
 pub mod config;
 
-use std::sync::Arc;
 pub use config::Config;
-use crate::{infra, boundary};
-use crate::boundary::notifier::LiquiditySourcesNotifying;
-use crate::domain::competition::solution::settlement::Settlement;
+use {
+    crate::{
+        boundary::{self, notifier::LiquiditySourcesNotifying},
+        domain::competition::solution::settlement::Settlement,
+        infra,
+    },
+    std::sync::Arc,
+};
 
 /// Auctions and settlement notifier for liquidity sources
 #[derive(Debug, Clone)]
@@ -13,9 +17,12 @@ pub struct Notifier {
 }
 
 impl Notifier {
-    pub fn try_new(config: &infra::notify::liquidity_sources::Config, chain_id: u64) -> Result<Self, Error> {
+    pub fn try_new(
+        config: &infra::notify::liquidity_sources::Config,
+        chain_id: u64,
+    ) -> Result<Self, Error> {
         Ok(Self {
-            inner: Arc::new(boundary::notifier::Notifier::try_new(config, chain_id)?)
+            inner: Arc::new(boundary::notifier::Notifier::try_new(config, chain_id)?),
         })
     }
 

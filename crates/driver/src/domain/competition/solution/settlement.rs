@@ -6,7 +6,7 @@ use {
                 self,
                 auction,
                 order::{self},
-                solution::{self, Trade, error},
+                solution::{self, Interaction, Trade, error},
             },
             eth,
         },
@@ -15,7 +15,6 @@ use {
     futures::future::try_join_all,
     std::collections::{BTreeSet, HashMap, HashSet},
 };
-use crate::domain::competition::solution::Interaction;
 
 /// A transaction calling into our settlement contract on the blockchain, ready
 /// to be published to the blockchain.
