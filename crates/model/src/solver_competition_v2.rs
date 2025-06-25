@@ -14,7 +14,7 @@ use {
 #[serde(rename_all = "camelCase")]
 pub struct Response {
     pub auction_id: AuctionId,
-    pub auction_start_block: u64,
+    pub auction_start_block: i64,
     pub transaction_hash: Vec<H256>,
     #[serde_as(as = "BTreeMap<_, HexOrDecimalU256>")]
     pub reference_scores: BTreeMap<H160, U256>,
@@ -36,8 +36,8 @@ pub struct Auction {
 #[serde(rename_all = "camelCase")]
 pub struct Solution {
     pub solver_address: H160,
-    #[serde_as(as = "Option<HexOrDecimalU256>")]
-    pub score: Option<U256>,
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub score: U256,
     pub ranking: usize,
     #[serde_as(as = "BTreeMap<_, HexOrDecimalU256>")]
     pub clearing_prices: BTreeMap<H160, U256>,
@@ -52,11 +52,11 @@ pub struct Solution {
 #[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
 #[serde_as]
 pub struct Order {
-    id: OrderUid,
+    pub id: OrderUid,
     /// The effective amount that left the user's wallet including all fees.
     #[serde_as(as = "HexOrDecimalU256")]
-    sell_amount: U256,
+    pub sell_amount: U256,
     /// The effective amount the user received after all fees.
     #[serde_as(as = "HexOrDecimalU256")]
-    buy_amount: U256,
+    pub buy_amount: U256,
 }

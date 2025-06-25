@@ -92,42 +92,82 @@ struct ReferenceScore {
 }
 
 pub struct Response {
-    auction_id: i64,
-    transaction_hashes: Vec<TransactionHash>,
-    reference_scores: HashMap<Address, BigDecimal>,
-    auction_start_block: i64,
-    auction: AuctionRes,
-    solutions: Vec<SolutionRes>,
+    pub auction_id: i64,
+    pub transaction_hashes: Vec<TransactionHash>,
+    pub reference_scores: HashMap<Address, BigDecimal>,
+    pub auction_start_block: i64,
+    pub auction: AuctionRes,
+    pub solutions: Vec<SolutionRes>,
 }
 
 pub struct AuctionRes {
-    orders: Vec<OrderUid>,
-    prices: HashMap<Address, BigDecimal>,
+    pub orders: Vec<OrderUid>,
+    pub prices: HashMap<Address, BigDecimal>,
 }
 
 pub struct SolutionRes {
-    solver_address: Address,
-    score: BigDecimal,
-    ranking: i64,
-    clearing_prices: HashMap<Address, BigDecimal>,
-    orders: Vec<OrderRes>,
-    is_winner: bool,
-    filtered_out: bool,
-    tx_hash: Option<TransactionHash>,
-    reference_score: Option<BigDecimal>,
+    pub solver_address: Address,
+    pub score: BigDecimal,
+    pub ranking: i64,
+    pub clearing_prices: HashMap<Address, BigDecimal>,
+    pub orders: Vec<OrderRes>,
+    pub is_winner: bool,
+    pub filtered_out: bool,
+    pub tx_hash: Option<TransactionHash>,
+    pub reference_score: Option<BigDecimal>,
 }
 
 pub struct OrderRes {
-    id: OrderUid,
-    sell_amount: BigDecimal,
-    buy_amount: BigDecimal,
+    pub id: OrderUid,
+    pub sell_amount: BigDecimal,
+    pub buy_amount: BigDecimal,
 }
 
+pub async fn load_by_tx_hash_v2(
+    mut ex: &mut PgConnection,
+    tx_hash: TransactionHash,
+) -> Result<Option<Response>, sqlx::Error> {
+    const FETCH_AUCTION_ID: &str = r#"
+        SELECT auction_id
+        FROM settlements s
+        LEFT OUTER JOIN settlement_observations so ON
+             s.block_number = so.block_number
+             AND s.log_index = so.log_index
+        WHERE s.tx_hash = $1;
+    "#;
+    let auction_id: i64 = sqlx::query_scalar(FETCH_AUCTION_ID)
+        .bind(tx_hash)
+        .fetch_one(ex.deref_mut())
+        .await?;
+    load_by_id_v2(ex.deref_mut(), auction_id).await
+}
+
+pub async fn load_latest_v2(mut ex: &mut PgConnection) -> Result<Option<Response>, sqlx::Error> {
+    const FETCH_AUCTION_ID: &str = r#"
+        SELECT id
+        FROM competition_auctions
+        ORDER BY id DESC
+        LIMIT 1;
+    "#;
+    let auction_id: i64 = sqlx::query_scalar(FETCH_AUCTION_ID)
+        .fetch_one(ex.deref_mut())
+        .await?;
+    load_by_id_v2(ex.deref_mut(), auction_id).await
+}
+
+// TODO wrapper function for latest, by tx, by id
 pub async fn load_by_id_v2(
     mut ex: &mut PgConnection,
     id: AuctionId,
 ) -> Result<Option<Response>, sqlx::Error> {
-    const FETCH_SETTLEMENTS: &str = r#"SELECT solver, tx_hash FROM settlements s LEFT OUTER JOIN settlement_observations so ON s.block_number = so.block_number AND s.log_index = so.log_index WHERE auction_id = $1;"#;
+    const FETCH_SETTLEMENTS: &str = r#"
+        SELECT solver, tx_hash
+        FROM settlements s
+        LEFT OUTER JOIN settlement_observations so ON
+             s.block_number = so.block_number
+             AND s.log_index = so.log_index
+         WHERE auction_id = $1;
+    "#;
     let settlements: Vec<Settlement> = sqlx::query_as(FETCH_SETTLEMENTS)
         .bind(id)
         .fetch_all(ex.deref_mut())
@@ -137,7 +177,11 @@ pub async fn load_by_id_v2(
         .map(|row| (row.solution_uid, row.tx_hash))
         .collect();
 
-    const FETCH_AUCTION: &str = r#"SELECT order_uids, price_tokens, price_values, block FROM competition_auctions WHERE auction_id = $1;"#;
+    const FETCH_AUCTION: &str = r#"
+        SELECT order_uids, price_tokens, price_values, block
+        FROM competition_auctions
+        WHERE auction_id = $1;
+    "#;
     let auction: Auction = sqlx::query_as(FETCH_AUCTION)
         .bind(id)
         .fetch_one(ex.deref_mut())
@@ -148,13 +192,21 @@ pub async fn load_by_id_v2(
         .zip(auction.price_values)
         .collect();
 
-    const FETCH_SOLUTIONS: &str = r#"SELECT uid, solver, is_winner, was_filtered, score, price_tokens, price_values FROM proposed_solutions WHERE auction_id = $1;"#;
+    const FETCH_SOLUTIONS: &str = r#"
+        SELECT uid, solver, is_winner, was_filtered, score, price_tokens, price_values
+        FROM proposed_solutions
+        WHERE auction_id = $1;
+    "#;
     let solutions: Vec<Solution2> = sqlx::query_as(FETCH_SOLUTIONS)
         .bind(id)
         .fetch_all(ex.deref_mut())
         .await?;
 
-    const FETCH_TRADES: &str = r#"SELECT solution_uid, order_uid, executed_sell, executed_buy FROM proposed_trade_executions WHERE auction_id = $1;"#;
+    const FETCH_TRADES: &str = r#"
+        SELECT solution_uid, order_uid, executed_sell, executed_buy
+        FROM proposed_trade_executions
+        WHERE auction_id = $1;
+    "#;
     let trades: Vec<Trade> = sqlx::query_as(FETCH_TRADES)
         .bind(id)
         .fetch_all(ex.deref_mut())
@@ -175,8 +227,11 @@ pub async fn load_by_id_v2(
         grouped_trades
     };
 
-    const FETCH_REFERENCE_SCORES: &str =
-        r#"SELECT solver, reference_score FROM reference_scores WHERE auction_id = $1;"#;
+    const FETCH_REFERENCE_SCORES: &str = r#"
+        SELECT solver, reference_score
+        FROM reference_scores
+        WHERE auction_id = $1;
+    "#;
     let reference_scores: Vec<ReferenceScore> = sqlx::query_as(FETCH_REFERENCE_SCORES)
         .bind(id)
         .fetch_all(ex.deref_mut())
