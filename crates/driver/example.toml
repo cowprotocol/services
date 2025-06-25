@@ -112,10 +112,9 @@ max-order-age = "1m"
 # url = "http://localhost:8454"
 # network-block-interval = "12s"
 
-# [liquidity-sources-notifier]
+[liquidity-sources-notifier]
 # [[liquidity-sources-notifier.liquorice]]
-# notification-url = "http://api.liquorice.tech/v1/notify"
+# base-url = "http://api.liquorice.tech/v1/"
 # api-key = "..."
-# settlement-contract = "0xAcA684A3F64e0eae4812B734E3f8f205D3EEd167"
 # http_timeout = "10s"
 

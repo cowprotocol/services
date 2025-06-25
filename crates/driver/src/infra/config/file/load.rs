@@ -314,12 +314,9 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
         liquidity_sources_notifier: notify::liquidity_sources::config::Config {
             liquorice: config.liquidity_sources_notifier.liquorice.map(|config| {
                 notify::liquidity_sources::config::Liquorice {
-                    notification_url: config.notification_url.clone(),
+                    base_url: config.base_url.clone(),
                     api_key: config.api_key.clone(),
                     http_timeout: config.http_timeout,
-                    // TODO: doesn't seem that we need to ensure existence of the deployed contract here,
-                    //   but needs to be confirmed
-                    settlement_contract: eth::ContractAddress(config.settlement_contract),
                 }
             }),
         },

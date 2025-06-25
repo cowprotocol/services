@@ -705,16 +705,13 @@ pub struct LiquiditySourcesNotifier {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct LiquoriceConfig {
-    /// The URL to post notifications to
-    pub notification_url: String,
+    /// Liquorice API base URL
+    pub base_url: String,
     /// API key for the Liquorice API
     pub api_key: String,
     /// The HTTP timeout for requests to the Liquorice API
     #[serde(with = "humantime_serde", default = "default_http_timeout")]
     pub http_timeout: Duration,
-    /// The address of the Liquorice settlement contract to detect
-    /// relevant interactions
-    pub settlement_contract: eth::H160,
 }
 
 
