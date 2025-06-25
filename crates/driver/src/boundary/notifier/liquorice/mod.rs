@@ -35,7 +35,7 @@ impl LiquoriceNotifier {
         Ok(Self {
             liquorice_api: DefaultLiquoriceApi::new(
                 reqwest::ClientBuilder::default(),
-                config.notification_url.clone(),
+                config.base_url.clone(),
                 config.api_key.clone(),
                 config.http_timeout
             )?,
