@@ -522,7 +522,7 @@ async fn test_account_query(
         .unwrap();
     assert_eq!(query.status(), 200);
     let response = query.json::<Vec<Order>>().await.unwrap();
-    let uid = order.uid(&contracts, ethflow_contract).await;
+    let uid = order.uid(contracts, ethflow_contract).await;
     let target_order = response.iter().find(|o| o.metadata.uid == uid).unwrap();
     test_order_parameters(target_order, order, owner, contracts, ethflow_contract).await;
 }
