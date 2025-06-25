@@ -114,7 +114,7 @@ max-order-age = "1m"
 
 [liquidity-sources-notifier]
 # [[liquidity-sources-notifier.liquorice]]
-# base-url = "http://api.liquorice.tech/v1/"
+# base-url = "https://api.liquorice.tech/v1/"
 # api-key = "..."
 # http_timeout = "10s"
 
