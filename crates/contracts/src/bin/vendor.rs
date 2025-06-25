@@ -205,6 +205,10 @@ fn run() -> Result<()> {
         .manual(
             "ChainalysisOracle",
             "Chainalysis does not publish its code",
+        )
+        .manual(
+            "ILiquoriceSettlement",
+            "Liquorice does not publish its code",
         );
 
     Ok(())
