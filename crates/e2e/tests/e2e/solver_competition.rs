@@ -430,7 +430,10 @@ async fn wrong_solution_submission_address(web3: Web3) {
         .await
         .unwrap();
     tracing::info!(?competition, "competition");
-    assert_eq!(competition.solutions.last().unwrap().solver_address, solver.address());
+    assert_eq!(
+        competition.solutions.last().unwrap().solver_address,
+        solver.address()
+    );
     assert_eq!(competition.solutions.len(), 1);
 }
 

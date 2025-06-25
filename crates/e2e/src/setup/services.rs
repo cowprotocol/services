@@ -403,7 +403,9 @@ impl<'a> Services<'a> {
         }
     }
 
-    pub async fn get_latest_solver_competition(&self) -> Result<solver_competition_v2::Response, StatusCode> {
+    pub async fn get_latest_solver_competition(
+        &self,
+    ) -> Result<solver_competition_v2::Response, StatusCode> {
         let response = self
             .http
             .get(format!("{API_HOST}{SOLVER_COMPETITION_ENDPOINT}/latest"))
