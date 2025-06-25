@@ -103,20 +103,22 @@ impl Competition {
     /// Solve an auction as part of this competition.
     pub async fn solve(&self, auction: Auction) -> Result<Option<Solved>, Error> {
         let auction = Arc::new(auction);
-
-        let tasks = self.fetcher.get_tasks_for_auction(Arc::clone(&auction));
+        let tasks = self.fetcher.get_tasks_for_auction(auction.clone());
         let auction = Arc::unwrap_or_clone(auction);
 
-        // TODO make this another parallel task
-        let auction = &self
-            .bad_tokens
-            .filter_unsupported_orders_in_auction(auction)
-            .await;
+        // Run bad token filtering and liquidity fetching in parallel
+        let (filtered_auction, liquidity) = tokio::join!(
+            // TODO: make bad token filtering as a task to spawn it earlier?
+            self.bad_tokens.filter_unsupported_orders_in_auction(auction),
+            async {
+                match self.solver.liquidity() {
+                    solver::Liquidity::Fetch => tasks.liquidity.await,
+                    solver::Liquidity::Skip => Arc::new(Vec::new()),
+                }
+            }
+        );
 
-            let liquidity = match self.solver.liquidity() {
-                solver::Liquidity::Fetch => tasks.liquidity.await,
-                solver::Liquidity::Skip => Arc::new(Vec::new()),
-            };
+        let auction = &filtered_auction;
 
         // Fetch the solutions from the solver.
         let solutions = self
