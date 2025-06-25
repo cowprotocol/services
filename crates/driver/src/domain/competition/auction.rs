@@ -49,27 +49,30 @@ pub struct Auction {
 impl Auction {
     pub async fn new(
         id: Option<Id>,
-        orders: Vec<competition::Order>,
+        mut orders: Vec<competition::Order>,
         tokens: impl Iterator<Item = Token>,
         deadline: time::Deadline,
         eth: &Ethereum,
         surplus_capturing_jit_order_owners: HashSet<eth::Address>,
     ) -> Result<Self, Error> {
         let tokens = Tokens(tokens.map(|token| (token.address, token)).collect());
-
-        // Ensure that tokens are included for each order.
         let weth = eth.contracts().weth_address();
-        if !orders.iter().all(|order| {
-            tokens.0.contains_key(&order.buy.token.as_erc20(weth))
-                && tokens.0.contains_key(&order.sell.token)
-        }) {
-            return Err(Error::InvalidTokens);
-        }
 
-        // Ensure that there are no orders with 0 amounts.
-        if orders.iter().any(|order| order.available().is_zero()) {
-            return Err(Error::InvalidAmounts);
-        }
+        // Filter out orders with 0 amounts (can lead to numerical issues)
+        // or where the auction doesn't contain information about the traded tokens.
+        orders.retain(|order| {
+            if order.available().is_zero() {
+                tracing::debug!(?order, "filtered out order with 0 amounts");
+                return false;
+            }
+            let all_tokens_present = tokens.0.contains_key(&order.buy.token.as_erc20(weth))
+                && tokens.0.contains_key(&order.sell.token);
+            if !all_tokens_present {
+                tracing::debug!(?order, "filtered out order without token info");
+                return false;
+            }
+            true
+        });
 
         Ok(Self {
             id,
@@ -738,10 +741,6 @@ pub struct InvalidPrice;
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("invalid auction tokens")]
-    InvalidTokens,
-    #[error("invalid order amounts")]
-    InvalidAmounts,
     #[error("blockchain error: {0:?}")]
     Blockchain(#[from] blockchain::Error),
 }

@@ -1600,14 +1600,12 @@ components:
         auctionId:
           type: integer
           description: The ID of the auction the competition info is for.
-        transactionHash:
-          type: string
-          nullable: true
-          allOf:
-            - $ref: "#/components/schemas/TransactionHash"
-          description: >-
-            The hash of the transaction that the winning solution of this info
-            was submitted in.
+        transactionHashes:
+          type: array
+          description: |
+            The hashes of the transactions for the winning solutions of this competition.
+          items:
+            $ref: "#/components/schemas/TransactionHash"
         gasPrice:
           type: number
           description: Gas price used for ranking solutions.

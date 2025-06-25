@@ -179,8 +179,6 @@ impl Order {
         )
         .await
         .map_err(|err| match err {
-            auction::Error::InvalidTokens => panic!("fake auction with invalid tokens"),
-            auction::Error::InvalidAmounts => panic!("fake auction with invalid amounts"),
             auction::Error::Blockchain(e) => e.into(),
         })
     }

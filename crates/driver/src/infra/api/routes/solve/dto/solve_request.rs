@@ -188,8 +188,6 @@ impl From<auction::InvalidId> for Error {
 impl From<auction::Error> for Error {
     fn from(value: auction::Error) -> Self {
         match value {
-            auction::Error::InvalidTokens => Self::InvalidTokens,
-            auction::Error::InvalidAmounts => Self::InvalidAmounts,
             auction::Error::Blockchain(err) => Self::Blockchain(err),
         }
     }
