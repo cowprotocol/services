@@ -311,9 +311,9 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                     http_timeout: config.http_timeout,
                 }),
         },
-        liquidity_source_notifier: notify::liquidity_source::config::Config {
-            liquorice: config.liquidity_source_notifier.liquorice.map(|config| {
-                notify::liquidity_source::config::Liquorice {
+        liquidity_sources_notifier: notify::liquidity_sources::config::Config {
+            liquorice: config.liquidity_sources_notifier.liquorice.map(|config| {
+                notify::liquidity_sources::config::Liquorice {
                     notification_url: config.notification_url.clone(),
                     api_key: config.api_key.clone(),
                     http_timeout: config.http_timeout,

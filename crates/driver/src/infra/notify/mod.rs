@@ -4,7 +4,7 @@ use {
 };
 
 mod notification;
-pub mod liquidity_source;
+pub mod liquidity_sources;
 
 pub use notification::{
     BanReason,

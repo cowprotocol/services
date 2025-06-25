@@ -49,8 +49,8 @@ struct Config {
     /// Use Enso for transaction simulation.
     enso: Option<EnsoConfig>,
 
-    /// Liquidity source notifier configuration.
-    liquidity_source_notifier: LiquiditySourceNotifier,
+    /// Liquidity sources notifier configuration.
+    liquidity_sources_notifier: LiquiditySourcesNotifier,
 
     #[serde(rename = "solver")]
     solvers: Vec<SolverConfig>,
@@ -697,7 +697,7 @@ fn default_number_of_orders_per_merged_solution() -> usize {
 /// A configuration for sending notifications to liquidity sources.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct LiquiditySourceNotifier {
+pub struct LiquiditySourcesNotifier {
     pub liquorice: Option<LiquoriceConfig>
 }
 

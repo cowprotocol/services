@@ -31,7 +31,7 @@ const REQUEST_BODY_LIMIT: usize = 10 * 1024 * 1024;
 pub struct Api {
     pub solvers: Vec<Solver>,
     pub liquidity: liquidity::Fetcher,
-    pub liquidity_source_notifier: notify::liquidity_source::Notifier,
+    pub liquidity_sources_notifier: notify::liquidity_sources::Notifier,
     pub simulator: Simulator,
     pub eth: Ethereum,
     pub mempools: Mempools,
@@ -108,7 +108,7 @@ impl Api {
                     solver,
                     self.eth.clone(),
                     self.liquidity.clone(),
-                    self.liquidity_source_notifier.clone(),
+                    self.liquidity_sources_notifier.clone(),
                     self.simulator.clone(),
                     self.mempools.clone(),
                     Arc::new(bad_tokens),

@@ -13,7 +13,7 @@ pub struct Notifier {
 }
 
 impl Notifier {
-    pub fn try_new(config: &infra::notify::liquidity_source::Config, chain_id: u64) -> Result<Self, Error> {
+    pub fn try_new(config: &infra::notify::liquidity_sources::Config, chain_id: u64) -> Result<Self, Error> {
         Ok(Self {
             inner: Arc::new(boundary::notifier::Notifier::try_new(config, chain_id)?)
         })
