@@ -24,7 +24,7 @@ pub struct Config {
     pub disable_gas_simulation: Option<eth::Gas>,
     pub solvers: Vec<solver::Config>,
     pub liquidity: liquidity::Config,
-    pub liquidity_source_notifier: notify::liquidity_source::Config,
+    pub liquidity_sources_notifier: notify::liquidity_sources::Config,
     pub simulator: Option<simulator::Config>,
     pub gas_estimator: GasEstimatorType,
     pub mempools: Vec<mempool::Config>,

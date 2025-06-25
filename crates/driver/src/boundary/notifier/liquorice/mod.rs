@@ -1,6 +1,6 @@
 //! Liquorice is an RFQ (Request for Quote) liquidity provider that
 //! aggregates quotes from PMMs (Private Market Makers) and
-//! provides an HTTP API for notifying PMMs when their quote 
+//! provides an HTTP API for notifying PMMs when their quote
 //! is used in CoW settlement.
 //!
 //! For more information on the HTTP API, consult:
@@ -22,13 +22,13 @@ use ethabi::Token;
 pub struct LiquoriceNotifier {
     /// Liquorice API client
     liquorice_api: DefaultLiquoriceApi,
-    /// Address of the Liquorice settlement contract is used to 
+    /// Address of the Liquorice settlement contract is used to
     /// find relevant interactions in CoW settlement contract
     settlement_contract_address: eth::Address
 }
 
 impl LiquoriceNotifier {
-    pub fn new(config: &infra::notify::liquidity_source::config::Liquorice, chain_id: u64) -> Result<Self> {
+    pub fn new(config: &infra::notify::liquidity_sources::config::Liquorice, chain_id: u64) -> Result<Self> {
         let settlement_contract_address = ILiquoriceSettlement::raw_contract().networks.get(chain_id.to_string().as_str())
             .map(|network| network.address.into()).ok_or(anyhow!("Liquorice settlement contract not found"))?;
 
@@ -86,7 +86,7 @@ impl LiquoriceNotifier {
         // Token at index 1 is expected to be a tuple corresponding to Liquorice Settlement single Order
         let rfq_id = tokens.get(1)
             .map(|token| match token {
-                Token::Tuple(tokens) => { 
+                Token::Tuple(tokens) => {
                     // Token at index 0 is expected to be a string corresponding to RFQ ID
                    tokens.first()
                        .map(|token| match token {
