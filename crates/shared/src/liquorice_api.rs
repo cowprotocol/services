@@ -3,7 +3,6 @@
 //! For more information on the HTTP API, consult:
 //! <https://liquorice.gitbook.io/liquorice-docs>
 
-use std::time::Duration;
 use {
     anyhow::{Context, Result},
     reqwest::{
@@ -14,7 +13,7 @@ use {
         header::{HeaderMap, HeaderValue},
     },
     serde::{Deserialize, Serialize},
-    std::{collections::HashSet},
+    std::{collections::HashSet, time::Duration},
     thiserror::Error,
 };
 
@@ -38,10 +37,7 @@ pub enum NotifyQuery {
 #[mockall::automock]
 pub trait LiquoriceApi: Send + Sync {
     /// Sends notification to Liquorice API.
-    async fn notify(
-        &self,
-        query: &NotifyQuery,
-    ) -> Result<(), LiquoriceResponseError>;
+    async fn notify(&self, query: &NotifyQuery) -> Result<(), LiquoriceResponseError>;
 }
 
 /// Liquorice API Client implementation.
@@ -53,7 +49,7 @@ pub struct DefaultLiquoriceApi {
 
 impl DefaultLiquoriceApi {
     /// Default 0x API URL.
-    pub const DEFAULT_URL: &'static str = "https://api.liquorice.tech/";
+    pub const DEFAULT_URL: &'static str = "https://api.liquorice.tech/v1";
 
     /// Create a new 0x HTTP API client with the specified base URL.
     pub fn new(
@@ -68,19 +64,24 @@ impl DefaultLiquoriceApi {
         let mut headers = HeaderMap::new();
         headers.insert("api-key", key);
 
-        let client_builder = client_builder.default_headers(headers).timeout(http_timeout);
+        let client_builder = client_builder
+            .default_headers(headers)
+            .timeout(http_timeout);
 
         Ok(Self {
-            client: client_builder.build().context("failed to build reqwest client")?,
+            client: client_builder
+                .build()
+                .context("failed to build reqwest client")?,
             base_url: base_url.into_url().context("liquorice api url")?,
         })
     }
 
-    /// Create a Liquorice HTTP API client for testing using the default HTTP client.
+    /// Create a Liquorice HTTP API client for testing using the default HTTP
+    /// client.
     ///
-    /// This method will attempt to read the `LIQUORICE_URL` (falling back to the
-    /// default URL) and `LIQUORICE_API_KEY` (falling back to no API key) from the
-    /// local environment when creating the API client.
+    /// This method will attempt to read the `LIQUORICE_URL` (falling back to
+    /// the default URL) and `LIQUORICE_API_KEY` (falling back to no API
+    /// key) from the local environment when creating the API client.
     pub fn test() -> Self {
         Self::new(
             Client::builder(),
@@ -88,20 +89,16 @@ impl DefaultLiquoriceApi {
             std::env::var("LIQUORICE_API_KEY").unwrap_or(String::new()),
             Duration::from_secs(1),
         )
-            .unwrap()
+        .unwrap()
     }
 
     /// Sends notification to Liquorice API
-    pub async fn notify(
-        &self,
-        query: &NotifyQuery,
-    ) -> Result<(), LiquoriceResponseError> {
-        let url = crate::url::join(
-            &self.base_url,
-            "notify",
-        );
+    pub async fn notify(&self, query: &NotifyQuery) -> Result<(), LiquoriceResponseError> {
+        let url = crate::url::join(&self.base_url, "notify");
 
-        let _ = self.client.post(url)
+        let _ = self
+            .client
+            .post(url)
             .json(query)
             .send()
             .await
