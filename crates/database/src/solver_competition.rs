@@ -9,8 +9,27 @@ use {
     },
     bigdecimal::BigDecimal,
     sqlx::{PgConnection, QueryBuilder, types::JsonValue},
-    std::ops::DerefMut,
+    std::{collections::HashMap, ops::DerefMut},
 };
+
+pub async fn load_by_id(
+    ex: &mut PgConnection,
+    id: AuctionId,
+) -> Result<Option<LoadCompetition>, sqlx::Error> {
+    const QUERY: &str = r#"
+SELECT sc.json, sc.id, COALESCE(ARRAY_AGG(s.tx_hash) FILTER (WHERE so.block_number IS NOT NULL), '{}') AS tx_hashes
+FROM solver_competitions sc
+-- outer joins because the data might not have been indexed yet
+LEFT OUTER JOIN settlements s ON sc.id = s.auction_id
+-- exclude settlements from another environment for which observation is guaranteed to not exist
+LEFT OUTER JOIN settlement_observations so 
+    ON s.block_number = so.block_number 
+    AND s.log_index = so.log_index
+WHERE sc.id = $1
+GROUP BY sc.id
+    ;"#;
+    sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
+}
 
 pub async fn save_solver_competition(
     ex: &mut PgConnection,
@@ -33,23 +52,172 @@ pub struct LoadCompetition {
     pub tx_hashes: Vec<TransactionHash>,
 }
 
-pub async fn load_by_id(
-    ex: &mut PgConnection,
+#[derive(sqlx::FromRow)]
+pub struct Settlement {
+    solution_uid: i64,
+    tx_hash: TransactionHash,
+}
+
+#[derive(sqlx::FromRow)]
+pub struct Auction {
+    order_uids: Vec<OrderUid>,
+    price_tokens: Vec<Address>,
+    price_values: Vec<BigDecimal>,
+    block: i64,
+}
+
+#[derive(sqlx::FromRow)]
+pub struct Solution2 {
+    solver: Address,
+    uid: i64,
+    is_winner: bool,
+    filtered_out: bool,
+    score: BigDecimal,
+    price_tokens: Vec<Address>,
+    price_values: Vec<BigDecimal>,
+}
+
+#[derive(sqlx::FromRow)]
+pub struct Trade {
+    solution_uid: i64,
+    order_uid: OrderUid,
+    executed_sell: BigDecimal,
+    executed_buy: BigDecimal,
+}
+
+#[derive(sqlx::FromRow)]
+pub struct ReferenceScore {
+    solver: Address,
+    reference_score: BigDecimal,
+}
+
+pub struct Response {
+    auction_id: i64,
+    transaction_hashes: Vec<TransactionHash>,
+    auction_start_block: i64,
+    auction: AuctionRes,
+    solutions: Vec<SolutionRes>,
+}
+
+pub struct AuctionRes {
+    orders: Vec<OrderUid>,
+    prices: HashMap<Address, BigDecimal>,
+}
+
+pub struct SolutionRes {
+    solver_address: Address,
+    score: BigDecimal,
+    ranking: i64,
+    clearing_prices: HashMap<Address, BigDecimal>,
+    orders: Vec<OrderRes>,
+    is_winner: bool,
+    filtered_out: bool,
+    tx_hash: Option<TransactionHash>,
+    reference_score: Option<BigDecimal>,
+}
+
+pub struct OrderRes {
+    id: OrderUid,
+    sell_amount: BigDecimal,
+    buy_amount: BigDecimal,
+}
+
+pub async fn load_by_id_v2(
+    mut ex: &mut PgConnection,
     id: AuctionId,
-) -> Result<Option<LoadCompetition>, sqlx::Error> {
-    const QUERY: &str = r#"
-SELECT sc.json, sc.id, COALESCE(ARRAY_AGG(s.tx_hash) FILTER (WHERE so.block_number IS NOT NULL), '{}') AS tx_hashes
-FROM solver_competitions sc
--- outer joins because the data might not have been indexed yet
-LEFT OUTER JOIN settlements s ON sc.id = s.auction_id
--- exclude settlements from another environment for which observation is guaranteed to not exist
-LEFT OUTER JOIN settlement_observations so 
-    ON s.block_number = so.block_number 
-    AND s.log_index = so.log_index
-WHERE sc.id = $1
-GROUP BY sc.id
-    ;"#;
-    sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
+) -> Result<Option<Response>, sqlx::Error> {
+    const FETCH_SETTLEMENTS: &str = r#"SELECT solver, tx_hash FROM settlements s LEFT OUTER JOIN settlement_observations so ON s.block_number = so.block_number AND s.log_index = so.log_index WHERE auction_id = $1;"#;
+    let settlements: Vec<Settlement> = sqlx::query_as(FETCH_SETTLEMENTS)
+        .bind(id)
+        .fetch_all(ex.deref_mut())
+        .await?;
+    let settlements: HashMap<_, _> = settlements
+        .into_iter()
+        .map(|row| (row.solution_uid, row.tx_hash))
+        .collect();
+
+    const FETCH_AUCTION: &str = r#"SELECT order_uids, price_tokens, price_values, block FROM competition_auctions WHERE auction_id = $1;"#;
+    let auction: Auction = sqlx::query_as(FETCH_AUCTION)
+        .bind(id)
+        .fetch_one(ex.deref_mut())
+        .await?;
+    let native_prices: HashMap<_, _> = auction
+        .price_tokens
+        .into_iter()
+        .zip(auction.price_values)
+        .collect();
+
+    const FETCH_SOLUTIONS: &str = r#"SELECT uid, solver, is_winner, was_filtered, score, price_tokens, price_values FROM proposed_solutions WHERE auction_id = $1;"#;
+    let solutions: Vec<Solution2> = sqlx::query_as(FETCH_SOLUTIONS)
+        .bind(id)
+        .fetch_all(ex.deref_mut())
+        .await?;
+
+    const FETCH_TRADES: &str = r#"SELECT solution_uid, order_uid, executed_sell, executed_buy FROM proposed_trade_executions WHERE auction_id = $1;"#;
+    let trades: Vec<Trade> = sqlx::query_as(FETCH_TRADES)
+        .bind(id)
+        .fetch_all(ex.deref_mut())
+        .await?;
+    let mut trades: HashMap<i64, Vec<OrderRes>> = {
+        let mut grouped_trades = HashMap::<i64, Vec<OrderRes>>::default();
+        for trade in trades {
+            grouped_trades
+                .entry(trade.solution_uid)
+                .or_default()
+                .push(OrderRes {
+                    id: trade.order_uid,
+                    sell_amount: trade.executed_sell,
+                    buy_amount: trade.executed_buy,
+                });
+        }
+        grouped_trades
+    };
+
+    const FETCH_REFERENCE_SCORES: &str =
+        r#"SELECT solver, reference_score FROM reference_scores WHERE auction_id = $1;"#;
+    let reference_scores: Vec<ReferenceScore> = sqlx::query_as(FETCH_REFERENCE_SCORES)
+        .bind(id)
+        .fetch_all(ex.deref_mut())
+        .await?;
+    let reference_scores: HashMap<_, _> = reference_scores
+        .into_iter()
+        .map(|row| (row.solver, row.reference_score))
+        .collect();
+
+    let mut solutions: Vec<_> = solutions
+        .into_iter()
+        .map(|s| {
+            let clearing_prices = s.price_tokens.into_iter().zip(s.price_values).collect();
+            let orders = trades.remove(&s.uid).unwrap_or_default();
+
+            SolutionRes {
+                solver_address: s.solver,
+                score: s.score,
+                // uids are given from best to worst solution starting from 0
+                ranking: s.uid + 1,
+                clearing_prices,
+                orders,
+                is_winner: s.is_winner,
+                filtered_out: s.filtered_out,
+                tx_hash: settlements.get(&s.uid).cloned(),
+                reference_score: reference_scores.get(&s.solver).cloned(),
+            }
+        })
+        .collect();
+
+    // the old `/solver_competition` endpoint sort from worst to best solution
+    solutions.sort_by_key(|s| std::cmp::Reverse(s.ranking));
+
+    Ok(Some(Response {
+        auction_id: id,
+        transaction_hashes: settlements.values().cloned().collect(),
+        auction_start_block: auction.block,
+        auction: AuctionRes {
+            prices: native_prices,
+            orders: auction.order_uids,
+        },
+        solutions,
+    }))
 }
 
 pub async fn load_latest_competitions(
