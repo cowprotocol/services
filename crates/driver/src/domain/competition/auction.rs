@@ -2,7 +2,7 @@ use {
     super::{Order, order},
     crate::{
         domain::{
-            competition::{self, auction, sorting},
+            competition::{self, sorting},
             eth,
             liquidity,
             time,
@@ -17,11 +17,10 @@ use {
         util::{self},
     },
     chrono::Duration,
-    futures::future::{BoxFuture, FutureExt, Shared},
     prometheus::HistogramTimer,
     std::{
         collections::{HashMap, HashSet},
-        sync::{Arc, Mutex},
+        sync::Arc,
     },
     thiserror::Error,
 };
@@ -134,12 +133,7 @@ impl Auction {
 }
 
 #[derive(Clone)]
-pub struct AuctionProcessor(Arc<Inner>);
-
-struct Inner {
-    aggregator: Arc<DataAggregator>,
-    control: Mutex<Control>,
-}
+pub struct AuctionProcessor(Arc<DataAggregator>);
 
 struct DataAggregator {
     eth: infra::Ethereum,
@@ -147,13 +141,6 @@ struct DataAggregator {
     /// `order_priority_strategies` from the driver's config.
     order_sorting_strategies: Vec<Arc<dyn sorting::SortingStrategy>>,
     fetcher: Arc<pre_processing::DataAggregator>,
-}
-
-struct Control {
-    /// Auction for which the data aggregation task was spawned.
-    auction: auction::Id,
-    /// Data aggregation task.
-    fut: Shared<BoxFuture<'static, Arc<AggregatedData>>>,
 }
 
 struct AggregatedData {
@@ -171,7 +158,8 @@ impl AuctionProcessor {
     /// auction with updated orders.
     pub async fn prioritize(&self, auction: Arc<Auction>, solver: eth::H160) -> Auction {
         let _timer = stage_timer("total");
-        let agg_data = Self::aggregate_data_for_auction(self.0.clone(), auction.clone()).await;
+
+        let agg_data = self.0.clone().fetch_aggregated_data(auction.clone()).await;
         let mut auction = Arc::unwrap_or_clone(auction);
 
         // This step filters out orders if the an owner doesn't have enough balances for
@@ -181,7 +169,7 @@ impl AuctionProcessor {
         //
         // Also use spawn_blocking() because a lot of CPU bound computations are
         // happening and we don't want to block the runtime for too long.
-        let helpers = self.0.aggregator.clone();
+        let helpers = self.0.clone();
         tokio::task::spawn_blocking(move || {
             let _timer = stage_timer("sort_and_update");
             let settlement_contract = helpers.eth.contracts().settlement().address();
@@ -198,37 +186,6 @@ impl AuctionProcessor {
             "Either runtime was shut down before spawning the task or no OS threads are \
              available; no sense in handling those errors",
         )
-    }
-
-    /// Aggregates all the data that is needed to pre-process the given auction.
-    /// Uses a shared futures internally to make sure that the works happens
-    /// only once for all connected solvers to share.
-    fn aggregate_data_for_auction(
-        inner: Arc<Inner>,
-        auction: Arc<Auction>,
-    ) -> Shared<BoxFuture<'static, Arc<AggregatedData>>> {
-        let new_id = auction
-            .id()
-            .expect("auctions used for quoting do not have to be prioritized");
-
-        let mut lock = inner.control.lock().unwrap();
-        let current_id = lock.auction;
-        if new_id.0 < current_id.0 {
-            tracing::error!(?current_id, ?new_id, "received an outdated auction");
-        }
-        if current_id.0 == new_id.0 {
-            tracing::debug!("await running data aggregation task");
-            return lock.fut.clone();
-        }
-
-        let fut = inner.aggregator.clone().fetch_aggregated_data(auction);
-        let fut = fut.boxed().shared();
-
-        tracing::debug!("started new data aggregation task");
-        lock.auction = new_id;
-        lock.fut = fut.clone();
-
-        fut
     }
 
     /// Removes orders that cannot be filled due to missing funds of the owner
@@ -362,17 +319,12 @@ impl AuctionProcessor {
             order_sorting_strategies.push(comparator);
         }
 
-        Self(Arc::new(Inner {
-            control: Mutex::new(Control {
-                auction: Id(0),
-                fut: futures::future::pending().boxed().shared(),
-            }),
-            aggregator: Arc::new(DataAggregator {
+        Self(
+            Arc::new(DataAggregator {
                 eth,
                 order_sorting_strategies,
                 fetcher,
-            }),
-        }))
+            }))
     }
 }
 
