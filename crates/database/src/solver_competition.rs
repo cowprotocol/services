@@ -161,7 +161,7 @@ pub async fn load_by_id_v2(
     id: AuctionId,
 ) -> Result<Option<Response>, sqlx::Error> {
     const FETCH_SETTLEMENTS: &str = r#"
-        SELECT solver, tx_hash
+        SELECT solution_uid, tx_hash
         FROM settlements s
         LEFT OUTER JOIN settlement_observations so ON
              s.block_number = so.block_number
@@ -180,7 +180,7 @@ pub async fn load_by_id_v2(
     const FETCH_AUCTION: &str = r#"
         SELECT order_uids, price_tokens, price_values, block
         FROM competition_auctions
-        WHERE auction_id = $1;
+        WHERE id = $1;
     "#;
     let auction: Auction = sqlx::query_as(FETCH_AUCTION)
         .bind(id)
@@ -193,7 +193,7 @@ pub async fn load_by_id_v2(
         .collect();
 
     const FETCH_SOLUTIONS: &str = r#"
-        SELECT uid, solver, is_winner, was_filtered, score, price_tokens, price_values
+        SELECT uid, solver, is_winner, filtered_out, score, price_tokens, price_values
         FROM proposed_solutions
         WHERE auction_id = $1;
     "#;
