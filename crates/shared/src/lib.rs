@@ -23,6 +23,7 @@ pub mod gas_price_estimation;
 pub mod http_client;
 pub mod http_solver;
 pub mod interaction;
+pub mod liquorice_api;
 pub mod maintenance;
 pub mod order_quoting;
 pub mod order_validation;
