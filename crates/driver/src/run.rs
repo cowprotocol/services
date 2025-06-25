@@ -195,7 +195,10 @@ async fn liquidity(config: &config::Config, eth: &Ethereum) -> liquidity::Fetche
         .expect("initialize liquidity fetcher")
 }
 
-fn liquidity_sources_notifier(config: &config::Config, eth: &Ethereum) -> notify::liquidity_sources::Notifier {
+fn liquidity_sources_notifier(
+    config: &config::Config,
+    eth: &Ethereum,
+) -> notify::liquidity_sources::Notifier {
     let chain_id = eth.chain().id();
 
     notify::liquidity_sources::Notifier::try_new(&config.liquidity_sources_notifier, chain_id)

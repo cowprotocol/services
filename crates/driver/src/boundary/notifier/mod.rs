@@ -1,18 +1,19 @@
 mod liquorice;
 
-use anyhow::Result;
-use futures::future::join_all;
-use crate::boundary::notifier::liquorice::LiquoriceNotifier;
-use crate::infra;
-use crate::domain::competition::solution::settlement::Settlement;
+use {
+    crate::{
+        boundary::notifier::liquorice::LiquoriceNotifier,
+        domain::competition::solution::settlement::Settlement,
+        infra,
+    },
+    anyhow::Result,
+    futures::future::join_all,
+};
 
 /// Trait for notifying liquidity sources about auctions and settlements
 #[async_trait::async_trait]
 pub trait LiquiditySourcesNotifying: Send + Sync {
-    async fn notify_before_settlement(
-        &self,
-        settlement: &Settlement,
-    ) -> Result<()>;
+    async fn notify_before_settlement(&self, settlement: &Settlement) -> Result<()>;
 }
 
 pub struct Notifier {
@@ -20,7 +21,10 @@ pub struct Notifier {
 }
 
 impl Notifier {
-    pub fn try_new(config: &infra::notify::liquidity_sources::Config, chain_id: u64) -> Result<Self> {
+    pub fn try_new(
+        config: &infra::notify::liquidity_sources::Config,
+        chain_id: u64,
+    ) -> Result<Self> {
         let mut inner: Vec<Box<dyn LiquiditySourcesNotifying>> = vec![];
 
         if let Some(liquorice) = &config.liquorice {
@@ -34,9 +38,10 @@ impl Notifier {
 #[async_trait::async_trait]
 impl LiquiditySourcesNotifying for Notifier {
     async fn notify_before_settlement(&self, settlement: &Settlement) -> Result<()> {
-        let futures = self.inner.iter().map(|notifier| {
-            notifier.notify_before_settlement(settlement)
-        });
+        let futures = self
+            .inner
+            .iter()
+            .map(|notifier| notifier.notify_before_settlement(settlement));
 
         let _ = join_all(futures).await;
 
@@ -51,4 +56,3 @@ impl std::fmt::Debug for Notifier {
             .finish()
     }
 }
-
