@@ -37,7 +37,7 @@ use {
     futures::stream::StreamExt,
     model::DomainSeparator,
     observe::{
-        config::{ObserveConfig, TracingConfig},
+        config::ObserveConfig,
         metrics::LivenessChecking,
     },
     shared::{
@@ -132,7 +132,7 @@ pub async fn start(args: impl Iterator<Item = String>) {
         args.shared.logging.log_filter.as_str(),
         args.shared.logging.log_stderr_threshold,
         args.shared.logging.use_json_logs,
-        TracingConfig::default(),
+        None,
     );
     observe::tracing::initialize(&obs_config);
     observe::panic_hook::install();

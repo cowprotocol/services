@@ -34,7 +34,7 @@ pub fn prepend_panic_handler(handler: Box<dyn Fn(&std::panic::PanicHookInfo) + S
 mod tests {
     use {
         super::*,
-        crate::config::{ObserveConfig, TracingConfig},
+        crate::config::ObserveConfig,
     };
 
     #[test]
@@ -44,7 +44,7 @@ mod tests {
             "info",
             tracing::level_filters::LevelFilter::OFF,
             false,
-            TracingConfig::default(),
+            None,
         );
         crate::tracing::initialize(&obs_config);
 
@@ -68,7 +68,7 @@ mod tests {
             "info",
             tracing::level_filters::LevelFilter::OFF,
             false,
-            TracingConfig::default(),
+            None,
         );
         crate::tracing::initialize(&obs_config);
 

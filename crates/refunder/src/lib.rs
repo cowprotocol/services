@@ -9,7 +9,7 @@ use {
     contracts::CoWSwapEthFlow,
     ethcontract::{Account, PrivateKey},
     observe::{
-        config::{ObserveConfig, TracingConfig},
+        config::ObserveConfig,
         metrics::LivenessChecking,
     },
     refund_service::RefundService,
@@ -30,7 +30,7 @@ pub async fn start(args: impl Iterator<Item = String>) {
         args.logging.log_filter.as_str(),
         args.logging.log_stderr_threshold,
         args.logging.use_json_logs,
-        TracingConfig::default(),
+        None,
     );
     observe::tracing::initialize(&obs_config);
     observe::panic_hook::install();

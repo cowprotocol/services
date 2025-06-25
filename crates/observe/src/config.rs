@@ -9,7 +9,7 @@ pub struct ObserveConfig {
     /// Output log events as JSON
     pub use_json_format: bool,
     /// Tracing config
-    pub tracing: TracingConfig,
+    pub tracing: Option<TracingConfig>,
 }
 
 impl ObserveConfig {
@@ -18,7 +18,7 @@ impl ObserveConfig {
         env_filter: &str,
         stderr_threshold: LevelFilter,
         use_json_format: bool,
-        tracing_config: TracingConfig,
+        tracing_config: Option<TracingConfig>,
     ) -> Self {
         Self {
             env_filter: env_filter.into(),
@@ -45,7 +45,7 @@ impl ObserveConfig {
     }
 
     pub fn with_tracing(mut self, tracing_config: TracingConfig) -> Self {
-        self.tracing = tracing_config;
+        self.tracing = Some(tracing_config);
         self
     }
 }
@@ -56,15 +56,13 @@ impl Default for ObserveConfig {
             env_filter: "info".to_string(),
             stderr_threshold: LevelFilter::ERROR,
             use_json_format: false,
-            tracing: TracingConfig::default(),
+            tracing: None,
         }
     }
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct TracingConfig {
-    /// Enable tracing
-    pub enabled: bool,
     /// Endpoint to send tracing info to
     pub collector_endpoint: String,
     /// Service name which will appear in spans
@@ -72,9 +70,8 @@ pub struct TracingConfig {
 }
 
 impl TracingConfig {
-    pub fn new(enabled: bool, collector_endpoint: String, service_name: String) -> Self {
+    pub fn new(collector_endpoint: String, service_name: String) -> Self {
         Self {
-            enabled,
             collector_endpoint,
             service_name,
         }

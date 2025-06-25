@@ -24,7 +24,7 @@ use {
         util::http,
     },
     ethrpc::block_stream::BlockInfo,
-    observe::config::{ObserveConfig, TracingConfig},
+    observe::config::ObserveConfig,
     std::{
         collections::{BTreeMap, HashSet},
         time::Duration,
@@ -41,7 +41,7 @@ pub fn init(log: &str, use_json_format: bool) {
         log,
         tracing::Level::ERROR.into(),
         use_json_format,
-        TracingConfig::default(),
+        None,
     );
     observe::tracing::initialize_reentrant(&obs_config);
     metrics::init();

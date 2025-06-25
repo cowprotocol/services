@@ -17,7 +17,7 @@ use {
     futures::{FutureExt, StreamExt},
     model::{DomainSeparator, order::BUY_ETH_ADDRESS},
     observe::{
-        config::{ObserveConfig, TracingConfig},
+        config::ObserveConfig,
         metrics::{DEFAULT_METRICS_PORT, serve_metrics},
     },
     order_validation,
@@ -57,7 +57,7 @@ pub async fn start(args: impl Iterator<Item = String>) {
         args.shared.logging.log_filter.as_str(),
         args.shared.logging.log_stderr_threshold,
         args.shared.logging.use_json_logs,
-        TracingConfig::default(),
+        None,
     );
     observe::tracing::initialize(&obs_config);
     tracing::info!("running order book with validated arguments:\n{}", args);

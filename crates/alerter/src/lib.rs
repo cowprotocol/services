@@ -8,7 +8,7 @@ use {
     clap::Parser,
     model::order::{BUY_ETH_ADDRESS, OrderClass, OrderKind, OrderStatus, OrderUid},
     number::serialization::HexOrDecimalU256,
-    observe::config::{ObserveConfig, TracingConfig},
+    observe::config::ObserveConfig,
     primitive_types::{H160, U256},
     prometheus::IntGauge,
     reqwest::Client,
@@ -391,7 +391,7 @@ pub async fn start(args: impl Iterator<Item = String>) {
         "alerter=debug",
         tracing::Level::ERROR.into(),
         args.use_json_logs,
-        TracingConfig::default(),
+        None,
     );
     observe::tracing::initialize(&obs_config);
     observe::panic_hook::install();

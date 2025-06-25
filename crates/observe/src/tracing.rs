@@ -100,10 +100,10 @@ fn set_tracing_subscriber(config: &ObserveConfig) {
     let (env_filter, reload_handle) =
         tracing_subscriber::reload::Layer::new(EnvFilter::new(&initial_filter));
 
-    let tracing_layer = if config.tracing.enabled {
+    let tracing_layer = if let Some(tracing_config) = &config.tracing {
         let otlp_exporter = opentelemetry_otlp::SpanExporter::builder()
             .with_tonic()
-            .with_endpoint(&config.tracing.collector_endpoint)
+            .with_endpoint(tracing_config.collector_endpoint.as_str())
             .with_timeout(Duration::from_secs(3)) // TODO make configurable
             .build()
             .expect("otlp exporter");
@@ -115,7 +115,7 @@ fn set_tracing_subscriber(config: &ObserveConfig) {
                 Resource::builder()
                     .with_attribute(KeyValue::new(
                         "service.name",
-                        config.tracing.service_name.to_owned(),
+                        tracing_config.service_name.to_owned(),
                     ))
                     .build(),
             )

@@ -10,7 +10,7 @@ use {
     crate::nodes::{NODE_HOST, Node},
     anyhow::{Result, anyhow},
     ethcontract::futures::FutureExt,
-    observe::config::{ObserveConfig, TracingConfig},
+    observe::config::ObserveConfig,
     shared::ethrpc::{Web3, create_test_transport},
     std::{
         future::Future,
@@ -188,7 +188,7 @@ async fn run<F, Fut, T>(
         &with_default_filters(filters).join(","),
         tracing::Level::ERROR.into(),
         false,
-        TracingConfig::default(),
+        None,
     );
     observe::tracing::initialize_reentrant(&obs_config);
     observe::panic_hook::install();

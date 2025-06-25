@@ -6,7 +6,7 @@ use {
         infra::{cli, config},
     },
     clap::Parser,
-    observe::config::{ObserveConfig, TracingConfig},
+    observe::config::ObserveConfig,
     std::net::SocketAddr,
     tokio::sync::oneshot,
 };
@@ -30,7 +30,7 @@ async fn run_with(args: cli::Args, bind: Option<oneshot::Sender<SocketAddr>>) {
         &args.log,
         tracing::Level::ERROR.into(),
         args.use_json_logs,
-        TracingConfig::default(),
+        None,
     );
     observe::tracing::initialize_reentrant(&obs_config);
     tracing::info!("running solver engine with {args:#?}");
