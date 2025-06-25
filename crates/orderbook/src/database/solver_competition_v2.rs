@@ -67,7 +67,7 @@ fn to_dto(
     Ok(Response {
         auction_id: value.auction_id,
         auction_start_block: value.auction_start_block,
-        transaction_hash: value
+        transaction_hashes: value
             .transaction_hashes
             .into_iter()
             .map(|tx| H256(tx.0))

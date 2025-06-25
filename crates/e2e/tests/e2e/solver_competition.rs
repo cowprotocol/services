@@ -139,20 +139,20 @@ async fn solver_competition(web3: Web3) {
         .await
         .unwrap();
 
-    assert!(competition.common.solutions.len() == 2);
+    assert!(competition.solutions.len() == 2);
 
     // Non winning candidate
-    assert!(competition.common.solutions[0].ranking == 2);
-    assert!(!competition.common.solutions[0].is_winner);
+    assert!(competition.solutions[0].ranking == 2);
+    assert!(!competition.solutions[0].is_winner);
     // Winning candidate
-    assert!(competition.common.solutions[1].ranking == 1);
-    assert!(competition.common.solutions[1].is_winner);
+    assert!(competition.solutions[1].ranking == 1);
+    assert!(competition.solutions[1].is_winner);
 }
 
 async fn fairness_check(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3).await;
 
-    let [solver] = onchain.make_solvers(to_wei(1)).await;
+    let [solver_a, solver_b] = onchain.make_solvers(to_wei(1)).await;
     let [trader_a, trader_b] = onchain.make_accounts(to_wei(1)).await;
     let [token_a, token_b] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
@@ -192,7 +192,7 @@ async fn fairness_check(web3: Web3) {
         vec![
             colocation::start_baseline_solver(
                 "test_solver".into(),
-                solver.clone(),
+                solver_a.clone(),
                 onchain.contracts().weth.address(),
                 vec![base_a.address()],
                 1,
@@ -201,7 +201,7 @@ async fn fairness_check(web3: Web3) {
             .await,
             colocation::start_baseline_solver(
                 "solver2".into(),
-                solver.clone(),
+                solver_b.clone(),
                 onchain.contracts().weth.address(),
                 vec![base_b.address()],
                 1,
@@ -218,7 +218,7 @@ async fn fairness_check(web3: Web3) {
         None,
         // Solver 1 has a fairness threshold of 0.01 ETH, which should be triggered by sub-optimally settling order_b
         vec![
-            format!("--drivers=solver1|http://localhost:11088/test_solver|{}|10000000000000000,solver2|http://localhost:11088/solver2|{}", hex::encode(solver.address()), hex::encode(solver.address())),
+            format!("--drivers=solver1|http://localhost:11088/test_solver|{}|10000000000000000,solver2|http://localhost:11088/solver2|{}", hex::encode(solver_a.address()), hex::encode(solver_b.address())),
             "--price-estimation-drivers=solver1|http://localhost:11088/test_solver".to_string(),
         ],
     ).await;
@@ -284,14 +284,14 @@ async fn fairness_check(web3: Web3) {
         .unwrap();
     tracing::info!(?competition, "competition");
 
-    assert_eq!(competition.common.solutions.len(), 2);
-    let unfair_solution = &competition.common.solutions[0];
-    assert_eq!(unfair_solution.solver, "solver1");
+    assert_eq!(competition.solutions.len(), 2);
+    let unfair_solution = &competition.solutions[0];
+    assert_eq!(unfair_solution.solver_address, solver_a.address());
     assert!(unfair_solution.filtered_out);
     assert!(!unfair_solution.is_winner);
 
-    let fair_solution = &competition.common.solutions[1];
-    assert_eq!(fair_solution.solver, "solver2");
+    let fair_solution = &competition.solutions[1];
+    assert_eq!(fair_solution.solver_address, solver_b.address());
     assert!(!fair_solution.filtered_out);
     assert!(fair_solution.is_winner);
 }
@@ -430,11 +430,8 @@ async fn wrong_solution_submission_address(web3: Web3) {
         .await
         .unwrap();
     tracing::info!(?competition, "competition");
-    assert_eq!(
-        competition.common.solutions.last().unwrap().solver,
-        "solver2"
-    );
-    assert_eq!(competition.common.solutions.len(), 1);
+    assert_eq!(competition.solutions.last().unwrap().solver_address, solver.address());
+    assert_eq!(competition.solutions.len(), 1);
 }
 
 async fn store_filtered_solutions(web3: Web3) {
@@ -637,12 +634,12 @@ async fn store_filtered_solutions(web3: Web3) {
         .unwrap();
 
     // check that JSON endpoint contains the filtered solution
-    let bad_solution = &competition.common.solutions[0];
+    let bad_solution = &competition.solutions[0];
     assert!(bad_solution.filtered_out);
     assert!(!bad_solution.is_winner);
     assert_eq!(bad_solution.solver_address, bad_solver_account.address());
 
-    let good_solution = &competition.common.solutions[1];
+    let good_solution = &competition.solutions[1];
     assert!(!good_solution.filtered_out);
     assert!(good_solution.is_winner);
     assert_eq!(good_solution.solver_address, good_solver_account.address());

@@ -15,7 +15,7 @@ use {
 pub struct Response {
     pub auction_id: AuctionId,
     pub auction_start_block: i64,
-    pub transaction_hash: Vec<H256>,
+    pub transaction_hashes: Vec<H256>,
     #[serde_as(as = "BTreeMap<_, HexOrDecimalU256>")]
     pub reference_scores: BTreeMap<H160, U256>,
     pub auction: Auction,

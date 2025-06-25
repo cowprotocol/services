@@ -14,7 +14,7 @@ use {
     model::{
         order::{Order, OrderCreation, OrderUid},
         quote::{NativeTokenPrice, OrderQuoteRequest, OrderQuoteResponse},
-        solver_competition::SolverCompetitionAPI,
+        solver_competition_v2,
         trade::Trade,
     },
     reqwest::{Client, StatusCode, Url},
@@ -35,7 +35,7 @@ pub const ACCOUNT_ENDPOINT: &str = "/api/v1/account";
 pub const AUCTION_ENDPOINT: &str = "/api/v1/auction";
 pub const TRADES_ENDPOINT: &str = "/api/v1/trades";
 pub const VERSION_ENDPOINT: &str = "/api/v1/version";
-pub const SOLVER_COMPETITION_ENDPOINT: &str = "/api/v1/solver_competition";
+pub const SOLVER_COMPETITION_ENDPOINT: &str = "/api/v2/solver_competition";
 const LOCAL_DB_URL: &str = "postgresql://";
 
 fn order_status_endpoint(uid: &OrderUid) -> String {
@@ -384,7 +384,7 @@ impl<'a> Services<'a> {
     pub async fn get_solver_competition(
         &self,
         hash: H256,
-    ) -> Result<SolverCompetitionAPI, StatusCode> {
+    ) -> Result<solver_competition_v2::Response, StatusCode> {
         let response = self
             .http
             .get(format!(
@@ -403,7 +403,7 @@ impl<'a> Services<'a> {
         }
     }
 
-    pub async fn get_latest_solver_competition(&self) -> Result<SolverCompetitionAPI, StatusCode> {
+    pub async fn get_latest_solver_competition(&self) -> Result<solver_competition_v2::Response, StatusCode> {
         let response = self
             .http
             .get(format!("{API_HOST}{SOLVER_COMPETITION_ENDPOINT}/latest"))
