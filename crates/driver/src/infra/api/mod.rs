@@ -108,6 +108,7 @@ impl Api {
                     solver,
                     self.eth.clone(),
                     self.liquidity.clone(),
+                    self.liquidity_source_notifier.clone(),
                     self.simulator.clone(),
                     self.mempools.clone(),
                     Arc::new(bad_tokens),
