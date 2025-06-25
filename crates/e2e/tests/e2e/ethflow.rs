@@ -848,9 +848,15 @@ async fn eth_flow_zero_buy_amount(web3: Web3) {
         ethflow_order_a
     };
 
+    // In the past this would have been an order that caused the
+    // whole auction to be discarded. We place it first to ensure
+    // it's part of the auction to prevent our "good" order getting
+    // settled before we can place the "bad" order.
     let _ = place_order(trader_a, 0).await;
     let order_b = place_order(trader_b, 1).await;
 
+    // Although the auction contains a problematic order we can
+    // still settle good orders.
     tracing::info!("waiting for trade");
     test_order_was_settled(&order_b, &web3).await;
 }
