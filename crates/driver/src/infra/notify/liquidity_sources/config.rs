@@ -1,10 +1,8 @@
-use std::time::Duration;
-
-use derive_more::Debug;
+use {derive_more::Debug, std::time::Duration};
 
 #[derive(Debug, Clone)]
 pub struct Config {
-    pub liquorice: Option<Liquorice>
+    pub liquorice: Option<Liquorice>,
 }
 
 #[derive(Debug, Clone)]

@@ -6,6 +6,7 @@ use {
             config::file::{AppDataFetching, GasEstimatorType, OrderPriorityStrategy},
             liquidity,
             mempool,
+            notify,
             simulator,
             solver,
         },
@@ -13,7 +14,6 @@ use {
     std::time::Duration,
     url::Url,
 };
-use crate::infra::notify;
 
 pub mod file;
 
