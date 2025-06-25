@@ -15,6 +15,7 @@ use {
     futures::future::try_join_all,
     std::collections::{BTreeSet, HashMap, HashSet},
 };
+use crate::domain::competition::solution::Interaction;
 
 /// A transaction calling into our settlement contract on the blockchain, ready
 /// to be published to the blockchain.
@@ -250,6 +251,21 @@ impl Settlement {
     /// The solution encoded in this settlement.
     pub fn solution(&self) -> &super::Id {
         self.solution.id()
+    }
+
+    /// Solution's pre interactions
+    pub fn pre_interactions(&self) -> &[eth::Interaction] {
+        self.solution.pre_interactions()
+    }
+
+    /// Solution's interactions
+    pub fn interactions(&self) -> &[Interaction] {
+        self.solution.interactions()
+    }
+
+    /// Solution's post interactions
+    pub fn post_interactions(&self) -> &[eth::Interaction] {
+        self.solution.post_interactions()
     }
 
     /// The settled user orders with their in/out amounts.
