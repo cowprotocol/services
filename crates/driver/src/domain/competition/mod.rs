@@ -455,7 +455,10 @@ impl Competition {
         let settlement_clone = settlement.clone();
         // Asynchronously notify liquidity sources to not block settlement execution.
         tokio::spawn(async move {
-            match liquidity_sources_notifier_clone.notify_before_settlement(&settlement_clone).await {
+            match liquidity_sources_notifier_clone
+                .notify_before_settlement(&settlement_clone)
+                .await
+            {
                 Ok(_) => {}
                 Err(err) => {
                     tracing::warn!(?err, "Failed to notify liquidity sources before settlement");

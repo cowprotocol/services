@@ -698,7 +698,7 @@ fn default_number_of_orders_per_merged_solution() -> usize {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct LiquiditySourcesNotifier {
-    pub liquorice: Option<LiquoriceConfig>
+    pub liquorice: Option<LiquoriceConfig>,
 }
 
 /// Liquorice API configuration for notifications.
@@ -713,7 +713,6 @@ pub struct LiquoriceConfig {
     #[serde(with = "humantime_serde", default = "default_http_timeout")]
     pub http_timeout: Duration,
 }
-
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
