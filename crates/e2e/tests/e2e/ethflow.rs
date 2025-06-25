@@ -61,6 +61,14 @@ async fn local_node_eth_flow_indexing_after_refund() {
     run_test(eth_flow_indexing_after_refund).await;
 }
 
+/// Tests that having an order with a buy amount of
+/// 0 does not prevent other orders from getting settled.
+#[tokio::test]
+#[ignore]
+async fn local_node_eth_flow_zero_buy_amount() {
+    run_test(eth_flow_zero_buy_amount).await;
+}
+
 async fn eth_flow_tx(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
@@ -514,8 +522,9 @@ async fn test_account_query(
         .unwrap();
     assert_eq!(query.status(), 200);
     let response = query.json::<Vec<Order>>().await.unwrap();
-    assert_eq!(response.len(), 1);
-    test_order_parameters(&response[0], order, owner, contracts, ethflow_contract).await;
+    let uid = order.uid(&contracts, ethflow_contract).await;
+    let target_order = response.iter().find(|o| o.metadata.uid == uid).unwrap();
+    test_order_parameters(target_order, order, owner, contracts, ethflow_contract).await;
 }
 
 enum TradeQuery {
@@ -787,4 +796,61 @@ impl EthFlowTradeIntent {
             timeout: Default::default(),
         }
     }
+}
+
+async fn eth_flow_zero_buy_amount(web3: Web3) {
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+
+    let [solver] = onchain.make_solvers(to_wei(2)).await;
+    let [trader_a, trader_b] = onchain.make_accounts(to_wei(2)).await;
+
+    // Create token with Uniswap pool for price estimation
+    let [dai] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(to_wei(DAI_PER_ETH * 1_000), to_wei(1_000))
+        .await;
+
+    let services = Services::new(&onchain).await;
+    services.start_protocol(solver).await;
+
+    let place_order = async |trader: TestAccount, buy_amount: u64| {
+        let valid_to = chrono::offset::Utc::now().timestamp() as u32
+            + timestamp_of_current_block_in_seconds(&web3).await.unwrap()
+            + 3600;
+        let ethflow_order_a = ExtendedEthFlowOrder(EthflowOrder {
+            buy_token: dai.address(),
+            sell_amount: to_wei(1),
+            buy_amount: buy_amount.into(),
+            valid_to,
+            partially_fillable: false,
+            quote_id: 0,
+            fee_amount: 0.into(),
+            receiver: H160([0x42; 20]),
+            app_data: Default::default(),
+        });
+
+        let ethflow_contract = onchain.contracts().ethflows.first().unwrap();
+        submit_order(
+            &ethflow_order_a,
+            trader.account(),
+            onchain.contracts(),
+            ethflow_contract,
+        )
+        .await;
+
+        test_order_availability_in_api(
+            &services,
+            &ethflow_order_a,
+            &trader.address(),
+            onchain.contracts(),
+            ethflow_contract,
+        )
+        .await;
+        ethflow_order_a
+    };
+
+    let _ = place_order(trader_a, 0).await;
+    let order_b = place_order(trader_b, 1).await;
+
+    tracing::info!("waiting for trade");
+    test_order_was_settled(&order_b, &web3).await;
 }
