@@ -388,7 +388,7 @@ mod tests {
         super::*,
         crate::create_env_test_transport,
         futures::StreamExt,
-        observe::config::{ObserveConfig, TracingConfig},
+        observe::config::ObserveConfig,
         tokio::time::{Duration, timeout},
     };
 

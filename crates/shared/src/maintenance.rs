@@ -157,7 +157,7 @@ mod tests {
         anyhow::bail,
         futures::stream,
         mockall::Sequence,
-        observe::config::{ObserveConfig, TracingConfig},
+        observe::config::ObserveConfig,
     };
 
     #[tokio::test]
