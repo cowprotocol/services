@@ -56,17 +56,18 @@ impl Api {
         );
 
         let tokens = tokens::Fetcher::new(&self.eth);
+        let fetcher = Arc::new(domain::competition::DataAggregator::new(
+            self.eth.clone(),
+            app_data_retriever.clone(),
+            self.liquidity.clone(),
+        ));
         let pre_processor = domain::competition::AuctionProcessor::new(
             &self.eth,
             order_priority_strategies,
-            app_data_retriever.clone(),
-        );
-        let fetcher = Arc::new(domain::competition::DataAggregator::new(
-            self.eth.clone(),
             app_data_retriever,
-            self.liquidity.clone(),
-        ));
-
+            fetcher.clone(),
+        );
+        
         // Add the metrics and healthz endpoints.
         app = routes::metrics(app);
         app = routes::healthz(app);

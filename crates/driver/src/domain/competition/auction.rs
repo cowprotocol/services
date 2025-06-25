@@ -29,6 +29,7 @@ use {
     tap::TapFallible,
     thiserror::Error,
 };
+use crate::domain::competition::pre_processing;
 
 /// An auction is a set of orders that can be solved. The solvers calculate
 /// [`super::solution::Solution`]s by picking subsets of these orders and
@@ -151,6 +152,7 @@ struct DataAggregator {
     order_sorting_strategies: Vec<Arc<dyn sorting::SortingStrategy>>,
     signature_validator: Arc<dyn SignatureValidating>,
     app_data_retriever: Option<order::app_data::AppDataRetriever>,
+    fetcher: Arc<pre_processing::DataAggregator>,
 }
 
 struct Control {
@@ -345,6 +347,7 @@ impl AuctionProcessor {
         eth: &infra::Ethereum,
         order_priority_strategies: Vec<OrderPriorityStrategy>,
         app_data_retriever: Option<order::app_data::AppDataRetriever>,
+        fetcher: Arc<pre_processing::DataAggregator>,
     ) -> Self {
         let eth = eth.with_metric_label("auctionPreProcessing".into());
         let mut order_sorting_strategies = vec![];
@@ -384,6 +387,7 @@ impl AuctionProcessor {
                 order_sorting_strategies,
                 signature_validator,
                 app_data_retriever,
+                fetcher,
             }),
         }))
     }
