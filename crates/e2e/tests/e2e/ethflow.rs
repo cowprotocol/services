@@ -816,7 +816,7 @@ async fn eth_flow_zero_buy_amount(web3: Web3) {
         let valid_to = chrono::offset::Utc::now().timestamp() as u32
             + timestamp_of_current_block_in_seconds(&web3).await.unwrap()
             + 3600;
-        let ethflow_order_a = ExtendedEthFlowOrder(EthflowOrder {
+        let ethflow_order = ExtendedEthFlowOrder(EthflowOrder {
             buy_token: dai.address(),
             sell_amount: to_wei(1),
             buy_amount: buy_amount.into(),
@@ -830,7 +830,7 @@ async fn eth_flow_zero_buy_amount(web3: Web3) {
 
         let ethflow_contract = onchain.contracts().ethflows.first().unwrap();
         submit_order(
-            &ethflow_order_a,
+            &ethflow_order,
             trader.account(),
             onchain.contracts(),
             ethflow_contract,
@@ -839,13 +839,13 @@ async fn eth_flow_zero_buy_amount(web3: Web3) {
 
         test_order_availability_in_api(
             &services,
-            &ethflow_order_a,
+            &ethflow_order,
             &trader.address(),
             onchain.contracts(),
             ethflow_contract,
         )
         .await;
-        ethflow_order_a
+        ethflow_order
     };
 
     // In the past this would have been an order that caused the
