@@ -640,10 +640,12 @@ async fn store_filtered_solutions(web3: Web3) {
     assert_eq!(competition.transaction_hashes[0], trade.tx_hash.unwrap());
 
     assert_eq!(competition.reference_scores.len(), 1);
-    assert!(
+    // since the only other solutions were unfair the reference score is zero
+    assert_eq!(
         competition
             .reference_scores
-            .contains_key(&good_solver_account.address())
+            .get(&good_solver_account.address()),
+        Some(&0.into())
     );
 
     assert_eq!(competition.solutions.len(), 2);
