@@ -32,10 +32,7 @@ pub fn prepend_panic_handler(handler: Box<dyn Fn(&std::panic::PanicHookInfo) + S
 
 #[cfg(test)]
 mod tests {
-    use {
-        super::*,
-        crate::config::ObserveConfig,
-    };
+    use {super::*, crate::config::ObserveConfig};
 
     #[test]
     #[ignore]

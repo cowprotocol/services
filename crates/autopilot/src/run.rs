@@ -36,10 +36,7 @@ use {
     ethrpc::block_stream::block_number_to_block_number_hash,
     futures::stream::StreamExt,
     model::DomainSeparator,
-    observe::{
-        config::ObserveConfig,
-        metrics::LivenessChecking,
-    },
+    observe::{config::ObserveConfig, metrics::LivenessChecking},
     shared::{
         account_balances,
         bad_token::{

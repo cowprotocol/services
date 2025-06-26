@@ -8,10 +8,7 @@ use {
     clap::Parser,
     contracts::CoWSwapEthFlow,
     ethcontract::{Account, PrivateKey},
-    observe::{
-        config::ObserveConfig,
-        metrics::LivenessChecking,
-    },
+    observe::{config::ObserveConfig, metrics::LivenessChecking},
     refund_service::RefundService,
     shared::http_client::HttpClientFactory,
     sqlx::PgPool,

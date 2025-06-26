@@ -141,19 +141,10 @@ impl<S: Subscriber + for<'lookup> LookupSpan<'lookup>> Layer<S> for RequestIdLay
 
 #[cfg(test)]
 mod test {
-    use {
-        super::*,
-        crate::config::ObserveConfig,
-        tracing::Instrument,
-    };
+    use {super::*, crate::config::ObserveConfig, tracing::Instrument};
 
     fn init_tracing(env_filter: &str) {
-        let obs_config = ObserveConfig::new(
-            env_filter,
-            tracing::Level::ERROR.into(),
-            false,
-            None,
-        );
+        let obs_config = ObserveConfig::new(env_filter, tracing::Level::ERROR.into(), false, None);
         crate::tracing::initialize_reentrant(&obs_config);
     }
 
