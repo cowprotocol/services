@@ -636,16 +636,35 @@ async fn store_filtered_solutions(web3: Web3) {
         .await
         .unwrap();
 
+    assert_eq!(competition.transaction_hashes.len(), 1);
+    assert_eq!(competition.transaction_hashes[0], trade.tx_hash.unwrap());
+
+    assert_eq!(competition.reference_scores.len(), 1);
+    assert!(
+        competition
+            .reference_scores
+            .contains_key(&good_solver_account.address())
+    );
+
+    assert_eq!(competition.solutions.len(), 2);
+
     // check that JSON endpoint contains the filtered solution
     let bad_solution = &competition.solutions[0];
+    assert_eq!(bad_solution.ranking, 2);
     assert!(bad_solution.filtered_out);
     assert!(!bad_solution.is_winner);
     assert_eq!(bad_solution.solver_address, bad_solver_account.address());
+    assert!(bad_solution.tx_hash.is_none());
+    assert!(bad_solution.reference_score.is_none());
 
     let good_solution = &competition.solutions[1];
+    assert_eq!(good_solution.ranking, 1);
     assert!(!good_solution.filtered_out);
     assert!(good_solution.is_winner);
     assert_eq!(good_solution.solver_address, good_solver_account.address());
+    assert_eq!(good_solution.tx_hash.unwrap(), trade.tx_hash.unwrap());
+    // since the only other solutions were unfair the reference score is zero
+    assert_eq!(good_solution.reference_score, Some(0.into()));
 
     // check that new DB tables contain the filtered solution
     let mut db = services.db().acquire().await.unwrap();
