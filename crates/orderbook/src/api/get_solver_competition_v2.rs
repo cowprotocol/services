@@ -39,8 +39,8 @@ pub fn get(db: Postgres) -> impl Filter<Extract = (super::ApiReply,), Error = Re
             let db = db.clone();
             async move {
                 let result = match identifier {
-                    Identifier::Id(id) => db.load_competition_by_id_v2(id).await,
-                    Identifier::Transaction(hash) => db.load_competition_by_tx_hash_v2(hash).await,
+                    Identifier::Id(id) => db.load_competition_by_id(id).await,
+                    Identifier::Transaction(hash) => db.load_competition_by_tx_hash(hash).await,
                 };
                 Result::<_, Infallible>::Ok(response(result))
             }
@@ -53,7 +53,7 @@ pub fn get_latest(
     request_latest().and_then(move || {
         let db = db.clone();
         async move {
-            let result = db.load_latest_competition_v2().await;
+            let result = db.load_latest_competition().await;
             Result::<_, Infallible>::Ok(response(result))
         }
     })

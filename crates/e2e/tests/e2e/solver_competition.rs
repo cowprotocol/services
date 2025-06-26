@@ -649,7 +649,7 @@ async fn store_filtered_solutions(web3: Web3) {
 
     // check that new DB tables contain the filtered solution
     let mut db = services.db().acquire().await.unwrap();
-    let solutions = database::solver_competition::fetch(&mut db, competition.auction_id)
+    let solutions = database::solver_competition_v2::fetch(&mut db, competition.auction_id)
         .await
         .unwrap();
     assert!(

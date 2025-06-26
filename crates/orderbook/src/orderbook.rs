@@ -535,9 +535,7 @@ impl Orderbook {
         };
 
         let latest_competition = async {
-            let competition = self
-                .database
-                .load_latest_competition()
+            let competition = SolverCompetitionStoring::load_latest_competition(&self.database)
                 .await
                 .map_err(Into::<OrderStatusError>::into)?;
             Ok::<_, OrderStatusError>(solutions(competition))

@@ -7,8 +7,6 @@ use {
     std::collections::BTreeMap,
 };
 
-/// Stored directly in the database and turned into SolverCompetitionAPI for the
-/// `/solver_competition` endpoint.
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
 #[serde_as]
 #[serde(rename_all = "camelCase")]
@@ -38,7 +36,7 @@ pub struct Solution {
     pub solver_address: H160,
     #[serde_as(as = "HexOrDecimalU256")]
     pub score: U256,
-    pub ranking: usize,
+    pub ranking: i64,
     #[serde_as(as = "BTreeMap<_, HexOrDecimalU256>")]
     pub clearing_prices: BTreeMap<H160, U256>,
     pub orders: Vec<Order>,
