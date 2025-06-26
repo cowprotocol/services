@@ -7,8 +7,8 @@ use {
     std::collections::BTreeMap,
 };
 
-#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
 #[serde_as]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Response {
     pub auction_id: AuctionId,
@@ -47,8 +47,8 @@ pub struct Solution {
     pub reference_score: Option<U256>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
 #[serde_as]
+#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Order {
     pub id: OrderUid,
