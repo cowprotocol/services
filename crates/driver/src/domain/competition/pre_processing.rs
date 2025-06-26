@@ -40,7 +40,6 @@ pub struct DataFetchingTasks {
     pub app_data: Shared<Arc<HashMap<order::app_data::AppDataHash, app_data::ValidatedAppData>>>,
     pub cow_amm_orders: Shared<Arc<Vec<Order>>>,
     pub liquidity: Shared<Arc<Vec<liquidity::Liquidity>>>,
-    // Also add token info fetching here
 }
 
 /// All the components used for fetching the necessary data.
