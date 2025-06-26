@@ -32,7 +32,7 @@ The `autopilot` connects to the same PostgreSQL database as the `orderbook` and 
 There are additional crates that live in the cargo workspace.
 
 - `alerter` provides a custom alerter binary that looks at the current orderbook and counts metrics for orders that should be solved but aren't
-- `contract` provides _[ethcontract-rs](https://github.com/gnosis/ethcontract-rs)_ based smart contract bindings
+- `contracts` provides _[ethcontract-rs](https://github.com/gnosis/ethcontract-rs)_ based smart contract bindings
 - `database` provides the shared database and storage layer logic shared between the `autopilot` and `orderbook`
 - `driver` an in-development binary that intends to replace the `solver`; it has a slightly different design that allows co-location with external solvers
 - `e2e` end-to-end tests
@@ -45,33 +45,39 @@ There are additional crates that live in the cargo workspace.
 
 ## Testing
 
-The CI (check .github/workflows/pull-request.yaml) runs unit tests, e2e tests, `clippy` and `cargo fmt`
+The CI (check .github/workflows/pull-request.yaml) runs unit tests, e2e tests, `clippy` and `cargo fmt`. The CI system uses [cargo-nextest](https://nexte.st/) and therefor all tests are getting verified by it. `cargo-nextest` and `cargo test` handle global state slightly differently which can cause some tests to fail with `cargo test`. That's why it's recommended to run tests with `cargo nextest run`.
 
 ### Unit Tests:
 
-`cargo test`
+`cargo nextest run`
 
 ### DB Tests:
 
-`cargo test -- postgres --test-threads 1 --ignored`
+`cargo nextest run postgres --test-threads 1 --run-ignored ignored-only`
 
 **Note:** Requires postgres database running (see below).
 
 ### E2E Tests - Local Node:
 
-`cargo test -p e2e local_node -- --ignored`.
+`cargo nextest run -p e2e local_node --test-threads 1 --failure-output final --run-ignored ignored-only`.
 
 **Note:** Requires postgres database and local test network with smart contracts deployed (see below).
 
 ### E2E Tests - Forked Node:
 
-`FORK_URL=<mainnet archive node RPC URL> cargo test -p e2e forked_node -- --ignored`.
+`FORK_URL=<mainnet archive node RPC URL> cargo nextest run -p e2e forked_node --test-threads 1 --run-ignored ignored-only --failure-output final`.
 
 **Note:** Requires postgres database (see below).
 
 ### Clippy
 
 `cargo clippy --all-features --all-targets -- -D warnings`
+
+### Formatting
+
+We rely on custom formatting rules which currently can only be used with a nightly toolchain which is why we need to override the default toolchain with `+nightly`.
+
+`cargo +nightly fmt --all`
 
 ### Flaky Tests
 In case a test is flaky and only fails **sometimes** in CI you can use the [`run-flaky-test`](.github/workflows/pull-request.yaml) github action to test your fix with the CI to get confidence that the fix that works locally also works in CI.
@@ -191,16 +197,7 @@ The `solver-account` is responsible for signing transactions. Solutions for sett
 
 To make things more interesting and see some real orders you can connect the `solver` to our real `orderbook` service. There are several orderbooks for production and staging environments on different networks. Find the `orderbook-url` corresponding to your `node-url` which suits your purposes and connect your solver to it with `--orderbook-url <URL>`.
 
-| Orderbook URL                              | Network      | Environment |
-|--------------------------------------------|--------------|-------------|
-| <https://barn.api.cow.fi/mainnet/api>      | Mainnet      | Staging     |
-| <https://api.cow.fi/mainnet/api>           | Mainnet      | Production  |
-| <https://barn.api.cow.fi/xdai/api>         | Gnosis Chain | Staging     |
-| <https://api.cow.fi/xdai/api>              | Gnosis Chain | Production  |
-| <https://barn.api.cow.fi/arbitrum_one/api> | Arbitrum One | Staging     |
-| <https://api.cow.fi/arbitrum_one/api>      | Arbitrum One | Production  |
-| <https://barn.api.cow.fi/sepolia/api>      | Sepolia      | Staging     |
-| <https://api.cow.fi/sepolia/api>           | Sepolia      | Production  |
+The publicly available orderbook URLs can be found [here](https://api.cow.fi/docs/).
 
 Always make sure that the `solver` and the `orderbook` it connects to are configured to use the same network.
 

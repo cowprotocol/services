@@ -233,6 +233,12 @@ pub struct Arguments {
     #[clap(long, env)]
     pub native_token_address: Option<H160>,
 
+    /// Override the address of the `HooksTrampoline` contract used for
+    /// trampolining custom order interactions. If not specified, the default
+    /// contract deployment for the current network will be used.
+    #[clap(long, env)]
+    pub hooks_contract_address: Option<H160>,
+
     /// Override address of the balancer vault contract.
     #[clap(long, env)]
     pub balancer_v2_vault_address: Option<H160>,
@@ -356,6 +362,7 @@ impl Display for Arguments {
             network_block_interval,
             settlement_contract_address,
             native_token_address,
+            hooks_contract_address,
             balancer_v2_vault_address,
             custom_univ2_baseline_sources,
             liquidity_fetcher_max_age_update,
@@ -412,6 +419,11 @@ impl Display for Arguments {
             f,
             "native_token_address",
             &native_token_address.map(|a| format!("{a:?}")),
+        )?;
+        display_option(
+            f,
+            "hooks_contract_address",
+            &hooks_contract_address.map(|a| format!("{a:?}")),
         )?;
         display_option(
             f,

@@ -5,20 +5,24 @@ use {
         time::{self, Remaining},
     },
     crate::{
-        domain::{competition::solution::Settlement, eth, time::DeadlineExceeded},
+        domain::{
+            competition::{solution::Settlement, sorting::SortingStrategy},
+            eth,
+            time::DeadlineExceeded,
+        },
         infra::{
             self,
             Simulator,
             blockchain::Ethereum,
+            config::file::OrderPriorityStrategy,
             notify,
-            observe,
+            observe::{self, metrics},
             simulator::{RevertError, SimulatorError},
             solver::{self, SolutionMerging, Solver},
-            observe::metrics, config::file::OrderPriorityStrategy
         },
-        util::Bytes,
+        util::{Bytes, math},
     },
-    futures::{StreamExt, stream::FuturesUnordered},
+    futures::{StreamExt, future::Either, stream::FuturesUnordered},
     itertools::Itertools,
     num::Zero,
     std::{
@@ -28,11 +32,11 @@ use {
         time::Duration,
     },
     tap::TapFallible,
-    tokio::sync::{mpsc, oneshot},
-    tokio::task,
+    tokio::{
+        sync::{mpsc, oneshot},
+        task,
+    },
     tracing::Instrument,
-    crate::domain::competition::sorting::SortingStrategy,
-    crate::util::math,
 };
 
 pub mod auction;
@@ -75,6 +79,7 @@ pub struct Competition {
 }
 
 impl Competition {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         solver: Solver,
         eth: Ethereum,
@@ -93,12 +98,14 @@ impl Competition {
                 OrderPriorityStrategy::ExternalPrice => Arc::new(sorting::ExternalPrice),
                 OrderPriorityStrategy::CreationTimestamp { max_order_age } => {
                     Arc::new(sorting::CreationTimestamp {
-                        max_order_age: max_order_age.map(|t| chrono::Duration::from_std(t).unwrap()),
+                        max_order_age: max_order_age
+                            .map(|t| chrono::Duration::from_std(t).unwrap()),
                     })
                 }
                 OrderPriorityStrategy::OwnQuotes { max_order_age } => {
                     Arc::new(sorting::OwnQuotes {
-                        max_order_age: max_order_age.map(|t| chrono::Duration::from_std(t).unwrap()),
+                        max_order_age: max_order_age
+                            .map(|t| chrono::Duration::from_std(t).unwrap()),
                     })
                 }
             };
@@ -115,7 +122,7 @@ impl Competition {
             settle_queue: settle_sender,
             bad_tokens,
             fetcher,
-            order_sorting_strategies
+            order_sorting_strategies,
         });
 
         let competition_clone = Arc::clone(&competition);
@@ -138,10 +145,15 @@ impl Competition {
         let solver_address = self.solver.account().address();
         let order_sorting_strategies = self.order_sorting_strategies.clone();
 
-        let sort_orders_future = 
-            Self::run_blocking_with_timer("sort_orders", move || {
-                Self::sort_orders(auction, solver_address, order_sorting_strategies, settlement_contract)
-        }).await;
+        let sort_orders_future = Self::run_blocking_with_timer("sort_orders", move || {
+            Self::sort_orders(
+                auction,
+                solver_address,
+                order_sorting_strategies,
+                settlement_contract,
+            )
+        })
+        .await;
 
         // We can sort the orders and fetch auction data in parallel
         let (auction, balances, app_data, cow_amm_orders) = tokio::join!(
@@ -151,23 +163,29 @@ impl Competition {
             tasks.cow_amm_orders,
         );
 
-        let auction = 
-            Self::run_blocking_with_timer("update_orders", move || {
-                Self::update_orders(auction, balances, app_data, cow_amm_orders, &eth::Address(settlement_contract))
-        }).await;
+        let auction = Self::run_blocking_with_timer("update_orders", move || {
+            Self::update_orders(
+                auction,
+                balances,
+                app_data,
+                cow_amm_orders,
+                &eth::Address(settlement_contract),
+            )
+        })
+        .await;
 
         // We can tun bad token filtering and liquidity fetching in parallel
-        let (filtered_auction, liquidity) = tokio::join!(
-            self.bad_tokens.filter_unsupported_orders_in_auction(auction),
+        let (liquidity, auction) = tokio::join!(
             async {
                 match self.solver.liquidity() {
                     solver::Liquidity::Fetch => tasks.liquidity.await,
                     solver::Liquidity::Skip => Arc::new(Vec::new()),
                 }
-            }
+            },
+            self.without_unsupported_orders(auction)
         );
 
-        let auction = &filtered_auction;
+        let auction = &auction;
 
         // Fetch the solutions from the solver.
         let solutions = self
@@ -374,9 +392,14 @@ impl Competition {
         Ok(score)
     }
 
-    // Oders already need to be sorted from most relevant to least relevant so that we
-    // allocate balances for the most relevants first.
-    async fn sort_orders(mut auction: Auction, solver: eth::H160, order_sorting_strategies: Vec<Arc<dyn SortingStrategy>>, _settlement_contract: eth::H160) -> Auction {
+    // Oders already need to be sorted from most relevant to least relevant so that
+    // we allocate balances for the most relevants first.
+    async fn sort_orders(
+        mut auction: Auction,
+        solver: eth::H160,
+        order_sorting_strategies: Vec<Arc<dyn SortingStrategy>>,
+        _settlement_contract: eth::H160,
+    ) -> Auction {
         sorting::sort_orders(
             &mut auction.orders,
             &auction.tokens,
@@ -494,7 +517,8 @@ impl Competition {
         auction
     }
 
-    /// Runs a blocking function on a background thread, timing it using the given stage name.
+    /// Runs a blocking function on a background thread, timing it using the
+    /// given stage name.
     pub async fn run_blocking_with_timer<T, F>(stage: &'static str, f: F) -> T
     where
         F: FnOnce() -> T + Send + 'static,
@@ -509,7 +533,7 @@ impl Competition {
             "Either runtime was shut down before spawning the task or no OS threads are \
              available; no sense in handling those errors",
         )
-    }   
+    }
 
     pub async fn reveal(
         &self,
@@ -583,7 +607,7 @@ impl Competition {
                 auction_id,
                 solution_id,
                 submission_deadline,
-                response_sender,
+                mut response_sender,
                 tracing_span,
             } = request;
             async {
@@ -598,9 +622,25 @@ impl Competition {
                 }
 
                 observe::settling();
-                let result = self
-                    .process_settle_request(auction_id, solution_id, submission_deadline)
-                    .await;
+                let settle_fut = Box::pin(self.process_settle_request(
+                    auction_id,
+                    solution_id,
+                    submission_deadline,
+                ));
+                let closed_fut = Box::pin(response_sender.closed());
+                let result = match futures::future::select(closed_fut, settle_fut).await {
+                    // Cancel the settlement task if the sender is closed (client likely
+                    // disconnected). This is a fallback to recover from issues
+                    // like a stuck driver (e.g., stalled block stream).
+                    Either::Left((_closed, settle_fut)) => {
+                        // Add a grace period to give driver the last chance to fetch the settlement
+                        // tx.
+                        tokio::time::timeout(Duration::from_secs(1), settle_fut)
+                            .await
+                            .unwrap_or_else(|_| Err(DeadlineExceeded.into()))
+                    }
+                    Either::Right((res, _)) => res,
+                };
                 observe::settled(self.solver.name(), &result);
 
                 if let Err(err) = response_sender.send(result) {
@@ -694,6 +734,15 @@ impl Competition {
             }));
         }
         Ok(())
+    }
+
+    async fn without_unsupported_orders(&self, mut auction: Auction) -> Auction {
+        if !self.solver.config().flashloans_enabled {
+            auction.orders.retain(|o| o.app_data.flashloan().is_none());
+        }
+        self.bad_tokens
+            .filter_unsupported_orders_in_auction(auction)
+            .await
     }
 }
 

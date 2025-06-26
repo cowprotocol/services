@@ -8,8 +8,7 @@ use {
     },
     chrono::{Duration, Utc},
     num::{CheckedDiv, ToPrimitive},
-    std::sync::Arc,
-    std::fmt::Debug,
+    std::{fmt::Debug, sync::Arc},
 };
 
 #[derive(PartialEq, Eq, PartialOrd, Ord)]

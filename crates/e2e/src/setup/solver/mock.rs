@@ -3,6 +3,7 @@
 use {
     crate::setup::solver::shutdown_signal,
     axum::Json,
+    futures::{FutureExt, future::BoxFuture},
     reqwest::Url,
     solvers_dto::{
         auction::Auction,
@@ -26,12 +27,22 @@ pub struct State {
     /// In-memory set of the auctions received by the solver.
     auctions: Arc<Mutex<Vec<Auction>>>,
     /// The currently configured solution to return.
-    solution: Arc<Mutex<Option<Solution>>>,
+    solution: Arc<Mutex<SolutionFuture>>,
 }
+
+type SolutionFuture = Arc<dyn Fn() -> BoxFuture<'static, Option<Solution>> + Send + Sync>;
 
 impl Mock {
     /// Instructs the solver to return a new solution from now on.
     pub fn configure_solution(&self, solution: Option<Solution>) {
+        *self.state.solution.lock().unwrap() = Arc::new(move || {
+            let solution = solution.clone();
+            async move { solution }.boxed()
+        });
+    }
+
+    /// Instructs the solver to return a new solution from now on.
+    pub fn configure_solution_async(&self, solution: SolutionFuture) {
         *self.state.solution.lock().unwrap() = solution;
     }
 
@@ -44,7 +55,7 @@ impl Mock {
 impl Default for Mock {
     fn default() -> Self {
         let state = State {
-            solution: Arc::new(Mutex::new(None)),
+            solution: Arc::new(Mutex::new(Arc::new(|| async { None }.boxed()))),
             auctions: Arc::new(Mutex::new(vec![])),
         };
 
@@ -72,7 +83,10 @@ async fn solve(
 ) -> (axum::http::StatusCode, Json<Solutions>) {
     let auction_id = auction.id.unwrap_or_default();
     state.auctions.lock().unwrap().push(auction);
-    let solutions = state.solution.lock().unwrap().iter().cloned().collect();
+    let solutions: Vec<_> = {
+        let solution_generator = state.solution.lock().unwrap().clone();
+        solution_generator().await.into_iter().collect()
+    };
     let solutions = Solutions { solutions };
     tracing::trace!(?auction_id, ?solutions, "/solve");
     (axum::http::StatusCode::OK, Json(solutions))

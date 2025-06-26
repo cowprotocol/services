@@ -64,6 +64,7 @@ struct Inner {
     /// It's very important that the 2 tokens have the same number of decimals.
     /// After startup this is a read only value.
     approximation_tokens: HashMap<H160, H160>,
+    quote_timeout: Duration,
 }
 
 struct UpdateTask {
@@ -172,6 +173,7 @@ impl Inner {
         &'a self,
         tokens: &'a [H160],
         max_age: Duration,
+        request_timeout: Duration,
     ) -> futures::stream::BoxStream<'a, (H160, NativePriceEstimateResult)> {
         let estimates = tokens.iter().map(move |token| async move {
             let current_accumulative_errors_count = {
@@ -190,7 +192,10 @@ impl Inner {
 
             let token_to_fetch = *self.approximation_tokens.get(token).unwrap_or(token);
 
-            let result = self.estimator.estimate_native_price(token_to_fetch).await;
+            let result = self
+                .estimator
+                .estimate_native_price(token_to_fetch, request_timeout)
+                .await;
 
             // update price in cache
             if should_cache(&result) {
@@ -268,7 +273,11 @@ impl UpdateTask {
         outdated_entries.truncate(self.update_size.unwrap_or(usize::MAX));
 
         if !outdated_entries.is_empty() {
-            let mut stream = inner.estimate_prices_and_update_cache(&outdated_entries, max_age);
+            let mut stream = inner.estimate_prices_and_update_cache(
+                &outdated_entries,
+                max_age,
+                inner.quote_timeout,
+            );
             while stream.next().await.is_some() {}
             metrics
                 .native_price_cache_background_updates
@@ -322,6 +331,7 @@ impl CachingNativePriceEstimator {
     /// recently used prices have a higher priority. If `update_size` is
     /// `Some(n)` at most `n` prices get updated per interval.
     /// If `update_size` is `None` no limit gets applied.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         estimator: Box<dyn NativePriceEstimating>,
         max_age: Duration,
@@ -330,6 +340,7 @@ impl CachingNativePriceEstimator {
         prefetch_time: Duration,
         concurrent_requests: usize,
         approximation_tokens: HashMap<H160, H160>,
+        quote_timeout: Duration,
     ) -> Self {
         let inner = Arc::new(Inner {
             estimator,
@@ -338,6 +349,7 @@ impl CachingNativePriceEstimator {
             max_age,
             concurrent_requests,
             approximation_tokens,
+            quote_timeout,
         });
 
         let update_task = UpdateTask {
@@ -402,9 +414,9 @@ impl CachingNativePriceEstimator {
             .filter(|t| !prices.contains_key(t))
             .copied()
             .collect();
-        let price_stream = self
-            .0
-            .estimate_prices_and_update_cache(&uncached_tokens, self.0.max_age);
+        let price_stream =
+            self.0
+                .estimate_prices_and_update_cache(&uncached_tokens, self.0.max_age, timeout);
 
         let _ = time::timeout(timeout, async {
             let mut price_stream = price_stream;
@@ -424,6 +436,7 @@ impl NativePriceEstimating for CachingNativePriceEstimator {
     fn estimate_native_price(
         &self,
         token: H160,
+        timeout: Duration,
     ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult> {
         async move {
             let cached = {
@@ -443,7 +456,7 @@ impl NativePriceEstimating for CachingNativePriceEstimator {
             }
 
             self.0
-                .estimate_prices_and_update_cache(&[token], self.0.max_age)
+                .estimate_prices_and_update_cache(&[token], self.0.max_age, timeout)
                 .next()
                 .await
                 .unwrap()
@@ -458,6 +471,7 @@ mod tests {
     use {
         super::*,
         crate::price_estimation::{
+            HEALTHY_PRICE_ESTIMATION_TIME,
             PriceEstimationError,
             native::{MockNativePriceEstimating, NativePriceEstimating},
         },
@@ -489,6 +503,7 @@ mod tests {
             Default::default(),
             1,
             Default::default(),
+            HEALTHY_PRICE_ESTIMATION_TIME,
         );
         estimator.initialize_cache(prices).await;
 
@@ -503,7 +518,9 @@ mod tests {
         }
 
         for i in 0..10 {
-            let result = estimator.estimate_native_price(token(i)).await;
+            let result = estimator
+                .estimate_native_price(token(i), HEALTHY_PRICE_ESTIMATION_TIME)
+                .await;
             assert_eq!(result.as_ref().unwrap().to_i64().unwrap(), 1);
         }
     }
@@ -514,7 +531,7 @@ mod tests {
         inner
             .expect_estimate_native_price()
             .times(1)
-            .returning(|_| async { Ok(1.0) }.boxed());
+            .returning(|_, _| async { Ok(1.0) }.boxed());
 
         let estimator = CachingNativePriceEstimator::new(
             Box::new(inner),
@@ -524,10 +541,13 @@ mod tests {
             Default::default(),
             1,
             Default::default(),
+            HEALTHY_PRICE_ESTIMATION_TIME,
         );
 
         for _ in 0..10 {
-            let result = estimator.estimate_native_price(token(0)).await;
+            let result = estimator
+                .estimate_native_price(token(0), HEALTHY_PRICE_ESTIMATION_TIME)
+                .await;
             assert_eq!(result.as_ref().unwrap().to_i64().unwrap(), 1);
         }
     }
@@ -538,18 +558,18 @@ mod tests {
         inner
             .expect_estimate_native_price()
             .times(1)
-            .withf(move |t| *t == token(0))
-            .returning(|_| async { Ok(1.0) }.boxed());
+            .withf(move |t, _| *t == token(0))
+            .returning(|_, _| async { Ok(1.0) }.boxed());
         inner
             .expect_estimate_native_price()
             .times(1)
-            .withf(move |t| *t == token(100))
-            .returning(|_| async { Ok(100.0) }.boxed());
+            .withf(move |t, _| *t == token(100))
+            .returning(|_, _| async { Ok(100.0) }.boxed());
         inner
             .expect_estimate_native_price()
             .times(1)
-            .withf(move |t| *t == token(200))
-            .returning(|_| async { Ok(200.0) }.boxed());
+            .withf(move |t, _| *t == token(200))
+            .returning(|_, _| async { Ok(200.0) }.boxed());
 
         let estimator = CachingNativePriceEstimator::new(
             Box::new(inner),
@@ -560,12 +580,13 @@ mod tests {
             1,
             // set token approximations for tokens 1 and 2
             HashMap::from([(token(1), token(100)), (token(2), token(200))]),
+            HEALTHY_PRICE_ESTIMATION_TIME,
         );
 
         // no approximation token used for token 0
         assert_eq!(
             estimator
-                .estimate_native_price(token(0))
+                .estimate_native_price(token(0), HEALTHY_PRICE_ESTIMATION_TIME)
                 .await
                 .unwrap()
                 .to_i64()
@@ -576,7 +597,7 @@ mod tests {
         // approximation price used for tokens 1 and 2
         assert_eq!(
             estimator
-                .estimate_native_price(token(1))
+                .estimate_native_price(token(1), HEALTHY_PRICE_ESTIMATION_TIME)
                 .await
                 .unwrap()
                 .to_i64()
@@ -585,7 +606,7 @@ mod tests {
         );
         assert_eq!(
             estimator
-                .estimate_native_price(token(2))
+                .estimate_native_price(token(2), HEALTHY_PRICE_ESTIMATION_TIME)
                 .await
                 .unwrap()
                 .to_i64()
@@ -600,7 +621,7 @@ mod tests {
         inner
             .expect_estimate_native_price()
             .times(1)
-            .returning(|_| async { Err(PriceEstimationError::NoLiquidity) }.boxed());
+            .returning(|_, _| async { Err(PriceEstimationError::NoLiquidity) }.boxed());
 
         let estimator = CachingNativePriceEstimator::new(
             Box::new(inner),
@@ -610,10 +631,13 @@ mod tests {
             Default::default(),
             1,
             Default::default(),
+            HEALTHY_PRICE_ESTIMATION_TIME,
         );
 
         for _ in 0..10 {
-            let result = estimator.estimate_native_price(token(0)).await;
+            let result = estimator
+                .estimate_native_price(token(0), HEALTHY_PRICE_ESTIMATION_TIME)
+                .await;
             assert!(matches!(
                 result.as_ref().unwrap_err(),
                 PriceEstimationError::NoLiquidity
@@ -631,7 +655,7 @@ mod tests {
             .expect_estimate_native_price()
             .times(3)
             .in_sequence(&mut seq)
-            .returning(|_| {
+            .returning(|_, _| {
                 async { Err(PriceEstimationError::EstimatorInternal(anyhow!("boom"))) }.boxed()
             });
 
@@ -640,7 +664,7 @@ mod tests {
             .expect_estimate_native_price()
             .once()
             .in_sequence(&mut seq)
-            .returning(|_| async { Ok(1.0) }.boxed());
+            .returning(|_, _| async { Ok(1.0) }.boxed());
 
         // Next 2 calls: Return EstimatorInternal error. Start incrementing the errors
         // counter from the beginning.
@@ -648,7 +672,7 @@ mod tests {
             .expect_estimate_native_price()
             .times(2)
             .in_sequence(&mut seq)
-            .returning(|_| {
+            .returning(|_, _| {
                 async { Err(PriceEstimationError::EstimatorInternal(anyhow!("boom"))) }.boxed()
             });
 
@@ -658,7 +682,7 @@ mod tests {
             .expect_estimate_native_price()
             .once()
             .in_sequence(&mut seq)
-            .returning(|_| async { Err(PriceEstimationError::RateLimited) }.boxed());
+            .returning(|_, _| async { Err(PriceEstimationError::RateLimited) }.boxed());
 
         // Since the ACCUMULATIVE_ERRORS_THRESHOLD is 5, there are only 3 more calls
         // remain. Anything exceeding that must return the cached value.
@@ -666,7 +690,7 @@ mod tests {
             .expect_estimate_native_price()
             .times(3)
             .in_sequence(&mut seq)
-            .returning(|_| {
+            .returning(|_, _| {
                 async { Err(PriceEstimationError::EstimatorInternal(anyhow!("boom"))) }.boxed()
             });
 
@@ -678,11 +702,14 @@ mod tests {
             Default::default(),
             1,
             Default::default(),
+            HEALTHY_PRICE_ESTIMATION_TIME,
         );
 
         // First 3 calls: The cache is not used. Counter gets increased.
         for _ in 0..3 {
-            let result = estimator.estimate_native_price(token(0)).await;
+            let result = estimator
+                .estimate_native_price(token(0), HEALTHY_PRICE_ESTIMATION_TIME)
+                .await;
             assert!(matches!(
                 result.as_ref().unwrap_err(),
                 PriceEstimationError::EstimatorInternal(_)
@@ -690,7 +717,9 @@ mod tests {
         }
 
         // Reset the errors counter.
-        let result = estimator.estimate_native_price(token(0)).await;
+        let result = estimator
+            .estimate_native_price(token(0), HEALTHY_PRICE_ESTIMATION_TIME)
+            .await;
         assert_eq!(result.as_ref().unwrap().to_i64().unwrap(), 1);
 
         // Make sure the cached value gets evicted.
@@ -698,7 +727,9 @@ mod tests {
 
         // Increment the errors counter again.
         for _ in 0..2 {
-            let result = estimator.estimate_native_price(token(0)).await;
+            let result = estimator
+                .estimate_native_price(token(0), HEALTHY_PRICE_ESTIMATION_TIME)
+                .await;
             assert!(matches!(
                 result.as_ref().unwrap_err(),
                 PriceEstimationError::EstimatorInternal(_)
@@ -706,7 +737,9 @@ mod tests {
         }
 
         // Receive a recoverable error, which shouldn't affect the counter.
-        let result = estimator.estimate_native_price(token(0)).await;
+        let result = estimator
+            .estimate_native_price(token(0), HEALTHY_PRICE_ESTIMATION_TIME)
+            .await;
         assert!(matches!(
             result.as_ref().unwrap_err(),
             PriceEstimationError::RateLimited
@@ -715,7 +748,9 @@ mod tests {
         // Make more than expected calls. The cache should be used once the threshold is
         // reached.
         for _ in 0..(ACCUMULATIVE_ERRORS_THRESHOLD * 2) {
-            let result = estimator.estimate_native_price(token(0)).await;
+            let result = estimator
+                .estimate_native_price(token(0), HEALTHY_PRICE_ESTIMATION_TIME)
+                .await;
             assert!(matches!(
                 result.as_ref().unwrap_err(),
                 PriceEstimationError::EstimatorInternal(_)
@@ -729,7 +764,7 @@ mod tests {
         inner
             .expect_estimate_native_price()
             .times(10)
-            .returning(|_| async { Err(PriceEstimationError::RateLimited) }.boxed());
+            .returning(|_, _| async { Err(PriceEstimationError::RateLimited) }.boxed());
 
         let estimator = CachingNativePriceEstimator::new(
             Box::new(inner),
@@ -739,10 +774,13 @@ mod tests {
             Default::default(),
             1,
             Default::default(),
+            HEALTHY_PRICE_ESTIMATION_TIME,
         );
 
         for _ in 0..10 {
-            let result = estimator.estimate_native_price(token(0)).await;
+            let result = estimator
+                .estimate_native_price(token(0), HEALTHY_PRICE_ESTIMATION_TIME)
+                .await;
             assert!(matches!(
                 result.as_ref().unwrap_err(),
                 PriceEstimationError::RateLimited
@@ -757,7 +795,7 @@ mod tests {
         inner
             .expect_estimate_native_price()
             .times(1)
-            .returning(|passed_token| {
+            .returning(|passed_token, _| {
                 assert_eq!(passed_token, token(0));
                 async { Ok(1.0) }.boxed()
             });
@@ -765,7 +803,7 @@ mod tests {
         inner
             .expect_estimate_native_price()
             .times(1)
-            .returning(|passed_token| {
+            .returning(|passed_token, _| {
                 assert_eq!(passed_token, token(1));
                 async { Ok(2.0) }.boxed()
             });
@@ -773,7 +811,7 @@ mod tests {
         inner
             .expect_estimate_native_price()
             .times(1)
-            .returning(|passed_token| {
+            .returning(|passed_token, _| {
                 assert_eq!(passed_token, token(1));
                 async { Ok(4.0) }.boxed()
             });
@@ -781,7 +819,7 @@ mod tests {
         inner
             .expect_estimate_native_price()
             .times(1)
-            .returning(|passed_token| {
+            .returning(|passed_token, _| {
                 assert_eq!(passed_token, token(0));
                 async { Ok(3.0) }.boxed()
             });
@@ -794,21 +832,30 @@ mod tests {
             Duration::default(),
             1,
             Default::default(),
+            HEALTHY_PRICE_ESTIMATION_TIME,
         );
 
         // fill cache with 2 different queries
-        let result = estimator.estimate_native_price(token(0)).await;
+        let result = estimator
+            .estimate_native_price(token(0), HEALTHY_PRICE_ESTIMATION_TIME)
+            .await;
         assert_eq!(result.as_ref().unwrap().to_i64().unwrap(), 1);
-        let result = estimator.estimate_native_price(token(1)).await;
+        let result = estimator
+            .estimate_native_price(token(1), HEALTHY_PRICE_ESTIMATION_TIME)
+            .await;
         assert_eq!(result.as_ref().unwrap().to_i64().unwrap(), 2);
 
         // wait for maintenance cycle
         tokio::time::sleep(Duration::from_millis(60)).await;
 
-        let result = estimator.estimate_native_price(token(0)).await;
+        let result = estimator
+            .estimate_native_price(token(0), HEALTHY_PRICE_ESTIMATION_TIME)
+            .await;
         assert_eq!(result.as_ref().unwrap().to_i64().unwrap(), 3);
 
-        let result = estimator.estimate_native_price(token(1)).await;
+        let result = estimator
+            .estimate_native_price(token(1), HEALTHY_PRICE_ESTIMATION_TIME)
+            .await;
         assert_eq!(result.as_ref().unwrap().to_i64().unwrap(), 4);
     }
 
@@ -818,12 +865,12 @@ mod tests {
         inner
             .expect_estimate_native_price()
             .times(10)
-            .returning(move |_| async { Ok(1.0) }.boxed());
+            .returning(move |_, _| async { Ok(1.0) }.boxed());
         // background task updates all outdated prices
         inner
             .expect_estimate_native_price()
             .times(10)
-            .returning(move |_| async { Ok(2.0) }.boxed());
+            .returning(move |_, _| async { Ok(2.0) }.boxed());
 
         let estimator = CachingNativePriceEstimator::new(
             Box::new(inner),
@@ -833,11 +880,15 @@ mod tests {
             Duration::default(),
             1,
             Default::default(),
+            HEALTHY_PRICE_ESTIMATION_TIME,
         );
 
         let tokens: Vec<_> = (0..10).map(H160::from_low_u64_be).collect();
         for token in &tokens {
-            let price = estimator.estimate_native_price(*token).await.unwrap();
+            let price = estimator
+                .estimate_native_price(*token, HEALTHY_PRICE_ESTIMATION_TIME)
+                .await
+                .unwrap();
             assert_eq!(price.to_i64().unwrap(), 1);
         }
 
@@ -845,7 +896,10 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(60)).await;
 
         for token in &tokens {
-            let price = estimator.estimate_native_price(*token).await.unwrap();
+            let price = estimator
+                .estimate_native_price(*token, HEALTHY_PRICE_ESTIMATION_TIME)
+                .await
+                .unwrap();
             assert_eq!(price.to_i64().unwrap(), 2);
         }
     }
@@ -858,12 +912,12 @@ mod tests {
         inner
             .expect_estimate_native_price()
             .times(BATCH_SIZE)
-            .returning(|_| async { Ok(1.0) }.boxed());
+            .returning(|_, _| async { Ok(1.0) }.boxed());
         // background task updates all outdated prices
         inner
             .expect_estimate_native_price()
             .times(BATCH_SIZE)
-            .returning(move |_| {
+            .returning(move |_, _| {
                 async move {
                     tokio::time::sleep(tokio::time::Duration::from_millis(WAIT_TIME_MS)).await;
                     Ok(2.0)
@@ -879,11 +933,15 @@ mod tests {
             Duration::default(),
             BATCH_SIZE,
             Default::default(),
+            HEALTHY_PRICE_ESTIMATION_TIME,
         );
 
         let tokens: Vec<_> = (0..BATCH_SIZE as u64).map(H160::from_low_u64_be).collect();
         for token in &tokens {
-            let price = estimator.estimate_native_price(*token).await.unwrap();
+            let price = estimator
+                .estimate_native_price(*token, HEALTHY_PRICE_ESTIMATION_TIME)
+                .await
+                .unwrap();
             assert_eq!(price.to_i64().unwrap(), 1);
         }
 
@@ -894,7 +952,10 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(60 + WAIT_TIME_MS)).await;
 
         for token in &tokens {
-            let price = estimator.estimate_native_price(*token).await.unwrap();
+            let price = estimator
+                .estimate_native_price(*token, HEALTHY_PRICE_ESTIMATION_TIME)
+                .await
+                .unwrap();
             assert_eq!(price.to_i64().unwrap(), 2);
         }
     }
@@ -918,6 +979,7 @@ mod tests {
             max_age: Default::default(),
             concurrent_requests: 1,
             approximation_tokens: Default::default(),
+            quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };
 
         let now = now + Duration::from_secs(1);

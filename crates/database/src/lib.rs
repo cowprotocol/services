@@ -22,6 +22,7 @@ pub mod settlement_observations;
 pub mod settlement_scores;
 pub mod settlements;
 pub mod solver_competition;
+pub mod solver_competition_v2;
 pub mod surplus_capturing_jit_order_owners;
 pub mod trades;
 
@@ -55,22 +56,16 @@ pub const TABLES: &[&str] = &[
     "app_data",
     "auction_orders",
     "auctions",
-    "competition_auctions",
     "ethflow_orders",
     "ethflow_refunds",
-    "fee_policies",
     "interactions",
     "invalidations",
     "jit_orders",
     "last_indexed_blocks",
     "onchain_order_invalidations",
     "onchain_placed_orders",
-    "order_execution",
-    "order_quotes",
-    "orders",
     "presignature_events",
     "proposed_jit_orders",
-    "proposed_solutions",
     "quotes",
     "reference_scores",
     "settlement_executions",
@@ -86,7 +81,13 @@ pub const TABLES: &[&str] = &[
 pub const LARGE_TABLES: &[&str] = &[
     "auction_prices",
     "auction_participants",
+    "competition_auctions",
+    "fee_policies",
+    "orders",
     "order_events",
+    "order_execution",
+    "order_quotes",
+    "proposed_solutions",
     "proposed_trade_executions",
 ];
 

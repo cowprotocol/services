@@ -61,7 +61,7 @@ impl Api {
             app_data_retriever.clone(),
             self.liquidity.clone(),
         ));
-        
+
         // Add the metrics and healthz endpoints.
         app = routes::metrics(app);
         app = routes::healthz(app);

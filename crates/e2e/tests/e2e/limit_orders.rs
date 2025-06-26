@@ -1,5 +1,6 @@
 use {
     crate::database::AuctionTransaction,
+    bigdecimal::BigDecimal,
     contracts::ERC20,
     database::byte_array::ByteArray,
     driver::domain::eth::NonZeroU256,
@@ -14,7 +15,7 @@ use {
     number::conversions::big_decimal_to_big_uint,
     secp256k1::SecretKey,
     shared::ethrpc::Web3,
-    std::ops::DerefMut,
+    std::{collections::HashMap, ops::DerefMut},
     web3::signing::SecretKeyRef,
 };
 
@@ -30,11 +31,11 @@ async fn local_node_two_limit_orders() {
     run_test(two_limit_orders_test).await;
 }
 
-// #[tokio::test]
-// #[ignore]
-// async fn local_node_two_limit_orders_multiple_winners() {
-//     run_test(two_limit_orders_multiple_winners_test).await;
-// }
+#[tokio::test]
+#[ignore]
+async fn local_node_two_limit_orders_multiple_winners() {
+    run_test(two_limit_orders_multiple_winners_test).await;
+}
 
 #[tokio::test]
 #[ignore]
@@ -431,6 +432,7 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
             hex::encode(solver_a.address()), hex::encode(solver_b.address())),
             "--price-estimation-drivers=solver1|http://localhost:11088/test_solver".to_string(),
             "--max-winners-per-auction=2".to_string(),
+            "--combinatorial-auctions-cutover=1970-03-27T15:04:50.410Z".to_string()
         ],
     ).await;
 
@@ -472,20 +474,22 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
     assert!(order_b_settled.metadata.executed_fee > 0.into());
 
     let mut ex = services.db().acquire().await.unwrap();
-    let solver_a_winning_solutions = database::solver_competition::fetch_solver_winning_solutions(
-        &mut ex,
-        competition.auction_id,
-        ByteArray(solver_a.address().0),
-    )
-    .await
-    .unwrap();
-    let solver_b_winning_solutions = database::solver_competition::fetch_solver_winning_solutions(
-        &mut ex,
-        competition.auction_id,
-        ByteArray(solver_b.address().0),
-    )
-    .await
-    .unwrap();
+    let solver_a_winning_solutions =
+        database::solver_competition_v2::fetch_solver_winning_solutions(
+            &mut ex,
+            competition.auction_id,
+            ByteArray(solver_a.address().0),
+        )
+        .await
+        .unwrap();
+    let solver_b_winning_solutions =
+        database::solver_competition_v2::fetch_solver_winning_solutions(
+            &mut ex,
+            competition.auction_id,
+            ByteArray(solver_b.address().0),
+        )
+        .await
+        .unwrap();
     assert_eq!(solver_a_winning_solutions.len(), 1);
     assert_eq!(solver_b_winning_solutions.len(), 1);
     assert_eq!(solver_a_winning_solutions[0].orders.len(), 1);
@@ -526,10 +530,31 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
         && settlement.solution_uid == solver_b_winning_solutions[0].uid));
 
     // Ensure all the reference scores are indexed
-    let reference_scores = database::reference_scores::fetch(&mut ex, competition.auction_id)
-        .await
-        .unwrap();
+    let reference_scores: HashMap<database::Address, BigDecimal> =
+        database::reference_scores::fetch(&mut ex, competition.auction_id)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|score| (score.solver, score.reference_score))
+            .collect();
     assert_eq!(reference_scores.len(), 2);
+
+    // fetch the reference scores of both winners
+    let solver_a_reference_score = reference_scores
+        .get(&ByteArray(solver_a.address().0))
+        .unwrap()
+        .clone();
+    let solver_b_reference_score = reference_scores
+        .get(&ByteArray(solver_b.address().0))
+        .unwrap()
+        .clone();
+
+    // The expected reference score for each winner is the solution score of the
+    // other winner
+    let solver_a_solution_score = solver_a_winning_solutions[0].score.clone();
+    let solver_b_solution_score = solver_b_winning_solutions[0].score.clone();
+    assert_eq!(solver_a_reference_score, solver_b_solution_score);
+    assert_eq!(solver_b_reference_score, solver_a_solution_score);
 }
 
 async fn too_many_limit_orders_test(web3: Web3) {

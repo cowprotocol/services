@@ -154,13 +154,15 @@ async fn single_limit_order_test(web3: Web3) {
         trades: vec![
             solvers_dto::solution::Trade::Jit(solvers_dto::solution::JitTrade {
                 order: jit_order,
-                executed_amount: to_wei(10),
-                fee: Some(0.into()),
+                // Making it 9 + 1 so we cover the edge case of fill-or-kill solution mismatches
+                // when observing settlements https://github.com/cowprotocol/services/pull/3440
+                executed_amount: to_wei(9),
+                fee: Some(to_wei(1)),
             }),
             solvers_dto::solution::Trade::Fulfillment(solvers_dto::solution::Fulfillment {
                 executed_amount: order.sell_amount,
                 fee: Some(0.into()),
-                order: order_id.0,
+                order: solvers_dto::solution::OrderUid(order_id.0),
             }),
         ],
         pre_interactions: vec![],

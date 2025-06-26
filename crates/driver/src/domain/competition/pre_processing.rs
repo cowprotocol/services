@@ -143,7 +143,8 @@ impl DataAggregator {
         let cow_amm_orders =
             Self::spawn_shared(Arc::clone(&self.utilities).cow_amm_orders(Arc::clone(&auction)));
 
-        let liquidity = Self::spawn_shared(Arc::clone(&self.utilities).fetch_liquidity(Arc::clone(&auction)));
+        let liquidity =
+            Self::spawn_shared(Arc::clone(&self.utilities).fetch_liquidity(Arc::clone(&auction)));
 
         DataFetchingTasks {
             balances,
@@ -388,13 +389,16 @@ impl Utilities {
         Arc::new(orders)
     }
 
-    async fn fetch_liquidity(self: Arc<Self>, auction: Arc<Auction>) -> Arc<Vec<liquidity::Liquidity>> {
+    async fn fetch_liquidity(
+        self: Arc<Self>,
+        auction: Arc<Auction>,
+    ) -> Arc<Vec<liquidity::Liquidity>> {
         let _timer = metrics::get().processing_stage_timer("fetch_liquidity");
         let pairs = auction.liquidity_pairs();
         Arc::new(
             self.liquidity_fetcher
                 .fetch(&pairs, infra::liquidity::AtBlock::Latest)
-                .await
+                .await,
         )
     }
 }

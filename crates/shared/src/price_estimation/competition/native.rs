@@ -8,16 +8,21 @@ use {
     futures::{FutureExt, future::BoxFuture},
     model::order::OrderKind,
     primitive_types::H160,
-    std::{cmp::Ordering, sync::Arc},
+    std::{cmp::Ordering, sync::Arc, time::Duration},
 };
 
 impl NativePriceEstimating for CompetitionEstimator<Arc<dyn NativePriceEstimating>> {
-    fn estimate_native_price(&self, token: H160) -> BoxFuture<'_, NativePriceEstimateResult> {
+    fn estimate_native_price(
+        &self,
+        token: H160,
+        timeout: Duration,
+    ) -> BoxFuture<'_, NativePriceEstimateResult> {
+        let timeout_per_stage = timeout / self.stages.len() as u32;
         async move {
             let results = self
-                .produce_results(token, Result::is_ok, |e, q| {
+                .produce_results(token, Result::is_ok, move |e, q| {
                     async move {
-                        let res = e.estimate_native_price(q).await;
+                        let res = e.estimate_native_price(q, timeout_per_stage).await;
                         if res.as_ref().is_ok_and(|price| is_price_malformed(*price)) {
                             let err = anyhow::anyhow!("estimator returned malformed price");
                             return Err(PriceEstimationError::EstimatorInternal(err));
@@ -53,7 +58,11 @@ fn compare_native_result(
 mod tests {
     use {
         super::*,
-        crate::price_estimation::{competition::PriceRanking, native::MockNativePriceEstimating},
+        crate::price_estimation::{
+            HEALTHY_PRICE_ESTIMATION_TIME,
+            competition::PriceRanking,
+            native::MockNativePriceEstimating,
+        },
     };
 
     fn native_price(native_price: f64) -> Result<f64, PriceEstimationError> {
@@ -77,7 +86,7 @@ mod tests {
             estimator
                 .expect_estimate_native_price()
                 .times(1)
-                .return_once(move |_| async move { estimate }.boxed());
+                .return_once(move |_, _| async move { estimate }.boxed());
             Arc::new(estimator)
         }
 
@@ -93,7 +102,9 @@ mod tests {
                 ranking.clone(),
             );
 
-        priority.estimate_native_price(Default::default()).await
+        priority
+            .estimate_native_price(Default::default(), HEALTHY_PRICE_ESTIMATION_TIME)
+            .await
     }
 
     /// If all estimators returned an error we return the one with the highest

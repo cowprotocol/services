@@ -47,7 +47,7 @@ async fn test_cancel_on_expiry(web3: Web3) {
 
     // Disable auto-mine so we don't accidentally mine a settlement
     web3.api::<TestNodeApi<_>>()
-        .disable_automine()
+        .set_automine_enabled(false)
         .await
         .expect("Must be able to disable automine");
 
