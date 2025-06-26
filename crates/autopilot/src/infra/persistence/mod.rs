@@ -19,7 +19,7 @@ use {
             SigningScheme as DbSigningScheme,
         },
         settlement_observations::Observation,
-        solver_competition::{Order, Solution},
+        solver_competition_v2::{Order, Solution},
     },
     domain::auction::order::{
         BuyTokenDestination as DomainBuyTokenDestination,
@@ -142,7 +142,7 @@ impl Persistence {
 
         let mut ex = self.postgres.pool.begin().await?;
 
-        database::solver_competition::save(
+        database::solver_competition_v2::save(
             &mut ex,
             auction_id,
             &solutions
@@ -876,7 +876,7 @@ impl Persistence {
             .with_label_values(&["find_non_settling_solvers"])
             .start_timer();
 
-        Ok(database::solver_competition::find_non_settling_solvers(
+        Ok(database::solver_competition_v2::find_non_settling_solvers(
             &mut ex,
             last_auctions_count,
             current_block,
@@ -904,7 +904,7 @@ impl Persistence {
             .with_label_values(&["find_low_settling_solvers"])
             .start_timer();
 
-        Ok(database::solver_competition::find_low_settling_solvers(
+        Ok(database::solver_competition_v2::find_low_settling_solvers(
             &mut ex,
             last_auctions_count,
             current_block,
@@ -930,7 +930,7 @@ impl Persistence {
             .start_timer();
 
         Ok(
-            database::solver_competition::fetch_solver_winning_solutions(
+            database::solver_competition_v2::fetch_solver_winning_solutions(
                 &mut ex,
                 auction_id,
                 ByteArray(solver.0.0),

@@ -344,6 +344,7 @@ paths:
           description: Unexpected error quoting an order.
   "/api/v1/solver_competition/{auction_id}":
     get:
+      deprecated: true
       summary: Get information about a solver competition.
       description: |
         Returns the competition information by `auction_id`.
@@ -364,6 +365,7 @@ paths:
           description: No competition information available for this auction id.
   "/api/v1/solver_competition/by_tx_hash/{tx_hash}":
     get:
+      deprecated: true
       summary: Get information about solver competition.
       description: |
         Returns the competition information by `tx_hash`.
@@ -384,6 +386,62 @@ paths:
         "404":
           description: No competition information available for this `tx_hash`.
   /api/v1/solver_competition/latest:
+    get:
+      deprecated: true
+      summary: Get information about the most recent solver competition.
+      description: |
+        Returns the competition information for the last seen auction_id.
+      responses:
+        "200":
+          description: Competition
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SolverCompetitionResponse"
+        "404":
+          description: No competition information available.
+  "/api/v2/solver_competition/{auction_id}":
+    get:
+      summary: Get information about a solver competition.
+      description: |
+        Returns the competition information by `auction_id`.
+      parameters:
+        - name: auction_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Competition
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SolverCompetitionResponse"
+        "404":
+          description: No competition information available for this auction id.
+  "/api/v2/solver_competition/by_tx_hash/{tx_hash}":
+    get:
+      summary: Get information about solver competition.
+      description: |
+        Returns the competition information by `tx_hash`.
+      parameters:
+        - name: tx_hash
+          description: Transaction hash in which the competition was settled.
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/TransactionHash"
+      responses:
+        "200":
+          description: Competition
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SolverCompetitionResponse"
+        "404":
+          description: No competition information available for this `tx_hash`.
+  /api/v2/solver_competition/latest:
     get:
       summary: Get information about the most recent solver competition.
       description: |
@@ -1600,19 +1658,21 @@ components:
         auctionId:
           type: integer
           description: The ID of the auction the competition info is for.
+        auctionStartBlock:
+          type: integer
+          description: Block that the auction started on.
         transactionHashes:
           type: array
           description: |
             The hashes of the transactions for the winning solutions of this competition.
           items:
             $ref: "#/components/schemas/TransactionHash"
-        gasPrice:
-          type: number
-          description: Gas price used for ranking solutions.
-        liquidityCollectedBlock:
-          type: integer
-        competitionSimulationBlock:
-          type: integer
+        referenceScores:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/BigUint"
+          description: >
+            The reference scores for each winning solver according to [CIP-67](https://forum.cow.fi/t/cip-67-moving-from-batch-auction-to-the-fair-combinatorial-auction/2967) (if available).
         auction:
           $ref: "#/components/schemas/CompetitionAuction"
         solutions:
@@ -1623,9 +1683,10 @@ components:
     SolverSettlement:
       type: object
       properties:
-        solver:
-          type: string
-          description: Name of the solver.
+        ranking:
+          type: number
+          description: |-
+            Which position the solution achieved in the total ranking of the competition.
         solverAddress:
           type: string
           description: |-
@@ -1633,28 +1694,23 @@ components:
 
             This field is missing for old settlements, the zero address has been
             used instead.
-        objective:
-          type: object
-          properties:
-            total:
-              type: number
-              description: The total objective value used for ranking solutions.
-            surplus:
-              type: number
-            fees:
-              type: number
-            cost:
-              type: number
-            gas:
-              type: integer
         score:
           allOf:
             - $ref: "#/components/schemas/BigUint"
           description: >
             The score of the current auction as defined in
             [CIP-20](https://snapshot.org/#/cow.eth/proposal/0x2d3f9bd1ea72dca84b03e97dda3efc1f4a42a772c54bd2037e8b62e7d09a491f).
-
-            It is `null` for old auctions.
+        referenceScore:
+          allOf:
+            - $ref: "#/components/schemas/BigUint"
+          description: >
+            The reference score as defined in [CIP-67](https://forum.cow.fi/t/cip-67-moving-from-batch-auction-to-the-fair-combinatorial-auction/2967) (if available).
+          nullable: true
+        txHash:
+          allOf:
+            - $ref: "#/components/schemas/TransactionHash"
+          description: >
+            Transaction in which the solution was executed onchain (if available).
           nullable: true
         clearingPrices:
           type: object
@@ -1671,11 +1727,16 @@ components:
             properties:
               id:
                 $ref: "#/components/schemas/UID"
-              executedAmount:
+              sellAmount:
+                $ref: "#/components/schemas/BigUint"
+              buyAmount:
                 $ref: "#/components/schemas/BigUint"
         isWinner:
           type: boolean
           description: whether the solution is a winner (received the right to get executed) or not
+        filteredOut:
+          type: boolean
+          description: whether the solution was filtered out according to the rules of [CIP-67](https://forum.cow.fi/t/cip-67-moving-from-batch-auction-to-the-fair-combinatorial-auction/2967).
     NativePriceResponse:
       description: |
         The estimated native price for the token
