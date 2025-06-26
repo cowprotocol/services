@@ -1,11 +1,14 @@
 use {
-    e2e::{setup::*, tx},
+    e2e::{nodes::local_node::TestNodeApi, setup::*, tx},
     ethcontract::prelude::U256,
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind, OrderStatus},
         signature::EcdsaSigningScheme,
     },
-    orderbook::{api::IntoWarpReply, orderbook::OrderReplacementError},
+    orderbook::{
+        api::IntoWarpReply,
+        orderbook::{OrderCancellationError, OrderReplacementError},
+    },
     reqwest::StatusCode,
     secp256k1::SecretKey,
     shared::ethrpc::Web3,
@@ -31,10 +34,10 @@ async fn local_node_try_replace_someone_else_order() {
 #[tokio::test]
 #[ignore]
 async fn local_node_try_replace_executed_order() {
-    run_test(try_replace_executed_order_test).await;
+    run_test(try_replace_unreplaceable_order_test).await;
 }
 
-async fn try_replace_executed_order_test(web3: Web3) {
+async fn try_replace_unreplaceable_order_test(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(to_wei(1)).await;
@@ -90,6 +93,12 @@ async fn try_replace_executed_order_test(web3: Web3) {
         token_a.approve(onchain.contracts().allowance, to_wei(15))
     );
 
+    // disable auto mining to prevent order being immediately executed
+    web3.api::<TestNodeApi<_>>()
+        .disable_automine()
+        .await
+        .expect("Must be able to disable auto-mining");
+
     // Place Orders
     let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
@@ -112,10 +121,17 @@ async fn try_replace_executed_order_test(web3: Web3) {
     onchain.mint_block().await;
     let order_id = services.create_order(&order).await.unwrap();
 
-    tracing::info!("Waiting for the old order to be executed");
+    // mine 1 block to trigger auction
+    web3.api::<TestNodeApi<_>>()
+        .mine_pending_block()
+        .await
+        .expect("Must mine pending block");
+
+    tracing::info!("Waiting for the old order to be bid on");
     wait_for_condition(TIMEOUT, || async {
-        let balance_after = token_a.balance_of(trader.address()).call().await.unwrap();
-        balance_before.saturating_sub(balance_after) == to_wei(10)
+        // here don't wait for the order to be filled, just for it to be bid on
+        // so we can make sure that such an order cannot be replaced anymore
+        services.get_latest_solver_competition().await.is_ok()
     })
     .await
     .unwrap();
@@ -148,6 +164,36 @@ async fn try_replace_executed_order_test(web3: Web3) {
     assert_eq!(error_code, StatusCode::BAD_REQUEST);
 
     let expected_response = OrderReplacementError::OldOrderActivelyBidOn
+        .into_warp_reply()
+        .into_response()
+        .into_body();
+    let expected_body_bytes = warp::hyper::body::to_bytes(expected_response)
+        .await
+        .unwrap();
+    let expected_body = String::from_utf8(expected_body_bytes.to_vec()).unwrap();
+    assert_eq!(error_message, expected_body);
+
+    // Continue automining so our order can be executed
+    web3.api::<TestNodeApi<_>>()
+        .enable_automine()
+        .await
+        .expect("Must be able to disable auto-mining");
+
+    tracing::info!("Waiting for the old order to be executed");
+    wait_for_condition(TIMEOUT, || async {
+        let balance_after = token_a.balance_of(trader.address()).call().await.unwrap();
+        balance_before.saturating_sub(balance_after) == to_wei(10)
+            && services.get_trades(&order_id).await.unwrap().len() > 0
+    })
+    .await
+    .unwrap();
+
+    // post replacement order again
+    let response = services.create_order(&new_order).await;
+    let (error_code, error_message) = response.err().unwrap();
+
+    assert_eq!(error_code, StatusCode::BAD_REQUEST);
+    let expected_response = OrderCancellationError::OrderFullyExecuted
         .into_warp_reply()
         .into_response()
         .into_body();

@@ -56,6 +56,13 @@ impl<T: Transport> TestNodeApi<T> {
         )
     }
 
+    pub fn enable_automine(&self) -> CallFuture<(), T::Out> {
+        CallFuture::new(
+            self.transport
+                .execute("evm_setAutomine", vec![serde_json::json!(true)]),
+        )
+    }
+
     pub fn set_mining_interval(&self, seconds: usize) -> CallFuture<(), T::Out> {
         CallFuture::new(
             self.transport
