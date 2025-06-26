@@ -17,7 +17,7 @@ use {
     },
     chain::Chain,
     chrono::{DateTime, Utc},
-    database::{orders::OrderKind, solver_competition::Solution},
+    database::{orders::OrderKind, solver_competition_v2::Solution},
     futures::TryFutureExt,
     number::conversions::big_decimal_to_u256,
     std::collections::{HashMap, HashSet},
@@ -234,7 +234,7 @@ fn trade_to_key(trade: &EncodedTrade) -> OrderMatchKey {
     }
 }
 
-fn order_to_key(order: &database::solver_competition::Order) -> OrderMatchKey {
+fn order_to_key(order: &database::solver_competition_v2::Order) -> OrderMatchKey {
     OrderMatchKey {
         uid: OrderUid(order.uid.0),
         token: match order.side {

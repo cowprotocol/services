@@ -22,6 +22,7 @@ pub mod settlement_observations;
 pub mod settlement_scores;
 pub mod settlements;
 pub mod solver_competition;
+pub mod solver_competition_v2;
 pub mod surplus_capturing_jit_order_owners;
 pub mod trades;
 

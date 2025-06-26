@@ -7,6 +7,7 @@ pub mod order;
 pub mod quote;
 pub mod signature;
 pub mod solver_competition;
+pub mod solver_competition_v2;
 pub mod time;
 pub mod trade;
 
