@@ -13,7 +13,6 @@ pub struct ObserveConfig {
 }
 
 impl ObserveConfig {
-    /// Create a new TracingConfig
     pub fn new(
         env_filter: &str,
         stderr_threshold: LevelFilter,
