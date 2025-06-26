@@ -111,7 +111,7 @@ fn to_dto(value: DbResponse) -> Result<ApiResponse, LoadSolverCompetitionError> 
         grouped_trades
     };
 
-    let solutions: Vec<Solution> = value
+    let mut solutions: Vec<Solution> = value
         .solutions
         .into_iter()
         .map(|solution| {
@@ -142,6 +142,9 @@ fn to_dto(value: DbResponse) -> Result<ApiResponse, LoadSolverCompetitionError> 
             })
         })
         .collect::<Result<_>>()?;
+
+    // sort from worst to best to stay consistent with the old endpoint
+    solutions.sort_by_key(|s| std::cmp::Reverse(s.ranking));
 
     Ok(ApiResponse {
         auction_id: value.auction.id,
