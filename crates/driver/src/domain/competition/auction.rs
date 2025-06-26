@@ -296,7 +296,7 @@ impl AuctionProcessor {
 
     pub fn new(
         eth: &infra::Ethereum,
-        order_priority_strategies: Vec<OrderPriorityStrategy>,
+        order_priority_strategies: &[OrderPriorityStrategy],
         fetcher: Arc<pre_processing::DataAggregator>,
     ) -> Self {
         let eth = eth.with_metric_label("auctionPreProcessing".into());

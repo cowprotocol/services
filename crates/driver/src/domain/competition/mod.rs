@@ -14,6 +14,7 @@ use {
             observe,
             simulator::{RevertError, SimulatorError},
             solver::{self, SolutionMerging, Solver},
+            observe::metrics, config::file::OrderPriorityStrategy
         },
         util::Bytes,
     },
@@ -29,6 +30,7 @@ use {
     tap::TapFallible,
     tokio::sync::{mpsc, oneshot},
     tracing::Instrument,
+    crate::domain::competition::sorting::SortingStrategy,
 };
 
 pub mod auction;
@@ -64,6 +66,7 @@ pub struct Competition {
     pub bad_tokens: Arc<bad_tokens::Detector>,
     fetcher: Arc<pre_processing::DataAggregator>,
     settle_queue: mpsc::Sender<SettleRequest>,
+    order_sorting_strategies: Vec<Arc<dyn sorting::SortingStrategy>>,
 }
 
 impl Competition {
@@ -75,8 +78,27 @@ impl Competition {
         mempools: Mempools,
         bad_tokens: Arc<bad_tokens::Detector>,
         fetcher: Arc<DataAggregator>,
+        order_priority_strategies: &[OrderPriorityStrategy],
     ) -> Arc<Self> {
         let (settle_sender, settle_receiver) = mpsc::channel(solver.settle_queue_size());
+
+        let mut order_sorting_strategies = vec![];
+        for strategy in order_priority_strategies {
+            let comparator: Arc<dyn sorting::SortingStrategy> = match strategy {
+                OrderPriorityStrategy::ExternalPrice => Arc::new(sorting::ExternalPrice),
+                OrderPriorityStrategy::CreationTimestamp { max_order_age } => {
+                    Arc::new(sorting::CreationTimestamp {
+                        max_order_age: max_order_age.map(|t| chrono::Duration::from_std(t).unwrap()),
+                    })
+                }
+                OrderPriorityStrategy::OwnQuotes { max_order_age } => {
+                    Arc::new(sorting::OwnQuotes {
+                        max_order_age: max_order_age.map(|t| chrono::Duration::from_std(t).unwrap()),
+                    })
+                }
+            };
+            order_sorting_strategies.push(comparator);
+        }
 
         let competition = Arc::new(Self {
             solver,
@@ -88,6 +110,7 @@ impl Competition {
             settle_queue: settle_sender,
             bad_tokens,
             fetcher,
+            order_sorting_strategies
         });
 
         let competition_clone = Arc::clone(&competition);
@@ -105,6 +128,10 @@ impl Competition {
         let auction = Arc::new(auction);
         let tasks = self.fetcher.get_tasks_for_auction(auction.clone());
         let auction = Arc::unwrap_or_clone(auction);
+
+        let settlement_contract = self.eth.contracts().settlement().address();
+        let solver_address = self.solver.account().address();
+        let auction = Self::sort_orders(auction, solver_address, self.order_sorting_strategies.clone(), settlement_contract).await;
 
         // Run bad token filtering and liquidity fetching in parallel
         let (filtered_auction, liquidity) = tokio::join!(
@@ -323,6 +350,29 @@ impl Competition {
         }
 
         Ok(score)
+    }
+
+    async fn sort_orders(mut auction: Auction, solver: eth::H160, order_sorting_strategies: Vec<Arc<dyn SortingStrategy>>, _settlement_contract: eth::H160) -> Auction {
+        // Oders already need to be sorted from most relevant to least relevant so that we
+        // allocate balances for the most relevants first.
+        //
+        // Also use spawn_blocking() because a lot of CPU bound computations are
+        // happening and we don't want to block the runtime for too long.
+        tokio::task::spawn_blocking(move || {
+            let _timer = metrics::get().processing_stage_timer("sort_orders");
+            sorting::sort_orders(
+                &mut auction.orders,
+                &auction.tokens,
+                &solver,
+                &order_sorting_strategies,
+            );
+            auction
+        })
+        .await
+        .expect(
+            "Either runtime was shut down before spawning the task or no OS threads are \
+             available; no sense in handling those errors",
+        )
     }
 
     pub async fn reveal(

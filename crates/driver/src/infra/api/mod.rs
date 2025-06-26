@@ -63,7 +63,7 @@ impl Api {
         ));
         let pre_processor = domain::competition::AuctionProcessor::new(
             &self.eth,
-            order_priority_strategies,
+            &order_priority_strategies,
             fetcher.clone(),
         );
         
@@ -113,6 +113,7 @@ impl Api {
                     self.mempools.clone(),
                     Arc::new(bad_tokens),
                     fetcher.clone(),
+                    &order_priority_strategies,
                 ),
                 liquidity: self.liquidity.clone(),
                 tokens: tokens.clone(),
