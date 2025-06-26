@@ -27,7 +27,7 @@ impl ObserveConfig {
         }
     }
 
-    /// Create a TracingConfig with JSON format enabled
+    /// Create an ObserveConfig with JSON format enabled
     pub fn with_json_format(mut self) -> Self {
         self.use_json_format = true;
         self
