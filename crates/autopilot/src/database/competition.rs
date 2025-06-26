@@ -58,7 +58,7 @@ impl super::Postgres {
 
         database::solver_competition::save(&mut ex, competition.auction_id, json)
             .await
-            .context("solver_competition::save_solver_competition")?;
+            .context("solver_competition::save")?;
 
         // TODO: this is deprecated and needs to be removed once the solver team has
         // switched to the reference_scores table.
