@@ -1,30 +1,21 @@
 use {
-    super::{Order, order},
     crate::{
         domain::{
-            competition::{self, sorting},
+            competition::{self},
             eth,
             liquidity,
             time,
         },
         infra::{
-            self,
             Ethereum,
             blockchain,
-            config::file::OrderPriorityStrategy,
-            observe::{self, metrics},
         },
-        util::{self},
     },
-    chrono::Duration,
-    prometheus::HistogramTimer,
     std::{
         collections::{HashMap, HashSet},
-        sync::Arc,
     },
     thiserror::Error,
 };
-use crate::domain::competition::pre_processing;
 
 /// An auction is a set of orders that can be solved. The solvers calculate
 /// [`super::solution::Solution`]s by picking subsets of these orders and
@@ -133,229 +124,8 @@ impl Auction {
 }
 
 #[derive(Clone)]
-pub struct AuctionProcessor(Arc<DataAggregator>);
+pub struct AuctionProcessor;
 
-struct DataAggregator {
-    eth: infra::Ethereum,
-    /// Order sorting strategies should be in the same order as the
-    /// `order_priority_strategies` from the driver's config.
-    order_sorting_strategies: Vec<Arc<dyn sorting::SortingStrategy>>,
-    fetcher: Arc<pre_processing::DataAggregator>,
-}
-
-struct AggregatedData {
-    balances: Arc<Balances>,
-    app_data: Arc<HashMap<order::app_data::AppDataHash, app_data::ValidatedAppData>>,
-    cow_amm_orders: Arc<Vec<Order>>,
-}
-
-type BalanceGroup = (order::Trader, eth::TokenAddress, order::SellTokenBalance);
-type Balances = HashMap<BalanceGroup, order::SellAmount>;
-
-impl AuctionProcessor {
-    /// Process the auction by prioritizing the orders and filtering out
-    /// unfillable orders. Fetches full app data for each order and returns an
-    /// auction with updated orders.
-    pub async fn prioritize(&self, auction: Arc<Auction>, solver: eth::H160) -> Auction {
-        let _timer = stage_timer("total");
-
-        let agg_data = self.0.clone().fetch_aggregated_data(auction.clone()).await;
-        let mut auction = Arc::unwrap_or_clone(auction);
-
-        // This step filters out orders if the an owner doesn't have enough balances for
-        // all their orders with the same sell token. That means orders already
-        // need to be sorted from most relevant to least relevant so that we
-        // allocate balances for the most relevants first.
-        //
-        // Also use spawn_blocking() because a lot of CPU bound computations are
-        // happening and we don't want to block the runtime for too long.
-        let helpers = self.0.clone();
-        tokio::task::spawn_blocking(move || {
-            let _timer = stage_timer("sort_and_update");
-            let settlement_contract = helpers.eth.contracts().settlement().address();
-            sorting::sort_orders(
-                &mut auction.orders,
-                &auction.tokens,
-                &solver,
-                &helpers.order_sorting_strategies,
-            );
-            Self::update_orders(auction, agg_data, &eth::Address(settlement_contract))
-        })
-        .await
-        .expect(
-            "Either runtime was shut down before spawning the task or no OS threads are \
-             available; no sense in handling those errors",
-        )
-    }
-
-    /// Removes orders that cannot be filled due to missing funds of the owner
-    /// and updates the fetched app data.
-    /// It allocates available funds from left to right so the orders should
-    /// already be sorted by priority going in.
-    fn update_orders(
-        mut auction: Auction,
-        data: Arc<AggregatedData>,
-        settlement_contract: &eth::Address,
-    ) -> Auction {
-        // Clone balances since we only aggregate data once but each solver needs
-        // to use and modify the data individually.
-        let mut balances = data.balances.as_ref().clone();
-        let cow_amms: HashSet<_> = data.cow_amm_orders.iter().map(|o| o.uid).collect();
-
-        // The auction that we receive from the `autopilot` assumes that there
-        // is sufficient balance to completely cover all the orders. **This is
-        // not the case** (as the protocol should not chose which limit orders
-        // get filled for some given sell token balance). This loop goes through
-        // the priority sorted orders and allocates the available user balance
-        // to each order, and potentially scaling the order's `available` amount
-        // down in case the available user balance is only enough to partially
-        // cover the rest of the order.
-        auction.orders.retain_mut(|order| {
-            if cow_amms.contains(&order.uid) {
-                // cow amm orders already get constructed fully initialized
-                // so we don't have to handle them here anymore.
-                // Without this short circuiting logic they would get filtered
-                // out later because we don't bother fetching their balances
-                // for performance reasons.
-                return true;
-            }
-
-            // Update order app data if it was fetched.
-            if let Some(fetched_app_data) = data.app_data.get(&order.app_data.hash()) {
-                order.app_data = fetched_app_data.clone().into();
-                if order.app_data.flashloan().is_some() {
-                    // If an order requires a flashloan we assume all the necessary
-                    // sell tokens will come from there. But the receiver must be the
-                    // settlement contract because that is how the driver expects
-                    // the flashloan to be repaid for now.
-                    return order.receiver.as_ref() == Some(settlement_contract);
-                }
-            }
-
-            let remaining_balance = match balances.get_mut(&(
-                order.trader(),
-                order.sell.token,
-                order.sell_token_balance,
-            )) {
-                Some(balance) => balance,
-                None => {
-                    let reason = observe::OrderExcludedFromAuctionReason::CouldNotFetchBalance;
-                    observe::order_excluded_from_auction(order, reason);
-                    return false;
-                }
-            };
-
-            let max_sell = order::SellAmount(order.available().sell.amount.0);
-
-            let allocated_balance = match order.partial {
-                order::Partial::Yes { .. } => max_sell.min(*remaining_balance),
-                order::Partial::No if max_sell <= *remaining_balance => max_sell,
-                _ => order::SellAmount::default(),
-            };
-            if allocated_balance.0.is_zero() {
-                observe::order_excluded_from_auction(
-                    order,
-                    observe::OrderExcludedFromAuctionReason::InsufficientBalance,
-                );
-                return false;
-            }
-
-            // We need to scale the available amount in the order based on
-            // allocated balance. We cannot naively just set the `available`
-            // amount to equal the `allocated_balance` because of two reasons:
-            // 1. They are in different units. `available` is a `TargetAmount` which means
-            //    it would be in buy token for buy orders and not in sell token like the
-            //    `allocated_balance`
-            // 2. Account for fees. Even in the case of sell orders, `available` is
-            //    potentially different to `allocated_balance` because of fee scaling. For
-            //    example, imagine a partially fillable order selling 100 tokens with a fee
-            //    of 10 for a user with a balance of 50. The `allocated_balance` would be 50
-            //    tokens, but the `available` amount needs to be less! We want the
-            //    following: `available + (fee * available / sell) <= allocated_balance`
-            if let order::Partial::Yes { available } = &mut order.partial {
-                *available = order::TargetAmount(
-                    util::math::mul_ratio(available.0, allocated_balance.0, max_sell.0)
-                        .unwrap_or_default(),
-                );
-            }
-            if order.available().is_zero() {
-                observe::order_excluded_from_auction(
-                    order,
-                    observe::OrderExcludedFromAuctionReason::OrderWithZeroAmountRemaining,
-                );
-                return false;
-            }
-
-            remaining_balance.0 -= allocated_balance.0;
-
-            true
-        });
-
-        auction
-    }
-
-    pub fn new(
-        eth: &infra::Ethereum,
-        order_priority_strategies: &[OrderPriorityStrategy],
-        fetcher: Arc<pre_processing::DataAggregator>,
-    ) -> Self {
-        let eth = eth.with_metric_label("auctionPreProcessing".into());
-        let mut order_sorting_strategies = vec![];
-
-        for strategy in order_priority_strategies {
-            let comparator: Arc<dyn sorting::SortingStrategy> = match strategy {
-                OrderPriorityStrategy::ExternalPrice => Arc::new(sorting::ExternalPrice),
-                OrderPriorityStrategy::CreationTimestamp { max_order_age } => {
-                    Arc::new(sorting::CreationTimestamp {
-                        max_order_age: max_order_age.map(|t| Duration::from_std(t).unwrap()),
-                    })
-                }
-                OrderPriorityStrategy::OwnQuotes { max_order_age } => {
-                    Arc::new(sorting::OwnQuotes {
-                        max_order_age: max_order_age.map(|t| Duration::from_std(t).unwrap()),
-                    })
-                }
-            };
-            order_sorting_strategies.push(comparator);
-        }
-
-        Self(
-            Arc::new(DataAggregator {
-                eth,
-                order_sorting_strategies,
-                fetcher,
-            }))
-    }
-}
-
-impl DataAggregator {
-    async fn fetch_aggregated_data(self: Arc<Self>, auction: Arc<Auction>) -> Arc<AggregatedData> {
-        let _timer = stage_timer("aggregate data");
-        let start = std::time::Instant::now();
-
-        let tasks = self.fetcher.get_tasks_for_auction(auction.clone());
-
-        let (balances, app_data, cow_amm_orders) = tokio::join!(
-            tasks.balances,
-            tasks.app_data,
-            tasks.cow_amm_orders,
-        );
-        tracing::debug!(auction_id = ?auction.id(), time =? start.elapsed(), "auction preprocessing done");
-
-        Arc::new(AggregatedData {
-            balances,
-            app_data,
-            cow_amm_orders,
-        })
-    }
-}
-
-fn stage_timer(stage: &str) -> HistogramTimer {
-    metrics::get()
-        .auction_preprocessing
-        .with_label_values(&[stage])
-        .start_timer()
-}
 
 /// The tokens that are used in an auction.
 #[derive(Debug, Default, Clone)]

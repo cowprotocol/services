@@ -61,11 +61,6 @@ impl Api {
             app_data_retriever.clone(),
             self.liquidity.clone(),
         ));
-        let pre_processor = domain::competition::AuctionProcessor::new(
-            &self.eth,
-            &order_priority_strategies,
-            fetcher.clone(),
-        );
         
         // Add the metrics and healthz endpoints.
         app = routes::metrics(app);
@@ -117,7 +112,6 @@ impl Api {
                 ),
                 liquidity: self.liquidity.clone(),
                 tokens: tokens.clone(),
-                pre_processor: pre_processor.clone(),
             })));
             let path = format!("/{name}");
             infra::observe::mounting_solver(&name, &path);
@@ -163,11 +157,6 @@ impl State {
         &self.0.tokens
     }
 
-    #[allow(dead_code)]
-    fn pre_processor(&self) -> &domain::competition::AuctionProcessor {
-        &self.0.pre_processor
-    }
-
     fn timeouts(&self) -> Timeouts {
         self.0.solver.timeouts()
     }
@@ -179,7 +168,4 @@ struct Inner {
     competition: Arc<domain::Competition>,
     liquidity: liquidity::Fetcher,
     tokens: tokens::Fetcher,
-    // TODO: use this
-    #[allow(dead_code)]
-    pre_processor: domain::competition::AuctionProcessor,
 }
