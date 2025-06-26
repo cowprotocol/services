@@ -49,17 +49,10 @@ impl<T: Transport> TestNodeApi<T> {
         CallFuture::new(self.transport.execute("evm_mine", vec![]))
     }
 
-    pub fn disable_automine(&self) -> CallFuture<(), T::Out> {
+    pub fn set_automine_enabled(&self, enabled: bool) -> CallFuture<(), T::Out> {
         CallFuture::new(
             self.transport
-                .execute("evm_setAutomine", vec![serde_json::json!(false)]),
-        )
-    }
-
-    pub fn enable_automine(&self) -> CallFuture<(), T::Out> {
-        CallFuture::new(
-            self.transport
-                .execute("evm_setAutomine", vec![serde_json::json!(true)]),
+                .execute("evm_setAutomine", vec![serde_json::json!(enabled)]),
         )
     }
 

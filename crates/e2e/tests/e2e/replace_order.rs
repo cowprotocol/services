@@ -28,9 +28,6 @@ async fn local_node_try_replace_someone_else_order() {
     run_test(try_replace_someone_else_order_test).await;
 }
 
-// TODO: The test is not ideal, as we actually want to test the replacement of
-// active orders as soon as they are being bid on, even before they are
-// executed. For that we would need the ability to mock the driver in e2e tests.
 #[tokio::test]
 #[ignore]
 async fn local_node_try_replace_executed_order() {
@@ -95,7 +92,7 @@ async fn try_replace_unreplaceable_order_test(web3: Web3) {
 
     // disable auto mining to prevent order being immediately executed
     web3.api::<TestNodeApi<_>>()
-        .disable_automine()
+        .set_automine_enabled(false)
         .await
         .expect("Must be able to disable auto-mining");
 
@@ -122,10 +119,7 @@ async fn try_replace_unreplaceable_order_test(web3: Web3) {
     let order_id = services.create_order(&order).await.unwrap();
 
     // mine 1 block to trigger auction
-    web3.api::<TestNodeApi<_>>()
-        .mine_pending_block()
-        .await
-        .expect("Must mine pending block");
+    onchain.mint_block().await;
 
     tracing::info!("Waiting for the old order to be bid on");
     wait_for_condition(TIMEOUT, || async {
@@ -175,7 +169,7 @@ async fn try_replace_unreplaceable_order_test(web3: Web3) {
 
     // Continue automining so our order can be executed
     web3.api::<TestNodeApi<_>>()
-        .enable_automine()
+        .set_automine_enabled(true)
         .await
         .expect("Must be able to disable auto-mining");
 
@@ -188,7 +182,8 @@ async fn try_replace_unreplaceable_order_test(web3: Web3) {
     .await
     .unwrap();
 
-    // post replacement order again
+    // post replacement order again, this time it will already be executed and
+    // therefore should be rejected for a different reason
     let response = services.create_order(&new_order).await;
     let (error_code, error_message) = response.err().unwrap();
 
