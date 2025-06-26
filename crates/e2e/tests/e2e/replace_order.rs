@@ -183,7 +183,7 @@ async fn try_replace_unreplaceable_order_test(web3: Web3) {
     wait_for_condition(TIMEOUT, || async {
         let balance_after = token_a.balance_of(trader.address()).call().await.unwrap();
         balance_before.saturating_sub(balance_after) == to_wei(10)
-            && services.get_trades(&order_id).await.unwrap().len() > 0
+            && !services.get_trades(&order_id).await.unwrap().is_empty()
     })
     .await
     .unwrap();
