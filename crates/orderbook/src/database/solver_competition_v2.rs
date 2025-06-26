@@ -2,7 +2,7 @@ use {
     super::Postgres,
     crate::solver_competition::LoadSolverCompetitionError,
     anyhow::{Context, Result},
-    database::{byte_array::ByteArray, solver_competition_v2::Response as DbResponse},
+    database::{byte_array::ByteArray, solver_competition_v2::SolverCompetition as DbResponse},
     model::{
         order::OrderUid,
         solver_competition_v2::{Auction, Order, Response as ApiResponse, Solution},

@@ -33,7 +33,7 @@ pub struct Auction {
 }
 
 #[derive(sqlx::FromRow)]
-pub struct Solution2 {
+pub struct ProposedSolution {
     pub solver: Address,
     pub uid: i64,
     pub is_winner: bool,
@@ -45,7 +45,7 @@ pub struct Solution2 {
 }
 
 #[derive(sqlx::FromRow)]
-pub struct Trade {
+pub struct ProposedTrade {
     pub solution_uid: i64,
     pub order_uid: OrderUid,
     pub executed_sell: BigDecimal,
@@ -58,18 +58,18 @@ pub struct ReferenceScore {
     pub reference_score: BigDecimal,
 }
 
-pub struct Response {
+pub struct SolverCompetition {
     pub settlements: Vec<Settlement>,
     pub auction: Auction,
-    pub solutions: Vec<Solution2>,
-    pub trades: Vec<Trade>,
+    pub solutions: Vec<ProposedSolution>,
+    pub trades: Vec<ProposedTrade>,
     pub reference_scores: Vec<ReferenceScore>,
 }
 
 pub async fn load_by_tx_hash(
     mut ex: &mut PgConnection,
     tx_hash: TransactionHash,
-) -> Result<Option<Response>, sqlx::Error> {
+) -> Result<Option<SolverCompetition>, sqlx::Error> {
     const FETCH_AUCTION_ID: &str = r#"
         SELECT auction_id
         FROM settlements s
@@ -85,7 +85,9 @@ pub async fn load_by_tx_hash(
     load_by_id(ex.deref_mut(), auction_id).await
 }
 
-pub async fn load_latest(mut ex: &mut PgConnection) -> Result<Option<Response>, sqlx::Error> {
+pub async fn load_latest(
+    mut ex: &mut PgConnection,
+) -> Result<Option<SolverCompetition>, sqlx::Error> {
     const FETCH_AUCTION_ID: &str = r#"
         SELECT id
         FROM competition_auctions
@@ -101,7 +103,7 @@ pub async fn load_latest(mut ex: &mut PgConnection) -> Result<Option<Response>, 
 pub async fn load_by_id(
     mut ex: &mut PgConnection,
     id: AuctionId,
-) -> Result<Option<Response>, sqlx::Error> {
+) -> Result<Option<SolverCompetition>, sqlx::Error> {
     const FETCH_AUCTION: &str = r#"
         SELECT id, order_uids, price_tokens, price_values, block
         FROM competition_auctions
@@ -132,7 +134,7 @@ pub async fn load_by_id(
         FROM proposed_solutions
         WHERE auction_id = $1;
     "#;
-    let solutions: Vec<Solution2> = sqlx::query_as(FETCH_SOLUTIONS)
+    let solutions: Vec<ProposedSolution> = sqlx::query_as(FETCH_SOLUTIONS)
         .bind(id)
         .fetch_all(ex.deref_mut())
         .await?;
@@ -142,7 +144,7 @@ pub async fn load_by_id(
         FROM proposed_trade_executions
         WHERE auction_id = $1;
     "#;
-    let trades: Vec<Trade> = sqlx::query_as(FETCH_TRADES)
+    let trades: Vec<ProposedTrade> = sqlx::query_as(FETCH_TRADES)
         .bind(id)
         .fetch_all(ex.deref_mut())
         .await?;
@@ -157,7 +159,7 @@ pub async fn load_by_id(
         .fetch_all(ex.deref_mut())
         .await?;
 
-    Ok(Some(Response {
+    Ok(Some(SolverCompetition {
         auction,
         settlements,
         solutions,
