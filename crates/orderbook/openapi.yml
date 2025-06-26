@@ -344,6 +344,7 @@ paths:
           description: Unexpected error quoting an order.
   "/api/v1/solver_competition/{auction_id}":
     get:
+      deprecated: true
       summary: Get information about a solver competition.
       description: |
         Returns the competition information by `auction_id`.
@@ -364,6 +365,7 @@ paths:
           description: No competition information available for this auction id.
   "/api/v1/solver_competition/by_tx_hash/{tx_hash}":
     get:
+      deprecated: true
       summary: Get information about solver competition.
       description: |
         Returns the competition information by `tx_hash`.
@@ -385,6 +387,7 @@ paths:
           description: No competition information available for this `tx_hash`.
   /api/v1/solver_competition/latest:
     get:
+      deprecated: true
       summary: Get information about the most recent solver competition.
       description: |
         Returns the competition information for the last seen auction_id.
