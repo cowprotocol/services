@@ -26,7 +26,7 @@ impl Postgres {
         database::solver_competition_v2::load_by_id(&mut ex, auction_id)
             .await
             .context("solver_competition::load_by_id")?
-            .map(to_dto)
+            .map(try_into_dto)
             .ok_or(LoadSolverCompetitionError::NotFound)?
     }
 
@@ -43,7 +43,7 @@ impl Postgres {
         database::solver_competition_v2::load_by_tx_hash(&mut ex, ByteArray(tx_hash.0))
             .await
             .context("solver_competition::load_by_tx_hash")?
-            .map(to_dto)
+            .map(try_into_dto)
             .ok_or(LoadSolverCompetitionError::NotFound)?
     }
 
@@ -57,12 +57,12 @@ impl Postgres {
         database::solver_competition_v2::load_latest(&mut ex)
             .await
             .context("solver_competition::load_latest")?
-            .map(to_dto)
+            .map(try_into_dto)
             .ok_or(LoadSolverCompetitionError::NotFound)?
     }
 }
 
-fn to_dto(value: DbResponse) -> Result<ApiResponse, LoadSolverCompetitionError> {
+fn try_into_dto(value: DbResponse) -> Result<ApiResponse, LoadSolverCompetitionError> {
     let native_prices: BTreeMap<_, _> = value
         .auction
         .price_tokens
