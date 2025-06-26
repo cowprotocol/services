@@ -94,7 +94,7 @@ async fn try_replace_unreplaceable_order_test(web3: Web3) {
     web3.api::<TestNodeApi<_>>()
         .set_automine_enabled(false)
         .await
-        .expect("Must be able to disable auto-mining");
+        .unwrap();
 
     // Place Orders
     let services = Services::new(&onchain).await;
