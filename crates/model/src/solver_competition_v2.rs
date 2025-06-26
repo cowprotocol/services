@@ -49,6 +49,7 @@ pub struct Solution {
 
 #[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
 #[serde_as]
+#[serde(rename_all = "camelCase")]
 pub struct Order {
     pub id: OrderUid,
     /// The effective amount that left the user's wallet including all fees.
