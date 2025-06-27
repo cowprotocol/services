@@ -78,10 +78,13 @@ pub async fn load_by_tx_hash(
              AND s.log_index = so.log_index
         WHERE s.tx_hash = $1;
     "#;
-    let auction_id: i64 = sqlx::query_scalar(FETCH_AUCTION_ID)
+    let auction_id: Option<i64> = sqlx::query_scalar(FETCH_AUCTION_ID)
         .bind(tx_hash)
-        .fetch_one(ex.deref_mut())
+        .fetch_optional(ex.deref_mut())
         .await?;
+    let Some(auction_id) = auction_id else {
+        return Ok(None);
+    };
     load_by_id(ex.deref_mut(), auction_id).await
 }
 
@@ -94,9 +97,12 @@ pub async fn load_latest(
         ORDER BY id DESC
         LIMIT 1;
     "#;
-    let auction_id: i64 = sqlx::query_scalar(FETCH_AUCTION_ID)
-        .fetch_one(ex.deref_mut())
+    let auction_id: Option<i64> = sqlx::query_scalar(FETCH_AUCTION_ID)
+        .fetch_optional(ex.deref_mut())
         .await?;
+    let Some(auction_id) = auction_id else {
+        return Ok(None);
+    };
     load_by_id(ex.deref_mut(), auction_id).await
 }
 
@@ -109,10 +115,13 @@ pub async fn load_by_id(
         FROM competition_auctions
         WHERE id = $1;
     "#;
-    let auction: Auction = sqlx::query_as(FETCH_AUCTION)
+    let auction: Option<Auction> = sqlx::query_as(FETCH_AUCTION)
         .bind(id)
-        .fetch_one(ex.deref_mut())
+        .fetch_optional(ex.deref_mut())
         .await?;
+    let Some(auction) = auction else {
+        return Ok(None);
+    };
 
     const FETCH_SETTLEMENTS: &str = r#"
         SELECT solution_uid, tx_hash
