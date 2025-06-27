@@ -194,7 +194,7 @@ jobs:
 
   run-flaky-test:
     # to debug a flaky test set `if` to true and configure the flaky test in the `run` step
-    if: ${{ false }}
+    if: ${{ true }}
     timeout-minutes: 60
     runs-on: ubuntu-latest
     env:
@@ -211,6 +211,8 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
       - run: rustup toolchain install stable --profile minimal
       - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.2.2
       - uses: Swatinem/rust-cache@v2
       # Start the build process in the background. The following cargo test command will automatically
       # wait for the build process to be done before proceeding.
@@ -225,7 +227,7 @@ jobs:
           attempt=1
           while true; do
             echo "Running test attempt #$attempt"
-            if ! cargo nextest run -p e2e forked_node_mainnet_repay_debt_with_collateral_of_safe --test-threads 1 --failure-output final --run-ignored ignored-only; then
+            if ! cargo nextest run -p e2e forked_node --test-threads 1 --failure-output final --run-ignored ignored-only; then
               exit 1
             fi
             attempt=$((attempt+1))
