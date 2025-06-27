@@ -56,11 +56,11 @@ impl Api {
         );
 
         let tokens = tokens::Fetcher::new(&self.eth);
-        let pre_processor = domain::competition::AuctionProcessor::new(
-            &self.eth,
-            order_priority_strategies,
-            app_data_retriever,
-        );
+        let fetcher = Arc::new(domain::competition::DataAggregator::new(
+            self.eth.clone(),
+            app_data_retriever.clone(),
+            self.liquidity.clone(),
+        ));
 
         // Add the metrics and healthz endpoints.
         app = routes::metrics(app);
@@ -107,10 +107,11 @@ impl Api {
                     self.simulator.clone(),
                     self.mempools.clone(),
                     Arc::new(bad_tokens),
+                    fetcher.clone(),
+                    &order_priority_strategies,
                 ),
                 liquidity: self.liquidity.clone(),
                 tokens: tokens.clone(),
-                pre_processor: pre_processor.clone(),
             })));
             let path = format!("/{name}");
             infra::observe::mounting_solver(&name, &path);
@@ -156,10 +157,6 @@ impl State {
         &self.0.tokens
     }
 
-    fn pre_processor(&self) -> &domain::competition::AuctionProcessor {
-        &self.0.pre_processor
-    }
-
     fn timeouts(&self) -> Timeouts {
         self.0.solver.timeouts()
     }
@@ -171,5 +168,4 @@ struct Inner {
     competition: Arc<domain::Competition>,
     liquidity: liquidity::Fetcher,
     tokens: tokens::Fetcher,
-    pre_processor: domain::competition::AuctionProcessor,
 }
