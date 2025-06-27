@@ -11,6 +11,7 @@ use {
             cli,
             config,
             liquidity,
+            notify,
             simulator::{self, Simulator},
             solver::Solver,
         },
@@ -64,6 +65,7 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
     let serve = Api {
         solvers: solvers(&config, &eth).await,
         liquidity: liquidity(&config, &eth).await,
+        liquidity_sources_notifier: liquidity_sources_notifier(&config, &eth),
         simulator: simulator(&config, &eth),
         mempools: Mempools::try_new(
             config
@@ -181,6 +183,16 @@ async fn liquidity(config: &config::Config, eth: &Ethereum) -> liquidity::Fetche
     liquidity::Fetcher::try_new(eth, &config.liquidity)
         .await
         .expect("initialize liquidity fetcher")
+}
+
+fn liquidity_sources_notifier(
+    config: &config::Config,
+    eth: &Ethereum,
+) -> notify::liquidity_sources::Notifier {
+    let chain_id = eth.chain().id();
+
+    notify::liquidity_sources::Notifier::try_new(&config.liquidity_sources_notifier, chain_id)
+        .expect("initialize notify sources notifier")
 }
 
 #[cfg(unix)]

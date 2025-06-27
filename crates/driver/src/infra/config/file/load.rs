@@ -7,6 +7,7 @@ use {
             config::file,
             liquidity,
             mempool,
+            notify,
             simulator,
             solver::{self, BadTokenDetection, SolutionMerging},
         },
@@ -309,6 +310,15 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                     api_key: config.api_key,
                     http_timeout: config.http_timeout,
                 }),
+        },
+        liquidity_sources_notifier: notify::liquidity_sources::config::Config {
+            liquorice: config.liquidity_sources_notifier.liquorice.map(|config| {
+                notify::liquidity_sources::config::Liquorice {
+                    base_url: config.base_url.clone(),
+                    api_key: config.api_key.clone(),
+                    http_timeout: config.http_timeout,
+                }
+            }),
         },
         mempools: config
             .submission
