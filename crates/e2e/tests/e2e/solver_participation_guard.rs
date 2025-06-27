@@ -104,8 +104,7 @@ async fn non_settling_solver(web3: Web3) {
     // possible delays.
     let sleep_timeout_secs = 40 - now.elapsed().as_secs() + 5;
     println!(
-        "Sleeping for {} seconds to reset the solver participation guard cache",
-        sleep_timeout_secs
+        "Sleeping for {sleep_timeout_secs} seconds to reset the solver participation guard cache"
     );
     tokio::time::sleep(tokio::time::Duration::from_secs(sleep_timeout_secs)).await;
     // The cache is reset, and the solver is allowed to participate again.
@@ -175,8 +174,7 @@ async fn low_settling_solver(web3: Web3) {
     // possible delays.
     let sleep_timeout_secs = 40 - now.elapsed().as_secs() + 5;
     println!(
-        "Sleeping for {} seconds to reset the solver participation guard cache",
-        sleep_timeout_secs
+        "Sleeping for {sleep_timeout_secs} seconds to reset the solver participation guard cache"
     );
     tokio::time::sleep(tokio::time::Duration::from_secs(sleep_timeout_secs)).await;
     // The cache is reset, and the solver is allowed to participate again.

@@ -70,6 +70,6 @@ impl Display for Arguments {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         let Self { http_timeout } = self;
 
-        writeln!(f, "http_timeout: {:?}", http_timeout)
+        writeln!(f, "http_timeout: {http_timeout:?}")
     }
 }

@@ -112,7 +112,7 @@ async fn order_creation_checks_metadata_signer(web3: Web3) {
 }
 
 fn full_app_data_with_signer(signer: H160) -> OrderCreationAppData {
-    let app_data = format!("{{\"metadata\": {{\"signer\": \"{:?}\"}}}}", signer);
+    let app_data = format!("{{\"metadata\": {{\"signer\": \"{signer:?}\"}}}}");
     OrderCreationAppData::Full {
         full: app_data.to_string(),
     }

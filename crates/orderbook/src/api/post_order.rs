@@ -99,7 +99,7 @@ impl IntoWarpReply for AppDataValidationErrorWrapper {
     fn into_warp_reply(self) -> ApiReply {
         match self.0 {
             AppDataValidationError::Invalid(err) => with_status(
-                error("InvalidAppData", format!("{:?}", err)),
+                error("InvalidAppData", format!("{err:?}")),
                 StatusCode::BAD_REQUEST,
             ),
             AppDataValidationError::Mismatch { provided, actual } => with_status(

@@ -141,8 +141,7 @@ async fn try_replace_unreplaceable_order_test(web3: Web3) {
         partially_fillable: false,
         app_data: OrderCreationAppData::Full {
             full: format!(
-                r#"{{"version":"1.1.0","metadata":{{"replacedOrder":{{"uid":"{}"}}}}}}"#,
-                order_id
+                r#"{{"version":"1.1.0","metadata":{{"replacedOrder":{{"uid":"{order_id}"}}}}}}"#
             ),
         },
         ..Default::default()
@@ -294,8 +293,7 @@ async fn try_replace_someone_else_order_test(web3: Web3) {
         partially_fillable: false,
         app_data: OrderCreationAppData::Full {
             full: format!(
-                r#"{{"version":"1.1.0","metadata":{{"replacedOrder":{{"uid":"{}"}}}}}}"#,
-                order_id
+                r#"{{"version":"1.1.0","metadata":{{"replacedOrder":{{"uid":"{order_id}"}}}}}}"#
             ),
         },
         ..Default::default()
@@ -402,12 +400,11 @@ async fn single_replace_order_test(web3: Web3) {
               "version":"1.1.0",
                   "metadata":{{
                       "replacedOrder":{{
-                          "uid":"{}"
+                          "uid":"{order_id}"
                       }},
                       "customStuff": 20
                   }}
-              }}"#,
-        order_id
+              }}"#
     );
 
     // Replace order

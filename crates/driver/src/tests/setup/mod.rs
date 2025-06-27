@@ -454,8 +454,7 @@ impl Pool {
                 / (eth::U256::from(1000) * quote_buy_amount);
         if reserve_a_min > reserve_a_max {
             panic!(
-                "Unexpected calculated reserves. min: {:?}, max: {:?}",
-                reserve_a_min, reserve_a_max
+                "Unexpected calculated reserves. min: {reserve_a_min:?}, max: {reserve_a_max:?}"
             );
         }
         Self {
@@ -485,8 +484,7 @@ impl Pool {
             / (eth::U256::from(997) * quote_sell_amount);
         if reserve_b_min > reserve_b_max {
             panic!(
-                "Unexpected calculated reserves. min: {:?}, max: {:?}",
-                reserve_b_min, reserve_b_max
+                "Unexpected calculated reserves. min: {reserve_b_min:?}, max: {reserve_b_max:?}"
             );
         }
         Self {

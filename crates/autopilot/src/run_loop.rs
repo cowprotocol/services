@@ -798,7 +798,7 @@ impl RunLoop {
         let outcome = match result {
             Ok(_) => "success".to_string(),
             Err(SettleError::Timeout) => "timeout".to_string(),
-            Err(SettleError::Other(err)) => format!("driver failed: {}", err),
+            Err(SettleError::Other(err)) => format!("driver failed: {err}"),
         };
 
         tokio::spawn(async move {
