@@ -596,6 +596,11 @@ mod test {
             interaction.target,
             eth::H160::from_slice(&hex!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")).into(),
         );
-        assert_eq!(interaction.call_data.0.as_slice(), hex!("095ea7b3000000000000000000000000000000000022d473030f116ddee9f6b43ac78ba3ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"));
+        assert_eq!(
+            interaction.call_data.0.as_slice(),
+            hex!(
+                "095ea7b3000000000000000000000000000000000022d473030f116ddee9f6b43ac78ba3ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+            )
+        );
     }
 }

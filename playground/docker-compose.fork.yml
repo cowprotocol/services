@@ -180,5 +180,22 @@ services:
     ports:
       - 8001:80
 
+  tempo:
+    image: grafana/tempo:latest
+    ports:
+      - "4317:4317" # OTLP gRPC
+    command: [ "-config.file=/etc/tempo.yaml" ]
+    volumes:
+      - ./tempo.yaml:/etc/tempo.yaml
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_AUTH_DISABLE_LOGIN_FORM=true
+
 volumes:
   postgres:

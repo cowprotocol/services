@@ -44,6 +44,7 @@ use {
     hyper::StatusCode,
     model::order::{BuyTokenDestination, SellTokenSource},
     number::serialization::HexOrDecimalU256,
+    observe::config::ObserveConfig,
     primitive_types::H160,
     secp256k1::SecretKey,
     serde_with::serde_as,
@@ -885,8 +886,8 @@ impl Setup {
     /// server for the solver and start the HTTP server for the driver.
     pub async fn done(self) -> Test {
         observe::tracing::initialize_reentrant(
-            "driver=trace,driver::tests::setup::blockchain=debug,warn",
-            false,
+            &ObserveConfig::default()
+                .with_env_filter("driver=trace,driver::tests::setup::blockchain=debug,warn"),
         );
 
         if let Some(name) = self.name.as_ref() {
