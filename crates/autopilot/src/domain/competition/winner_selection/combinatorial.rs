@@ -1367,7 +1367,7 @@ mod tests {
         match s.to_lowercase().as_str() {
             "buy" => Ok(order::Side::Buy),
             "sell" => Ok(order::Side::Sell),
-            _ => Err(serde::de::Error::custom(format!("Invalid side: {}", s))),
+            _ => Err(serde::de::Error::custom(format!("Invalid side: {s}"))),
         }
     }
 }

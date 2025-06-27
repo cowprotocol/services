@@ -109,8 +109,7 @@ fn fee_policy_from(
         },
         database::fee_policies::FeePolicyKind::PriceImprovement => {
             let quote = quote.context(format!(
-                "missing price improvement quote for order '{:?}'",
-                order_uid
+                "missing price improvement quote for order '{order_uid:?}'"
             ))?;
             let gas_amount =
                 BigRational::from_f64(quote.gas_amount).context("invalid quote gas amount")?;

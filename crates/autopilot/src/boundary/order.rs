@@ -29,9 +29,11 @@ pub fn to_domain(
         owner: order.metadata.owner.into(),
         partially_fillable: order.data.partially_fillable,
         executed: remaining_order.executed_amount.into(),
-        pre_interactions: order_is_untouched
-            .then(|| order.interactions.pre.into_iter().map(Into::into).collect())
-            .unwrap_or_default(),
+        pre_interactions: if order_is_untouched {
+            order.interactions.pre.into_iter().map(Into::into).collect()
+        } else {
+            Default::default()
+        },
         post_interactions: order
             .interactions
             .post
