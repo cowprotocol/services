@@ -885,8 +885,8 @@ impl Setup {
     /// server for the solver and start the HTTP server for the driver.
     pub async fn done(self) -> Test {
         observe::tracing::initialize_reentrant(
-            "driver=trace,driver::tests::setup::blockchain=debug,warn",
-            false,
+            &observe::Config::default()
+                .with_env_filter("driver=trace,driver::tests::setup::blockchain=debug,warn"),
         );
 
         if let Some(name) = self.name.as_ref() {

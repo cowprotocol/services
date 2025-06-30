@@ -401,7 +401,8 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn mainnet() {
-        observe::tracing::initialize_reentrant("shared=debug", false);
+        observe::tracing::initialize(&observe::Config::default().with_env_filter("shared=debug"));
+
         let node = std::env::var("NODE_URL").unwrap().parse().unwrap();
         let receiver = current_block_stream(node, Duration::from_secs(1))
             .await
