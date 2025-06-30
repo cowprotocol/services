@@ -16,10 +16,7 @@ use {
     ethcontract::errors::DeployError,
     futures::{FutureExt, StreamExt},
     model::{DomainSeparator, order::BUY_ETH_ADDRESS},
-    observe::{
-        Config,
-        metrics::{DEFAULT_METRICS_PORT, serve_metrics},
-    },
+    observe::metrics::{DEFAULT_METRICS_PORT, serve_metrics},
     order_validation,
     shared::{
         account_balances,
@@ -53,7 +50,7 @@ use {
 
 pub async fn start(args: impl Iterator<Item = String>) {
     let args = Arguments::parse_from(args);
-    let obs_config = Config::new(
+    let obs_config = observe::Config::new(
         args.shared.logging.log_filter.as_str(),
         args.shared.logging.log_stderr_threshold,
         args.shared.logging.use_json_logs,

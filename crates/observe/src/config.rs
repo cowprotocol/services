@@ -4,13 +4,13 @@ use {core::time::Duration, tracing::level_filters::LevelFilter};
 pub struct Config {
     /// Filters spans and events based on a set of filter directives
     /// https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html
-    pub env_filter: String,
+    pub(crate) env_filter: String,
     /// Minimum level threshold for stderr output
-    pub stderr_threshold: LevelFilter,
+    pub(crate) stderr_threshold: LevelFilter,
     /// Output log events as JSON
-    pub use_json_format: bool,
+    pub(crate) use_json_format: bool,
     /// Tracing config
-    pub tracing: Option<TracingConfig>,
+    pub(crate) tracing: Option<TracingConfig>,
 }
 
 impl Config {

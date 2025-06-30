@@ -10,7 +10,6 @@ use {
     crate::nodes::{NODE_HOST, Node},
     anyhow::{Result, anyhow},
     ethcontract::futures::FutureExt,
-    observe::Config,
     shared::ethrpc::{Web3, create_test_transport},
     std::{
         future::Future,
@@ -184,7 +183,7 @@ async fn run<F, Fut, T>(
     Fut: Future<Output = ()>,
     T: AsRef<str>,
 {
-    let obs_config = Config::new(
+    let obs_config = observe::Config::new(
         &with_default_filters(filters).join(","),
         tracing::Level::ERROR.into(),
         false,

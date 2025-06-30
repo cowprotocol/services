@@ -379,7 +379,6 @@ mod tests {
         chain::Chain,
         contracts::{BalancerV2Vault, IUniswapV3Factory},
         hex_literal::hex,
-        observe::Config,
         std::{env, time::Duration},
         web3::types::{
             Action,
@@ -770,7 +769,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn mainnet_univ3() {
-        observe::tracing::initialize(&Config::default().with_env_filter("shared=debug"));
+        observe::tracing::initialize(&observe::Config::default().with_env_filter("shared=debug"));
         let http = create_env_test_transport();
         let web3 = Web3::new(http);
         let base_tokens = vec![testlib::tokens::WETH];

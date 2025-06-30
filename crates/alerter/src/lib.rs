@@ -8,7 +8,6 @@ use {
     clap::Parser,
     model::order::{BUY_ETH_ADDRESS, OrderClass, OrderKind, OrderStatus, OrderUid},
     number::serialization::HexOrDecimalU256,
-    observe::Config,
     primitive_types::{H160, U256},
     prometheus::IntGauge,
     reqwest::Client,
@@ -387,7 +386,7 @@ struct Arguments {
 
 pub async fn start(args: impl Iterator<Item = String>) {
     let args = Arguments::parse_from(args);
-    let obs_config = Config::new(
+    let obs_config = observe::Config::new(
         "alerter=debug",
         tracing::Level::ERROR.into(),
         args.use_json_logs,
