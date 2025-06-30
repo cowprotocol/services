@@ -152,13 +152,7 @@ struct Metrics {
 
 #[cfg(test)]
 mod tests {
-    use {
-        super::*,
-        anyhow::bail,
-        futures::stream,
-        mockall::Sequence,
-        observe::config::ObserveConfig,
-    };
+    use {super::*, anyhow::bail, futures::stream, mockall::Sequence, observe::Config};
 
     #[tokio::test]
     async fn run_maintenance_no_early_exit_on_error() {
@@ -225,7 +219,7 @@ mod tests {
 
     #[tokio::test]
     async fn block_stream_retries_failed_blocks() {
-        let obs_config = ObserveConfig::default().with_env_filter("debug");
+        let obs_config = Config::default().with_env_filter("debug");
         observe::tracing::initialize(&obs_config);
 
         let mut mock_maintenance = MockMaintaining::new();

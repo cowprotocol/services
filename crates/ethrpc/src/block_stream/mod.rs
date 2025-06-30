@@ -388,7 +388,7 @@ mod tests {
         super::*,
         crate::create_env_test_transport,
         futures::StreamExt,
-        observe::config::ObserveConfig,
+        observe::Config,
         tokio::time::{Duration, timeout},
     };
 
@@ -402,7 +402,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn mainnet() {
-        observe::tracing::initialize(&ObserveConfig::default().with_env_filter("shared=debug"));
+        observe::tracing::initialize(&Config::default().with_env_filter("shared=debug"));
 
         let node = std::env::var("NODE_URL").unwrap().parse().unwrap();
         let receiver = current_block_stream(node, Duration::from_secs(1))

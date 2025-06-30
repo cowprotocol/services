@@ -32,12 +32,12 @@ pub fn prepend_panic_handler(handler: Box<dyn Fn(&std::panic::PanicHookInfo) + S
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::config::ObserveConfig};
+    use {super::*, crate::config::Config};
 
     #[test]
     #[ignore]
     fn manual_thread() {
-        let obs_config = ObserveConfig::new(
+        let obs_config = Config::new(
             "info",
             tracing::level_filters::LevelFilter::OFF,
             false,
@@ -61,7 +61,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     #[ignore]
     async fn manual_tokio() {
-        let obs_config = ObserveConfig::new(
+        let obs_config = Config::new(
             "info",
             tracing::level_filters::LevelFilter::OFF,
             false,

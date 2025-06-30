@@ -8,7 +8,7 @@ use {
     clap::Parser,
     contracts::CoWSwapEthFlow,
     ethcontract::{Account, PrivateKey},
-    observe::{config::ObserveConfig, metrics::LivenessChecking},
+    observe::{Config, metrics::LivenessChecking},
     refund_service::RefundService,
     shared::http_client::HttpClientFactory,
     sqlx::PgPool,
@@ -23,7 +23,7 @@ const DELAY_FROM_LAST_LOOP_BEFORE_UNHEALTHY: Duration = LOOP_INTERVAL.saturating
 
 pub async fn start(args: impl Iterator<Item = String>) {
     let args = Arguments::parse_from(args);
-    let obs_config = ObserveConfig::new(
+    let obs_config = Config::new(
         args.logging.log_filter.as_str(),
         args.logging.log_stderr_threshold,
         args.logging.use_json_logs,

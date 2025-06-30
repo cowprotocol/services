@@ -1,7 +1,8 @@
-use tracing::level_filters::LevelFilter;
+use {core::time::Duration, tracing::level_filters::LevelFilter};
 
 #[derive(Debug, Clone)]
-pub struct ObserveConfig {
+pub struct Config {
+    /// Filters spans and events based on a set of filter directives
     /// https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html
     pub env_filter: String,
     /// Minimum level threshold for stderr output
@@ -12,7 +13,7 @@ pub struct ObserveConfig {
     pub tracing: Option<TracingConfig>,
 }
 
-impl ObserveConfig {
+impl Config {
     pub fn new(
         env_filter: &str,
         stderr_threshold: LevelFilter,
@@ -49,7 +50,7 @@ impl ObserveConfig {
     }
 }
 
-impl Default for ObserveConfig {
+impl Default for Config {
     fn default() -> Self {
         Self {
             env_filter: "info".to_string(),
@@ -63,16 +64,19 @@ impl Default for ObserveConfig {
 #[derive(Debug, Clone, Default)]
 pub struct TracingConfig {
     /// Endpoint to send tracing info to
-    pub collector_endpoint: String,
+    pub(crate) collector_endpoint: String,
     /// Service name which will appear in spans
-    pub service_name: String,
+    pub(crate) service_name: String,
+    /// Timeout for exporting spans to collector
+    pub(crate) export_timeout: Duration,
 }
 
 impl TracingConfig {
-    pub fn new(collector_endpoint: String, service_name: String) -> Self {
+    pub fn new(collector_endpoint: String, service_name: String, export_timeout: Duration) -> Self {
         Self {
             collector_endpoint,
             service_name,
+            export_timeout,
         }
     }
 }

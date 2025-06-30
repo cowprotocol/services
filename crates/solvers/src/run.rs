@@ -6,7 +6,7 @@ use {
         infra::{cli, config},
     },
     clap::Parser,
-    observe::config::ObserveConfig,
+    observe::Config,
     std::net::SocketAddr,
     tokio::sync::oneshot,
 };
@@ -26,7 +26,7 @@ pub async fn run(
 }
 
 async fn run_with(args: cli::Args, bind: Option<oneshot::Sender<SocketAddr>>) {
-    let obs_config = ObserveConfig::new(
+    let obs_config = Config::new(
         &args.log,
         tracing::Level::ERROR.into(),
         args.use_json_logs,

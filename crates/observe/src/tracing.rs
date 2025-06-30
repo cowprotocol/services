@@ -1,6 +1,6 @@
 use {
     crate::{
-        config::ObserveConfig,
+        config::Config,
         request_id::RequestIdLayer,
         tracing_reload_handler::spawn_reload_handler,
     },
@@ -10,7 +10,7 @@ use {
         Resource,
         trace::{RandomIdGenerator, Sampler},
     },
-    std::{panic::PanicHookInfo, sync::Once, time::Duration},
+    std::{panic::PanicHookInfo, sync::Once},
     time::macros::format_description,
     tracing::level_filters::LevelFilter,
     tracing_subscriber::{
@@ -25,7 +25,7 @@ use {
 /// Initializes tracing setup that is shared between the binaries.
 /// `env_filter` has similar syntax to env_logger. It is documented at
 /// https://docs.rs/tracing-subscriber/0.2.15/tracing_subscriber/filter/struct.EnvFilter.html
-pub fn initialize(config: &ObserveConfig) {
+pub fn initialize(config: &Config) {
     set_tracing_subscriber(config);
     std::panic::set_hook(Box::new(tracing_panic_hook));
 }
@@ -34,7 +34,7 @@ pub fn initialize(config: &ObserveConfig) {
 /// are ignored.
 ///
 /// Useful for tests.
-pub fn initialize_reentrant(config: &ObserveConfig) {
+pub fn initialize_reentrant(config: &Config) {
     // The tracing subscriber below is global object so initializing it again in the
     // same process by a different thread would fail.
     static ONCE: Once = Once::new();
@@ -44,7 +44,7 @@ pub fn initialize_reentrant(config: &ObserveConfig) {
     });
 }
 
-fn set_tracing_subscriber(config: &ObserveConfig) {
+fn set_tracing_subscriber(config: &Config) {
     let initial_filter = config.env_filter.to_string();
 
     // The `tracing` APIs are heavily generic to enable zero overhead. Unfortunately
@@ -104,7 +104,7 @@ fn set_tracing_subscriber(config: &ObserveConfig) {
         let otlp_exporter = opentelemetry_otlp::SpanExporter::builder()
             .with_tonic()
             .with_endpoint(tracing_config.collector_endpoint.as_str())
-            .with_timeout(Duration::from_secs(3)) // TODO make configurable
+            .with_timeout(tracing_config.export_timeout)
             .build()
             .expect("otlp exporter");
         let tracer = opentelemetry_sdk::trace::SdkTracerProvider::builder()
