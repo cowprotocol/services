@@ -50,11 +50,13 @@ use {
 
 pub async fn start(args: impl Iterator<Item = String>) {
     let args = Arguments::parse_from(args);
-    observe::tracing::initialize(
+    let obs_config = observe::Config::new(
         args.shared.logging.log_filter.as_str(),
         args.shared.logging.log_stderr_threshold,
         args.shared.logging.use_json_logs,
+        None,
     );
+    observe::tracing::initialize(&obs_config);
     tracing::info!("running order book with validated arguments:\n{}", args);
     observe::panic_hook::install();
     observe::metrics::setup_registry(Some("gp_v2_api".into()), None);
@@ -129,7 +131,7 @@ pub async fn run(args: Arguments) {
         },
     };
 
-    let hooks_contract = match args.hooks_contract_address {
+    let hooks_contract = match args.shared.hooks_contract_address {
         Some(address) => HooksTrampoline::at(&web3, address),
         None => HooksTrampoline::deployed(&web3)
             .await
@@ -343,6 +345,7 @@ pub async fn run(args: Arguments) {
             },
             balance_fetcher.clone(),
             verification,
+            args.price_estimation.quote_timeout,
         ))
     };
     let optimal_quoter = create_quoter(price_estimator, args.price_estimation.quote_verification);
@@ -415,6 +418,7 @@ pub async fn run(args: Arguments) {
             let _ = shutdown_receiver.await;
         },
         native_price_estimator,
+        args.price_estimation.quote_timeout,
     );
 
     let mut metrics_address = args.bind_address;
@@ -480,6 +484,7 @@ fn serve_api(
     address: SocketAddr,
     shutdown_receiver: impl Future<Output = ()> + Send + 'static,
     native_price_estimator: Arc<dyn NativePriceEstimating>,
+    quote_timeout: Duration,
 ) -> JoinHandle<()> {
     let filter = api::handle_all_routes(
         database,
@@ -487,6 +492,7 @@ fn serve_api(
         quotes,
         app_data,
         native_price_estimator,
+        quote_timeout,
     )
     .boxed();
     tracing::info!(%address, "serving order book");

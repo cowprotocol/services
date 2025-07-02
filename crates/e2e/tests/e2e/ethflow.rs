@@ -61,6 +61,14 @@ async fn local_node_eth_flow_indexing_after_refund() {
     run_test(eth_flow_indexing_after_refund).await;
 }
 
+/// Tests that having an order with a buy amount of
+/// 0 does not prevent other orders from getting settled.
+#[tokio::test]
+#[ignore]
+async fn local_node_eth_flow_zero_buy_amount() {
+    run_test(eth_flow_zero_buy_amount).await;
+}
+
 async fn eth_flow_tx(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
@@ -85,11 +93,52 @@ async fn eth_flow_tx(web3: Web3) {
     let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
-    let quote: OrderQuoteResponse = test_submit_quote(
-        &services,
-        &intent.to_quote_request(trader.account().address(), &onchain.contracts().weth),
-    )
-    .await;
+    let approve_call_data = {
+        let bytes = dai.approve(trader.address(), to_wei(10)).tx.data.unwrap();
+        format!("0x{}", hex::encode(&bytes.0))
+    };
+
+    let hash = services
+        .put_app_data(
+            None,
+            &format!(
+                r#"{{
+    "metadata": {{
+         "hooks": {{
+             "pre": [
+                 {{
+                     "target": "{:?}",
+                     "callData": "{}",
+                     "gasLimit": "100000"
+                 }}
+             ],
+             "post": [
+                 {{
+                     "target": "{:?}",
+                     "callData": "{}",
+                     "gasLimit": "100000"
+                 }}
+             ]
+         }}
+    }}
+}}"#,
+                dai.address(),
+                approve_call_data,
+                onchain.contracts().weth.address(),
+                approve_call_data,
+            ),
+        )
+        .await
+        .unwrap();
+
+    let quote_request = OrderQuoteRequest {
+        app_data: OrderCreationAppData::Hash {
+            hash: app_data::AppDataHash(hex::decode(&hash[2..]).unwrap().try_into().unwrap()),
+        },
+        ..intent.to_quote_request(trader.account().address(), &onchain.contracts().weth)
+    };
+
+    let quote: OrderQuoteResponse = test_submit_quote(&services, &quote_request).await;
 
     let valid_to = chrono::offset::Utc::now().timestamp() as u32
         + timestamp_of_current_block_in_seconds(&web3).await.unwrap()
@@ -142,6 +191,45 @@ async fn eth_flow_tx(web3: Web3) {
         ethflow_contract,
     )
     .await;
+
+    // Pre and post interactions provided in the appdata got executed.
+    // Note that the allowance was set for the trampoline contract
+    // which proofs that the interactions were correctly sandboxed.
+    let trampoline = onchain.contracts().hooks.address();
+    let allowance = dai
+        .allowance(trampoline, trader.address())
+        .call()
+        .await
+        .unwrap();
+    assert_eq!(allowance, to_wei(10));
+
+    let allowance = onchain
+        .contracts()
+        .weth
+        .allowance(trampoline, trader.address())
+        .call()
+        .await
+        .unwrap();
+    assert_eq!(allowance, to_wei(10));
+
+    // Just to be super sure we assert that we indeed were not
+    // able to set an allowance on behalf of the settlement contract.
+    let settlement = onchain.contracts().gp_settlement.address();
+    let allowance = dai
+        .allowance(settlement, trader.address())
+        .call()
+        .await
+        .unwrap();
+    assert_eq!(allowance, 0.into());
+
+    let allowance = onchain
+        .contracts()
+        .weth
+        .allowance(settlement, trader.address())
+        .call()
+        .await
+        .unwrap();
+    assert_eq!(allowance, 0.into());
 }
 
 async fn eth_flow_without_quote(web3: Web3) {
@@ -434,8 +522,9 @@ async fn test_account_query(
         .unwrap();
     assert_eq!(query.status(), 200);
     let response = query.json::<Vec<Order>>().await.unwrap();
-    assert_eq!(response.len(), 1);
-    test_order_parameters(&response[0], order, owner, contracts, ethflow_contract).await;
+    let uid = order.uid(contracts, ethflow_contract).await;
+    let target_order = response.iter().find(|o| o.metadata.uid == uid).unwrap();
+    test_order_parameters(target_order, order, owner, contracts, ethflow_contract).await;
 }
 
 enum TradeQuery {
@@ -503,7 +592,7 @@ async fn test_order_parameters(
     );
 
     // Requires wrapping first
-    assert_eq!(response.interactions.pre.len(), 1);
+    assert!(!response.interactions.pre.is_empty());
     assert_eq!(
         response.interactions.pre[0].target,
         ethflow_contract.address()
@@ -704,6 +793,70 @@ impl EthFlowTradeIntent {
             buy_token_balance: BuyTokenDestination::Erc20,
             sell_token_balance: SellTokenSource::Erc20,
             price_quality: PriceQuality::Optimal,
+            timeout: Default::default(),
         }
     }
+}
+
+async fn eth_flow_zero_buy_amount(web3: Web3) {
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+
+    let [solver] = onchain.make_solvers(to_wei(2)).await;
+    let [trader_a, trader_b] = onchain.make_accounts(to_wei(2)).await;
+
+    // Create token with Uniswap pool for price estimation
+    let [dai] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(to_wei(DAI_PER_ETH * 1_000), to_wei(1_000))
+        .await;
+
+    let services = Services::new(&onchain).await;
+    services.start_protocol(solver).await;
+
+    let place_order = async |trader: TestAccount, buy_amount: u64| {
+        let valid_to = chrono::offset::Utc::now().timestamp() as u32
+            + timestamp_of_current_block_in_seconds(&web3).await.unwrap()
+            + 3600;
+        let ethflow_order = ExtendedEthFlowOrder(EthflowOrder {
+            buy_token: dai.address(),
+            sell_amount: to_wei(1),
+            buy_amount: buy_amount.into(),
+            valid_to,
+            partially_fillable: false,
+            quote_id: 0,
+            fee_amount: 0.into(),
+            receiver: H160([0x42; 20]),
+            app_data: Default::default(),
+        });
+
+        let ethflow_contract = onchain.contracts().ethflows.first().unwrap();
+        submit_order(
+            &ethflow_order,
+            trader.account(),
+            onchain.contracts(),
+            ethflow_contract,
+        )
+        .await;
+
+        test_order_availability_in_api(
+            &services,
+            &ethflow_order,
+            &trader.address(),
+            onchain.contracts(),
+            ethflow_contract,
+        )
+        .await;
+        ethflow_order
+    };
+
+    // In the past this would have been an order that caused the
+    // whole auction to be discarded. We place it first to ensure
+    // it's part of the auction to prevent our "good" order getting
+    // settled before we can place the "bad" order.
+    let _ = place_order(trader_a, 0).await;
+    let order_b = place_order(trader_b, 1).await;
+
+    // Although the auction contains a problematic order we can
+    // still settle good orders.
+    tracing::info!("waiting for trade");
+    test_order_was_settled(&order_b, &web3).await;
 }

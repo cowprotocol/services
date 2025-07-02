@@ -14,6 +14,7 @@ use {
     std::{
         collections::{HashMap, HashSet},
         sync::Arc,
+        time::Duration,
     },
     url::Url,
 };
@@ -95,6 +96,7 @@ impl CoinGecko {
     async fn bulk_fetch_denominated_in_eth(
         &self,
         tokens: &HashSet<Token>,
+        timeout: Duration,
     ) -> Result<HashMap<Token, f64>, PriceEstimationError> {
         let mut url = crate::url::join(&self.base_url, &self.chain);
         metrics::batch_size(tokens.len());
@@ -103,14 +105,14 @@ impl CoinGecko {
                 "contract_addresses",
                 &tokens
                     .iter()
-                    .map(|token| format!("{:#x}", token))
+                    .map(|token| format!("{token:#x}"))
                     .collect::<Vec<_>>()
                     .join(","),
             )
             .append_pair("vs_currencies", "eth")
             .append_pair("precision", "full");
 
-        let mut builder = self.client.get(url.clone());
+        let mut builder = self.client.get(url.clone()).timeout(timeout);
         if let Some(ref api_key) = self.api_key {
             builder = builder.header(Self::AUTHORIZATION, api_key)
         }
@@ -145,13 +147,14 @@ impl CoinGecko {
     async fn bulk_fetch_denominated_in_token(
         &self,
         mut tokens: HashSet<Token>,
+        timeout: Duration,
     ) -> Result<HashMap<H160, NativePriceEstimateResult>, PriceEstimationError> {
         tokens.insert(self.denominator.address);
 
         let tokens_vec: Vec<_> = tokens.iter().cloned().collect();
 
         let (prices_in_eth, infos) = tokio::try_join!(
-            self.bulk_fetch_denominated_in_eth(&tokens),
+            self.bulk_fetch_denominated_in_eth(&tokens, timeout),
             self.infos.get_token_infos(&tokens_vec).map(Result::Ok),
         )?;
 
@@ -224,8 +227,10 @@ impl NativePriceBatchFetching for CoinGecko {
     fn fetch_native_prices(
         &'_ self,
         tokens: HashSet<Token>,
+        timeout: Duration,
     ) -> BoxFuture<'_, Result<HashMap<H160, NativePriceEstimateResult>, PriceEstimationError>> {
-        self.bulk_fetch_denominated_in_token(tokens).boxed()
+        self.bulk_fetch_denominated_in_token(tokens, timeout)
+            .boxed()
     }
 
     fn max_batch_size(&self) -> usize {
@@ -239,9 +244,15 @@ impl NativePriceBatchFetching for CoinGecko {
 }
 
 impl NativePriceEstimating for CoinGecko {
-    fn estimate_native_price(&self, token: Token) -> BoxFuture<'_, NativePriceEstimateResult> {
+    fn estimate_native_price(
+        &self,
+        token: Token,
+        timeout: Duration,
+    ) -> BoxFuture<'_, NativePriceEstimateResult> {
         async move {
-            let prices = self.fetch_native_prices(HashSet::from([token])).await?;
+            let prices = self
+                .fetch_native_prices(HashSet::from([token]), timeout)
+                .await?;
             prices
                 .get(&token)
                 .ok_or(PriceEstimationError::NoLiquidity)?
@@ -303,7 +314,10 @@ mod metrics {
 mod tests {
     use {
         super::*,
-        crate::token_info::{MockTokenInfoFetching, TokenInfo},
+        crate::{
+            price_estimation::HEALTHY_PRICE_ESTIMATION_TIME,
+            token_info::{MockTokenInfoFetching, TokenInfo},
+        },
         std::env,
     };
 
@@ -392,7 +406,10 @@ mod tests {
         )
         .unwrap();
 
-        let estimated_price = instance.estimate_native_price(native_token).await.unwrap();
+        let estimated_price = instance
+            .estimate_native_price(native_token, HEALTHY_PRICE_ESTIMATION_TIME)
+            .await
+            .unwrap();
         // Since the WETH precise price against ETH is not always exact to 1.0 (it can
         // vary slightly)
         assert!((0.95..=1.05).contains(&estimated_price));
@@ -412,7 +429,10 @@ mod tests {
         )
         .unwrap();
 
-        let estimated_price = instance.estimate_native_price(native_token).await.unwrap();
+        let estimated_price = instance
+            .estimate_native_price(native_token, HEALTHY_PRICE_ESTIMATION_TIME)
+            .await
+            .unwrap();
         // Since the USDT precise price against XDAI is not always exact to 1.0
         // (it can vary slightly)
         assert!((0.95..=1.05).contains(&estimated_price));
@@ -433,7 +453,10 @@ mod tests {
         .unwrap();
 
         let estimated_price = instance
-            .fetch_native_prices(HashSet::from([usdt_token, usdc_token]))
+            .fetch_native_prices(
+                HashSet::from([usdt_token, usdc_token]),
+                HEALTHY_PRICE_ESTIMATION_TIME,
+            )
             .await
             .unwrap();
         let usdt_price = estimated_price.get(&usdt_token).unwrap().clone();
@@ -459,7 +482,10 @@ mod tests {
         .unwrap();
 
         let estimated_price = instance
-            .fetch_native_prices(HashSet::from([usdc, unknown_token]))
+            .fetch_native_prices(
+                HashSet::from([usdc, unknown_token]),
+                HEALTHY_PRICE_ESTIMATION_TIME,
+            )
             .await
             .unwrap();
         let usdc_price = estimated_price.get(&usdc).unwrap().clone();
@@ -500,9 +526,15 @@ mod tests {
         .unwrap();
 
         // usdc_price should be: ~1000000000000.0
-        let usdc_price = instance.estimate_native_price(usdc).await.unwrap();
+        let usdc_price = instance
+            .estimate_native_price(usdc, HEALTHY_PRICE_ESTIMATION_TIME)
+            .await
+            .unwrap();
         // wxdai_price should be: ~1.0
-        let wxdai_price = instance.estimate_native_price(wxdai).await.unwrap();
+        let wxdai_price = instance
+            .estimate_native_price(wxdai, HEALTHY_PRICE_ESTIMATION_TIME)
+            .await
+            .unwrap();
         dbg!(usdc_price, wxdai_price);
 
         // The `USDC` token only has 6 decimals whereas `wxDai` has 18. To make
@@ -548,9 +580,15 @@ mod tests {
         .unwrap();
 
         // usdc_price should be: ~0.001
-        let usdc_price = instance.estimate_native_price(usdc).await.unwrap();
+        let usdc_price = instance
+            .estimate_native_price(usdc, HEALTHY_PRICE_ESTIMATION_TIME)
+            .await
+            .unwrap();
         // wxdai_price should be: ~1.0
-        let wxdai_price = instance.estimate_native_price(wxdai).await.unwrap();
+        let wxdai_price = instance
+            .estimate_native_price(wxdai, HEALTHY_PRICE_ESTIMATION_TIME)
+            .await
+            .unwrap();
         dbg!(usdc_price, wxdai_price);
 
         // We pretended that `USDC` has 21 decimals now so we need to move it's price

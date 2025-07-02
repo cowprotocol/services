@@ -25,7 +25,6 @@ use {
 
 /// Buffered configuration.
 #[derive(Clone)]
-#[allow(dead_code)]
 pub struct Configuration {
     /// The maximum amount of concurrent batches to request.
     ///
@@ -53,6 +52,7 @@ pub trait NativePriceBatchFetching: Sync + Send + NativePriceEstimating {
     fn fetch_native_prices(
         &self,
         tokens: HashSet<H160>,
+        timeout: Duration,
     ) -> futures::future::BoxFuture<
         '_,
         Result<HashMap<H160, NativePriceEstimateResult>, PriceEstimationError>,
@@ -89,6 +89,7 @@ where
     fn estimate_native_price(
         &self,
         token: H160,
+        timeout: Duration,
     ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult> {
         async move {
             // We must subscribe before we send the request, so we get the `rx` pointing to
@@ -104,7 +105,7 @@ where
                 ))
             })?;
 
-            tokio::time::timeout(self.config.result_ready_timeout, async {
+            tokio::time::timeout(timeout, async {
                 loop {
                     match rx.recv().await {
                         Ok(value) => {
@@ -163,6 +164,7 @@ where
         requests: mpsc::UnboundedReceiver<H160>,
         results_sender: broadcast::Sender<NativePriceResult>,
     ) -> JoinHandle<()> {
+        let timeout = config.result_ready_timeout;
         tokio::task::spawn(batched_for_each(
             config,
             requests,
@@ -175,7 +177,8 @@ where
                         return;
                     }
                     let batch_map = batch.iter().cloned().collect::<HashSet<_>>();
-                    let results: Vec<_> = match inner.fetch_native_prices(batch_map).await {
+                    let results: Vec<_> = match inner.fetch_native_prices(batch_map, timeout).await
+                    {
                         Ok(results) => results
                             .into_iter()
                             .map(|(token, price)| NativePriceResult {
@@ -251,7 +254,10 @@ where
 mod tests {
     use {
         super::*,
-        crate::price_estimation::native::MockNativePriceEstimating,
+        crate::price_estimation::{
+            HEALTHY_PRICE_ESTIMATION_TIME,
+            native::MockNativePriceEstimating,
+        },
         futures::future::try_join_all,
         num::ToPrimitive,
         tokio::time::sleep,
@@ -261,9 +267,12 @@ mod tests {
         fn estimate_native_price(
             &self,
             token: H160,
+            timeout: Duration,
         ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult> {
             async move {
-                let prices = self.fetch_native_prices(HashSet::from([token])).await?;
+                let prices = self
+                    .fetch_native_prices(HashSet::from([token]), timeout)
+                    .await?;
                 prices
                     .get(&token)
                     .cloned()
@@ -293,7 +302,7 @@ mod tests {
             .expect_fetch_native_prices()
             // We expect this to be requested just one, because for the second call it fetches the cached one
             .times(1)
-            .returning(|input| {
+            .returning(|input, _| {
                 let input_cloned = input.clone();
                 async move {
                     Ok(input_cloned
@@ -310,7 +319,9 @@ mod tests {
         };
 
         let buffered = BufferedRequest::with_config(native_price_batch_fetcher, config);
-        let result = buffered.estimate_native_price(token(0)).await;
+        let result = buffered
+            .estimate_native_price(token(0), HEALTHY_PRICE_ESTIMATION_TIME)
+            .await;
         assert_eq!(result.as_ref().unwrap().to_i64().unwrap(), 1);
     }
 
@@ -324,7 +335,7 @@ mod tests {
             .expect_fetch_native_prices()
             // We expect this to be requested just one, because for the second call it fetches the cached one
             .times(1)
-            .returning(|input| {
+            .returning(|input, _| {
                 let input_cloned = input.clone();
                 async move { Ok(input_cloned
                     .iter()
@@ -340,7 +351,9 @@ mod tests {
 
         let buffered = BufferedRequest::with_config(native_price_batch_fetcher, config);
 
-        let result = buffered.estimate_native_price(token(0)).await;
+        let result = buffered
+            .estimate_native_price(token(0), HEALTHY_PRICE_ESTIMATION_TIME)
+            .await;
 
         assert_eq!(result.as_ref().unwrap().to_i64().unwrap(), 1);
     }
@@ -355,7 +368,7 @@ mod tests {
             .expect_fetch_native_prices()
             // We expect this to be requested just one
             .times(1)
-            .returning(|_| {
+            .returning(|_, _| {
                 async { Err(PriceEstimationError::NoLiquidity) }.boxed()
             });
 
@@ -368,7 +381,9 @@ mod tests {
 
         let buffered = BufferedRequest::with_config(native_price_batch_fetcher, config);
 
-        let result = buffered.estimate_native_price(token(0)).await;
+        let result = buffered
+            .estimate_native_price(token(0), HEALTHY_PRICE_ESTIMATION_TIME)
+            .await;
 
         assert_eq!(result, Err(PriceEstimationError::NoLiquidity));
     }
@@ -383,7 +398,10 @@ mod tests {
             let buffered = buffered.clone();
             futures.push(tokio::spawn(async move {
                 buffered
-                    .estimate_native_price(token(i.try_into().unwrap()))
+                    .estimate_native_price(
+                        token(i.try_into().unwrap()),
+                        HEALTHY_PRICE_ESTIMATION_TIME,
+                    )
                     .await
             }));
         }
@@ -410,7 +428,7 @@ mod tests {
             .expect_fetch_native_prices()
             // We expect this to be requested exactly one time because the max batch is 20, so all petitions fit into one batch request
             .times(1)
-            .returning(|input| {
+            .returning(|input, _| {
                 let input_cloned = input.clone();
                 async move { Ok(input_cloned
                     .iter()
@@ -444,7 +462,7 @@ mod tests {
             .expect_fetch_native_prices()
             // We expect this to be requested exactly one time because the max batch is 20, so all petitions fit into one batch request
             .times(1)
-            .returning(|input| {
+            .returning(|input, _| {
                 let input_cloned = input.clone();
                 async move { Ok(input_cloned
                     .iter()
@@ -475,7 +493,10 @@ mod tests {
             let buffered = buffered.clone();
             futures.push(tokio::spawn(async move {
                 buffered
-                    .estimate_native_price(token(i.try_into().unwrap()))
+                    .estimate_native_price(
+                        token(i.try_into().unwrap()),
+                        HEALTHY_PRICE_ESTIMATION_TIME,
+                    )
                     .await
             }));
         }
@@ -502,7 +523,7 @@ mod tests {
             .expect_fetch_native_prices()
             // We expect this to be requested exactly two times because the max batch is 20, so all petitions fit into one batch request
             .times(2)
-            .returning(|input| {
+            .returning(|input, _| {
                 let input_cloned = input.clone();
                 async move { Ok(input_cloned
                     .iter()
@@ -561,7 +582,7 @@ mod tests {
             .expect_fetch_native_prices()
             // We expect this to be requested exactly two times because there are two batches petitions separated by 250 ms
             .times(2)
-            .returning(|input| {
+            .returning(|input, _| {
                 let input_cloned = input.clone();
                 async move { Ok(input_cloned
                     .iter()

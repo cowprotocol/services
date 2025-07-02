@@ -308,15 +308,15 @@ fn build_rpc_metadata(
     let mut grouped_metadata_iter = grouped_metadata.into_iter().peekable();
     while let Some((trace_id, methods)) = grouped_metadata_iter.next() {
         // New entry starts with the trace_id
-        write!(metadata_str, "{}:", trace_id)?;
+        write!(metadata_str, "{trace_id}:")?;
 
         // Followed by the method names and their indices
         let mut methods_iter = methods.into_iter().peekable();
         while let Some((method, indices)) = methods_iter.next() {
-            write!(metadata_str, "{}(", method)?;
+            write!(metadata_str, "{method}(")?;
 
             let indices_str = format_indices_as_ranges(indices)?;
-            write!(metadata_str, "{}", indices_str)?;
+            write!(metadata_str, "{indices_str}")?;
 
             write!(metadata_str, ")")?;
 
@@ -394,11 +394,11 @@ fn format_indices_as_ranges(indices: BTreeSet<usize>) -> anyhow::Result<String> 
 ///   represented as a range using two dots (e.g., "start..last").
 fn append_sequence(buffer: &mut String, start: usize, last: usize) -> core::fmt::Result {
     if start == last {
-        write!(buffer, "{}", start)
+        write!(buffer, "{start}")
     } else if start == last - 1 {
-        write!(buffer, "{},{}", start, last)
+        write!(buffer, "{start},{last}")
     } else {
-        write!(buffer, "{}..{}", start, last)
+        write!(buffer, "{start}..{last}")
     }
 }
 

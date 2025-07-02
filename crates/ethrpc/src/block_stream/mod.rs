@@ -142,6 +142,8 @@ pub async fn current_block_stream(
                 }
             };
 
+            update_current_block_metrics(block.number);
+
             // If the block is exactly the same, ignore it.
             if previous_block.hash == block.hash {
                 continue;
@@ -342,6 +344,9 @@ pub struct Metrics {
     /// How much a new block number differs from the current block number.
     #[metric(buckets(0., 1., 2., 4., 8., 25.), labels("sign"))]
     block_stream_update_delta: prometheus::HistogramVec,
+
+    /// Records newly observed block number.
+    last_block_number: prometheus::core::GenericGauge<prometheus::core::AtomicU64>,
 }
 
 /// Updates metrics about the difference of the new block number compared to the
@@ -357,6 +362,15 @@ fn update_block_metrics(current_block: u64, new_block: u64) {
     } else {
         metric.with_label_values(&["positive"]).observe(delta.abs());
     }
+}
+
+/// Records newly observed block number in the metrics.
+fn update_current_block_metrics(block_number: u64) {
+    let metric = &Metrics::instance(observe::metrics::get_storage_registry())
+        .unwrap()
+        .last_block_number;
+
+    metric.set(block_number);
 }
 
 /// Awaits and returns the next block that will be pushed into the stream.
@@ -387,7 +401,8 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn mainnet() {
-        observe::tracing::initialize_reentrant("shared=debug", false);
+        observe::tracing::initialize(&observe::Config::default().with_env_filter("shared=debug"));
+
         let node = std::env::var("NODE_URL").unwrap().parse().unwrap();
         let receiver = current_block_stream(node, Duration::from_secs(1))
             .await

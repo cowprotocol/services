@@ -3,7 +3,12 @@ use {
     anyhow::Result,
     serde::{Serialize, de::DeserializeOwned},
     shared::price_estimation::{PriceEstimationError, native::NativePriceEstimating},
-    std::{convert::Infallible, fmt::Debug, sync::Arc, time::Instant},
+    std::{
+        convert::Infallible,
+        fmt::Debug,
+        sync::Arc,
+        time::{Duration, Instant},
+    },
     warp::{
         Filter,
         Rejection,
@@ -23,6 +28,7 @@ mod get_order_by_uid;
 mod get_order_status;
 mod get_orders_by_tx;
 mod get_solver_competition;
+mod get_solver_competition_v2;
 mod get_token_metadata;
 mod get_total_surplus;
 mod get_trades;
@@ -38,6 +44,7 @@ pub fn handle_all_routes(
     quotes: Arc<QuoteHandler>,
     app_data: Arc<app_data::Registry>,
     native_price_estimator: Arc<dyn NativePriceEstimating>,
+    quote_timeout: Duration,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
     // Note that we add a string with endpoint's name to all responses.
     // This string will be used later to report metrics.
@@ -86,15 +93,26 @@ pub fn handle_all_routes(
             box_filter(get_solver_competition::get(Arc::new(database.clone()))),
         ),
         (
+            "v2/solver_competition",
+            box_filter(get_solver_competition_v2::get(database.clone())),
+        ),
+        (
             "v1/solver_competition/latest",
             box_filter(get_solver_competition::get_latest(Arc::new(
                 database.clone(),
             ))),
         ),
+        (
+            "v2/solver_competition/latest",
+            box_filter(get_solver_competition_v2::get_latest(database.clone())),
+        ),
         ("v1/version", box_filter(version::version())),
         (
             "v1/get_native_price",
-            box_filter(get_native_price::get_native_price(native_price_estimator)),
+            box_filter(get_native_price::get_native_price(
+                native_price_estimator,
+                quote_timeout,
+            )),
         ),
         (
             "v1/get_app_data",

@@ -1,8 +1,4 @@
-use {
-    crate::domain::liquidity,
-    ethereum_types::U256,
-    std::collections::BTreeMap,
-};
+use {crate::domain::liquidity, ethereum_types::U256, std::collections::BTreeMap};
 
 /// State for a UniswapV3-like concentrated liquidity pool.
 #[derive(Clone, Debug)]

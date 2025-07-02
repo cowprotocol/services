@@ -228,9 +228,8 @@ impl Inner {
             };
 
             for request in self.requests_for_order(&order) {
-                tracing::error!(order =% order.uid, ?request, "finding route");
+                tracing::trace!(order =% order.uid, ?request, "finding route");
                 if let Some(solution) = compute_solution(request).await {
-                    tracing::error!("found solution");
                     if sender.send(solution).is_err() {
                         tracing::debug!("deadline hit, receiver dropped");
                     }

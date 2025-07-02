@@ -232,9 +232,17 @@ pub struct Arguments {
     #[clap(long, env, default_value = "0s", value_parser = humantime::parse_duration)]
     pub run_loop_native_price_timeout: Duration,
 
+    #[clap(long, env)]
+    /// When set, enables combinatorial auctions for auctions with a deadline
+    /// later than this timestamp.
+    // TODO: Remove after the cutover has fully taken effect.
+    pub combinatorial_auctions_cutover: Option<chrono::DateTime<chrono::Utc>>,
+
     #[clap(long, env, default_value = "1")]
     /// The maximum number of winners per auction. Each winner will be allowed
     /// to settle their winning orders at the same time.
+    /// This setting only applies to auctions occurring after
+    /// `combinatorial_auctions_cutover`.
     pub max_winners_per_auction: NonZeroUsize,
 
     #[clap(long, env, default_value = "3")]
@@ -372,97 +380,85 @@ impl std::fmt::Display for Arguments {
             cow_amm_configs,
             max_run_loop_delay,
             run_loop_native_price_timeout,
+            combinatorial_auctions_cutover,
             max_winners_per_auction,
             archive_node_url,
             max_solutions_per_solver,
             db_based_solver_participation_guard,
         } = self;
 
-        write!(f, "{}", shared)?;
-        write!(f, "{}", order_quoting)?;
-        write!(f, "{}", http_client)?;
-        write!(f, "{}", token_owner_finder)?;
-        write!(f, "{}", price_estimation)?;
+        write!(f, "{shared}")?;
+        write!(f, "{order_quoting}")?;
+        write!(f, "{http_client}")?;
+        write!(f, "{token_owner_finder}")?;
+        write!(f, "{price_estimation}")?;
         display_option(f, "tracing_node_url", tracing_node_url)?;
-        writeln!(f, "ethflow_contracts: {:?}", ethflow_contracts)?;
-        writeln!(f, "ethflow_indexing_start: {:?}", ethflow_indexing_start)?;
-        writeln!(f, "metrics_address: {}", metrics_address)?;
+        writeln!(f, "ethflow_contracts: {ethflow_contracts:?}")?;
+        writeln!(f, "ethflow_indexing_start: {ethflow_indexing_start:?}")?;
+        writeln!(f, "metrics_address: {metrics_address}")?;
         let _intentionally_ignored = db_url;
         writeln!(f, "db_url: SECRET")?;
-        writeln!(f, "skip_event_sync: {}", skip_event_sync)?;
-        writeln!(f, "allowed_tokens: {:?}", allowed_tokens)?;
-        writeln!(f, "unsupported_tokens: {:?}", unsupported_tokens)?;
-        writeln!(f, "pool_cache_lru_size: {}", pool_cache_lru_size)?;
-        writeln!(f, "native_price_estimators: {}", native_price_estimators)?;
+        writeln!(f, "skip_event_sync: {skip_event_sync}")?;
+        writeln!(f, "allowed_tokens: {allowed_tokens:?}")?;
+        writeln!(f, "unsupported_tokens: {unsupported_tokens:?}")?;
+        writeln!(f, "pool_cache_lru_size: {pool_cache_lru_size}")?;
+        writeln!(f, "native_price_estimators: {native_price_estimators}")?;
         writeln!(
             f,
-            "min_order_validity_period: {:?}",
-            min_order_validity_period
+            "min_order_validity_period: {min_order_validity_period:?}"
         )?;
-        writeln!(f, "banned_users: {:?}", banned_users)?;
-        writeln!(f, "max_auction_age: {:?}", max_auction_age)?;
-        writeln!(
-            f,
-            "limit_order_price_factor: {:?}",
-            limit_order_price_factor
-        )?;
+        writeln!(f, "banned_users: {banned_users:?}")?;
+        writeln!(f, "max_auction_age: {max_auction_age:?}")?;
+        writeln!(f, "limit_order_price_factor: {limit_order_price_factor:?}")?;
         display_option(f, "trusted_tokens_url", trusted_tokens_url)?;
-        writeln!(f, "trusted_tokens: {:?}", trusted_tokens)?;
+        writeln!(f, "trusted_tokens: {trusted_tokens:?}")?;
         writeln!(
             f,
-            "trusted_tokens_update_interval: {:?}",
-            trusted_tokens_update_interval
+            "trusted_tokens_update_interval: {trusted_tokens_update_interval:?}"
         )?;
         display_list(f, "drivers", drivers.iter())?;
-        writeln!(f, "submission_deadline: {}", submission_deadline)?;
+        writeln!(f, "submission_deadline: {submission_deadline}")?;
         display_option(f, "shadow", shadow)?;
-        writeln!(f, "solve_deadline: {:?}", solve_deadline)?;
-        writeln!(f, "fee_policies: {:?}", fee_policies)?;
+        writeln!(f, "solve_deadline: {solve_deadline:?}")?;
+        writeln!(f, "fee_policies: {fee_policies:?}")?;
         writeln!(
             f,
-            "fee_policy_max_partner_fee: {:?}",
-            fee_policy_max_partner_fee
+            "fee_policy_max_partner_fee: {fee_policy_max_partner_fee:?}"
         )?;
         writeln!(
             f,
-            "order_events_cleanup_interval: {:?}",
-            order_events_cleanup_interval
+            "order_events_cleanup_interval: {order_events_cleanup_interval:?}"
         )?;
         writeln!(
             f,
-            "order_events_cleanup_threshold: {:?}",
-            order_events_cleanup_threshold
+            "order_events_cleanup_threshold: {order_events_cleanup_threshold:?}"
         )?;
-        writeln!(f, "insert_batch_size: {}", insert_batch_size)?;
+        writeln!(f, "insert_batch_size: {insert_batch_size}")?;
         writeln!(
             f,
-            "native_price_estimation_results_required: {}",
-            native_price_estimation_results_required
+            "native_price_estimation_results_required: {native_price_estimation_results_required}"
         )?;
         writeln!(
             f,
-            "max_settlement_transaction_wait: {:?}",
-            max_settlement_transaction_wait
+            "max_settlement_transaction_wait: {max_settlement_transaction_wait:?}"
         )?;
-        writeln!(f, "s3: {:?}", s3)?;
-        writeln!(f, "cow_amm_configs: {:?}", cow_amm_configs)?;
-        writeln!(f, "max_run_loop_delay: {:?}", max_run_loop_delay)?;
+        writeln!(f, "s3: {s3:?}")?;
+        writeln!(f, "cow_amm_configs: {cow_amm_configs:?}")?;
+        writeln!(f, "max_run_loop_delay: {max_run_loop_delay:?}")?;
         writeln!(
             f,
-            "run_loop_native_price_timeout: {:?}",
-            run_loop_native_price_timeout
-        )?;
-        writeln!(f, "max_winners_per_auction: {:?}", max_winners_per_auction)?;
-        writeln!(f, "archive_node_url: {:?}", archive_node_url)?;
-        writeln!(
-            f,
-            "max_solutions_per_solver: {:?}",
-            max_solutions_per_solver
+            "run_loop_native_price_timeout: {run_loop_native_price_timeout:?}"
         )?;
         writeln!(
             f,
-            "db_based_solver_participation_guard: {:?}",
-            db_based_solver_participation_guard
+            "combinatorial_auctions_cutover: {combinatorial_auctions_cutover:?}"
+        )?;
+        writeln!(f, "max_winners_per_auction: {max_winners_per_auction:?}")?;
+        writeln!(f, "archive_node_url: {archive_node_url:?}")?;
+        writeln!(f, "max_solutions_per_solver: {max_solutions_per_solver:?}")?;
+        writeln!(
+            f,
+            "db_based_solver_participation_guard: {db_based_solver_participation_guard:?}"
         )?;
         Ok(())
     }

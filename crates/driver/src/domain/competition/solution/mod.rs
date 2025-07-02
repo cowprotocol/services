@@ -54,7 +54,7 @@ pub struct Solution {
     solver: Solver,
     weth: eth::WethAddress,
     gas: Option<eth::Gas>,
-    flashloans: Vec<Flashloan>,
+    flashloans: HashMap<order::Uid, Flashloan>,
 }
 
 impl Solution {
@@ -71,7 +71,7 @@ impl Solution {
         gas: Option<eth::Gas>,
         fee_handler: FeeHandler,
         surplus_capturing_jit_order_owners: &HashSet<eth::Address>,
-        flashloans: Vec<Flashloan>,
+        flashloans: HashMap<order::Uid, Flashloan>,
     ) -> Result<Self, error::Solution> {
         // Surplus capturing JIT orders behave like Fulfillment orders. They capture
         // surplus, pay network fees and contribute to score of a solution.
@@ -343,6 +343,12 @@ impl Solution {
             }
         }
 
+        let flashloans = {
+            let mut merged = self.flashloans.clone();
+            merged.extend(other.flashloans.clone());
+            merged
+        };
+
         // Merge remaining fields
         Ok(Solution {
             id: Id::new_merged(&self.id, &other.id),
@@ -368,7 +374,7 @@ impl Solution {
                 (None, Some(gas)) => Some(gas),
                 (None, None) => None,
             },
-            flashloans: [self.flashloans.clone(), other.flashloans.clone()].concat(),
+            flashloans,
         })
     }
 

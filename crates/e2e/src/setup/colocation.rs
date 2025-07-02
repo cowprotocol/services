@@ -95,9 +95,8 @@ http-timeout = "10s"
                 r#"
 [[liquidity.uniswap-v3]]
 preset = "uniswap-v3"
-graph-url = "{}"
-"#,
-                subgraph
+graph-url = "{subgraph}"
+"#
             ),
         }
     }
@@ -136,6 +135,8 @@ merge-solutions = {merge_solutions}
 quote-using-limit-orders = {quote_using_limit_orders}
 enable-simulation-bad-token-detection = true
 enable-metrics-bad-token-detection = true
+http-time-buffer = "10ms"
+solving-share-of-deadline = 1.0
 "#
                 )
             },
@@ -229,7 +230,7 @@ mempool = "public"
 fn encode_base_tokens(tokens: impl IntoIterator<Item = H160>) -> String {
     tokens
         .into_iter()
-        .map(|token| format!(r#""{:x}""#, token))
+        .map(|token| format!(r#""{token:x}""#))
         .collect::<Vec<_>>()
         .join(",")
 }

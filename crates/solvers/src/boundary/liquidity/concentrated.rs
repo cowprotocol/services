@@ -31,33 +31,41 @@ impl BaselineSolvable for Pool {
             return None;
         }
 
-        let contract = uniswap_v3_quoter::Contract::at(&self.web3, shared::addr!("b27308f9F90D607463bb33eA1BeBb41C27CE5AB6"));
-        let res = contract.quote_exact_input_single(in_token, out_token, self.fee.into(), in_amount, 0.into()).call().await;
+        let contract = uniswap_v3_quoter::Contract::at(
+            &self.web3,
+            shared::addr!("b27308f9F90D607463bb33eA1BeBb41C27CE5AB6"),
+        );
+        let res = contract
+            .quote_exact_input_single(in_token, out_token, self.fee, in_amount, 0.into())
+            .call()
+            .await;
         tracing::error!(?res, ?in_token, ?out_token, "out_amount");
         res.ok()
 
-//         let contract = uniswap_v3_pool::Contract::at(&self.web3, self.address);
-//         let zero_for_one = in_token == self.tokens.get().0;
+        //         let contract = uniswap_v3_pool::Contract::at(&self.web3,
+        // self.address);         let zero_for_one = in_token ==
+        // self.tokens.get().0;
 
-//         let (amount0, amount1) = contract
-//             .swap(
-//                 H160::random(), // use random address since we only care about the amounts and not
-//                 // the exact calldata here
-//                 zero_for_one, // indicates whether we swap token0 for token1 or the other way
-//                 in_amount,    // positive value indicates exact input
-//                 price_limit(zero_for_one),
-//                 Default::default(), // don't pass additional data
-//             )
-//             .call()
-//             .await
-//             .ok()?;
+        //         let (amount0, amount1) = contract
+        //             .swap(
+        //                 H160::random(), // use random address since we only
+        // care about the amounts and not                 // the exact
+        // calldata here                 zero_for_one, // indicates
+        // whether we swap token0 for token1 or the other way
+        //                 in_amount,    // positive value indicates exact input
+        //                 price_limit(zero_for_one),
+        //                 Default::default(), // don't pass additional data
+        //             )
+        //             .call()
+        //             .await
+        //             .ok()?;
 
-//         tracing::error!(?amount0, ?amount1);
+        //         tracing::error!(?amount0, ?amount1);
 
-//         match zero_for_one {
-//             true => Some(abs(&amount1)),
-//             false => Some(abs(&amount0)),
-//         }
+        //         match zero_for_one {
+        //             true => Some(abs(&amount1)),
+        //             false => Some(abs(&amount0)),
+        //         }
     }
 
     async fn get_amount_in(
@@ -72,8 +80,14 @@ impl BaselineSolvable for Pool {
             return None;
         }
 
-        let contract = uniswap_v3_quoter::Contract::at(&self.web3, shared::addr!("b27308f9F90D607463bb33eA1BeBb41C27CE5AB6"));
-        let res = contract.quote_exact_output_single(in_token, out_token, self.fee.into(), out_amount, 0.into()).call().await;
+        let contract = uniswap_v3_quoter::Contract::at(
+            &self.web3,
+            shared::addr!("b27308f9F90D607463bb33eA1BeBb41C27CE5AB6"),
+        );
+        let res = contract
+            .quote_exact_output_single(in_token, out_token, self.fee, out_amount, 0.into())
+            .call()
+            .await;
         tracing::error!(?res, ?in_token, ?out_token, "in_amount");
         res.ok()
     }

@@ -1,7 +1,7 @@
 use {
     crate::{
         domain::{competition, eth, liquidity},
-        infra::{Solver, solver::Config},
+        infra::Solver,
         util::Bytes,
     },
     app_data::AppDataHash,
@@ -10,7 +10,7 @@ use {
         DomainSeparator,
         order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
     },
-    std::str::FromStr,
+    std::{collections::HashMap, str::FromStr},
 };
 
 #[derive(derive_more::From)]
@@ -23,7 +23,7 @@ impl Solutions {
         liquidity: &[liquidity::Liquidity],
         weth: eth::WethAddress,
         solver: Solver,
-        solver_config: &Config,
+        flashloan_hints: &HashMap<competition::order::Uid, eth::Flashloan>,
     ) -> Result<Vec<competition::Solution>, super::Error> {
         self.0.solutions
             .into_iter()
@@ -32,13 +32,13 @@ impl Solutions {
                     competition::solution::Id::new(solution.id),
                     solution
                         .trades
-                        .into_iter()
+                        .iter()
                         .map(|trade| match trade {
                             solvers_dto::solution::Trade::Fulfillment(fulfillment) => {
                                 let order = auction
                                     .orders()
                                     .iter()
-                                    .find(|order| order.uid == fulfillment.order)
+                                    .find(|order| order.uid == fulfillment.order.0)
                                     // TODO this error should reference the UID
                                     .ok_or(super::Error(
                                         "invalid order UID specified in fulfillment".to_owned()
@@ -59,7 +59,7 @@ impl Solutions {
                                 .map_err(|err| super::Error(format!("invalid fulfillment: {err}")))
                             }
                             solvers_dto::solution::Trade::Jit(jit) => {
-                                let jit_order: JitOrder = jit.order.into();
+                                let jit_order: JitOrder = jit.order.clone().into();
                                 Ok(competition::solution::Trade::Jit(
                                 competition::solution::trade::Jit::new(
                                     competition::order::Jit {
@@ -206,18 +206,24 @@ impl Solutions {
                     solver.clone(),
                     weth,
                     solution.gas.map(|gas| eth::Gas(gas.into())),
-                    solver_config.fee_handler,
+                    solver.config().fee_handler,
                     auction.surplus_capturing_jit_order_owners(),
-                    solution
-                        .flashloans
-                        .into_iter()
-                        .map(|flashloan| eth::Flashloan {
-                            lender: flashloan.lender.into(),
-                            borrower: flashloan.borrower.into(),
-                            token: flashloan.token.into(),
-                            amount: flashloan.amount.into(),
-                        })
-                        .collect(),
+                    solution.flashloans
+                        // convert the flashloan info provided by the solver
+                        .map(|f| f.iter().map(|(order, loan)|(order.into(), loan.into())).collect())
+                        // or copy over the relevant flashloan hints from the solve request
+                        .unwrap_or_else(|| solution.trades.iter()
+                            .filter_map(|t| {
+                            let solvers_dto::solution::Trade::Fulfillment(trade) = &t else {
+                                // we don't have any flashloan data on JIT orders
+                                return None;
+                            };
+                            let uid = competition::order::Uid::from(&trade.order);
+                            Some((
+                                uid,
+                                flashloan_hints.get(&uid).cloned()?,
+                            ))
+                        }).collect()),
                 )
                 .map_err(|err| match err {
                     competition::solution::error::Solution::InvalidClearingPrices => {

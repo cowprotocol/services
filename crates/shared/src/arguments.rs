@@ -233,6 +233,12 @@ pub struct Arguments {
     #[clap(long, env)]
     pub native_token_address: Option<H160>,
 
+    /// Override the address of the `HooksTrampoline` contract used for
+    /// trampolining custom order interactions. If not specified, the default
+    /// contract deployment for the current network will be used.
+    #[clap(long, env)]
+    pub hooks_contract_address: Option<H160>,
+
     /// Override address of the balancer vault contract.
     #[clap(long, env)]
     pub balancer_v2_vault_address: Option<H160>,
@@ -313,19 +319,16 @@ impl Display for OrderQuotingArguments {
 
         writeln!(
             f,
-            "eip1271_onchain_quote_validity_second: {:?}",
-            eip1271_onchain_quote_validity
+            "eip1271_onchain_quote_validity_second: {eip1271_onchain_quote_validity:?}"
         )?;
         writeln!(
             f,
-            "presign_onchain_quote_validity_second: {:?}",
-            presign_onchain_quote_validity
+            "presign_onchain_quote_validity_second: {presign_onchain_quote_validity:?}"
         )?;
         display_list(f, "price_estimation_drivers", price_estimation_drivers)?;
         writeln!(
             f,
-            "standard_offchain_quote_validity: {:?}",
-            standard_offchain_quote_validity
+            "standard_offchain_quote_validity: {standard_offchain_quote_validity:?}"
         )?;
         Ok(())
     }
@@ -356,6 +359,7 @@ impl Display for Arguments {
             network_block_interval,
             settlement_contract_address,
             native_token_address,
+            hooks_contract_address,
             balancer_v2_vault_address,
             custom_univ2_baseline_sources,
             liquidity_fetcher_max_age_update,
@@ -364,35 +368,32 @@ impl Display for Arguments {
             token_quality_cache_prefetch_time,
         } = self;
 
-        write!(f, "{}", ethrpc)?;
-        write!(f, "{}", current_block)?;
-        write!(f, "{}", tenderly)?;
-        write!(f, "{}", logging)?;
-        writeln!(f, "node_url: {}", node_url)?;
+        write!(f, "{ethrpc}")?;
+        write!(f, "{current_block}")?;
+        write!(f, "{tenderly}")?;
+        write!(f, "{logging}")?;
+        writeln!(f, "node_url: {node_url}")?;
         display_option(f, "chain_id", chain_id)?;
         display_option(f, "simulation_node_url", simulation_node_url)?;
-        writeln!(f, "gas_estimators: {:?}", gas_estimators)?;
+        writeln!(f, "gas_estimators: {gas_estimators:?}")?;
         display_secret_option(f, "blocknative_api_key", blocknative_api_key.as_ref())?;
-        writeln!(f, "base_tokens: {:?}", base_tokens)?;
-        writeln!(f, "baseline_sources: {:?}", baseline_sources)?;
-        writeln!(f, "pool_cache_blocks: {}", pool_cache_blocks)?;
+        writeln!(f, "base_tokens: {base_tokens:?}")?;
+        writeln!(f, "baseline_sources: {baseline_sources:?}")?;
+        writeln!(f, "pool_cache_blocks: {pool_cache_blocks}")?;
         writeln!(
             f,
-            "pool_cache_maximum_recent_block_age: {}",
-            pool_cache_maximum_recent_block_age
+            "pool_cache_maximum_recent_block_age: {pool_cache_maximum_recent_block_age}"
         )?;
         writeln!(
             f,
-            "pool_cache_maximum_retries: {}",
-            pool_cache_maximum_retries
+            "pool_cache_maximum_retries: {pool_cache_maximum_retries}"
         )?;
         writeln!(
             f,
-            "pool_cache_delay_between_retries: {:?}",
-            pool_cache_delay_between_retries
+            "pool_cache_delay_between_retries: {pool_cache_delay_between_retries:?}"
         )?;
-        writeln!(f, "use_internal_buffers: {}", use_internal_buffers)?;
-        writeln!(f, "balancer_factories: {:?}", balancer_factories)?;
+        writeln!(f, "use_internal_buffers: {use_internal_buffers}")?;
+        writeln!(f, "balancer_factories: {balancer_factories:?}")?;
         display_secret_option(
             f,
             "solver_competition_auth",
@@ -415,6 +416,11 @@ impl Display for Arguments {
         )?;
         display_option(
             f,
+            "hooks_contract_address",
+            &hooks_contract_address.map(|a| format!("{a:?}")),
+        )?;
+        display_option(
+            f,
             "balancer_v2_vault_address",
             &balancer_v2_vault_address.map(|a| format!("{a:?}")),
         )?;
@@ -425,23 +431,19 @@ impl Display for Arguments {
         )?;
         writeln!(
             f,
-            "liquidity_fetcher_max_age_update: {:?}",
-            liquidity_fetcher_max_age_update
+            "liquidity_fetcher_max_age_update: {liquidity_fetcher_max_age_update:?}"
         )?;
         writeln!(
             f,
-            "max_pools_to_initialize_cache: {}",
-            max_pools_to_initialize_cache
+            "max_pools_to_initialize_cache: {max_pools_to_initialize_cache}"
         )?;
         writeln!(
             f,
-            "token_quality_cache_expiry: {:?}",
-            token_quality_cache_expiry
+            "token_quality_cache_expiry: {token_quality_cache_expiry:?}"
         )?;
         writeln!(
             f,
-            "token_quality_cache_prefetch_time: {:?}",
-            token_quality_cache_prefetch_time
+            "token_quality_cache_prefetch_time: {token_quality_cache_prefetch_time:?}"
         )?;
 
         Ok(())

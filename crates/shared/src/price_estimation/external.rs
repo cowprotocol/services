@@ -1,7 +1,17 @@
 use {
     super::{
-        trade_finder::TradeEstimator, trade_verifier::TradeVerifying, PriceEstimateResult, PriceEstimating, Query
-    }, crate::trade_finding::external::ExternalTradeFinder, ethrpc::block_stream::CurrentBlockWatcher, futures::FutureExt, rate_limit::RateLimiter, reqwest::{Client, Url}, std::sync::Arc
+        PriceEstimateResult,
+        PriceEstimating,
+        Query,
+        trade_finder::TradeEstimator,
+        trade_verifier::TradeVerifying,
+    },
+    crate::trade_finding::external::ExternalTradeFinder,
+    ethrpc::block_stream::CurrentBlockWatcher,
+    futures::FutureExt,
+    rate_limit::RateLimiter,
+    reqwest::{Client, Url},
+    std::sync::Arc,
 };
 
 pub struct ExternalPriceEstimator(TradeEstimator);
@@ -12,14 +22,12 @@ impl ExternalPriceEstimator {
         client: Client,
         rate_limiter: Arc<RateLimiter>,
         block_stream: CurrentBlockWatcher,
-        timeout: std::time::Duration,
     ) -> Self {
         Self(TradeEstimator::new(
             Arc::new(ExternalTradeFinder::new(
                 driver.clone(),
                 client,
                 block_stream,
-                timeout,
             )),
             rate_limiter,
         ))
@@ -36,6 +44,7 @@ impl PriceEstimating for ExternalPriceEstimator {
             let res = self.0.estimate(query.clone()).await;
             tracing::error!(?query, ?res, "solution in API");
             res
-        }.boxed()
+        }
+        .boxed()
     }
 }

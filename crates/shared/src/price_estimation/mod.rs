@@ -86,7 +86,7 @@ impl Display for NativePriceEstimator {
             NativePriceEstimator::OneInchSpotPriceApi => "OneInchSpotPriceApi".into(),
             NativePriceEstimator::CoinGecko => "CoinGecko".into(),
         };
-        write!(f, "{}", formatter)
+        write!(f, "{formatter}")
     }
 }
 
@@ -107,7 +107,7 @@ impl Display for NativePriceEstimators {
                     .format_with(",", |estimator, f| f(&format_args!("{estimator}")))
             })
             .format(";");
-        write!(f, "{}", formatter)
+        write!(f, "{formatter}")
     }
 }
 
@@ -235,7 +235,7 @@ pub struct Arguments {
     )]
     pub quote_verification: QuoteVerificationMode,
 
-    /// Time solvers have to compute a quote
+    /// Default timeout for quote requests.
     #[clap(
         long,
         env,
@@ -303,7 +303,6 @@ pub struct CoinGecko {
     clap::ArgGroup::new("coin_gecko_buffered")
     .requires_all(&[
         "coin_gecko_debouncing_time",
-        "coin_gecko_result_ready_timeout",
         "coin_gecko_broadcast_channel_capacity"
     ])
     .multiple(true)
@@ -315,10 +314,6 @@ pub struct CoinGeckoBuffered {
     /// The delay to start counting after receiving the first request.
     #[clap(long, env, value_parser = humantime::parse_duration, group = "coin_gecko_buffered")]
     pub coin_gecko_debouncing_time: Option<Duration>,
-
-    /// The timeout to wait for the result to be ready
-    #[clap(long, env, value_parser = humantime::parse_duration, group = "coin_gecko_buffered")]
-    pub coin_gecko_result_ready_timeout: Option<Duration>,
 
     /// Maximum capacity of the broadcast channel to store the CoinGecko native
     /// prices results
@@ -368,28 +363,23 @@ impl Display for Arguments {
         )?;
         writeln!(
             f,
-            "native_price_cache_refresh: {:?}",
-            native_price_cache_refresh
+            "native_price_cache_refresh: {native_price_cache_refresh:?}"
         )?;
         writeln!(
             f,
-            "native_price_cache_max_age: {:?}",
-            native_price_cache_max_age
+            "native_price_cache_max_age: {native_price_cache_max_age:?}"
         )?;
         writeln!(
             f,
-            "native_price_prefetch_time: {:?}",
-            native_price_prefetch_time
+            "native_price_prefetch_time: {native_price_prefetch_time:?}"
         )?;
         writeln!(
             f,
-            "native_price_cache_max_update_size: {}",
-            native_price_cache_max_update_size
+            "native_price_cache_max_update_size: {native_price_cache_max_update_size}"
         )?;
         writeln!(
             f,
-            "native_price_cache_concurrent_requests: {}",
-            native_price_cache_concurrent_requests
+            "native_price_cache_concurrent_requests: {native_price_cache_concurrent_requests}"
         )?;
         display_option(
             f,
@@ -402,7 +392,7 @@ impl Display for Arguments {
             "one_inch_spot_price_api_key: {:?}",
             one_inch_api_key.as_ref(),
         )?;
-        writeln!(f, "one_inch_spot_price_api_url: {}", one_inch_url)?;
+        writeln!(f, "one_inch_spot_price_api_url: {one_inch_url}")?;
         display_secret_option(
             f,
             "coin_gecko_api_key: {:?}",
@@ -410,14 +400,6 @@ impl Display for Arguments {
         )?;
         writeln!(f, "coin_gecko_api_url: {}", coin_gecko.coin_gecko_url)?;
         writeln!(f, "coin_gecko_api_url: {}", coin_gecko.coin_gecko_url)?;
-        writeln!(
-            f,
-            "coin_gecko_result_ready_timeout: {:?}",
-            coin_gecko
-                .coin_gecko_buffered
-                .as_ref()
-                .map(|coin_gecko_buffered| coin_gecko_buffered.coin_gecko_result_ready_timeout),
-        )?;
         writeln!(
             f,
             "coin_gecko_debouncing_time: {:?}",
@@ -433,14 +415,13 @@ impl Display for Arguments {
                 |coin_gecko_buffered| coin_gecko_buffered.coin_gecko_broadcast_channel_capacity
             ),
         )?;
-        writeln!(f, "quote_inaccuracy_limit: {}", quote_inaccuracy_limit)?;
-        writeln!(f, "quote_verification: {:?}", quote_verification)?;
-        writeln!(f, "quote_timeout: {:?}", quote_timeout)?;
-        write!(f, "{}", balance_overrides)?;
+        writeln!(f, "quote_inaccuracy_limit: {quote_inaccuracy_limit}")?;
+        writeln!(f, "quote_verification: {quote_verification:?}")?;
+        writeln!(f, "quote_timeout: {quote_timeout:?}")?;
+        write!(f, "{balance_overrides}")?;
         writeln!(
             f,
-            "native_price_approximation_tokens: {:?}",
-            native_price_approximation_tokens
+            "native_price_approximation_tokens: {native_price_approximation_tokens:?}"
         )?;
 
         Ok(())
@@ -510,6 +491,7 @@ pub struct Query {
     /// used to answer the query.
     #[serde(skip_serializing)]
     pub block_dependent: bool,
+    pub timeout: Duration,
 }
 
 /// Conditions under which a given price estimate needs to work in order to be
@@ -635,12 +617,18 @@ mod tests {
 
         for repr in [
             &NativePriceEstimator::Driver(
-                ExternalSolver::from_str("baseline|http://localhost:1234/|0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2").unwrap(),
+                ExternalSolver::from_str(
+                    "baseline|http://localhost:1234/|0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+                )
+                .unwrap(),
             )
             .to_string(),
             &NativePriceEstimator::OneInchSpotPriceApi.to_string(),
             "one|http://localhost:1111/,two|http://localhost:2222/;three|http://localhost:3333/,four|http://localhost:4444/",
-            &format!("one|http://localhost:1111/,two|http://localhost:2222/;{},four|http://localhost:4444/", NativePriceEstimator::OneInchSpotPriceApi),
+            &format!(
+                "one|http://localhost:1111/,two|http://localhost:2222/;{},four|http://localhost:4444/",
+                NativePriceEstimator::OneInchSpotPriceApi
+            ),
         ] {
             assert_eq!(stringified(&parsed(repr).unwrap()), repr);
         }
@@ -656,8 +644,6 @@ mod tests {
             "https://api.coingecko.com/api/v3/simple/token_price",
             "--coin-gecko-debouncing-time",
             "300ms",
-            "--coin-gecko-result-ready-timeout",
-            "600ms",
             "--coin-gecko-broadcast-channel-capacity",
             "50",
         ];
@@ -670,10 +656,6 @@ mod tests {
         assert_eq!(
             buffered.coin_gecko_debouncing_time.unwrap(),
             Duration::from_millis(300)
-        );
-        assert_eq!(
-            buffered.coin_gecko_result_ready_timeout.unwrap(),
-            Duration::from_millis(600)
         );
         assert_eq!(buffered.coin_gecko_broadcast_channel_capacity.unwrap(), 50);
     }

@@ -90,7 +90,7 @@ impl Pool {
 #[derive(Debug, Clone)]
 pub struct Solution {
     pub trades: Vec<Trade>,
-    pub flashloans: Vec<Flashloan>,
+    pub flashloans: HashMap<order::Uid, Flashloan>,
 }
 
 #[derive(Debug, Clone)]

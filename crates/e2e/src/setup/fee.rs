@@ -42,21 +42,16 @@ impl std::fmt::Display for ProtocolFee {
             FeePolicyKind::Surplus {
                 factor,
                 max_volume_factor,
-            } => write!(
-                f,
-                "surplus:{}:{}:{}",
-                factor, max_volume_factor, order_class_str
-            ),
+            } => write!(f, "surplus:{factor}:{max_volume_factor}:{order_class_str}"),
             FeePolicyKind::Volume { factor } => {
-                write!(f, "volume:{}:{}", factor, order_class_str)
+                write!(f, "volume:{factor}:{order_class_str}")
             }
             FeePolicyKind::PriceImprovement {
                 factor,
                 max_volume_factor,
             } => write!(
                 f,
-                "priceImprovement:{}:{}:{}",
-                factor, max_volume_factor, order_class_str
+                "priceImprovement:{factor}:{max_volume_factor}:{order_class_str}"
             ),
         }
     }
@@ -70,6 +65,6 @@ impl std::fmt::Display for ProtocolFeesConfig {
             .map(|fee| fee.to_string())
             .collect::<Vec<_>>()
             .join(",");
-        write!(f, "--fee-policies={}", fees_str)
+        write!(f, "--fee-policies={fees_str}")
     }
 }

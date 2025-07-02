@@ -454,8 +454,7 @@ impl Pool {
                 / (eth::U256::from(1000) * quote_buy_amount);
         if reserve_a_min > reserve_a_max {
             panic!(
-                "Unexpected calculated reserves. min: {:?}, max: {:?}",
-                reserve_a_min, reserve_a_max
+                "Unexpected calculated reserves. min: {reserve_a_min:?}, max: {reserve_a_max:?}"
             );
         }
         Self {
@@ -485,8 +484,7 @@ impl Pool {
             / (eth::U256::from(997) * quote_sell_amount);
         if reserve_b_min > reserve_b_max {
             panic!(
-                "Unexpected calculated reserves. min: {:?}, max: {:?}",
-                reserve_b_min, reserve_b_max
+                "Unexpected calculated reserves. min: {reserve_b_min:?}, max: {reserve_b_max:?}"
             );
         }
         Self {
@@ -575,7 +573,7 @@ pub enum Calldata {
 pub struct Solution {
     pub calldata: Calldata,
     pub orders: Vec<&'static str>,
-    pub flashloans: Vec<Flashloan>,
+    pub flashloans: HashMap<order::Uid, Flashloan>,
 }
 
 impl Solution {
@@ -618,8 +616,8 @@ impl Solution {
         }
     }
 
-    pub fn flashloan(mut self, flashloan: Flashloan) -> Self {
-        self.flashloans.push(flashloan);
+    pub fn flashloan(mut self, order: order::Uid, flashloan: Flashloan) -> Self {
+        self.flashloans.insert(order, flashloan);
         self
     }
 }
@@ -887,8 +885,8 @@ impl Setup {
     /// server for the solver and start the HTTP server for the driver.
     pub async fn done(self) -> Test {
         observe::tracing::initialize_reentrant(
-            "driver=trace,driver::tests::setup::blockchain=debug,warn",
-            false,
+            &observe::Config::default()
+                .with_env_filter("driver=trace,driver::tests::setup::blockchain=debug,warn"),
         );
 
         if let Some(name) = self.name.as_ref() {

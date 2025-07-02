@@ -236,7 +236,7 @@ components:
       example: "0x0000000000000000000000000000000000000000000000000000000000000000"
     FlashloanHint:
       description: |
-        Contains information to hint at how how to make use of flashloans to settle the associated order.
+        Contains information to hint at how to make use of flashloans to settle the associated order.
       type: object
       required:
         - lender

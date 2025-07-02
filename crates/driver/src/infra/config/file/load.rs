@@ -60,7 +60,7 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                     let account =
                         ethcontract::transaction::kms::Account::new((&config).into(), &key_id.0)
                             .await
-                            .unwrap_or_else(|_| panic!("Unable to load KMS account {:?}", key_id));
+                            .unwrap_or_else(|_| panic!("Unable to load KMS account {key_id:?}"));
                     ethcontract::Account::Kms(account, None)
                 }
                 file::Account::Address(address) => ethcontract::Account::Local(address, None),
@@ -137,6 +137,10 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                 },
                 settle_queue_size: solver_config.settle_queue_size,
                 flashloans_enabled: config.flashloans_enabled,
+                fetch_liquidity_at_block: match config.liquidity.fetch_at_block {
+                    file::AtBlock::Latest => liquidity::AtBlock::Latest,
+                    file::AtBlock::Finalized => liquidity::AtBlock::Finalized,
+                },
             }
         }))
         .await,
@@ -395,8 +399,8 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                         .any(|wrapper| wrapper.lender == default_lender)
                     {
                         panic!(
-                            "Flashloan default lender {:?} not found in flashloan wrappers",
-                            default_lender
+                            "Flashloan default lender {default_lender:?} not found in flashloan \
+                             wrappers"
                         );
                     }
                 }

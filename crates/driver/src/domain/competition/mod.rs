@@ -17,7 +17,7 @@ use {
         },
         util::Bytes,
     },
-    futures::{StreamExt, stream::FuturesUnordered},
+    futures::{StreamExt, future::Either, stream::FuturesUnordered},
     itertools::Itertools,
     num::Zero,
     std::{
@@ -97,22 +97,16 @@ impl Competition {
 
     /// Solve an auction as part of this competition.
     pub async fn solve(&self, auction: Auction) -> Result<Option<Solved>, Error> {
-        let auction = &self
-            .bad_tokens
-            .filter_unsupported_orders_in_auction(auction)
-            .await;
-
-        let liquidity = match self.solver.liquidity() {
-            solver::Liquidity::Fetch => {
-                self.liquidity
-                    .fetch(
-                        &auction.liquidity_pairs(),
-                        infra::liquidity::AtBlock::Latest,
-                    )
-                    .await
-            }
+        let pairs_to_fetch = match self.solver.liquidity() {
+            solver::Liquidity::Fetch => auction.liquidity_pairs(),
             solver::Liquidity::Skip => Default::default(),
         };
+        let (liquidity, auction) = tokio::join!(
+            self.liquidity
+                .fetch(&pairs_to_fetch, self.solver.fetch_liquidity_at_block()),
+            self.without_unsupported_orders(auction)
+        );
+        let auction = &auction;
 
         // Fetch the solutions from the solver.
         let solutions = self
@@ -391,7 +385,7 @@ impl Competition {
                 auction_id,
                 solution_id,
                 submission_deadline,
-                response_sender,
+                mut response_sender,
                 tracing_span,
             } = request;
             async {
@@ -406,9 +400,25 @@ impl Competition {
                 }
 
                 observe::settling();
-                let result = self
-                    .process_settle_request(auction_id, solution_id, submission_deadline)
-                    .await;
+                let settle_fut = Box::pin(self.process_settle_request(
+                    auction_id,
+                    solution_id,
+                    submission_deadline,
+                ));
+                let closed_fut = Box::pin(response_sender.closed());
+                let result = match futures::future::select(closed_fut, settle_fut).await {
+                    // Cancel the settlement task if the sender is closed (client likely
+                    // disconnected). This is a fallback to recover from issues
+                    // like a stuck driver (e.g., stalled block stream).
+                    Either::Left((_closed, settle_fut)) => {
+                        // Add a grace period to give driver the last chance to fetch the settlement
+                        // tx.
+                        tokio::time::timeout(Duration::from_secs(1), settle_fut)
+                            .await
+                            .unwrap_or_else(|_| Err(DeadlineExceeded.into()))
+                    }
+                    Either::Right((res, _)) => res,
+                };
                 observe::settled(self.solver.name(), &result);
 
                 if let Err(err) = response_sender.send(result) {
@@ -502,6 +512,15 @@ impl Competition {
             }));
         }
         Ok(())
+    }
+
+    async fn without_unsupported_orders(&self, mut auction: Auction) -> Auction {
+        if !self.solver.config().flashloans_enabled {
+            auction.orders.retain(|o| o.app_data.flashloan().is_none());
+        }
+        self.bad_tokens
+            .filter_unsupported_orders_in_auction(auction)
+            .await
     }
 }
 

@@ -124,12 +124,6 @@ pub struct Arguments {
     #[clap(long, env)]
     pub ipfs_pinata_auth: Option<String>,
 
-    /// Override the address of the `HooksTrampoline` contract used for
-    /// trampolining custom order interactions. If not specified, the default
-    /// contract deployment for the current network will be used.
-    #[clap(long, env)]
-    pub hooks_contract_address: Option<H160>,
-
     /// Set the maximum size in bytes of order app data.
     #[clap(long, env, default_value = "8192")]
     pub app_data_size_limit: usize,
@@ -168,75 +162,58 @@ impl std::fmt::Display for Arguments {
             max_limit_orders_per_user,
             ipfs_gateway,
             ipfs_pinata_auth,
-            hooks_contract_address,
             app_data_size_limit,
             db_url,
             max_gas_per_order,
             active_order_competition_threshold,
         } = self;
 
-        write!(f, "{}", shared)?;
-        write!(f, "{}", order_quoting)?;
-        write!(f, "{}", http_client)?;
-        write!(f, "{}", token_owner_finder)?;
-        write!(f, "{}", price_estimation)?;
+        write!(f, "{shared}")?;
+        write!(f, "{order_quoting}")?;
+        write!(f, "{http_client}")?;
+        write!(f, "{token_owner_finder}")?;
+        write!(f, "{price_estimation}")?;
         display_option(f, "tracing_node_url", tracing_node_url)?;
-        writeln!(f, "bind_address: {}", bind_address)?;
+        writeln!(f, "bind_address: {bind_address}")?;
         let _intentionally_ignored = db_url;
         writeln!(f, "db_url: SECRET")?;
         writeln!(
             f,
-            "min_order_validity_period: {:?}",
-            min_order_validity_period
+            "min_order_validity_period: {min_order_validity_period:?}"
         )?;
         writeln!(
             f,
-            "max_order_validity_period: {:?}",
-            max_order_validity_period
+            "max_order_validity_period: {max_order_validity_period:?}"
         )?;
         writeln!(
             f,
-            "max_limit_order_validity_period: {:?}",
-            max_limit_order_validity_period
+            "max_limit_order_validity_period: {max_limit_order_validity_period:?}"
         )?;
-        writeln!(f, "unsupported_tokens: {:?}", unsupported_tokens)?;
-        writeln!(f, "banned_users: {:?}", banned_users)?;
-        writeln!(f, "allowed_tokens: {:?}", allowed_tokens)?;
-        writeln!(f, "pool_cache_lru_size: {}", pool_cache_lru_size)?;
+        writeln!(f, "unsupported_tokens: {unsupported_tokens:?}")?;
+        writeln!(f, "banned_users: {banned_users:?}")?;
+        writeln!(f, "allowed_tokens: {allowed_tokens:?}")?;
+        writeln!(f, "pool_cache_lru_size: {pool_cache_lru_size}")?;
         writeln!(
             f,
-            "eip1271_skip_creation_validation: {}",
-            eip1271_skip_creation_validation
-        )?;
-        writeln!(
-            f,
-            "solvable_orders_max_update_age_blocks: {}",
-            solvable_orders_max_update_age_blocks,
-        )?;
-        writeln!(f, "native_price_estimators: {}", native_price_estimators)?;
-        writeln!(
-            f,
-            "fast_price_estimation_results_required: {}",
-            fast_price_estimation_results_required
+            "eip1271_skip_creation_validation: {eip1271_skip_creation_validation}"
         )?;
         writeln!(
             f,
-            "max_limit_orders_per_user: {}",
-            max_limit_orders_per_user
+            "solvable_orders_max_update_age_blocks: {solvable_orders_max_update_age_blocks}",
         )?;
-        writeln!(f, "ipfs_gateway: {:?}", ipfs_gateway)?;
+        writeln!(f, "native_price_estimators: {native_price_estimators}")?;
+        writeln!(
+            f,
+            "fast_price_estimation_results_required: {fast_price_estimation_results_required}"
+        )?;
+        writeln!(f, "max_limit_orders_per_user: {max_limit_orders_per_user}")?;
+        writeln!(f, "ipfs_gateway: {ipfs_gateway:?}")?;
         display_secret_option(f, "ipfs_pinata_auth", ipfs_pinata_auth.as_ref())?;
-        display_option(
-            f,
-            "hooks_contract_address",
-            &hooks_contract_address.map(|a| format!("{a:?}")),
-        )?;
-        writeln!(f, "app_data_size_limit: {}", app_data_size_limit)?;
-        writeln!(f, "max_gas_per_order: {}", max_gas_per_order)?;
+        writeln!(f, "app_data_size_limit: {app_data_size_limit}")?;
+        writeln!(f, "max_gas_per_order: {max_gas_per_order}")?;
         writeln!(
             f,
-            "active_order_competition_threshold: {}",
-            active_order_competition_threshold
+            "active_order_competition_threshold: {active_order_competition_threshold}"
         )?;
 
         Ok(())

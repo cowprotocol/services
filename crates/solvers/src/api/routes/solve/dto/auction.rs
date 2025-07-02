@@ -4,10 +4,9 @@ use {
         domain::{auction, eth, liquidity, order},
         util::conv,
     },
+    bigdecimal::{FromPrimitive, ToPrimitive},
     itertools::Itertools,
     solvers_dto::auction::*,
-    bigdecimal::FromPrimitive,
-    bigdecimal::ToPrimitive,
 };
 
 /// Converts a data transfer object into its domain object representation.
@@ -202,7 +201,7 @@ mod stable_pool {
 }
 
 mod concentrated_liquidity_pool {
-    use {super::*, bigdecimal::BigDecimal, itertools::Itertools, num::BigRational};
+    use {super::*, bigdecimal::BigDecimal, itertools::Itertools};
 
     pub fn to_domain(pool: &ConcentratedLiquidityPool) -> Result<liquidity::Liquidity, Error> {
         let tokens = {
@@ -240,7 +239,9 @@ mod concentrated_liquidity_pool {
                     })
                     .collect(),
                 fee: liquidity::concentrated::Fee(
-                    (pool.fee.clone() * bps).to_u32().ok_or("invalid concentrated liquidity pool fee")?
+                    (pool.fee.clone() * bps)
+                        .to_u32()
+                        .ok_or("invalid concentrated liquidity pool fee")?,
                 ),
             }),
         })
