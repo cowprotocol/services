@@ -3,6 +3,7 @@ use {
     crate::domain::competition::{auction, solution},
 };
 
+pub mod liquidity_sources;
 mod notification;
 
 pub use notification::{
