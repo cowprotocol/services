@@ -4881,6 +4881,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+ "uuid",
  "web3",
 ]
 
@@ -4965,6 +4966,7 @@ dependencies = [
  "testlib",
  "tokio",
  "tracing",
+ "uuid",
  "web3",
 ]
 
@@ -5009,6 +5011,7 @@ dependencies = [
  "tower-http",
  "tracing",
  "tracing-opentelemetry",
+ "uuid",
  "web3",
 ]
 

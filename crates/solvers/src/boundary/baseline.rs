@@ -10,6 +10,7 @@ use {
     model::TokenPair,
     shared::baseline_solver::{self, BaseTokens, BaselineSolvable},
     std::collections::{HashMap, HashSet},
+    uuid::Uuid,
 };
 
 pub struct Solver<'a> {
@@ -45,6 +46,14 @@ impl<'a> Solver<'a> {
             request.buy.token.0,
             max_hops,
         );
+        let id = Uuid::new_v4();
+        tracing::info!(
+            ?id,
+            "newlog solving request={:?}, sell={:?}, buy={:?}",
+            request.side,
+            request.sell.token,
+            request.buy.token
+        );
 
         let (segments, _) = match request.side {
             order::Side::Buy => {
@@ -56,7 +65,7 @@ impl<'a> Solver<'a> {
                     )
                     .await?;
                     let segments = self
-                        .traverse_path(&sell.path, request.sell.token.0, sell.value)
+                        .traverse_path(&sell.path, request.sell.token.0, sell.value, id)
                         .await?;
 
                     let buy = segments.last().map(|segment| segment.output.amount);
@@ -79,18 +88,20 @@ impl<'a> Solver<'a> {
             }
             order::Side::Sell => {
                 let futures = candidates.iter().map(|path| async {
+                    tracing::info!(?id, "newlog estimating buy amount");
                     let buy = baseline_solver::estimate_buy_amount(
                         request.sell.amount,
                         path,
                         &self.onchain_liquidity,
+                        id,
                     )
                     .await;
-                    tracing::error!("computed buy amount");
+                    tracing::info!("newlog computed buy amount={:?}", buy.is_some());
                     let buy = buy?;
                     let segments = self
-                        .traverse_path(&buy.path, request.sell.token.0, request.sell.amount)
+                        .traverse_path(&buy.path, request.sell.token.0, request.sell.amount, id)
                         .await;
-                    tracing::error!(?segments, "computed segments");
+                    tracing::error!(?segments, "newlog computed segments");
                     let segments = segments?;
 
                     let sell = segments.first().map(|segment| segment.input.amount);
@@ -121,6 +132,7 @@ impl<'a> Solver<'a> {
         path: &[&OnchainLiquidity],
         mut sell_token: H160,
         mut sell_amount: U256,
+        id: Uuid,
     ) -> Option<Vec<solver::Segment<'a>>> {
         let mut segments = Vec::new();
         for liquidity in path {
@@ -134,7 +146,7 @@ impl<'a> Solver<'a> {
                 .other(&sell_token)
                 .expect("Inconsistent path");
             let buy_amount = liquidity
-                .get_amount_out(buy_token, (sell_amount, sell_token))
+                .get_amount_out(buy_token, (sell_amount, sell_token), id)
                 .await?;
 
             segments.push(solver::Segment {
@@ -276,15 +288,19 @@ enum LiquiditySource {
 }
 
 impl BaselineSolvable for OnchainLiquidity {
-    async fn get_amount_out(&self, out_token: H160, input: (U256, H160)) -> Option<U256> {
+    async fn get_amount_out(&self, out_token: H160, input: (U256, H160), id: Uuid) -> Option<U256> {
         match &self.source {
-            LiquiditySource::ConstantProduct(pool) => pool.get_amount_out(out_token, input).await,
-            LiquiditySource::WeightedProduct(pool) => pool.get_amount_out(out_token, input).await,
-            LiquiditySource::Stable(pool) => pool.get_amount_out(out_token, input).await,
-            LiquiditySource::LimitOrder(limit_order) => {
-                limit_order.get_amount_out(out_token, input).await
+            LiquiditySource::ConstantProduct(pool) => {
+                pool.get_amount_out(out_token, input, id).await
             }
-            LiquiditySource::Concentrated(pool) => pool.get_amount_out(out_token, input).await,
+            LiquiditySource::WeightedProduct(pool) => {
+                pool.get_amount_out(out_token, input, id).await
+            }
+            LiquiditySource::Stable(pool) => pool.get_amount_out(out_token, input, id).await,
+            LiquiditySource::LimitOrder(limit_order) => {
+                limit_order.get_amount_out(out_token, input, id).await
+            }
+            LiquiditySource::Concentrated(pool) => pool.get_amount_out(out_token, input, id).await,
         }
     }
 

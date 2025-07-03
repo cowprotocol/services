@@ -13,15 +13,17 @@ mempool = "public"
 
 [liquidity]
 base-tokens = [
-    "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2", # WETH
-    "0x6B175474E89094C44Da98b954EedeAC495271d0F", # DAI
-    "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", # USDC
-    "0xdAC17F958D2ee523a2206206994597C13D831ec7", # USDT
-    "0xc00e94Cb662C3520282E6f5717214004A7f26888", # COMP
-    "0x9f8F72aA9304c8B593d555F12eF6589cC3A579A2", # MKR
-    "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599", # WBTC
-    "0x6810e776880C02933D47DB1b9fc05908e5386b96", # GNO
+    "0xBB4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c", # WBNB
+    "0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d", # USDC
+    "0x2170ed0880ac9a755fd29b2688956bd959f933f8", # ETH
+    "0x0555e30da8f98308edb960aa94c0db47230d2b9c", # WBTC
+    "0x55d398326f99059ff775485246999027b3197955", # BSC-USD
+    "0xce7de646e7208a4ef112cb6ed5038fa6cc6b12e3", # TRON
 ]
 
 [[liquidity.uniswap-v2]] # Uniswap V2 configuration
 preset = "uniswap-v2"
+
+[[liquidity.uniswap-v3]]
+preset = "uniswap-v3"
+graph-url = "https://gateway.thegraph.com/api/9f9877721bab61c8ca6b9ce472608b36/subgraphs/id/G5MUbSBM7Nsrm9tH2tGQUiAF4SZDGf2qeo1xPLYjKr7K"

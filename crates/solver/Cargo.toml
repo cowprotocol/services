@@ -37,6 +37,7 @@ strum = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
 tracing = { workspace = true }
 web3 = { workspace = true }
+uuid = { version = "1.8.0", features = ["v4"] }
 
 [dev-dependencies]
 derivative = { workspace = true }

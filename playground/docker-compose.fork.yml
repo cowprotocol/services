@@ -159,26 +159,26 @@ services:
       - ./baseline.toml:/baseline.toml
     ports:
       - 9001:80
-
-  frontend:
-    build:
-      context: .
-      dockerfile: Dockerfile.cowswap
-      args:
-        - CHAIN=$CHAIN
-        - ETH_RPC_URL=http://127.0.0.1:8545
-    ports:
-      - 8000:80
-
-  explorer:
-    build:
-      context: .
-      dockerfile: Dockerfile.explorer
-      args:
-        - CHAIN=$CHAIN
-        - ETH_RPC_URL=http://127.0.0.1:8545
-    ports:
-      - 8001:80
+#
+#  frontend:
+#    build:
+#      context: .
+#      dockerfile: Dockerfile.cowswap
+#      args:
+#        - CHAIN=$CHAIN
+#        - ETH_RPC_URL=http://127.0.0.1:8545
+#    ports:
+#      - 8000:80
+#
+#  explorer:
+#    build:
+#      context: .
+#      dockerfile: Dockerfile.explorer
+#      args:
+#        - CHAIN=$CHAIN
+#        - ETH_RPC_URL=http://127.0.0.1:8545
+#    ports:
+#      - 8001:80
 
   tempo:
     image: grafana/tempo:latest

@@ -1,3 +1,4 @@
+use uuid::Uuid;
 use {
     crate::{
         baseline_solver::BaselineSolvable,
@@ -114,6 +115,7 @@ impl BaselineSolvable for WeightedPoolRef<'_> {
         &self,
         out_token: H160,
         (in_amount, in_token): (U256, H160),
+        _id: Uuid,
     ) -> Option<U256> {
         self.get_amount_out_inner(out_token, in_amount, in_token)
     }
@@ -302,6 +304,7 @@ impl BaselineSolvable for StablePoolRef<'_> {
         &self,
         out_token: H160,
         (in_amount, in_token): (U256, H160),
+        _id: Uuid,
     ) -> Option<U256> {
         self.get_amount_out_inner(out_token, in_amount, in_token)
     }
@@ -372,8 +375,8 @@ impl WeightedPool {
 }
 
 impl BaselineSolvable for WeightedPool {
-    async fn get_amount_out(&self, out_token: H160, input: (U256, H160)) -> Option<U256> {
-        self.as_pool_ref().get_amount_out(out_token, input).await
+    async fn get_amount_out(&self, out_token: H160, input: (U256, H160), id: Uuid,) -> Option<U256> {
+        self.as_pool_ref().get_amount_out(out_token, input, id).await
     }
 
     async fn get_amount_in(&self, in_token: H160, output: (U256, H160)) -> Option<U256> {
@@ -402,8 +405,8 @@ impl StablePool {
 }
 
 impl BaselineSolvable for StablePool {
-    async fn get_amount_out(&self, out_token: H160, input: (U256, H160)) -> Option<U256> {
-        self.as_pool_ref().get_amount_out(out_token, input).await
+    async fn get_amount_out(&self, out_token: H160, input: (U256, H160), id: Uuid) -> Option<U256> {
+        self.as_pool_ref().get_amount_out(out_token, input, id).await
     }
 
     async fn get_amount_in(&self, in_token: H160, output: (U256, H160)) -> Option<U256> {
@@ -521,7 +524,7 @@ mod tests {
         );
 
         assert_eq!(
-            b.get_amount_out(crv, (227_937_106_828_652_254_870_i128.into(), sdvecrv_dao))
+            b.get_amount_out(crv, (227_937_106_828_652_254_870_i128.into(), sdvecrv_dao), Uuid::new_v4())
                 .await
                 .unwrap(),
             488_192_591_864_344_551_330_i128.into()
@@ -617,7 +620,7 @@ mod tests {
         // https://etherscan.io/tx/0x75be93fff064ad46b423b9e20cee09b0ae7f741087f43e4187d4f4cf59f54229
         let amount_in = 1_886_982_823_746_269_817_650_i128.into();
         let amount_out = 1_887_770_905_i128;
-        let res_out = pool.get_amount_out(usdc, (amount_in, dai)).await;
+        let res_out = pool.get_amount_out(usdc, (amount_in, dai), Uuid::new_v4()).await;
         assert_eq!(res_out.unwrap(), amount_out.into());
     }
 

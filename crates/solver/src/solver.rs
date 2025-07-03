@@ -8,6 +8,7 @@ use {
     },
     std::{fmt::Debug, str::FromStr},
 };
+use uuid::Uuid;
 
 // Wrapper type for AWS ARN identifiers
 #[derive(Debug, Clone)]
@@ -28,8 +29,8 @@ impl FromStr for Arn {
 }
 
 impl BaselineSolvable for ConstantProductOrder {
-    async fn get_amount_out(&self, out_token: H160, input: (U256, H160)) -> Option<U256> {
-        amm_to_pool(self).get_amount_out(out_token, input).await
+    async fn get_amount_out(&self, out_token: H160, input: (U256, H160), id: Uuid) -> Option<U256> {
+        amm_to_pool(self).get_amount_out(out_token, input, id).await
     }
 
     async fn get_amount_in(&self, in_token: H160, output: (U256, H160)) -> Option<U256> {
@@ -42,9 +43,9 @@ impl BaselineSolvable for ConstantProductOrder {
 }
 
 impl BaselineSolvable for WeightedProductOrder {
-    async fn get_amount_out(&self, out_token: H160, input: (U256, H160)) -> Option<U256> {
+    async fn get_amount_out(&self, out_token: H160, input: (U256, H160), id: Uuid) -> Option<U256> {
         amm_to_weighted_pool(self)
-            .get_amount_out(out_token, input)
+            .get_amount_out(out_token, input, id)
             .await
     }
 

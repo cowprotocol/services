@@ -1,11 +1,13 @@
 //! Module containing basic path-finding logic to get quotes/routes for the best
 //! onchain liquidity.
 
+use std::time::Instant;
 use {
     ethcontract::{H160, U256},
     model::TokenPair,
     std::collections::{HashMap, HashSet},
 };
+use uuid::Uuid;
 
 /// The maximum number of hops to use when trading with AMMs along a path.
 const DEFAULT_MAX_HOPS: usize = 2;
@@ -25,6 +27,7 @@ pub trait BaselineSolvable {
         &self,
         out_token: H160,
         input: (U256, H160),
+        id: Uuid,
     ) -> impl Future<Output = Option<U256>> + Send;
 
     // Given the input token, the amount and token we want output, return the
@@ -66,7 +69,9 @@ pub async fn estimate_buy_amount<'a, L: BaselineSolvable>(
     sell_amount: U256,
     path: &[H160],
     liquidity: &'a HashMap<TokenPair, Vec<L>>,
+    id: Uuid,
 ) -> Option<Estimate<'a, U256, L>> {
+    tracing::info!(?id, "newlog path={:?}", path);
     let sell_token = path.first()?;
 
     let mut previous = (sell_amount, *sell_token, Vec::new());
@@ -74,18 +79,25 @@ pub async fn estimate_buy_amount<'a, L: BaselineSolvable>(
     for current in path.iter().skip(1) {
         let (amount, previous_token, mut path) = previous;
         let pools = liquidity.get(&TokenPair::new(*current, previous_token)?)?;
+        tracing::info!(?id, "newlog pools.len()={:?}", pools.len());
+        let start = Instant::now();
         let outputs = futures::future::join_all(pools.iter().map(|liquidity| async move {
+            tracing::info!(?id, "newlog computing liquidity out amount");
             let output = liquidity
-                .get_amount_out(*current, (amount, previous_token))
+                .get_amount_out(*current, (amount, previous_token), id)
                 .await;
+            tracing::info!(?id, "newlog output={:?}", output);
             output.map(|output| (liquidity, output))
         }))
         .await;
+        let elapsed = start.elapsed();
+        tracing::info!(?id, "newlog elapsed={:?}", elapsed);
+        tracing::info!(?id, "newlog outputs={:?}", outputs.is_empty());
         let (best_liquidity, amount) = outputs
             .into_iter()
             .flatten()
             .max_by_key(|(_, amount)| *amount)?;
-        tracing::error!(?current, "best liquidity for hop");
+        tracing::info!(?current, "newlog best liquidity for hop");
         path.push(best_liquidity);
         previous = (amount, *current, path);
     }
@@ -112,6 +124,7 @@ pub async fn estimate_sell_amount<'a, L: BaselineSolvable>(
     for current in path.iter().rev().skip(1) {
         let (amount, previous_token, mut path) = previous;
         let pools = liquidity.get(&TokenPair::new(*current, previous_token)?)?;
+        // let start = Instant::now();
         let outputs = futures::future::join_all(pools.iter().map(|liquidity| async move {
             let output = liquidity
                 .get_amount_in(*current, (amount, previous_token))
@@ -119,6 +132,7 @@ pub async fn estimate_sell_amount<'a, L: BaselineSolvable>(
             output.map(|output| (liquidity, output))
         }))
         .await;
+        // tracing::info!("newlog elapsed sell={:?}", start.elapsed());
         let (best_liquidity, amount) = outputs
             .into_iter()
             .flatten()
@@ -361,7 +375,7 @@ mod tests {
             pools[0].tokens => vec![pools[0]],
         };
 
-        assert!(estimate_buy_amount(1.into(), &path, &pools).await.is_none());
+        assert!(estimate_buy_amount(1.into(), &path, &pools, Uuid::new_v4()).await.is_none());
         assert!(
             estimate_sell_amount(1.into(), &path, &pools)
                 .await
@@ -394,7 +408,7 @@ mod tests {
         };
 
         assert_eq!(
-            estimate_buy_amount(10.into(), &path, &pools)
+            estimate_buy_amount(10.into(), &path, &pools, Uuid::new_v4())
                 .await
                 .unwrap()
                 .value,
@@ -467,7 +481,7 @@ mod tests {
             second_pair => vec![second_hop_high_slippage, second_hop_low_slippage],
         };
 
-        let buy_estimate = estimate_buy_amount(1000.into(), &path, &pools)
+        let buy_estimate = estimate_buy_amount(1000.into(), &path, &pools, Uuid::new_v4())
             .await
             .unwrap();
         assert_eq!(
@@ -486,7 +500,7 @@ mod tests {
         // For the reverse path we now expect to use the higher price for the first hop,
         // but still low slippage for the second
         path.reverse();
-        let buy_estimate = estimate_buy_amount(1000.into(), &path, &pools)
+        let buy_estimate = estimate_buy_amount(1000.into(), &path, &pools, Uuid::new_v4())
             .await
             .unwrap();
         assert_eq!(
@@ -516,7 +530,7 @@ mod tests {
             pair => vec![valid_pool, invalid_pool],
         };
 
-        let buy_estimate = estimate_buy_amount(1000.into(), &path, &pools)
+        let buy_estimate = estimate_buy_amount(1000.into(), &path, &pools, Uuid::new_v4())
             .await
             .unwrap();
         assert_eq!(buy_estimate.path, [&valid_pool]);

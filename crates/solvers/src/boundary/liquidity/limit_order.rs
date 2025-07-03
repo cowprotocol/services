@@ -1,3 +1,4 @@
+use uuid::Uuid;
 use {
     crate::domain::liquidity::limit_order::LimitOrder,
     contracts::ethcontract::{H160, U256},
@@ -10,6 +11,7 @@ impl BaselineSolvable for LimitOrder {
         &self,
         out_token: H160,
         (in_amount, in_token): (U256, H160),
+        _id: Uuid,
     ) -> Option<U256> {
         if in_token != self.taker.token.0
             || out_token != self.maker.token.0

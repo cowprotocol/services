@@ -1,3 +1,4 @@
+use uuid::Uuid;
 use {
     super::pair_provider::PairProvider,
     crate::{baseline_solver::BaselineSolvable, ethrpc::Web3, recent_block_cache::Block},
@@ -164,6 +165,7 @@ impl BaselineSolvable for Pool {
         &self,
         out_token: H160,
         (in_amount, in_token): (U256, H160),
+        id: Uuid,
     ) -> Option<U256> {
         self.get_amount_out(in_token, in_amount)
             .map(|(out_amount, token)| {

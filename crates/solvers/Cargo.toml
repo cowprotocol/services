@@ -53,6 +53,7 @@ solver = { workspace = true }
 tracing = { workspace = true }
 opentelemetry = { workspace = true }
 tracing-opentelemetry = "0.31.0"
+uuid = { version = "1.8.0", features = ["v4"] }
 
 [dev-dependencies]
 tempfile = { workspace = true }

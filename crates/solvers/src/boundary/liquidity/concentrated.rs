@@ -1,3 +1,4 @@
+use uuid::Uuid;
 use {
     contracts::{
         ethcontract::{H160, I256, U256},
@@ -23,6 +24,7 @@ impl BaselineSolvable for Pool {
         &self,
         out_token: H160,
         (in_amount, in_token): (U256, H160),
+        id: Uuid,
     ) -> Option<U256> {
         // let in_amount = I256::from_raw(in_amount);
         if TokenPair::new(out_token, in_token) != Some(self.tokens) {
@@ -35,11 +37,12 @@ impl BaselineSolvable for Pool {
             &self.web3,
             shared::addr!("b27308f9F90D607463bb33eA1BeBb41C27CE5AB6"),
         );
+        tracing::info!(?id, "newlog contract={:?}", contract.address());
         let res = contract
             .quote_exact_input_single(in_token, out_token, self.fee, in_amount, 0.into())
             .call()
             .await;
-        tracing::error!(?res, ?in_token, ?out_token, "out_amount");
+        tracing::error!(?id, ?res, ?in_token, ?out_token, "newlog out_amount");
         res.ok()
 
         //         let contract = uniswap_v3_pool::Contract::at(&self.web3,
@@ -88,7 +91,7 @@ impl BaselineSolvable for Pool {
             .quote_exact_output_single(in_token, out_token, self.fee, out_amount, 0.into())
             .call()
             .await;
-        tracing::error!(?res, ?in_token, ?out_token, "in_amount");
+        // tracing::error!(?res, ?in_token, ?out_token, "newlog in_amount");
         res.ok()
     }
 
