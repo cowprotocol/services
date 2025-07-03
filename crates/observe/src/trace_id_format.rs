@@ -110,7 +110,7 @@ where
     ) -> fmt::Result {
         let trace_id = Span::current().context().span().span_context().trace_id();
         if trace_id != TraceId::INVALID {
-            write!(writer, "[trace_id={}] ", trace_id)?;
+            write!(writer, "[trace_id={trace_id}] ")?;
         }
 
         // now let the normal formatter do all the fancy stuff
