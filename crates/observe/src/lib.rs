@@ -6,7 +6,7 @@ pub mod future;
 pub mod metrics;
 pub mod panic_hook;
 pub mod request_id;
-pub mod trace_id_format;
+mod trace_id_format;
 pub mod tracing;
 #[cfg(feature = "axum-tracing")]
 pub mod tracing_axum;

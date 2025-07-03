@@ -2,7 +2,7 @@ use {
     crate::{
         config::Config,
         request_id::RequestIdLayer,
-        trace_id_format::TraceIdFormat,
+        trace_id_format::{TraceIdFmt, TraceIdJsonFormat},
         tracing_reload_handler::spawn_reload_handler,
     },
     opentelemetry::{
@@ -87,21 +87,23 @@ fn set_tracing_subscriber(config: &Config) {
                 // structured logging
                 tracing_subscriber::fmt::layer()
                     .json()
-                    .event_format(TraceIdFormat)
+                    .event_format(TraceIdJsonFormat)
                     .with_writer(writer)
                     .with_filter($env_filter)
                     .boxed()
             } else {
                 tracing_subscriber::fmt::layer()
+                    .with_timer(timer)
+                    .map_event_format(|formatter| TraceIdFmt { inner: formatter })
                     .with_ansi(atty::is(atty::Stream::Stdout))
                     .with_writer(writer)
-                    .with_timer(timer)
                     .with_filter($env_filter)
                     .boxed()
             }
         }};
     }
 
+    // let layer = tracing_subscriber::fmt::layer();
     let enable_tokio_console: bool = std::env::var("TOKIO_CONSOLE")
         .unwrap_or("false".to_string())
         .parse()
@@ -147,6 +149,7 @@ fn set_tracing_subscriber(config: &Config) {
     let subscriber = tracing_subscriber::registry()
         .with(LevelFilter::TRACE)
         .with(RequestIdLayer)
+        // .with(TraceIdLayer)
         .with(fmt_layer!(
             env_filter,
             config.stderr_threshold,
