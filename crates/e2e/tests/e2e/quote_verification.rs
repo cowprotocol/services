@@ -1,8 +1,11 @@
 use {
+    crate::liquidity::USDT_WHALE,
     bigdecimal::{BigDecimal, Zero},
-    e2e::{setup::*, tx},
+    contracts::ERC20,
+    e2e::{nodes::forked_node::ForkedNodeApi, setup::*, tx},
     ethcontract::{H160, U256},
     ethrpc::Web3,
+    hex_literal::hex,
     model::{
         interaction::InteractionData,
         order::{BuyTokenDestination, OrderKind, SellTokenSource},
@@ -545,12 +548,22 @@ async fn usdt_quote_verification_univ3(web3: Web3) {
         .unwrap();
     let mut onchain = OnchainComponents::deployed(web3.clone()).await;
 
-    let [solver] = onchain.make_solvers_forked(to_wei(1)).await;
+    let [solver, trader] = onchain.make_solvers_forked(to_wei(1)).await;
 
     let usdc = addr!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48");
-    let usdt = addr!("dac17f958d2ee523a2206206994597c13d831ec7");
+    let token_usdt = ERC20::at(
+        &web3,
+        "0xdac17f958d2ee523a2206206994597c13d831ec7"
+            .parse()
+            .unwrap(),
+    );
     let dai = addr!("6b175474e89094c44da98b954eedeac495271d0f");
     let weth = onchain.contracts().weth.address();
+
+    let forked_node_api = web3.api::<ForkedNodeApi<_>>();
+    let usdt_whale = forked_node_api.impersonate(&USDT_WHALE).await.unwrap();
+    let amount = to_wei_with_exp(2000, 6);
+    tx!(usdt_whale, token_usdt.transfer(trader.address(), amount));
 
     // Place Orders
     let services = Services::new(&onchain).await;
@@ -561,7 +574,7 @@ async fn usdt_quote_verification_univ3(web3: Web3) {
                 "test_solver".into(),
                 solver.clone(),
                 weth,
-                vec![usdc, usdt, weth, dai],
+                vec![usdc, token_usdt.address(), weth, dai],
                 3,
                 true,
             )
@@ -582,13 +595,14 @@ async fn usdt_quote_verification_univ3(web3: Web3) {
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
         let res = services
             .submit_quote(&OrderQuoteRequest {
-                sell_token: usdt,
+                sell_token: token_usdt.address(),
                 buy_token: usdc,
                 side: OrderQuoteSide::Sell {
                     sell_amount: SellAmount::BeforeFee {
-                        value: to_wei_with_exp(1000, 18).try_into().unwrap(),
+                        value: to_wei_with_exp(1000, 6).try_into().unwrap(),
                     },
                 },
+                from: trader.address(),
                 ..Default::default()
             })
             .await;

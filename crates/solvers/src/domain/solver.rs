@@ -162,6 +162,7 @@ impl Inner {
                         .await
                     {
                         Some(route) => {
+                            tracing::info!("newlog found native price route");
                             // how many units of buy_token are bought for one unit of sell_token
                             // (buy_amount / sell_amount).
                             let price = self.native_token_price_estimation_amount.to_f64_lossy()
@@ -183,6 +184,7 @@ impl Inner {
 
             let compute_solution = async |request| -> Option<Solution> {
                 let route = boundary_solver.route(request, self.max_hops).await?;
+                tracing::info!("newlog found order route");
                 let interactions = route
                     .segments
                     .iter()
@@ -230,6 +232,7 @@ impl Inner {
             for request in self.requests_for_order(&order) {
                 tracing::trace!(order =% order.uid, ?request, "finding route");
                 if let Some(solution) = compute_solution(request).await {
+                    tracing::info!("newlog computed solution={:?}", solution);
                     if sender.send(solution).is_err() {
                         tracing::debug!("deadline hit, receiver dropped");
                     }

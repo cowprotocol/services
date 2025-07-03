@@ -36,10 +36,14 @@ impl BaselineSolvable for Pool {
         let contract = uniswap_v3_quoter::Contract::at(
             &self.web3,
             shared::addr!("b27308f9F90D607463bb33eA1BeBb41C27CE5AB6"),
+            // shared::addr!("61fFE014bA17989E743c5F6cB21bF9697530B21e"),
         );
         tracing::info!(?id, "newlog contract={:?}", contract.address());
-        let res = contract
-            .quote_exact_input_single(in_token, out_token, self.fee, in_amount, 0.into())
+        let builder = contract
+            .quote_exact_input_single(in_token, out_token, self.fee, in_amount, 0.into());
+        let tx = &builder.tx;
+        tracing::info!(?id, "newlog tx={:?}", tx);
+        let res = builder
             .call()
             .await;
         tracing::error!(?id, ?res, ?in_token, ?out_token, "newlog out_amount");

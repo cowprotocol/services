@@ -100,9 +100,7 @@ impl<'a> Solver<'a> {
                     let buy = buy?;
                     let segments = self
                         .traverse_path(&buy.path, request.sell.token.0, request.sell.amount, id)
-                        .await;
-                    tracing::error!(?segments, "newlog computed segments");
-                    let segments = segments?;
+                        .await?;
 
                     let sell = segments.first().map(|segment| segment.input.amount);
                     if sell.map(|sell| sell >= request.sell.amount) != Some(true) {

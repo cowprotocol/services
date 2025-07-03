@@ -494,8 +494,10 @@ impl OrderQuoter {
             sell_token_price,
         };
 
-        self.verify_quote(&trade_estimate, parameters, quoted_sell_amount)
-            .await?;
+        let vr = self.verify_quote(&trade_estimate, parameters, quoted_sell_amount)
+            .await;
+        tracing::info!("newlog vr={:?}", vr);
+        vr?;
 
         let quote_kind = quote_kind_from_signing_scheme(&parameters.signing_scheme);
         let quote = QuoteData {
