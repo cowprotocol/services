@@ -19,6 +19,7 @@ use {
     anyhow::{Context, anyhow},
     ethrpc::block_stream::CurrentBlockWatcher,
     futures::FutureExt,
+    observe::tracing::tracing_headers,
     reqwest::{Client, header},
     url::Url,
 };
@@ -72,6 +73,7 @@ impl ExternalTradeFinder {
                     .get(quote_endpoint)
                     .timeout(timeout)
                     .query(&order)
+                    .headers(tracing_headers())
                     .header(header::CONTENT_TYPE, "application/json")
                     .header(header::ACCEPT, "application/json");
 

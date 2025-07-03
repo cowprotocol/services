@@ -11,6 +11,7 @@ use {
     ethcontract::{H160, H256, U256},
     ethrpc::block_stream::{BlockInfo, CurrentBlockWatcher},
     number::serialization::HexOrDecimalU256,
+    observe::tracing::tracing_headers,
     reqwest::{
         Client,
         ClientBuilder,
@@ -385,7 +386,7 @@ impl DefaultZeroExApi {
 
         let path = url.path().to_owned();
         let result = async move {
-            let mut request = self.client.get(url.clone());
+            let mut request = self.client.get(url.clone()).headers(tracing_headers());
             if set_current_block_header {
                 request = request.header(
                     "X-Current-Block-Hash",

@@ -14,6 +14,7 @@ use {
     anyhow::{Context, Result, ensure},
     bigdecimal::BigDecimal,
     ethcontract::{H160, U256},
+    observe::TracingConfig,
     std::{
         fmt::{self, Display, Formatter},
         num::NonZeroU64,
@@ -103,8 +104,31 @@ pub struct OrderQuotingArguments {
 
 logging_args_with_default_filter!(
     LoggingArguments,
-    "warn,autopilot=debug,driver=debug,orderbook=debug,solver=debug,shared=debug,cow_amm=debug"
+    "info,autopilot=debug,driver=debug,orderbook=debug,solver=debug,shared=debug,cow_amm=debug"
 );
+
+#[derive(Debug, clap::Parser)]
+pub struct TracingArguments {
+    #[clap(long, env)]
+    pub tracing_collector_endpoint: Option<String>,
+    #[clap(long, env)]
+    pub tracing_level: Option<LevelFilter>,
+    #[clap(long, env, value_parser = humantime::parse_duration)]
+    pub tracing_exporter_timeout: Option<Duration>,
+}
+
+pub fn tracing_config(args: &TracingArguments, service_name: String) -> Option<TracingConfig> {
+    args.tracing_collector_endpoint.as_ref().map(|endpoint| {
+        let mut config = TracingConfig::new(endpoint.clone(), service_name);
+        if let Some(level) = args.tracing_level {
+            config = config.with_level(level);
+        }
+        if let Some(timeout) = args.tracing_exporter_timeout {
+            config = config.with_timeout(timeout);
+        }
+        config
+    })
+}
 
 #[derive(clap::Parser)]
 #[group(skip)]
@@ -120,6 +144,9 @@ pub struct Arguments {
 
     #[clap(flatten)]
     pub logging: LoggingArguments,
+
+    #[clap(flatten)]
+    pub tracing: TracingArguments,
 
     /// The Ethereum node URL to connect to.
     #[clap(long, env, default_value = "http://localhost:8545")]
@@ -366,6 +393,7 @@ impl Display for Arguments {
             max_pools_to_initialize_cache,
             token_quality_cache_expiry,
             token_quality_cache_prefetch_time,
+            tracing,
         } = self;
 
         write!(f, "{ethrpc}")?;
@@ -445,6 +473,7 @@ impl Display for Arguments {
             f,
             "token_quality_cache_prefetch_time: {token_quality_cache_prefetch_time:?}"
         )?;
+        writeln!(f, "token_quality_cache_prefetch_time: {tracing:?}")?;
 
         Ok(())
     }
