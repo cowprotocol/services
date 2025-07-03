@@ -12,8 +12,7 @@ pub fn warp_tracing(info: warp::trace::Info) -> tracing::Span {
     let parent_cx = global::get_text_map_propagator(|prop| prop.extract(&HeaderExtractor(headers)));
     let request_id = headers
         .get("X-Request-Id")
-        .map(|x| x.to_str().ok())
-        .flatten()
+        .and_then(|x| x.to_str().ok())
         .unwrap_or("");
 
     let span = tracing::info_span!("http_request",
