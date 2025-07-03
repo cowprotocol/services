@@ -5,19 +5,25 @@ use {
         trace::{TraceContextExt, TraceId},
     },
     serde::ser::{SerializeMap, Serializer as _},
-    std::io,
-    tracing::{Event, Subscriber},
+    std::{fmt, io},
+    tracing::{Event, Span, Subscriber},
     tracing_opentelemetry::OpenTelemetrySpanExt,
     tracing_serde::{AsSerde, fields::AsMap},
     tracing_subscriber::{
-        fmt::{FmtContext, FormatEvent, FormatFields, format::Writer},
+        fmt::{
+            FmtContext,
+            FormatEvent,
+            FormatFields,
+            format::{Format, Full, Writer},
+            time::FormatTime,
+        },
         registry::LookupSpan,
     },
 };
 
-pub struct TraceIdFormat;
+pub struct TraceIdJsonFormat;
 
-impl<S, N> FormatEvent<S, N> for TraceIdFormat
+impl<S, N> FormatEvent<S, N> for TraceIdJsonFormat
 where
     S: Subscriber + for<'lookup> LookupSpan<'lookup>,
     N: for<'writer> FormatFields<'writer> + 'static,
@@ -84,5 +90,30 @@ impl<'a> io::Write for WriteAdaptor<'a> {
 
     fn flush(&mut self) -> io::Result<()> {
         Ok(())
+    }
+}
+
+pub struct TraceIdFmt<T: FormatTime> {
+    pub(crate) inner: Format<Full, T>,
+}
+
+impl<S, N, T: FormatTime> FormatEvent<S, N> for TraceIdFmt<T>
+where
+    S: Subscriber + for<'a> LookupSpan<'a>,
+    N: for<'a> FormatFields<'a> + 'static,
+{
+    fn format_event(
+        &self,
+        ctx: &FmtContext<'_, S, N>,
+        mut writer: Writer<'_>,
+        event: &Event<'_>,
+    ) -> fmt::Result {
+        let trace_id = Span::current().context().span().span_context().trace_id();
+        if trace_id != TraceId::INVALID {
+            write!(writer, "[trace_id={}] ", trace_id)?;
+        }
+
+        // now let the normal formatter do all the fancy stuff
+        self.inner.format_event(ctx, writer, event)
     }
 }
