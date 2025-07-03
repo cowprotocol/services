@@ -2,6 +2,7 @@ use {
     ethcontract::jsonrpc as jsonrpc_core,
     futures::{FutureExt, future::BoxFuture},
     jsonrpc_core::types::{Call, Output, Request, Value},
+    observe::tracing::tracing_headers,
     reqwest::{Client, Url, header},
     serde::{Deserialize, Serialize, de::DeserializeOwned},
     std::{
@@ -76,6 +77,7 @@ async fn execute_rpc<T: DeserializeOwned>(
         .post(inner.url.clone())
         .header(header::CONTENT_TYPE, "application/json")
         .header("X-RPC-REQUEST-ID", id.to_string())
+        .headers(tracing_headers())
         .body(body);
     match request {
         Request::Single(Call::MethodCall(call)) => {

@@ -2,6 +2,7 @@
 
 use {
     crate::domain::solver::Solver,
+    observe::tracing_axum::{accept_trace, make_span, record_trace_id},
     std::{future::Future, net::SocketAddr, sync::Arc},
     tokio::sync::oneshot,
 };
@@ -29,7 +30,10 @@ impl Api {
             .route("/healthz", axum::routing::get(routes::healthz))
             .route("/solve", axum::routing::post(routes::solve))
             .layer(
-                tower::ServiceBuilder::new().layer(tower_http::trace::TraceLayer::new_for_http()),
+                tower::ServiceBuilder::new()
+                    .layer(tower_http::trace::TraceLayer::new_for_http().make_span_with(make_span))
+                    .map_request(accept_trace)
+                    .map_request(record_trace_id),
             )
             .with_state(Arc::new(self.solver))
             // axum's default body limit needs to be disabled to not have the default limit on top of our custom limit

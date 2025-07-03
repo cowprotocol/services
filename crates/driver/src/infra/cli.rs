@@ -1,5 +1,6 @@
 use {
     reqwest::Url,
+    shared::arguments::TracingArguments,
     std::{net::SocketAddr, path::PathBuf},
 };
 
@@ -13,9 +14,12 @@ pub struct Args {
     #[clap(
         long,
         env,
-        default_value = "warn,driver=debug,driver::infra::solver=trace,shared=debug,solver=debug"
+        default_value = "info,driver=debug,driver::infra::solver=trace,shared=debug,solver=debug"
     )]
     pub log: String,
+
+    #[clap(flatten)]
+    pub tracing: TracingArguments,
 
     /// Whether to use JSON format for the logs.
     #[clap(long, env, default_value = "false")]

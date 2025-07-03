@@ -17,6 +17,7 @@ use {
     },
     error::Error,
     futures::Future,
+    observe::tracing_axum::{accept_trace, make_span, record_trace_id},
     std::{net::SocketAddr, sync::Arc},
     tokio::sync::oneshot,
 };
@@ -47,13 +48,9 @@ impl Api {
         app_data_retriever: Option<AppDataRetriever>,
     ) -> Result<(), hyper::Error> {
         // Add middleware.
-        let mut app = axum::Router::new().layer(
-            tower::ServiceBuilder::new()
-                .layer(tower_http::limit::RequestBodyLimitLayer::new(
-                    REQUEST_BODY_LIMIT,
-                ))
-                .layer(tower_http::trace::TraceLayer::new_for_http()),
-        );
+        let mut app = axum::Router::new().layer(tower::ServiceBuilder::new().layer(
+            tower_http::limit::RequestBodyLimitLayer::new(REQUEST_BODY_LIMIT),
+        ));
 
         let tokens = tokens::Fetcher::new(&self.eth);
         let pre_processor = domain::competition::AuctionProcessor::new(
@@ -117,7 +114,14 @@ impl Api {
             app = app
                 .nest(&path, router)
                 // axum's default body limit needs to be disabled to not have the default limit on top of our custom limit
-                .layer(axum::extract::DefaultBodyLimit::disable());
+                .layer(axum::extract::DefaultBodyLimit::disable())
+                .layer(
+                tower::ServiceBuilder::new()
+                    .layer(
+                        tower_http::trace::TraceLayer::new_for_http().make_span_with(make_span),
+                    )
+                    .map_request(accept_trace)
+                    .map_request(record_trace_id));
         }
 
         let make_svc = observe::make_service_with_request_tracing!(app);

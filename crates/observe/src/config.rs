@@ -61,7 +61,7 @@ impl Default for Config {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct TracingConfig {
     /// Endpoint to send tracing info to
     pub(crate) collector_endpoint: String,
@@ -69,14 +69,37 @@ pub struct TracingConfig {
     pub(crate) service_name: String,
     /// Timeout for exporting spans to collector
     pub(crate) export_timeout: Duration,
+    /// Level of traces that should be collected
+    pub(crate) level: LevelFilter,
 }
 
 impl TracingConfig {
-    pub fn new(collector_endpoint: String, service_name: String, export_timeout: Duration) -> Self {
+    pub fn new(collector_endpoint: String, service_name: String) -> Self {
         Self {
             collector_endpoint,
             service_name,
-            export_timeout,
+            ..Default::default()
+        }
+    }
+
+    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.export_timeout = timeout;
+        self
+    }
+
+    pub fn with_level(mut self, level: LevelFilter) -> Self {
+        self.level = level;
+        self
+    }
+}
+
+impl Default for TracingConfig {
+    fn default() -> Self {
+        Self {
+            collector_endpoint: String::new(),
+            service_name: String::new(),
+            export_timeout: Duration::from_secs(10),
+            level: LevelFilter::INFO,
         }
     }
 }
