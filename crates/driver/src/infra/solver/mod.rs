@@ -264,7 +264,7 @@ impl Solver {
             .body(body)
             .headers(tracing_headers())
             .timeout(timeout);
-        if let Some(id) = observe::request_id::from_current_span() {
+        if let Some(id) = observe::distributed_tracing::request_id::from_current_span() {
             req = req.header("X-REQUEST-ID", id);
         }
         super::observe::sending_solve_request(self.config.name.as_str(), timeout);
@@ -325,7 +325,7 @@ impl Solver {
         let url = shared::url::join(&self.config.endpoint, "notify");
         super::observe::solver_request(&url, &body);
         let mut req = self.client.post(url).body(body).headers(tracing_headers());
-        if let Some(id) = observe::request_id::from_current_span() {
+        if let Some(id) = observe::distributed_tracing::request_id::from_current_span() {
             req = req.header("X-REQUEST-ID", id);
         }
         let response_size = self.config.response_size_limit_max_bytes;

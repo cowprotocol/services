@@ -114,7 +114,7 @@ impl<S: Subscriber + for<'lookup> LookupSpan<'lookup>> Layer<S> for RequestIdLay
         let Some(span) = ctx.span(id) else {
             return;
         };
-        if span.name() != crate::request_id::SPAN_NAME {
+        if span.name() != crate::distributed_tracing::request_id::SPAN_NAME {
             return;
         }
 
@@ -154,7 +154,7 @@ mod test {
         async {
             assert_eq!(
                 Some("test".to_string()),
-                crate::request_id::from_current_span()
+                crate::distributed_tracing::request_id::from_current_span()
             );
         }
         .instrument(info_span("test".to_string()))
@@ -165,7 +165,10 @@ mod test {
     async fn request_id_not_set() {
         init_tracing("debug");
         async {
-            assert_eq!(None, crate::request_id::from_current_span());
+            assert_eq!(
+                None,
+                crate::distributed_tracing::request_id::from_current_span()
+            );
         }
         .await
     }
@@ -179,7 +182,7 @@ mod test {
                     // we traverse the span hierarchy until we find a span with the request id
                     assert_eq!(
                         Some("test".to_string()),
-                        crate::request_id::from_current_span()
+                        crate::distributed_tracing::request_id::from_current_span()
                     );
                 }
                 .instrument(tracing::info_span!("wrap2", value = "value2"))
@@ -201,7 +204,7 @@ mod test {
                     // if multiple ancestors have a request id we take the closest one
                     assert_eq!(
                         Some("test_inner".to_string()),
-                        crate::request_id::from_current_span()
+                        crate::distributed_tracing::request_id::from_current_span()
                     );
                 }
                 .instrument(tracing::info_span!("wrap", value = "value"))
@@ -224,7 +227,7 @@ mod test {
                     // was instrumented with a span that contains the request id
                     assert_eq!(
                         Some("test".to_string()),
-                        crate::request_id::from_current_span()
+                        crate::distributed_tracing::request_id::from_current_span()
                     );
                 }
                 .instrument(Span::current()),

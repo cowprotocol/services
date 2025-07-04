@@ -1,8 +1,10 @@
 use {
     crate::{
         config::Config,
-        request_id::RequestIdLayer,
-        trace_id_format::{TraceIdFmt, TraceIdJsonFormat},
+        distributed_tracing::{
+            request_id::RequestIdLayer,
+            trace_id_format::{TraceIdFmt, TraceIdJsonFormat},
+        },
         tracing_reload_handler::spawn_reload_handler,
     },
     opentelemetry::{

@@ -62,7 +62,7 @@ impl ExternalTradeFinder {
                 deadline: chrono::Utc::now() + query.timeout,
             };
             let block_dependent = query.block_dependent;
-            let id = observe::request_id::from_current_span();
+            let id = observe::distributed_tracing::request_id::from_current_span();
             let client = self.client.clone();
             let quote_endpoint = self.quote_endpoint.clone();
             let block_hash = self.block_stream.borrow().hash;

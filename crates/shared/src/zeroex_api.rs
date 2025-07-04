@@ -393,7 +393,7 @@ impl DefaultZeroExApi {
                     self.block_stream.borrow().hash.to_string(),
                 );
             };
-            if let Some(id) = observe::request_id::from_current_span() {
+            if let Some(id) = observe::distributed_tracing::request_id::from_current_span() {
                 request = request.header("X-REQUEST-ID", id);
             }
 

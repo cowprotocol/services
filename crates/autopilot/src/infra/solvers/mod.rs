@@ -149,7 +149,7 @@ impl Driver {
                 .context("failed to build request")?
         };
 
-        if let Some(request_id) = observe::request_id::from_current_span() {
+        if let Some(request_id) = observe::distributed_tracing::request_id::from_current_span() {
             request = request.header("X-REQUEST-ID", request_id);
         }
 

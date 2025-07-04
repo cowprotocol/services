@@ -2,16 +2,15 @@
 //! improve the observability of a system. That includes initialization logic
 //! for metrics and logging as well as logging helper functions.
 pub mod config;
+pub mod distributed_tracing;
 pub mod future;
 pub mod metrics;
 pub mod panic_hook;
-pub mod request_id;
-mod trace_id_format;
 pub mod tracing;
-#[cfg(feature = "axum-tracing")]
-pub mod tracing_axum;
 #[cfg(unix)]
 mod tracing_reload_handler;
-pub mod tracing_warp;
 
-pub use config::{Config, TracingConfig};
+pub use {
+    config::{Config, TracingConfig},
+    distributed_tracing::request_id,
+};

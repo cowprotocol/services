@@ -1,7 +1,7 @@
 use {
     crate::{app_data, database::Postgres, orderbook::Orderbook, quoter::QuoteHandler},
     anyhow::Result,
-    observe::tracing_warp::make_span,
+    observe::distributed_tracing::tracing_warp::make_span,
     serde::{Serialize, de::DeserializeOwned},
     shared::price_estimation::{PriceEstimationError, native::NativePriceEstimating},
     std::{
