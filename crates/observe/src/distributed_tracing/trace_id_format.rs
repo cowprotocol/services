@@ -21,6 +21,32 @@ use {
     },
 };
 
+/// A custom `tracing_subscriber::fmt::FormatEvent` implementation for JSON log
+/// formatting that attaches OpenTelemetry `trace_id` and `span_id` at the root
+/// level of each log object.
+///
+/// This formatter is useful for environments where logs are ingested into
+/// systems like Grafana Tempo, Loki, or other observability backends that
+/// benefit from having distributed trace metadata available for correlation and
+/// search.
+///
+/// Instead of nesting tracing metadata inside the "fields" key, it elevates
+/// `trace_id` and `span_id` to top-level keys for easier indexing.
+///
+/// ## Example Output
+/// ```json
+/// {
+///   "timestamp": "2025-07-04T12:58:56.138095625+00:00",
+///   "level": "INFO",
+///   "fields": {
+///     "message": "finished processing with success",
+///     "status": 200
+///   },
+///   "target": "warp::filters::trace",
+///   "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+///   "span_id": "55d65b4e45405272"
+/// }
+/// ```
 pub struct TraceIdJsonFormat;
 
 impl<S, N> FormatEvent<S, N> for TraceIdJsonFormat
@@ -92,6 +118,18 @@ impl<'a> io::Write for WriteAdapter<'a> {
     }
 }
 
+/// A layered formatter that prepends the current OpenTelemetry trace ID to each
+/// human-readable log line, then delegates formatting to a wrapped default
+/// formatter (`self.inner`).
+///
+/// ## Example Output
+/// ```text
+/// [trace_id=4bf92f3577b34da6a3ce929d0e0e4736] 2025-07-04T13:35:17.741Z  INFO \
+/// http_request{method=GET path=/api/v1/version request_id=123}: \
+/// warp::filters::trace: processing request
+/// ```
+///
+/// If no `trace_id` is present in the current span, nothing is prepended.
 pub struct TraceIdFmt<T: FormatTime> {
     pub(crate) inner: Format<Full, T>,
 }
