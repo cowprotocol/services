@@ -87,7 +87,7 @@ where
     }
 }
 
-pub struct WriteAdapter<'a>(pub(crate) &'a mut dyn std::fmt::Write);
+struct WriteAdapter<'a>(pub(crate) &'a mut dyn std::fmt::Write);
 
 impl<'a> io::Write for WriteAdapter<'a> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
