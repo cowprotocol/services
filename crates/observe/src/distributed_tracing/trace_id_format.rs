@@ -1,9 +1,6 @@
 use {
     chrono::Utc,
-    opentelemetry::{
-        SpanId,
-        trace::{TraceContextExt, TraceId},
-    },
+    opentelemetry::trace::{TraceContextExt, TraceId},
     serde::ser::{SerializeMap, Serializer as _},
     std::{fmt, io},
     tracing::{Event, Span, Subscriber},
@@ -43,8 +40,7 @@ use {
 ///     "status": 200
 ///   },
 ///   "target": "warp::filters::trace",
-///   "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
-///   "span_id": "55d65b4e45405272"
+///   "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
 /// }
 /// ```
 pub struct TraceIdJsonFormat;
@@ -81,11 +77,6 @@ where
             let trace_id = span_context.trace_id();
             if trace_id != TraceId::INVALID {
                 serializer.serialize_entry("trace_id", &trace_id.to_string())?;
-
-                let span_id = span_context.span_id();
-                if span_id != SpanId::INVALID {
-                    serializer.serialize_entry("span_id", &span_id.to_string())?;
-                }
             }
 
             serializer.end()
