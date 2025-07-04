@@ -14,7 +14,7 @@ pub struct Args {
     #[clap(
         long,
         env,
-        default_value = "info,driver=debug,driver::infra::solver=trace,shared=debug,solver=debug"
+        default_value = "warn,driver=debug,driver::infra::solver=trace,shared=debug,solver=debug"
     )]
     pub log: String,
 
