@@ -2,7 +2,7 @@
 
 use {
     crate::domain::solver::Solver,
-    observe::tracing_axum::{accept_trace, make_span, record_trace_id},
+    observe::distributed_tracing::tracing_axum::{accept_trace, make_span, record_trace_id},
     std::{future::Future, net::SocketAddr, sync::Arc},
     tokio::sync::oneshot,
 };
