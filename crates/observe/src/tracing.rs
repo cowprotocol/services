@@ -103,7 +103,6 @@ fn set_tracing_subscriber(config: &Config) {
         }};
     }
 
-    // let layer = tracing_subscriber::fmt::layer();
     let enable_tokio_console: bool = std::env::var("TOKIO_CONSOLE")
         .unwrap_or("false".to_string())
         .parse()
@@ -149,7 +148,6 @@ fn set_tracing_subscriber(config: &Config) {
     let subscriber = tracing_subscriber::registry()
         .with(LevelFilter::TRACE)
         .with(RequestIdLayer)
-        // .with(TraceIdLayer)
         .with(fmt_layer!(
             env_filter,
             config.stderr_threshold,
