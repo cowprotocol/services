@@ -19,8 +19,8 @@ use {
 };
 
 /// A custom `tracing_subscriber::fmt::FormatEvent` implementation for JSON log
-/// formatting that attaches OpenTelemetry `trace_id` and `span_id` at the root
-/// level of each log object.
+/// formatting that attaches OpenTelemetry `trace_id` at the root level of each
+/// log object.
 ///
 /// This formatter is useful for environments where logs are ingested into
 /// systems like Grafana Tempo, Loki, or other observability backends that
