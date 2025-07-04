@@ -76,7 +76,7 @@ multibase = "0.9"
 number = { path = "crates/number" }
 observe = { path = "crates/observe" }
 order-validation = { path = "crates/order-validation" }
-opentelemetry = "0.30"
+opentelemetry = { version = "0.30", features = ["tracing"] }
 opentelemetry-otlp = "0.30"
 opentelemetry_sdk = "0.30"
 orderbook = { path = "crates/orderbook" }
@@ -98,6 +98,7 @@ tiny-keccak = "2.0.2"
 tower = "0.4"
 tower-http = "0.4"
 tracing-opentelemetry = "0.31"
+tracing-serde = "0.2"
 vergen = "8"
 
 [workspace.lints]

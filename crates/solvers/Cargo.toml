@@ -45,7 +45,7 @@ web3 = { workspace = true }
 anyhow = { workspace = true }
 contracts = { workspace = true }
 model = { workspace = true }
-observe = { workspace = true }
+observe = { workspace = true, features = ["axum-tracing"] }
 shared = { workspace = true }
 solver = { workspace = true }
 tracing = { workspace = true }

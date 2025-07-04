@@ -17,6 +17,7 @@ use {
     },
     clap::Parser,
     futures::future::join_all,
+    shared::arguments::tracing_config,
     std::{net::SocketAddr, sync::Arc, time::Duration},
     tokio::sync::oneshot,
 };
@@ -45,7 +46,12 @@ pub async fn run(
 /// Run the driver. This function exists to avoid multiple monomorphizations of
 /// the `run` code, which bloats the binaries and increases compile times.
 async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAddr>>) {
-    crate::infra::observe::init(&args.log, args.use_json_logs);
+    infra::observe::init(observe::Config::new(
+        &args.log,
+        tracing::Level::ERROR.into(),
+        args.use_json_logs,
+        tracing_config(&args.tracing, "driver".into()),
+    ));
 
     let ethrpc = ethrpc(&args).await;
     let web3 = ethrpc.web3().clone();
