@@ -62,7 +62,7 @@ where
         let meta = event.metadata();
 
         let mut visit = || {
-            let mut serializer = serde_json::Serializer::new(WriteAdapter::new(&mut writer));
+            let mut serializer = serde_json::Serializer::new(WriteAdapter(&mut writer));
             let mut serializer = serializer.serialize_map(None)?;
             serializer.serialize_entry("timestamp", &Utc::now().to_rfc3339())?;
             serializer.serialize_entry("level", &meta.level().as_serde())?;
@@ -87,20 +87,12 @@ where
     }
 }
 
-pub struct WriteAdapter<'a> {
-    fmt_write: &'a mut dyn std::fmt::Write,
-}
-
-impl<'a> WriteAdapter<'a> {
-    pub fn new(fmt_write: &'a mut dyn std::fmt::Write) -> Self {
-        Self { fmt_write }
-    }
-}
+pub struct WriteAdapter<'a>(pub(crate) &'a mut dyn std::fmt::Write);
 
 impl<'a> io::Write for WriteAdapter<'a> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let s = String::from_utf8_lossy(buf);
-        self.fmt_write.write_str(&s).map_err(io::Error::other)?;
+        self.0.write_str(&s).map_err(io::Error::other)?;
         Ok(s.len())
     }
 
