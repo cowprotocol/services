@@ -5,7 +5,7 @@ use {
     warp::http::HeaderMap,
 };
 
-pub fn warp_tracing(info: warp::trace::Info) -> tracing::Span {
+pub fn make_span(info: warp::trace::Info) -> tracing::Span {
     let headers: &HeaderMap = info.request_headers();
 
     // Extract OTEL context from headers

@@ -1,7 +1,7 @@
 use {
     crate::{app_data, database::Postgres, orderbook::Orderbook, quoter::QuoteHandler},
     anyhow::Result,
-    observe::tracing_warp::warp_tracing,
+    observe::tracing_warp::make_span,
     serde::{Serialize, de::DeserializeOwned},
     shared::price_estimation::{PriceEstimationError, native::NativePriceEstimating},
     std::{
@@ -348,7 +348,7 @@ pub fn finalize_router(
         .recover(handle_rejection)
         .with(cors)
         .with(warp::log::log(log_prefix))
-        .with(warp::trace::trace(warp_tracing))
+        .with(warp::trace::trace(make_span))
 }
 
 impl IntoWarpReply for PriceEstimationError {
