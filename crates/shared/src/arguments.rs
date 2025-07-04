@@ -473,7 +473,7 @@ impl Display for Arguments {
             f,
             "token_quality_cache_prefetch_time: {token_quality_cache_prefetch_time:?}"
         )?;
-        writeln!(f, "token_quality_cache_prefetch_time: {tracing:?}")?;
+        write!(f, "{tracing:?}")?;
 
         Ok(())
     }

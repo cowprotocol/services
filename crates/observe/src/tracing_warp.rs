@@ -13,7 +13,7 @@ pub fn warp_tracing(info: warp::trace::Info) -> tracing::Span {
     let request_id = headers
         .get("X-Request-Id")
         .and_then(|x| x.to_str().ok())
-        .unwrap_or("");
+        .unwrap_or_default();
 
     let span = tracing::info_span!("http_request",
         method = %info.method(),
