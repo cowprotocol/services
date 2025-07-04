@@ -101,7 +101,6 @@ impl Order {
             .fake_auction(eth, tokens, solver.quote_using_limit_orders())
             .await?;
         let solutions = solver.solve(&auction, &liquidity).await?;
-        tracing::error!(?solutions, "solution");
         Quote::try_new(
             eth,
             // TODO(#1468): choose the best solution in the future, but for now just pick the
@@ -111,7 +110,6 @@ impl Order {
                 .find(|solution| !solution.is_empty(auction.surplus_capturing_jit_order_owners()))
                 .ok_or(QuotingFailed::NoSolutions)?,
         )
-        .inspect_err(|err| tracing::error!(?err, "could not convert solution"))
     }
 
     async fn fake_auction(
