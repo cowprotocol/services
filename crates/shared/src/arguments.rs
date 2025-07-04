@@ -111,24 +111,23 @@ logging_args_with_default_filter!(
 pub struct TracingArguments {
     #[clap(long, env)]
     pub tracing_collector_endpoint: Option<String>,
-    #[clap(long, env)]
-    pub tracing_level: Option<LevelFilter>,
-    #[clap(long, env, value_parser = humantime::parse_duration)]
-    pub tracing_exporter_timeout: Option<Duration>,
+    #[clap(long, env, default_value_t = LevelFilter::INFO)]
+    pub tracing_level: LevelFilter,
+    #[clap(long, env, value_parser = humantime::parse_duration, default_value = "10s")]
+    pub tracing_exporter_timeout: Duration,
 }
 
 pub fn tracing_config(args: &TracingArguments, service_name: String) -> Option<TracingConfig> {
     let Some(endpoint) = &args.tracing_collector_endpoint else {
         return None;
     };
-    let mut config = TracingConfig::new(endpoint.clone(), service_name);
-    if let Some(level) = args.tracing_level {
-        config = config.with_level(level);
-    }
-    if let Some(timeout) = args.tracing_exporter_timeout {
-        config = config.with_timeout(timeout);
-    }
-    Some(config)
+
+    Some(TracingConfig::new(
+        endpoint.clone(),
+        service_name,
+        args.tracing_exporter_timeout,
+        args.tracing_level,
+    ))
 }
 
 #[derive(clap::Parser)]
