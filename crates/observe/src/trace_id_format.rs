@@ -83,7 +83,7 @@ impl<'a> WriteAdaptor<'a> {
 impl<'a> io::Write for WriteAdaptor<'a> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let s =
-            std::str::from_utf8(buf).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+            std::str::from_utf8_lossy(buf);
         self.fmt_write.write_str(s).map_err(io::Error::other)?;
         Ok(s.len())
     }

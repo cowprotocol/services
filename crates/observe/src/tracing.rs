@@ -203,13 +203,13 @@ impl Extractor for HeaderExtractor<'_> {
 pub struct HeaderInjector<'a>(pub &'a mut http::HeaderMap);
 
 impl Injector for HeaderInjector<'_> {
-    /// Set a key and value in the HeaderMap.  Does nothing if the key or value
+    /// Set a key and value in the HeaderMap. Does nothing if the key or value
     /// are not valid inputs.
     fn set(&mut self, key: &str, value: String) {
-        if let Ok(name) = http::header::HeaderName::from_bytes(key.as_bytes()) {
-            if let Ok(val) = http::header::HeaderValue::from_str(&value) {
-                self.0.insert(name, val);
-            }
+        if let Ok(name) = http::header::HeaderName::from_bytes(key.as_bytes())
+            && let Ok(val) = http::header::HeaderValue::from_str(&value)
+        {
+            self.0.insert(name, val);
         }
     }
 }
