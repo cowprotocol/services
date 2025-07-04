@@ -118,16 +118,17 @@ pub struct TracingArguments {
 }
 
 pub fn tracing_config(args: &TracingArguments, service_name: String) -> Option<TracingConfig> {
-    args.tracing_collector_endpoint.as_ref().map(|endpoint| {
-        let mut config = TracingConfig::new(endpoint.clone(), service_name);
-        if let Some(level) = args.tracing_level {
-            config = config.with_level(level);
-        }
-        if let Some(timeout) = args.tracing_exporter_timeout {
-            config = config.with_timeout(timeout);
-        }
-        config
-    })
+    let Some(endpoint) = &args.tracing_collector_endpoint else {
+        return None;
+    };
+    let mut config = TracingConfig::new(endpoint.clone(), service_name);
+    if let Some(level) = args.tracing_level {
+        config = config.with_level(level);
+    }
+    if let Some(timeout) = args.tracing_exporter_timeout {
+        config = config.with_timeout(timeout);
+    }
+    Some(config)
 }
 
 #[derive(clap::Parser)]
