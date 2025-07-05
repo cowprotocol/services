@@ -9,6 +9,7 @@ pub mod multicall;
 
 use {
     self::{buffered::BufferedTransport, http::HttpTransport},
+    alloy::providers::{DynProvider, Provider, ProviderBuilder, layers::CallBatchLayer},
     ethcontract::{batch::CallBatch, transport::DynTransport},
     reqwest::{Client, Url},
     std::{num::NonZeroUsize, time::Duration},
@@ -29,7 +30,7 @@ pub type Web3CallBatch = CallBatch<Web3Transport>;
 #[derive(Debug, Clone)]
 pub struct Web3<T: Transport = DynTransport> {
     pub web3: web3::Web3<T>,
-    pub alloy: (),
+    pub alloy: DynProvider,
 }
 
 impl<T: Transport> std::ops::Deref for Web3<T> {
@@ -42,14 +43,23 @@ impl<T: Transport> std::ops::Deref for Web3<T> {
 
 impl<T: Transport> Web3<T> {
     pub fn new(transport: T) -> Self {
+        let alloy = ProviderBuilder::new()
+            .layer(CallBatchLayer::new().wait(Duration::from_millis(10)))
+            .connect_http("https://eth.llamarpc.com".parse().unwrap())
+            .erased();
+
         Self {
             web3: web3::Web3::new(transport),
-            alloy: (),
+            alloy,
         }
     }
 
     pub fn from_legacy_web3(web3: web3::Web3<T>) -> Self {
-        Self { web3, alloy: () }
+        let alloy = ProviderBuilder::new()
+            .layer(CallBatchLayer::new().wait(Duration::from_millis(10)))
+            .connect_http("https://eth.llamarpc.com".parse().unwrap())
+            .erased();
+        Self { web3, alloy }
     }
 }
 
