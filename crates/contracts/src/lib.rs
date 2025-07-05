@@ -133,6 +133,19 @@ pub mod test {
     }
 }
 
+pub mod alloy {
+    use alloy::sol;
+
+    pub use ChainanalysisOracleInner as ChainalysisOracle;
+
+    sol!(
+        #[allow(missing_docs)]
+        #[sol(rpc)]
+        ChainanalysisOracleInner,
+        "./artifacts/ChainalysisOracle.json"
+    );
+}
+
 #[cfg(test)]
 mod tests {
     const MAINNET: u64 = 1;

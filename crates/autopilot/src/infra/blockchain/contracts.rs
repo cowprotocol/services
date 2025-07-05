@@ -4,7 +4,11 @@ use {crate::domain, chain::Chain, ethrpc::Web3, primitive_types::H160};
 pub struct Contracts {
     settlement: contracts::GPv2Settlement,
     weth: contracts::WETH9,
-    chainalysis_oracle: Option<contracts::ChainalysisOracle>,
+    chainalysis_oracle: Option<
+        contracts::alloy::ChainalysisOracle::ChainanalysisOracleInnerInstance<
+            alloy::providers::DynProvider,
+        >,
+    >,
     trampoline: contracts::HooksTrampoline,
 
     /// The authenticator contract that decides which solver is allowed to
@@ -50,7 +54,10 @@ impl Contracts {
             ),
         );
 
-        let chainalysis_oracle = contracts::ChainalysisOracle::deployed(web3).await.ok();
+        let chainalysis_oracle = Some(contracts::alloy::ChainalysisOracle::new(
+            Default::default(),
+            web3.alloy.clone(),
+        ));
 
         let settlement_domain_separator = domain::eth::DomainSeparator(
             settlement
@@ -92,7 +99,13 @@ impl Contracts {
         &self.settlement_domain_separator
     }
 
-    pub fn chainalysis_oracle(&self) -> &Option<contracts::ChainalysisOracle> {
+    pub fn chainalysis_oracle(
+        &self,
+    ) -> &Option<
+        contracts::alloy::ChainalysisOracle::ChainanalysisOracleInnerInstance<
+            alloy::providers::DynProvider,
+        >,
+    > {
         &self.chainalysis_oracle
     }
 

@@ -1171,6 +1171,7 @@ checksum = "0c4b4d0bd25bd0b74681c0ad21497610ce1b7c91b1022cd21c80c6fbdd9476b0"
 name = "autopilot"
 version = "0.1.0"
 dependencies = [
+ "alloy",
  "anyhow",
  "app-data",
  "async-trait",
@@ -2408,6 +2409,7 @@ dependencies = [
 name = "contracts"
 version = "0.1.0"
 dependencies = [
+ "alloy",
  "anyhow",
  "ethcontract",
  "ethcontract-generate",
@@ -4930,6 +4932,7 @@ dependencies = [
 name = "order-validation"
 version = "0.1.0"
 dependencies = [
+ "alloy",
  "contracts",
  "ethcontract",
  "thiserror 1.0.61",
