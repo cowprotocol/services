@@ -85,6 +85,7 @@ services:
       - BASELINE_SOURCES=None
       - RUST_BACKTRACE=1
       - TOML_TRACE_ERROR=1
+      - TRACING_COLLECTOR_ENDPOINT=http://tempo:4317
     depends_on:
       - db-migrations
     ports:
@@ -134,6 +135,7 @@ services:
       - ADDR=0.0.0.0:80
       - RUST_BACKTRACE=1
       - TOML_TRACE_ERROR=1
+      - TRACING_COLLECTOR_ENDPOINT=http://tempo:4317
     volumes:
       - ./driver.toml:/driver.toml
     ports:

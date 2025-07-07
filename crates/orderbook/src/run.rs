@@ -20,6 +20,7 @@ use {
     order_validation,
     shared::{
         account_balances,
+        arguments::tracing_config,
         bad_token::{
             cache::CachingDetector,
             instrumented::InstrumentedBadTokenDetectorExt,
@@ -54,7 +55,7 @@ pub async fn start(args: impl Iterator<Item = String>) {
         args.shared.logging.log_filter.as_str(),
         args.shared.logging.log_stderr_threshold,
         args.shared.logging.use_json_logs,
-        None,
+        tracing_config(&args.shared.tracing, "orderbook".into()),
     );
     observe::tracing::initialize(&obs_config);
     tracing::info!("running order book with validated arguments:\n{}", args);
