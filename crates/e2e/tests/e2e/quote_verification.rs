@@ -1,8 +1,6 @@
 use {
-    crate::liquidity::USDT_WHALE,
     bigdecimal::{BigDecimal, Zero},
-    contracts::ERC20,
-    e2e::{nodes::forked_node::ForkedNodeApi, setup::*, tx},
+    e2e::{setup::*, tx},
     ethcontract::{H160, U256},
     ethrpc::Web3,
     model::{
