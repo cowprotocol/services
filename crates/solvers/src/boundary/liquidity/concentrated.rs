@@ -1,6 +1,6 @@
 use {
     contracts::{
-        ethcontract::{H160, I256, U256},
+        ethcontract::{H160, U256},
         uniswap_v3_quoter_v2,
     },
     ethrpc::Web3,
@@ -17,9 +17,9 @@ pub struct Pool {
 }
 
 impl Pool {
-    const QUOTER_V2_ADDRESS: H160 = shared::addr!("61fFE014bA17989E743c5F6cB21bF9697530B21e");
     // Estimated with https://dune.com/queries/5431793
     const POOL_SWAP_GAS_COST: usize = 65_000;
+    const QUOTER_V2_ADDRESS: H160 = shared::addr!("61fFE014bA17989E743c5F6cB21bF9697530B21e");
 }
 
 /// Computes input or output amounts via eth_calls. The implementation was based
@@ -81,18 +81,5 @@ impl BaselineSolvable for Pool {
 
     async fn gas_cost(&self) -> usize {
         Self::POOL_SWAP_GAS_COST
-    }
-}
-
-fn abs(val: &I256) -> U256 {
-    let mut bytes = [0_u8; 32];
-    val.abs().to_big_endian(&mut bytes);
-    U256::from_big_endian(&bytes)
-}
-
-fn price_limit(zero_for_one: bool) -> U256 {
-    match zero_for_one {
-        true => 4295128740u128.into(),
-        false => U256::from_dec_str("1461446703485210103287273052203988822378723970341").unwrap(),
     }
 }
