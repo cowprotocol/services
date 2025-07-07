@@ -16,6 +16,10 @@ pub struct Pool {
     pub fee: u32,
 }
 
+impl Pool {
+    const QUOTER_V2_ADDRESS: H160 = shared::addr!("61fFE014bA17989E743c5F6cB21bF9697530B21e");
+}
+
 /// Computes input or output amounts via eth_calls. The implementation was based
 /// on these [docs](https://docs.uniswap.org/contracts/v3/reference/core/UniswapV3Pool#swap).
 impl BaselineSolvable for Pool {
@@ -33,7 +37,7 @@ impl BaselineSolvable for Pool {
 
         let contract = uniswap_v3_quoter_v2::Contract::at(
             &self.web3,
-            shared::addr!("61fFE014bA17989E743c5F6cB21bF9697530B21e"),
+            Self::QUOTER_V2_ADDRESS,
         );
         contract
             .quote_exact_input_single((in_token, out_token, in_amount, self.fee, 0.into()))
@@ -62,19 +66,19 @@ impl BaselineSolvable for Pool {
 
         let contract = uniswap_v3_quoter_v2::Contract::at(
             &self.web3,
-            shared::addr!("61fFE014bA17989E743c5F6cB21bF9697530B21e"),
+            Self::QUOTER_V2_ADDRESS,
         );
         contract
             .quote_exact_output_single((in_token, out_token, out_amount, self.fee, 0.into()))
             .call()
             .await
             // todo: inspect error
-            .ok()
             .map(
                 |(amount_in, _sqrt_price_x96_after, _initialized_ticks_crossed, _gas_estimate)| {
                     amount_in
                 },
             )
+            .ok()
     }
 
     async fn gas_cost(&self) -> usize {
