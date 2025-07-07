@@ -1,7 +1,7 @@
 use {
     contracts::{
         ethcontract::{H160, I256, U256},
-        uniswap_v3_quoter,
+        uniswap_v3_quoter_v2,
     },
     ethrpc::Web3,
     model::TokenPair,
@@ -31,14 +31,20 @@ impl BaselineSolvable for Pool {
             return None;
         }
 
-        let contract = uniswap_v3_quoter::Contract::at(
+        let contract = uniswap_v3_quoter_v2::Contract::at(
             &self.web3,
-            shared::addr!("b27308f9F90D607463bb33eA1BeBb41C27CE5AB6"),
+            shared::addr!("61fFE014bA17989E743c5F6cB21bF9697530B21e"),
         );
         contract
-            .quote_exact_input_single(in_token, out_token, self.fee, in_amount, 0.into())
+            .quote_exact_input_single((in_token, out_token, in_amount, self.fee, 0.into()))
             .call()
             .await
+            // todo: inspect error
+            .map(
+                |(amount_out, _sqrt_price_x96_after, _initialized_ticks_crossed, _gas_estimate)| {
+                    amount_out
+                },
+            )
             .ok()
     }
 
@@ -54,15 +60,21 @@ impl BaselineSolvable for Pool {
             return None;
         }
 
-        let contract = uniswap_v3_quoter::Contract::at(
+        let contract = uniswap_v3_quoter_v2::Contract::at(
             &self.web3,
-            shared::addr!("b27308f9F90D607463bb33eA1BeBb41C27CE5AB6"),
+            shared::addr!("61fFE014bA17989E743c5F6cB21bF9697530B21e"),
         );
-        let res = contract
-            .quote_exact_output_single(in_token, out_token, self.fee, out_amount, 0.into())
+        contract
+            .quote_exact_output_single((in_token, out_token, out_amount, self.fee, 0.into()))
             .call()
-            .await;
-        res.ok()
+            .await
+            // todo: inspect error
+            .ok()
+            .map(
+                |(amount_in, _sqrt_price_x96_after, _initialized_ticks_crossed, _gas_estimate)| {
+                    amount_in
+                },
+            )
     }
 
     async fn gas_cost(&self) -> usize {
