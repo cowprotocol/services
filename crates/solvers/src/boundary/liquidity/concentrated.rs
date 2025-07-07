@@ -31,7 +31,7 @@ impl BaselineSolvable for Pool {
         (in_amount, in_token): (U256, H160),
     ) -> Option<U256> {
         if TokenPair::new(out_token, in_token) != Some(self.tokens) {
-            // pool has wrong tokens or input amount would overflow
+            // The pool has wrong tokens or input amount would overflow
             return None;
         }
 
@@ -56,10 +56,8 @@ impl BaselineSolvable for Pool {
         in_token: H160,
         (out_amount, out_token): (U256, H160),
     ) -> Option<U256> {
-        // let out_amount = I256::from_raw(out_amount);
         if TokenPair::new(out_token, in_token) != Some(self.tokens) {
-            // tracing::error!(neg = out_amount.is_negative(), "abort");
-            // pool has wrong tokens or out amount would overflow
+            // The pool has wrong tokens or out amount would overflow
             return None;
         }
 
