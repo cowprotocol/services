@@ -80,10 +80,11 @@ async fn forked_node_mainnet_usdt_quote() {
 #[tokio::test]
 #[ignore]
 async fn forked_node_mainnet_usdt_quote_univ3() {
-    run_forked_test(
+    run_forked_test_with_block_number(
         usdt_quote_verification_univ3,
         std::env::var("FORK_URL_MAINNET")
             .expect("FORK_URL_MAINNET must be set to run forked tests"),
+        22857974,
     )
     .await;
 }
