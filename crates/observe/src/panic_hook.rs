@@ -32,12 +32,18 @@ pub fn prepend_panic_handler(handler: Box<dyn Fn(&std::panic::PanicHookInfo) + S
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use {super::*, crate::config::Config};
 
     #[test]
     #[ignore]
     fn manual_thread() {
-        crate::tracing::initialize("info", tracing::level_filters::LevelFilter::OFF, false);
+        let obs_config = Config::new(
+            "info",
+            tracing::level_filters::LevelFilter::OFF,
+            false,
+            None,
+        );
+        crate::tracing::initialize(&obs_config);
 
         // Should print panic trace log but not kill the process.
         let handle = std::thread::spawn(|| panic!("you should see this message"));
@@ -55,7 +61,13 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     #[ignore]
     async fn manual_tokio() {
-        crate::tracing::initialize("info", tracing::level_filters::LevelFilter::OFF, false);
+        let obs_config = Config::new(
+            "info",
+            tracing::level_filters::LevelFilter::OFF,
+            false,
+            None,
+        );
+        crate::tracing::initialize(&obs_config);
 
         let handle = tokio::task::spawn(async { panic!("you should see this message") });
         assert!(handle.await.is_err());

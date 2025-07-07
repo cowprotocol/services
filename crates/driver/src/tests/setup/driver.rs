@@ -279,29 +279,27 @@ async fn create_config_file(
             .unwrap(),
             OrderPriorityStrategy::CreationTimestamp { max_order_age } => {
                 let max_order_age = max_order_age
-                    .map(|age| format!("max-order-age = \"{:?}\"", age))
+                    .map(|age| format!("max-order-age = \"{age:?}\""))
                     .unwrap_or_else(|| "".to_string());
                 write!(
                     file,
                     r#"[[order-priority]]
                     strategy = "creation-timestamp"
-                    {}
+                    {max_order_age}
                     "#,
-                    max_order_age,
                 )
                 .unwrap()
             }
             OrderPriorityStrategy::OwnQuotes { max_order_age } => {
                 let max_order_age = max_order_age
-                    .map(|age| format!("max-order-age = \"{:?}\"", age))
+                    .map(|age| format!("max-order-age = \"{age:?}\""))
                     .unwrap_or_else(|| "".to_string());
                 write!(
                     file,
                     r#"[[order-priority]]
                     strategy = "own-quotes"
-                    {}
+                    {max_order_age}
                     "#,
-                    max_order_age,
                 )
                 .unwrap()
             }

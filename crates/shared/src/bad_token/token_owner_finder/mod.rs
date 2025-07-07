@@ -220,11 +220,11 @@ impl Display for Arguments {
             solver_token_owners_cache_update_intervals,
         } = self;
 
-        writeln!(f, "token_owner_finders: {:?}", token_owner_finders)?;
+        writeln!(f, "token_owner_finders: {token_owner_finders:?}")?;
         writeln!(
             f,
-            "token_owner_finder_uniswap_v3_fee_values: {:?}",
-            token_owner_finder_uniswap_v3_fee_values
+            "token_owner_finder_uniswap_v3_fee_values: \
+             {token_owner_finder_uniswap_v3_fee_values:?}"
         )?;
         display_option(
             f,
@@ -262,12 +262,12 @@ impl Display for Arguments {
             "token_owner_finder_rate_limiter",
             token_owner_finder_rate_limiter,
         )?;
-        writeln!(f, "whitelisted_owners, {:?}", whitelisted_owners)?;
+        writeln!(f, "whitelisted_owners, {whitelisted_owners:?}")?;
         display_list(f, "solver_token_owners_urls", solver_token_owners_urls)?;
         writeln!(
             f,
-            "solver_token_owners_cache_update_intervals, {:?}",
-            solver_token_owners_cache_update_intervals
+            "solver_token_owners_cache_update_intervals, \
+             {solver_token_owners_cache_update_intervals:?}"
         )?;
         Ok(())
     }

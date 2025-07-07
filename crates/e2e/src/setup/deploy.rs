@@ -50,7 +50,7 @@ impl Contracts {
         let gp_settlement = GPv2Settlement::deployed(web3).await.unwrap();
         let cow_amm_helper = match contracts::CowAmmLegacyHelper::deployed(web3).await {
             Err(DeployError::NotFound(_)) => None,
-            Err(err) => panic!("failed to find deployed contract: {:?}", err),
+            Err(err) => panic!("failed to find deployed contract: {err:?}"),
             Ok(contract) => Some(contract),
         };
 

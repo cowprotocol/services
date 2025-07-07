@@ -62,13 +62,6 @@ impl Reserves {
             return Err(InvalidReserves::DuplicateToken);
         }
 
-        let total_weight = reserves.iter().fold(eth::U256::default(), |acc, r| {
-            acc.saturating_add(r.weight.0)
-        });
-        if total_weight != Weight::base() {
-            return Err(InvalidReserves::AbnormalWeights);
-        }
-
         Ok(Self(reserves))
     }
 
@@ -101,9 +94,6 @@ impl IntoIterator for Reserves {
 pub enum InvalidReserves {
     #[error("invalid Balancer V2 token reserves; duplicate token address")]
     DuplicateToken,
-
-    #[error("invalid Balancer V2 token reserves; token weights do not sum to 1.0")]
-    AbnormalWeights,
 }
 
 /// Balancer weighted pool reserve for a single token.

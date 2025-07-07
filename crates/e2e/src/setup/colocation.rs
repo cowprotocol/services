@@ -221,7 +221,7 @@ mempool = "public"
 fn encode_base_tokens(tokens: impl IntoIterator<Item = H160>) -> String {
     tokens
         .into_iter()
-        .map(|token| format!(r#""{:x}""#, token))
+        .map(|token| format!(r#""{token:x}""#))
         .collect::<Vec<_>>()
         .join(",")
 }
