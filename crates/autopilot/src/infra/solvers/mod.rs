@@ -3,6 +3,7 @@ use {
     crate::{arguments::Account, domain::eth, infra::solvers::dto::notify, util},
     anyhow::{Context, Result, anyhow},
     chrono::{DateTime, Utc},
+    observe::tracing::tracing_headers,
     reqwest::{Client, StatusCode},
     std::{sync::Arc, time::Duration},
     thiserror::Error,
@@ -103,6 +104,7 @@ impl Driver {
             .json(request)
             .timeout(timeout)
             .header("X-REQUEST-ID", request.auction_id.to_string())
+            .headers(tracing_headers())
             .send()
             .await
             .context("send")?;
@@ -137,7 +139,7 @@ impl Driver {
             "solver request",
         );
         let mut request = {
-            let builder = self.client.post(url.clone());
+            let builder = self.client.post(url.clone()).headers(tracing_headers());
             // If the payload is very big then serializing it will block the
             // executor a long time (mostly relevant for solve requests).
             // That's why we always do it on a thread specifically for
@@ -147,7 +149,7 @@ impl Driver {
                 .context("failed to build request")?
         };
 
-        if let Some(request_id) = observe::request_id::from_current_span() {
+        if let Some(request_id) = observe::distributed_tracing::request_id::from_current_span() {
             request = request.header("X-REQUEST-ID", request_id);
         }
 
