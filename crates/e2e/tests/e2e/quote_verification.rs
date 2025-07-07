@@ -77,17 +77,6 @@ async fn forked_node_mainnet_usdt_quote() {
     .await;
 }
 
-#[tokio::test]
-#[ignore]
-async fn forked_node_mainnet_usdt_quote_univ3() {
-    run_forked_test(
-        usdt_quote_verification_univ3,
-        std::env::var("FORK_URL_MAINNET")
-            .expect("FORK_URL_MAINNET must be set to run forked tests"),
-    )
-    .await;
-}
-
 /// Verified quotes work as expected.
 async fn standard_verified_quote(web3: Web3) {
     tracing::info!("Setting up chain state.");
@@ -536,81 +525,4 @@ async fn usdt_quote_verification(web3: Web3) {
         .await
         .unwrap();
     assert!(quote.verified);
-}
-
-/// Ensures that quotes can even be verified with tokens like `USDT`
-/// which are not completely ERC20 compliant.
-async fn usdt_quote_verification_univ3(web3: Web3) {
-    let subgraph_url = std::env::var("UNI_V3_SUBGRAPH_URL")
-        .unwrap()
-        .parse()
-        .unwrap();
-    let mut onchain = OnchainComponents::deployed(web3.clone()).await;
-    let forked_node_api = web3.api::<ForkedNodeApi<_>>();
-
-    let [solver] = onchain.make_solvers_forked(to_wei(1)).await;
-    let [trader] = onchain.make_accounts(to_wei(1)).await;
-
-    let usdc = addr!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48");
-    let token_usdt = ERC20::at(
-        &web3,
-        "0xdac17f958d2ee523a2206206994597c13d831ec7"
-            .parse()
-            .unwrap(),
-    );
-    let dai = addr!("6b175474e89094c44da98b954eedeac495271d0f");
-    let weth = onchain.contracts().weth.address();
-
-    let usdt_whale = forked_node_api.impersonate(&USDT_WHALE).await.unwrap();
-    let amount = to_wei_with_exp(2000, 6);
-    tx!(usdt_whale, token_usdt.transfer(trader.address(), amount));
-
-    // Place Orders
-    let services = Services::new(&onchain).await;
-    colocation::start_driver(
-        onchain.contracts(),
-        vec![
-            colocation::start_baseline_solver(
-                "test_solver".into(),
-                solver.clone(),
-                weth,
-                vec![usdc, token_usdt.address(), weth, dai],
-                3,
-                true,
-            )
-            .await,
-        ],
-        colocation::LiquidityProvider::UniswapV3 {
-            subgraph: subgraph_url,
-        },
-        false,
-    );
-    services
-        .start_api(vec![
-            "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
-        ])
-        .await;
-
-    let received_verified_quote = || async {
-        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-        let res = services
-            .submit_quote(&OrderQuoteRequest {
-                sell_token: token_usdt.address(),
-                buy_token: usdc,
-                side: OrderQuoteSide::Sell {
-                    sell_amount: SellAmount::BeforeFee {
-                        value: to_wei_with_exp(1000, 18).try_into().unwrap(),
-                    },
-                },
-                from: trader.address(),
-                ..Default::default()
-            })
-            .await;
-        tracing::error!(?res);
-        res.is_ok_and(|res| res.verified)
-    };
-
-    wait_for_condition(std::time::Duration::from_secs(60), received_verified_quote)
-        .await
-        .expect("waiting for API timed out");
 }

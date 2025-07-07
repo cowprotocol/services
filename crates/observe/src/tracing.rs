@@ -205,14 +205,11 @@ impl Injector for HeaderInjector<'_> {
     /// Set a key and value in the HeaderMap. Does nothing if the key or value
     /// are not valid inputs.
     fn set(&mut self, key: &str, value: String) {
-        match (
+        if let (Ok(name), Ok(val)) = (
             http::header::HeaderName::from_bytes(key.as_bytes()),
             http::header::HeaderValue::from_str(&value),
         ) {
-            (Ok(name), Ok(val)) => {
-                self.0.insert(name, val);
-            }
-            _ => {}
+            self.0.insert(name, val);
         }
     }
 }

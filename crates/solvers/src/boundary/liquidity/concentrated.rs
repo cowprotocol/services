@@ -35,10 +35,7 @@ impl BaselineSolvable for Pool {
             return None;
         }
 
-        let contract = uniswap_v3_quoter_v2::Contract::at(
-            &self.web3,
-            Self::QUOTER_V2_ADDRESS,
-        );
+        let contract = uniswap_v3_quoter_v2::Contract::at(&self.web3, Self::QUOTER_V2_ADDRESS);
         contract
             .quote_exact_input_single((in_token, out_token, in_amount, self.fee, 0.into()))
             .call()
@@ -64,10 +61,7 @@ impl BaselineSolvable for Pool {
             return None;
         }
 
-        let contract = uniswap_v3_quoter_v2::Contract::at(
-            &self.web3,
-            Self::QUOTER_V2_ADDRESS,
-        );
+        let contract = uniswap_v3_quoter_v2::Contract::at(&self.web3, Self::QUOTER_V2_ADDRESS);
         contract
             .quote_exact_output_single((in_token, out_token, out_amount, self.fee, 0.into()))
             .call()
