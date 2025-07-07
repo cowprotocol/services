@@ -18,6 +18,8 @@ pub struct Pool {
 
 impl Pool {
     const QUOTER_V2_ADDRESS: H160 = shared::addr!("61fFE014bA17989E743c5F6cB21bF9697530B21e");
+    // Estimated with https://dune.com/queries/5431793
+    const POOL_SWAP_GAS_COST: usize = 65_000;
 }
 
 /// Computes input or output amounts via eth_calls. The implementation was based
@@ -28,9 +30,7 @@ impl BaselineSolvable for Pool {
         out_token: H160,
         (in_amount, in_token): (U256, H160),
     ) -> Option<U256> {
-        // let in_amount = I256::from_raw(in_amount);
         if TokenPair::new(out_token, in_token) != Some(self.tokens) {
-            // tracing::error!(neg = in_amount.is_negative(), "abort");
             // pool has wrong tokens or input amount would overflow
             return None;
         }
@@ -40,7 +40,9 @@ impl BaselineSolvable for Pool {
             .quote_exact_input_single((in_token, out_token, in_amount, self.fee, 0.into()))
             .call()
             .await
-            // todo: inspect error
+            .inspect_err(|err| {
+                tracing::debug!(?err, "failed to get amount out from Uniswap V3 Quoter V2");
+            })
             .map(
                 |(amount_out, _sqrt_price_x96_after, _initialized_ticks_crossed, _gas_estimate)| {
                     amount_out
@@ -66,7 +68,9 @@ impl BaselineSolvable for Pool {
             .quote_exact_output_single((in_token, out_token, out_amount, self.fee, 0.into()))
             .call()
             .await
-            // todo: inspect error
+            .inspect_err(|err| {
+                tracing::debug!(?err, "failed to get amount in from Uniswap V3 Quoter V2");
+            })
             .map(
                 |(amount_in, _sqrt_price_x96_after, _initialized_ticks_crossed, _gas_estimate)| {
                     amount_in
@@ -76,8 +80,7 @@ impl BaselineSolvable for Pool {
     }
 
     async fn gas_cost(&self) -> usize {
-        // TODO: research a reasonable approximation
-        100_000
+        Self::POOL_SWAP_GAS_COST
     }
 }
 

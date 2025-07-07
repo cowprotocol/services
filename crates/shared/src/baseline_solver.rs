@@ -19,24 +19,24 @@ type PathCandidate = Vec<H160>;
 /// rare and resulting amounts should usually be identical or very close but it
 /// can occur.
 pub trait BaselineSolvable {
-    // Given the desired output token, the amount and token input, return the
-    // expected amount of output token.
+    /// Given the desired output token, the amount and token input, return the
+    /// expected amount of output token.
     fn get_amount_out(
         &self,
         out_token: H160,
         input: (U256, H160),
     ) -> impl Future<Output = Option<U256>> + Send;
 
-    // Given the input token, the amount and token we want output, return the
-    // required amount of input token that needs to be provided.
+    /// Given the input token, the amount and token we want output, return the
+    /// required amount of input token that needs to be provided.
     fn get_amount_in(
         &self,
         in_token: H160,
         out: (U256, H160),
     ) -> impl Future<Output = Option<U256>> + Send;
 
-    // Returns the approximate amount of gas that using this piece of liquidity
-    // would incur
+    /// Returns the approximate amount of gas that using this piece of liquidity
+    /// would incur
     fn gas_cost(&self) -> impl Future<Output = usize> + Send;
 }
 
