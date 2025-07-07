@@ -27,6 +27,7 @@ use {
         trade_finding::{Interaction, LegacyTrade, QuoteExecution, TradeKind},
     },
     std::{str::FromStr, sync::Arc},
+    web3::types::BlockNumber,
 };
 
 #[tokio::test]
@@ -550,6 +551,21 @@ async fn usdt_quote_verification_univ3(web3: Web3) {
 
     let [solver] = onchain.make_solvers_forked(to_wei(1)).await;
     let [trader] = onchain.make_accounts(to_wei(1)).await;
+
+    let solver_balance = onchain
+        .web3()
+        .eth()
+        .balance(solver.address(), Some(BlockNumber::Latest))
+        .await
+        .unwrap();
+    let trader_balance = onchain
+        .web3()
+        .eth()
+        .balance(trader.address(), Some(BlockNumber::Latest))
+        .await
+        .unwrap();
+    assert_ne!(solver_balance, U256::zero());
+    assert_ne!(trader_balance, U256::zero());
 
     let usdc = addr!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48");
     let token_usdt = ERC20::at(
