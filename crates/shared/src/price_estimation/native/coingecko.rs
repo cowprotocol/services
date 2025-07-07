@@ -105,7 +105,7 @@ impl CoinGecko {
                 "contract_addresses",
                 &tokens
                     .iter()
-                    .map(|token| format!("{:#x}", token))
+                    .map(|token| format!("{token:#x}"))
                     .collect::<Vec<_>>()
                     .join(","),
             )

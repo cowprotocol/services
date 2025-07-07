@@ -183,7 +183,13 @@ async fn run<F, Fut, T>(
     Fut: Future<Output = ()>,
     T: AsRef<str>,
 {
-    observe::tracing::initialize_reentrant(&with_default_filters(filters).join(","), false);
+    let obs_config = observe::Config::new(
+        &with_default_filters(filters).join(","),
+        tracing::Level::ERROR.into(),
+        false,
+        None,
+    );
+    observe::tracing::initialize_reentrant(&obs_config);
     observe::panic_hook::install();
 
     // The mutex guarantees that no more than a test at a time is running on

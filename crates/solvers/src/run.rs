@@ -25,7 +25,13 @@ pub async fn run(
 }
 
 async fn run_with(args: cli::Args, bind: Option<oneshot::Sender<SocketAddr>>) {
-    observe::tracing::initialize_reentrant(&args.log, args.use_json_logs);
+    let obs_config = observe::Config::new(
+        &args.log,
+        tracing::Level::ERROR.into(),
+        args.use_json_logs,
+        None,
+    );
+    observe::tracing::initialize_reentrant(&obs_config);
     tracing::info!("running solver engine with {args:#?}");
 
     let solver = match args.command {

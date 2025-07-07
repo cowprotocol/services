@@ -50,11 +50,13 @@ use {
 
 pub async fn start(args: impl Iterator<Item = String>) {
     let args = Arguments::parse_from(args);
-    observe::tracing::initialize(
+    let obs_config = observe::Config::new(
         args.shared.logging.log_filter.as_str(),
         args.shared.logging.log_stderr_threshold,
         args.shared.logging.use_json_logs,
+        None,
     );
+    observe::tracing::initialize(&obs_config);
     tracing::info!("running order book with validated arguments:\n{}", args);
     observe::panic_hook::install();
     observe::metrics::setup_registry(Some("gp_v2_api".into()), None);

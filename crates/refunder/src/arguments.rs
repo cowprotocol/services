@@ -85,19 +85,19 @@ impl std::fmt::Display for Arguments {
             refunder_pk,
         } = self;
 
-        write!(f, "{}", http_client)?;
-        write!(f, "{}", ethrpc)?;
-        write!(f, "{}", logging)?;
-        writeln!(f, "min_validity_duration: {:?}", min_validity_duration)?;
-        writeln!(f, "min_price_deviation_bps: {}", min_price_deviation_bps)?;
+        write!(f, "{http_client}")?;
+        write!(f, "{ethrpc}")?;
+        write!(f, "{logging}")?;
+        writeln!(f, "min_validity_duration: {min_validity_duration:?}")?;
+        writeln!(f, "min_price_deviation_bps: {min_price_deviation_bps}")?;
         let _intentionally_ignored = db_url;
         writeln!(f, "db_url: SECRET")?;
-        writeln!(f, "node_url: {}", node_url)?;
+        writeln!(f, "node_url: {node_url}")?;
         display_option(f, "chain_id", chain_id)?;
-        writeln!(f, "ethflow_contracts: {:?}", ethflow_contracts)?;
+        writeln!(f, "ethflow_contracts: {ethflow_contracts:?}")?;
         let _intentionally_ignored = refunder_pk;
         writeln!(f, "refunder_pk: SECRET")?;
-        writeln!(f, "metrics_port: {}", metrics_port)?;
+        writeln!(f, "metrics_port: {metrics_port}")?;
         Ok(())
     }
 }

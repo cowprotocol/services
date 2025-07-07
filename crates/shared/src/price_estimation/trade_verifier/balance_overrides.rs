@@ -80,23 +80,22 @@ impl Display for Arguments {
 
         writeln!(
             f,
-            "quote_token_balance_overrides: {:?}",
-            quote_token_balance_overrides
+            "quote_token_balance_overrides: {quote_token_balance_overrides:?}"
         )?;
         writeln!(
             f,
-            "quote_autodetect_token_balance_overrides: {:?}",
-            quote_autodetect_token_balance_overrides
+            "quote_autodetect_token_balance_overrides: \
+             {quote_autodetect_token_balance_overrides:?}"
         )?;
         writeln!(
             f,
-            "quote_autodetect_token_balance_overrides_probing_depth: {:?}",
-            quote_autodetect_token_balance_overrides_probing_depth
+            "quote_autodetect_token_balance_overrides_probing_depth: \
+             {quote_autodetect_token_balance_overrides_probing_depth:?}"
         )?;
         writeln!(
             f,
-            "quote_autodetect_token_balance_overrides_cache_size: {:?}",
-            quote_autodetect_token_balance_overrides_cache_size
+            "quote_autodetect_token_balance_overrides_cache_size: \
+             {quote_autodetect_token_balance_overrides_cache_size:?}"
         )?;
 
         Ok(())
