@@ -23,11 +23,13 @@ const DELAY_FROM_LAST_LOOP_BEFORE_UNHEALTHY: Duration = LOOP_INTERVAL.saturating
 
 pub async fn start(args: impl Iterator<Item = String>) {
     let args = Arguments::parse_from(args);
-    observe::tracing::initialize(
+    let obs_config = observe::Config::new(
         args.logging.log_filter.as_str(),
         args.logging.log_stderr_threshold,
         args.logging.use_json_logs,
+        None,
     );
+    observe::tracing::initialize(&obs_config);
     observe::panic_hook::install();
     tracing::info!("running refunder with validated arguments:\n{}", args);
     observe::metrics::setup_registry(Some("refunder".into()), None);

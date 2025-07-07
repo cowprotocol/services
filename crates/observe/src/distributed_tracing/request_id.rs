@@ -114,7 +114,7 @@ impl<S: Subscriber + for<'lookup> LookupSpan<'lookup>> Layer<S> for RequestIdLay
         let Some(span) = ctx.span(id) else {
             return;
         };
-        if span.name() != crate::request_id::SPAN_NAME {
+        if span.name() != crate::distributed_tracing::request_id::SPAN_NAME {
             return;
         }
 
@@ -141,15 +141,20 @@ impl<S: Subscriber + for<'lookup> LookupSpan<'lookup>> Layer<S> for RequestIdLay
 
 #[cfg(test)]
 mod test {
-    use {super::*, tracing::Instrument};
+    use {super::*, crate::config::Config, tracing::Instrument};
+
+    fn init_tracing(env_filter: &str) {
+        let obs_config = Config::new(env_filter, tracing::Level::ERROR.into(), false, None);
+        crate::tracing::initialize_reentrant(&obs_config);
+    }
 
     #[tokio::test]
     async fn request_id_from_current_span() {
-        crate::tracing::initialize_reentrant("error", false);
+        init_tracing("error");
         async {
             assert_eq!(
                 Some("test".to_string()),
-                crate::request_id::from_current_span()
+                crate::distributed_tracing::request_id::from_current_span()
             );
         }
         .instrument(info_span("test".to_string()))
@@ -158,23 +163,26 @@ mod test {
 
     #[tokio::test]
     async fn request_id_not_set() {
-        crate::tracing::initialize_reentrant("debug", false);
+        init_tracing("debug");
         async {
-            assert_eq!(None, crate::request_id::from_current_span());
+            assert_eq!(
+                None,
+                crate::distributed_tracing::request_id::from_current_span()
+            );
         }
         .await
     }
 
     #[tokio::test]
     async fn request_id_from_ancestor_span() {
-        crate::tracing::initialize_reentrant("error", false);
+        init_tracing("error");
         async {
             async {
                 async {
                     // we traverse the span hierarchy until we find a span with the request id
                     assert_eq!(
                         Some("test".to_string()),
-                        crate::request_id::from_current_span()
+                        crate::distributed_tracing::request_id::from_current_span()
                     );
                 }
                 .instrument(tracing::info_span!("wrap2", value = "value2"))
@@ -189,14 +197,14 @@ mod test {
 
     #[tokio::test]
     async fn request_id_from_first_ancestor_span() {
-        crate::tracing::initialize_reentrant("error", false);
+        init_tracing("error");
         async {
             async {
                 async {
                     // if multiple ancestors have a request id we take the closest one
                     assert_eq!(
                         Some("test_inner".to_string()),
-                        crate::request_id::from_current_span()
+                        crate::distributed_tracing::request_id::from_current_span()
                     );
                 }
                 .instrument(tracing::info_span!("wrap", value = "value"))
@@ -211,7 +219,7 @@ mod test {
 
     #[tokio::test]
     async fn request_id_within_spawned_task() {
-        crate::tracing::initialize_reentrant("error", false);
+        init_tracing("error");
         async {
             tokio::spawn(
                 async {
@@ -219,7 +227,7 @@ mod test {
                     // was instrumented with a span that contains the request id
                     assert_eq!(
                         Some("test".to_string()),
-                        crate::request_id::from_current_span()
+                        crate::distributed_tracing::request_id::from_current_span()
                     );
                 }
                 .instrument(Span::current()),

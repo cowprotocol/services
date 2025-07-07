@@ -89,7 +89,9 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn not_found() {
-        observe::tracing::initialize_reentrant("orderbook::ipfs=trace", false);
+        observe::tracing::initialize(
+            &observe::Config::default().with_env_filter("orderbook::ipfs=trace"),
+        );
         let ipfs = Ipfs::new(Default::default(), "https://ipfs.io".parse().unwrap(), None);
         let cid = "Qma4Dwke5h8mgJyZMDRvKqM3RF7c6Mxcj3fR4um9UGaNF7";
         let result = ipfs.fetch(cid).await.unwrap();

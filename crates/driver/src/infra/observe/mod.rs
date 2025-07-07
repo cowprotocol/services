@@ -35,8 +35,8 @@ pub mod metrics;
 
 /// Setup the observability. The log argument configures the tokio tracing
 /// framework.
-pub fn init(log: &str, use_json_format: bool) {
-    observe::tracing::initialize_reentrant(log, use_json_format);
+pub fn init(obs_config: observe::Config) {
+    observe::tracing::initialize_reentrant(&obs_config);
     metrics::init();
 }
 

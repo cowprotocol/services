@@ -39,6 +39,7 @@ use {
     observe::metrics::LivenessChecking,
     shared::{
         account_balances,
+        arguments::tracing_config,
         bad_token::{
             cache::CachingDetector,
             instrumented::InstrumentedBadTokenDetectorExt,
@@ -125,11 +126,13 @@ async fn ethereum(
 
 pub async fn start(args: impl Iterator<Item = String>) {
     let args = Arguments::parse_from(args);
-    observe::tracing::initialize(
+    let obs_config = observe::Config::new(
         args.shared.logging.log_filter.as_str(),
         args.shared.logging.log_stderr_threshold,
         args.shared.logging.use_json_logs,
+        tracing_config(&args.shared.tracing, "autopilot".into()),
     );
+    observe::tracing::initialize(&obs_config);
     observe::panic_hook::install();
     tracing::info!("running autopilot with validated arguments:\n{}", args);
     observe::metrics::setup_registry(Some("gp_v2_autopilot".into()), None);

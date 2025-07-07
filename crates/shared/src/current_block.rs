@@ -48,8 +48,7 @@ impl Display for Arguments {
 
         writeln!(
             f,
-            "block_stream_poll_interval: {:?}",
-            block_stream_poll_interval
+            "block_stream_poll_interval: {block_stream_poll_interval:?}"
         )?;
 
         Ok(())

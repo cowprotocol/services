@@ -474,20 +474,22 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
     assert!(order_b_settled.metadata.executed_fee > 0.into());
 
     let mut ex = services.db().acquire().await.unwrap();
-    let solver_a_winning_solutions = database::solver_competition::fetch_solver_winning_solutions(
-        &mut ex,
-        competition.auction_id,
-        ByteArray(solver_a.address().0),
-    )
-    .await
-    .unwrap();
-    let solver_b_winning_solutions = database::solver_competition::fetch_solver_winning_solutions(
-        &mut ex,
-        competition.auction_id,
-        ByteArray(solver_b.address().0),
-    )
-    .await
-    .unwrap();
+    let solver_a_winning_solutions =
+        database::solver_competition_v2::fetch_solver_winning_solutions(
+            &mut ex,
+            competition.auction_id,
+            ByteArray(solver_a.address().0),
+        )
+        .await
+        .unwrap();
+    let solver_b_winning_solutions =
+        database::solver_competition_v2::fetch_solver_winning_solutions(
+            &mut ex,
+            competition.auction_id,
+            ByteArray(solver_b.address().0),
+        )
+        .await
+        .unwrap();
     assert_eq!(solver_a_winning_solutions.len(), 1);
     assert_eq!(solver_b_winning_solutions.len(), 1);
     assert_eq!(solver_a_winning_solutions[0].orders.len(), 1);

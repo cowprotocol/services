@@ -107,7 +107,8 @@ where
                             (requests.remove(0), trace_ids.remove(0), senders.remove(0));
                         let result = match (&request, trace_id) {
                             (Call::MethodCall(_), Some(trace_id)) => {
-                                let span = observe::request_id::info_span(trace_id);
+                                let span =
+                                    observe::distributed_tracing::request_id::info_span(trace_id);
                                 inner.send(id, request).instrument(span).await
                             }
                             _ => inner.send(id, request).await,
@@ -117,7 +118,8 @@ where
                     n => {
                         let results = match build_rpc_metadata(&requests, &trace_ids) {
                             Ok(metadata) => {
-                                let span = observe::request_id::info_span(metadata);
+                                let span =
+                                    observe::distributed_tracing::request_id::info_span(metadata);
                                 inner.send_batch(requests).instrument(span).await
                             }
                             Err(err) => {
@@ -142,7 +144,7 @@ where
     /// Queue a call by sending it over calls channel to the background worker.
     fn queue_call(&self, id: RequestId, request: Call) -> oneshot::Receiver<RpcResult> {
         let (sender, receiver) = oneshot::channel();
-        let trace_id = observe::request_id::from_current_span();
+        let trace_id = observe::distributed_tracing::request_id::from_current_span();
         let context = (id, request, trace_id, sender);
         self.calls
             .unbounded_send(context)
@@ -308,15 +310,15 @@ fn build_rpc_metadata(
     let mut grouped_metadata_iter = grouped_metadata.into_iter().peekable();
     while let Some((trace_id, methods)) = grouped_metadata_iter.next() {
         // New entry starts with the trace_id
-        write!(metadata_str, "{}:", trace_id)?;
+        write!(metadata_str, "{trace_id}:")?;
 
         // Followed by the method names and their indices
         let mut methods_iter = methods.into_iter().peekable();
         while let Some((method, indices)) = methods_iter.next() {
-            write!(metadata_str, "{}(", method)?;
+            write!(metadata_str, "{method}(")?;
 
             let indices_str = format_indices_as_ranges(indices)?;
-            write!(metadata_str, "{}", indices_str)?;
+            write!(metadata_str, "{indices_str}")?;
 
             write!(metadata_str, ")")?;
 
@@ -394,11 +396,11 @@ fn format_indices_as_ranges(indices: BTreeSet<usize>) -> anyhow::Result<String> 
 ///   represented as a range using two dots (e.g., "start..last").
 fn append_sequence(buffer: &mut String, start: usize, last: usize) -> core::fmt::Result {
     if start == last {
-        write!(buffer, "{}", start)
+        write!(buffer, "{start}")
     } else if start == last - 1 {
-        write!(buffer, "{},{}", start, last)
+        write!(buffer, "{start},{last}")
     } else {
-        write!(buffer, "{}..{}", start, last)
+        write!(buffer, "{start}..{last}")
     }
 }
 

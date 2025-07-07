@@ -14,6 +14,7 @@ use {
     anyhow::{Context, Result, ensure},
     bigdecimal::BigDecimal,
     ethcontract::{H160, U256},
+    observe::TracingConfig,
     std::{
         fmt::{self, Display, Formatter},
         num::NonZeroU64,
@@ -103,8 +104,31 @@ pub struct OrderQuotingArguments {
 
 logging_args_with_default_filter!(
     LoggingArguments,
-    "warn,autopilot=debug,driver=debug,orderbook=debug,solver=debug,shared=debug,cow_amm=debug"
+    "info,autopilot=debug,driver=debug,orderbook=debug,solver=debug,shared=debug,cow_amm=debug"
 );
+
+#[derive(Debug, clap::Parser)]
+pub struct TracingArguments {
+    #[clap(long, env)]
+    pub tracing_collector_endpoint: Option<String>,
+    #[clap(long, env, default_value_t = LevelFilter::INFO)]
+    pub tracing_level: LevelFilter,
+    #[clap(long, env, value_parser = humantime::parse_duration, default_value = "10s")]
+    pub tracing_exporter_timeout: Duration,
+}
+
+pub fn tracing_config(args: &TracingArguments, service_name: String) -> Option<TracingConfig> {
+    let Some(endpoint) = &args.tracing_collector_endpoint else {
+        return None;
+    };
+
+    Some(TracingConfig::new(
+        endpoint.clone(),
+        service_name,
+        args.tracing_exporter_timeout,
+        args.tracing_level,
+    ))
+}
 
 #[derive(clap::Parser)]
 #[group(skip)]
@@ -120,6 +144,9 @@ pub struct Arguments {
 
     #[clap(flatten)]
     pub logging: LoggingArguments,
+
+    #[clap(flatten)]
+    pub tracing: TracingArguments,
 
     /// The Ethereum node URL to connect to.
     #[clap(long, env, default_value = "http://localhost:8545")]
@@ -319,19 +346,16 @@ impl Display for OrderQuotingArguments {
 
         writeln!(
             f,
-            "eip1271_onchain_quote_validity_second: {:?}",
-            eip1271_onchain_quote_validity
+            "eip1271_onchain_quote_validity_second: {eip1271_onchain_quote_validity:?}"
         )?;
         writeln!(
             f,
-            "presign_onchain_quote_validity_second: {:?}",
-            presign_onchain_quote_validity
+            "presign_onchain_quote_validity_second: {presign_onchain_quote_validity:?}"
         )?;
         display_list(f, "price_estimation_drivers", price_estimation_drivers)?;
         writeln!(
             f,
-            "standard_offchain_quote_validity: {:?}",
-            standard_offchain_quote_validity
+            "standard_offchain_quote_validity: {standard_offchain_quote_validity:?}"
         )?;
         Ok(())
     }
@@ -369,37 +393,35 @@ impl Display for Arguments {
             max_pools_to_initialize_cache,
             token_quality_cache_expiry,
             token_quality_cache_prefetch_time,
+            tracing,
         } = self;
 
-        write!(f, "{}", ethrpc)?;
-        write!(f, "{}", current_block)?;
-        write!(f, "{}", tenderly)?;
-        write!(f, "{}", logging)?;
-        writeln!(f, "node_url: {}", node_url)?;
+        write!(f, "{ethrpc}")?;
+        write!(f, "{current_block}")?;
+        write!(f, "{tenderly}")?;
+        write!(f, "{logging}")?;
+        writeln!(f, "node_url: {node_url}")?;
         display_option(f, "chain_id", chain_id)?;
         display_option(f, "simulation_node_url", simulation_node_url)?;
-        writeln!(f, "gas_estimators: {:?}", gas_estimators)?;
+        writeln!(f, "gas_estimators: {gas_estimators:?}")?;
         display_secret_option(f, "blocknative_api_key", blocknative_api_key.as_ref())?;
-        writeln!(f, "base_tokens: {:?}", base_tokens)?;
-        writeln!(f, "baseline_sources: {:?}", baseline_sources)?;
-        writeln!(f, "pool_cache_blocks: {}", pool_cache_blocks)?;
+        writeln!(f, "base_tokens: {base_tokens:?}")?;
+        writeln!(f, "baseline_sources: {baseline_sources:?}")?;
+        writeln!(f, "pool_cache_blocks: {pool_cache_blocks}")?;
         writeln!(
             f,
-            "pool_cache_maximum_recent_block_age: {}",
-            pool_cache_maximum_recent_block_age
+            "pool_cache_maximum_recent_block_age: {pool_cache_maximum_recent_block_age}"
         )?;
         writeln!(
             f,
-            "pool_cache_maximum_retries: {}",
-            pool_cache_maximum_retries
+            "pool_cache_maximum_retries: {pool_cache_maximum_retries}"
         )?;
         writeln!(
             f,
-            "pool_cache_delay_between_retries: {:?}",
-            pool_cache_delay_between_retries
+            "pool_cache_delay_between_retries: {pool_cache_delay_between_retries:?}"
         )?;
-        writeln!(f, "use_internal_buffers: {}", use_internal_buffers)?;
-        writeln!(f, "balancer_factories: {:?}", balancer_factories)?;
+        writeln!(f, "use_internal_buffers: {use_internal_buffers}")?;
+        writeln!(f, "balancer_factories: {balancer_factories:?}")?;
         display_secret_option(
             f,
             "solver_competition_auth",
@@ -437,24 +459,21 @@ impl Display for Arguments {
         )?;
         writeln!(
             f,
-            "liquidity_fetcher_max_age_update: {:?}",
-            liquidity_fetcher_max_age_update
+            "liquidity_fetcher_max_age_update: {liquidity_fetcher_max_age_update:?}"
         )?;
         writeln!(
             f,
-            "max_pools_to_initialize_cache: {}",
-            max_pools_to_initialize_cache
+            "max_pools_to_initialize_cache: {max_pools_to_initialize_cache}"
         )?;
         writeln!(
             f,
-            "token_quality_cache_expiry: {:?}",
-            token_quality_cache_expiry
+            "token_quality_cache_expiry: {token_quality_cache_expiry:?}"
         )?;
         writeln!(
             f,
-            "token_quality_cache_prefetch_time: {:?}",
-            token_quality_cache_prefetch_time
+            "token_quality_cache_prefetch_time: {token_quality_cache_prefetch_time:?}"
         )?;
+        write!(f, "{tracing:?}")?;
 
         Ok(())
     }
