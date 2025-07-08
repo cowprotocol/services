@@ -1,16 +1,12 @@
 use {
-    contracts::{
-        ethcontract::{H160, U256},
-        uniswap_v3_quoter_v2,
-    },
-    ethrpc::Web3,
+    contracts::ethcontract::{H160, U256},
     model::TokenPair,
     shared::baseline_solver::BaselineSolvable,
 };
 
 #[derive(Debug)]
 pub struct Pool {
-    pub web3: Web3,
+    pub uni_v3_quoter_contract: contracts::UniswapV3QuoterV2,
     pub address: H160,
     pub tokens: TokenPair,
     pub fee: u32,
@@ -35,8 +31,7 @@ impl BaselineSolvable for Pool {
             return None;
         }
 
-        let contract = uniswap_v3_quoter_v2::Contract::at(&self.web3, Self::QUOTER_V2_ADDRESS);
-        contract
+        self.uni_v3_quoter_contract
             .quote_exact_input_single((in_token, out_token, in_amount, self.fee, 0.into()))
             .call()
             .await
@@ -61,8 +56,7 @@ impl BaselineSolvable for Pool {
             return None;
         }
 
-        let contract = uniswap_v3_quoter_v2::Contract::at(&self.web3, Self::QUOTER_V2_ADDRESS);
-        contract
+        self.uni_v3_quoter_contract
             .quote_exact_output_single((in_token, out_token, out_amount, self.fee, 0.into()))
             .call()
             .await

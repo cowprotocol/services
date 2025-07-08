@@ -6,7 +6,6 @@ use {
         domain::{eth, liquidity, order, solver},
     },
     ethereum_types::{H160, U256},
-    ethrpc::Web3,
     model::TokenPair,
     shared::baseline_solver::{self, BaseTokens, BaselineSolvable},
     std::collections::{HashMap, HashSet},
@@ -23,11 +22,11 @@ impl<'a> Solver<'a> {
         weth: &eth::WethAddress,
         base_tokens: &HashSet<eth::TokenAddress>,
         liquidity: &'a [liquidity::Liquidity],
-        web3: Option<&Web3>,
+        uni_v3_quoter_v2: Option<&contracts::UniswapV3QuoterV2>,
     ) -> Self {
         Self {
             base_tokens: to_boundary_base_tokens(weth, base_tokens),
-            onchain_liquidity: to_boundary_liquidity(liquidity, web3),
+            onchain_liquidity: to_boundary_liquidity(liquidity, uni_v3_quoter_v2),
             liquidity: liquidity
                 .iter()
                 .map(|liquidity| (liquidity.id.clone(), liquidity))
@@ -155,7 +154,7 @@ impl<'a> Solver<'a> {
 
 fn to_boundary_liquidity(
     liquidity: &[liquidity::Liquidity],
-    web3: Option<&Web3>,
+    uni_v3_quoter_v2: Option<&contracts::UniswapV3QuoterV2>,
 ) -> HashMap<TokenPair, Vec<OnchainLiquidity>> {
     liquidity
         .iter()
@@ -228,8 +227,8 @@ fn to_boundary_liquidity(
                     }
                 }
                 liquidity::State::Concentrated(pool) => {
-                    let Some(web3) = web3 else {
-                        // liquidity sources that rely on an RPC are disabled
+                    let Some(uni_v3_quoter_v2) = uni_v3_quoter_v2 else {
+                        // liquidity sources that rely on concentrated pools are disabled
                         return onchain_liquidity;
                     };
 
@@ -242,7 +241,7 @@ fn to_boundary_liquidity(
                             token_pair,
                             source: LiquiditySource::Concentrated(
                                 boundary::liquidity::concentrated::Pool {
-                                    web3: web3.clone(),
+                                    uni_v3_quoter_contract: uni_v3_quoter_v2.clone(),
                                     address: liquidity.address,
                                     tokens: token_pair,
                                     fee: pool.fee.0,

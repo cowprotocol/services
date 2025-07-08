@@ -18,8 +18,8 @@ use {
         },
         infra::metrics,
     },
+    chain::Chain,
     ethereum_types::U256,
-    ethrpc::Web3,
     reqwest::Url,
     std::{cmp, collections::HashSet, sync::Arc},
 };
@@ -70,17 +70,17 @@ struct Inner {
     /// token
     native_token_price_estimation_amount: eth::U256,
 
-    /// If a provider is configured the solver will use liquidity sources which
-    /// rely on eth_calls to compute the input or output amounts.
-    web3: Option<Web3>,
+    /// If provided, the solver can rely on Uniswap V3 LPs
+    uni_v3_quoter_v2: Option<contracts::UniswapV3QuoterV2>,
 }
 
 impl Solver {
     /// Creates a new baseline solver for the specified configuration.
-    pub fn new(config: Config) -> Self {
-        let web3 = config
-            .node_url
-            .map(|url| ethrpc::web3(Default::default(), Default::default(), &url, "baseline"));
+    pub async fn new(config: Config) -> Self {
+        let uni_v3_quoter_v2 = match config.node_url {
+            Some(url) => Self::get_uni_v3_quoter_v2_contract(&url).await,
+            None => None,
+        };
 
         Self(Arc::new(Inner {
             weth: config.weth,
@@ -89,8 +89,24 @@ impl Solver {
             max_partial_attempts: config.max_partial_attempts,
             solution_gas_offset: config.solution_gas_offset,
             native_token_price_estimation_amount: config.native_token_price_estimation_amount,
-            web3,
+            uni_v3_quoter_v2,
         }))
+    }
+
+    async fn get_uni_v3_quoter_v2_contract(node_url: &Url) -> Option<contracts::UniswapV3QuoterV2> {
+        let web3 = ethrpc::web3(Default::default(), Default::default(), node_url, "baseline");
+        let chain_id = web3.eth().chain_id().await.expect("retrieve chain id");
+        let chain = Chain::try_from(chain_id).expect("unsupported chain");
+        let address = contracts::UniswapV3QuoterV2::raw_contract()
+            .networks
+            .get(&chain.id().to_string())
+            .map(|network| network.address);
+
+        if address.is_none() {
+            tracing::warn!(?chain, "UniswapV3QuoterV2 contract is not deployed");
+        }
+
+        Some(contracts::UniswapV3QuoterV2::at(&web3, address?))
     }
 
     /// Solves the specified auction, returning a vector of all possible
@@ -143,7 +159,7 @@ impl Inner {
             &self.weth,
             &self.base_tokens,
             &auction.liquidity,
-            self.web3.as_ref(),
+            self.uni_v3_quoter_v2.as_ref(),
         );
 
         for (i, order) in auction.orders.into_iter().enumerate() {
