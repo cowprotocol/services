@@ -1,3 +1,13 @@
+/// Module implements notifications for third party liquidity sources
+/// used by solvers.
+///
+/// Such notifications are useful when a liquidity source needs to know
+/// about the settlement before it gets submitted on-chain.
+///
+/// For example, when PMMs (Private Market Makers) provide firm quotes, they
+/// need to know as early as possible that their quote will be used for the
+/// settlement. It is crucial for risk management and leads to better
+/// pricing.
 pub mod config;
 
 pub use config::Config;
