@@ -98,8 +98,8 @@ impl Settlement {
                 auction,
                 &solution,
                 eth.contracts(),
-                solution.approvals(eth, Internalization::Enable).await?,
-                Internalization::Enable,
+                solution.approvals(eth, Internalization::Disable).await?,
+                Internalization::Disable,
                 solver_native_token,
             )?,
             uninternalized: encoding::tx(
