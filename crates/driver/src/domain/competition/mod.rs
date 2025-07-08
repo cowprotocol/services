@@ -156,12 +156,11 @@ impl Competition {
                 order_sorting_strategies,
                 settlement_contract,
             )
-        })
-        .await;
+        });
 
         // We can sort the orders and fetch auction data in parallel
         let (auction, balances, app_data) =
-            tokio::join!(sort_orders_future, tasks.balances, tasks.app_data,);
+            tokio::join!(sort_orders_future, tasks.balances, tasks.app_data);
 
         let auction = Self::run_blocking_with_timer("update_orders", move || {
             Self::update_orders(
@@ -394,7 +393,7 @@ impl Competition {
 
     // Oders already need to be sorted from most relevant to least relevant so that
     // we allocate balances for the most relevants first.
-    async fn sort_orders(
+    fn sort_orders(
         mut auction: Auction,
         solver: eth::H160,
         order_sorting_strategies: Vec<Arc<dyn SortingStrategy>>,
