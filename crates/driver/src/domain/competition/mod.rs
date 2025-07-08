@@ -45,12 +45,7 @@ mod pre_processing;
 pub mod solution;
 pub mod sorting;
 
-pub use {
-    auction::{Auction, AuctionProcessor},
-    order::Order,
-    pre_processing::DataAggregator,
-    solution::Solution,
-};
+pub use {auction::Auction, order::Order, pre_processing::DataAggregator, solution::Solution};
 
 use crate::domain::BlockNo;
 

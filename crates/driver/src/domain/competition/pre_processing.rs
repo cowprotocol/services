@@ -33,8 +33,6 @@ type Balances = HashMap<BalanceGroup, order::SellAmount>;
 /// tasks you can simply await only those and already start with your new task
 /// while the third task can continue in the background.
 #[derive(Clone, Debug)]
-// TODO: not used yet
-#[allow(dead_code)]
 pub struct DataFetchingTasks {
     pub balances: Shared<Arc<Balances>>,
     pub app_data: Shared<Arc<HashMap<order::app_data::AppDataHash, app_data::ValidatedAppData>>>,

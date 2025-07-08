@@ -121,9 +121,6 @@ impl Auction {
     }
 }
 
-#[derive(Clone)]
-pub struct AuctionProcessor;
-
 /// The tokens that are used in an auction.
 #[derive(Debug, Default, Clone)]
 pub struct Tokens(HashMap<eth::TokenAddress, Token>);
