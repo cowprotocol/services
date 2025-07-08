@@ -18,7 +18,6 @@ use {
         },
         infra::metrics,
     },
-    chain::Chain,
     ethereum_types::U256,
     reqwest::Url,
     std::{cmp, collections::HashSet, sync::Arc},
@@ -78,7 +77,15 @@ impl Solver {
     /// Creates a new baseline solver for the specified configuration.
     pub async fn new(config: Config) -> Self {
         let uni_v3_quoter_v2 = match config.node_url {
-            Some(url) => Self::get_uni_v3_quoter_v2_contract(&url).await,
+            Some(url) => {
+                let web3 = ethrpc::web3(Default::default(), Default::default(), &url, "baseline");
+                contracts::UniswapV3QuoterV2::deployed(&web3)
+                    .await
+                    .inspect_err(|err| {
+                        tracing::warn!(?err, "Failed to load UniswapV3QuoterV2 contract");
+                    })
+                    .ok()
+            }
             None => None,
         };
 
@@ -91,22 +98,6 @@ impl Solver {
             native_token_price_estimation_amount: config.native_token_price_estimation_amount,
             uni_v3_quoter_v2,
         }))
-    }
-
-    async fn get_uni_v3_quoter_v2_contract(node_url: &Url) -> Option<contracts::UniswapV3QuoterV2> {
-        let web3 = ethrpc::web3(Default::default(), Default::default(), node_url, "baseline");
-        let chain_id = web3.eth().chain_id().await.expect("retrieve chain id");
-        let chain = Chain::try_from(chain_id).expect("unsupported chain");
-        let address = contracts::UniswapV3QuoterV2::raw_contract()
-            .networks
-            .get(&chain.id().to_string())
-            .map(|network| network.address);
-
-        if address.is_none() {
-            tracing::warn!(?chain, "UniswapV3QuoterV2 contract is not deployed");
-        }
-
-        Some(contracts::UniswapV3QuoterV2::at(&web3, address?))
     }
 
     /// Solves the specified auction, returning a vector of all possible
