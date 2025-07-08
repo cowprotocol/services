@@ -215,7 +215,7 @@ mod concentrated_liquidity_pool {
             liquidity::TokenPair::new(a, b)
                 .ok_or("duplicate concentrated liquidity pool token address")?
         };
-        let bps = BigDecimal::from_f32(10_000.).unwrap();
+        let bps = BigDecimal::from_f32(1_000_000.).unwrap();
 
         Ok(liquidity::Liquidity {
             id: liquidity::Id(pool.id.clone()),
