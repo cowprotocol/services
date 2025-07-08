@@ -84,6 +84,8 @@ impl LiquoriceNotifier {
         Ok(HashSet::from_iter(rfq_ids.into_iter()))
     }
 
+    /// Extracts rfqId from the `settleSingle` function call arguments of the
+    /// ILiquoriceSettlement.sol interface <https://etherscan.io/address/0xaca684a3f64e0eae4812b734e3f8f205d3eed167#code#F6#L1>
     fn extract_rfq_id_from_calldata(calldata: &Bytes<Vec<u8>>) -> Result<String> {
         // Decode the calldata using the Liquorice settlement contract ABI
         let settle_single_function = ILiquoriceSettlement::raw_contract()
@@ -95,13 +97,14 @@ impl LiquoriceNotifier {
             .decode_output(calldata.0.as_slice())
             .context("Invalid output from settleSingle")?;
 
-        // Token at index 1 is expected to be a tuple corresponding to Liquorice
-        // Settlement single Order
+        // Token at index 1 is expected to be an instance of `Single` order
+        // in the ILiquoriceSettlement.sol
         let rfq_id = tokens
             .get(1)
             .map(|token| match token {
                 Token::Tuple(tokens) => {
-                    // Token at index 0 is expected to be a string corresponding to RFQ ID
+                    // Token at index 0 is expected to be a string corresponding to `rfqId`
+                    // field of the `Single` order
                     tokens
                         .first()
                         .map(|token| match token {
