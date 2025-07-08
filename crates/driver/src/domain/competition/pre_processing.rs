@@ -154,7 +154,9 @@ impl DataAggregator {
 
     /// Spawns an async task and returns a `Shared` handle to its result.
     /// Errors are not handled as we are deferring all error handling to where
-    /// the shared future is awaited
+    /// the shared future is awaited.
+    /// The future is being started immediately and polled in the background so
+    /// the caller doen't have to manage data dependencies directly.
     fn spawn_shared<T>(fut: impl Future<Output = T> + Send + 'static) -> Shared<T>
     where
         T: Send + Sync + Clone + 'static,
