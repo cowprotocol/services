@@ -215,7 +215,9 @@ mod concentrated_liquidity_pool {
             liquidity::TokenPair::new(a, b)
                 .ok_or("duplicate concentrated liquidity pool token address")?
         };
-        let bps = BigDecimal::from_f32(10_000.).unwrap();
+        // Convert fee from decimal to basis points for the UniV3 SC.
+        // Example: 0.003 × 1,000,000 = 3000 → 3000 bps = 0.3% fee
+        let bps = BigDecimal::from_f32(1_000_000.).unwrap();
 
         Ok(liquidity::Liquidity {
             id: liquidity::Id(pool.id.clone()),
