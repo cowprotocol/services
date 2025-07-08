@@ -14,7 +14,6 @@ use {
             self,
             Simulator,
             blockchain::Ethereum,
-            config::file::OrderPriorityStrategy,
             notify,
             observe::{self, metrics},
             simulator::{RevertError, SimulatorError},
@@ -44,7 +43,7 @@ pub mod bad_tokens;
 pub mod order;
 mod pre_processing;
 pub mod solution;
-mod sorting;
+pub mod sorting;
 
 pub use {
     auction::{Auction, AuctionProcessor},
@@ -88,29 +87,9 @@ impl Competition {
         mempools: Mempools,
         bad_tokens: Arc<bad_tokens::Detector>,
         fetcher: Arc<DataAggregator>,
-        order_priority_strategies: &[OrderPriorityStrategy],
+        order_sorting_strategies: Vec<Arc<dyn sorting::SortingStrategy>>,
     ) -> Arc<Self> {
         let (settle_sender, settle_receiver) = mpsc::channel(solver.settle_queue_size());
-
-        let mut order_sorting_strategies = vec![];
-        for strategy in order_priority_strategies {
-            let comparator: Arc<dyn sorting::SortingStrategy> = match strategy {
-                OrderPriorityStrategy::ExternalPrice => Arc::new(sorting::ExternalPrice),
-                OrderPriorityStrategy::CreationTimestamp { max_order_age } => {
-                    Arc::new(sorting::CreationTimestamp {
-                        max_order_age: max_order_age
-                            .map(|t| chrono::Duration::from_std(t).unwrap()),
-                    })
-                }
-                OrderPriorityStrategy::OwnQuotes { max_order_age } => {
-                    Arc::new(sorting::OwnQuotes {
-                        max_order_age: max_order_age
-                            .map(|t| chrono::Duration::from_std(t).unwrap()),
-                    })
-                }
-            };
-            order_sorting_strategies.push(comparator);
-        }
 
         let competition = Arc::new(Self {
             solver,

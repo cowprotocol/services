@@ -3,7 +3,7 @@ use {
         domain::{
             self,
             Mempools,
-            competition::{bad_tokens, order::app_data::AppDataRetriever},
+            competition::{bad_tokens, order::app_data::AppDataRetriever, sorting},
         },
         infra::{
             self,
@@ -59,6 +59,9 @@ impl Api {
             self.liquidity.clone(),
         ));
 
+        let order_sorting_strategies =
+            Self::build_order_sorting_strategies(&order_priority_strategies);
+
         // Add the metrics and healthz endpoints.
         app = routes::metrics(app);
         app = routes::healthz(app);
@@ -105,7 +108,7 @@ impl Api {
                     self.mempools.clone(),
                     Arc::new(bad_tokens),
                     fetcher.clone(),
-                    &order_priority_strategies,
+                    order_sorting_strategies.clone(),
                 ),
                 liquidity: self.liquidity.clone(),
                 tokens: tokens.clone(),
@@ -134,6 +137,32 @@ impl Api {
             addr_sender.send(server.local_addr()).unwrap();
         }
         server.with_graceful_shutdown(shutdown).await
+    }
+
+    fn build_order_sorting_strategies(
+        order_priority_strategies: &[OrderPriorityStrategy],
+    ) -> Vec<Arc<dyn sorting::SortingStrategy>> {
+        let mut order_sorting_strategies = vec![];
+        for strategy in order_priority_strategies {
+            let comparator: Arc<dyn sorting::SortingStrategy> = match strategy {
+                OrderPriorityStrategy::ExternalPrice => Arc::new(sorting::ExternalPrice),
+                OrderPriorityStrategy::CreationTimestamp { max_order_age } => {
+                    Arc::new(sorting::CreationTimestamp {
+                        max_order_age: max_order_age
+                            .map(|t| chrono::Duration::from_std(t).unwrap()),
+                    })
+                }
+                OrderPriorityStrategy::OwnQuotes { max_order_age } => {
+                    Arc::new(sorting::OwnQuotes {
+                        max_order_age: max_order_age
+                            .map(|t| chrono::Duration::from_std(t).unwrap()),
+                    })
+                }
+            };
+            order_sorting_strategies.push(comparator);
+        }
+
+        order_sorting_strategies
     }
 }
 
