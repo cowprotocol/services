@@ -139,11 +139,15 @@ impl Competition {
     pub async fn solve(&self, auction: Auction) -> Result<Option<Solved>, Error> {
         let auction = Arc::new(auction);
         let tasks = self.fetcher.get_tasks_for_auction(auction.clone());
-        let auction = Arc::unwrap_or_clone(auction);
+        let mut auction = Arc::unwrap_or_clone(auction);
 
         let settlement_contract = self.eth.contracts().settlement().address();
         let solver_address = self.solver.account().address();
         let order_sorting_strategies = self.order_sorting_strategies.clone();
+
+        // Add the CoW AMM orders to the auction
+        let cow_amm_orders = tasks.cow_amm_orders.await;
+        auction.orders.extend(cow_amm_orders.iter().cloned());
 
         let sort_orders_future = Self::run_blocking_with_timer("sort_orders", move || {
             Self::sort_orders(
@@ -156,12 +160,8 @@ impl Competition {
         .await;
 
         // We can sort the orders and fetch auction data in parallel
-        let (auction, balances, app_data, cow_amm_orders) = tokio::join!(
-            sort_orders_future,
-            tasks.balances,
-            tasks.app_data,
-            tasks.cow_amm_orders,
-        );
+        let (auction, balances, app_data) =
+            tokio::join!(sort_orders_future, tasks.balances, tasks.app_data,);
 
         let auction = Self::run_blocking_with_timer("update_orders", move || {
             Self::update_orders(
