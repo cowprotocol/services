@@ -199,9 +199,7 @@ fn liquidity_sources_notifier(
     config: &config::Config,
     eth: &Ethereum,
 ) -> notify::liquidity_sources::Notifier {
-    let chain_id = eth.chain().id();
-
-    notify::liquidity_sources::Notifier::try_new(&config.liquidity_sources_notifier, chain_id)
+    notify::liquidity_sources::Notifier::try_new(&config.liquidity_sources_notifier, eth.chain())
         .expect("initialize notify sources notifier")
 }
 

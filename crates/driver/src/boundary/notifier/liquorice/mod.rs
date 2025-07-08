@@ -34,11 +34,11 @@ pub struct LiquoriceNotifier {
 impl LiquoriceNotifier {
     pub fn new(
         config: &infra::notify::liquidity_sources::config::Liquorice,
-        chain_id: u64,
+        chain: chain::Chain,
     ) -> Result<Self> {
         let settlement_contract_address = ILiquoriceSettlement::raw_contract()
             .networks
-            .get(chain_id.to_string().as_str())
+            .get(chain.id().to_string().as_str())
             .map(|network| network.address.into())
             .ok_or(anyhow!("Liquorice settlement contract not found"))?;
 

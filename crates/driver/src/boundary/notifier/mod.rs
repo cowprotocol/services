@@ -23,12 +23,12 @@ pub struct Notifier {
 impl Notifier {
     pub fn try_new(
         config: &infra::notify::liquidity_sources::Config,
-        chain_id: u64,
+        chain: chain::Chain,
     ) -> Result<Self> {
         let mut inner: Vec<Box<dyn LiquiditySourcesNotifying>> = vec![];
 
         if let Some(liquorice) = &config.liquorice {
-            inner.push(Box::new(LiquoriceNotifier::new(liquorice, chain_id)?));
+            inner.push(Box::new(LiquoriceNotifier::new(liquorice, chain)?));
         }
 
         Ok(Self { inner })
