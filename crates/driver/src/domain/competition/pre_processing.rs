@@ -162,13 +162,7 @@ impl DataAggregator {
         let shared = fut.boxed().shared();
 
         // Start the computation in the background
-        tokio::spawn({
-            let shared = shared.clone();
-            async move {
-                // Just await once to start the future
-                let _ = shared.await;
-            }
-        });
+        tokio::spawn(shared.clone());
 
         shared
     }
