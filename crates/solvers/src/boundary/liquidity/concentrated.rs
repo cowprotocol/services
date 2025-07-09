@@ -60,6 +60,7 @@ impl BaselineSolvable for Pool {
                         ?out_token,
                         ?in_token,
                         ?in_amount,
+                        ?amount_out,
                         fee=?self.fee,
                         "got amount out from UniswapV3QuoterV2"
                     );
@@ -108,6 +109,7 @@ impl BaselineSolvable for Pool {
                         ?in_token,
                         ?out_token,
                         ?out_amount,
+                        ?amount_in,
                         fee=?self.fee,
                         "got amount in from UniswapV3QuoterV2"
                     );
