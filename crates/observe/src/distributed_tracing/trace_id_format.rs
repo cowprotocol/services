@@ -129,11 +129,19 @@ where
         event: &Event<'_>,
     ) -> fmt::Result {
         let trace_id = Span::current().context().span().span_context().trace_id();
-        if trace_id != TraceId::INVALID {
-            write!(writer, "[trace_id={trace_id}] ")?;
-        }
+        let mut line = String::new();
 
-        // now let the normal formatter do all the fancy stuff
-        self.inner.format_event(ctx, writer, event)
+        // now let the normal formatter do all the fancy stuff and dump it into a String
+        let format_res = self.inner.format_event(ctx, Writer::new(&mut line), event);
+        if trace_id != TraceId::INVALID {
+            // remove the new line the default formatter added
+            if line.ends_with('\n') {
+                line.pop();
+            }
+            // append trace id and a newline
+            line.push_str(&format!(" [trace_id {trace_id}]\n"));
+        }
+        writer.write_str(&line)?;
+        format_res
     }
 }
