@@ -139,7 +139,7 @@ where
                 line.pop();
             }
             // append trace id and a newline
-            line.push_str(&format!(" [trace_id {trace_id}]\n"));
+            line.push_str(&format!(" trace_id={trace_id}\n"));
         }
         writer.write_str(&line)?;
         format_res
