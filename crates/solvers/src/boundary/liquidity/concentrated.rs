@@ -56,13 +56,13 @@ impl BaselineSolvable for Pool {
             .map(
                 |(amount_out, _sqrt_price_x96_after, _initialized_ticks_crossed, _gas_estimate)| {
                     tracing::debug!(
-                    ?tx,
-                    ?out_token,
-                    ?in_token,
-                    ?in_amount,
-                    fee=?self.fee,
-                    "got amount out from UniswapV3QuoterV2"
-                );
+                        ?tx,
+                        ?out_token,
+                        ?in_token,
+                        ?in_amount,
+                        fee=?self.fee,
+                        "got amount out from UniswapV3QuoterV2"
+                    );
                     amount_out
                 },
             )
@@ -104,13 +104,13 @@ impl BaselineSolvable for Pool {
             .map(
                 |(amount_in, _sqrt_price_x96_after, _initialized_ticks_crossed, _gas_estimate)| {
                     tracing::debug!(
-                    ?tx,
-                    ?in_token,
-                    ?out_token,
-                    ?out_amount,
-                    fee=?self.fee,
-                    "got amount in from UniswapV3QuoterV2"
-                );
+                        ?tx,
+                        ?in_token,
+                        ?out_token,
+                        ?out_amount,
+                        fee=?self.fee,
+                        "got amount in from UniswapV3QuoterV2"
+                    );
                     amount_in
                 },
             )
