@@ -98,6 +98,11 @@ impl<'a> Solver<'a> {
                         return None;
                     }
 
+                    tracing::info!(
+                        "newlog computed buy.value={:?}, request.buy.amount={:?}",
+                        buy.value,
+                        request.buy.amount
+                    );
                     (buy.value >= request.buy.amount).then_some((segments, buy))
                 });
                 let result = futures::future::join_all(futures)
