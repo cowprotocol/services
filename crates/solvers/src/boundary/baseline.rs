@@ -84,9 +84,11 @@ impl<'a> Solver<'a> {
                         &self.onchain_liquidity,
                     )
                     .await?;
+                    tracing::info!("newlog found buy amount={:?}", buy.value);
                     let segments = self
                         .traverse_path(&buy.path, request.sell.token.0, request.sell.amount)
                         .await?;
+                    tracing::info!("newlog found segments={:?}", segments.len());
 
                     let sell = segments.first().map(|segment| segment.input.amount);
                     if sell.map(|sell| sell >= request.sell.amount) != Some(true) {
