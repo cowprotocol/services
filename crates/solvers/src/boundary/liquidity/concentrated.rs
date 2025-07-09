@@ -15,7 +15,6 @@ pub struct Pool {
 impl Pool {
     // Estimated with https://dune.com/queries/5431793
     const POOL_SWAP_GAS_COST: usize = 106_000;
-    const QUOTER_V2_ADDRESS: H160 = shared::addr!("61fFE014bA17989E743c5F6cB21bF9697530B21e");
 }
 
 /// Computes input or output amounts via eth_calls. The implementation was based
