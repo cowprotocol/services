@@ -31,12 +31,27 @@ impl BaselineSolvable for Pool {
             return None;
         }
 
-        self.uni_v3_quoter_contract
-            .quote_exact_input_single((in_token, out_token, in_amount, self.fee, 0.into()))
+        let builder = self.uni_v3_quoter_contract.quote_exact_input_single((
+            in_token,
+            out_token,
+            in_amount,
+            self.fee,
+            0.into(),
+        ));
+        let tx = builder.tx.clone();
+        builder
             .call()
             .await
             .inspect_err(|err| {
-                tracing::debug!(?err, "failed to get amount out from Uniswap V3 Quoter V2");
+                tracing::debug!(
+                    ?err,
+                    ?tx,
+                    ?out_token,
+                    ?in_token,
+                    ?in_amount,
+                    fee=?self.fee,
+                    "failed to get amount out from UniswapV3QuoterV2"
+                );
             })
             .map(
                 |(amount_out, _sqrt_price_x96_after, _initialized_ticks_crossed, _gas_estimate)| {
@@ -56,12 +71,27 @@ impl BaselineSolvable for Pool {
             return None;
         }
 
-        self.uni_v3_quoter_contract
-            .quote_exact_output_single((in_token, out_token, out_amount, self.fee, 0.into()))
+        let builder = self.uni_v3_quoter_contract.quote_exact_output_single((
+            in_token,
+            out_token,
+            out_amount,
+            self.fee,
+            0.into(),
+        ));
+        let tx = builder.tx.clone();
+        builder
             .call()
             .await
             .inspect_err(|err| {
-                tracing::debug!(?err, "failed to get amount in from Uniswap V3 Quoter V2");
+                tracing::debug!(
+                    ?err,
+                    ?tx,
+                    ?in_token,
+                    ?out_token,
+                    ?out_amount,
+                    fee=?self.fee,
+                    "failed to get amount in from UniswapV3QuoterV2"
+                );
             })
             .map(
                 |(amount_in, _sqrt_price_x96_after, _initialized_ticks_crossed, _gas_estimate)| {
