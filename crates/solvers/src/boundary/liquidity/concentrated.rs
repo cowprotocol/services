@@ -35,9 +35,6 @@ impl BaselineSolvable for Pool {
             .quote_exact_input_single((in_token, out_token, in_amount, self.fee, 0.into()))
             .call()
             .await
-            .inspect_err(|err| {
-                tracing::debug!(?err, "failed to get amount out from Uniswap V3 Quoter V2");
-            })
             .map(
                 |(amount_out, _sqrt_price_x96_after, _initialized_ticks_crossed, _gas_estimate)| {
                     amount_out
@@ -60,9 +57,6 @@ impl BaselineSolvable for Pool {
             .quote_exact_output_single((in_token, out_token, out_amount, self.fee, 0.into()))
             .call()
             .await
-            .inspect_err(|err| {
-                tracing::debug!(?err, "failed to get amount in from Uniswap V3 Quoter V2");
-            })
             .map(
                 |(amount_in, _sqrt_price_x96_after, _initialized_ticks_crossed, _gas_estimate)| {
                     amount_in
