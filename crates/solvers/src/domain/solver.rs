@@ -19,6 +19,7 @@ use {
         infra::metrics,
     },
     ethereum_types::U256,
+    reqwest::Url,
     std::{cmp, collections::HashSet, sync::Arc},
 };
 
@@ -35,6 +36,7 @@ pub struct Config {
     pub max_partial_attempts: usize,
     pub solution_gas_offset: eth::SignedGas,
     pub native_token_price_estimation_amount: eth::U256,
+    pub node_url: Option<Url>,
 }
 
 struct Inner {
@@ -66,11 +68,27 @@ struct Inner {
     /// The amount of the native token to use to estimate native price of a
     /// token
     native_token_price_estimation_amount: eth::U256,
+
+    /// If provided, the solver can rely on Uniswap V3 LPs
+    uni_v3_quoter_v2: Option<contracts::UniswapV3QuoterV2>,
 }
 
 impl Solver {
     /// Creates a new baseline solver for the specified configuration.
-    pub fn new(config: Config) -> Self {
+    pub async fn new(config: Config) -> Self {
+        let uni_v3_quoter_v2 = match config.node_url {
+            Some(url) => {
+                let web3 = ethrpc::web3(Default::default(), Default::default(), &url, "baseline");
+                contracts::UniswapV3QuoterV2::deployed(&web3)
+                    .await
+                    .inspect_err(|err| {
+                        tracing::warn!(?err, "Failed to load UniswapV3QuoterV2 contract");
+                    })
+                    .ok()
+            }
+            None => None,
+        };
+
         Self(Arc::new(Inner {
             weth: config.weth,
             base_tokens: config.base_tokens.into_iter().collect(),
@@ -78,6 +96,7 @@ impl Solver {
             max_partial_attempts: config.max_partial_attempts,
             solution_gas_offset: config.solution_gas_offset,
             native_token_price_estimation_amount: config.native_token_price_estimation_amount,
+            uni_v3_quoter_v2,
         }))
     }
 
@@ -127,8 +146,12 @@ impl Inner {
         auction: auction::Auction,
         sender: tokio::sync::mpsc::UnboundedSender<solution::Solution>,
     ) {
-        let boundary_solver =
-            boundary::baseline::Solver::new(&self.weth, &self.base_tokens, &auction.liquidity);
+        let boundary_solver = boundary::baseline::Solver::new(
+            &self.weth,
+            &self.base_tokens,
+            &auction.liquidity,
+            self.uni_v3_quoter_v2.as_ref(),
+        );
 
         for (i, order) in auction.orders.into_iter().enumerate() {
             let sell_token = order.sell.token;

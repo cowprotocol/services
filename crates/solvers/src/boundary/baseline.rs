@@ -22,10 +22,11 @@ impl<'a> Solver<'a> {
         weth: &eth::WethAddress,
         base_tokens: &HashSet<eth::TokenAddress>,
         liquidity: &'a [liquidity::Liquidity],
+        uni_v3_quoter_v2: Option<&contracts::UniswapV3QuoterV2>,
     ) -> Self {
         Self {
             base_tokens: to_boundary_base_tokens(weth, base_tokens),
-            onchain_liquidity: to_boundary_liquidity(liquidity),
+            onchain_liquidity: to_boundary_liquidity(liquidity, uni_v3_quoter_v2),
             liquidity: liquidity
                 .iter()
                 .map(|liquidity| (liquidity.id.clone(), liquidity))
@@ -153,6 +154,7 @@ impl<'a> Solver<'a> {
 
 fn to_boundary_liquidity(
     liquidity: &[liquidity::Liquidity],
+    uni_v3_quoter_v2: Option<&contracts::UniswapV3QuoterV2>,
 ) -> HashMap<TokenPair, Vec<OnchainLiquidity>> {
     liquidity
         .iter()
@@ -224,8 +226,29 @@ fn to_boundary_liquidity(
                             })
                     }
                 }
-                // The baseline solver does not currently support other AMMs.
-                _ => {}
+                liquidity::State::Concentrated(pool) => {
+                    let Some(uni_v3_quoter_v2) = uni_v3_quoter_v2 else {
+                        // liquidity sources that rely on concentrated pools are disabled
+                        return onchain_liquidity;
+                    };
+
+                    let token_pair = to_boundary_token_pair(&pool.tokens);
+                    onchain_liquidity
+                        .entry(token_pair)
+                        .or_default()
+                        .push(OnchainLiquidity {
+                            id: liquidity.id.clone(),
+                            token_pair,
+                            source: LiquiditySource::Concentrated(
+                                boundary::liquidity::concentrated::Pool {
+                                    uni_v3_quoter_contract: uni_v3_quoter_v2.clone(),
+                                    address: liquidity.address,
+                                    tokens: token_pair,
+                                    fee: pool.fee.0,
+                                },
+                            ),
+                        })
+                }
             };
             onchain_liquidity
         })
@@ -244,6 +267,7 @@ enum LiquiditySource {
     WeightedProduct(boundary::liquidity::weighted_product::Pool),
     Stable(boundary::liquidity::stable::Pool),
     LimitOrder(liquidity::limit_order::LimitOrder),
+    Concentrated(boundary::liquidity::concentrated::Pool),
 }
 
 impl BaselineSolvable for OnchainLiquidity {
@@ -255,6 +279,7 @@ impl BaselineSolvable for OnchainLiquidity {
             LiquiditySource::LimitOrder(limit_order) => {
                 limit_order.get_amount_out(out_token, input).await
             }
+            LiquiditySource::Concentrated(pool) => pool.get_amount_out(out_token, input).await,
         }
     }
 
@@ -266,6 +291,7 @@ impl BaselineSolvable for OnchainLiquidity {
             LiquiditySource::LimitOrder(limit_order) => {
                 limit_order.get_amount_in(in_token, out).await
             }
+            LiquiditySource::Concentrated(pool) => pool.get_amount_in(in_token, out).await,
         }
     }
 
@@ -275,6 +301,7 @@ impl BaselineSolvable for OnchainLiquidity {
             LiquiditySource::WeightedProduct(pool) => pool.gas_cost().await,
             LiquiditySource::Stable(pool) => pool.gas_cost().await,
             LiquiditySource::LimitOrder(limit_order) => limit_order.gas_cost().await,
+            LiquiditySource::Concentrated(pool) => pool.gas_cost().await,
         }
     }
 }

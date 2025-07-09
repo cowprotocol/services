@@ -1,3 +1,4 @@
+pub mod concentrated;
 pub mod constant_product;
 mod limit_order;
 pub mod stable;

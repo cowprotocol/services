@@ -37,7 +37,7 @@ async fn run_with(args: cli::Args, bind: Option<oneshot::Sender<SocketAddr>>) {
     let solver = match args.command {
         cli::Command::Baseline { config } => {
             let config = config::load(&config).await;
-            solver::Solver::new(config)
+            solver::Solver::new(config).await
         }
     };
 
