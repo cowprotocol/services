@@ -160,9 +160,12 @@ pub async fn current_block_stream(
             }
 
             tracing::info!(number=%block.number, hash=?block.hash, "noticed a new block");
-            if sender.send(block).is_err() {
-                tracing::info!("exiting polling loop");
-                break;
+            if let Err(err) = sender.send(block) {
+                tracing::error!(
+                    ?err,
+                    "failed to send block to stream, aborting polling loop"
+                );
+                panic!("polling loop terminated due to sender failure");
             }
 
             previous_block = block;
@@ -200,9 +203,12 @@ pub fn throttle(blocks: CurrentBlockWatcher, updates_to_skip: NonZeroU64) -> Cur
                 continue;
             }
 
-            if sender.send(block).is_err() {
-                tracing::info!("exiting polling loop");
-                break;
+            if let Err(err) = sender.send(block) {
+                tracing::error!(
+                    ?err,
+                    "failed to send block to stream, aborting polling loop"
+                );
+                panic!("polling loop terminated due to sender failure");
             }
         }
     };
