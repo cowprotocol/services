@@ -73,7 +73,7 @@ impl Validator {
         // 1. How the pre-interactions would behave as part of the settlement
         // 2. Simulate the actual `isValidSignature` calls that would happen as part of
         //    a settlement
-        let gas_used = contracts::storage_accessible::simulate(
+        let result = contracts::storage_accessible::simulate(
             BYTECODE.clone(),
             self.signatures.methods().validate(
                 (self.settlement, self.vault_relayer),
@@ -87,12 +87,10 @@ impl Validator {
                     .collect(),
             ),
         )
-        .await?;
+        .await;
 
-        let simulation = Simulation { gas_used };
-
-        tracing::trace!(?check, ?simulation, "simulated signature");
-        Ok(simulation)
+        tracing::trace!(?check, ?result, "simulated signature");
+        Ok(Simulation { gas_used: result? })
     }
 }
 
