@@ -1,0 +1,128 @@
+{
+  "abi": [
+    {
+      "type": "function",
+      "name": "settleSingle",
+      "inputs": [
+        {
+          "name": "_signer",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "_order",
+          "type": "tuple",
+          "internalType": "struct ILiquoriceSettlement.Single",
+          "components": [
+            {
+              "name": "rfqId",
+              "type": "string",
+              "internalType": "string"
+            },
+            {
+              "name": "nonce",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "trader",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "effectiveTrader",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "baseToken",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "quoteToken",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "baseTokenAmount",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "quoteTokenAmount",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "minFillAmount",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "quoteExpiry",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "recipient",
+              "type": "address",
+              "internalType": "address"
+            }
+          ]
+        },
+        {
+          "name": "_makerSignature",
+          "type": "tuple",
+          "internalType": "struct Signature.TypedSignature",
+          "components": [
+            {
+              "name": "signatureType",
+              "type": "uint8",
+              "internalType": "enum Signature.Type"
+            },
+            {
+              "name": "transferCommand",
+              "type": "uint8",
+              "internalType": "enum Signature.TransferCommand"
+            },
+            {
+              "name": "signatureBytes",
+              "type": "bytes",
+              "internalType": "bytes"
+            }
+          ]
+        },
+        {
+          "name": "_filledTakerAmount",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "_takerSignature",
+          "type": "tuple",
+          "internalType": "struct Signature.TypedSignature",
+          "components": [
+            {
+              "name": "signatureType",
+              "type": "uint8",
+              "internalType": "enum Signature.Type"
+            },
+            {
+              "name": "transferCommand",
+              "type": "uint8",
+              "internalType": "enum Signature.TransferCommand"
+            },
+            {
+              "name": "signatureBytes",
+              "type": "bytes",
+              "internalType": "bytes"
+            }
+          ]
+        }
+      ],
+      "outputs": [],
+      "stateMutability": "payable"
+    }
+  ]
+}
