@@ -50,6 +50,8 @@ pub struct ProposedTrade {
     pub order_uid: OrderUid,
     pub executed_sell: BigDecimal,
     pub executed_buy: BigDecimal,
+    pub sell_token: Address,
+    pub buy_token: Address,
 }
 
 #[derive(sqlx::FromRow)]

@@ -106,6 +106,8 @@ fn try_into_dto(value: DbResponse) -> Result<ApiResponse, LoadSolverCompetitionE
                         .context("could not convert sell amount to U256")?,
                     buy_amount: big_decimal_to_u256(&trade.executed_buy)
                         .context("could not convert buy amount to U256")?,
+                    sell_token: H160(trade.sell_token.0),
+                    buy_token: H160(trade.buy_token.0),
                 });
         }
         grouped_trades
