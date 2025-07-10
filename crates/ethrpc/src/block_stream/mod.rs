@@ -161,7 +161,7 @@ pub async fn current_block_stream(
 
             tracing::info!(number=%block.number, hash=?block.hash, "noticed a new block");
             if sender.send(block).is_err() {
-                tracing::debug!("exiting polling loop");
+                tracing::info!("exiting polling loop");
                 break;
             }
 
@@ -201,7 +201,7 @@ pub fn throttle(blocks: CurrentBlockWatcher, updates_to_skip: NonZeroU64) -> Cur
             }
 
             if sender.send(block).is_err() {
-                tracing::debug!("exiting polling loop");
+                tracing::info!("exiting polling loop");
                 break;
             }
         }
