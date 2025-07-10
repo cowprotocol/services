@@ -45,6 +45,13 @@ impl TradeRetrieving for Postgres {
             .iter()
             .filter_map(|t| t.auction_id.map(|auction_id| (auction_id, t.order_uid)))
             .collect::<Vec<_>>();
+
+        if auction_order_uids.len() >= u16::MAX as usize {
+            // We use these ids as arguments for an SQL query and sqlx only allows
+            // u16::MAX arguments. To avoid a panic later on we return an error here.
+            anyhow::bail!("query response too large");
+        }
+
         let executed_protocol_fees = self
             .executed_protocol_fees(auction_order_uids.as_slice())
             .await?;
