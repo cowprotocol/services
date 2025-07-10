@@ -21,7 +21,7 @@ pub type Web3 = DynWeb3;
 pub type Web3Transport = DynTransport;
 pub type Web3CallBatch = CallBatch<Web3Transport>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Config {
     /// Maximum batch size for Ethereum RPC requests. Use '0' to disable
     /// batching.
