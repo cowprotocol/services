@@ -182,6 +182,7 @@ pub fn tx(
 
     // Collect flashloan information for the router
     // Users are now expected to handle flashloan repayment via hooks (pre-interactions)
+    #[allow(clippy::iter_kv_map)]
     let flashloans = solution
         .flashloans
         .iter()

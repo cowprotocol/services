@@ -313,6 +313,10 @@ impl AuctionProcessor {
 
             // Update order app data if it was fetched.
             if let Some(fetched_app_data) = app_data_by_hash.get(&order.app_data.hash()) {
+                tracing::warn!(
+                    app_data = ?fetched_app_data.clone(),
+                    "[flashloan_hint_debug] app_data"
+                );
                 order.app_data = fetched_app_data.clone().into();
                 if order.app_data.flashloan().is_some() {
                     // If an order requires a flashloan we assume all the necessary
@@ -320,6 +324,10 @@ impl AuctionProcessor {
                     // already ensures that flashloan orders have sufficient flashloan
                     // hints to cover their sell amounts, so we don't need to enforce
                     // receiver == settlement here anymore.
+                    tracing::warn!(
+                        app_data = ?fetched_app_data.clone(),
+                        "[flashloan_hint_debug] has flashloan"
+                    );
                     return true;
                 }
             }

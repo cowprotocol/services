@@ -380,9 +380,14 @@ impl OrderValidator {
             .protocol
             .flashloan
             .as_ref()
-            .map_or(false, |flashloan| {
+            .is_some_and(|flashloan| {
                 flashloan.token == order.data().sell_token && flashloan.amount >= order.data().sell_amount
             });
+        tracing::warn!(
+            owner = ?owner,
+            has_flashloan_for_sell_token = ?has_flashloan_for_sell_token,
+            "[flashloan_hint_debug] has_flashloan_for_sell_token"
+        );
 
         // Simulate transferring a small token balance into the settlement contract.
         // As a spam protection we require that an account must have at least 1 atom
@@ -420,6 +425,10 @@ impl OrderValidator {
                     //    transaction with a WETH wrap and WETH approval to the vault relayer contract.
                     // 2. Orders with flashloan hints that match the sell token, since the flashloan
                     //    will provide the necessary tokens during settlement.
+                    tracing::warn!(
+                        owner = ?owner,
+                        "[flashloan_hint_debug] flashloan token is transferable"
+                    );
                     return Ok(());
                 }
                 Err(err) => match err {
