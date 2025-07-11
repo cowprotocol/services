@@ -8,20 +8,20 @@ pub async fn insert(
     ex: &mut PgConnection,
     auction_id: AuctionId,
     solver: Address,
-    solution_id: i64,
+    solution_uid: i64,
     start_timestamp: DateTime<Utc>,
     start_block: i64,
     deadline_block: i64,
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
-INSERT INTO settlement_executions (auction_id, solver, solution_id, start_timestamp, start_block, deadline_block)
+INSERT INTO settlement_executions (auction_id, solver, solution_uid, start_timestamp, start_block, deadline_block)
 VALUES ($1, $2, $3, $4, $5, $6)
     ;"#;
 
     sqlx::query(QUERY)
         .bind(auction_id)
         .bind(solver)
-        .bind(solution_id)
+        .bind(solution_uid)
         .bind(start_timestamp)
         .bind(start_block)
         .bind(deadline_block)
@@ -35,7 +35,7 @@ pub async fn update(
     ex: &mut PgConnection,
     auction_id: AuctionId,
     solver: Address,
-    solution_id: i64,
+    solution_uid: i64,
     end_timestamp: DateTime<Utc>,
     end_block: i64,
     outcome: String,
@@ -43,13 +43,13 @@ pub async fn update(
     const QUERY: &str = r#"
 UPDATE settlement_executions
 SET end_timestamp = $4, end_block = $5, outcome = $6
-WHERE auction_id = $1 AND solver = $2 AND solution_id = $3
+WHERE auction_id = $1 AND solver = $2 AND solution_uid = $3
     ;"#;
 
     sqlx::query(QUERY)
         .bind(auction_id)
         .bind(solver)
-        .bind(solution_id)
+        .bind(solution_uid)
         .bind(end_timestamp)
         .bind(end_block)
         .bind(outcome)
@@ -110,7 +110,7 @@ mod tests {
         let expected_a = ExecutionRow {
             auction_id,
             solver: solver_a,
-            solution_id: 1,
+            solution_uid: 1,
             start_timestamp,
             end_timestamp: None,
             start_block,
@@ -121,7 +121,7 @@ mod tests {
         let expected_b = ExecutionRow {
             auction_id,
             solver: solver_b,
-            solution_id: 1,
+            solution_uid: 1,
             start_timestamp,
             end_timestamp: None,
             start_block,
@@ -167,7 +167,7 @@ mod tests {
         let expected_a = ExecutionRow {
             auction_id,
             solver: solver_a,
-            solution_id: 1,
+            solution_uid: 1,
             start_timestamp,
             end_timestamp: Some(end_timestamp_a),
             start_block,
@@ -178,7 +178,7 @@ mod tests {
         let expected_b = ExecutionRow {
             auction_id,
             solver: solver_b,
-            solution_id: 1,
+            solution_uid: 1,
             start_timestamp,
             end_timestamp: Some(end_timestamp_b),
             start_block,
@@ -194,7 +194,7 @@ mod tests {
     struct ExecutionRow {
         pub auction_id: AuctionId,
         pub solver: Address,
-        pub solution_id: i64,
+        pub solution_uid: i64,
         pub start_timestamp: DateTime<Utc>,
         pub end_timestamp: Option<DateTime<Utc>>,
         pub start_block: i64,

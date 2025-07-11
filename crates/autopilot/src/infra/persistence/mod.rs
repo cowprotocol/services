@@ -826,7 +826,7 @@ impl Persistence {
             event
                 .solution_uid
                 .try_into()
-                .context("solution id overflow")?,
+                .context("solution uid overflow")?,
             event.start_timestamp,
             event
                 .start_block
@@ -859,7 +859,7 @@ impl Persistence {
             event
                 .solution_uid
                 .try_into()
-                .context("solution id overflow")?,
+                .context("solution uid overflow")?,
             event.end_timestamp,
             event.end_block.try_into().context("end block overflow")?,
             event.outcome,
