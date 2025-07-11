@@ -71,17 +71,18 @@ pub async fn load_by_tx_hash(
     tx_hash: TransactionHash,
 ) -> Result<Option<SolverCompetition>, sqlx::Error> {
     const FETCH_AUCTION_ID: &str = r#"
-        SELECT auction_id
+        SELECT s.auction_id
         FROM settlements s
         LEFT OUTER JOIN settlement_observations so ON
              s.block_number = so.block_number
              AND s.log_index = so.log_index
         WHERE s.tx_hash = $1;
     "#;
-    let auction_id: Option<i64> = sqlx::query_scalar(FETCH_AUCTION_ID)
+    let auction_id = sqlx::query_scalar::<_, Option<i64>>(FETCH_AUCTION_ID)
         .bind(tx_hash)
         .fetch_optional(ex.deref_mut())
-        .await?;
+        .await?
+        .flatten();
     let Some(auction_id) = auction_id else {
         return Ok(None);
     };
@@ -973,5 +974,29 @@ mod tests {
 
         // Now, it is not a low-settling solver anymore
         assert_eq!(result, vec![non_settling_solver]);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_load_by_tx_hash() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let event = EventIndex {
+            block_number: 1,
+            log_index: 0,
+        };
+        let tx_hash = ByteArray([1u8; 32]);
+        let settlement = Settlement {
+            solver: ByteArray([1u8; 20]),
+            transaction_hash: tx_hash,
+        };
+        events::insert_settlement(&mut db, &event, &settlement)
+            .await
+            .unwrap();
+
+        let solver_competition = load_by_tx_hash(&mut db, tx_hash).await.unwrap();
+        assert!(solver_competition.is_none());
     }
 }
