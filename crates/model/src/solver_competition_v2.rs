@@ -58,6 +58,10 @@ pub struct Order {
     /// The effective amount the user received after all fees.
     #[serde_as(as = "HexOrDecimalU256")]
     pub buy_amount: U256,
+    /// The buy token address.
+    pub buy_token: H160,
+    /// The sell token address.
+    pub sell_token: H160,
 }
 
 #[cfg(test)]
@@ -96,6 +100,8 @@ mod tests {
                                      111111111111111111111111111111111111111111111111",
                             "sellAmount": "12",
                             "buyAmount": "13",
+                            "buyToken": "0x2222222222222222222222222222222222222222",
+                            "sellToken": "0x2222222222222222222222222222222222222222"
                         },
                     ],
                     "referenceScore": "10",
@@ -133,6 +139,8 @@ mod tests {
                     id: OrderUid([0x11; 56]),
                     sell_amount: 12.into(),
                     buy_amount: 13.into(),
+                    buy_token: H160([0x22; 20]),
+                    sell_token: H160([0x22; 20]),
                 }],
                 is_winner: true,
                 filtered_out: false,
