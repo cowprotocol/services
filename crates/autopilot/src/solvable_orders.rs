@@ -5,6 +5,7 @@ use {
         infra::{self, banned},
     },
     anyhow::{Context, Result},
+    app_data,
     bigdecimal::BigDecimal,
     database::order_events::OrderEventLabel,
     futures::{FutureExt, future::join_all},
@@ -513,11 +514,9 @@ async fn find_invalid_signature_orders(
 fn orders_with_balance(
     mut orders: Vec<Order>,
     balances: &Balances,
-    settlement_contract: H160,
+    _settlement_contract: H160,
 ) -> Vec<Order> {
-    tracing::warn!(
-        "[flashloan_hint_debug] orders_with_balance"
-    );
+    tracing::warn!("[flashloan_hint_debug] orders_with_balance");
     // Prefer newer orders over older ones.
     orders.sort_by_key(|order| std::cmp::Reverse(order.metadata.creation_date));
     orders.retain(|order| {
@@ -526,13 +525,25 @@ fn orders_with_balance(
             "[flashloan_hint_debug] order"
         );
 
-        if order.data.receiver.as_ref() == Some(&settlement_contract) {
-            // TODO: replace with proper detection logic
-            // for now we assume that all orders with the settlement contract
-            // as the receiver are flashloan orders which unlock the necessary
-            // funds via a pre-interaction that can't succeed in our balance
-            // fetching simulation logic.
-            return true;
+        // Check if this is a flashloan order by looking at the app_data
+        if let Some(full_app_data) = &order.metadata.full_app_data {
+            tracing::warn!(
+                order = ?order,
+                "[flashloan_hint_debug] full_app_data"
+            );
+            if let Ok(protocol_app_data) = app_data::parse(full_app_data.as_bytes()) {
+                tracing::warn!(
+                    order = ?order,
+                    is_flashloan = ?protocol_app_data.flashloan.is_some(),
+                    "[flashloan_hint_debug] is_flashloan"
+                );
+                if protocol_app_data.flashloan.is_some() {
+                    // This is a flashloan order which unlocks the necessary
+                    // funds via a pre-interaction that can't succeed in our balance
+                    // fetching simulation logic.
+                    return true;
+                }
+            }
         }
 
         let balance = match balances.get(&Query::from_order(order)) {
@@ -1428,14 +1439,17 @@ mod tests {
                 },
                 ..Default::default()
             },
-            // considered flashloan order because of special receiver
+            // considered flashloan order because of flashloan hint in app_data
             Order {
                 data: OrderData {
                     sell_token: H160::from_low_u64_be(6),
                     sell_amount: 200.into(),
                     fee_amount: 0.into(),
                     partially_fillable: true,
-                    receiver: Some(settlement_contract),
+                    ..Default::default()
+                },
+                metadata: OrderMetadata {
+                    full_app_data: Some(r#"{"metadata":{"flashloan":{"lender":"0x1111111111111111111111111111111111111111","token":"0x2222222222222222222222222222222222222222","amount":"1000000000000000000"}}}"#.to_string()),
                     ..Default::default()
                 },
                 ..Default::default()
