@@ -290,7 +290,7 @@ impl AuctionProcessor {
         balances: &mut Balances,
         app_data_by_hash: &mut HashMap<order::app_data::AppDataHash, app_data::ValidatedAppData>,
         orders: &mut Vec<order::Order>,
-        settlement: &eth::Address,
+        _settlement: &eth::Address,
         cow_amms: &HashSet<order::Uid>,
     ) {
         // The auction that we receive from the `autopilot` assumes that there
@@ -316,10 +316,11 @@ impl AuctionProcessor {
                 order.app_data = fetched_app_data.clone().into();
                 if order.app_data.flashloan().is_some() {
                     // If an order requires a flashloan we assume all the necessary
-                    // sell tokens will come from there. But the receiver must be the
-                    // settlement contract because that is how the driver expects
-                    // the flashloan to be repaid for now.
-                    return order.receiver.as_ref() == Some(settlement);
+                    // sell tokens will come from there. The order validation logic
+                    // already ensures that flashloan orders have sufficient flashloan
+                    // hints to cover their sell amounts, so we don't need to enforce
+                    // receiver == settlement here anymore.
+                    return true;
                 }
             }
 
