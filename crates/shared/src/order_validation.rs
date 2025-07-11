@@ -375,14 +375,16 @@ impl OrderValidator {
         let mut res = Ok(());
 
         // Check if there's a flashloan hint that could provide the sell token
-        let has_flashloan_for_sell_token = app_data
-            .inner
-            .protocol
-            .flashloan
-            .as_ref()
-            .is_some_and(|flashloan| {
-                flashloan.token == order.data().sell_token && flashloan.amount >= order.data().sell_amount
-            });
+        let has_flashloan_for_sell_token =
+            app_data
+                .inner
+                .protocol
+                .flashloan
+                .as_ref()
+                .is_some_and(|flashloan| {
+                    flashloan.token == order.data().sell_token
+                        && flashloan.amount >= order.data().sell_amount
+                });
         tracing::warn!(
             owner = ?owner,
             has_flashloan_for_sell_token = ?has_flashloan_for_sell_token,
@@ -420,9 +422,10 @@ impl OrderValidator {
                     // We have exceptions for:
                     // 1. Pre-sign orders where they do not require sufficient balance or allowance.
                     //    The idea is that this allows smart contracts to place orders bundled with
-                    //    other transactions that either produce the required balance or set the allowance.
-                    //    This would, for example, allow a Gnosis Safe to bundle the pre-signature
-                    //    transaction with a WETH wrap and WETH approval to the vault relayer contract.
+                    //    other transactions that either produce the required balance or set the
+                    //    allowance. This would, for example, allow a Gnosis Safe to bundle the
+                    //    pre-signature transaction with a WETH wrap and WETH approval to the vault
+                    //    relayer contract.
                     // 2. Orders with flashloan hints that match the sell token, since the flashloan
                     //    will provide the necessary tokens during settlement.
                     tracing::warn!(
@@ -2049,7 +2052,8 @@ mod tests {
                             "amount": "150"
                         }
                     }
-                }"#.to_string(),
+                }"#
+                .to_string(),
             },
             signature: Signature::PreSign,
             from: Some(Default::default()),
@@ -2085,7 +2089,8 @@ mod tests {
                             "amount": "50"
                         }
                     }
-                }"#.to_string(),
+                }"#
+                .to_string(),
             },
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
             ..Default::default()
@@ -2120,7 +2125,8 @@ mod tests {
                             "amount": "150"
                         }
                     }
-                }"#.to_string(),
+                }"#
+                .to_string(),
             },
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
             ..Default::default()

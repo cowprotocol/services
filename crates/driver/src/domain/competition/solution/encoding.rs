@@ -31,7 +31,6 @@ pub enum Error {
     FlashloanSupportDisabled,
     #[error("no flashloan helper configured for lender: {0}")]
     UnsupportedFlashloanLender(eth::H160),
-
 }
 
 pub fn tx(
@@ -181,7 +180,8 @@ pub fn tx(
     };
 
     // Collect flashloan information for the router
-    // Users are now expected to handle flashloan repayment via hooks (pre-interactions)
+    // Users are now expected to handle flashloan repayment via hooks
+    // (pre-interactions)
     #[allow(clippy::iter_kv_map)]
     let flashloans = solution
         .flashloans
@@ -263,8 +263,6 @@ pub fn tx(
     })
 }
 
-
-
 pub fn liquidity_interaction(
     liquidity: &Liquidity,
     slippage: &slippage::Parameters,
@@ -316,8 +314,6 @@ pub fn approve(allowance: &Allowance) -> eth::Interaction {
         .into(),
     }
 }
-
-
 
 fn unwrap(amount: eth::TokenAmount, weth: &contracts::WETH9) -> eth::Interaction {
     let tx = weth.withdraw(amount.into()).into_inner();
