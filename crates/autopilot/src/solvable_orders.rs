@@ -515,9 +515,17 @@ fn orders_with_balance(
     balances: &Balances,
     settlement_contract: H160,
 ) -> Vec<Order> {
+    tracing::warn!(
+        "[flashloan_hint_debug] orders_with_balance"
+    );
     // Prefer newer orders over older ones.
     orders.sort_by_key(|order| std::cmp::Reverse(order.metadata.creation_date));
     orders.retain(|order| {
+        tracing::warn!(
+            order = ?order,
+            "[flashloan_hint_debug] order"
+        );
+
         if order.data.receiver.as_ref() == Some(&settlement_contract) {
             // TODO: replace with proper detection logic
             // for now we assume that all orders with the settlement contract
