@@ -325,7 +325,11 @@ impl RunLoop {
             OrderEventLabel::Considered,
         );
 
-        for (uid, winner) in ranking.all().enumerate() {
+        for (solution_uid, winner) in ranking
+            .all()
+            .enumerate()
+            .filter(|(_, participant)| participant.is_winner())
+        {
             let (driver, solution) = (winner.driver(), winner.solution());
             tracing::info!(driver = %driver.name, solution = %solution.id(), "winner");
 
@@ -334,7 +338,7 @@ impl RunLoop {
                 single_run_start,
                 driver,
                 solution,
-                uid,
+                solution_uid,
                 block_deadline,
             )
             .await;
