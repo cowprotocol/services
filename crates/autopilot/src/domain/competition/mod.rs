@@ -18,6 +18,7 @@ type SolutionId = u64;
 
 #[derive(Debug, Clone)]
 pub struct Solution {
+    /// A solution ID provided by the solver.
     id: SolutionId,
     solver: eth::Address,
     /// Score reported by the solver in their response.
