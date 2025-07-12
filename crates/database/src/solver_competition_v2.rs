@@ -19,7 +19,7 @@ use {
 
 #[derive(sqlx::FromRow)]
 pub struct Settlement {
-    pub solution_uid: i64,
+    pub solution_uid: Option<i64>,
     pub tx_hash: TransactionHash,
 }
 
@@ -124,7 +124,7 @@ pub async fn load_by_id(
     };
 
     const FETCH_SETTLEMENTS: &str = r#"
-        SELECT solution_uid, tx_hash
+        SELECT s.solution_uid, s.tx_hash
         FROM settlements s
         LEFT OUTER JOIN settlement_observations so ON
              s.block_number = so.block_number
