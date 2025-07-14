@@ -24,7 +24,7 @@
 //! That is effectively a measurement of how much better each order got executed
 //! because solver S participated in the competition.
 use {
-    super::{Arbitrator, PartitionedSolutions, Ranking},
+    super::{PartitionedSolutions, Ranking},
     crate::domain::{
         self,
         OrderUid,
@@ -48,8 +48,44 @@ use {
     },
 };
 
-impl Arbitrator for Config {
-    fn partition_unfair_solutions(
+/// Implements auction arbitration in 3 phases:
+/// 1. filter unfair solutions
+/// 2. mark winners
+/// 3. compute reference scores
+///
+/// The functions assume the `Arbitrator` is the only one
+/// changing the ordering or the `participants.
+impl Config {
+    /// Runs the entire auction mechanism on the passed in solutions.
+    pub fn arbitrate(
+        &self,
+        participants: Vec<Participant<Unranked>>,
+        auction: &domain::Auction,
+    ) -> Ranking {
+        let partitioned = self.partition_unfair_solutions(participants, auction);
+        let filtered_out = partitioned
+            .discarded
+            .into_iter()
+            .map(|participant| participant.rank(Ranked::FilteredOut))
+            .collect();
+
+        let mut ranked = self.mark_winners(partitioned.kept);
+        ranked.sort_by_key(|participant| {
+            (
+                // winners before non-winners
+                std::cmp::Reverse(participant.is_winner()),
+                // high score before low score
+                std::cmp::Reverse(participant.solution().computed_score().cloned()),
+            )
+        });
+        Ranking {
+            filtered_out,
+            ranked,
+        }
+    }
+
+    /// Removes unfair solutions from the set of all solutions.
+    pub fn partition_unfair_solutions(
         &self,
         mut participants: Vec<Participant<Unranked>>,
         auction: &domain::Auction,
@@ -99,7 +135,9 @@ impl Arbitrator for Config {
         }
     }
 
-    fn mark_winners(&self, participants: Vec<Participant<Unranked>>) -> Vec<Participant> {
+    /// Picks winners and sorts all solutions where winners come before
+    /// non-winners and higher scores come before lower scores.
+    pub fn mark_winners(&self, participants: Vec<Participant<Unranked>>) -> Vec<Participant> {
         let winner_indexes = self.pick_winners(participants.iter().map(|p| p.solution()));
         participants
             .into_iter()
@@ -114,7 +152,9 @@ impl Arbitrator for Config {
             .collect()
     }
 
-    fn compute_reference_scores(&self, ranking: &Ranking) -> HashMap<eth::Address, Score> {
+    /// Computes the reference scores which are used to compute
+    /// rewards for the winning solvers.
+    pub fn compute_reference_scores(&self, ranking: &Ranking) -> HashMap<eth::Address, Score> {
         let mut reference_scores = HashMap::default();
 
         for participant in &ranking.ranked {
@@ -150,9 +190,7 @@ impl Arbitrator for Config {
 
         reference_scores
     }
-}
 
-impl Config {
     /// Returns indices of winning solutions.
     /// Assumes that `solutions` is sorted by score descendingly.
     /// This logic was moved into a helper function to avoid a ton of `.clone()`
@@ -390,14 +428,7 @@ mod tests {
                     Price,
                     order::{self, AppDataHash},
                 },
-                competition::{
-                    Participant,
-                    Score,
-                    Solution,
-                    TradedOrder,
-                    Unranked,
-                    winner_selection::Arbitrator,
-                },
+                competition::{Participant, Score, Solution, TradedOrder, Unranked},
                 eth::{self, TokenAddress},
             },
             infra::Driver,

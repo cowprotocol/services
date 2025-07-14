@@ -11,7 +11,7 @@ use {
                 SolutionError,
                 SolverParticipationGuard,
                 Unranked,
-                winner_selection::{self, Arbitrator, Ranking},
+                winner_selection::{self, Ranking},
             },
             eth::{self, TxId},
             settlement::{ExecutionEnded, ExecutionStarted},

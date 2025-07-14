@@ -11,11 +11,7 @@ use {
     crate::{
         domain::{
             self,
-            competition::{
-                Participant,
-                Unranked,
-                winner_selection::{self, Arbitrator},
-            },
+            competition::{Participant, Unranked, winner_selection},
             eth::WrappedNativeToken,
         },
         infra::{

@@ -1,11 +1,4 @@
-use {
-    crate::domain::{
-        Auction,
-        competition::{Participant, Ranked, Score, Unranked},
-        eth,
-    },
-    std::collections::HashMap,
-};
+use crate::domain::competition::{Participant, Ranked, Unranked};
 
 pub mod combinatorial;
 
@@ -44,52 +37,4 @@ impl Ranking {
 pub struct PartitionedSolutions {
     kept: Vec<Participant<Unranked>>,
     discarded: Vec<Participant<Unranked>>,
-}
-
-/// Implements auction arbitration in 3 phases:
-/// 1. filter unfair solutions
-/// 2. mark winners
-/// 3. compute reference scores
-///
-/// The functions assume the `Arbitrator` is the only one
-/// changing the ordering or the `participants.
-pub trait Arbitrator: Send + Sync + 'static {
-    /// Runs the entire auction mechanism on the passed in solutions.
-    fn arbitrate(&self, participants: Vec<Participant<Unranked>>, auction: &Auction) -> Ranking {
-        let partitioned = self.partition_unfair_solutions(participants, auction);
-        let filtered_out = partitioned
-            .discarded
-            .into_iter()
-            .map(|participant| participant.rank(Ranked::FilteredOut))
-            .collect();
-
-        let mut ranked = self.mark_winners(partitioned.kept);
-        ranked.sort_by_key(|participant| {
-            (
-                // winners before non-winners
-                std::cmp::Reverse(participant.is_winner()),
-                // high score before low score
-                std::cmp::Reverse(participant.solution().computed_score().cloned()),
-            )
-        });
-        Ranking {
-            filtered_out,
-            ranked,
-        }
-    }
-
-    /// Removes unfair solutions from the set of all solutions.
-    fn partition_unfair_solutions(
-        &self,
-        participants: Vec<Participant<Unranked>>,
-        auction: &Auction,
-    ) -> PartitionedSolutions;
-
-    /// Picks winners and sorts all solutions where winners come before
-    /// non-winners and higher scores come before lower scores.
-    fn mark_winners(&self, participants: Vec<Participant<Unranked>>) -> Vec<Participant<Ranked>>;
-
-    /// Computes the reference scores which are used to compute
-    /// rewards for the winning solvers.
-    fn compute_reference_scores(&self, ranking: &Ranking) -> HashMap<eth::Address, Score>;
 }
