@@ -25,7 +25,7 @@ impl Postgres {
         let mut ex = self.pool.acquire().await.map_err(anyhow::Error::from)?;
         database::solver_competition_v2::load_by_id(&mut ex, auction_id)
             .await
-            .context("solver_competition::load_by_id")?
+            .context("solver_competition_v2::load_by_id")?
             .map(try_into_dto)
             .ok_or(LoadSolverCompetitionError::NotFound)?
     }
@@ -42,7 +42,7 @@ impl Postgres {
         let mut ex = self.pool.acquire().await.map_err(anyhow::Error::from)?;
         database::solver_competition_v2::load_by_tx_hash(&mut ex, ByteArray(tx_hash.0))
             .await
-            .context("solver_competition::load_by_tx_hash")?
+            .context("solver_competition_v2::load_by_tx_hash")?
             .map(try_into_dto)
             .ok_or(LoadSolverCompetitionError::NotFound)?
     }
@@ -56,7 +56,7 @@ impl Postgres {
         let mut ex = self.pool.acquire().await.map_err(anyhow::Error::from)?;
         database::solver_competition_v2::load_latest(&mut ex)
             .await
-            .context("solver_competition::load_latest")?
+            .context("solver_competition_v2::load_latest")?
             .map(try_into_dto)
             .ok_or(LoadSolverCompetitionError::NotFound)?
     }
