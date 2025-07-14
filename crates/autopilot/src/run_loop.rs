@@ -457,7 +457,6 @@ impl RunLoop {
         };
         let competition = Competition {
             auction_id: auction.id,
-            legacy: None,
             reference_scores,
             participants,
             prices: auction
