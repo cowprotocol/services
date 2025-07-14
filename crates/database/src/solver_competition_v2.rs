@@ -73,16 +73,15 @@ pub async fn load_by_tx_hash(
     const FETCH_AUCTION_ID: &str = r#"
         SELECT s.auction_id
         FROM settlements s
-        LEFT OUTER JOIN settlement_observations so ON
+        JOIN settlement_observations so ON
              s.block_number = so.block_number
              AND s.log_index = so.log_index
-        WHERE s.tx_hash = $1;
+        WHERE s.tx_hash = $1 AND s.auction_id IS NOT NULL;
     "#;
-    let auction_id = sqlx::query_scalar::<_, Option<i64>>(FETCH_AUCTION_ID)
+    let auction_id = sqlx::query_scalar(FETCH_AUCTION_ID)
         .bind(tx_hash)
         .fetch_optional(ex.deref_mut())
-        .await?
-        .flatten();
+        .await?;
     let Some(auction_id) = auction_id else {
         return Ok(None);
     };
