@@ -129,7 +129,7 @@ pub async fn load_by_id(
         JOIN settlement_observations so ON
              s.block_number = so.block_number
              AND s.log_index = so.log_index
-         WHERE s.auction_id = $1 AND s.solution_uid IS NOT NULL;
+        WHERE s.auction_id = $1 AND s.solution_uid IS NOT NULL;
     "#;
     let settlements: Vec<Settlement> = sqlx::query_as(FETCH_SETTLEMENTS)
         .bind(id)
