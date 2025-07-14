@@ -19,7 +19,7 @@ use {
 
 #[derive(sqlx::FromRow)]
 pub struct Settlement {
-    pub solution_uid: Option<i64>,
+    pub solution_uid: i64,
     pub tx_hash: TransactionHash,
 }
 
@@ -126,10 +126,10 @@ pub async fn load_by_id(
     const FETCH_SETTLEMENTS: &str = r#"
         SELECT s.solution_uid, s.tx_hash
         FROM settlements s
-        LEFT OUTER JOIN settlement_observations so ON
+        JOIN settlement_observations so ON
              s.block_number = so.block_number
              AND s.log_index = so.log_index
-         WHERE auction_id = $1;
+         WHERE s.auction_id = $1 AND s.solution_uid IS NOT NULL;
     "#;
     let settlements: Vec<Settlement> = sqlx::query_as(FETCH_SETTLEMENTS)
         .bind(id)

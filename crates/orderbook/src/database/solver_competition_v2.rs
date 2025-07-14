@@ -79,7 +79,7 @@ fn try_into_dto(value: DbResponse) -> Result<ApiResponse, LoadSolverCompetitionE
     let settlements: HashMap<_, _> = value
         .settlements
         .into_iter()
-        .filter_map(|row| row.solution_uid.map(|uid| (uid, H256(row.tx_hash.0))))
+        .map(|row| (row.solution_uid, H256(row.tx_hash.0)))
         .collect();
 
     let reference_scores: BTreeMap<_, _> = value
