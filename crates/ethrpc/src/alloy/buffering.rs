@@ -101,6 +101,10 @@ where
         request: SerializedRequest,
     ) -> oneshot::Receiver<Result<Response, TransportError>> {
         let (sender, receiver) = oneshot::channel();
+        // Theoreticallly we could propagate the error to the caller, however
+        // this is a critical error we can't recover from (i.e. we'll not be
+        // able to send any more RPC calls). That's why we panic ASAP to immediately
+        // cause a restart of the pod if this is running in kubernetes.
         self.calls
             .unbounded_send((sender, request))
             .expect("worker task unexpectedly dropped");
