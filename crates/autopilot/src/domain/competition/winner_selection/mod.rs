@@ -8,7 +8,6 @@ use {
 };
 
 pub mod combinatorial;
-pub mod max_score;
 
 pub struct Ranking {
     /// Solutions that were discarded because they were malformed
