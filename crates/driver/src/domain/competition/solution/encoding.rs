@@ -10,7 +10,7 @@ use {
             liquidity,
         },
         infra::{self, solver::ManageNativeToken},
-        util::Bytes,
+        util::{Bytes, conv::u256::U256Ext},
     },
     allowance::Allowance,
     itertools::Itertools,
@@ -191,6 +191,51 @@ pub fn tx(
                 .get_flashloan_wrapper(&flashloan.lender)
                 .ok_or(Error::UnsupportedFlashloanLender(flashloan.lender.0))?;
 
+            // Repayment amount needs to be increased by flash fee
+            let fee_amount =
+                (flashloan.amount.0 * flashloan_wrapper.fee_in_bps).ceil_div(&10_000.into());
+            let repayment_amount = flashloan.amount.0 + fee_amount;
+
+            // Allow settlement contract to pull borrowed tokens from flashloan wrapper
+            pre_interactions.insert(
+                0,
+                approve_flashloan(
+                    flashloan.token,
+                    flashloan.amount,
+                    contracts.settlement().address().into(),
+                    &flashloan_wrapper.helper_contract,
+                ),
+            );
+
+            // Transfer tokens from flashloan wrapper to user (i.e. borrower) to later allow
+            // settlement contract to pull in all the necessary sell tokens from the user.
+            let tx = contracts::ERC20::at(
+                &contracts.settlement().raw_instance().web3(),
+                flashloan.token.into(),
+            )
+            .transfer_from(
+                flashloan_wrapper.helper_contract.address(),
+                flashloan.borrower.into(),
+                flashloan.amount.0,
+            )
+            .into_inner();
+            pre_interactions.insert(
+                1,
+                eth::Interaction {
+                    target: tx.to.unwrap().into(),
+                    value: eth::U256::zero().into(),
+                    call_data: tx.data.unwrap().0.into(),
+                },
+            );
+
+            // Allow flash loan lender to take tokens from wrapper contract
+            post_interactions.push(approve_flashloan(
+                flashloan.token,
+                repayment_amount.into(),
+                flashloan.lender,
+                &flashloan_wrapper.helper_contract,
+            ));
+
             Ok((
                 flashloan.amount.0,
                 flashloan_wrapper.helper_contract.address(),
@@ -312,6 +357,22 @@ pub fn approve(allowance: &Allowance) -> eth::Interaction {
         ]
         .concat()
         .into(),
+    }
+}
+
+fn approve_flashloan(
+    token: eth::TokenAddress,
+    amount: eth::TokenAmount,
+    spender: eth::ContractAddress,
+    flashloan_wrapper: &contracts::IFlashLoanSolverWrapper,
+) -> eth::Interaction {
+    let tx = flashloan_wrapper
+        .approve(token.into(), spender.into(), amount.0)
+        .into_inner();
+    eth::Interaction {
+        target: tx.to.unwrap().into(),
+        value: eth::U256::zero().into(),
+        call_data: tx.data.unwrap().0.into(),
     }
 }
 
