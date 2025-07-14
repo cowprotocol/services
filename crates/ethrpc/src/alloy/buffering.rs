@@ -181,8 +181,13 @@ where
     type Response = S::Response;
 
     fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        // the service only sends messages into a queue so it's always ready.
-        Poll::Ready(Ok(()))
+        if self.calls.is_closed() {
+            Poll::Ready(Err(TransportErrorKind::custom_str(
+                "background task for batching requests was dropped unexpectedly",
+            )))
+        } else {
+            Poll::Ready(Ok(()))
+        }
     }
 
     fn call(&mut self, packet: RequestPacket) -> Self::Future {
