@@ -151,9 +151,17 @@ pub async fn load_by_id(
         .await?;
 
     const FETCH_TRADES: &str = r#"
-        SELECT solution_uid, order_uid, executed_sell, executed_buy
-        FROM proposed_trade_executions
-        WHERE auction_id = $1;
+        SELECT pte.solution_uid, pte.order_uid, executed_sell, executed_buy, 
+            COALESCE(o.sell_token, pjo.sell_token) AS sell_token,
+            COALESCE(o.buy_token, pjo.buy_token) AS buy_token
+        FROM proposed_trade_executions AS pte
+        LEFT JOIN orders o ON
+            pte.order_uid = o.uid
+        LEFT JOIN proposed_jit_orders pjo ON
+            pte.order_uid = pjo.order_uid
+            AND pte.solution_uid = pjo.solution_uid
+            AND pte.auction_id = pjo.auction_id
+        WHERE pte.auction_id = $1;
     "#;
     let trades: Vec<ProposedTrade> = sqlx::query_as(FETCH_TRADES)
         .bind(id)
