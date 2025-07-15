@@ -96,7 +96,7 @@ fn set_tracing_subscriber(config: &Config) {
                 tracing_subscriber::fmt::layer()
                     .with_timer(timer)
                     .map_event_format(|formatter| TraceIdFmt {
-                        inner: formatter.with_ansi(true),
+                        inner: formatter.with_ansi(atty::is(atty::Stream::Stdout)),
                     })
                     .with_writer(writer)
                     .with_filter($env_filter)
