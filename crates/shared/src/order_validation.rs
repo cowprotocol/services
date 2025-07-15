@@ -374,6 +374,19 @@ impl OrderValidator {
     ) -> Result<(), ValidationError> {
         let mut res = Ok(());
 
+        // Check if there's a flashloan hint that could provide the sell token
+        let has_flashloan_for_sell_token =
+            app_data
+                .inner
+                .protocol
+                .flashloan
+                .as_ref()
+                .is_some_and(|flashloan| {
+                    flashloan.borrower.is_none_or(|b| b == owner)
+                        && flashloan.token == order.data().sell_token
+                        && flashloan.amount >= order.data().sell_amount
+                });
+
         // Simulate transferring a small token balance into the settlement contract.
         // As a spam protection we require that an account must have at least 1 atom
         // of the sell_token. However, some tokens (e.g. rebasing tokens) actually run
@@ -401,14 +414,16 @@ impl OrderValidator {
                     TransferSimulationError::InsufficientAllowance
                     | TransferSimulationError::InsufficientBalance
                     | TransferSimulationError::TransferFailed,
-                ) if order.signature == Signature::PreSign => {
-                    // We have an exception for pre-sign orders where they do not
-                    // require sufficient balance or allowance. The idea, is that
-                    // this allows smart contracts to place orders bundled with
-                    // other transactions that either produce the required balance
-                    // or set the allowance. This would, for example, allow a Gnosis
-                    // Safe to bundle the pre-signature transaction with a WETH wrap
-                    // and WETH approval to the vault relayer contract.
+                ) if order.signature == Signature::PreSign || has_flashloan_for_sell_token => {
+                    // We have exceptions for:
+                    // 1. Pre-sign orders where they do not require sufficient balance or allowance.
+                    //    The idea is that this allows smart contracts to place orders bundled with
+                    //    other transactions that either produce the required balance or set the
+                    //    allowance. This would, for example, allow a Gnosis Safe to bundle the
+                    //    pre-signature transaction with a WETH wrap and WETH approval to the vault
+                    //    relayer contract.
+                    // 2. Orders with flashloan hints that match the sell token, since the flashloan
+                    //    will provide the necessary tokens during settlement.
                     return Ok(());
                 }
                 Err(err) => match err {
@@ -1977,6 +1992,149 @@ mod tests {
             || TransferSimulationError::InsufficientBalance,
             |e| matches!(e, ValidationError::InsufficientBalance),
         );
+    }
+
+    #[test]
+    fn allows_insufficient_balance_for_orders_with_sufficient_flashloan_hint() {
+        let mut order_quoter = MockOrderQuoting::new();
+        let mut bad_token_detector = MockBadTokenDetecting::new();
+        let mut balance_fetcher = MockBalanceFetching::new();
+        order_quoter
+            .expect_find_quote()
+            .returning(|_, _| Ok(Default::default()));
+        bad_token_detector
+            .expect_detect()
+            .returning(|_| Ok(TokenQuality::Good));
+        balance_fetcher
+            .expect_can_transfer()
+            .returning(|_, _| Err(TransferSimulationError::InsufficientBalance));
+        let mut limit_order_counter = MockLimitOrderCounting::new();
+        limit_order_counter.expect_count().returning(|_| Ok(0u64));
+        let validator = OrderValidator::new(
+            dummy_contract!(WETH9, [0xef; 20]),
+            Arc::new(order_validation::banned::Users::none()),
+            OrderValidPeriodConfiguration::any(),
+            false,
+            Arc::new(bad_token_detector),
+            dummy_contract!(HooksTrampoline, [0xcf; 20]),
+            Arc::new(order_quoter),
+            Arc::new(balance_fetcher),
+            Arc::new(MockSignatureValidating::new()),
+            Arc::new(limit_order_counter),
+            0,
+            Arc::new(MockCodeFetching::new()),
+            Default::default(),
+            u64::MAX,
+        );
+
+        // Test with flashloan hint that covers the sell amount
+        let order_with_sufficient_flashloan = OrderCreation {
+            valid_to: u32::MAX,
+            sell_token: H160::from_low_u64_be(1),
+            sell_amount: 100.into(),
+            buy_token: H160::from_low_u64_be(2),
+            buy_amount: 1.into(),
+            app_data: OrderCreationAppData::Full {
+                full: r#"{
+                    "metadata": {
+                        "flashloan": {
+                            "lender": "0x1111111111111111111111111111111111111111",
+                            "borrower": "0x2222222222222222222222222222222222222222",
+                            "token": "0x0100000000000000000000000000000000000000",
+                            "amount": "150"
+                        }
+                    }
+                }"#
+                .to_string(),
+            },
+            signature: Signature::PreSign,
+            from: Some(Default::default()),
+            ..Default::default()
+        };
+
+        // This should succeed because the flashloan amount (150) >= sell amount (100)
+        validator
+            .validate_and_construct_order(
+                order_with_sufficient_flashloan,
+                &Default::default(),
+                Default::default(),
+                None,
+            )
+            .now_or_never()
+            .unwrap()
+            .unwrap();
+
+        // Test with flashloan hint that doesn't cover the sell amount
+        let order_with_insufficient_flashloan = OrderCreation {
+            valid_to: u32::MAX,
+            sell_token: H160::from_low_u64_be(1),
+            sell_amount: 100.into(),
+            buy_token: H160::from_low_u64_be(2),
+            buy_amount: 1.into(),
+            app_data: OrderCreationAppData::Full {
+                full: r#"{
+                    "metadata": {
+                        "flashloan": {
+                            "lender": "0x1111111111111111111111111111111111111111",
+                            "borrower": "0x2222222222222222222222222222222222222222",
+                            "token": "0x0100000000000000000000000000000000000000",
+                            "amount": "50"
+                        }
+                    }
+                }"#
+                .to_string(),
+            },
+            signature: Signature::Eip712(EcdsaSignature::non_zero()),
+            ..Default::default()
+        };
+
+        // This should fail because the flashloan amount (50) < sell amount (100)
+        let result = validator
+            .validate_and_construct_order(
+                order_with_insufficient_flashloan,
+                &Default::default(),
+                Default::default(),
+                None,
+            )
+            .now_or_never()
+            .unwrap();
+        assert!(matches!(result, Err(ValidationError::InsufficientBalance)));
+
+        // Test with flashloan hint for different token
+        let order_with_wrong_token_flashloan = OrderCreation {
+            valid_to: u32::MAX,
+            sell_token: H160::from_low_u64_be(1),
+            sell_amount: 100.into(),
+            buy_token: H160::from_low_u64_be(2),
+            buy_amount: 1.into(),
+            app_data: OrderCreationAppData::Full {
+                full: r#"{
+                    "metadata": {
+                        "flashloan": {
+                            "lender": "0x1111111111111111111111111111111111111111",
+                            "borrower": "0x2222222222222222222222222222222222222222",
+                            "token": "0x0300000000000000000000000000000000000000",
+                            "amount": "150"
+                        }
+                    }
+                }"#
+                .to_string(),
+            },
+            signature: Signature::Eip712(EcdsaSignature::non_zero()),
+            ..Default::default()
+        };
+
+        // This should fail because the flashloan token doesn't match the sell token
+        let result = validator
+            .validate_and_construct_order(
+                order_with_wrong_token_flashloan,
+                &Default::default(),
+                Default::default(),
+                None,
+            )
+            .now_or_never()
+            .unwrap();
+        assert!(matches!(result, Err(ValidationError::InsufficientBalance)));
     }
 
     #[tokio::test]
