@@ -125,11 +125,8 @@ impl Solver {
         };
 
         let mut handle = tokio::spawn(background_work);
-        
-        if tokio::time::timeout(remaining, &mut handle)
-            .await
-            .is_err()
-        {
+
+        if tokio::time::timeout(remaining, &mut handle).await.is_err() {
             tracing::debug!("reached timeout while solving orders");
             // Abort the background task to prevent memory leaks
             handle.abort();
