@@ -18,6 +18,8 @@ contract Trader layout at 0x02565dba7d68dcbed629110024b7b5e785bfc1a484602045eea5
     using Math for *;
     using SafeERC20 for *;
 
+    bool private _alreadyCalled;
+
     /// @dev Address where the original code for the trader implementation is
     /// expected to be. Use 0x10000 as its the first "valid" address, since
     /// addresses up to 0xffff are reserved for pre-compiles.
@@ -25,30 +27,11 @@ contract Trader layout at 0x02565dba7d68dcbed629110024b7b5e785bfc1a484602045eea5
     /// the trader is actually a smart contract.
     address constant private TRADER_IMPL = address(0x10000);
 
-    /// @dev Storage slot where we store the flag whether `prepareSwap` has
-    /// already been called to implement a reentrancy guard that does not rely
-    /// on node implementation specific behavior.
-    /// Note that we subtract 1 from the hash so that their is no known
-    /// pre-image, so hash collisions are not possible.
-    bytes32 constant private ALREADY_CALLED_SLOT =
-        bytes32(uint256(keccak256("Trader.alreadyCalled")) - 1);
-
-    // Intuitively one would store a flag whether or not `prepareSwap()` has
-    // been called before inside a mutable member veriable bool. However, this
-    // bool can not be reliably initialized as this would require running a
-    // constructor which would be annoying to do as that would require a multi
-    // trace call.
-    // Instead we store the flag inside a storage slot. The EVM spec says
-    // that loading from uninitialized storage results in a `0` byte which is
-    // equal to `false`.
     /// @dev Returns the value that is currently in storage at `ALREADY_CALLED_SLOT`
     /// and sets that storage to true to indicate that the function has been called.
     function alreadyCalled() private returns (bool value) {
-        bytes32 slot = ALREADY_CALLED_SLOT;
-        assembly {
-            value := sload(slot)
-            sstore(slot, 1)
-        }
+        value = _alreadyCalled;
+        _alreadyCalled = true;
     }
 
     // The `Trader` contract gets deployed on the `from` address of the quote.
