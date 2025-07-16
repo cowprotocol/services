@@ -18,7 +18,7 @@ contract Trader layout at 0x02565dba7d68dcbed629110024b7b5e785bfc1a484602045eea5
     using Math for *;
     using SafeERC20 for *;
 
-    bool private _alreadyCalled;
+    bool private _initializationTriggered;
 
     /// @dev Address where the original code for the trader implementation is
     /// expected to be. Use 0x10000 as its the first "valid" address, since
@@ -27,11 +27,11 @@ contract Trader layout at 0x02565dba7d68dcbed629110024b7b5e785bfc1a484602045eea5
     /// the trader is actually a smart contract.
     address constant private TRADER_IMPL = address(0x10000);
 
-    /// @dev Returns the value that is currently in storage at `ALREADY_CALLED_SLOT`
-    /// and sets that storage to true to indicate that the function has been called.
-    function alreadyCalled() private returns (bool value) {
-        value = _alreadyCalled;
-        _alreadyCalled = true;
+    /// @dev Returns whether the trader initialization already happened and
+    /// sets the flag to true.
+    function triggerInitialization() private returns (bool value) {
+        value = _initializationTriggered;
+        _initializationTriggered = true;
     }
 
     // The `Trader` contract gets deployed on the `from` address of the quote.
@@ -64,7 +64,7 @@ contract Trader layout at 0x02565dba7d68dcbed629110024b7b5e785bfc1a484602045eea5
         address nativeToken,
         address spardose
     ) external {
-        require(!alreadyCalled(), "prepareSwap can only be called once");
+        require(!triggerInitialization(), "prepareSwap can only be called once");
 
         if (sellToken == nativeToken) {
             uint256 availableNativeToken = IERC20(sellToken).balanceOf(address(this));
