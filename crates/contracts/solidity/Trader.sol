@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.17;
+pragma solidity ^0.8.30;
 
 import { IERC20, INativeERC20 } from "./interfaces/IERC20.sol";
 import { Interaction, Trade, ISettlement } from "./interfaces/ISettlement.sol";
@@ -9,7 +9,11 @@ import { SafeERC20 } from "./libraries/SafeERC20.sol";
 import { Spardose } from "./Spardose.sol";
 
 /// @title A contract for impersonating a trader.
-contract Trader {
+/// Because this contract code gets put at the address of a trader account it uses
+/// a custom storage layout to avoid storage slot conflicts with trader accounts
+/// that are smart contracts using the default layout.
+/// layout at uint256(keccak256("cowprotocol/services trader impersonator")) - 1
+contract Trader layout at 0x02565dba7d68dcbed629110024b7b5e785bfc1a484602045eea513de8a2dcf98 {
     using Caller for *;
     using Math for *;
     using SafeERC20 for *;

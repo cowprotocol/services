@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.17;
+pragma solidity ^0.8.30;
 
 import { IERC20, INativeERC20 } from "./interfaces/IERC20.sol";
 import { Interaction, Trade, ISettlement } from "./interfaces/ISettlement.sol";
@@ -13,7 +13,11 @@ import { Trader } from "./Trader.sol";
 /// that proxies to some actual code. This way no solver can offer `ETH` from
 /// their private liquidity for the solution which could interfere with gas
 /// estimation.
-contract Solver {
+/// Because this contract code gets put at the address of a solver account it uses
+/// a custom storage layout to avoid storage slot conflicts with solver accounts
+/// that are smart contracts using the default layout.
+/// layout at uint256(keccak256("cowprotocol/services solver impersonator")) - 1
+contract Solver layout at 0x14f5b2c185fc03c75c787d1f0e10ea137cc6d235a0047448eff18c9a173a722a {
     using Caller for *;
     using Math for *;
 
@@ -43,11 +47,6 @@ contract Solver {
         uint256[] memory queriedBalances
     ) {
         require(msg.sender == address(this), "only simulation logic is allowed to call 'swap' function");
-        // Manually reset the relevant storage slots because our simulation only overwrites
-        // the code at the solver address but not the storage. So if the account already
-        // has some storage slots populated on the actual network it can mess with the simulation.
-        _simulationOverhead = 0;
-        delete _queriedBalances;
 
         // Warm the storage for sending ETH to smart contract addresses.
         // We allow this call to revert becaues it was either unnecessary in the first place
