@@ -43,6 +43,11 @@ contract Solver {
         uint256[] memory queriedBalances
     ) {
         require(msg.sender == address(this), "only simulation logic is allowed to call 'swap' function");
+        // Manually reset the relevant storage slots because our simulation only overwrites
+        // the code at the solver address but not the storage. So if the account already
+        // has some storage slots populated on the actual network it can mess with the simulation.
+        _simulationOverhead = 0;
+        delete _queriedBalances;
 
         // Warm the storage for sending ETH to smart contract addresses.
         // We allow this call to revert becaues it was either unnecessary in the first place
