@@ -171,6 +171,43 @@ factory = "{:?}"
         .collect::<Vec<_>>()
         .join("\n");
 
+    let flashloan_router_config = contracts
+        .flashloan_router
+        .as_ref()
+        .map(|contract| format!("flashloan-router = \"{:?}\"", contract.address()))
+        .unwrap_or_default();
+
+    let maker_adapter = contracts
+        .flashloan_wrapper_maker
+        .as_ref()
+        .map(|contract| {
+            format!(
+                r#"
+            [[contracts.flashloan-wrappers]] # Maker
+            lender = "0x60744434d6339a6B27d73d9Eda62b6F66a0a04FA"
+            helper-contract = "{:?}"
+        "#,
+                contract.address()
+            )
+        })
+        .unwrap_or_default();
+
+    let aave_adapter = contracts
+        .flashloan_wrapper_aave
+        .as_ref()
+        .map(|contract| {
+            format!(
+                r#"
+            [[contracts.flashloan-wrappers]] # Aave
+            lender = "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2"
+            helper-contract = "{:?}"
+            fee-in-bps = "5"
+        "#,
+                contract.address()
+            )
+        })
+        .unwrap_or_default();
+
     let config_file = config_tmp_file(format!(
         r#"
 app-data-fetching-enabled = true
@@ -183,16 +220,10 @@ estimator = "web3"
 [contracts]
 gp-v2-settlement = "{:?}"
 weth = "{:?}"
-flashloan-router = "{:?}"
+{flashloan_router_config}
 
-[[contracts.flashloan-wrappers]] # Maker
-lender = "0x60744434d6339a6B27d73d9Eda62b6F66a0a04FA"
-helper-contract = "{:?}"
-
-[[contracts.flashloan-wrappers]] # Aave
-lender = "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2"
-helper-contract = "{:?}"
-fee-in-bps = "5"
+{maker_adapter}
+{aave_adapter}
 
 {cow_amms}
 
@@ -211,9 +242,6 @@ mempool = "public"
 "#,
         contracts.gp_settlement.address(),
         contracts.weth.address(),
-        contracts.flashloan_router.address(),
-        contracts.flashloan_wrapper_maker.address(),
-        contracts.flashloan_wrapper_aave.address(),
     ));
     let args = vec![
         "driver".to_string(),

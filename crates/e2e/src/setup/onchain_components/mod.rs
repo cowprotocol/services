@@ -310,15 +310,15 @@ impl OnchainComponents {
                 .expect("failed to add solver");
         }
 
-        // TODO: remove when contract is actually deployed
-        // flashloan wrapper also needs to be authorized
-        self.contracts
-            .gp_authenticator
-            .add_solver(self.contracts.flashloan_router.address())
-            .from(auth_manager.clone())
-            .send()
-            .await
-            .expect("failed to add flashloan wrapper");
+        if let Some(router) = &self.contracts.flashloan_router {
+            self.contracts
+                .gp_authenticator
+                .add_solver(router.address())
+                .from(auth_manager.clone())
+                .send()
+                .await
+                .expect("failed to add flashloan wrapper");
+        }
 
         solvers
     }

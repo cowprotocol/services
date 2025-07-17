@@ -32,7 +32,27 @@ fn main() {
     // - https://doc.rust-lang.org/cargo/reference/build-scripts.html#cargorerun-if-changedpath
     println!("cargo:rerun-if-changed=build.rs");
 
-    generate_contract("AaveFlashLoanSolverWrapper");
+    generate_contract_with_config("AaveFlashLoanSolverWrapper", |builder| {
+        let mut builder = builder;
+        for network in [
+            MAINNET,
+            GNOSIS,
+            SEPOLIA,
+            ARBITRUM_ONE,
+            BASE,
+            POLYGON,
+            AVALANCHE,
+        ] {
+            builder = builder.add_network(
+                network,
+                Network {
+                    address: addr("0x7d9c4dee56933151bc5c909cfe09def0d315cb4a"),
+                    deployment_information: None,
+                },
+            );
+        }
+        builder
+    });
     generate_contract_with_config("CoWSwapEthFlow", |builder| {
         builder
             .contract_mod_override("cowswap_eth_flow")
@@ -1073,7 +1093,27 @@ fn main() {
     generate_contract("ERC20");
     generate_contract("ERC20Mintable");
     generate_contract("ERC3156FlashLoanSolverWrapper");
-    generate_contract("FlashLoanRouter");
+    generate_contract_with_config("FlashLoanRouter", |builder| {
+        let mut builder = builder;
+        for network in [
+            MAINNET,
+            GNOSIS,
+            SEPOLIA,
+            ARBITRUM_ONE,
+            BASE,
+            POLYGON,
+            AVALANCHE,
+        ] {
+            builder = builder.add_network(
+                network,
+                Network {
+                    address: addr("0x9da8b48441583a2b93e2ef8213aad0ec0b392c69"),
+                    deployment_information: None,
+                },
+            );
+        }
+        builder
+    });
     generate_contract_with_config("GPv2AllowListAuthentication", |builder| {
         builder
             .contract_mod_override("gpv2_allow_list_authentication")
