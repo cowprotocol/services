@@ -9,4 +9,4 @@ ALTER TABLE settlement_executions
 -- Recreate primary key
 ALTER TABLE settlement_executions
     ADD CONSTRAINT settlement_executions_pkey
-        PRIMARY KEY (auction_id, solution_uid);
+        PRIMARY KEY (auction_id, solver, solution_uid);
