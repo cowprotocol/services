@@ -2,7 +2,14 @@ use {
     crate::{nodes::forked_node::ForkedNodeApi, setup::deploy::Contracts},
     app_data::Hook,
     contracts::{CowProtocolToken, ERC20Mintable},
-    ethcontract::{Account, Bytes, H160, PrivateKey, U256, transaction::TransactionBuilder},
+    ethcontract::{
+        Account,
+        Bytes,
+        H160,
+        PrivateKey,
+        U256,
+        transaction::{TransactionBuilder, TransactionResult},
+    },
     hex_literal::hex,
     model::{
         DomainSeparator,
@@ -539,12 +546,25 @@ impl OnchainComponents {
     }
 
     pub async fn send_wei(&self, to: H160, amount: U256) {
-        TransactionBuilder::new(self.web3.clone())
+        let balance_before = self.web3.eth().balance(to, None).await.unwrap();
+        let receipt = TransactionBuilder::new(self.web3.clone())
             .value(amount)
             .to(to)
             .send()
             .await
             .unwrap();
+        let TransactionResult::Receipt(receipt) = receipt else {
+            panic!("expected to get a transaction receipt");
+        };
+        assert_eq!(receipt.status, Some(1.into()));
+
+        // There seems to be a bug in anvil where sending ETH does not work
+        // reliably with a forked node. On some block numbers the transaction
+        // supposedly succeeds but the balances still don't get changed.
+        // If you hit this assert try using a different block number for your
+        // forked test.
+        let balance_after = self.web3.eth().balance(to, None).await.unwrap();
+        assert_eq!(balance_after, balance_before + amount);
     }
 
     pub async fn mint_block(&self) {
