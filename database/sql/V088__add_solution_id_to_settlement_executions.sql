@@ -1,6 +1,9 @@
--- Add nullable column `solution_uid`
+-- Clean up the table
+DELETE FROM settlement_executions;
+
+-- Add the new column `solution_uid`
 ALTER TABLE settlement_executions
-    ADD COLUMN solution_uid BIGINT;
+    ADD COLUMN solution_uid BIGINT NOT NULL;
 
 -- Drop existing primary key
 ALTER TABLE settlement_executions
