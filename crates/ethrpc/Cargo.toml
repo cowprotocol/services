@@ -11,6 +11,7 @@ path = "src/lib.rs"
 doctest = false
 
 [dependencies]
+alloy = { workspace = true, default-features = false, features = ["json-rpc", "providers", "rpc-client", "transports"] }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 futures = { workspace = true }
@@ -33,6 +34,7 @@ ethcontract = { workspace = true }
 tracing = { workspace = true }
 url = { workspace = true }
 itertools = { workspace = true }
+tower = { workspace = true }
 
 [dev-dependencies]
 maplit = { workspace = true }
