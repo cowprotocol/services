@@ -104,7 +104,8 @@ pub struct OrderQuotingArguments {
 
 logging_args_with_default_filter!(
     LoggingArguments,
-    "info,autopilot=debug,driver=debug,orderbook=debug,solver=debug,shared=debug,cow_amm=debug"
+    "info,autopilot=debug,driver=debug,observe=info,orderbook=debug,solver=debug,shared=debug,\
+     cow_amm=debug"
 );
 
 #[derive(Debug, clap::Parser)]
