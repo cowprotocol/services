@@ -34,7 +34,7 @@ async fn forked_node_mainnet_repay_debt_with_collateral_of_safe() {
         forked_mainnet_repay_debt_with_collateral_of_safe,
         std::env::var("FORK_URL_MAINNET")
             .expect("FORK_URL_MAINNET must be set to run forked tests"),
-        21874126,
+        22166000,
     )
     .await;
 }
@@ -49,6 +49,8 @@ async fn forked_mainnet_repay_debt_with_collateral_of_safe(web3: Web3) {
     let [trader] = onchain.make_accounts(to_wei(1)).await;
     let trader = Safe::deploy(trader.clone(), &web3).await;
 
+    let aave_adapter_contract = addr!("7d9c4dee56933151bc5c909cfe09def0d315cb4a");
+
     // AAVE token tracking how much USDC is deposited by a user
     let ausdc = addr!("98c23e9d8f34fefb1b7bd6a91b7ff122f4e16f5c");
     let weth = &onchain.contracts().weth;
@@ -62,12 +64,11 @@ async fn forked_mainnet_repay_debt_with_collateral_of_safe(web3: Web3) {
         .await
         .unwrap();
 
-    // transfer $50K + 1 atom to the safe (50K for the test and 1 atom for passing
-    // the minimum balance test before placing the order)
+    // transfer $50K to the safe for setting up the debt position
     let collateral_amount = to_wei_with_exp(50_000, 6);
     tx!(
         usdc_whale,
-        usdc.transfer(trader.address(), collateral_amount + U256::from(1))
+        usdc.transfer(trader.address(), collateral_amount)
     );
     // approve vault relayer to take safe's sell tokens
     trader
@@ -89,10 +90,10 @@ async fn forked_mainnet_repay_debt_with_collateral_of_safe(web3: Web3) {
             0,                 // referral code
         ))
         .await;
-    assert!(balance(&web3, trader.address(), ausdc).await >= collateral_amount);
 
     tracing::info!("wait a bit to make `borrow()` call work");
     tokio::time::sleep(Duration::from_secs(1)).await;
+    assert!(balance(&web3, trader.address(), ausdc).await >= collateral_amount);
 
     // Borrow 1 WETH against the collateral
     let flashloan_amount = to_wei(1);
@@ -110,13 +111,12 @@ async fn forked_mainnet_repay_debt_with_collateral_of_safe(web3: Web3) {
     // could be replaced with `permit` pre-hook or `repayWithPermit()` for
     // borrowed tokens that support `permit`
     trader
-        .exec_call(
-            onchain
-                .contracts()
-                .weth
-                .approve(aave_pool.address(), to_wei(1)),
-        )
+        .exec_call(weth.approve(aave_pool.address(), to_wei(1)))
         .await;
+
+    // pay some extra for the flashloan fee
+    let fee_bps = aave_pool.flashloan_premium_total().call().await.unwrap();
+    let flashloan_fee = (flashloan_amount * U256::from(fee_bps)).ceil_div(&10_000.into());
 
     let current_safe_nonce = trader.nonce().await;
 
@@ -124,16 +124,12 @@ async fn forked_mainnet_repay_debt_with_collateral_of_safe(web3: Web3) {
     // 1. take out a 1 WETH flashloan for the trader (flashloan hint)
     // 2. repay the 1 WETH debt to unlock trader's collateral (1st pre-hook)
     // 3. withdraw the collateral it can be sold for WETH (2nd pre-hook)
+    // 4. repay the flashloan with the proceeds (1st post-hook)
     let app_data = {
-        let repay_tx = trader.sign_transaction(
+        let repay_collateral_tx = trader.sign_transaction(
             aave_pool.address(),
             aave_pool
-                .repay(
-                    onchain.contracts().weth.address(),
-                    to_wei(1),
-                    2.into(),
-                    trader.address(),
-                )
+                .repay(weth.address(), to_wei(1), 2.into(), trader.address())
                 .tx
                 .data
                 .unwrap()
@@ -152,6 +148,16 @@ async fn forked_mainnet_repay_debt_with_collateral_of_safe(web3: Web3) {
                 .clone(),
             current_safe_nonce + U256::from(1),
         );
+        let repay_flashloan_tx = trader.sign_transaction(
+            weth.address(),
+            weth.transfer(aave_adapter_contract, flashloan_amount + flashloan_fee)
+                .tx
+                .data
+                .unwrap()
+                .0
+                .clone(),
+            current_safe_nonce + U256::from(2),
+        );
         let app_data = format!(
             r#"{{
                 "metadata": {{
@@ -164,33 +170,40 @@ async fn forked_mainnet_repay_debt_with_collateral_of_safe(web3: Web3) {
                         "pre": [
                             {{
                                 "target": "{:?}",
-                                "value": "0",
                                 "callData": "0x{}",
                                 "gasLimit": "1000000"
                             }},
                             {{
                                 "target": "{:?}",
-                                "value": "0",
                                 "callData": "0x{}",
                                 "gasLimit": "1000000"
                             }}
                         ],
-                        "post": []
+                        "post": [
+                            {{
+                                "target": "{:?}",
+                                "callData": "0x{}",
+                                "gasLimit": "1000000"
+                            }}
+                        ]
                     }},
                     "signer": "{:?}"
                 }}
             }}"#,
-            // flashloan
-            onchain.contracts().weth.address(),
+            // flashloan token
+            weth.address(),
             // take out a loan that's bigger than we originally borrowed
             flashloan_amount,
             // 1st pre-hook
             trader.address(),
-            hex::encode(&repay_tx.tx.data.unwrap().0),
+            hex::encode(&repay_collateral_tx.tx.data.unwrap().0),
             // 2nd pre-hook
             // ~200K gas
             trader.address(),
             hex::encode(&withdraw_tx.tx.data.unwrap().0),
+            // 1st post-hook
+            trader.address(),
+            hex::encode(&repay_flashloan_tx.tx.data.unwrap().0),
             // signer
             trader.address(),
         );
@@ -200,21 +213,16 @@ async fn forked_mainnet_repay_debt_with_collateral_of_safe(web3: Web3) {
         }
     };
 
-    // pay some extra for the flashloan fee
-    let fee_bps = aave_pool.flashloan_premium_total().call().await.unwrap();
-    let flashloan_fee = (flashloan_amount * U256::from(fee_bps)).ceil_div(&10_000.into());
     let mut order = OrderCreation {
         sell_token: usdc.address(),
         sell_amount: collateral_amount,
-        buy_token: onchain.contracts().weth.address(),
+        buy_token: weth.address(),
+        // we want to get exactly enough WETH to repay the flashloan
         buy_amount: flashloan_amount + flashloan_fee,
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Buy,
         app_data,
         partially_fillable: false,
-        // receiver is always the settlement contract because the driver takes
-        // funds from the settlement contract to pay back the loan
-        receiver: Some(onchain.contracts().gp_settlement.address()),
         ..Default::default()
     };
     order.signature = Signature::Eip1271(trader.sign_message(&hashed_eip712_message(
@@ -242,12 +250,6 @@ async fn forked_mainnet_repay_debt_with_collateral_of_safe(web3: Web3) {
     let services = Services::new(&onchain).await;
     services.start_protocol(solver.clone()).await;
 
-    assert_eq!(
-        balance(&web3, trader.address(), usdc.address()).await,
-        1.into()
-    );
-    tracing::info!("trader just has 1 atom of USDC before placing order");
-
     let uid = services.create_order(&order).await.unwrap();
     tracing::info!(?uid, "placed order");
 
@@ -273,9 +275,9 @@ async fn forked_mainnet_repay_debt_with_collateral_of_safe(web3: Web3) {
     assert!(trader_usdc > to_wei_with_exp(47_000, 6));
     tracing::info!("trader got majority of collateral back");
 
-    let settlement_weth = balance(&web3, settlement.address(), weth.address()).await;
-    assert!(settlement_weth < 100_000_000u128.into());
-    tracing::info!("settlement contract only has dust amounts of WETH");
+    let trader_weth = balance(&web3, trader.address(), weth.address()).await;
+    assert_eq!(trader_weth, flashloan_amount);
+    tracing::info!("the trader still has the originally borrowed amount of WETH");
 
     assert!(balance(&web3, trader.address(), ausdc).await < 10_000.into());
     tracing::info!("trader only has dust of aUSDC");

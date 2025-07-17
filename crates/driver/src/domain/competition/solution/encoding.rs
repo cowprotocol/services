@@ -13,7 +13,6 @@ use {
         util::{Bytes, conv::u256::U256Ext},
     },
     allowance::Allowance,
-    ethcontract::H160,
     itertools::Itertools,
 };
 
@@ -32,8 +31,6 @@ pub enum Error {
     FlashloanSupportDisabled,
     #[error("no flashloan helper configured for lender: {0}")]
     UnsupportedFlashloanLender(eth::H160),
-    #[error("incorrect flashloan payment (order: {order:?}): {error}")]
-    FlashloanPayment { order: order::Uid, error: String },
 }
 
 pub fn tx(
@@ -182,12 +179,10 @@ pub fn tx(
         prices: auction.native_prices().clone(),
     };
 
-    // Add all interactions needed to move flash loaned tokens around
-    // These interactions are executed before all other pre-interactions
     let flashloans = solution
         .flashloans
-        .iter()
-        .map(|(order, flashloan)| {
+        .values()
+        .map(|flashloan| {
             let flashloan_wrapper = contracts
                 .get_flashloan_wrapper(&flashloan.lender)
                 .ok_or(Error::UnsupportedFlashloanLender(flashloan.lender.0))?;
@@ -196,21 +191,6 @@ pub fn tx(
             let fee_amount =
                 (flashloan.amount.0 * flashloan_wrapper.fee_in_bps).ceil_div(&10_000.into());
             let repayment_amount = flashloan.amount.0 + fee_amount;
-
-            ensure_flashloan_is_paid_for(
-                auction,
-                solution,
-                order,
-                contracts.settlement().address(),
-                eth::Asset {
-                    token: flashloan.token,
-                    amount: repayment_amount.into(),
-                },
-            )
-            .map_err(|error| Error::FlashloanPayment {
-                order: *order,
-                error,
-            })?;
 
             // Allow settlement contract to pull borrowed tokens from flashloan wrapper
             pre_interactions.insert(
@@ -243,23 +223,6 @@ pub fn tx(
                     call_data: tx.data.unwrap().0.into(),
                 },
             );
-
-            // Since the order receiver is expected to be the setttlement contract, we need
-            // to transfer tokens from the settlement contract to the flashloan wrapper
-            let tx = contracts::ERC20::at(
-                &contracts.settlement().raw_instance().web3(),
-                flashloan.token.into(),
-            )
-            .transfer(
-                flashloan_wrapper.helper_contract.address(),
-                repayment_amount,
-            )
-            .into_inner();
-            post_interactions.push(eth::Interaction {
-                target: tx.to.unwrap().into(),
-                value: eth::U256::zero().into(),
-                call_data: tx.data.unwrap().0.into(),
-            });
 
             // Allow flash loan lender to take tokens from wrapper contract
             post_interactions.push(approve_flashloan(
@@ -339,43 +302,6 @@ pub fn tx(
         value: Ether(0.into()),
         access_list: Default::default(),
     })
-}
-
-/// Makes sure that there is an order that intended to pay for a
-/// given flashloan and that the payment is sufficient.
-fn ensure_flashloan_is_paid_for(
-    auction: &competition::Auction,
-    solution: &super::Solution,
-    uid: &order::Uid,
-    settlement: H160,
-    expected_payment: eth::Asset,
-) -> Result<(), String> {
-    let Some(trade) = solution.trades().iter().find(|t| t.uid() == *uid) else {
-        return Err("no trade execution to repay the flashloan".into());
-    };
-    if trade.receiver().0 != settlement {
-        return Err("order does not pay the settlement contract".into());
-    }
-
-    let paid = trade.buy();
-    if paid.token != expected_payment.token {
-        return Err("order pays with the wrong token".into());
-    }
-    if paid.amount < expected_payment.amount {
-        return Err("order does not pay enough".into());
-    }
-
-    if auction
-        .orders
-        .iter()
-        .find(|o| o.uid == *uid)
-        .and_then(|o| o.app_data.flashloan())
-        .is_none()
-    {
-        return Err("order did not request a flashloan".into());
-    }
-
-    Ok(())
 }
 
 pub fn liquidity_interaction(
