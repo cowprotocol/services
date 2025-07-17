@@ -326,8 +326,7 @@ impl RunLoop {
         );
 
         for (solution_uid, winner) in ranking
-            .all()
-            .enumerate()
+            .enumerated()
             .filter(|(_, participant)| participant.is_winner())
         {
             let (driver, solution) = (winner.driver(), winner.solution());
@@ -464,8 +463,7 @@ impl RunLoop {
         }
 
         let mut solutions: Vec<_> = ranking
-            .all()
-            .enumerate()
+            .enumerated()
             .map(|(index, participant)| SolverSettlement {
                 solver: participant.driver().name.clone(),
                 solver_address: participant.solution().solver().0,
