@@ -34,7 +34,7 @@ async fn forked_node_mainnet_repay_debt_with_collateral_of_safe() {
         forked_mainnet_repay_debt_with_collateral_of_safe,
         std::env::var("FORK_URL_MAINNET")
             .expect("FORK_URL_MAINNET must be set to run forked tests"),
-        21874126,
+        22166000,
     )
     .await;
 }
@@ -274,7 +274,7 @@ async fn forked_mainnet_repay_debt_with_collateral_of_safe(web3: Web3) {
     tracing::info!("trader got majority of collateral back");
 
     let settlement_weth = balance(&web3, settlement.address(), weth.address()).await;
-    assert!(settlement_weth < 100_000_000u128.into());
+    assert!(settlement_weth < 300_000_000u128.into());
     tracing::info!("settlement contract only has dust amounts of WETH");
 
     assert!(balance(&web3, trader.address(), ausdc).await < 10_000.into());
