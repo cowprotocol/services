@@ -185,7 +185,7 @@ async fn run<F, Fut, T>(
 {
     let obs_config = observe::Config::new(
         &with_default_filters(filters).join(","),
-        tracing::Level::ERROR.into(),
+        Some(tracing::Level::ERROR),
         false,
         None,
     );
