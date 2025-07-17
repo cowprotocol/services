@@ -11,12 +11,26 @@ use {
 mod simulation;
 
 /// Structure used to represent a signature.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct SignatureCheck {
     pub signer: H160,
     pub hash: [u8; 32],
     pub signature: Vec<u8>,
     pub interactions: Vec<InteractionData>,
+}
+
+impl std::fmt::Debug for SignatureCheck {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SignatureCheck")
+            .field("signer", &self.signer)
+            .field("hash", &format_args!("0x{}", hex::encode(self.hash)))
+            .field(
+                "signature",
+                &format_args!("0x{}", hex::encode(&self.signature)),
+            )
+            .field("interactions", &self.interactions)
+            .finish()
+    }
 }
 
 #[derive(Debug, Error)]
