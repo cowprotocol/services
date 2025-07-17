@@ -21,7 +21,6 @@ use {
         str::FromStr,
         time::Duration,
     },
-    tracing::level_filters::LevelFilter,
     url::Url,
 };
 
@@ -33,8 +32,8 @@ macro_rules! logging_args_with_default_filter {
             #[clap(long, env, default_value = $default_filter)]
             pub log_filter: String,
 
-            #[clap(long, env, default_value = "error")]
-            pub log_stderr_threshold: LevelFilter,
+            #[clap(long, env)]
+            pub log_stderr_threshold: Option<tracing::Level>,
 
             #[clap(long, env, default_value = "false")]
             pub use_json_logs: bool,
@@ -49,7 +48,7 @@ macro_rules! logging_args_with_default_filter {
                 } = self;
 
                 writeln!(f, "log_filter: {}", log_filter)?;
-                writeln!(f, "log_stderr_threshold: {}", log_stderr_threshold)?;
+                writeln!(f, "log_stderr_threshold: {:?}", log_stderr_threshold)?;
                 writeln!(f, "use_json_logs: {}", use_json_logs)?;
                 Ok(())
             }
@@ -112,8 +111,8 @@ logging_args_with_default_filter!(
 pub struct TracingArguments {
     #[clap(long, env)]
     pub tracing_collector_endpoint: Option<String>,
-    #[clap(long, env, default_value_t = LevelFilter::INFO)]
-    pub tracing_level: LevelFilter,
+    #[clap(long, env, default_value_t = tracing::Level::INFO)]
+    pub tracing_level: tracing::Level,
     #[clap(long, env, value_parser = humantime::parse_duration, default_value = "10s")]
     pub tracing_exporter_timeout: Duration,
 }
