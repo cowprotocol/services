@@ -8,10 +8,10 @@ import { Math } from "./libraries/Math.sol";
 import { SafeERC20 } from "./libraries/SafeERC20.sol";
 import { Trader } from "./Trader.sol";
 
-/// @title A contract for impersonating a solver. This contract is compatible with
-/// EOA solver accounts but only partially compatible with SC solver accounts as
-/// it does not have a fallback implementation delegating the execution of unknown
-/// calls to the original contract's code. (TODO: add the delegating logic)
+/// @title A contract for impersonating a solver. This contract assume the solver
+/// does not execute extra logic outside of the settlement that affects the execution
+/// nor is called from the settlement. (TODO: remove this assumption by adding
+/// a fallback handler delegating to the original solver account's code).
 /// Because this contract code gets put at the address of a solver account it uses
 /// a custom storage layout to avoid storage slot conflicts with solver accounts
 /// that are smart contracts using the default layout.
