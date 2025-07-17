@@ -17,9 +17,8 @@ use {
         transports::{TransportError, TransportErrorKind},
     },
     futures::{
-        FutureExt,
         channel::{mpsc, oneshot},
-        stream::{self, FusedStream, Stream, StreamExt as _},
+        stream::StreamExt as _,
     },
     std::{
         collections::HashMap,
@@ -29,6 +28,7 @@ use {
         task::{Context, Poll},
     },
     tokio::task::JoinHandle,
+    tokio_stream::StreamExt,
     tower::{Layer, Service},
 };
 
@@ -117,53 +117,56 @@ where
         config: Config,
         calls: mpsc::UnboundedReceiver<CallContext>,
     ) -> JoinHandle<()> {
-        tokio::task::spawn(batched_for_each(config, calls, move |batch| {
-            // Clones service via [`std::mem::replace`] as recommended by
-            // <https://docs.rs/tower/latest/tower/trait.Service.html#be-careful-when-cloning-inner-services>
-            let clone: S = inner.clone();
-            let mut inner = std::mem::replace(&mut inner, clone);
+        tokio::task::spawn(
+            calls
+                .chunks_timeout(config.ethrpc_max_batch_size, config.ethrpc_batch_delay)
+                .for_each_concurrent(config.ethrpc_max_concurrent_requests, move |batch|{
+                    // Clones service via [`std::mem::replace`] as recommended by
+                    // <https://docs.rs/tower/latest/tower/trait.Service.html#be-careful-when-cloning-inner-services>
+                    let clone: S = inner.clone();
+                    let mut inner = std::mem::replace(&mut inner, clone);
 
-            async move {
-                // map request_id => sender to quickly find the correct sender if
-                // the node returns sub-responses in a different order
-                let (mut senders, requests): (HashMap<_, _>, Vec<_>) = batch
-                    .into_iter()
-                    .filter(|(sender, _)| !sender.is_canceled())
-                    .map(|(sender, request)| ((request.id().clone(), sender), request))
-                    .unzip();
-                if requests.is_empty() {
-                    tracing::trace!("all callers stopped awaiting their request");
-                    return;
-                }
+                    async move {
+                        // map request_id => sender to quickly find the correct sender if
+                        // the node returns sub-responses in a different order
+                        let (mut senders, requests): (HashMap<_, _>, Vec<_>) = batch
+                            .into_iter()
+                            .filter(|(sender, _)| !sender.is_canceled())
+                            .map(|(sender, request)| ((request.id().clone(), sender), request))
+                            .unzip();
+                        if requests.is_empty() {
+                            tracing::trace!("all callers stopped awaiting their request");
+                            return;
+                        }
 
-                let result = inner
-                    .call(RequestPacket::Batch(requests))
-                    .await
-                    .map(|response| match response {
-                        ResponsePacket::Batch(res) => res,
-                        ResponsePacket::Single(res) => {
-                            tracing::warn!("received single response for batch request");
-                            vec![res]
-                        }
-                    });
+                        let result = inner
+                            .call(RequestPacket::Batch(requests))
+                            .await
+                            .map(|response| match response {
+                                ResponsePacket::Batch(res) => res,
+                                ResponsePacket::Single(res) => {
+                                    tracing::warn!("received single response for batch request");
+                                    vec![res]
+                                }
+                            });
 
-                match result {
-                    Err(err) => {
-                        let err = format!("batch call failed: {err:?}");
-                        for sender in senders.into_values() {
-                            let _ = sender.send(Err(TransportErrorKind::custom_str(&err)));
+                        match result {
+                            Err(err) => {
+                                let err = format!("batch call failed: {err:?}");
+                                for sender in senders.into_values() {
+                                    let _ = sender.send(Err(TransportErrorKind::custom_str(&err)));
+                                }
+                            }
+                            Ok(responses) => {
+                                for response in responses {
+                                    let Some(sender) = senders.remove(&response.id) else {
+                                        tracing::warn!(id = ?response.id, "missing response for id");
+                                        continue;
+                                    };
+                                    let _ = sender.send(Ok(response));
+                                }
+                            }
                         }
-                    }
-                    Ok(responses) => {
-                        for response in responses {
-                            let Some(sender) = senders.remove(&response.id) else {
-                                tracing::warn!(id = ?response.id, "missing response for id");
-                                continue;
-                            };
-                            let _ = sender.send(Ok(response));
-                        }
-                    }
-                }
             }
         }))
     }
@@ -218,39 +221,4 @@ where
             }),
         }
     }
-}
-
-/// Batches a stream into chunks.
-///
-/// This is very similar to `futures::stream::StreamExt::ready_chunks` with the
-/// difference that it allows configuring a minimum delay for a batch, so
-/// waiting for a small amount of time to allow the stream to produce additional
-/// items, thus decreasing the chance of batches of size 1.
-fn batched_for_each<T, St, F, Fut>(config: Config, items: St, work: F) -> impl Future<Output = ()>
-where
-    St: Stream<Item = T> + FusedStream + Unpin,
-    F: FnMut(Vec<T>) -> Fut,
-    Fut: Future<Output = ()>,
-{
-    let batches = stream::unfold(items, move |mut items| async move {
-        let mut chunk = Vec::with_capacity(config.ethrpc_max_batch_size);
-        chunk.push(items.next().await?);
-
-        let delay = tokio::time::sleep(config.ethrpc_batch_delay).fuse();
-        futures::pin_mut!(delay);
-
-        while chunk.len() < config.ethrpc_max_batch_size {
-            futures::select_biased! {
-                item = items.next() => match item {
-                    Some(item) => chunk.push(item),
-                    None => break,
-                },
-                _ = delay => break,
-            }
-        }
-
-        Some((chunk, items))
-    });
-
-    batches.for_each_concurrent(config.ethrpc_max_concurrent_requests, work)
 }
