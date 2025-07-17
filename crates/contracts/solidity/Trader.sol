@@ -12,8 +12,8 @@ import { Spardose } from "./Spardose.sol";
 /// Because this contract code gets put at the address of a trader account it uses
 /// a custom storage layout to avoid storage slot conflicts with trader accounts
 /// that are smart contracts using the default layout.
-/// layout at uint256(keccak256("cowprotocol/services trader impersonator")) - 1
-contract Trader layout at 0x02565dba7d68dcbed629110024b7b5e785bfc1a484602045eea513de8a2dcf98 {
+/// layout at uint256(keccak256("cowprotocol/services trader impersonator"))
+contract Trader layout at 0x02565dba7d68dcbed629110024b7b5e785bfc1a484602045eea513de8a2dcf99 {
     using Caller for *;
     using Math for *;
     using SafeERC20 for *;

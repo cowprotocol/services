@@ -8,16 +8,15 @@ import { Math } from "./libraries/Math.sol";
 import { SafeERC20 } from "./libraries/SafeERC20.sol";
 import { Trader } from "./Trader.sol";
 
-/// @title A contract for impersonating a solver. This contract
-/// assumes that all solvers are EOAs so there is no fallback implementation
-/// that proxies to some actual code. This way no solver can offer `ETH` from
-/// their private liquidity for the solution which could interfere with gas
-/// estimation.
+/// @title A contract for impersonating a solver. This contract is compatible with
+/// EOA solver accounts but only partially compatible with SC solver accounts as
+/// it does not have a fallback implementation delegating the execution of unknown
+/// calls to the original contract's code. (TODO: add the delegating logic)
 /// Because this contract code gets put at the address of a solver account it uses
 /// a custom storage layout to avoid storage slot conflicts with solver accounts
 /// that are smart contracts using the default layout.
-/// layout at uint256(keccak256("cowprotocol/services solver impersonator")) - 1
-contract Solver layout at 0x14f5b2c185fc03c75c787d1f0e10ea137cc6d235a0047448eff18c9a173a722a {
+/// layout at uint256(keccak256("cowprotocol/services solver impersonator"))
+contract Solver layout at 0x14f5b2c185fc03c75c787d1f0e10ea137cc6d235a0047448eff18c9a173a722b {
     using Caller for *;
     using Math for *;
 
