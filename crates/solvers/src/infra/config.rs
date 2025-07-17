@@ -88,7 +88,7 @@ pub async fn load(path: &Path) -> solver::Config {
         max_partial_attempts: config.max_partial_attempts,
         solution_gas_offset: config.solution_gas_offset.into(),
         native_token_price_estimation_amount: config.native_token_price_estimation_amount,
-        node_url: config.node_url.map(|url| url.parse().unwrap())
+        node_url: config.node_url.map(|url| url.parse().unwrap()),
     }
 }
 
