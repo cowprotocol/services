@@ -3,6 +3,7 @@ resolver = "3"
 members = ["crates/*"]
 
 [workspace.dependencies]
+alloy = { git = "https://github.com/alloy-rs/alloy", rev = "c15a4a3c04ce15bfa3796cc449f8407200b7599f", default-features = false }
 anyhow = "=1.0.76"
 async-trait = "0.1.80"
 axum = "0.6"
@@ -27,7 +28,7 @@ humantime = "2.1.0"
 humantime-serde = "1.1.1"
 hyper = "0.14.29"
 indexmap = "2.2.6"
-itertools = "0.12.1"
+itertools = "0.14"
 maplit = "1.0.2"
 mockall = "0.12.1"
 num = "0.4.3"
