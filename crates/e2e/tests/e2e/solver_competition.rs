@@ -514,7 +514,6 @@ async fn store_filtered_solutions(web3: Web3) {
                 "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
                     .to_string(),
                 "--max-winners-per-auction=10".to_string(),
-                "--combinatorial-auctions-cutover=1970-03-27T15:04:50.410Z".to_string()
             ],
         )
         .await;
