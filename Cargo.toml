@@ -76,6 +76,7 @@ moka = "0.12.10"
 multibase = "0.9"
 number = { path = "crates/number" }
 observe = { path = "crates/observe" }
+once_cell = "1.21"
 order-validation = { path = "crates/order-validation" }
 opentelemetry = { version = "0.30", features = ["tracing"] }
 opentelemetry-otlp = "0.30"
