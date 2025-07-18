@@ -47,7 +47,7 @@ impl Balances {
 
         // prepare state overrides that put the contract code of the helper contract at
         // chosen address
-        let helper_contract_bytecode = HelperContract::raw_contract().bytecode.to_bytes().unwrap();
+        let helper_contract_bytecode = HelperContract::raw_contract().deployed_bytecode.to_bytes().unwrap();
         let state_overrides: StateOverrides = [(
             helper_contract_address,
             StateOverride {
@@ -68,6 +68,50 @@ impl Balances {
         }
     }
 
+    async fn simulate(&self, query: &Query, amount: Option<U256>) -> Result<Simulation> {
+        let (v1, v2) = tokio::join!(self.simulate_v1(query, amount), self.simulate_v2(query, amount));
+        assert_eq!(v1.is_err(), v2.is_err());
+        if let (Ok(v1), Ok(v2)) = (&v1, &v2) {
+            assert_eq!(v1, v2);
+        }
+        v1
+    }
+
+    async fn simulate_v1(&self, query: &Query, amount: Option<U256>) -> Result<Simulation> {
+       // We simulate the balances from the Settlement contract's context. This
+       // allows us to check:
+       // 1. How the pre-interactions would behave as part of the settlement
+       // 2. Simulate the actual VaultRelayer transfers that would happen as part of a
+       //    settlement
+       //
+       // This allows us to end up with very accurate balance simulations.
+       let (token_balance, allowance, effective_balance, can_transfer) =
+           contracts::storage_accessible::simulate(
+               contracts::bytecode!(contracts::support::Balances),
+               self.helper_contract.methods().balance(
+                   (self.settlement.address(), self.vault_relayer, self.vault),
+                   query.owner,
+                   query.token,
+                   amount.unwrap_or_default(),
+                   Bytes(query.source.as_bytes()),
+                   query
+                       .interactions
+                       .iter()
+                       .map(|i| (i.target, i.value, Bytes(i.call_data.clone())))
+                       .collect(),
+               ),
+           ).await?;
+       let simulation = Simulation {
+           token_balance,
+           allowance,
+           effective_balance,
+           can_transfer,
+       };
+
+       tracing::trace!(?query, ?amount, ?simulation, "simulated balances");
+       Ok(simulation)
+    }
+
     // We simulate the balances from the Settlement contract's context. This
     // allows us to check:
     // 1. How the pre-interactions would behave as part of the settlement
@@ -75,7 +119,7 @@ impl Balances {
     //    settlement
     //
     // This allows us to end up with very accurate balance simulations.
-    async fn simulate(&self, query: &Query, amount: Option<U256>) -> Result<Simulation> {
+    async fn simulate_v2(&self, query: &Query, amount: Option<U256>) -> Result<Simulation> {
         // prepare the call that does the balance computation
         let balances_calldata = self
             .helper_contract
@@ -133,8 +177,6 @@ impl Balances {
             .abi
             .function("balance")
             .context("contract does not have the required function signature")?;
-
-        tracing::error!(bytes = hex::encode(&response_bytes.0));
 
         let tokens = function
             .decode_output(&response_bytes.0)
@@ -207,7 +249,7 @@ impl Balances {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 struct Simulation {
     token_balance: U256,
     allowance: U256,
