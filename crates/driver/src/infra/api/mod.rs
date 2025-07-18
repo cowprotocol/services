@@ -17,7 +17,7 @@ use {
     },
     error::Error,
     futures::Future,
-    observe::distributed_tracing::tracing_axum::{accept_trace, make_span, record_trace_id},
+    observe::distributed_tracing::tracing_axum::{make_span, record_trace_id},
     std::{net::SocketAddr, sync::Arc},
     tokio::sync::oneshot,
 };
@@ -120,14 +120,11 @@ impl Api {
                     .layer(
                         tower_http::trace::TraceLayer::new_for_http().make_span_with(make_span),
                     )
-                    .map_request(accept_trace)
                     .map_request(record_trace_id));
         }
 
-        let make_svc = observe::make_service_with_request_tracing!(app);
-
         // Start the server.
-        let server = axum::Server::bind(&self.addr).serve(make_svc);
+        let server = axum::Server::bind(&self.addr).serve(app.into_make_service());
         tracing::info!(port = server.local_addr().port(), "serving driver");
         if let Some(addr_sender) = self.addr_sender {
             addr_sender.send(server.local_addr()).unwrap();
