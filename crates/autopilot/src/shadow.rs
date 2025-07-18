@@ -39,7 +39,7 @@ pub struct RunLoop {
     solve_deadline: Duration,
     liveness: Arc<Liveness>,
     current_block: CurrentBlockWatcher,
-    winner_selection: winner_selection::combinatorial::Config,
+    winner_selection: winner_selection::Config,
 }
 
 impl RunLoop {
@@ -55,7 +55,7 @@ impl RunLoop {
         weth: WrappedNativeToken,
     ) -> Self {
         Self {
-            winner_selection: winner_selection::combinatorial::Config {
+            winner_selection: winner_selection::Config {
                 max_winners: max_winners_per_auction.get(),
                 weth,
             },
