@@ -4,6 +4,7 @@
 
 use {
     super::{BalanceFetching, Query, TransferSimulationError},
+    alloy::sol_types::{SolType, sol_data},
     anyhow::{Context, Result},
     contracts::{
         BalancerV2Vault,
@@ -19,8 +20,6 @@ use {
     futures::future,
     model::order::SellTokenSource,
     web3::types::CallRequest,
-    alloy::sol,
-    alloy::sol_types::SolCall,
 };
 
 pub struct Balances {
@@ -49,7 +48,10 @@ impl Balances {
 
         // prepare state overrides that put the contract code of the helper contract at
         // chosen address
-        let helper_contract_bytecode = HelperContract::raw_contract().deployed_bytecode.to_bytes().unwrap();
+        let helper_contract_bytecode = HelperContract::raw_contract()
+            .deployed_bytecode
+            .to_bytes()
+            .unwrap();
         let state_overrides: StateOverrides = [(
             helper_contract_address,
             StateOverride {
@@ -71,7 +73,10 @@ impl Balances {
     }
 
     async fn simulate(&self, query: &Query, amount: Option<U256>) -> Result<Simulation> {
-        let (v1, v2) = tokio::join!(self.simulate_v1(query, amount), self.simulate_v2(query, amount));
+        let (v1, v2) = tokio::join!(
+            self.simulate_v1(query, amount),
+            self.simulate_v2(query, amount)
+        );
         if v1.is_err() != v2.is_err() {
             tracing::error!(?v1, ?v2);
             panic!("ABORT");
@@ -83,39 +88,40 @@ impl Balances {
     }
 
     async fn simulate_v1(&self, query: &Query, amount: Option<U256>) -> Result<Simulation> {
-       // We simulate the balances from the Settlement contract's context. This
-       // allows us to check:
-       // 1. How the pre-interactions would behave as part of the settlement
-       // 2. Simulate the actual VaultRelayer transfers that would happen as part of a
-       //    settlement
-       //
-       // This allows us to end up with very accurate balance simulations.
-       let balances = contracts::support::Balances::at(&self.web3, self.settlement.address());
-       let (token_balance, allowance, effective_balance, can_transfer) =
-           contracts::storage_accessible::simulate(
-               contracts::bytecode!(contracts::support::Balances),
-               balances.methods().balance(
-                   (self.settlement.address(), self.vault_relayer, self.vault),
-                   query.owner,
-                   query.token,
-                   amount.unwrap_or_default(),
-                   Bytes(query.source.as_bytes()),
-                   query
-                       .interactions
-                       .iter()
-                       .map(|i| (i.target, i.value, Bytes(i.call_data.clone())))
-                       .collect(),
-               ),
-           ).await?;
-       let simulation = Simulation {
-           token_balance,
-           allowance,
-           effective_balance,
-           can_transfer,
-       };
+        // We simulate the balances from the Settlement contract's context. This
+        // allows us to check:
+        // 1. How the pre-interactions would behave as part of the settlement
+        // 2. Simulate the actual VaultRelayer transfers that would happen as part of a
+        //    settlement
+        //
+        // This allows us to end up with very accurate balance simulations.
+        let balances = contracts::support::Balances::at(&self.web3, self.settlement.address());
+        let (token_balance, allowance, effective_balance, can_transfer) =
+            contracts::storage_accessible::simulate(
+                contracts::bytecode!(contracts::support::Balances),
+                balances.methods().balance(
+                    (self.settlement.address(), self.vault_relayer, self.vault),
+                    query.owner,
+                    query.token,
+                    amount.unwrap_or_default(),
+                    Bytes(query.source.as_bytes()),
+                    query
+                        .interactions
+                        .iter()
+                        .map(|i| (i.target, i.value, Bytes(i.call_data.clone())))
+                        .collect(),
+                ),
+            )
+            .await?;
+        let simulation = Simulation {
+            token_balance,
+            allowance,
+            effective_balance,
+            can_transfer,
+        };
 
-       tracing::trace!(?query, ?amount, ?simulation, "simulated balances");
-       Ok(simulation)
+        tracing::trace!(?query, ?amount, ?simulation, "simulated balances");
+        Ok(simulation)
     }
 
     // We simulate the balances from the Settlement contract's context. This
@@ -159,7 +165,7 @@ impl Balances {
 
         // send the RPC call with state overrides that put the helper
         // contract at the expected address
-        let response_bytes = self
+        let wrapped_response = self
             .web3
             .eth()
             .call_with_state_overrides(
@@ -175,46 +181,27 @@ impl Balances {
             .context("RPC call failed")?
             .0;
 
-        sol!(
-            #[allow(missing_docs)]
-            #[derive(Debug, PartialEq, Eq)]
-            function balance() external returns (uint256,uint256,uint256,bool);
+        // simulateDelegatecall does not return the raw bytes of the internal function
+        // call but wraps them in another byte array
+        let actual_response_bytes = sol_data::Bytes::abi_decode(&wrapped_response)
+            .context("failed to decode byte array")?;
+
+        // now we can get at the data we really want
+        type Response = (
+            sol_data::Uint<256>, // token_balance
+            sol_data::Uint<256>, // allowance
+            sol_data::Uint<256>, // effective_balance
+            sol_data::Bool,      // can_transfer
         );
-        tracing::error!(bytes = ?hex::encode(&response_bytes));
-        let decoded = balanceCall::abi_decode_returns_validate(&response_bytes).context("miep")?;
+        let decoded = Response::abi_decode(&actual_response_bytes)
+            .context("failed to decode balance response")?;
 
         let simulation = Simulation {
-            token_balance: U256::from_little_endian(&decoded._0.as_le_bytes()),
-            allowance: U256::from_little_endian(&decoded._1.as_le_bytes()),
-            effective_balance: U256::from_little_endian(&decoded._2.as_le_bytes()),
-            can_transfer: decoded._3,
+            token_balance: U256::from_little_endian(&decoded.0.as_le_bytes()),
+            allowance: U256::from_little_endian(&decoded.1.as_le_bytes()),
+            effective_balance: U256::from_little_endian(&decoded.2.as_le_bytes()),
+            can_transfer: decoded.3,
         };
-
-        // // Look up function signature to know how to decode the raw
-        // // bytes response. Note that we use the `balance` call of the
-        // // helper contract because `simulate_delegatecall` will simply
-        // // forward the raw bytes of the inner function call.
-        // let function = HelperContract::raw_contract()
-        //     .interface
-        //     .abi
-        //     .function("balance")
-        //     .context("contract does not have the required function signature")?;
-
-        // tracing::error!(?function.outputs);
-
-        // let tokens = function
-        //     .decode_output(&response_bytes)
-        //     .unwrap();
-
-        // let (token_balance, allowance, effective_balance, can_transfer) =
-        //     Tokenize::from_token(Token::Tuple(tokens)).context("unexpected response tokens")?;
-
-        // let simulation = Simulation {
-        //     token_balance,
-        //     allowance,
-        //     effective_balance,
-        //     can_transfer,
-        // };
 
         tracing::trace!(?query, ?amount, ?simulation, "simulated balances");
         Ok(simulation)
