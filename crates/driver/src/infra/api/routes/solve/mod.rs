@@ -2,9 +2,12 @@ mod dto;
 
 pub use dto::AuctionError;
 use {
-    crate::infra::{
-        api::{Error, State},
-        observe,
+    crate::{
+        domain,
+        infra::{
+            api::{Error, State},
+            observe,
+        },
     },
     std::time::Instant,
     tap::TapFallible,
@@ -36,6 +39,9 @@ async fn route(
             .pre_processor()
             .prioritize(auction, &competition.solver.account().address())
             .await;
+        if auction.orders.is_empty() {
+            return Err(domain::competition::Error::NoValidOrdersFound.into());
+        }
         let result = competition.solve(auction).await;
         // Solving takes some time, so there is a chance for the settlement queue to
         // have capacity again.

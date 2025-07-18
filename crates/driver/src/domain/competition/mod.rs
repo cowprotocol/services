@@ -666,4 +666,6 @@ pub enum Error {
     SubmissionError,
     #[error("too many pending settlements for the same solver")]
     TooManyPendingSettlements,
+    #[error("no valid orders found in the auction")]
+    NoValidOrdersFound,
 }
