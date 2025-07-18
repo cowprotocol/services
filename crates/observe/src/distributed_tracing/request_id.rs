@@ -18,8 +18,10 @@
 //! request.
 
 use {
-    once_cell::sync::OnceCell,
-    std::{fmt, sync::atomic::AtomicUsize},
+    std::{
+        fmt,
+        sync::{OnceLock, atomic::AtomicUsize},
+    },
     tracing::{
         Id,
         Span,
@@ -32,7 +34,7 @@ use {
 };
 
 pub(crate) fn request_id(headers: &HeaderMap<HeaderValue>) -> String {
-    static INSTANCE: OnceCell<AtomicUsize> = OnceCell::new();
+    static INSTANCE: OnceLock<AtomicUsize> = OnceLock::new();
     let counter = INSTANCE.get_or_init(|| AtomicUsize::new(0));
 
     if let Some(header) = headers.get("X-Request-ID") {
@@ -40,7 +42,7 @@ pub(crate) fn request_id(headers: &HeaderMap<HeaderValue>) -> String {
     } else {
         format!(
             "{}",
-            counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+            counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         )
     }
 }
