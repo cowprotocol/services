@@ -86,16 +86,21 @@ contract Trader layout at 0x02565dba7d68dcbed629110024b7b5e785bfc1a484602045eea5
         address vaultRelayer = settlementContract.vaultRelayer();
         uint256 currentAllowance = IERC20(sellToken).allowance(address(this), vaultRelayer);
         if (currentAllowance < sellAmount) {
-            // Simulate an approval to the settlement contract so the user doesn't have to
+            // Simulate an approval to the vault relayer so the user doesn't have to
             // spend gas on that just to get a quote. If they are happy with the quote and
             // want to create an order they will actually have to do the approvals, though.
+            //
             // We first reset the allowance to 0 since some ERC20 tokens (e.g. USDT)
             // require that due to this attack:
             // https://github.com/ethereum/EIPs/issues/20#issuecomment-263524729
+            //
             // In order to handle tokens which are not ERC20 compliant (like USDT) we have
             // to use `safeApprove()` instead of the regular `approve()` here.
-            IERC20(sellToken).safeApprove(vaultRelayer, 0);
-            IERC20(sellToken).safeApprove(vaultRelayer, type(uint256).max);
+            //
+            // Some tokens revert when you try to set an approval to 0. To support these
+            // tokens and USDT at the same time we catch any revert from the 2 approve calls.
+            try this.safeApprove(sellToken, vaultRelayer, 0) {} catch {}
+            try this.safeApprove(sellToken, vaultRelayer, type(uint256).max) {} catch {}
             uint256 allowance = IERC20(sellToken).allowance(address(this), vaultRelayer);
             require(allowance >= sellAmount, "trader did not give the required approvals");
         }
@@ -113,6 +118,12 @@ contract Trader layout at 0x02565dba7d68dcbed629110024b7b5e785bfc1a484602045eea5
                 revert("trader does not have enough sell token");
             }
         }
+    }
+
+    /// @dev Wrap the `safeApprove` function in another function in order to mark it
+    /// as `external`. That allows us to call it in a try-catch.
+    function safeApprove(address token, address vaultRelayer, uint amount) external {
+        IERC20(token).safeApprove(vaultRelayer, amount);
     }
 
     /// @dev Validate all signature requests. This makes "signing" CoW protocol
