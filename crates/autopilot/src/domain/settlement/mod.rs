@@ -325,6 +325,7 @@ impl From<infra::persistence::DatabaseError> for Error {
 pub struct ExecutionStarted {
     pub auction_id: AuctionId,
     pub solver: eth::Address,
+    pub solution_uid: usize,
     pub start_timestamp: DateTime<Utc>,
     pub start_block: u64,
     pub deadline_block: u64,
@@ -334,6 +335,7 @@ pub struct ExecutionStarted {
 pub struct ExecutionEnded {
     pub auction_id: AuctionId,
     pub solver: eth::Address,
+    pub solution_uid: usize,
     pub end_timestamp: DateTime<Utc>,
     pub end_block: u64,
     pub outcome: String,

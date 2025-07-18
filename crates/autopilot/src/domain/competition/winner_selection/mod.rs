@@ -26,6 +26,11 @@ impl Ranking {
         self.ranked.iter().chain(&self.filtered_out)
     }
 
+    /// Enumerates all solutions. The index is used as solution UID.
+    pub fn enumerated(&self) -> impl Iterator<Item = (usize, &Participant<Ranked>)> {
+        self.all().enumerate()
+    }
+
     /// All solutions that won the right to get executed.
     pub fn winners(&self) -> impl Iterator<Item = &Participant<Ranked>> {
         self.ranked.iter().filter(|p| p.is_winner())
