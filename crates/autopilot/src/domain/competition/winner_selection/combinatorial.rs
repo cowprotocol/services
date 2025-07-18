@@ -85,7 +85,7 @@ impl Config {
     }
 
     /// Removes unfair solutions from the set of all solutions.
-    pub fn partition_unfair_solutions(
+    fn partition_unfair_solutions(
         &self,
         mut participants: Vec<Participant<Unranked>>,
         auction: &domain::Auction,
@@ -137,7 +137,7 @@ impl Config {
 
     /// Picks winners and sorts all solutions where winners come before
     /// non-winners and higher scores come before lower scores.
-    pub fn mark_winners(&self, participants: Vec<Participant<Unranked>>) -> Vec<Participant> {
+    fn mark_winners(&self, participants: Vec<Participant<Unranked>>) -> Vec<Participant> {
         let winner_indexes = self.pick_winners(participants.iter().map(|p| p.solution()));
         participants
             .into_iter()

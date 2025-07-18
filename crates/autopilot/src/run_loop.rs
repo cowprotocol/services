@@ -77,7 +77,7 @@ pub struct RunLoop {
     /// the most recent data available.
     maintenance: Arc<Maintenance>,
     competition_updates_sender: tokio::sync::mpsc::UnboundedSender<()>,
-    winner_selection: Arc<winner_selection::combinatorial::Config>,
+    winner_selection: winner_selection::combinatorial::Config,
 }
 
 impl RunLoop {
@@ -109,10 +109,7 @@ impl RunLoop {
             liveness,
             maintenance,
             competition_updates_sender,
-            winner_selection: Arc::new(winner_selection::combinatorial::Config {
-                max_winners,
-                weth,
-            }),
+            winner_selection: winner_selection::combinatorial::Config { max_winners, weth },
         }
     }
 
@@ -274,7 +271,7 @@ impl RunLoop {
                 competition_simulation_block,
                 &ranking,
                 block_deadline,
-                self.winner_selection.clone(),
+                &self.winner_selection,
             )
             .await
         {
@@ -377,7 +374,7 @@ impl RunLoop {
         competition_simulation_block: u64,
         ranking: &Ranking,
         block_deadline: u64,
-        winner_selection: Arc<winner_selection::combinatorial::Config>,
+        winner_selection: &winner_selection::combinatorial::Config,
     ) -> Result<()> {
         let start = Instant::now();
         let reference_scores = winner_selection.compute_reference_scores(ranking);
