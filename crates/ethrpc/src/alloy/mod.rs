@@ -1,4 +1,5 @@
 mod buffering;
+pub mod conversions;
 mod instrumentation;
 
 pub use instrumentation::ProviderLabelingExt;
