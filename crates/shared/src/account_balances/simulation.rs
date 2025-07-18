@@ -4,18 +4,28 @@
 
 use {
     super::{BalanceFetching, Query, TransferSimulationError},
-    anyhow::Result,
-    contracts::{BalancerV2Vault, erc20::Contract},
-    ethcontract::{Bytes, H160, U256},
-    ethrpc::Web3,
+    anyhow::{Context, Result},
+    contracts::{
+        BalancerV2Vault,
+        GPv2Settlement,
+        erc20::Contract,
+        support::Balances as HelperContract,
+    },
+    ethcontract::{BlockId, BlockNumber, Bytes, H160, U256, tokens::Tokenize},
+    ethrpc::{
+        Web3,
+        extensions::{EthExt, StateOverride, StateOverrides},
+    },
     futures::future,
     model::order::SellTokenSource,
+    web3::{ethabi::Token, types::CallRequest},
 };
 
 pub struct Balances {
-    balances: contracts::support::Balances,
+    helper_contract: HelperContract,
+    state_overrides: StateOverrides,
     web3: Web3,
-    settlement: H160,
+    settlement: GPv2Settlement,
     vault_relayer: H160,
     vault: H160,
 }
@@ -31,42 +41,107 @@ impl Balances {
         // work without additional code paths :tada:!
         let vault = vault.unwrap_or_default();
         let web3 = ethrpc::instrumented::instrument_with_label(web3, "balanceFetching".into());
-        let balances = contracts::support::Balances::at(&web3, settlement);
+
+        // pick a random address for the helper contract to avoid accidental collisions
+        let helper_contract_address = H160::random();
+
+        // prepare state overrides that put the contract code of the helper contract at
+        // chosen address
+        let helper_contract_bytecode = HelperContract::raw_contract().bytecode.to_bytes().unwrap();
+        let state_overrides: StateOverrides = [(
+            helper_contract_address,
+            StateOverride {
+                code: Some(helper_contract_bytecode),
+                ..Default::default()
+            },
+        )]
+        .into_iter()
+        .collect();
 
         Self {
+            helper_contract: HelperContract::at(&web3, helper_contract_address),
+            settlement: GPv2Settlement::at(&web3, settlement),
             web3,
-            balances,
-            settlement,
             vault_relayer,
             vault,
+            state_overrides,
         }
     }
 
+    // We simulate the balances from the Settlement contract's context. This
+    // allows us to check:
+    // 1. How the pre-interactions would behave as part of the settlement
+    // 2. Simulate the actual VaultRelayer transfers that would happen as part of a
+    //    settlement
+    //
+    // This allows us to end up with very accurate balance simulations.
     async fn simulate(&self, query: &Query, amount: Option<U256>) -> Result<Simulation> {
-        // We simulate the balances from the Settlement contract's context. This
-        // allows us to check:
-        // 1. How the pre-interactions would behave as part of the settlement
-        // 2. Simulate the actual VaultRelayer transfers that would happen as part of a
-        //    settlement
-        //
-        // This allows us to end up with very accurate balance simulations.
-        let (token_balance, allowance, effective_balance, can_transfer) =
-            contracts::storage_accessible::simulate(
-                contracts::bytecode!(contracts::support::Balances),
-                self.balances.methods().balance(
-                    (self.settlement, self.vault_relayer, self.vault),
-                    query.owner,
-                    query.token,
-                    amount.unwrap_or_default(),
-                    Bytes(query.source.as_bytes()),
-                    query
-                        .interactions
-                        .iter()
-                        .map(|i| (i.target, i.value, Bytes(i.call_data.clone())))
-                        .collect(),
-                ),
+        // prepare the call that does the balance computation
+        let balances_calldata = self
+            .helper_contract
+            .balance(
+                (self.settlement.address(), self.vault_relayer, self.vault),
+                query.owner,
+                query.token,
+                amount.unwrap_or_default(),
+                Bytes(query.source.as_bytes()),
+                query
+                    .interactions
+                    .iter()
+                    .map(|i| (i.target, i.value, Bytes(i.call_data.clone())))
+                    .collect(),
             )
-            .await?;
+            .tx
+            .data
+            .context("no calldata for balance computation call")?;
+
+        // execute that call via the storage accessible interface to execute
+        // it in the context of the settlement contract
+        let storage_accessible_calldata = self
+            .settlement
+            .simulate_delegatecall(
+                self.helper_contract.address(),
+                ethcontract::Bytes(balances_calldata.0),
+            )
+            .tx
+            .data
+            .context("no calldata for storage accessible call")?;
+
+        // send the RPC call with state overrides that put the helper
+        // contract at the expected address
+        let response_bytes = self
+            .web3
+            .eth()
+            .call_with_state_overrides(
+                CallRequest {
+                    to: Some(self.settlement.address()),
+                    data: Some(storage_accessible_calldata),
+                    ..Default::default()
+                },
+                BlockId::Number(BlockNumber::Latest),
+                self.state_overrides.clone(),
+            )
+            .await
+            .context("RPC call failed")?;
+
+        // Look up function signature to know how to decode the raw
+        // bytes response. Note that we use the `balance` call of the
+        // helper contract because `simulate_delegatecall` will simply
+        // forward the raw bytes of the inner function call.
+        let function = HelperContract::raw_contract()
+            .interface
+            .abi
+            .function("balance")
+            .context("contract does not have the required function signature")?;
+
+        tracing::error!(bytes = hex::encode(&response_bytes.0));
+
+        let tokens = function
+            .decode_output(&response_bytes.0)
+            .context("failed to parse response bytes as tokens")?;
+
+        let (token_balance, allowance, effective_balance, can_transfer) =
+            Tokenize::from_token(Token::Tuple(tokens)).context("unexpected response tokens")?;
 
         let simulation = Simulation {
             token_balance,
@@ -143,7 +218,6 @@ struct Simulation {
 #[async_trait::async_trait]
 impl BalanceFetching for Balances {
     async fn get_balances(&self, queries: &[Query]) -> Vec<Result<U256>> {
-        // TODO(nlordell): Use `Multicall` here to use fewer node round-trips
         let futures = queries
             .iter()
             .map(|query| async {
