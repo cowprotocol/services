@@ -11,14 +11,16 @@ use {
         erc20::Contract,
         support::Balances as HelperContract,
     },
-    ethcontract::{BlockId, BlockNumber, Bytes, H160, U256, tokens::Tokenize},
+    ethcontract::{BlockId, BlockNumber, Bytes, H160, U256},
     ethrpc::{
         Web3,
         extensions::{EthExt, StateOverride, StateOverrides},
     },
     futures::future,
     model::order::SellTokenSource,
-    web3::{ethabi::Token, types::CallRequest},
+    web3::types::CallRequest,
+    alloy::sol,
+    alloy::sol_types::SolCall,
 };
 
 pub struct Balances {
@@ -70,7 +72,10 @@ impl Balances {
 
     async fn simulate(&self, query: &Query, amount: Option<U256>) -> Result<Simulation> {
         let (v1, v2) = tokio::join!(self.simulate_v1(query, amount), self.simulate_v2(query, amount));
-        assert_eq!(v1.is_err(), v2.is_err());
+        if v1.is_err() != v2.is_err() {
+            tracing::error!(?v1, ?v2);
+            panic!("ABORT");
+        }
         if let (Ok(v1), Ok(v2)) = (&v1, &v2) {
             assert_eq!(v1, v2);
         }
@@ -85,10 +90,11 @@ impl Balances {
        //    settlement
        //
        // This allows us to end up with very accurate balance simulations.
+       let balances = contracts::support::Balances::at(&self.web3, self.settlement.address());
        let (token_balance, allowance, effective_balance, can_transfer) =
            contracts::storage_accessible::simulate(
                contracts::bytecode!(contracts::support::Balances),
-               self.helper_contract.methods().balance(
+               balances.methods().balance(
                    (self.settlement.address(), self.vault_relayer, self.vault),
                    query.owner,
                    query.token,
@@ -166,31 +172,49 @@ impl Balances {
                 self.state_overrides.clone(),
             )
             .await
-            .context("RPC call failed")?;
+            .context("RPC call failed")?
+            .0;
 
-        // Look up function signature to know how to decode the raw
-        // bytes response. Note that we use the `balance` call of the
-        // helper contract because `simulate_delegatecall` will simply
-        // forward the raw bytes of the inner function call.
-        let function = HelperContract::raw_contract()
-            .interface
-            .abi
-            .function("balance")
-            .context("contract does not have the required function signature")?;
-
-        let tokens = function
-            .decode_output(&response_bytes.0)
-            .context("failed to parse response bytes as tokens")?;
-
-        let (token_balance, allowance, effective_balance, can_transfer) =
-            Tokenize::from_token(Token::Tuple(tokens)).context("unexpected response tokens")?;
+        sol!(
+            #[allow(missing_docs)]
+            #[derive(Debug, PartialEq, Eq)]
+            function balance() external returns (uint256,uint256,uint256,bool);
+        );
+        tracing::error!(bytes = ?hex::encode(&response_bytes));
+        let decoded = balanceCall::abi_decode_returns_validate(&response_bytes).context("miep")?;
 
         let simulation = Simulation {
-            token_balance,
-            allowance,
-            effective_balance,
-            can_transfer,
+            token_balance: U256::from_little_endian(&decoded._0.as_le_bytes()),
+            allowance: U256::from_little_endian(&decoded._1.as_le_bytes()),
+            effective_balance: U256::from_little_endian(&decoded._2.as_le_bytes()),
+            can_transfer: decoded._3,
         };
+
+        // // Look up function signature to know how to decode the raw
+        // // bytes response. Note that we use the `balance` call of the
+        // // helper contract because `simulate_delegatecall` will simply
+        // // forward the raw bytes of the inner function call.
+        // let function = HelperContract::raw_contract()
+        //     .interface
+        //     .abi
+        //     .function("balance")
+        //     .context("contract does not have the required function signature")?;
+
+        // tracing::error!(?function.outputs);
+
+        // let tokens = function
+        //     .decode_output(&response_bytes)
+        //     .unwrap();
+
+        // let (token_balance, allowance, effective_balance, can_transfer) =
+        //     Tokenize::from_token(Token::Tuple(tokens)).context("unexpected response tokens")?;
+
+        // let simulation = Simulation {
+        //     token_balance,
+        //     allowance,
+        //     effective_balance,
+        //     can_transfer,
+        // };
 
         tracing::trace!(?query, ?amount, ?simulation, "simulated balances");
         Ok(simulation)
