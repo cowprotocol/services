@@ -10,7 +10,6 @@ use {
         solution::{Solution, Solutions},
     },
     std::sync::{Arc, Mutex, MutexGuard},
-    warp::hyper,
 };
 
 /// A solver that does not implement any solving logic itself and instead simply
@@ -63,8 +62,8 @@ impl Default for Mock {
             .route("/solve", axum::routing::post(solve))
             .with_state(state.clone());
 
-        let make_svc = observe::make_service_with_request_tracing!(app);
-        let server = axum::Server::bind(&"0.0.0.0:0".parse().unwrap()).serve(make_svc);
+        let server =
+            axum::Server::bind(&"0.0.0.0:0".parse().unwrap()).serve(app.into_make_service());
 
         let mock = Mock {
             state,
