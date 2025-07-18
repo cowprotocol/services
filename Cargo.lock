@@ -4476,7 +4476,6 @@ dependencies = [
  "chrono",
  "console-subscriber",
  "futures",
- "once_cell",
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
