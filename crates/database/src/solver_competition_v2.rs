@@ -161,7 +161,9 @@ pub async fn load_by_id(
             pte.order_uid = pjo.order_uid
             AND pte.solution_uid = pjo.solution_uid
             AND pte.auction_id = pjo.auction_id
-        WHERE pte.auction_id = $1;
+        WHERE pte.auction_id = $1
+            AND COALESCE(o.sell_token, pjo.sell_token) IS NOT NULL
+            AND COALESCE(o.buy_token, pjo.buy_token) IS NOT NULL;
     "#;
     let trades: Vec<ProposedTrade> = sqlx::query_as(FETCH_TRADES)
         .bind(id)
