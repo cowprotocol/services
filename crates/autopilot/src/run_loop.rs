@@ -143,8 +143,9 @@ impl RunLoop {
                 self_arc
                     .single_run(auction)
                     .instrument(tracing::info_span!("auction", auction_id))
-                    .await
+                    .await;
             };
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         }
     }
 
