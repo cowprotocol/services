@@ -3,7 +3,6 @@ use {
     ethcontract::H160,
     shared::{arguments::display_option, ethrpc, http_client, logging_args_with_default_filter},
     std::time::Duration,
-    tracing::level_filters::LevelFilter,
     url::Url,
 };
 
