@@ -216,11 +216,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use {
-        super::*,
-        crate::{Web3, create_env_test_transport},
-        std::fmt::Debug,
-    };
+    use {super::*, crate::Web3, std::fmt::Debug};
 
     macro_rules! data {
         ($x:literal) => {{ ::hex_literal::hex!($x).to_vec() }};
@@ -311,7 +307,7 @@ mod tests {
     #[ignore]
     #[tokio::test]
     async fn execute_multicall() {
-        let web3 = Web3::new(create_env_test_transport());
+        let web3 = Web3::new_from_env();
         let results = web3
             .eth()
             .multicall(
@@ -376,7 +372,7 @@ mod tests {
     #[ignore]
     #[tokio::test]
     async fn calls_are_unrelated() {
-        let web3 = Web3::new(create_env_test_transport());
+        let web3 = Web3::new_from_env();
         let results = web3
             .eth()
             .multicall(

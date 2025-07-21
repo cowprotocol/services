@@ -256,15 +256,16 @@ impl CodeSimulating for Web3ThenTenderly {
 mod tests {
     use {
         super::*,
-        crate::{ethrpc::create_env_test_transport, tenderly_api::TenderlyHttpApi},
+        crate::tenderly_api::TenderlyHttpApi,
         ethcontract::H256,
+        ethrpc::Web3,
         hex_literal::hex,
         maplit::hashmap,
         std::time::Duration,
     };
 
     async fn test_simulators() -> Vec<Arc<dyn CodeSimulating>> {
-        let web3 = Web3::new(create_env_test_transport());
+        let web3 = Web3::new_from_env();
         let network_id = web3.eth().chain_id().await.unwrap().to_string();
 
         vec![
@@ -368,7 +369,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn tenderly_state_override_conversion() {
-        let web3 = Web3::new(create_env_test_transport());
+        let web3 = Web3::new_from_env();
         let network_id = web3.eth().chain_id().await.unwrap().to_string();
         let tenderly = TenderlyCodeSimulator::new(TenderlyHttpApi::test_from_env(), network_id)
             .save(true, true);

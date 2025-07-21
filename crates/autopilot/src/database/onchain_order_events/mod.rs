@@ -793,6 +793,7 @@ mod test {
         contracts::cowswap_onchain_orders::event_data::OrderPlacement as ContractOrderPlacement,
         database::{byte_array::ByteArray, onchain_broadcasted_orders::OnchainOrderPlacement},
         ethcontract::{Bytes, EventMetadata, H160, U256},
+        ethrpc::Web3,
         model::{
             DomainSeparator,
             order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
@@ -806,7 +807,6 @@ mod test {
                 sell_token_source_into,
                 signing_scheme_into,
             },
-            ethrpc::create_env_test_transport,
             fee::FeeParameters,
             order_quoting::{MockOrderQuoting, Quote, QuoteData},
         },
@@ -1234,7 +1234,7 @@ mod test {
         custom_onchain_order_parser
             .expect_customized_event_data_for_event_index()
             .returning(|_, _, _, _| 1u8);
-        let web3 = Web3::new(create_env_test_transport());
+        let web3 = Web3::new_from_env();
         let onchain_order_parser = OnchainOrderParser {
             db: Postgres {
                 pool: PgPool::connect_lazy("postgresql://").unwrap(),
