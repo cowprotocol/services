@@ -1,6 +1,7 @@
 use {
     crate::{request_id::request_id, tracing::HeaderExtractor},
     opentelemetry::global,
+    tracing::info,
     tracing_opentelemetry::OpenTelemetrySpanExt,
     warp::http::HeaderMap,
 };
@@ -12,6 +13,7 @@ pub fn make_span(info: warp::trace::Info) -> tracing::Span {
     let parent_cx = global::get_text_map_propagator(|prop| prop.extract(&HeaderExtractor(headers)));
 
     let span = tracing::info_span!("http_request", request_id = %request_id(headers));
+    info!(method = %info.method(), path = %info.path(), "HTTP request");
 
     span.set_parent(parent_cx); // sets parent context for distributed trace
     span
