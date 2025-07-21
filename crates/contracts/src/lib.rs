@@ -207,6 +207,13 @@ pub mod alloy {
             provider: &AlloyProvider,
         ) -> impl std::future::Future<Output = anyhow::Result<Self>> + Send;
     }
+
+    bindings!(
+        ChainalysisOracle,
+        maplit::hashmap! {
+            1 => address!("0x40C57923924B5c5c5455c48D93317139ADDaC8fb"),
+        }
+    );
 }
 
 #[cfg(test)]
