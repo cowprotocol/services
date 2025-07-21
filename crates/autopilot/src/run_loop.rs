@@ -660,14 +660,18 @@ impl RunLoop {
         let (can_participate, response) = {
             let driver = driver.clone();
             let guard = self.solver_participation_guard.clone();
-            let both = tokio::task::spawn(async move {
+            let mut handle = tokio::task::spawn(async move {
                 let fetch_response = driver.solve(request);
                 let check_allowed = guard.can_participate(&driver.submission_address);
                 tokio::join!(check_allowed, fetch_response)
             });
-            tokio::time::timeout(self.config.solve_deadline, both)
+            tokio::time::timeout(self.config.solve_deadline, &mut handle)
                 .await
-                .map_err(|_| SolveError::Timeout)?
+                .map_err(|_| {
+                    // Abort the background task to prevent memory leaks
+                    handle.abort();
+                    SolveError::Timeout
+                })?
                 .context("could not finish the task")
                 .map_err(SolveError::Failure)?
         };
