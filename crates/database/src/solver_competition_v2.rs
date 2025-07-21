@@ -50,6 +50,8 @@ pub struct ProposedTrade {
     pub order_uid: OrderUid,
     pub executed_sell: BigDecimal,
     pub executed_buy: BigDecimal,
+    pub sell_token: Address,
+    pub buy_token: Address,
 }
 
 #[derive(sqlx::FromRow)]
@@ -149,9 +151,19 @@ pub async fn load_by_id(
         .await?;
 
     const FETCH_TRADES: &str = r#"
-        SELECT solution_uid, order_uid, executed_sell, executed_buy
-        FROM proposed_trade_executions
-        WHERE auction_id = $1;
+        SELECT pte.solution_uid, pte.order_uid, executed_sell, executed_buy, 
+            COALESCE(o.sell_token, pjo.sell_token) AS sell_token,
+            COALESCE(o.buy_token, pjo.buy_token) AS buy_token
+        FROM proposed_trade_executions AS pte
+        LEFT JOIN orders o ON
+            pte.order_uid = o.uid
+        LEFT JOIN proposed_jit_orders pjo ON
+            pte.order_uid = pjo.order_uid
+            AND pte.solution_uid = pjo.solution_uid
+            AND pte.auction_id = pjo.auction_id
+        WHERE pte.auction_id = $1
+            AND COALESCE(o.sell_token, pjo.sell_token) IS NOT NULL
+            AND COALESCE(o.buy_token, pjo.buy_token) IS NOT NULL;
     "#;
     let trades: Vec<ProposedTrade> = sqlx::query_as(FETCH_TRADES)
         .bind(id)
@@ -530,6 +542,7 @@ mod tests {
             auction,
             byte_array::ByteArray,
             events::{self, EventIndex, Settlement},
+            orders::insert_order_and_ignore_conflicts,
             reference_scores,
             settlement_observations,
             settlements,
@@ -1057,14 +1070,24 @@ mod tests {
         let solver_competition = load_by_id(&mut db, auction_id).await.unwrap();
         assert!(solver_competition.is_none());
 
+        // example order
+        let order_uid = ByteArray([1u8; 56]);
+        let order_sell_token = ByteArray([1u8; 20]);
+        let order_buy_token = ByteArray([2u8; 20]);
+        let order_limit_sell = BigDecimal::from(100);
+        let order_limit_buy = BigDecimal::from(200);
+        let order_executed_sell = BigDecimal::from(50);
+        let order_executed_buy = BigDecimal::from(150);
+        let order_side = OrderKind::Sell;
+
         // competition_auctions
         let auction = auction::Auction {
             id: auction_id,
             block: block_number,
             deadline: 2,
-            order_uids: vec![ByteArray([1u8; 56])],
-            price_tokens: vec![ByteArray([1u8; 20])],
-            price_values: vec![BigDecimal::from(100)],
+            order_uids: vec![order_uid],
+            price_tokens: vec![order_sell_token],
+            price_values: vec![order_limit_sell.clone()],
             surplus_capturing_jit_order_owners: vec![],
         };
         auction::save(&mut db, auction).await.unwrap();
@@ -1144,14 +1167,14 @@ mod tests {
             filtered_out: false,
             score: BigDecimal::from(100),
             orders: vec![Order {
-                uid: ByteArray([1u8; 56]),
-                sell_token: ByteArray([1u8; 20]),
-                buy_token: ByteArray([2u8; 20]),
-                limit_sell: BigDecimal::from(100),
-                limit_buy: BigDecimal::from(200),
-                executed_sell: BigDecimal::from(50),
-                executed_buy: BigDecimal::from(150),
-                side: OrderKind::Sell,
+                uid: order_uid,
+                sell_token: order_sell_token,
+                buy_token: order_buy_token,
+                limit_sell: order_limit_sell.clone(),
+                limit_buy: order_limit_buy.clone(),
+                executed_sell: order_executed_sell,
+                executed_buy: order_executed_buy,
+                side: order_side,
             }],
             price_tokens: vec![ByteArray([1u8; 20])],
             price_values: vec![BigDecimal::from(100)],
@@ -1172,6 +1195,22 @@ mod tests {
             reference_score: BigDecimal::from(100),
         }];
         reference_scores::insert(&mut db, &scores).await.unwrap();
+
+        // orders
+        insert_order_and_ignore_conflicts(
+            &mut db,
+            &crate::orders::Order {
+                uid: order_uid,
+                sell_token: order_sell_token,
+                buy_token: order_buy_token,
+                sell_amount: order_limit_sell.clone(),
+                buy_amount: order_limit_buy.clone(),
+                kind: order_side,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
 
         let solver_competition = load_by_id(&mut db, auction_id).await.unwrap();
         assert!(solver_competition.is_some());
