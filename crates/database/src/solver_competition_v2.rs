@@ -170,8 +170,6 @@ pub async fn load_by_id(
         .fetch_all(ex.deref_mut())
         .await?;
 
-    println!("{} trades loaded for auction {}", trades.len(), id);
-
     const FETCH_REFERENCE_SCORES: &str = r#"
         SELECT solver, reference_score
         FROM reference_scores
