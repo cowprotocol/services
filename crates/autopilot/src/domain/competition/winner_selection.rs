@@ -447,7 +447,7 @@ impl Ranking {
     }
 }
 
-pub struct PartitionedSolutions {
+struct PartitionedSolutions {
     kept: Vec<Participant<Unranked>>,
     discarded: Vec<Participant<Unranked>>,
 }
