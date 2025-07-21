@@ -26,11 +26,10 @@ pub fn make_span<B>(request: &Request<B>) -> Span {
 
     let span = info_span!("http_request", ?request_id, trace_id = field::Empty);
     {
+        span.set_parent(parent_context);
         let _span = span.enter();
         info!(uri = %request.uri(), method = %request.method(), "HTTP request");
     }
-
-    span.set_parent(parent_context);
 
     span
 }
