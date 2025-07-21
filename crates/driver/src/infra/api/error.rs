@@ -19,9 +19,9 @@ enum Kind {
     MissingSurplusFee,
     InvalidTokens,
     InvalidAmounts,
-    InvalidOrders,
     QuoteSameTokens,
     FailedToSubmit,
+    NoValidOrders,
 }
 
 #[derive(Debug, Serialize)]
@@ -54,7 +54,7 @@ impl From<Kind> for (hyper::StatusCode, axum::Json<Error>) {
             }
             Kind::FailedToSubmit => "Could not submit the solution to the blockchain",
             Kind::TooManyPendingSettlements => "Settlement queue is full",
-            Kind::InvalidOrders => "No valid orders found in the auction",
+            Kind::NoValidOrders => "No valid orders found in the auction",
         };
         (
             hyper::StatusCode::BAD_REQUEST,
@@ -88,7 +88,7 @@ impl From<competition::Error> for (hyper::StatusCode, axum::Json<Error>) {
             competition::Error::Solver(_) => Kind::SolverFailed,
             competition::Error::SubmissionError => Kind::FailedToSubmit,
             competition::Error::TooManyPendingSettlements => Kind::TooManyPendingSettlements,
-            competition::Error::NoValidOrdersFound => Kind::InvalidOrders,
+            competition::Error::NoValidOrdersFound => Kind::NoValidOrders,
         };
         error.into()
     }
