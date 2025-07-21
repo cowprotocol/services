@@ -19,6 +19,14 @@ servers:
     url: "https://api.cow.fi/base"
   - description: Base (Staging)
     url: "https://barn.api.cow.fi/base"
+  - description: Avalanche (Prod)
+    url: "https://api.cow.fi/avalanche"
+  - description: Avalanche (Staging)
+    url: "https://barn.api.cow.fi/avalanche"
+  - description: Polygon (Prod)
+    url: "https://api.cow.fi/polygon"
+  - description: Polygon (Staging)
+    url: "https://barn.api.cow.fi/polygon"
   - description: Sepolia (Prod)
     url: "https://api.cow.fi/sepolia"
   - description: Sepolia (Staging)
