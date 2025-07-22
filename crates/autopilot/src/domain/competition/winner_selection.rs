@@ -53,8 +53,8 @@ use {
 /// 3. compute reference scores
 ///
 /// The functions assume the `Arbitrator` is the only one
-/// changing the ordering or the `participants.
-impl Config {
+/// changing the ordering or the `participants`.
+impl Arbitrator {
     /// Runs the entire auction mechanism on the passed in solutions.
     pub fn arbitrate(
         &self,
@@ -349,7 +349,7 @@ fn score_by_token_pair(solution: &Solution, auction: &Auction) -> Result<ScoreBy
     Ok(scores)
 }
 
-pub struct Config {
+pub struct Arbitrator {
     pub max_winners: usize,
     pub weth: WrappedNativeToken,
 }
@@ -1263,8 +1263,8 @@ mod tests {
         pub buy_amount: eth::U256,
     }
 
-    fn create_test_arbitrator() -> super::Config {
-        super::Config {
+    fn create_test_arbitrator() -> super::Arbitrator {
+        super::Arbitrator {
             max_winners: 10,
             weth: H160::from_slice(&hex!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")).into(),
         }
