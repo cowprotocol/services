@@ -1,4 +1,4 @@
-use {core::time::Duration, tracing::level_filters::LevelFilter};
+use {core::time::Duration, tracing::Level};
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -6,7 +6,7 @@ pub struct Config {
     /// https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html
     pub(crate) env_filter: String,
     /// Minimum level threshold for stderr output
-    pub(crate) stderr_threshold: LevelFilter,
+    pub(crate) stderr_threshold: Option<Level>,
     /// Output log events as JSON
     pub(crate) use_json_format: bool,
     /// Tracing config
@@ -16,7 +16,7 @@ pub struct Config {
 impl Config {
     pub fn new(
         env_filter: &str,
-        stderr_threshold: LevelFilter,
+        stderr_threshold: Option<Level>,
         use_json_format: bool,
         tracing_config: Option<TracingConfig>,
     ) -> Self {
@@ -39,8 +39,8 @@ impl Config {
         self
     }
 
-    pub fn with_stderr_threshold(mut self, stderr_threshold: LevelFilter) -> Self {
-        self.stderr_threshold = stderr_threshold;
+    pub fn with_stderr_threshold(mut self, stderr_threshold: Level) -> Self {
+        self.stderr_threshold = Some(stderr_threshold);
         self
     }
 
@@ -54,7 +54,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             env_filter: "info".to_string(),
-            stderr_threshold: LevelFilter::ERROR,
+            stderr_threshold: None,
             use_json_format: false,
             tracing: None,
         }
@@ -70,7 +70,7 @@ pub struct TracingConfig {
     /// Timeout for exporting spans to collector
     pub(crate) export_timeout: Duration,
     /// Level of traces that should be collected
-    pub(crate) level: LevelFilter,
+    pub(crate) level: Level,
 }
 
 impl TracingConfig {
@@ -78,7 +78,7 @@ impl TracingConfig {
         collector_endpoint: String,
         service_name: String,
         export_timeout: Duration,
-        level: LevelFilter,
+        level: Level,
     ) -> Self {
         Self {
             collector_endpoint,

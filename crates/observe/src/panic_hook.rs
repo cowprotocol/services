@@ -37,12 +37,7 @@ mod tests {
     #[test]
     #[ignore]
     fn manual_thread() {
-        let obs_config = Config::new(
-            "info",
-            tracing::level_filters::LevelFilter::OFF,
-            false,
-            None,
-        );
+        let obs_config = Config::new("info", None, false, None);
         crate::tracing::initialize(&obs_config);
 
         // Should print panic trace log but not kill the process.
@@ -61,12 +56,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     #[ignore]
     async fn manual_tokio() {
-        let obs_config = Config::new(
-            "info",
-            tracing::level_filters::LevelFilter::OFF,
-            false,
-            None,
-        );
+        let obs_config = Config::new("info", None, false, None);
         crate::tracing::initialize(&obs_config);
 
         let handle = tokio::task::spawn(async { panic!("you should see this message") });
