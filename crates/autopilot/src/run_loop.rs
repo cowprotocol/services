@@ -325,7 +325,10 @@ impl RunLoop {
             OrderEventLabel::Considered,
         );
 
-        for winner in ranking.winners() {
+        for (solution_uid, winner) in ranking
+            .enumerated()
+            .filter(|(_, participant)| participant.is_winner())
+        {
             let (driver, solution) = (winner.driver(), winner.solution());
             tracing::info!(driver = %driver.name, solution = %solution.id(), "winner");
 
@@ -334,6 +337,7 @@ impl RunLoop {
                 single_run_start,
                 driver,
                 solution,
+                solution_uid,
                 block_deadline,
             )
             .await;
@@ -349,6 +353,7 @@ impl RunLoop {
         single_run_start: Instant,
         driver: &Arc<infra::Driver>,
         solution: &Solution,
+        solution_uid: usize,
         block_deadline: u64,
     ) {
         let solved_order_uids: HashSet<_> = solution.orders().keys().cloned().collect();
@@ -369,10 +374,11 @@ impl RunLoop {
             match self_
                 .settle(
                     &driver_,
-                    solution_id,
                     solved_order_uids.clone(),
                     solver,
                     auction_id,
+                    solution_id,
+                    solution_uid,
                     block_deadline,
                 )
                 .await
@@ -457,8 +463,7 @@ impl RunLoop {
         }
 
         let mut solutions: Vec<_> = ranking
-            .all()
-            .enumerate()
+            .enumerated()
             .map(|(index, participant)| SolverSettlement {
                 solver: participant.driver().name.clone(),
                 solver_address: participant.solution().solver().0,
@@ -699,13 +704,15 @@ impl RunLoop {
 
     /// Execute the solver's solution. Returns Ok when the corresponding
     /// transaction has been mined.
+    #[allow(clippy::too_many_arguments)]
     async fn settle(
         &self,
         driver: &infra::Driver,
-        solution_id: u64,
         solved_order_uids: HashSet<OrderUid>,
         solver: eth::Address,
         auction_id: i64,
+        solution_id: u64,
+        solution_uid: usize,
         submission_deadline_latest_block: u64,
     ) -> Result<TxId, SettleError> {
         let settle = async move {
@@ -724,6 +731,7 @@ impl RunLoop {
             self.store_execution_started(
                 auction_id,
                 solver,
+                solution_uid,
                 current_block,
                 submission_deadline_latest_block,
             );
@@ -749,7 +757,7 @@ impl RunLoop {
             }
         };
 
-        self.store_execution_ended(solver, auction_id, &result);
+        self.store_execution_ended(solver, auction_id, solution_uid, &result);
 
         // Clean up the in-flight orders regardless the result.
         self.in_flight_orders
@@ -766,6 +774,7 @@ impl RunLoop {
         &self,
         auction_id: i64,
         solver: eth::Address,
+        solution_uid: usize,
         start_block: u64,
         deadline_block: u64,
     ) {
@@ -774,6 +783,7 @@ impl RunLoop {
             let execution_started = ExecutionStarted {
                 auction_id,
                 solver,
+                solution_uid,
                 start_timestamp: chrono::Utc::now(),
                 start_block,
                 deadline_block,
@@ -794,6 +804,7 @@ impl RunLoop {
         &self,
         solver: eth::Address,
         auction_id: i64,
+        solution_uid: usize,
         result: &Result<TxId, SettleError>,
     ) {
         let end_timestamp = chrono::Utc::now();
@@ -809,6 +820,7 @@ impl RunLoop {
             let execution_ended = ExecutionEnded {
                 auction_id,
                 solver,
+                solution_uid,
                 end_timestamp,
                 end_block: current_block,
                 outcome,
