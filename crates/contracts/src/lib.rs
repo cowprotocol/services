@@ -109,7 +109,7 @@ include_contracts! {
     UniswapV2Router02;
     UniswapV3Pool;
     UniswapV3QuoterV2;
-    UniswapV3SwapRouter;
+    UniswapV3SwapRouterV2;
     WETH9;
 }
 
@@ -219,7 +219,7 @@ mod tests {
             assert_has_deployment_address!(UniswapV2Router02 for *network);
         }
         for network in &[MAINNET, GOERLI, SEPOLIA, ARBITRUM_ONE] {
-            assert_has_deployment_address!(UniswapV3SwapRouter for *network);
+            assert_has_deployment_address!(UniswapV3SwapRouterV2 for *network);
             assert_has_deployment_address!(IUniswapV3Factory for *network);
         }
         for network in &[MAINNET, GOERLI, ARBITRUM_ONE] {
