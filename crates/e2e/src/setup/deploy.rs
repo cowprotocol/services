@@ -32,9 +32,9 @@ pub struct Contracts {
     pub ethflows: Vec<CoWSwapEthFlow>,
     pub hooks: HooksTrampoline,
     pub cow_amm_helper: Option<CowAmmLegacyHelper>,
-    pub flashloan_wrapper_maker: ERC3156FlashLoanSolverWrapper,
-    pub flashloan_wrapper_aave: AaveFlashLoanSolverWrapper,
-    pub flashloan_router: FlashLoanRouter,
+    pub flashloan_wrapper_maker: Option<ERC3156FlashLoanSolverWrapper>,
+    pub flashloan_wrapper_aave: Option<AaveFlashLoanSolverWrapper>,
+    pub flashloan_router: Option<FlashLoanRouter>,
 }
 
 impl Contracts {
@@ -54,21 +54,16 @@ impl Contracts {
             Ok(contract) => Some(contract),
         };
 
-        // TODO: use Contract::deployed() after contracts got deployed on mainnet
-        let flashloan_router = FlashLoanRouter::builder(web3, gp_settlement.address())
-            .deploy()
-            .await
-            .unwrap();
-        let flashloan_wrapper_aave =
-            AaveFlashLoanSolverWrapper::builder(web3, flashloan_router.address())
+        let flashloan_router = FlashLoanRouter::deployed(web3).await.ok();
+        let flashloan_wrapper_aave = AaveFlashLoanSolverWrapper::deployed(web3).await.ok();
+
+        let flashloan_wrapper_maker = match &flashloan_router {
+            Some(router) => ERC3156FlashLoanSolverWrapper::builder(web3, router.address())
                 .deploy()
                 .await
-                .unwrap();
-        let flashloan_wrapper_maker =
-            ERC3156FlashLoanSolverWrapper::builder(web3, flashloan_router.address())
-                .deploy()
-                .await
-                .unwrap();
+                .ok(),
+            None => None,
+        };
 
         Self {
             chain_id: network_id
@@ -206,9 +201,9 @@ impl Contracts {
             hooks,
             // Current helper contract only works in forked tests
             cow_amm_helper: None,
-            flashloan_wrapper_maker,
-            flashloan_wrapper_aave,
-            flashloan_router,
+            flashloan_wrapper_maker: Some(flashloan_wrapper_maker),
+            flashloan_wrapper_aave: Some(flashloan_wrapper_aave),
+            flashloan_router: Some(flashloan_router),
         }
     }
 
