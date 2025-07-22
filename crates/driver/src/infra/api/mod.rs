@@ -111,17 +111,17 @@ impl Api {
             })));
             let path = format!("/{name}");
             infra::observe::mounting_solver(&name, &path);
-            app = app
-                .nest(&path, router)
-                // axum's default body limit needs to be disabled to not have the default limit on top of our custom limit
-                .layer(axum::extract::DefaultBodyLimit::disable());
+            app = app.nest(&path, router);
         }
 
-        app = app.layer(
-            tower::ServiceBuilder::new()
-                .layer(tower_http::trace::TraceLayer::new_for_http().make_span_with(make_span))
-                .map_request(record_trace_id),
-        );
+        app = app
+            // axum's default body limit needs to be disabled to not have the default limit on top of our custom limit
+            .layer(axum::extract::DefaultBodyLimit::disable())
+            .layer(
+                tower::ServiceBuilder::new()
+                    .layer(tower_http::trace::TraceLayer::new_for_http().make_span_with(make_span))
+                    .map_request(record_trace_id),
+            );
 
         // Start the server.
         let server = axum::Server::bind(&self.addr).serve(app.into_make_service());
