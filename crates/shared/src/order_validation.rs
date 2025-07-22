@@ -626,11 +626,8 @@ impl OrderValidating for OrderValidator {
             verification,
         };
 
-        // TODO: fix this check on lens, for now disable the logic to
-        // find more blockers
-        let _ = self
-            .ensure_token_is_transferable(&order, owner, &app_data)
-            .await;
+        self.ensure_token_is_transferable(&order, owner, &app_data)
+            .await?;
 
         // Check if we need to re-classify the market order if it is outside the market
         // price. We consider out-of-price orders as liquidity orders. See
