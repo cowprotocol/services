@@ -134,21 +134,21 @@ impl Balances {
         let actual_response_bytes = sol_data::Bytes::abi_decode(&wrapped_response)
             .context("failed to decode byte array")?;
 
-        // now we can get at the data we really want
-        type Response = (
-            sol_data::Uint<256>, // token_balance
-            sol_data::Uint<256>, // allowance
-            sol_data::Uint<256>, // effective_balance
-            sol_data::Bool,      // can_transfer
-        );
-        let decoded = Response::abi_decode(&actual_response_bytes)
+        // decode the actual response of the simulated call
+        let (token_balance, allowance, effective_balance, can_transfer) =
+            <(
+                sol_data::Uint<256>,
+                sol_data::Uint<256>,
+                sol_data::Uint<256>,
+                sol_data::Bool,
+            )>::abi_decode(&actual_response_bytes)
             .context("failed to decode balance response")?;
 
         let simulation = Simulation {
-            token_balance: U256::from_little_endian(&decoded.0.as_le_bytes()),
-            allowance: U256::from_little_endian(&decoded.1.as_le_bytes()),
-            effective_balance: U256::from_little_endian(&decoded.2.as_le_bytes()),
-            can_transfer: decoded.3,
+            token_balance: U256::from_little_endian(&token_balance.as_le_bytes()),
+            allowance: U256::from_little_endian(&allowance.as_le_bytes()),
+            effective_balance: U256::from_little_endian(&effective_balance.as_le_bytes()),
+            can_transfer,
         };
 
         tracing::trace!(?query, ?amount, ?simulation, "simulated balances");
