@@ -35,7 +35,7 @@ use {
         sync::{mpsc, oneshot},
         task,
     },
-    tracing::Instrument,
+    tracing::{Instrument, instrument},
 };
 
 pub mod auction;
@@ -110,6 +110,7 @@ impl Competition {
     }
 
     /// Solve an auction as part of this competition.
+    #[instrument(skip_all)]
     pub async fn solve(&self, auction: Auction) -> Result<Option<Solved>, Error> {
         let auction = Arc::new(auction);
         let tasks = self.fetcher.start_or_get_tasks_for_auction(auction.clone());
@@ -714,6 +715,7 @@ impl Competition {
         Ok(())
     }
 
+    #[instrument(skip_all)]
     async fn without_unsupported_orders(&self, mut auction: Auction) -> Auction {
         if !self.solver.config().flashloans_enabled {
             auction.orders.retain(|o| o.app_data.flashloan().is_none());

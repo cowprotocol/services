@@ -27,6 +27,7 @@ use {
         collections::{HashMap, HashSet},
         sync::Arc,
     },
+    tracing::instrument,
 };
 
 type OrderBuckets = HashMap<(H160, H160), Vec<OrderRecord>>;
@@ -128,6 +129,7 @@ impl ZeroExLiquidity {
 
 #[async_trait::async_trait]
 impl LiquidityCollecting for ZeroExLiquidity {
+    #[instrument(name = "zeroex_liquidity", skip_all)]
     async fn get_liquidity(
         &self,
         pairs: HashSet<TokenPair>,

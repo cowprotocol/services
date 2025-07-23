@@ -25,6 +25,7 @@ use {
         collections::HashSet,
         sync::{Arc, Mutex},
     },
+    tracing::instrument,
 };
 
 // 1h timeout for Uniswap V3 interactions
@@ -121,6 +122,7 @@ impl UniswapV3Liquidity {
 impl LiquidityCollecting for UniswapV3Liquidity {
     /// Given a list of offchain orders returns the list of AMM liquidity to be
     /// considered
+    #[instrument(name = "uniswap_v3_liquidity", skip_all)]
     async fn get_liquidity(
         &self,
         pairs: HashSet<TokenPair>,
