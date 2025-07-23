@@ -227,7 +227,7 @@ impl Solver {
 
     /// Make a POST request instructing the solver to solve an auction.
     /// Allocates at most `timeout` time for the solving.
-    #[instrument(skip_all)]
+    #[instrument(name = "solver_engine", skip_all)]
     pub async fn solve(
         &self,
         auction: &Auction,
