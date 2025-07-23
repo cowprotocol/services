@@ -74,7 +74,7 @@ impl DataAggregator {
     /// Aggregates all the data that is needed to pre-process the given auction.
     /// Uses a shared futures internally to make sure that the works happens
     /// only once for all connected solvers to share.
-    pub fn get_tasks_for_auction(&self, auction: Arc<Auction>) -> DataFetchingTasks {
+    pub fn start_or_get_tasks_for_auction(&self, auction: Arc<Auction>) -> DataFetchingTasks {
         let new_id = auction
             .id()
             .expect("auctions used for quoting do not have to be prioritized");

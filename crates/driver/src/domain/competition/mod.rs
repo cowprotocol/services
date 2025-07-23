@@ -112,7 +112,7 @@ impl Competition {
     /// Solve an auction as part of this competition.
     pub async fn solve(&self, auction: Auction) -> Result<Option<Solved>, Error> {
         let auction = Arc::new(auction);
-        let tasks = self.fetcher.get_tasks_for_auction(auction.clone());
+        let tasks = self.fetcher.start_or_get_tasks_for_auction(auction.clone());
         let mut auction = Arc::unwrap_or_clone(auction);
 
         let settlement_contract = self.eth.contracts().settlement().address();
@@ -124,6 +124,8 @@ impl Competition {
         auction.orders.extend(cow_amm_orders.iter().cloned());
 
         let sort_orders_future = Self::run_blocking_with_timer("sort_orders", move || {
+            // Use spawn_blocking() because a lot of CPU bound computations are happening
+            // and we don't want to block the runtime for too long.
             Self::sort_orders(
                 auction,
                 solver_address,
@@ -137,6 +139,9 @@ impl Competition {
             tokio::join!(sort_orders_future, tasks.balances, tasks.app_data);
 
         let auction = Self::run_blocking_with_timer("update_orders", move || {
+            // Same as before with sort_orders, we use spawn_blocking() because a lot of CPU
+            // bound computations are happening and we want to avoid blocking
+            // the runtime.
             Self::update_orders(
                 auction,
                 balances,
