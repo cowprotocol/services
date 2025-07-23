@@ -259,12 +259,12 @@ impl BlockRetrieving for Web3 {
         ))
     }
 
-    /// get blocks defined by the range (inclusive)
-    /// if successful, function guarantees full range of blocks in Result (does
-    /// not return partial results)
+    /// Gets all blocks requested in the range. For successful results it's
+    /// enforced that all the blocks a present, in the correct order and that
+    /// there are not reorgs in the block range.
     async fn blocks(&self, range: RangeInclusive<u64>) -> Result<Vec<BlockNumberHash>> {
         let include_txs = helpers::serialize(&false);
-        let (start, end) = range.into_inner();
+        let (start, end) = range.clone().into_inner();
         let mut batch_request = Vec::with_capacity((end - start + 1) as usize);
         for i in start..=end {
             let num = helpers::serialize(&BlockNumber::Number(i.into()));
@@ -273,6 +273,8 @@ impl BlockRetrieving for Web3 {
                 .prepare("eth_getBlockByNumber", vec![num, include_txs.clone()]);
             batch_request.push(request);
         }
+
+        let mut prev_hash = None;
 
         // send_batch guarantees the size and order of the responses to match the
         // requests
@@ -285,10 +287,20 @@ impl BlockRetrieving for Web3 {
                     serde_json::from_value::<web3::types::Block<H256>>(response.clone())
                         .with_context(|| format!("unexpected response format: {response:?}"))
                         .and_then(|response| {
-                            Ok((
-                                response.number.context("missing block number")?.as_u64(),
-                                response.hash.context("missing hash")?,
-                            ))
+                            let current_hash = response.hash.context("missing hash")?;
+                            let current_block = response.number.context("missing number")?.as_u64();
+                            if prev_hash.is_some_and(|prev| prev != response.parent_hash) {
+                                tracing::debug!(
+                                    ?range,
+                                    ?prev_hash,
+                                    parent_hash = ?response.parent_hash,
+                                    "detected reorg in block range"
+                                );
+                                return Err(anyhow!("block range contains a reorg"));
+                            }
+                            prev_hash = Some(current_hash);
+
+                            Ok((current_block, current_hash))
                         })
                 }
                 Err(err) => Err(anyhow!("web3 error: {}", err)),
