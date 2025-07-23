@@ -515,6 +515,7 @@ impl Competition {
         Ok(())
     }
 
+    #[instrument]
     async fn without_unsupported_orders(&self, mut auction: Auction) -> Auction {
         if !self.solver.config().flashloans_enabled {
             auction.orders.retain(|o| o.app_data.flashloan().is_none());
