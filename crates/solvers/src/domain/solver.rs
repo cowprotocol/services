@@ -36,7 +36,7 @@ pub struct Config {
     pub max_partial_attempts: usize,
     pub solution_gas_offset: eth::SignedGas,
     pub native_token_price_estimation_amount: eth::U256,
-    pub node_url: Option<Url>,
+    pub uni_v3_node_url: Option<Url>,
 }
 
 struct Inner {
@@ -76,7 +76,7 @@ struct Inner {
 impl Solver {
     /// Creates a new baseline solver for the specified configuration.
     pub async fn new(config: Config) -> Self {
-        let uni_v3_quoter_v2 = match config.node_url {
+        let uni_v3_quoter_v2 = match config.uni_v3_node_url {
             Some(url) => {
                 let web3 = ethrpc::web3(Default::default(), Default::default(), &url, "baseline");
                 contracts::UniswapV3QuoterV2::deployed(&web3)
