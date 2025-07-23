@@ -573,6 +573,8 @@ pub(crate) fn verify_executed_amount(order: &Order, executed: U256) -> Result<()
         (false, OrderKind::Sell) => executed == remaining.remaining(order.data.sell_amount)?,
         (false, OrderKind::Buy) => executed == remaining.remaining(order.data.buy_amount)?,
     };
+    let r = remaining.remaining(order.data.sell_amount)?;
+    tracing::info!(?executed, ?r, "newlog executed 1");
     ensure!(valid_executed_amount, "invalid executed amount");
     Ok(())
 }
