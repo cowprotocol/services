@@ -28,7 +28,7 @@ use {
     },
     tap::TapFallible,
     tokio::sync::{mpsc, oneshot},
-    tracing::Instrument,
+    tracing::{Instrument, instrument},
 };
 
 pub mod auction;
@@ -96,6 +96,7 @@ impl Competition {
     }
 
     /// Solve an auction as part of this competition.
+    #[instrument(skip_all)]
     pub async fn solve(&self, auction: Auction) -> Result<Option<Solved>, Error> {
         let pairs_to_fetch = match self.solver.liquidity() {
             solver::Liquidity::Fetch => auction.liquidity_pairs(),
