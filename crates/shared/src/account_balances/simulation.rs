@@ -12,11 +12,8 @@ use {
         erc20::Contract,
         support::Balances as HelperContract,
     },
-    ethcontract::{BlockId, BlockNumber, Bytes, H160, U256},
-    ethrpc::{
-        Web3,
-        extensions::{EthExt, StateOverride, StateOverrides},
-    },
+    ethcontract::{Bytes, H160, U256},
+    ethrpc::Web3,
     futures::future,
     model::order::SellTokenSource,
     web3::types::CallRequest,
@@ -24,7 +21,6 @@ use {
 
 pub struct Balances {
     helper_contract: HelperContract,
-    state_overrides: StateOverrides,
     web3: Web3,
     settlement: GPv2Settlement,
     vault_relayer: H160,
@@ -43,24 +39,7 @@ impl Balances {
         let vault = vault.unwrap_or_default();
         let web3 = ethrpc::instrumented::instrument_with_label(web3, "balanceFetching".into());
 
-        // pick a random address for the helper contract to avoid accidental collisions
-        let helper_contract_address = H160::random();
-
-        // prepare state overrides that put the contract code of the helper contract at
-        // chosen address
-        let helper_contract_bytecode = HelperContract::raw_contract()
-            .deployed_bytecode
-            .to_bytes()
-            .unwrap();
-        let state_overrides: StateOverrides = [(
-            helper_contract_address,
-            StateOverride {
-                code: Some(helper_contract_bytecode),
-                ..Default::default()
-            },
-        )]
-        .into_iter()
-        .collect();
+        let helper_contract_address = crate::addr!("b61fea3a98d47d673b10622a819d283c394544bd");
 
         Self {
             helper_contract: HelperContract::at(&web3, helper_contract_address),
@@ -68,7 +47,6 @@ impl Balances {
             web3,
             vault_relayer,
             vault,
-            state_overrides,
         }
     }
 
@@ -116,14 +94,13 @@ impl Balances {
         let wrapped_response = self
             .web3
             .eth()
-            .call_with_state_overrides(
+            .call(
                 CallRequest {
                     to: Some(self.settlement.address()),
                     data: Some(storage_accessible_calldata),
                     ..Default::default()
                 },
-                BlockId::Number(BlockNumber::Latest),
-                self.state_overrides.clone(),
+                None,
             )
             .await
             .context("RPC call failed")?
