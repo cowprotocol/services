@@ -72,15 +72,18 @@ fn set_tracing_subscriber(config: &Config) {
     //    happen for example under the hood in `sqlx`. I don't understand what's
     //    actually causing that but at this point I'm just happy if all the features
     //    work correctly.
+
     macro_rules! fmt_layer {
         ($env_filter:expr_2021, $stderr_threshold:expr_2021, $use_json_format:expr_2021) => {{
-            let writer = std::io::stdout
-                .with_min_level(
-                    $stderr_threshold
-                        .into_level()
-                        .unwrap_or(tracing::Level::ERROR),
-                )
-                .or_else(std::io::stderr);
+            let stderr_threshold = $stderr_threshold.clone();
+            let writer = std::io::stderr
+                .with_filter(move |meta| {
+                    // if the log is at most as verbose as our stderr threshold we log it to
+                    // stderr. For example if the threshold is WARN all WARN and ERROR logs
+                    // will get written to stderr.
+                    stderr_threshold.is_some_and(|min_verbosity| meta.level() <= &min_verbosity)
+                })
+                .or_else(std::io::stdout);
             let timer = UtcTime::new(format_description!(
                 "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z"
             ));
@@ -95,8 +98,10 @@ fn set_tracing_subscriber(config: &Config) {
             } else {
                 tracing_subscriber::fmt::layer()
                     .with_timer(timer)
-                    .map_event_format(|formatter| TraceIdFmt { inner: formatter })
                     .with_ansi(atty::is(atty::Stream::Stdout))
+                    .map_event_format(|formatter| TraceIdFmt {
+                        inner: formatter.with_ansi(atty::is(atty::Stream::Stdout)),
+                    })
                     .with_writer(writer)
                     .with_filter($env_filter)
                     .boxed()
@@ -139,7 +144,7 @@ fn set_tracing_subscriber(config: &Config) {
         Some(
             tracing_opentelemetry::layer()
                 .with_tracer(tracer)
-                .with_filter(tracing_config.level),
+                .with_filter(LevelFilter::from_level(tracing_config.level)),
         )
     } else {
         tracing::info!("no tracing layer set up");
@@ -205,9 +210,10 @@ impl Injector for HeaderInjector<'_> {
     /// Set a key and value in the HeaderMap. Does nothing if the key or value
     /// are not valid inputs.
     fn set(&mut self, key: &str, value: String) {
-        if let Ok(name) = http::header::HeaderName::from_bytes(key.as_bytes())
-            && let Ok(val) = http::header::HeaderValue::from_str(&value)
-        {
+        if let (Ok(name), Ok(val)) = (
+            http::header::HeaderName::from_bytes(key.as_bytes()),
+            http::header::HeaderValue::from_str(&value),
+        ) {
             self.0.insert(name, val);
         }
     }

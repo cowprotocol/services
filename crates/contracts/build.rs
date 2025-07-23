@@ -31,7 +31,27 @@ fn main() {
     // - https://doc.rust-lang.org/cargo/reference/build-scripts.html#cargorerun-if-changedpath
     println!("cargo:rerun-if-changed=build.rs");
 
-    generate_contract("AaveFlashLoanSolverWrapper");
+    generate_contract_with_config("AaveFlashLoanSolverWrapper", |builder| {
+        let mut builder = builder;
+        for network in [
+            MAINNET,
+            GNOSIS,
+            SEPOLIA,
+            ARBITRUM_ONE,
+            BASE,
+            POLYGON,
+            AVALANCHE,
+        ] {
+            builder = builder.add_network(
+                network,
+                Network {
+                    address: addr("0x7d9c4dee56933151bc5c909cfe09def0d315cb4a"),
+                    deployment_information: None,
+                },
+            );
+        }
+        builder
+    });
     generate_contract_with_config("CoWSwapEthFlow", |builder| {
         builder
             .contract_mod_override("cowswap_eth_flow")
@@ -1056,7 +1076,27 @@ fn main() {
     generate_contract("ERC20");
     generate_contract("ERC20Mintable");
     generate_contract("ERC3156FlashLoanSolverWrapper");
-    generate_contract("FlashLoanRouter");
+    generate_contract_with_config("FlashLoanRouter", |builder| {
+        let mut builder = builder;
+        for network in [
+            MAINNET,
+            GNOSIS,
+            SEPOLIA,
+            ARBITRUM_ONE,
+            BASE,
+            POLYGON,
+            AVALANCHE,
+        ] {
+            builder = builder.add_network(
+                network,
+                Network {
+                    address: addr("0x9da8b48441583a2b93e2ef8213aad0ec0b392c69"),
+                    deployment_information: None,
+                },
+            );
+        }
+        builder
+    });
     generate_contract_with_config("GPv2AllowListAuthentication", |builder| {
         builder
             .contract_mod_override("gpv2_allow_list_authentication")
@@ -1327,6 +1367,18 @@ fn main() {
         // Not available on Gnosis Chain
     });
     generate_contract("UniswapV3Pool");
+    generate_contract_with_config("UniswapV3QuoterV2", |builder| {
+        // <https://docs.uniswap.org/contracts/v3/reference/deployments/>
+        builder
+            .add_network_str(MAINNET, "0x61fFE014bA17989E743c5F6cB21bF9697530B21e")
+            .add_network_str(ARBITRUM_ONE, "0x61fFE014bA17989E743c5F6cB21bF9697530B21e")
+            .add_network_str(BASE, "0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a")
+            .add_network_str(AVALANCHE, "0xbe0F5544EC67e9B3b2D979aaA43f18Fd87E6257F")
+            .add_network_str(BNB, "0x78D78E420Da98ad378D7799bE8f4AF69033EB077")
+            .add_network_str(OPTIMISM, "0x61fFE014bA17989E743c5F6cB21bF9697530B21e")
+            .add_network_str(POLYGON, "0x61fFE014bA17989E743c5F6cB21bF9697530B21e")
+        // Not listed on Gnosis and Sepolia chains
+    });
     generate_contract_with_config("WETH9", |builder| {
         // Note: the WETH address must be consistent with the one used by the ETH-flow
         // contract

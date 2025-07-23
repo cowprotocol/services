@@ -44,7 +44,7 @@ use {
         sources::{self, BaselineSource, uniswap_v2::UniV2BaselineSourceParameters},
         token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
     },
-    std::{future::Future, net::SocketAddr, sync::Arc, time::Duration},
+    std::{convert::Infallible, future::Future, net::SocketAddr, sync::Arc, time::Duration},
     tokio::{task, task::JoinHandle},
     warp::Filter,
 };
@@ -498,9 +498,12 @@ fn serve_api(
     .boxed();
     tracing::info!(%address, "serving order book");
     let warp_svc = warp::service(filter);
-    let warp_svc = observe::make_service_with_request_tracing!(warp_svc);
+    let make_svc = hyper::service::make_service_fn(move |_| {
+        let svc = warp_svc.clone();
+        async move { Ok::<_, Infallible>(svc) }
+    });
     let server = hyper::Server::bind(&address)
-        .serve(warp_svc)
+        .serve(make_svc)
         .with_graceful_shutdown(shutdown_receiver)
         .map(|_| ());
     task::spawn(server)

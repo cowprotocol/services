@@ -186,7 +186,7 @@ impl Utilities {
         let traders = auction
             .orders
             .iter()
-            .group_by(|order| (order.trader(), order.sell.token, order.sell_token_balance))
+            .chunk_by(|order| (order.trader(), order.sell.token, order.sell_token_balance))
             .into_iter()
             .map(|((trader, token, source), mut orders)| {
                 let first = orders.next().expect("group contains at least 1 order");

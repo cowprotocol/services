@@ -6,6 +6,7 @@ use {
     },
     chain::Chain,
     ethereum_types::H160,
+    reqwest::Url,
     serde::Deserialize,
     serde_with::serde_as,
     shared::price_estimation::gas::SETTLEMENT_OVERHEAD,
@@ -48,6 +49,10 @@ struct Config {
     /// token
     #[serde_as(as = "serialize::U256")]
     native_token_price_estimation_amount: eth::U256,
+
+    /// If this is configured the solver will also use liquidity sources
+    /// that rely on RPC request.
+    node_url: Option<Url>,
 }
 
 /// Load the driver configuration from a TOML file.
@@ -84,6 +89,7 @@ pub async fn load(path: &Path) -> solver::Config {
         max_partial_attempts: config.max_partial_attempts,
         solution_gas_offset: config.solution_gas_offset.into(),
         native_token_price_estimation_amount: config.native_token_price_estimation_amount,
+        node_url: config.node_url,
     }
 }
 

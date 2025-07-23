@@ -16,8 +16,12 @@
 //! And when we issue requests to another process we can simply fetch the
 //! current identifier specific to our task and send that along with the
 //! request.
+
 use {
-    std::fmt,
+    std::{
+        fmt,
+        sync::{OnceLock, atomic::AtomicUsize},
+    },
     tracing::{
         Id,
         Span,
@@ -26,7 +30,22 @@ use {
         span::Attributes,
     },
     tracing_subscriber::{Layer, Registry, layer::Context, registry::LookupSpan},
+    warp::http::{HeaderMap, HeaderValue},
 };
+
+pub(crate) fn request_id(headers: &HeaderMap<HeaderValue>) -> String {
+    static INSTANCE: OnceLock<AtomicUsize> = OnceLock::new();
+    let counter = INSTANCE.get_or_init(|| AtomicUsize::new(0));
+
+    if let Some(header) = headers.get("X-Request-ID") {
+        String::from_utf8_lossy(header.as_bytes()).to_string()
+    } else {
+        format!(
+            "{}",
+            counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        )
+    }
+}
 
 /// Name of the span that stores the id used to associated logs
 /// across processes.
@@ -34,44 +53,6 @@ pub const SPAN_NAME: &str = "request";
 
 pub fn info_span(request_id: String) -> Span {
     tracing::info_span!(SPAN_NAME, id = request_id)
-}
-
-/// Takes a `tower::Service` and embeds it in a `make_service` function that
-/// spawns one of these services per incoming request.
-/// But crucially before spawning that service task local storage will be
-/// initialized with some request id.
-/// Either that gets taken from the requests `X-REQUEST-ID` header of if that's
-/// missing a globally unique request number will be generated.
-#[macro_export]
-macro_rules! make_service_with_request_tracing {
-    ($service:expr_2021) => {{
-        {
-            let internal_request_id = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-            hyper::service::make_service_fn(move |_| {
-                let warp_svc = $service.clone();
-                let internal_request_id = internal_request_id.clone();
-                async move {
-                    let svc =
-                        hyper::service::service_fn(move |req: hyper::Request<hyper::Body>| {
-                            let mut warp_svc = warp_svc.clone();
-                            let id = if let Some(header) = req.headers().get("X-Request-ID") {
-                                String::from_utf8_lossy(header.as_bytes()).to_string()
-                            } else {
-                                format!(
-                                    "{}",
-                                    internal_request_id
-                                        .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
-                                )
-                            };
-                            let span = tracing::info_span!(observe::request_id::SPAN_NAME, id);
-                            let task = hyper::service::Service::call(&mut warp_svc, req);
-                            tracing::Instrument::instrument(task, span)
-                        });
-                    Ok::<_, std::convert::Infallible>(svc)
-                }
-            })
-        }
-    }};
 }
 
 /// Looks up the request id from the current tracing span.
@@ -237,5 +218,30 @@ mod test {
         }
         .instrument(info_span("test".to_string()))
         .await
+    }
+
+    #[test]
+    fn returns_existing_request_id_header() {
+        let mut headers = HeaderMap::new();
+        headers.insert("X-Request-ID", HeaderValue::from_static("abc123"));
+
+        let id = request_id(&headers);
+        assert_eq!(id, "abc123");
+    }
+
+    #[test]
+    fn generates_incrementing_request_id_when_header_missing() {
+        let headers = HeaderMap::new();
+
+        let id1 = request_id(&headers);
+        let id2 = request_id(&headers);
+        let id3 = request_id(&headers);
+
+        let n1: usize = id1.parse().unwrap();
+        let n2: usize = id2.parse().unwrap();
+        let n3: usize = id3.parse().unwrap();
+
+        assert!(n2 > n1);
+        assert!(n3 > n2);
     }
 }
