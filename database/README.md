@@ -473,6 +473,7 @@ Contains data for each settlement execution of an auction. To check if the aucti
 -----------------|-------------|----------|--------
 auction\_id      | bigint      | not null | id of the auction the settlement execution belongs to
 solver           | bytea       | not null | public address of the winning solver that executed the settlement
+solution\_uid    | bigint      | not null | corresponding winning solver's solution UID
 start\_timestamp | timestamptz | not null | when the settlement execution started
 end\_timestamp   | timestamptz | nullable | when the settlement execution ended
 start\_block     | bigint      | not null | block in which the settlement execution started
@@ -481,7 +482,7 @@ deadline\_block  | bigint      | not null | latest block at which the settlement
 outcome          | text        | nullable | outcome of the settlement execution
 
 Indexes:
-- PRIMARY KEY: btree(`auction_id`, `solver`)
+- PRIMARY KEY: btree(`auction_id`, `solver`, `solution_uid`)
 - settlement\_executions\_time\_range\_index: btree(`start_timestamp`, `end_timestamp`)
 
 ### solver\_competitions
