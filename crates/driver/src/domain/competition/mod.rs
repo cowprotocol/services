@@ -28,7 +28,7 @@ use {
     },
     tap::TapFallible,
     tokio::sync::{mpsc, oneshot},
-    tracing::Instrument,
+    tracing::{Instrument, instrument},
 };
 
 pub mod auction;
@@ -96,6 +96,7 @@ impl Competition {
     }
 
     /// Solve an auction as part of this competition.
+    #[instrument(skip_all)]
     pub async fn solve(&self, auction: Auction) -> Result<Option<Solved>, Error> {
         let pairs_to_fetch = match self.solver.liquidity() {
             solver::Liquidity::Fetch => auction.liquidity_pairs(),
@@ -514,6 +515,7 @@ impl Competition {
         Ok(())
     }
 
+    #[instrument(skip_all)]
     async fn without_unsupported_orders(&self, mut auction: Auction) -> Auction {
         if !self.solver.config().flashloans_enabled {
             auction.orders.retain(|o| o.app_data.flashloan().is_none());
