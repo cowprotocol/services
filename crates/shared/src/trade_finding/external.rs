@@ -226,6 +226,7 @@ impl TradeFinding for ExternalTradeFinder {
         })
     }
 
+    #[instrument(skip_all)]
     async fn get_trade(&self, query: &Query) -> Result<TradeKind, TradeError> {
         self.shared_query(query).await
     }
