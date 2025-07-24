@@ -13,7 +13,9 @@ use {
     tracing::Instrument,
     url::Url,
     web3::{
-        BatchTransport, Transport, helpers,
+        BatchTransport,
+        Transport,
+        helpers,
         types::{Block, BlockId, BlockNumber, U64},
     },
 };

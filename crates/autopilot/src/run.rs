@@ -8,7 +8,8 @@ use {
             onchain_order_events::{
                 OnchainOrderParser,
                 ethflow_events::{
-                    EthFlowOnchainOrderParser, determine_ethflow_indexing_start,
+                    EthFlowOnchainOrderParser,
+                    determine_ethflow_indexing_start,
                     determine_ethflow_refund_indexing_start,
                 },
                 event_retriever::CoWSwapOnchainOrdersContract,
@@ -26,7 +27,11 @@ use {
     clap::Parser,
     contracts::{BalancerV2Vault, IUniswapV3Factory},
     ethcontract::{
-        BlockNumber, H160, common::DeploymentInformation, dyns::DynWeb3, errors::DeployError,
+        BlockNumber,
+        H160,
+        common::DeploymentInformation,
+        dyns::DynWeb3,
+        errors::DeployError,
     },
     ethrpc::block_stream::block_number_to_block_number_hash,
     futures::stream::StreamExt,

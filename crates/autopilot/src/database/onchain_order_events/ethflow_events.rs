@@ -5,7 +5,8 @@ use {
     contracts::{
         GPv2Settlement,
         cowswap_onchain_orders::{
-            Event as ContractEvent, event_data::OrderPlacement as ContractOrderPlacement,
+            Event as ContractEvent,
+            event_data::OrderPlacement as ContractOrderPlacement,
         },
         deployment_block,
     },
