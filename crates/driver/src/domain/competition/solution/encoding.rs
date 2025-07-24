@@ -192,37 +192,27 @@ pub fn tx(
                 (flashloan.amount.0 * flashloan_wrapper.fee_in_bps).ceil_div(&10_000.into());
             let repayment_amount = flashloan.amount.0 + fee_amount;
 
-            // Allow settlement contract to pull borrowed tokens from flashloan wrapper
+            // Move the loaned money from the helper contract to the borrower address (most
+            // likely the user).
+            let take_out_call_data = flashloan_wrapper
+                .helper_contract
+                .take_out(
+                    flashloan.borrower.into(),
+                    flashloan.token.into(),
+                    flashloan.amount.into(),
+                )
+                .tx
+                .data
+                .unwrap();
             pre_interactions.insert(
                 0,
-                approve_flashloan(
-                    flashloan.token,
-                    flashloan.amount,
-                    contracts.settlement().address().into(),
-                    &flashloan_wrapper.helper_contract,
-                ),
-            );
-
-            // Transfer tokens from flashloan wrapper to user (i.e. borrower) to later allow
-            // settlement contract to pull in all the necessary sell tokens from the user.
-            let tx = contracts::ERC20::at(
-                &contracts.settlement().raw_instance().web3(),
-                flashloan.token.into(),
-            )
-            .transfer_from(
-                flashloan_wrapper.helper_contract.address(),
-                flashloan.borrower.into(),
-                flashloan.amount.0,
-            )
-            .into_inner();
-            pre_interactions.insert(
-                1,
                 eth::Interaction {
-                    target: tx.to.unwrap().into(),
-                    value: eth::U256::zero().into(),
-                    call_data: tx.data.unwrap().0.into(),
+                    target: flashloan_wrapper.helper_contract.address().into(),
+                    value: 0.into(),
+                    call_data: Bytes(take_out_call_data.0),
                 },
             );
+            // the user is expected to do the repayment via a post-hook
 
             // Allow flash loan lender to take tokens from wrapper contract
             post_interactions.push(approve_flashloan(
