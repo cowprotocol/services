@@ -9,9 +9,11 @@ use {
     model::order::OrderKind,
     primitive_types::H160,
     std::{cmp::Ordering, sync::Arc, time::Duration},
+    tracing::instrument,
 };
 
 impl NativePriceEstimating for CompetitionEstimator<Arc<dyn NativePriceEstimating>> {
+    #[instrument(skip_all)]
     fn estimate_native_price(
         &self,
         token: H160,

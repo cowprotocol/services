@@ -3,6 +3,7 @@ use {
     anyhow::Result,
     primitive_types::H160,
     std::sync::Arc,
+    tracing::instrument,
 };
 
 /// If a token is neither in the allow nor the deny list treat it this way.
@@ -48,6 +49,7 @@ impl ListBasedDetector {
 
 #[async_trait::async_trait]
 impl BadTokenDetecting for ListBasedDetector {
+    #[instrument(skip_all)]
     async fn detect(&self, token: ethcontract::H160) -> Result<TokenQuality> {
         if self.allow_list.contains(&token) {
             return Ok(TokenQuality::Good);

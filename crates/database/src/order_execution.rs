@@ -3,6 +3,7 @@ use {
     bigdecimal::BigDecimal,
     sqlx::{PgConnection, QueryBuilder},
     std::collections::HashMap,
+    tracing::instrument,
 };
 
 type Execution = (AuctionId, OrderUid);
@@ -13,6 +14,7 @@ pub struct Asset {
     pub token: Address,
 }
 
+#[instrument(skip_all)]
 pub async fn save(
     ex: &mut PgConnection,
     order: &OrderUid,
@@ -47,6 +49,7 @@ DO UPDATE SET reward = $3, executed_fee = $4, executed_fee_token = $5, block_num
 }
 
 /// Fetch protocol fees for all keys in the filter
+#[instrument(skip_all)]
 pub async fn executed_protocol_fees(
     ex: &mut PgConnection,
     keys_filter: &[Execution],

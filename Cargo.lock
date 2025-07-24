@@ -160,7 +160,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ad31216895d27d307369daa1393f5850b50bbbd372478a9fa951c095c210627e"
 dependencies = [
  "alloy-primitives",
- "alloy-sol-types",
 ]
 
 [[package]]
@@ -2438,6 +2437,7 @@ dependencies = [
  "sqlx",
  "strum 0.26.2",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -6010,7 +6010,6 @@ dependencies = [
 name = "shared"
 version = "0.1.0"
 dependencies = [
- "alloy",
  "anyhow",
  "app-data",
  "async-stream",

@@ -19,6 +19,7 @@ use {
         fmt::{self, Display, Formatter},
         sync::Arc,
     },
+    tracing::instrument,
     web3::types::{Bytes, H160, H256, U256},
 };
 
@@ -79,6 +80,7 @@ impl TenderlyHttpApi {
 
 #[async_trait::async_trait]
 impl TenderlyApi for TenderlyHttpApi {
+    #[instrument(skip_all)]
     async fn simulate(&self, simulation: SimulationRequest) -> Result<SimulationResponse> {
         let url = crate::url::join(&self.api, "simulate");
         let body = serde_json::to_string(&simulation)?;

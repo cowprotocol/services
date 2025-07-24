@@ -2,8 +2,10 @@ use {
     crate::{Address, jit_orders, orders},
     futures::stream::BoxStream,
     sqlx::PgConnection,
+    tracing::instrument,
 };
 
+#[instrument(skip_all)]
 pub fn user_orders<'a>(
     ex: &'a mut PgConnection,
     owner: &'a Address,

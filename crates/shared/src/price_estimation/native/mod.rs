@@ -9,6 +9,7 @@ use {
         sync::{Arc, LazyLock},
         time::Duration,
     },
+    tracing::instrument,
 };
 
 mod coingecko;
@@ -90,6 +91,7 @@ impl NativePriceEstimator {
 }
 
 impl NativePriceEstimating for NativePriceEstimator {
+    #[instrument(skip_all)]
     fn estimate_native_price(
         &self,
         token: H160,

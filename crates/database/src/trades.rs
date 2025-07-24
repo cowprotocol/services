@@ -3,6 +3,7 @@ use {
     bigdecimal::BigDecimal,
     futures::stream::BoxStream,
     sqlx::PgConnection,
+    tracing::instrument,
 };
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, sqlx::FromRow)]
@@ -20,6 +21,7 @@ pub struct TradesQueryRow {
     pub auction_id: Option<AuctionId>,
 }
 
+#[instrument(skip_all)]
 pub fn trades<'a>(
     ex: &'a mut PgConnection,
     owner_filter: Option<&'a Address>,
@@ -79,6 +81,7 @@ pub struct TradeEvent {
     pub order_uid: OrderUid,
 }
 
+#[instrument(skip_all)]
 pub async fn get_trades_for_settlement(
     ex: &mut PgConnection,
     settlement: EventIndex,
@@ -106,6 +109,7 @@ AND t.log_index BETWEEN (SELECT * from previous_settlement) AND $2
         .await
 }
 
+#[instrument(skip_all)]
 pub async fn token_first_trade_block(
     ex: &mut PgConnection,
     token: Address,
