@@ -1,4 +1,4 @@
-use {crate::TransactionHash, bigdecimal::BigDecimal, sqlx::PgConnection};
+use {crate::TransactionHash, bigdecimal::BigDecimal, sqlx::PgConnection, tracing::instrument};
 
 #[derive(Debug, Clone, Default, PartialEq, sqlx::FromRow)]
 pub struct Observation {
@@ -10,6 +10,7 @@ pub struct Observation {
     pub log_index: i64,
 }
 
+#[instrument(skip_all)]
 pub async fn upsert(ex: &mut PgConnection, observation: Observation) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
 INSERT INTO settlement_observations (gas_used, effective_gas_price, surplus, fee, block_number, log_index)
@@ -29,6 +30,7 @@ SET gas_used = $1, effective_gas_price = $2, surplus = $3, fee = $4
     Ok(())
 }
 
+#[instrument(skip_all)]
 pub async fn fetch(
     ex: &mut PgConnection,
     tx_hashes: &[TransactionHash],
