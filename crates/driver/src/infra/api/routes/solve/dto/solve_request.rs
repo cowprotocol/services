@@ -11,9 +11,11 @@ use {
     serde::Deserialize,
     serde_with::serde_as,
     std::collections::HashSet,
+    tracing::instrument,
 };
 
 impl SolveRequest {
+    #[instrument(skip_all)]
     pub async fn into_domain(
         self,
         eth: &Ethereum,
