@@ -123,11 +123,6 @@ pub struct Arguments {
     )]
     pub max_auction_age: Duration,
 
-    /// Used to filter out limit orders with prices that are too far from the
-    /// market price. 0 means no filtering.
-    #[clap(long, env, default_value = "0")]
-    pub limit_order_price_factor: f64,
-
     /// The URL of a list of tokens our settlement contract is willing to
     /// internalize.
     #[clap(long, env)]
@@ -360,7 +355,6 @@ impl std::fmt::Display for Arguments {
             min_order_validity_period,
             banned_users,
             max_auction_age,
-            limit_order_price_factor,
             trusted_tokens_url,
             trusted_tokens,
             trusted_tokens_update_interval,
@@ -409,7 +403,6 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(f, "banned_users: {banned_users:?}")?;
         writeln!(f, "max_auction_age: {max_auction_age:?}")?;
-        writeln!(f, "limit_order_price_factor: {limit_order_price_factor:?}")?;
         display_option(f, "trusted_tokens_url", trusted_tokens_url)?;
         writeln!(f, "trusted_tokens: {trusted_tokens:?}")?;
         writeln!(
