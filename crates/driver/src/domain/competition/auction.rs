@@ -214,7 +214,6 @@ impl AuctionProcessor {
                     )
                 });
 
-            let settlement = eth.contracts().settlement().address().into();
             let _timer2 = stage_timer("aggregate_and_sort");
 
             let cow_amm_lookup: HashSet<_> = cow_amms.iter().map(|o| o.uid).collect();
@@ -224,7 +223,7 @@ impl AuctionProcessor {
             // their orders with the same sell token. That means orders already need to be sorted
             // from most relevant to least relevant so that we allocate balances for the most
             // relevants first.
-            Self::update_orders(&mut balances, &mut app_data_by_hash, &mut orders, &settlement, &cow_amm_lookup);
+            Self::update_orders(&mut balances, &mut app_data_by_hash, &mut orders, &cow_amm_lookup);
 
             tracing::debug!(auction_id = new_id.0, time =? start.elapsed(), "auction preprocessing done");
             orders
@@ -292,7 +291,6 @@ impl AuctionProcessor {
         balances: &mut Balances,
         app_data_by_hash: &mut HashMap<order::app_data::AppDataHash, app_data::ValidatedAppData>,
         orders: &mut Vec<order::Order>,
-        settlement: &eth::Address,
         cow_amms: &HashSet<order::Uid>,
     ) {
         // The auction that we receive from the `autopilot` assumes that there
@@ -318,10 +316,10 @@ impl AuctionProcessor {
                 order.app_data = fetched_app_data.clone().into();
                 if order.app_data.flashloan().is_some() {
                     // If an order requires a flashloan we assume all the necessary
-                    // sell tokens will come from there. But the receiver must be the
-                    // settlement contract because that is how the driver expects
-                    // the flashloan to be repaid for now.
-                    return order.receiver.as_ref() == Some(settlement);
+                    // sell tokens will come from there. The order validation logic
+                    // already ensures that flashloan orders have sufficient flashloan
+                    // hints to cover their sell amounts.
+                    return true;
                 }
             }
 
