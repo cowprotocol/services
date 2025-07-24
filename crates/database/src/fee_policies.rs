@@ -2,6 +2,7 @@ use {
     crate::{OrderUid, auction::AuctionId},
     sqlx::{PgConnection, QueryBuilder},
     std::collections::HashMap,
+    tracing::instrument,
 };
 
 type Execution = (AuctionId, OrderUid);
@@ -26,6 +27,7 @@ pub enum FeePolicyKind {
     PriceImprovement,
 }
 
+#[instrument(skip_all)]
 pub async fn insert_batch(
     ex: &mut PgConnection,
     fee_policies: impl IntoIterator<Item = FeePolicy>,
@@ -55,6 +57,7 @@ pub async fn insert_batch(
     query_builder.build().execute(ex).await.map(|_| ())
 }
 
+#[instrument(skip_all)]
 pub async fn fetch_all(
     ex: &mut PgConnection,
     keys_filter: &[Execution],

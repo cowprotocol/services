@@ -3,6 +3,7 @@ use {
     bigdecimal::BigDecimal,
     sqlx::{PgConnection, QueryBuilder},
     std::ops::DerefMut,
+    tracing::instrument,
 };
 
 #[derive(Debug, Clone, PartialEq, sqlx::FromRow)]
@@ -12,6 +13,7 @@ pub struct Score {
     pub reference_score: BigDecimal,
 }
 
+#[instrument(skip_all)]
 pub async fn insert(ex: &mut PgTransaction<'_>, scores: &[Score]) -> Result<(), sqlx::Error> {
     const QUERY: &str = "INSERT INTO reference_scores (auction_id, solver, reference_score) ";
 
@@ -32,6 +34,7 @@ pub async fn insert(ex: &mut PgTransaction<'_>, scores: &[Score]) -> Result<(), 
     Ok(())
 }
 
+#[instrument(skip_all)]
 pub async fn fetch(
     ex: &mut PgConnection,
     auction_id: AuctionId,
