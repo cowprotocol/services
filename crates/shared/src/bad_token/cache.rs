@@ -9,6 +9,7 @@ use {
         sync::Arc,
         time::{Duration, Instant},
     },
+    tracing::instrument,
 };
 
 pub struct CachingDetector {
@@ -20,6 +21,7 @@ pub struct CachingDetector {
 
 #[async_trait::async_trait]
 impl BadTokenDetecting for CachingDetector {
+    #[instrument(skip_all)]
     async fn detect(&self, token: H160) -> Result<TokenQuality> {
         if let Some(quality) = self.get_from_cache(&token, Instant::now()) {
             return Ok(quality);
