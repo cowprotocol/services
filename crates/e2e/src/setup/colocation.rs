@@ -30,7 +30,7 @@ base-tokens = [{encoded_base_tokens}]
 max-hops = {max_hops}
 max-partial-attempts = 5
 native-token-price-estimation-amount = "100000000000000000"
-node-url = "http://localhost:8545"
+uni-v3-node-url = "http://localhost:8545"
         "#,
     ));
 
