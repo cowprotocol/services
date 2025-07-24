@@ -296,7 +296,7 @@ impl BlockRetrieving for Web3 {
                                     parent_hash = ?response.parent_hash,
                                     "inconsistent parent in block range"
                                 );
-                                return Err(anyhow!("block range contains a reorg"));
+                                return Err(anyhow!("inconsistent block range"));
                             }
                             prev_hash = Some(current_hash);
 
