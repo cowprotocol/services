@@ -1,7 +1,12 @@
-use thiserror::Error;
+use {
+    thiserror::Error,
+    tracing::{Span, field, instrument},
+};
 
+#[instrument(skip_all, fields(url = field::Empty))]
 pub async fn send(limit_bytes: usize, req: reqwest::RequestBuilder) -> Result<String, Error> {
     let mut res = req.send().await?;
+    Span::current().record("url", res.url().as_str());
     let mut data = Vec::new();
     while let Some(chunk) = res.chunk().await? {
         data.extend_from_slice(&chunk);

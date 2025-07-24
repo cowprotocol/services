@@ -1,8 +1,10 @@
 use {
     crate::{OrderUid, auction::AuctionId},
     sqlx::PgConnection,
+    tracing::instrument,
 };
 
+#[instrument(skip_all)]
 pub async fn insert(
     ex: &mut PgConnection,
     auction_id: AuctionId,
@@ -17,6 +19,7 @@ pub async fn insert(
     Ok(())
 }
 
+#[instrument(skip_all)]
 pub async fn fetch(
     ex: &mut PgConnection,
     auction_id: AuctionId,

@@ -388,7 +388,11 @@ pub async fn run(args: Arguments) {
         .unwrap();
 
     let skip_event_sync_start = if args.skip_event_sync {
-        block_number_to_block_number_hash(&web3, BlockNumber::Latest).await
+        Some(
+            block_number_to_block_number_hash(&web3, BlockNumber::Latest)
+                .await
+                .expect("Failed to fetch latest block"),
+        )
     } else {
         None
     };

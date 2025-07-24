@@ -28,6 +28,7 @@ use {
     },
     tap::TapFallible,
     thiserror::Error,
+    tracing::instrument,
 };
 
 /// An auction is a set of orders that can be solved. The solvers calculate
@@ -167,6 +168,7 @@ impl AuctionProcessor {
         }
     }
 
+    #[instrument(skip_all)]
     fn prioritize_orders(
         &self,
         auction: &Auction,
