@@ -18,6 +18,10 @@ pub struct Args {
     )]
     pub log: String,
 
+    /// At which log level logs should be printed to stderr instead of stdout.
+    #[clap(long, env)]
+    pub stderr_threshold: Option<tracing::Level>,
+
     #[clap(flatten)]
     pub tracing: TracingArguments,
 
