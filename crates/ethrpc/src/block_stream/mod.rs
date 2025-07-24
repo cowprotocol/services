@@ -260,7 +260,7 @@ impl BlockRetrieving for Web3 {
     }
 
     /// Gets all blocks requested in the range. For successful results it's
-    /// enforced that all the blocks a present, in the correct order and that
+    /// enforced that all the blocks are present, in the correct order and that
     /// there are not reorgs in the block range.
     async fn blocks(&self, range: RangeInclusive<u64>) -> Result<Vec<BlockNumberHash>> {
         let include_txs = helpers::serialize(&false);
