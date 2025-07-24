@@ -294,7 +294,7 @@ impl BlockRetrieving for Web3 {
                                     ?range,
                                     ?prev_hash,
                                     parent_hash = ?response.parent_hash,
-                                    "detected reorg in block range"
+                                    "inconsistent parent in block range"
                                 );
                                 return Err(anyhow!("block range contains a reorg"));
                             }
