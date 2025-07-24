@@ -6,6 +6,7 @@ use {
     anyhow::Result,
     cached::{Cached, SizedCache},
     std::sync::{Arc, Mutex},
+    tracing::instrument,
     web3::types::{Bytes, H160},
 };
 
@@ -21,10 +22,12 @@ pub trait CodeFetching: Send + Sync + 'static {
 
 #[async_trait::async_trait]
 impl CodeFetching for Web3 {
+    #[instrument(skip_all)]
     async fn code(&self, address: H160) -> Result<Bytes> {
         Ok(self.eth().code(address, None).await?)
     }
 
+    #[instrument(skip_all)]
     async fn code_size(&self, address: H160) -> Result<usize> {
         Ok(self.code(address).await?.0.len())
     }

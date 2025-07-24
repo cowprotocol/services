@@ -42,6 +42,7 @@ use {
         time,
     },
     std::{sync::Arc, time::Duration},
+    tracing::instrument,
 };
 
 #[mockall::automock]
@@ -453,6 +454,7 @@ impl OrderValidator {
 
 #[async_trait::async_trait]
 impl OrderValidating for OrderValidator {
+    #[instrument(skip_all)]
     async fn partial_validate(&self, order: PreOrderData) -> Result<(), PartialValidationError> {
         if !self
             .banned_users
@@ -557,6 +559,7 @@ impl OrderValidating for OrderValidator {
         })
     }
 
+    #[instrument(skip_all)]
     async fn validate_and_construct_order(
         &self,
         order: OrderCreation,
@@ -864,6 +867,7 @@ pub async fn get_quote_and_check_fee(
 ///
 /// This works by first trying to find an existing quote, and then falling back
 /// to calculating a brand new one if none can be found.
+#[instrument(skip_all)]
 async fn get_or_create_quote(
     quoter: &dyn OrderQuoting,
     quote_search_parameters: &QuoteSearchParameters,

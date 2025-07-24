@@ -13,9 +13,11 @@ use {
     model::order::OrderKind,
     primitive_types::{H160, U256},
     std::{cmp::Ordering, sync::Arc, time::Duration},
+    tracing::instrument,
 };
 
 impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
+    #[instrument(skip_all)]
     fn estimate(&self, mut query: Arc<Query>) -> BoxFuture<'_, PriceEstimateResult> {
         Arc::make_mut(&mut query).timeout /= self.stages.len() as u32;
 

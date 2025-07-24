@@ -28,6 +28,7 @@ use {
     number::conversions::big_decimal_to_u256,
     std::sync::Arc,
     thiserror::Error,
+    tracing::instrument,
 };
 
 /// Order parameters for quoting.
@@ -579,6 +580,7 @@ impl OrderQuoter {
 
 #[async_trait::async_trait]
 impl OrderQuoting for OrderQuoter {
+    #[instrument(skip_all)]
     async fn calculate_quote(
         &self,
         parameters: QuoteParameters,
@@ -612,6 +614,7 @@ impl OrderQuoting for OrderQuoter {
         Ok(quote)
     }
 
+    #[instrument(skip_all)]
     async fn store_quote(&self, quote: Quote) -> Result<Quote> {
         let id = self.storage.save(quote.data.clone()).await?;
         Ok(Quote {
@@ -620,6 +623,7 @@ impl OrderQuoting for OrderQuoter {
         })
     }
 
+    #[instrument(skip_all)]
     async fn find_quote(
         &self,
         id: Option<QuoteId>,
