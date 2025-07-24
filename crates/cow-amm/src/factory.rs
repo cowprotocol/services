@@ -3,6 +3,7 @@ use {
     ethcontract::{Address, H256, contract::AllEventsBuilder, dyns::DynTransport},
     ethrpc::Web3,
     shared::event_handling::EventRetrieving,
+    tracing::instrument,
 };
 
 const AMM_DEPLOYED_TOPIC: H256 = H256(hex_literal::hex!(
@@ -17,6 +18,7 @@ pub(crate) struct Factory {
 impl EventRetrieving for Factory {
     type Event = CowAmmEvent;
 
+    #[instrument(skip_all)]
     fn get_events(&self) -> AllEventsBuilder<DynTransport, Self::Event> {
         let mut events = AllEventsBuilder::new(self.web3.clone(), self.address, None);
         events.filter = events.filter.topic0(Some(AMM_DEPLOYED_TOPIC).into());

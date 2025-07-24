@@ -30,6 +30,7 @@ use {
     model::TokenPair,
     std::{collections::HashSet, sync::Arc},
     tokio::sync::Mutex,
+    tracing::instrument,
 };
 
 pub struct BasePoolFactoryContract(BalancerV2BasePoolFactory);
@@ -41,6 +42,7 @@ const POOL_CREATED_TOPIC: H256 = H256(hex!(
 impl EventRetrieving for BasePoolFactoryContract {
     type Event = balancer_v2_base_pool_factory::Event;
 
+    #[instrument(skip_all)]
     fn get_events(&self) -> DynAllEventsBuilder<Self::Event> {
         let mut events = self.0.all_events();
         events.filter = events.filter.topic0(POOL_CREATED_TOPIC.into());

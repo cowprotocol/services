@@ -18,6 +18,7 @@ use {
     ethrpc::{Web3, block_stream::RangeInclusive},
     hex_literal::hex,
     std::collections::BTreeMap,
+    tracing::instrument,
 };
 
 const SWAP_TOPIC: [u8; 32] =
@@ -79,6 +80,7 @@ pub struct UniswapV3PoolEventFetcher(pub Web3);
 impl EventRetrieving for UniswapV3PoolEventFetcher {
     type Event = UniswapV3Event;
 
+    #[instrument(skip_all)]
     fn get_events(&self) -> DynAllEventsBuilder<Self::Event> {
         let mut events = DynAllEventsBuilder::new(self.0.clone(), H160::default(), None);
         let events_signatures = vec![H256(SWAP_TOPIC), H256(BURN_TOPIC), H256(MINT_TOPIC)];

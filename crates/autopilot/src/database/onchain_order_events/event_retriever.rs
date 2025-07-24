@@ -3,6 +3,7 @@ use {
     ethcontract::{H160, H256, contract::AllEventsBuilder, transport::DynTransport},
     hex_literal::hex,
     shared::{ethrpc::Web3, event_handling::EventRetrieving},
+    tracing::instrument,
 };
 
 const ORDER_PLACEMENT_TOPIC: H256 = H256(hex!(
@@ -39,6 +40,7 @@ impl CoWSwapOnchainOrdersContract {
 impl EventRetrieving for CoWSwapOnchainOrdersContract {
     type Event = cowswap_onchain_orders::Event;
 
+    #[instrument(skip_all)]
     fn get_events(&self) -> AllEventsBuilder<DynTransport, Self::Event> {
         let mut events = AllEventsBuilder::new(self.web3.clone(), H160::default(), None);
         // We want to observe multiple addresses for events.

@@ -38,6 +38,7 @@ use {
         nonzero::U256 as NonZeroU256,
     },
     std::{collections::HashMap, sync::Arc},
+    tracing::instrument,
     web3::{ethabi::Token, types::CallRequest},
 };
 
@@ -396,6 +397,7 @@ impl TradeVerifier {
 
 #[async_trait::async_trait]
 impl TradeVerifying for TradeVerifier {
+    #[instrument(skip_all)]
     async fn verify(
         &self,
         query: &PriceQuery,
