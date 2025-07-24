@@ -323,18 +323,16 @@ pub async fn timestamp_of_current_block_in_seconds(web3: &Web3) -> Result<u32> {
 pub async fn block_number_to_block_number_hash(
     web3: &Web3,
     block_number: BlockNumber,
-) -> Option<BlockNumberHash> {
-    web3.eth()
+) -> Result<BlockNumberHash> {
+    let block = web3
+        .eth()
         .block(BlockId::Number(block_number))
-        .await
-        .ok()
-        .flatten()
-        .map(|block| {
-            (
-                block.number.expect("number must exist").as_u64(),
-                block.hash.expect("hash must exist"),
-            )
-        })
+        .await?
+        .context("block should exists")?;
+    Ok((
+        block.number.expect("number must exist").as_u64(),
+        block.hash.expect("hash must exist"),
+    ))
 }
 
 pub async fn block_by_number(web3: &Web3, block_number: BlockNumber) -> Option<Block<H256>> {
