@@ -22,6 +22,9 @@ bin = [
 ]
 
 [dependencies]
+alloy = { workspace = true, features = ["sol-types", "json", "contract"] }
+paste = { workspace = true }
+maplit = { workspace = true }
 ethcontract = { workspace = true }
 serde = { workspace = true }
 
