@@ -240,17 +240,13 @@ pub async fn determine_ethflow_refund_indexing_start(
     .expect("Should be able to find a valid start block")
 }
 
-/// 1. Check the `last_indexed_blocks` table for the `index_name`. Use the next
-///    block as the starting point.
+/// 1. Check the `last_indexed_blocks` table for the `index_name`.
 /// 2. If no value found or the index is 0, use `fallback_start_block`, if
 ///    provided.
 /// 3. Fallback to the settlement deployment block number, if the `chain_id` is
 ///    provided.
 /// 4. Try to fetch the block number to ensure the node is able to continue
 ///    indexing.
-///
-/// Each option except the DB read is retried up to 3 times with a delay of
-/// 500ms.
 async fn find_indexing_start_block(
     db: &PgPool,
     web3: &Web3,
