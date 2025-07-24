@@ -61,6 +61,7 @@ impl Validator {
         Ok(())
     }
 
+    #[instrument(skip_all, fields(interactions_len = check.interactions.len()))]
     async fn simulate(
         &self,
         check: &SignatureCheck,
