@@ -1,6 +1,6 @@
 /********************************
  * Conversions to the alloy types
- **************************** */
+ *************************** */
 
 pub trait ToAlloy {
     /// The corresponding Alloy type.
@@ -48,7 +48,7 @@ impl ToAlloy for primitive_types::H256 {
 
 /*********************************
  * Conversions to the legacy types
- ***************************** */
+ **************************** */
 
 pub trait ToLegacy {
     /// The corresponding legacy type.

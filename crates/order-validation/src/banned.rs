@@ -1,9 +1,13 @@
 use {
-    contracts::alloy::ChainalysisOracle, ethcontract::{futures::future::join_all, H160}, ethrpc::alloy::conversions::ToAlloy, std::{
+    contracts::alloy::ChainalysisOracle,
+    ethcontract::{H160, futures::future::join_all},
+    ethrpc::alloy::conversions::ToAlloy,
+    std::{
         collections::{HashMap, HashSet},
         sync::Arc,
         time::{Duration, Instant},
-    }, tokio::sync::RwLock
+    },
+    tokio::sync::RwLock,
 };
 
 /// A list of banned users and an optional registry that can be checked onchain.
