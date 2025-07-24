@@ -5,7 +5,6 @@ use {
     ethcontract::{H160, H256, contract::AllEventsBuilder, transport::DynTransport},
     hex_literal::hex,
     shared::{ethrpc::Web3, event_handling::EventRetrieving},
-    tracing::instrument,
 };
 
 const ORDER_REFUND_TOPIC: H256 = H256(hex!(
@@ -30,7 +29,6 @@ impl EthFlowRefundRetriever {
 impl EventRetrieving for EthFlowRefundRetriever {
     type Event = contracts::cowswap_eth_flow::Event;
 
-    #[instrument(skip_all)]
     fn get_events(&self) -> AllEventsBuilder<DynTransport, Self::Event> {
         let mut events = AllEventsBuilder::new(self.web3.clone(), H160::default(), None);
         // We want to observe multiple addresses for events.
