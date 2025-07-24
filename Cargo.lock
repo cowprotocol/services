@@ -2437,6 +2437,7 @@ dependencies = [
  "sqlx",
  "strum 0.26.2",
  "tokio",
+ "tracing",
 ]
 
 [[package]]

@@ -2,6 +2,7 @@ use {
     super::events::EventIndex,
     crate::{Address, OrderUid, PgTransaction},
     sqlx::{Executor, PgConnection},
+    tracing::instrument,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq, sqlx::Type, strum::EnumIter)]
@@ -51,6 +52,7 @@ pub struct OnchainOrderPlacementRow {
     pub log_index: i64,
 }
 
+#[instrument(skip_all)]
 pub async fn mark_as_reorged(
     ex: &mut PgTransaction<'_>,
     mark_from_block_number: i64,
@@ -62,6 +64,7 @@ pub async fn mark_as_reorged(
     Ok(())
 }
 
+#[instrument(skip_all)]
 pub async fn append(
     ex: &mut PgTransaction<'_>,
     events: &[(EventIndex, OnchainOrderPlacement)],
@@ -72,6 +75,7 @@ pub async fn append(
     Ok(())
 }
 
+#[instrument(skip_all)]
 pub async fn insert_onchain_order(
     ex: &mut PgConnection,
     index: &EventIndex,
@@ -96,6 +100,7 @@ pub async fn insert_onchain_order(
     Ok(())
 }
 
+#[instrument(skip_all)]
 pub async fn read_order(
     ex: &mut PgConnection,
     id: &OrderUid,

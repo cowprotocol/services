@@ -5,6 +5,7 @@ use {
     crate::{OrderUid, byte_array::ByteArray},
     chrono::Utc,
     sqlx::{PgConnection, PgPool, types::chrono::DateTime},
+    tracing::instrument,
 };
 
 /// Describes what kind of event was registered for an order.
@@ -47,6 +48,7 @@ pub struct OrderEvent {
 
 /// Inserts a row into the `order_events` table only if the latest event for the
 /// corresponding order UID has a different label than the provided event..
+#[instrument(skip_all)]
 pub async fn insert_order_event(
     ex: &mut PgConnection,
     event: &OrderEvent,
@@ -77,6 +79,7 @@ pub async fn insert_order_event(
 }
 
 /// Deletes rows before the provided timestamp from the `order_events` table.
+#[instrument(skip_all)]
 pub async fn delete_order_events_before(
     pool: &PgPool,
     timestamp: DateTime<Utc>,
@@ -92,6 +95,7 @@ pub async fn delete_order_events_before(
         .map(|result| result.rows_affected())
 }
 
+#[instrument(skip_all)]
 pub async fn get_latest(
     ex: &mut PgConnection,
     order: &OrderUid,
