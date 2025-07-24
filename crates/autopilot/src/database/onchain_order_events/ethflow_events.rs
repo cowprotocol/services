@@ -5,8 +5,7 @@ use {
     contracts::{
         GPv2Settlement,
         cowswap_onchain_orders::{
-            Event as ContractEvent,
-            event_data::OrderPlacement as ContractOrderPlacement,
+            Event as ContractEvent, event_data::OrderPlacement as ContractOrderPlacement,
         },
         deployment_block,
     },
@@ -25,7 +24,7 @@ use {
     },
     hex_literal::hex,
     sqlx::{PgPool, types::BigDecimal},
-    std::{collections::HashMap, convert::TryInto, time::Duration},
+    std::{collections::HashMap, convert::TryInto},
     web3::types::U64,
 };
 
@@ -154,7 +153,7 @@ async fn settlement_deployment_block_number_hash(
     let block_number = deployment_block(GPv2Settlement::raw_contract(), chain_id)?;
     block_number_to_block_number_hash(web3, U64::from(block_number).into())
         .await
-        .ok_or_else(|| anyhow!("Deployment block not found"))
+        .context("Deployment block not found")
 }
 
 /// The block from which to start indexing eth-flow events. Note that this
@@ -263,63 +262,26 @@ async fn find_indexing_start_block(
         .await
         .context("failed to read last indexed block from db")?;
 
-    let retries = 3;
-    let retry_delay = Duration::from_millis(500);
     if last_indexed_block > 0 {
-        return retry(
-            || async {
-                block_number_to_block_number_hash(web3, U64::from(last_indexed_block + 1).into())
-                    .await
-                    .map(Some)
-                    .context("failed to fetch block")
-            },
-            retries,
-            retry_delay,
-        )
-        .await;
+        return block_number_to_block_number_hash(web3, U64::from(last_indexed_block).into())
+            .await
+            .map(Some)
+            .context("failed to fetch block");
     }
     if let Some(start_block) = fallback_start_block {
-        return retry(
-            || async {
-                block_number_to_block_number_hash(web3, start_block.into())
-                    .await
-                    .map(Some)
-                    .context("failed to fetch fallback indexing start block")
-            },
-            retries,
-            retry_delay,
-        )
-        .await;
+        return block_number_to_block_number_hash(web3, start_block.into())
+            .await
+            .map(Some)
+            .context("failed to fetch fallback indexing start block");
     }
     if let Some(chain_id) = settlement_fallback_chain_id {
-        return retry(
-            || settlement_deployment_block_number_hash(web3, chain_id),
-            retries,
-            retry_delay,
-        )
-        .await
-        .map(Some)
-        .context("failed to fetch settlement deployment block");
+        return settlement_deployment_block_number_hash(web3, chain_id)
+            .await
+            .map(Some)
+            .context("failed to fetch settlement deployment block");
     }
 
     Ok(None)
-}
-
-async fn retry<F, T, E>(mut f: impl FnMut() -> F, retries: usize, delay: Duration) -> Result<T, E>
-where
-    F: Future<Output = Result<T, E>>,
-{
-    let mut attempts = 0;
-    loop {
-        match f().await {
-            Ok(val) => return Ok(val),
-            Err(_) if attempts < retries => {
-                attempts += 1;
-                tokio::time::sleep(delay).await;
-            }
-            Err(err) => return Err(err),
-        }
-    }
 }
 
 #[cfg(test)]
