@@ -63,6 +63,7 @@ impl TradeEstimator {
 }
 
 impl Inner {
+    #[instrument(skip_all)]
     async fn estimate(
         self: Arc<Self>,
         query: Arc<Query>,
