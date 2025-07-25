@@ -19,6 +19,8 @@ RUN cargo chef prepare --recipe-path recipe.json
 FROM rust-chef as cargo-build
 WORKDIR /src/
 
+ENV CARGO_HOME=/usr/local/cargo
+
 # Install dependencies
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update && \
     apt-get install -y git libssl-dev pkg-config
@@ -31,15 +33,15 @@ ENV CARGO_PROFILE_RELEASE_DEBUG=1
 # Cook cached deps first
 COPY --from=chef-recipe /src/recipe.json recipe.json
 #RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/src/target \
-RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
-    --mount=type=cache,id=cargo-git,target=/usr/local/cargo/git \
+RUN --mount=type=cache,id=cargo-registry,target=$CARGO_HOME/registry \
+    --mount=type=cache,id=cargo-git,target=$CARGO_HOME/git \
     --mount=type=cache,id=cargo-target,target=/src/target \
     cargo chef cook --release --recipe-path recipe.json
 
 # Now copy full source and build the real crates
 COPY . .
-RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
-    --mount=type=cache,id=cargo-git,target=/usr/local/cargo/git \
+RUN --mount=type=cache,id=cargo-registry,target=$CARGO_HOME/registry \
+    --mount=type=cache,id=cargo-git,target=$CARGO_HOME/git \
     --mount=type=cache,id=cargo-target,target=/src/target \
     cargo build --release && \
     cp target/release/alerter / && \
