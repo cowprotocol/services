@@ -11,7 +11,7 @@ COPY . .
 #COPY crates/*/Cargo.toml crates/*/
 RUN cargo chef prepare --recipe-path recipe.json
 
-FROM chef as cargo-build
+FROM docker.io/rust:1-slim-bookworm as cargo-build
 WORKDIR /src/
 
 # Install dependencies
@@ -24,8 +24,8 @@ RUN cargo install cargo-chef --locked
 
 # Cook cached deps first
 COPY --from=chef /src/recipe.json recipe.json
-RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/src/target \
-    cargo chef cook --release --recipe-path recipe.json
+#RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/src/target \
+RUN cargo chef cook --release --recipe-path recipe.json
 
 # Now copy full source and build the real crates
 COPY . .
