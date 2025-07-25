@@ -11,7 +11,7 @@ COPY . .
 #COPY crates/*/Cargo.toml crates/*/
 RUN cargo chef prepare --recipe-path recipe.json
 
-FROM docker.io/rust:1-slim-bookworm as cargo-build
+FROM chef as cargo-build
 WORKDIR /src/
 
 # Install dependencies
