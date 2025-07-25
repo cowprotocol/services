@@ -2,30 +2,34 @@ FROM docker.io/flyway/flyway:10.7.1 as migrations
 COPY database/ /flyway/
 CMD ["migrate"]
 
-FROM docker.io/rust:1-slim-bookworm as chef
+FROM  docker.io/rust:1-slim-bookworm AS rust-chef
+RUN cargo install --locked cargo-chef
+# DISBLED TO TEST - IS THIS CAUSIN ISSUES?
+#RUN rustup default stable
+
+FROM rust-chef as chef-recipe
 WORKDIR /src
-RUN cargo install cargo-chef --locked
+#RUN cargo install cargo-chef --locked
 # copy only manifests so hash changes rarely
 COPY . .
 #COPY Cargo.toml Cargo.lock ./
 #COPY crates/*/Cargo.toml crates/*/
 RUN cargo chef prepare --recipe-path recipe.json
 
-FROM docker.io/rust:1-slim-bookworm as cargo-build
+FROM rust-chef as cargo-build
 WORKDIR /src/
 
 # Install dependencies
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update && \
     apt-get install -y git libssl-dev pkg-config
 # Install Rust toolchain
-RUN rustup install stable && rustup default stable
 # Need cargo‑chef here too
-RUN cargo install cargo-chef --locked
+RUN #cargo install cargo-chef --locked
 
 ENV CARGO_PROFILE_RELEASE_DEBUG=1
 
 # Cook cached deps first
-COPY --from=chef /src/recipe.json recipe.json
+COPY --from=chef-recipe /src/recipe.json recipe.json
 #RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/src/target \
 RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
     --mount=type=cache,id=cargo-git,target=/usr/local/cargo/git \
