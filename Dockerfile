@@ -6,8 +6,9 @@ FROM docker.io/rust:1-slim-bookworm as chef
 WORKDIR /src
 RUN cargo install cargo-chef --locked
 # copy only manifests so hash changes rarely
-COPY Cargo.toml Cargo.lock ./
-COPY crates/*/Cargo.toml crates/*/
+COPY . .
+#COPY Cargo.toml Cargo.lock ./
+#COPY crates/*/Cargo.toml crates/*/
 RUN cargo chef prepare --recipe-path recipe.json
 
 FROM docker.io/rust:1-slim-bookworm as cargo-build
