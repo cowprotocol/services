@@ -22,15 +22,22 @@ RUN rustup install stable && rustup default stable
 # Need cargo‑chef here too
 RUN cargo install cargo-chef --locked
 
+ENV CARGO_PROFILE_RELEASE_DEBUG=1
+
 # Cook cached deps first
 COPY --from=chef /src/recipe.json recipe.json
 #RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/src/target \
-RUN cargo chef cook --release --recipe-path recipe.json
+RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
+    --mount=type=cache,id=cargo-git,target=/usr/local/cargo/git \
+    --mount=type=cache,id=cargo-target,target=/src/target \
+    cargo chef cook --release --recipe-path recipe.json
 
 # Now copy full source and build the real crates
 COPY . .
-RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/src/target \
-    CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release && \
+RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
+    --mount=type=cache,id=cargo-git,target=/usr/local/cargo/git \
+    --mount=type=cache,id=cargo-target,target=/src/target \
+    cargo build --release && \
     cp target/release/alerter / && \
     cp target/release/autopilot / && \
     cp target/release/driver / && \
