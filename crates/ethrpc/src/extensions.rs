@@ -3,10 +3,7 @@
 use {
     serde::{Deserialize, Serialize},
     std::collections::HashMap,
-    tracing::{
-        Instrument,
-        instrument::{self, Instrumented},
-    },
+    tracing::{Instrument, instrument::Instrumented},
     web3::{
         self,
         Transport,
