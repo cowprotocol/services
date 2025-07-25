@@ -174,11 +174,6 @@ impl Fulfillment {
             Fee::Dynamic(_) => order.solver_determines_fee(),
         };
 
-        tracing::info!("newlog valid_execution={:?}", valid_execution);
-        tracing::info!("newlog valid_fee={:?}", valid_fee);
-        tracing::info!("newlog fee={:?}", fee);
-        tracing::info!("newlog order.kind={:?}", order.kind);
-
         if valid_execution && valid_fee {
             Ok(Self {
                 order,
