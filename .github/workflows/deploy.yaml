@@ -1,8 +1,8 @@
 name: deploy
 on:
   push:
-    branches: [main]
-    tags: [v*]
+    branches: [ main ]
+    tags: [ v* ]
   workflow_dispatch:
 
 jobs:
@@ -31,6 +31,7 @@ jobs:
           images: ghcr.io/${{ github.repository }}
           labels: |
             org.opencontainers.image.licenses=GPL-3.0-or-later
+
       - name: Services image build
         uses: docker/build-push-action@v6
         with:
@@ -39,6 +40,8 @@ jobs:
           push: true
           tags: ${{ steps.meta_services.outputs.tags }}
           labels: ${{ steps.meta_services.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Migration image metadata
         id: meta_migration
@@ -47,6 +50,7 @@ jobs:
           images: ghcr.io/${{ github.repository }}-migration
           labels: |
             org.opencontainers.image.licenses=GPL-3.0-or-later
+
       - name: Migration image build
         uses: docker/build-push-action@v6
         with:
