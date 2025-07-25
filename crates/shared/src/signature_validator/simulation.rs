@@ -95,8 +95,16 @@ impl Validator {
             BYTECODE.clone(),
             method.tx.clone().data.take().unwrap(),
         );
-        tracing::info!(?tx, ?calldata, "newlog simulating signature with");
-        let result = contracts::storage_accessible::simulate(BYTECODE.clone(), method).await;
+        let result =
+            contracts::storage_accessible::simulate(BYTECODE.clone(), method.clone()).await;
+        if result.is_err() {
+            tracing::info!(
+                ?result,
+                ?tx,
+                ?calldata,
+                "newlog simulating signature failed with"
+            );
+        }
 
         tracing::trace!(?check, ?result, "simulated signature");
         Ok(Simulation { gas_used: result? })
