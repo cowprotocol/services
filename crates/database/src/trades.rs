@@ -214,6 +214,7 @@ mod tests {
         expected: &[TradesQueryRow],
     ) {
         let mut filtered = trades(db, owner_filter, order_uid_filter)
+            .into_inner()
             .try_collect::<Vec<_>>()
             .await
             .unwrap();
@@ -287,6 +288,7 @@ mod tests {
 
         let now = std::time::Instant::now();
         trades(&mut db, Some(&ByteArray([2u8; 20])), None)
+            .into_inner()
             .try_collect::<Vec<_>>()
             .await
             .unwrap();

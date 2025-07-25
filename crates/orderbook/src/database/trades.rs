@@ -36,6 +36,7 @@ impl TradeRetrieving for Postgres {
             filter.owner.map(|owner| ByteArray(owner.0)).as_ref(),
             filter.order_uid.map(|uid| ByteArray(uid.0)).as_ref(),
         )
+        .into_inner()
         .map_err(anyhow::Error::from)
         .try_collect::<Vec<TradesQueryRow>>()
         .await?;
