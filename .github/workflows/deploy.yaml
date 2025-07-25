@@ -24,6 +24,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Set up Buildx
+        id: buildx
+        # default driver=docker-container which is needed for cache type=gha
+        uses: docker/setup-buildx-action@v3
+
       - name: Services image metadata
         id: meta_services
         uses: docker/metadata-action@v5
@@ -36,6 +41,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
+          builder: ${{ steps.buildx.outputs.name }}
           file: Dockerfile
           push: true
           tags: ${{ steps.meta_services.outputs.tags }}
