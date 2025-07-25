@@ -2,6 +2,14 @@ FROM docker.io/flyway/flyway:10.7.1 as migrations
 COPY database/ /flyway/
 CMD ["migrate"]
 
+FROM docker.io/rust:1-slim-bookworm as chef
+WORKDIR /src
+RUN cargo install cargo-chef --locked
+# copy only manifests so hash changes rarely
+COPY Cargo.toml Cargo.lock ./
+COPY crates/*/Cargo.toml crates/*/
+RUN cargo chef prepare --recipe-path recipe.json
+
 FROM docker.io/rust:1-slim-bookworm as cargo-build
 WORKDIR /src/
 
@@ -10,8 +18,15 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update && \
     apt-get install -y git libssl-dev pkg-config
 # Install Rust toolchain
 RUN rustup install stable && rustup default stable
+# Need cargo‑chef here too
+RUN cargo install cargo-chef --locked
 
-# Copy and Build Code
+# Cook cached deps first
+COPY --from=chef /src/recipe.json recipe.json
+RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/src/target \
+    cargo chef cook --release --recipe-path recipe.json
+
+# Now copy full source and build the real crates
 COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/src/target \
     CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release && \
