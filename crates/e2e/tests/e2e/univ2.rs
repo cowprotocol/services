@@ -116,7 +116,7 @@ async fn test(web3: Web3) {
             // solver participated in the competition
             && data.participants.iter().any(|p| p.participant.0 == solver.address().0)
             // and won the auction
-            && data.score.winner.0 == solver.address().0
+            && data.reference_scores[0].solver.0 == solver.address().0
     };
     wait_for_condition(TIMEOUT, cip_20_data_updated)
         .await

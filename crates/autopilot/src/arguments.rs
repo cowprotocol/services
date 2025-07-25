@@ -232,17 +232,9 @@ pub struct Arguments {
     #[clap(long, env, default_value = "0s", value_parser = humantime::parse_duration)]
     pub run_loop_native_price_timeout: Duration,
 
-    #[clap(long, env)]
-    /// When set, enables combinatorial auctions for auctions with a deadline
-    /// later than this timestamp.
-    // TODO: Remove after the cutover has fully taken effect.
-    pub combinatorial_auctions_cutover: Option<chrono::DateTime<chrono::Utc>>,
-
-    #[clap(long, env, default_value = "1")]
+    #[clap(long, env, default_value = "20")]
     /// The maximum number of winners per auction. Each winner will be allowed
     /// to settle their winning orders at the same time.
-    /// This setting only applies to auctions occurring after
-    /// `combinatorial_auctions_cutover`.
     pub max_winners_per_auction: NonZeroUsize,
 
     #[clap(long, env, default_value = "3")]
@@ -380,7 +372,6 @@ impl std::fmt::Display for Arguments {
             cow_amm_configs,
             max_run_loop_delay,
             run_loop_native_price_timeout,
-            combinatorial_auctions_cutover,
             max_winners_per_auction,
             archive_node_url,
             max_solutions_per_solver,
@@ -448,10 +439,6 @@ impl std::fmt::Display for Arguments {
         writeln!(
             f,
             "run_loop_native_price_timeout: {run_loop_native_price_timeout:?}"
-        )?;
-        writeln!(
-            f,
-            "combinatorial_auctions_cutover: {combinatorial_auctions_cutover:?}"
         )?;
         writeln!(f, "max_winners_per_auction: {max_winners_per_auction:?}")?;
         writeln!(f, "archive_node_url: {archive_node_url:?}")?;
