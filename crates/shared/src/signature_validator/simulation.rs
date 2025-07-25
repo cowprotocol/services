@@ -54,6 +54,7 @@ impl Validator {
             .map(|value| hex::encode(value.0))?;
 
         if magic_bytes != Self::IS_VALID_SIGNATURE_MAGIC_BYTES {
+            tracing::info!(?magic_bytes, "newlog invalid signature 3");
             return Err(SignatureValidationError::Invalid);
         }
 
@@ -132,7 +133,10 @@ struct Simulation {
 impl From<ethcontract::errors::MethodError> for SignatureValidationError {
     fn from(err: ethcontract::errors::MethodError) -> Self {
         match EthcontractErrorType::classify(&err) {
-            EthcontractErrorType::Contract => Self::Invalid,
+            EthcontractErrorType::Contract => {
+                tracing::info!(?err, "newlog invalid signature 1");
+                Self::Invalid
+            }
             _ => Self::Other(err.into()),
         }
     }
