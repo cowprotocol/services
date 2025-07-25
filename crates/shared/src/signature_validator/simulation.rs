@@ -6,7 +6,11 @@
 use {
     super::{SignatureCheck, SignatureValidating, SignatureValidationError},
     anyhow::Result,
-    contracts::{ERC1271SignatureValidator, errors::EthcontractErrorType},
+    contracts::{
+        ERC1271SignatureValidator,
+        errors::EthcontractErrorType,
+        storage_accessible::call,
+    },
     ethcontract::Bytes,
     ethrpc::Web3,
     futures::future,
@@ -74,21 +78,25 @@ impl Validator {
         // 1. How the pre-interactions would behave as part of the settlement
         // 2. Simulate the actual `isValidSignature` calls that would happen as part of
         //    a settlement
-        let result = contracts::storage_accessible::simulate(
+        let method = self.signatures.methods().validate(
+            (self.settlement, self.vault_relayer),
+            check.signer,
+            Bytes(check.hash),
+            Bytes(check.signature.clone()),
+            check
+                .interactions
+                .iter()
+                .map(|i| (i.target, i.value, Bytes(i.call_data.clone())))
+                .collect(),
+        );
+        let tx = &method.tx;
+        let calldata = call(
+            method.tx.to.unwrap(),
             BYTECODE.clone(),
-            self.signatures.methods().validate(
-                (self.settlement, self.vault_relayer),
-                check.signer,
-                Bytes(check.hash),
-                Bytes(check.signature.clone()),
-                check
-                    .interactions
-                    .iter()
-                    .map(|i| (i.target, i.value, Bytes(i.call_data.clone())))
-                    .collect(),
-            ),
-        )
-        .await;
+            method.tx.clone().data.take().unwrap(),
+        );
+        tracing::info!(?tx, ?calldata, "newlog simulating signature with");
+        let result = contracts::storage_accessible::simulate(BYTECODE.clone(), method).await;
 
         tracing::trace!(?check, ?result, "simulated signature");
         Ok(Simulation { gas_used: result? })
