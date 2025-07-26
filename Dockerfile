@@ -27,7 +27,7 @@ RUN for mf in $(find . -name Cargo.toml); do \
 
 # Build just deps & cache them
 RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/src/target \
-    CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --releas
+    CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release
 
 # Copy and Build Code
 COPY . .
