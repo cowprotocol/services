@@ -5,7 +5,7 @@ CMD ["migrate"]
 
 FROM docker.io/rust:1-slim-bookworm as rust
 # Install Rust toolchain
-RUN rustup component add rustfmt clippy
+RUN rustup install stable && rustup default stable
 
 FROM rust as cargo-build
 WORKDIR /src/
