@@ -29,12 +29,14 @@ RUN for mf in $(find . -name Cargo.toml); do \
     && echo "fn main() {}" > crates/orderbook/build.rs
 
 # Build just deps & cache them
-RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/src/target \
+RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,id=cargo-target,target=/src/target \
     CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release
 
 # Copy and Build Code
 COPY . .
-RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/src/target \
+RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,id=cargo-target,target=/src/targett \
     CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release && \
     cp target/release/alerter / && \
     cp target/release/autopilot / && \
