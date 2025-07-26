@@ -23,7 +23,9 @@ RUN for mf in $(find . -name Cargo.toml); do \
         pkgdir=$(dirname "$mf"); \
         mkdir -p "$pkgdir/src"; \
         echo 'pub fn _stub() {}' > "$pkgdir/src/lib.rs"; \
-    done && echo "fn main() {}" > crates/contracts/src/bin/vendor.rs
+    done \
+    && echo "fn main() {}" > crates/contracts/src/bin/vendor.rs \
+    && echo "fn main() {}" > crates/orderbook/build.rs
 
 # Build just deps & cache them
 RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/src/target \
