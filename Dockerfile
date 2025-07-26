@@ -2,14 +2,17 @@ FROM docker.io/flyway/flyway:10.7.1 as migrations
 COPY database/ /flyway/
 CMD ["migrate"]
 
-FROM docker.io/rust:1-slim-bookworm as cargo-build
+
+FROM docker.io/rust:1-slim-bookworm as rust
+# Install Rust toolchain
+RUN rustup component add rustfmt clippy
+
+FROM rust as cargo-build
 WORKDIR /src/
 
 # Install dependencies
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update && \
     apt-get install -y git libssl-dev pkg-config
-# Install Rust toolchain
-RUN rustup install stable && rustup default stable
 
 # Copy just just manifests
 COPY Cargo.toml Cargo.lock ./
