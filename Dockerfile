@@ -38,7 +38,7 @@ RUN --mount=type=cache,id=sccache,target=/sccache,sharing=locked \
 
 # Create an intermediate image to extract the binaries
 FROM docker.io/debian:bookworm-slim as intermediate
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update && \
+RUN --mount=type=cache,id=apt,target=/var/cache/apt,sharing=locked apt-get update && \
     apt-get install -y ca-certificates tini gettext-base && \
     apt-get clean
 
