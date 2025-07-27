@@ -38,22 +38,28 @@ jobs:
           labels: |
             org.opencontainers.image.licenses=GPL-3.0-or-later
 
-      - name: cache sccache + apt
+      - name: cache cargo + sccache + apt
         uses: actions/cache@v4
         id: build-cache
         with:
-          path: cache-mount                 # <‑ any dir name is fine
-          key: build-mount-${{ github.ref_name }}-${{ hashFiles('**/Cargo.lock') }}
+          path: cache-mount # <‑ any dir name is fine
+          key: build-mount-services-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            build-mount-${{ github.ref_name }}-
+            build-mount-services-
 
       - uses: reproducible-containers/buildkit-cache-dance@v3
         with:
           builder: ${{ steps.buildx.outputs.name }}  # IMPORTANT
           cache-dir: cache-mount                     # same as ↑
           cache-map: |
-            { "sccache": { "target": "/sccache", "id": "sccache" },
-              "apt":     { "target": "/var/cache/apt", "id": "apt" } }
+            { 
+              "sccache": { "target": "/sccache", "id": "sccache" },
+              "apt":     { "target": "/var/cache/apt", "id": "apt" } 
+              "cargo-registry": 
+                { "target": "/usr/local/cargo/registry", "id": "cargo-registry" } 
+              "cargo-target":
+                { "target": "/src/target", "id": "cargo-target" } 
+            }
           skip-extraction: ${{ steps.build-cache.outputs.cache-hit }}
 
       - name: Services image build
@@ -65,8 +71,8 @@ jobs:
           push: true
           tags: ${{ steps.meta_services.outputs.tags }}
           labels: ${{ steps.meta_services.outputs.labels }}
-      #          cache-from: type=gha,scope=services
-      #          cache-to: type=gha,scope=services,mode=max
+          cache-from: type=gha,scope=services
+          cache-to: type=gha,scope=services,mode=max
 
       - name: Migration image metadata
         id: meta_migration
