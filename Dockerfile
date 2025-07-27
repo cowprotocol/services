@@ -14,7 +14,7 @@ RUN cargo install --locked cargo-chef
 FROM rust-chef AS planner
 WORKDIR /src/
 COPY . .
-RUN cargo chef prepare --recipe-path recipe.json
+RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo chef prepare --recipe-path recipe.json
 
 
 FROM rust-chef as cargo-build
@@ -22,7 +22,7 @@ WORKDIR /src/
 
 # Compile deps
 COPY --from=planner /src/recipe.json recipe.json
-RUN cargo chef cook --release --recipe-path recipe.json
+RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo chef cook --release --recipe-path recipe.json
 
 # Copy and Build Code
 COPY . .
