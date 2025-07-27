@@ -23,14 +23,14 @@ WORKDIR /src/
 COPY --from=planner /src/recipe.json recipe.json
 RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,id=cargo-target,target=/src/target,sharing=locked \
-    --mount=type=cache,id=sccache,target=/sccache \
+    --mount=type=cache,id=sccache,target=/src/sccache \
     CARGO_PROFILE_RELEASE_DEBUG=1 cargo chef cook --release --recipe-path recipe.json
 
 # Copy and Build Code
 COPY . .
 RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,id=cargo-target,target=/src/target,sharing=locked \
-    --mount=type=cache,id=sccache,target=/sccache \
+    --mount=type=cache,id=sccache,target=/src/sccache \
     CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release && \
     cp target/release/alerter / && \
     cp target/release/autopilot / && \
