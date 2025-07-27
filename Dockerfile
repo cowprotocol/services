@@ -9,6 +9,7 @@ RUN rustup install stable && rustup default stable
 RUN --mount=type=cache,id=apt,target=/var/cache/apt,sharing=locked apt-get update && \
     apt-get install -y git libssl-dev pkg-config
 #RUN cargo install --locked cargo-chef sccache
+RUN cargo install --locked sccache
 ENV RUSTC_WRAPPER=sccache SCCACHE_DIR=/sccache
 
 #FROM rust-chef AS planner
