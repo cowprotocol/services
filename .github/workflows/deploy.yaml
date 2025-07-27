@@ -48,7 +48,7 @@ jobs:
               },
               "apt": {
                 "target": "/var/cache/apt",
-                "apt": "cargo-target"
+                "id": "apt"
               }
             }
 
