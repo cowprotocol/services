@@ -53,7 +53,7 @@ jobs:
           cache-dir: cache-mount
           cache-map: |
             { 
-              "/src/sccache": { "target": "/sccache", "id": "sccache" },
+              "/src/sccache": { "target": "/src/sccache", "id": "sccache" },
               "/var/cache/apt": { "target": "/var/cache/apt", "id": "apt" },
               "/usr/local/cargo/registry": 
                 { "target": "/usr/local/cargo/registry", "id": "cargo-registry" },
