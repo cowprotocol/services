@@ -71,8 +71,11 @@ jobs:
           push: true
           tags: ${{ steps.meta_services.outputs.tags }}
           labels: ${{ steps.meta_services.outputs.labels }}
-          cache-from: type=gha,scope=services
-          cache-to: type=gha,scope=services,mode=max
+          build-args: BUILDKIT_INLINE_CACHE=1
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache,mode=min
+      #          cache-from: type=gha,scope=services
+      #          cache-to: type=gha,scope=services,mode=min
 
       - name: Migration image metadata
         id: meta_migration
