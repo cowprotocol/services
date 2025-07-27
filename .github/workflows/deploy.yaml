@@ -30,13 +30,6 @@ jobs:
         with:
           driver: docker-container # needed for cache type=gha in builds
 
-      # Cache the Cargo dependencies to speed up the build
-      - uses: actions/cache@v4
-        with:
-          path: /tmp/.buildx-cache
-          key: service-${{ runner.os }}-buildx-cache
-
-
       - name: Services image metadata
         id: meta_services
         uses: docker/metadata-action@v5
@@ -78,17 +71,8 @@ jobs:
           push: true
           tags: ${{ steps.meta_services.outputs.tags }}
           labels: ${{ steps.meta_services.outputs.labels }}
-          build-args: BUILDKIT_INLINE_CACHE=1
-          cache-from: type=local,src=/tmp/.buildx-cache
-          cache-to: type=local,dest=/tmp/.buildx-cache-new
-      #          cache-from: type=gha,scope=services
-      #          cache-to: type=gha,scope=services,mode=min
-
-      # Move the new cache to the original location
-      - name: Move cache to original location
-        run: |
-          rm -rf /tmp/.buildx-cache
-          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+          cache-from: type=gha,scope=services
+          cache-to: type=gha,scope=services,mode=min
 
       - name: Migration image metadata
         id: meta_migration
