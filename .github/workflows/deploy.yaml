@@ -54,11 +54,11 @@ jobs:
           cache-map: |
             { 
               "/sccache": { "target": "/sccache", "id": "sccache" },
-              "/var/cache/apt":     { "target": "/var/cache/apt", "id": "apt" },
-              "cargo-registry": 
-                { "/usr/local/cargo/registry": "/usr/local/cargo/registry", "id": "cargo-registry" },
-              "cargo-target":
-                { "/src/target": "/src/target", "id": "cargo-target" } 
+              "/var/cache/apt": { "target": "/var/cache/apt", "id": "apt" },
+              "/usr/local/cargo/registry": 
+                { "target": "/usr/local/cargo/registry", "id": "cargo-registry" },
+              "/src/target":
+                { "target": "/src/target", "id": "cargo-target" } 
             }
           skip-extraction: ${{ steps.build-cache.outputs.cache-hit }}
 
