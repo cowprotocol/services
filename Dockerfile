@@ -8,36 +8,33 @@ RUN rustup install stable && rustup default stable
 # Install dependencies
 RUN --mount=type=cache,id=apt,target=/var/cache/apt,sharing=locked apt-get update && \
     apt-get install -y git libssl-dev pkg-config
-RUN cargo install --locked cargo-chef sccache
-ENV RUSTC_WRAPPER=sccache
+RUN cargo install --locked cargo-chef
+
 
 FROM rust-chef AS planner
 WORKDIR /src/
 COPY . .
 RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo chef prepare --recipe-path recipe.json
 
+
 FROM rust-chef as cargo-build
 WORKDIR /src/
 
 # Compile deps
 COPY --from=planner /src/recipe.json recipe.json
-RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
-    --mount=type=cache,id=cargo-target,target=/src/target,sharing=locked \
-    --mount=type=cache,id=sccache,target=/src/sccache \
-    CARGO_PROFILE_RELEASE_DEBUG=1 cargo chef cook --release --recipe-path recipe.json
+RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo chef cook --release --recipe-path recipe.json
 
 # Copy and Build Code
 COPY . .
-RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
-    --mount=type=cache,id=cargo-target,target=/src/target,sharing=locked \
-    --mount=type=cache,id=sccache,target=/src/sccache \
-    CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release && \
+RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release && \
     cp target/release/alerter / && \
     cp target/release/autopilot / && \
     cp target/release/driver / && \
     cp target/release/orderbook / && \
     cp target/release/refunder / && \
-    cp target/release/solvers /
+    cp target/release/solvers / && \
+    rm -rf target/ # keep the layer small as it gets cached
+
 
 # Create an intermediate image to extract the binaries
 FROM docker.io/debian:bookworm-slim as intermediate
