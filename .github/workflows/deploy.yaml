@@ -38,6 +38,20 @@ jobs:
           labels: |
             org.opencontainers.image.licenses=GPL-3.0-or-later
 
+      - uses: reproducible-containers/buildkit-cache-dance@v3
+        with:
+          cache-map: |
+            {
+              "cargo-registry": {
+                "target": "/usr/local/cargo/registry",
+                "id": "cargo-registry"
+              },
+              "cargo-target": {
+                "target": "/src/target",
+                "id": "cargo-target"
+              }
+            }
+
       - name: Services image build
         uses: docker/build-push-action@v6
         with:
@@ -47,8 +61,8 @@ jobs:
           push: true
           tags: ${{ steps.meta_services.outputs.tags }}
           labels: ${{ steps.meta_services.outputs.labels }}
-          cache-from: type=gha,scope=services
-          cache-to: type=gha,scope=services,mode=max
+      #          cache-from: type=gha,scope=services
+      #          cache-to: type=gha,scope=services,mode=max
 
       - name: Migration image metadata
         id: meta_migration
