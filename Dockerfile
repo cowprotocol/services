@@ -8,7 +8,7 @@ RUN rustup install stable && rustup default stable
 # Install dependencies
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update && \
     apt-get install -y git libssl-dev pkg-config
-RUN cargo install --locked cargo-chef \
+RUN cargo install --locked cargo-chef
 #    sccache
 ##ENV RUSTC_WRAPPER=sccache SCCACHE_DIR=/sccache
 
