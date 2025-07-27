@@ -54,9 +54,9 @@ jobs:
           cache-map: |
             { 
               "sccache": { "target": "/sccache", "id": "sccache" },
-              "apt":     { "target": "/var/cache/apt", "id": "apt" } 
+              "apt":     { "target": "/var/cache/apt", "id": "apt" },
               "cargo-registry": 
-                { "target": "/usr/local/cargo/registry", "id": "cargo-registry" } 
+                { "target": "/usr/local/cargo/registry", "id": "cargo-registry" },
               "cargo-target":
                 { "target": "/src/target", "id": "cargo-target" } 
             }
