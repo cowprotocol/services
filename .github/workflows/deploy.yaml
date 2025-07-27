@@ -49,8 +49,8 @@ jobs:
 
       - uses: reproducible-containers/buildkit-cache-dance@v3
         with:
-          builder: ${{ steps.buildx.outputs.name }}  # IMPORTANT
-          cache-dir: cache-mount                     # same as ↑
+          builder: ${{ steps.buildx.outputs.name }}
+          cache-dir: cache-mount
           cache-map: |
             { 
               "/sccache": { "target": "/sccache", "id": "sccache" },
