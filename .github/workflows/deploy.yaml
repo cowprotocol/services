@@ -42,13 +42,13 @@ jobs:
         with:
           cache-map: |
             {
-              "cargo-registry": {
-                "target": "/usr/local/cargo/registry",
-                "id": "cargo-registry"
+              "sccache": {
+                "target": "/sccache",
+                "id": "sccache"
               },
-              "cargo-target": {
-                "target": "/src/target",
-                "id": "cargo-target"
+              "apt": {
+                "target": "/var/cache/apt",
+                "apt": "cargo-target"
               }
             }
 
