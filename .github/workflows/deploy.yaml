@@ -53,12 +53,12 @@ jobs:
           cache-dir: cache-mount                     # same as ↑
           cache-map: |
             { 
-              "sccache": { "target": "/sccache", "id": "sccache" },
-              "apt":     { "target": "/var/cache/apt", "id": "apt" },
+              "/sccache": { "target": "/sccache", "id": "sccache" },
+              "/var/cache/apt":     { "target": "/var/cache/apt", "id": "apt" },
               "cargo-registry": 
-                { "target": "/usr/local/cargo/registry", "id": "cargo-registry" },
+                { "/usr/local/cargo/registry": "/usr/local/cargo/registry", "id": "cargo-registry" },
               "cargo-target":
-                { "target": "/src/target", "id": "cargo-target" } 
+                { "/src/target": "/src/target", "id": "cargo-target" } 
             }
           skip-extraction: ${{ steps.build-cache.outputs.cache-hit }}
 
