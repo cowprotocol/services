@@ -20,38 +20,11 @@ WORKDIR /src/
 
 # Compile deps
 COPY --from=planner /src/recipe.json recipe.json
-RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
-    --mount=type=cache,id=cargo-target,target=/src/target \
-     CARGO_PROFILE_RELEASE_DEBUG=1 cargo chef cook --release --recipe-path recipe.json   # builds deps only :contentReference[oaicite:1]{index=1}
-
-#
-## Copy just just manifests
-#COPY Cargo.* ./
-#COPY crates/*/Cargo.toml crates/*/
-#
-## Shred everything except the manifests
-#RUN find crates -type f ! -name Cargo.toml -delete
-#
-## Add stub src so Cargo builds
-#RUN for mf in $(find . -name Cargo.toml); do \
-#        pkgdir=$(dirname "$mf"); \
-#        mkdir -p "$pkgdir/src"; \
-#        echo 'pub fn _stub() {}' > "$pkgdir/src/lib.rs"; \
-#        echo 'pub fn main() {}' > "$pkgdir/src/main.rs"; \
-#    done \
-#    && mkdir -p crates/contracts/src/bin/ && echo "fn main() {}" > crates/contracts/src/bin/vendor.rs \
-#    && echo "fn main() {}" > crates/orderbook/build.rs
-
-# Build just deps & cache them
-RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
-    --mount=type=cache,id=cargo-target,target=/src/target \
-    CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release
+RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo chef cook --release --recipe-path recipe.json
 
 # Copy and Build Code
 COPY . .
-RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
-    --mount=type=cache,id=cargo-target,target=/src/target \
-    CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release && \
+RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release && \
     cp target/release/alerter / && \
     cp target/release/autopilot / && \
     cp target/release/driver / && \
