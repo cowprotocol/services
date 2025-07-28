@@ -1,0 +1,8 @@
+[profile.default]
+src = "solidity"
+test = "test"
+out = "out"
+libs = ["lib"]
+
+# You can add more configuration as needed
+

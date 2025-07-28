@@ -1569,7 +1569,15 @@ fn main() {
     // Support contracts used for various order simulations.
     generate_contract("Balances");
     generate_contract("Signatures");
-    generate_contract("SimulateCode");
+    generate_contract_with_config("Signatures", |builder| {
+        builder.add_network(
+            LENS,
+            Network {
+                address: addr("0x714cC35842b9090B9738CbCBFb882c0128685921"),
+                deployment_information: None,
+            },
+        )
+    });
 
     // Support contract used for solver fee simulations.
     generate_contract("AnyoneAuthenticator");
