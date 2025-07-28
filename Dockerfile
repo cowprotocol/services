@@ -13,7 +13,7 @@ RUN rustup install stable && rustup default stable
 
 # Copy and Build Code
 #COPY . .
-RUN cargo init --bin foo .
+RUN cargo init --bin foo && cp -r foo/** .
 RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/src/target \
     CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release \
 #    && \
