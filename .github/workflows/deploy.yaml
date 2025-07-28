@@ -52,7 +52,6 @@ jobs:
               "rust-build-cache": "/usr/local/cargo/registry",
               "rust-build-cache": "/src/target"
             }
-          skip-extraction: ${{ steps.cache.outputs.cache-hit }}
 
       #          cache-dir: rust-build-cache
       #          dockerfile: Dockerfile
