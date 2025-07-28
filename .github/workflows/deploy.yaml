@@ -37,10 +37,15 @@ jobs:
 
       - name: Rust Build Cache for Docker
         uses: actions/cache@v4
-        id: cache
         with:
-          path: rust-build-cache
+          path: rust-cargo-cache
           key: ${{ runner.os }}-rust-build-cache-${{ hashFiles('Cargo.lock') }}
+
+      - name: Apt Cache
+        uses: actions/cache@v4
+        with:
+          path: var-cache-apt
+          key: ${{ runner.os }}-var-apt-cache-build-cache-${{ hashFiles('Dockerfile') }}
 
       - name: Restore Docker cache mounts
         uses: reproducible-containers/buildkit-cache-dance@v3
@@ -48,9 +53,9 @@ jobs:
           builder: ${{ steps.setup-buildx.outputs.name }}
           cache-map: |
             {
-              "rust-build-cache": "/var/cache/apt",
-              "rust-build-cache": "/usr/local/cargo/registry",
-              "rust-build-cache": "/src/target"
+              "var-cache-apt": target": "/var/cache/apt",
+              "rust-cargo-cache": "/usr/local/cargo/registry"
+            #              "rust-build-cache": "/src/target"
             }
 
       #          cache-dir: rust-build-cache
