@@ -15,7 +15,7 @@ use {
     ethrpc::Web3,
     futures::future,
     primitive_types::{H160, U256},
-    std::sync::LazyLock,
+    std::{str::FromStr, sync::LazyLock},
 };
 
 pub struct Validator {
@@ -31,8 +31,10 @@ impl Validator {
 
     pub fn new(web3: &Web3, settlement: H160, vault_relayer: H160) -> Self {
         let web3 = ethrpc::instrumented::instrument_with_label(web3, "signatureValidation".into());
+        let sig_address = H160::from_str("0x714cC35842b9090B9738CbCBFb882c0128685921")
+            .expect("newlog H160 from address");
         Self {
-            signatures: contracts::support::Signatures::at(&web3, settlement),
+            signatures: contracts::support::Signatures::at(&web3, sig_address),
             settlement,
             vault_relayer,
             web3: web3.clone(),
