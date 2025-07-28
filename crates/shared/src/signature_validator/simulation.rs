@@ -98,7 +98,7 @@ impl Validator {
         let result =
             contracts::storage_accessible::simulate(BYTECODE.clone(), method.clone()).await;
         if result.is_err() {
-            tracing::info!( 
+            tracing::info!(
                 ?result,
                 ?tx,
                 ?calldata,
