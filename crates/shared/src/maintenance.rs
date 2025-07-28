@@ -67,7 +67,7 @@ impl ServiceMaintenance {
             {
                 tracing::debug!(
                     ?block.number, ?block.hash, ?err,
-                    "maintenance failed; queuing retry:",
+                    "maintenance failed; queuing retry",
                 );
 
                 retry_block = Some(block);
