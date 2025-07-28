@@ -49,7 +49,7 @@ jobs:
           cache-map: |
             {
               "var-cache-apt": "/var/cache/apt",
-              "usr-local-cargo-registry": "/usr/local/cargo/registry"
+              "usr-local-cargo-registry": "/usr/local/cargo/registry",
               "src-target": "/src/target"
             }
       #          cache-dir: rust-build-cache
