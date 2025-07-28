@@ -13,7 +13,7 @@ RUN rustup install stable && rustup default stable
 
 # Copy and Build Code
 #COPY . .
-RUN cargo init --bin foobar && cp -r foobar/** . && cargo add tokio
+RUN cargo init --bin foobar && cp -r foobar/** . && cargo add tokio && cargo build
 RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/src/target \
     CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release \
 #    && \
