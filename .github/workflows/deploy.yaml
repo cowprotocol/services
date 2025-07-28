@@ -38,30 +38,6 @@ jobs:
           labels: |
             org.opencontainers.image.licenses=GPL-3.0-or-later
 
-      #      - name: cache cargo + sccache + apt
-      #        uses: actions/cache@v4
-      #        id: build-cache
-      #        with:
-      #          path: cache-mount # <‑ any dir name is fine
-      #          key: build-mount-services-${{ hashFiles('**/Cargo.lock') }}
-      #          restore-keys: |
-      #            build-mount-services-
-      #
-      #      - uses: reproducible-containers/buildkit-cache-dance@v3
-      #        with:
-      #          builder: ${{ steps.buildx.outputs.name }}
-      #          cache-dir: cache-mount
-      #          cache-map: |
-      #            {
-      #              "/src/sccache": { "target": "/src/sccache", "id": "sccache" },
-      #              "/var/cache/apt": { "target": "/var/cache/apt", "id": "apt" },
-      #              "/usr/local/cargo/registry":
-      #                { "target": "/usr/local/cargo/registry", "id": "cargo-registry" },
-      #              "/src/target":
-      #                { "target": "/src/target", "id": "cargo-target" }
-      #            }
-      #          skip-extraction: ${{ steps.build-cache.outputs.cache-hit }}
-
       - name: Services image build
         uses: docker/build-push-action@v6
         with:
