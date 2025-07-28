@@ -442,7 +442,7 @@ pub fn order_excluded_from_auction(
     order: &competition::Order,
     reason: OrderExcludedFromAuctionReason,
 ) {
-    tracing::trace!(uid=?order.uid, ?reason, "order excluded from auction");
+    tracing::warn!(uid=?order.uid, ?reason, "order excluded from auction");
 }
 
 /// Observe that a settlement was simulated

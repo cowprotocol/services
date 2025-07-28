@@ -319,6 +319,11 @@ impl AuctionProcessor {
                     // sell tokens will come from there. But the receiver must be the
                     // settlement contract because that is how the driver expects
                     // the flashloan to be repaid for now.
+                    tracing::info!(
+                        "newlog order.receiver={:?}, settlement={:?}",
+                        order.receiver,
+                        settlement
+                    );
                     return order.receiver.as_ref() == Some(settlement);
                 }
             }
@@ -330,6 +335,7 @@ impl AuctionProcessor {
             )) {
                 Some(balance) => balance,
                 None => {
+                    tracing::info!("newlog balances={:?}", balances);
                     let reason = observe::OrderExcludedFromAuctionReason::CouldNotFetchBalance;
                     observe::order_excluded_from_auction(order, reason);
                     return false;
@@ -344,6 +350,7 @@ impl AuctionProcessor {
                 _ => order::SellAmount::default(),
             };
             if allocated_balance.0.is_zero() {
+                tracing::info!("newlog allocated_balance={:?}", allocated_balance);
                 observe::order_excluded_from_auction(
                     order,
                     observe::OrderExcludedFromAuctionReason::InsufficientBalance,
