@@ -28,7 +28,7 @@ WORKDIR /src/
 
 # Copy and Build Code
 COPY . .
-RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release && \
+RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release --workspace --exclude e2e && \
     cp target/release/alerter / && \
     cp target/release/autopilot / && \
     cp target/release/driver / && \
