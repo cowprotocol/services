@@ -46,9 +46,14 @@ jobs:
         uses: reproducible-containers/buildkit-cache-dance@v3
         with:
           builder: ${{ steps.setup-buildx.outputs.name }}
-          cache-dir: rust-build-cache
-          dockerfile: Dockerfile
-          skip-extraction: ${{ steps.cache.outputs.cache-hit }}
+          cache-map: |
+            {
+              "var-cache-apt": "/var/cache/apt",
+              "usr-local-cargo-registry": "/usr/local/cargo/registry"
+              "src-target": "/src/target"
+            }
+      #          cache-dir: rust-build-cache
+      #          dockerfile: Dockerfile
 
       - name: Services image build
         uses: docker/build-push-action@v6
@@ -58,8 +63,8 @@ jobs:
           push: true
           tags: ${{ steps.meta_services.outputs.tags }}
           labels: ${{ steps.meta_services.outputs.labels }}
-      #          cache-from: type=gha
-      #          cache-to: type=gha,mode=max
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Migration image metadata
         id: meta_migration
