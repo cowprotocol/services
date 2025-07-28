@@ -55,7 +55,6 @@ jobs:
             {
               "var-cache-apt": "/var/cache/apt",
               "rust-cargo-cache": "/usr/local/cargo/registry"
-            #              "rust-build-cache": "/src/target"
             }
 
       #          cache-dir: rust-build-cache
