@@ -53,7 +53,7 @@ jobs:
           builder: ${{ steps.setup-buildx.outputs.name }}
           cache-map: |
             {
-              "var-cache-apt": target": "/var/cache/apt",
+              "var-cache-apt": "/var/cache/apt",
               "rust-cargo-cache": "/usr/local/cargo/registry"
             #              "rust-build-cache": "/src/target"
             }
