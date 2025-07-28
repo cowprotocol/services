@@ -9,18 +9,18 @@ RUN rustup install stable && rustup default stable
 RUN --mount=type=cache,id=apt,target=/var/cache/apt,sharing=locked apt-get update && \
     apt-get install -y git libssl-dev pkg-config
 RUN cargo install --locked cargo-chef
-
+RUN apt-get purge -y --auto-remove && rm -rf /var/lib/apt/lists/*
 
 FROM rust-chef AS planner
 WORKDIR /src/
 COPY . .
-RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo chef prepare --recipe-path recipe.json
+RUN CARGO_PROFILE_RELEASE_DEBUG=0 cargo chef prepare --recipe-path recipe.json
 
 FROM rust-chef as built-deps
 WORKDIR /src/
 # Compile deps
 COPY --from=planner /src/recipe.json recipe.json
-RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo chef cook --release --recipe-path recipe.json
+RUN CARGO_PROFILE_RELEASE_DEBUG=0 cargo chef cook --release --recipe-path recipe.json
 
 
 FROM built-deps as cargo-build
