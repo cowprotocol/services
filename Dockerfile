@@ -10,17 +10,19 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update && \
     apt-get install -y git libssl-dev pkg-config
 # Install Rust toolchain
 RUN rustup install stable && rustup default stable
+ENV CARGO_INCREMENTAL=0
 
 # Copy and Build Code
 COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/src/target \
     CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release --workspace --exclude e2e && \
-    cp target/release/alerter / && \
-    cp target/release/autopilot / && \
-    cp target/release/driver / && \
-    cp target/release/orderbook / && \
-    cp target/release/refunder / && \
-    cp target/release/solvers /
+    mv target/release/alerter / && \
+    mv target/release/autopilot / && \
+    mv target/release/driver / && \
+    mv target/release/orderbook / && \
+    mv target/release/refunder / && \
+    mv target/release/solvers / && \
+    rm -rf target/*/incremental && rm -rf target/tests
 
 # Create an intermediate image to extract the binaries
 FROM docker.io/debian:bookworm-slim as intermediate
