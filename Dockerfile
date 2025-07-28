@@ -16,17 +16,20 @@ WORKDIR /src/
 COPY . .
 RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo chef prepare --recipe-path recipe.json
 
-
-FROM rust-chef as cargo-build
+FROM rust-chef as built-deps
 WORKDIR /src/
-
 # Compile deps
 COPY --from=planner /src/recipe.json recipe.json
 RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo chef cook --release --recipe-path recipe.json
 
+
+FROM built-deps as cargo-build
+WORKDIR /src/
+
 # Copy and Build Code
 COPY . .
-RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release && \
+RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/src/target \
+    CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release && \
     cp target/release/alerter / && \
     cp target/release/autopilot / && \
     cp target/release/driver / && \

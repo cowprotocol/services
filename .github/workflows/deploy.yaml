@@ -72,7 +72,7 @@ jobs:
           tags: ${{ steps.meta_services.outputs.tags }}
           labels: ${{ steps.meta_services.outputs.labels }}
           cache-from: type=gha,scope=services
-          cache-to: type=gha,scope=services,mode=min
+          cache-to: type=gha,scope=services,mode=max
 
       - name: Migration image metadata
         id: meta_migration
