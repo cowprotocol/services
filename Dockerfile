@@ -28,15 +28,14 @@ WORKDIR /src/
 
 # Copy and Build Code
 COPY . .
-RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/src/target \
-    CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release && \
+RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release && \
     cp target/release/alerter / && \
     cp target/release/autopilot / && \
     cp target/release/driver / && \
     cp target/release/orderbook / && \
     cp target/release/refunder / && \
     cp target/release/solvers / && \
-    rm -rf target/ # keep the layer small as it gets cached
+    cargo clean # keep the layer small as it gets cached
 
 
 # Create an intermediate image to extract the binaries
