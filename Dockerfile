@@ -12,7 +12,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update && \
 RUN rustup install stable && rustup default stable
 
 # Copy and Build Code
-COPY . .
+#COPY . .
+cargo init --bin foo
 RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/src/target \
     CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release && \
     cp target/release/alerter / && \
