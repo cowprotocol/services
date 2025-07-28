@@ -1570,13 +1570,7 @@ fn main() {
     generate_contract("Balances");
     generate_contract("Signatures");
     generate_contract_with_config("Signatures", |builder| {
-        builder.add_network(
-            LENS,
-            Network {
-                address: addr("0x714cC35842b9090B9738CbCBFb882c0128685921"),
-                deployment_information: None,
-            },
-        )
+        builder.add_network_str(LENS, "0x714cC35842b9090B9738CbCBFb882c0128685921")
     });
 
     // Support contract used for solver fee simulations.
