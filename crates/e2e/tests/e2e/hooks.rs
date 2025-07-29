@@ -100,7 +100,11 @@ async fn gas_limit(web3: Web3) {
     );
     let error = services.create_order(&order).await.unwrap_err();
     assert_eq!(error.0, StatusCode::BAD_REQUEST);
-    assert!(error.1.contains("TooMuchGas"));
+    assert!(
+        error
+            .1
+            .contains("Executing order requires too many gas units")
+    );
 }
 
 async fn allowance(web3: Web3) {
