@@ -1276,10 +1276,10 @@ fn main() {
     generate_contract_with_config("HooksTrampoline", |builder| {
         // <https://github.com/cowprotocol/hooks-trampoline/blob/993427166ade6c65875b932f853776299290ac4b/networks.json>
         builder
-            .add_network_str(MAINNET, "0x01DcB88678aedD0C4cC9552B20F4718550250574")
+            .add_network_str(MAINNET, "0xe85935281b001ad8d825b1629fc7f2ac1e8952b5")
             .add_network_str(GOERLI, "0x01DcB88678aedD0C4cC9552B20F4718550250574")
             .add_network_str(GNOSIS, "0x01DcB88678aedD0C4cC9552B20F4718550250574")
-            .add_network_str(SEPOLIA, "0x01DcB88678aedD0C4cC9552B20F4718550250574")
+            .add_network_str(SEPOLIA, "0xe85935281b001ad8d825b1629fc7f2ac1e8952b5")
             .add_network_str(ARBITRUM_ONE, "0x01DcB88678aedD0C4cC9552B20F4718550250574")
             .add_network_str(BASE, "0x01DcB88678aedD0C4cC9552B20F4718550250574")
             .add_network_str(AVALANCHE, "0x01DcB88678aedD0C4cC9552B20F4718550250574")
