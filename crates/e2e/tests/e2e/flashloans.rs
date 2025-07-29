@@ -34,7 +34,8 @@ async fn forked_node_mainnet_repay_debt_with_collateral_of_safe() {
         forked_mainnet_repay_debt_with_collateral_of_safe,
         std::env::var("FORK_URL_MAINNET")
             .expect("FORK_URL_MAINNET must be set to run forked tests"),
-        22166000,
+        // https://etherscan.io/tx/0xb7a10292f12442061a0a9e58c138b0040f378e5b26a02f34703bb4053b5279e0
+        23019308,
     )
     .await;
 }

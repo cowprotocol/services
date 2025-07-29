@@ -112,9 +112,15 @@ impl TestAccount {
     }
 }
 
-#[derive(Default)]
 struct AccountGenerator {
     id: usize,
+}
+
+impl Default for AccountGenerator {
+    fn default() -> Self {
+        // Start from 42 to avoid conflicts with existing accounts
+        AccountGenerator { id: 100500 }
+    }
 }
 
 impl Iterator for AccountGenerator {
