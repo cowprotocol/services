@@ -31,6 +31,8 @@ pub enum Error {
     FlashloanSupportDisabled,
     #[error("no flashloan helper configured for lender: {0}")]
     UnsupportedFlashloanLender(eth::H160),
+    #[error("Flashloan tracker contract not configured")]
+    FlashLoanTrackerNotConfigured,
 }
 
 pub fn tx(
@@ -186,17 +188,28 @@ pub fn tx(
             let flashloan_wrapper = contracts
                 .get_flashloan_wrapper(&flashloan.lender)
                 .ok_or(Error::UnsupportedFlashloanLender(flashloan.lender.0))?;
+            let flashloan_tracker = contracts
+                .flashloan_tracker()
+                .ok_or(Error::FlashLoanTrackerNotConfigured)?;
 
             // Repayment amount needs to be increased by flash fee
             let fee_amount =
                 (flashloan.amount.0 * flashloan_wrapper.fee_in_bps).ceil_div(&10_000.into());
             let repayment_amount = flashloan.amount.0 + fee_amount;
 
-            // Move the loaned money from the helper contract to the borrower address (most
+            // Allow flash loan lender to take tokens from wrapper contract
+            pre_interactions.push(approve_flashloan(
+                flashloan.token,
+                repayment_amount.into(),
+                flashloan_tracker.address().into(),
+                &flashloan_wrapper.helper_contract,
+            ));
+
+            // Move the loaned money from the tracker contract to the borrower address (most
             // likely the user).
-            let take_out_call_data = flashloan_wrapper
-                .helper_contract
+            let take_out_call_data = flashloan_tracker
                 .take_out(
+                    flashloan_wrapper.helper_contract.address().into(),
                     flashloan.borrower.into(),
                     flashloan.token.into(),
                     flashloan.amount.into(),
@@ -207,20 +220,30 @@ pub fn tx(
             pre_interactions.insert(
                 0,
                 eth::Interaction {
-                    target: flashloan_wrapper.helper_contract.address().into(),
+                    target: flashloan_tracker.address().into(),
                     value: 0.into(),
                     call_data: Bytes(take_out_call_data.0),
                 },
             );
-            // the user is expected to do the repayment via a post-hook
 
-            // Allow flash loan lender to take tokens from wrapper contract
-            post_interactions.push(approve_flashloan(
-                flashloan.token,
-                repayment_amount.into(),
-                flashloan.lender,
-                &flashloan_wrapper.helper_contract,
-            ));
+            // the user is expected to do the repayment via a post-hook
+            let pay_back_call_data = flashloan_tracker
+                .pay_back(
+                    flashloan_wrapper.helper_contract.address().into(),
+                    flashloan.borrower.into(),
+                    flashloan.token.into(),
+                )
+                .tx
+                .data
+                .unwrap();
+            post_interactions.insert(
+                0,
+                eth::Interaction {
+                    target: flashloan_tracker.address().into(),
+                    value: 0.into(),
+                    call_data: Bytes(pay_back_call_data.0),
+                },
+            );
 
             Ok((
                 flashloan.amount.0,
