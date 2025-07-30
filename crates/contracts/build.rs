@@ -1278,7 +1278,7 @@ fn main() {
         builder
             .add_network_str(MAINNET, "0x60Bf78233f48eC42eE3F101b9a05eC7878728006")
             .add_network_str(GOERLI, "0x60Bf78233f48eC42eE3F101b9a05eC7878728006")
-            .add_network_str(GNOSIS, "0x60Bf78233f48eC42eE3F101b9a05eC7878728006")
+            .add_network_str(GNOSIS, "0x01DcB88678aedD0C4cC9552B20F4718550250574")
             .add_network_str(SEPOLIA, "0x60Bf78233f48eC42eE3F101b9a05eC7878728006")
             .add_network_str(ARBITRUM_ONE, "0x60Bf78233f48eC42eE3F101b9a05eC7878728006")
             .add_network_str(BASE, "0x60Bf78233f48eC42eE3F101b9a05eC7878728006")
