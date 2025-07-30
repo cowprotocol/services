@@ -197,10 +197,19 @@ pub fn tx(
                 (flashloan.amount.0 * flashloan_wrapper.fee_in_bps).ceil_div(&10_000.into());
             let repayment_amount = flashloan.amount.0 + fee_amount;
 
+            // Allow flash loan lender to take tokens from wrapper contract
+            pre_interactions.push(approve_flashloan(
+                flashloan.token,
+                repayment_amount.into(),
+                flashloan.lender,
+                &flashloan_wrapper.helper_contract,
+            ));
+
             // Move the loaned money from the tracker contract to the borrower address (most
             // likely the user).
             let take_out_call_data = flashloan_tracker
                 .take_out(
+                    flashloan_wrapper.helper_contract.address().into(),
                     flashloan.borrower.into(),
                     flashloan.token.into(),
                     flashloan.amount.into(),
@@ -219,10 +228,10 @@ pub fn tx(
 
             // the user is expected to do the repayment via a post-hook
             let pay_back_call_data = flashloan_tracker
-                .take_out(
+                .pay_back(
+                    flashloan_wrapper.helper_contract.address().into(),
                     flashloan.borrower.into(),
                     flashloan.token.into(),
-                    flashloan.amount.into(),
                 )
                 .tx
                 .data
@@ -231,19 +240,10 @@ pub fn tx(
                 0,
                 eth::Interaction {
                     target: flashloan_tracker.address().into(),
-                    // target: flashloan_wrapper.helper_contract.address().into(),
                     value: 0.into(),
                     call_data: Bytes(pay_back_call_data.0),
                 },
             );
-
-            // Allow flash loan lender to take tokens from wrapper contract
-            post_interactions.push(approve_flashloan(
-                flashloan.token,
-                repayment_amount.into(),
-                flashloan.lender,
-                &flashloan_wrapper.helper_contract,
-            ));
 
             Ok((
                 flashloan.amount.0,
