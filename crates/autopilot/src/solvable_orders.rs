@@ -182,6 +182,7 @@ impl SolvableOrdersCache {
                 self.timed_future("cow_amm_registry", self.cow_amm_registry.amms()),
             )
         };
+        tracing::info!("fetched next round metadata");
 
         let orders = orders_with_balance(orders, &balances, self.settlement_contract);
         let removed = counter.checkpoint("insufficient_balance", &orders);
@@ -210,6 +211,7 @@ impl SolvableOrdersCache {
                 ),
             )
             .await;
+        tracing::info!("got orders with native prices");
         // Add WETH price if it's not already there to support ETH wrap when required.
         if let Entry::Vacant(entry) = prices.entry(self.weth) {
             let weth_price = self
