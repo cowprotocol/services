@@ -201,7 +201,7 @@ pub fn tx(
             pre_interactions.push(approve_flashloan(
                 flashloan.token,
                 repayment_amount.into(),
-                flashloan.lender,
+                flashloan_tracker.address().into(),
                 &flashloan_wrapper.helper_contract,
             ));
 
