@@ -70,7 +70,7 @@ pub struct TradeVerifier {
 }
 
 impl TradeVerifier {
-    const DEFAULT_GAS: u64 = 8_000_000;
+    const DEFAULT_GAS: u64 = 12_000_000;
     const SPARDOSE: H160 = addr!("0000000000000000000000000000000000020000");
     const TRADER_IMPL: H160 = addr!("0000000000000000000000000000000000010000");
 
