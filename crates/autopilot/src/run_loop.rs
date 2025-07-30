@@ -281,6 +281,7 @@ impl RunLoop {
         };
 
         let ranking = winner_selection.arbitrate(solutions, &auction);
+        tracing::info!(auction_id = ?auction.id, "ranked");
 
         // Count and record the number of winners
         let num_winners = ranking.winners().count();
@@ -307,6 +308,7 @@ impl RunLoop {
             tracing::error!(?err, "failed to post-process competition");
             return;
         }
+        tracing::info!(auction_id = ?auction.id, "post-processed");
 
         // Mark all winning orders as `Executing`
         let winning_orders = ranking
@@ -535,6 +537,7 @@ impl RunLoop {
                 .map_err(|e| e.0.context("failed to save solutions")),
         ) {
             Ok(_) => {
+                tracing::info!(auction_id = ?auction.id, "auction stored");
                 // Notify the solver participation guard that the proposed solutions have been
                 // saved.
                 if let Err(err) = self.competition_updates_sender.send(()) {
@@ -548,7 +551,7 @@ impl RunLoop {
             }
         }
 
-        tracing::trace!(?competition, "saving competition");
+        tracing::info!(?competition, "saving competition");
         futures::try_join!(
             self.persistence
                 .save_competition(&competition)
