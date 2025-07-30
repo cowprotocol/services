@@ -5,7 +5,6 @@ use {
         infra::{self, banned},
     },
     anyhow::{Context, Result},
-    bigdecimal::BigDecimal,
     database::order_events::OrderEventLabel,
     futures::{FutureExt, future::join_all},
     indexmap::IndexSet,
@@ -15,17 +14,14 @@ use {
         signature::Signature,
         time::now_in_epoch_seconds,
     },
-    number::conversions::u256_to_big_decimal,
     primitive_types::{H160, H256, U256},
     prometheus::{Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec},
     shared::{
-        account_balances::{BalanceFetching, Query},
         bad_token::BadTokenDetecting,
         price_estimation::{
             native::{NativePriceEstimating, to_normalized_price},
             native_price_cache::CachingNativePriceEstimator,
         },
-        remaining_amounts,
         signature_validator::{SignatureCheck, SignatureValidating},
     },
     std::{
@@ -88,21 +84,16 @@ pub struct SolvableOrdersCache {
     min_order_validity_period: Duration,
     persistence: infra::Persistence,
     banned_users: banned::Users,
-    balance_fetcher: Arc<dyn BalanceFetching>,
     bad_token_detector: Arc<dyn BadTokenDetecting>,
     cache: Mutex<Option<Inner>>,
     native_price_estimator: Arc<CachingNativePriceEstimator>,
     signature_validator: Arc<dyn SignatureValidating>,
     metrics: &'static Metrics,
     weth: H160,
-    limit_order_price_factor: BigDecimal,
     protocol_fees: domain::ProtocolFees,
     cow_amm_registry: cow_amm::Registry,
     native_price_timeout: Duration,
-    settlement_contract: H160,
 }
-
-type Balances = HashMap<Query, U256>;
 
 struct Inner {
     auction: domain::RawAuctionData,
@@ -115,33 +106,27 @@ impl SolvableOrdersCache {
         min_order_validity_period: Duration,
         persistence: infra::Persistence,
         banned_users: banned::Users,
-        balance_fetcher: Arc<dyn BalanceFetching>,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
         native_price_estimator: Arc<CachingNativePriceEstimator>,
         signature_validator: Arc<dyn SignatureValidating>,
         weth: H160,
-        limit_order_price_factor: BigDecimal,
         protocol_fees: domain::ProtocolFees,
         cow_amm_registry: cow_amm::Registry,
         native_price_timeout: Duration,
-        settlement_contract: H160,
     ) -> Arc<Self> {
         Arc::new(Self {
             min_order_validity_period,
             persistence,
             banned_users,
-            balance_fetcher,
             bad_token_detector,
             cache: Mutex::new(None),
             native_price_estimator,
             signature_validator,
             metrics: Metrics::instance(observe::metrics::get_storage_registry()).unwrap(),
             weth,
-            limit_order_price_factor,
             protocol_fees,
             cow_amm_registry,
             native_price_timeout,
-            settlement_contract,
         })
     }
 
@@ -174,22 +159,10 @@ impl SolvableOrdersCache {
         let mut invalid_order_uids = HashSet::new();
         let mut filtered_order_events = Vec::new();
 
-        let (balances, orders, cow_amms) = {
-            let queries = orders.iter().map(Query::from_order).collect::<Vec<_>>();
-            tokio::join!(
-                self.fetch_balances(queries),
-                self.filter_invalid_orders(orders, &mut counter, &mut invalid_order_uids,),
-                self.timed_future("cow_amm_registry", self.cow_amm_registry.amms()),
-            )
-        };
-
-        let orders = orders_with_balance(orders, &balances, self.settlement_contract);
-        let removed = counter.checkpoint("insufficient_balance", &orders);
-        invalid_order_uids.extend(removed);
-
-        let orders = filter_dust_orders(orders, &balances);
-        let removed = counter.checkpoint("dust_order", &orders);
-        filtered_order_events.extend(removed);
+        let (orders, cow_amms) = tokio::join!(
+            self.filter_invalid_orders(orders, &mut counter, &mut invalid_order_uids,),
+            self.timed_future("cow_amm_registry", self.cow_amm_registry.amms()),
+        );
 
         let cow_amm_tokens = cow_amms
             .iter()
@@ -227,10 +200,6 @@ impl SolvableOrdersCache {
         }
 
         let removed = counter.checkpoint("missing_price", &orders);
-        filtered_order_events.extend(removed);
-
-        let orders = filter_mispriced_limit_orders(orders, &prices, &self.limit_order_price_factor);
-        let removed = counter.checkpoint("out_of_market", &orders);
         filtered_order_events.extend(removed);
 
         let removed = counter.record(&orders);
@@ -300,32 +269,6 @@ impl SolvableOrdersCache {
             .auction_update_total_time
             .observe(start.elapsed().as_secs_f64());
         Ok(())
-    }
-
-    async fn fetch_balances(&self, queries: Vec<Query>) -> HashMap<Query, U256> {
-        let fetched_balances = self
-            .timed_future(
-                "balance_filtering",
-                self.balance_fetcher.get_balances(&queries),
-            )
-            .await;
-        queries
-            .into_iter()
-            .zip(fetched_balances)
-            .filter_map(|(query, balance)| match balance {
-                Ok(balance) => Some((query, balance)),
-                Err(err) => {
-                    tracing::warn!(
-                        owner = ?query.owner,
-                        token = ?query.token,
-                        source = ?query.source,
-                        error = ?err,
-                        "failed to get balance"
-                    );
-                    None
-                }
-            })
-            .collect()
     }
 
     /// Returns currently solvable orders.
@@ -508,75 +451,6 @@ async fn find_invalid_signature_orders(
     invalid_orders
 }
 
-/// Removes orders that can't possibly be settled because there isn't enough
-/// balance.
-fn orders_with_balance(
-    mut orders: Vec<Order>,
-    balances: &Balances,
-    settlement_contract: H160,
-) -> Vec<Order> {
-    // Prefer newer orders over older ones.
-    orders.sort_by_key(|order| std::cmp::Reverse(order.metadata.creation_date));
-    orders.retain(|order| {
-        if order.data.receiver.as_ref() == Some(&settlement_contract) {
-            // TODO: replace with proper detection logic
-            // for now we assume that all orders with the settlement contract
-            // as the receiver are flashloan orders which unlock the necessary
-            // funds via a pre-interaction that can't succeed in our balance
-            // fetching simulation logic.
-            return true;
-        }
-
-        let balance = match balances.get(&Query::from_order(order)) {
-            None => return false,
-            Some(balance) => *balance,
-        };
-
-        if order.data.partially_fillable && balance >= 1.into() {
-            return true;
-        }
-
-        let needed_balance = match order.data.sell_amount.checked_add(order.data.fee_amount) {
-            None => return false,
-            Some(balance) => balance,
-        };
-        balance >= needed_balance
-    });
-    orders
-}
-
-/// Filters out dust orders i.e. partially fillable orders that, when scaled
-/// have a 0 buy or sell amount.
-fn filter_dust_orders(mut orders: Vec<Order>, balances: &Balances) -> Vec<Order> {
-    orders.retain(|order| {
-        if !order.data.partially_fillable {
-            return true;
-        }
-
-        let balance = if let Some(balance) = balances.get(&Query::from_order(order)) {
-            *balance
-        } else {
-            return false;
-        };
-
-        let Ok(remaining) =
-            remaining_amounts::Remaining::from_order_with_balance(&order.into(), balance)
-        else {
-            return false;
-        };
-
-        let (Ok(sell_amount), Ok(buy_amount)) = (
-            remaining.remaining(order.data.sell_amount),
-            remaining.remaining(order.data.buy_amount),
-        ) else {
-            return false;
-        };
-
-        !sell_amount.is_zero() && !buy_amount.is_zero()
-    });
-    orders
-}
-
 async fn get_orders_with_native_prices(
     orders: Vec<Order>,
     native_price_estimator: &CachingNativePriceEstimator,
@@ -706,45 +580,6 @@ async fn find_unsupported_tokens(
                 .then_some(order.metadata.uid)
         })
         .collect()
-}
-
-/// Filter out limit orders which are far enough outside the estimated native
-/// token price.
-fn filter_mispriced_limit_orders(
-    mut orders: Vec<Order>,
-    prices: &BTreeMap<H160, U256>,
-    price_factor: &BigDecimal,
-) -> Vec<Order> {
-    orders.retain(|order| {
-        if !order.is_limit_order() {
-            return true;
-        }
-
-        let sell_price = *prices.get(&order.data.sell_token).unwrap();
-        let buy_price = *prices.get(&order.data.buy_token).unwrap();
-
-        // Convert the sell and buy price to the native token (ETH) and make sure that
-        // sell is higher than buy with the configurable price factor.
-        let (sell_native, buy_native) = match (
-            order.data.sell_amount.checked_mul(sell_price),
-            order.data.buy_amount.checked_mul(buy_price),
-        ) {
-            (Some(sell), Some(buy)) => (sell, buy),
-            _ => {
-                tracing::warn!(
-                    order_uid = %order.metadata.uid,
-                    "limit order overflow computing native amounts",
-                );
-                return false;
-            }
-        };
-
-        let sell_native = u256_to_big_decimal(&sell_native);
-        let buy_native = u256_to_big_decimal(&buy_native);
-
-        sell_native >= buy_native * price_factor
-    });
-    orders
 }
 
 /// Order filtering state for recording filtered orders over the course of
@@ -1311,145 +1146,6 @@ mod tests {
             unsupported_tokens_orders,
             [orders[0].metadata.uid, orders[2].metadata.uid]
         );
-    }
-
-    #[test]
-    fn filters_mispriced_orders() {
-        let sell_token = H160([1; 20]);
-        let buy_token = H160([2; 20]);
-
-        // Prices are set such that 1 sell token is equivalent to 2 buy tokens.
-        // Additionally, they are scaled to large values to allow for overflows.
-        let prices = btreemap! {
-            sell_token => U256::MAX / 100,
-            buy_token => U256::MAX / 200,
-        };
-        let price_factor = "0.95".parse().unwrap();
-
-        let order = |sell_amount: u8, buy_amount: u8| Order {
-            data: OrderData {
-                sell_token,
-                sell_amount: sell_amount.into(),
-                buy_token,
-                buy_amount: buy_amount.into(),
-                ..Default::default()
-            },
-            metadata: OrderMetadata {
-                class: OrderClass::Limit,
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
-        let valid_orders = vec![
-            // Reasonably priced order, doesn't get filtered.
-            order(100, 200),
-            // Slightly out of price order, doesn't get filtered.
-            order(10, 21),
-        ];
-
-        let invalid_orders = vec![
-            // Out of price order gets filtered out.
-            order(10, 100),
-            // Overflow sell value gets filtered.
-            order(255, 1),
-            // Overflow buy value gets filtered.
-            order(100, 255),
-        ];
-
-        let orders = [valid_orders.clone(), invalid_orders].concat();
-        assert_eq!(
-            filter_mispriced_limit_orders(orders, &prices, &price_factor),
-            valid_orders,
-        );
-
-        let mut order = order(10, 21);
-        order.data.partially_fillable = true;
-        let orders = vec![order];
-        assert_eq!(
-            filter_mispriced_limit_orders(orders, &prices, &price_factor).len(),
-            1
-        );
-    }
-
-    #[test]
-    fn orders_with_balance_() {
-        let settlement_contract = H160([1; 20]);
-        let orders = vec![
-            // enough balance for sell and fee
-            Order {
-                data: OrderData {
-                    sell_token: H160::from_low_u64_be(2),
-                    sell_amount: 1.into(),
-                    fee_amount: 1.into(),
-                    partially_fillable: false,
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-            // missing fee balance
-            Order {
-                data: OrderData {
-                    sell_token: H160::from_low_u64_be(3),
-                    sell_amount: 1.into(),
-                    fee_amount: 1.into(),
-                    partially_fillable: false,
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-            // at least 1 partially fillable balance
-            Order {
-                data: OrderData {
-                    sell_token: H160::from_low_u64_be(4),
-                    sell_amount: 2.into(),
-                    fee_amount: 0.into(),
-                    partially_fillable: true,
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-            // 0 partially fillable balance
-            Order {
-                data: OrderData {
-                    sell_token: H160::from_low_u64_be(5),
-                    sell_amount: 2.into(),
-                    fee_amount: 0.into(),
-                    partially_fillable: true,
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-            // considered flashloan order because of special receiver
-            Order {
-                data: OrderData {
-                    sell_token: H160::from_low_u64_be(6),
-                    sell_amount: 200.into(),
-                    fee_amount: 0.into(),
-                    partially_fillable: true,
-                    receiver: Some(settlement_contract),
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-        ];
-        let balances = [
-            (Query::from_order(&orders[0]), 2.into()),
-            (Query::from_order(&orders[1]), 1.into()),
-            (Query::from_order(&orders[2]), 1.into()),
-            (Query::from_order(&orders[3]), 0.into()),
-            (Query::from_order(&orders[4]), 0.into()),
-        ]
-        .into_iter()
-        .collect();
-        let expected = &[0, 2, 4];
-
-        let filtered = orders_with_balance(orders.clone(), &balances, settlement_contract);
-        assert_eq!(filtered.len(), expected.len());
-        for index in expected {
-            let found = filtered.iter().any(|o| o.data == orders[*index].data);
-            assert!(found, "{}", index);
-        }
     }
 
     #[test]
