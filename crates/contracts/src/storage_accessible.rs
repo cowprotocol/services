@@ -54,6 +54,5 @@ where
 {
     method.tx.data = call(method.tx.to.unwrap(), code, method.tx.data.take().unwrap()).data;
     method.tx.to = None;
-    method.tx.gas = Some(12_000_000.into());
     method.call().await
 }

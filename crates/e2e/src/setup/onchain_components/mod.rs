@@ -118,7 +118,9 @@ struct AccountGenerator {
 
 impl Default for AccountGenerator {
     fn default() -> Self {
-        // Start from 42 to avoid conflicts with existing accounts
+        // Start from a high number to avoid conflicts with existing accounts which may
+        // have clowny delegation contracts deployed (e.g. preventing to send ETH to
+        // that address)
         AccountGenerator { id: 100500 }
     }
 }
