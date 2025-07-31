@@ -5,6 +5,7 @@ use {
         path::PathBuf,
         str::FromStr,
         sync::Arc,
+        time::Duration,
     },
     tokio::signal::unix::{SignalKind, signal},
 };
@@ -24,6 +25,15 @@ impl JemallocMemoryProfiler {
             tracing::info!("MEM_DUMP_PATH is not set, using default /tmp/dump");
             "/tmp/dump".to_string()
         });
+        let profiling_duration = std::env::var("PROFILING_DURATION")
+            .ok()
+            .and_then(|duration_str| humantime::parse_duration(&duration_str).ok())
+            .unwrap_or_else(|| {
+                tracing::info!(
+                    "PROFILING_DURATION is not set or invalid, using default 60 seconds"
+                );
+                Duration::from_secs(60)
+            });
         let Some(dump_dir_path) = PathBuf::from_str(&dump_dir_path_str).ok() else {
             tracing::warn!(
                 "Invalid MEM_DUMP_PATH: {dump_dir_path_str}, memory profiler is disabled"
@@ -40,6 +50,7 @@ impl JemallocMemoryProfiler {
             inner: Arc::new(Inner {
                 active: tokio::sync::Mutex::new(active),
                 dump_dir_path,
+                profiling_duration,
             }),
         })
     }
@@ -64,6 +75,9 @@ impl JemallocMemoryProfiler {
                     tracing::warn!("failed to enable jemalloc profiler");
                     continue;
                 }
+
+                // Sleep to collect some data
+                tokio::time::sleep(self.inner.profiling_duration).await;
 
                 // Perform dump
                 self.dump().await;
@@ -123,6 +137,7 @@ impl JemallocMemoryProfiler {
 struct Inner {
     active: tokio::sync::Mutex<bool>,
     dump_dir_path: PathBuf,
+    profiling_duration: Duration,
 }
 
 const PROF_ACTIVE: &[u8] = b"prof.active\0";
