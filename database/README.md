@@ -18,7 +18,7 @@ Column                | Type        | Nullable | Details
 ----------------------|-------      |----------|-------
  contract\_app\_data  | bytea       | not null | 32 bytes. Referenced by `orders.app_data`.
  full\_app\_data      | bytea       | not null | Is utf-8 but not stored as string because the raw bytes are important for hashing.
- creation\_timestamp  | timestamptz | NOW()    | when the entry was created
+ creation\_timestamp  | timestamptz | nullable | when the entry was created or when column was added (DEFAULT NOW())
 
 Indexes:
 - "app\_data\_pkey" PRIMARY KEY, btree (`contract_app_data`)
@@ -242,7 +242,7 @@ Quotes that an order was created with. These quotes get stored persistently and 
  solver              | bytea       | not null | public address of the solver that provided this quote
  verified            | boolean     | not null | information if quote was verified
  metadata            | json        | not null | additional data associated with the quote in json format
- creation\_timestamp | timestamptz | NOW()    | when the entry was created
+ creation\_timestamp | timestamptz | nullable | when the entry was created (DEFAULT NOW())
 
 Indexes:
 - PRIMARY KEY: btree(`order_uid`)
