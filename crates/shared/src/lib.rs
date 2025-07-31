@@ -2,6 +2,7 @@
 pub mod macros;
 
 pub mod account_balances;
+pub mod alloc;
 pub mod arguments;
 pub mod bad_token;
 pub mod baseline_solver;
