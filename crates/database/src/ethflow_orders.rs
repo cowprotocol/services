@@ -140,7 +140,7 @@ AND t.order_uid is null
 AND eo.valid_to < $1
 AND o.sell_amount = oq.sell_amount
 AND (1.0 - o.buy_amount / GREATEST(oq.buy_amount,1)) >= $3
-AND eo.valid_to - extract(epoch from creation_timestamp)::int > $2
+AND eo.valid_to - extract(epoch from o.creation_timestamp)::int > $2
     "#;
     sqlx::query_as(QUERY)
         .bind(since_valid_to)
