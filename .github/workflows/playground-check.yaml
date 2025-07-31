@@ -13,7 +13,7 @@ jobs:
       FORK_URL_MAINNET: ${{ secrets.FORK_URL_MAINNET }}
     steps:
       - name: Free Disk Space (Ubuntu)
-        uses: jlumbroso/free-disk-space@main
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
         with:
           tool-cache: false
           android: true
@@ -24,13 +24,15 @@ jobs:
           swap-storage: false
 
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
 
       - name: Install dependency
         run: sudo apt-get -qq update && sudo apt-get -y -q install curl jq
 
       - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@v1
+        uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
 
       - name: Setup environment
         run: |
@@ -39,22 +41,19 @@ jobs:
           cat playground/.env
 
       - name: Start docker containers
-        id: containers
+        working-directory: playground
         run: |
-          cd playground
           # firstly start explorer container to workaround yarn cache problem 
           docker compose -f docker-compose.fork.yml up -d explorer
           docker compose -f docker-compose.fork.yml up -d
 
       - name: Execute validation script
-        id: test_script
-        run: |
-          cd playground
-          ./test_playground.sh
+        working-directory: playground
+        run: ./test_playground.sh
 
       - name: Collect docker logs on failure
         if: failure()
-        uses: jwalton/gh-docker-logs@v2
+        uses: jwalton/gh-docker-logs@2741064ab9d7af54b0b1ffb6076cf64c16f0220e # v2.2.2
         with:
           dest: './logs'
 
@@ -69,7 +68,7 @@ jobs:
       - name: Upload logs to GitHub
         if: failure()
         id: artifact-upload-step
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: logs.tgz
           path: ./logs.tgz
@@ -77,7 +76,7 @@ jobs:
       - name: Slack notification on failure
         if: failure()
         id: slack
-        uses: slackapi/slack-github-action@v1.27.0
+        uses: slackapi/slack-github-action@91efab103c0de0a537f72a35f6b8cda0ee76bf0a # v2.1.1
         with:
           payload: |
             {
