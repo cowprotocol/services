@@ -104,10 +104,12 @@ impl JemallocMemoryProfiler {
         let filename = format!("jemalloc_dump_{timestamp}.heap");
         let full_path = self.inner.dump_dir_path.join(filename);
         {
-            let mut bytes = CString::new(full_path.as_os_str().as_bytes())
-                .unwrap()
-                .into_bytes_with_nul();
+            let Some(bytes) = CString::new(full_path.as_os_str().as_bytes()).ok() else {
+                tracing::error!(?full_path, "failed to create CString from path");
+                return;
+            };
 
+            let mut bytes = bytes.into_bytes_with_nul();
             let ptr = bytes.as_mut_ptr().cast::<c_char>();
             if let Err(err) = unsafe { tikv_jemalloc_ctl::raw::write(PROF_DUMP, ptr) } {
                 tracing::error!(?err, "failed to dump jemalloc profiling data");
