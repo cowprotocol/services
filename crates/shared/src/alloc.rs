@@ -100,9 +100,11 @@ impl JemallocMemoryProfiler {
             tracing::error!("memory profiler is not active, cannot dump");
         }
 
-        let path = self.inner.dump_dir_path.clone();
+        let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S").to_string();
+        let filename = format!("jemalloc_dump_{timestamp}.heap");
+        let full_path = self.inner.dump_dir_path.join(filename);
         {
-            let mut bytes = CString::new(path.as_os_str().as_bytes())
+            let mut bytes = CString::new(full_path.as_os_str().as_bytes())
                 .unwrap()
                 .into_bytes_with_nul();
 
@@ -112,7 +114,7 @@ impl JemallocMemoryProfiler {
             }
         }
 
-        tracing::info!(?path, "saved the jemalloc profiling dump");
+        tracing::info!(?full_path, "saved the jemalloc profiling dump");
     }
 }
 
