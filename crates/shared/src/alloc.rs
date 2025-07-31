@@ -16,8 +16,8 @@ pub struct JemallocMemoryProfiler {
 
 impl JemallocMemoryProfiler {
     pub fn new() -> Option<Self> {
-        if std::env::var("MALLOC_CONF").is_err() {
-            tracing::warn!("MALLOC_CONF is not set, memory profiler is disabled");
+        if std::env::var("_RJEM_MALLOC_CONF").is_err() {
+            tracing::warn!("_RJEM_MALLOC_CONF is not set, memory profiler is disabled");
             return None;
         }
         let dump_dir_path_str = std::env::var("MEM_DUMP_PATH").ok().unwrap_or_else(|| {
