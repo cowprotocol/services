@@ -14,10 +14,11 @@ Associates the 32 bytes contract app data with the corresponding full app data.
 
 See [here](https://github.com/cowprotocol/services/issues/1465) for more details. In this table the contract app data is either the old unixfs based scheme, or the new keccak scheme. The new scheme can be validated by keccak-256 hashing the full app data, which should produce the contract app data. The old scheme cannot be validated.
 
-Column               | Type  | Nullable | Details
----------------------|-------|----------|-------
- contract\_app\_data | bytea | not null | 32 bytes. Referenced by `orders.app_data`.
- full\_app\_data     | bytea | not null | Is utf-8 but not stored as string because the raw bytes are important for hashing.
+Column                | Type        | Nullable | Details
+----------------------|-------      |----------|-------
+ contract\_app\_data  | bytea       | not null | 32 bytes. Referenced by `orders.app_data`.
+ full\_app\_data      | bytea       | not null | Is utf-8 but not stored as string because the raw bytes are important for hashing.
+ creation\_timestamp  | timestamptz | NOW()    | when the entry was created
 
 Indexes:
 - "app\_data\_pkey" PRIMARY KEY, btree (`contract_app_data`)
@@ -230,17 +231,18 @@ Indexes:
 
 Quotes that an order was created with. These quotes get stored persistently and can be used to evaluate how accurate the quoted fee predicted the execution cost that actually happened on-chain.
 
- Column             | Type    | Nullable | Details
---------------------|---------|----------|--------
- order\_uid         | bytea   | not null | order that this quote belongs to
- gas\_amount        | double  | not null | estimated gas used by the quote used to create this order with
- gas\_price         | double  | not null | gas price at the time of order creation
- sell\_token\_price | double  | not null | ether-denominated price of sell\_token at the time of quoting. The ether value of `x` sell\_tokens is `x * sell_token_price`.
- sell\_amount       | numeric | not null | sell\_amount of the quote used to create the order with
- buy\_amount        | numeric | not null | buy\_amount of the quote used to create the order with
- solver             | bytea   | not null | public address of the solver that provided this quote
- verified           | boolean | not null | information if quote was verified
- metadata           | json    | not null | additional data associated with the quote in json format
+ Column              | Type        | Nullable | Details
+---------------------|-------------|----------|--------
+ order\_uid          | bytea       | not null | order that this quote belongs to
+ gas\_amount         | double      | not null | estimated gas used by the quote used to create this order with
+ gas\_price          | double      | not null | gas price at the time of order creation
+ sell\_token\_price  | double      | not null | ether-denominated price of sell\_token at the time of quoting. The ether value of `x` sell\_tokens is `x * sell_token_price`.
+ sell\_amount        | numeric     | not null | sell\_amount of the quote used to create the order with
+ buy\_amount         | numeric     | not null | buy\_amount of the quote used to create the order with
+ solver              | bytea       | not null | public address of the solver that provided this quote
+ verified            | boolean     | not null | information if quote was verified
+ metadata            | json        | not null | additional data associated with the quote in json format
+ creation\_timestamp | timestamptz | NOW()    | when the entry was created
 
 Indexes:
 - PRIMARY KEY: btree(`order_uid`)
