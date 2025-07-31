@@ -1,5 +1,5 @@
 - markdown: |
-    Reminder: Please update the DB Readme and comment whether migrations are reversible (include rollback scripts if applicable).
+    Reminder: Please update the [DB Readme](https://github.com/cowprotocol/services/blob/644ffb373cc9f52b3a0399fbae2a6d86b0268668/database/README.md).
     If creating new tables, update the [tables list](https://github.com/cowprotocol/services/blob/main/crates/database/src/lib.rs#L51-L87).
     When adding a new index, consider using `CREATE INDEX CONCURRENTLY` for tables involved in the critical execution path.
   pathFilter:
