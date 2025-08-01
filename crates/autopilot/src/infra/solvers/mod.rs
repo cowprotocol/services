@@ -7,6 +7,7 @@ use {
     reqwest::{Client, StatusCode},
     std::{sync::Arc, time::Duration},
     thiserror::Error,
+    tracing::instrument,
     url::Url,
 };
 
@@ -36,6 +37,7 @@ pub enum Error {
 }
 
 impl Driver {
+    #[instrument(skip_all)]
     pub async fn try_new(
         url: Url,
         name: String,

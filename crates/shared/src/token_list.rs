@@ -47,6 +47,7 @@ pub struct AutoUpdatingTokenList {
 }
 
 impl AutoUpdatingTokenList {
+    #[instrument(skip_all)]
     pub async fn from_configuration(configuration: TokenListConfiguration) -> Self {
         let tokens = Arc::new(RwLock::new(match configuration.get_external_list().await {
             Ok(tokens) => tokens,
