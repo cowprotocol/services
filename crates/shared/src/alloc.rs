@@ -95,6 +95,7 @@ impl JemallocMemoryProfiler {
 
 impl JemallocMemoryProfiler {
     async fn set_enabled(&self, enabled: bool) -> bool {
+        // @todo: support multiple threads to collect the dump in parallel
         let mut state = self.inner.active.lock().await;
         match unsafe { tikv_jemalloc_ctl::raw::update(PROF_ACTIVE, enabled) } {
             Ok(was_enabled) => {
