@@ -1,4 +1,5 @@
 use {
+    num::ToPrimitive,
     sqlx::{Executor, PgConnection, PgPool},
     std::{num::NonZeroUsize, time::Duration},
     tracing::Instrument,
@@ -27,10 +28,32 @@ pub struct Postgres {
 
 impl Postgres {
     pub async fn new(url: &str, insert_batch_size: NonZeroUsize) -> sqlx::Result<Self> {
+        let pool = PgPool::connect(url).await?;
+
+        Self::start_db_metrics_job(pool.clone());
+
         Ok(Self {
-            pool: PgPool::connect(url).await?,
+            pool,
             config: Config { insert_batch_size },
         })
+    }
+
+    fn start_db_metrics_job(pool: PgPool) {
+        tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(Duration::from_secs(5));
+            loop {
+                ticker.tick().await;
+
+                let Some(idle) = pool.num_idle().to_i64() else {
+                    tracing::error!("Failed to get number of idle connections from the pool");
+                    continue;
+                };
+                let active = i64::from(pool.size()) - idle;
+
+                Metrics::get().active_connections.set(active);
+                Metrics::get().idle_connections.set(idle);
+            }
+        });
     }
 
     pub async fn with_defaults() -> sqlx::Result<Self> {
@@ -118,6 +141,14 @@ struct Metrics {
     /// Timing of db queries.
     #[metric(name = "autopilot_database_queries", labels("type"))]
     database_queries: prometheus::HistogramVec,
+
+    /// Number of active connections in the database pool.
+    #[metric(name = "database_active_connections")]
+    active_connections: prometheus::IntGauge,
+
+    /// Number of idle connections in the database pool.
+    #[metric(name = "database_idle_connections")]
+    idle_connections: prometheus::IntGauge,
 }
 
 impl Metrics {
