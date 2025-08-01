@@ -22,8 +22,8 @@ impl JemallocMemoryProfiler {
             return None;
         }
         let dump_dir_path_str = std::env::var("MEM_DUMP_PATH").ok().unwrap_or_else(|| {
-            tracing::info!("MEM_DUMP_PATH is not set, using default /tmp/dump");
-            "/tmp/dump".to_string()
+            tracing::info!("MEM_DUMP_PATH is not set, using system temp directory as default");
+            std::env::temp_dir().to_string_lossy().to_string()
         });
         let profiling_duration = std::env::var("PROFILING_DURATION")
             .ok()
@@ -110,6 +110,7 @@ impl JemallocMemoryProfiler {
 
     async fn dump(&self) {
         let state = self.inner.active.lock().await;
+        // Hold the lock until the dump is complete.
         if !*state {
             tracing::error!("memory profiler is not active, cannot dump");
             return;
