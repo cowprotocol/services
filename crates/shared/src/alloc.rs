@@ -112,6 +112,7 @@ impl JemallocMemoryProfiler {
         let state = self.inner.active.lock().await;
         if !*state {
             tracing::error!("memory profiler is not active, cannot dump");
+            return;
         }
 
         let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S").to_string();
