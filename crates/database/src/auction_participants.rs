@@ -2,6 +2,7 @@ use {
     crate::{Address, PgTransaction, auction::AuctionId},
     sqlx::{PgConnection, QueryBuilder},
     std::ops::DerefMut,
+    tracing::instrument,
 };
 
 /// Participant of a solver competition for a given auction.
@@ -11,6 +12,7 @@ pub struct Participant {
     pub participant: Address,
 }
 
+#[instrument(skip_all)]
 pub async fn insert(
     ex: &mut PgTransaction<'_>,
     participants: &[Participant],
@@ -33,6 +35,7 @@ pub async fn insert(
     Ok(())
 }
 
+#[instrument(skip_all)]
 pub async fn fetch(
     ex: &mut PgConnection,
     auction_id: AuctionId,

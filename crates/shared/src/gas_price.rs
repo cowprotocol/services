@@ -8,6 +8,7 @@ use {
     anyhow::Result,
     gas_estimation::{GasPrice1559, GasPriceEstimating},
     std::time::Duration,
+    tracing::instrument,
 };
 
 /// An instrumented gas price estimator that wraps an inner one.
@@ -33,6 +34,7 @@ impl<T> GasPriceEstimating for InstrumentedGasEstimator<T>
 where
     T: GasPriceEstimating,
 {
+    #[instrument(skip_all)]
     async fn estimate_with_limits(
         &self,
         gas_limit: f64,
@@ -43,6 +45,7 @@ where
         self.inner.estimate_with_limits(gas_limit, time_limit).await
     }
 
+    #[instrument(skip_all)]
     async fn estimate(&self) -> Result<GasPrice1559> {
         let estimate = self.inner.estimate().await?;
         self.metrics

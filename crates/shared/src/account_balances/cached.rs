@@ -9,7 +9,7 @@ use {
         collections::HashMap,
         sync::{Arc, Mutex},
     },
-    tracing::Instrument,
+    tracing::{Instrument, instrument},
 };
 
 type BlockNumber = u64;
@@ -157,6 +157,7 @@ impl Balances {
 
 #[async_trait::async_trait]
 impl BalanceFetching for Balances {
+    #[instrument(skip_all)]
     async fn get_balances(&self, queries: &[Query]) -> Vec<Result<U256>> {
         let CacheResponse {
             mut cached,

@@ -4,29 +4,19 @@
 
 use {
     super::{BalanceFetching, Query, TransferSimulationError},
-    alloy::sol_types::{SolType, sol_data},
-    anyhow::{Context, Result},
-    contracts::{
-        BalancerV2Vault,
-        GPv2Settlement,
-        erc20::Contract,
-        support::Balances as HelperContract,
-    },
-    ethcontract::{BlockId, BlockNumber, Bytes, H160, U256},
-    ethrpc::{
-        Web3,
-        extensions::{EthExt, StateOverride, StateOverrides},
-    },
+    anyhow::Result,
+    contracts::{BalancerV2Vault, erc20::Contract},
+    ethcontract::{Bytes, H160, U256},
+    ethrpc::Web3,
     futures::future,
     model::order::SellTokenSource,
-    web3::types::CallRequest,
+    tracing::instrument,
 };
 
 pub struct Balances {
-    helper_contract: HelperContract,
-    state_overrides: StateOverrides,
+    balances: contracts::support::Balances,
     web3: Web3,
-    settlement: GPv2Settlement,
+    settlement: H160,
     vault_relayer: H160,
     vault: H160,
 }
@@ -42,112 +32,48 @@ impl Balances {
         // work without additional code paths :tada:!
         let vault = vault.unwrap_or_default();
         let web3 = ethrpc::instrumented::instrument_with_label(web3, "balanceFetching".into());
-
-        // pick a random address for the helper contract to avoid accidental collisions
-        let helper_contract_address = H160::random();
-
-        // prepare state overrides that put the contract code of the helper contract at
-        // chosen address
-        let helper_contract_bytecode = HelperContract::raw_contract()
-            .deployed_bytecode
-            .to_bytes()
-            .unwrap();
-        let state_overrides: StateOverrides = [(
-            helper_contract_address,
-            StateOverride {
-                code: Some(helper_contract_bytecode),
-                ..Default::default()
-            },
-        )]
-        .into_iter()
-        .collect();
+        let balances = contracts::support::Balances::at(&web3, settlement);
 
         Self {
-            helper_contract: HelperContract::at(&web3, helper_contract_address),
-            settlement: GPv2Settlement::at(&web3, settlement),
             web3,
+            balances,
+            settlement,
             vault_relayer,
             vault,
-            state_overrides,
         }
     }
 
-    // We simulate the balances from the Settlement contract's context. This
-    // allows us to check:
-    // 1. How the pre-interactions would behave as part of the settlement
-    // 2. Simulate the actual VaultRelayer transfers that would happen as part of a
-    //    settlement
-    //
-    // This allows us to end up with very accurate balance simulations.
+    #[instrument(skip_all)]
     async fn simulate(&self, query: &Query, amount: Option<U256>) -> Result<Simulation> {
-        // prepare the call that does the balance computation
-        let balances_calldata = self
-            .helper_contract
-            .balance(
-                (self.settlement.address(), self.vault_relayer, self.vault),
-                query.owner,
-                query.token,
-                amount.unwrap_or_default(),
-                Bytes(query.source.as_bytes()),
-                query
-                    .interactions
-                    .iter()
-                    .map(|i| (i.target, i.value, Bytes(i.call_data.clone())))
-                    .collect(),
-            )
-            .tx
-            .data
-            .context("no calldata for balance computation call")?;
-
-        // execute that call via the storage accessible interface to execute
-        // it in the context of the settlement contract
-        let storage_accessible_calldata = self
-            .settlement
-            .simulate_delegatecall(
-                self.helper_contract.address(),
-                ethcontract::Bytes(balances_calldata.0),
-            )
-            .tx
-            .data
-            .context("no calldata for storage accessible call")?;
-
-        // send the RPC call with state overrides that put the helper
-        // contract at the expected address
-        let wrapped_response = self
-            .web3
-            .eth()
-            .call_with_state_overrides(
-                CallRequest {
-                    to: Some(self.settlement.address()),
-                    data: Some(storage_accessible_calldata),
-                    ..Default::default()
-                },
-                BlockId::Number(BlockNumber::Latest),
-                self.state_overrides.clone(),
-            )
-            .await
-            .context("RPC call failed")?
-            .0;
-
-        // simulateDelegatecall does not return the raw bytes of the internal function
-        // call but wraps them in another byte array
-        let actual_response_bytes = sol_data::Bytes::abi_decode(&wrapped_response)
-            .context("failed to decode byte array")?;
-
-        // decode the actual response of the simulated call
+        // We simulate the balances from the Settlement contract's context. This
+        // allows us to check:
+        // 1. How the pre-interactions would behave as part of the settlement
+        // 2. Simulate the actual VaultRelayer transfers that would happen as part of a
+        //    settlement
+        //
+        // This allows us to end up with very accurate balance simulations.
         let (token_balance, allowance, effective_balance, can_transfer) =
-            <(
-                sol_data::Uint<256>,
-                sol_data::Uint<256>,
-                sol_data::Uint<256>,
-                sol_data::Bool,
-            )>::abi_decode(&actual_response_bytes)
-            .context("failed to decode balance response")?;
+            contracts::storage_accessible::simulate(
+                contracts::bytecode!(contracts::support::Balances),
+                self.balances.methods().balance(
+                    (self.settlement, self.vault_relayer, self.vault),
+                    query.owner,
+                    query.token,
+                    amount.unwrap_or_default(),
+                    Bytes(query.source.as_bytes()),
+                    query
+                        .interactions
+                        .iter()
+                        .map(|i| (i.target, i.value, Bytes(i.call_data.clone())))
+                        .collect(),
+                ),
+            )
+            .await?;
 
         let simulation = Simulation {
-            token_balance: U256::from_little_endian(&token_balance.as_le_bytes()),
-            allowance: U256::from_little_endian(&allowance.as_le_bytes()),
-            effective_balance: U256::from_little_endian(&effective_balance.as_le_bytes()),
+            token_balance,
+            allowance,
+            effective_balance,
             can_transfer,
         };
 
@@ -218,7 +144,9 @@ struct Simulation {
 
 #[async_trait::async_trait]
 impl BalanceFetching for Balances {
+    #[instrument(skip_all)]
     async fn get_balances(&self, queries: &[Query]) -> Vec<Result<U256>> {
+        // TODO(nlordell): Use `Multicall` here to use fewer node round-trips
         let futures = queries
             .iter()
             .map(|query| async {

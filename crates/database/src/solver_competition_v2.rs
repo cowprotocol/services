@@ -3,6 +3,7 @@
 //! dedicated for that.
 //! See `solver_competition.rs` for the legacy version of this which
 //! simply stored JSON blobs in the DB.
+
 use {
     crate::{
         Address,
@@ -15,6 +16,7 @@ use {
     bigdecimal::BigDecimal,
     sqlx::{PgConnection, QueryBuilder},
     std::ops::DerefMut,
+    tracing::instrument,
 };
 
 #[derive(sqlx::FromRow)]
@@ -68,6 +70,7 @@ pub struct SolverCompetition {
     pub reference_scores: Vec<ReferenceScore>,
 }
 
+#[instrument(skip_all)]
 pub async fn load_by_tx_hash(
     mut ex: &mut PgConnection,
     tx_hash: TransactionHash,
@@ -90,6 +93,7 @@ pub async fn load_by_tx_hash(
     load_by_id(ex.deref_mut(), auction_id).await
 }
 
+#[instrument(skip_all)]
 pub async fn load_latest(
     mut ex: &mut PgConnection,
 ) -> Result<Option<SolverCompetition>, sqlx::Error> {
@@ -108,6 +112,7 @@ pub async fn load_latest(
     load_by_id(ex.deref_mut(), auction_id).await
 }
 
+#[instrument(skip_all)]
 pub async fn load_by_id(
     mut ex: &mut PgConnection,
     id: AuctionId,
@@ -201,6 +206,7 @@ pub async fn load_by_id(
 /// 5. Flags solvers who failed to settle in all of these auctions.
 /// 6. Returns a list of solvers that have consistently failed to settle
 ///    solutions.
+#[instrument(skip_all)]
 pub async fn find_non_settling_solvers(
     ex: &mut PgConnection,
     last_auctions_count: u32,
@@ -252,6 +258,7 @@ FROM consistent_solvers;
         .await
 }
 
+#[instrument(skip_all)]
 pub async fn find_low_settling_solvers(
     ex: &mut PgConnection,
     last_auctions_count: u32,
@@ -325,6 +332,7 @@ pub struct Order {
     pub side: OrderKind,
 }
 
+#[instrument(skip_all)]
 pub async fn save(
     ex: &mut PgTransaction<'_>,
     auction_id: AuctionId,
@@ -341,6 +349,7 @@ pub async fn save(
     Ok(())
 }
 
+#[instrument(skip_all)]
 async fn save_solutions(
     ex: &mut PgTransaction<'_>,
     auction_id: AuctionId,
@@ -368,6 +377,7 @@ async fn save_solutions(
     Ok(())
 }
 
+#[instrument(skip_all)]
 async fn save_trade_executions(
     ex: &mut PgTransaction<'_>,
     auction_id: AuctionId,
@@ -399,6 +409,7 @@ async fn save_trade_executions(
     Ok(())
 }
 
+#[instrument(skip_all)]
 async fn save_jit_orders(
     ex: &mut PgTransaction<'_>,
     auction_id: AuctionId,
@@ -471,6 +482,7 @@ const BASE_SOLUTIONS_QUERY: &str = r#"
         ON pse.order_uid = o.uid
 "#;
 
+#[instrument(skip_all)]
 pub async fn fetch(
     ex: &mut PgConnection,
     auction_id: AuctionId,
@@ -481,6 +493,7 @@ pub async fn fetch(
     map_rows_to_solutions(query.fetch_all(ex).await?)
 }
 
+#[instrument(skip_all)]
 pub async fn fetch_solver_winning_solutions(
     ex: &mut PgConnection,
     auction_id: AuctionId,
@@ -496,6 +509,7 @@ pub async fn fetch_solver_winning_solutions(
     map_rows_to_solutions(query.fetch_all(ex).await?)
 }
 
+#[instrument(skip_all)]
 fn map_rows_to_solutions(rows: Vec<SolutionRow>) -> Result<Vec<Solution>, sqlx::Error> {
     let mut solutions_map = std::collections::HashMap::new();
 

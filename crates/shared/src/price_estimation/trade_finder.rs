@@ -16,6 +16,7 @@ use {
     futures::future::FutureExt,
     rate_limit::RateLimiter,
     std::sync::Arc,
+    tracing::instrument,
 };
 
 /// A `TradeFinding`-based price estimator with request sharing and rate
@@ -62,6 +63,7 @@ impl TradeEstimator {
 }
 
 impl Inner {
+    #[instrument(skip_all)]
     async fn estimate(
         self: Arc<Self>,
         query: Arc<Query>,
@@ -93,6 +95,7 @@ impl Inner {
 }
 
 impl PriceEstimating for TradeEstimator {
+    #[instrument(skip_all)]
     fn estimate(&self, query: Arc<Query>) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
         self.estimate(query).boxed()
     }

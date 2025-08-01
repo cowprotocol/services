@@ -2,8 +2,10 @@ use {
     crate::{Address, auction::AuctionId},
     chrono::{DateTime, Utc},
     sqlx::PgConnection,
+    tracing::instrument,
 };
 
+#[instrument(skip_all)]
 pub async fn insert(
     ex: &mut PgConnection,
     auction_id: AuctionId,
@@ -31,6 +33,7 @@ VALUES ($1, $2, $3, $4, $5, $6)
     Ok(())
 }
 
+#[instrument(skip_all)]
 pub async fn update(
     ex: &mut PgConnection,
     auction_id: AuctionId,

@@ -18,6 +18,7 @@ use {
     },
     std::sync::Arc,
     thiserror::Error,
+    tracing::instrument,
 };
 
 /// A high-level interface for handling API quote requests.
@@ -49,6 +50,7 @@ impl QuoteHandler {
 }
 
 impl QuoteHandler {
+    #[instrument(skip_all, fields(buy_token = ?request.buy_token, sell_token = ?request.sell_token, price_quality = ?request.price_quality))]
     pub async fn calculate_quote(
         &self,
         request: &OrderQuoteRequest,

@@ -17,7 +17,7 @@ use {
         time::{Duration, Instant},
     },
     tokio::time,
-    tracing::Instrument,
+    tracing::{Instrument, instrument},
 };
 
 #[derive(prometheus_metric_storage::MetricStorage)]
@@ -433,6 +433,7 @@ impl CachingNativePriceEstimator {
 }
 
 impl NativePriceEstimating for CachingNativePriceEstimator {
+    #[instrument(skip_all)]
     fn estimate_native_price(
         &self,
         token: H160,
