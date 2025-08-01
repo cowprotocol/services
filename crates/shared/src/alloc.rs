@@ -110,12 +110,12 @@ impl JemallocMemoryProfiler {
     // }
 
     async fn dump(&self) {
-        let state = self.inner.active.lock().await;
+        // let state = self.inner.active.lock().await;
         // Hold the lock until the dump is complete.
-        if !*state {
-            tracing::error!("memory profiler is not active, cannot dump");
-            return;
-        }
+        // if !*state {
+        //     tracing::error!("memory profiler is not active, cannot dump");
+        //     return;
+        // }
 
         let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S").to_string();
         let filename = format!("jemalloc_dump_{timestamp}.heap");
