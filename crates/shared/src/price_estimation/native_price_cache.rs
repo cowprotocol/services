@@ -296,7 +296,7 @@ impl UpdateTask {
 }
 
 impl CachingNativePriceEstimator {
-    pub async fn initialize_cache(&self, prices: HashMap<H160, BigDecimal>) {
+    pub fn initialize_cache(&self, prices: HashMap<H160, BigDecimal>) {
         let mut rng = rand::thread_rng();
         let now = std::time::Instant::now();
 
