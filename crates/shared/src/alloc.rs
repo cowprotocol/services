@@ -71,21 +71,21 @@ impl JemallocMemoryProfiler {
                 tracing::info!("SIGUSR2 received: triggering memory profiling dump");
 
                 // Enable profiler
-                if !self.set_enabled(true).await {
-                    tracing::warn!("failed to enable jemalloc profiler");
-                    continue;
-                }
+                // if !self.set_enabled(true).await {
+                //     tracing::warn!("failed to enable jemalloc profiler");
+                //     continue;
+                // }
 
                 // Sleep to collect some data
-                tokio::time::sleep(self.inner.profiling_duration).await;
+                // tokio::time::sleep(self.inner.profiling_duration).await;
 
                 // Perform dump
                 self.dump().await;
 
                 // Disable profiler
-                if !self.set_enabled(false).await {
-                    tracing::warn!("failed to disable jemalloc profiler");
-                }
+                // if !self.set_enabled(false).await {
+                //     tracing::warn!("failed to disable jemalloc profiler");
+                // }
 
                 tracing::info!("jemalloc memory profiler dump complete");
             }
@@ -94,20 +94,20 @@ impl JemallocMemoryProfiler {
 }
 
 impl JemallocMemoryProfiler {
-    async fn set_enabled(&self, enabled: bool) -> bool {
-        // @todo: support multiple threads to collect the dump in parallel
-        let mut state = self.inner.active.lock().await;
-        match unsafe { tikv_jemalloc_ctl::raw::update(PROF_ACTIVE, enabled) } {
-            Ok(was_enabled) => {
-                *state = enabled;
-                was_enabled != enabled
-            }
-            Err(err) => {
-                tracing::error!(?err, "failed to update memory profiler state");
-                false
-            }
-        }
-    }
+    // async fn set_enabled(&self, enabled: bool) -> bool {
+    //     // @todo: support multiple threads to collect the dump in parallel
+    //     let mut state = self.inner.active.lock().await;
+    //     match unsafe { tikv_jemalloc_ctl::raw::update(PROF_ACTIVE, enabled) } {
+    //         Ok(was_enabled) => {
+    //             *state = enabled;
+    //             was_enabled != enabled
+    //         }
+    //         Err(err) => {
+    //             tracing::error!(?err, "failed to update memory profiler state");
+    //             false
+    //         }
+    //     }
+    // }
 
     async fn dump(&self) {
         let state = self.inner.active.lock().await;
@@ -137,6 +137,7 @@ impl JemallocMemoryProfiler {
     }
 }
 
+#[allow(dead_code)]
 struct Inner {
     active: tokio::sync::Mutex<bool>,
     dump_dir_path: PathBuf,
