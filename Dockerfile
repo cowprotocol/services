@@ -2,25 +2,41 @@ FROM docker.io/flyway/flyway:10.7.1 as migrations
 COPY database/ /flyway/
 CMD ["migrate"]
 
-FROM docker.io/rust:1-slim-bookworm as cargo-build
-WORKDIR /src/
-
-# Install dependencies
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update && \
-    apt-get install -y git libssl-dev pkg-config
+FROM docker.io/rust:1-slim-bookworm as rust-chef
 # Install Rust toolchain
 RUN rustup install stable && rustup default stable
+# Install dependencies
+RUN --mount=type=cache,id=apt,target=/var/cache/apt,sharing=locked apt-get update && \
+    apt-get install -y git libssl-dev pkg-config
+RUN cargo install --locked cargo-chef
+RUN apt-get purge -y --auto-remove && rm -rf /var/lib/apt/lists/*
+
+FROM rust-chef AS planner
+WORKDIR /src/
+COPY . .
+RUN CARGO_PROFILE_RELEASE_DEBUG=0 cargo chef prepare --recipe-path recipe.json
+
+FROM rust-chef as built-deps
+WORKDIR /src/
+# Compile deps
+COPY --from=planner /src/recipe.json recipe.json
+RUN CARGO_PROFILE_RELEASE_DEBUG=0 cargo chef cook --release --recipe-path recipe.json
+
+
+FROM built-deps as cargo-build
+WORKDIR /src/
 
 # Copy and Build Code
 COPY . .
-RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/src/target \
-    CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release && \
+RUN CARGO_PROFILE_RELEASE_DEBUG=0 cargo build --release --workspace --exclude e2e && \
     cp target/release/alerter / && \
     cp target/release/autopilot / && \
     cp target/release/driver / && \
     cp target/release/orderbook / && \
     cp target/release/refunder / && \
-    cp target/release/solvers /
+    cp target/release/solvers / && \
+    cargo clean # keep the layer small as it gets cached
+
 
 # Create an intermediate image to extract the binaries
 FROM docker.io/debian:bookworm-slim as intermediate
