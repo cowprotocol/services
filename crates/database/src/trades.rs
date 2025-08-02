@@ -3,7 +3,7 @@ use {
     bigdecimal::BigDecimal,
     futures::stream::BoxStream,
     sqlx::PgConnection,
-    tracing::instrument,
+    tracing::{Instrument, info_span, instrument},
 };
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, sqlx::FromRow)]
@@ -21,12 +21,11 @@ pub struct TradesQueryRow {
     pub auction_id: Option<AuctionId>,
 }
 
-#[instrument(skip_all)]
 pub fn trades<'a>(
     ex: &'a mut PgConnection,
     owner_filter: Option<&'a Address>,
     order_uid_filter: Option<&'a OrderUid>,
-) -> BoxStream<'a, Result<TradesQueryRow, sqlx::Error>> {
+) -> instrument::Instrumented<BoxStream<'a, Result<TradesQueryRow, sqlx::Error>>> {
     const COMMON_QUERY: &str = r#"
 SELECT
     t.block_number,
@@ -72,6 +71,7 @@ LEFT OUTER JOIN LATERAL (
         .bind(owner_filter)
         .bind(order_uid_filter)
         .fetch(ex)
+        .instrument(info_span!("trades"))
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, sqlx::FromRow)]
@@ -214,6 +214,7 @@ mod tests {
         expected: &[TradesQueryRow],
     ) {
         let mut filtered = trades(db, owner_filter, order_uid_filter)
+            .into_inner()
             .try_collect::<Vec<_>>()
             .await
             .unwrap();
@@ -287,6 +288,7 @@ mod tests {
 
         let now = std::time::Instant::now();
         trades(&mut db, Some(&ByteArray([2u8; 20])), None)
+            .into_inner()
             .try_collect::<Vec<_>>()
             .await
             .unwrap();
