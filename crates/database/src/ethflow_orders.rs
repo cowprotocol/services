@@ -1,6 +1,7 @@
 use {
     crate::{OrderUid, PgTransaction, TransactionHash},
     sqlx::{Executor, PgConnection},
+    tracing::instrument,
 };
 
 #[derive(Clone, Debug, Default, sqlx::FromRow, Eq, PartialEq)]
@@ -9,6 +10,7 @@ pub struct EthOrderPlacement {
     pub valid_to: i64,
 }
 
+#[instrument(skip_all)]
 pub async fn insert_or_overwrite_orders(
     ex: &mut PgTransaction<'_>,
     events: &[EthOrderPlacement],
@@ -19,6 +21,7 @@ pub async fn insert_or_overwrite_orders(
     Ok(())
 }
 
+#[instrument(skip_all)]
 pub async fn insert_or_overwrite_ethflow_order(
     ex: &mut PgConnection,
     event: &EthOrderPlacement,
@@ -41,6 +44,7 @@ pub struct EthOrderData {
     pub refund_tx: Option<TransactionHash>,
 }
 
+#[instrument(skip_all)]
 pub async fn read_order(
     ex: &mut PgConnection,
     id: &OrderUid,
@@ -61,6 +65,7 @@ pub struct Refund {
 }
 
 /// Used to delete refunds in case of a reorg.
+#[instrument(skip_all)]
 pub async fn delete_refunds(
     ex: &mut PgTransaction<'_>,
     from_block: i64,
@@ -73,6 +78,7 @@ pub async fn delete_refunds(
     Ok(())
 }
 
+#[instrument(skip_all)]
 pub async fn insert_refund_tx_hashes(
     ex: &mut PgTransaction<'_>,
     refunds: &[Refund],
@@ -83,6 +89,7 @@ pub async fn insert_refund_tx_hashes(
     Ok(())
 }
 
+#[instrument(skip_all)]
 pub async fn insert_refund_tx_hash(
     ex: &mut PgTransaction<'_>,
     refund: &Refund,
@@ -102,6 +109,7 @@ pub async fn insert_refund_tx_hash(
     Ok(())
 }
 
+#[instrument(skip_all)]
 pub async fn refundable_orders(
     ex: &mut PgConnection,
     since_valid_to: i64,

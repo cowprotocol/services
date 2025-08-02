@@ -21,6 +21,7 @@ use {
     futures::FutureExt,
     observe::tracing::tracing_headers,
     reqwest::{Client, header},
+    tracing::instrument,
     url::Url,
 };
 
@@ -197,6 +198,7 @@ impl From<dto::Interaction> for Interaction {
 
 #[async_trait::async_trait]
 impl TradeFinding for ExternalTradeFinder {
+    #[instrument(skip_all)]
     async fn get_quote(&self, query: &Query) -> Result<Quote, TradeError> {
         // The driver only has a single endpoint to compute trades so we can simply
         // reuse the same logic here.
@@ -224,6 +226,7 @@ impl TradeFinding for ExternalTradeFinder {
         })
     }
 
+    #[instrument(skip_all)]
     async fn get_trade(&self, query: &Query) -> Result<TradeKind, TradeError> {
         self.shared_query(query).await
     }

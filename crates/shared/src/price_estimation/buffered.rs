@@ -21,6 +21,7 @@ use {
         time::Duration,
     },
     tokio::{sync::broadcast, task::JoinHandle},
+    tracing::instrument,
 };
 
 /// Buffered configuration.
@@ -86,6 +87,7 @@ where
     Inner: NativePriceBatchFetching + NativePriceEstimating + 'static,
 {
     /// Request to get estimate prices in a batch
+    #[instrument(skip_all)]
     fn estimate_native_price(
         &self,
         token: H160,

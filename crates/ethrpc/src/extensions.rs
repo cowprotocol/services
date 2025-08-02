@@ -3,6 +3,7 @@
 use {
     serde::{Deserialize, Serialize},
     std::collections::HashMap,
+    tracing::instrument,
     web3::{
         self,
         Transport,
@@ -29,6 +30,7 @@ impl<T> EthExt<T> for web3::api::Eth<T>
 where
     T: Transport,
 {
+    #[instrument(skip_all)]
     fn call_with_state_overrides(
         &self,
         call: CallRequest,

@@ -3,11 +3,14 @@
 //! table.
 //! See `solver_competition_v2.rs` for the new version of this which
 //! uses individual and well defined tables for this.
+
 use {
     crate::{TransactionHash, auction::AuctionId},
     sqlx::{PgConnection, types::JsonValue},
+    tracing::instrument,
 };
 
+#[instrument(skip_all)]
 pub async fn save(
     ex: &mut PgConnection,
     id: AuctionId,
@@ -29,6 +32,7 @@ pub struct LoadCompetition {
     pub tx_hashes: Vec<TransactionHash>,
 }
 
+#[instrument(skip_all)]
 pub async fn load_by_id(
     ex: &mut PgConnection,
     id: AuctionId,
@@ -48,6 +52,7 @@ GROUP BY sc.id
     sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
 }
 
+#[instrument(skip_all)]
 pub async fn load_latest_competitions(
     ex: &mut PgConnection,
     latest_competitions_count: u32,
@@ -79,6 +84,7 @@ pub async fn load_latest_competition(
     Ok(latest)
 }
 
+#[instrument(skip_all)]
 pub async fn load_by_tx_hash(
     ex: &mut PgConnection,
     tx_hash: &TransactionHash,

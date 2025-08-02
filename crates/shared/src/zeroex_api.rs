@@ -25,6 +25,7 @@ use {
     std::{collections::HashSet, sync::Arc},
     thiserror::Error,
     tokio::sync::watch,
+    tracing::instrument,
 };
 
 const ORDERS_MAX_PAGE_SIZE: usize = 1_000;
@@ -331,6 +332,7 @@ pub enum ZeroExResponseError {
 
 #[async_trait::async_trait]
 impl ZeroExApi for DefaultZeroExApi {
+    #[instrument(skip_all)]
     async fn get_orders(
         &self,
         query: &OrdersQuery,

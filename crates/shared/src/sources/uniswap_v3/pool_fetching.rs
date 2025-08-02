@@ -26,6 +26,7 @@ use {
         ops::Neg,
         sync::{Arc, Mutex},
     },
+    tracing::instrument,
 };
 
 #[async_trait::async_trait]
@@ -332,6 +333,7 @@ impl UniswapV3PoolFetcher {
 
 #[async_trait::async_trait]
 impl PoolFetching for UniswapV3PoolFetcher {
+    #[instrument(skip_all)]
     async fn fetch(
         &self,
         token_pairs: &HashSet<TokenPair>,

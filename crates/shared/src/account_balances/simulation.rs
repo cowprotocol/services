@@ -10,6 +10,7 @@ use {
     ethrpc::Web3,
     futures::future,
     model::order::SellTokenSource,
+    tracing::instrument,
 };
 
 pub struct Balances {
@@ -42,6 +43,7 @@ impl Balances {
         }
     }
 
+    #[instrument(skip_all)]
     async fn simulate(&self, query: &Query, amount: Option<U256>) -> Result<Simulation> {
         // We simulate the balances from the Settlement contract's context. This
         // allows us to check:
@@ -142,6 +144,7 @@ struct Simulation {
 
 #[async_trait::async_trait]
 impl BalanceFetching for Balances {
+    #[instrument(skip_all)]
     async fn get_balances(&self, queries: &[Query]) -> Vec<Result<U256>> {
         // TODO(nlordell): Use `Multicall` here to use fewer node round-trips
         let futures = queries

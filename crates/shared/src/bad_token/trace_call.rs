@@ -12,6 +12,7 @@ use {
     model::interaction::InteractionData,
     primitive_types::{H160, U256},
     std::{cmp, sync::Arc},
+    tracing::instrument,
     web3::{
         error::TransportError,
         signing::keccak256,
@@ -33,6 +34,7 @@ pub struct TraceCallDetector {
 
 #[async_trait::async_trait]
 impl BadTokenDetecting for TraceCallDetector {
+    #[instrument(skip_all)]
     async fn detect(&self, token: H160) -> Result<TokenQuality> {
         let quality = self.detect_impl(token).await?;
         tracing::debug!(?token, ?quality, "determined token quality");

@@ -48,7 +48,7 @@ pub async fn run(
 async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAddr>>) {
     infra::observe::init(observe::Config::new(
         &args.log,
-        tracing::Level::ERROR.into(),
+        args.stderr_threshold,
         args.use_json_logs,
         tracing_config(&args.tracing, "driver".into()),
     ));
