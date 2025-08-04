@@ -1676,6 +1676,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn get_orders_with_quote() {
         let mut db = PgConnection::connect("postgresql://").await.unwrap();
         let mut db = db.begin().await.unwrap();
