@@ -86,10 +86,15 @@ impl Validator {
                 .collect(),
         );
         let calldata = validate_call.tx.data.clone();
-        let gas_cost = self.storage_accessible.simulate_delegatecall(
-            self.signatures.address(),
-            Bytes(validate_call.tx.data.unwrap_or_default().0),
-        );
+        let random_account =
+            ethcontract::Account::Local(self.web3.eth().accounts().await.unwrap()[0], None);
+        let gas_cost = self
+            .storage_accessible
+            .simulate_delegatecall(
+                self.signatures.address(),
+                Bytes(validate_call.tx.data.unwrap_or_default().0),
+            )
+            .from(random_account);
         let tx = gas_cost.tx;
         let result = tx.clone().estimate_gas().await.map_err(|err| {
             tracing::warn!(?err, ?tx, "newlog estimate gas failed");
