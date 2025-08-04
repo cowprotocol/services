@@ -106,42 +106,29 @@ impl Erc20 {
         interactions: &[eth::Interaction],
     ) -> Result<eth::TokenAmount, Error> {
         let balance_helper = self.ethereum.contracts().balance_helper();
-        let mut method = balance_helper.balance(
-            (
-                balance_helper.address(),
-                self.ethereum.contracts().vault_relayer().into(),
-                self.ethereum.contracts().vault().address(),
-            ),
-            trader.into(),
-            self.token.address(),
-            0.into(),
-            ethcontract::Bytes(source.hash().0),
-            interactions
-                .iter()
-                .map(|i| {
-                    (
-                        i.target.into(),
-                        i.value.into(),
-                        ethcontract::Bytes(i.call_data.0.clone()),
-                    )
-                })
-                .collect(),
-        );
-        // Create the access list for the balance simulation
-        let access_list_call = contracts::storage_accessible::call(
-            method.tx.to.unwrap(),
-            contracts::bytecode!(contracts::support::Balances),
-            method.tx.data.clone().unwrap(),
-        );
-        let access_list = self
-            .ethereum
-            .create_access_list(access_list_call)
-            .await
-            .ok();
-        method.tx.access_list = access_list.map(Into::into);
         let (_, _, effective_balance, can_transfer) = contracts::storage_accessible::simulate(
             contracts::bytecode!(contracts::support::Balances),
-            method,
+            balance_helper.balance(
+                (
+                    balance_helper.address(),
+                    self.ethereum.contracts().vault_relayer().into(),
+                    self.ethereum.contracts().vault().address(),
+                ),
+                trader.into(),
+                self.token.address(),
+                0.into(),
+                ethcontract::Bytes(source.hash().0),
+                interactions
+                    .iter()
+                    .map(|i| {
+                        (
+                            i.target.into(),
+                            i.value.into(),
+                            ethcontract::Bytes(i.call_data.0.clone()),
+                        )
+                    })
+                    .collect(),
+            ),
         )
         .await?;
 
