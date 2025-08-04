@@ -506,7 +506,7 @@ mod tests {
             Default::default(),
             HEALTHY_PRICE_ESTIMATION_TIME,
         );
-        estimator.initialize_cache(prices).await;
+        estimator.initialize_cache(prices);
 
         {
             // Check that `updated_at` timestamps are initialized with
