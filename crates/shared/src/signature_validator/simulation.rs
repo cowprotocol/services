@@ -7,7 +7,7 @@ use {
     super::{SignatureCheck, SignatureValidating, SignatureValidationError},
     anyhow::Result,
     contracts::{ERC1271SignatureValidator, errors::EthcontractErrorType},
-    ethcontract::Bytes,
+    ethcontract::{Account, Bytes, PrivateKey},
     ethrpc::Web3,
     futures::future,
     primitive_types::{H160, U256},
@@ -86,8 +86,7 @@ impl Validator {
                 .collect(),
         );
         let calldata = validate_call.tx.data.clone();
-        let random_account =
-            ethcontract::Account::Local(self.web3.eth().accounts().await.unwrap()[0], None);
+        let random_account = Self::random_account();
         let gas_cost = self
             .storage_accessible
             .simulate_delegatecall(
@@ -111,6 +110,20 @@ impl Validator {
 
         tracing::trace!(?check, ?result, "simulated signature");
         Ok(Simulation { gas_used: result? })
+    }
+
+    fn random_account() -> Account {
+        let mut buffer = [0; 32];
+        let mut start: usize = 100500;
+        loop {
+            buffer[24..].copy_from_slice(&start.to_be_bytes());
+            let Ok(pk) = PrivateKey::from_raw(buffer) else {
+                start += 1;
+                continue;
+            };
+
+            break Account::Offline(pk, None);
+        }
     }
 }
 
