@@ -1,7 +1,11 @@
 use {
     super::{Error, Ethereum},
     crate::domain::{competition::order, eth},
+    ethabi::{ParamType, Token},
+    ethcontract::{Account, PrivateKey},
     futures::TryFutureExt,
+    primitive_types::U256,
+    web3::ethabi,
 };
 
 /// An ERC-20 token.
@@ -106,36 +110,95 @@ impl Erc20 {
         interactions: &[eth::Interaction],
     ) -> Result<eth::TokenAmount, Error> {
         let balance_helper = self.ethereum.contracts().balance_helper();
-        let (_, _, effective_balance, can_transfer) = contracts::storage_accessible::simulate(
-            contracts::bytecode!(contracts::support::Balances),
-            balance_helper.balance(
-                (
-                    balance_helper.address(),
-                    self.ethereum.contracts().vault_relayer().into(),
-                    self.ethereum.contracts().vault().address(),
-                ),
-                trader.into(),
-                self.token.address(),
-                0.into(),
-                ethcontract::Bytes(source.hash().0),
-                interactions
-                    .iter()
-                    .map(|i| {
-                        (
-                            i.target.into(),
-                            i.value.into(),
-                            ethcontract::Bytes(i.call_data.0.clone()),
-                        )
-                    })
-                    .collect(),
+        let balance_call = balance_helper.balance(
+            (
+                balance_helper.address(),
+                self.ethereum.contracts().vault_relayer().into(),
+                self.ethereum.contracts().vault().address(),
             ),
+            trader.into(),
+            self.token.address(),
+            0.into(),
+            ethcontract::Bytes(source.hash().0),
+            interactions
+                .iter()
+                .map(|i| {
+                    (
+                        i.target.into(),
+                        i.value.into(),
+                        ethcontract::Bytes(i.call_data.0.clone()),
+                    )
+                })
+                .collect(),
+        );
+        let calldata = balance_call.tx.data.clone();
+        let random_account = Self::random_account();
+        let method = self
+            .ethereum
+            .contracts()
+            .storage_accessible()
+            .simulate_delegatecall(
+                balance_helper.address(),
+                ethcontract::Bytes(balance_call.tx.data.unwrap_or_default().0),
+            )
+            .from(random_account);
+        let tx = method.tx.clone();
+        let result = method.call().await;
+        if result.is_err() {
+            tracing::warn!(
+                ?result,
+                ?calldata,
+                ?tx,
+                "newlog simulating tradable balance failed with"
+            );
+        }
+        let result = result?.0;
+        let tokens = ethabi::decode(
+            &[
+                ParamType::Uint(256),
+                ParamType::Uint(256),
+                ParamType::Uint(256),
+                ParamType::Bool,
+            ],
+            &result,
         )
-        .await?;
+        .map_err(|err| {
+            tracing::warn!("newlog decode error={:?}", err);
+            Error::Web3(web3::error::Error::Decoder("decode error".to_string()))
+        })?;
+        let (effective_balance, can_transfer) = match tokens.as_slice() {
+            [
+                Token::Uint(_),
+                Token::Uint(_),
+                Token::Uint(effective_balance),
+                Token::Bool(can_transfer),
+            ] => (U256::from(effective_balance), *can_transfer),
+            _ => {
+                tracing::warn!(?tokens, "newlog unexpected decode result");
+                return Err(Error::Web3(web3::error::Error::Decoder(
+                    "unexpected decode result".to_string(),
+                )));
+            }
+        };
 
         if can_transfer {
             Ok(effective_balance.into())
         } else {
             Ok(eth::TokenAmount(0.into()))
+        }
+    }
+
+    fn random_account() -> Account {
+        let mut buffer = [0; 32];
+        let mut start: usize = 100500;
+        loop {
+            buffer[24..].copy_from_slice(&start.to_be_bytes());
+            let Ok(pk) = PrivateKey::from_raw(buffer) else {
+                start += 1;
+                continue;
+            };
+
+            break Account::Offline(pk, None);
         }
     }
 

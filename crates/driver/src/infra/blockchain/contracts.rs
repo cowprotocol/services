@@ -8,7 +8,8 @@ use {
     contracts::FlashLoanRouter,
     ethcontract::dyns::DynWeb3,
     ethrpc::block_stream::CurrentBlockWatcher,
-    std::collections::HashMap,
+    primitive_types::H160,
+    std::{collections::HashMap, str::FromStr},
     thiserror::Error,
 };
 
@@ -34,6 +35,7 @@ pub struct Contracts {
     /// specified.
     flashloan_default_lender: Option<eth::ContractAddress>,
     balance_helper: contracts::support::Balances,
+    storage_accessible: contracts::StorageAccessible,
 }
 
 #[derive(Debug, Clone)]
@@ -75,10 +77,13 @@ impl Contracts {
                 addresses.settlement,
             ),
         );
+        let settlement_address = settlement.address();
         let vault_relayer = settlement.methods().vault_relayer().call().await?.into();
         let vault =
             contracts::BalancerV2Vault::at(web3, settlement.methods().vault().call().await?);
-        let balance_helper = contracts::support::Balances::at(web3, settlement.address());
+        let bal_address = H160::from_str("0xef15666A3573a36748aE3A03A7471627ae114562")
+            .expect("newlog H160 from address");
+        let balance_helper = contracts::support::Balances::at(web3, bal_address);
 
         let weth = contracts::WETH9::at(
             web3,
@@ -150,6 +155,7 @@ impl Contracts {
             flashloan_router,
             flashloan_default_lender: addresses.flashloan_default_lender,
             balance_helper,
+            storage_accessible: contracts::StorageAccessible::at(web3, settlement_address),
         })
     }
 
@@ -198,6 +204,10 @@ impl Contracts {
 
     pub fn balance_helper(&self) -> &contracts::support::Balances {
         &self.balance_helper
+    }
+
+    pub fn storage_accessible(&self) -> &contracts::StorageAccessible {
+        &self.storage_accessible
     }
 }
 

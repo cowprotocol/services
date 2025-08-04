@@ -1567,7 +1567,10 @@ fn main() {
     generate_contract("Trader");
 
     // Support contracts used for various order simulations.
-    generate_contract("Balances");
+    // generate_contract("Balances");
+    generate_contract_with_config("Balances", |builder| {
+        builder.add_network_str(LENS, "0xef15666A3573a36748aE3A03A7471627ae114562")
+    });
     generate_contract_with_config("StorageAccessible", |builder| {
         builder.contract_mod_override("deployed_storage_accessible")
     });
