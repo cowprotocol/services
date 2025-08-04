@@ -429,6 +429,16 @@ impl AuctionProcessor {
 
                     async move {
                         let balance = fetch_balance.await;
+                        let pre_interactions_count = interactions.len();
+                        if balance.is_err() {
+                            tracing::warn!(
+                                ?trader,
+                                ?token,
+                                ?source,
+                                ?pre_interactions_count,
+                                "newlog failed to fetch tradable balance"
+                            );
+                        }
                         (
                             (trader, token, source),
                             balance.map(order::SellAmount::from).ok(),
