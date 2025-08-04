@@ -27,7 +27,7 @@ use {
     itertools::Itertools,
     shared::token_list::AutoUpdatingTokenList,
     std::{num::NonZeroUsize, sync::Arc, time::Duration},
-    tracing::Instrument,
+    tracing::{Instrument, instrument},
 };
 
 pub struct RunLoop {
@@ -91,6 +91,7 @@ impl RunLoop {
         }
     }
 
+    #[instrument(skip_all)]
     async fn next_auction(&mut self) -> Option<domain::Auction> {
         let auction = match self.orderbook.auction().await {
             Ok(auction) => auction,
@@ -119,6 +120,7 @@ impl RunLoop {
         Some(auction)
     }
 
+    #[instrument(skip_all, fields(auction_id = auction.id))]
     async fn single_run(&self, auction: &domain::Auction) {
         tracing::info!("solving");
         Metrics::get().auction.set(auction.id);
@@ -163,6 +165,7 @@ impl RunLoop {
     }
 
     /// Runs the solver competition, making all configured drivers participate.
+    #[instrument(skip_all)]
     async fn competition(&self, auction: &domain::Auction) -> Vec<Participant<Unranked>> {
         let request = solve::Request::new(auction, &self.trusted_tokens.all(), self.solve_deadline);
 
@@ -178,6 +181,7 @@ impl RunLoop {
     }
 
     /// Computes a driver's solutions in the shadow competition.
+    #[instrument(skip_all, fields(driver = driver.name))]
     async fn participate(
         &self,
         driver: Arc<infra::Driver>,
@@ -238,6 +242,7 @@ impl RunLoop {
             .collect()
     }
 
+    #[instrument(skip_all)]
     async fn fetch_solutions(
         &self,
         driver: &infra::Driver,
