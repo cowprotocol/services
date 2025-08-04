@@ -1,8 +1,8 @@
-FROM docker.io/flyway/flyway:10.7.1 as migrations
+FROM docker.io/flyway/flyway:10.7.1 AS migrations
 COPY database/ /flyway/
 CMD ["migrate"]
 
-FROM docker.io/rust:1-slim-bookworm as rust-chef
+FROM docker.io/rust:1-slim-bookworm AS rust-chef
 # Install Rust toolchain
 RUN rustup install stable && rustup default stable
 # Install dependencies
@@ -16,14 +16,14 @@ WORKDIR /src/
 COPY . .
 RUN CARGO_PROFILE_RELEASE_DEBUG=0 cargo chef prepare --recipe-path recipe.json
 
-FROM rust-chef as built-deps
+FROM rust-chef AS built-deps
 WORKDIR /src/
 # Compile deps
 COPY --from=planner /src/recipe.json recipe.json
 RUN CARGO_PROFILE_RELEASE_DEBUG=0 cargo chef cook --release --recipe-path recipe.json
 
 
-FROM built-deps as cargo-build
+FROM built-deps AS cargo-build
 WORKDIR /src/
 
 # Copy and Build Code
@@ -39,32 +39,32 @@ RUN CARGO_PROFILE_RELEASE_DEBUG=0 cargo build --release --workspace --exclude e2
 
 
 # Create an intermediate image to extract the binaries
-FROM docker.io/debian:bookworm-slim as intermediate
+FROM docker.io/debian:bookworm-slim AS intermediate
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update && \
     apt-get install -y ca-certificates tini gettext-base && \
     apt-get clean
 
-FROM intermediate as alerter
+FROM intermediate AS alerter
 COPY --from=cargo-build /alerter /usr/local/bin/alerter
 ENTRYPOINT [ "alerter" ]
 
-FROM intermediate as autopilot
+FROM intermediate AS autopilot
 COPY --from=cargo-build /autopilot /usr/local/bin/autopilot
 ENTRYPOINT [ "autopilot" ]
 
-FROM intermediate as driver
+FROM intermediate AS driver
 COPY --from=cargo-build /driver /usr/local/bin/driver
 ENTRYPOINT [ "driver" ]
 
-FROM intermediate as orderbook
+FROM intermediate AS orderbook
 COPY --from=cargo-build /orderbook /usr/local/bin/orderbook
 ENTRYPOINT [ "orderbook" ]
 
-FROM intermediate as refunder
+FROM intermediate AS refunder
 COPY --from=cargo-build /refunder /usr/local/bin/refunder
 ENTRYPOINT [ "refunder" ]
 
-FROM intermediate as solvers
+FROM intermediate AS solvers
 COPY --from=cargo-build /solvers /usr/local/bin/solvers
 ENTRYPOINT [ "solvers" ]
 
