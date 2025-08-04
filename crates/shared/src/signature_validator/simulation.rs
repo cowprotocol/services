@@ -6,20 +6,17 @@
 use {
     super::{SignatureCheck, SignatureValidating, SignatureValidationError},
     anyhow::Result,
-    contracts::{
-        ERC1271SignatureValidator,
-        errors::EthcontractErrorType,
-        storage_accessible::call,
-    },
+    contracts::{ERC1271SignatureValidator, errors::EthcontractErrorType},
     ethcontract::Bytes,
     ethrpc::Web3,
     futures::future,
     primitive_types::{H160, U256},
-    std::{str::FromStr, sync::LazyLock},
+    std::str::FromStr,
 };
 
 pub struct Validator {
     signatures: contracts::support::Signatures,
+    storage_accessible: contracts::StorageAccessible,
     settlement: H160,
     vault_relayer: H160,
     web3: Web3,
@@ -35,6 +32,7 @@ impl Validator {
             .expect("newlog H160 from address");
         Self {
             signatures: contracts::support::Signatures::at(&web3, sig_address),
+            storage_accessible: contracts::StorageAccessible::at(&web3, settlement),
             settlement,
             vault_relayer,
             web3: web3.clone(),
@@ -71,16 +69,12 @@ impl Validator {
         &self,
         check: &SignatureCheck,
     ) -> Result<Simulation, SignatureValidationError> {
-        // memoize byte code to not hex-decode it on every call
-        static BYTECODE: LazyLock<web3::types::Bytes> =
-            LazyLock::new(|| contracts::bytecode!(contracts::support::Signatures));
-
         // We simulate the signature verification from the Settlement contract's
         // context. This allows us to check:
         // 1. How the pre-interactions would behave as part of the settlement
         // 2. Simulate the actual `isValidSignature` calls that would happen as part of
         //    a settlement
-        let method = self.signatures.methods().validate(
+        let validate_call = self.signatures.methods().validate(
             (self.settlement, self.vault_relayer),
             check.signer,
             Bytes(check.hash),
@@ -91,14 +85,16 @@ impl Validator {
                 .map(|i| (i.target, i.value, Bytes(i.call_data.clone())))
                 .collect(),
         );
-        let tx = &method.tx;
-        let calldata = call(
-            method.tx.to.unwrap(),
-            BYTECODE.clone(),
-            method.tx.clone().data.take().unwrap(),
+        let calldata = validate_call.tx.data.clone();
+        let gas_cost = self.storage_accessible.simulate_delegatecall(
+            self.signatures.address(),
+            Bytes(validate_call.tx.data.unwrap_or_default().0),
         );
-        let result =
-            contracts::storage_accessible::simulate(BYTECODE.clone(), method.clone()).await;
+        let tx = gas_cost.tx;
+        let result = tx.clone().estimate_gas().await.map_err(|err| {
+            tracing::warn!(?err, ?tx, "newlog estimate gas failed");
+            SignatureValidationError::Other(err.into())
+        });
         if result.is_err() {
             tracing::info!(
                 ?result,

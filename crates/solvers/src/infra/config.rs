@@ -6,6 +6,7 @@ use {
     },
     chain::Chain,
     ethereum_types::H160,
+    reqwest::Url,
     serde::Deserialize,
     serde_with::serde_as,
     shared::price_estimation::gas::SETTLEMENT_OVERHEAD,
