@@ -9,6 +9,7 @@ RUN rustup install stable && rustup default stable
 RUN --mount=type=cache,id=apt,target=/var/cache/apt,sharing=locked apt-get update && \
     apt-get install -y git libssl-dev pkg-config
 RUN cargo install --locked cargo-chef
+# keep the layer small by removing apt caches/data
 RUN apt-get purge -y --auto-remove && rm -rf /var/lib/apt/lists/*
 
 FROM rust-chef AS planner
@@ -16,6 +17,7 @@ WORKDIR /src/
 COPY . .
 RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo chef prepare --recipe-path recipe.json
 
+# this layer with built dependencies will rarely change and gets cached
 FROM rust-chef AS built-deps
 WORKDIR /src/
 # Compile deps
