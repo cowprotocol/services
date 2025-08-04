@@ -209,7 +209,7 @@ pub fn tx(
             // likely the user).
             let take_out_call_data = flashloan_tracker
                 .take_out(
-                    flashloan_wrapper.helper_contract.address().into(),
+                    flashloan_wrapper.helper_contract.address(),
                     flashloan.borrower.into(),
                     flashloan.token.into(),
                     flashloan.amount.into(),
@@ -229,7 +229,7 @@ pub fn tx(
             // the user is expected to do the repayment via a post-hook
             let pay_back_call_data = flashloan_tracker
                 .pay_back(
-                    flashloan_wrapper.helper_contract.address().into(),
+                    flashloan_wrapper.helper_contract.address(),
                     flashloan.borrower.into(),
                     flashloan.token.into(),
                 )
