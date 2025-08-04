@@ -14,13 +14,13 @@ RUN apt-get purge -y --auto-remove && rm -rf /var/lib/apt/lists/*
 FROM rust-chef AS planner
 WORKDIR /src/
 COPY . .
-RUN CARGO_PROFILE_RELEASE_DEBUG=0 cargo chef prepare --recipe-path recipe.json
+RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo chef prepare --recipe-path recipe.json
 
 FROM rust-chef AS built-deps
 WORKDIR /src/
 # Compile deps
 COPY --from=planner /src/recipe.json recipe.json
-RUN CARGO_PROFILE_RELEASE_DEBUG=0 cargo chef cook --release --recipe-path recipe.json
+RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo chef cook --release --recipe-path recipe.json
 
 
 FROM built-deps AS cargo-build
@@ -28,7 +28,7 @@ WORKDIR /src/
 
 # Copy and Build Code
 COPY . .
-RUN CARGO_PROFILE_RELEASE_DEBUG=0 cargo build --release --workspace --exclude e2e && \
+RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release --workspace --exclude e2e && \
     cp target/release/alerter / && \
     cp target/release/autopilot / && \
     cp target/release/driver / && \
