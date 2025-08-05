@@ -102,6 +102,7 @@ include_contracts! {
     PancakeRouter;
     Permit2;
     ChainalysisOracle;
+    StorageAccessible;
     SushiSwapRouter;
     SwaprRouter;
     TestnetUniswapV2Router02;

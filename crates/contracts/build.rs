@@ -1568,6 +1568,10 @@ fn main() {
 
     // Support contracts used for various order simulations.
     generate_contract("Balances");
+    generate_contract_with_config("StorageAccessible", |builder| {
+        builder.contract_mod_override("deployed_storage_accessible")
+    });
+    generate_contract("SimulateCode");
     generate_contract_with_config("Signatures", |builder| {
         builder.add_network_str(LENS, "0x714cC35842b9090B9738CbCBFb882c0128685921")
     });
