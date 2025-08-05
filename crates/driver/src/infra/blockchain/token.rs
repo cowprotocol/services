@@ -112,7 +112,7 @@ impl Erc20 {
         let balance_helper = self.ethereum.contracts().balance_helper();
         let balance_call = balance_helper.balance(
             (
-                balance_helper.address(),
+                self.ethereum.contracts().settlement().address(),
                 self.ethereum.contracts().vault_relayer().into(),
                 self.ethereum.contracts().vault().address(),
             ),
