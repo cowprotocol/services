@@ -27,6 +27,7 @@ use {
         sources::balancer_v2::pool_fetching::BalancerPoolFetching,
     },
     std::{collections::HashSet, sync::Arc},
+    tracing::instrument,
 };
 
 /// A liquidity provider for Balancer V2 weighted pools.
@@ -110,6 +111,7 @@ impl BalancerV2Liquidity {
 impl LiquidityCollecting for BalancerV2Liquidity {
     /// Returns relevant Balancer V2 weighted pools given a list of off-chain
     /// orders.
+    #[instrument(name = "balancer_v2_liquidity", skip_all)]
     async fn get_liquidity(
         &self,
         pairs: HashSet<TokenPair>,

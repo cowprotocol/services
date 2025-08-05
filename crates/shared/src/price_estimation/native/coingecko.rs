@@ -16,6 +16,7 @@ use {
         sync::Arc,
         time::Duration,
     },
+    tracing::instrument,
     url::Url,
 };
 
@@ -225,6 +226,7 @@ impl CoinGecko {
 }
 
 impl NativePriceBatchFetching for CoinGecko {
+    #[instrument(skip_all)]
     fn fetch_native_prices(
         &'_ self,
         tokens: HashSet<Token>,
@@ -245,6 +247,7 @@ impl NativePriceBatchFetching for CoinGecko {
 }
 
 impl NativePriceEstimating for CoinGecko {
+    #[instrument(skip_all)]
     fn estimate_native_price(
         &self,
         token: Token,

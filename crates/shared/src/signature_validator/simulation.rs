@@ -16,6 +16,7 @@ use {
     futures::future,
     primitive_types::{H160, U256},
     std::sync::LazyLock,
+    tracing::instrument,
 };
 
 pub struct Validator {
@@ -65,6 +66,7 @@ impl Validator {
         Ok(())
     }
 
+    #[instrument(skip_all, fields(interactions_len = check.interactions.len()))]
     async fn simulate(
         &self,
         check: &SignatureCheck,
@@ -113,6 +115,7 @@ impl Validator {
 
 #[async_trait::async_trait]
 impl SignatureValidating for Validator {
+    #[instrument(skip_all)]
     async fn validate_signatures(
         &self,
         checks: Vec<SignatureCheck>,

@@ -1,5 +1,9 @@
-use sqlx::{Executor, PgConnection};
+use {
+    sqlx::{Executor, PgConnection},
+    tracing::instrument,
+};
 
+#[instrument(skip_all)]
 pub async fn update(
     ex: &mut PgConnection,
     contract: &str,
@@ -17,6 +21,7 @@ DO UPDATE SET block_number = EXCLUDED.block_number;
     Ok(())
 }
 
+#[instrument(skip_all)]
 pub async fn fetch(ex: &mut PgConnection, contract: &str) -> Result<Option<i64>, sqlx::Error> {
     const QUERY: &str = r#"
 SELECT block_number

@@ -49,9 +49,9 @@ struct Config {
     #[serde_as(as = "serialize::U256")]
     native_token_price_estimation_amount: eth::U256,
 
-    /// If this is configured the solver will also use liquidity sources
-    /// that rely on RPC request.
-    node_url: Option<String>,
+    /// If this is configured the solver will also use the Uniswap V3 liquidity
+    /// sources that rely on RPC request.
+    uni_v3_node_url: Option<Url>,
 }
 
 /// Load the driver configuration from a TOML file.
@@ -88,7 +88,7 @@ pub async fn load(path: &Path) -> solver::Config {
         max_partial_attempts: config.max_partial_attempts,
         solution_gas_offset: config.solution_gas_offset.into(),
         native_token_price_estimation_amount: config.native_token_price_estimation_amount,
-        node_url: config.node_url.map(|url| url.parse().unwrap()),
+        uni_v3_node_url: config.uni_v3_node_url,
     }
 }
 

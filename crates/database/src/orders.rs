@@ -16,6 +16,7 @@ use {
             chrono::{DateTime, Utc},
         },
     },
+    tracing::instrument,
 };
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, sqlx::Type)]
@@ -100,6 +101,7 @@ pub struct Order {
     pub class: OrderClass,
 }
 
+#[instrument(skip_all)]
 pub async fn insert_orders_and_ignore_conflicts(
     ex: &mut PgConnection,
     orders: &[Order],
@@ -145,6 +147,7 @@ INSERT INTO orders (
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
     "#;
 
+#[instrument(skip_all)]
 pub async fn insert_order_and_ignore_conflicts(
     ex: &mut PgConnection,
     order: &Order,
@@ -188,10 +191,12 @@ async fn insert_order_execute_sqlx(
     Ok(())
 }
 
+#[instrument(skip_all)]
 pub async fn insert_order(ex: &mut PgConnection, order: &Order) -> Result<(), sqlx::Error> {
     insert_order_execute_sqlx(INSERT_ORDER_QUERY, ex, order).await
 }
 
+#[instrument(skip_all)]
 pub async fn read_order(
     ex: &mut PgConnection,
     id: &OrderUid,
@@ -236,6 +241,7 @@ pub struct Interaction {
     pub execution: ExecutionTime,
 }
 
+#[instrument(skip_all)]
 pub async fn insert_interactions(
     ex: &mut PgConnection,
     order: &OrderUid,
@@ -247,6 +253,7 @@ pub async fn insert_interactions(
     Ok(())
 }
 
+#[instrument(skip_all)]
 pub async fn insert_interaction(
     ex: &mut PgConnection,
     order: &OrderUid,
@@ -275,6 +282,7 @@ VALUES ($1, $2, $3, $4, $5, $6)
     Ok(())
 }
 
+#[instrument(skip_all)]
 pub async fn insert_or_overwrite_interactions(
     ex: &mut PgConnection,
     uid_and_interaction: &[(OrderUid, Interaction)],
@@ -285,6 +293,7 @@ pub async fn insert_or_overwrite_interactions(
     Ok(())
 }
 
+#[instrument(skip_all)]
 pub async fn insert_or_overwrite_interaction(
     ex: &mut PgConnection,
     interaction: &Interaction,
@@ -330,6 +339,7 @@ pub struct Quote {
     pub metadata: serde_json::Value,
 }
 
+#[instrument(skip_all)]
 pub async fn insert_quotes(ex: &mut PgConnection, quotes: &[Quote]) -> Result<(), sqlx::Error> {
     for quote in quotes {
         insert_quote_and_update_on_conflict(ex, quote).await?;
@@ -351,6 +361,7 @@ INSERT INTO order_quotes (
 )
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"#;
 
+#[instrument(skip_all)]
 pub async fn insert_quote_and_update_on_conflict(
     ex: &mut PgConnection,
     quote: &Quote,
@@ -381,6 +392,7 @@ buy_amount = $6, verified = $8, metadata = $9
     Ok(())
 }
 
+#[instrument(skip_all)]
 pub async fn insert_quote(ex: &mut PgConnection, quote: &Quote) -> Result<(), sqlx::Error> {
     sqlx::query(INSERT_ORDER_QUOTES_QUERY)
         .bind(quote.order_uid)
@@ -397,6 +409,7 @@ pub async fn insert_quote(ex: &mut PgConnection, quote: &Quote) -> Result<(), sq
     Ok(())
 }
 
+#[instrument(skip_all)]
 pub async fn read_quote(
     ex: &mut PgConnection,
     id: &OrderUid,
@@ -408,6 +421,7 @@ WHERE order_uid = $1
     sqlx::query_as(query).bind(id).fetch_optional(ex).await
 }
 
+#[instrument(skip_all)]
 pub async fn read_quotes(
     ex: &mut sqlx::PgConnection,
     order_ids: &[OrderUid],
@@ -428,6 +442,7 @@ pub async fn read_quotes(
     query.fetch_all(ex).await
 }
 
+#[instrument(skip_all)]
 pub async fn cancel_order(
     ex: &mut PgConnection,
     order_uid: &OrderUid,
@@ -612,6 +627,7 @@ COALESCE((SELECT executed_fee_token FROM order_execution oe WHERE oe.order_uid =
 
 pub const FROM: &str = "orders o";
 
+#[instrument(skip_all)]
 pub async fn single_full_order_with_quote(
     ex: &mut PgConnection,
     uid: &OrderUid,
@@ -659,6 +675,7 @@ WITH
     )
 "#;
 
+#[instrument(skip_all)]
 pub fn full_orders_in_tx<'a>(
     ex: &'a mut PgConnection,
     tx_hash: &'a TransactionHash,
@@ -709,6 +726,7 @@ WHERE
 /// Uses the conditions from OPEN_ORDERS and checks the fok limit orders have
 /// surplus fee.
 /// cleanup: fok limit orders should be allowed to not have surplus fee
+#[instrument(skip_all)]
 pub fn solvable_orders(
     ex: &mut PgConnection,
     min_valid_to: i64,
@@ -716,6 +734,7 @@ pub fn solvable_orders(
     sqlx::query_as(OPEN_ORDERS).bind(min_valid_to).fetch(ex)
 }
 
+#[instrument(skip_all)]
 pub fn open_orders_by_time_or_uids<'a>(
     ex: &'a mut PgConnection,
     uids: &'a [OrderUid],
@@ -735,6 +754,7 @@ pub fn open_orders_by_time_or_uids<'a>(
         .fetch(ex)
 }
 
+#[instrument(skip_all)]
 pub async fn latest_settlement_block(ex: &mut PgConnection) -> Result<i64, sqlx::Error> {
     const QUERY: &str = r#"
 SELECT COALESCE(MAX(block_number), 0)
@@ -745,6 +765,7 @@ FROM settlements
 
 /// Counts the number of limit orders with the conditions of OPEN_ORDERS. Used
 /// to enforce a maximum number of limit orders per user.
+#[instrument(skip_all)]
 pub async fn count_limit_orders_by_owner(
     ex: &mut PgConnection,
     min_valid_to: i64,
@@ -776,6 +797,7 @@ pub struct OrderWithQuote {
     pub quote_sell_token_price: f64,
 }
 
+#[instrument(skip_all)]
 pub async fn user_orders_with_quote(
     ex: &mut PgConnection,
     min_valid_to: i64,
@@ -803,6 +825,7 @@ pub async fn user_orders_with_quote(
         .await
 }
 
+#[instrument(skip_all)]
 pub async fn updated_order_uids_after(
     ex: &mut PgConnection,
     after_block: i64,
@@ -834,6 +857,7 @@ pub struct InteractionIndices {
     pub next_post_interaction_index: i32,
 }
 
+#[instrument(skip_all)]
 pub async fn next_free_interaction_indices(
     db: &mut PgConnection,
     order: OrderUid,

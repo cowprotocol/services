@@ -14,6 +14,7 @@ use {
             chrono::{DateTime, Utc},
         },
     },
+    tracing::instrument,
 };
 
 pub const SELECT: &str = r#"
@@ -38,6 +39,7 @@ NULL AS full_app_data
 
 pub const FROM: &str = "jit_orders o";
 
+#[instrument(skip_all)]
 pub async fn get_by_id(
     ex: &mut PgConnection,
     uid: &OrderUid,
@@ -52,6 +54,7 @@ SELECT,
     sqlx::query_as(QUERY).bind(uid).fetch_optional(ex).await
 }
 
+#[instrument(skip_all)]
 pub async fn get_by_tx(
     ex: &mut PgConnection,
     tx_hash: &TransactionHash,
@@ -100,6 +103,7 @@ pub struct JitOrder {
     pub buy_token_balance: BuyTokenDestination,
 }
 
+#[instrument(skip_all)]
 pub async fn insert(ex: &mut PgConnection, jit_orders: &[JitOrder]) -> Result<(), sqlx::Error> {
     if jit_orders.is_empty() {
         return Ok(());

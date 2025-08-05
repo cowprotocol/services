@@ -14,6 +14,7 @@ use {
     },
     futures::future::try_join_all,
     std::collections::{BTreeSet, HashMap, HashSet},
+    tracing::instrument,
 };
 
 /// A transaction calling into our settlement contract on the blockchain, ready
@@ -68,6 +69,7 @@ impl SettlementTx {
 
 impl Settlement {
     /// Encode a solution into an onchain settlement.
+    #[instrument(name = "encode_settlement", skip_all)]
     pub(super) async fn encode(
         solution: competition::Solution,
         auction: &competition::Auction,
@@ -202,6 +204,7 @@ impl Settlement {
     /// Simulate executing this settlement on the blockchain. This process
     /// ensures that the settlement does not revert, and calculates the
     /// access list and gas needed to settle the solution.
+    #[instrument(name = "simulate_settlement", skip_all)]
     async fn simulate(
         tx: eth::Tx,
         partial_access_list: &eth::AccessList,

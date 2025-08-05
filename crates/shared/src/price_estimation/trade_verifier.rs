@@ -38,6 +38,7 @@ use {
         nonzero::U256 as NonZeroU256,
     },
     std::{collections::HashMap, sync::Arc},
+    tracing::instrument,
     web3::{ethabi::Token, types::CallRequest},
 };
 
@@ -69,7 +70,7 @@ pub struct TradeVerifier {
 }
 
 impl TradeVerifier {
-    const DEFAULT_GAS: u64 = 8_000_000;
+    const DEFAULT_GAS: u64 = 12_000_000;
     const SPARDOSE: H160 = addr!("0000000000000000000000000000000000020000");
     const TRADER_IMPL: H160 = addr!("0000000000000000000000000000000000010000");
 
@@ -396,6 +397,7 @@ impl TradeVerifier {
 
 #[async_trait::async_trait]
 impl TradeVerifying for TradeVerifier {
+    #[instrument(skip_all)]
     async fn verify(
         &self,
         query: &PriceQuery,

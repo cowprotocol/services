@@ -17,7 +17,7 @@ use {
         time::{Duration, Instant},
     },
     tokio::time,
-    tracing::Instrument,
+    tracing::{Instrument, instrument},
 };
 
 #[derive(prometheus_metric_storage::MetricStorage)]
@@ -296,7 +296,7 @@ impl UpdateTask {
 }
 
 impl CachingNativePriceEstimator {
-    pub async fn initialize_cache(&self, prices: HashMap<H160, BigDecimal>) {
+    pub fn initialize_cache(&self, prices: HashMap<H160, BigDecimal>) {
         let mut rng = rand::thread_rng();
         let now = std::time::Instant::now();
 
@@ -433,6 +433,7 @@ impl CachingNativePriceEstimator {
 }
 
 impl NativePriceEstimating for CachingNativePriceEstimator {
+    #[instrument(skip_all)]
     fn estimate_native_price(
         &self,
         token: H160,
@@ -505,7 +506,7 @@ mod tests {
             Default::default(),
             HEALTHY_PRICE_ESTIMATION_TIME,
         );
-        estimator.initialize_cache(prices).await;
+        estimator.initialize_cache(prices);
 
         {
             // Check that `updated_at` timestamps are initialized with

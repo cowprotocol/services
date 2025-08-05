@@ -5,6 +5,7 @@ use {
         PgConnection,
         types::chrono::{DateTime, Utc},
     },
+    tracing::instrument,
 };
 
 pub type QuoteId = i64;
@@ -40,6 +41,7 @@ pub struct Quote {
 
 /// Stores the quote and returns the id. The id of the quote parameter is not
 /// used.
+#[instrument(skip_all)]
 pub async fn save(ex: &mut PgConnection, quote: &Quote) -> Result<QuoteId, sqlx::Error> {
     const QUERY: &str = r#"
 INSERT INTO quotes (
@@ -79,6 +81,7 @@ RETURNING id
     Ok(id)
 }
 
+#[instrument(skip_all)]
 pub async fn get(ex: &mut PgConnection, id: QuoteId) -> Result<Option<Quote>, sqlx::Error> {
     const QUERY: &str = r#"
 SELECT *
@@ -101,6 +104,7 @@ pub struct QuoteSearchParameters {
     pub quote_kind: QuoteKind,
 }
 
+#[instrument(skip_all)]
 pub async fn find(
     ex: &mut PgConnection,
     params: &QuoteSearchParameters,
@@ -135,6 +139,7 @@ LIMIT 1
         .await
 }
 
+#[instrument(skip_all)]
 pub async fn remove_expired_quotes(
     ex: &mut PgConnection,
     max_expiry: DateTime<Utc>,

@@ -16,6 +16,7 @@ use {
         sync::{LazyLock, RwLock},
         time::Duration,
     },
+    tracing::instrument,
 };
 
 const POOL_SWAP_GAS_COST: usize = 60_000;
@@ -210,6 +211,7 @@ impl<Reader> PoolFetching for PoolFetcher<Reader>
 where
     Reader: PoolReading,
 {
+    #[instrument(skip_all)]
     async fn fetch(&self, token_pairs: HashSet<TokenPair>, at_block: Block) -> Result<Vec<Pool>> {
         let mut token_pairs: Vec<_> = token_pairs.into_iter().collect();
         {

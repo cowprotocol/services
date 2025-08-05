@@ -3,6 +3,7 @@ use {
     bigdecimal::BigDecimal,
     futures::stream::BoxStream,
     sqlx::PgConnection,
+    tracing::{Instrument, info_span, instrument},
 };
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, sqlx::FromRow)]
@@ -24,7 +25,7 @@ pub fn trades<'a>(
     ex: &'a mut PgConnection,
     owner_filter: Option<&'a Address>,
     order_uid_filter: Option<&'a OrderUid>,
-) -> BoxStream<'a, Result<TradesQueryRow, sqlx::Error>> {
+) -> instrument::Instrumented<BoxStream<'a, Result<TradesQueryRow, sqlx::Error>>> {
     const COMMON_QUERY: &str = r#"
 SELECT
     t.block_number,
@@ -70,6 +71,7 @@ LEFT OUTER JOIN LATERAL (
         .bind(owner_filter)
         .bind(order_uid_filter)
         .fetch(ex)
+        .instrument(info_span!("trades"))
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, sqlx::FromRow)]
@@ -79,6 +81,7 @@ pub struct TradeEvent {
     pub order_uid: OrderUid,
 }
 
+#[instrument(skip_all)]
 pub async fn get_trades_for_settlement(
     ex: &mut PgConnection,
     settlement: EventIndex,
@@ -106,6 +109,7 @@ AND t.log_index BETWEEN (SELECT * from previous_settlement) AND $2
         .await
 }
 
+#[instrument(skip_all)]
 pub async fn token_first_trade_block(
     ex: &mut PgConnection,
     token: Address,
@@ -210,6 +214,7 @@ mod tests {
         expected: &[TradesQueryRow],
     ) {
         let mut filtered = trades(db, owner_filter, order_uid_filter)
+            .into_inner()
             .try_collect::<Vec<_>>()
             .await
             .unwrap();
@@ -283,6 +288,7 @@ mod tests {
 
         let now = std::time::Instant::now();
         trades(&mut db, Some(&ByteArray([2u8; 20])), None)
+            .into_inner()
             .try_collect::<Vec<_>>()
             .await
             .unwrap();

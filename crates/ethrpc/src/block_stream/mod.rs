@@ -10,7 +10,7 @@ use {
     },
     tokio::sync::watch,
     tokio_stream::wrappers::WatchStream,
-    tracing::Instrument,
+    tracing::{Instrument, instrument},
     url::Url,
     web3::{
         BatchTransport,
@@ -259,12 +259,12 @@ impl BlockRetrieving for Web3 {
         ))
     }
 
-    /// get blocks defined by the range (inclusive)
-    /// if successful, function guarantees full range of blocks in Result (does
-    /// not return partial results)
+    /// Gets all blocks requested in the range. For successful results it's
+    /// enforced that all the blocks are present, in the correct order and that
+    /// there are not reorgs in the block range.
     async fn blocks(&self, range: RangeInclusive<u64>) -> Result<Vec<BlockNumberHash>> {
         let include_txs = helpers::serialize(&false);
-        let (start, end) = range.into_inner();
+        let (start, end) = range.clone().into_inner();
         let mut batch_request = Vec::with_capacity((end - start + 1) as usize);
         for i in start..=end {
             let num = helpers::serialize(&BlockNumber::Number(i.into()));
@@ -273,6 +273,8 @@ impl BlockRetrieving for Web3 {
                 .prepare("eth_getBlockByNumber", vec![num, include_txs.clone()]);
             batch_request.push(request);
         }
+
+        let mut prev_hash = None;
 
         // send_batch guarantees the size and order of the responses to match the
         // requests
@@ -285,10 +287,20 @@ impl BlockRetrieving for Web3 {
                     serde_json::from_value::<web3::types::Block<H256>>(response.clone())
                         .with_context(|| format!("unexpected response format: {response:?}"))
                         .and_then(|response| {
-                            Ok((
-                                response.number.context("missing block number")?.as_u64(),
-                                response.hash.context("missing hash")?,
-                            ))
+                            let current_hash = response.hash.context("missing hash")?;
+                            let current_block = response.number.context("missing number")?.as_u64();
+                            if prev_hash.is_some_and(|prev| prev != response.parent_hash) {
+                                tracing::debug!(
+                                    ?range,
+                                    ?prev_hash,
+                                    parent_hash = ?response.parent_hash,
+                                    "inconsistent parent in block range"
+                                );
+                                return Err(anyhow!("inconsistent block range"));
+                            }
+                            prev_hash = Some(current_hash);
+
+                            Ok((current_block, current_hash))
                         })
                 }
                 Err(err) => Err(anyhow!("web3 error: {}", err)),
@@ -320,21 +332,20 @@ pub async fn timestamp_of_current_block_in_seconds(web3: &Web3) -> Result<u32> {
     timestamp_of_block_in_seconds(web3, BlockNumber::Latest).await
 }
 
+#[instrument(skip_all)]
 pub async fn block_number_to_block_number_hash(
     web3: &Web3,
     block_number: BlockNumber,
-) -> Option<BlockNumberHash> {
-    web3.eth()
+) -> Result<BlockNumberHash> {
+    let block = web3
+        .eth()
         .block(BlockId::Number(block_number))
-        .await
-        .ok()
-        .flatten()
-        .map(|block| {
-            (
-                block.number.expect("number must exist").as_u64(),
-                block.hash.expect("hash must exist"),
-            )
-        })
+        .await?
+        .context("block should exists")?;
+    Ok((
+        block.number.expect("number must exist").as_u64(),
+        block.hash.expect("hash must exist"),
+    ))
 }
 
 pub async fn block_by_number(web3: &Web3, block_number: BlockNumber) -> Option<Block<H256>> {

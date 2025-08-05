@@ -23,6 +23,7 @@ use {
         collections::HashSet,
         sync::{Arc, Mutex},
     },
+    tracing::instrument,
 };
 
 pub struct UniswapLikeLiquidity {
@@ -90,6 +91,7 @@ impl UniswapLikeLiquidity {
 impl LiquidityCollecting for UniswapLikeLiquidity {
     /// Given a list of offchain orders returns the list of AMM liquidity to be
     /// considered
+    #[instrument(name = "uniswap_like_liquidity", skip_all)]
     async fn get_liquidity(
         &self,
         pairs: HashSet<TokenPair>,

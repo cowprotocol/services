@@ -1,6 +1,7 @@
 use {
     crate::{Address, OrderUid, PgTransaction, TransactionHash},
     sqlx::{Executor, PgConnection, types::BigDecimal},
+    tracing::instrument,
 };
 
 #[derive(Clone, Debug)]
@@ -43,6 +44,7 @@ pub struct EventIndex {
     pub log_index: i64,
 }
 
+#[instrument(skip_all)]
 pub async fn delete(
     ex: &mut PgTransaction<'_>,
     delete_from_block_number: u64,
@@ -67,6 +69,7 @@ pub async fn delete(
     Ok(())
 }
 
+#[instrument(skip_all)]
 pub async fn append(
     ex: &mut PgTransaction<'_>,
     events: &[(EventIndex, Event)],
@@ -86,6 +89,7 @@ pub async fn append(
     Ok(())
 }
 
+#[instrument(skip_all)]
 async fn insert_invalidation(
     ex: &mut PgConnection,
     index: &EventIndex,
@@ -105,6 +109,7 @@ async fn insert_invalidation(
     Ok(())
 }
 
+#[instrument(skip_all)]
 pub async fn insert_trade(
     ex: &mut PgConnection,
     index: &EventIndex,
@@ -125,6 +130,7 @@ pub async fn insert_trade(
     Ok(())
 }
 
+#[instrument(skip_all)]
 pub async fn insert_settlement(
     ex: &mut PgConnection,
     index: &EventIndex,
@@ -144,6 +150,7 @@ pub async fn insert_settlement(
     Ok(())
 }
 
+#[instrument(skip_all)]
 async fn insert_presignature(
     ex: &mut PgConnection,
     index: &EventIndex,
