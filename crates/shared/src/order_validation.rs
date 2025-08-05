@@ -598,7 +598,6 @@ impl OrderValidating for OrderValidator {
                     .await
                     .map_err(|err| match err {
                         SignatureValidationError::Invalid => {
-                            tracing::info!(?err, "newlog invalid signature 2");
                             ValidationError::InvalidEip1271Signature(H256(hash))
                         }
                         SignatureValidationError::Other(err) => ValidationError::Other(err),
