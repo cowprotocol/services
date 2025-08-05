@@ -140,7 +140,7 @@ fn main() {
             .add_network(
                 LENS,
                 Network {
-                    address: addr("0x5A5b8aE7a0b4C0EAf453d10DCcfbA413f07ebdC2"),
+                    address: addr("0xFb337f8a725A142f65fb9ff4902d41cc901de222"),
                     // <https://explorer.lens.xyz/tx/0xc59b5ffadb40158f9390b1d77f19346dbe9214b27f26346dfa2990ad379a1a32>
                     deployment_information: Some(DeploymentInformation::BlockNumber(71296258)),
                 },
@@ -1568,8 +1568,9 @@ fn main() {
 
     // Support contracts used for various order simulations.
     generate_contract("Balances");
-    generate_contract("Signatures");
-    generate_contract("SimulateCode");
+    generate_contract_with_config("Signatures", |builder| {
+        builder.add_network_str(LENS, "0x714cC35842b9090B9738CbCBFb882c0128685921")
+    });
 
     // Support contract used for solver fee simulations.
     generate_contract("AnyoneAuthenticator");
