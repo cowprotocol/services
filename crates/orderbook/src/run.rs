@@ -116,7 +116,9 @@ pub async fn run(args: Arguments) {
             settlement: settlement_contract.address(),
             vault_relayer,
         },
-    );
+    )
+    .await
+    .expect("failed to create signature validator");
 
     let vault = match args.shared.balancer_v2_vault_address {
         Some(address) => Some(contracts::BalancerV2Vault::with_deployment_info(

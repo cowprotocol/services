@@ -98,20 +98,21 @@ impl DataAggregator {
         tasks
     }
 
-    pub fn new(
+    pub async fn new(
         eth: infra::Ethereum,
         app_data_retriever: Option<order::app_data::AppDataRetriever>,
         liquidity_fetcher: infra::liquidity::Fetcher,
-    ) -> Self {
+    ) -> anyhow::Result<Self> {
         let signature_validator = shared::signature_validator::validator(
             eth.web3(),
             shared::signature_validator::Contracts {
                 settlement: eth.contracts().settlement().address(),
                 vault_relayer: eth.contracts().vault_relayer().0,
             },
-        );
+        )
+        .await?;
 
-        Self {
+        Ok(Self {
             utilities: Arc::new(Utilities {
                 eth,
                 signature_validator,
@@ -127,7 +128,7 @@ impl DataAggregator {
                     liquidity: futures::future::pending().boxed().shared(),
                 },
             }),
-        }
+        })
     }
 
     fn assemble_tasks(&self, auction: Arc<Auction>) -> DataFetchingTasks {

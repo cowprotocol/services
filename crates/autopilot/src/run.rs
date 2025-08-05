@@ -247,7 +247,9 @@ pub async fn run(args: Arguments) {
             settlement: eth.contracts().settlement().address(),
             vault_relayer,
         },
-    );
+    )
+    .await
+    .expect("failed to create signature validator");
 
     let balance_fetcher = account_balances::cached(
         &web3,

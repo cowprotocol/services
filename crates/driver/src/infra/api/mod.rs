@@ -3,7 +3,7 @@ use {
         domain::{
             self,
             Mempools,
-            competition::{bad_tokens, order::app_data::AppDataRetriever, sorting},
+            competition::{bad_tokens, sorting},
         },
         infra::{
             self,
@@ -45,20 +45,15 @@ impl Api {
         self,
         shutdown: impl Future<Output = ()> + Send + 'static,
         order_priority_strategies: Vec<OrderPriorityStrategy>,
-        app_data_retriever: Option<AppDataRetriever>,
+        data_aggregator: domain::competition::DataAggregator,
     ) -> Result<(), hyper::Error> {
+        let fetcher = Arc::new(data_aggregator);
         // Add middleware.
         let mut app = axum::Router::new().layer(tower::ServiceBuilder::new().layer(
             tower_http::limit::RequestBodyLimitLayer::new(REQUEST_BODY_LIMIT),
         ));
 
         let tokens = tokens::Fetcher::new(&self.eth);
-        let fetcher = Arc::new(domain::competition::DataAggregator::new(
-            self.eth.clone(),
-            app_data_retriever.clone(),
-            self.liquidity.clone(),
-        ));
-
         let order_sorting_strategies =
             Self::build_order_sorting_strategies(&order_priority_strategies);
 

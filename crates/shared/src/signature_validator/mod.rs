@@ -79,10 +79,11 @@ pub struct Contracts {
 }
 
 /// Creates the default [`SignatureValidating`] instance.
-pub fn validator(web3: &Web3, contracts: Contracts) -> Arc<dyn SignatureValidating> {
-    Arc::new(simulation::Validator::new(
-        web3,
-        contracts.settlement,
-        contracts.vault_relayer,
+pub async fn validator(
+    web3: &Web3,
+    contracts: Contracts,
+) -> anyhow::Result<Arc<dyn SignatureValidating>> {
+    Ok(Arc::new(
+        simulation::Validator::new(web3, contracts.settlement, contracts.vault_relayer).await?,
     ))
 }

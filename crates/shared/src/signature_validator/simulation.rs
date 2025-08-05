@@ -7,7 +7,7 @@ use {
     super::{SignatureCheck, SignatureValidating, SignatureValidationError},
     anyhow::Result,
     contracts::{ERC1271SignatureValidator, errors::EthcontractErrorType},
-    ethcontract::Bytes,
+    ethcontract::{Account, Bytes, PrivateKey},
     ethrpc::Web3,
     futures::future,
     primitive_types::{H160, U256},
@@ -15,53 +15,52 @@ use {
     tracing::instrument,
 };
 
-pub struct Validator {
+pub struct Validator(ValidatorType);
+
+enum ValidatorType {
+    Evm(Box<EvmValidator>),
+    ZkSync(Box<ZkSyncValidator>),
+}
+
+struct EvmValidator {
     signatures: contracts::support::Signatures,
     settlement: H160,
     vault_relayer: H160,
     web3: Web3,
 }
 
-impl Validator {
-    /// The result returned from `isValidSignature` if the signature is correct
-    const IS_VALID_SIGNATURE_MAGIC_BYTES: &'static str = "1626ba7e";
+struct ZkSyncValidator {
+    signatures: contracts::support::Signatures,
+    storage_accessible: contracts::StorageAccessible,
+    settlement: H160,
+    vault_relayer: H160,
+    web3: Web3,
+}
 
-    pub fn new(web3: &Web3, settlement: H160, vault_relayer: H160) -> Self {
-        let web3 = ethrpc::instrumented::instrument_with_label(web3, "signatureValidation".into());
-        Self {
-            signatures: contracts::support::Signatures::at(&web3, settlement),
-            settlement,
-            vault_relayer,
-            web3: web3.clone(),
-        }
-    }
-
-    /// Simulate isValidSignature for the cases in which the order does not have
-    /// pre-interactions
-    async fn simulate_without_pre_interactions(
+#[async_trait::async_trait]
+trait Simulator: Send + Sync {
+    async fn simulate(
         &self,
         check: &SignatureCheck,
-    ) -> Result<(), SignatureValidationError> {
-        // Since there are no interactions (no dynamic conditions / complex pre-state
-        // change), the order's validity can be directly determined by whether
-        // the signature matches the expected hash of the order data, checked
-        // with isValidSignature method called on the owner's contract
-        let contract = ERC1271SignatureValidator::at(&self.web3, check.signer);
-        let magic_bytes = contract
-            .methods()
-            .is_valid_signature(Bytes(check.hash), Bytes(check.signature.clone()))
-            .call()
-            .await
-            .map(|value| hex::encode(value.0))?;
+    ) -> Result<Simulation, SignatureValidationError>;
+}
 
-        if magic_bytes != Self::IS_VALID_SIGNATURE_MAGIC_BYTES {
-            return Err(SignatureValidationError::Invalid);
+#[async_trait::async_trait]
+impl Simulator for Validator {
+    async fn simulate(
+        &self,
+        check: &SignatureCheck,
+    ) -> Result<Simulation, SignatureValidationError> {
+        match &self.0 {
+            ValidatorType::Evm(validator) => validator.simulate(check).await,
+            ValidatorType::ZkSync(validator) => validator.simulate(check).await,
         }
-
-        Ok(())
     }
+}
 
-    #[instrument(skip_all, fields(interactions_len = check.interactions.len()))]
+#[async_trait::async_trait]
+impl Simulator for EvmValidator {
+    // #[instrument(skip_all, fields(interactions_len = check.interactions.len()))]
     async fn simulate(
         &self,
         check: &SignatureCheck,
@@ -93,6 +92,147 @@ impl Validator {
 
         tracing::trace!(?check, ?result, "simulated signature");
         Ok(Simulation { gas_used: result? })
+    }
+}
+
+#[async_trait::async_trait]
+impl Simulator for ZkSyncValidator {
+    async fn simulate(
+        &self,
+        check: &SignatureCheck,
+    ) -> Result<Simulation, SignatureValidationError> {
+        // We simulate the signature verification from the Settlement contract's
+        // context. This allows us to check:
+        // 1. How the pre-interactions would behave as part of the settlement
+        // 2. Simulate the actual `isValidSignature` calls that would happen as part of
+        //    a settlement
+        let validate_call = self.signatures.methods().validate(
+            (self.settlement, self.vault_relayer),
+            check.signer,
+            Bytes(check.hash),
+            Bytes(check.signature.clone()),
+            check
+                .interactions
+                .iter()
+                .map(|i| (i.target, i.value, Bytes(i.call_data.clone())))
+                .collect(),
+        );
+        let calldata = validate_call.tx.data.clone();
+        let random_account = Self::random_account();
+        let gas_cost = self
+            .storage_accessible
+            .simulate_delegatecall(
+                self.signatures.address(),
+                Bytes(validate_call.tx.data.unwrap_or_default().0),
+            )
+            .from(random_account);
+        let tx = gas_cost.tx;
+        let result = tx.clone().estimate_gas().await.map_err(|err| {
+            tracing::warn!(?err, ?tx, "newlog estimate gas failed");
+            SignatureValidationError::Other(err.into())
+        });
+        if result.is_err() {
+            tracing::info!(
+                ?result,
+                ?tx,
+                ?calldata,
+                "newlog simulating signature failed with"
+            );
+        }
+
+        tracing::trace!(?check, ?result, "simulated signature");
+        Ok(Simulation { gas_used: result? })
+    }
+}
+
+impl Validator {
+    /// The result returned from `isValidSignature` if the signature is correct
+    const IS_VALID_SIGNATURE_MAGIC_BYTES: &'static str = "1626ba7e";
+
+    pub async fn new(web3: &Web3, settlement: H160, vault_relayer: H160) -> Result<Self> {
+        let web3 = ethrpc::instrumented::instrument_with_label(web3, "signatureValidation".into());
+        let chain_id = web3.eth().chain_id().await?.low_u32();
+        let validator_type = match chain_id {
+            232 | 324 => ValidatorType::ZkSync(Box::new(
+                ZkSyncValidator::new(&web3, settlement, vault_relayer).await?,
+            )),
+            _ => ValidatorType::Evm(Box::new(EvmValidator::new(
+                &web3,
+                settlement,
+                vault_relayer,
+            ))),
+        };
+
+        Ok(Self(validator_type))
+    }
+
+    pub fn web3(&self) -> &Web3 {
+        match &self.0 {
+            ValidatorType::Evm(validator) => &validator.web3,
+            ValidatorType::ZkSync(validator) => &validator.web3,
+        }
+    }
+
+    /// Simulate isValidSignature for the cases in which the order does not have
+    /// pre-interactions
+    pub async fn simulate_without_pre_interactions(
+        &self,
+        check: &SignatureCheck,
+    ) -> Result<(), SignatureValidationError> {
+        // Since there are no interactions (no dynamic conditions / complex pre-state
+        // change), the order's validity can be directly determined by whether
+        // the signature matches the expected hash of the order data, checked
+        // with isValidSignature method called on the owner's contract
+        let contract = ERC1271SignatureValidator::at(self.web3(), check.signer);
+        let magic_bytes = contract
+            .methods()
+            .is_valid_signature(Bytes(check.hash), Bytes(check.signature.clone()))
+            .call()
+            .await
+            .map(|value| hex::encode(value.0))?;
+
+        if magic_bytes != Self::IS_VALID_SIGNATURE_MAGIC_BYTES {
+            return Err(SignatureValidationError::Invalid);
+        }
+
+        Ok(())
+    }
+}
+
+impl ZkSyncValidator {
+    pub async fn new(web3: &Web3, settlement: H160, vault_relayer: H160) -> Result<Self> {
+        Ok(Self {
+            signatures: contracts::support::Signatures::deployed(web3).await?,
+            storage_accessible: contracts::StorageAccessible::at(web3, settlement),
+            settlement,
+            vault_relayer,
+            web3: web3.clone(),
+        })
+    }
+
+    fn random_account() -> Account {
+        let mut buffer = [0; 32];
+        let mut start: usize = 100500;
+        loop {
+            buffer[24..].copy_from_slice(&start.to_be_bytes());
+            let Ok(pk) = PrivateKey::from_raw(buffer) else {
+                start += 1;
+                continue;
+            };
+
+            break Account::Offline(pk, None);
+        }
+    }
+}
+
+impl EvmValidator {
+    pub fn new(web3: &Web3, settlement: H160, vault_relayer: H160) -> Self {
+        Self {
+            signatures: contracts::support::Signatures::at(web3, settlement),
+            settlement,
+            vault_relayer,
+            web3: web3.clone(),
+        }
     }
 }
 
