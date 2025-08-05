@@ -1,6 +1,6 @@
 use {
     crate::{
-        database::competition::{Competition, LegacyScore},
+        database::competition::Competition,
         domain::{
             self,
             OrderUid,
@@ -48,7 +48,7 @@ use {
         time::{Duration, Instant},
     },
     tokio::sync::Mutex,
-    tracing::Instrument,
+    tracing::{Instrument, instrument},
 };
 
 pub struct Config {
@@ -59,26 +59,8 @@ pub struct Config {
     /// allowed to start before it has to re-synchronize to the blockchain
     /// by waiting for the next block to appear.
     pub max_run_loop_delay: Duration,
-    pub combinatorial_auctions_cutover: Option<chrono::DateTime<chrono::Utc>>,
     pub max_winners_per_auction: NonZeroUsize,
     pub max_solutions_per_solver: NonZeroUsize,
-}
-
-impl Config {
-    fn single_winner(&self) -> bool {
-        // Always single winner if max_winners is 1
-        if self.max_winners_per_auction.get() == 1 {
-            return true;
-        }
-
-        // Check cutover date conditions
-        match self.combinatorial_auctions_cutover {
-            // No cutover date means single winner
-            None => true,
-            // If there is a cutover date, check if we are past it
-            Some(cutover) => chrono::Utc::now() < cutover,
-        }
-    }
 }
 
 pub struct RunLoop {
@@ -95,6 +77,7 @@ pub struct RunLoop {
     /// the most recent data available.
     maintenance: Arc<Maintenance>,
     competition_updates_sender: tokio::sync::mpsc::UnboundedSender<()>,
+    winner_selection: winner_selection::Arbitrator,
 }
 
 impl RunLoop {
@@ -111,6 +94,9 @@ impl RunLoop {
         maintenance: Arc<Maintenance>,
         competition_updates_sender: tokio::sync::mpsc::UnboundedSender<()>,
     ) -> Self {
+        let max_winners = config.max_winners_per_auction.get();
+        let weth = eth.contracts().wrapped_native_token();
+
         Self {
             config,
             eth,
@@ -123,6 +109,7 @@ impl RunLoop {
             liveness,
             maintenance,
             competition_updates_sender,
+            winner_selection: winner_selection::Arbitrator { max_winners, weth },
         }
     }
 
@@ -150,6 +137,7 @@ impl RunLoop {
 
     /// Sleeps until the next auction is supposed to start, builds it and
     /// returns it.
+    #[instrument(skip(self, prev_auction), fields(prev_auction = prev_auction.as_ref().map(|a| a.id)))]
     async fn next_auction(
         &self,
         prev_auction: &mut Option<domain::Auction>,
@@ -250,6 +238,7 @@ impl RunLoop {
         })
     }
 
+    #[instrument(skip_all, fields(auction_id = auction.id, auction_block = auction.block, auction_orders = auction.orders.len()))]
     async fn single_run(self: &Arc<Self>, auction: domain::Auction) {
         let single_run_start = Instant::now();
         tracing::info!(auction_id = ?auction.id, "solving");
@@ -265,22 +254,7 @@ impl RunLoop {
             return;
         }
 
-        // Build the winner selection implementation.
-        // We only compute this once to ensure consistency throughout the entire
-        // auction.
-        let is_single_winner_selection = self.config.single_winner();
-        tracing::info!(auction_id = ?auction.id, ?is_single_winner_selection, "winner selection implementation");
-        let winner_selection: Box<dyn winner_selection::Arbitrator> = if is_single_winner_selection
-        {
-            Box::new(winner_selection::max_score::Config)
-        } else {
-            Box::new(winner_selection::combinatorial::Config {
-                max_winners: self.config.max_winners_per_auction.get(),
-                weth: self.eth.contracts().wrapped_native_token(),
-            })
-        };
-
-        let ranking = winner_selection.arbitrate(solutions, &auction);
+        let ranking = self.winner_selection.arbitrate(solutions, &auction);
 
         // Count and record the number of winners
         let num_winners = ranking.winners().count();
@@ -299,8 +273,7 @@ impl RunLoop {
                 competition_simulation_block,
                 &ranking,
                 block_deadline,
-                winner_selection,
-                is_single_winner_selection,
+                &self.winner_selection,
             )
             .await
         {
@@ -403,40 +376,17 @@ impl RunLoop {
         tokio::spawn(settle_fut);
     }
 
+    #[instrument(skip_all)]
     async fn post_processing(
         &self,
         auction: &domain::Auction,
         competition_simulation_block: u64,
         ranking: &Ranking,
         block_deadline: u64,
-        winner_selection: Box<dyn winner_selection::Arbitrator>,
-        is_single_winner_selection: bool,
+        winner_selection: &winner_selection::Arbitrator,
     ) -> Result<()> {
         let start = Instant::now();
         let reference_scores = winner_selection.compute_reference_scores(ranking);
-        // TODO: Needs to be removed once other teams fully migrated to the
-        // reference_scores table
-        let legacy_score = {
-            let Some(winning_solution) = ranking
-                .winners()
-                .nth(0)
-                .map(|participant| participant.solution())
-            else {
-                return Err(anyhow::anyhow!("no winners found"));
-            };
-            let winner = winning_solution.solver().into();
-            let winning_score = winning_solution.score().get().0;
-            let reference_score = ranking
-                .ranked()
-                .nth(1)
-                .map(|participant| participant.solution().score().get().0)
-                .unwrap_or_default();
-            is_single_winner_selection.then_some(LegacyScore {
-                winner,
-                winning_score,
-                reference_score,
-            })
-        };
 
         let participants = ranking
             .all()
@@ -512,7 +462,6 @@ impl RunLoop {
         };
         let competition = Competition {
             auction_id: auction.id,
-            legacy: legacy_score,
             reference_scores,
             participants,
             prices: auction
@@ -570,6 +519,7 @@ impl RunLoop {
 
     /// Runs the solver competition, making all configured drivers participate.
     /// Returns all fair solutions sorted by their score (best to worst).
+    #[instrument(skip_all)]
     async fn fetch_solutions(
         &self,
         auction: &domain::Auction,
@@ -620,6 +570,7 @@ impl RunLoop {
 
     /// Sends a `/solve` request to the driver and manages all error cases and
     /// records metrics and logs appropriately.
+    #[instrument(skip_all, fields(driver = driver.name))]
     async fn solve(
         &self,
         driver: Arc<infra::Driver>,
@@ -839,6 +790,7 @@ impl RunLoop {
     ///
     /// Returns None if no transaction was found within the deadline or the task
     /// is cancelled.
+    #[instrument(skip_all)]
     async fn wait_for_settlement_transaction(
         &self,
         auction_id: i64,

@@ -48,7 +48,7 @@ pub struct Cip20Data {
     pub txs: Vec<AuctionTransaction>,
     pub participants: Vec<database::auction_participants::Participant>,
     pub prices: Vec<database::auction_prices::AuctionPrice>,
-    pub score: database::settlement_scores::Score,
+    pub reference_scores: Vec<database::reference_scores::Score>,
     pub competition: serde_json::Value,
 }
 
@@ -85,9 +85,9 @@ SELECT * FROM settlements WHERE auction_id = $1";
     let prices = database::auction_prices::fetch(&mut db, auction_id)
         .await
         .unwrap();
-    let score = database::settlement_scores::fetch(&mut db, auction_id)
+    let reference_scores = database::reference_scores::fetch(&mut db, auction_id)
         .await
-        .unwrap()?;
+        .unwrap();
     let competition = database::solver_competition::load_by_id(&mut db, auction_id)
         .await
         .unwrap()?
@@ -98,7 +98,7 @@ SELECT * FROM settlements WHERE auction_id = $1";
         txs,
         participants,
         prices,
-        score,
+        reference_scores,
         competition,
     })
 }
