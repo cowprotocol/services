@@ -41,6 +41,7 @@ mod version;
 
 pub fn handle_all_routes(
     database: Postgres,
+    database_replica: Postgres,
     orderbook: Arc<Orderbook>,
     quotes: Arc<QuoteHandler>,
     app_data: Arc<app_data::Registry>,
@@ -66,7 +67,7 @@ pub fn handle_all_routes(
         ),
         (
             "v1/get_trades",
-            box_filter(get_trades::get_trades(database.clone())),
+            box_filter(get_trades::get_trades(database_replica.clone())),
         ),
         (
             "v1/cancel_order",
@@ -117,7 +118,7 @@ pub fn handle_all_routes(
         ),
         (
             "v1/get_app_data",
-            get_app_data::get(database.clone()).boxed(),
+            get_app_data::get(database_replica.clone()).boxed(),
         ),
         (
             "v1/put_app_data",
@@ -125,11 +126,11 @@ pub fn handle_all_routes(
         ),
         (
             "v1/get_total_surplus",
-            box_filter(get_total_surplus::get(database.clone())),
+            box_filter(get_total_surplus::get(database_replica.clone())),
         ),
         (
             "v1/get_token_metadata",
-            box_filter(get_token_metadata::get_token_metadata(database)),
+            box_filter(get_token_metadata::get_token_metadata(database_replica)),
         ),
     ];
 
