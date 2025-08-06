@@ -83,7 +83,12 @@ impl Contracts {
             contracts::BalancerV2Vault::at(web3, settlement.methods().vault().call().await?);
         let bal_address = H160::from_str("0xef15666A3573a36748aE3A03A7471627ae114562")
             .expect("newlog H160 from address");
-        let balance_helper = contracts::support::Balances::at(web3, bal_address);
+        let balance_helper = contracts::support::Balances::deployed(web3).await.unwrap();
+        assert_eq!(
+            balance_helper.address(),
+            bal_address,
+            "balance helper address mismatch"
+        );
 
         let weth = contracts::WETH9::at(
             web3,
