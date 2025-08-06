@@ -1,7 +1,7 @@
 use {
     super::{Error, Ethereum},
     crate::domain::{competition::order, eth},
-    ethabi::{ParamType, Token},
+    alloy::sol_types::{SolType, sol_data},
     ethcontract::{Account, PrivateKey},
     futures::TryFutureExt,
 };
@@ -303,49 +303,39 @@ impl TradableBalanceSimulator for ZkSyncTradableBalanceSimulator {
             )
             .from(random_account);
         let tx = method.tx.clone();
-        let result = method.call().await;
+        let response = method.call().await;
         // @todo: remove
-        if result.is_err() {
+        if response.is_err() {
             tracing::warn!(
-                ?result,
+                ?response,
                 ?calldata,
                 ?tx,
                 "newlog simulating tradable balance failed with"
             );
         }
-        let result = result?.0;
-        // @todo: switch to abi_decode
-        let tokens = ethabi::decode(
-            &[
-                ParamType::Uint(256),
-                ParamType::Uint(256),
-                ParamType::Uint(256),
-                ParamType::Bool,
-            ],
-            &result,
-        )
-        .map_err(|err| {
-            // todo: remove
-            tracing::warn!("newlog decode error={:?}", err);
-            Error::Web3(web3::error::Error::Decoder("decode error".to_string()))
+        let result = response?.0;
+        let response_bytes = sol_data::Bytes::abi_decode(&result).map_err(|err| {
+            tracing::error!(?err, "failed to decode balances response byte array");
+            Error::Web3(web3::error::Error::Decoder(
+                "failed to decode balances response byte array".to_string(),
+            ))
         })?;
-        let (effective_balance, can_transfer) = match tokens.as_slice() {
-            [
-                Token::Uint(_),
-                Token::Uint(_),
-                Token::Uint(effective_balance),
-                Token::Bool(can_transfer),
-            ] => (eth::U256::from(effective_balance), *can_transfer),
-            _ => {
-                tracing::warn!(?tokens, "newlog unexpected decode result");
-                return Err(Error::Web3(web3::error::Error::Decoder(
-                    "unexpected decode result".to_string(),
-                )));
-            }
-        };
+        let (_token_balance, _allowance, effective_balance, can_transfer) =
+            <(
+                sol_data::Uint<256>,
+                sol_data::Uint<256>,
+                sol_data::Uint<256>,
+                sol_data::Bool,
+            )>::abi_decode(&response_bytes)
+            .map_err(|err| {
+                tracing::error!(?err, "failed to decode balance response");
+                Error::Web3(web3::error::Error::Decoder(
+                    "failed to decode balance response".to_string(),
+                ))
+            })?;
 
         if can_transfer {
-            Ok(effective_balance.into())
+            Ok(eth::U256::from_little_endian(&effective_balance.as_le_bytes()).into())
         } else {
             Ok(eth::TokenAmount(0.into()))
         }
