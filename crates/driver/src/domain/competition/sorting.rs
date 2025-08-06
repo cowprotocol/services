@@ -8,7 +8,7 @@ use {
     },
     chrono::{Duration, Utc},
     num::{CheckedDiv, ToPrimitive},
-    std::{fmt::Debug, sync::Arc},
+    std::sync::Arc,
 };
 
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
@@ -18,14 +18,13 @@ pub enum SortingKey {
     Bool(bool),
 }
 
-pub trait SortingStrategy: Send + Sync + Debug {
+pub trait SortingStrategy: Send + Sync {
     fn key(&self, order: &order::Order, tokens: &Tokens, solver: &eth::H160) -> SortingKey;
 }
 
 /// Orders are sorted by their likelihood of being fulfilled, with the most
 /// likely orders coming first. See more details in the `likelihood` function
 /// docs.
-#[derive(Debug)]
 pub struct ExternalPrice;
 impl SortingStrategy for ExternalPrice {
     fn key(&self, order: &order::Order, tokens: &Tokens, _solver: &eth::H160) -> SortingKey {
@@ -75,7 +74,6 @@ impl Eq for OrdFloat {}
 /// Orders are sorted by their creation timestamp, with the most recent orders
 /// coming first. If `max_order_age` is set, only orders created within the
 /// specified duration will be considered.
-#[derive(Debug)]
 pub struct CreationTimestamp {
     pub max_order_age: Option<Duration>,
 }
@@ -94,7 +92,6 @@ impl SortingStrategy for CreationTimestamp {
 
 /// Prioritize orders based on whether the current solver provided the winning
 /// quote for the order.
-#[derive(Debug)]
 pub struct OwnQuotes {
     pub max_order_age: Option<Duration>,
 }
