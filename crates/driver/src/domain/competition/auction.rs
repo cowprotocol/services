@@ -554,11 +554,11 @@ impl AuctionProcessor {
         orders
     }
 
-    pub fn new(
+    pub async fn new(
         eth: &infra::Ethereum,
-        order_priority_strategies: Vec<OrderPriorityStrategy>,
+        order_priority_strategies: &[OrderPriorityStrategy],
         app_data_retriever: Option<order::app_data::AppDataRetriever>,
-    ) -> Self {
+    ) -> anyhow::Result<Self> {
         let eth = eth.with_metric_label("auctionPreProcessing".into());
         let mut order_sorting_strategies = vec![];
 
@@ -585,16 +585,17 @@ impl AuctionProcessor {
                 settlement: eth.contracts().settlement().address(),
                 vault_relayer: eth.contracts().vault_relayer().0,
             },
-        );
+        )
+        .await?;
 
-        Self(Arc::new(Mutex::new(Inner {
+        Ok(Self(Arc::new(Mutex::new(Inner {
             auction: Id(0),
             fut: futures::future::pending().boxed().shared(),
             eth,
             order_sorting_strategies,
             signature_validator,
             app_data_retriever,
-        })))
+        }))))
     }
 }
 

@@ -1,15 +1,10 @@
 use {
     crate::{
-        domain::{
-            self,
-            Mempools,
-            competition::{bad_tokens, order::app_data::AppDataRetriever},
-        },
+        domain::{self, Mempools, competition::bad_tokens},
         infra::{
             self,
             Ethereum,
             Simulator,
-            config::file::OrderPriorityStrategy,
             liquidity,
             solver::{Solver, Timeouts},
             tokens,
@@ -44,8 +39,7 @@ impl Api {
     pub async fn serve(
         self,
         shutdown: impl Future<Output = ()> + Send + 'static,
-        order_priority_strategies: Vec<OrderPriorityStrategy>,
-        app_data_retriever: Option<AppDataRetriever>,
+        auction_processor: domain::competition::AuctionProcessor,
     ) -> Result<(), hyper::Error> {
         // Add middleware.
         let mut app = axum::Router::new().layer(tower::ServiceBuilder::new().layer(
@@ -53,11 +47,6 @@ impl Api {
         ));
 
         let tokens = tokens::Fetcher::new(&self.eth);
-        let pre_processor = domain::competition::AuctionProcessor::new(
-            &self.eth,
-            order_priority_strategies,
-            app_data_retriever,
-        );
 
         // Add the metrics and healthz endpoints.
         app = routes::metrics(app);
@@ -107,7 +96,7 @@ impl Api {
                 ),
                 liquidity: self.liquidity.clone(),
                 tokens: tokens.clone(),
-                pre_processor: pre_processor.clone(),
+                pre_processor: auction_processor.clone(),
             })));
             let path = format!("/{name}");
             infra::observe::mounting_solver(&name, &path);

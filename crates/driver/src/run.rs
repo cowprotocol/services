@@ -68,18 +68,17 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
         } => Some(AppDataRetriever::new(orderbook_url.clone(), *cache_size)),
         config::file::AppDataFetching::Disabled => None,
     };
-    let liquidity = liquidity(&config, &eth).await;
-    let fetcher = domain::competition::DataAggregator::new(
-        eth.clone(),
-        app_data_retriever.clone(),
-        liquidity.clone(),
+    let auction_processor = domain::competition::AuctionProcessor::new(
+        &eth,
+        &config.order_priority_strategies,
+        app_data_retriever,
     )
     .await
-    .expect("initialize data aggregator");
+    .expect("initialize auction processor");
 
     let serve = Api {
         solvers: solvers(&config, &eth).await,
-        liquidity,
+        liquidity: liquidity(&config, &eth).await,
         simulator: simulator(&config, &eth),
         mempools: Mempools::try_new(
             config
@@ -104,8 +103,7 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
         async {
             let _ = shutdown_receiver.await;
         },
-        config.order_priority_strategies,
-        fetcher,
+        auction_processor,
     );
 
     futures::pin_mut!(serve);
