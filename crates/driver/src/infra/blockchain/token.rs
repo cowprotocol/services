@@ -289,9 +289,11 @@ impl TradableBalanceSimulator for ZkSyncTradableBalanceSimulator {
         );
         let calldata = balance_call.tx.data.clone();
         let random_account = Self::random_account();
-        let method = ethereum
-            .contracts()
-            .storage_accessible()
+        let storage_accessible = contracts::StorageAccessible::at(
+            ethereum.web3(),
+            ethereum.contracts().settlement().address(),
+        );
+        let method = storage_accessible
             .simulate_delegatecall(
                 balance_helper.address(),
                 ethcontract::Bytes(balance_call.tx.data.unwrap_or_default().0),

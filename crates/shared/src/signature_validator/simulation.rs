@@ -26,7 +26,6 @@ struct EvmValidator {
 
 struct ZkSyncValidator {
     signatures: contracts::support::Signatures,
-    storage_accessible: contracts::StorageAccessible,
     settlement: H160,
     vault_relayer: H160,
     web3: Web3,
@@ -121,8 +120,8 @@ impl Simulator for ZkSyncValidator {
         );
         let calldata = validate_call.tx.data.clone();
         let random_account = Self::random_account();
-        let gas_cost = self
-            .storage_accessible
+        let storage_accessible = contracts::StorageAccessible::at(self.web3(), self.settlement);
+        let gas_cost = storage_accessible
             .simulate_delegatecall(
                 self.signatures.address(),
                 Bytes(validate_call.tx.data.unwrap_or_default().0),
@@ -199,7 +198,6 @@ impl ZkSyncValidator {
     pub async fn new(web3: &Web3, settlement: H160, vault_relayer: H160) -> Result<Self> {
         Ok(Self {
             signatures: contracts::support::Signatures::deployed(web3).await?,
-            storage_accessible: contracts::StorageAccessible::at(web3, settlement),
             settlement,
             vault_relayer,
             web3: web3.clone(),

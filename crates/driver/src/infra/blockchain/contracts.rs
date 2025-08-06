@@ -34,7 +34,6 @@ pub struct Contracts {
     /// specified.
     flashloan_default_lender: Option<eth::ContractAddress>,
     balance_helper: contracts::support::Balances,
-    storage_accessible: contracts::StorageAccessible,
 }
 
 #[derive(Debug, Clone)]
@@ -157,7 +156,6 @@ impl Contracts {
             flashloan_router,
             flashloan_default_lender: addresses.flashloan_default_lender,
             balance_helper,
-            storage_accessible: contracts::StorageAccessible::at(web3, settlement_address),
         })
     }
 
@@ -206,10 +204,6 @@ impl Contracts {
 
     pub fn balance_helper(&self) -> &contracts::support::Balances {
         &self.balance_helper
-    }
-
-    pub fn storage_accessible(&self) -> &contracts::StorageAccessible {
-        &self.storage_accessible
     }
 }
 
