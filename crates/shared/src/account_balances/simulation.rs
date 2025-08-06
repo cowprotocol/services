@@ -27,7 +27,6 @@ pub struct Balances {
 
 #[async_trait::async_trait]
 trait BalancesSimulator: Send + Sync {
-    // #[instrument(skip_all)]
     async fn simulate(&self, query: &Query, amount: Option<U256>) -> Result<Simulation>;
 }
 
@@ -52,6 +51,7 @@ impl EvmBalancesSimulator {
 
 #[async_trait::async_trait]
 impl BalancesSimulator for EvmBalancesSimulator {
+    #[instrument(skip_all)]
     async fn simulate(&self, query: &Query, amount: Option<U256>) -> Result<Simulation> {
         // We simulate the balances from the Settlement contract's context. This
         // allows us to check:
@@ -133,6 +133,7 @@ impl ZkSyncBalancesSimulator {
 
 #[async_trait::async_trait]
 impl BalancesSimulator for ZkSyncBalancesSimulator {
+    #[instrument(skip_all)]
     async fn simulate(&self, query: &Query, amount: Option<U256>) -> Result<Simulation> {
         // prepare the call that does the balance computation
         let balances_calldata = self

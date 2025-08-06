@@ -168,6 +168,9 @@ impl Erc20 {
     }
 }
 
+/// Uses a custom helper contract to simulate balances while taking
+/// pre-interactions into account. This is the most accurate method to
+/// compute tradable balances but is very slow.
 #[async_trait::async_trait]
 trait TradableBalanceSimulator: Send + Sync {
     async fn simulate(

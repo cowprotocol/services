@@ -43,6 +43,7 @@ trait Simulator: Send + Sync {
 
 #[async_trait::async_trait]
 impl Simulator for Validator {
+    #[instrument(skip_all, fields(interactions_len = check.interactions.len()))]
     async fn simulate(
         &self,
         check: &SignatureCheck,
@@ -57,7 +58,7 @@ impl Simulator for Validator {
 
 #[async_trait::async_trait]
 impl Simulator for EvmValidator {
-    // #[instrument(skip_all, fields(interactions_len = check.interactions.len()))]
+    #[instrument(skip_all, fields(interactions_len = check.interactions.len()))]
     async fn simulate(
         &self,
         check: &SignatureCheck,
@@ -98,6 +99,7 @@ impl Simulator for EvmValidator {
 
 #[async_trait::async_trait]
 impl Simulator for ZkSyncValidator {
+    #[instrument(skip_all, fields(interactions_len = check.interactions.len()))]
     async fn simulate(
         &self,
         check: &SignatureCheck,
