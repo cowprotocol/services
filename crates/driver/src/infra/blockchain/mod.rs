@@ -318,6 +318,8 @@ impl fmt::Debug for Ethereum {
 pub enum Error {
     #[error("method error: {0:?}")]
     Method(#[from] ethcontract::errors::MethodError),
+    #[error("deploy error: {0:?}")]
+    Deploy(#[from] ethcontract::errors::DeployError),
     #[error("web3 error: {0:?}")]
     Web3(#[from] web3::error::Error),
     #[error("gas price estimation error: {0}")]
@@ -339,6 +341,7 @@ impl Error {
             }
             Error::GasPrice(_) => false,
             Error::AccessList(_) => true,
+            Error::Deploy(_) => false,
         }
     }
 }
@@ -347,6 +350,8 @@ impl From<contracts::Error> for Error {
     fn from(err: contracts::Error) -> Self {
         match err {
             contracts::Error::Method(err) => Self::Method(err),
+            contracts::Error::Web3(err) => Self::Web3(err),
+            contracts::Error::Deploy(err) => Self::Deploy(err),
         }
     }
 }

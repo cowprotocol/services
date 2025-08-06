@@ -130,9 +130,11 @@ impl Simulator for ZkSyncValidator {
             .from(random_account);
         let tx = gas_cost.tx;
         let result = tx.clone().estimate_gas().await.map_err(|err| {
+            // @todo: remove
             tracing::warn!(?err, ?tx, "newlog estimate gas failed");
             SignatureValidationError::Other(err.into())
         });
+        // @todo: remove
         if result.is_err() {
             tracing::info!(
                 ?result,
@@ -159,6 +161,7 @@ impl Validator {
         let web3 = ethrpc::instrumented::instrument_with_label(web3, "signatureValidation".into());
         let chain_id = web3.eth().chain_id().await?.low_u32();
         let simulator: Box<dyn Simulator> = match chain_id {
+            // ZkSync-based chains
             232 | 324 => Box::new(ZkSyncValidator::new(&web3, settlement, vault_relayer).await?),
             _ => Box::new(EvmValidator::new(&web3, settlement, vault_relayer)),
         };

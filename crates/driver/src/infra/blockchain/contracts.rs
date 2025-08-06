@@ -34,6 +34,7 @@ pub struct Contracts {
     /// specified.
     flashloan_default_lender: Option<eth::ContractAddress>,
     balance_helper: contracts::support::Balances,
+    storage_accessible: contracts::StorageAccessible,
 }
 
 #[derive(Debug, Clone)]
@@ -75,10 +76,16 @@ impl Contracts {
                 addresses.settlement,
             ),
         );
+        let settlement_address = settlement.address();
+        let chain_id = web3.eth().chain_id().await?.low_u32();
         let vault_relayer = settlement.methods().vault_relayer().call().await?.into();
         let vault =
             contracts::BalancerV2Vault::at(web3, settlement.methods().vault().call().await?);
-        let balance_helper = contracts::support::Balances::at(web3, settlement.address());
+        let balance_helper = match chain_id {
+            // ZkSync-based chains
+            232 | 324 => contracts::support::Balances::deployed(web3).await?,
+            _ => contracts::support::Balances::at(web3, settlement_address),
+        };
 
         let weth = contracts::WETH9::at(
             web3,
@@ -150,6 +157,7 @@ impl Contracts {
             flashloan_router,
             flashloan_default_lender: addresses.flashloan_default_lender,
             balance_helper,
+            storage_accessible: contracts::StorageAccessible::at(web3, settlement_address),
         })
     }
 
@@ -198,6 +206,10 @@ impl Contracts {
 
     pub fn balance_helper(&self) -> &contracts::support::Balances {
         &self.balance_helper
+    }
+
+    pub fn storage_accessible(&self) -> &contracts::StorageAccessible {
+        &self.storage_accessible
     }
 }
 
@@ -253,4 +265,8 @@ impl ContractAt for contracts::support::Balances {
 pub enum Error {
     #[error("method error: {0:?}")]
     Method(#[from] ethcontract::errors::MethodError),
+    #[error("deploy error: {0:?}")]
+    Deploy(#[from] ethcontract::errors::DeployError),
+    #[error("web3 error: {0:?}")]
+    Web3(#[from] web3::Error),
 }
