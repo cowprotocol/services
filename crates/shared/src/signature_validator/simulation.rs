@@ -15,12 +15,7 @@ use {
     tracing::instrument,
 };
 
-pub struct Validator(ValidatorType);
-
-enum ValidatorType {
-    Evm(Box<EvmValidator>),
-    ZkSync(Box<ZkSyncValidator>),
-}
+pub struct Validator(Box<dyn Simulator>);
 
 struct EvmValidator {
     signatures: contracts::support::Signatures,
@@ -43,6 +38,8 @@ trait Simulator: Send + Sync {
         &self,
         check: &SignatureCheck,
     ) -> Result<Simulation, SignatureValidationError>;
+
+    fn web3(&self) -> &Web3;
 }
 
 #[async_trait::async_trait]
@@ -51,10 +48,11 @@ impl Simulator for Validator {
         &self,
         check: &SignatureCheck,
     ) -> Result<Simulation, SignatureValidationError> {
-        match &self.0 {
-            ValidatorType::Evm(validator) => validator.simulate(check).await,
-            ValidatorType::ZkSync(validator) => validator.simulate(check).await,
-        }
+        self.0.simulate(check).await
+    }
+
+    fn web3(&self) -> &Web3 {
+        self.0.web3()
     }
 }
 
@@ -92,6 +90,10 @@ impl Simulator for EvmValidator {
 
         tracing::trace!(?check, ?result, "simulated signature");
         Ok(Simulation { gas_used: result? })
+    }
+
+    fn web3(&self) -> &Web3 {
+        &self.web3
     }
 }
 
@@ -143,6 +145,10 @@ impl Simulator for ZkSyncValidator {
         tracing::trace!(?check, ?result, "simulated signature");
         Ok(Simulation { gas_used: result? })
     }
+
+    fn web3(&self) -> &Web3 {
+        &self.web3
+    }
 }
 
 impl Validator {
@@ -152,25 +158,12 @@ impl Validator {
     pub async fn new(web3: &Web3, settlement: H160, vault_relayer: H160) -> Result<Self> {
         let web3 = ethrpc::instrumented::instrument_with_label(web3, "signatureValidation".into());
         let chain_id = web3.eth().chain_id().await?.low_u32();
-        let validator_type = match chain_id {
-            232 | 324 => ValidatorType::ZkSync(Box::new(
-                ZkSyncValidator::new(&web3, settlement, vault_relayer).await?,
-            )),
-            _ => ValidatorType::Evm(Box::new(EvmValidator::new(
-                &web3,
-                settlement,
-                vault_relayer,
-            ))),
+        let simulator: Box<dyn Simulator> = match chain_id {
+            232 | 324 => Box::new(ZkSyncValidator::new(&web3, settlement, vault_relayer).await?),
+            _ => Box::new(EvmValidator::new(&web3, settlement, vault_relayer)),
         };
 
-        Ok(Self(validator_type))
-    }
-
-    pub fn web3(&self) -> &Web3 {
-        match &self.0 {
-            ValidatorType::Evm(validator) => &validator.web3,
-            ValidatorType::ZkSync(validator) => &validator.web3,
-        }
+        Ok(Self(simulator))
     }
 
     /// Simulate isValidSignature for the cases in which the order does not have
