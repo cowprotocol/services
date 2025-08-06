@@ -5,9 +5,10 @@
 
 use {
     super::{SignatureCheck, SignatureValidating, SignatureValidationError},
+    crate::random_account,
     anyhow::Result,
     contracts::{ERC1271SignatureValidator, errors::EthcontractErrorType},
-    ethcontract::{Account, Bytes, PrivateKey},
+    ethcontract::Bytes,
     ethrpc::Web3,
     futures::future,
     primitive_types::{H160, U256},
@@ -121,7 +122,7 @@ impl Simulator for ZkSyncValidator {
                 .collect(),
         );
         let calldata = validate_call.tx.data.clone();
-        let random_account = Self::random_account();
+        let random_account = random_account();
         let storage_accessible = contracts::StorageAccessible::at(self.web3(), self.settlement);
         let gas_cost = storage_accessible
             .simulate_delegatecall(
@@ -204,21 +205,6 @@ impl ZkSyncValidator {
             vault_relayer,
             web3: web3.clone(),
         })
-    }
-
-    // @todo: deduplicate
-    fn random_account() -> Account {
-        let mut buffer = [0; 32];
-        let mut start: usize = 100500;
-        loop {
-            buffer[24..].copy_from_slice(&start.to_be_bytes());
-            let Ok(pk) = PrivateKey::from_raw(buffer) else {
-                start += 1;
-                continue;
-            };
-
-            break Account::Offline(pk, None);
-        }
     }
 }
 

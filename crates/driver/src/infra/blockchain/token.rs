@@ -2,7 +2,6 @@ use {
     super::{Error, Ethereum},
     crate::domain::{competition::order, eth},
     alloy::sol_types::{SolType, sol_data},
-    ethcontract::{Account, PrivateKey},
     futures::TryFutureExt,
 };
 
@@ -241,23 +240,6 @@ impl TradableBalanceSimulator for EvmTradableBalanceSimulator {
 
 struct ZkSyncTradableBalanceSimulator;
 
-impl ZkSyncTradableBalanceSimulator {
-    // @todo: deduplicate
-    fn random_account() -> Account {
-        let mut buffer = [0; 32];
-        let mut start: usize = 100500;
-        loop {
-            buffer[24..].copy_from_slice(&start.to_be_bytes());
-            let Ok(pk) = PrivateKey::from_raw(buffer) else {
-                start += 1;
-                continue;
-            };
-
-            break Account::Offline(pk, None);
-        }
-    }
-}
-
 #[async_trait::async_trait]
 impl TradableBalanceSimulator for ZkSyncTradableBalanceSimulator {
     async fn simulate(
@@ -291,7 +273,7 @@ impl TradableBalanceSimulator for ZkSyncTradableBalanceSimulator {
                 .collect(),
         );
         let calldata = balance_call.tx.data.clone();
-        let random_account = Self::random_account();
+        let random_account = shared::random_account();
         let storage_accessible = contracts::StorageAccessible::at(
             ethereum.web3(),
             ethereum.contracts().settlement().address(),
