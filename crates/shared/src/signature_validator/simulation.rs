@@ -121,30 +121,19 @@ impl Simulator for ZkSyncValidator {
                 .map(|i| (i.target, i.value, Bytes(i.call_data.clone())))
                 .collect(),
         );
-        let calldata = validate_call.tx.data.clone();
         let random_account = random_account();
         let storage_accessible = contracts::StorageAccessible::at(self.web3(), self.settlement);
-        let gas_cost = storage_accessible
+        let gas_cost_call = storage_accessible
             .simulate_delegatecall(
                 self.signatures.address(),
                 Bytes(validate_call.tx.data.unwrap_or_default().0),
             )
             .from(random_account);
-        let tx = gas_cost.tx;
-        let result = tx.clone().estimate_gas().await.map_err(|err| {
-            // @todo: remove
-            tracing::warn!(?err, ?tx, "newlog estimate gas failed");
-            SignatureValidationError::Other(err.into())
-        });
-        // @todo: remove
-        if result.is_err() {
-            tracing::info!(
-                ?result,
-                ?tx,
-                ?calldata,
-                "newlog simulating signature failed with"
-            );
-        }
+        let result = gas_cost_call
+            .tx
+            .estimate_gas()
+            .await
+            .map_err(|err| SignatureValidationError::Other(err.into()));
 
         tracing::trace!(?check, ?result, "simulated signature");
         Ok(Simulation { gas_used: result? })

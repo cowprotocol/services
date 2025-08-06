@@ -272,8 +272,6 @@ impl TradableBalanceSimulator for ZkSyncTradableBalanceSimulator {
                 })
                 .collect(),
         );
-        let calldata = balance_call.tx.data.clone();
-        let random_account = shared::random_account();
         let storage_accessible = contracts::StorageAccessible::at(
             ethereum.web3(),
             ethereum.contracts().settlement().address(),
@@ -283,20 +281,9 @@ impl TradableBalanceSimulator for ZkSyncTradableBalanceSimulator {
                 balance_helper.address(),
                 ethcontract::Bytes(balance_call.tx.data.unwrap_or_default().0),
             )
-            .from(random_account);
-        let tx = method.tx.clone();
-        let response = method.call().await;
-        // @todo: remove
-        if response.is_err() {
-            tracing::warn!(
-                ?response,
-                ?calldata,
-                ?tx,
-                "newlog simulating tradable balance failed with"
-            );
-        }
-        let result = response?.0;
-        let response_bytes = sol_data::Bytes::abi_decode(&result).map_err(|err| {
+            .from(shared::random_account());
+        let response = method.call().await?;
+        let response_bytes = sol_data::Bytes::abi_decode(&response.0).map_err(|err| {
             tracing::error!(?err, "failed to decode balances response byte array");
             Error::Web3(web3::error::Error::Decoder(
                 "failed to decode balances response byte array".to_string(),
