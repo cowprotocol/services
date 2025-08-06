@@ -4,46 +4,54 @@
 
 use {
     super::{BalanceFetching, Query, TransferSimulationError},
-    anyhow::Result,
+    alloy::sol_types::{SolType, sol_data},
+    anyhow::{Context, Result},
     contracts::{BalancerV2Vault, erc20::Contract},
     ethcontract::{Bytes, H160, U256},
-    ethrpc::Web3,
+    ethrpc::{
+        Web3,
+        extensions::{EthExt, StateOverride, StateOverrides},
+    },
     futures::future,
     model::order::SellTokenSource,
     tracing::instrument,
+    web3::types::{BlockId, BlockNumber, CallRequest},
 };
 
 pub struct Balances {
-    balances: contracts::support::Balances,
     web3: Web3,
+    vault_relayer: H160,
+    vault: H160,
+    simulator: Box<dyn BalancesSimulator + Send + Sync>,
+}
+
+#[async_trait::async_trait]
+trait BalancesSimulator: Send + Sync {
+    // #[instrument(skip_all)]
+    async fn simulate(&self, query: &Query, amount: Option<U256>) -> Result<Simulation>;
+}
+
+struct EvmBalancesSimulator {
+    balances: contracts::support::Balances,
     settlement: H160,
     vault_relayer: H160,
     vault: H160,
 }
 
-impl Balances {
-    pub fn new(web3: &Web3, settlement: H160, vault_relayer: H160, vault: Option<H160>) -> Self {
-        // Note that the balances simulation **will fail** if the `vault`
-        // address is not a contract and the `source` is set to one of
-        // `SellTokenSource::{External, Internal}` (i.e. the Vault contract is
-        // needed). This is because Solidity generates code to verify that
-        // contracts exist at addresses that get called. This allows us to
-        // properly check if the `source` is not supported for the deployment
-        // work without additional code paths :tada:!
-        let vault = vault.unwrap_or_default();
-        let web3 = ethrpc::instrumented::instrument_with_label(web3, "balanceFetching".into());
+impl EvmBalancesSimulator {
+    pub fn new(web3: Web3, settlement: H160, vault_relayer: H160, vault: H160) -> Self {
         let balances = contracts::support::Balances::at(&web3, settlement);
-
         Self {
-            web3,
             balances,
             settlement,
             vault_relayer,
             vault,
         }
     }
+}
 
-    #[instrument(skip_all)]
+#[async_trait::async_trait]
+impl BalancesSimulator for EvmBalancesSimulator {
     async fn simulate(&self, query: &Query, amount: Option<U256>) -> Result<Simulation> {
         // We simulate the balances from the Settlement contract's context. This
         // allows us to check:
@@ -80,9 +88,171 @@ impl Balances {
         tracing::trace!(?query, ?amount, ?simulation, "simulated balances");
         Ok(simulation)
     }
+}
+
+struct ZkSyncBalancesSimulator {
+    balances: contracts::support::Balances,
+    settlement: contracts::GPv2Settlement,
+    state_overrides: StateOverrides,
+    vault_relayer: H160,
+    vault: H160,
+    web3: Web3,
+}
+
+impl ZkSyncBalancesSimulator {
+    pub fn new(web3: Web3, settlement: H160, vault_relayer: H160, vault: H160) -> Self {
+        // pick a random address for the helper contract to avoid accidental collisions
+        let balances_address = H160::random();
+
+        // prepare state overrides that put the contract code of the helper contract at
+        // chosen address
+        let balances = contracts::support::Balances::raw_contract()
+            .deployed_bytecode
+            .to_bytes()
+            .unwrap();
+        let state_overrides: StateOverrides = [(
+            balances_address,
+            StateOverride {
+                code: Some(balances),
+                ..Default::default()
+            },
+        )]
+        .into_iter()
+        .collect();
+
+        Self {
+            balances: contracts::support::Balances::at(&web3, balances_address),
+            settlement: contracts::GPv2Settlement::at(&web3, settlement),
+            web3,
+            vault_relayer,
+            vault,
+            state_overrides,
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl BalancesSimulator for ZkSyncBalancesSimulator {
+    async fn simulate(&self, query: &Query, amount: Option<U256>) -> Result<Simulation> {
+        // prepare the call that does the balance computation
+        let balances_calldata = self
+            .balances
+            .balance(
+                (self.settlement.address(), self.vault_relayer, self.vault),
+                query.owner,
+                query.token,
+                amount.unwrap_or_default(),
+                Bytes(query.source.as_bytes()),
+                query
+                    .interactions
+                    .iter()
+                    .map(|i| (i.target, i.value, Bytes(i.call_data.clone())))
+                    .collect(),
+            )
+            .tx
+            .data
+            .context("no calldata for balance computation call")?;
+
+        // execute that call via the storage accessible interface to execute
+        // it in the context of the settlement contract
+        let storage_accessible_calldata = self
+            .settlement
+            .simulate_delegatecall(
+                self.balances.address(),
+                ethcontract::Bytes(balances_calldata.0),
+            )
+            .tx
+            .data
+            .context("no calldata for storage accessible call")?;
+
+        // send the RPC call with state overrides that put the helper
+        // contract at the expected address
+        let wrapped_response = self
+            .web3
+            .eth()
+            .call_with_state_overrides(
+                CallRequest {
+                    to: Some(self.settlement.address()),
+                    data: Some(storage_accessible_calldata),
+                    ..Default::default()
+                },
+                BlockId::Number(BlockNumber::Latest),
+                self.state_overrides.clone(),
+            )
+            .await
+            .context("RPC call failed")?
+            .0;
+
+        // simulateDelegatecall does not return the raw bytes of the internal function
+        // call but wraps them in another byte array
+        let actual_response_bytes = sol_data::Bytes::abi_decode(&wrapped_response)
+            .context("failed to decode byte array")?;
+
+        // decode the actual response of the simulated call
+        let (token_balance, allowance, effective_balance, can_transfer) =
+            <(
+                sol_data::Uint<256>,
+                sol_data::Uint<256>,
+                sol_data::Uint<256>,
+                sol_data::Bool,
+            )>::abi_decode(&actual_response_bytes)
+            .context("failed to decode balance response")?;
+
+        let simulation = Simulation {
+            token_balance: U256::from_little_endian(&token_balance.as_le_bytes()),
+            allowance: U256::from_little_endian(&allowance.as_le_bytes()),
+            effective_balance: U256::from_little_endian(&effective_balance.as_le_bytes()),
+            can_transfer,
+        };
+
+        tracing::trace!(?query, ?amount, ?simulation, "simulated balances");
+        Ok(simulation)
+    }
+}
+
+impl Balances {
+    pub async fn new(
+        web3: &Web3,
+        settlement: H160,
+        vault_relayer: H160,
+        vault: Option<H160>,
+    ) -> Result<Self> {
+        // Note that the balances simulation **will fail** if the `vault`
+        // address is not a contract and the `source` is set to one of
+        // `SellTokenSource::{External, Internal}` (i.e. the Vault contract is
+        // needed). This is because Solidity generates code to verify that
+        // contracts exist at addresses that get called. This allows us to
+        // properly check if the `source` is not supported for the deployment
+        // work without additional code paths :tada:!
+        let vault = vault.unwrap_or_default();
+        let web3 = ethrpc::instrumented::instrument_with_label(web3, "balanceFetching".into());
+        let chain_id = web3.eth().chain_id().await?;
+        let simulator: Box<dyn BalancesSimulator + Send + Sync> = match chain_id.low_u32() {
+            // ZkSync-based chains
+            232 | 324 => Box::new(ZkSyncBalancesSimulator::new(
+                web3.clone(),
+                settlement,
+                vault_relayer,
+                vault,
+            )),
+            _ => Box::new(EvmBalancesSimulator::new(
+                web3.clone(),
+                settlement,
+                vault_relayer,
+                vault,
+            )),
+        };
+
+        Ok(Self {
+            web3,
+            vault_relayer,
+            vault,
+            simulator,
+        })
+    }
 
     async fn tradable_balance_simulated(&self, query: &Query) -> Result<U256> {
-        let simulation = self.simulate(query, None).await?;
+        let simulation = self.simulator.simulate(query, None).await?;
         Ok(if simulation.can_transfer {
             simulation.effective_balance
         } else {
@@ -167,7 +337,7 @@ impl BalanceFetching for Balances {
         query: &Query,
         amount: U256,
     ) -> Result<(), TransferSimulationError> {
-        let simulation = self.simulate(query, Some(amount)).await?;
+        let simulation = self.simulator.simulate(query, Some(amount)).await?;
 
         if simulation.token_balance < amount {
             return Err(TransferSimulationError::InsufficientBalance);
@@ -199,7 +369,9 @@ mod tests {
             addr!("9008d19f58aabd9ed0d60971565aa8510560ab41"),
             addr!("C92E8bdf79f0507f65a392b0ab4667716BFE0110"),
             Some(addr!("BA12222222228d8Ba445958a75a0704d566BF2C8")),
-        );
+        )
+        .await
+        .unwrap();
 
         let owner = addr!("b0a4e99371dfb0734f002ae274933b4888f618ef");
         let token = addr!("d909c5862cdb164adb949d92622082f0092efc3d");

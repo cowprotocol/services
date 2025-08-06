@@ -259,7 +259,9 @@ pub async fn run(args: Arguments) {
             vault: vault.as_ref().map(|contract| contract.address()),
         },
         eth.current_block().clone(),
-    );
+    )
+    .await
+    .expect("failed to create balance fetcher");
 
     let gas_price_estimator = Arc::new(
         shared::gas_price_estimation::create_priority_estimator(

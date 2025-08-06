@@ -73,22 +73,25 @@ pub struct Contracts {
 }
 
 /// Create the default [`BalanceFetching`] instance.
-pub fn fetcher(web3: &Web3, contracts: Contracts) -> Arc<dyn BalanceFetching> {
-    Arc::new(simulation::Balances::new(
-        web3,
-        contracts.settlement,
-        contracts.vault_relayer,
-        contracts.vault,
+pub async fn fetcher(web3: &Web3, contracts: Contracts) -> Result<Arc<dyn BalanceFetching>> {
+    Ok(Arc::new(
+        simulation::Balances::new(
+            web3,
+            contracts.settlement,
+            contracts.vault_relayer,
+            contracts.vault,
+        )
+        .await?,
     ))
 }
 
 /// Create a cached [`BalanceFetching`] instance.
-pub fn cached(
+pub async fn cached(
     web3: &Web3,
     contracts: Contracts,
     blocks: CurrentBlockWatcher,
-) -> Arc<dyn BalanceFetching> {
-    let cached = Arc::new(cached::Balances::new(fetcher(web3, contracts)));
+) -> Result<Arc<dyn BalanceFetching>> {
+    let cached = Arc::new(cached::Balances::new(fetcher(web3, contracts).await?));
     cached.spawn_background_task(blocks);
-    cached
+    Ok(cached)
 }
