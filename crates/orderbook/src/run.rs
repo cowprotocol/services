@@ -157,7 +157,8 @@ pub async fn run(args: Arguments) {
         .expect("Deployed contract constants don't match the ones in this binary");
     let domain_separator = DomainSeparator::new(chain_id, settlement_contract.address());
     let postgres = Postgres::try_new(args.db_url.as_str()).expect("failed to create database");
-
+    let postgres_replica = Postgres::try_new(args.db_replica_url.as_str())
+        .expect("failed to create read replica database");
     let balance_fetcher = account_balances::fetcher(
         &web3,
         account_balances::Contracts {
@@ -411,6 +412,7 @@ pub async fn run(args: Arguments) {
         domain_separator,
         settlement_contract.address(),
         postgres.clone(),
+        postgres_replica.clone(),
         order_validator.clone(),
         app_data.clone(),
         args.active_order_competition_threshold,
@@ -425,6 +427,7 @@ pub async fn run(args: Arguments) {
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let serve_api = serve_api(
         postgres,
+        postgres_replica,
         orderbook.clone(),
         quotes,
         app_data,
@@ -493,6 +496,7 @@ async fn check_database_connection(orderbook: &Orderbook) {
 #[allow(clippy::too_many_arguments)]
 fn serve_api(
     database: Postgres,
+    database_replica: Postgres,
     orderbook: Arc<Orderbook>,
     quotes: Arc<QuoteHandler>,
     app_data: Arc<crate::app_data::Registry>,
@@ -503,6 +507,7 @@ fn serve_api(
 ) -> JoinHandle<()> {
     let filter = api::handle_all_routes(
         database,
+        database_replica,
         orderbook,
         quotes,
         app_data,

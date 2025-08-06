@@ -160,7 +160,11 @@ pub async fn run(args: Arguments) {
     let db = Postgres::new(args.db_url.as_str(), args.insert_batch_size)
         .await
         .unwrap();
-    crate::database::run_database_metrics_work(db.clone());
+
+    let db_replica = Postgres::new(args.db_replica_url.as_str(), args.insert_batch_size)
+        .await
+        .unwrap();
+    crate::database::run_database_metrics_work(db_replica.clone());
 
     let http_factory = HttpClientFactory::new(&args.http_client);
     let web3 = shared::ethrpc::web3(

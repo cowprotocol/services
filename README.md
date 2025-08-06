@@ -61,7 +61,7 @@ The CI (check .github/workflows/pull-request.yaml) runs unit tests, e2e tests, `
 
 `cargo nextest run -p e2e local_node --test-threads 1 --failure-output final --run-ignored ignored-only`.
 
-**Note:** Requires postgres database and local test network with smart contracts deployed (see below).
+**Note:** Requires postgres database and *anvil* (see below). A local test network with smart contracts will be automatically deployed.
 
 ### E2E Tests - Forked Node:
 
