@@ -3,7 +3,7 @@ use {
         domain::{
             self,
             Mempools,
-            competition::{bad_tokens, sorting},
+            competition::{bad_tokens, order::app_data::AppDataRetriever},
         },
         infra::{
             self,
@@ -45,17 +45,19 @@ impl Api {
         self,
         shutdown: impl Future<Output = ()> + Send + 'static,
         order_priority_strategies: Vec<OrderPriorityStrategy>,
-        data_aggregator: domain::competition::DataAggregator,
+        app_data_retriever: Option<AppDataRetriever>,
     ) -> Result<(), hyper::Error> {
-        let fetcher = Arc::new(data_aggregator);
         // Add middleware.
         let mut app = axum::Router::new().layer(tower::ServiceBuilder::new().layer(
             tower_http::limit::RequestBodyLimitLayer::new(REQUEST_BODY_LIMIT),
         ));
 
         let tokens = tokens::Fetcher::new(&self.eth);
-        let order_sorting_strategies =
-            Self::build_order_sorting_strategies(&order_priority_strategies);
+        let pre_processor = domain::competition::AuctionProcessor::new(
+            &self.eth,
+            order_priority_strategies,
+            app_data_retriever,
+        );
 
         // Add the metrics and healthz endpoints.
         app = routes::metrics(app);
@@ -102,11 +104,10 @@ impl Api {
                     self.simulator.clone(),
                     self.mempools.clone(),
                     Arc::new(bad_tokens),
-                    fetcher.clone(),
-                    order_sorting_strategies.clone(),
                 ),
                 liquidity: self.liquidity.clone(),
                 tokens: tokens.clone(),
+                pre_processor: pre_processor.clone(),
             })));
             let path = format!("/{name}");
             infra::observe::mounting_solver(&name, &path);
@@ -129,32 +130,6 @@ impl Api {
             addr_sender.send(server.local_addr()).unwrap();
         }
         server.with_graceful_shutdown(shutdown).await
-    }
-
-    fn build_order_sorting_strategies(
-        order_priority_strategies: &[OrderPriorityStrategy],
-    ) -> Vec<Arc<dyn sorting::SortingStrategy>> {
-        let mut order_sorting_strategies = vec![];
-        for strategy in order_priority_strategies {
-            let comparator: Arc<dyn sorting::SortingStrategy> = match strategy {
-                OrderPriorityStrategy::ExternalPrice => Arc::new(sorting::ExternalPrice),
-                OrderPriorityStrategy::CreationTimestamp { max_order_age } => {
-                    Arc::new(sorting::CreationTimestamp {
-                        max_order_age: max_order_age
-                            .map(|t| chrono::Duration::from_std(t).unwrap()),
-                    })
-                }
-                OrderPriorityStrategy::OwnQuotes { max_order_age } => {
-                    Arc::new(sorting::OwnQuotes {
-                        max_order_age: max_order_age
-                            .map(|t| chrono::Duration::from_std(t).unwrap()),
-                    })
-                }
-            };
-            order_sorting_strategies.push(comparator);
-        }
-
-        order_sorting_strategies
     }
 }
 
@@ -182,6 +157,10 @@ impl State {
         &self.0.tokens
     }
 
+    fn pre_processor(&self) -> &domain::competition::AuctionProcessor {
+        &self.0.pre_processor
+    }
+
     fn timeouts(&self) -> Timeouts {
         self.0.solver.timeouts()
     }
@@ -193,4 +172,5 @@ struct Inner {
     competition: Arc<domain::Competition>,
     liquidity: liquidity::Fetcher,
     tokens: tokens::Fetcher,
+    pre_processor: domain::competition::AuctionProcessor,
 }
