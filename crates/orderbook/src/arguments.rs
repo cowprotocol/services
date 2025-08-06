@@ -40,6 +40,11 @@ pub struct Arguments {
     #[clap(long, env, default_value = "postgresql://")]
     pub db_url: Url,
 
+    /// url of the Postgres database read replica. By default connects to
+    /// locally running postgres
+    #[clap(long, env, default_value = "postgresql://")]
+    pub db_replica_url: Url,
+
     /// The minimum amount of time in seconds an order has to be valid for.
     #[clap(
         long,
@@ -164,6 +169,7 @@ impl std::fmt::Display for Arguments {
             ipfs_pinata_auth,
             app_data_size_limit,
             db_url,
+            db_replica_url,
             max_gas_per_order,
             active_order_competition_threshold,
         } = self;
@@ -177,6 +183,8 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "bind_address: {bind_address}")?;
         let _intentionally_ignored = db_url;
         writeln!(f, "db_url: SECRET")?;
+        let _intentionally_ignored = db_replica_url;
+        writeln!(f, "db_replica_url: SECRET")?;
         writeln!(
             f,
             "min_order_validity_period: {min_order_validity_period:?}"

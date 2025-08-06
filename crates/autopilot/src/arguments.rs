@@ -64,6 +64,11 @@ pub struct Arguments {
     #[clap(long, env, default_value = "postgresql://")]
     pub db_url: Url,
 
+    /// Url of the Postgres database replica. By default connects to locally
+    /// running postgres.
+    #[clap(long, env, default_value = "postgresql://")]
+    pub db_replica_url: Url,
+
     /// The number of order events to insert in a single batch.
     #[clap(long, env, default_value = "500")]
     pub insert_batch_size: NonZeroUsize,
@@ -367,6 +372,7 @@ impl std::fmt::Display for Arguments {
             order_events_cleanup_interval,
             order_events_cleanup_threshold,
             db_url,
+            db_replica_url,
             insert_batch_size,
             native_price_estimation_results_required,
             max_settlement_transaction_wait,
@@ -391,6 +397,8 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "metrics_address: {metrics_address}")?;
         let _intentionally_ignored = db_url;
         writeln!(f, "db_url: SECRET")?;
+        let _intentionally_ignored = db_replica_url;
+        writeln!(f, "db_replica_url: SECRET")?;
         writeln!(f, "skip_event_sync: {skip_event_sync}")?;
         writeln!(f, "allowed_tokens: {allowed_tokens:?}")?;
         writeln!(f, "unsupported_tokens: {unsupported_tokens:?}")?;

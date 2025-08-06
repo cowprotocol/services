@@ -23,6 +23,7 @@ use {
     std::{
         collections::{HashMap, hash_map::Entry},
         ops::DerefMut,
+        sync::LazyLock,
         time::Duration,
     },
     web3::Transport,
@@ -37,6 +38,12 @@ pub const TRADES_ENDPOINT: &str = "/api/v1/trades";
 pub const VERSION_ENDPOINT: &str = "/api/v1/version";
 pub const SOLVER_COMPETITION_ENDPOINT: &str = "/api/v2/solver_competition";
 const LOCAL_DB_URL: &str = "postgresql://";
+static LOCAL_READ_ONLY_DB_URL: LazyLock<String> = LazyLock::new(|| {
+    format!(
+        "postgresql://readonly@localhost/{db}",
+        db = std::env::var("USER").unwrap()
+    )
+});
 
 fn order_status_endpoint(uid: &OrderUid) -> String {
     format!("/api/v1/orders/{uid}/status")
@@ -156,6 +163,14 @@ impl<'a> Services<'a> {
         .into_iter()
     }
 
+    fn api_database_arguments(&self) -> impl Iterator<Item = String> + use<> {
+        [
+            "--db-replica-url".to_string(),
+            LOCAL_READ_ONLY_DB_URL.clone(),
+        ]
+        .into_iter()
+    }
+
     /// Start the autopilot service in a background task.
     /// Optionally specify a solve deadline to use instead of the default 2s.
     /// (note: specifying a larger solve deadline will impact test times as the
@@ -184,6 +199,7 @@ impl<'a> Services<'a> {
         .into_iter()
         .chain(self.api_autopilot_solver_arguments())
         .chain(self.api_autopilot_arguments())
+        .chain(self.api_database_arguments())
         .chain(extra_args)
         .collect();
         let args = ignore_overwritten_cli_params(args);
@@ -204,6 +220,7 @@ impl<'a> Services<'a> {
         .into_iter()
         .chain(self.api_autopilot_solver_arguments())
         .chain(self.api_autopilot_arguments())
+        .chain(self.api_database_arguments())
         .chain(extra_args)
         .collect();
         let args = ignore_overwritten_cli_params(args);
@@ -709,6 +726,51 @@ pub async fn clear_database() {
             panic!("repeatedly failed to clear DB");
         }
     }
+}
+
+pub async fn ensure_e2e_readonly_user() {
+    use sqlx::{Executor, Row};
+
+    const PSQL_DUPLICATE_OBJECT_ERROR_CODE: &str = "42710";
+
+    tracing::info!("Ensuring read-only user exists");
+    async fn create_readonly_user() -> Result<(), sqlx::Error> {
+        let mut db = sqlx::PgConnection::connect(LOCAL_DB_URL).await?;
+        let mut db: sqlx::Transaction<'_, sqlx::Postgres> = db.begin().await?;
+        let current_db: String = db.fetch_one("SELECT current_database();").await?.get(0);
+
+        let res = db
+            .execute(
+                format!(
+                    r#"
+        CREATE ROLE readonly WITH LOGIN PASSWORD 'password';
+        GRANT CONNECT ON DATABASE "{current_db}" TO readonly;
+        GRANT USAGE ON SCHEMA public TO readonly;
+        GRANT SELECT ON ALL TABLES IN SCHEMA public TO readonly;
+        GRANT SELECT ON ALL SEQUENCES IN SCHEMA public TO readonly;
+        ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO readonly;
+        ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON SEQUENCES TO readonly;
+        "#
+                )
+                .as_str(),
+            )
+            .await;
+
+        match res {
+            Err(sqlx::Error::Database(e))
+                if e.code()
+                    .is_some_and(|c| c == PSQL_DUPLICATE_OBJECT_ERROR_CODE) =>
+            {
+                tracing::info!("Read-only user already exists! {:?}", e)
+            }
+            Err(e) => tracing::error!("Read-only user creation failed {:?}", e),
+            _ => tracing::info!("Read only user created"),
+        }
+
+        db.commit().await
+    }
+
+    create_readonly_user().await.unwrap();
 }
 
 pub type Db = sqlx::Pool<sqlx::Postgres>;
