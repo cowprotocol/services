@@ -206,6 +206,7 @@ impl ZkSyncValidator {
         })
     }
 
+    // @todo: deduplicate
     fn random_account() -> Account {
         let mut buffer = [0; 32];
         let mut start: usize = 100500;
