@@ -26,7 +26,7 @@ struct EvmValidator {
 
 struct ZkSyncValidator {
     signatures: contracts::support::Signatures,
-    settlement: H160,
+    settlement: contracts::GPv2Settlement,
     vault_relayer: H160,
     web3: Web3,
 }
@@ -117,7 +117,7 @@ impl Simulator for ZkSyncValidator {
         // 2. Simulate the actual `isValidSignature` calls that would happen as part of
         //    a settlement
         let validate_call = self.signatures.methods().validate(
-            (self.settlement, self.vault_relayer),
+            (self.settlement.address(), self.vault_relayer),
             check.signer,
             Bytes(check.hash),
             Bytes(check.signature.clone()),
@@ -127,8 +127,8 @@ impl Simulator for ZkSyncValidator {
                 .map(|i| (i.target, i.value, Bytes(i.call_data.clone())))
                 .collect(),
         );
-        let storage_accessible = contracts::StorageAccessible::at(self.web3(), self.settlement);
-        let gas_cost_call = storage_accessible
+        let gas_cost_call = self
+            .settlement
             .simulate_delegatecall(
                 self.signatures.address(),
                 Bytes(validate_call.tx.data.unwrap_or_default().0),
@@ -153,13 +153,21 @@ impl Validator {
     /// The result returned from `isValidSignature` if the signature is correct
     const IS_VALID_SIGNATURE_MAGIC_BYTES: &'static str = "1626ba7e";
 
-    pub async fn new(web3: &Web3, settlement: H160, vault_relayer: H160) -> Result<Self> {
+    pub async fn new(
+        web3: &Web3,
+        settlement: contracts::GPv2Settlement,
+        vault_relayer: H160,
+    ) -> Result<Self> {
         let web3 = ethrpc::instrumented::instrument_with_label(web3, "signatureValidation".into());
         let chain_id = web3.eth().chain_id().await?.low_u32();
         let simulator: Box<dyn Simulator> = match chain_id {
             // ZkSync-based chains
             232 | 324 => Box::new(ZkSyncValidator::new(&web3, settlement, vault_relayer).await?),
-            _ => Box::new(EvmValidator::new(&web3, settlement, vault_relayer)),
+            _ => Box::new(EvmValidator::new(
+                &web3,
+                settlement.address(),
+                vault_relayer,
+            )),
         };
 
         Ok(Self(simulator))
@@ -192,7 +200,11 @@ impl Validator {
 }
 
 impl ZkSyncValidator {
-    pub async fn new(web3: &Web3, settlement: H160, vault_relayer: H160) -> Result<Self> {
+    pub async fn new(
+        web3: &Web3,
+        settlement: contracts::GPv2Settlement,
+        vault_relayer: H160,
+    ) -> Result<Self> {
         Ok(Self {
             signatures: contracts::support::Signatures::deployed(web3).await?,
             settlement,

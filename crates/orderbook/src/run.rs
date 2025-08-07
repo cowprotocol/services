@@ -113,7 +113,7 @@ pub async fn run(args: Arguments) {
     let signature_validator = signature_validator::validator(
         &web3,
         signature_validator::Contracts {
-            settlement: settlement_contract.address(),
+            settlement: settlement_contract.clone(),
             vault_relayer,
         },
     )

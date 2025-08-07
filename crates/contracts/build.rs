@@ -1570,9 +1570,6 @@ fn main() {
     generate_contract_with_config("Balances", |builder| {
         builder.add_network_str(LENS, "0xef15666A3573a36748aE3A03A7471627ae114562")
     });
-    generate_contract_with_config("StorageAccessible", |builder| {
-        builder.contract_mod_override("generated_storage_accessible")
-    });
     generate_contract("SimulateCode");
     generate_contract_with_config("Signatures", |builder| {
         builder.add_network_str(LENS, "0x714cC35842b9090B9738CbCBFb882c0128685921")
