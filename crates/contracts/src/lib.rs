@@ -95,6 +95,7 @@ include_contracts! {
     IAavePool;
     IFlashLoanSolverWrapper;
     ILiquoriceSettlement;
+    LiquoriceAllowListAuthentication;
     ISwaprPair;
     IUniswapLikePair;
     IUniswapLikeRouter;
