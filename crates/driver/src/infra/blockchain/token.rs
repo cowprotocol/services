@@ -169,9 +169,6 @@ impl Erc20 {
     }
 }
 
-/// Uses a custom helper contract to simulate balances while taking
-/// pre-interactions into account. This is the most accurate method to
-/// compute tradable balances but is very slow.
 #[async_trait::async_trait]
 trait TradableBalanceSimulator: Send + Sync {
     async fn simulate(
@@ -188,6 +185,9 @@ struct EvmTradableBalanceSimulator;
 
 #[async_trait::async_trait]
 impl TradableBalanceSimulator for EvmTradableBalanceSimulator {
+    /// Uses a custom helper contract to simulate balances while taking
+    /// pre-interactions into account. This is the most accurate method to
+    /// compute tradable balances but is very slow.
     async fn simulate(
         &self,
         ethereum: &Ethereum,
@@ -244,6 +244,9 @@ struct ZkSyncTradableBalanceSimulator;
 
 #[async_trait::async_trait]
 impl TradableBalanceSimulator for ZkSyncTradableBalanceSimulator {
+    /// ZKSync doesn't support access lists and delegate calls
+    /// from EVM to EraVM SCs and vice versa, so this version uses a
+    /// deployed EVM Balances SC directly and avoids using access lists.
     async fn simulate(
         &self,
         ethereum: &Ethereum,
@@ -257,7 +260,7 @@ impl TradableBalanceSimulator for ZkSyncTradableBalanceSimulator {
                 "0000000000000000000000000000000000000000000000000000000000018894",
             )
             .map(|pk| Account::Offline(pk, None))
-            .expect("valid simulation private key")
+            .expect("valid simulation account private key")
         });
         let balance_helper = ethereum.contracts().balance_helper();
         let balance_call = balance_helper.balance(

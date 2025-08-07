@@ -133,6 +133,8 @@ impl ZkSyncBalancesSimulator {
 
 #[async_trait::async_trait]
 impl BalancesSimulator for ZkSyncBalancesSimulator {
+    /// ZKSync doesn't support delegate calls from EVM to EraVM SCs, so this
+    /// version uses a deployed EVM Balances helper SC directly.
     #[instrument(skip_all)]
     async fn simulate(&self, query: &Query, amount: Option<U256>) -> Result<Simulation> {
         // prepare the call that does the balance computation

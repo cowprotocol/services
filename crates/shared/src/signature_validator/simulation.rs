@@ -99,6 +99,8 @@ impl Simulator for EvmValidator {
 
 #[async_trait::async_trait]
 impl Simulator for ZkSyncValidator {
+    /// ZKSync doesn't support delegate calls from EVM to EraVM SCs, so this
+    /// version uses a deployed EVM Signatures helper SC directly.
     #[instrument(skip_all, fields(interactions_len = check.interactions.len()))]
     async fn simulate(
         &self,
@@ -109,7 +111,7 @@ impl Simulator for ZkSyncValidator {
                 "0000000000000000000000000000000000000000000000000000000000018894",
             )
             .map(|pk| Account::Offline(pk, None))
-            .expect("valid simulation private key")
+            .expect("valid simulation account private key")
         });
         // We simulate the signature verification from the Settlement contract's
         // context. This allows us to check:
