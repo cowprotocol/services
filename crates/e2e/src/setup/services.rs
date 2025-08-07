@@ -72,7 +72,7 @@ impl ServicesBuilder {
         self
     }
 
-    pub async fn build(self, onchain_components: &OnchainComponents) -> Services {
+    pub async fn build(self, onchain_components: &OnchainComponents) -> Services<'_> {
         Services {
             contracts: onchain_components.contracts(),
             http: Client::builder().timeout(self.timeout).build().unwrap(),
