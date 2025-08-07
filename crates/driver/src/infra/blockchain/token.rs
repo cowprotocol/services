@@ -292,19 +292,13 @@ impl TradableBalanceSimulator for ZkSyncTradableBalanceSimulator {
             )
             .from(SIMULATION_ACCOUNT.clone());
         let response = method.call().await?;
-        let response_bytes = sol_data::Bytes::abi_decode(&response.0).map_err(|err| {
-            tracing::error!(?err, "failed to decode balances response byte array");
-            Error::Web3(web3::error::Error::Decoder(
-                "failed to decode balances response byte array".to_string(),
-            ))
-        })?;
         let (_token_balance, _allowance, effective_balance, can_transfer) =
             <(
                 sol_data::Uint<256>,
                 sol_data::Uint<256>,
                 sol_data::Uint<256>,
                 sol_data::Bool,
-            )>::abi_decode(&response_bytes)
+            )>::abi_decode(&response.0)
             .map_err(|err| {
                 tracing::error!(?err, "failed to decode balance response");
                 Error::Web3(web3::error::Error::Decoder(
