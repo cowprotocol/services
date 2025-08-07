@@ -5,10 +5,9 @@
 
 use {
     super::{SignatureCheck, SignatureValidating, SignatureValidationError},
-    crate::random_account,
     anyhow::Result,
     contracts::{ERC1271SignatureValidator, errors::EthcontractErrorType},
-    ethcontract::Bytes,
+    ethcontract::{Account, Bytes, PrivateKey},
     ethrpc::Web3,
     futures::future,
     primitive_types::{H160, U256},
@@ -105,6 +104,13 @@ impl Simulator for ZkSyncValidator {
         &self,
         check: &SignatureCheck,
     ) -> Result<Simulation, SignatureValidationError> {
+        static SIMULATION_ACCOUNT: LazyLock<Account> = LazyLock::new(|| {
+            PrivateKey::from_hex_str(
+                "0000000000000000000000000000000000000000000000000000000000018894",
+            )
+            .map(|pk| Account::Offline(pk, None))
+            .expect("valid simulation private key")
+        });
         // We simulate the signature verification from the Settlement contract's
         // context. This allows us to check:
         // 1. How the pre-interactions would behave as part of the settlement
@@ -121,14 +127,13 @@ impl Simulator for ZkSyncValidator {
                 .map(|i| (i.target, i.value, Bytes(i.call_data.clone())))
                 .collect(),
         );
-        let random_account = random_account();
         let storage_accessible = contracts::StorageAccessible::at(self.web3(), self.settlement);
         let gas_cost_call = storage_accessible
             .simulate_delegatecall(
                 self.signatures.address(),
                 Bytes(validate_call.tx.data.unwrap_or_default().0),
             )
-            .from(random_account);
+            .from(SIMULATION_ACCOUNT.clone());
         let result = gas_cost_call
             .tx
             .estimate_gas()

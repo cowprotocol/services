@@ -2,7 +2,9 @@ use {
     super::{Error, Ethereum},
     crate::domain::{competition::order, eth},
     alloy::sol_types::{SolType, sol_data},
+    ethcontract::{Account, PrivateKey},
     futures::TryFutureExt,
+    std::sync::LazyLock,
 };
 
 /// An ERC-20 token.
@@ -250,6 +252,13 @@ impl TradableBalanceSimulator for ZkSyncTradableBalanceSimulator {
         source: order::SellTokenBalance,
         interactions: &[eth::Interaction],
     ) -> Result<eth::TokenAmount, Error> {
+        static SIMULATION_ACCOUNT: LazyLock<Account> = LazyLock::new(|| {
+            PrivateKey::from_hex_str(
+                "0000000000000000000000000000000000000000000000000000000000018894",
+            )
+            .map(|pk| Account::Offline(pk, None))
+            .expect("valid simulation private key")
+        });
         let balance_helper = ethereum.contracts().balance_helper();
         let balance_call = balance_helper.balance(
             (
@@ -281,7 +290,7 @@ impl TradableBalanceSimulator for ZkSyncTradableBalanceSimulator {
                 balance_helper.address(),
                 ethcontract::Bytes(balance_call.tx.data.unwrap_or_default().0),
             )
-            .from(shared::random_account());
+            .from(SIMULATION_ACCOUNT.clone());
         let response = method.call().await?;
         let response_bytes = sol_data::Bytes::abi_decode(&response.0).map_err(|err| {
             tracing::error!(?err, "failed to decode balances response byte array");

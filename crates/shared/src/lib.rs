@@ -1,5 +1,3 @@
-use ethcontract::{Account, PrivateKey};
-
 #[macro_use]
 pub mod macros;
 
@@ -47,18 +45,4 @@ pub mod zeroex_api;
 /// without backtrace.
 pub fn clone_anyhow_error(err: &anyhow::Error) -> anyhow::Error {
     anyhow::anyhow!("{:#}", err)
-}
-
-pub fn random_account() -> Account {
-    let mut buffer = [0; 32];
-    let mut start: usize = 100500;
-    loop {
-        buffer[24..].copy_from_slice(&start.to_be_bytes());
-        let Ok(pk) = PrivateKey::from_raw(buffer) else {
-            start += 1;
-            continue;
-        };
-
-        break Account::Offline(pk, None);
-    }
 }
