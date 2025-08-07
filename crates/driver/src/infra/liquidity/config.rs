@@ -159,7 +159,7 @@ impl UniswapV3 {
     #[allow(clippy::self_named_constructors)]
     pub fn uniswap_v3(graph_url: &Url, chain: Chain) -> Option<Self> {
         Some(Self {
-            router: deployment_address(contracts::UniswapV3SwapRouter::raw_contract(), chain)?,
+            router: deployment_address(contracts::UniswapV3SwapRouterV2::raw_contract(), chain)?,
             max_pools_to_initialize: 100,
             graph_url: graph_url.clone(),
             reinit_interval: None,

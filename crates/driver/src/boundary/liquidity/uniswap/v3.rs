@@ -11,7 +11,7 @@ use {
         infra::{self, blockchain::Ethereum},
     },
     anyhow::Context,
-    contracts::{GPv2Settlement, UniswapV3SwapRouter},
+    contracts::{GPv2Settlement, UniswapV3SwapRouterV2},
     ethrpc::block_stream::BlockRetrieving,
     shared::{
         http_solver::model::TokenAmount,
@@ -81,7 +81,7 @@ pub fn to_interaction(
     let web3 = ethrpc::dummy::web3();
 
     let handler = UniswapV3SettlementHandler::new(
-        UniswapV3SwapRouter::at(&web3, pool.router.0),
+        UniswapV3SwapRouterV2::at(&web3, pool.router.0),
         GPv2Settlement::at(&web3, receiver.0),
         Mutex::new(Allowances::empty(receiver.0)),
         pool.fee.0,
@@ -129,7 +129,7 @@ async fn init_liquidity(
     config: &infra::liquidity::config::UniswapV3,
 ) -> anyhow::Result<impl LiquidityCollecting + use<>> {
     let web3 = boundary::web3(eth);
-    let router = UniswapV3SwapRouter::at(&web3, config.router.0);
+    let router = UniswapV3SwapRouterV2::at(&web3, config.router.0);
 
     let pool_fetcher = Arc::new(
         UniswapV3PoolFetcher::new(
