@@ -10,7 +10,7 @@ use {
     },
     tokio::sync::watch,
     tokio_stream::wrappers::WatchStream,
-    tracing::Instrument,
+    tracing::{Instrument, instrument},
     url::Url,
     web3::{
         BatchTransport,
@@ -332,6 +332,7 @@ pub async fn timestamp_of_current_block_in_seconds(web3: &Web3) -> Result<u32> {
     timestamp_of_block_in_seconds(web3, BlockNumber::Latest).await
 }
 
+#[instrument(skip_all)]
 pub async fn block_number_to_block_number_hash(
     web3: &Web3,
     block_number: BlockNumber,
