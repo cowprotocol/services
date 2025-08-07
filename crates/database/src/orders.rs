@@ -209,10 +209,10 @@ WHERE uid = $1
 }
 
 pub fn is_duplicate_record_error(err: &sqlx::Error) -> bool {
-    if let sqlx::Error::Database(db_err) = &err {
-        if let Some(code) = db_err.code() {
-            return code.as_ref() == "23505";
-        }
+    if let sqlx::Error::Database(db_err) = &err
+        && let Some(code) = db_err.code()
+    {
+        return code.as_ref() == "23505";
     }
     false
 }

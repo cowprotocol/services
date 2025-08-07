@@ -224,7 +224,7 @@ impl Vendor {
 
     /// Creates a context for vendoring "full" contract data, including bytecode
     /// used for deploying the contract for end-to-end test.
-    fn full(&self) -> VendorContext {
+    fn full(&self) -> VendorContext<'_> {
         VendorContext {
             artifacts: &self.artifacts,
             properties: &[
@@ -241,7 +241,7 @@ impl Vendor {
     /// not need to be deployed for tests, or get created by alternative means
     /// (e.g. `UniswapV2Pair` contracts don't require bytecode as they get
     /// created by `UniswapV2Factory` instances on-chain).
-    fn abi_only(&self) -> VendorContext {
+    fn abi_only(&self) -> VendorContext<'_> {
         VendorContext {
             artifacts: &self.artifacts,
             properties: &[

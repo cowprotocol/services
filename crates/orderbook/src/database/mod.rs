@@ -46,10 +46,9 @@ impl Postgres {
             let full_app_data = full_app_data.as_bytes();
             if let Some(existing) =
                 database::app_data::insert(ex, contract_app_data, full_app_data).await?
+                && full_app_data != existing
             {
-                if full_app_data != existing {
-                    return Err(InsertionError::AppDataMismatch(existing));
-                }
+                return Err(InsertionError::AppDataMismatch(existing));
             }
         }
         Ok(())

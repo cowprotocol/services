@@ -1053,11 +1053,11 @@ pub struct Test {
 
 impl Test {
     /// Call the /solve endpoint.
-    pub async fn solve(&self) -> Solve {
+    pub async fn solve(&self) -> Solve<'_> {
         self.solve_with_solver(solver::NAME).await
     }
 
-    pub async fn solve_with_solver(&self, solver: &str) -> Solve {
+    pub async fn solve_with_solver(&self, solver: &str) -> Solve<'_> {
         let res = self
             .client
             .post(format!("http://{}/{}/solve", self.driver.addr, solver))
@@ -1099,7 +1099,7 @@ impl Test {
     }
 
     /// Call the /quote endpoint.
-    pub async fn quote(&self) -> Quote {
+    pub async fn quote(&self) -> Quote<'_> {
         if !self.quote {
             panic!("called /quote on a test which wasn't configured to test the /quote endpoint");
         }

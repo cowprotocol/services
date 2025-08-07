@@ -48,7 +48,7 @@ impl MockTransport {
         Self::default()
     }
 
-    pub fn mock(&self) -> MutexGuard<MockMockableTransport> {
+    pub fn mock(&self) -> MutexGuard<'_, MockMockableTransport> {
         self.0.inner.lock().unwrap()
     }
 }
