@@ -180,6 +180,7 @@ impl RunLoop {
                 .await
             {
                 Ok(()) => {
+                    tracing::trace!("solvable orders cache updated");
                     self.solvable_orders_cache.track_auction_update("success");
                 }
                 Err(err) => {
@@ -191,6 +192,7 @@ impl RunLoop {
         };
 
         let auction = self.cut_auction().await?;
+        tracing::trace!(auction_id = ?auction.id, "auction cut");
 
         // Only run the solvers if the auction or block has changed.
         let previous = prev_auction.replace(auction.clone());
@@ -259,6 +261,7 @@ impl RunLoop {
         // Mark all auction orders as `Ready` for competition
         self.persistence
             .store_order_events(auction.orders.iter().map(|o| o.uid), OrderEventLabel::Ready);
+        tracing::trace!(auction_id = ?auction.id, "orders marked as ready");
 
         // Collect valid solutions from all drivers
         let solutions = self.fetch_solutions(&auction).await;
@@ -309,6 +312,7 @@ impl RunLoop {
             tracing::error!(?err, "failed to post-process competition");
             return;
         }
+        tracing::trace!(auction_id = ?auction.id, "post-processing completed");
 
         // Mark all winning orders as `Executing`
         let winning_orders = ranking
@@ -326,6 +330,7 @@ impl RunLoop {
                 .filter(|order_id| !winning_orders.contains(order_id)),
             OrderEventLabel::Considered,
         );
+        tracing::trace!(auction_id = ?auction.id, "orders marked as considered");
 
         for (solution_uid, winner) in ranking
             .enumerated()
@@ -344,6 +349,7 @@ impl RunLoop {
             )
             .await;
         }
+        tracing::trace!(auction_id = ?auction.id, "settlement execution started");
         observe::unsettled(&ranking, &auction);
     }
 
@@ -550,6 +556,7 @@ impl RunLoop {
                 tracing::warn!(?err, "failed to save new competition data");
             }
         }
+        tracing::trace!(auction_id = ?auction.id, "auction saved");
 
         tracing::trace!(?competition, "saving competition");
         futures::try_join!(
@@ -566,6 +573,7 @@ impl RunLoop {
                 .store_fee_policies(auction.id, fee_policies)
                 .map_err(|e| e.context("failed to fee_policies")),
         )?;
+        tracing::trace!(auction_id = ?auction.id, "competition saved");
 
         Metrics::post_processed(start.elapsed());
         Ok(())
