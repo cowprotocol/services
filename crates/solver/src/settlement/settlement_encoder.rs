@@ -129,7 +129,7 @@ impl SettlementEncoder {
         &self.clearing_prices
     }
 
-    pub(crate) fn all_trades(&self) -> impl Iterator<Item = PricedTrade> + '_ {
+    pub(crate) fn all_trades(&self) -> impl Iterator<Item = PricedTrade<'_>> + '_ {
         self.trades
             .iter()
             .map(move |trade| self.compute_trade_token_prices(trade))
