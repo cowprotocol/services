@@ -39,7 +39,7 @@ pub struct RunLoop {
     solve_deadline: Duration,
     liveness: Arc<Liveness>,
     current_block: CurrentBlockWatcher,
-    winner_selection: winner_selection::Arbitrator,
+    winner_selection: Box<dyn winner_selection::Arbitrator>,
 }
 
 impl RunLoop {
@@ -55,9 +55,12 @@ impl RunLoop {
         weth: WrappedNativeToken,
     ) -> Self {
         Self {
-            winner_selection: winner_selection::Arbitrator {
-                max_winners: max_winners_per_auction.get(),
-                weth,
+            winner_selection: match max_winners_per_auction.get() {
+                0 | 1 => Box::new(winner_selection::max_score::Config),
+                n => Box::new(winner_selection::combinatorial::Config {
+                    max_winners: n,
+                    weth,
+                }),
             },
             orderbook,
             drivers,

@@ -611,6 +611,7 @@ pub async fn run(args: Arguments) {
         max_settlement_transaction_wait: args.max_settlement_transaction_wait,
         solve_deadline: args.solve_deadline,
         max_run_loop_delay: args.max_run_loop_delay,
+        combinatorial_auctions_cutover: args.combinatorial_auctions_cutover,
         max_winners_per_auction: args.max_winners_per_auction,
         max_solutions_per_solver: args.max_solutions_per_solver,
     };
