@@ -46,6 +46,7 @@ impl Api {
         shutdown: impl Future<Output = ()> + Send + 'static,
         order_priority_strategies: Vec<OrderPriorityStrategy>,
         app_data_retriever: Option<AppDataRetriever>,
+        disable_access_list_simulation: bool,
     ) -> Result<(), hyper::Error> {
         // Add middleware.
         let mut app = axum::Router::new().layer(tower::ServiceBuilder::new().layer(
@@ -57,6 +58,7 @@ impl Api {
             self.eth.clone(),
             app_data_retriever.clone(),
             self.liquidity.clone(),
+            disable_access_list_simulation,
         ));
 
         let order_sorting_strategies =
