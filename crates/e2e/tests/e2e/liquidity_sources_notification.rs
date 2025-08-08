@@ -1,25 +1,14 @@
 use {
-    chrono::{NaiveDateTime, Utc},
-    contracts::{
-        ERC20,
-        ILiquoriceSettlement,
-        IZeroEx,
-        LiquoriceAllowListAuthentication,
-        i_zero_ex::Contract,
-    },
-    driver::domain::{competition::order::Partial::No, eth::H160},
+    chrono::Utc,
+    contracts::{ERC20, ILiquoriceSettlement, LiquoriceAllowListAuthentication},
+    driver::domain::eth::H160,
     e2e::{
-        api::{
-            liquorice::{DomainSeparator, Eip712TypedLiquoriceSingleOrder, LiquoriceSignature},
-            zeroex::{Eip712TypedZeroExOrder, ZeroExApi},
-        },
-        assert_approximately_eq,
+        api::liquorice::{DomainSeparator, Eip712TypedLiquoriceSingleOrder, LiquoriceSignature},
         nodes::forked_node::ForkedNodeApi,
         setup::{
             OnchainComponents,
             Services,
             TIMEOUT,
-            TestAccount,
             colocation::{self, SolverEngine},
             mock::Mock,
             run_forked_test_with_block_number,
@@ -29,23 +18,14 @@ use {
         },
         tx,
     },
-    ethcontract::{
-        Account,
-        Bytes,
-        H256,
-        errors::MethodError,
-        prelude::U256,
-        transaction::TransactionResult,
-    },
+    ethcontract::prelude::U256,
     ethrpc::Web3,
     hex_literal::hex,
     model::{
         order::{OrderCreation, OrderKind},
-        quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::EcdsaSigningScheme,
     },
     secp256k1::SecretKey,
-    shared::addr,
     solvers_dto::solution::Solution,
     std::collections::HashMap,
     web3::signing::SecretKeyRef,
@@ -183,7 +163,6 @@ async fn liquidity_sources_notification(web3: Web3) {
     let liquorice_solver_api_mock = Mock::default();
     let services = Services::new(&onchain).await;
 
-    let base_tokens = vec![token_usdc.address(), token_usdt.address()];
     colocation::start_driver(
         onchain.contracts(),
         vec![
@@ -255,7 +234,6 @@ async fn liquidity_sources_notification(web3: Web3) {
     // # Create Liquorice solution calldata for CoW order
     let liquorice_solution_calldata = {
         // Create Liquorice order
-        let now = Utc::now().timestamp() as u64;
         let liquorice_order = Eip712TypedLiquoriceSingleOrder {
             rfq_id: "c99d2e3f-702b-49c9-8bb8-43775770f2f3".to_string(),
             nonce: U256::from(0),
@@ -351,140 +329,4 @@ async fn liquidity_sources_notification(web3: Web3) {
 
     let trade = services.get_trades(&order_id).await.unwrap().pop();
     assert!(trade.is_some());
-}
-
-fn create_zeroex_liquidity_orders(
-    order_creation: OrderCreation,
-    zeroex_maker: TestAccount,
-    zeroex_addr: H160,
-    chain_id: u64,
-    weth_address: H160,
-) -> [shared::zeroex_api::OrderRecord; 3] {
-    let typed_order = Eip712TypedZeroExOrder {
-        maker_token: order_creation.buy_token,
-        taker_token: order_creation.sell_token,
-        // fully covers execution costs
-        maker_amount: order_creation.buy_amount.as_u128() * 3,
-        taker_amount: order_creation.sell_amount.as_u128() * 2,
-        // makes 0x order partially filled, but the amount is higher than the cowswap order to
-        // make sure the 0x order is not overfilled in the end of the e2e test
-        remaining_fillable_taker_amount: order_creation.sell_amount.as_u128() * 3 / 2,
-        taker_token_fee_amount: 0,
-        maker: zeroex_maker.address(),
-        // Makes it possible for anyone to fill the order
-        taker: Default::default(),
-        sender: Default::default(),
-        fee_recipient: zeroex_addr,
-        pool: H256::default(),
-        expiry: NaiveDateTime::MAX.and_utc().timestamp() as u64,
-        salt: U256::from(Utc::now().timestamp()),
-    };
-    let usdt_weth_order = Eip712TypedZeroExOrder {
-        maker_token: weth_address,
-        taker_token: order_creation.buy_token,
-        // the value comes from the `--amount-to-estimate-prices-with` config to provide
-        // sufficient liquidity
-        maker_amount: 1_000_000_000_000_000_000u128,
-        taker_amount: order_creation.sell_amount.as_u128(),
-        remaining_fillable_taker_amount: order_creation.sell_amount.as_u128(),
-        taker_token_fee_amount: 0,
-        maker: zeroex_maker.address(),
-        taker: Default::default(),
-        sender: Default::default(),
-        fee_recipient: zeroex_addr,
-        pool: H256::default(),
-        expiry: NaiveDateTime::MAX.and_utc().timestamp() as u64,
-        salt: U256::from(Utc::now().timestamp()),
-    };
-    let usdc_weth_order = Eip712TypedZeroExOrder {
-        maker_token: weth_address,
-        taker_token: order_creation.sell_token,
-        // the value comes from the `--amount-to-estimate-prices-with` config to provide
-        // sufficient liquidity
-        maker_amount: 1_000_000_000_000_000_000u128,
-        taker_amount: order_creation.sell_amount.as_u128(),
-        remaining_fillable_taker_amount: order_creation.sell_amount.as_u128(),
-        taker_token_fee_amount: 0,
-        maker: zeroex_maker.address(),
-        taker: Default::default(),
-        sender: Default::default(),
-        fee_recipient: zeroex_addr,
-        pool: H256::default(),
-        expiry: NaiveDateTime::MAX.and_utc().timestamp() as u64,
-        salt: U256::from(Utc::now().timestamp()),
-    };
-    [typed_order, usdt_weth_order, usdc_weth_order]
-        .map(|order| order.to_order_record(chain_id, zeroex_addr, zeroex_maker.clone()))
-}
-
-#[derive(Debug)]
-struct ZeroExOrderAmounts {
-    filled: u128,
-    fillable: u128,
-}
-
-async fn get_zeroex_order_amounts(
-    zeroex: &Contract,
-    zeroex_order: &shared::zeroex_api::OrderRecord,
-) -> Result<ZeroExOrderAmounts, MethodError> {
-    zeroex
-        .get_limit_order_relevant_state(
-            (
-                zeroex_order.order().maker_token,
-                zeroex_order.order().taker_token,
-                zeroex_order.order().maker_amount,
-                zeroex_order.order().taker_amount,
-                zeroex_order.order().taker_token_fee_amount,
-                zeroex_order.order().maker,
-                zeroex_order.order().taker,
-                zeroex_order.order().sender,
-                zeroex_order.order().fee_recipient,
-                Bytes(zeroex_order.order().pool.0),
-                zeroex_order.order().expiry,
-                zeroex_order.order().salt,
-            ),
-            (
-                zeroex_order.order().signature.signature_type,
-                zeroex_order.order().signature.v,
-                Bytes(zeroex_order.order().signature.r.0),
-                Bytes(zeroex_order.order().signature.s.0),
-            ),
-        )
-        .call()
-        .await
-        .map(|((_, _, filled), fillable, _)| ZeroExOrderAmounts { filled, fillable })
-}
-
-async fn fill_or_kill_zeroex_limit_order(
-    zeroex: &Contract,
-    zeroex_order: &shared::zeroex_api::OrderRecord,
-    from_account: Account,
-) -> Result<TransactionResult, MethodError> {
-    zeroex
-        .fill_or_kill_limit_order(
-            (
-                zeroex_order.order().maker_token,
-                zeroex_order.order().taker_token,
-                zeroex_order.order().maker_amount,
-                zeroex_order.order().taker_amount,
-                zeroex_order.order().taker_token_fee_amount,
-                zeroex_order.order().maker,
-                zeroex_order.order().taker,
-                zeroex_order.order().sender,
-                zeroex_order.order().fee_recipient,
-                Bytes(zeroex_order.order().pool.0),
-                zeroex_order.order().expiry,
-                zeroex_order.order().salt,
-            ),
-            (
-                zeroex_order.order().signature.signature_type,
-                zeroex_order.order().signature.v,
-                Bytes(zeroex_order.order().signature.r.0),
-                Bytes(zeroex_order.order().signature.s.0),
-            ),
-            zeroex_order.order().taker_amount,
-        )
-        .from(from_account)
-        .send()
-        .await
 }
