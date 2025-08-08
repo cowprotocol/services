@@ -4,7 +4,6 @@ use {
     hex_literal::hex,
     secp256k1::SecretKey,
     std::sync::LazyLock,
-    warp::{Filter, Reply},
     web3::{
         signing::{self, Key, SecretKeyRef},
         types::{H160, U256},
