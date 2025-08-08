@@ -1,0 +1,5 @@
+[profile.default]
+src = "solidity"
+test = "test"
+out = "out"
+libs = ["lib"]
