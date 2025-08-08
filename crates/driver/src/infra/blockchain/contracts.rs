@@ -5,7 +5,7 @@ use {
         infra::{blockchain::Ethereum, config},
     },
     chain::Chain,
-    contracts::{FlashLoanRouter, IFlashLoanTracker},
+    contracts::{FlashLoanRouter, FlashLoanTracker},
     ethcontract::dyns::DynWeb3,
     ethrpc::block_stream::CurrentBlockWatcher,
     std::collections::HashMap,
@@ -33,7 +33,7 @@ pub struct Contracts {
     /// Default lender to use for flashloans, if flashloan doesn't have a lender
     /// specified.
     flashloan_default_lender: Option<eth::ContractAddress>,
-    flashloan_tracker: Option<IFlashLoanTracker>,
+    flashloan_tracker: Option<FlashLoanTracker>,
     balance_helper: contracts::support::Balances,
 }
 
@@ -132,7 +132,7 @@ impl Contracts {
 
         let flashloan_tracker = addresses
             .flashloan_tracker
-            .map(|tracker| IFlashLoanTracker::at(web3, tracker.into()));
+            .map(|tracker| FlashLoanTracker::at(web3, tracker.into()));
 
         // TODO: use `address_for()` once contracts are deployed
         let flashloan_router = addresses
@@ -203,7 +203,7 @@ impl Contracts {
         self.flashloan_router.as_ref()
     }
 
-    pub fn flashloan_tracker(&self) -> Option<&contracts::IFlashLoanTracker> {
+    pub fn flashloan_tracker(&self) -> Option<&contracts::FlashLoanTracker> {
         self.flashloan_tracker.as_ref()
     }
 

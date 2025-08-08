@@ -1289,7 +1289,7 @@ fn main() {
     });
     generate_contract("IAavePool");
     generate_contract("IFlashLoanSolverWrapper");
-    generate_contract("IFlashLoanTracker");
+    generate_contract("FlashLoanTracker");
     generate_contract("IUniswapLikeRouter");
     generate_contract("IUniswapLikePair");
     // EIP-1271 contract - SignatureValidator

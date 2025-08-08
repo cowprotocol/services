@@ -94,7 +94,7 @@ include_contracts! {
     HooksTrampoline;
     IAavePool;
     IFlashLoanSolverWrapper;
-    IFlashLoanTracker;
+    FlashLoanTracker;
     ISwaprPair;
     IUniswapLikePair;
     IUniswapLikeRouter;

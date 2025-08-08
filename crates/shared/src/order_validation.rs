@@ -383,7 +383,8 @@ impl OrderValidator {
                 .as_ref()
                 .is_some_and(|flashloan| {
                     flashloan.borrower.is_none_or(|b| b == owner)
-                        && flashloan.token == order.data().sell_token
+                        && (flashloan.token == order.data().sell_token
+                            || flashloan.token == order.data().buy_token)
                         && flashloan.amount >= order.data().sell_amount
                 });
 

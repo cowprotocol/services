@@ -6,14 +6,20 @@ use {
                 self,
                 order::{self, Partial},
             },
-            eth::{self, Ether, allowance},
+            eth::{self, Ether, Flashloan, Interaction, allowance},
             liquidity,
         },
-        infra::{self, solver::ManageNativeToken},
+        infra::{
+            self,
+            blockchain::{Contracts, contracts::FlashloanWrapperData},
+            solver::ManageNativeToken,
+        },
         util::{Bytes, conv::u256::U256Ext},
     },
     allowance::Allowance,
+    contracts::flash_loan_tracker::Contract,
     itertools::Itertools,
+    primitive_types::U256,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -192,58 +198,32 @@ pub fn tx(
                 .flashloan_tracker()
                 .ok_or(Error::FlashLoanTrackerNotConfigured)?;
 
-            // Repayment amount needs to be increased by flash fee
+            // Repayment amount needs to be increased by a flash loan fee
             let fee_amount =
                 (flashloan.amount.0 * flashloan_wrapper.fee_in_bps).ceil_div(&10_000.into());
             let repayment_amount = flashloan.amount.0 + fee_amount;
 
-            // Allow flash loan lender to take tokens from wrapper contract
-            pre_interactions.push(approve_flashloan(
-                flashloan.token,
-                repayment_amount.into(),
-                flashloan_tracker.address().into(),
-                &flashloan_wrapper.helper_contract,
-            ));
+            let flash_loan_pre_interactions = vec![
+                approve_flashloan(
+                    flashloan.token,
+                    flashloan.amount.0.into(),
+                    flashloan_tracker.address().into(),
+                    &flashloan_wrapper.helper_contract,
+                ),
+                // Move the loaned money from the helper contract to the borrower address (most
+                // likely the user)
+                take_out_from_tracker(flashloan, flashloan_wrapper, flashloan_tracker),
+            ];
+            pre_interactions.splice(0..0, flash_loan_pre_interactions); // prepend interactions
 
-            // Move the loaned money from the tracker contract to the borrower address (most
-            // likely the user).
-            let take_out_call_data = flashloan_tracker
-                .take_out(
-                    flashloan_wrapper.helper_contract.address(),
-                    flashloan.borrower.into(),
-                    flashloan.token.into(),
-                    flashloan.amount.into(),
-                )
-                .tx
-                .data
-                .unwrap();
-            pre_interactions.insert(
-                0,
-                eth::Interaction {
-                    target: flashloan_tracker.address().into(),
-                    value: 0.into(),
-                    call_data: Bytes(take_out_call_data.0),
-                },
-            );
-
-            // the user is expected to do the repayment via a post-hook
-            let pay_back_call_data = flashloan_tracker
-                .pay_back(
-                    flashloan_wrapper.helper_contract.address(),
-                    flashloan.borrower.into(),
-                    flashloan.token.into(),
-                )
-                .tx
-                .data
-                .unwrap();
-            post_interactions.insert(
-                0,
-                eth::Interaction {
-                    target: flashloan_tracker.address().into(),
-                    value: 0.into(),
-                    call_data: Bytes(pay_back_call_data.0),
-                },
-            );
+            let flash_loan_post_interactions = vec![
+                // Allow the flashloan lender to pull funds from the borrower contract (= pay back
+                // flash loan) after settlement execution
+                allow_lender_pull_funds(contracts, flashloan, flashloan_wrapper, repayment_amount),
+                // Call payBack() on the tracker; the user is expected to re-pay fee via post-hook
+                pay_back_via_tracker(flashloan, flashloan_wrapper, flashloan_tracker),
+            ];
+            post_interactions.splice(0..0, flash_loan_post_interactions); // prepend interactions
 
             Ok((
                 flashloan.amount.0,
@@ -315,6 +295,72 @@ pub fn tx(
         value: Ether(0.into()),
         access_list: Default::default(),
     })
+}
+
+fn pay_back_via_tracker(
+    flashloan: &Flashloan,
+    flashloan_wrapper: &FlashloanWrapperData,
+    flashloan_tracker: &Contract,
+) -> Interaction {
+    let pay_back_call_data = flashloan_tracker
+        .pay_back(
+            flashloan_wrapper.helper_contract.address(),
+            flashloan.borrower.into(),
+            flashloan.token.into(),
+        )
+        .tx
+        .data
+        .unwrap();
+    eth::Interaction {
+        target: flashloan_tracker.address().into(),
+        value: 0.into(),
+        call_data: Bytes(pay_back_call_data.0),
+    }
+}
+
+fn allow_lender_pull_funds(
+    contracts: &Contracts,
+    flashloan: &Flashloan,
+    flashloan_wrapper: &FlashloanWrapperData,
+    repayment_amount: U256,
+) -> Interaction {
+    let allow_aave_funds_pull = flashloan_wrapper
+        .helper_contract
+        .approve(
+            contracts.weth().address(),
+            flashloan.lender.into(), // aave = 0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2
+            repayment_amount,
+        )
+        .tx
+        .data
+        .unwrap();
+    eth::Interaction {
+        target: flashloan_wrapper.helper_contract.address().into(),
+        value: 0.into(),
+        call_data: Bytes(allow_aave_funds_pull.0),
+    }
+}
+
+fn take_out_from_tracker(
+    flashloan: &Flashloan,
+    flashloan_wrapper: &FlashloanWrapperData,
+    flashloan_tracker: &Contract,
+) -> Interaction {
+    let take_out_call_data = flashloan_tracker
+        .take_out(
+            flashloan_wrapper.helper_contract.address(),
+            flashloan.borrower.into(),
+            flashloan.token.into(),
+            flashloan.amount.into(),
+        )
+        .tx
+        .data
+        .unwrap();
+    eth::Interaction {
+        target: flashloan_tracker.address().into(),
+        value: 0.into(),
+        call_data: Bytes(take_out_call_data.0),
+    }
 }
 
 pub fn liquidity_interaction(
