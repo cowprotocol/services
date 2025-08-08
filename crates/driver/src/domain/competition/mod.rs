@@ -62,6 +62,7 @@ pub struct Competition {
     pub solver: Solver,
     pub eth: Ethereum,
     pub liquidity: infra::liquidity::Fetcher,
+    pub liquidity_sources_notifier: infra::notify::liquidity_sources::Notifier,
     pub simulator: Simulator,
     pub mempools: Mempools,
     /// Cached solutions with the most recent solutions at the front.
@@ -78,6 +79,7 @@ impl Competition {
         solver: Solver,
         eth: Ethereum,
         liquidity: infra::liquidity::Fetcher,
+        liquidity_sources_notifier: infra::notify::liquidity_sources::Notifier,
         simulator: Simulator,
         mempools: Mempools,
         bad_tokens: Arc<bad_tokens::Detector>,
@@ -90,6 +92,7 @@ impl Competition {
             solver,
             eth,
             liquidity,
+            liquidity_sources_notifier,
             simulator,
             mempools,
             settlements: Default::default(),
@@ -647,6 +650,21 @@ impl Competition {
             lock.swap_remove_front(index)
                 .ok_or(Error::SolutionNotAvailable)?
         };
+
+        let liquidity_sources_notifier_clone = self.liquidity_sources_notifier.clone();
+        let settlement_clone = settlement.clone();
+        // Asynchronously notify liquidity sources to not block settlement execution.
+        tokio::spawn(async move {
+            match liquidity_sources_notifier_clone
+                .notify_before_settlement(&settlement_clone)
+                .await
+            {
+                Ok(_) => {}
+                Err(err) => {
+                    tracing::warn!(?err, "Failed to notify liquidity sources before settlement");
+                }
+            }
+        });
 
         // When settling, the gas price must be carefully chosen to ensure the
         // transaction is included in a block before the deadline.
