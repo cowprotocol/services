@@ -123,7 +123,8 @@ async fn liquidity_sources_notification(web3: Web3) {
         // Trader gives approval to the CoW allowance contract
         tx!(
             trader.account(),
-            token_usdc.approve(onchain.contracts().allowance, trade_amount)
+            // TODO: give allowance for certain amount?
+            token_usdc.approve(onchain.contracts().allowance, U256::MAX)
         );
     }
 
@@ -131,6 +132,11 @@ async fn liquidity_sources_notification(web3: Web3) {
     // Liquorice Settlement contract through which we will trade with the
     // `liquorice_maker`
     let liquorice_settlement = ILiquoriceSettlement::deployed(&web3).await.unwrap();
+    let liquorice_balance_manager_address = liquorice_settlement
+        .balance_manager()
+        .call()
+        .await
+        .expect("balance manager");
 
     // Fund `liquorice_maker`
     {
@@ -144,14 +150,8 @@ async fn liquidity_sources_notification(web3: Web3) {
     // Maker gives approval to Liquorice Balance manager contract
     tx!(
         liquorice_maker.account(),
-        token_usdt.approve(
-            liquorice_settlement
-                .balance_manager()
-                .call()
-                .await
-                .expect("balance manager"),
-            trade_amount
-        )
+        // TODO: give allowance for certain amount?
+        token_usdt.approve(liquorice_balance_manager_address, U256::MAX)
     );
 
     // Liquorice manager whitelists maker and CoW settlement contract
@@ -301,8 +301,8 @@ async fn liquidity_sources_notification(web3: Web3) {
     liquorice_solver_api_mock.configure_solution(Some(Solution {
         id: 1,
         prices: HashMap::from([
-            (token_usdc.address(), to_wei(1)),
-            (token_usdt.address(), to_wei(1)),
+            (token_usdc.address(), to_wei(11)),
+            (token_usdt.address(), to_wei(10)),
         ]),
         trades: vec![solvers_dto::solution::Trade::Fulfillment(
             solvers_dto::solution::Fulfillment {
@@ -317,7 +317,11 @@ async fn liquidity_sources_notification(web3: Web3) {
                 target: liquorice_settlement.address(),
                 calldata: liquorice_solution_calldata.0,
                 value: 0.into(),
-                allowances: vec![],
+                allowances: vec![solvers_dto::solution::Allowance {
+                    token: token_usdc.address(),
+                    spender: liquorice_balance_manager_address,
+                    amount: trade_amount,
+                }],
                 inputs: vec![],
                 outputs: vec![],
                 internalize: false,
@@ -332,7 +336,6 @@ async fn liquidity_sources_notification(web3: Web3) {
      * Assert
      */
 
-    tracing::info!("Waiting for trade to get indexed");
     onchain.mint_block().await;
     wait_for_condition(TIMEOUT, || async {
         let trade = services.get_trades(&order_id).await.unwrap().pop()?;
@@ -346,7 +349,8 @@ async fn liquidity_sources_notification(web3: Web3) {
     .await
     .unwrap();
 
-    let trade = services.get_trades(&order_id).await.unwrap().pop().unwrap();
+    let trade = services.get_trades(&order_id).await.unwrap().pop();
+    assert!(trade.is_some());
 }
 
 fn create_zeroex_liquidity_orders(
