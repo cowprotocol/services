@@ -100,7 +100,9 @@ fn set_tracing_subscriber(config: &Config) {
                     .with_timer(timer)
                     .with_ansi(atty::is(atty::Stream::Stdout))
                     .map_event_format(|formatter| TraceIdFmt {
-                        inner: formatter.with_ansi(atty::is(atty::Stream::Stdout)),
+                        inner: formatter
+                            .with_ansi(atty::is(atty::Stream::Stdout))
+                            .with_source_location(true),
                     })
                     .with_writer(writer)
                     .with_filter($env_filter)
