@@ -7,7 +7,7 @@ WORKDIR /src/
 
 # Install dependencies
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update && \
-    apt-get install -y git libssl-dev pkg-config
+    apt-get install -y git libssl-dev pkg-config make
 # Install Rust toolchain
 RUN rustup install stable && rustup default stable
 
