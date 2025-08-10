@@ -4,25 +4,32 @@
 
 use {
     super::{BalanceFetching, Query, TransferSimulationError},
+    alloy::sol_types::{SolType, sol_data},
     anyhow::Result,
     contracts::{BalancerV2Vault, erc20::Contract},
-    ethcontract::{Bytes, H160, U256},
+    ethcontract::{Account, Bytes, H160, PrivateKey, U256},
     ethrpc::Web3,
     futures::future,
     model::order::SellTokenSource,
+    std::sync::LazyLock,
     tracing::instrument,
 };
 
 pub struct Balances {
     balances: contracts::support::Balances,
+    settlement: contracts::GPv2Settlement,
     web3: Web3,
-    settlement: H160,
     vault_relayer: H160,
     vault: H160,
 }
 
 impl Balances {
-    pub fn new(web3: &Web3, settlement: H160, vault_relayer: H160, vault: Option<H160>) -> Self {
+    pub async fn new(
+        web3: &Web3,
+        settlement: contracts::GPv2Settlement,
+        vault_relayer: H160,
+        vault: Option<H160>,
+    ) -> Result<Self> {
         // Note that the balances simulation **will fail** if the `vault`
         // address is not a contract and the `source` is set to one of
         // `SellTokenSource::{External, Internal}` (i.e. the Vault contract is
@@ -32,19 +39,26 @@ impl Balances {
         // work without additional code paths :tada:!
         let vault = vault.unwrap_or_default();
         let web3 = ethrpc::instrumented::instrument_with_label(web3, "balanceFetching".into());
-        let balances = contracts::support::Balances::at(&web3, settlement);
+        let balances = contracts::support::Balances::deployed(&web3).await?;
 
-        Self {
+        Ok(Self {
             web3,
-            balances,
             settlement,
+            balances,
             vault_relayer,
             vault,
-        }
+        })
     }
 
     #[instrument(skip_all)]
     async fn simulate(&self, query: &Query, amount: Option<U256>) -> Result<Simulation> {
+        static SIMULATION_ACCOUNT: LazyLock<Account> = LazyLock::new(|| {
+            PrivateKey::from_hex_str(
+                "0000000000000000000000000000000000000000000000000000000000018894",
+            )
+            .map(|pk| Account::Offline(pk, None))
+            .expect("valid simulation account private key")
+        });
         // We simulate the balances from the Settlement contract's context. This
         // allows us to check:
         // 1. How the pre-interactions would behave as part of the settlement
@@ -52,28 +66,40 @@ impl Balances {
         //    settlement
         //
         // This allows us to end up with very accurate balance simulations.
-        let (token_balance, allowance, effective_balance, can_transfer) =
-            contracts::storage_accessible::simulate(
-                contracts::bytecode!(contracts::support::Balances),
-                self.balances.methods().balance(
-                    (self.settlement, self.vault_relayer, self.vault),
-                    query.owner,
-                    query.token,
-                    amount.unwrap_or_default(),
-                    Bytes(query.source.as_bytes()),
-                    query
-                        .interactions
-                        .iter()
-                        .map(|i| (i.target, i.value, Bytes(i.call_data.clone())))
-                        .collect(),
-                ),
+        let balance_call = self.balances.balance(
+            (self.settlement.address(), self.vault_relayer, self.vault),
+            query.owner,
+            query.token,
+            amount.unwrap_or_default(),
+            Bytes(query.source.as_bytes()),
+            query
+                .interactions
+                .iter()
+                .map(|i| (i.target, i.value, Bytes(i.call_data.clone())))
+                .collect(),
+        );
+
+        let delegate_call = self
+            .settlement
+            .simulate_delegatecall(
+                self.balances.address(),
+                ethcontract::Bytes(balance_call.tx.data.unwrap_or_default().0),
             )
-            .await?;
+            .from(SIMULATION_ACCOUNT.clone());
+
+        let response = delegate_call.call().await?;
+        let (token_balance, allowance, effective_balance, can_transfer) =
+            <(
+                sol_data::Uint<256>,
+                sol_data::Uint<256>,
+                sol_data::Uint<256>,
+                sol_data::Bool,
+            )>::abi_decode(&response.0)?;
 
         let simulation = Simulation {
-            token_balance,
-            allowance,
-            effective_balance,
+            token_balance: U256::from_little_endian(&token_balance.as_le_bytes()),
+            allowance: U256::from_little_endian(&allowance.as_le_bytes()),
+            effective_balance: U256::from_little_endian(&effective_balance.as_le_bytes()),
             can_transfer,
         };
 
@@ -194,12 +220,17 @@ mod tests {
     #[ignore]
     #[tokio::test]
     async fn test_for_user() {
+        let web3 = Web3::new(ethrpc::create_env_test_transport());
+        let settlement =
+            contracts::GPv2Settlement::at(&web3, addr!("9008d19f58aabd9ed0d60971565aa8510560ab41"));
         let balances = Balances::new(
-            &Web3::new(ethrpc::create_env_test_transport()),
-            addr!("9008d19f58aabd9ed0d60971565aa8510560ab41"),
+            &web3,
+            settlement,
             addr!("C92E8bdf79f0507f65a392b0ab4667716BFE0110"),
             Some(addr!("BA12222222228d8Ba445958a75a0704d566BF2C8")),
-        );
+        )
+        .await
+        .unwrap();
 
         let owner = addr!("b0a4e99371dfb0734f002ae274933b4888f618ef");
         let token = addr!("d909c5862cdb164adb949d92622082f0092efc3d");

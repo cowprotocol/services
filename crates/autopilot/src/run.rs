@@ -252,12 +252,14 @@ pub async fn run(args: Arguments) {
     let balance_fetcher = account_balances::cached(
         &web3,
         account_balances::Contracts {
-            settlement: eth.contracts().settlement().address(),
+            settlement: eth.contracts().settlement().clone(),
             vault_relayer,
             vault: vault.as_ref().map(|contract| contract.address()),
         },
         eth.current_block().clone(),
-    );
+    )
+    .await
+    .expect("failed to create cached balance fetcher");
 
     let gas_price_estimator = Arc::new(
         shared::gas_price_estimation::create_priority_estimator(

@@ -148,11 +148,13 @@ pub async fn run(args: Arguments) {
     let balance_fetcher = account_balances::fetcher(
         &web3,
         account_balances::Contracts {
-            settlement: settlement_contract.address(),
+            settlement: settlement_contract.clone(),
             vault_relayer,
             vault: vault.as_ref().map(|contract| contract.address()),
         },
-    );
+    )
+    .await
+    .expect("failed to create balance fetcher");
 
     let gas_price_estimator = Arc::new(InstrumentedGasEstimator::new(
         shared::gas_price_estimation::create_priority_estimator(
