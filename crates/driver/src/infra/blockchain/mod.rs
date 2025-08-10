@@ -317,6 +317,8 @@ impl fmt::Debug for Ethereum {
 pub enum Error {
     #[error("method error: {0:?}")]
     Method(#[from] ethcontract::errors::MethodError),
+    #[error("method error: {0:?}")]
+    Deploy(#[from] ethcontract::errors::DeployError),
     #[error("web3 error: {0:?}")]
     Web3(#[from] web3::error::Error),
     #[error("gas price estimation error: {0}")]
@@ -332,6 +334,7 @@ impl Error {
         // This behavior is node dependent
         match self {
             Error::Method(error) => matches!(error.inner, ExecutionError::Revert(_)),
+            Error::Deploy(_) => todo!(),
             Error::Web3(inner) => {
                 let error = ExecutionError::from(inner.clone());
                 matches!(error, ExecutionError::Revert(_))
@@ -346,6 +349,7 @@ impl From<contracts::Error> for Error {
     fn from(err: contracts::Error) -> Self {
         match err {
             contracts::Error::Method(err) => Self::Method(err),
+            contracts::Error::Deploy(err) => Self::Deploy(err),
         }
     }
 }
