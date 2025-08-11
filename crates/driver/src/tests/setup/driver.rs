@@ -225,6 +225,7 @@ async fn create_config_file(
         r#"[contracts]
            gp-v2-settlement = "{}"
            weth = "{}"
+           balances = "{}"
            flashloan-router = "{}"
 
            [[contracts.flashloan-wrappers]]
@@ -236,6 +237,7 @@ async fn create_config_file(
            "#,
         hex_address(blockchain.settlement.address()),
         hex_address(blockchain.weth.address()),
+        hex_address(blockchain.balances.address()),
         hex_address(blockchain.flashloan_router.address()),
         hex_address(blockchain.flashloan_wrapper.address()),
     )
