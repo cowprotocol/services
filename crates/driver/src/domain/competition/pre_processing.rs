@@ -173,7 +173,6 @@ impl DataAggregator {
 impl Utilities {
     /// Fetches the tradable balance for every order owner.
     async fn fetch_balances(self: Arc<Self>, auction: Arc<Auction>) -> Arc<Balances> {
-        let _timer = metrics::get().processing_stage_timer("fetch_balances");
         let ethereum = self.eth.with_metric_label("orderBalances".into());
         let mut tokens: HashMap<_, _> = Default::default();
         // Collect trader/token/source/interaction tuples for fetching available
@@ -200,6 +199,8 @@ impl Utilities {
             })
             .collect::<Vec<_>>();
 
+        let _timer =
+            (!traders.is_empty()).then(|| metrics::get().processing_stage_timer("fetch_balances"));
         let balances = join_all(traders.into_iter().map(
             |(trader, token, source, interactions)| {
                 let token_contract = tokens.get(&token);
@@ -267,45 +268,50 @@ impl Utilities {
     }
 
     async fn cow_amm_orders(self: Arc<Self>, auction: Arc<Auction>) -> Arc<Vec<Order>> {
-        let _timer = metrics::get().processing_stage_timer("cow_amm_orders");
-        let cow_amms = self.eth.contracts().cow_amm_registry().amms().await;
+        let cow_amms = {
+            let _timer = metrics::get().processing_stage_timer("cow_amm_registry");
+            self.eth.contracts().cow_amm_registry().amms().await
+        };
         let domain_separator = self.eth.contracts().settlement_domain_separator();
         let domain_separator = model::DomainSeparator(domain_separator.0);
         let validator = self.signature_validator.as_ref();
-        let results: Vec<_> = futures::future::join_all(
-            cow_amms
-                .into_iter()
-                // Only generate orders for cow amms the auction told us about.
-                // Otherwise the solver would expect the order to get surplus but
-                // the autopilot would actually not count it.
-                .filter(|amm| auction.surplus_capturing_jit_order_owners.contains(&eth::Address(*amm.address())))
-                // Only generate orders where the auction provided the required
-                // reference prices. Otherwise there will be an error during the
-                // surplus calculation which will also result in 0 surplus for
-                // this order.
-                .filter_map(|amm| {
-                    let prices = amm
-                        .traded_tokens()
-                        .iter()
-                        .map(|t| {
-                            auction.tokens
-                                .get(eth::TokenAddress(eth::ContractAddress(*t)))
-                                .price
-                                .map(|p| p.0.0)
-                        })
-                        .collect::<Option<Vec<_>>>()?;
-                    Some((amm, prices))
-                })
-                .map(|(cow_amm, prices)| async move {
-                    let order = cow_amm.validated_template_order(
-                        prices,
-                        validator,
-                        &domain_separator
-                    ).await;
-                    (*cow_amm.address(), order)
-                }),
-        )
-        .await;
+        let mut cow_amms = cow_amms
+            .into_iter()
+            // Only generate orders for cow amms the auction told us about.
+            // Otherwise the solver would expect the order to get surplus but
+            // the autopilot would actually not count it.
+            .filter(|amm| auction.surplus_capturing_jit_order_owners.contains(&eth::Address(*amm.address())))
+            // Only generate orders where the auction provided the required
+            // reference prices. Otherwise there will be an error during the
+            // surplus calculation which will also result in 0 surplus for
+            // this order.
+            .filter_map(|amm| {
+                let prices = amm
+                    .traded_tokens()
+                    .iter()
+                    .map(|t| {
+                        auction.tokens
+                            .get(eth::TokenAddress(eth::ContractAddress(*t)))
+                            .price
+                            .map(|p| p.0.0)
+                    })
+                    .collect::<Option<Vec<_>>>()?;
+                Some((amm, prices))
+            }).peekable();
+        let results: Vec<_> = {
+            let _timer = cow_amms
+                .peek()
+                .is_some()
+                .then(|| metrics::get().processing_stage_timer("cow_amm_orders_validation"));
+
+            futures::future::join_all(cow_amms.map(|(cow_amm, prices)| async move {
+                let order = cow_amm
+                    .validated_template_order(prices, validator, &domain_separator)
+                    .await;
+                (*cow_amm.address(), order)
+            }))
+            .await
+        };
 
         // Convert results to domain format.
         let domain_separator = model::DomainSeparator(domain_separator.0);
@@ -387,8 +393,9 @@ impl Utilities {
         self: Arc<Self>,
         auction: Arc<Auction>,
     ) -> Arc<Vec<liquidity::Liquidity>> {
-        let _timer = metrics::get().processing_stage_timer("fetch_liquidity");
         let pairs = auction.liquidity_pairs();
+        let _timer =
+            (!pairs.is_empty()).then(|| metrics::get().processing_stage_timer("fetch_liquidity"));
         Arc::new(
             self.liquidity_fetcher
                 .fetch(&pairs, infra::liquidity::AtBlock::Latest)
