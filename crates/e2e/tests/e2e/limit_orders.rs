@@ -56,7 +56,7 @@ async fn local_node_no_liquidity_limit_order() {
 }
 
 /// The block number from which we will fetch state for the forked tests.
-const FORK_BLOCK_MAINNET: u64 = 18477910;
+const FORK_BLOCK_MAINNET: u64 = 23097057;
 /// USDC whale address as per [FORK_BLOCK_MAINNET].
 const USDC_WHALE_MAINNET: H160 = H160(hex_literal::hex!(
     "28c6c06298d514db089934071355e5743bf21d60"

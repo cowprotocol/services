@@ -5,7 +5,7 @@
 use {
     super::{BalanceFetching, Query, TransferSimulationError},
     alloy::sol_types::{SolType, sol_data},
-    anyhow::Result,
+    anyhow::{Context, Result},
     contracts::{BalancerV2Vault, erc20::Contract},
     ethcontract::{Account, Bytes, H160, PrivateKey, U256},
     ethrpc::Web3,
@@ -94,7 +94,8 @@ impl Balances {
                 sol_data::Uint<256>,
                 sol_data::Uint<256>,
                 sol_data::Bool,
-            )>::abi_decode(&response.0)?;
+            )>::abi_decode(&response.0)
+            .context("failed to decode balance response")?;
 
         let simulation = Simulation {
             token_balance: U256::from_little_endian(&token_balance.as_le_bytes()),
