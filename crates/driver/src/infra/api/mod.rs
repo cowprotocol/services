@@ -3,7 +3,7 @@ use {
         domain::{
             self,
             Mempools,
-            competition::{bad_tokens, sorting},
+            competition::{bad_tokens, order::app_data::AppDataRetriever, sorting},
         },
         infra::{
             self,
@@ -45,7 +45,8 @@ impl Api {
         self,
         shutdown: impl Future<Output = ()> + Send + 'static,
         order_priority_strategies: Vec<OrderPriorityStrategy>,
-        comp_data_aggregator: domain::competition::DataAggregator,
+        app_data_retriever: Option<AppDataRetriever>,
+        disable_access_list_simulation: bool,
     ) -> Result<(), hyper::Error> {
         // Add middleware.
         let mut app = axum::Router::new().layer(tower::ServiceBuilder::new().layer(
@@ -53,6 +54,12 @@ impl Api {
         ));
 
         let tokens = tokens::Fetcher::new(&self.eth);
+        let fetcher = Arc::new(domain::competition::DataAggregator::new(
+            self.eth.clone(),
+            app_data_retriever.clone(),
+            self.liquidity.clone(),
+            disable_access_list_simulation,
+        ));
 
         let order_sorting_strategies =
             Self::build_order_sorting_strategies(&order_priority_strategies);
@@ -61,7 +68,6 @@ impl Api {
         app = routes::metrics(app);
         app = routes::healthz(app);
 
-        let fetcher = Arc::new(comp_data_aggregator);
         // Multiplex each solver as part of the API. Multiple solvers are multiplexed
         // on the same driver so only one liquidity collector collects the liquidity
         // for all of them. This is important because liquidity collection is

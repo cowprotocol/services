@@ -1,7 +1,6 @@
 use {
     crate::{
         domain::{
-            self,
             Mempools,
             competition::{bad_tokens, order::app_data::AppDataRetriever},
         },
@@ -68,16 +67,9 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
         } => Some(AppDataRetriever::new(orderbook_url.clone(), *cache_size)),
         config::file::AppDataFetching::Disabled => None,
     };
-    let liquidity = liquidity(&config, &eth).await;
-    let comp_data_aggregator = domain::competition::DataAggregator::new(
-        eth.clone(),
-        app_data_retriever.clone(),
-        liquidity.clone(),
-        config.disable_access_list_simulation,
-    );
     let serve = Api {
         solvers: solvers(&config, &eth).await,
-        liquidity,
+        liquidity: liquidity(&config, &eth).await,
         simulator: simulator(&config, &eth),
         mempools: Mempools::try_new(
             config
@@ -103,7 +95,8 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
             let _ = shutdown_receiver.await;
         },
         config.order_priority_strategies,
-        comp_data_aggregator,
+        app_data_retriever,
+        config.disable_access_list_simulation,
     );
 
     futures::pin_mut!(serve);
