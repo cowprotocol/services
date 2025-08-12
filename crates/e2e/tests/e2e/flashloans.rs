@@ -29,13 +29,12 @@ use {
 
 #[tokio::test]
 #[ignore]
-async fn forked_node_mainnet_repay_debt_with_collateral_of_safe() {
+async fn orked_node_mainnet_repay_debt_with_collateral_of_safe() {
     run_forked_test_with_block_number(
         forked_mainnet_repay_debt_with_collateral_of_safe,
         std::env::var("FORK_URL_MAINNET")
             .expect("FORK_URL_MAINNET must be set to run forked tests"),
-        // https://etherscan.io/tx/0x215de2ddda2e16bf6d21d148a6c1519e94a4eee047ddd100778e01ee6ba0cf2a
-        23031384,
+        23097057,
     )
     .await;
 }
