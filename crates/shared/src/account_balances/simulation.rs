@@ -24,12 +24,13 @@ pub struct Balances {
 }
 
 impl Balances {
-    pub async fn new(
+    pub fn new(
         web3: &Web3,
         settlement: contracts::GPv2Settlement,
+        balances: contracts::support::Balances,
         vault_relayer: H160,
         vault: Option<H160>,
-    ) -> Result<Self> {
+    ) -> Self {
         // Note that the balances simulation **will fail** if the `vault`
         // address is not a contract and the `source` is set to one of
         // `SellTokenSource::{External, Internal}` (i.e. the Vault contract is
@@ -39,15 +40,14 @@ impl Balances {
         // work without additional code paths :tada:!
         let vault = vault.unwrap_or_default();
         let web3 = ethrpc::instrumented::instrument_with_label(web3, "balanceFetching".into());
-        let balances = contracts::support::Balances::deployed(&web3).await?;
 
-        Ok(Self {
+        Self {
             web3,
             settlement,
             balances,
             vault_relayer,
             vault,
-        })
+        }
     }
 
     #[instrument(skip_all)]
@@ -223,14 +223,17 @@ mod tests {
         let web3 = Web3::new(ethrpc::create_env_test_transport());
         let settlement =
             contracts::GPv2Settlement::at(&web3, addr!("9008d19f58aabd9ed0d60971565aa8510560ab41"));
+        let balances = contracts::support::Balances::at(
+            &web3,
+            addr!("3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b"),
+        );
         let balances = Balances::new(
             &web3,
             settlement,
+            balances,
             addr!("C92E8bdf79f0507f65a392b0ab4667716BFE0110"),
             Some(addr!("BA12222222228d8Ba445958a75a0704d566BF2C8")),
-        )
-        .await
-        .unwrap();
+        );
 
         let owner = addr!("b0a4e99371dfb0734f002ae274933b4888f618ef");
         let token = addr!("d909c5862cdb164adb949d92622082f0092efc3d");

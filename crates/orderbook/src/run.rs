@@ -96,6 +96,12 @@ pub async fn run(args: Arguments) {
             .await
             .expect("load settlement contract"),
     };
+    let balances_contract = match args.shared.balances_contract_address {
+        Some(address) => contracts::support::Balances::with_deployment_info(&web3, address, None),
+        None => contracts::support::Balances::deployed(&web3)
+            .await
+            .expect("load balances contract"),
+    };
     let vault_relayer = settlement_contract
         .vault_relayer()
         .call()
@@ -149,12 +155,11 @@ pub async fn run(args: Arguments) {
         &web3,
         account_balances::Contracts {
             settlement: settlement_contract.clone(),
+            balances: balances_contract.clone(),
             vault_relayer,
             vault: vault.as_ref().map(|contract| contract.address()),
         },
-    )
-    .await
-    .expect("failed to create balance fetcher");
+    );
 
     let gas_price_estimator = Arc::new(InstrumentedGasEstimator::new(
         shared::gas_price_estimation::create_priority_estimator(

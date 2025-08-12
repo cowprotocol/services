@@ -68,30 +68,29 @@ pub trait BalanceFetching: Send + Sync {
 /// Contracts required for balance simulation.
 pub struct Contracts {
     pub settlement: contracts::GPv2Settlement,
+    pub balances: contracts::support::Balances,
     pub vault_relayer: H160,
     pub vault: Option<H160>,
 }
 
 /// Create the default [`BalanceFetching`] instance.
-pub async fn fetcher(web3: &Web3, contracts: Contracts) -> Result<Arc<dyn BalanceFetching>> {
-    Ok(Arc::new(
-        simulation::Balances::new(
-            web3,
-            contracts.settlement,
-            contracts.vault_relayer,
-            contracts.vault,
-        )
-        .await?,
+pub fn fetcher(web3: &Web3, contracts: Contracts) -> Arc<dyn BalanceFetching> {
+    Arc::new(simulation::Balances::new(
+        web3,
+        contracts.settlement,
+        contracts.balances,
+        contracts.vault_relayer,
+        contracts.vault,
     ))
 }
 
 /// Create a cached [`BalanceFetching`] instance.
-pub async fn cached(
+pub fn cached(
     web3: &Web3,
     contracts: Contracts,
     blocks: CurrentBlockWatcher,
-) -> Result<Arc<dyn BalanceFetching>> {
-    let cached = Arc::new(cached::Balances::new(fetcher(web3, contracts).await?));
+) -> Arc<dyn BalanceFetching> {
+    let cached = Arc::new(cached::Balances::new(fetcher(web3, contracts)));
     cached.spawn_background_task(blocks);
-    Ok(cached)
+    cached
 }

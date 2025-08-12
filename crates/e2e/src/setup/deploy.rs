@@ -58,7 +58,7 @@ impl Contracts {
 
         let balances = Balances::deployed(web3)
             .await
-            .expect("failed to find balances contract: {err:?}");
+            .expect("failed to find balances contract");
 
         let flashloan_router = FlashLoanRouter::deployed(web3).await.ok();
         let flashloan_wrapper_aave = AaveFlashLoanSolverWrapper::deployed(web3).await.ok();
