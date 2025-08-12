@@ -24,7 +24,7 @@ jobs:
           swap-storage: false
 
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install dependency
         run: sudo apt-get -qq update && sudo apt-get -y -q install curl jq
