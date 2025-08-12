@@ -24,6 +24,7 @@ use {
 #[derive(Default)]
 pub struct DeployedContracts {
     pub balances: Option<Address>,
+    pub signatures: Option<Address>,
 }
 
 pub struct Contracts {
@@ -69,9 +70,12 @@ impl Contracts {
                 .await
                 .expect("failed to find balances contract"),
         };
-        let signatures = Signatures::deployed(web3)
-            .await
-            .expect("failed to find signatures contract");
+        let signatures = match deployed.signatures {
+            Some(address) => Signatures::at(web3, address),
+            None => Signatures::deployed(web3)
+                .await
+                .expect("failed to find signatures contract"),
+        };
 
         let flashloan_router = FlashLoanRouter::deployed(web3).await.ok();
         let flashloan_wrapper_aave = AaveFlashLoanSolverWrapper::deployed(web3).await.ok();
@@ -160,8 +164,7 @@ impl Contracts {
             GPv2Settlement(gp_authenticator.address(), balancer_vault.address(),)
         );
         let balances = deploy!(web3, Balances());
-
-        let signatures = deploy!(Signatures());
+        let signatures = deploy!(web3, Signatures());
 
         contracts::vault::grant_required_roles(
             &balancer_authorizer,

@@ -28,6 +28,7 @@ use {
     std::collections::{HashMap, HashSet},
     web3::signing::SecretKeyRef,
 };
+use contracts::support::Signatures;
 
 #[tokio::test]
 #[ignore]
@@ -386,8 +387,10 @@ async fn cow_amm_driver_support(web3: Web3) {
     // manually
     let deployed_contracts = {
         let balances = deploy!(&web3, Balances());
+        let signatures = deploy!(&web3, Signatures());
         DeployedContracts {
             balances: Some(balances.address()),
+            signatures: Some(signatures.address()),
         }
     };
     let mut onchain = OnchainComponents::deployed_with(web3.clone(), deployed_contracts).await;
