@@ -415,6 +415,14 @@
       "created_at": "2025-08-12T01:27:53Z",
       "repoId": 477694383,
       "pullRequestNo": 3553
+    },
+    {
+      "name": "rejected-l",
+      "id": 99460023,
+      "comment_id": 3180306585,
+      "created_at": "2025-08-12T17:27:39Z",
+      "repoId": 477694383,
+      "pullRequestNo": 3555
     }
   ]
 }
