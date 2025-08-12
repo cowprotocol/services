@@ -1,6 +1,9 @@
 use {
     app_data::AppDataHash,
-    contracts::{ERC20, support::Balances},
+    contracts::{
+        ERC20,
+        support::{Balances, Signatures},
+    },
     driver::domain::eth::NonZeroU256,
     e2e::{
         deploy,
@@ -28,7 +31,6 @@ use {
     std::collections::{HashMap, HashSet},
     web3::signing::SecretKeyRef,
 };
-use contracts::support::Signatures;
 
 #[tokio::test]
 #[ignore]
