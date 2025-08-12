@@ -48,6 +48,7 @@ pub struct Addresses {
     pub settlement: Option<eth::ContractAddress>,
     pub signatures: Option<eth::ContractAddress>,
     pub weth: Option<eth::ContractAddress>,
+    pub balances: Option<eth::ContractAddress>,
     pub cow_amms: Vec<CowAmmConfig>,
     pub flashloan_wrappers: Vec<config::file::FlashloanWrapperConfig>,
     pub flashloan_router: Option<eth::ContractAddress>,
@@ -80,6 +81,13 @@ impl Contracts {
         let vault_relayer = settlement.methods().vault_relayer().call().await?.into();
         let vault =
             contracts::BalancerV2Vault::at(web3, settlement.methods().vault().call().await?);
+        let balance_helper = contracts::support::Balances::at(
+            web3,
+            address_for(
+                contracts::support::Balances::raw_contract(),
+                addresses.balances,
+            ),
+        );
         let signatures = contracts::support::Signatures::at(
             web3,
             address_for(
@@ -87,7 +95,6 @@ impl Contracts {
                 addresses.signatures,
             ),
         );
-        let balance_helper = contracts::support::Balances::deployed(web3).await?;
 
         let weth = contracts::WETH9::at(
             web3,

@@ -13,6 +13,7 @@ use {
         UniswapV2Factory,
         UniswapV2Router02,
         WETH9,
+        support::Balances,
         support::Signatures,
     },
     ethcontract::{Address, H256, U256, errors::DeployError},
@@ -26,6 +27,7 @@ pub struct Contracts {
     pub gp_settlement: GPv2Settlement,
     pub signatures: Signatures,
     pub gp_authenticator: GPv2AllowListAuthentication,
+    pub balances: Balances,
     pub uniswap_v2_factory: UniswapV2Factory,
     pub uniswap_v2_router: UniswapV2Router02,
     pub weth: WETH9,
@@ -56,6 +58,10 @@ impl Contracts {
             Err(err) => panic!("failed to find deployed contract: {err:?}"),
             Ok(contract) => Some(contract),
         };
+
+        let balances = Balances::deployed(web3)
+            .await
+            .expect("failed to find balances contract: {err:?}");
 
         let flashloan_router = FlashLoanRouter::deployed(web3).await.ok();
         let flashloan_wrapper_aave = AaveFlashLoanSolverWrapper::deployed(web3).await.ok();
@@ -93,6 +99,7 @@ impl Contracts {
             ethflows: vec![CoWSwapEthFlow::deployed(web3).await.unwrap()],
             hooks: HooksTrampoline::deployed(web3).await.unwrap(),
             gp_settlement,
+            balances,
             signatures,
             cow_amm_helper,
             flashloan_wrapper_maker,
@@ -153,6 +160,7 @@ impl Contracts {
             gp_authenticator.address(),
             balancer_vault.address(),
         ));
+        let balances = deploy!(Balances());
 
         let signatures = deploy!(Signatures());
 
@@ -198,6 +206,7 @@ impl Contracts {
             balancer_vault,
             gp_settlement,
             gp_authenticator,
+            balances,
             signatures,
             uniswap_v2_factory,
             uniswap_v2_router,

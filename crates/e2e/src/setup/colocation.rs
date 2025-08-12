@@ -221,6 +221,7 @@ estimator = "web3"
 gp-v2-settlement = "{:?}"
 signatures = "{:?}"
 weth = "{:?}"
+balances = "{:?}"
 {flashloan_router_config}
 
 {maker_adapter}
@@ -244,6 +245,7 @@ mempool = "public"
         contracts.gp_settlement.address(),
         contracts.signatures.address(),
         contracts.weth.address(),
+        contracts.balances.address(),
     ));
     let args = vec![
         "driver".to_string(),
