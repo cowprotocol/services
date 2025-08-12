@@ -224,9 +224,9 @@ async fn create_config_file(
         file,
         r#"[contracts]
            gp-v2-settlement = "{}"
-           signatures = "{}"
            weth = "{}"
            balances = "{}"
+           signatures = "{}"
            flashloan-router = "{}"
 
            [[contracts.flashloan-wrappers]]
@@ -237,9 +237,9 @@ async fn create_config_file(
            gas-price-cap = "1000000000000"
            "#,
         hex_address(blockchain.settlement.address()),
-        hex_address(blockchain.signatures.address()),
         hex_address(blockchain.weth.address()),
         hex_address(blockchain.balances.address()),
+        hex_address(blockchain.signatures.address()),
         hex_address(blockchain.flashloan_router.address()),
         hex_address(blockchain.flashloan_wrapper.address()),
     )

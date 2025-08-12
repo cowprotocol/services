@@ -13,8 +13,7 @@ use {
         UniswapV2Factory,
         UniswapV2Router02,
         WETH9,
-        support::Balances,
-        support::Signatures,
+        support::{Balances, Signatures},
     },
     ethcontract::{Address, H256, U256, errors::DeployError},
     model::DomainSeparator,
@@ -52,7 +51,6 @@ impl Contracts {
         tracing::info!("connected to forked test network {}", network_id);
 
         let gp_settlement = GPv2Settlement::deployed(web3).await.unwrap();
-        let signatures = Signatures::deployed(web3).await.unwrap();
         let cow_amm_helper = match contracts::CowAmmLegacyHelper::deployed(web3).await {
             Err(DeployError::NotFound(_)) => None,
             Err(err) => panic!("failed to find deployed contract: {err:?}"),
@@ -61,7 +59,10 @@ impl Contracts {
 
         let balances = Balances::deployed(web3)
             .await
-            .expect("failed to find balances contract: {err:?}");
+            .expect("failed to find balances contract");
+        let signatures = Signatures::deployed(web3)
+            .await
+            .expect("failed to find signatures contract");
 
         let flashloan_router = FlashLoanRouter::deployed(web3).await.ok();
         let flashloan_wrapper_aave = AaveFlashLoanSolverWrapper::deployed(web3).await.ok();
