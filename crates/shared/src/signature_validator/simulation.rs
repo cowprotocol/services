@@ -105,7 +105,7 @@ impl Validator {
             .tx
             .estimate_gas()
             .await
-            .map_err(|err| SignatureValidationError::Other(err.into()));
+            .map_err(|_| SignatureValidationError::Invalid);
 
         tracing::trace!(?check, ?result, "simulated signature");
         Ok(Simulation { gas_used: result? })
