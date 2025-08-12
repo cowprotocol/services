@@ -74,10 +74,10 @@ async fn forked_node_mainnet_single_limit_order() {
     .await;
 }
 
-const FORK_BLOCK_GNOSIS: u64 = 32070725;
+const FORK_BLOCK_GNOSIS: u64 = 41502478;
 /// USDC whale address as per [FORK_BLOCK_GNOSIS].
 const USDC_WHALE_GNOSIS: H160 = H160(hex_literal::hex!(
-    "ba12222222228d8ba445958a75a0704d566bf2c8"
+    "d4A39d219ADB43aB00739DC5D876D98Fdf0121Bf"
 ));
 
 #[tokio::test]
