@@ -216,23 +216,22 @@ where
         // of new blocks is sufficiently small.
         if let Ok(block_range) =
             RangeInclusive::try_new(last_handled_block_number, current_block_number)
+            && block_range.end() - block_range.start() <= MAX_REORG_BLOCK_COUNT
         {
-            if block_range.end() - block_range.start() <= MAX_REORG_BLOCK_COUNT {
-                let mut new_blocks = self.block_retriever.blocks(block_range).await?;
-                if new_blocks.first().map(|b| b.1) == Some(last_handled_block_hash) {
-                    // first block is not actually new and was only fetched to detect a reorg
-                    new_blocks.remove(0);
-                    tracing::debug!(
-                        first_new=?new_blocks.first(),
-                        last_new=?new_blocks.last(),
-                        "multiple new blocks without reorg"
-                    );
-                    return Ok(EventRange {
-                        history_range: None,
-                        latest_blocks: new_blocks,
-                        is_reorg: false,
-                    });
-                }
+            let mut new_blocks = self.block_retriever.blocks(block_range).await?;
+            if new_blocks.first().map(|b| b.1) == Some(last_handled_block_hash) {
+                // first block is not actually new and was only fetched to detect a reorg
+                new_blocks.remove(0);
+                tracing::debug!(
+                    first_new=?new_blocks.first(),
+                    last_new=?new_blocks.last(),
+                    "multiple new blocks without reorg"
+                );
+                return Ok(EventRange {
+                    history_range: None,
+                    latest_blocks: new_blocks,
+                    is_reorg: false,
+                });
             }
         }
 

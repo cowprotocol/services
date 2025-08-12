@@ -68,7 +68,7 @@ fn amm_to_pool(amm: &ConstantProductOrder) -> Pool {
     }
 }
 
-fn amm_to_weighted_pool(amm: &WeightedProductOrder) -> WeightedPoolRef {
+fn amm_to_weighted_pool(amm: &WeightedProductOrder) -> WeightedPoolRef<'_> {
     WeightedPoolRef {
         reserves: &amm.reserves,
         swap_fee: amm.fee,

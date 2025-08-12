@@ -140,16 +140,16 @@ fn calculate_submission_gas_price(
     // If tx from the previous submission was not mined,
     // we incease the tip and max_gas_fee for miners
     // in order to avoid "tx underpriced errors"
-    if Some(newest_nonce) == nonce_of_last_submission {
-        if let Some(gas_price_of_last_submission) = gas_price_of_last_submission {
-            let gas_price_of_last_submission = gas_price_of_last_submission.bump(GAS_PRICE_BUMP);
-            new_gas_price.max_fee_per_gas = new_gas_price
-                .max_fee_per_gas
-                .max(gas_price_of_last_submission.max_fee_per_gas);
-            new_gas_price.max_priority_fee_per_gas = new_gas_price
-                .max_priority_fee_per_gas
-                .max(gas_price_of_last_submission.max_priority_fee_per_gas);
-        }
+    if Some(newest_nonce) == nonce_of_last_submission
+        && let Some(gas_price_of_last_submission) = gas_price_of_last_submission
+    {
+        let gas_price_of_last_submission = gas_price_of_last_submission.bump(GAS_PRICE_BUMP);
+        new_gas_price.max_fee_per_gas = new_gas_price
+            .max_fee_per_gas
+            .max(gas_price_of_last_submission.max_fee_per_gas);
+        new_gas_price.max_priority_fee_per_gas = new_gas_price
+            .max_priority_fee_per_gas
+            .max(gas_price_of_last_submission.max_priority_fee_per_gas);
     }
 
     if new_gas_price.max_fee_per_gas > MAX_GAS_PRICE as f64 {

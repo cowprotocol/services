@@ -168,7 +168,7 @@ pub struct RateLimiter {
 }
 
 impl RateLimiter {
-    fn strategy(&self) -> MutexGuard<Strategy> {
+    fn strategy(&self) -> MutexGuard<'_, Strategy> {
         self.strategy.lock().unwrap()
     }
 
