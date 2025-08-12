@@ -1,4 +1,5 @@
 use {
+    crate::deploy,
     contracts::{
         AaveFlashLoanSolverWrapper,
         BalancerV2Authorizer,
@@ -20,18 +21,9 @@ use {
     shared::ethrpc::Web3,
 };
 
-macro_rules! deploy {
-    ($web3:expr, $contract:ident) => { deploy!($web3, $contract ()) };
-    ($web3:expr, $contract:ident ( $($param:expr_2021),* $(,)? )) => {
-        deploy!($web3, $contract ($($param),*) as stringify!($contract))
-    };
-    ($web3:expr, $contract:ident ( $($param:expr_2021),* $(,)? ) as $name:expr_2021) => {{
-        let name = $name;
-        $contract::builder(&$web3 $(, $param)*)
-            .deploy()
-            .await
-            .unwrap_or_else(|e| panic!("failed to deploy {name}: {e:?}"))
-    }};
+#[derive(Default)]
+pub struct DeployedContracts {
+    pub balances: Option<Address>,
 }
 
 pub struct Contracts {
@@ -54,7 +46,7 @@ pub struct Contracts {
 }
 
 impl Contracts {
-    pub async fn deployed(web3: &Web3) -> Self {
+    pub async fn deployed_with(web3: &Web3, deployed: DeployedContracts) -> Self {
         let network_id = web3
             .eth()
             .chain_id()
@@ -70,9 +62,12 @@ impl Contracts {
             Ok(contract) => Some(contract),
         };
 
-        let balances = Balances::deployed(web3)
-            .await
-            .expect("failed to find balances contract");
+        let balances = match deployed.balances {
+            Some(address) => Balances::at(web3, address),
+            None => Balances::deployed(web3)
+                .await
+                .expect("failed to find balances contract"),
+        };
 
         let flashloan_router = FlashLoanRouter::deployed(web3).await.ok();
         let flashloan_wrapper_aave = AaveFlashLoanSolverWrapper::deployed(web3).await.ok();
