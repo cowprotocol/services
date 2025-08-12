@@ -334,7 +334,13 @@ impl Error {
         // This behavior is node dependent
         match self {
             Error::Method(error) => matches!(error.inner, ExecutionError::Revert(_)),
-            Error::Deploy(_) => todo!(),
+            Error::Deploy(err) => match err {
+                ethcontract::errors::DeployError::Web3(inner) => {
+                    let error = ExecutionError::from(inner.clone());
+                    matches!(error, ExecutionError::Revert(_))
+                }
+                _ => false,
+            },
             Error::Web3(inner) => {
                 let error = ExecutionError::from(inner.clone());
                 matches!(error, ExecutionError::Revert(_))
