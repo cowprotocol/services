@@ -29,7 +29,7 @@ use {
 
 #[tokio::test]
 #[ignore]
-async fn orked_node_mainnet_repay_debt_with_collateral_of_safe() {
+async fn forked_node_mainnet_repay_debt_with_collateral_of_safe() {
     run_forked_test_with_block_number(
         forked_mainnet_repay_debt_with_collateral_of_safe,
         std::env::var("FORK_URL_MAINNET")
@@ -89,7 +89,9 @@ async fn forked_mainnet_repay_debt_with_collateral_of_safe(web3: Web3) {
             0,                 // referral code
         ))
         .await;
-    assert!(balance(&web3, trader.address(), ausdc).await >= collateral_amount);
+    // AAVE takes some fee
+    let fee = 2;
+    assert!(balance(&web3, trader.address(), ausdc).await >= collateral_amount - fee);
 
     tracing::info!("wait a bit to make `borrow()` call work");
     tokio::time::sleep(Duration::from_secs(1)).await;
