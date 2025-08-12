@@ -74,9 +74,7 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
         app_data_retriever.clone(),
         liquidity.clone(),
         config.disable_access_list_simulation,
-    )
-    .await
-    .expect("initialize competition data aggregator");
+    );
     let serve = Api {
         solvers: solvers(&config, &eth).await,
         liquidity,

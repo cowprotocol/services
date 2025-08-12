@@ -75,15 +75,16 @@ pub fn check_erc1271_result(result: Bytes<[u8; 4]>) -> Result<(), SignatureValid
 /// Contracts required for signature verification simulation.
 pub struct Contracts {
     pub settlement: contracts::GPv2Settlement,
+    pub signatures: contracts::support::Signatures,
     pub vault_relayer: H160,
 }
 
 /// Creates the default [`SignatureValidating`] instance.
-pub async fn validator(
-    web3: &Web3,
-    contracts: Contracts,
-) -> anyhow::Result<Arc<dyn SignatureValidating>> {
-    Ok(Arc::new(
-        simulation::Validator::new(web3, contracts.settlement, contracts.vault_relayer).await?,
+pub fn validator(web3: &Web3, contracts: Contracts) -> Arc<dyn SignatureValidating> {
+    Arc::new(simulation::Validator::new(
+        web3,
+        contracts.settlement,
+        contracts.signatures,
+        contracts.vault_relayer,
     ))
 }

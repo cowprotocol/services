@@ -256,6 +256,10 @@ pub struct Arguments {
     #[clap(long, env)]
     pub settlement_contract_address: Option<H160>,
 
+    /// Override address of the Signatures contract.
+    #[clap(long, env)]
+    pub signatures_contract_address: Option<H160>,
+
     /// Override address of the settlement contract.
     #[clap(long, env)]
     pub native_token_address: Option<H160>,
@@ -385,6 +389,7 @@ impl Display for Arguments {
             solver_competition_auth,
             network_block_interval,
             settlement_contract_address,
+            signatures_contract_address,
             native_token_address,
             hooks_contract_address,
             balancer_v2_vault_address,
@@ -436,6 +441,11 @@ impl Display for Arguments {
             f,
             "settlement_contract_address",
             &settlement_contract_address.map(|a| format!("{a:?}")),
+        )?;
+        display_option(
+            f,
+            "signatures_contract_address",
+            &signatures_contract_address.map(|a| format!("{a:?}")),
         )?;
         display_option(
             f,

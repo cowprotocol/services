@@ -101,6 +101,12 @@ pub async fn run(args: Arguments) {
         .call()
         .await
         .expect("Couldn't get vault relayer address");
+    let signatures_contract = match args.shared.signatures_contract_address {
+        Some(address) => contracts::support::Signatures::with_deployment_info(&web3, address, None),
+        None => contracts::support::Signatures::deployed(&web3)
+            .await
+            .expect("load signatures contract"),
+    };
     let native_token = match args.shared.native_token_address {
         Some(address) => contracts::WETH9::with_deployment_info(&web3, address, None),
         None => WETH9::deployed(&web3)
@@ -114,11 +120,10 @@ pub async fn run(args: Arguments) {
         &web3,
         signature_validator::Contracts {
             settlement: settlement_contract.clone(),
+            signatures: signatures_contract,
             vault_relayer,
         },
-    )
-    .await
-    .expect("failed to create signature validator");
+    );
 
     let vault = match args.shared.balancer_v2_vault_address {
         Some(address) => Some(contracts::BalancerV2Vault::with_deployment_info(

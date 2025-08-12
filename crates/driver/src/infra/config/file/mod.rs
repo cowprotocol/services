@@ -363,6 +363,9 @@ struct ContractsConfig {
     /// Override the default address of the GPv2Settlement contract.
     gp_v2_settlement: Option<eth::H160>,
 
+    /// Override the default address of the Signatures contract.
+    signatures: Option<eth::H160>,
+
     /// Override the default address of the WETH contract.
     weth: Option<eth::H160>,
 

@@ -17,6 +17,7 @@ pub struct Contracts {
     settlement: contracts::GPv2Settlement,
     vault_relayer: eth::ContractAddress,
     vault: contracts::BalancerV2Vault,
+    signatures: contracts::support::Signatures,
     weth: contracts::WETH9,
 
     /// The domain separator for settlement contract used for signing orders.
@@ -45,6 +46,7 @@ pub struct FlashloanWrapperData {
 #[derive(Debug, Default, Clone)]
 pub struct Addresses {
     pub settlement: Option<eth::ContractAddress>,
+    pub signatures: Option<eth::ContractAddress>,
     pub weth: Option<eth::ContractAddress>,
     pub cow_amms: Vec<CowAmmConfig>,
     pub flashloan_wrappers: Vec<config::file::FlashloanWrapperConfig>,
@@ -78,6 +80,13 @@ impl Contracts {
         let vault_relayer = settlement.methods().vault_relayer().call().await?.into();
         let vault =
             contracts::BalancerV2Vault::at(web3, settlement.methods().vault().call().await?);
+        let signatures = contracts::support::Signatures::at(
+            web3,
+            address_for(
+                contracts::support::Signatures::raw_contract(),
+                addresses.signatures,
+            ),
+        );
         let balance_helper = contracts::support::Balances::deployed(web3).await?;
 
         let weth = contracts::WETH9::at(
@@ -143,6 +152,7 @@ impl Contracts {
             settlement,
             vault_relayer,
             vault,
+            signatures,
             weth,
             settlement_domain_separator,
             cow_amm_registry,
@@ -155,6 +165,10 @@ impl Contracts {
 
     pub fn settlement(&self) -> &contracts::GPv2Settlement {
         &self.settlement
+    }
+
+    pub fn signatures(&self) -> &contracts::support::Signatures {
+        &self.signatures
     }
 
     pub fn vault_relayer(&self) -> eth::ContractAddress {

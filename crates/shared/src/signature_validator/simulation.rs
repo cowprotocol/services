@@ -26,18 +26,19 @@ impl Validator {
     /// The result returned from `isValidSignature` if the signature is correct
     const IS_VALID_SIGNATURE_MAGIC_BYTES: &'static str = "1626ba7e";
 
-    pub async fn new(
+    pub fn new(
         web3: &Web3,
         settlement: contracts::GPv2Settlement,
+        signatures: contracts::support::Signatures,
         vault_relayer: H160,
-    ) -> Result<Self> {
+    ) -> Self {
         let web3 = ethrpc::instrumented::instrument_with_label(web3, "signatureValidation".into());
-        Ok(Self {
-            signatures: contracts::support::Signatures::deployed(&web3).await?,
+        Self {
+            signatures,
             settlement,
             vault_relayer,
             web3: web3.clone(),
-        })
+        }
     }
 
     /// Simulate isValidSignature for the cases in which the order does not have

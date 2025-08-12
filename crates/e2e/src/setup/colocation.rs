@@ -219,6 +219,7 @@ estimator = "web3"
 
 [contracts]
 gp-v2-settlement = "{:?}"
+signatures = "{:?}"
 weth = "{:?}"
 {flashloan_router_config}
 
@@ -241,6 +242,7 @@ gas-price-cap = "1000000000000"
 mempool = "public"
 "#,
         contracts.gp_settlement.address(),
+        contracts.signatures.address(),
         contracts.weth.address(),
     ));
     let args = vec![

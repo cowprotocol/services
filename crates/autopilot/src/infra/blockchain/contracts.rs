@@ -3,6 +3,7 @@ use {crate::domain, chain::Chain, ethcontract::dyns::DynWeb3, primitive_types::H
 #[derive(Debug, Clone)]
 pub struct Contracts {
     settlement: contracts::GPv2Settlement,
+    signatures: contracts::support::Signatures,
     weth: contracts::WETH9,
     chainalysis_oracle: Option<contracts::ChainalysisOracle>,
     trampoline: contracts::HooksTrampoline,
@@ -17,6 +18,7 @@ pub struct Contracts {
 #[derive(Debug, Clone)]
 pub struct Addresses {
     pub settlement: Option<H160>,
+    pub signatures: Option<H160>,
     pub weth: Option<H160>,
     pub trampoline: Option<H160>,
 }
@@ -34,6 +36,14 @@ impl Contracts {
             address_for(
                 contracts::GPv2Settlement::raw_contract(),
                 addresses.settlement,
+            ),
+        );
+
+        let signatures = contracts::support::Signatures::at(
+            web3,
+            address_for(
+                contracts::support::Signatures::raw_contract(),
+                addresses.signatures,
             ),
         );
 
@@ -72,6 +82,7 @@ impl Contracts {
 
         Self {
             settlement,
+            signatures,
             weth,
             chainalysis_oracle,
             settlement_domain_separator,
@@ -82,6 +93,10 @@ impl Contracts {
 
     pub fn settlement(&self) -> &contracts::GPv2Settlement {
         &self.settlement
+    }
+
+    pub fn signatures(&self) -> &contracts::support::Signatures {
+        &self.signatures
     }
 
     pub fn trampoline(&self) -> &contracts::HooksTrampoline {
