@@ -196,6 +196,7 @@ pub async fn run(args: Arguments) {
         settlement: args.shared.settlement_contract_address,
         signatures: args.shared.signatures_contract_address,
         weth: args.shared.native_token_address,
+        balances: args.shared.balances_contract_address,
         trampoline: args.shared.hooks_contract_address,
     };
     let eth = ethereum(
@@ -254,7 +255,8 @@ pub async fn run(args: Arguments) {
     let balance_fetcher = account_balances::cached(
         &web3,
         account_balances::Contracts {
-            settlement: eth.contracts().settlement().address(),
+            settlement: eth.contracts().settlement().clone(),
+            balances: eth.contracts().balances().clone(),
             vault_relayer,
             vault: vault.as_ref().map(|contract| contract.address()),
         },

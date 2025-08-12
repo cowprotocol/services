@@ -140,6 +140,10 @@ impl<'a> Services<'a> {
                 self.contracts.gp_settlement.address()
             ),
             format!(
+                "--balances-contract-address={:?}",
+                self.contracts.balances.address()
+            ),
+            format!(
                 "--signatures-contract-address={:?}",
                 self.contracts.signatures.address()
             ),

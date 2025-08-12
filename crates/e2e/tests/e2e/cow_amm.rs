@@ -365,12 +365,12 @@ async fn cow_amm_jit(web3: Web3) {
 
 #[tokio::test]
 #[ignore]
-async fn forked_node_mainnet_cow_amm_driver_support() {
+async fn orked_node_mainnet_cow_amm_driver_support() {
     run_forked_test_with_block_number(
         cow_amm_driver_support,
         std::env::var("FORK_URL_MAINNET")
             .expect("FORK_URL_MAINNET must be set to run forked tests"),
-        20332745, // block at which helper was deployed
+        23097057, // block at which helper was deployed
     )
     .await;
 }
