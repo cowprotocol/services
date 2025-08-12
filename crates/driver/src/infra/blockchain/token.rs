@@ -1,7 +1,12 @@
 use {
     super::{Error, Ethereum},
     crate::domain::{competition::order, eth},
+    alloy::sol_types::{SolType, sol_data},
+    ethcontract::{Account, PrivateKey},
     futures::TryFutureExt,
+    std::sync::LazyLock,
+    tap::TapFallible,
+    web3::types::CallRequest,
 };
 
 /// An ERC-20 token.
@@ -87,12 +92,18 @@ impl Erc20 {
         trader: eth::Address,
         source: order::SellTokenBalance,
         interactions: &[eth::Interaction],
+        disable_access_list_simulation: bool,
     ) -> Result<eth::TokenAmount, Error> {
         if interactions.is_empty() {
             self.tradable_balance_simple(trader, source).await
         } else {
-            self.tradable_balance_simulated(trader, source, interactions)
-                .await
+            self.tradable_balance_simulated(
+                trader,
+                source,
+                interactions,
+                disable_access_list_simulation,
+            )
+            .await
         }
     }
 
@@ -104,11 +115,19 @@ impl Erc20 {
         trader: eth::Address,
         source: order::SellTokenBalance,
         interactions: &[eth::Interaction],
+        disable_access_lists: bool,
     ) -> Result<eth::TokenAmount, Error> {
+        static SIMULATION_ACCOUNT: LazyLock<Account> = LazyLock::new(|| {
+            PrivateKey::from_hex_str(
+                "0000000000000000000000000000000000000000000000000000000000018894",
+            )
+            .map(|pk| Account::Offline(pk, None))
+            .expect("valid simulation account private key")
+        });
         let balance_helper = self.ethereum.contracts().balance_helper();
-        let mut method = balance_helper.balance(
+        let balance_call = balance_helper.balance(
             (
-                balance_helper.address(),
+                self.ethereum.contracts().settlement().address(),
                 self.ethereum.contracts().vault_relayer().into(),
                 self.ethereum.contracts().vault().address(),
             ),
@@ -127,26 +146,51 @@ impl Erc20 {
                 })
                 .collect(),
         );
-        // Create the access list for the balance simulation
-        let access_list_call = contracts::storage_accessible::call(
-            method.tx.to.unwrap(),
-            contracts::bytecode!(contracts::support::Balances),
-            method.tx.data.clone().unwrap(),
-        );
-        let access_list = self
+        let mut delegate_call = self
             .ethereum
-            .create_access_list(access_list_call)
-            .await
-            .ok();
-        method.tx.access_list = access_list.map(Into::into);
-        let (_, _, effective_balance, can_transfer) = contracts::storage_accessible::simulate(
-            contracts::bytecode!(contracts::support::Balances),
-            method,
-        )
-        .await?;
+            .contracts()
+            .settlement()
+            .simulate_delegatecall(
+                balance_helper.address(),
+                ethcontract::Bytes(balance_call.tx.data.unwrap_or_default().0),
+            )
+            .from(SIMULATION_ACCOUNT.clone());
+
+        // Create the access list for the balance simulation only if they are enabled
+        // system-wide.
+        if !disable_access_lists {
+            let access_list_call = CallRequest {
+                data: delegate_call.tx.data.clone(),
+                ..Default::default()
+            };
+            let access_list = self
+                .ethereum
+                .create_access_list(access_list_call)
+                .await
+                .tap_err(|err| {
+                    tracing::error!(?err, "failed to create access list for balance simulation");
+                })
+                .ok();
+            delegate_call.tx.access_list = access_list.map(Into::into);
+        }
+
+        let response = delegate_call.call().await?;
+        let (_token_balance, _allowance, effective_balance, can_transfer) =
+            <(
+                sol_data::Uint<256>,
+                sol_data::Uint<256>,
+                sol_data::Uint<256>,
+                sol_data::Bool,
+            )>::abi_decode(&response.0)
+            .map_err(|err| {
+                tracing::error!(?err, "failed to decode balance response");
+                Error::Web3(web3::error::Error::Decoder(
+                    "failed to decode balance response".to_string(),
+                ))
+            })?;
 
         if can_transfer {
-            Ok(effective_balance.into())
+            Ok(eth::U256::from_little_endian(&effective_balance.as_le_bytes()).into())
         } else {
             Ok(eth::TokenAmount(0.into()))
         }
