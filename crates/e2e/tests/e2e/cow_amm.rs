@@ -382,8 +382,8 @@ async fn forked_node_mainnet_cow_amm_driver_support() {
 /// cow amms and that they can be settled by solvers like regular orders.
 async fn cow_amm_driver_support(web3: Web3) {
     // The Balances SC is deployed many blocks after the cow amm helper contract, so
-    // since the forked block number can't be changed, we deploy the following SCs
-    // manually
+    // since changing the forked number would result in very costly ~1 year of event
+    // syncing, we deploy the following SCs
     let deployed_contracts = {
         let balances = deploy!(&web3, Balances());
         DeployedContracts {
