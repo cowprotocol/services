@@ -52,6 +52,8 @@ impl Balances {
 
     #[instrument(skip_all)]
     async fn simulate(&self, query: &Query, amount: Option<U256>) -> Result<Simulation> {
+        // ZKSync-based chains don't use the default 0x0 account when `tx.from` is not
+        // specified, so we need to use a random simulation account.
         static SIMULATION_ACCOUNT: LazyLock<Account> = LazyLock::new(|| {
             PrivateKey::from_hex_str(
                 "0000000000000000000000000000000000000000000000000000000000018894",
