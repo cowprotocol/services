@@ -58,6 +58,7 @@ impl Api {
             &self.eth,
             order_priority_strategies,
             app_data_retriever,
+            disable_access_list_simulation,
         );
 
         // Add the metrics and healthz endpoints.
