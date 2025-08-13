@@ -7,11 +7,10 @@ use {
     super::{SignatureCheck, SignatureValidating, SignatureValidationError},
     anyhow::Result,
     contracts::{ERC1271SignatureValidator, errors::EthcontractErrorType},
-    ethcontract::{Account, Bytes, PrivateKey},
+    ethcontract::Bytes,
     ethrpc::Web3,
     futures::future,
     primitive_types::{H160, U256},
-    std::sync::LazyLock,
     tracing::instrument,
 };
 
