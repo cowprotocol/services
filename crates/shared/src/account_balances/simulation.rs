@@ -52,13 +52,6 @@ impl Balances {
 
     #[instrument(skip_all)]
     async fn simulate(&self, query: &Query, amount: Option<U256>) -> Result<Simulation> {
-        static SIMULATION_ACCOUNT: LazyLock<Account> = LazyLock::new(|| {
-            PrivateKey::from_hex_str(
-                "0000000000000000000000000000000000000000000000000000000000018894",
-            )
-            .map(|pk| Account::Offline(pk, None))
-            .expect("valid simulation account private key")
-        });
         // We simulate the balances from the Settlement contract's context. This
         // allows us to check:
         // 1. How the pre-interactions would behave as part of the settlement
@@ -85,7 +78,7 @@ impl Balances {
                 self.balances.address(),
                 ethcontract::Bytes(balance_call.tx.data.unwrap_or_default().0),
             )
-            .from(SIMULATION_ACCOUNT.clone());
+            .from(crate::SIMULATION_ACCOUNT.clone());
 
         let response = delegate_call.call().await?;
         let (token_balance, allowance, effective_balance, can_transfer) =

@@ -117,13 +117,6 @@ impl Erc20 {
         interactions: &[eth::Interaction],
         disable_access_lists: bool,
     ) -> Result<eth::TokenAmount, Error> {
-        static SIMULATION_ACCOUNT: LazyLock<Account> = LazyLock::new(|| {
-            PrivateKey::from_hex_str(
-                "0000000000000000000000000000000000000000000000000000000000018894",
-            )
-            .map(|pk| Account::Offline(pk, None))
-            .expect("valid simulation account private key")
-        });
         let balance_helper = self.ethereum.contracts().balance_helper();
         let balance_call = balance_helper.balance(
             (
@@ -154,7 +147,7 @@ impl Erc20 {
                 balance_helper.address(),
                 ethcontract::Bytes(balance_call.tx.data.unwrap_or_default().0),
             )
-            .from(SIMULATION_ACCOUNT.clone());
+            .from(shared::SIMULATION_ACCOUNT.clone());
 
         // Create the access list for the balance simulation only if they are enabled
         // system-wide.

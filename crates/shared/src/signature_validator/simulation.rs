@@ -71,13 +71,6 @@ impl Validator {
         &self,
         check: &SignatureCheck,
     ) -> Result<Simulation, SignatureValidationError> {
-        static SIMULATION_ACCOUNT: LazyLock<Account> = LazyLock::new(|| {
-            PrivateKey::from_hex_str(
-                "0000000000000000000000000000000000000000000000000000000000018894",
-            )
-            .map(|pk| Account::Offline(pk, None))
-            .expect("valid simulation account private key")
-        });
         // We simulate the signature verification from the Settlement contract's
         // context. This allows us to check:
         // 1. How the pre-interactions would behave as part of the settlement
@@ -100,7 +93,7 @@ impl Validator {
                 self.signatures.address(),
                 Bytes(validate_call.tx.data.unwrap_or_default().0),
             )
-            .from(SIMULATION_ACCOUNT.clone());
+            .from(crate::SIMULATION_ACCOUNT.clone());
         let result = gas_cost_call
             .tx
             .estimate_gas()

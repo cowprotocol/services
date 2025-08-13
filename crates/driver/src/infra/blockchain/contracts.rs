@@ -274,6 +274,4 @@ impl ContractAt for contracts::support::Balances {
 pub enum Error {
     #[error("method error: {0:?}")]
     Method(#[from] ethcontract::errors::MethodError),
-    #[error("deploy error: {0:?}")]
-    Deploy(#[from] ethcontract::errors::DeployError),
 }
