@@ -7,11 +7,10 @@ use {
     alloy::sol_types::{SolType, sol_data},
     anyhow::{Context, Result},
     contracts::{BalancerV2Vault, erc20::Contract},
-    ethcontract::{Account, Bytes, H160, PrivateKey, U256},
+    ethcontract::{Bytes, H160, U256},
     ethrpc::Web3,
     futures::future,
     model::order::SellTokenSource,
-    std::sync::LazyLock,
     tracing::instrument,
 };
 
