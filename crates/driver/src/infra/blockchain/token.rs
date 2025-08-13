@@ -117,6 +117,8 @@ impl Erc20 {
         interactions: &[eth::Interaction],
         disable_access_lists: bool,
     ) -> Result<eth::TokenAmount, Error> {
+        // ZKSync-based chains don't use the default 0x0 account when `tx.from` is not
+        // specified, so we need to use a random simulation account.
         static SIMULATION_ACCOUNT: LazyLock<Account> = LazyLock::new(|| {
             PrivateKey::from_hex_str(
                 "0000000000000000000000000000000000000000000000000000000000018894",
