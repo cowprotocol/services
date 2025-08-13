@@ -87,12 +87,18 @@ impl Erc20 {
         trader: eth::Address,
         source: order::SellTokenBalance,
         interactions: &[eth::Interaction],
+        disable_access_list_simulation: bool,
     ) -> Result<eth::TokenAmount, Error> {
         if interactions.is_empty() {
             self.tradable_balance_simple(trader, source).await
         } else {
-            self.tradable_balance_simulated(trader, source, interactions)
-                .await
+            self.tradable_balance_simulated(
+                trader,
+                source,
+                interactions,
+                disable_access_list_simulation,
+            )
+            .await
         }
     }
 
@@ -104,6 +110,7 @@ impl Erc20 {
         trader: eth::Address,
         source: order::SellTokenBalance,
         interactions: &[eth::Interaction],
+        disable_access_lists: bool,
     ) -> Result<eth::TokenAmount, Error> {
         let balance_helper = self.ethereum.contracts().balance_helper();
         let mut method = balance_helper.balance(
@@ -127,18 +134,21 @@ impl Erc20 {
                 })
                 .collect(),
         );
-        // Create the access list for the balance simulation
-        let access_list_call = contracts::storage_accessible::call(
-            method.tx.to.unwrap(),
-            contracts::bytecode!(contracts::support::Balances),
-            method.tx.data.clone().unwrap(),
-        );
-        let access_list = self
-            .ethereum
-            .create_access_list(access_list_call)
-            .await
-            .ok();
-        method.tx.access_list = access_list.map(Into::into);
+        // Create the access list for the balance simulation only if they are enabled
+        // system-wide.
+        if !disable_access_lists {
+            let access_list_call = contracts::storage_accessible::call(
+                method.tx.to.unwrap(),
+                contracts::bytecode!(contracts::support::Balances),
+                method.tx.data.clone().unwrap(),
+            );
+            let access_list = self
+                .ethereum
+                .create_access_list(access_list_call)
+                .await
+                .ok();
+            method.tx.access_list = access_list.map(Into::into);
+        }
         let (_, _, effective_balance, can_transfer) = contracts::storage_accessible::simulate(
             contracts::bytecode!(contracts::support::Balances),
             method,

@@ -199,7 +199,9 @@ mod tests {
         let jit_order = JitOrder::default();
 
         // insert a jit order and read it back
-        insert(&mut db, &[jit_order.clone()]).await.unwrap();
+        insert(&mut db, std::slice::from_ref(&jit_order))
+            .await
+            .unwrap();
         let read_jit_order = read_order(&mut db, &jit_order.uid).await.unwrap().unwrap();
         assert_eq!(jit_order, read_jit_order);
 
@@ -208,7 +210,9 @@ mod tests {
             creation_timestamp: DateTime::<Utc>::default() + chrono::Duration::days(1),
             ..jit_order.clone()
         };
-        insert(&mut db, &[jit_order_updated.clone()]).await.unwrap();
+        insert(&mut db, std::slice::from_ref(&jit_order))
+            .await
+            .unwrap();
         let read_jit_order = read_order(&mut db, &jit_order_updated.uid)
             .await
             .unwrap()
@@ -230,7 +234,9 @@ mod tests {
         let jit_order = JitOrder::default();
 
         // insert a jit order and make sure "SELECT" query works properly
-        insert(&mut db, &[jit_order.clone()]).await.unwrap();
+        insert(&mut db, std::slice::from_ref(&jit_order))
+            .await
+            .unwrap();
         get_by_id(&mut db, &jit_order.uid).await.unwrap().unwrap();
     }
 }

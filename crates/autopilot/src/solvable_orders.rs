@@ -163,6 +163,7 @@ impl SolvableOrdersCache {
         let start = Instant::now();
 
         let db_solvable_orders = self.get_solvable_orders().await?;
+        tracing::trace!("fetched solvable orders from db");
 
         let orders = db_solvable_orders
             .orders
@@ -210,6 +211,7 @@ impl SolvableOrdersCache {
                 ),
             )
             .await;
+        tracing::trace!("fetched native prices for solvable orders");
         // Add WETH price if it's not already there to support ETH wrap when required.
         if let Entry::Vacant(entry) = prices.entry(self.weth) {
             let weth_price = self
@@ -309,6 +311,7 @@ impl SolvableOrdersCache {
                 self.balance_fetcher.get_balances(&queries),
             )
             .await;
+        tracing::trace!("fetched balances for solvable orders");
         queries
             .into_iter()
             .zip(fetched_balances)
@@ -384,6 +387,7 @@ impl SolvableOrdersCache {
                 find_unsupported_tokens(&orders, self.bad_token_detector.clone())
             ),
         );
+        tracing::trace!("filtered invalid orders");
 
         counter.checkpoint_by_invalid_orders("banned_user", &banned_user_orders);
         counter.checkpoint_by_invalid_orders("invalid_signature", &invalid_signature_orders);
