@@ -62,7 +62,7 @@ use {
         sync::{Arc, RwLock},
         time::{Duration, Instant},
     },
-    tracing::{Instrument, info_span, instrument},
+    tracing::Instrument,
     url::Url,
 };
 
@@ -94,7 +94,6 @@ impl Liveness {
 }
 
 /// Creates Web3 transport based on the given config.
-#[instrument(skip_all)]
 async fn ethrpc(url: &Url, ethrpc_args: &shared::ethrpc::Arguments) -> infra::blockchain::Rpc {
     infra::blockchain::Rpc::new(url, ethrpc_args)
         .await
@@ -114,7 +113,6 @@ async fn unbuffered_ethrpc(url: &Url) -> infra::blockchain::Rpc {
     .await
 }
 
-#[instrument(skip_all, fields(chain = ?chain))]
 async fn ethereum(
     web3: DynWeb3,
     unbuffered_web3: DynWeb3,
@@ -153,9 +151,6 @@ pub async fn start(args: impl Iterator<Item = String>) {
 /// Assumes tracing and metrics registry have already been set up.
 pub async fn run(args: Arguments) {
     assert!(args.shadow.is_none(), "cannot run in shadow mode");
-    // Start a new span that measures the initialization phase of the autopilot
-    let startup_span = info_span!("autopilot_startup", ?args.shared.node_url);
-    let startup_span = startup_span.enter();
 
     let db = Postgres::new(args.db_url.as_str(), args.insert_batch_size)
         .await
@@ -176,7 +171,6 @@ pub async fn run(args: Arguments) {
     let chain_id = web3
         .eth()
         .chain_id()
-        .instrument(info_span!("chain_id"))
         .await
         .expect("Could not get chainId")
         .as_u64();
@@ -214,17 +208,13 @@ pub async fn run(args: Arguments) {
         .settlement()
         .vault_relayer()
         .call()
-        .instrument(info_span!("vault_relayer_call"))
         .await
         .expect("Couldn't get vault relayer address");
     let vault = match args.shared.balancer_v2_vault_address {
         Some(address) => Some(contracts::BalancerV2Vault::with_deployment_info(
             &web3, address, None,
         )),
-        None => match BalancerV2Vault::deployed(&web3)
-            .instrument(info_span!("balancerV2vault_deployed"))
-            .await
-        {
+        None => match BalancerV2Vault::deployed(&web3).await {
             Ok(contract) => Some(contract),
             Err(DeployError::NotFound(_)) => {
                 tracing::warn!("balancer contracts are not deployed on this network");
@@ -233,10 +223,7 @@ pub async fn run(args: Arguments) {
             Err(err) => panic!("failed to get balancer vault contract: {err}"),
         },
     };
-    let uniswapv3_factory = match IUniswapV3Factory::deployed(&web3)
-        .instrument(info_span!("uniswapv3_deployed"))
-        .await
-    {
+    let uniswapv3_factory = match IUniswapV3Factory::deployed(&web3).await {
         Err(DeployError::NotFound(_)) => None,
         other => Some(other.unwrap()),
     };
@@ -292,7 +279,6 @@ pub async fn run(args: Arguments) {
             async move { source.into_source(web3).await.unwrap().pair_provider }
         })
         .collect()
-        .instrument(info_span!("pair_providers"))
         .await;
 
     let base_tokens = Arc::new(BaseTokens::new(
@@ -315,7 +301,6 @@ pub async fn run(args: Arguments) {
         &base_tokens,
         eth.contracts().settlement().address(),
     )
-    .instrument(info_span!("token_owner_finder_init"))
     .await
     .expect("failed to initialize token owner finders");
 
@@ -367,7 +352,6 @@ pub async fn run(args: Arguments) {
                 .settlement()
                 .authenticator()
                 .call()
-                .instrument(info_span!("authenticator_call"))
                 .await
                 .expect("failed to query solver authenticator address"),
             base_tokens: base_tokens.clone(),
@@ -380,7 +364,6 @@ pub async fn run(args: Arguments) {
             code_fetcher: code_fetcher.clone(),
         },
     )
-    .instrument(info_span!("price_estimator_factory"))
     .await
     .expect("failed to initialize price estimator factory");
 
@@ -390,11 +373,10 @@ pub async fn run(args: Arguments) {
             args.native_price_estimation_results_required,
             eth.contracts().weth().clone(),
         )
-        .instrument(info_span!("native_price_estimator"))
         .await
         .unwrap();
     let prices = db.fetch_latest_prices().await.unwrap();
-    native_price_estimator.initialize_cache(prices);
+    native_price_estimator.initialize_cache(prices).await;
 
     let price_estimator = price_estimator_factory
         .price_estimator(
@@ -423,9 +405,7 @@ pub async fn run(args: Arguments) {
         tokio::sync::mpsc::unbounded_channel();
 
     let persistence =
-        infra::persistence::Persistence::new(args.s3.into().unwrap(), Arc::new(db.clone()))
-            .instrument(info_span!("persistence_init"))
-            .await;
+        infra::persistence::Persistence::new(args.s3.into().unwrap(), Arc::new(db.clone())).await;
     let settlement_observer =
         crate::domain::settlement::Observer::new(eth.clone(), persistence.clone());
     let settlement_contract_start_index = match contracts::GPv2Settlement::raw_contract()
@@ -565,7 +545,6 @@ pub async fn run(args: Arguments) {
             block_retriever.clone(),
             ethflow_refund_start_block,
         )
-        .instrument(info_span!("refund_event_handler_init"))
         .await
         .unwrap();
 
@@ -597,7 +576,6 @@ pub async fn run(args: Arguments) {
             block_retriever,
             ethflow_start_block,
         )
-        .instrument(info_span!("onchain_order_indexer_init"))
         .await
         .expect("Should be able to initialize event updater. Database read issues?");
 
@@ -638,7 +616,6 @@ pub async fn run(args: Arguments) {
         .collect::<Vec<_>>();
 
     let drivers: Vec<_> = futures::future::join_all(drivers_futures)
-        .instrument(info_span!("drivers_init"))
         .await
         .into_iter()
         .collect();
@@ -663,7 +640,6 @@ pub async fn run(args: Arguments) {
         Arc::new(maintenance),
         competition_updates_sender,
     );
-    drop(startup_span);
     run.run_forever().await;
 }
 

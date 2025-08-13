@@ -14,7 +14,6 @@ use {
     reqwest::header::{self, HeaderMap, HeaderValue},
     serde::de::DeserializeOwned,
     std::sync::{Arc, Mutex},
-    tracing::instrument,
 };
 
 #[derive(Copy, Clone, Debug, clap::ValueEnum)]
@@ -47,7 +46,6 @@ impl Transport for Client {
     }
 }
 
-#[instrument(skip_all)]
 pub async fn create_priority_estimator(
     http_factory: &HttpClientFactory,
     web3: &Web3,

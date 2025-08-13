@@ -48,7 +48,7 @@ use {
         time::{Duration, Instant},
     },
     tokio::sync::Mutex,
-    tracing::{Instrument, instrument},
+    tracing::Instrument,
 };
 
 pub struct Config {
@@ -150,7 +150,6 @@ impl RunLoop {
 
     /// Sleeps until the next auction is supposed to start, builds it and
     /// returns it.
-    #[instrument(skip(self, prev_auction), fields(prev_auction = prev_auction.as_ref().map(|a| a.id)))]
     async fn next_auction(
         &self,
         prev_auction: &mut Option<domain::Auction>,
@@ -253,7 +252,6 @@ impl RunLoop {
         })
     }
 
-    #[instrument(skip_all, fields(auction_id = auction.id, auction_block = auction.block, auction_orders = auction.orders.len()))]
     async fn single_run(self: &Arc<Self>, auction: domain::Auction) {
         let single_run_start = Instant::now();
         tracing::info!(auction_id = ?auction.id, "solving");
@@ -411,7 +409,6 @@ impl RunLoop {
         tokio::spawn(settle_fut);
     }
 
-    #[instrument(skip_all)]
     async fn post_processing(
         &self,
         auction: &domain::Auction,
@@ -581,7 +578,6 @@ impl RunLoop {
 
     /// Runs the solver competition, making all configured drivers participate.
     /// Returns all fair solutions sorted by their score (best to worst).
-    #[instrument(skip_all)]
     async fn fetch_solutions(
         &self,
         auction: &domain::Auction,
@@ -632,7 +628,6 @@ impl RunLoop {
 
     /// Sends a `/solve` request to the driver and manages all error cases and
     /// records metrics and logs appropriately.
-    #[instrument(skip_all, fields(driver = driver.name))]
     async fn solve(
         &self,
         driver: Arc<infra::Driver>,
@@ -852,7 +847,6 @@ impl RunLoop {
     ///
     /// Returns None if no transaction was found within the deadline or the task
     /// is cancelled.
-    #[instrument(skip_all)]
     async fn wait_for_settlement_transaction(
         &self,
         auction_id: i64,

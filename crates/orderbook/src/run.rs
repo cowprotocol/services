@@ -303,7 +303,7 @@ pub async fn run(args: Arguments) {
         .await
         .unwrap();
     let prices = postgres.fetch_latest_prices().await.unwrap();
-    native_price_estimator.initialize_cache(prices);
+    native_price_estimator.initialize_cache(prices).await;
 
     let price_estimator = price_estimator_factory
         .price_estimator(

@@ -9,7 +9,6 @@ use {
     },
     std::sync::Arc,
     tokio::sync::{Mutex, RwLock},
-    tracing::instrument,
 };
 
 /// CoW AMM indexer which stores events in-memory.
@@ -33,7 +32,6 @@ impl Registry {
     /// Interfacing with the CoW AMM happens via the
     /// [`contracts::CowAmmLegacyHelper`] deployed at `helper_contract`.
     /// To actually start indexing these pools call `spawn_maintenance_tasks()`.
-    #[instrument(skip_all)]
     pub async fn add_listener(
         &mut self,
         deployment_block: u64,

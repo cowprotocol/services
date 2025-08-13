@@ -26,7 +26,6 @@ use {
     hex_literal::hex,
     sqlx::{PgPool, types::BigDecimal},
     std::{collections::HashMap, convert::TryInto},
-    tracing::instrument,
     web3::types::U64,
 };
 
@@ -161,7 +160,6 @@ async fn settlement_deployment_block_number_hash(
 /// The block from which to start indexing eth-flow events. Note that this
 /// function is expected to be used at the start of the services and will panic
 /// if it cannot retrieve the information it needs.
-#[instrument(skip_all)]
 pub async fn determine_ethflow_indexing_start(
     skip_event_sync_start: &Option<BlockNumberHash>,
     ethflow_indexing_start: Option<u64>,
@@ -203,7 +201,6 @@ pub async fn determine_ethflow_indexing_start(
 /// # Panics
 /// Note that this function is expected to be used at the start of the services
 /// and will panic  if it cannot retrieve the information it needs.
-#[instrument(skip_all)]
 pub async fn determine_ethflow_refund_indexing_start(
     skip_event_sync_start: &Option<BlockNumberHash>,
     ethflow_indexing_start: Option<u64>,
