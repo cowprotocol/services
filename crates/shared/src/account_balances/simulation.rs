@@ -185,17 +185,13 @@ impl BalanceFetching for Balances {
 
 #[cfg(test)]
 mod tests {
-    use {
-        super::*,
-        crate::ethrpc::{self, Web3},
-        model::order::SellTokenSource,
-    };
+    use {super::*, ethrpc::Web3, model::order::SellTokenSource};
 
     #[ignore]
     #[tokio::test]
     async fn test_for_user() {
         let balances = Balances::new(
-            &Web3::new(ethrpc::create_env_test_transport()),
+            &Web3::new_from_env(),
             addr!("9008d19f58aabd9ed0d60971565aa8510560ab41"),
             addr!("C92E8bdf79f0507f65a392b0ab4667716BFE0110"),
             Some(addr!("BA12222222228d8Ba445958a75a0704d566BF2C8")),

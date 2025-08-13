@@ -1,10 +1,4 @@
-pub use ethrpc::{
-    Web3,
-    Web3CallBatch,
-    Web3Transport,
-    create_env_test_transport,
-    create_test_transport,
-};
+pub use ethrpc::{Web3, Web3CallBatch, Web3Transport};
 use {
     crate::http_client::HttpClientFactory,
     reqwest::Url,

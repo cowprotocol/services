@@ -2,8 +2,8 @@ use {
     self::contracts::ContractAt,
     crate::{boundary, domain::eth},
     chain::Chain,
-    ethcontract::{dyns::DynWeb3, errors::ExecutionError},
-    ethrpc::block_stream::CurrentBlockWatcher,
+    ethcontract::errors::ExecutionError,
+    ethrpc::{Web3, block_stream::CurrentBlockWatcher},
     std::{fmt, sync::Arc, time::Duration},
     thiserror::Error,
     url::Url,
@@ -13,12 +13,11 @@ use {
 pub mod contracts;
 pub mod gas;
 pub mod token;
-
 pub use self::{contracts::Contracts, gas::GasPriceEstimator};
 
 /// An Ethereum RPC connection.
 pub struct Rpc {
-    web3: DynWeb3,
+    web3: Web3,
     chain: Chain,
     args: RpcArgs,
 }
@@ -49,7 +48,7 @@ impl Rpc {
     }
 
     /// Returns a reference to the underlying web3 client.
-    pub fn web3(&self) -> &DynWeb3 {
+    pub fn web3(&self) -> &Web3 {
         &self.web3
     }
 }
@@ -65,7 +64,7 @@ pub enum RpcError {
 /// The Ethereum blockchain.
 #[derive(Clone)]
 pub struct Ethereum {
-    web3: DynWeb3,
+    web3: Web3,
     inner: Arc<Inner>,
 }
 
@@ -297,7 +296,7 @@ impl Ethereum {
             .map(|gas| gas.effective().0.0)
     }
 
-    pub fn web3(&self) -> &DynWeb3 {
+    pub fn web3(&self) -> &Web3 {
         &self.web3
     }
 }

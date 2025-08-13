@@ -10,7 +10,7 @@ use {
     crate::nodes::{NODE_HOST, Node},
     anyhow::{Result, anyhow},
     ethcontract::futures::FutureExt,
-    shared::ethrpc::{Web3, create_test_transport},
+    ethrpc::Web3,
     std::{
         future::Future,
         io::Write,
@@ -212,8 +212,7 @@ async fn run<F, Fut, T>(
         let _ = node_panic_handle.lock().unwrap().take();
     }));
 
-    let http = create_test_transport(NODE_HOST);
-    let web3 = Web3::new(http);
+    let web3 = Web3::new_from_url(NODE_HOST);
 
     services::clear_database().await;
     // Hack: the closure may actually be unwind unsafe; moreover, `catch_unwind`
