@@ -89,9 +89,9 @@ async fn forked_mainnet_repay_debt_with_collateral_of_safe(web3: Web3) {
             0,                 // referral code
         ))
         .await;
-    // AAVE takes some fee
-    let fee = 2;
-    assert!(balance(&web3, trader.address(), ausdc).await >= collateral_amount - fee);
+    // Exchange rate between USDC and aUSDC can differ from block to block.
+    let slippage = 2;
+    assert!(balance(&web3, trader.address(), ausdc).await >= collateral_amount - slippage);
 
     tracing::info!("wait a bit to make `borrow()` call work");
     tokio::time::sleep(Duration::from_secs(1)).await;

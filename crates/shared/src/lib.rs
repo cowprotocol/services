@@ -1,7 +1,4 @@
-use {
-    ethcontract::{Account, PrivateKey},
-    std::sync::LazyLock,
-};
+use {ethcontract::Account, primitive_types::H160, std::sync::LazyLock};
 
 #[macro_use]
 pub mod macros;
@@ -54,8 +51,5 @@ pub fn clone_anyhow_error(err: &anyhow::Error) -> anyhow::Error {
 
 // ZKSync-based chains don't use the default 0x0 account when `tx.from` is not
 // specified, so we need to use a random account when sending a simulation tx.
-pub static SIMULATION_ACCOUNT: LazyLock<Account> = LazyLock::new(|| {
-    PrivateKey::from_hex_str("0000000000000000000000000000000000000000000000000000000000018894")
-        .map(|pk| Account::Offline(pk, None))
-        .expect("valid simulation account private key")
-});
+pub static SIMULATION_ACCOUNT: LazyLock<Account> =
+    LazyLock::new(|| Account::Local(H160::random(), None));
