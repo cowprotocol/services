@@ -269,7 +269,7 @@ async fn forked_mainnet_repay_debt_with_collateral_of_safe(web3: Web3) {
     .unwrap();
 
     // Because the trader sold some of their collateral to repay their debt
-    // (~4000 USDC for ~1 WETH) they have that much less `USDC` compared to
+    // (~4900 USDC for ~1 WETH) they have that much less `USDC` compared to
     // the original collateral.
     let trader_usdc = balance(&web3, trader.address(), usdc.address()).await;
     assert!(trader_usdc > to_wei_with_exp(45_000, 6));

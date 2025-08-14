@@ -342,17 +342,18 @@ impl Blockchain {
         .await
         .unwrap();
 
-        let mut signatures = wait_for(
-            &web3,
-            contracts::support::Signatures::builder(&web3)
-                .from(main_trader_account.clone())
-                .deploy(),
-        )
-        .await
-        .unwrap();
-        if let Some(signatures_address) = config.signatures_address {
-            signatures = contracts::support::Signatures::at(&web3, signatures_address);
-        }
+        let signatures = if let Some(signatures_address) = config.signatures_address {
+            contracts::support::Signatures::at(&web3, signatures_address)
+        } else {
+            wait_for(
+                &web3,
+                contracts::support::Signatures::builder(&web3)
+                    .from(main_trader_account.clone())
+                    .deploy(),
+            )
+            .await
+            .unwrap()
+        };
 
         let flashloan_router = wait_for(
             &web3,
