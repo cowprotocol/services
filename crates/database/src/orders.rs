@@ -720,7 +720,7 @@ WITH live_orders AS (
 ),
 trades_agg AS (
      SELECT t.order_uid,
-            SUM(t.buy_amount)  AS sum_buy,
+            SUM(t.buy_amount) AS sum_buy,
             SUM(t.sell_amount) AS sum_sell,
             SUM(t.fee_amount) AS sum_fee
      FROM trades t
@@ -752,7 +752,7 @@ SELECT
     COALESCE(ta.sum_sell, 0) AS sum_sell,
     COALESCE(ta.sum_fee, 0) AS sum_fee,
     false AS invalidated,
-    (lo.signing_scheme = 'presign' AND COALESCE(pl.unsigned, TRUE)) AS presignature_pending,
+    (lo.signing_scheme = 'presign' AND COALESCE(pe.unsigned, TRUE)) AS presignature_pending,
     ARRAY(
             SELECT (p.target, p.value, p.data)
             FROM   interactions p
@@ -765,11 +765,11 @@ SELECT
             WHERE  p.order_uid = lo.uid AND p.execution = 'post'
             ORDER  BY p.index
     ) AS post_interactions,
-    ef.ethflow_data,
-    pf.onchain_user,
+    ed.ethflow_data,
+    opo.onchain_user,
     NULL AS onchain_placement_error,
-    COALESCE(ea.executed_fee,0)        AS executed_fee,
-    COALESCE(ea.executed_fee_token, lo.sell_token) AS executed_fee_token,
+    COALESCE(fee_agg.executed_fee,0)        AS executed_fee,
+    COALESCE(fee_agg.executed_fee_token, lo.sell_token) AS executed_fee_token,
     ad.full_app_data
 FROM live_orders lo
 LEFT JOIN LATERAL (
@@ -778,28 +778,28 @@ LEFT JOIN LATERAL (
     WHERE  order_uid = lo.uid
     ORDER  BY block_number DESC, log_index DESC
     LIMIT  1
-    ) pl ON TRUE
+    ) pe ON TRUE
 LEFT JOIN LATERAL (
     SELECT sender AS onchain_user
     FROM   onchain_placed_orders
     WHERE  uid = lo.uid
     ORDER  BY block_number DESC
     LIMIT  1
-    ) pf ON TRUE
+    ) opo ON TRUE
 LEFT JOIN LATERAL (
     SELECT ROW(tx_hash, eo.valid_to) AS ethflow_data
     FROM   ethflow_orders  eo
     LEFT   JOIN ethflow_refunds r ON r.order_uid = eo.uid
     WHERE  eo.uid = lo.uid
-    ) ef ON TRUE
+    ) ed ON TRUE
 LEFT JOIN LATERAL (
     SELECT SUM(executed_fee) AS executed_fee,
            (ARRAY_AGG(executed_fee_token))[1] AS executed_fee_token
     FROM   order_execution
     WHERE  order_uid = lo.uid
-) ea ON TRUE
+) fee_agg ON TRUE
 LEFT JOIN app_data ad ON ad.contract_app_data = lo.app_data
-LEFT JOIN trades_agg ta ON ta.order_uid = lo.uid
+LEFT JOIN trades_agg ta ON  ta.order_uid = lo.uid
 WHERE ((lo.kind = 'sell' AND COALESCE(ta.sum_sell,0) < lo.sell_amount) OR
        (lo.kind = 'buy'  AND COALESCE(ta.sum_buy ,0) < lo.buy_amount))
 "#;
