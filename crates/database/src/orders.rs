@@ -799,7 +799,7 @@ LEFT JOIN LATERAL (
     WHERE  order_uid = lo.uid
 ) ea ON TRUE
 LEFT JOIN app_data ad ON ad.contract_app_data = lo.app_data
-LEFT JOIN trades_agg ta ON  ta.order_uid = lo.uid
+LEFT JOIN trades_agg ta ON ta.order_uid = lo.uid
 WHERE ((lo.kind = 'sell' AND COALESCE(ta.sum_sell,0) < lo.sell_amount) OR
        (lo.kind = 'buy'  AND COALESCE(ta.sum_buy ,0) < lo.buy_amount))
 "#;
