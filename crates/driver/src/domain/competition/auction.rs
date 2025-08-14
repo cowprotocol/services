@@ -420,7 +420,7 @@ impl AuctionProcessor {
                     let token_contract = tokens.get(&token);
                     let token_contract = token_contract.expect("all tokens were created earlier");
                     let fetch_balance =
-                        token_contract.tradable_balance(trader.into(), source, interactions);
+                        token_contract.tradable_balance(trader.into(), source, interactions, false);
 
                     async move {
                         let balance = fetch_balance.await;
