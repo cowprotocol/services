@@ -158,6 +158,7 @@ impl Erc20 {
         if !disable_access_lists {
             let access_list_call = CallRequest {
                 data: delegate_call.tx.data.clone(),
+                from: delegate_call.tx.from.clone().map(|acc| acc.address()),
                 ..Default::default()
             };
             let access_list = self
