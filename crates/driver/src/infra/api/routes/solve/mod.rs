@@ -35,6 +35,10 @@ async fn route(
             })?;
         tracing::debug!(elapsed = ?start.elapsed(), "auction task execution time");
         let competition = state.competition();
+        let auction = state
+            .pre_processor()
+            .prioritize(auction, &competition.solver.account().address())
+            .await;
         if auction.orders.is_empty() {
             return Err(domain::competition::Error::NoValidOrdersFound.into());
         }
