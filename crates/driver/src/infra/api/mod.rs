@@ -46,7 +46,7 @@ impl Api {
         shutdown: impl Future<Output = ()> + Send + 'static,
         order_priority_strategies: Vec<OrderPriorityStrategy>,
         app_data_retriever: Option<AppDataRetriever>,
-        _disable_access_list_simulation: bool,
+        disable_access_list_simulation: bool,
     ) -> Result<(), hyper::Error> {
         // Add middleware.
         let mut app = axum::Router::new().layer(tower::ServiceBuilder::new().layer(
@@ -58,6 +58,7 @@ impl Api {
             &self.eth,
             order_priority_strategies,
             app_data_retriever,
+            disable_access_list_simulation,
         );
 
         // Add the metrics and healthz endpoints.

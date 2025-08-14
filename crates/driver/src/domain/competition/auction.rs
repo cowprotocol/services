@@ -152,6 +152,7 @@ struct Inner {
     order_sorting_strategies: Vec<Arc<dyn sorting::SortingStrategy>>,
     signature_validator: Arc<dyn SignatureValidating>,
     app_data_retriever: Option<order::app_data::AppDataRetriever>,
+    disable_access_list_simulation: bool,
 }
 
 type BalanceGroup = (order::Trader, eth::TokenAddress, order::SellTokenBalance);
@@ -198,6 +199,7 @@ impl AuctionProcessor {
         let solver = *solver;
         let order_comparators = lock.order_sorting_strategies.clone();
         let app_data_retriever = lock.app_data_retriever.clone();
+        let disable_access_list_simulation = lock.disable_access_list_simulation;
 
         // Use spawn_blocking() because a lot of CPU bound computations are happening
         // and we don't want to block the runtime for too long.
@@ -208,7 +210,7 @@ impl AuctionProcessor {
             let (mut balances, mut app_data_by_hash, cow_amms) =
                 rt.block_on(async {
                     tokio::join!(
-                        Self::fetch_balances(&eth, &orders),
+                        Self::fetch_balances(&eth, &orders, disable_access_list_simulation),
                         Self::collect_orders_app_data(app_data_retriever, &orders),
                         Self::cow_amm_orders(&eth, &tokens, &cow_amms, signature_validator.as_ref()),
                     )
@@ -386,7 +388,11 @@ impl AuctionProcessor {
     }
 
     /// Fetches the tradable balance for every order owner.
-    async fn fetch_balances(ethereum: &infra::Ethereum, orders: &[order::Order]) -> Balances {
+    async fn fetch_balances(
+        ethereum: &infra::Ethereum,
+        orders: &[order::Order],
+        disable_access_list_simulation: bool,
+    ) -> Balances {
         let _timer = stage_timer("fetch_balances");
         let ethereum = ethereum.with_metric_label("orderBalances".into());
         let mut tokens: HashMap<_, _> = Default::default();
@@ -419,8 +425,12 @@ impl AuctionProcessor {
                 .map(|(trader, token, source, interactions)| {
                     let token_contract = tokens.get(&token);
                     let token_contract = token_contract.expect("all tokens were created earlier");
-                    let fetch_balance =
-                        token_contract.tradable_balance(trader.into(), source, interactions, false);
+                    let fetch_balance = token_contract.tradable_balance(
+                        trader.into(),
+                        source,
+                        interactions,
+                        disable_access_list_simulation,
+                    );
 
                     async move {
                         let balance = fetch_balance.await;
@@ -558,6 +568,7 @@ impl AuctionProcessor {
         eth: &infra::Ethereum,
         order_priority_strategies: Vec<OrderPriorityStrategy>,
         app_data_retriever: Option<order::app_data::AppDataRetriever>,
+        disable_access_list_simulation: bool,
     ) -> Self {
         let eth = eth.with_metric_label("auctionPreProcessing".into());
         let mut order_sorting_strategies = vec![];
@@ -594,6 +605,7 @@ impl AuctionProcessor {
             order_sorting_strategies,
             signature_validator,
             app_data_retriever,
+            disable_access_list_simulation,
         })))
     }
 }
