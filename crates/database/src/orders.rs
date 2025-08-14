@@ -789,7 +789,7 @@ LEFT JOIN LATERAL (
 LEFT JOIN LATERAL (
     SELECT ROW(tx_hash, eo.valid_to) AS ethflow_data
     FROM   ethflow_orders  eo
-    LEFT   JOIN ethflow_refunds r ON r.order_uid = eo.uid
+    LEFT JOIN ethflow_refunds r ON r.order_uid = eo.uid
     WHERE  eo.uid = lo.uid
     ) ed ON TRUE
 LEFT JOIN LATERAL (
