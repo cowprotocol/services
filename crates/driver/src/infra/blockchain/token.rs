@@ -2,9 +2,7 @@ use {
     super::{Error, Ethereum},
     crate::domain::{competition::order, eth},
     alloy::sol_types::{SolType, sol_data},
-    ethcontract::{Account, PrivateKey},
     futures::TryFutureExt,
-    std::sync::LazyLock,
     tap::TapFallible,
     web3::types::CallRequest,
 };
