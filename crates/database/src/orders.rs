@@ -752,7 +752,7 @@ SELECT
     COALESCE(ta.sum_sell, 0) AS sum_sell,
     COALESCE(ta.sum_fee, 0) AS sum_fee,
     false AS invalidated,
-    (lo.signing_scheme = 'presign' AND COALESCE(pl.unsigned,TRUE)) AS presignature_pending,
+    (lo.signing_scheme = 'presign' AND COALESCE(pl.unsigned, TRUE)) AS presignature_pending,
     ARRAY(
             SELECT (p.target, p.value, p.data)
             FROM   interactions p
