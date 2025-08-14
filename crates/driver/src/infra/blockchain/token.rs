@@ -165,7 +165,7 @@ impl Erc20 {
                 .create_access_list(access_list_call)
                 .await
                 .tap_err(|err| {
-                    tracing::error!(?err, "failed to create access list for balance simulation");
+                    tracing::debug!(?err, "failed to create access list for balance simulation");
                 })
                 .ok();
             delegate_call.tx.access_list = access_list.map(Into::into);
