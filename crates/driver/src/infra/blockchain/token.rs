@@ -2,7 +2,7 @@ use {
     super::{Error, Ethereum},
     crate::domain::{competition::order, eth},
     alloy::sol_types::{SolType, sol_data},
-    ethcontract::{Account, PrivateKey},
+    ethcontract::Account,
     futures::TryFutureExt,
     std::sync::LazyLock,
     tap::TapFallible,
@@ -119,13 +119,8 @@ impl Erc20 {
     ) -> Result<eth::TokenAmount, Error> {
         // ZKSync-based chains don't use the default 0x0 account when `tx.from` is not
         // specified, so we need to use a random simulation account.
-        static SIMULATION_ACCOUNT: LazyLock<Account> = LazyLock::new(|| {
-            PrivateKey::from_hex_str(
-                "0000000000000000000000000000000000000000000000000000000000018894",
-            )
-            .map(|pk| Account::Offline(pk, None))
-            .expect("valid simulation account private key")
-        });
+        static SIMULATION_ACCOUNT: LazyLock<Account> =
+            LazyLock::new(|| Account::Local(eth::H160::random(), None));
         let balance_helper = self.ethereum.contracts().balance_helper();
         let balance_call = balance_helper.balance(
             (
