@@ -10,7 +10,7 @@ jobs:
     timeout-minutes: 60
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ github.event.pull_request.head.sha }}
       - run: rustup toolchain install stable --profile minimal
@@ -32,7 +32,7 @@ jobs:
   nitpicker:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ github.event.pull_request.head.sha }}
       - uses: ethanis/nitpicker@v1
@@ -44,7 +44,7 @@ jobs:
     timeout-minutes: 60
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ github.event.pull_request.head.sha }}
       - run: rustup toolchain install stable --profile minimal
@@ -60,7 +60,7 @@ jobs:
       CARGO_PROFILE_TEST_DEBUG: 0
       CARGO_TERM_COLOR: always
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ github.event.pull_request.head.sha }}
       - run: rustup toolchain install stable --profile minimal
@@ -78,7 +78,7 @@ jobs:
       CARGO_PROFILE_TEST_DEBUG: 0
       CARGO_TERM_COLOR: always
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ github.event.pull_request.head.sha }}
       - run: rustup toolchain install stable --profile minimal
@@ -103,7 +103,7 @@ jobs:
       CARGO_TERM_COLOR: always
       TOML_TRACE_ERROR: 1
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ github.event.pull_request.head.sha }}
       - run: rustup toolchain install stable --profile minimal
@@ -135,7 +135,7 @@ jobs:
       FORK_URL_GNOSIS: ${{ secrets.FORK_URL_GNOSIS }}
       TOML_TRACE_ERROR: 1
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ github.event.pull_request.head.sha }}
       - run: rustup toolchain install stable --profile minimal
@@ -165,7 +165,7 @@ jobs:
       CARGO_TERM_COLOR: always
       TOML_TRACE_ERROR: 1
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ github.event.pull_request.head.sha }}
       - run: rustup toolchain install stable --profile minimal
@@ -181,7 +181,7 @@ jobs:
     timeout-minutes: 60
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ github.event.pull_request.head.sha }}
       - run: npm install @apidevtools/swagger-cli @stoplight/spectral-cli
@@ -206,7 +206,7 @@ jobs:
       FORK_URL_MAINNET: ${{ secrets.FORK_URL_MAINNET }}
       FORK_URL_GNOSIS: ${{ secrets.FORK_URL_GNOSIS }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ github.event.pull_request.head.sha }}
       - run: rustup toolchain install stable --profile minimal
