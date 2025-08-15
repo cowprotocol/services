@@ -4,6 +4,7 @@ use {
     chain::Chain,
     ethcontract::{dyns::DynWeb3, errors::ExecutionError},
     ethrpc::block_stream::CurrentBlockWatcher,
+    shared::account_balances::SimulationError,
     std::{fmt, sync::Arc, time::Duration},
     thiserror::Error,
     url::Url,
@@ -347,6 +348,15 @@ impl From<contracts::Error> for Error {
     fn from(err: contracts::Error) -> Self {
         match err {
             contracts::Error::Method(err) => Self::Method(err),
+        }
+    }
+}
+
+impl From<SimulationError> for Error {
+    fn from(err: SimulationError) -> Self {
+        match err {
+            SimulationError::Method(err) => Self::Method(err),
+            SimulationError::Web3(err) => Self::Web3(err),
         }
     }
 }

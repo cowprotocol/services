@@ -4,10 +4,10 @@
 
 use {
     super::{BalanceFetching, Query, TransferSimulationError},
-    alloy::sol_types::{SolType, sol_data},
-    anyhow::{Context, Result},
+    crate::account_balances::BalanceSimulating,
+    anyhow::Result,
     contracts::{BalancerV2Vault, erc20::Contract},
-    ethcontract::{Bytes, H160, U256},
+    ethcontract::{Bytes, H160, U256, contract::MethodBuilder, dyns::DynTransport},
     ethrpc::Web3,
     futures::future,
     model::order::SellTokenSource,
@@ -49,59 +49,17 @@ impl Balances {
         }
     }
 
-    #[instrument(skip_all)]
-    async fn simulate(&self, query: &Query, amount: Option<U256>) -> Result<Simulation> {
-        // We simulate the balances from the Settlement contract's context. This
-        // allows us to check:
-        // 1. How the pre-interactions would behave as part of the settlement
-        // 2. Simulate the actual VaultRelayer transfers that would happen as part of a
-        //    settlement
-        //
-        // This allows us to end up with very accurate balance simulations.
-        let balance_call = self.balances.balance(
-            (self.settlement.address(), self.vault_relayer, self.vault),
-            query.owner,
-            query.token,
-            amount.unwrap_or_default(),
-            Bytes(query.source.as_bytes()),
-            query
-                .interactions
-                .iter()
-                .map(|i| (i.target, i.value, Bytes(i.call_data.clone())))
-                .collect(),
-        );
-
-        let delegate_call = self
-            .settlement
-            .simulate_delegatecall(
-                self.balances.address(),
-                ethcontract::Bytes(balance_call.tx.data.unwrap_or_default().0),
-            )
-            .from(crate::SIMULATION_ACCOUNT.clone());
-
-        let response = delegate_call.call().await?;
-        let (token_balance, allowance, effective_balance, can_transfer) =
-            <(
-                sol_data::Uint<256>,
-                sol_data::Uint<256>,
-                sol_data::Uint<256>,
-                sol_data::Bool,
-            )>::abi_decode(&response.0)
-            .context("failed to decode balance response")?;
-
-        let simulation = Simulation {
-            token_balance: U256::from_little_endian(&token_balance.as_le_bytes()),
-            allowance: U256::from_little_endian(&allowance.as_le_bytes()),
-            effective_balance: U256::from_little_endian(&effective_balance.as_le_bytes()),
-            can_transfer,
-        };
-
-        tracing::trace!(?query, ?amount, ?simulation, "simulated balances");
-        Ok(simulation)
-    }
-
     async fn tradable_balance_simulated(&self, query: &Query) -> Result<U256> {
-        let simulation = self.simulate(query, None).await?;
+        let simulation = self
+            .simulate(
+                query.owner,
+                query.token,
+                query.source,
+                &query.interactions,
+                None,
+                false,
+            )
+            .await?;
         Ok(if simulation.can_transfer {
             simulation.effective_balance
         } else {
@@ -153,14 +111,6 @@ impl Balances {
     }
 }
 
-#[derive(Debug)]
-struct Simulation {
-    token_balance: U256,
-    allowance: U256,
-    effective_balance: U256,
-    can_transfer: bool,
-}
-
 #[async_trait::async_trait]
 impl BalanceFetching for Balances {
     #[instrument(skip_all)]
@@ -186,7 +136,17 @@ impl BalanceFetching for Balances {
         query: &Query,
         amount: U256,
     ) -> Result<(), TransferSimulationError> {
-        let simulation = self.simulate(query, Some(amount)).await?;
+        let simulation = self
+            .simulate(
+                query.owner,
+                query.token,
+                query.source,
+                &query.interactions,
+                Some(amount),
+                false,
+            )
+            .await
+            .map_err(|err| TransferSimulationError::Other(err.into()))?;
 
         if simulation.token_balance < amount {
             return Err(TransferSimulationError::InsufficientBalance);
@@ -199,6 +159,32 @@ impl BalanceFetching for Balances {
         }
 
         Ok(())
+    }
+}
+
+#[async_trait::async_trait]
+impl BalanceSimulating for Balances {
+    fn settlement(&self) -> &contracts::GPv2Settlement {
+        &self.settlement
+    }
+
+    fn vault_relayer(&self) -> H160 {
+        self.vault_relayer
+    }
+
+    fn vault(&self) -> H160 {
+        self.vault
+    }
+
+    fn balances(&self) -> &contracts::support::Balances {
+        &self.balances
+    }
+
+    async fn add_access_lists(
+        &self,
+        _delegate_call: &mut MethodBuilder<DynTransport, Bytes<Vec<u8>>>,
+    ) {
+        // Access lists are not needed for account balance simulations
     }
 }
 
