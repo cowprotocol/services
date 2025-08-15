@@ -11,11 +11,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0 # Fetch all history for all branches and tags
           # Requires "Read and Write access to code" permission
           token: ${{ secrets.RELEASE_ACTION_ACCESS_TOKEN }}
+          persist-credentials: false
 
       - name: Fetch latest release version tag
         id: fetch_tag
@@ -29,7 +30,9 @@ jobs:
 
       - name: Check for changes since last tag
         run: |
-          git diff --quiet ${{ steps.fetch_tag.outputs.latest }}..HEAD || echo "CHANGES_DETECTED=true" >> $GITHUB_ENV
+          git diff --quiet $LATEST..HEAD || echo "CHANGES_DETECTED=true" >> $GITHUB_ENV
+        env:
+          LATEST: ${{ steps.fetch_tag.outputs.latest }}
 
       - name: No changes detected
         if: env.CHANGES_DETECTED != 'true'
@@ -39,17 +42,19 @@ jobs:
         id: tag_version
         if: env.CHANGES_DETECTED == 'true'
         run: |
-          MAJOR=$(echo ${{ steps.fetch_tag.outputs.latest }} | cut -d. -f1)
-          MINOR=$(echo ${{ steps.fetch_tag.outputs.latest }} | cut -d. -f2)
+          MAJOR=$(echo $LATEST | cut -d. -f1)
+          MINOR=$(echo $LATEST | cut -d. -f2)
           NEW_MINOR=$((MINOR+1))
           NEW_TAG="${MAJOR}.${NEW_MINOR}.0"
           echo "tag=$NEW_TAG" >> $GITHUB_OUTPUT
           git tag $NEW_TAG
           git push origin --tags
+        env:
+          LATEST: ${{ steps.fetch_tag.outputs.latest }}
 
       - name: "Create release"
         if: env.CHANGES_DETECTED == 'true'
-        uses: "actions/github-script@v6"
+        uses: "actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea" # v7.0.1
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
           script: |
@@ -57,11 +62,11 @@ jobs:
               const response = await github.rest.repos.createRelease({
                 draft: false,
                 generate_release_notes: true,
-                name: "Weekly Release ${{ steps.tag_version.outputs.tag }}",
+                name: `Weekly Release ${process.env.TAG}`,
                 owner: context.repo.owner,
                 prerelease: false,
                 repo: context.repo.repo,
-                tag_name: "${{ steps.tag_version.outputs.tag }}",
+                tag_name: process.env.TAG,
               });
 
               core.exportVariable('RELEASE_ID', response.data.id);
@@ -69,3 +74,6 @@ jobs:
             } catch (error) {
               core.setFailed(error.message);
             }
+        env:
+          TAG: ${{ steps.tag_version.outputs.tag }}
+
