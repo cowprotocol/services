@@ -14,7 +14,7 @@ RUN rustup install nightly && rustup default nightly
 # Copy and Build Code
 COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/src/target \
-    CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release --target x86_64-unknown-linux-gnu && \
+    CARGO_PROFILE_RELEASE_DEBUG=1 cargo build +nightly --release --target x86_64-unknown-linux-gnu && \
     cp target/release/alerter / && \
     cp target/release/autopilot / && \
     cp target/release/driver / && \
