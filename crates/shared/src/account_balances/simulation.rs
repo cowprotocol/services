@@ -7,7 +7,7 @@ use {
     crate::account_balances::BalanceSimulating,
     anyhow::Result,
     contracts::{BalancerV2Vault, erc20::Contract},
-    ethcontract::{H160, U256},
+    ethcontract::{Bytes, H160, U256, contract::MethodBuilder, dyns::DynTransport},
     ethrpc::Web3,
     futures::future,
     model::order::SellTokenSource,
@@ -50,7 +50,16 @@ impl Balances {
     }
 
     async fn tradable_balance_simulated(&self, query: &Query) -> Result<U256> {
-        let simulation = self.simulate(query, None).await?;
+        let simulation = self
+            .simulate(
+                query.owner,
+                query.token,
+                query.source,
+                query.interactions.clone(),
+                None,
+                false,
+            )
+            .await?;
         Ok(if simulation.can_transfer {
             simulation.effective_balance
         } else {
@@ -127,7 +136,17 @@ impl BalanceFetching for Balances {
         query: &Query,
         amount: U256,
     ) -> Result<(), TransferSimulationError> {
-        let simulation = self.simulate(query, Some(amount)).await?;
+        let simulation = self
+            .simulate(
+                query.owner,
+                query.token,
+                query.source,
+                query.interactions.clone(),
+                Some(amount),
+                false,
+            )
+            .await
+            .map_err(|err| TransferSimulationError::Other(err.into()))?;
 
         if simulation.token_balance < amount {
             return Err(TransferSimulationError::InsufficientBalance);
@@ -159,6 +178,13 @@ impl BalanceSimulating for Balances {
 
     fn balances(&self) -> &contracts::support::Balances {
         &self.balances
+    }
+
+    async fn add_access_lists(
+        &self,
+        _delegate_call: &mut MethodBuilder<DynTransport, Bytes<Vec<u8>>>,
+    ) {
+        // Access lists are not needed for account balance simulations
     }
 }
 
