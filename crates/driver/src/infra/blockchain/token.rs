@@ -116,6 +116,7 @@ impl Erc20 {
         interactions: &[eth::Interaction],
         disable_access_lists: bool,
     ) -> Result<eth::TokenAmount, Error> {
+        let interactions: Vec<_> = interactions.iter().map(|i| i.clone().into()).collect();
         let shared::account_balances::Simulation {
             token_balance: _,
             allowance: _,
@@ -126,7 +127,7 @@ impl Erc20 {
                 trader.0,
                 self.token.address(),
                 source.into(),
-                interactions.iter().map(|i| i.clone().into()).collect(),
+                &interactions,
                 None,
                 disable_access_lists,
             )

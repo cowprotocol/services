@@ -55,7 +55,7 @@ impl Balances {
                 query.owner,
                 query.token,
                 query.source,
-                query.interactions.clone(),
+                &query.interactions,
                 None,
                 false,
             )
@@ -141,7 +141,7 @@ impl BalanceFetching for Balances {
                 query.owner,
                 query.token,
                 query.source,
-                query.interactions.clone(),
+                &query.interactions,
                 Some(amount),
                 false,
             )

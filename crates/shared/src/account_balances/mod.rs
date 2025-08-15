@@ -114,7 +114,7 @@ pub trait BalanceSimulating: Send + Sync {
         owner: H160,
         token: H160,
         source: SellTokenSource,
-        interactions: Vec<InteractionData>,
+        interactions: &[InteractionData],
         amount: Option<U256>,
         disable_access_lists: bool,
     ) -> Result<Simulation, SimulationError> {
