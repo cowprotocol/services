@@ -3,7 +3,6 @@ use {crate::domain::eth, chain::Chain};
 #[derive(Clone, Debug)]
 pub struct Contracts {
     pub weth: eth::WethAddress,
-    // todo: move uni_v3_quoter_v2 initialization here
 }
 
 impl Contracts {
