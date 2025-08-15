@@ -9,12 +9,12 @@ WORKDIR /src/
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update && \
     apt-get install -y git libssl-dev pkg-config
 # Install Rust toolchain
-RUN rustup install stable && rustup default stable
+RUN rustup install nightly && rustup default nightly
 
 # Copy and Build Code
 COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/src/target \
-    CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release && \
+    CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release --target x86_64-unknown-linux-gnu && \
     cp target/release/alerter / && \
     cp target/release/autopilot / && \
     cp target/release/driver / && \
