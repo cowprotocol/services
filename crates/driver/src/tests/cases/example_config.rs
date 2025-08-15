@@ -9,6 +9,7 @@ async fn test() {
     tests::setup()
         .config(example_config_file)
         .settlement_address(&addr!("9008D19f58AAbD9eD0D60971565AA8510560ab41"))
+        .balances_address(&addr!("3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b"))
         .done()
         .await;
 }

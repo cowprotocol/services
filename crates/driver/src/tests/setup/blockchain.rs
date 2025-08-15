@@ -35,6 +35,7 @@ pub struct Blockchain {
     pub tokens: HashMap<&'static str, contracts::ERC20Mintable>,
     pub weth: contracts::WETH9,
     pub settlement: contracts::GPv2Settlement,
+    pub balances: contracts::support::Balances,
     pub flashloan_wrapper: contracts::ERC3156FlashLoanSolverWrapper,
     pub flashloan_router: contracts::FlashLoanRouter,
     pub ethflow: Option<ContractAddress>,
@@ -195,6 +196,7 @@ pub struct Config {
     pub main_trader_secret_key: SecretKey,
     pub solvers: Vec<super::Solver>,
     pub settlement_address: Option<eth::H160>,
+    pub balances_address: Option<eth::H160>,
     pub rpc_args: Vec<String>,
 }
 
@@ -315,6 +317,20 @@ impl Blockchain {
 
             settlement = contracts::GPv2Settlement::at(&web3, settlement_address);
         }
+
+        let balances = if let Some(balances_address) = config.balances_address {
+            contracts::support::Balances::at(&web3, balances_address)
+        } else {
+            wait_for(
+                &web3,
+                contracts::support::Balances::builder(&web3)
+                    .from(main_trader_account.clone())
+                    .deploy(),
+            )
+            .await
+            .unwrap()
+        };
+
         wait_for(
             &web3,
             authenticator
@@ -641,6 +657,7 @@ impl Blockchain {
             trader_secret_key: config.main_trader_secret_key,
             tokens,
             settlement,
+            balances,
             domain_separator,
             weth,
             ethflow: None,
