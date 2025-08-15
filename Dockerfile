@@ -15,12 +15,12 @@ RUN rustup install nightly && rustup default nightly
 COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/src/target \
     CARGO_PROFILE_RELEASE_DEBUG=1 cargo +nightly build --release --target x86_64-unknown-linux-gnu && \
-    cp target/release/alerter / && \
-    cp target/release/autopilot / && \
-    cp target/release/driver / && \
-    cp target/release/orderbook / && \
-    cp target/release/refunder / && \
-    cp target/release/solvers /
+    cp target/x86_64-unknown-linux-gnu/release/alerter / && \
+    cp target/x86_64-unknown-linux-gnu/release/autopilot / && \
+    cp target/x86_64-unknown-linux-gnu/release/driver / && \
+    cp target/x86_64-unknown-linux-gnu/release/orderbook / && \
+    cp target/x86_64-unknown-linux-gnu/release/refunder / && \
+    cp target/x86_64-unknown-linux-gnu/release/solvers /
 
 # Create an intermediate image to extract the binaries
 FROM docker.io/debian:bookworm-slim as intermediate
