@@ -2,9 +2,7 @@ use {
     super::{Error, Ethereum},
     crate::domain::{competition::order, eth},
     alloy::sol_types::{SolType, sol_data},
-    ethcontract::Account,
     futures::TryFutureExt,
-    std::sync::LazyLock,
     tap::TapFallible,
     web3::types::CallRequest,
 };
@@ -117,10 +115,6 @@ impl Erc20 {
         interactions: &[eth::Interaction],
         disable_access_lists: bool,
     ) -> Result<eth::TokenAmount, Error> {
-        // ZKSync-based chains don't use the default 0x0 account when `tx.from` is not
-        // specified, so we need to use a random simulation account.
-        static SIMULATION_ACCOUNT: LazyLock<Account> =
-            LazyLock::new(|| Account::Local(eth::H160::random(), None));
         let balance_helper = self.ethereum.contracts().balance_helper();
         let balance_call = balance_helper.balance(
             (
@@ -151,7 +145,7 @@ impl Erc20 {
                 balance_helper.address(),
                 ethcontract::Bytes(balance_call.tx.data.unwrap_or_default().0),
             )
-            .from(SIMULATION_ACCOUNT.clone());
+            .from(shared::SIMULATION_ACCOUNT.clone());
 
         // Create the access list for the balance simulation only if they are enabled
         // system-wide.

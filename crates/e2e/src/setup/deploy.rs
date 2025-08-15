@@ -1,4 +1,5 @@
 use {
+    crate::deploy,
     contracts::{
         AaveFlashLoanSolverWrapper,
         BalancerV2Authorizer,
@@ -20,6 +21,11 @@ use {
     shared::ethrpc::Web3,
 };
 
+#[derive(Default)]
+pub struct DeployedContracts {
+    pub balances: Option<Address>,
+}
+
 pub struct Contracts {
     pub chain_id: u64,
     pub balancer_vault: BalancerV2Vault,
@@ -40,7 +46,7 @@ pub struct Contracts {
 }
 
 impl Contracts {
-    pub async fn deployed(web3: &Web3) -> Self {
+    pub async fn deployed_with(web3: &Web3, deployed: DeployedContracts) -> Self {
         let network_id = web3
             .eth()
             .chain_id()
@@ -56,9 +62,12 @@ impl Contracts {
             Ok(contract) => Some(contract),
         };
 
-        let balances = Balances::deployed(web3)
-            .await
-            .expect("failed to find balances contract");
+        let balances = match deployed.balances {
+            Some(address) => Balances::at(web3, address),
+            None => Balances::deployed(web3)
+                .await
+                .expect("failed to find balances contract"),
+        };
 
         let flashloan_router = FlashLoanRouter::deployed(web3).await.ok();
         let flashloan_wrapper_aave = AaveFlashLoanSolverWrapper::deployed(web3).await.ok();
@@ -116,47 +125,36 @@ impl Contracts {
         let accounts: Vec<Address> = web3.eth().accounts().await.expect("get accounts failed");
         let admin = accounts[0];
 
-        macro_rules! deploy {
-                ($contract:ident) => { deploy!($contract ()) };
-                ($contract:ident ( $($param:expr_2021),* $(,)? )) => {
-                    deploy!($contract ($($param),*) as stringify!($contract))
-                };
-                ($contract:ident ( $($param:expr_2021),* $(,)? ) as $name:expr_2021) => {{
-                    let name = $name;
-                    $contract::builder(&web3 $(, $param)*)
-                        .deploy()
-                        .await
-                        .unwrap_or_else(|e| panic!("failed to deploy {name}: {e:?}"))
-                }};
-            }
+        let weth = deploy!(web3, WETH9());
 
-        let weth = deploy!(WETH9());
+        let balancer_authorizer = deploy!(web3, BalancerV2Authorizer(admin));
+        let balancer_vault = deploy!(
+            web3,
+            BalancerV2Vault(
+                balancer_authorizer.address(),
+                weth.address(),
+                U256::from(0),
+                U256::from(0),
+            )
+        );
 
-        let balancer_authorizer = deploy!(BalancerV2Authorizer(admin));
-        let balancer_vault = deploy!(BalancerV2Vault(
-            balancer_authorizer.address(),
-            weth.address(),
-            U256::from(0),
-            U256::from(0),
-        ));
+        let uniswap_v2_factory = deploy!(web3, UniswapV2Factory(accounts[0]));
+        let uniswap_v2_router = deploy!(
+            web3,
+            UniswapV2Router02(uniswap_v2_factory.address(), weth.address())
+        );
 
-        let uniswap_v2_factory = deploy!(UniswapV2Factory(accounts[0]));
-        let uniswap_v2_router = deploy!(UniswapV2Router02(
-            uniswap_v2_factory.address(),
-            weth.address()
-        ));
-
-        let gp_authenticator = deploy!(GPv2AllowListAuthentication);
+        let gp_authenticator = deploy!(web3, GPv2AllowListAuthentication);
         gp_authenticator
             .initialize_manager(admin)
             .send()
             .await
             .expect("failed to initialize manager");
-        let gp_settlement = deploy!(GPv2Settlement(
-            gp_authenticator.address(),
-            balancer_vault.address(),
-        ));
-        let balances = deploy!(Balances());
+        let gp_settlement = deploy!(
+            web3,
+            GPv2Settlement(gp_authenticator.address(), balancer_vault.address(),)
+        );
+        let balances = deploy!(web3, Balances());
 
         contracts::vault::grant_required_roles(
             &balancer_authorizer,
@@ -184,14 +182,22 @@ impl Contracts {
                 .0,
         );
 
-        let ethflow = deploy!(CoWSwapEthFlow(gp_settlement.address(), weth.address()));
-        let ethflow_secondary = deploy!(CoWSwapEthFlow(gp_settlement.address(), weth.address()));
-        let hooks = deploy!(HooksTrampoline(gp_settlement.address()));
-        let flashloan_router = deploy!(FlashLoanRouter(gp_settlement.address()));
-        let flashloan_wrapper_maker =
-            deploy!(ERC3156FlashLoanSolverWrapper(flashloan_router.address()));
+        let ethflow = deploy!(
+            web3,
+            CoWSwapEthFlow(gp_settlement.address(), weth.address())
+        );
+        let ethflow_secondary = deploy!(
+            web3,
+            CoWSwapEthFlow(gp_settlement.address(), weth.address())
+        );
+        let hooks = deploy!(web3, HooksTrampoline(gp_settlement.address()));
+        let flashloan_router = deploy!(web3, FlashLoanRouter(gp_settlement.address()));
+        let flashloan_wrapper_maker = deploy!(
+            web3,
+            ERC3156FlashLoanSolverWrapper(flashloan_router.address())
+        );
         let flashloan_wrapper_aave =
-            deploy!(AaveFlashLoanSolverWrapper(flashloan_router.address()));
+            deploy!(web3, AaveFlashLoanSolverWrapper(flashloan_router.address()));
 
         Self {
             chain_id: network_id
