@@ -3,7 +3,7 @@
 use {
     serde::{Deserialize, Serialize},
     std::collections::HashMap,
-    tracing::{Instrument, instrument::Instrumented},
+    tracing::instrument,
     web3::{
         self,
         Transport,
@@ -23,19 +23,20 @@ where
         call: CallRequest,
         block: BlockId,
         overrides: HashMap<H160, StateOverride>,
-    ) -> Instrumented<CallFuture<Bytes, T::Out>>;
+    ) -> CallFuture<Bytes, T::Out>;
 }
 
 impl<T> EthExt<T> for web3::api::Eth<T>
 where
     T: Transport,
 {
+    #[instrument(skip_all)]
     fn call_with_state_overrides(
         &self,
         call: CallRequest,
         block: BlockId,
         overrides: StateOverrides,
-    ) -> Instrumented<CallFuture<Bytes, T::Out>> {
+    ) -> CallFuture<Bytes, T::Out> {
         let call = helpers::serialize(&call);
         let block = helpers::serialize(&block);
         let overrides = helpers::serialize(&overrides);
@@ -44,7 +45,6 @@ where
             self.transport()
                 .execute("eth_call", vec![call, block, overrides]),
         )
-        .instrument(tracing::info_span!("eth_call"))
     }
 }
 

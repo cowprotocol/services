@@ -483,6 +483,8 @@ impl Solver {
             Addresses {
                 settlement: Some(config.blockchain.settlement.address().into()),
                 weth: Some(config.blockchain.weth.address().into()),
+                balances: Some(config.blockchain.balances.address().into()),
+                signatures: Some(config.blockchain.signatures.address().into()),
                 cow_amms: vec![],
                 flashloan_default_lender: flashloan_wrappers.first().map(|w| w.lender.into()),
                 flashloan_wrappers,

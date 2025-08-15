@@ -1,6 +1,6 @@
 use {
     crate::{
-        database::competition::Competition,
+        database::competition::{Competition, LegacyScore},
         domain::{
             self,
             OrderUid,
@@ -59,8 +59,26 @@ pub struct Config {
     /// allowed to start before it has to re-synchronize to the blockchain
     /// by waiting for the next block to appear.
     pub max_run_loop_delay: Duration,
+    pub combinatorial_auctions_cutover: Option<chrono::DateTime<chrono::Utc>>,
     pub max_winners_per_auction: NonZeroUsize,
     pub max_solutions_per_solver: NonZeroUsize,
+}
+
+impl Config {
+    fn single_winner(&self) -> bool {
+        // Always single winner if max_winners is 1
+        if self.max_winners_per_auction.get() == 1 {
+            return true;
+        }
+
+        // Check cutover date conditions
+        match self.combinatorial_auctions_cutover {
+            // No cutover date means single winner
+            None => true,
+            // If there is a cutover date, check if we are past it
+            Some(cutover) => chrono::Utc::now() < cutover,
+        }
+    }
 }
 
 pub struct RunLoop {
@@ -77,7 +95,6 @@ pub struct RunLoop {
     /// the most recent data available.
     maintenance: Arc<Maintenance>,
     competition_updates_sender: tokio::sync::mpsc::UnboundedSender<()>,
-    winner_selection: winner_selection::Arbitrator,
 }
 
 impl RunLoop {
@@ -94,9 +111,6 @@ impl RunLoop {
         maintenance: Arc<Maintenance>,
         competition_updates_sender: tokio::sync::mpsc::UnboundedSender<()>,
     ) -> Self {
-        let max_winners = config.max_winners_per_auction.get();
-        let weth = eth.contracts().wrapped_native_token();
-
         Self {
             config,
             eth,
@@ -109,7 +123,6 @@ impl RunLoop {
             liveness,
             maintenance,
             competition_updates_sender,
-            winner_selection: winner_selection::Arbitrator { max_winners, weth },
         }
     }
 
@@ -167,6 +180,7 @@ impl RunLoop {
                 .await
             {
                 Ok(()) => {
+                    tracing::trace!("solvable orders cache updated");
                     self.solvable_orders_cache.track_auction_update("success");
                 }
                 Err(err) => {
@@ -178,6 +192,7 @@ impl RunLoop {
         };
 
         let auction = self.cut_auction().await?;
+        tracing::trace!(auction_id = ?auction.id, "auction cut");
 
         // Only run the solvers if the auction or block has changed.
         let previous = prev_auction.replace(auction.clone());
@@ -246,6 +261,7 @@ impl RunLoop {
         // Mark all auction orders as `Ready` for competition
         self.persistence
             .store_order_events(auction.orders.iter().map(|o| o.uid), OrderEventLabel::Ready);
+        tracing::trace!(auction_id = ?auction.id, "orders marked as ready");
 
         // Collect valid solutions from all drivers
         let solutions = self.fetch_solutions(&auction).await;
@@ -254,7 +270,22 @@ impl RunLoop {
             return;
         }
 
-        let ranking = self.winner_selection.arbitrate(solutions, &auction);
+        // Build the winner selection implementation.
+        // We only compute this once to ensure consistency throughout the entire
+        // auction.
+        let is_single_winner_selection = self.config.single_winner();
+        tracing::info!(auction_id = ?auction.id, ?is_single_winner_selection, "winner selection implementation");
+        let winner_selection: Box<dyn winner_selection::Arbitrator> = if is_single_winner_selection
+        {
+            Box::new(winner_selection::max_score::Config)
+        } else {
+            Box::new(winner_selection::combinatorial::Config {
+                max_winners: self.config.max_winners_per_auction.get(),
+                weth: self.eth.contracts().wrapped_native_token(),
+            })
+        };
+
+        let ranking = winner_selection.arbitrate(solutions, &auction);
 
         // Count and record the number of winners
         let num_winners = ranking.winners().count();
@@ -273,13 +304,15 @@ impl RunLoop {
                 competition_simulation_block,
                 &ranking,
                 block_deadline,
-                &self.winner_selection,
+                winner_selection,
+                is_single_winner_selection,
             )
             .await
         {
             tracing::error!(?err, "failed to post-process competition");
             return;
         }
+        tracing::trace!(auction_id = ?auction.id, "post-processing completed");
 
         // Mark all winning orders as `Executing`
         let winning_orders = ranking
@@ -297,6 +330,7 @@ impl RunLoop {
                 .filter(|order_id| !winning_orders.contains(order_id)),
             OrderEventLabel::Considered,
         );
+        tracing::trace!(auction_id = ?auction.id, "orders marked as considered");
 
         for (solution_uid, winner) in ranking
             .enumerated()
@@ -315,6 +349,7 @@ impl RunLoop {
             )
             .await;
         }
+        tracing::trace!(auction_id = ?auction.id, "settlement execution started");
         observe::unsettled(&ranking, &auction);
     }
 
@@ -383,10 +418,34 @@ impl RunLoop {
         competition_simulation_block: u64,
         ranking: &Ranking,
         block_deadline: u64,
-        winner_selection: &winner_selection::Arbitrator,
+        winner_selection: Box<dyn winner_selection::Arbitrator>,
+        is_single_winner_selection: bool,
     ) -> Result<()> {
         let start = Instant::now();
         let reference_scores = winner_selection.compute_reference_scores(ranking);
+        // TODO: Needs to be removed once other teams fully migrated to the
+        // reference_scores table
+        let legacy_score = {
+            let Some(winning_solution) = ranking
+                .winners()
+                .nth(0)
+                .map(|participant| participant.solution())
+            else {
+                return Err(anyhow::anyhow!("no winners found"));
+            };
+            let winner = winning_solution.solver().into();
+            let winning_score = winning_solution.score().get().0;
+            let reference_score = ranking
+                .ranked()
+                .nth(1)
+                .map(|participant| participant.solution().score().get().0)
+                .unwrap_or_default();
+            is_single_winner_selection.then_some(LegacyScore {
+                winner,
+                winning_score,
+                reference_score,
+            })
+        };
 
         let participants = ranking
             .all()
@@ -462,6 +521,7 @@ impl RunLoop {
         };
         let competition = Competition {
             auction_id: auction.id,
+            legacy: legacy_score,
             reference_scores,
             participants,
             prices: auction
@@ -496,6 +556,7 @@ impl RunLoop {
                 tracing::warn!(?err, "failed to save new competition data");
             }
         }
+        tracing::trace!(auction_id = ?auction.id, "auction saved");
 
         tracing::trace!(?competition, "saving competition");
         futures::try_join!(
@@ -512,6 +573,7 @@ impl RunLoop {
                 .store_fee_policies(auction.id, fee_policies)
                 .map_err(|e| e.context("failed to fee_policies")),
         )?;
+        tracing::trace!(auction_id = ?auction.id, "competition saved");
 
         Metrics::post_processed(start.elapsed());
         Ok(())

@@ -4,7 +4,8 @@
 
 use {
     super::{BalanceFetching, Query, TransferSimulationError},
-    anyhow::Result,
+    alloy::sol_types::{SolType, sol_data},
+    anyhow::{Context, Result},
     contracts::{BalancerV2Vault, erc20::Contract},
     ethcontract::{Bytes, H160, U256},
     ethrpc::Web3,
@@ -15,14 +16,20 @@ use {
 
 pub struct Balances {
     balances: contracts::support::Balances,
+    settlement: contracts::GPv2Settlement,
     web3: Web3,
-    settlement: H160,
     vault_relayer: H160,
     vault: H160,
 }
 
 impl Balances {
-    pub fn new(web3: &Web3, settlement: H160, vault_relayer: H160, vault: Option<H160>) -> Self {
+    pub fn new(
+        web3: &Web3,
+        settlement: contracts::GPv2Settlement,
+        balances: contracts::support::Balances,
+        vault_relayer: H160,
+        vault: Option<H160>,
+    ) -> Self {
         // Note that the balances simulation **will fail** if the `vault`
         // address is not a contract and the `source` is set to one of
         // `SellTokenSource::{External, Internal}` (i.e. the Vault contract is
@@ -32,12 +39,11 @@ impl Balances {
         // work without additional code paths :tada:!
         let vault = vault.unwrap_or_default();
         let web3 = ethrpc::instrumented::instrument_with_label(web3, "balanceFetching".into());
-        let balances = contracts::support::Balances::at(&web3, settlement);
 
         Self {
             web3,
-            balances,
             settlement,
+            balances,
             vault_relayer,
             vault,
         }
@@ -52,28 +58,41 @@ impl Balances {
         //    settlement
         //
         // This allows us to end up with very accurate balance simulations.
-        let (token_balance, allowance, effective_balance, can_transfer) =
-            contracts::storage_accessible::simulate(
-                contracts::bytecode!(contracts::support::Balances),
-                self.balances.methods().balance(
-                    (self.settlement, self.vault_relayer, self.vault),
-                    query.owner,
-                    query.token,
-                    amount.unwrap_or_default(),
-                    Bytes(query.source.as_bytes()),
-                    query
-                        .interactions
-                        .iter()
-                        .map(|i| (i.target, i.value, Bytes(i.call_data.clone())))
-                        .collect(),
-                ),
+        let balance_call = self.balances.balance(
+            (self.settlement.address(), self.vault_relayer, self.vault),
+            query.owner,
+            query.token,
+            amount.unwrap_or_default(),
+            Bytes(query.source.as_bytes()),
+            query
+                .interactions
+                .iter()
+                .map(|i| (i.target, i.value, Bytes(i.call_data.clone())))
+                .collect(),
+        );
+
+        let delegate_call = self
+            .settlement
+            .simulate_delegatecall(
+                self.balances.address(),
+                ethcontract::Bytes(balance_call.tx.data.unwrap_or_default().0),
             )
-            .await?;
+            .from(crate::SIMULATION_ACCOUNT.clone());
+
+        let response = delegate_call.call().await?;
+        let (token_balance, allowance, effective_balance, can_transfer) =
+            <(
+                sol_data::Uint<256>,
+                sol_data::Uint<256>,
+                sol_data::Uint<256>,
+                sol_data::Bool,
+            )>::abi_decode(&response.0)
+            .context("failed to decode balance response")?;
 
         let simulation = Simulation {
-            token_balance,
-            allowance,
-            effective_balance,
+            token_balance: U256::from_little_endian(&token_balance.as_le_bytes()),
+            allowance: U256::from_little_endian(&allowance.as_le_bytes()),
+            effective_balance: U256::from_little_endian(&effective_balance.as_le_bytes()),
             can_transfer,
         };
 
@@ -194,9 +213,17 @@ mod tests {
     #[ignore]
     #[tokio::test]
     async fn test_for_user() {
+        let web3 = Web3::new(ethrpc::create_env_test_transport());
+        let settlement =
+            contracts::GPv2Settlement::at(&web3, addr!("9008d19f58aabd9ed0d60971565aa8510560ab41"));
+        let balances = contracts::support::Balances::at(
+            &web3,
+            addr!("3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b"),
+        );
         let balances = Balances::new(
-            &Web3::new(ethrpc::create_env_test_transport()),
-            addr!("9008d19f58aabd9ed0d60971565aa8510560ab41"),
+            &web3,
+            settlement,
+            balances,
             addr!("C92E8bdf79f0507f65a392b0ab4667716BFE0110"),
             Some(addr!("BA12222222228d8Ba445958a75a0704d566BF2C8")),
         );
