@@ -1,5 +1,3 @@
-use prometheus::HistogramTimer;
-
 /// Metrics for the driver.
 #[derive(Debug, Clone, prometheus_metric_storage::MetricStorage)]
 pub struct Metrics {
@@ -55,14 +53,6 @@ pub struct Metrics {
         )
     )]
     pub used_solve_time: prometheus::HistogramVec,
-}
-
-impl Metrics {
-    pub fn processing_stage_timer(&self, stage: &str) -> HistogramTimer {
-        self.auction_preprocessing
-            .with_label_values(&[stage])
-            .start_timer()
-    }
 }
 
 /// Setup the metrics registry.
