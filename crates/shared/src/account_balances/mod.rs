@@ -1,5 +1,7 @@
 use {
-    anyhow::Result,
+    alloy::sol_types::{SolType, sol_data},
+    anyhow::{Context, Result},
+    ethcontract::Bytes,
     ethrpc::{Web3, block_stream::CurrentBlockWatcher},
     model::{
         interaction::InteractionData,
@@ -93,4 +95,74 @@ pub fn cached(
     let cached = Arc::new(cached::Balances::new(fetcher(web3, contracts)));
     cached.spawn_background_task(blocks);
     cached
+}
+
+#[async_trait::async_trait]
+pub trait BalanceSimulating: Send + Sync {
+    fn settlement(&self) -> &contracts::GPv2Settlement;
+    fn vault_relayer(&self) -> H160;
+    fn vault(&self) -> H160;
+    fn balances(&self) -> &contracts::support::Balances;
+
+    async fn simulate(&self, query: &Query, amount: Option<U256>) -> Result<Simulation> {
+        // We simulate the balances from the Settlement contract's context. This
+        // allows us to check:
+        // 1. How the pre-interactions would behave as part of the settlement
+        // 2. Simulate the actual VaultRelayer transfers that would happen as part of a
+        //    settlement
+        //
+        // This allows us to end up with very accurate balance simulations.
+        let balance_call = self.balances().balance(
+            (
+                self.settlement().address(),
+                self.vault_relayer(),
+                self.vault(),
+            ),
+            query.owner,
+            query.token,
+            amount.unwrap_or_default(),
+            Bytes(query.source.as_bytes()),
+            query
+                .interactions
+                .iter()
+                .map(|i| (i.target, i.value, Bytes(i.call_data.clone())))
+                .collect(),
+        );
+
+        let delegate_call = self
+            .settlement()
+            .simulate_delegatecall(
+                self.balances().address(),
+                Bytes(balance_call.tx.data.unwrap_or_default().0),
+            )
+            .from(crate::SIMULATION_ACCOUNT.clone());
+
+        let response = delegate_call.call().await?;
+        let (token_balance, allowance, effective_balance, can_transfer) =
+            <(
+                sol_data::Uint<256>,
+                sol_data::Uint<256>,
+                sol_data::Uint<256>,
+                sol_data::Bool,
+            )>::abi_decode(&response.0)
+            .context("failed to decode balance response")?;
+
+        let simulation = Simulation {
+            token_balance: U256::from_little_endian(&token_balance.as_le_bytes()),
+            allowance: U256::from_little_endian(&allowance.as_le_bytes()),
+            effective_balance: U256::from_little_endian(&effective_balance.as_le_bytes()),
+            can_transfer,
+        };
+
+        tracing::trace!(?query, ?amount, ?simulation, "simulated balances");
+        Ok(simulation)
+    }
+}
+
+#[derive(Debug)]
+pub struct Simulation {
+    token_balance: U256,
+    allowance: U256,
+    effective_balance: U256,
+    can_transfer: bool,
 }
