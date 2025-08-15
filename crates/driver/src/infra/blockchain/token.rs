@@ -115,6 +115,10 @@ impl Erc20 {
         interactions: &[eth::Interaction],
         disable_access_lists: bool,
     ) -> Result<eth::TokenAmount, Error> {
+        // ZKSync-based chains don't use the default 0x0 account when `tx.from` is not
+        // specified, so we need to use a random simulation account.
+        static SIMULATION_ACCOUNT: LazyLock<Account> =
+            LazyLock::new(|| Account::Local(eth::H160::random(), None));
         let balance_helper = self.ethereum.contracts().balance_helper();
         let balance_call = balance_helper.balance(
             (
