@@ -320,17 +320,18 @@ impl Blockchain {
             settlement = contracts::GPv2Settlement::at(&web3, settlement_address);
         }
 
-        let mut balances = wait_for(
-            &web3,
-            contracts::support::Balances::builder(&web3)
-                .from(main_trader_account.clone())
-                .deploy(),
-        )
-        .await
-        .unwrap();
-        if let Some(balances_address) = config.balances_address {
-            balances = contracts::support::Balances::at(&web3, balances_address);
-        }
+        let balances = if let Some(balances_address) = config.balances_address {
+            contracts::support::Balances::at(&web3, balances_address)
+        } else {
+            wait_for(
+                &web3,
+                contracts::support::Balances::builder(&web3)
+                    .from(main_trader_account.clone())
+                    .deploy(),
+            )
+            .await
+            .unwrap()
+        };
 
         wait_for(
             &web3,

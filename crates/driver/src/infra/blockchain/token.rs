@@ -152,6 +152,7 @@ impl Erc20 {
         if !disable_access_lists {
             let access_list_call = CallRequest {
                 data: delegate_call.tx.data.clone(),
+                from: delegate_call.tx.from.clone().map(|acc| acc.address()),
                 ..Default::default()
             };
             let access_list = self
@@ -159,7 +160,7 @@ impl Erc20 {
                 .create_access_list(access_list_call)
                 .await
                 .tap_err(|err| {
-                    tracing::error!(?err, "failed to create access list for balance simulation");
+                    tracing::debug!(?err, "failed to create access list for balance simulation");
                 })
                 .ok();
             delegate_call.tx.access_list = access_list.map(Into::into);
