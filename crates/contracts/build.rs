@@ -1537,7 +1537,18 @@ fn main() {
             .add_network_str(GNOSIS, "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b")
             .add_network_str(SEPOLIA, "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b")
     });
-    generate_contract("Signatures");
+    generate_contract_with_config("Signatures", |builder| {
+        builder
+            .add_network_str(MAINNET, "0x8262d639c38470F38d2eff15926F7071c28057Af")
+            .add_network_str(ARBITRUM_ONE, "0x8262d639c38470F38d2eff15926F7071c28057Af")
+            .add_network_str(BASE, "0x8262d639c38470F38d2eff15926F7071c28057Af")
+            .add_network_str(AVALANCHE, "0x8262d639c38470F38d2eff15926F7071c28057Af")
+            .add_network_str(BNB, "0x8262d639c38470F38d2eff15926F7071c28057Af")
+            .add_network_str(OPTIMISM, "0x8262d639c38470F38d2eff15926F7071c28057Af")
+            .add_network_str(POLYGON, "0x8262d639c38470F38d2eff15926F7071c28057Af")
+            .add_network_str(GNOSIS, "0x8262d639c38470F38d2eff15926F7071c28057Af")
+            .add_network_str(SEPOLIA, "0x8262d639c38470F38d2eff15926F7071c28057Af")
+    });
     generate_contract("SimulateCode");
 
     // Support contract used for solver fee simulations.

@@ -194,6 +194,7 @@ pub async fn run(args: Arguments) {
     let url = ethrpc.url().clone();
     let contracts = infra::blockchain::contracts::Addresses {
         settlement: args.shared.settlement_contract_address,
+        signatures: args.shared.signatures_contract_address,
         weth: args.shared.native_token_address,
         balances: args.shared.balances_contract_address,
         trampoline: args.shared.hooks_contract_address,
@@ -245,7 +246,8 @@ pub async fn run(args: Arguments) {
     let signature_validator = signature_validator::validator(
         &web3,
         signature_validator::Contracts {
-            settlement: eth.contracts().settlement().address(),
+            settlement: eth.contracts().settlement().clone(),
+            signatures: eth.contracts().signatures().clone(),
             vault_relayer,
         },
     );

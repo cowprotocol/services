@@ -30,7 +30,7 @@ async fn forked_node_mainnet_single_limit_order() {
 }
 
 /// The block number from which we will fetch state for the forked tests.
-const FORK_BLOCK_MAINNET: u64 = 23097057;
+const FORK_BLOCK_MAINNET: u64 = 23112197;
 /// DAI whale address as per [FORK_BLOCK_MAINNET].
 const DAI_WHALE_MAINNET: H160 = H160(hex_literal::hex!(
     "762d46904B93a1EEDBfF2fD50445CB8ffA41F9FB"

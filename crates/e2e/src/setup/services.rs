@@ -143,6 +143,10 @@ impl<'a> Services<'a> {
                 "--balances-contract-address={:?}",
                 self.contracts.balances.address()
             ),
+            format!(
+                "--signatures-contract-address={:?}",
+                self.contracts.signatures.address()
+            ),
             format!("--native-token-address={:?}", self.contracts.weth.address()),
             format!(
                 "--balancer-v2-vault-address={:?}",

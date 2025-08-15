@@ -74,7 +74,8 @@ pub fn check_erc1271_result(result: Bytes<[u8; 4]>) -> Result<(), SignatureValid
 
 /// Contracts required for signature verification simulation.
 pub struct Contracts {
-    pub settlement: H160,
+    pub settlement: contracts::GPv2Settlement,
+    pub signatures: contracts::support::Signatures,
     pub vault_relayer: H160,
 }
 
@@ -83,6 +84,7 @@ pub fn validator(web3: &Web3, contracts: Contracts) -> Arc<dyn SignatureValidati
     Arc::new(simulation::Validator::new(
         web3,
         contracts.settlement,
+        contracts.signatures,
         contracts.vault_relayer,
     ))
 }

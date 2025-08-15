@@ -14,7 +14,7 @@ use {
         UniswapV2Factory,
         UniswapV2Router02,
         WETH9,
-        support::Balances,
+        support::{Balances, Signatures},
     },
     ethcontract::{Address, H256, U256, errors::DeployError},
     model::DomainSeparator,
@@ -24,12 +24,14 @@ use {
 #[derive(Default)]
 pub struct DeployedContracts {
     pub balances: Option<Address>,
+    pub signatures: Option<Address>,
 }
 
 pub struct Contracts {
     pub chain_id: u64,
     pub balancer_vault: BalancerV2Vault,
     pub gp_settlement: GPv2Settlement,
+    pub signatures: Signatures,
     pub gp_authenticator: GPv2AllowListAuthentication,
     pub balances: Balances,
     pub uniswap_v2_factory: UniswapV2Factory,
@@ -67,6 +69,12 @@ impl Contracts {
             None => Balances::deployed(web3)
                 .await
                 .expect("failed to find balances contract"),
+        };
+        let signatures = match deployed.signatures {
+            Some(address) => Signatures::at(web3, address),
+            None => Signatures::deployed(web3)
+                .await
+                .expect("failed to find signatures contract"),
         };
 
         let flashloan_router = FlashLoanRouter::deployed(web3).await.ok();
@@ -106,6 +114,7 @@ impl Contracts {
             hooks: HooksTrampoline::deployed(web3).await.unwrap(),
             gp_settlement,
             balances,
+            signatures,
             cow_amm_helper,
             flashloan_wrapper_maker,
             flashloan_wrapper_aave,
@@ -155,6 +164,7 @@ impl Contracts {
             GPv2Settlement(gp_authenticator.address(), balancer_vault.address(),)
         );
         let balances = deploy!(web3, Balances());
+        let signatures = deploy!(web3, Signatures());
 
         contracts::vault::grant_required_roles(
             &balancer_authorizer,
@@ -207,6 +217,7 @@ impl Contracts {
             gp_settlement,
             gp_authenticator,
             balances,
+            signatures,
             uniswap_v2_factory,
             uniswap_v2_router,
             weth,
