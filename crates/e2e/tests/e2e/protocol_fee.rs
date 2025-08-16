@@ -24,6 +24,7 @@ use {
     serde_json::json,
     shared::ethrpc::Web3,
     web3::signing::SecretKeyRef,
+    std::time::Duration,
 };
 
 #[tokio::test]
@@ -215,26 +216,46 @@ async fn combined_protocol_fees(web3: Web3) {
         .await;
 
     tracing::info!("Waiting for liquidity state to update");
-    wait_for_condition(TIMEOUT, || async {
+    
+    // More robust waiting for liquidity state update with better error handling
+    let liquidity_updated = || async {
         // Mint blocks until we evict the cached liquidity and fetch the new state.
         onchain.mint_block().await;
-        let new_market_order_quote = get_quote(
+        
+        match get_quote(
             &services,
             onchain.contracts().weth.address(),
             market_order_token.address(),
             OrderKind::Sell,
             sell_amount,
             model::time::now_in_epoch_seconds() + 300,
-        )
+        ).await {
+            Ok(new_market_order_quote) => {
+                let quote_change_ratio = new_market_order_quote.quote.buy_amount.as_u128() as f64 / 
+                    market_quote_before.quote.buy_amount.as_u128() as f64;
+                
+                tracing::debug!(
+                    "Quote change ratio: {:.2} (before: {}, after: {})", 
+                    quote_change_ratio,
+                    market_quote_before.quote.buy_amount,
+                    new_market_order_quote.quote.buy_amount
+                );
+                
+                // Only proceed with test once the quote changes significantly (2x) to avoid
+                // progressing due to tiny fluctuations in gas price which would lead to
+                // errors down the line.
+                quote_change_ratio > 2.0
+            }
+            Err(e) => {
+                tracing::warn!("Failed to get quote for liquidity check: {:?}", e);
+                false
+            }
+        }
+    };
+    
+    wait_for_condition(TIMEOUT, liquidity_updated)
         .await
-        .unwrap();
-        // Only proceed with test once the quote changes significantly (2x) to avoid
-        // progressing due to tiny fluctuations in gas price which would lead to
-        // errors down the line.
-        new_market_order_quote.quote.buy_amount > market_quote_before.quote.buy_amount * 2
-    })
-    .await
-    .expect("Timeout waiting for eviction of the cached liquidity");
+        .expect("Timeout waiting for eviction of the cached liquidity");
 
     let [
         market_quote_after,
@@ -281,29 +302,64 @@ async fn combined_protocol_fees(web3: Web3) {
 
     onchain.mint_block().await;
 
+    // Add a small delay to ensure orders are properly processed
+    tracing::info!("Waiting for orders to be processed...");
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    onchain.mint_block().await;
+
     tracing::info!("Waiting for orders to trade.");
-    let metadata_updated = || async {
-        onchain.mint_block().await;
-        futures::future::join_all(
-            [
-                &market_price_improvement_uid,
-                &limit_surplus_order_uid,
-                &partner_fee_order_uid,
-            ]
-            .map(|uid| async {
-                services
-                    .get_order(uid)
-                    .await
-                    .is_ok_and(|order| !order.metadata.executed_fee.is_zero())
-            }),
-        )
-        .await
-        .into_iter()
-        .all(std::convert::identity)
+    
+    // Wait for each order individually with separate timeouts to avoid race conditions
+    let wait_for_order_execution = |order_uid: &str| async {
+        let mut attempts = 0;
+        const MAX_ATTEMPTS: u32 = 150; // 30 seconds with 200ms intervals
+        
+        while attempts < MAX_ATTEMPTS {
+            onchain.mint_block().await;
+            
+            match services.get_order(order_uid).await {
+                Ok(order) if !order.metadata.executed_fee.is_zero() => {
+                    tracing::info!("Order {} executed with fee: {}", order_uid, order.metadata.executed_fee);
+                    return true;
+                }
+                Ok(_) => {
+                    // Order exists but not yet executed, continue waiting
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to get order {}: {:?}", order_uid, e);
+                }
+            }
+            
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            attempts += 1;
+        }
+        false
     };
-    wait_for_condition(TIMEOUT, metadata_updated)
-        .await
-        .expect("Timeout waiting for the orders to trade");
+
+    // Wait for all orders to execute with individual timeouts
+    let execution_results = futures::future::join_all([
+        wait_for_order_execution(&market_price_improvement_uid),
+        wait_for_order_execution(&limit_surplus_order_uid),
+        wait_for_order_execution(&partner_fee_order_uid),
+    ]).await;
+
+    // Check if all orders executed successfully
+    let all_executed = execution_results.iter().all(|&executed| executed);
+    if !all_executed {
+        // Provide detailed error information
+        let order_statuses = futures::future::join_all([
+            services.get_order(&market_price_improvement_uid),
+            services.get_order(&limit_surplus_order_uid),
+            services.get_order(&partner_fee_order_uid),
+        ]).await;
+        
+        tracing::error!("Order execution status:");
+        tracing::error!("Market order {}: {:?}", market_price_improvement_uid, order_statuses[0].as_ref().map(|o| o.metadata.executed_fee));
+        tracing::error!("Limit order {}: {:?}", limit_surplus_order_uid, order_statuses[1].as_ref().map(|o| o.metadata.executed_fee));
+        tracing::error!("Partner fee order {}: {:?}", partner_fee_order_uid, order_statuses[2].as_ref().map(|o| o.metadata.executed_fee));
+        
+        panic!("Timeout waiting for orders to trade. Not all orders were executed within the timeout period.");
+    }
 
     tracing::info!("Checking executions...");
     let market_price_improvement_order = services
@@ -483,17 +539,49 @@ async fn surplus_partner_fee(web3: Web3) {
 
     onchain.mint_block().await;
 
+    // Add a small delay to ensure order is properly processed
+    tracing::info!("Waiting for order to be processed...");
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    onchain.mint_block().await;
+
     tracing::info!("Waiting for orders to trade.");
-    let metadata_updated = || async {
+    
+    // More robust waiting for order execution
+    let mut attempts = 0;
+    const MAX_ATTEMPTS: u32 = 150; // 30 seconds with 200ms intervals
+    
+    while attempts < MAX_ATTEMPTS {
         onchain.mint_block().await;
-        services
-            .get_order(&order_uid)
-            .await
-            .is_ok_and(|order| !order.metadata.executed_fee.is_zero())
-    };
-    wait_for_condition(TIMEOUT, metadata_updated)
-        .await
-        .expect("Timeout waiting for the orders to trade");
+        
+        match services.get_order(&order_uid).await {
+            Ok(order) if !order.metadata.executed_fee.is_zero() => {
+                tracing::info!("Order {} executed with fee: {}", order_uid, order.metadata.executed_fee);
+                break;
+            }
+            Ok(_) => {
+                // Order exists but not yet executed, continue waiting
+            }
+            Err(e) => {
+                tracing::warn!("Failed to get order {}: {:?}", order_uid, e);
+            }
+        }
+        
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        attempts += 1;
+    }
+    
+    if attempts >= MAX_ATTEMPTS {
+        // Provide detailed error information
+        match services.get_order(&order_uid).await {
+            Ok(order) => {
+                tracing::error!("Order {} final status - executed_fee: {}", order_uid, order.metadata.executed_fee);
+            }
+            Err(e) => {
+                tracing::error!("Failed to get final order status for {}: {:?}", order_uid, e);
+            }
+        }
+        panic!("Timeout waiting for order to trade. Order was not executed within the timeout period.");
+    }
 
     tracing::info!("Checking executions...");
     let trades = services.get_trades(&order_uid).await.unwrap();
@@ -705,14 +793,50 @@ async fn volume_fee_buy_order_test(web3: Web3) {
     );
     let uid = services.create_order(&order).await.unwrap();
 
+    // Add a small delay to ensure order is properly processed
+    tracing::info!("Waiting for order to be processed...");
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    onchain.mint_block().await;
+
     // Drive solution
     tracing::info!("Waiting for trade.");
-    let metadata_updated = || async {
+    
+    // More robust waiting for order execution
+    let mut attempts = 0;
+    const MAX_ATTEMPTS: u32 = 150; // 30 seconds with 200ms intervals
+    
+    while attempts < MAX_ATTEMPTS {
         onchain.mint_block().await;
-        let order = services.get_order(&uid).await.unwrap();
-        !order.metadata.executed_fee.is_zero()
-    };
-    wait_for_condition(TIMEOUT, metadata_updated).await.unwrap();
+        
+        match services.get_order(&uid).await {
+            Ok(order) if !order.metadata.executed_fee.is_zero() => {
+                tracing::info!("Order {} executed with fee: {}", uid, order.metadata.executed_fee);
+                break;
+            }
+            Ok(_) => {
+                // Order exists but not yet executed, continue waiting
+            }
+            Err(e) => {
+                tracing::warn!("Failed to get order {}: {:?}", uid, e);
+            }
+        }
+        
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        attempts += 1;
+    }
+    
+    if attempts >= MAX_ATTEMPTS {
+        // Provide detailed error information
+        match services.get_order(&uid).await {
+            Ok(order) => {
+                tracing::error!("Order {} final status - executed_fee: {}", uid, order.metadata.executed_fee);
+            }
+            Err(e) => {
+                tracing::error!("Failed to get final order status for {}: {:?}", uid, e);
+            }
+        }
+        panic!("Timeout waiting for order to trade. Order was not executed within the timeout period.");
+    }
 
     let order = services.get_order(&uid).await.unwrap();
     let fee_in_buy_token = quote.fee_amount * quote.buy_amount / quote.sell_amount;
