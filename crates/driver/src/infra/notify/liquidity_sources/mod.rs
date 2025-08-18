@@ -14,32 +14,52 @@ pub mod liquorice;
 pub use config::Config;
 use {
     crate::{
-        boundary::{self, notifier::LiquiditySourcesNotifying},
+        boundary::{self},
         domain::competition::solution::settlement::Settlement,
-        infra,
     },
+    ethcontract::jsonrpc::futures_util::future::join_all,
     std::sync::Arc,
 };
 
+type Inner = Arc<Vec<Box<dyn LiquiditySourcesNotifying>>>;
+
+/// Trait for notifying liquidity sources about auctions and settlements
+#[async_trait::async_trait]
+pub trait LiquiditySourcesNotifying: Send + Sync {
+    async fn notify_before_settlement(&self, settlement: &Settlement) -> anyhow::Result<()>;
+}
+
 /// Auctions and settlement notifier for liquidity sources
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Notifier {
-    inner: Arc<boundary::notifier::Notifier>,
+    inner: Inner,
 }
 
 impl Notifier {
-    pub fn try_new(
-        config: &infra::notify::liquidity_sources::Config,
-        chain: chain::Chain,
-    ) -> Result<Self, Error> {
+    pub fn try_new(config: &Config, chain: chain::Chain) -> Result<Self, Error> {
+        let mut inner: Vec<Box<dyn LiquiditySourcesNotifying>> = vec![];
+
+        if let Some(liquorice) = &config.liquorice {
+            inner.push(Box::new(liquorice::Notifier::new(liquorice, chain)?));
+        }
+
         Ok(Self {
-            inner: Arc::new(boundary::notifier::Notifier::try_new(config, chain)?),
+            inner: Arc::new(inner),
         })
     }
+}
 
+#[async_trait::async_trait]
+impl LiquiditySourcesNotifying for Notifier {
     /// Sends notification to liquidity sources before settlement
-    pub async fn notify_before_settlement(&self, settlement: &Settlement) -> Result<(), Error> {
-        let _ = self.inner.notify_before_settlement(settlement).await?;
+    async fn notify_before_settlement(&self, settlement: &Settlement) -> anyhow::Result<()> {
+        let futures = self
+            .inner
+            .iter()
+            .map(|notifier| notifier.notify_before_settlement(settlement));
+
+        let _ = join_all(futures).await;
+
         Ok(())
     }
 }
@@ -48,4 +68,12 @@ impl Notifier {
 pub enum Error {
     #[error("boundary error: {0:?}")]
     Boundary(#[from] boundary::Error),
+}
+
+impl std::fmt::Debug for Notifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.debug_struct("Notifier")
+            .field("inner", &"LiquiditySources")
+            .finish()
+    }
 }

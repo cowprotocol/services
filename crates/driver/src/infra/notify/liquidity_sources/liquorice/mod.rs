@@ -1,1 +1,4 @@
-pub mod client;
+mod client;
+mod notifier;
+
+pub use notifier::Notifier;
