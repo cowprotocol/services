@@ -38,7 +38,6 @@ mod macros;
 
 #[cfg(feature = "bin")]
 pub mod paths;
-pub mod storage_accessible;
 pub mod vault;
 pub mod web3;
 
@@ -119,7 +118,6 @@ pub mod support {
         Balances;
         Multicall;
         Signatures;
-        SimulateCode;
         Solver;
         Spardose;
         Swapper;
