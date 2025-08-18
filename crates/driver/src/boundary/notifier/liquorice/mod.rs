@@ -13,13 +13,19 @@ use {
             competition::{solution, solution::Settlement},
             eth,
         },
-        infra,
+        infra::{
+            self,
+            notify::liquidity_sources::liquorice::client::{
+                BeforeSettleNotification,
+                DefaultLiquoriceApi,
+                NotifyQuery,
+            },
+        },
         util::Bytes,
     },
     anyhow::{Context, Result, anyhow},
     contracts::ILiquoriceSettlement,
     ethabi::Token,
-    shared::liquorice_api::{BeforeSettleNotification, DefaultLiquoriceApi, NotifyQuery},
     std::collections::HashSet,
 };
 

@@ -9,6 +9,7 @@
 /// settlement. It is crucial for risk management and leads to better
 /// pricing.
 pub mod config;
+pub mod liquorice;
 
 pub use config::Config;
 use {

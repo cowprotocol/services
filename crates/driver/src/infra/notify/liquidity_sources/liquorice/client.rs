@@ -34,6 +34,7 @@ pub enum NotifyQuery {
 
 /// Abstract Liquorice API. Provides a mockable implementation.
 #[async_trait::async_trait]
+#[cfg(test)]
 #[mockall::automock]
 pub trait LiquoriceApi: Send + Sync {
     /// Sends notification to Liquorice API.
@@ -94,7 +95,7 @@ impl DefaultLiquoriceApi {
 
     /// Sends notification to Liquorice API
     pub async fn notify(&self, query: &NotifyQuery) -> Result<(), LiquoriceResponseError> {
-        let url = crate::url::join(&self.base_url, "notify");
+        let url = format!("{}/{}", self.base_url, "notify");
 
         let _ = self
             .client
