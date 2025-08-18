@@ -24,8 +24,6 @@
 //! Software (2014)
 
 pub mod liquidity;
-pub mod notifier;
-
 // The [`anyhow::Error`] type is re-exported because the legacy code mostly
 // returns that error. This will change as the legacy code gets refactored away.
 use {crate::infra::blockchain::Ethereum, url::Url};

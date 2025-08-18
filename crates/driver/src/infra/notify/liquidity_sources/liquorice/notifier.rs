@@ -8,17 +8,15 @@
 
 use {
     crate::{
-        boundary::notifier::LiquiditySourcesNotifying,
         domain::{
             competition::{solution, solution::Settlement},
             eth,
         },
         infra::{
             self,
-            notify::liquidity_sources::liquorice::client::{
-                BeforeSettleNotification,
-                DefaultLiquoriceApi,
-                NotifyQuery,
+            notify::liquidity_sources::{
+                LiquiditySourcesNotifying,
+                liquorice::client::{BeforeSettleNotification, DefaultLiquoriceApi, NotifyQuery},
             },
         },
         util::Bytes,
@@ -29,7 +27,7 @@ use {
     std::collections::HashSet,
 };
 
-pub struct LiquoriceNotifier {
+pub struct Notifier {
     /// Liquorice API client
     liquorice_api: DefaultLiquoriceApi,
     /// Address of the Liquorice settlement contract is used to
@@ -37,7 +35,7 @@ pub struct LiquoriceNotifier {
     settlement_contract_address: eth::Address,
 }
 
-impl LiquoriceNotifier {
+impl Notifier {
     pub fn new(
         config: &infra::notify::liquidity_sources::config::Liquorice,
         chain: chain::Chain,
@@ -130,7 +128,7 @@ impl LiquoriceNotifier {
 }
 
 #[async_trait::async_trait]
-impl LiquiditySourcesNotifying for LiquoriceNotifier {
+impl LiquiditySourcesNotifying for Notifier {
     async fn notify_before_settlement(&self, settlement: &Settlement) -> Result<()> {
         let rfq_ids = self.extract_rfq_ids_from_settlement(settlement)?;
 
