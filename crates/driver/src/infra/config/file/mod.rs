@@ -366,6 +366,12 @@ struct ContractsConfig {
     /// Override the default address of the WETH contract.
     weth: Option<eth::H160>,
 
+    /// Override the default address of the Balances contract.
+    balances: Option<eth::H160>,
+
+    /// Override the default address of the Signatures contract.
+    signatures: Option<eth::H160>,
+
     /// List of all cow amm factories the driver should generate
     /// rebalancing orders for.
     #[serde(default)]

@@ -160,6 +160,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ad31216895d27d307369daa1393f5850b50bbbd372478a9fa951c095c210627e"
 dependencies = [
  "alloy-primitives",
+ "alloy-sol-types",
 ]
 
 [[package]]
@@ -2571,6 +2572,7 @@ checksum = "1435fa1053d8b2fbbe9be7e97eca7f33d37b28409959813daefc1446a14247f1"
 name = "driver"
 version = "0.1.0"
 dependencies = [
+ "alloy",
  "anyhow",
  "app-data",
  "async-trait",
@@ -6010,6 +6012,7 @@ dependencies = [
 name = "shared"
 version = "0.1.0"
 dependencies = [
+ "alloy",
  "anyhow",
  "app-data",
  "async-stream",

@@ -72,7 +72,7 @@ impl ServicesBuilder {
         self
     }
 
-    pub async fn build(self, onchain_components: &OnchainComponents) -> Services {
+    pub async fn build(self, onchain_components: &OnchainComponents) -> Services<'_> {
         Services {
             contracts: onchain_components.contracts(),
             http: Client::builder().timeout(self.timeout).build().unwrap(),
@@ -138,6 +138,14 @@ impl<'a> Services<'a> {
             format!(
                 "--settlement-contract-address={:?}",
                 self.contracts.gp_settlement.address()
+            ),
+            format!(
+                "--balances-contract-address={:?}",
+                self.contracts.balances.address()
+            ),
+            format!(
+                "--signatures-contract-address={:?}",
+                self.contracts.signatures.address()
             ),
             format!("--native-token-address={:?}", self.contracts.weth.address()),
             format!(
