@@ -173,7 +173,7 @@ jobs:
         with:
           # the latest version introduced a bug caused driver tests to fail
           # only switch back to latest stable version after it was fixed in anvil
-          version: v1.3.0
+          version: v1.2.3
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@nextest
       # Build the driver's tests.
