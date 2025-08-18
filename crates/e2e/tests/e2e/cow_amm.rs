@@ -1,8 +1,12 @@
 use {
     app_data::AppDataHash,
-    contracts::ERC20,
+    contracts::{
+        ERC20,
+        support::{Balances, Signatures},
+    },
     driver::domain::eth::NonZeroU256,
     e2e::{
+        deploy,
         nodes::forked_node::ForkedNodeApi,
         setup::{colocation::SolverEngine, mock::Mock, *},
         tx,
@@ -370,7 +374,9 @@ async fn forked_node_mainnet_cow_amm_driver_support() {
         cow_amm_driver_support,
         std::env::var("FORK_URL_MAINNET")
             .expect("FORK_URL_MAINNET must be set to run forked tests"),
-        20332745, // block at which helper was deployed
+        // block at which helper was deployed, this block can't be updated since it would lead to
+        // the long indexing problem and, as a result, failing tests
+        20332745,
     )
     .await;
 }
@@ -378,7 +384,18 @@ async fn forked_node_mainnet_cow_amm_driver_support() {
 /// Tests that the driver is able to generate template orders for indexed
 /// cow amms and that they can be settled by solvers like regular orders.
 async fn cow_amm_driver_support(web3: Web3) {
-    let mut onchain = OnchainComponents::deployed(web3.clone()).await;
+    // The Balances SC is deployed many blocks after the cow amm helper contract, so
+    // since changing the forked number would result in very costly ~1 year of event
+    // syncing, we deploy the following SCs
+    let deployed_contracts = {
+        let balances = deploy!(&web3, Balances());
+        let signatures = deploy!(&web3, Signatures());
+        DeployedContracts {
+            balances: Some(balances.address()),
+            signatures: Some(signatures.address()),
+        }
+    };
+    let mut onchain = OnchainComponents::deployed_with(web3.clone(), deployed_contracts).await;
     let forked_node_api = web3.api::<ForkedNodeApi<_>>();
 
     let [solver] = onchain.make_solvers_forked(to_wei(1)).await;

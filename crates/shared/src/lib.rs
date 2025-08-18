@@ -1,3 +1,5 @@
+use {ethcontract::Account, primitive_types::H160, std::sync::LazyLock};
+
 #[macro_use]
 pub mod macros;
 
@@ -46,3 +48,8 @@ pub mod zeroex_api;
 pub fn clone_anyhow_error(err: &anyhow::Error) -> anyhow::Error {
     anyhow::anyhow!("{:#}", err)
 }
+
+// ZKSync-based chains don't use the default 0x0 account when `tx.from` is not
+// specified, so we need to use a random account when sending a simulation tx.
+pub static SIMULATION_ACCOUNT: LazyLock<Account> =
+    LazyLock::new(|| Account::Local(H160::random(), None));

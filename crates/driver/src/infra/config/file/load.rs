@@ -379,6 +379,8 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
         contracts: blockchain::contracts::Addresses {
             settlement: config.contracts.gp_v2_settlement.map(Into::into),
             weth: config.contracts.weth.map(Into::into),
+            balances: config.contracts.balances.map(Into::into),
+            signatures: config.contracts.signatures.map(Into::into),
             cow_amms: config
                 .contracts
                 .cow_amms

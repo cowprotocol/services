@@ -538,6 +538,10 @@ pub struct Setup {
     enable_simulation: bool,
     /// Ensure the settlement contract is deployed on a specific address?
     settlement_address: Option<eth::H160>,
+    /// Ensure the Balances contract is deployed on a specific address?
+    balances_address: Option<eth::H160>,
+    /// Ensure the Signatures contract is deployed on a specific address?
+    signatures_address: Option<eth::H160>,
     /// Via which mempool the solutions should be submitted
     mempools: Vec<Mempool>,
     /// Extra configuration for the RPC node
@@ -845,6 +849,18 @@ impl Setup {
         self
     }
 
+    /// Ensure that the Balances contract is deployed to a specific address
+    pub fn balances_address(mut self, address: &H160) -> Self {
+        self.balances_address = Some(*address);
+        self
+    }
+
+    /// Ensure that the Signatures contract is deployed to a specific address.
+    pub fn signatures_address(mut self, address: &H160) -> Self {
+        self.signatures_address = Some(*address);
+        self
+    }
+
     pub fn mempools(mut self, mempools: Vec<Mempool>) -> Self {
         self.mempools = mempools;
         self
@@ -918,6 +934,8 @@ impl Setup {
             main_trader_secret_key: trader_secret_key,
             solvers: self.solvers.clone(),
             settlement_address: self.settlement_address,
+            balances_address: self.balances_address,
+            signatures_address: self.signatures_address,
             rpc_args: self.rpc_args,
         })
         .await;

@@ -1,5 +1,8 @@
 use {
-    crate::{nodes::forked_node::ForkedNodeApi, setup::deploy::Contracts},
+    crate::{
+        nodes::forked_node::ForkedNodeApi,
+        setup::{DeployedContracts, deploy::Contracts},
+    },
     app_data::Hook,
     contracts::{CowProtocolToken, ERC20Mintable},
     ethcontract::{
@@ -45,6 +48,21 @@ macro_rules! tx {
     ($acc:expr_2021, $call:expr_2021) => {
         $crate::tx_value!($acc, U256::zero(), $call)
     };
+}
+
+#[macro_export]
+macro_rules! deploy {
+    ($web3:expr, $contract:ident) => { deploy!($web3, $contract ()) };
+    ($web3:expr, $contract:ident ( $($param:expr_2021),* $(,)? )) => {
+        deploy!($web3, $contract ($($param),*) as stringify!($contract))
+    };
+    ($web3:expr, $contract:ident ( $($param:expr_2021),* $(,)? ) as $name:expr_2021) => {{
+        let name = $name;
+        $contract::builder(&$web3 $(, $param)*)
+            .deploy()
+            .await
+            .unwrap_or_else(|e| panic!("failed to deploy {name}: {e:?}"))
+    }};
 }
 
 pub fn to_wei_with_exp(base: u32, exp: usize) -> U256 {
@@ -242,7 +260,17 @@ impl OnchainComponents {
     }
 
     pub async fn deployed(web3: Web3) -> Self {
-        let contracts = Contracts::deployed(&web3).await;
+        let contracts = Contracts::deployed_with(&web3, DeployedContracts::default()).await;
+
+        Self {
+            web3,
+            contracts,
+            accounts: Default::default(),
+        }
+    }
+
+    pub async fn deployed_with(web3: Web3, deployed: DeployedContracts) -> Self {
+        let contracts = Contracts::deployed_with(&web3, deployed).await;
 
         Self {
             web3,

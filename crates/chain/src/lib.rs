@@ -23,6 +23,7 @@ pub enum Chain {
     Avalanche = 43114,
     Optimism = 10,
     Polygon = 137,
+    Lens = 232,
 }
 
 impl Chain {
@@ -47,6 +48,7 @@ impl Chain {
             Self::Avalanche => "Avalanche",
             Self::Optimism => "Optimism",
             Self::Polygon => "Polygon",
+            Self::Lens => "Lens",
         }
     }
 
@@ -60,7 +62,7 @@ impl Chain {
             | Self::Base
             | Self::Bnb
             | Self::Optimism => 10u128.pow(17).into(),
-            Self::Gnosis | Self::Avalanche => 10u128.pow(18).into(),
+            Self::Gnosis | Self::Avalanche | Self::Lens => 10u128.pow(18).into(),
             Self::Polygon => 10u128.pow(20).into(),
             Self::Hardhat => {
                 panic!("unsupported chain for default amount to estimate native prices with")
@@ -82,6 +84,7 @@ impl Chain {
             Self::Avalanche => Duration::from_millis(2_000),
             Self::Optimism => Duration::from_millis(2_000),
             Self::Polygon => Duration::from_millis(2_000),
+            Self::Lens => Duration::from_millis(2_000),
         }
     }
 
@@ -110,6 +113,7 @@ impl TryFrom<u64> for Chain {
             x if x == Self::Avalanche as u64 => Self::Avalanche,
             x if x == Self::Optimism as u64 => Self::Optimism,
             x if x == Self::Polygon as u64 => Self::Polygon,
+            x if x == Self::Lens as u64 => Self::Lens,
             _ => Err(ChainIdNotSupported)?,
         };
         Ok(network)

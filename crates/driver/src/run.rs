@@ -96,6 +96,7 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
         },
         config.order_priority_strategies,
         app_data_retriever,
+        config.disable_access_list_simulation,
     );
 
     futures::pin_mut!(serve);
