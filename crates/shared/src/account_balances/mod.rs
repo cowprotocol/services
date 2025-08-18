@@ -67,57 +67,65 @@ pub trait BalanceFetching: Send + Sync {
     ) -> Result<(), TransferSimulationError>;
 }
 
-/// Contracts required for balance simulation.
-pub struct Contracts {
-    pub settlement: contracts::GPv2Settlement,
-    pub balances: contracts::support::Balances,
-    pub vault_relayer: H160,
-    pub vault: Option<H160>,
-}
-
 /// Create the default [`BalanceFetching`] instance.
-pub fn fetcher(web3: &Web3, contracts: Contracts) -> Arc<dyn BalanceFetching> {
-    Arc::new(simulation::Balances::new(
-        web3,
-        contracts.settlement,
-        contracts.balances,
-        contracts.vault_relayer,
-        contracts.vault,
-    ))
+pub fn fetcher(web3: &Web3, balance_simulator: BalanceSimulator) -> Arc<dyn BalanceFetching> {
+    Arc::new(simulation::Balances::new(web3, balance_simulator))
 }
 
 /// Create a cached [`BalanceFetching`] instance.
 pub fn cached(
     web3: &Web3,
-    contracts: Contracts,
+    balance_simulator: BalanceSimulator,
     blocks: CurrentBlockWatcher,
 ) -> Arc<dyn BalanceFetching> {
-    let cached = Arc::new(cached::Balances::new(fetcher(web3, contracts)));
+    let cached = Arc::new(cached::Balances::new(fetcher(web3, balance_simulator)));
     cached.spawn_background_task(blocks);
     cached
 }
 
-#[async_trait::async_trait]
-pub trait BalanceSimulating: Send + Sync {
-    fn settlement(&self) -> &contracts::GPv2Settlement;
-    fn vault_relayer(&self) -> H160;
-    fn vault(&self) -> H160;
-    fn balances(&self) -> &contracts::support::Balances;
+pub struct BalanceSimulator {
+    settlement: contracts::GPv2Settlement,
+    balances: contracts::support::Balances,
+    vault_relayer: H160,
+    vault: H160,
+}
 
-    async fn add_access_lists(
-        &self,
-        delegate_call: &mut MethodBuilder<DynTransport, Bytes<Vec<u8>>>,
-    );
+impl BalanceSimulator {
+    pub fn new(
+        settlement: contracts::GPv2Settlement,
+        balances: contracts::support::Balances,
+        vault_relayer: H160,
+        vault: Option<H160>,
+    ) -> Self {
+        Self {
+            settlement,
+            vault_relayer,
+            vault: vault.unwrap_or_default(),
+            balances,
+        }
+    }
 
-    async fn simulate(
+    pub fn vault_relayer(&self) -> H160 {
+        self.vault_relayer
+    }
+
+    pub fn vault(&self) -> H160 {
+        self.vault
+    }
+
+    pub async fn simulate<F, Fut>(
         &self,
         owner: H160,
         token: H160,
         source: SellTokenSource,
         interactions: &[InteractionData],
         amount: Option<U256>,
-        disable_access_lists: bool,
-    ) -> Result<Simulation, SimulationError> {
+        add_access_lists: F,
+    ) -> Result<Simulation, SimulationError>
+    where
+        F: FnOnce(MethodBuilder<DynTransport, Bytes<Vec<u8>>>) -> Fut,
+        Fut: Future<Output = MethodBuilder<DynTransport, Bytes<Vec<u8>>>>,
+    {
         // We simulate the balances from the Settlement contract's context. This
         // allows us to check:
         // 1. How the pre-interactions would behave as part of the settlement
@@ -125,12 +133,8 @@ pub trait BalanceSimulating: Send + Sync {
         //    settlement
         //
         // This allows us to end up with very accurate balance simulations.
-        let balance_call = self.balances().balance(
-            (
-                self.settlement().address(),
-                self.vault_relayer(),
-                self.vault(),
-            ),
+        let balance_call = self.balances.balance(
+            (self.settlement.address(), self.vault_relayer, self.vault),
             owner,
             token,
             amount.unwrap_or_default(),
@@ -141,19 +145,15 @@ pub trait BalanceSimulating: Send + Sync {
                 .collect(),
         );
 
-        let mut delegate_call = self
-            .settlement()
+        let delegate_call = self
+            .settlement
             .simulate_delegatecall(
-                self.balances().address(),
+                self.balances.address(),
                 Bytes(balance_call.tx.data.unwrap_or_default().0),
             )
             .from(crate::SIMULATION_ACCOUNT.clone());
 
-        if !disable_access_lists {
-            // Add the access lists to the delegate call if they are enabled
-            // system-wide.
-            self.add_access_lists(&mut delegate_call).await;
-        }
+        let delegate_call = add_access_lists(delegate_call).await;
 
         let response = delegate_call.call().await?;
         let (token_balance, allowance, effective_balance, can_transfer) =

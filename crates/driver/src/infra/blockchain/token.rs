@@ -1,9 +1,7 @@
 use {
     super::{Error, Ethereum},
     crate::domain::{competition::order, eth},
-    ethcontract::{Bytes, contract::MethodBuilder, dyns::DynTransport},
     futures::TryFutureExt,
-    shared::account_balances::BalanceSimulating,
     tap::TapFallible,
     web3::types::CallRequest,
 };
@@ -123,13 +121,42 @@ impl Erc20 {
             effective_balance,
             can_transfer,
         } = self
+            .ethereum
+            .balance_simulator()
             .simulate(
                 trader.0,
                 self.token.address(),
                 source.into(),
                 &interactions,
                 None,
-                disable_access_lists,
+                |mut delegate_call| {
+                    let ethereum = self.ethereum.clone();
+                    async move {
+                        // Add the access lists to the delegate call if they are enabled
+                        // system-wide.
+                        if disable_access_lists {
+                            return delegate_call;
+                        }
+
+                        let access_list_call = CallRequest {
+                            data: delegate_call.tx.data.clone(),
+                            from: delegate_call.tx.from.clone().map(|acc| acc.address()),
+                            ..Default::default()
+                        };
+                        let access_list = ethereum
+                            .create_access_list(access_list_call)
+                            .await
+                            .tap_err(|err| {
+                                tracing::debug!(
+                                    ?err,
+                                    "failed to create access list for balance simulation"
+                                );
+                            })
+                            .ok();
+                        delegate_call.tx.access_list = access_list.map(Into::into);
+                        delegate_call
+                    }
+                },
             )
             .await?;
 
@@ -192,45 +219,6 @@ impl Erc20 {
             }
         };
         Ok(eth::TokenAmount(usable_balance))
-    }
-}
-
-#[async_trait::async_trait]
-impl BalanceSimulating for Erc20 {
-    fn settlement(&self) -> &contracts::GPv2Settlement {
-        self.ethereum.contracts().settlement()
-    }
-
-    fn vault_relayer(&self) -> eth::H160 {
-        self.ethereum.contracts().vault_relayer().0
-    }
-
-    fn vault(&self) -> eth::H160 {
-        self.ethereum.contracts().vault().address()
-    }
-
-    fn balances(&self) -> &contracts::support::Balances {
-        self.ethereum.contracts().balance_helper()
-    }
-
-    async fn add_access_lists(
-        &self,
-        delegate_call: &mut MethodBuilder<DynTransport, Bytes<Vec<u8>>>,
-    ) {
-        let access_list_call = CallRequest {
-            data: delegate_call.tx.data.clone(),
-            from: delegate_call.tx.from.clone().map(|acc| acc.address()),
-            ..Default::default()
-        };
-        let access_list = self
-            .ethereum
-            .create_access_list(access_list_call)
-            .await
-            .tap_err(|err| {
-                tracing::debug!(?err, "failed to create access list for balance simulation");
-            })
-            .ok();
-        delegate_call.tx.access_list = access_list.map(Into::into);
     }
 }
 
