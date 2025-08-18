@@ -13,10 +13,7 @@ pub mod liquorice;
 
 pub use config::Config;
 use {
-    crate::{
-        boundary::{self},
-        domain::competition::solution::settlement::Settlement,
-    },
+    crate::domain::competition::solution::settlement::Settlement,
     ethcontract::jsonrpc::futures_util::future::join_all,
     std::sync::Arc,
 };
@@ -36,7 +33,7 @@ pub struct Notifier {
 }
 
 impl Notifier {
-    pub fn try_new(config: &Config, chain: chain::Chain) -> Result<Self, Error> {
+    pub fn try_new(config: &Config, chain: chain::Chain) -> anyhow::Result<Self> {
         let mut inner: Vec<Box<dyn LiquiditySourcesNotifying>> = vec![];
 
         if let Some(liquorice) = &config.liquorice {
@@ -62,12 +59,6 @@ impl LiquiditySourcesNotifying for Notifier {
 
         Ok(())
     }
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum Error {
-    #[error("boundary error: {0:?}")]
-    Boundary(#[from] boundary::Error),
 }
 
 impl std::fmt::Debug for Notifier {

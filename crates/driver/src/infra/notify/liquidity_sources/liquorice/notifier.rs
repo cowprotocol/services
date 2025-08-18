@@ -16,20 +16,24 @@ use {
             self,
             notify::liquidity_sources::{
                 LiquiditySourcesNotifying,
-                liquorice::client::{BeforeSettleNotification, DefaultLiquoriceApi, NotifyQuery},
+                liquorice::{self},
             },
         },
         util::Bytes,
     },
     anyhow::{Context, Result, anyhow},
+    chrono::Utc,
     contracts::ILiquoriceSettlement,
     ethabi::Token,
     std::collections::HashSet,
 };
 
+const NOTIFICATION_SOURCE: &str = "cow_protocol";
+const DRIVER_VERSION: &str = env!("CARGO_PKG_VERSION");
+
 pub struct Notifier {
     /// Liquorice API client
-    liquorice_api: DefaultLiquoriceApi,
+    client: liquorice::Client,
     /// Address of the Liquorice settlement contract is used to
     /// find relevant interactions in CoW settlement contract
     settlement_contract_address: eth::Address,
@@ -47,7 +51,7 @@ impl Notifier {
             .ok_or(anyhow!("Liquorice settlement contract not found"))?;
 
         Ok(Self {
-            liquorice_api: DefaultLiquoriceApi::new(
+            client: liquorice::Client::new(
                 reqwest::ClientBuilder::default(),
                 config.base_url.clone(),
                 config.api_key.clone(),
@@ -132,10 +136,25 @@ impl LiquiditySourcesNotifying for Notifier {
     async fn notify_before_settlement(&self, settlement: &Settlement) -> Result<()> {
         let rfq_ids = self.extract_rfq_ids_from_settlement(settlement)?;
 
-        self.liquorice_api
-            .notify(&NotifyQuery::BeforeSettle(BeforeSettleNotification {
-                rfq_ids,
-            }))
+        use liquorice::client::request::v1::intent_origin::notification::post::{
+            Content,
+            Metadata,
+            Request,
+            Settle,
+        };
+
+        self.client
+            .send_request(Request {
+                source: NOTIFICATION_SOURCE.to_string(),
+                timestamp: Utc::now(),
+                metadata: Metadata {
+                    driver_version: DRIVER_VERSION.to_string(),
+                },
+                content: Content::Settle(Settle {
+                    auction_id: settlement.auction_id.0,
+                    rfq_ids,
+                }),
+            })
             .await
             .context("Failed to notify before_settle")
     }

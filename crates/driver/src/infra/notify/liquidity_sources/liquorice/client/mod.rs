@@ -3,10 +3,12 @@
 //! For more information on the HTTP API, consult:
 //! <https://liquorice.gitbook.io/liquorice-docs>
 
+pub mod request;
+
 use {
+    crate::infra::notify::liquidity_sources::liquorice::client::request::Request,
     anyhow::{Context, Result},
     reqwest::{
-        Client,
         ClientBuilder,
         IntoUrl,
         Url,
@@ -14,7 +16,6 @@ use {
     },
     serde::{Deserialize, Serialize},
     std::{collections::HashSet, time::Duration},
-    thiserror::Error,
 };
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -32,27 +33,19 @@ pub enum NotifyQuery {
     BeforeSettle(BeforeSettleNotification),
 }
 
-/// Abstract Liquorice API. Provides a mockable implementation.
-#[async_trait::async_trait]
-#[cfg(test)]
-#[mockall::automock]
-pub trait LiquoriceApi: Send + Sync {
-    /// Sends notification to Liquorice API.
-    async fn notify(&self, query: &NotifyQuery) -> Result<(), LiquoriceResponseError>;
-}
-
 /// Liquorice API Client implementation.
 #[derive(Debug)]
-pub struct DefaultLiquoriceApi {
-    client: Client,
-    base_url: Url,
+pub struct Client {
+    client: reqwest::Client,
+    pub base_url: Url,
 }
 
-impl DefaultLiquoriceApi {
-    /// Default 0x API URL.
+impl Client {
+    /// Default Liquorice API URL.
     pub const DEFAULT_URL: &'static str = "https://api.liquorice.tech/v1";
 
-    /// Create a new 0x HTTP API client with the specified base URL.
+    /// Create a new Liquorice HTTP API client with the specified API key and
+    /// base URL.
     pub fn new(
         client_builder: ClientBuilder,
         base_url: impl IntoUrl,
@@ -85,7 +78,7 @@ impl DefaultLiquoriceApi {
     /// key) from the local environment when creating the API client.
     pub fn test() -> Self {
         Self::new(
-            Client::builder(),
+            reqwest::Client::builder(),
             std::env::var("LIQUORICE_URL").unwrap_or_else(|_| Self::DEFAULT_URL.to_string()),
             std::env::var("LIQUORICE_API_KEY").unwrap_or(String::new()),
             Duration::from_secs(1),
@@ -93,31 +86,12 @@ impl DefaultLiquoriceApi {
         .unwrap()
     }
 
-    /// Sends notification to Liquorice API
-    pub async fn notify(&self, query: &NotifyQuery) -> Result<(), LiquoriceResponseError> {
-        let url = format!("{}/{}", self.base_url, "notify");
-
-        let _ = self
-            .client
-            .post(url)
-            .json(query)
-            .send()
-            .await
-            .map_err(|e| LiquoriceResponseError::Send(e))?
-            .error_for_status()
-            .map_err(|e| LiquoriceResponseError::Reqwest(e))?;
-
-        Ok(())
+    pub async fn send_request<R: Request>(
+        &self,
+        request: R,
+    ) -> Result<R::Response, request::Error> {
+        request.send(&self.client, self.base_url.as_str()).await
     }
-}
-
-#[derive(Error, Debug)]
-pub enum LiquoriceResponseError {
-    // Connectivity or non-response error
-    #[error("Failed on send")]
-    Send(reqwest::Error),
-    #[error("Reqwest error: {0}")]
-    Reqwest(reqwest::Error),
 }
 
 #[derive(prometheus_metric_storage::MetricStorage)]
