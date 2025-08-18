@@ -12,7 +12,6 @@ CONTRACTS := \
 	Balances.sol \
 	Multicall.sol \
 	Signatures.sol \
-	SimulateCode.sol \
 	Solver.sol \
 	Spardose.sol \
 	Swapper.sol \
