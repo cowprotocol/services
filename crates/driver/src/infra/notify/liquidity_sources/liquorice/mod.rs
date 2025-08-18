@@ -1,4 +1,4 @@
 mod client;
 mod notifier;
 
-pub use notifier::Notifier;
+pub use {client::Client, notifier::Notifier};
