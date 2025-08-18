@@ -177,6 +177,12 @@ factory = "{:?}"
         .map(|contract| format!("flashloan-router = \"{:?}\"", contract.address()))
         .unwrap_or_default();
 
+    let flashloan_tracker_config = contracts
+        .flashloan_tracker
+        .as_ref()
+        .map(|contract| format!("flashloan-tracker = \"{:?}\"", contract.address()))
+        .unwrap_or_default();
+
     let maker_adapter = contracts
         .flashloan_wrapper_maker
         .as_ref()
@@ -221,6 +227,7 @@ estimator = "web3"
 gp-v2-settlement = "{:?}"
 weth = "{:?}"
 {flashloan_router_config}
+{flashloan_tracker_config}
 
 {maker_adapter}
 {aave_adapter}

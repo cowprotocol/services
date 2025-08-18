@@ -391,23 +391,23 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                 .collect(),
             flashloan_default_lender: {
                 // Make sure flashloan default lender exists in the flashloan wrappers
-                if let Some(default_lender) = config.contracts.flashloan_default_lender {
-                    if !config
+                if let Some(default_lender) = config.contracts.flashloan_default_lender
+                    && !config
                         .contracts
                         .flashloan_wrappers
                         .iter()
                         .any(|wrapper| wrapper.lender == default_lender)
-                    {
-                        panic!(
-                            "Flashloan default lender {default_lender:?} not found in flashloan \
-                             wrappers"
-                        );
-                    }
+                {
+                    panic!(
+                        "Flashloan default lender {default_lender:?} not found in flashloan \
+                         wrappers"
+                    );
                 }
                 config.contracts.flashloan_default_lender.map(Into::into)
             },
             flashloan_wrappers: config.contracts.flashloan_wrappers,
             flashloan_router: config.contracts.flashloan_router.map(Into::into),
+            flashloan_tracker: config.contracts.flashloan_tracker.map(Into::into),
         },
         disable_access_list_simulation: config.disable_access_list_simulation,
         disable_gas_simulation: config.disable_gas_simulation.map(Into::into),

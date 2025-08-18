@@ -233,7 +233,7 @@ mod tests {
         };
         let trade_a =
             add_order_and_trade(&mut db, owners[0], order_ids[0], event_index_a, None, None).await;
-        assert_trades(&mut db, None, None, &[trade_a.clone()]).await;
+        assert_trades(&mut db, None, None, std::slice::from_ref(&trade_a)).await;
 
         let event_index_b = EventIndex {
             block_number: 1,
@@ -314,8 +314,20 @@ mod tests {
         let trade_1 =
             add_order_and_trade(&mut db, owners[1], order_ids[1], event_index_1, None, None).await;
 
-        assert_trades(&mut db, Some(&owners[0]), None, &[trade_0.clone()]).await;
-        assert_trades(&mut db, Some(&owners[1]), None, &[trade_1]).await;
+        assert_trades(
+            &mut db,
+            Some(&owners[0]),
+            None,
+            std::slice::from_ref(&trade_0),
+        )
+        .await;
+        assert_trades(
+            &mut db,
+            Some(&owners[1]),
+            None,
+            std::slice::from_ref(&trade_1),
+        )
+        .await;
         assert_trades(&mut db, Some(&owners[2]), None, &[]).await;
 
         let onchain_order = OnchainOrderPlacement {
@@ -327,7 +339,13 @@ mod tests {
         insert_onchain_order(&mut db, &event_index, &onchain_order)
             .await
             .unwrap();
-        assert_trades(&mut db, Some(&owners[3]), None, &[trade_0.clone()]).await;
+        assert_trades(
+            &mut db,
+            Some(&owners[3]),
+            None,
+            std::slice::from_ref(&trade_0),
+        )
+        .await;
 
         add_order_and_trade(&mut db, owners[3], order_ids[3], event_index_1, None, None).await;
         let onchain_order = OnchainOrderPlacement {
@@ -448,7 +466,7 @@ mod tests {
             Some(1),
         )
         .await;
-        assert_trades(&mut db, None, None, &[trade_a.clone()]).await;
+        assert_trades(&mut db, None, None, std::slice::from_ref(&trade_a)).await;
 
         let trade_b = add_order_and_trade(
             &mut db,
@@ -564,7 +582,7 @@ mod tests {
             Some(1),
         )
         .await;
-        assert_trades(&mut db, None, None, &[trade_a.clone()]).await;
+        assert_trades(&mut db, None, None, std::slice::from_ref(&trade_a)).await;
 
         let trade_b = add_order_and_trade(
             &mut db,
