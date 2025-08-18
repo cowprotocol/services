@@ -118,7 +118,6 @@ pub mod support {
         Balances;
         Multicall;
         Signatures;
-        SimulateCode;
         Solver;
         Spardose;
         Swapper;
