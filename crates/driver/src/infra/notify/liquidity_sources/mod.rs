@@ -15,7 +15,6 @@ pub mod liquorice;
 pub use config::Config;
 use {
     crate::domain::competition::solution::settlement::Settlement,
-    anyhow::bail,
     ethcontract::jsonrpc::futures_util::future::join_all,
     std::{collections::HashMap, sync::Arc},
 };
@@ -61,21 +60,19 @@ impl LiquiditySourcesNotifying for Notifier {
         let futures = self.inner.iter().map(|(source_name, notifier)| {
             notifier
                 .settlement(settlement)
+                .inspect(|result| {
+                    if let Err(error) = result {
+                        tracing::warn!(
+                            "Error notifying liquidity source '{}': {:?}",
+                            source_name.clone(),
+                            error
+                        );
+                    }
+                })
                 .map(|result| (source_name.to_string(), result))
         });
 
-        let errors = join_all(futures)
-            .await
-            .into_iter()
-            .filter_map(|(source_name, result)| match result {
-                Ok(()) => None,
-                Err(e) => Some((source_name, e)),
-            })
-            .collect::<HashMap<_, _>>();
-
-        if !errors.is_empty() {
-            bail!("{errors:?}")
-        }
+        let _ = join_all(futures).await;
 
         Ok(())
     }
