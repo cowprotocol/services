@@ -1,15 +1,20 @@
 use {
     chrono::Utc,
     contracts::{ERC20, ILiquoriceSettlement, LiquoriceAllowListAuthentication},
-    driver::domain::eth::H160,
+    driver::{domain::eth::H160, infra},
     e2e::{
-        api::liquorice::{DomainSeparator, Eip712TypedLiquoriceSingleOrder, LiquoriceSignature},
+        api::liquorice::{
+            DomainSeparator,
+            Eip712TypedLiquoriceSingleOrder,
+            LiquoriceApi,
+            LiquoriceSignature,
+        },
         nodes::forked_node::ForkedNodeApi,
         setup::{
             OnchainComponents,
             Services,
             TIMEOUT,
-            colocation::{self, SolverEngine},
+            colocation::{self, LiquiditySourceNotifier, SolverEngine},
             mock::Mock,
             run_forked_test_with_block_number,
             to_wei,
@@ -159,6 +164,9 @@ async fn liquidity_sources_notification(web3: Web3) {
         );
     }
 
+    // # Liquorice services setup
+    let liquorice_api = LiquoriceApi::start().await;
+
     // # CoW services setup
     let liquorice_solver_api_mock = Mock::default();
     let services = Services::new(&onchain).await;
@@ -185,6 +193,9 @@ async fn liquidity_sources_notification(web3: Web3) {
         ],
         colocation::LiquidityProvider::UniswapV2,
         false,
+        Some(LiquiditySourceNotifier::Liquorice {
+            api_port: liquorice_api.port,
+        }),
     );
     services
         .start_autopilot(
@@ -231,23 +242,24 @@ async fn liquidity_sources_notification(web3: Web3) {
         services.create_order(&order).await.unwrap()
     };
 
-    // # Create Liquorice solution calldata for CoW order
-    let liquorice_solution_calldata = {
-        // Create Liquorice order
-        let liquorice_order = Eip712TypedLiquoriceSingleOrder {
-            rfq_id: "c99d2e3f-702b-49c9-8bb8-43775770f2f3".to_string(),
-            nonce: U256::from(0),
-            trader: onchain.contracts().gp_settlement.address(),
-            effective_trader: onchain.contracts().gp_settlement.address(),
-            base_token: token_usdc.address(),
-            quote_token: token_usdt.address(),
-            base_token_amount: trade_amount,
-            quote_token_amount: trade_amount,
-            min_fill_amount: U256::from(1),
-            quote_expiry: U256::from(Utc::now().timestamp() as u64 + 10),
-            recipient: liquorice_maker.address(),
-        };
+    // # Create Liquorice solution
+    // ## Create Liquorice order
+    let liquorice_order = Eip712TypedLiquoriceSingleOrder {
+        rfq_id: "c99d2e3f-702b-49c9-8bb8-43775770f2f3".to_string(),
+        nonce: U256::from(0),
+        trader: onchain.contracts().gp_settlement.address(),
+        effective_trader: onchain.contracts().gp_settlement.address(),
+        base_token: token_usdc.address(),
+        quote_token: token_usdt.address(),
+        base_token_amount: trade_amount,
+        quote_token_amount: trade_amount,
+        min_fill_amount: U256::from(1),
+        quote_expiry: U256::from(Utc::now().timestamp() as u64 + 10),
+        recipient: liquorice_maker.address(),
+    };
 
+    // ## Create calldata
+    let liquorice_solution_calldata = {
         // Create Liquorice order signature
         let liquorice_order_signature = liquorice_order.sign(
             &DomainSeparator::new(1, liquorice_settlement.address()),
@@ -329,4 +341,20 @@ async fn liquidity_sources_notification(web3: Web3) {
 
     let trade = services.get_trades(&order_id).await.unwrap().pop();
     assert!(trade.is_some());
+
+    let notification = liquorice_api
+        .get_state()
+        .await
+        .notification_requests
+        .first()
+        .cloned()
+        .unwrap();
+
+    use infra::notify::liquidity_sources::liquorice::client::request::v1::intent_origin::notification::post::{Content, Settle};
+
+    // Ensure that notification was delivered to Liquorice API
+    assert!(matches!(notification.content, Content::Settle(Settle {
+        rfq_ids,
+        ..
+    }) if rfq_ids.contains(&liquorice_order.rfq_id)));
 }
