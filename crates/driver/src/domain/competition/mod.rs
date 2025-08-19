@@ -461,7 +461,10 @@ impl Competition {
             {
                 Ok(_) => {}
                 Err(err) => {
-                    tracing::warn!(?err, "Failed to notify liquidity sources before settlement");
+                    tracing::warn!(
+                        "Failed to notify liquidity sources on settlement: \n\t{}",
+                        err
+                    );
                 }
             }
         });
