@@ -8,17 +8,22 @@
 /// need to know as early as possible that their quote will be used for the
 /// settlement. It is crucial for risk management and leads to better
 /// pricing.
+use futures::FutureExt;
 pub mod config;
 pub mod liquorice;
 
 pub use config::Config;
 use {
     crate::domain::competition::solution::settlement::Settlement,
+    anyhow::bail,
     ethcontract::jsonrpc::futures_util::future::join_all,
-    std::sync::Arc,
+    std::{collections::HashMap, sync::Arc},
 };
 
-type Inner = Arc<Vec<Box<dyn LiquiditySourcesNotifying>>>;
+type LiquiditySourcesNotifiers = HashMap<String, Box<dyn LiquiditySourcesNotifying>>;
+type Inner = Arc<LiquiditySourcesNotifiers>;
+
+const SOURCE_NAME_LIQUORICE: &str = "liquorice";
 
 /// Trait for notifying liquidity sources about auctions and settlements
 #[async_trait::async_trait]
@@ -34,14 +39,17 @@ pub struct Notifier {
 
 impl Notifier {
     pub fn try_new(config: &Config, chain: chain::Chain) -> anyhow::Result<Self> {
-        let mut inner: Vec<Box<dyn LiquiditySourcesNotifying>> = vec![];
+        let mut notifiers = LiquiditySourcesNotifiers::default();
 
         if let Some(liquorice) = &config.liquorice {
-            inner.push(Box::new(liquorice::Notifier::new(liquorice, chain)?));
+            notifiers.insert(
+                SOURCE_NAME_LIQUORICE.to_string(),
+                Box::new(liquorice::Notifier::new(liquorice, chain)?),
+            );
         }
 
         Ok(Self {
-            inner: Arc::new(inner),
+            inner: Arc::new(notifiers),
         })
     }
 }
@@ -50,12 +58,24 @@ impl Notifier {
 impl LiquiditySourcesNotifying for Notifier {
     /// Sends notification to liquidity sources before settlement
     async fn notify_before_settlement(&self, settlement: &Settlement) -> anyhow::Result<()> {
-        let futures = self
-            .inner
-            .iter()
-            .map(|notifier| notifier.notify_before_settlement(settlement));
+        let futures = self.inner.iter().map(|(source_name, notifier)| {
+            notifier
+                .notify_before_settlement(settlement)
+                .map(|result| (source_name.to_string(), result))
+        });
 
-        let _ = join_all(futures).await;
+        let errors = join_all(futures)
+            .await
+            .into_iter()
+            .filter_map(|(source_name, result)| match result {
+                Ok(()) => None,
+                Err(e) => Some((source_name, e)),
+            })
+            .collect::<HashMap<_, _>>();
+
+        if !errors.is_empty() {
+            bail!("{errors:?}")
+        }
 
         Ok(())
     }
