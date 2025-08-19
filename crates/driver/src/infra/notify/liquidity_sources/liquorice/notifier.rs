@@ -25,6 +25,7 @@ use {
     chrono::Utc,
     contracts::ILiquoriceSettlement,
     ethabi::Token,
+    ethcontract::common::FunctionExt,
     std::collections::HashSet,
 };
 
@@ -101,9 +102,18 @@ impl Notifier {
             .abi
             .function("settleSingle")
             .unwrap();
-        let tokens = settle_single_function
-            .decode_output(calldata.0.as_slice())
-            .context("Invalid output from settleSingle")?;
+
+        let tokens = calldata
+            .0
+            .strip_prefix(&settle_single_function.selector())
+            .ok_or(anyhow!(
+                "Error stripping function selector prefix from calldata"
+            ))
+            .and_then(|calldata| {
+                settle_single_function
+                    .decode_input(calldata)
+                    .context("Invalid input for settleSingle function")
+            })?;
 
         // Token at index 1 is expected to be an instance of `Single` order
         // in the ILiquoriceSettlement.sol
@@ -143,7 +153,8 @@ impl LiquiditySourcesNotifying for Notifier {
             Settle,
         };
 
-        self.client
+        let _ = self
+            .client
             .send_request(Request {
                 source: NOTIFICATION_SOURCE.to_string(),
                 timestamp: Utc::now(),
@@ -156,6 +167,8 @@ impl LiquiditySourcesNotifying for Notifier {
                 }),
             })
             .await
-            .context("Failed to notify before_settle")
+            .context("request error")?;
+
+        Ok(())
     }
 }
