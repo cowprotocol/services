@@ -382,6 +382,7 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
         ],
         colocation::LiquidityProvider::UniswapV2,
         false,
+        None,
     );
 
     let services = Services::new(&onchain).await;
@@ -590,6 +591,7 @@ async fn too_many_limit_orders_test(web3: Web3) {
         ],
         colocation::LiquidityProvider::UniswapV2,
         false,
+        None,
     );
     services
         .start_api(vec![
@@ -669,6 +671,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
         ],
         colocation::LiquidityProvider::UniswapV2,
         false,
+        None,
     );
     services
         .start_api(vec![

@@ -151,6 +151,7 @@ async fn zero_ex_liquidity(web3: Web3) {
             api_port: zeroex_api_port,
         },
         false,
+        None,
     );
     services
         .start_autopilot(
