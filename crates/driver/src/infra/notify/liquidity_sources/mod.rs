@@ -28,7 +28,7 @@ const SOURCE_NAME_LIQUORICE: &str = "liquorice";
 /// Trait for notifying liquidity sources about auctions and settlements
 #[async_trait::async_trait]
 pub trait LiquiditySourcesNotifying: Send + Sync {
-    async fn notify_before_settlement(&self, settlement: &Settlement) -> anyhow::Result<()>;
+    async fn settlement(&self, settlement: &Settlement) -> anyhow::Result<()>;
 }
 
 /// Auctions and settlement notifier for liquidity sources
@@ -57,10 +57,10 @@ impl Notifier {
 #[async_trait::async_trait]
 impl LiquiditySourcesNotifying for Notifier {
     /// Sends notification to liquidity sources before settlement
-    async fn notify_before_settlement(&self, settlement: &Settlement) -> anyhow::Result<()> {
+    async fn settlement(&self, settlement: &Settlement) -> anyhow::Result<()> {
         let futures = self.inner.iter().map(|(source_name, notifier)| {
             notifier
-                .notify_before_settlement(settlement)
+                .settlement(settlement)
                 .map(|result| (source_name.to_string(), result))
         });
 

@@ -133,7 +133,7 @@ impl Notifier {
 
 #[async_trait::async_trait]
 impl LiquiditySourcesNotifying for Notifier {
-    async fn notify_before_settlement(&self, settlement: &Settlement) -> Result<()> {
+    async fn settlement(&self, settlement: &Settlement) -> Result<()> {
         let rfq_ids = self.extract_rfq_ids_from_settlement(settlement)?;
 
         use liquorice::client::request::v1::intent_origin::notification::post::{

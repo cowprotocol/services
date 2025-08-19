@@ -456,7 +456,7 @@ impl Competition {
         // Asynchronously notify liquidity sources to not block settlement execution.
         tokio::spawn(async move {
             match liquidity_sources_notifier_clone
-                .notify_before_settlement(&settlement_clone)
+                .settlement(&settlement_clone)
                 .await
             {
                 Ok(_) => {}
