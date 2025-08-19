@@ -12,6 +12,7 @@ use {
         order_quoting::{QuoteData, QuoteSearchParameters, QuoteStoring},
     },
     std::{collections::HashMap, ops::DerefMut},
+    tracing::log::info,
 };
 
 #[async_trait::async_trait]
@@ -84,6 +85,7 @@ impl Postgres {
                 })
                 .try_collect()
                 .await?;
+        info!("all solvable orders fetched in {}", Utc::now() - start);
         let latest_settlement_block = database::orders::latest_settlement_block(&mut ex)
             .await?
             .to_u64()
