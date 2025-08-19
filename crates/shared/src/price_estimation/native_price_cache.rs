@@ -279,11 +279,8 @@ impl UpdateTask {
             return;
         }
 
-        let mut stream = inner.estimate_prices_and_update_cache(
-            &outdated_entries,
-            max_age,
-            inner.quote_timeout,
-        );
+        let mut stream =
+            inner.estimate_prices_and_update_cache(&outdated_entries, max_age, inner.quote_timeout);
         while stream.next().await.is_some() {}
         metrics
             .native_price_cache_background_updates
