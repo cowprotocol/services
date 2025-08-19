@@ -102,11 +102,31 @@ graph-url = "{subgraph}"
     }
 }
 
+pub enum LiquiditySourceNotifier {
+    Liquorice { api_port: u16 },
+}
+
+impl LiquiditySourceNotifier {
+    pub fn to_config_string(&self) -> String {
+        match self {
+            Self::Liquorice { api_port } => format!(
+                r#"
+[liquidity-sources-notifier.liquorice]
+base-url = "http://0.0.0.0:{api_port}"
+api-key = "none"
+http-timeout = "10s"
+"#,
+            ),
+        }
+    }
+}
+
 pub fn start_driver(
     contracts: &Contracts,
     solvers: Vec<SolverEngine>,
     liquidity: LiquidityProvider,
     quote_using_limit_orders: bool,
+    liquidity_source_notifier: Option<LiquiditySourceNotifier>,
 ) -> JoinHandle<()> {
     let base_tokens: HashSet<_> = solvers
         .iter()
@@ -208,6 +228,10 @@ factory = "{:?}"
         })
         .unwrap_or_default();
 
+    let liquidity_source_notifier = liquidity_source_notifier
+        .map(|notifier| notifier.to_config_string())
+        .unwrap_or_default();
+
     let config_file = config_tmp_file(format!(
         r#"
 app-data-fetching-enabled = true
@@ -237,6 +261,7 @@ base-tokens = [{encoded_base_tokens}]
 {liquidity}
 
 [liquidity-sources-notifier]
+{liquidity_source_notifier}
 
 [submission]
 gas-price-cap = "1000000000000"
