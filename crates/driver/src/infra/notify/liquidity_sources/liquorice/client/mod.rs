@@ -90,7 +90,7 @@ impl Client {
         &self,
         request: R,
     ) -> Result<R::Response, request::Error> {
-        request.send(&self.client, self.base_url.as_str()).await
+        request.send(&self.client, &self.base_url).await
     }
 }
 

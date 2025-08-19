@@ -3,23 +3,25 @@ use {
     crate::infra::notify::liquidity_sources::liquorice::client::request::error::StatusError,
     reqwest::StatusCode,
     serde::de::DeserializeOwned,
+    url::Url,
 };
 
 #[async_trait::async_trait]
 pub trait Request {
     type Response;
-    async fn send(self, client: &reqwest::Client, base_url: &str) -> Result<Self::Response, Error>;
+    async fn send(self, client: &reqwest::Client, base_url: &Url) -> Result<Self::Response, Error>;
 }
 
 pub mod error {
     #[derive(Debug, thiserror::Error)]
     pub enum Error {
-        #[error("Reqwest error: {0}")]
+        #[error("reqwest error: {0}")]
         Reqwest(#[from] reqwest::Error),
-        #[error("Status error")]
+        #[error("status error: {0}")]
         Status(StatusError),
     }
-    #[derive(Debug)]
+    #[derive(Debug, thiserror::Error)]
+    #[error("{code}: {text}")]
     pub struct StatusError {
         pub code: reqwest::StatusCode,
         pub text: String,
@@ -36,12 +38,16 @@ pub mod v1 {
                         Error,
                         decode_response,
                     },
+                    anyhow::Context,
                     chrono::{DateTime, Utc, serde::ts_milliseconds},
                     serde::{Deserialize, Serialize},
                     std::collections::HashSet,
+                    url::Url,
                 };
 
-                pub type Response = ();
+                #[derive(Debug, Clone, Serialize, Deserialize)]
+                #[serde(rename_all = "camelCase")]
+                pub struct Response {}
 
                 #[derive(Debug, Clone, Serialize, Deserialize)]
                 #[serde(rename_all = "camelCase")]
@@ -82,9 +88,15 @@ pub mod v1 {
                     async fn send(
                         self,
                         client: &reqwest::Client,
-                        base_url: &str,
+                        base_url: &Url,
                     ) -> Result<Self::Response, Error> {
-                        let url = format!("{}/{}", base_url, "intent-origin/notification");
+                        let url = base_url
+                            .to_owned()
+                            .join("intent-origin/notification")
+                            .context("request url")
+                            .unwrap();
+                        tracing::debug!("sending notification to {}", url);
+
                         let response = client.post(url).json(&self).send().await?;
                         decode_response(response).await
                     }
