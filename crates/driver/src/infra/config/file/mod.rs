@@ -50,7 +50,7 @@ struct Config {
     enso: Option<EnsoConfig>,
 
     /// Liquidity sources notifier configuration.
-    liquidity_sources_notifier: LiquiditySourcesNotifier,
+    liquidity_sources_notifier: Option<LiquiditySourcesNotifier>,
 
     #[serde(rename = "solver")]
     solvers: Vec<SolverConfig>,

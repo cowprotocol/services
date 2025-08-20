@@ -112,7 +112,7 @@ max-order-age = "1m"
 # url = "http://localhost:8454"
 # network-block-interval = "12s"
 
-[liquidity-sources-notifier] # Settlement notifications for third party liquidity sources used by solvers
+# [liquidity-sources-notifier] # Settlement notifications for third party liquidity sources used by solvers
 # [liquidity-sources-notifier.liquorice]
 # base-url = "https://api.liquorice.tech/v1/"
 # api-key = "..."
