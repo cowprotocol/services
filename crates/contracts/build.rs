@@ -1488,7 +1488,7 @@ fn main() {
             .add_network_str(MAINNET, "0xAcA684A3F64e0eae4812B734E3f8f205D3EEd167")
             .add_network_str(ARBITRUM_ONE, "0xAcA684A3F64e0eae4812B734E3f8f205D3EEd167")
     });
-    generate_contract("LiquoriceAllowListAuthentication");
+    generate_contract("LiquoriceAllowListAuthentication"); // Contract's ABI is used in e2e tests
     generate_contract_with_config("CowProtocolToken", |builder| {
         builder
             .add_network_str(MAINNET, "0xDEf1CA1fb7FBcDC777520aa7f396b4E015F497aB")

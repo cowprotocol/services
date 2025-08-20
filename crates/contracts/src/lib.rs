@@ -94,12 +94,12 @@ include_contracts! {
     IAavePool;
     IFlashLoanSolverWrapper;
     ILiquoriceSettlement;
-    LiquoriceAllowListAuthentication;
     ISwaprPair;
     IUniswapLikePair;
     IUniswapLikeRouter;
     IUniswapV3Factory;
     IZeroEx;
+    LiquoriceAllowListAuthentication;
     PancakeRouter;
     Permit2;
     ChainalysisOracle;
