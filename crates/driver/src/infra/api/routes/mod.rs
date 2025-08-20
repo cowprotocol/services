@@ -1,3 +1,4 @@
+mod gasprice;
 mod healthz;
 mod info;
 mod metrics;
@@ -8,6 +9,7 @@ mod settle;
 mod solve;
 
 pub(super) use {
+    gasprice::gasprice,
     healthz::healthz,
     info::info,
     metrics::metrics,
