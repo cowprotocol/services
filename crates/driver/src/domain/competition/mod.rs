@@ -451,20 +451,22 @@ impl Competition {
                 .ok_or(Error::SolutionNotAvailable)?
         };
 
-        let liquidity_sources_notifier_clone = self.liquidity_sources_notifier.clone();
-        let settlement_clone = settlement.clone();
         // Asynchronously notify liquidity sources to not block settlement execution.
-        tokio::spawn(async move {
-            match liquidity_sources_notifier_clone
-                .settlement(&settlement_clone)
-                .await
-            {
-                Ok(_) => {}
-                Err(err) => {
-                    tracing::error!(?err, "Failed to notify liquidity sources on settlement");
+        {
+            let liquidity_sources_notifier_clone = self.liquidity_sources_notifier.clone();
+            let settlement_clone = settlement.clone();
+            tokio::spawn(async move {
+                match liquidity_sources_notifier_clone
+                    .settlement(&settlement_clone)
+                    .await
+                {
+                    Ok(_) => {}
+                    Err(err) => {
+                        tracing::error!(?err, "Failed to notify liquidity sources on settlement");
+                    }
                 }
-            }
-        });
+            });
+        }
 
         // When settling, the gas price must be carefully chosen to ensure the
         // transaction is included in a block before the deadline.
