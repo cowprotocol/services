@@ -701,7 +701,7 @@ pub struct LiquiditySourcesNotifier {
     pub liquorice: Option<LiquoriceConfig>,
 }
 
-/// Liquorice API configuration for notifications.
+/// Liquorice API configuration
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct LiquoriceConfig {
