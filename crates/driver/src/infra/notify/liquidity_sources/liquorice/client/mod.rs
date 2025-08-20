@@ -80,7 +80,7 @@ impl Client {
         Self::new(
             reqwest::Client::builder(),
             std::env::var("LIQUORICE_URL").unwrap_or_else(|_| Self::DEFAULT_URL.to_string()),
-            std::env::var("LIQUORICE_API_KEY").unwrap_or(String::new()),
+            std::env::var("LIQUORICE_API_KEY").unwrap_or_default(),
             Duration::from_secs(1),
         )
         .unwrap()

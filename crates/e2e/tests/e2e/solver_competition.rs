@@ -212,6 +212,7 @@ async fn fairness_check(web3: Web3) {
         ],
         colocation::LiquidityProvider::UniswapV2,
         false,
+        None,
     );
 
     let services = Services::new(&onchain).await;
