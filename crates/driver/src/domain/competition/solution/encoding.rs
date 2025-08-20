@@ -217,13 +217,15 @@ pub fn tx(
             pre_interactions.splice(0..0, flash_loan_pre_interactions); // prepend interactions
 
             // exeucte driver flashloan interactions AFTER order post-hooks
-            post_interactions.append([
+            post_interactions.push(
                 // Allow the flashloan lender to pull funds from the borrower contract (= pay back
                 // flash loan) after settlement execution
-                allow_lender_pull_funds(contracts, flashloan, flashloan_wrapper, repayment_amount),
+                allow_lender_pull_funds(contracts, flashloan, flashloan_wrapper, repayment_amount)
+            );
+            post_interactions.push(
                 // Call payBack() on the tracker; the user is expected to re-pay fee via post-hook
                 pay_back_via_tracker(flashloan, flashloan_wrapper, flashloan_tracker),
-            ]);
+            );
 
             Ok((
                 flashloan.amount.0,
@@ -327,7 +329,7 @@ fn allow_lender_pull_funds(
     let allow_aave_funds_pull = flashloan_wrapper
         .helper_contract
         .approve(
-            flashloan.token.0,
+            flashloan.token.0.into(),
             flashloan.lender.into(), // aave = 0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2
             repayment_amount,
         )
