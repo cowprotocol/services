@@ -38,7 +38,6 @@ mod macros;
 
 #[cfg(feature = "bin")]
 pub mod paths;
-pub mod storage_accessible;
 pub mod vault;
 pub mod web3;
 
@@ -109,7 +108,7 @@ include_contracts! {
     UniswapV2Router02;
     UniswapV3Pool;
     UniswapV3QuoterV2;
-    UniswapV3SwapRouter;
+    UniswapV3SwapRouterV2;
     WETH9;
 }
 
@@ -119,7 +118,6 @@ pub mod support {
         Balances;
         Multicall;
         Signatures;
-        SimulateCode;
         Solver;
         Spardose;
         Swapper;
@@ -141,6 +139,12 @@ mod tests {
     const GNOSIS: u64 = 100;
     const SEPOLIA: u64 = 11155111;
     const ARBITRUM_ONE: u64 = 42161;
+    const BASE: u64 = 8453;
+    const POLYGON: u64 = 137;
+    const AVALANCHE: u64 = 43114;
+    const BNB: u64 = 56;
+    const OPTIMISM: u64 = 10;
+    const LENS: u64 = 232;
 
     use {
         super::*,
@@ -218,8 +222,17 @@ mod tests {
             assert_has_deployment_address!(UniswapV2Factory for *network);
             assert_has_deployment_address!(UniswapV2Router02 for *network);
         }
-        for network in &[MAINNET, GOERLI, SEPOLIA, ARBITRUM_ONE] {
-            assert_has_deployment_address!(UniswapV3SwapRouter for *network);
+        for network in &[
+            MAINNET,
+            ARBITRUM_ONE,
+            POLYGON,
+            OPTIMISM,
+            BASE,
+            AVALANCHE,
+            BNB,
+            LENS,
+        ] {
+            assert_has_deployment_address!(UniswapV3SwapRouterV2 for *network);
             assert_has_deployment_address!(IUniswapV3Factory for *network);
         }
         for network in &[MAINNET, GOERLI, ARBITRUM_ONE] {

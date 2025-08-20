@@ -67,7 +67,8 @@ pub trait BalanceFetching: Send + Sync {
 
 /// Contracts required for balance simulation.
 pub struct Contracts {
-    pub settlement: H160,
+    pub settlement: contracts::GPv2Settlement,
+    pub balances: contracts::support::Balances,
     pub vault_relayer: H160,
     pub vault: Option<H160>,
 }
@@ -77,6 +78,7 @@ pub fn fetcher(web3: &Web3, contracts: Contracts) -> Arc<dyn BalanceFetching> {
     Arc::new(simulation::Balances::new(
         web3,
         contracts.settlement,
+        contracts.balances,
         contracts.vault_relayer,
         contracts.vault,
     ))

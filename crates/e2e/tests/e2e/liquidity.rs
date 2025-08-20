@@ -38,8 +38,9 @@ use {
 };
 
 /// The block number from which we will fetch state for the forked tests.
-pub const FORK_BLOCK: u64 = 18477910;
+pub const FORK_BLOCK: u64 = 23112197;
 pub const USDT_WHALE: H160 = H160(hex!("F977814e90dA44bFA03b6295A0616a897441aceC"));
+pub const USDC_WHALE: H160 = H160(hex!("28c6c06298d514db089934071355e5743bf21d60"));
 
 #[tokio::test]
 #[ignore]
@@ -79,7 +80,7 @@ async fn zero_ex_liquidity(web3: Web3) {
     let amount = to_wei_with_exp(5, 8);
 
     // Give trader some USDC
-    let usdc_whale = forked_node_api.impersonate(&USDT_WHALE).await.unwrap();
+    let usdc_whale = forked_node_api.impersonate(&USDC_WHALE).await.unwrap();
     tx!(usdc_whale, token_usdc.transfer(trader.address(), amount));
 
     // Give 0x maker a bit more USDT
