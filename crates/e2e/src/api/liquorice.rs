@@ -209,18 +209,6 @@ impl Eip712TypedLiquoriceSingleOrder {
         )
     }
 
-    ///
-    //     pub rfq_id: String,
-    //     pub nonce: U256,
-    //     pub trader: H160,
-    //     pub effective_trader: H160,
-    //     pub base_token: H160,
-    //     pub quote_token: H160,
-    //     pub base_token_amount: U256,
-    //     pub quote_token_amount: U256,
-    //     pub min_fill_amount: U256,
-    //     pub quote_expiry: U256,
-    //     pub recipient: H160,
     pub fn as_tuple(
         &self,
     ) -> (

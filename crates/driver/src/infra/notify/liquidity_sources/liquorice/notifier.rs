@@ -146,7 +146,7 @@ fn extract_rfq_id_from_interaction(
     }
 
     // Decode the calldata using the Liquorice settlement contract ABI
-    let Some(tokens) = ({
+    let tokens = {
         let settle_single_function = ILiquoriceSettlement::raw_contract()
             .interface
             .abi
@@ -158,9 +158,7 @@ fn extract_rfq_id_from_interaction(
             .0
             .strip_prefix(&settle_single_function.selector())
             .and_then(|input| settle_single_function.decode_input(input).ok())
-    }) else {
-        return None;
-    };
+    }?;
 
     // Token at index 1 corresponds to `Single` order
     // <https://etherscan.io/address/0xaca684a3f64e0eae4812b734e3f8f205d3eed167#code#F6#L85>

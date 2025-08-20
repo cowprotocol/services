@@ -270,7 +270,7 @@ async fn liquidity_sources_notification(web3: Web3) {
         // Create Liquorice settlement calldata
         liquorice_settlement
             .settle_single(
-                liquorice_maker.address().into(),
+                liquorice_maker.address(),
                 liquorice_order.as_tuple(),
                 liquorice_order_signature.as_tuple(),
                 liquorice_order.quote_token_amount,
