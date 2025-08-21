@@ -45,17 +45,12 @@ struct GasPriceResponse {
 const CACHE_DURATION: Duration = Duration::from_secs(5);
 
 impl DriverGasEstimator {
-    pub async fn new(client: reqwest::Client, driver_url: Url) -> Result<Self> {
-        let instance = Self {
+    pub fn new(client: reqwest::Client, driver_url: Url) -> Self {
+        Self {
             client,
             url: driver_url,
             cache: Arc::new(Mutex::new(None)),
-        };
-
-        // test connection
-        instance.estimate().await?;
-
-        Ok(instance)
+        }
     }
 
     #[instrument(skip(self))]

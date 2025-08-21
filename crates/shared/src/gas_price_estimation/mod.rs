@@ -70,10 +70,10 @@ pub async fn create_priority_estimator(
                 let url = driver_url.clone().ok_or_else(|| {
                     anyhow!("Driver URL must be provided when using Driver gas estimator")
                 })?;
-                match DriverGasEstimator::new(http_factory.create(), url).await {
-                    Ok(estimator) => estimators.push(Box::new(estimator)),
-                    Err(err) => tracing::error!("driver gas estimator failed: {}", err),
-                }
+                estimators.push(Box::new(DriverGasEstimator::new(
+                    http_factory.create(),
+                    url,
+                )));
             }
             GasEstimatorType::BlockNative => {
                 ensure!(is_mainnet(&network_id), "BlockNative only supports mainnet");
