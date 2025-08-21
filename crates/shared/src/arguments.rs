@@ -5,8 +5,7 @@ use {
     crate::{
         gas_price_estimation::GasEstimatorType,
         sources::{
-            BaselineSource,
-            balancer_v2::BalancerFactoryKind,
+            BaselineSource, balancer_v2::BalancerFactoryKind,
             uniswap_v2::UniV2BaselineSourceParameters,
         },
         tenderly_api,
@@ -186,7 +185,7 @@ pub struct Arguments {
 
     /// Driver URL for gas price estimation when using the Driver estimator.
     #[clap(long, env)]
-    pub gas_estimation_driver_url: Option<String>,
+    pub gas_estimation_driver_url: Option<Url>,
 
     /// Base tokens used for finding multi-hop paths between multiple AMMs
     /// Should be the most liquid tokens of the given network.

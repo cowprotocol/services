@@ -41,7 +41,7 @@ struct GasPriceResponse {
     base_fee_per_gas: U256,
 }
 
-const CACHE_DURATION: Duration = Duration::from_secs(30);
+const CACHE_DURATION: Duration = Duration::from_secs(5);
 
 impl DriverGasEstimator {
     pub async fn new(client: reqwest::Client, driver_url: Url) -> Result<Self> {
