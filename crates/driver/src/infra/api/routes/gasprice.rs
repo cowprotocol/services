@@ -14,10 +14,10 @@ pub(in crate::infra::api) fn gasprice(app: axum::Router<Ethereum>) -> axum::Rout
     app.route("/gasprice", axum::routing::get(route))
 }
 
+/// Gas price components in EIP-1559 format.
 #[serde_as]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-/// Gas price components in EIP-1559 format.
 pub struct GasPriceResponse {
     #[serde_as(as = "serialize::U256")]
     pub max_fee_per_gas: eth::U256,
