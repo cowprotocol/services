@@ -1,9 +1,6 @@
 use {
     super::price_estimation::{
-        self,
-        PriceEstimating,
-        PriceEstimationError,
-        native::NativePriceEstimating,
+        self, PriceEstimating, PriceEstimationError, native::NativePriceEstimating,
     },
     crate::{
         account_balances::{BalanceFetching, Query},
@@ -776,8 +773,7 @@ mod tests {
             account_balances::MockBalanceFetching,
             gas_price_estimation::FakeGasPriceEstimator,
             price_estimation::{
-                HEALTHY_PRICE_ESTIMATION_TIME,
-                MockPriceEstimating,
+                HEALTHY_PRICE_ESTIMATION_TIME, MockPriceEstimating,
                 native::MockNativePriceEstimating,
             },
         },
@@ -788,7 +784,6 @@ mod tests {
         mockall::{Sequence, predicate::eq},
         model::time,
         number::nonzero::U256 as NonZeroU256,
-        std::sync::Mutex,
     };
 
     fn mock_balance_fetcher() -> Arc<dyn BalanceFetching> {
@@ -894,7 +889,7 @@ mod tests {
             })
             .returning(|_, _| async { Ok(0.2) }.boxed());
 
-        let gas_estimator = FakeGasPriceEstimator(Arc::new(Mutex::new(gas_price)));
+        let gas_estimator = FakeGasPriceEstimator::new(gas_price);
 
         let mut storage = MockQuoteStoring::new();
         storage
@@ -1035,7 +1030,7 @@ mod tests {
             })
             .returning(|_, _| async { Ok(0.2) }.boxed());
 
-        let gas_estimator = FakeGasPriceEstimator(Arc::new(Mutex::new(gas_price)));
+        let gas_estimator = FakeGasPriceEstimator::new(gas_price);
 
         let mut storage = MockQuoteStoring::new();
         storage
@@ -1171,7 +1166,7 @@ mod tests {
             })
             .returning(|_, _| async { Ok(0.2) }.boxed());
 
-        let gas_estimator = FakeGasPriceEstimator(Arc::new(Mutex::new(gas_price)));
+        let gas_estimator = FakeGasPriceEstimator::new(gas_price);
 
         let mut storage = MockQuoteStoring::new();
         storage
@@ -1292,7 +1287,7 @@ mod tests {
             })
             .returning(|_, _| async { Ok(1.) }.boxed());
 
-        let gas_estimator = FakeGasPriceEstimator(Arc::new(Mutex::new(gas_price)));
+        let gas_estimator = FakeGasPriceEstimator::new(gas_price);
 
         let quoter = OrderQuoter {
             price_estimator: Arc::new(price_estimator),
@@ -1366,7 +1361,7 @@ mod tests {
             })
             .returning(|_, _| async { Err(PriceEstimationError::NoLiquidity) }.boxed());
 
-        let gas_estimator = FakeGasPriceEstimator(Arc::new(Mutex::new(gas_price)));
+        let gas_estimator = FakeGasPriceEstimator::new(gas_price);
 
         let quoter = OrderQuoter {
             price_estimator: Arc::new(price_estimator),
