@@ -1,6 +1,9 @@
 use {
     super::price_estimation::{
-        self, PriceEstimating, PriceEstimationError, native::NativePriceEstimating,
+        self,
+        PriceEstimating,
+        PriceEstimationError,
+        native::NativePriceEstimating,
     },
     crate::{
         account_balances::{BalanceFetching, Query},
@@ -773,7 +776,8 @@ mod tests {
             account_balances::MockBalanceFetching,
             gas_price_estimation::FakeGasPriceEstimator,
             price_estimation::{
-                HEALTHY_PRICE_ESTIMATION_TIME, MockPriceEstimating,
+                HEALTHY_PRICE_ESTIMATION_TIME,
+                MockPriceEstimating,
                 native::MockNativePriceEstimating,
             },
         },
