@@ -1,9 +1,9 @@
+pub mod driver;
 pub mod fake;
 
-pub use {driver::DriverGasEstimator, fake::FakeGasPriceEstimator};
 use {
     crate::{ethrpc::Web3, http_client::HttpClientFactory},
-    anyhow::{Context, Result, ensure},
+    anyhow::{Context, Result, anyhow, ensure},
     gas_estimation::{
         EthGasStation,
         GasNowGasStation,
@@ -18,6 +18,7 @@ use {
     tracing::instrument,
     url::Url,
 };
+pub use {driver::DriverGasEstimator, fake::FakeGasPriceEstimator};
 
 #[derive(Copy, Clone, Debug, clap::ValueEnum)]
 #[clap(rename_all = "verbatim")]
