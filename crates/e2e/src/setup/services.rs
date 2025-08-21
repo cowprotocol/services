@@ -1,7 +1,9 @@
 use {
     super::TestAccount,
     crate::setup::{
-        Contracts, OnchainComponents, TIMEOUT,
+        Contracts,
+        OnchainComponents,
+        TIMEOUT,
         colocation::{self, SolverEngine},
         wait_for_condition,
     },

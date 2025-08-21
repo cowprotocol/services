@@ -7,9 +7,10 @@ use {
     serde::Deserialize,
     serde_with::serde_as,
     std::{
-        sync::{Arc, Mutex},
+        sync::Arc,
         time::{Duration, Instant},
     },
+    tokio::sync::Mutex,
     tracing::instrument,
 };
 
@@ -79,28 +80,24 @@ impl DriverGasEstimator {
     }
 
     async fn estimate(&self) -> Result<GasPrice1559> {
-        // Check cache
+        // Lock cache for entire duration of this method to prevent concurrent network
+        // requests
+        let mut cache = self.cache.lock().await;
+        if let Some(cached) = cache.as_ref()
+            && cached.timestamp.elapsed() < CACHE_DURATION
         {
-            let cache = self.cache.lock().unwrap();
-            if let Some(cached) = cache.as_ref()
-                && cached.timestamp.elapsed() < CACHE_DURATION
-            {
-                tracing::debug!(gasPrice = ?cached.price, "returning cached gas price");
-                return Ok(cached.price);
-            }
+            tracing::debug!(gasPrice = ?cached.price, "returning cached gas price");
+            return Ok(cached.price);
         }
 
         // Cache miss or expired, fetch new price and update cache
         let price = self.fetch_gas_price().await?;
         tracing::debug!(gasPrice = ?price, "fetched fresh gas price from driver");
 
-        {
-            let mut cache = self.cache.lock().unwrap();
-            *cache = Some(CachedGasPrice {
-                price,
-                timestamp: Instant::now(),
-            });
-        }
+        *cache = Some(CachedGasPrice {
+            price,
+            timestamp: Instant::now(),
+        });
 
         Ok(price)
     }
