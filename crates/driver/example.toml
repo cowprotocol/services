@@ -18,7 +18,6 @@ fake-header-one = "FAKE-HEADER-VALUE" # For instance an authorization token whic
 
 [submission]
 gas-price-cap = "1000000000000"
-min-priority-fee = "1000000000"
 
 [[submission.mempool]]
 mempool = "public"
@@ -67,8 +66,8 @@ strategy = "external-price"
 strategy = "own-quotes"
 max-order-age = "1m"
 
-[[liquidity.uniswap-v2]] # Uniswap V2 configuration
-preset = "uniswap-v2" # or "sushi-swap", "honeyswap", "baoswap", "pancake-swap", etc.
+# [[liquidity.uniswap-v2]] # Uniswap V2 configuration
+# preset = "uniswap-v2" # or "sushi-swap", "honeyswap", "baoswap", "pancake-swap", etc.
 
 # [[liquidity.uniswap-v2]] # Custom Uniswap V2 configuration
 # router = "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D"
