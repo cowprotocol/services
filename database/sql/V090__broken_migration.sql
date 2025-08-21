@@ -1,1 +1,1 @@
-garbage migration causing an error!!!
+-- garbage migration causing an error!!!
