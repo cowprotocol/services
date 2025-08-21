@@ -96,11 +96,23 @@ pub async fn run(args: Arguments) {
             .await
             .expect("load settlement contract"),
     };
+    let balances_contract = match args.shared.balances_contract_address {
+        Some(address) => contracts::support::Balances::with_deployment_info(&web3, address, None),
+        None => contracts::support::Balances::deployed(&web3)
+            .await
+            .expect("load balances contract"),
+    };
     let vault_relayer = settlement_contract
         .vault_relayer()
         .call()
         .await
         .expect("Couldn't get vault relayer address");
+    let signatures_contract = match args.shared.signatures_contract_address {
+        Some(address) => contracts::support::Signatures::with_deployment_info(&web3, address, None),
+        None => contracts::support::Signatures::deployed(&web3)
+            .await
+            .expect("load signatures contract"),
+    };
     let native_token = match args.shared.native_token_address {
         Some(address) => contracts::WETH9::with_deployment_info(&web3, address, None),
         None => WETH9::deployed(&web3)
@@ -113,7 +125,8 @@ pub async fn run(args: Arguments) {
     let signature_validator = signature_validator::validator(
         &web3,
         signature_validator::Contracts {
-            settlement: settlement_contract.address(),
+            settlement: settlement_contract.clone(),
+            signatures: signatures_contract,
             vault_relayer,
         },
     );
@@ -148,7 +161,8 @@ pub async fn run(args: Arguments) {
     let balance_fetcher = account_balances::fetcher(
         &web3,
         account_balances::Contracts {
-            settlement: settlement_contract.address(),
+            settlement: settlement_contract.clone(),
+            balances: balances_contract.clone(),
             vault_relayer,
             vault: vault.as_ref().map(|contract| contract.address()),
         },

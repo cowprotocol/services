@@ -187,6 +187,7 @@ impl Ethereum {
             Chain::Optimism => self.block_gas_limit().0,
             Chain::Avalanche => self.block_gas_limit().0,
             Chain::Polygon => self.block_gas_limit().0,
+            Chain::Lens => self.block_gas_limit().0,
             Chain::Hardhat => self.block_gas_limit().0,
         });
         tx.gas_price = self.simulation_gas_price().await;
