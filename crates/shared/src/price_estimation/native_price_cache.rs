@@ -141,6 +141,7 @@ impl Inner {
                     // This should happen only for prices missing while building the auction.
                     // Otherwise malicious actors could easily cause the cache size to blow up.
                     let outdated_timestamp = now.checked_sub(*max_age).unwrap();
+                    tracing::trace!(?token, "create outdated price entry");
                     entry.insert(CachedResult::new(
                         Ok(0.),
                         outdated_timestamp,
@@ -266,23 +267,24 @@ impl UpdateTask {
         let max_age = inner.max_age.saturating_sub(self.prefetch_time);
         let mut outdated_entries = inner.sorted_tokens_to_update(max_age, Instant::now());
 
+        tracing::trace!(tokens = ?outdated_entries, first_n = ?self.update_size, "outdated prices to fetch");
+
         metrics
             .native_price_cache_outdated_entries
             .set(i64::try_from(outdated_entries.len()).unwrap_or(i64::MAX));
 
         outdated_entries.truncate(self.update_size.unwrap_or(usize::MAX));
 
-        if !outdated_entries.is_empty() {
-            let mut stream = inner.estimate_prices_and_update_cache(
-                &outdated_entries,
-                max_age,
-                inner.quote_timeout,
-            );
-            while stream.next().await.is_some() {}
-            metrics
-                .native_price_cache_background_updates
-                .inc_by(outdated_entries.len() as u64);
+        if outdated_entries.is_empty() {
+            return;
         }
+
+        let mut stream =
+            inner.estimate_prices_and_update_cache(&outdated_entries, max_age, inner.quote_timeout);
+        while stream.next().await.is_some() {}
+        metrics
+            .native_price_cache_background_updates
+            .inc_by(outdated_entries.len() as u64);
     }
 
     /// Runs background updates until inner is no longer alive.
@@ -396,6 +398,7 @@ impl CachingNativePriceEstimator {
     }
 
     pub fn replace_high_priority(&self, tokens: IndexSet<H160>) {
+        tracing::trace!(?tokens, "update high priority tokens");
         *self.0.high_priority.lock().unwrap() = tokens;
     }
 
