@@ -1,0 +1,63 @@
+name: e2e protocol_fee stress
+
+on:
+  workflow_dispatch:
+    inputs:
+      runs:
+        description: How many times to run the test
+        required: false
+        default: "40"
+  pull_request:
+    paths:
+      - "crates/e2e/**"
+      - ".github/workflows/e2e-protocol-fee-stress.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  stress:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      RUST_BACKTRACE: 1
+      RUST_LOG: info,driver=debug,solver=debug,e2e=debug
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+
+      # Provide `anvil` binary in case the e2e harness spawns it.
+      - name: Install Foundry (anvil)
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: nightly
+
+      - name: Stress run protocol_fee test N times
+        shell: bash
+        run: |
+          set -euo pipefail
+          runs="${{ github.event.inputs.runs || '40' }}"
+          rm -f e2e.log
+          for i in $(seq 1 "$runs"); do
+            echo "=== run $i ===" | tee -a e2e.log
+            # ensure 8545 isn’t held by anything between runs
+            sudo fuser -k 8545/tcp || true
+            # IMPORTANT: do NOT set ETH_RPC_URL – let the test harness spawn its own node
+            cargo test -p e2e protocol_fee::local_node_combined_protocol_fees \
+              -- --ignored --nocapture --test-threads=1 2>&1 | tee -a e2e.log
+          done
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-protocol-fee-logs
+          path: e2e.log
+          retention-days: 7
