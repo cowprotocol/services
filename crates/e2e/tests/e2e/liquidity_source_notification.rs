@@ -3,12 +3,7 @@ use {
     contracts::{ERC20, ILiquoriceSettlement, LiquoriceAllowListAuthentication},
     driver::{domain::eth::H160, infra},
     e2e::{
-        api::liquorice::{
-            DomainSeparator,
-            Eip712TypedLiquoriceSingleOrder,
-            LiquoriceApi,
-            LiquoriceSignature,
-        },
+        api,
         nodes::forked_node::ForkedNodeApi,
         setup::{
             OnchainComponents,
@@ -45,9 +40,9 @@ pub const LIQUORICE_MANAGER: H160 = H160(hex!("000438801500c89E225E8D6CB69D9c14d
 
 #[tokio::test]
 #[ignore]
-async fn forked_node_liquidity_sources_notification_mainnet() {
+async fn forked_node_liquidity_source_notification_mainnet() {
     run_forked_test_with_block_number(
-        liquidity_sources_notification,
+        liquidity_source_notification,
         std::env::var("FORK_URL_MAINNET")
             .expect("FORK_URL_MAINNET must be set to run forked tests"),
         FORK_BLOCK,
@@ -55,25 +50,23 @@ async fn forked_node_liquidity_sources_notification_mainnet() {
     .await
 }
 
-async fn liquidity_sources_notification(web3: Web3) {
-    /*
-     * Arrange
-     */
+async fn liquidity_source_notification(web3: Web3) {
+    // Start onchain components
     let mut onchain = OnchainComponents::deployed(web3.clone()).await;
     let forked_node_api = web3.api::<ForkedNodeApi<_>>();
 
-    // # Define trade params
+    // Define trade params
     let trade_amount = to_wei_with_exp(5, 8);
 
-    // # Create parties accounts
-    //   solver - represents both baseline solver engine for quoting and liquorice
-    //   solver engine for solving
+    // Create parties accounts
+    // solver - represents both baseline solver engine for quoting and liquorice
+    // solver engine for solving
     let [solver] = onchain.make_solvers_forked(to_wei(1)).await;
-    // trader - the account that will place the order
+    // trader - the account that will place order
     // liquorice_maker - the account that will be used to fill the order
     let [trader, liquorice_maker] = onchain.make_accounts(to_wei(1)).await;
 
-    // # Access trade tokens contracts
+    // Access trade tokens contracts
     let token_usdc = ERC20::at(
         &web3,
         "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
@@ -88,7 +81,7 @@ async fn liquidity_sources_notification(web3: Web3) {
             .unwrap(),
     );
 
-    // # CoW onchain setup
+    // CoW onchain setup
     {
         // Fund trader
         let usdc_whale = forked_node_api.impersonate(&USDC_WHALE).await.unwrap();
@@ -98,8 +91,6 @@ async fn liquidity_sources_notification(web3: Web3) {
         );
 
         // Fund solver
-        // TODO: remove?
-        // Fund solver
         tx!(
             usdc_whale,
             token_usdc.transfer(solver.address(), trade_amount)
@@ -108,13 +99,13 @@ async fn liquidity_sources_notification(web3: Web3) {
         // Trader gives approval to the CoW allowance contract
         tx!(
             trader.account(),
-            // TODO: give allowance for certain amount?
             token_usdc.approve(onchain.contracts().allowance, U256::MAX)
         );
     }
 
-    // # Liquorice onchain setup
-    // Liquorice Settlement contract through which we will trade with the
+    // Liquorice onchain setup
+
+    // Liquorice settlement contract through which we will trade with the
     // `liquorice_maker`
     let liquorice_settlement = ILiquoriceSettlement::deployed(&web3).await.unwrap();
     let liquorice_balance_manager_address = liquorice_settlement
@@ -132,10 +123,9 @@ async fn liquidity_sources_notification(web3: Web3) {
         );
     }
 
-    // Maker gives approval to Liquorice Balance manager contract
+    // Maker gives approval to the Liquorice balance manager contract
     tx!(
         liquorice_maker.account(),
-        // TODO: give allowance for certain amount?
         token_usdt.approve(liquorice_balance_manager_address, U256::MAX)
     );
 
@@ -164,10 +154,10 @@ async fn liquidity_sources_notification(web3: Web3) {
         );
     }
 
-    // # Liquorice services setup
-    let liquorice_api = LiquoriceApi::start().await;
+    // Liquorice API setup
+    let liquorice_api = api::liquorice::server::LiquoriceApi::start().await;
 
-    // # CoW services setup
+    // CoW services setup
     let liquorice_solver_api_mock = Mock::default();
     let services = Services::new(&onchain).await;
 
@@ -216,14 +206,9 @@ async fn liquidity_sources_notification(web3: Web3) {
         ])
         .await;
 
-    /*
-     * Act
-     */
-
-    // # Mint block
     onchain.mint_block().await;
 
-    // # Create CoW order
+    // Create CoW order
     let order_id = {
         let order = OrderCreation {
             sell_token: token_usdc.address(),
@@ -242,9 +227,10 @@ async fn liquidity_sources_notification(web3: Web3) {
         services.create_order(&order).await.unwrap()
     };
 
-    // # Create Liquorice solution
-    // ## Create Liquorice order
-    let liquorice_order = Eip712TypedLiquoriceSingleOrder {
+    // Prepare Liquorice solution
+
+    // Create Liquorice order
+    let liquorice_order = api::liquorice::onchain::order::Single {
         rfq_id: "c99d2e3f-702b-49c9-8bb8-43775770f2f3".to_string(),
         nonce: U256::from(0),
         trader: onchain.contracts().gp_settlement.address(),
@@ -258,12 +244,12 @@ async fn liquidity_sources_notification(web3: Web3) {
         recipient: liquorice_maker.address(),
     };
 
-    // ## Create calldata
+    // Create calldata
     let liquorice_solution_calldata = {
         // Create Liquorice order signature
         let liquorice_order_signature = liquorice_order.sign(
-            &DomainSeparator::new(1, liquorice_settlement.address()),
-            liquorice_order.hash_struct(),
+            &api::liquorice::onchain::DomainSeparator::new(1, liquorice_settlement.address()),
+            liquorice_order.hash(),
             &liquorice_maker,
         );
 
@@ -275,7 +261,7 @@ async fn liquidity_sources_notification(web3: Web3) {
                 liquorice_order_signature.as_tuple(),
                 liquorice_order.quote_token_amount,
                 // Taker signature is not used in this use case
-                LiquoriceSignature {
+                api::liquorice::onchain::order::Signature {
                     signature_type: 0,
                     transfer_command: 0,
                     signature_bytes: ethcontract::Bytes(vec![0u8; 65]),
@@ -287,7 +273,7 @@ async fn liquidity_sources_notification(web3: Web3) {
             .unwrap()
     };
 
-    // # Submit solution to the CoW
+    // Submit solution to CoW
     liquorice_solver_api_mock.configure_solution(Some(Solution {
         id: 1,
         prices: HashMap::from([
@@ -322,10 +308,7 @@ async fn liquidity_sources_notification(web3: Web3) {
         flashloans: None,
     }));
 
-    /*
-     * Assert
-     */
-
+    // Wait for trade
     onchain.mint_block().await;
     wait_for_condition(TIMEOUT, || async {
         let trade = services.get_trades(&order_id).await.unwrap().pop()?;
