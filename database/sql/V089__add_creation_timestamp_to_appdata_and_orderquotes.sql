@@ -1,7 +1,6 @@
 -- This adds `creation_timestamp` column to `app_data`, `order_quotes`
 -- in order to help data ingestion for our analytics team
 
--- Add the columns as nullable first
 ALTER TABLE app_data
     ADD COLUMN creation_timestamp timestamptz NOT NULL SET DEFAULT '1970-01-01 00:00:00+00'::timestamptz;
 
