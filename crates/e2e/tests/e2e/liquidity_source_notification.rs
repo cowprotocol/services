@@ -32,11 +32,11 @@ use {
 };
 
 /// The block number from which we will fetch state for the forked tests.
-pub const FORK_BLOCK: u64 = 21839998;
+pub const FORK_BLOCK: u64 = 23112197;
 pub const USDT_WHALE: H160 = H160(hex!("F977814e90dA44bFA03b6295A0616a897441aceC"));
 pub const USDC_WHALE: H160 = H160(hex!("28c6c06298d514db089934071355e5743bf21d60"));
 
-pub const LIQUORICE_MANAGER: H160 = H160(hex!("000438801500c89E225E8D6CB69D9c14dD05e000"));
+pub const LIQUORICE_MANAGER: H160 = H160(hex!("adb0c800d2684b1098d2a6e78ff75c2aa1496ce5"));
 
 #[tokio::test]
 #[ignore]
@@ -113,6 +113,9 @@ async fn liquidity_source_notification(web3: Web3) {
         .call()
         .await
         .expect("balance manager");
+
+    // Fund liquorice manager
+    onchain.send_wei(LIQUORICE_MANAGER, to_wei(1)).await;
 
     // Fund `liquorice_maker`
     {
