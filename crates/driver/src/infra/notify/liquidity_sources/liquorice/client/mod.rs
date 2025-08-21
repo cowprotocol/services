@@ -6,7 +6,7 @@
 pub mod request;
 
 use {
-    crate::infra::notify::liquidity_sources::liquorice::client::request::Request,
+    crate::infra::notify::liquidity_sources::liquorice::client::request::IsRequest,
     anyhow::{Context, Result},
     reqwest::{
         ClientBuilder,
@@ -14,24 +14,8 @@ use {
         Url,
         header::{HeaderMap, HeaderValue},
     },
-    serde::{Deserialize, Serialize},
-    std::{collections::HashSet, time::Duration},
+    std::time::Duration,
 };
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BeforeSettleNotification {
-    /// UUIDs of Liquorice RFQs
-    pub rfq_ids: HashSet<String>,
-}
-
-/// Liquorice API notify query parameters.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(tag = "type", content = "content", rename_all = "snake_case")]
-pub enum NotifyQuery {
-    /// Notify Liquorice before settlement.
-    BeforeSettle(BeforeSettleNotification),
-}
 
 /// Liquorice API Client implementation.
 #[derive(Debug)]
@@ -42,9 +26,9 @@ pub struct Client {
 
 impl Client {
     /// Default Liquorice API URL.
-    pub const DEFAULT_URL: &'static str = "https://api.liquorice.tech/v1";
+    pub const DEFAULT_URL: &'static str = "https://api.liquorice.tech/";
 
-    /// Create a new Liquorice HTTP API client with the specified API key and
+    /// Creates a new Liquorice HTTP API client with the specified API key and
     /// base URL.
     pub fn new(
         client_builder: ClientBuilder,
@@ -70,23 +54,7 @@ impl Client {
         })
     }
 
-    /// Create a Liquorice HTTP API client for testing using the default HTTP
-    /// client.
-    ///
-    /// This method will attempt to read the `LIQUORICE_URL` (falling back to
-    /// the default URL) and `LIQUORICE_API_KEY` (falling back to no API
-    /// key) from the local environment when creating the API client.
-    pub fn test() -> Self {
-        Self::new(
-            reqwest::Client::builder(),
-            std::env::var("LIQUORICE_URL").unwrap_or_else(|_| Self::DEFAULT_URL.to_string()),
-            std::env::var("LIQUORICE_API_KEY").unwrap_or_default(),
-            Duration::from_secs(1),
-        )
-        .unwrap()
-    }
-
-    pub async fn send_request<R: Request>(
+    pub async fn send_request<R: IsRequest>(
         &self,
         request: R,
     ) -> Result<R::Response, request::Error> {
