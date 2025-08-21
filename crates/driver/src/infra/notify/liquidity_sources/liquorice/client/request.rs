@@ -7,7 +7,7 @@ use {
 };
 
 #[async_trait::async_trait]
-pub trait Request {
+pub trait IsRequest {
     type Response;
     async fn send(self, client: &reqwest::Client, base_url: &Url) -> Result<Self::Response, Error>;
 }
@@ -82,7 +82,7 @@ pub mod v1 {
                 }
 
                 #[async_trait::async_trait]
-                impl request::Request for Request {
+                impl request::IsRequest for Request {
                     type Response = Response;
 
                     async fn send(
@@ -92,10 +92,9 @@ pub mod v1 {
                     ) -> Result<Self::Response, Error> {
                         let url = base_url
                             .to_owned()
-                            .join("intent-origin/notification")
+                            .join("v1/intent-origin/notification")
                             .context("request url")
                             .unwrap();
-                        tracing::debug!("sending notification to {}", url);
 
                         let response = client.post(url).json(&self).send().await?;
                         decode_response(response).await

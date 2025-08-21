@@ -8,10 +8,7 @@
 
 use {
     crate::{
-        domain::{
-            competition::{solution, solution::Settlement},
-            eth,
-        },
+        domain::{competition::solution::Settlement, eth},
         infra::{
             self,
             notify::liquidity_sources::{
@@ -23,9 +20,6 @@ use {
     anyhow::{Context, Result, anyhow},
     chrono::Utc,
     contracts::ILiquoriceSettlement,
-    ethabi::Token,
-    ethcontract::common::FunctionExt,
-    std::collections::HashSet,
 };
 
 const NOTIFICATION_SOURCE: &str = "cow_protocol";
@@ -36,7 +30,7 @@ pub struct Notifier {
     client: liquorice::Client,
     /// Address of the Liquorice settlement contract is used to
     /// find relevant interactions in CoW settlement contract
-    settlement_contract_address: eth::Address,
+    liquorice_settlement_contract_address: eth::Address,
 }
 
 impl Notifier {
@@ -44,7 +38,7 @@ impl Notifier {
         config: &infra::notify::liquidity_sources::config::Liquorice,
         chain: chain::Chain,
     ) -> Result<Self> {
-        let settlement_contract_address = ILiquoriceSettlement::raw_contract()
+        let liquorice_settlement_contract_address = ILiquoriceSettlement::raw_contract()
             .networks
             .get(chain.id().to_string().as_str())
             .map(|network| network.address.into())
@@ -57,55 +51,18 @@ impl Notifier {
                 config.api_key.clone(),
                 config.http_timeout,
             )?,
-            settlement_contract_address,
+            liquorice_settlement_contract_address,
         })
-    }
-
-    /// Extracts Liquorice maker RFQ IDs from the settlement interactions.
-    /// <https://liquorice.gitbook.io/liquorice-docs/for-market-makers/basic-market-making-api#id-3.-receiving-rfq>
-    fn extract_rfq_ids_from_settlement(&self, settlement: &Settlement) -> HashSet<String> {
-        // Aggregate all interactions from the settlement
-        settlement
-            .pre_interactions()
-            .iter()
-            .filter_map(|interaction| {
-                extract_rfq_id_from_interaction(interaction, self.settlement_contract_address)
-            })
-            .chain(
-                settlement
-                    .interactions()
-                    .iter()
-                    .filter_map(|interaction| match interaction {
-                        solution::Interaction::Custom(custom) => extract_rfq_id_from_interaction(
-                            &eth::Interaction {
-                                target: custom.target.into(),
-                                value: custom.value,
-                                call_data: custom.call_data.clone(),
-                            },
-                            self.settlement_contract_address,
-                        ),
-                        solution::Interaction::Liquidity(_) => None,
-                    }),
-            )
-            .chain(
-                settlement
-                    .post_interactions()
-                    .iter()
-                    .filter_map(|interaction| {
-                        extract_rfq_id_from_interaction(
-                            interaction,
-                            self.settlement_contract_address,
-                        )
-                    }),
-            )
-            .collect()
     }
 }
 
 #[async_trait::async_trait]
 impl LiquiditySourcesNotifying for Notifier {
     async fn settlement(&self, settlement: &Settlement) -> Result<()> {
-        let rfq_ids = self.extract_rfq_ids_from_settlement(settlement);
+        let rfq_ids = utils::extract_rfq_ids_from_settlement(
+            settlement,
+            self.liquorice_settlement_contract_address,
+        );
 
         use liquorice::client::request::v1::intent_origin::notification::post::{
             Content,
@@ -134,43 +91,100 @@ impl LiquiditySourcesNotifying for Notifier {
     }
 }
 
-/// Extracts Liquorice RFQ ID from CoW interaction.
-/// RFQ ID extracted from the calldata corresponding to the
-/// `settleSingle` function of the LiquoriceSettlement contract <https://etherscan.io/address/0xaca684a3f64e0eae4812b734e3f8f205d3eed167#code#F6#L1>
-fn extract_rfq_id_from_interaction(
-    interaction: &eth::Interaction,
-    settlement_contract_address: eth::Address,
-) -> Option<String> {
-    if interaction.target != settlement_contract_address {
-        return None;
+mod utils {
+    use {
+        crate::domain::{
+            competition::{solution, solution::Settlement},
+            eth,
+        },
+        contracts::ILiquoriceSettlement,
+        ethabi::Token,
+        ethcontract::common::FunctionExt,
+        std::collections::HashSet,
+    };
+
+    /// Extracts Liquorice maker RFQ IDs from the settlement interactions.
+    /// <https://liquorice.gitbook.io/liquorice-docs/for-market-makers/basic-market-making-api#id-3.-receiving-rfq>
+    pub fn extract_rfq_ids_from_settlement(
+        settlement: &Settlement,
+        liquorice_settlement_contract_address: eth::Address,
+    ) -> HashSet<String> {
+        // Aggregate all interactions from the settlement and extract RFQ ID from each
+        settlement
+            .pre_interactions()
+            .iter()
+            .filter_map(|interaction| {
+                extract_rfq_id_from_interaction(interaction, liquorice_settlement_contract_address)
+            })
+            .chain(
+                settlement
+                    .interactions()
+                    .iter()
+                    .filter_map(|interaction| match interaction {
+                        solution::Interaction::Custom(custom) => extract_rfq_id_from_interaction(
+                            &eth::Interaction {
+                                target: custom.target.into(),
+                                value: custom.value,
+                                call_data: custom.call_data.clone(),
+                            },
+                            liquorice_settlement_contract_address,
+                        ),
+                        solution::Interaction::Liquidity(_) => None,
+                    }),
+            )
+            .chain(
+                settlement
+                    .post_interactions()
+                    .iter()
+                    .filter_map(|interaction| {
+                        extract_rfq_id_from_interaction(
+                            interaction,
+                            liquorice_settlement_contract_address,
+                        )
+                    }),
+            )
+            .collect()
     }
 
-    // Decode the calldata using the Liquorice settlement contract ABI
-    let tokens = {
-        let settle_single_function = ILiquoriceSettlement::raw_contract()
-            .interface
-            .abi
-            .function("settleSingle")
-            .unwrap();
-
-        interaction
-            .call_data
-            .0
-            .strip_prefix(&settle_single_function.selector())
-            .and_then(|input| settle_single_function.decode_input(input).ok())
-    }?;
-
-    // Token at index 1 corresponds to `Single` order
-    // <https://etherscan.io/address/0xaca684a3f64e0eae4812b734e3f8f205d3eed167#code#F6#L85>
-    tokens.get(1).and_then(|token| match token {
-        Token::Tuple(tokens) => {
-            // Token at index 0 corresponds to `rfqId` field
-            // <https://etherscan.io/address/0xaca684a3f64e0eae4812b734e3f8f205d3eed167#code#F6#L42>
-            tokens.first().and_then(|token| match token {
-                Token::String(rfq_id) => Some(rfq_id.clone()),
-                _ => None,
-            })
+    /// Extracts Liquorice maker RFQ ID from CoW interaction.
+    /// RFQ ID is extracted from the calldata corresponding to the
+    /// `settleSingle` function of the LiquoriceSettlement contract
+    /// <https://etherscan.io/address/0xaca684a3f64e0eae4812b734e3f8f205d3eed167#code#F6#L83>
+    pub fn extract_rfq_id_from_interaction(
+        interaction: &eth::Interaction,
+        liquorice_settlement_contract_address: eth::Address,
+    ) -> Option<String> {
+        if interaction.target != liquorice_settlement_contract_address {
+            return None;
         }
-        _ => None,
-    })
+
+        // Decode the calldata using the Liquorice settlement contract ABI
+        let tokens = {
+            let settle_single_function = ILiquoriceSettlement::raw_contract()
+                .interface
+                .abi
+                .function("settleSingle")
+                .unwrap();
+
+            interaction
+                .call_data
+                .0
+                .strip_prefix(&settle_single_function.selector())
+                .and_then(|input| settle_single_function.decode_input(input).ok())
+        }?;
+
+        // Token at index 1 corresponds to `Single` order
+        // <https://etherscan.io/address/0xaca684a3f64e0eae4812b734e3f8f205d3eed167#code#F6#L85>
+        tokens.get(1).and_then(|token| match token {
+            Token::Tuple(tokens) => {
+                // Token at index 0 corresponds to `rfqId` field
+                // <https://etherscan.io/address/0xaca684a3f64e0eae4812b734e3f8f205d3eed167#code#F6#L42>
+                tokens.first().and_then(|token| match token {
+                    Token::String(rfq_id) => Some(rfq_id.clone()),
+                    _ => None,
+                })
+            }
+            _ => None,
+        })
+    }
 }

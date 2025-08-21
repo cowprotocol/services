@@ -24,13 +24,13 @@ type Inner = Arc<LiquiditySourcesNotifiers>;
 
 const SOURCE_NAME_LIQUORICE: &str = "liquorice";
 
-/// Trait for notifying liquidity sources about auctions and settlements
+/// Trait describing notifications send to liquidity source
 #[async_trait::async_trait]
 pub trait LiquiditySourcesNotifying: Send + Sync {
     async fn settlement(&self, settlement: &Settlement) -> anyhow::Result<()>;
 }
 
-/// Auctions and settlement notifier for liquidity sources
+/// Aggregation of notifiers
 #[derive(Clone)]
 pub struct Notifier {
     inner: Inner,
@@ -55,7 +55,7 @@ impl Notifier {
 
 #[async_trait::async_trait]
 impl LiquiditySourcesNotifying for Notifier {
-    /// Sends notification to liquidity sources before settlement
+    /// Sends notifications to liquidity sources on settlement
     async fn settlement(&self, settlement: &Settlement) -> anyhow::Result<()> {
         let futures = self.inner.iter().map(|(source_name, notifier)| {
             notifier
