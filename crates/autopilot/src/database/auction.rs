@@ -85,7 +85,7 @@ impl Postgres {
                 })
                 .try_collect()
                 .await?;
-        info!("all solvable orders fetched in {}", Utc::now() - start);
+        info!(time = Utc::now() - start, "fetched all solvable orders");
         let latest_settlement_block = database::orders::latest_settlement_block(&mut ex)
             .await?
             .to_u64()
