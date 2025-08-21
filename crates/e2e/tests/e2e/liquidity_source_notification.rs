@@ -1,6 +1,6 @@
 use {
     chrono::Utc,
-    contracts::{ERC20, ILiquoriceSettlement, LiquoriceAllowListAuthentication},
+    contracts::{ERC20, ILiquoriceSettlement},
     driver::{domain::eth::H160, infra},
     e2e::{
         api,
@@ -35,8 +35,6 @@ use {
 pub const FORK_BLOCK: u64 = 23112197;
 pub const USDT_WHALE: H160 = H160(hex!("F977814e90dA44bFA03b6295A0616a897441aceC"));
 pub const USDC_WHALE: H160 = H160(hex!("28c6c06298d514db089934071355e5743bf21d60"));
-
-pub const LIQUORICE_MANAGER: H160 = H160(hex!("adb0c800d2684b1098d2a6e78ff75c2aa1496ce5"));
 
 #[tokio::test]
 #[ignore]
@@ -114,9 +112,6 @@ async fn liquidity_source_notification(web3: Web3) {
         .await
         .expect("balance manager");
 
-    // Fund liquorice manager
-    onchain.send_wei(LIQUORICE_MANAGER, to_wei(1)).await;
-
     // Fund `liquorice_maker`
     {
         let usdt_whale = forked_node_api.impersonate(&USDT_WHALE).await.unwrap();
@@ -131,31 +126,6 @@ async fn liquidity_source_notification(web3: Web3) {
         liquorice_maker.account(),
         token_usdt.approve(liquorice_balance_manager_address, U256::MAX)
     );
-
-    // Liquorice manager whitelists maker and CoW settlement contract
-    {
-        let liquorice_allowlist = LiquoriceAllowListAuthentication::at(
-            &web3,
-            liquorice_settlement.authenticator().call().await.unwrap(),
-        );
-
-        let liquorice_manager = forked_node_api
-            .impersonate(&LIQUORICE_MANAGER)
-            .await
-            .unwrap();
-
-        // Add maker to the allowlist of makers
-        tx!(
-            liquorice_manager,
-            liquorice_allowlist.add_maker(liquorice_maker.address())
-        );
-
-        // Add GPV2Settlement to the allowlist of solvers
-        tx!(
-            liquorice_manager,
-            liquorice_allowlist.add_solver(onchain.contracts().gp_settlement.address())
-        );
-    }
 
     // Liquorice API setup
     let liquorice_api = api::liquorice::server::LiquoriceApi::start().await;
@@ -208,8 +178,6 @@ async fn liquidity_source_notification(web3: Web3) {
             "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
         ])
         .await;
-
-    onchain.mint_block().await;
 
     // Create CoW order
     let order_id = {

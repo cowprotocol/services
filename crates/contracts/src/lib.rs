@@ -99,7 +99,6 @@ include_contracts! {
     IUniswapLikeRouter;
     IUniswapV3Factory;
     IZeroEx;
-    LiquoriceAllowListAuthentication;
     PancakeRouter;
     Permit2;
     ChainalysisOracle;
