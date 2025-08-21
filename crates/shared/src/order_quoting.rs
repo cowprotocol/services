@@ -788,7 +788,6 @@ mod tests {
         mockall::{Sequence, predicate::eq},
         model::time,
         number::nonzero::U256 as NonZeroU256,
-        std::sync::Mutex,
     };
 
     fn mock_balance_fetcher() -> Arc<dyn BalanceFetching> {
@@ -894,7 +893,7 @@ mod tests {
             })
             .returning(|_, _| async { Ok(0.2) }.boxed());
 
-        let gas_estimator = FakeGasPriceEstimator(Arc::new(Mutex::new(gas_price)));
+        let gas_estimator = FakeGasPriceEstimator::new(gas_price);
 
         let mut storage = MockQuoteStoring::new();
         storage
@@ -1035,7 +1034,7 @@ mod tests {
             })
             .returning(|_, _| async { Ok(0.2) }.boxed());
 
-        let gas_estimator = FakeGasPriceEstimator(Arc::new(Mutex::new(gas_price)));
+        let gas_estimator = FakeGasPriceEstimator::new(gas_price);
 
         let mut storage = MockQuoteStoring::new();
         storage
@@ -1171,7 +1170,7 @@ mod tests {
             })
             .returning(|_, _| async { Ok(0.2) }.boxed());
 
-        let gas_estimator = FakeGasPriceEstimator(Arc::new(Mutex::new(gas_price)));
+        let gas_estimator = FakeGasPriceEstimator::new(gas_price);
 
         let mut storage = MockQuoteStoring::new();
         storage
@@ -1292,7 +1291,7 @@ mod tests {
             })
             .returning(|_, _| async { Ok(1.) }.boxed());
 
-        let gas_estimator = FakeGasPriceEstimator(Arc::new(Mutex::new(gas_price)));
+        let gas_estimator = FakeGasPriceEstimator::new(gas_price);
 
         let quoter = OrderQuoter {
             price_estimator: Arc::new(price_estimator),
@@ -1366,7 +1365,7 @@ mod tests {
             })
             .returning(|_, _| async { Err(PriceEstimationError::NoLiquidity) }.boxed());
 
-        let gas_estimator = FakeGasPriceEstimator(Arc::new(Mutex::new(gas_price)));
+        let gas_estimator = FakeGasPriceEstimator::new(gas_price);
 
         let quoter = OrderQuoter {
             price_estimator: Arc::new(price_estimator),
