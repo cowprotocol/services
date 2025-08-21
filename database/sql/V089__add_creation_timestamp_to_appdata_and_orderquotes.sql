@@ -1,3 +1,5 @@
+-- This adds `creation_timestamp` column to `app_data`, `order_quotes`
+-- in order to help data ingestion for our analytics team
 
 -- Add the columns as nullable first
 ALTER TABLE app_data
