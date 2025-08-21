@@ -698,10 +698,12 @@ fn default_number_of_orders_per_merged_solution() -> usize {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct LiquiditySourcesNotifier {
+    /// Configuration for Liquorice liquidity
     pub liquorice: Option<LiquoriceConfig>,
 }
 
 /// Liquorice API configuration
+/// <https://liquorice.gitbook.io/liquorice-docs>
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct LiquoriceConfig {
