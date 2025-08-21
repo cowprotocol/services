@@ -1,7 +1,7 @@
 use {
     crate::{
         domain::{competition, quote},
-        infra::api,
+        infra::{api, blockchain},
     },
     serde::Serialize,
 };
@@ -91,6 +91,12 @@ impl From<competition::Error> for (hyper::StatusCode, axum::Json<Error>) {
             competition::Error::NoValidOrdersFound => Kind::NoValidOrders,
         };
         error.into()
+    }
+}
+
+impl From<blockchain::Error> for (hyper::StatusCode, axum::Json<Error>) {
+    fn from(_: blockchain::Error) -> Self {
+        Kind::Unknown.into()
     }
 }
 
