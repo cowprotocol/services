@@ -19,14 +19,14 @@ use {
     std::{collections::HashMap, sync::Arc},
 };
 
-type LiquiditySourcesNotifiers = HashMap<String, Box<dyn LiquiditySourcesNotifying>>;
-type Inner = Arc<LiquiditySourcesNotifiers>;
+type Notifiers = HashMap<String, Box<dyn LiquiditySourceNotifying>>;
+type Inner = Arc<Notifiers>;
 
 const SOURCE_NAME_LIQUORICE: &str = "liquorice";
 
 /// Trait describing notifications send to liquidity source
 #[async_trait::async_trait]
-pub trait LiquiditySourcesNotifying: Send + Sync {
+pub trait LiquiditySourceNotifying: Send + Sync {
     async fn settlement(&self, settlement: &Settlement) -> anyhow::Result<()>;
 }
 
@@ -38,7 +38,7 @@ pub struct Notifier {
 
 impl Notifier {
     pub fn try_new(config: &Config, chain: chain::Chain) -> anyhow::Result<Self> {
-        let mut notifiers = LiquiditySourcesNotifiers::default();
+        let mut notifiers = Notifiers::default();
 
         if let Some(liquorice) = &config.liquorice {
             notifiers.insert(
@@ -54,7 +54,7 @@ impl Notifier {
 }
 
 #[async_trait::async_trait]
-impl LiquiditySourcesNotifying for Notifier {
+impl LiquiditySourceNotifying for Notifier {
     /// Sends notifications to liquidity sources on settlement
     async fn settlement(&self, settlement: &Settlement) -> anyhow::Result<()> {
         let futures = self.inner.iter().map(|(source_name, notifier)| {

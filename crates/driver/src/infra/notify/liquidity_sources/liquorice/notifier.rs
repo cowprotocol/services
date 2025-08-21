@@ -12,7 +12,7 @@ use {
         infra::{
             self,
             notify::liquidity_sources::{
-                LiquiditySourcesNotifying,
+                LiquiditySourceNotifying,
                 liquorice::{self},
             },
         },
@@ -57,7 +57,7 @@ impl Notifier {
 }
 
 #[async_trait::async_trait]
-impl LiquiditySourcesNotifying for Notifier {
+impl LiquiditySourceNotifying for Notifier {
     async fn settlement(&self, settlement: &Settlement) -> Result<()> {
         let rfq_ids = utils::extract_rfq_ids_from_settlement(
             settlement,
