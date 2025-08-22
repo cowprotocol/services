@@ -44,7 +44,10 @@ use {
     std::{
         collections::{HashMap, HashSet},
         num::NonZeroUsize,
-        sync::Arc,
+        sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+        },
         time::{Duration, Instant},
     },
     tokio::sync::Mutex,
@@ -91,6 +94,7 @@ pub struct RunLoop {
     trusted_tokens: AutoUpdatingTokenList,
     in_flight_orders: Arc<Mutex<HashSet<OrderUid>>>,
     liveness: Arc<Liveness>,
+    readiness: Arc<Option<AtomicBool>>,
     /// Maintenance tasks that should run before every runloop to have
     /// the most recent data available.
     maintenance: Arc<Maintenance>,
@@ -108,6 +112,7 @@ impl RunLoop {
         solvable_orders_cache: Arc<SolvableOrdersCache>,
         trusted_tokens: AutoUpdatingTokenList,
         liveness: Arc<Liveness>,
+        readiness: Arc<Option<AtomicBool>>,
         maintenance: Arc<Maintenance>,
         competition_updates_sender: tokio::sync::mpsc::UnboundedSender<()>,
     ) -> Self {
@@ -121,6 +126,7 @@ impl RunLoop {
             trusted_tokens,
             in_flight_orders: Default::default(),
             liveness,
+            readiness,
             maintenance,
             competition_updates_sender,
         }
@@ -134,9 +140,30 @@ impl RunLoop {
         let mut last_auction = None;
         let mut last_block = None;
         let self_arc = Arc::new(self);
+        let mut leader = self_arc
+            .persistence
+            .leader("autopilot_startup".to_string())
+            .await;
+
         loop {
+            let is_leader = leader.tick().await.unwrap_or_else(|err| {
+                tracing::warn!(error=%err, "failed to get leader");
+                false
+            });
+            let start_block = if is_leader {
+                self_arc.update_caches(&mut last_block, true).await
+            } else {
+                self_arc.update_caches(&mut last_block, false).await;
+                continue;
+            };
+
+            // caches are warmed up, we're ready to do leader work
+            if let Some(readiness) = self_arc.readiness.as_ref() {
+                readiness.store(true, Ordering::Release);
+            }
+
             let auction = self_arc
-                .next_auction(&mut last_auction, &mut last_block)
+                .next_auction(start_block, &mut last_auction, &mut last_block)
                 .await;
             if let Some(auction) = auction {
                 let auction_id = auction.id;
@@ -148,48 +175,50 @@ impl RunLoop {
         }
     }
 
+    async fn update_caches(&self, prev_block: &mut Option<H256>, store_events: bool) -> BlockInfo {
+        let current_block = *self.eth.current_block().borrow();
+        let time_since_last_block = current_block.observed_at.elapsed();
+        let auction_block = if time_since_last_block > self.config.max_run_loop_delay {
+            if prev_block.is_some_and(|prev_block| prev_block != current_block.hash) {
+                // don't emit warning if we finished prev run loop within the same block
+                tracing::warn!(
+                    missed_by = ?time_since_last_block - self.config.max_run_loop_delay,
+                    "missed optimal auction start, wait for new block"
+                );
+            }
+            ethrpc::block_stream::next_block(self.eth.current_block()).await
+        } else {
+            current_block
+        };
+
+        self.run_maintenance(&auction_block).await;
+        match self
+            .solvable_orders_cache
+            .update(auction_block.number, store_events)
+            .await
+        {
+            Ok(()) => {
+                tracing::trace!("solvable orders cache updated");
+                self.solvable_orders_cache.track_auction_update("success");
+            }
+            Err(err) => {
+                self.solvable_orders_cache.track_auction_update("failure");
+                tracing::warn!(?err, "failed to update auction");
+            }
+        }
+        auction_block
+    }
+
     /// Sleeps until the next auction is supposed to start, builds it and
     /// returns it.
     #[instrument(skip(self, prev_auction), fields(prev_auction = prev_auction.as_ref().map(|a| a.id)))]
     async fn next_auction(
         &self,
+        start_block: BlockInfo,
         prev_auction: &mut Option<domain::Auction>,
         prev_block: &mut Option<H256>,
     ) -> Option<domain::Auction> {
         // wait for appropriate time to start building the auction
-        let start_block = {
-            let current_block = *self.eth.current_block().borrow();
-            let time_since_last_block = current_block.observed_at.elapsed();
-            let auction_block = if time_since_last_block > self.config.max_run_loop_delay {
-                if prev_block.is_some_and(|prev_block| prev_block != current_block.hash) {
-                    // don't emit warning if we finished prev run loop within the same block
-                    tracing::warn!(
-                        missed_by = ?time_since_last_block - self.config.max_run_loop_delay,
-                        "missed optimal auction start, wait for new block"
-                    );
-                }
-                ethrpc::block_stream::next_block(self.eth.current_block()).await
-            } else {
-                current_block
-            };
-
-            self.run_maintenance(&auction_block).await;
-            match self
-                .solvable_orders_cache
-                .update(auction_block.number)
-                .await
-            {
-                Ok(()) => {
-                    tracing::trace!("solvable orders cache updated");
-                    self.solvable_orders_cache.track_auction_update("success");
-                }
-                Err(err) => {
-                    self.solvable_orders_cache.track_auction_update("failure");
-                    tracing::warn!(?err, "failed to update auction");
-                }
-            }
-            auction_block
-        };
 
         let auction = self.cut_auction().await?;
         tracing::trace!(auction_id = ?auction.id, "auction cut");
