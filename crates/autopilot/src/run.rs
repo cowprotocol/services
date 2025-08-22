@@ -137,11 +137,10 @@ pub async fn start(args: impl Iterator<Item = String>) {
     observe::tracing::initialize(&obs_config);
     observe::panic_hook::install();
 
-    let commit_hash = option_env!("VERGEN_GIT_DESCRIBE")
-        .unwrap_or("COMMIT_INFO_NOT_FOUND");
+    let commit_hash = option_env!("VERGEN_GIT_SHA").unwrap_or("COMMIT_INFO_NOT_FOUND");
 
     tracing::info!(%commit_hash, "running autopilot with validated arguments:\n{}", args);
-    
+
     observe::metrics::setup_registry(Some("gp_v2_autopilot".into()), None);
 
     if args.drivers.is_empty() {

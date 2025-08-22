@@ -33,11 +33,10 @@ async fn run_with(args: cli::Args, bind: Option<oneshot::Sender<SocketAddr>>) {
     );
     observe::tracing::initialize_reentrant(&obs_config);
 
-    let commit_hash = option_env!("VERGEN_GIT_DESCRIBE")
-        .unwrap_or("COMMIT_INFO_NOT_FOUND");
+    let commit_hash = option_env!("VERGEN_GIT_SHA").unwrap_or("COMMIT_INFO_NOT_FOUND");
 
     tracing::info!(%commit_hash, "running solver engine with {args:#?}");
-    
+
     let solver = match args.command {
         cli::Command::Baseline { config } => {
             let config = config::load(&config).await;
