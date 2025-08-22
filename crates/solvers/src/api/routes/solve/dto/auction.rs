@@ -229,9 +229,6 @@ mod concentrated_liquidity_pool {
             gas: eth::Gas(pool.gas_estimate),
             state: liquidity::State::Concentrated(liquidity::concentrated::Pool {
                 tokens,
-                sqrt_price: liquidity::concentrated::SqrtPrice(pool.sqrt_price),
-                liquidity: liquidity::concentrated::Amount(pool.liquidity),
-                tick: liquidity::concentrated::Tick(pool.tick),
                 fee: liquidity::concentrated::Fee(
                     (pool.fee.clone() * bps)
                         .to_u32()
