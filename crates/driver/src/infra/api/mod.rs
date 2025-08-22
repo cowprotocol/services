@@ -61,9 +61,12 @@ impl Api {
             disable_access_list_simulation,
         );
 
-        // Add the metrics and healthz endpoints.
+        // Add the metrics, healthz, and gasprice endpoints.
         app = routes::metrics(app);
         app = routes::healthz(app);
+
+        let eth = axum::Router::new();
+        app = app.merge(routes::gasprice(eth).with_state(self.eth.clone()));
 
         // Multiplex each solver as part of the API. Multiple solvers are multiplexed
         // on the same driver so only one liquidity collector collects the liquidity
