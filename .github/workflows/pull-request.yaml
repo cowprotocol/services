@@ -91,7 +91,7 @@ jobs:
         with:
           file: docker-compose.yaml
           up-opts: -d db
-      - uses: yu-ichiro/spin-up-docker-compose-action@v1
+      - uses: yu-ichiro/spin-up-docker-compose-action@b7808421e139a485cb455f78e66605ca9dbe4334 # v1.2
         with:
           file: docker-compose.yaml
           up-opts: migrations --abort-on-container-failure
@@ -121,7 +121,7 @@ jobs:
         with:
           file: docker-compose.yaml
           up-opts: -d db
-      - uses: yu-ichiro/spin-up-docker-compose-action@v1
+      - uses: yu-ichiro/spin-up-docker-compose-action@b7808421e139a485cb455f78e66605ca9dbe4334 # v1.2
         with:
           file: docker-compose.yaml
           up-opts: migrations --abort-on-container-failure
@@ -161,7 +161,7 @@ jobs:
         with:
           file: docker-compose.yaml
           up-opts: -d db
-      - uses: yu-ichiro/spin-up-docker-compose-action@v1
+      - uses: yu-ichiro/spin-up-docker-compose-action@b7808421e139a485cb455f78e66605ca9dbe4334 # v1.2
         with:
           file: docker-compose.yaml
           up-opts: migrations --abort-on-container-failure
@@ -236,7 +236,7 @@ jobs:
         with:
           file: docker-compose.yaml
           up-opts: -d db
-      - uses: yu-ichiro/spin-up-docker-compose-action@v1
+      - uses: yu-ichiro/spin-up-docker-compose-action@b7808421e139a485cb455f78e66605ca9dbe4334 # v1.2
         with:
           file: docker-compose.yaml
           up-opts: migrations --abort-on-container-failure
