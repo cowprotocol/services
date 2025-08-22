@@ -921,6 +921,7 @@ dependencies = [
  "indexmap 2.10.0",
  "itertools 0.14.0",
  "maplit",
+ "mimalloc",
  "mockall 0.12.1",
  "model",
  "num",
