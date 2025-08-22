@@ -10,7 +10,7 @@ use {
 };
 
 /// Converts a data transfer object into its domain object representation.
-pub fn to_domain(auction: &Auction) -> Result<auction::Auction, Error> {
+pub fn into_domain(auction: Auction) -> Result<auction::Auction, Error> {
     Ok(auction::Auction {
         id: match auction.id {
             Some(id) => auction::Id::Solve(id),
