@@ -59,7 +59,7 @@ use {
         token_list::{AutoUpdatingTokenList, TokenListConfiguration},
     },
     std::{
-        sync::{Arc, RwLock},
+        sync::{Arc, RwLock, atomic::AtomicBool},
         time::{Duration, Instant},
     },
     tracing::{Instrument, info_span, instrument},
@@ -520,7 +520,8 @@ pub async fn run(args: Arguments) {
     );
 
     let liveness = Arc::new(Liveness::new(args.max_auction_age));
-    observe::metrics::serve_metrics(liveness.clone(), args.metrics_address);
+    let readiness = Arc::new(Some(AtomicBool::new(false)));
+    observe::metrics::serve_metrics(liveness.clone(), args.metrics_address, readiness.clone());
 
     let order_events_cleaner_config = crate::periodic_db_cleanup::OrderEventsCleanerConfig::new(
         args.order_events_cleanup_interval,
@@ -664,6 +665,7 @@ pub async fn run(args: Arguments) {
         solvable_orders_cache,
         trusted_tokens,
         liveness.clone(),
+        readiness.clone(),
         Arc::new(maintenance),
         competition_updates_sender,
     );
@@ -744,7 +746,7 @@ async fn shadow_mode(args: Arguments) -> ! {
     };
 
     let liveness = Arc::new(Liveness::new(args.max_auction_age));
-    observe::metrics::serve_metrics(liveness.clone(), args.metrics_address);
+    observe::metrics::serve_metrics(liveness.clone(), args.metrics_address, Default::default());
 
     let current_block = ethrpc::block_stream::current_block_stream(
         args.shared.node_url,
