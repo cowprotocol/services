@@ -1,10 +1,12 @@
+pub mod fake;
+
+pub use fake::FakeGasPriceEstimator;
 use {
     crate::{ethrpc::Web3, http_client::HttpClientFactory},
     anyhow::{Context, Result, ensure},
     gas_estimation::{
         EthGasStation,
         GasNowGasStation,
-        GasPrice1559,
         GasPriceEstimating,
         PriorityGasPriceEstimating,
         Transport,
@@ -13,7 +15,7 @@ use {
     },
     reqwest::header::{self, HeaderMap, HeaderValue},
     serde::de::DeserializeOwned,
-    std::sync::{Arc, Mutex},
+    tracing::instrument,
 };
 
 #[derive(Copy, Clone, Debug, clap::ValueEnum)]
@@ -46,6 +48,7 @@ impl Transport for Client {
     }
 }
 
+#[instrument(skip_all)]
 pub async fn create_priority_estimator(
     http_factory: &HttpClientFactory,
     web3: &Web3,
@@ -109,19 +112,4 @@ pub async fn create_priority_estimator(
 
 fn is_mainnet(network_id: &str) -> bool {
     network_id == "1"
-}
-
-#[derive(Default)]
-pub struct FakeGasPriceEstimator(pub Arc<Mutex<GasPrice1559>>);
-
-impl FakeGasPriceEstimator {
-    pub fn new(gas_price: GasPrice1559) -> Self {
-        Self(Arc::new(Mutex::new(gas_price)))
-    }
-}
-#[async_trait::async_trait]
-impl GasPriceEstimating for FakeGasPriceEstimator {
-    async fn estimate_with_limits(&self, _: f64, _: std::time::Duration) -> Result<GasPrice1559> {
-        Ok(*self.0.lock().unwrap())
-    }
 }

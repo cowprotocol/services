@@ -2,6 +2,8 @@ use {
     super::{Error, Ethereum},
     crate::domain::{competition::order, eth},
     futures::TryFutureExt,
+    tap::TapFallible,
+    web3::types::CallRequest,
 };
 
 /// An ERC-20 token.
@@ -87,12 +89,18 @@ impl Erc20 {
         trader: eth::Address,
         source: order::SellTokenBalance,
         interactions: &[eth::Interaction],
+        disable_access_list_simulation: bool,
     ) -> Result<eth::TokenAmount, Error> {
         if interactions.is_empty() {
             self.tradable_balance_simple(trader, source).await
         } else {
-            self.tradable_balance_simulated(trader, source, interactions)
-                .await
+            self.tradable_balance_simulated(
+                trader,
+                source,
+                interactions,
+                disable_access_list_simulation,
+            )
+            .await
         }
     }
 
@@ -104,46 +112,53 @@ impl Erc20 {
         trader: eth::Address,
         source: order::SellTokenBalance,
         interactions: &[eth::Interaction],
+        disable_access_lists: bool,
     ) -> Result<eth::TokenAmount, Error> {
-        let balance_helper = self.ethereum.contracts().balance_helper();
-        let mut method = balance_helper.balance(
-            (
-                balance_helper.address(),
-                self.ethereum.contracts().vault_relayer().into(),
-                self.ethereum.contracts().vault().address(),
-            ),
-            trader.into(),
-            self.token.address(),
-            0.into(),
-            ethcontract::Bytes(source.hash().0),
-            interactions
-                .iter()
-                .map(|i| {
-                    (
-                        i.target.into(),
-                        i.value.into(),
-                        ethcontract::Bytes(i.call_data.0.clone()),
-                    )
-                })
-                .collect(),
-        );
-        // Create the access list for the balance simulation
-        let access_list_call = contracts::storage_accessible::call(
-            method.tx.to.unwrap(),
-            contracts::bytecode!(contracts::support::Balances),
-            method.tx.data.clone().unwrap(),
-        );
-        let access_list = self
+        let interactions: Vec<_> = interactions.iter().map(|i| i.clone().into()).collect();
+        let shared::account_balances::Simulation {
+            token_balance: _,
+            allowance: _,
+            effective_balance,
+            can_transfer,
+        } = self
             .ethereum
-            .create_access_list(access_list_call)
-            .await
-            .ok();
-        method.tx.access_list = access_list.map(Into::into);
-        let (_, _, effective_balance, can_transfer) = contracts::storage_accessible::simulate(
-            contracts::bytecode!(contracts::support::Balances),
-            method,
-        )
-        .await?;
+            .balance_simulator()
+            .simulate(
+                trader.0,
+                self.token.address(),
+                source.into(),
+                &interactions,
+                None,
+                |mut delegate_call| {
+                    let ethereum = self.ethereum.clone();
+                    async move {
+                        // Add the access lists to the delegate call if they are enabled
+                        // system-wide.
+                        if disable_access_lists {
+                            return delegate_call;
+                        }
+
+                        let access_list_call = CallRequest {
+                            data: delegate_call.tx.data.clone(),
+                            from: delegate_call.tx.from.clone().map(|acc| acc.address()),
+                            ..Default::default()
+                        };
+                        let access_list = ethereum
+                            .create_access_list(access_list_call)
+                            .await
+                            .tap_err(|err| {
+                                tracing::debug!(
+                                    ?err,
+                                    "failed to create access list for balance simulation"
+                                );
+                            })
+                            .ok();
+                        delegate_call.tx.access_list = access_list.map(Into::into);
+                        delegate_call
+                    }
+                },
+            )
+            .await?;
 
         if can_transfer {
             Ok(effective_balance.into())
