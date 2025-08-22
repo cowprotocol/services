@@ -56,6 +56,10 @@ impl GasPrice {
         self.tip
     }
 
+    pub fn base(&self) -> FeePerGas {
+        self.base
+    }
+
     /// Creates a new instance limiting maxFeePerGas to a reasonable multiple of
     /// the current base fee.
     pub fn new(max: FeePerGas, tip: FeePerGas, base: FeePerGas) -> Self {
