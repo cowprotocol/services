@@ -11,7 +11,7 @@ use {
         settlement::SettlementEncoder,
     },
     anyhow::{Context, Result, ensure},
-    contracts::{GPv2Settlement, UniswapV3SwapRouter},
+    contracts::{GPv2Settlement, UniswapV3SwapRouterV2},
     model::TokenPair,
     num::{CheckedMul, rational::Ratio},
     primitive_types::{H160, U256},
@@ -28,16 +28,13 @@ use {
     tracing::instrument,
 };
 
-// 1h timeout for Uniswap V3 interactions
-const TIMEOUT: u32 = 3600;
-
 pub struct UniswapV3Liquidity {
     inner: Arc<Inner>,
     pool_fetcher: Arc<dyn PoolFetching>,
     settlement_allowances: Box<dyn AllowanceManaging>,
 }
 pub struct Inner {
-    pub router: UniswapV3SwapRouter,
+    pub router: UniswapV3SwapRouterV2,
     gpv2_settlement: GPv2Settlement,
     // Mapping of how much allowance the router has per token to spend on behalf of the settlement
     // contract
@@ -51,7 +48,7 @@ pub struct UniswapV3SettlementHandler {
 
 impl UniswapV3SettlementHandler {
     pub fn new(
-        router: UniswapV3SwapRouter,
+        router: UniswapV3SwapRouterV2,
         gpv2_settlement: GPv2Settlement,
         allowances: Mutex<Allowances>,
         fee: Ratio<u32>,
@@ -82,7 +79,7 @@ fn ratio_to_u32(ratio: Ratio<u32>) -> Result<u32> {
 
 impl UniswapV3Liquidity {
     pub fn new(
-        router: UniswapV3SwapRouter,
+        router: UniswapV3SwapRouterV2,
         gpv2_settlement: GPv2Settlement,
         web3: Web3,
         pool_fetcher: Arc<dyn PoolFetching>,
@@ -177,11 +174,6 @@ impl UniswapV3SettlementHandler {
                     token_amount_out,
                     fee: self.fee,
                     recipient: self.inner.gpv2_settlement.address(),
-                    deadline: {
-                        model::time::now_in_epoch_seconds()
-                            .saturating_add(TIMEOUT)
-                            .into()
-                    },
                     sqrt_price_limit_x96: U256::zero(),
                 },
             },
@@ -217,7 +209,7 @@ mod tests {
         fn new_dummy(allowances: HashMap<H160, U256>, fee: u32) -> Self {
             Self {
                 inner: Arc::new(Inner {
-                    router: dummy_contract!(UniswapV3SwapRouter, H160::zero()),
+                    router: dummy_contract!(UniswapV3SwapRouterV2, H160::zero()),
                     gpv2_settlement: dummy_contract!(GPv2Settlement, H160::zero()),
                     allowances: Mutex::new(Allowances::new(H160::zero(), allowances)),
                 }),

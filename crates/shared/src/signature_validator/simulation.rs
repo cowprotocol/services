@@ -11,13 +11,12 @@ use {
     ethrpc::Web3,
     futures::future,
     primitive_types::{H160, U256},
-    std::sync::LazyLock,
     tracing::instrument,
 };
 
 pub struct Validator {
     signatures: contracts::support::Signatures,
-    settlement: H160,
+    settlement: contracts::GPv2Settlement,
     vault_relayer: H160,
     web3: Web3,
 }
@@ -26,10 +25,15 @@ impl Validator {
     /// The result returned from `isValidSignature` if the signature is correct
     const IS_VALID_SIGNATURE_MAGIC_BYTES: &'static str = "1626ba7e";
 
-    pub fn new(web3: &Web3, settlement: H160, vault_relayer: H160) -> Self {
+    pub fn new(
+        web3: &Web3,
+        settlement: contracts::GPv2Settlement,
+        signatures: contracts::support::Signatures,
+        vault_relayer: H160,
+    ) -> Self {
         let web3 = ethrpc::instrumented::instrument_with_label(web3, "signatureValidation".into());
         Self {
-            signatures: contracts::support::Signatures::at(&web3, settlement),
+            signatures,
             settlement,
             vault_relayer,
             web3: web3.clone(),
@@ -66,30 +70,34 @@ impl Validator {
         &self,
         check: &SignatureCheck,
     ) -> Result<Simulation, SignatureValidationError> {
-        // memoize byte code to not hex-decode it on every call
-        static BYTECODE: LazyLock<web3::types::Bytes> =
-            LazyLock::new(|| contracts::bytecode!(contracts::support::Signatures));
-
         // We simulate the signature verification from the Settlement contract's
         // context. This allows us to check:
         // 1. How the pre-interactions would behave as part of the settlement
         // 2. Simulate the actual `isValidSignature` calls that would happen as part of
         //    a settlement
-        let result = contracts::storage_accessible::simulate(
-            BYTECODE.clone(),
-            self.signatures.methods().validate(
-                (self.settlement, self.vault_relayer),
-                check.signer,
-                Bytes(check.hash),
-                Bytes(check.signature.clone()),
-                check
-                    .interactions
-                    .iter()
-                    .map(|i| (i.target, i.value, Bytes(i.call_data.clone())))
-                    .collect(),
-            ),
-        )
-        .await;
+        let validate_call = self.signatures.methods().validate(
+            (self.settlement.address(), self.vault_relayer),
+            check.signer,
+            Bytes(check.hash),
+            Bytes(check.signature.clone()),
+            check
+                .interactions
+                .iter()
+                .map(|i| (i.target, i.value, Bytes(i.call_data.clone())))
+                .collect(),
+        );
+        let gas_cost_call = self
+            .settlement
+            .simulate_delegatecall(
+                self.signatures.address(),
+                Bytes(validate_call.tx.data.unwrap_or_default().0),
+            )
+            .from(crate::SIMULATION_ACCOUNT.clone());
+        let result = gas_cost_call
+            .tx
+            .estimate_gas()
+            .await
+            .map_err(|_| SignatureValidationError::Invalid);
 
         tracing::trace!(?check, ?result, "simulated signature");
         Ok(Simulation { gas_used: result? })
