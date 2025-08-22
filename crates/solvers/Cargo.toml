@@ -59,5 +59,9 @@ tempfile = { workspace = true }
 hex-literal = { workspace = true }
 ethcontract = { workspace = true }
 
+[build-dependencies]
+anyhow = { workspace = true }
+vergen = { workspace = true, features = ["git", "gitcl"] }
+
 [lints]
 workspace = true

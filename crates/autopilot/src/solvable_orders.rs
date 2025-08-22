@@ -633,8 +633,7 @@ async fn get_orders_with_native_prices(
 /// with very few fetch requests.
 fn prioritize_missing_prices(mut orders: Vec<Order>) -> IndexSet<H160> {
     /// How old an order can be at most to be considered a market order.
-    const MARKET_ORDER_AGE_MINUTES: i64 = 30;
-    let market_order_age = chrono::Duration::minutes(MARKET_ORDER_AGE_MINUTES);
+    const MARKET_ORDER_AGE: chrono::Duration = chrono::Duration::minutes(30);
     let now = chrono::Utc::now();
 
     // newer orders at the start
@@ -645,7 +644,7 @@ fn prioritize_missing_prices(mut orders: Vec<Order>) -> IndexSet<H160> {
     for order in orders {
         let sell_token = order.data.sell_token;
         let buy_token = order.data.buy_token;
-        let is_market = now.signed_duration_since(order.metadata.creation_date) <= market_order_age;
+        let is_market = now.signed_duration_since(order.metadata.creation_date) <= MARKET_ORDER_AGE;
 
         if is_market {
             // already correct priority because orders were sorted by creation_date
