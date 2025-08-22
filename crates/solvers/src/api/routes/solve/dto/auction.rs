@@ -232,16 +232,6 @@ mod concentrated_liquidity_pool {
                 sqrt_price: liquidity::concentrated::SqrtPrice(pool.sqrt_price),
                 liquidity: liquidity::concentrated::Amount(pool.liquidity),
                 tick: liquidity::concentrated::Tick(pool.tick),
-                liquidity_net: pool
-                    .liquidity_net
-                    .iter()
-                    .map(|(tick, liquidity)| {
-                        (
-                            liquidity::concentrated::Tick(*tick),
-                            liquidity::concentrated::LiquidityNet(*liquidity),
-                        )
-                    })
-                    .collect(),
                 fee: liquidity::concentrated::Fee(
                     (pool.fee.clone() * bps)
                         .to_u32()

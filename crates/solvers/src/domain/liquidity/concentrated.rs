@@ -1,4 +1,4 @@
-use {crate::domain::liquidity, ethereum_types::U256, std::collections::BTreeMap};
+use {crate::domain::liquidity, ethereum_types::U256};
 
 /// State for a UniswapV3-like concentrated liquidity pool.
 #[derive(Clone, Debug)]
@@ -7,7 +7,6 @@ pub struct Pool {
     pub sqrt_price: SqrtPrice,
     pub liquidity: Amount,
     pub tick: Tick,
-    pub liquidity_net: BTreeMap<Tick, LiquidityNet>,
     pub fee: Fee,
 }
 
