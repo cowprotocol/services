@@ -58,7 +58,11 @@ pub async fn run(args: arguments::Arguments) {
         // Program will be healthy at the start even if no loop was ran yet.
         last_successful_loop: RwLock::new(Instant::now()),
     });
-    observe::metrics::serve_metrics(liveness.clone(), ([0, 0, 0, 0], args.metrics_port).into());
+    observe::metrics::serve_metrics(
+        liveness.clone(),
+        ([0, 0, 0, 0], args.metrics_port).into(),
+        Default::default(),
+    );
 
     let ethflow_contracts = args
         .ethflow_contracts

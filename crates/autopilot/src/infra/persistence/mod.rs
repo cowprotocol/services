@@ -11,6 +11,7 @@ use {
     chrono::{DateTime, Utc},
     database::{
         events::EventIndex,
+        leader_pg_lock::LeaderLock,
         order_events::OrderEventLabel,
         order_execution::Asset,
         orders::{
@@ -33,6 +34,7 @@ use {
         collections::{HashMap, HashSet},
         ops::DerefMut,
         sync::Arc,
+        time::Duration,
     },
     tracing::Instrument,
 };
@@ -55,6 +57,10 @@ impl Persistence {
             },
             postgres,
         }
+    }
+
+    pub async fn leader(&self, key: String) -> LeaderLock {
+        LeaderLock::new(self.postgres.pool.clone(), key, Duration::from_millis(200))
     }
 
     /// There is always only one `current` auction.
