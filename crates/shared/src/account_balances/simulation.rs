@@ -4,10 +4,10 @@
 
 use {
     super::{BalanceFetching, Query, TransferSimulationError},
-    alloy::sol_types::{SolType, sol_data},
-    anyhow::{Context, Result},
+    crate::account_balances::BalanceSimulator,
+    anyhow::Result,
     contracts::{BalancerV2Vault, erc20::Contract},
-    ethcontract::{Bytes, H160, U256},
+    ethcontract::{H160, U256},
     ethrpc::Web3,
     futures::future,
     model::order::SellTokenSource,
@@ -15,21 +15,12 @@ use {
 };
 
 pub struct Balances {
-    balances: contracts::support::Balances,
-    settlement: contracts::GPv2Settlement,
     web3: Web3,
-    vault_relayer: H160,
-    vault: H160,
+    balance_simulator: BalanceSimulator,
 }
 
 impl Balances {
-    pub fn new(
-        web3: &Web3,
-        settlement: contracts::GPv2Settlement,
-        balances: contracts::support::Balances,
-        vault_relayer: H160,
-        vault: Option<H160>,
-    ) -> Self {
+    pub fn new(web3: &Web3, balance_simulator: BalanceSimulator) -> Self {
         // Note that the balances simulation **will fail** if the `vault`
         // address is not a contract and the `source` is set to one of
         // `SellTokenSource::{External, Internal}` (i.e. the Vault contract is
@@ -37,71 +28,34 @@ impl Balances {
         // contracts exist at addresses that get called. This allows us to
         // properly check if the `source` is not supported for the deployment
         // work without additional code paths :tada:!
-        let vault = vault.unwrap_or_default();
         let web3 = ethrpc::instrumented::instrument_with_label(web3, "balanceFetching".into());
 
         Self {
             web3,
-            settlement,
-            balances,
-            vault_relayer,
-            vault,
+            balance_simulator,
         }
     }
 
-    #[instrument(skip_all)]
-    async fn simulate(&self, query: &Query, amount: Option<U256>) -> Result<Simulation> {
-        // We simulate the balances from the Settlement contract's context. This
-        // allows us to check:
-        // 1. How the pre-interactions would behave as part of the settlement
-        // 2. Simulate the actual VaultRelayer transfers that would happen as part of a
-        //    settlement
-        //
-        // This allows us to end up with very accurate balance simulations.
-        let balance_call = self.balances.balance(
-            (self.settlement.address(), self.vault_relayer, self.vault),
-            query.owner,
-            query.token,
-            amount.unwrap_or_default(),
-            Bytes(query.source.as_bytes()),
-            query
-                .interactions
-                .iter()
-                .map(|i| (i.target, i.value, Bytes(i.call_data.clone())))
-                .collect(),
-        );
+    fn vault_relayer(&self) -> H160 {
+        self.balance_simulator.vault_relayer
+    }
 
-        let delegate_call = self
-            .settlement
-            .simulate_delegatecall(
-                self.balances.address(),
-                ethcontract::Bytes(balance_call.tx.data.unwrap_or_default().0),
-            )
-            .from(crate::SIMULATION_ACCOUNT.clone());
-
-        let response = delegate_call.call().await?;
-        let (token_balance, allowance, effective_balance, can_transfer) =
-            <(
-                sol_data::Uint<256>,
-                sol_data::Uint<256>,
-                sol_data::Uint<256>,
-                sol_data::Bool,
-            )>::abi_decode(&response.0)
-            .context("failed to decode balance response")?;
-
-        let simulation = Simulation {
-            token_balance: U256::from_little_endian(&token_balance.as_le_bytes()),
-            allowance: U256::from_little_endian(&allowance.as_le_bytes()),
-            effective_balance: U256::from_little_endian(&effective_balance.as_le_bytes()),
-            can_transfer,
-        };
-
-        tracing::trace!(?query, ?amount, ?simulation, "simulated balances");
-        Ok(simulation)
+    fn vault(&self) -> H160 {
+        self.balance_simulator.vault
     }
 
     async fn tradable_balance_simulated(&self, query: &Query) -> Result<U256> {
-        let simulation = self.simulate(query, None).await?;
+        let simulation = self
+            .balance_simulator
+            .simulate(
+                query.owner,
+                query.token,
+                query.source,
+                &query.interactions,
+                None,
+                |delegate_call| async move { delegate_call },
+            )
+            .await?;
         Ok(if simulation.can_transfer {
             simulation.effective_balance
         } else {
@@ -113,18 +67,18 @@ impl Balances {
         let usable_balance = match query.source {
             SellTokenSource::Erc20 => {
                 let balance = token.balance_of(query.owner).call();
-                let allowance = token.allowance(query.owner, self.vault_relayer).call();
+                let allowance = token.allowance(query.owner, self.vault_relayer()).call();
                 let (balance, allowance) = futures::try_join!(balance, allowance)?;
                 std::cmp::min(balance, allowance)
             }
             SellTokenSource::External => {
-                let vault = BalancerV2Vault::at(&self.web3, self.vault);
+                let vault = BalancerV2Vault::at(&self.web3, self.vault());
                 let balance = token.balance_of(query.owner).call();
                 let approved = vault
                     .methods()
-                    .has_approved_relayer(query.owner, self.vault_relayer)
+                    .has_approved_relayer(query.owner, self.vault_relayer())
                     .call();
-                let allowance = token.allowance(query.owner, self.vault).call();
+                let allowance = token.allowance(query.owner, self.vault()).call();
                 let (balance, approved, allowance) =
                     futures::try_join!(balance, approved, allowance)?;
                 match approved {
@@ -133,14 +87,14 @@ impl Balances {
                 }
             }
             SellTokenSource::Internal => {
-                let vault = BalancerV2Vault::at(&self.web3, self.vault);
+                let vault = BalancerV2Vault::at(&self.web3, self.vault());
                 let balance = vault
                     .methods()
                     .get_internal_balance(query.owner, vec![query.token])
                     .call();
                 let approved = vault
                     .methods()
-                    .has_approved_relayer(query.owner, self.vault_relayer)
+                    .has_approved_relayer(query.owner, self.vault_relayer())
                     .call();
                 let (balance, approved) = futures::try_join!(balance, approved)?;
                 match approved {
@@ -151,14 +105,6 @@ impl Balances {
         };
         Ok(usable_balance)
     }
-}
-
-#[derive(Debug)]
-struct Simulation {
-    token_balance: U256,
-    allowance: U256,
-    effective_balance: U256,
-    can_transfer: bool,
 }
 
 #[async_trait::async_trait]
@@ -186,7 +132,18 @@ impl BalanceFetching for Balances {
         query: &Query,
         amount: U256,
     ) -> Result<(), TransferSimulationError> {
-        let simulation = self.simulate(query, Some(amount)).await?;
+        let simulation = self
+            .balance_simulator
+            .simulate(
+                query.owner,
+                query.token,
+                query.source,
+                &query.interactions,
+                Some(amount),
+                |delegate_call| async move { delegate_call },
+            )
+            .await
+            .map_err(|err| TransferSimulationError::Other(err.into()))?;
 
         if simulation.token_balance < amount {
             return Err(TransferSimulationError::InsufficientBalance);
@@ -222,10 +179,12 @@ mod tests {
         );
         let balances = Balances::new(
             &web3,
-            settlement,
-            balances,
-            addr!("C92E8bdf79f0507f65a392b0ab4667716BFE0110"),
-            Some(addr!("BA12222222228d8Ba445958a75a0704d566BF2C8")),
+            BalanceSimulator::new(
+                settlement,
+                balances,
+                addr!("C92E8bdf79f0507f65a392b0ab4667716BFE0110"),
+                Some(addr!("BA12222222228d8Ba445958a75a0704d566BF2C8")),
+            ),
         );
 
         let owner = addr!("b0a4e99371dfb0734f002ae274933b4888f618ef");
