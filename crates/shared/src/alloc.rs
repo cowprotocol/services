@@ -18,22 +18,13 @@ pub struct JemallocMemoryProfiler {
 impl JemallocMemoryProfiler {
     pub fn new() -> Option<Self> {
         if std::env::var("_RJEM_MALLOC_CONF").is_err() {
-            tracing::warn!("_RJEM_MALLOC_CONF is not set, memory profiler is disabled");
+            tracing::info!("_RJEM_MALLOC_CONF is not set, memory profiler is disabled");
             return None;
         }
         let dump_dir_path_str = std::env::var("MEM_DUMP_PATH").ok().unwrap_or_else(|| {
             tracing::info!("MEM_DUMP_PATH is not set, using system temp directory as default");
             std::env::temp_dir().to_string_lossy().to_string()
         });
-        let profiling_duration = std::env::var("PROFILING_DURATION")
-            .ok()
-            .and_then(|duration_str| humantime::parse_duration(&duration_str).ok())
-            .unwrap_or_else(|| {
-                tracing::info!(
-                    "PROFILING_DURATION is not set or invalid, using default 60 seconds"
-                );
-                Duration::from_secs(60)
-            });
         let Some(dump_dir_path) = PathBuf::from_str(&dump_dir_path_str).ok() else {
             tracing::warn!(
                 "Invalid MEM_DUMP_PATH: {dump_dir_path_str}, memory profiler is disabled"
@@ -42,15 +33,19 @@ impl JemallocMemoryProfiler {
         };
 
         let Ok::<bool, _>(active) = (unsafe { tikv_jemalloc_ctl::raw::read(PROF_ACTIVE) }) else {
-            tracing::error!("failed to read memory profiler state");
+            tracing::error!("failed to read memory profiler state, disabling");
             return None;
         };
 
+        tracing::info!(
+            ?dump_dir_path,
+            active,
+            "jemalloc memory profiler initialized"
+        );
         Some(Self {
             inner: Arc::new(Inner {
                 active: tokio::sync::Mutex::new(active),
                 dump_dir_path,
-                profiling_duration,
             }),
         })
     }
@@ -70,24 +65,53 @@ impl JemallocMemoryProfiler {
             while sigusr2.recv().await.is_some() {
                 tracing::info!("SIGUSR2 received: triggering memory profiling dump");
 
-                // Enable profiler
-                if !self.set_enabled(true).await {
-                    tracing::warn!("failed to enable jemalloc profiler");
+                let Some(command) = option_env!("PROFILER_COMMAND")
+                    .and_then(|cmd| ProfilerCommand::from_str(cmd).ok())
+                else {
+                    tracing::warn!(
+                        "PROFILER_COMMAND is not set or invalid, skipping jemalloc memory \
+                         profiling"
+                    );
                     continue;
+                };
+
+                match command {
+                    ProfilerCommand::Enable => {
+                        if self.set_enabled(true).await {
+                            tracing::info!("jemalloc active profiling enabled");
+                        }
+                    }
+                    ProfilerCommand::Disable => {
+                        if self.set_enabled(false).await {
+                            tracing::info!("jemalloc active profiling disabled");
+                        }
+                    }
+                    ProfilerCommand::Dump => {
+                        self.dump_prof().await;
+                    }
+                    ProfilerCommand::RunFor(duration) => {
+                        if self.set_enabled(true).await {
+                            tracing::info!("jemalloc active profiling enabled");
+                        } else {
+                            tracing::warn!(
+                                "jemalloc active profiling was already enabled, disable it first \
+                                 and try again"
+                            );
+                            continue;
+                        }
+
+                        tracing::info!(
+                            "jemalloc active memory profiling will be executing for {duration:?}"
+                        );
+                        tokio::time::sleep(duration).await;
+
+                        self.dump_prof().await;
+
+                        if self.set_enabled(false).await {
+                            tracing::info!("jemalloc active profiling disabled");
+                        }
+                    }
                 }
-
-                // Sleep to collect some data
-                tokio::time::sleep(self.inner.profiling_duration).await;
-
-                // Perform dump
-                self.dump().await;
-
-                // Disable profiler
-                if !self.set_enabled(false).await {
-                    tracing::warn!("failed to disable jemalloc profiler");
-                }
-
-                tracing::info!("jemalloc memory profiler dump complete");
             }
         });
     }
@@ -109,7 +133,7 @@ impl JemallocMemoryProfiler {
         }
     }
 
-    async fn dump(&self) {
+    async fn dump_prof(&self) {
         let state = self.inner.active.lock().await;
         // Hold the lock until the dump is complete.
         if !*state {
@@ -140,7 +164,38 @@ impl JemallocMemoryProfiler {
 struct Inner {
     active: tokio::sync::Mutex<bool>,
     dump_dir_path: PathBuf,
-    profiling_duration: Duration,
+}
+
+#[derive(Debug)]
+enum ProfilerCommand {
+    Enable,
+    Disable,
+    RunFor(Duration),
+    Dump,
+}
+
+impl FromStr for ProfilerCommand {
+    type Err = String;
+
+    fn from_str(str: &str) -> Result<Self, Self::Err> {
+        let lower = str.to_lowercase();
+        if lower == "enable" {
+            Ok(ProfilerCommand::Enable)
+        } else if lower == "disable" {
+            Ok(ProfilerCommand::Disable)
+        } else if lower == "dump" {
+            Ok(ProfilerCommand::Dump)
+        } else if let Some(arg) = lower
+            .strip_prefix("run_for(")
+            .and_then(|rest| rest.strip_suffix(")"))
+        {
+            let dur = humantime::parse_duration(arg)
+                .map_err(|err| format!("invalid duration {arg:?}: {err}"))?;
+            Ok(ProfilerCommand::RunFor(dur))
+        } else {
+            Err(format!("Unknown command: {str}"))
+        }
+    }
 }
 
 const PROF_ACTIVE: &[u8] = b"prof.active\0";
