@@ -4,15 +4,15 @@ use {
         os::unix::prelude::OsStrExt,
         path::PathBuf,
         str::FromStr,
-        sync::Arc,
         time::Duration,
     },
     tokio::signal::unix::{SignalKind, signal},
 };
 
-#[derive(Clone)]
 pub struct JemallocMemoryProfiler {
-    inner: Arc<Inner>,
+    process_name: String,
+    active: tokio::sync::Mutex<bool>,
+    dump_dir_path: PathBuf,
 }
 
 impl JemallocMemoryProfiler {
@@ -44,11 +44,9 @@ impl JemallocMemoryProfiler {
         );
 
         Some(Self {
-            inner: Arc::new(Inner {
-                process_name: process_name.to_string(),
-                active: tokio::sync::Mutex::new(active),
-                dump_dir_path,
-            }),
+            process_name: process_name.to_string(),
+            active: tokio::sync::Mutex::new(active),
+            dump_dir_path,
         })
     }
 
@@ -122,7 +120,7 @@ impl JemallocMemoryProfiler {
 
 impl JemallocMemoryProfiler {
     async fn set_enabled(&self, enabled: bool) -> bool {
-        let mut state = self.inner.active.lock().await;
+        let mut state = self.active.lock().await;
         match unsafe { tikv_jemalloc_ctl::raw::update(PROF_ACTIVE, enabled) } {
             Ok(was_enabled) => {
                 *state = enabled;
@@ -136,7 +134,7 @@ impl JemallocMemoryProfiler {
     }
 
     async fn dump_prof(&self) {
-        let state = self.inner.active.lock().await;
+        let state = self.active.lock().await;
         // Hold the lock until the dump is complete.
         if !*state {
             tracing::error!("memory profiler is not active, cannot dump");
@@ -144,9 +142,9 @@ impl JemallocMemoryProfiler {
         }
 
         let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S").to_string();
-        let process_name = self.inner.process_name.as_str();
+        let process_name = self.process_name.as_str();
         let filename = format!("jemalloc_dump_{process_name}_{timestamp}.heap");
-        let full_path = self.inner.dump_dir_path.join(filename);
+        let full_path = self.dump_dir_path.join(filename);
         {
             let Some(bytes) = CString::new(full_path.as_os_str().as_bytes()).ok() else {
                 tracing::error!(?full_path, "failed to create CString from path");
@@ -163,12 +161,6 @@ impl JemallocMemoryProfiler {
 
         tracing::info!(?full_path, "saved the jemalloc profiling dump");
     }
-}
-
-struct Inner {
-    process_name: String,
-    active: tokio::sync::Mutex<bool>,
-    dump_dir_path: PathBuf,
 }
 
 #[derive(Debug)]
