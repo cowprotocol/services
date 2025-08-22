@@ -60,8 +60,9 @@ async fn liquidity_source_notification(web3: Web3) {
     // solver - represents both baseline solver engine for quoting and liquorice
     // solver engine for solving
     let [solver] = onchain.make_solvers_forked(to_wei(1)).await;
-    // trader - the account that will place order
-    // liquorice_maker - the account that will be used to fill the order
+    // trader - the account that will place CoW order
+    // liquorice_maker - the account that will place Liquorice order to fill CoW
+    // order with
     let [trader, liquorice_maker] = onchain.make_accounts(to_wei(1)).await;
 
     // Access trade tokens contracts
@@ -296,6 +297,7 @@ async fn liquidity_source_notification(web3: Web3) {
     let trade = services.get_trades(&order_id).await.unwrap().pop();
     assert!(trade.is_some());
 
+    // Ensure that notification was delivered to Liquorice API
     let notification = liquorice_api
         .get_state()
         .await
@@ -305,8 +307,6 @@ async fn liquidity_source_notification(web3: Web3) {
         .unwrap();
 
     use infra::notify::liquidity_sources::liquorice::client::request::v1::intent_origin::notification::post::{Content, Settle};
-
-    // Ensure that notification was delivered to Liquorice API
     assert!(matches!(notification.content, Content::Settle(Settle {
         rfq_ids,
         ..

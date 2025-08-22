@@ -199,9 +199,7 @@ fn liquidity_sources_notifier(
     let notifier_config = config
         .liquidity_sources_notifier
         .as_ref()
-        .unwrap_or(&notify::liquidity_sources::config::Config {
-            liquorice: None,
-        });
+        .unwrap_or(&notify::liquidity_sources::config::Config { liquorice: None });
     notify::liquidity_sources::Notifier::try_new(notifier_config, eth.chain())
         .expect("initialize notify sources notifier")
 }
