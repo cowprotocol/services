@@ -16,7 +16,7 @@ pub struct JemallocMemoryProfiler {
 }
 
 impl JemallocMemoryProfiler {
-    pub fn new() -> Option<Self> {
+    pub fn new(process_name: &str) -> Option<Self> {
         if std::env::var("_RJEM_MALLOC_CONF").is_err() {
             tracing::info!("_RJEM_MALLOC_CONF is not set, memory profiler is disabled");
             return None;
@@ -42,8 +42,10 @@ impl JemallocMemoryProfiler {
             active,
             "jemalloc memory profiler initialized"
         );
+
         Some(Self {
             inner: Arc::new(Inner {
+                process_name: process_name.to_string(),
                 active: tokio::sync::Mutex::new(active),
                 dump_dir_path,
             }),
@@ -65,8 +67,9 @@ impl JemallocMemoryProfiler {
             while sigusr2.recv().await.is_some() {
                 tracing::info!("SIGUSR2 received: triggering memory profiling dump");
 
-                let Some(command) = option_env!("PROFILER_COMMAND")
-                    .and_then(|cmd| ProfilerCommand::from_str(cmd).ok())
+                let Some(command) = std::env::var("PROFILER_COMMAND")
+                    .ok()
+                    .and_then(|cmd| ProfilerCommand::from_str(cmd.as_str()).ok())
                 else {
                     tracing::warn!(
                         "PROFILER_COMMAND is not set or invalid, skipping jemalloc memory \
@@ -119,7 +122,6 @@ impl JemallocMemoryProfiler {
 
 impl JemallocMemoryProfiler {
     async fn set_enabled(&self, enabled: bool) -> bool {
-        // @todo: support multiple threads to collect the dump in parallel
         let mut state = self.inner.active.lock().await;
         match unsafe { tikv_jemalloc_ctl::raw::update(PROF_ACTIVE, enabled) } {
             Ok(was_enabled) => {
@@ -142,7 +144,8 @@ impl JemallocMemoryProfiler {
         }
 
         let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S").to_string();
-        let filename = format!("jemalloc_dump_{timestamp}.heap");
+        let process_name = self.inner.process_name.as_str();
+        let filename = format!("jemalloc_dump_{process_name}_{timestamp}.heap");
         let full_path = self.inner.dump_dir_path.join(filename);
         {
             let Some(bytes) = CString::new(full_path.as_os_str().as_bytes()).ok() else {
@@ -152,6 +155,7 @@ impl JemallocMemoryProfiler {
 
             let mut bytes = bytes.into_bytes_with_nul();
             let ptr = bytes.as_mut_ptr().cast::<c_char>();
+            tracing::info!(?full_path, "dumping jemalloc profiling data");
             if let Err(err) = unsafe { tikv_jemalloc_ctl::raw::write(PROF_DUMP, ptr) } {
                 tracing::error!(?err, "failed to dump jemalloc profiling data");
             }
@@ -162,6 +166,7 @@ impl JemallocMemoryProfiler {
 }
 
 struct Inner {
+    process_name: String,
     active: tokio::sync::Mutex<bool>,
     dump_dir_path: PathBuf,
 }

@@ -144,7 +144,7 @@ pub async fn start(args: impl Iterator<Item = String>) {
 
     observe::metrics::setup_registry(Some("gp_v2_autopilot".into()), None);
 
-    if let Some(profiler) = JemallocMemoryProfiler::new() {
+    if let Some(profiler) = JemallocMemoryProfiler::new("autopilot") {
         profiler.run();
     }
 
