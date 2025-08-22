@@ -38,7 +38,7 @@ use {
     model::DomainSeparator,
     observe::metrics::LivenessChecking,
     shared::{
-        account_balances,
+        account_balances::{self, BalanceSimulator},
         arguments::tracing_config,
         bad_token::{
             cache::CachingDetector,
@@ -258,12 +258,12 @@ pub async fn run(args: Arguments) {
 
     let balance_fetcher = account_balances::cached(
         &web3,
-        account_balances::Contracts {
-            settlement: eth.contracts().settlement().clone(),
-            balances: eth.contracts().balances().clone(),
+        BalanceSimulator::new(
+            eth.contracts().settlement().clone(),
+            eth.contracts().balances().clone(),
             vault_relayer,
-            vault: vault.as_ref().map(|contract| contract.address()),
-        },
+            vault.as_ref().map(|contract| contract.address()),
+        ),
         eth.current_block().clone(),
     );
 
