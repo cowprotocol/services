@@ -13,7 +13,7 @@ use {
             self,
             notify::liquidity_sources::{
                 LiquiditySourceNotifying,
-                liquorice::{self},
+                liquorice::{self, client::request::v1::intent_origin::notification},
             },
         },
     },
@@ -64,22 +64,15 @@ impl LiquiditySourceNotifying for Notifier {
             self.liquorice_settlement_contract_address,
         );
 
-        use liquorice::client::request::v1::intent_origin::notification::post::{
-            Content,
-            Metadata,
-            Request,
-            Settle,
-        };
-
         let _ = self
             .client
-            .send_request(Request {
+            .send_request(notification::post::Request {
                 source: NOTIFICATION_SOURCE.to_string(),
                 timestamp: Utc::now(),
-                metadata: Metadata {
+                metadata: notification::post::Metadata {
                     driver_version: DRIVER_VERSION.to_string(),
                 },
-                content: Content::Settle(Settle {
+                content: notification::post::Content::Settle(notification::post::Settle {
                     auction_id: settlement.auction_id.0,
                     rfq_ids,
                 }),

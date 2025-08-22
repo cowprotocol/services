@@ -311,9 +311,8 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                     http_timeout: config.http_timeout,
                 }),
         },
-        liquidity_sources_notifier: config
-            .liquidity_sources_notifier
-            .map(|notifier| notify::liquidity_sources::config::Config {
+        liquidity_sources_notifier: config.liquidity_sources_notifier.map(|notifier| {
+            notify::liquidity_sources::config::Config {
                 liquorice: notifier.liquorice.map(|liquorice_config| {
                     notify::liquidity_sources::config::Liquorice {
                         base_url: liquorice_config.base_url,
@@ -321,7 +320,8 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                         http_timeout: liquorice_config.http_timeout,
                     }
                 }),
-            }),
+            }
+        }),
         mempools: config
             .submission
             .mempools

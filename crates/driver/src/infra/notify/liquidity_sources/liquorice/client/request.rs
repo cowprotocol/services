@@ -66,14 +66,12 @@ pub mod v1 {
                     pub driver_version: String,
                 }
 
-                // #[serde_as]
                 #[derive(Debug, Clone, Serialize, Deserialize)]
                 #[serde(tag = "type", content = "content", rename_all = "snake_case")]
                 pub enum Content {
                     Settle(Settle),
                 }
 
-                // #[serde_as]
                 #[derive(Debug, Clone, Serialize, Deserialize)]
                 #[serde(rename_all = "camelCase")]
                 pub struct Settle {
