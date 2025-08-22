@@ -6,11 +6,11 @@ run the CoW Protocol stack 🚀
 ## Quickstart
 
 1. Clone this repo.
-2. It is expected that this is from from a `devcontainer` in VSCode, or a similar environment.
+2. It is expected that this is run from a `devcontainer` in VSCode, or a similar environment.
 3. Configure the stack by editing the `.env.example` file and renaming it to `.env`. **NOTE**: RPC demand is very high,
    for optimal performance, use a local node. The stack was tested with `reth` on `mainnet`.
 4. Run `docker-compose -f docker-compose.fork.yml up -d`.
-5. Configure Rabby Wallet (or see [metamask specific notes](#metamask)) to use the RPC endpoint at
+5. Configure Rabby Wallet (or see [Metamask specific notes](#metamask)) to use the RPC endpoint at
    `http://localhost:8545` (for `mainnet`, or your network of choice).
 6. Configure your wallet to use a test account (any of the first 10 accounts from the test mnemonic will do).
 
@@ -35,10 +35,87 @@ Private Keys
 (9) 0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6
 ```
 
-Now with Rabby configured, and the services started, you can browse to http://localhost:8000 and make a trade with CoW
-Swap. Initially you will start with 10000 ETH, so you will have to wrap some ETH, or alternatively just simply test out
-an EthFlow order! You can follow along with watching the logs of the `autopilot`, `driver`, and `baseline` solver to see
-how the Protocol interacts.
+Now with Rabby configured, and the services started, you can browse to http://localhost:8000 and make a trade with CoW Swap.
+
+> Initially you will start with 10000 ETH, to run proper transaction you will need to wrap some ETH first.
+> The EthFlow is not configured by default, the next section explains how to set it up.
+> You can follow along with watching the logs of the `autopilot`, `driver`, and `baseline` solver to see how the Protocol interacts.
+
+## Setting up EthFlow
+
+For EthFlow orders to work, you will need to provide an EthFlow contract address.
+
+You do that by adding `ETHFLOW_CONTRACTS=<address>` to your `.env` file.
+
+For testing, (at the time of writing) the contract you should use is [`0x04501b9b1d52e67f6862d157e00d13419d2d6e95`](https://github.com/cowprotocol/cow-sdk/blob/747e2ade0118d2468c00af7d773bb7b1fbf64f66/src/common/consts/contracts.ts#L56),
+as time progresses it may no longer be the case, there are multiple ways of figuring out the right contract.
+
+
+### Setting the contract — using the frontend repo
+
+Inside the [`contracts.ts`](https://github.com/cowprotocol/cow-sdk/blob/main/src/common/consts/contracts.ts)
+file you will find the address for the EthFlow staging contract:
+
+```ts
+const BARN_ETH_FLOW_ADDRESS = '0x04501b9b1d52e67f6862d157e00d13419d2d6e95'
+```
+
+This is, of course, subject to change, alternatively you can follow the next method.
+
+#### Setting the contract — the long way
+
+To go the long way, you first run the system and try to perform an EthFlow transaction.
+The expect behavior is for the ETH to be sent but for the flow to block on the order creation.
+
+Copy the transaction hash from "View Transaction", the link should point to Etherscan but the transaction should be missing
+(you're running a fork after all), the link should be similar to the following:
+
+```
+https://etherscan.io/tx/0xe510b729782d5c19b6cceebec905a20b749519af295a32a06e3122e46221fd4d
+```
+
+You should take the hash and use `cast` to look for its receipt:
+
+```
+$ cast receipt 0xe510b729782d5c19b6cceebec905a20b749519af295a32a06e3122e46221fd4d
+
+blockHash            0xc36ec230da90e097d4edb63167cbfe62cdf0e5d515a5bbd282372a7dd20e74e0
+blockNumber          23197203
+contractAddress
+cumulativeGasUsed    56228
+effectiveGasPrice    7782057214
+from                 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
+gasUsed              56228
+logs                 [{"address":"0x04501b9b1d52e67f6862d157e00d13419d2d6e95","topics":["0xcf5f9de2984132265203b5c335b25727702ca77262ff622e136baa7362bf1da9","0x000000000000000000000000f39fd6e51aad88f6f4ce6ab8827279cfffb92266"],"data":"0x000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48000000000000000000000000f39fd6e51aad88f6f4ce6ab8827279cfffb922660000000000000000000000000000000000000000000000000de0b6b3a7640000000000000000000000000000000000000000000000000000000000010943cf0e00000000000000000000000000000000000000000000000000000000ffffffffd2b043c2cbd6f15b991059ab1e7bb61a27834f458a0986a5bcb9d893f69cbe990000000000000000000000000000000000000000000000000000000000000000f3b277728b3fee749481eb3e0b3b48980dbbab78658fc419025cb16eee34677500000000000000000000000000000000000000000000000000000000000000005a28e9363bb942b639270062aa6bb295f434bcdfc42c97267bf003f272060dc95a28e9363bb942b639270062aa6bb295f434bcdfc42c97267bf003f272060dc900000000000000000000000000000000000000000000000000000000000001c0000000000000000000000000000000000000000000000000000000000000024000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000001404501b9b1d52e67f6862d157e00d13419d2d6e95000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c000000000000000368a884e60000000000000000000000000000000000000000","blockHash":"0xc36ec230da90e097d4edb63167cbfe62cdf0e5d515a5bbd282372a7dd20e74e0","blockNumber":"0x161f613","blockTimestamp":"0x68a87deb","transactionHash":"0xe510b729782d5c19b6cceebec905a20b749519af295a32a06e3122e46221fd4d","transactionIndex":"0x0","logIndex":"0x0","removed":false}]
+logsBloom            0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000800000000000000000000000200000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000040000000000000000000000000000000000000000200000000000000000000000002000000000000100000000000000000000000000000000000000000800000000000000000000000000000000
+root
+status               1 (success)
+transactionHash      0xe510b729782d5c19b6cceebec905a20b749519af295a32a06e3122e46221fd4d
+transactionIndex     0
+type                 2
+blobGasPrice         1
+blobGasUsed
+to                   0x04501b9b1D52e67f6862d157E00D13419D2D6E95
+```
+
+The key field is the last one, `to`, that address is the smart contract address for the EthFlow.
+
+
+### Set the indexing start — Optional
+
+Indexing takes a while, to give the playground a little boost you should query the current chain head from "final" RPC you're using:
+
+```
+cast block-number -r <RPC_URL>
+```
+
+For example:
+```
+cast block-number -r https://ovh-mainnet-reth-01.nodes.batch.exchange/reth
+23197382
+```
+
+Afterwards you set `ETHFLOW_INDEXING_START` to the received block number and you're good to go.
 
 ### Resetting the playground
 
@@ -96,8 +173,6 @@ await window.ethereum.request({
   ],
 });
 ```
-
-See ya Infura! 🚀 We want to roam the meadows with the herd 🐮
 
 ## Components
 

@@ -117,6 +117,8 @@ services:
       - BASELINE_SOURCES=None
       - RUST_BACKTRACE=1
       - TOML_TRACE_ERROR=1
+      - ETHFLOW_CONTRACTS
+      - ETHFLOW_INDEXING_START
     depends_on:
       orderbook:
         condition: service_started
