@@ -39,6 +39,7 @@ use {
     observe::metrics::LivenessChecking,
     shared::{
         account_balances::{self, BalanceSimulator},
+        alloc::JemallocMemoryProfiler,
         arguments::tracing_config,
         bad_token::{
             cache::CachingDetector,
@@ -142,6 +143,10 @@ pub async fn start(args: impl Iterator<Item = String>) {
     tracing::info!(%commit_hash, "running autopilot with validated arguments:\n{}", args);
 
     observe::metrics::setup_registry(Some("gp_v2_autopilot".into()), None);
+
+    if let Some(profiler) = JemallocMemoryProfiler::new("autopilot") {
+        profiler.run();
+    }
 
     if args.drivers.is_empty() {
         panic!("colocation is enabled but no drivers are configured");
