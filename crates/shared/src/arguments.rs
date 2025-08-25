@@ -184,6 +184,10 @@ pub struct Arguments {
     #[clap(long, env)]
     pub blocknative_api_key: Option<String>,
 
+    /// Driver URL for gas price estimation when using the Driver estimator.
+    #[clap(long, env)]
+    pub gas_estimation_driver_url: Option<Url>,
+
     /// Base tokens used for finding multi-hop paths between multiple AMMs
     /// Should be the most liquid tokens of the given network.
     #[clap(long, env, use_value_delimiter = true)]
@@ -382,6 +386,7 @@ impl Display for Arguments {
             simulation_node_url,
             gas_estimators,
             blocknative_api_key,
+            gas_estimation_driver_url,
             base_tokens,
             baseline_sources,
             pool_cache_blocks,
@@ -415,6 +420,7 @@ impl Display for Arguments {
         display_option(f, "simulation_node_url", simulation_node_url)?;
         writeln!(f, "gas_estimators: {gas_estimators:?}")?;
         display_secret_option(f, "blocknative_api_key", blocknative_api_key.as_ref())?;
+        display_option(f, "gas_estimation_driver_url", gas_estimation_driver_url)?;
         writeln!(f, "base_tokens: {base_tokens:?}")?;
         writeln!(f, "baseline_sources: {baseline_sources:?}")?;
         writeln!(f, "pool_cache_blocks: {pool_cache_blocks}")?;

@@ -6,13 +6,13 @@ use {crate::domain::solver::Solver, std::sync::Arc};
 
 pub async fn solve(
     state: axum::extract::State<Arc<Solver>>,
-    auction: axum::extract::Json<dto::Auction>,
+    axum::extract::Json(auction): axum::extract::Json<dto::Auction>,
 ) -> (
     axum::http::StatusCode,
     axum::response::Json<Response<dto::Solutions>>,
 ) {
     let handle_request = async {
-        let auction = match dto::auction::to_domain(&auction) {
+        let auction = match dto::auction::into_domain(auction) {
             Ok(value) => value,
             Err(err) => {
                 tracing::warn!(?err, "invalid auction");

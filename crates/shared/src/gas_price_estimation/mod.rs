@@ -1,9 +1,9 @@
+pub mod driver;
 pub mod fake;
 
-pub use fake::FakeGasPriceEstimator;
 use {
     crate::{ethrpc::Web3, http_client::HttpClientFactory},
-    anyhow::{Context, Result, ensure},
+    anyhow::{Context, Result, anyhow, ensure},
     gas_estimation::{
         EthGasStation,
         GasNowGasStation,
@@ -16,7 +16,9 @@ use {
     reqwest::header::{self, HeaderMap, HeaderValue},
     serde::de::DeserializeOwned,
     tracing::instrument,
+    url::Url,
 };
+pub use {driver::DriverGasEstimator, fake::FakeGasPriceEstimator};
 
 #[derive(Copy, Clone, Debug, clap::ValueEnum)]
 #[clap(rename_all = "verbatim")]
@@ -26,6 +28,7 @@ pub enum GasEstimatorType {
     Web3,
     BlockNative,
     Native,
+    Driver,
 }
 
 #[derive(Clone)]
@@ -54,6 +57,7 @@ pub async fn create_priority_estimator(
     web3: &Web3,
     estimator_types: &[GasEstimatorType],
     blocknative_api_key: Option<String>,
+    driver_url: Option<Url>,
 ) -> Result<impl GasPriceEstimating + use<>> {
     let client = || Client(http_factory.create());
     let network_id = web3.eth().chain_id().await?.to_string();
@@ -62,6 +66,15 @@ pub async fn create_priority_estimator(
     for estimator_type in estimator_types {
         tracing::info!("estimator {estimator_type:?}, networkid {network_id}");
         match estimator_type {
+            GasEstimatorType::Driver => {
+                let url = driver_url.clone().ok_or_else(|| {
+                    anyhow!("Driver URL must be provided when using Driver gas estimator")
+                })?;
+                estimators.push(Box::new(DriverGasEstimator::new(
+                    http_factory.create(),
+                    url,
+                )));
+            }
             GasEstimatorType::BlockNative => {
                 ensure!(is_mainnet(&network_id), "BlockNative only supports mainnet");
                 ensure!(

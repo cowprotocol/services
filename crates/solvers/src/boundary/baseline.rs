@@ -8,7 +8,10 @@ use {
     ethereum_types::{H160, U256},
     model::TokenPair,
     shared::baseline_solver::{self, BaseTokens, BaselineSolvable},
-    std::collections::{HashMap, HashSet},
+    std::{
+        collections::{HashMap, HashSet},
+        sync::Arc,
+    },
 };
 
 pub struct Solver<'a> {
@@ -22,7 +25,7 @@ impl<'a> Solver<'a> {
         weth: &eth::WethAddress,
         base_tokens: &HashSet<eth::TokenAddress>,
         liquidity: &'a [liquidity::Liquidity],
-        uni_v3_quoter_v2: Option<&contracts::UniswapV3QuoterV2>,
+        uni_v3_quoter_v2: Option<Arc<contracts::UniswapV3QuoterV2>>,
     ) -> Self {
         Self {
             base_tokens: to_boundary_base_tokens(weth, base_tokens),
@@ -154,7 +157,7 @@ impl<'a> Solver<'a> {
 
 fn to_boundary_liquidity(
     liquidity: &[liquidity::Liquidity],
-    uni_v3_quoter_v2: Option<&contracts::UniswapV3QuoterV2>,
+    uni_v3_quoter_v2: Option<Arc<contracts::UniswapV3QuoterV2>>,
 ) -> HashMap<TokenPair, Vec<OnchainLiquidity>> {
     liquidity
         .iter()
@@ -227,7 +230,7 @@ fn to_boundary_liquidity(
                     }
                 }
                 liquidity::State::Concentrated(pool) => {
-                    let Some(uni_v3_quoter_v2) = uni_v3_quoter_v2 else {
+                    let Some(ref uni_v3_quoter_v2_arc) = uni_v3_quoter_v2 else {
                         // liquidity sources that rely on concentrated pools are disabled
                         return onchain_liquidity;
                     };
@@ -241,7 +244,7 @@ fn to_boundary_liquidity(
                             token_pair,
                             source: LiquiditySource::Concentrated(
                                 boundary::liquidity::concentrated::Pool {
-                                    uni_v3_quoter_contract: uni_v3_quoter_v2.clone(),
+                                    uni_v3_quoter_contract: uni_v3_quoter_v2_arc.clone(),
                                     address: liquidity.address,
                                     tokens: token_pair,
                                     fee: pool.fee.0,
