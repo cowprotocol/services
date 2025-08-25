@@ -7,7 +7,10 @@ use {
         str::FromStr,
         time::Duration,
     },
-    tokio::signal::unix::{SignalKind, signal},
+    tokio::{
+        io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+        net::{UnixListener, UnixStream},
+    },
 };
 
 pub struct JemallocMemoryProfiler {
@@ -37,74 +40,31 @@ impl JemallocMemoryProfiler {
 
     pub fn run(self) {
         tokio::spawn(async move {
-            let mut sigusr2 = match signal(SignalKind::user_defined2()) {
-                Ok(signal) => signal,
-                Err(err) => {
-                    tracing::error!(?err, "failed to bind to SIGUSR2");
-                    return;
-                }
+            let process_name = self.process_name.as_str();
+            let socket_path = std::env::var("PROFILER_CMD_FILE")
+                .unwrap_or_else(|_| format!("/tmp/profiler_cmd_{process_name}.sock").to_string());
+
+            tracing::info!(file = socket_path, "opening profiler command socket");
+            let _ = tokio::fs::remove_file(&socket_path).await;
+
+            let handle = SocketHandle {
+                listener: UnixListener::bind(&socket_path).expect("socket handle is unique"),
+                socket_path: socket_path.clone(),
             };
 
-            tracing::info!("jemalloc memory profiler background task started; Waiting for SIGUSR2");
+            tracing::info!(
+                "jemalloc memory profiler background task started; Waiting for socket connections"
+            );
 
-            while sigusr2.recv().await.is_some() {
-                tracing::info!("SIGUSR2 received: triggering memory profiling dump");
-
-                let Some(command) = std::env::var("PROFILER_COMMAND")
-                    .ok()
-                    .and_then(|cmd| ProfilerCommand::from_str(cmd.as_str()).ok())
-                else {
-                    tracing::warn!(
-                        "PROFILER_COMMAND is not set or invalid, skipping jemalloc memory \
-                         profiling"
-                    );
-                    continue;
-                };
-
-                match command {
-                    ProfilerCommand::Enable => {
-                        if self.set_enabled(true).await {
-                            tracing::info!("jemalloc active profiling enabled");
-                        }
-                    }
-                    ProfilerCommand::Disable => {
-                        if self.set_enabled(false).await {
-                            tracing::info!("jemalloc active profiling disabled");
-                        }
-                    }
-                    ProfilerCommand::Dump => {
-                        self.dump_prof().await;
-                    }
-                    ProfilerCommand::RunFor(duration) => {
-                        if self.set_enabled(true).await {
-                            tracing::info!("jemalloc active profiling enabled");
-                        } else {
-                            tracing::warn!(
-                                "jemalloc active profiling was already enabled, disable it first \
-                                 and try again"
-                            );
-                            continue;
-                        }
-
-                        tracing::info!(
-                            "jemalloc active memory profiling will be executing for {duration:?}"
-                        );
-                        tokio::time::sleep(duration).await;
-
-                        self.dump_prof().await;
-
-                        if self.set_enabled(false).await {
-                            tracing::info!("jemalloc active profiling disabled");
-                        }
-                    }
-                }
+            loop {
+                self.handle_connection(&handle.listener).await;
             }
         });
     }
 }
 
 impl JemallocMemoryProfiler {
-    async fn set_enabled(&self, enabled: bool) -> bool {
+    async fn set_enabled(&self, enabled: bool, socket: &mut UnixStream) -> bool {
         let mut state = self.active.lock().await;
         match unsafe { tikv_jemalloc_ctl::raw::update(PROF_ACTIVE, enabled) } {
             Ok(was_enabled) => {
@@ -112,58 +72,180 @@ impl JemallocMemoryProfiler {
                 was_enabled != enabled
             }
             Err(err) => {
-                tracing::error!(?err, "failed to update memory profiler state");
+                log(
+                    socket,
+                    format!("failed to set memory profiler state to {enabled}: {err:?}"),
+                )
+                .await;
                 false
             }
         }
     }
 
-    async fn dump_prof(&self) {
+    async fn dump_prof(&self, socket: &mut UnixStream) {
         let state = self.active.lock().await;
         // Hold the lock until the dump is complete.
         if !*state {
-            tracing::error!("memory profiler is not active, cannot dump");
+            log(
+                socket,
+                "memory profiler is not active, cannot dump".to_string(),
+            )
+            .await;
             return;
         }
 
         let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S").to_string();
         let process_name = self.process_name.as_str();
         let filename = format!("jemalloc_dump_{process_name}_{timestamp}.heap");
-        let full_path = match Self::get_dump_dir_path() {
+        let full_path = match Self::get_dump_dir_path(socket).await {
             Ok(path) => path.join(filename),
             Err(err) => {
-                tracing::error!(?err, "dump was not saved");
+                log(
+                    socket,
+                    format!("failed to get dump dir path, dump was not saved: {err:?}"),
+                )
+                .await;
                 return;
             }
         };
 
         {
             let Some(bytes) = CString::new(full_path.as_os_str().as_bytes()).ok() else {
-                tracing::error!(?full_path, "failed to create CString from path");
+                log(
+                    socket,
+                    format!("failed to create CString from path {full_path:?}"),
+                )
+                .await;
                 return;
             };
 
+            log(
+                socket,
+                format!("saving jemalloc profiling dump to {full_path:?}"),
+            )
+            .await;
             let mut bytes = bytes.into_bytes_with_nul();
             let ptr = bytes.as_mut_ptr().cast::<c_char>();
-            tracing::info!(?full_path, "dumping jemalloc profiling data");
             if let Err(err) = unsafe { tikv_jemalloc_ctl::raw::write(PROF_DUMP, ptr) } {
-                tracing::error!(?err, "failed to dump jemalloc profiling data");
+                log(
+                    socket,
+                    format!("failed to dump jemalloc profiling data: {err:?}"),
+                )
+                .await;
                 return;
             }
         }
 
-        tracing::info!(?full_path, "saved the jemalloc profiling dump");
+        log(
+            socket,
+            format!("saved jemalloc profiling dump to {full_path:?}"),
+        )
+        .await;
     }
 
-    fn get_dump_dir_path() -> anyhow::Result<PathBuf> {
-        let dump_dir_path_str = std::env::var("MEM_DUMP_PATH").ok().unwrap_or_else(|| {
-            tracing::info!("MEM_DUMP_PATH is not set, using system temp directory as default");
-            std::env::temp_dir().to_string_lossy().to_string()
-        });
+    async fn get_dump_dir_path(socket: &mut UnixStream) -> anyhow::Result<PathBuf> {
+        let dump_dir_path_str = match std::env::var("MEM_DUMP_PATH").ok() {
+            Some(path) => path,
+            None => {
+                log(
+                    socket,
+                    "MEM_DUMP_PATH is not set, using system temp directory as default".to_string(),
+                )
+                .await;
+                std::env::temp_dir().to_string_lossy().to_string()
+            }
+        };
 
         PathBuf::from_str(&dump_dir_path_str).context(format!(
             "failed to parse dump dir path: {dump_dir_path_str}"
         ))
+    }
+
+    async fn handle_connection(&self, listener: &UnixListener) {
+        match listener.accept().await {
+            Ok((mut socket, _)) => loop {
+                let message = Self::read_line(&mut socket).await;
+                match message.as_deref() {
+                    Some("") => {
+                        log(&mut socket, "client terminated connection".into()).await;
+                        break;
+                    }
+                    None => {
+                        log(&mut socket, "failed to read message from socket".into()).await;
+                        break;
+                    }
+                    Some(line) => {
+                        if let Err(err) = self.handle_command(line, &mut socket).await {
+                            log(
+                                &mut socket,
+                                format!("error handling profiler command {line:?}: {err:?}"),
+                            )
+                            .await;
+                        }
+                        continue;
+                    }
+                }
+            },
+            Err(err) => {
+                tracing::error!(?err, "error accepting connection");
+            }
+        }
+    }
+
+    async fn read_line(socket: &mut UnixStream) -> Option<String> {
+        let mut reader = BufReader::new(socket);
+        let mut buffer = String::new();
+        reader.read_line(&mut buffer).await.ok()?;
+        Some(buffer.trim().to_owned())
+    }
+
+    async fn handle_command(&self, command: &str, socket: &mut UnixStream) -> anyhow::Result<()> {
+        match ProfilerCommand::from_str(command).map_err(|err| anyhow::anyhow!(err))? {
+            ProfilerCommand::Enable => {
+                if self.set_enabled(true, socket).await {
+                    log(socket, "jemalloc active profiling enabled".to_string()).await;
+                }
+            }
+            ProfilerCommand::Disable => {
+                if self.set_enabled(false, socket).await {
+                    log(socket, "jemalloc active profiling disabled".to_string()).await;
+                }
+            }
+            ProfilerCommand::Dump => {
+                self.dump_prof(socket).await;
+            }
+            ProfilerCommand::RunFor(duration) => {
+                if self.set_enabled(true, socket).await {
+                    log(socket, "jemalloc active profiling enabled".to_string()).await;
+                } else {
+                    log(
+                        socket,
+                        "jemalloc active profiling was already enabled, will run for the \
+                         specified duration"
+                            .to_string(),
+                    )
+                    .await;
+                    return Ok(());
+                }
+
+                log(
+                    socket,
+                    format!(
+                        "jemalloc active profiling will run for {duration:?}, after which a dump \
+                         will be created and profiling disabled"
+                    ),
+                )
+                .await;
+                tokio::time::sleep(duration).await;
+
+                self.dump_prof(socket).await;
+
+                if self.set_enabled(false, socket).await {
+                    log(socket, "jemalloc active profiling disabled".to_string()).await;
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -201,3 +283,25 @@ impl FromStr for ProfilerCommand {
 
 const PROF_ACTIVE: &[u8] = b"prof.active\0";
 const PROF_DUMP: &[u8] = b"prof.dump\0";
+
+struct SocketHandle {
+    listener: UnixListener,
+    socket_path: String,
+}
+
+impl Drop for SocketHandle {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.socket_path);
+    }
+}
+
+// @todo: deduplicate
+/// Logs the message in this process' logs and reports it back to the
+/// connected socket.
+async fn log(socket: &mut UnixStream, message: String) {
+    // Use a fairly high log level to improve chances that this actually gets logged
+    // when somebody messed with the log filter.
+    tracing::warn!(message);
+    let _ = socket.write_all(message.as_bytes()).await;
+    let _ = socket.write_all(b"\n").await;
+}
