@@ -112,9 +112,10 @@ async fn high_gas_limit() {
 
     let id = test.solve().await.ok().orders(&[ab_order()]).id();
 
-    // Assume validators downvoted gas limit, solution still settles. Even though we
-    // have a rule that for bidding the solution needs to be less than half of the
-    // block gas limit we want it to be submitted as long as it fits in the block
+    // Assume validators downvoted gas limit, solution still settles: even though we
+    // have a rule that in the _bidding phase_ the solution needs to use less than
+    // half of the block gas limit, we want it to be submitted/settled as long as it
+    // fits in the block.
     test.web3()
         .transport()
         .execute("evm_setBlockGasLimit", vec![serde_json::json!(9_000_000)])
