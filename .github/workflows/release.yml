@@ -16,7 +16,6 @@ jobs:
           fetch-depth: 0 # Fetch all history for all branches and tags
           # Requires "Read and Write access to code" permission
           token: ${{ secrets.RELEASE_ACTION_ACCESS_TOKEN }}
-          persist-credentials: false
 
       - name: Fetch latest release version tag
         id: fetch_tag
