@@ -14,7 +14,9 @@ RUN rustup install stable && rustup default stable
 # Copy and Build Code
 COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/src/target \
-    CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release && \
+    CARGO_PROFILE_RELEASE_DEBUG=1 \
+    cargo build -p autopilot --release --features mimalloc-allocator && \
+    cargo build --release -p alerter -p driver -p orderbook -p refunder -p solvers && \
     cp target/release/alerter / && \
     cp target/release/autopilot / && \
     cp target/release/driver / && \
