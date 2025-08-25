@@ -1,7 +1,12 @@
 use {
     crate::{
-        api, arguments::Arguments, database::Postgres, ipfs::Ipfs, ipfs_app_data::IpfsAppData,
-        orderbook::Orderbook, quoter::QuoteHandler,
+        api,
+        arguments::Arguments,
+        database::Postgres,
+        ipfs::Ipfs,
+        ipfs_app_data::IpfsAppData,
+        orderbook::Orderbook,
+        quoter::QuoteHandler,
     },
     anyhow::{Context, Result, anyhow},
     app_data::Validator,
@@ -30,7 +35,8 @@ use {
         order_quoting::{self, OrderQuoter},
         order_validation::{OrderValidPeriodConfiguration, OrderValidator},
         price_estimation::{
-            PriceEstimating, QuoteVerificationMode,
+            PriceEstimating,
+            QuoteVerificationMode,
             factory::{self, PriceEstimatorFactory},
             native::NativePriceEstimating,
         },

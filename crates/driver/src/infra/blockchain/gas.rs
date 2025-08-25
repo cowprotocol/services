@@ -10,7 +10,9 @@ use {
     },
     ethcontract::dyns::DynWeb3,
     gas_estimation::{
-        DEFAULT_GAS_LIMIT, DEFAULT_TIME_LIMIT, GasPriceEstimating,
+        DEFAULT_GAS_LIMIT,
+        DEFAULT_TIME_LIMIT,
+        GasPriceEstimating,
         nativegasestimator::{NativeGasEstimator, Params},
     },
     std::{sync::Arc, time::Duration},

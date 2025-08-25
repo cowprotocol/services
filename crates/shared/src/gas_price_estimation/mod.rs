@@ -5,7 +5,9 @@ use {
     crate::{ethrpc::Web3, http_client::HttpClientFactory},
     anyhow::Result,
     gas_estimation::{
-        GasPriceEstimating, PriorityGasPriceEstimating, nativegasestimator::NativeGasEstimator,
+        GasPriceEstimating,
+        PriorityGasPriceEstimating,
+        nativegasestimator::NativeGasEstimator,
     },
     std::str::FromStr,
     tracing::instrument,
