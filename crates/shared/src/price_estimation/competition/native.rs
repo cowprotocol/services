@@ -183,4 +183,69 @@ mod tests {
             assert!(best.is_err());
         }
     }
+
+    /// If early stages don't use some of their allocated time later stages
+    /// can use it instead.
+    #[tokio::test]
+    async fn later_stages_may_use_excess_time() {
+        fn estimator(
+            estimate: NativePriceFuture,
+            max_timeout: Duration,
+        ) -> Arc<dyn NativePriceEstimating> {
+            let mut estimator = MockNativePriceEstimating::new();
+            estimator
+                .expect_estimate_native_price()
+                .times(1)
+                .withf(move |_query, actual_timeout| {
+                    // allow for small difference due to tokio scheduling
+                    const BUFFER: Duration = Duration::from_millis(10);
+                    ((max_timeout - BUFFER)..=max_timeout).contains(actual_timeout)
+                })
+                .return_once(move |_, _| estimate);
+            Arc::new(estimator)
+        }
+
+        const TOTAL_TIMEOUT: Duration = Duration::from_millis(500);
+        const FIRST_STAGE: Duration = Duration::from_millis(100);
+
+        let priority: CompetitionEstimator<Arc<dyn NativePriceEstimating>> =
+            CompetitionEstimator::new(
+                vec![
+                    vec![(
+                        "first".into(),
+                        estimator(
+                            async {
+                                // The first stage takes a bit of time but is still
+                                // way faster than it needs to be.
+                                tokio::time::sleep(FIRST_STAGE).await;
+                                // return an error to require the second estimator to run
+                                Err(PriceEstimationError::NoLiquidity)
+                            }
+                            .boxed(),
+                            // first stage gets half the total time
+                            TOTAL_TIMEOUT / 2,
+                        ),
+                    )],
+                    vec![(
+                        "second".into(),
+                        estimator(
+                            async { Ok(1.) }.boxed(),
+                            // Because the first stage was faster than the allocated
+                            // time, the second stage now gets a bit more time.
+                            TOTAL_TIMEOUT - FIRST_STAGE,
+                        ),
+                    )],
+                ],
+                PriceRanking::MaxOutAmount,
+            )
+            // allow bailing out after 1 successful result to prevent both
+            // stages to be kicked-off at the same time (if we have too few stages
+            // configured the CompetitionEstimator will trigger them all concurrently)
+            .with_early_return(1.try_into().unwrap());
+
+        let res = priority
+            .estimate_native_price(Default::default(), TOTAL_TIMEOUT)
+            .await;
+        assert_eq!(res, Ok(1.));
+    }
 }
