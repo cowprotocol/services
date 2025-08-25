@@ -23,8 +23,7 @@ type AdditionalTipPercentage = f64;
 type AdditionalTip = (MaxAdditionalTip, AdditionalTipPercentage);
 
 pub struct GasPriceEstimator {
-    //TODO: remove visibility once boundary is removed
-    pub(super) gas: Arc<dyn GasPriceEstimating>,
+    gas: Arc<dyn GasPriceEstimating>,
     additional_tip: AdditionalTip,
     max_fee_per_gas: eth::U256,
     min_priority_fee: eth::U256,
