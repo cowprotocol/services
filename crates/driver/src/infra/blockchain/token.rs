@@ -1,7 +1,6 @@
 use {
     super::{Error, Ethereum},
     crate::domain::{competition::order, eth},
-    alloy::sol_types::{SolType, sol_data},
     futures::TryFutureExt,
     tap::TapFallible,
     web3::types::CallRequest,
@@ -115,74 +114,54 @@ impl Erc20 {
         interactions: &[eth::Interaction],
         disable_access_lists: bool,
     ) -> Result<eth::TokenAmount, Error> {
-        let balance_helper = self.ethereum.contracts().balance_helper();
-        let balance_call = balance_helper.balance(
-            (
-                self.ethereum.contracts().settlement().address(),
-                self.ethereum.contracts().vault_relayer().into(),
-                self.ethereum.contracts().vault().address(),
-            ),
-            trader.into(),
-            self.token.address(),
-            0.into(),
-            ethcontract::Bytes(source.hash().0),
-            interactions
-                .iter()
-                .map(|i| {
-                    (
-                        i.target.into(),
-                        i.value.into(),
-                        ethcontract::Bytes(i.call_data.0.clone()),
-                    )
-                })
-                .collect(),
-        );
-        let mut delegate_call = self
+        let interactions: Vec<_> = interactions.iter().map(|i| i.clone().into()).collect();
+        let shared::account_balances::Simulation {
+            token_balance: _,
+            allowance: _,
+            effective_balance,
+            can_transfer,
+        } = self
             .ethereum
-            .contracts()
-            .settlement()
-            .simulate_delegatecall(
-                balance_helper.address(),
-                ethcontract::Bytes(balance_call.tx.data.unwrap_or_default().0),
+            .balance_simulator()
+            .simulate(
+                trader.0,
+                self.token.address(),
+                source.into(),
+                &interactions,
+                None,
+                |mut delegate_call| {
+                    let ethereum = self.ethereum.clone();
+                    async move {
+                        // Add the access lists to the delegate call if they are enabled
+                        // system-wide.
+                        if disable_access_lists {
+                            return delegate_call;
+                        }
+
+                        let access_list_call = CallRequest {
+                            data: delegate_call.tx.data.clone(),
+                            from: delegate_call.tx.from.clone().map(|acc| acc.address()),
+                            ..Default::default()
+                        };
+                        let access_list = ethereum
+                            .create_access_list(access_list_call)
+                            .await
+                            .tap_err(|err| {
+                                tracing::debug!(
+                                    ?err,
+                                    "failed to create access list for balance simulation"
+                                );
+                            })
+                            .ok();
+                        delegate_call.tx.access_list = access_list.map(Into::into);
+                        delegate_call
+                    }
+                },
             )
-            .from(shared::SIMULATION_ACCOUNT.clone());
-
-        // Create the access list for the balance simulation only if they are enabled
-        // system-wide.
-        if !disable_access_lists {
-            let access_list_call = CallRequest {
-                data: delegate_call.tx.data.clone(),
-                from: delegate_call.tx.from.clone().map(|acc| acc.address()),
-                ..Default::default()
-            };
-            let access_list = self
-                .ethereum
-                .create_access_list(access_list_call)
-                .await
-                .tap_err(|err| {
-                    tracing::debug!(?err, "failed to create access list for balance simulation");
-                })
-                .ok();
-            delegate_call.tx.access_list = access_list.map(Into::into);
-        }
-
-        let response = delegate_call.call().await?;
-        let (_token_balance, _allowance, effective_balance, can_transfer) =
-            <(
-                sol_data::Uint<256>,
-                sol_data::Uint<256>,
-                sol_data::Uint<256>,
-                sol_data::Bool,
-            )>::abi_decode(&response.0)
-            .map_err(|err| {
-                tracing::error!(?err, "failed to decode balance response");
-                Error::Web3(web3::error::Error::Decoder(
-                    "failed to decode balance response".to_string(),
-                ))
-            })?;
+            .await?;
 
         if can_transfer {
-            Ok(eth::U256::from_little_endian(&effective_balance.as_le_bytes()).into())
+            Ok(effective_balance.into())
         } else {
             Ok(eth::TokenAmount(0.into()))
         }

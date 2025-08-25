@@ -245,6 +245,8 @@ impl<'a> Services<'a> {
                     ),
                     "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                         .to_string(),
+                    "--gas-estimators=Driver".to_string(),
+                    "--gas-estimation-driver-url=http://localhost:11088/gasprice".to_string(),
                 ],
                 args.autopilot,
             ]
@@ -256,6 +258,8 @@ impl<'a> Services<'a> {
                 vec![
                     "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                         .to_string(),
+                    "--gas-estimators=Driver".to_string(),
+                    "--gas-estimation-driver-url=http://localhost:11088/gasprice".to_string(),
                 ],
                 args.api,
             ]

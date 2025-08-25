@@ -19,7 +19,7 @@ use {
     observe::metrics::{DEFAULT_METRICS_PORT, serve_metrics},
     order_validation,
     shared::{
-        account_balances,
+        account_balances::{self, BalanceSimulator},
         arguments::tracing_config,
         bad_token::{
             cache::CachingDetector,
@@ -160,12 +160,12 @@ pub async fn run(args: Arguments) {
 
     let balance_fetcher = account_balances::fetcher(
         &web3,
-        account_balances::Contracts {
-            settlement: settlement_contract.clone(),
-            balances: balances_contract.clone(),
+        BalanceSimulator::new(
+            settlement_contract.clone(),
+            balances_contract.clone(),
             vault_relayer,
-            vault: vault.as_ref().map(|contract| contract.address()),
-        },
+            vault.as_ref().map(|contract| contract.address()),
+        ),
     );
 
     let gas_price_estimator = Arc::new(InstrumentedGasEstimator::new(
@@ -174,6 +174,7 @@ pub async fn run(args: Arguments) {
             &web3,
             args.shared.gas_estimators.as_slice(),
             args.shared.blocknative_api_key.clone(),
+            args.shared.gas_estimation_driver_url.clone(),
         )
         .await
         .expect("failed to create gas price estimator"),
