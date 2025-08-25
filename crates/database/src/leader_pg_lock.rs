@@ -51,11 +51,11 @@ impl LeaderLock {
     // Call every loop; handles acquire/release/liveness. Returns "am I leader rn?"
     pub async fn tick(&mut self) -> Result<bool, sqlx::Error> {
         // if we think we're leader, verify the session is alive
-        if let Some(lock) = self.lock_guard.as_mut() {
-            if !lock.ping().await {
-                tracing::warn!("leader session died; demoting");
-                self.lock_guard = None; // lock already gone with the dead session
-            }
+        if let Some(lock) = self.lock_guard.as_mut()
+            && !lock.ping().await
+        {
+            tracing::warn!("leader session died; demoting");
+            self.lock_guard = None; // lock already gone with the dead session
         }
 
         // try to become leader if we aren't (rate-limited)
