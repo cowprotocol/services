@@ -43,12 +43,14 @@ Now with Rabby configured, and the services started, you can browse to http://lo
 
 ## Setting up EthFlow
 
+> By default, the EthFlow is setup by default, but this section will cover how to configure it for troubleshooting purposes.
+
 For EthFlow orders to work, you will need to provide an EthFlow contract address.
 
 You do that by adding `ETHFLOW_CONTRACTS=<address>` to your `.env` file.
 
-For testing, (at the time of writing) the contract you should use is [`0x04501b9b1d52e67f6862d157e00d13419d2d6e95`](https://github.com/cowprotocol/cow-sdk/blob/747e2ade0118d2468c00af7d773bb7b1fbf64f66/src/common/consts/contracts.ts#L56),
-as time progresses it may no longer be the case, there are multiple ways of figuring out the right contract.
+> For testing, (at the time of writing) the contract you should use is [`0x04501b9b1d52e67f6862d157e00d13419d2d6e95`](https://github.com/cowprotocol/cow-sdk/blob/747e2ade0118d2468c00af7d773bb7b1fbf64f66/src/common/consts/contracts.ts#L56),
+> as time progresses it may no longer be the case, there are multiple ways of figuring out the right contract.
 
 
 ### Setting the contract — using the frontend repo
@@ -111,11 +113,15 @@ cast block-number -r <RPC_URL>
 
 For example:
 ```
-cast block-number -r https://ovh-mainnet-reth-01.nodes.batch.exchange/reth
+cast block-number -r wss://mainnet.gateway.tenderly.co
 23197382
 ```
 
-Afterwards you set `ETHFLOW_INDEXING_START` to the received block number and you're good to go.
+Finally, you set `ETHFLOW_INDEXING_START` to the received block number and you're good to go.
+
+### Skipping indexing
+
+You can set `SKIP_EVENT_SYNC=true` to skip the block sync. This is set by default in the playground.
 
 ### Resetting the playground
 
