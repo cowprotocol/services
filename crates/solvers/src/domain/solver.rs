@@ -70,7 +70,7 @@ struct Inner {
     native_token_price_estimation_amount: eth::U256,
 
     /// If provided, the solver can rely on Uniswap V3 LPs
-    uni_v3_quoter_v2: Option<contracts::UniswapV3QuoterV2>,
+    uni_v3_quoter_v2: Option<Arc<contracts::UniswapV3QuoterV2>>,
 }
 
 impl Solver {
@@ -81,6 +81,7 @@ impl Solver {
                 let web3 = ethrpc::web3(Default::default(), Default::default(), &url, "baseline");
                 contracts::UniswapV3QuoterV2::deployed(&web3)
                     .await
+                    .map(Arc::new)
                     .inspect_err(|err| {
                         tracing::warn!(?err, "Failed to load UniswapV3QuoterV2 contract");
                     })
@@ -151,7 +152,7 @@ impl Inner {
             &self.weth,
             &self.base_tokens,
             &auction.liquidity,
-            self.uni_v3_quoter_v2.as_ref(),
+            self.uni_v3_quoter_v2.clone(),
         );
 
         for (i, order) in auction.orders.into_iter().enumerate() {
