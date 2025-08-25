@@ -38,7 +38,7 @@ use {
     model::DomainSeparator,
     observe::metrics::LivenessChecking,
     shared::{
-        account_balances,
+        account_balances::{self, BalanceSimulator},
         arguments::tracing_config,
         bad_token::{
             cache::CachingDetector,
@@ -136,7 +136,11 @@ pub async fn start(args: impl Iterator<Item = String>) {
     );
     observe::tracing::initialize(&obs_config);
     observe::panic_hook::install();
-    tracing::info!("running autopilot with validated arguments:\n{}", args);
+
+    let commit_hash = option_env!("VERGEN_GIT_SHA").unwrap_or("COMMIT_INFO_NOT_FOUND");
+
+    tracing::info!(%commit_hash, "running autopilot with validated arguments:\n{}", args);
+
     observe::metrics::setup_registry(Some("gp_v2_autopilot".into()), None);
 
     if args.drivers.is_empty() {
@@ -254,12 +258,12 @@ pub async fn run(args: Arguments) {
 
     let balance_fetcher = account_balances::cached(
         &web3,
-        account_balances::Contracts {
-            settlement: eth.contracts().settlement().clone(),
-            balances: eth.contracts().balances().clone(),
+        BalanceSimulator::new(
+            eth.contracts().settlement().clone(),
+            eth.contracts().balances().clone(),
             vault_relayer,
-            vault: vault.as_ref().map(|contract| contract.address()),
-        },
+            vault.as_ref().map(|contract| contract.address()),
+        ),
         eth.current_block().clone(),
     );
 
@@ -269,6 +273,7 @@ pub async fn run(args: Arguments) {
             &web3,
             args.shared.gas_estimators.as_slice(),
             args.shared.blocknative_api_key.clone(),
+            args.shared.gas_estimation_driver_url.clone(),
         )
         .await
         .expect("failed to create gas price estimator"),

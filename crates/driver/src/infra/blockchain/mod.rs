@@ -4,6 +4,7 @@ use {
     chain::Chain,
     ethcontract::{dyns::DynWeb3, errors::ExecutionError},
     ethrpc::block_stream::CurrentBlockWatcher,
+    shared::account_balances::{BalanceSimulator, SimulationError},
     std::{fmt, sync::Arc, time::Duration},
     thiserror::Error,
     url::Url,
@@ -74,6 +75,7 @@ struct Inner {
     contracts: Contracts,
     gas: Arc<GasPriceEstimator>,
     current_block: CurrentBlockWatcher,
+    balance_simulator: BalanceSimulator,
 }
 
 impl Ethereum {
@@ -111,6 +113,12 @@ impl Ethereum {
         )
         .await
         .expect("could not initialize important smart contracts");
+        let balance_simulator = BalanceSimulator::new(
+            contracts.settlement().clone(),
+            contracts.balance_helper().clone(),
+            contracts.vault_relayer().0,
+            Some(contracts.vault().address()),
+        );
 
         Self {
             inner: Arc::new(Inner {
@@ -118,6 +126,7 @@ impl Ethereum {
                 chain,
                 contracts,
                 gas,
+                balance_simulator,
             }),
             web3,
         }
@@ -125,6 +134,10 @@ impl Ethereum {
 
     pub fn chain(&self) -> Chain {
         self.inner.chain
+    }
+
+    pub fn balance_simulator(&self) -> &BalanceSimulator {
+        &self.inner.balance_simulator
     }
 
     /// Clones self and returns an instance that captures metrics extended with
@@ -347,6 +360,15 @@ impl From<contracts::Error> for Error {
     fn from(err: contracts::Error) -> Self {
         match err {
             contracts::Error::Method(err) => Self::Method(err),
+        }
+    }
+}
+
+impl From<SimulationError> for Error {
+    fn from(err: SimulationError) -> Self {
+        match err {
+            SimulationError::Method(err) => Self::Method(err),
+            SimulationError::Web3(err) => Self::Web3(err),
         }
     }
 }
