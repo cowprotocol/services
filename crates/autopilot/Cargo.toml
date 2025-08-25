@@ -78,5 +78,6 @@ workspace = true
 debug = true
 
 [features]
+default = ["mimalloc-allocator"]
 jemalloc-allocator = ["tikv-jemallocator"]
 mimalloc-allocator = ["mimalloc"]
