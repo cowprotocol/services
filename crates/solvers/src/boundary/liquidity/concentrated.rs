@@ -2,11 +2,12 @@ use {
     contracts::ethcontract::{H160, U256},
     model::TokenPair,
     shared::baseline_solver::BaselineSolvable,
+    std::sync::Arc,
 };
 
 #[derive(Debug)]
 pub struct Pool {
-    pub uni_v3_quoter_contract: contracts::UniswapV3QuoterV2,
+    pub uni_v3_quoter_contract: Arc<contracts::UniswapV3QuoterV2>,
     pub address: H160,
     pub tokens: TokenPair,
     pub fee: u32,
