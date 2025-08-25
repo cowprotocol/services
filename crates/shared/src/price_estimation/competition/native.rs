@@ -86,30 +86,24 @@ mod tests {
             competition::PriceRanking,
             native::MockNativePriceEstimating,
         },
+        std::pin::Pin,
     };
 
-    fn native_price(native_price: f64) -> Result<f64, PriceEstimationError> {
-        Ok(native_price)
-    }
-
-    fn error<T>(err: PriceEstimationError) -> Result<T, PriceEstimationError> {
-        Err(err)
-    }
+    type NativePriceFuture =
+        Pin<Box<dyn Future<Output = Result<f64, PriceEstimationError>> + Send>>;
 
     /// Returns the best native estimate with respect to the provided ranking
     /// and order kind.
     async fn best_response(
         ranking: PriceRanking,
-        estimates: Vec<Result<f64, PriceEstimationError>>,
+        estimates: Vec<NativePriceFuture>,
     ) -> Result<f64, PriceEstimationError> {
-        fn estimator(
-            estimate: Result<f64, PriceEstimationError>,
-        ) -> Arc<dyn NativePriceEstimating> {
+        fn estimator(estimate: NativePriceFuture) -> Arc<dyn NativePriceEstimating> {
             let mut estimator = MockNativePriceEstimating::new();
             estimator
                 .expect_estimate_native_price()
                 .times(1)
-                .return_once(move |_, _| async move { estimate }.boxed());
+                .return_once(move |_, _| estimate);
             Arc::new(estimator)
         }
 
@@ -137,10 +131,10 @@ mod tests {
         // Returns errors with highest priority.
         let best = best_response(
             PriceRanking::MaxOutAmount,
-            vec![native_price(1.), native_price(2.)],
+            vec![async { Ok(1.) }.boxed(), async { Ok(2.) }.boxed()],
         )
         .await;
-        assert_eq!(best, native_price(2.));
+        assert_eq!(best, Ok(2.));
     }
 
     /// If all estimators returned an error we return the one with the highest
@@ -151,12 +145,12 @@ mod tests {
         let best = best_response(
             PriceRanking::MaxOutAmount,
             vec![
-                error(PriceEstimationError::RateLimited),
-                error(PriceEstimationError::ProtocolInternal(anyhow::anyhow!("!"))),
+                async { Err(PriceEstimationError::RateLimited) }.boxed(),
+                async { Err(PriceEstimationError::ProtocolInternal(anyhow::anyhow!("!"))) }.boxed(),
             ],
         )
         .await;
-        assert_eq!(best, error(PriceEstimationError::RateLimited));
+        assert_eq!(best, Err(PriceEstimationError::RateLimited));
     }
 
     /// Any native price estimate, no matter how bad, is preferred over an
@@ -165,10 +159,13 @@ mod tests {
     async fn prefer_estimate_over_error_native() {
         let best = best_response(
             PriceRanking::MaxOutAmount,
-            vec![native_price(1.), error(PriceEstimationError::RateLimited)],
+            vec![
+                async { Ok(1.) }.boxed(),
+                async { Err(PriceEstimationError::RateLimited) }.boxed(),
+            ],
         )
         .await;
-        assert_eq!(best, native_price(1.));
+        assert_eq!(best, Ok(1.));
     }
 
     /// Nonsensical prices like infinities, and non-positive values get ignored.
@@ -178,7 +175,11 @@ mod tests {
         assert!(!subnormal.is_normal());
 
         for price in [f64::NEG_INFINITY, -1., 0., f64::INFINITY, subnormal] {
-            let best = best_response(PriceRanking::MaxOutAmount, vec![native_price(price)]).await;
+            let best = best_response(
+                PriceRanking::MaxOutAmount,
+                vec![async move { Ok(price) }.boxed()],
+            )
+            .await;
             assert!(best.is_err());
         }
     }
