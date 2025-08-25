@@ -5,8 +5,5 @@ use {
 
 fn main() -> Result<()> {
     // Set environment variable VERGEN_GIT_SHA for use to log version at startup
-    EmitBuilder::builder()
-        .git_sha(true)
-        .emit()
-        .context("emit")
+    EmitBuilder::builder().git_sha(true).emit().context("emit")
 }
