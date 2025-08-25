@@ -1,12 +1,7 @@
 use {
     crate::{
-        api,
-        arguments::Arguments,
-        database::Postgres,
-        ipfs::Ipfs,
-        ipfs_app_data::IpfsAppData,
-        orderbook::Orderbook,
-        quoter::QuoteHandler,
+        api, arguments::Arguments, database::Postgres, ipfs::Ipfs, ipfs_app_data::IpfsAppData,
+        orderbook::Orderbook, quoter::QuoteHandler,
     },
     anyhow::{Context, Result, anyhow},
     app_data::Validator,
@@ -35,8 +30,7 @@ use {
         order_quoting::{self, OrderQuoter},
         order_validation::{OrderValidPeriodConfiguration, OrderValidator},
         price_estimation::{
-            PriceEstimating,
-            QuoteVerificationMode,
+            PriceEstimating, QuoteVerificationMode,
             factory::{self, PriceEstimatorFactory},
             native::NativePriceEstimating,
         },
@@ -173,8 +167,6 @@ pub async fn run(args: Arguments) {
             &http_factory,
             &web3,
             args.shared.gas_estimators.as_slice(),
-            args.shared.blocknative_api_key.clone(),
-            args.shared.gas_estimation_driver_url.clone(),
         )
         .await
         .expect("failed to create gas price estimator"),

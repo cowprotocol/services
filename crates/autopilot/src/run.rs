@@ -8,8 +8,7 @@ use {
             onchain_order_events::{
                 OnchainOrderParser,
                 ethflow_events::{
-                    EthFlowOnchainOrderParser,
-                    determine_ethflow_indexing_start,
+                    EthFlowOnchainOrderParser, determine_ethflow_indexing_start,
                     determine_ethflow_refund_indexing_start,
                 },
                 event_retriever::CoWSwapOnchainOrdersContract,
@@ -27,11 +26,7 @@ use {
     clap::Parser,
     contracts::{BalancerV2Vault, IUniswapV3Factory},
     ethcontract::{
-        BlockNumber,
-        H160,
-        common::DeploymentInformation,
-        dyns::DynWeb3,
-        errors::DeployError,
+        BlockNumber, H160, common::DeploymentInformation, dyns::DynWeb3, errors::DeployError,
     },
     ethrpc::block_stream::block_number_to_block_number_hash,
     futures::stream::StreamExt,
@@ -272,8 +267,6 @@ pub async fn run(args: Arguments) {
             &http_factory,
             &web3,
             args.shared.gas_estimators.as_slice(),
-            args.shared.blocknative_api_key.clone(),
-            args.shared.gas_estimation_driver_url.clone(),
         )
         .await
         .expect("failed to create gas price estimator"),
