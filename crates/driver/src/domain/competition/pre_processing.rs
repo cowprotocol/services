@@ -46,7 +46,6 @@ pub struct Utilities {
     signature_validator: Arc<dyn SignatureValidating>,
     app_data_retriever: Option<order::app_data::AppDataRetriever>,
     liquidity_fetcher: infra::liquidity::Fetcher,
-    disable_access_list_simulation: bool,
 }
 
 impl std::fmt::Debug for Utilities {
@@ -103,13 +102,11 @@ impl DataAggregator {
         eth: infra::Ethereum,
         app_data_retriever: Option<order::app_data::AppDataRetriever>,
         liquidity_fetcher: infra::liquidity::Fetcher,
-        disable_access_list_simulation: bool,
     ) -> Self {
         let signature_validator = shared::signature_validator::validator(
             eth.web3(),
             shared::signature_validator::Contracts {
-                settlement: eth.contracts().settlement().clone(),
-                signatures: eth.contracts().signatures().clone(),
+                settlement: eth.contracts().settlement().address(),
                 vault_relayer: eth.contracts().vault_relayer().0,
             },
         );
@@ -120,7 +117,6 @@ impl DataAggregator {
                 signature_validator,
                 app_data_retriever,
                 liquidity_fetcher,
-                disable_access_list_simulation,
             }),
             control: Mutex::new(ControlBlock {
                 auction: auction::Id(0),
@@ -208,12 +204,8 @@ impl Utilities {
             |(trader, token, source, interactions)| {
                 let token_contract = tokens.get(&token);
                 let token_contract = token_contract.expect("all tokens were created earlier");
-                let fetch_balance = token_contract.tradable_balance(
-                    trader.into(),
-                    source,
-                    interactions,
-                    self.disable_access_list_simulation,
-                );
+                let fetch_balance =
+                    token_contract.tradable_balance(trader.into(), source, interactions);
 
                 async move {
                     let balance = fetch_balance.await;
