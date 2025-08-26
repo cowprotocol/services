@@ -137,12 +137,11 @@ impl RunLoop {
                 tracing::warn!(error=%err, "failed to get leader");
                 false
             });
-            let start_block = if is_leader {
-                self_arc.update_caches(&mut last_block, true).await
-            } else {
-                self_arc.update_caches(&mut last_block, false).await;
+            self_arc.update_caches(&mut last_block, is_leader).await;
+            if !is_leader {
+                // only the leader is supposed to run the auctions
                 continue;
-            };
+            }
 
             // caches are warmed up, we're ready to do leader work
             if let Some(readiness) = self_arc.readiness.as_ref() {
