@@ -134,7 +134,7 @@ impl RunLoop {
 
         loop {
             let is_leader = leader.tick().await.unwrap_or_else(|err| {
-                tracing::warn!(error=%err, "failed to get leader");
+                tracing::warn!(error=%err, "failed to become leader");
                 false
             });
             self_arc.update_caches(&mut last_block, is_leader).await;
