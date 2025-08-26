@@ -27,7 +27,8 @@ hyper = { workspace = true }
 hex-literal = { workspace = true }
 ethcontract = { workspace = true }
 itertools = { workspace = true }
-mimalloc = { workspace = true }
+tikv-jemallocator = { version = "0.6", features = ["profiling"], optional = true }
+mimalloc = { version = "0.1", optional = true }
 num = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
@@ -65,3 +66,9 @@ vergen = { workspace = true, features = ["git", "gitcl"] }
 
 [lints]
 workspace = true
+
+[features]
+default = ["mimalloc-allocator"]
+jemalloc-allocator = ["tikv-jemallocator"]
+mimalloc-allocator = ["mimalloc"]
+
