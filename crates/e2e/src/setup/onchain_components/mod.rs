@@ -1,5 +1,8 @@
 use {
-    crate::{nodes::forked_node::ForkedNodeApi, setup::deploy::Contracts},
+    crate::{
+        nodes::forked_node::ForkedNodeApi,
+        setup::{DeployedContracts, deploy::Contracts},
+    },
     app_data::Hook,
     contracts::{CowProtocolToken, ERC20Mintable},
     ethcontract::{
@@ -45,6 +48,21 @@ macro_rules! tx {
     ($acc:expr_2021, $call:expr_2021) => {
         $crate::tx_value!($acc, U256::zero(), $call)
     };
+}
+
+#[macro_export]
+macro_rules! deploy {
+    ($web3:expr, $contract:ident) => { deploy!($web3, $contract ()) };
+    ($web3:expr, $contract:ident ( $($param:expr_2021),* $(,)? )) => {
+        deploy!($web3, $contract ($($param),*) as stringify!($contract))
+    };
+    ($web3:expr, $contract:ident ( $($param:expr_2021),* $(,)? ) as $name:expr_2021) => {{
+        let name = $name;
+        $contract::builder(&$web3 $(, $param)*)
+            .deploy()
+            .await
+            .unwrap_or_else(|e| panic!("failed to deploy {name}: {e:?}"))
+    }};
 }
 
 pub fn to_wei_with_exp(base: u32, exp: usize) -> U256 {
@@ -112,9 +130,17 @@ impl TestAccount {
     }
 }
 
-#[derive(Default)]
 struct AccountGenerator {
     id: usize,
+}
+
+impl Default for AccountGenerator {
+    fn default() -> Self {
+        // Start from a high number to avoid conflicts with existing accounts which may
+        // have clowny delegation contracts deployed (e.g. preventing to send ETH to
+        // that address)
+        AccountGenerator { id: 100500 }
+    }
 }
 
 impl Iterator for AccountGenerator {
@@ -234,7 +260,17 @@ impl OnchainComponents {
     }
 
     pub async fn deployed(web3: Web3) -> Self {
-        let contracts = Contracts::deployed(&web3).await;
+        let contracts = Contracts::deployed_with(&web3, DeployedContracts::default()).await;
+
+        Self {
+            web3,
+            contracts,
+            accounts: Default::default(),
+        }
+    }
+
+    pub async fn deployed_with(web3: Web3, deployed: DeployedContracts) -> Self {
+        let contracts = Contracts::deployed_with(&web3, deployed).await;
 
         Self {
             web3,
@@ -310,15 +346,15 @@ impl OnchainComponents {
                 .expect("failed to add solver");
         }
 
-        // TODO: remove when contract is actually deployed
-        // flashloan wrapper also needs to be authorized
-        self.contracts
-            .gp_authenticator
-            .add_solver(self.contracts.flashloan_router.address())
-            .from(auth_manager.clone())
-            .send()
-            .await
-            .expect("failed to add flashloan wrapper");
+        if let Some(router) = &self.contracts.flashloan_router {
+            self.contracts
+                .gp_authenticator
+                .add_solver(router.address())
+                .from(auth_manager.clone())
+                .send()
+                .await
+                .expect("failed to add flashloan wrapper");
+        }
 
         solvers
     }

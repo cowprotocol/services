@@ -42,6 +42,7 @@ use {
     std::{borrow::Cow, sync::Arc},
     strum_macros::Display,
     thiserror::Error,
+    tracing::instrument,
 };
 
 #[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
@@ -257,6 +258,7 @@ impl Orderbook {
         }
     }
 
+    #[instrument(skip_all)]
     pub async fn add_order(
         &self,
         payload: OrderCreation,

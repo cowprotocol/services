@@ -379,6 +379,8 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
         contracts: blockchain::contracts::Addresses {
             settlement: config.contracts.gp_v2_settlement.map(Into::into),
             weth: config.contracts.weth.map(Into::into),
+            balances: config.contracts.balances.map(Into::into),
+            signatures: config.contracts.signatures.map(Into::into),
             cow_amms: config
                 .contracts
                 .cow_amms
@@ -391,18 +393,17 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                 .collect(),
             flashloan_default_lender: {
                 // Make sure flashloan default lender exists in the flashloan wrappers
-                if let Some(default_lender) = config.contracts.flashloan_default_lender {
-                    if !config
+                if let Some(default_lender) = config.contracts.flashloan_default_lender
+                    && !config
                         .contracts
                         .flashloan_wrappers
                         .iter()
                         .any(|wrapper| wrapper.lender == default_lender)
-                    {
-                        panic!(
-                            "Flashloan default lender {default_lender:?} not found in flashloan \
-                             wrappers"
-                        );
-                    }
+                {
+                    panic!(
+                        "Flashloan default lender {default_lender:?} not found in flashloan \
+                         wrappers"
+                    );
                 }
                 config.contracts.flashloan_default_lender.map(Into::into)
             },

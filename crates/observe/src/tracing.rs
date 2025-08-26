@@ -98,6 +98,7 @@ fn set_tracing_subscriber(config: &Config) {
             } else {
                 tracing_subscriber::fmt::layer()
                     .with_timer(timer)
+                    .with_ansi(atty::is(atty::Stream::Stdout))
                     .map_event_format(|formatter| TraceIdFmt {
                         inner: formatter.with_ansi(atty::is(atty::Stream::Stdout)),
                     })

@@ -201,7 +201,8 @@ impl TokenOwnerFindingStrategy {
             | Chain::Bnb
             | Chain::Optimism
             | Chain::Avalanche
-            | Chain::Polygon => &[Self::Liquidity],
+            | Chain::Polygon
+            | Chain::Lens => &[Self::Liquidity],
             Chain::Hardhat => panic!("unsupported chain for token owner finding"),
         }
     }

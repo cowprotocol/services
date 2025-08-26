@@ -48,7 +48,7 @@ use {
         time::{Duration, Instant},
     },
     tokio::sync::Mutex,
-    tracing::Instrument,
+    tracing::{Instrument, instrument},
 };
 
 pub struct Config {
@@ -150,6 +150,7 @@ impl RunLoop {
 
     /// Sleeps until the next auction is supposed to start, builds it and
     /// returns it.
+    #[instrument(skip(self, prev_auction), fields(prev_auction = prev_auction.as_ref().map(|a| a.id)))]
     async fn next_auction(
         &self,
         prev_auction: &mut Option<domain::Auction>,
@@ -179,6 +180,7 @@ impl RunLoop {
                 .await
             {
                 Ok(()) => {
+                    tracing::trace!("solvable orders cache updated");
                     self.solvable_orders_cache.track_auction_update("success");
                 }
                 Err(err) => {
@@ -190,6 +192,7 @@ impl RunLoop {
         };
 
         let auction = self.cut_auction().await?;
+        tracing::trace!(auction_id = ?auction.id, "auction cut");
 
         // Only run the solvers if the auction or block has changed.
         let previous = prev_auction.replace(auction.clone());
@@ -250,6 +253,7 @@ impl RunLoop {
         })
     }
 
+    #[instrument(skip_all, fields(auction_id = auction.id, auction_block = auction.block, auction_orders = auction.orders.len()))]
     async fn single_run(self: &Arc<Self>, auction: domain::Auction) {
         let single_run_start = Instant::now();
         tracing::info!(auction_id = ?auction.id, "solving");
@@ -257,6 +261,7 @@ impl RunLoop {
         // Mark all auction orders as `Ready` for competition
         self.persistence
             .store_order_events(auction.orders.iter().map(|o| o.uid), OrderEventLabel::Ready);
+        tracing::trace!(auction_id = ?auction.id, "orders marked as ready");
 
         // Collect valid solutions from all drivers
         let solutions = self.fetch_solutions(&auction).await;
@@ -307,6 +312,7 @@ impl RunLoop {
             tracing::error!(?err, "failed to post-process competition");
             return;
         }
+        tracing::trace!(auction_id = ?auction.id, "post-processing completed");
 
         // Mark all winning orders as `Executing`
         let winning_orders = ranking
@@ -324,8 +330,12 @@ impl RunLoop {
                 .filter(|order_id| !winning_orders.contains(order_id)),
             OrderEventLabel::Considered,
         );
+        tracing::trace!(auction_id = ?auction.id, "orders marked as considered");
 
-        for winner in ranking.winners() {
+        for (solution_uid, winner) in ranking
+            .enumerated()
+            .filter(|(_, participant)| participant.is_winner())
+        {
             let (driver, solution) = (winner.driver(), winner.solution());
             tracing::info!(driver = %driver.name, solution = %solution.id(), "winner");
 
@@ -334,10 +344,12 @@ impl RunLoop {
                 single_run_start,
                 driver,
                 solution,
+                solution_uid,
                 block_deadline,
             )
             .await;
         }
+        tracing::trace!(auction_id = ?auction.id, "settlement execution started");
         observe::unsettled(&ranking, &auction);
     }
 
@@ -349,6 +361,7 @@ impl RunLoop {
         single_run_start: Instant,
         driver: &Arc<infra::Driver>,
         solution: &Solution,
+        solution_uid: usize,
         block_deadline: u64,
     ) {
         let solved_order_uids: HashSet<_> = solution.orders().keys().cloned().collect();
@@ -369,10 +382,11 @@ impl RunLoop {
             match self_
                 .settle(
                     &driver_,
-                    solution_id,
                     solved_order_uids.clone(),
                     solver,
                     auction_id,
+                    solution_id,
+                    solution_uid,
                     block_deadline,
                 )
                 .await
@@ -397,6 +411,7 @@ impl RunLoop {
         tokio::spawn(settle_fut);
     }
 
+    #[instrument(skip_all)]
     async fn post_processing(
         &self,
         auction: &domain::Auction,
@@ -457,8 +472,7 @@ impl RunLoop {
         }
 
         let mut solutions: Vec<_> = ranking
-            .all()
-            .enumerate()
+            .enumerated()
             .map(|(index, participant)| SolverSettlement {
                 solver: participant.driver().name.clone(),
                 solver_address: participant.solution().solver().0,
@@ -542,6 +556,7 @@ impl RunLoop {
                 tracing::warn!(?err, "failed to save new competition data");
             }
         }
+        tracing::trace!(auction_id = ?auction.id, "auction saved");
 
         tracing::trace!(?competition, "saving competition");
         futures::try_join!(
@@ -558,6 +573,7 @@ impl RunLoop {
                 .store_fee_policies(auction.id, fee_policies)
                 .map_err(|e| e.context("failed to fee_policies")),
         )?;
+        tracing::trace!(auction_id = ?auction.id, "competition saved");
 
         Metrics::post_processed(start.elapsed());
         Ok(())
@@ -565,6 +581,7 @@ impl RunLoop {
 
     /// Runs the solver competition, making all configured drivers participate.
     /// Returns all fair solutions sorted by their score (best to worst).
+    #[instrument(skip_all)]
     async fn fetch_solutions(
         &self,
         auction: &domain::Auction,
@@ -615,6 +632,7 @@ impl RunLoop {
 
     /// Sends a `/solve` request to the driver and manages all error cases and
     /// records metrics and logs appropriately.
+    #[instrument(skip_all, fields(driver = driver.name))]
     async fn solve(
         &self,
         driver: Arc<infra::Driver>,
@@ -660,14 +678,18 @@ impl RunLoop {
         let (can_participate, response) = {
             let driver = driver.clone();
             let guard = self.solver_participation_guard.clone();
-            let both = tokio::task::spawn(async move {
+            let mut handle = tokio::task::spawn(async move {
                 let fetch_response = driver.solve(request);
                 let check_allowed = guard.can_participate(&driver.submission_address);
                 tokio::join!(check_allowed, fetch_response)
             });
-            tokio::time::timeout(self.config.solve_deadline, both)
+            tokio::time::timeout(self.config.solve_deadline, &mut handle)
                 .await
-                .map_err(|_| SolveError::Timeout)?
+                .map_err(|_| {
+                    // Abort the background task to prevent memory leaks
+                    handle.abort();
+                    SolveError::Timeout
+                })?
                 .context("could not finish the task")
                 .map_err(SolveError::Failure)?
         };
@@ -695,13 +717,15 @@ impl RunLoop {
 
     /// Execute the solver's solution. Returns Ok when the corresponding
     /// transaction has been mined.
+    #[allow(clippy::too_many_arguments)]
     async fn settle(
         &self,
         driver: &infra::Driver,
-        solution_id: u64,
         solved_order_uids: HashSet<OrderUid>,
         solver: eth::Address,
         auction_id: i64,
+        solution_id: u64,
+        solution_uid: usize,
         submission_deadline_latest_block: u64,
     ) -> Result<TxId, SettleError> {
         let settle = async move {
@@ -720,6 +744,7 @@ impl RunLoop {
             self.store_execution_started(
                 auction_id,
                 solver,
+                solution_uid,
                 current_block,
                 submission_deadline_latest_block,
             );
@@ -745,7 +770,7 @@ impl RunLoop {
             }
         };
 
-        self.store_execution_ended(solver, auction_id, &result);
+        self.store_execution_ended(solver, auction_id, solution_uid, &result);
 
         // Clean up the in-flight orders regardless the result.
         self.in_flight_orders
@@ -762,6 +787,7 @@ impl RunLoop {
         &self,
         auction_id: i64,
         solver: eth::Address,
+        solution_uid: usize,
         start_block: u64,
         deadline_block: u64,
     ) {
@@ -770,6 +796,7 @@ impl RunLoop {
             let execution_started = ExecutionStarted {
                 auction_id,
                 solver,
+                solution_uid,
                 start_timestamp: chrono::Utc::now(),
                 start_block,
                 deadline_block,
@@ -790,6 +817,7 @@ impl RunLoop {
         &self,
         solver: eth::Address,
         auction_id: i64,
+        solution_uid: usize,
         result: &Result<TxId, SettleError>,
     ) {
         let end_timestamp = chrono::Utc::now();
@@ -805,6 +833,7 @@ impl RunLoop {
             let execution_ended = ExecutionEnded {
                 auction_id,
                 solver,
+                solution_uid,
                 end_timestamp,
                 end_block: current_block,
                 outcome,
@@ -823,6 +852,7 @@ impl RunLoop {
     ///
     /// Returns None if no transaction was found within the deadline or the task
     /// is cancelled.
+    #[instrument(skip_all)]
     async fn wait_for_settlement_transaction(
         &self,
         auction_id: i64,

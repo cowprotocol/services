@@ -34,7 +34,7 @@ async fn forked_node_mainnet_repay_debt_with_collateral_of_safe() {
         forked_mainnet_repay_debt_with_collateral_of_safe,
         std::env::var("FORK_URL_MAINNET")
             .expect("FORK_URL_MAINNET must be set to run forked tests"),
-        21874126,
+        23112197,
     )
     .await;
 }
@@ -89,7 +89,9 @@ async fn forked_mainnet_repay_debt_with_collateral_of_safe(web3: Web3) {
             0,                 // referral code
         ))
         .await;
-    assert!(balance(&web3, trader.address(), ausdc).await >= collateral_amount);
+    // Exchange rate between USDC and aUSDC can differ from block to block.
+    let slippage = 2;
+    assert!(balance(&web3, trader.address(), ausdc).await >= collateral_amount - slippage);
 
     tracing::info!("wait a bit to make `borrow()` call work");
     tokio::time::sleep(Duration::from_secs(1)).await;
@@ -267,14 +269,14 @@ async fn forked_mainnet_repay_debt_with_collateral_of_safe(web3: Web3) {
     .unwrap();
 
     // Because the trader sold some of their collateral to repay their debt
-    // (~3000 USDC for ~1 WETH) they have that much less `USDC` compared to
+    // (~4900 USDC for ~1 WETH) they have that much less `USDC` compared to
     // the original collateral.
     let trader_usdc = balance(&web3, trader.address(), usdc.address()).await;
-    assert!(trader_usdc > to_wei_with_exp(47_000, 6));
+    assert!(trader_usdc > to_wei_with_exp(45_000, 6));
     tracing::info!("trader got majority of collateral back");
 
     let settlement_weth = balance(&web3, settlement.address(), weth.address()).await;
-    assert!(settlement_weth < 100_000_000u128.into());
+    assert!(settlement_weth < 300_000_000u128.into());
     tracing::info!("settlement contract only has dust amounts of WETH");
 
     assert!(balance(&web3, trader.address(), ausdc).await < 10_000.into());

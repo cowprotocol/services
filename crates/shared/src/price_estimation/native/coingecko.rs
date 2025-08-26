@@ -16,6 +16,7 @@ use {
         sync::Arc,
         time::Duration,
     },
+    tracing::instrument,
     url::Url,
 };
 
@@ -79,6 +80,7 @@ impl CoinGecko {
             Chain::Polygon => "polygon-pos".to_string(),
             Chain::Optimism => "optimistic-ethereum".to_string(),
             Chain::Bnb => "binance-smart-chain".to_string(),
+            Chain::Lens => "lens".to_string(),
             Chain::Sepolia | Chain::Goerli | Chain::Hardhat => {
                 anyhow::bail!("unsupported network {}", chain.name())
             }
@@ -224,6 +226,7 @@ impl CoinGecko {
 }
 
 impl NativePriceBatchFetching for CoinGecko {
+    #[instrument(skip_all)]
     fn fetch_native_prices(
         &'_ self,
         tokens: HashSet<Token>,
@@ -244,6 +247,7 @@ impl NativePriceBatchFetching for CoinGecko {
 }
 
 impl NativePriceEstimating for CoinGecko {
+    #[instrument(skip_all)]
     fn estimate_native_price(
         &self,
         token: Token,

@@ -5,7 +5,7 @@ use {
     shared::{baseline_solver::BaseTokens, recent_block_cache::Block},
     std::{collections::HashSet, future::Future, sync::Arc, time::Duration},
     tokio::sync::RwLock,
-    tracing::Instrument,
+    tracing::{Instrument, instrument},
 };
 
 #[async_trait::async_trait]
@@ -24,6 +24,7 @@ pub struct LiquidityCollector {
 
 #[async_trait::async_trait]
 impl LiquidityCollecting for LiquidityCollector {
+    #[instrument(skip_all, fields(pair_count = pairs.len()))]
     async fn get_liquidity(
         &self,
         pairs: HashSet<TokenPair>,

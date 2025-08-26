@@ -130,7 +130,7 @@ impl SlippageCalculator {
         &self,
         price: Option<&BigRational>,
         amount: BigInt,
-    ) -> Result<(Cow<BigRational>, BigInt)> {
+    ) -> Result<(Cow<'_, BigRational>, BigInt)> {
         let relative = if let Some(max_absolute_native_token) = self.absolute.clone() {
             let price = price.context("missing token price")?;
             let max_absolute_slippage = BigRational::new(max_absolute_native_token, 1.into())

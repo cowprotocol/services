@@ -823,6 +823,10 @@ impl Persistence {
             &mut ex,
             event.auction_id,
             ByteArray(event.solver.0.0),
+            event
+                .solution_uid
+                .try_into()
+                .context("solution uid overflow")?,
             event.start_timestamp,
             event
                 .start_block
@@ -852,6 +856,10 @@ impl Persistence {
             &mut ex,
             event.auction_id,
             ByteArray(event.solver.0.0),
+            event
+                .solution_uid
+                .try_into()
+                .context("solution uid overflow")?,
             event.end_timestamp,
             event.end_block.try_into().context("end block overflow")?,
             event.outcome,

@@ -1,7 +1,7 @@
 use {
     crate::{
         domain::{competition, quote},
-        infra::api,
+        infra::{api, blockchain},
     },
     serde::Serialize,
 };
@@ -21,6 +21,7 @@ enum Kind {
     InvalidAmounts,
     QuoteSameTokens,
     FailedToSubmit,
+    NoValidOrders,
 }
 
 #[derive(Debug, Serialize)]
@@ -53,6 +54,7 @@ impl From<Kind> for (hyper::StatusCode, axum::Json<Error>) {
             }
             Kind::FailedToSubmit => "Could not submit the solution to the blockchain",
             Kind::TooManyPendingSettlements => "Settlement queue is full",
+            Kind::NoValidOrders => "No valid orders found in the auction",
         };
         (
             hyper::StatusCode::BAD_REQUEST,
@@ -86,8 +88,15 @@ impl From<competition::Error> for (hyper::StatusCode, axum::Json<Error>) {
             competition::Error::Solver(_) => Kind::SolverFailed,
             competition::Error::SubmissionError => Kind::FailedToSubmit,
             competition::Error::TooManyPendingSettlements => Kind::TooManyPendingSettlements,
+            competition::Error::NoValidOrdersFound => Kind::NoValidOrders,
         };
         error.into()
+    }
+}
+
+impl From<blockchain::Error> for (hyper::StatusCode, axum::Json<Error>) {
+    fn from(_: blockchain::Error) -> Self {
+        Kind::Unknown.into()
     }
 }
 

@@ -148,6 +148,7 @@ impl SolvableOrdersCache {
         let start = Instant::now();
 
         let db_solvable_orders = self.get_solvable_orders().await?;
+        tracing::trace!("fetched solvable orders from db");
 
         let orders = db_solvable_orders
             .orders
@@ -183,6 +184,7 @@ impl SolvableOrdersCache {
                 ),
             )
             .await;
+        tracing::trace!("fetched native prices for solvable orders");
         // Add WETH price if it's not already there to support ETH wrap when required.
         if let Entry::Vacant(entry) = prices.entry(self.weth) {
             let weth_price = self
@@ -327,6 +329,7 @@ impl SolvableOrdersCache {
                 find_unsupported_tokens(&orders, self.bad_token_detector.clone())
             ),
         );
+        tracing::trace!("filtered invalid orders");
 
         counter.checkpoint_by_invalid_orders("banned_user", &banned_user_orders);
         counter.checkpoint_by_invalid_orders("invalid_signature", &invalid_signature_orders);
@@ -503,8 +506,7 @@ async fn get_orders_with_native_prices(
 /// with very few fetch requests.
 fn prioritize_missing_prices(mut orders: Vec<Order>) -> IndexSet<H160> {
     /// How old an order can be at most to be considered a market order.
-    const MARKET_ORDER_AGE_MINUTES: i64 = 30;
-    let market_order_age = chrono::Duration::minutes(MARKET_ORDER_AGE_MINUTES);
+    const MARKET_ORDER_AGE: chrono::Duration = chrono::Duration::minutes(30);
     let now = chrono::Utc::now();
 
     // newer orders at the start
@@ -515,7 +517,7 @@ fn prioritize_missing_prices(mut orders: Vec<Order>) -> IndexSet<H160> {
     for order in orders {
         let sell_token = order.data.sell_token;
         let buy_token = order.data.buy_token;
-        let is_market = now.signed_duration_since(order.metadata.creation_date) <= market_order_age;
+        let is_market = now.signed_duration_since(order.metadata.creation_date) <= MARKET_ORDER_AGE;
 
         if is_market {
             // already correct priority because orders were sorted by creation_date

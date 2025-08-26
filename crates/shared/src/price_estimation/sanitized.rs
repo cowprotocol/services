@@ -14,6 +14,7 @@ use {
     model::order::BUY_ETH_ADDRESS,
     primitive_types::H160,
     std::sync::Arc,
+    tracing::instrument,
 };
 
 /// Verifies that buy and sell tokens are supported and handles
@@ -53,6 +54,7 @@ impl SanitizedPriceEstimator {
 }
 
 impl PriceEstimating for SanitizedPriceEstimator {
+    #[instrument(skip_all)]
     fn estimate(
         &self,
         query: Arc<Query>,

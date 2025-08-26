@@ -48,7 +48,7 @@ pub async fn run(
 async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAddr>>) {
     infra::observe::init(observe::Config::new(
         &args.log,
-        tracing::Level::ERROR.into(),
+        args.stderr_threshold,
         args.use_json_logs,
         tracing_config(&args.tracing, "driver".into()),
     ));
@@ -56,7 +56,10 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
     let ethrpc = ethrpc(&args).await;
     let web3 = ethrpc.web3().clone();
     let config = config::file::load(ethrpc.chain(), &args.config).await;
-    tracing::info!("running driver with {config:#?}");
+
+    let commit_hash = option_env!("VERGEN_GIT_SHA").unwrap_or("COMMIT_INFO_NOT_FOUND");
+
+    tracing::info!(%commit_hash, "running driver with {config:#?}");
 
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let eth = ethereum(&config, ethrpc).await;
@@ -96,6 +99,7 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
         },
         config.order_priority_strategies,
         app_data_retriever,
+        config.disable_access_list_simulation,
     );
 
     futures::pin_mut!(serve);
