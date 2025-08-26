@@ -98,7 +98,7 @@ async fn too_much_gas() {
 
 #[tokio::test]
 #[ignore]
-async fn high_gas_limit() {
+async fn submits_huge_solution() {
     let test = tests::setup()
         .name("high gas limit")
         .allow_multiple_solve_requests()
@@ -126,10 +126,9 @@ async fn high_gas_limit() {
 
 #[tokio::test]
 #[ignore]
-async fn gas_over_half_of_block_gas_limit() {
+async fn does_not_bid_huge_solution() {
     let test = tests::setup()
         .name("high gas limit")
-        .allow_multiple_solve_requests()
         .pool(ab_pool())
         .order(ab_order())
         // the solution will end up using 5049130 gas, which is >half of block gas limit
@@ -138,7 +137,7 @@ async fn gas_over_half_of_block_gas_limit() {
         .done()
         .await;
 
-    // The found solution is bigger than half of gas block limit which it gets
+    // The found solution is bigger than half of gas block limit which means it gets
     // discarded
     test.solve().await.ok().empty();
 }
