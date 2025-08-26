@@ -409,6 +409,7 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
             },
             flashloan_wrappers: config.contracts.flashloan_wrappers,
             flashloan_router: config.contracts.flashloan_router.map(Into::into),
+            flashloan_tracker: config.contracts.flashloan_tracker.map(Into::into),
         },
         disable_access_list_simulation: config.disable_access_list_simulation,
         disable_gas_simulation: config.disable_gas_simulation.map(Into::into),

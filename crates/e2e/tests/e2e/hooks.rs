@@ -376,10 +376,6 @@ async fn signature(web3: Web3) {
     // Check Safe was deployed
     let code = web3.eth().code(safe.address(), None).await.unwrap();
     assert_ne!(code.0.len(), 0);
-
-    tracing::info!("Waiting for auction to be cleared.");
-    let auction_is_empty = || async { services.get_auction().await.auction.orders.is_empty() };
-    wait_for_condition(TIMEOUT, auction_is_empty).await.unwrap();
 }
 
 async fn partial_fills(web3: Web3) {

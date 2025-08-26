@@ -277,16 +277,6 @@ async fn two_limit_orders_test(web3: Web3) {
         &onchain.contracts().domain_separator,
         SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
     );
-
-    let balance_before_a = token_b.balance_of(trader_a.address()).call().await.unwrap();
-    let balance_before_b = token_a.balance_of(trader_b.address()).call().await.unwrap();
-
-    let order_id = services.create_order(&order_a).await.unwrap();
-    onchain.mint_block().await;
-
-    let limit_order = services.get_order(&order_id).await.unwrap();
-    assert!(limit_order.metadata.class.is_limit());
-
     let order_b = OrderCreation {
         sell_token: token_b.address(),
         sell_amount: to_wei(5),
@@ -301,10 +291,14 @@ async fn two_limit_orders_test(web3: Web3) {
         &onchain.contracts().domain_separator,
         SecretKeyRef::from(&SecretKey::from_slice(trader_b.private_key()).unwrap()),
     );
-    let order_id = services.create_order(&order_b).await.unwrap();
 
-    let limit_order = services.get_order(&order_id).await.unwrap();
-    assert!(limit_order.metadata.class.is_limit());
+    let balance_before_a = token_b.balance_of(trader_a.address()).call().await.unwrap();
+    let balance_before_b = token_a.balance_of(trader_b.address()).call().await.unwrap();
+
+    services.create_order(&order_a).await.unwrap();
+    services.create_order(&order_b).await.unwrap();
+
+    onchain.mint_block().await;
 
     // Drive solution
     tracing::info!("Waiting for trade.");

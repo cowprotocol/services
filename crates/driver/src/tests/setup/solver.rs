@@ -489,6 +489,7 @@ impl Solver {
                 flashloan_default_lender: flashloan_wrappers.first().map(|w| w.lender.into()),
                 flashloan_wrappers,
                 flashloan_router: Some(config.blockchain.flashloan_wrapper.address().into()),
+                flashloan_tracker: None,
             },
             gas,
             None,

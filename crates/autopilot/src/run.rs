@@ -506,18 +506,13 @@ pub async fn run(args: Arguments) {
             eth.contracts().chainalysis_oracle().clone(),
             args.banned_users,
         ),
-        balance_fetcher.clone(),
         bad_token_detector.clone(),
         native_price_estimator.clone(),
         signature_validator.clone(),
         eth.contracts().weth().address(),
-        args.limit_order_price_factor
-            .try_into()
-            .expect("limit order price factor can't be converted to BigDecimal"),
         domain::ProtocolFees::new(&args.fee_policies, args.fee_policy_max_partner_fee),
         cow_amm_registry.clone(),
         args.run_loop_native_price_timeout,
-        eth.contracts().settlement().address(),
     );
 
     let liveness = Arc::new(Liveness::new(args.max_auction_age));

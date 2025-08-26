@@ -8,6 +8,7 @@ use {
         CowAmmLegacyHelper,
         ERC3156FlashLoanSolverWrapper,
         FlashLoanRouter,
+        FlashLoanTracker,
         GPv2AllowListAuthentication,
         GPv2Settlement,
         HooksTrampoline,
@@ -45,6 +46,7 @@ pub struct Contracts {
     pub flashloan_wrapper_maker: Option<ERC3156FlashLoanSolverWrapper>,
     pub flashloan_wrapper_aave: Option<AaveFlashLoanSolverWrapper>,
     pub flashloan_router: Option<FlashLoanRouter>,
+    pub flashloan_tracker: Option<FlashLoanTracker>,
 }
 
 impl Contracts {
@@ -88,6 +90,11 @@ impl Contracts {
             None => None,
         };
 
+        let flashloan_tracker = FlashLoanTracker::builder(web3, gp_settlement.address())
+            .deploy()
+            .await
+            .ok();
+
         Self {
             chain_id: network_id
                 .parse()
@@ -119,6 +126,7 @@ impl Contracts {
             flashloan_wrapper_maker,
             flashloan_wrapper_aave,
             flashloan_router,
+            flashloan_tracker,
         }
     }
 
@@ -208,6 +216,7 @@ impl Contracts {
         );
         let flashloan_wrapper_aave =
             deploy!(web3, AaveFlashLoanSolverWrapper(flashloan_router.address()));
+        let flashloan_tracker = deploy!(web3, FlashLoanTracker(gp_settlement.address()));
 
         Self {
             chain_id: network_id
@@ -230,6 +239,7 @@ impl Contracts {
             flashloan_wrapper_maker: Some(flashloan_wrapper_maker),
             flashloan_wrapper_aave: Some(flashloan_wrapper_aave),
             flashloan_router: Some(flashloan_router),
+            flashloan_tracker: Some(flashloan_tracker),
         }
     }
 
