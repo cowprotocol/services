@@ -165,6 +165,13 @@ impl JemallocMemoryProfiler {
     async fn handle_connection(&self, listener: &UnixListener) {
         match listener.accept().await {
             Ok((mut socket, _)) => loop {
+                log(
+                    &mut socket,
+                    "connected, use the following commands to control the memory profiler: \
+                     'enable', 'disable', 'fun_for(<Duration, e.g. 1h>'"
+                        .into(),
+                )
+                .await;
                 let message = Self::read_line(&mut socket).await;
                 match message.as_deref() {
                     Some("") => {
