@@ -3,6 +3,7 @@
 //! dedicated for that.
 //! See `solver_competition.rs` for the legacy version of this which
 //! simply stored JSON blobs in the DB.
+
 use {
     crate::{
         Address,
@@ -15,6 +16,7 @@ use {
     bigdecimal::BigDecimal,
     sqlx::{PgConnection, QueryBuilder},
     std::ops::DerefMut,
+    tracing::instrument,
 };
 
 #[derive(sqlx::FromRow)]
@@ -50,6 +52,8 @@ pub struct ProposedTrade {
     pub order_uid: OrderUid,
     pub executed_sell: BigDecimal,
     pub executed_buy: BigDecimal,
+    pub sell_token: Address,
+    pub buy_token: Address,
 }
 
 #[derive(sqlx::FromRow)]
@@ -66,6 +70,7 @@ pub struct SolverCompetition {
     pub reference_scores: Vec<ReferenceScore>,
 }
 
+#[instrument(skip_all)]
 pub async fn load_by_tx_hash(
     mut ex: &mut PgConnection,
     tx_hash: TransactionHash,
@@ -88,6 +93,7 @@ pub async fn load_by_tx_hash(
     load_by_id(ex.deref_mut(), auction_id).await
 }
 
+#[instrument(skip_all)]
 pub async fn load_latest(
     mut ex: &mut PgConnection,
 ) -> Result<Option<SolverCompetition>, sqlx::Error> {
@@ -106,6 +112,7 @@ pub async fn load_latest(
     load_by_id(ex.deref_mut(), auction_id).await
 }
 
+#[instrument(skip_all)]
 pub async fn load_by_id(
     mut ex: &mut PgConnection,
     id: AuctionId,
@@ -124,12 +131,12 @@ pub async fn load_by_id(
     };
 
     const FETCH_SETTLEMENTS: &str = r#"
-        SELECT solution_uid, tx_hash
+        SELECT s.solution_uid, s.tx_hash
         FROM settlements s
-        LEFT OUTER JOIN settlement_observations so ON
+        JOIN settlement_observations so ON
              s.block_number = so.block_number
              AND s.log_index = so.log_index
-         WHERE auction_id = $1;
+        WHERE s.auction_id = $1 AND s.solution_uid IS NOT NULL;
     "#;
     let settlements: Vec<Settlement> = sqlx::query_as(FETCH_SETTLEMENTS)
         .bind(id)
@@ -149,9 +156,19 @@ pub async fn load_by_id(
         .await?;
 
     const FETCH_TRADES: &str = r#"
-        SELECT solution_uid, order_uid, executed_sell, executed_buy
-        FROM proposed_trade_executions
-        WHERE auction_id = $1;
+        SELECT pte.solution_uid, pte.order_uid, executed_sell, executed_buy, 
+            COALESCE(o.sell_token, pjo.sell_token) AS sell_token,
+            COALESCE(o.buy_token, pjo.buy_token) AS buy_token
+        FROM proposed_trade_executions AS pte
+        LEFT JOIN orders o ON
+            pte.order_uid = o.uid
+        LEFT JOIN proposed_jit_orders pjo ON
+            pte.order_uid = pjo.order_uid
+            AND pte.solution_uid = pjo.solution_uid
+            AND pte.auction_id = pjo.auction_id
+        WHERE pte.auction_id = $1
+            AND COALESCE(o.sell_token, pjo.sell_token) IS NOT NULL
+            AND COALESCE(o.buy_token, pjo.buy_token) IS NOT NULL;
     "#;
     let trades: Vec<ProposedTrade> = sqlx::query_as(FETCH_TRADES)
         .bind(id)
@@ -189,6 +206,7 @@ pub async fn load_by_id(
 /// 5. Flags solvers who failed to settle in all of these auctions.
 /// 6. Returns a list of solvers that have consistently failed to settle
 ///    solutions.
+#[instrument(skip_all)]
 pub async fn find_non_settling_solvers(
     ex: &mut PgConnection,
     last_auctions_count: u32,
@@ -240,6 +258,7 @@ FROM consistent_solvers;
         .await
 }
 
+#[instrument(skip_all)]
 pub async fn find_low_settling_solvers(
     ex: &mut PgConnection,
     last_auctions_count: u32,
@@ -313,6 +332,7 @@ pub struct Order {
     pub side: OrderKind,
 }
 
+#[instrument(skip_all)]
 pub async fn save(
     ex: &mut PgTransaction<'_>,
     auction_id: AuctionId,
@@ -329,6 +349,7 @@ pub async fn save(
     Ok(())
 }
 
+#[instrument(skip_all)]
 async fn save_solutions(
     ex: &mut PgTransaction<'_>,
     auction_id: AuctionId,
@@ -356,6 +377,7 @@ async fn save_solutions(
     Ok(())
 }
 
+#[instrument(skip_all)]
 async fn save_trade_executions(
     ex: &mut PgTransaction<'_>,
     auction_id: AuctionId,
@@ -387,6 +409,7 @@ async fn save_trade_executions(
     Ok(())
 }
 
+#[instrument(skip_all)]
 async fn save_jit_orders(
     ex: &mut PgTransaction<'_>,
     auction_id: AuctionId,
@@ -459,6 +482,7 @@ const BASE_SOLUTIONS_QUERY: &str = r#"
         ON pse.order_uid = o.uid
 "#;
 
+#[instrument(skip_all)]
 pub async fn fetch(
     ex: &mut PgConnection,
     auction_id: AuctionId,
@@ -469,6 +493,7 @@ pub async fn fetch(
     map_rows_to_solutions(query.fetch_all(ex).await?)
 }
 
+#[instrument(skip_all)]
 pub async fn fetch_solver_winning_solutions(
     ex: &mut PgConnection,
     auction_id: AuctionId,
@@ -484,6 +509,7 @@ pub async fn fetch_solver_winning_solutions(
     map_rows_to_solutions(query.fetch_all(ex).await?)
 }
 
+#[instrument(skip_all)]
 fn map_rows_to_solutions(rows: Vec<SolutionRow>) -> Result<Vec<Solution>, sqlx::Error> {
     let mut solutions_map = std::collections::HashMap::new();
 
@@ -530,6 +556,9 @@ mod tests {
             auction,
             byte_array::ByteArray,
             events::{self, EventIndex, Settlement},
+            orders::insert_order_and_ignore_conflicts,
+            reference_scores,
+            settlement_observations,
             settlements,
         },
         sqlx::{Connection, Row},
@@ -997,5 +1026,219 @@ mod tests {
 
         let solver_competition = load_by_tx_hash(&mut db, tx_hash).await.unwrap();
         assert!(solver_competition.is_none());
+
+        // settlement_observations
+        let observation = settlement_observations::Observation {
+            block_number: 1,
+            log_index: 0,
+            ..Default::default()
+        };
+        settlement_observations::upsert(&mut db, observation)
+            .await
+            .unwrap();
+
+        let solver_competition = load_by_tx_hash(&mut db, tx_hash).await.unwrap();
+        assert!(solver_competition.is_none());
+
+        // update settlements
+        settlements::update_settlement_auction(&mut db, 1, 0, 1)
+            .await
+            .unwrap();
+        settlements::update_settlement_solver(&mut db, 1, 0, ByteArray([1u8; 20]), 0)
+            .await
+            .unwrap();
+
+        // competition_auctions
+        let auction = auction::Auction {
+            id: 1,
+            block: 1,
+            deadline: 2,
+            order_uids: vec![ByteArray([1u8; 56])],
+            price_tokens: vec![ByteArray([1u8; 20])],
+            price_values: vec![BigDecimal::from(100)],
+            surplus_capturing_jit_order_owners: vec![],
+        };
+        auction::save(&mut db, auction).await.unwrap();
+
+        let solver_competition = load_by_tx_hash(&mut db, tx_hash).await.unwrap();
+        assert!(solver_competition.is_some());
+        let solver_competition = solver_competition.unwrap();
+        assert_eq!(solver_competition.settlements.len(), 1);
+        assert_eq!(
+            solver_competition.settlements.first().unwrap().tx_hash,
+            tx_hash
+        );
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_load_by_id() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let block_number = 1;
+        let log_index = 0;
+        let auction_id = 1;
+
+        let solver_competition = load_by_id(&mut db, auction_id).await.unwrap();
+        assert!(solver_competition.is_none());
+
+        // example order
+        let order_uid = ByteArray([1u8; 56]);
+        let order_sell_token = ByteArray([1u8; 20]);
+        let order_buy_token = ByteArray([2u8; 20]);
+        let order_limit_sell = BigDecimal::from(100);
+        let order_limit_buy = BigDecimal::from(200);
+        let order_executed_sell = BigDecimal::from(50);
+        let order_executed_buy = BigDecimal::from(150);
+        let order_side = OrderKind::Sell;
+
+        // competition_auctions
+        let auction = auction::Auction {
+            id: auction_id,
+            block: block_number,
+            deadline: 2,
+            order_uids: vec![order_uid],
+            price_tokens: vec![order_sell_token],
+            price_values: vec![order_limit_sell.clone()],
+            surplus_capturing_jit_order_owners: vec![],
+        };
+        auction::save(&mut db, auction).await.unwrap();
+
+        let solver_competition = load_by_id(&mut db, auction_id).await.unwrap();
+        assert!(solver_competition.is_some());
+
+        // settlements
+        let event = EventIndex {
+            block_number,
+            log_index,
+        };
+        let tx_hash = ByteArray([1u8; 32]);
+        let settlement = Settlement {
+            solver: ByteArray([1u8; 20]),
+            transaction_hash: tx_hash,
+        };
+        events::insert_settlement(&mut db, &event, &settlement)
+            .await
+            .unwrap();
+
+        // Check before the joined table is populated
+        let solver_competition = load_by_id(&mut db, auction_id).await.unwrap();
+        assert!(solver_competition.is_some());
+        let solver_competition = solver_competition.unwrap();
+        assert!(solver_competition.settlements.is_empty());
+        assert_eq!(solver_competition.auction.id, 1);
+
+        // settlement_observations
+        let observation = settlement_observations::Observation {
+            block_number,
+            log_index,
+            ..Default::default()
+        };
+        settlement_observations::upsert(&mut db, observation)
+            .await
+            .unwrap();
+
+        // Check after the joined table is populated
+        let solver_competition = load_by_id(&mut db, auction_id).await.unwrap();
+        assert!(solver_competition.is_some());
+        let solver_competition = solver_competition.unwrap();
+        assert!(solver_competition.settlements.is_empty());
+        assert_eq!(solver_competition.auction.id, 1);
+
+        // update settlements
+        settlements::update_settlement_auction(&mut db, block_number, log_index, auction_id)
+            .await
+            .unwrap();
+        settlements::update_settlement_solver(
+            &mut db,
+            block_number,
+            log_index,
+            ByteArray([1u8; 20]),
+            0,
+        )
+        .await
+        .unwrap();
+
+        // Check after both tables are linked
+        let solver_competition = load_by_id(&mut db, auction_id).await.unwrap();
+        assert!(solver_competition.is_some());
+        let solver_competition = solver_competition.unwrap();
+        assert_eq!(solver_competition.settlements.len(), 1);
+        assert_eq!(
+            solver_competition.settlements.first().unwrap().tx_hash,
+            tx_hash
+        );
+        assert_eq!(solver_competition.auction.id, 1);
+
+        // proposed_solutions
+        let solutions = vec![Solution {
+            uid: 0,
+            id: 0.into(),
+            solver: ByteArray([1u8; 20]),
+            is_winner: true,
+            filtered_out: false,
+            score: BigDecimal::from(100),
+            orders: vec![Order {
+                uid: order_uid,
+                sell_token: order_sell_token,
+                buy_token: order_buy_token,
+                limit_sell: order_limit_sell.clone(),
+                limit_buy: order_limit_buy.clone(),
+                executed_sell: order_executed_sell,
+                executed_buy: order_executed_buy,
+                side: order_side,
+            }],
+            price_tokens: vec![ByteArray([1u8; 20])],
+            price_values: vec![BigDecimal::from(100)],
+        }];
+        save_solutions(&mut db, auction_id, &solutions)
+            .await
+            .unwrap();
+
+        // proposed_trade_executions
+        save_trade_executions(&mut db, auction_id, &solutions)
+            .await
+            .unwrap();
+
+        // reference_scores
+        let scores = vec![reference_scores::Score {
+            auction_id,
+            solver: ByteArray([1u8; 20]),
+            reference_score: BigDecimal::from(100),
+        }];
+        reference_scores::insert(&mut db, &scores).await.unwrap();
+
+        // orders
+        insert_order_and_ignore_conflicts(
+            &mut db,
+            &crate::orders::Order {
+                uid: order_uid,
+                sell_token: order_sell_token,
+                buy_token: order_buy_token,
+                sell_amount: order_limit_sell.clone(),
+                buy_amount: order_limit_buy.clone(),
+                kind: order_side,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let solver_competition = load_by_id(&mut db, auction_id).await.unwrap();
+        assert!(solver_competition.is_some());
+        let solver_competition = solver_competition.unwrap();
+        assert_eq!(solver_competition.settlements.len(), 1);
+        assert_eq!(
+            solver_competition.settlements.first().unwrap().tx_hash,
+            tx_hash
+        );
+        assert_eq!(solver_competition.auction.id, 1);
+        assert_eq!(solver_competition.trades.len(), 1);
+        assert_eq!(solver_competition.trades.first().unwrap().solution_uid, 0);
+        assert_eq!(solver_competition.reference_scores.len(), 1);
+        assert_eq!(solver_competition.solutions.len(), 1);
+        assert_eq!(solver_competition.solutions.first().unwrap().uid, 0);
     }
 }

@@ -15,6 +15,7 @@ use {
         sync::{Arc, Mutex},
         time::Duration,
     },
+    tracing::instrument,
     url::Url,
 };
 
@@ -89,6 +90,7 @@ impl OneInch {
 }
 
 impl NativePriceEstimating for OneInch {
+    #[instrument(skip_all)]
     fn estimate_native_price(
         &self,
         token: Token,

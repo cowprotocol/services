@@ -21,7 +21,6 @@ use {
         str::FromStr,
         time::Duration,
     },
-    tracing::level_filters::LevelFilter,
     url::Url,
 };
 
@@ -33,8 +32,8 @@ macro_rules! logging_args_with_default_filter {
             #[clap(long, env, default_value = $default_filter)]
             pub log_filter: String,
 
-            #[clap(long, env, default_value = "error")]
-            pub log_stderr_threshold: LevelFilter,
+            #[clap(long, env)]
+            pub log_stderr_threshold: Option<tracing::Level>,
 
             #[clap(long, env, default_value = "false")]
             pub use_json_logs: bool,
@@ -49,7 +48,7 @@ macro_rules! logging_args_with_default_filter {
                 } = self;
 
                 writeln!(f, "log_filter: {}", log_filter)?;
-                writeln!(f, "log_stderr_threshold: {}", log_stderr_threshold)?;
+                writeln!(f, "log_stderr_threshold: {:?}", log_stderr_threshold)?;
                 writeln!(f, "use_json_logs: {}", use_json_logs)?;
                 Ok(())
             }
@@ -104,15 +103,16 @@ pub struct OrderQuotingArguments {
 
 logging_args_with_default_filter!(
     LoggingArguments,
-    "info,autopilot=debug,driver=debug,orderbook=debug,solver=debug,shared=debug,cow_amm=debug"
+    "info,autopilot=debug,driver=debug,observe=info,orderbook=debug,solver=debug,shared=debug,\
+     cow_amm=debug"
 );
 
 #[derive(Debug, clap::Parser)]
 pub struct TracingArguments {
     #[clap(long, env)]
     pub tracing_collector_endpoint: Option<String>,
-    #[clap(long, env, default_value_t = LevelFilter::INFO)]
-    pub tracing_level: LevelFilter,
+    #[clap(long, env, default_value_t = tracing::Level::INFO)]
+    pub tracing_level: tracing::Level,
     #[clap(long, env, value_parser = humantime::parse_duration, default_value = "10s")]
     pub tracing_exporter_timeout: Duration,
 }
@@ -183,6 +183,10 @@ pub struct Arguments {
     /// be skipped in gas estimators.
     #[clap(long, env)]
     pub blocknative_api_key: Option<String>,
+
+    /// Driver URL for gas price estimation when using the Driver estimator.
+    #[clap(long, env)]
+    pub gas_estimation_driver_url: Option<Url>,
 
     /// Base tokens used for finding multi-hop paths between multiple AMMs
     /// Should be the most liquid tokens of the given network.
@@ -255,6 +259,14 @@ pub struct Arguments {
     /// Override address of the settlement contract.
     #[clap(long, env)]
     pub settlement_contract_address: Option<H160>,
+
+    /// Override address of the Balances contract.
+    #[clap(long, env)]
+    pub balances_contract_address: Option<H160>,
+
+    /// Override address of the Signatures contract.
+    #[clap(long, env)]
+    pub signatures_contract_address: Option<H160>,
 
     /// Override address of the settlement contract.
     #[clap(long, env)]
@@ -374,6 +386,7 @@ impl Display for Arguments {
             simulation_node_url,
             gas_estimators,
             blocknative_api_key,
+            gas_estimation_driver_url,
             base_tokens,
             baseline_sources,
             pool_cache_blocks,
@@ -385,6 +398,8 @@ impl Display for Arguments {
             solver_competition_auth,
             network_block_interval,
             settlement_contract_address,
+            balances_contract_address,
+            signatures_contract_address,
             native_token_address,
             hooks_contract_address,
             balancer_v2_vault_address,
@@ -405,6 +420,7 @@ impl Display for Arguments {
         display_option(f, "simulation_node_url", simulation_node_url)?;
         writeln!(f, "gas_estimators: {gas_estimators:?}")?;
         display_secret_option(f, "blocknative_api_key", blocknative_api_key.as_ref())?;
+        display_option(f, "gas_estimation_driver_url", gas_estimation_driver_url)?;
         writeln!(f, "base_tokens: {base_tokens:?}")?;
         writeln!(f, "baseline_sources: {baseline_sources:?}")?;
         writeln!(f, "pool_cache_blocks: {pool_cache_blocks}")?;
@@ -436,6 +452,16 @@ impl Display for Arguments {
             f,
             "settlement_contract_address",
             &settlement_contract_address.map(|a| format!("{a:?}")),
+        )?;
+        display_option(
+            f,
+            "balances_contract_address",
+            &balances_contract_address.map(|a| format!("{a:?}")),
+        )?;
+        display_option(
+            f,
+            "signatures_contract_address",
+            &signatures_contract_address.map(|a| format!("{a:?}")),
         )?;
         display_option(
             f,

@@ -7,6 +7,7 @@ use {
     },
     chrono::Utc,
     sqlx::{Executor, PgConnection},
+    tracing::instrument,
 };
 
 #[derive(Clone, Debug, Default, sqlx::FromRow, Eq, PartialEq)]
@@ -16,6 +17,7 @@ pub struct OnchainInvalidationRow {
     pub log_index: i64,
 }
 
+#[instrument(skip_all)]
 pub async fn insert_onchain_invalidations(
     ex: &mut PgTransaction<'_>,
     events: &[(EventIndex, OrderUid)],
@@ -37,6 +39,7 @@ pub async fn insert_onchain_invalidations(
     Ok(())
 }
 
+#[instrument(skip_all)]
 pub async fn delete_invalidations(
     ex: &mut PgTransaction<'_>,
     block_number: i64,
@@ -48,6 +51,7 @@ pub async fn delete_invalidations(
     Ok(())
 }
 
+#[instrument(skip_all)]
 pub async fn insert_onchain_invalidation(
     ex: &mut PgConnection,
     index: &EventIndex,
@@ -66,6 +70,7 @@ pub async fn insert_onchain_invalidation(
     Ok(())
 }
 
+#[instrument(skip_all)]
 pub async fn read_onchain_invalidation(
     ex: &mut PgConnection,
     id: &OrderUid,

@@ -11,6 +11,7 @@ use {
     },
     std::sync::Arc,
     thiserror::Error,
+    tracing::instrument,
     web3::types::{BlockNumber, CallRequest},
 };
 
@@ -57,6 +58,7 @@ impl From<web3::Error> for SimulationError {
 
 #[async_trait::async_trait]
 impl CodeSimulating for Web3 {
+    #[instrument(skip_all)]
     async fn simulate(
         &self,
         call: CallRequest,
@@ -151,6 +153,7 @@ impl TenderlyCodeSimulator {
 
 #[async_trait::async_trait]
 impl CodeSimulating for TenderlyCodeSimulator {
+    #[instrument(skip_all)]
     async fn simulate(
         &self,
         call: CallRequest,
@@ -229,6 +232,7 @@ impl Web3ThenTenderly {
 
 #[async_trait::async_trait]
 impl CodeSimulating for Web3ThenTenderly {
+    #[instrument(skip_all)]
     async fn simulate(
         &self,
         call: CallRequest,

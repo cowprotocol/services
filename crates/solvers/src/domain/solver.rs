@@ -36,7 +36,7 @@ pub struct Config {
     pub max_partial_attempts: usize,
     pub solution_gas_offset: eth::SignedGas,
     pub native_token_price_estimation_amount: eth::U256,
-    pub node_url: Option<Url>,
+    pub uni_v3_node_url: Option<Url>,
 }
 
 struct Inner {
@@ -70,17 +70,18 @@ struct Inner {
     native_token_price_estimation_amount: eth::U256,
 
     /// If provided, the solver can rely on Uniswap V3 LPs
-    uni_v3_quoter_v2: Option<contracts::UniswapV3QuoterV2>,
+    uni_v3_quoter_v2: Option<Arc<contracts::UniswapV3QuoterV2>>,
 }
 
 impl Solver {
     /// Creates a new baseline solver for the specified configuration.
     pub async fn new(config: Config) -> Self {
-        let uni_v3_quoter_v2 = match config.node_url {
+        let uni_v3_quoter_v2 = match config.uni_v3_node_url {
             Some(url) => {
                 let web3 = ethrpc::web3(Default::default(), Default::default(), &url, "baseline");
                 contracts::UniswapV3QuoterV2::deployed(&web3)
                     .await
+                    .map(Arc::new)
                     .inspect_err(|err| {
                         tracing::warn!(?err, "Failed to load UniswapV3QuoterV2 contract");
                     })
@@ -124,11 +125,12 @@ impl Solver {
             inner.solve(auction, sender).await;
         };
 
-        if tokio::time::timeout(remaining, tokio::spawn(background_work))
-            .await
-            .is_err()
-        {
+        let mut handle = tokio::spawn(background_work);
+
+        if tokio::time::timeout(remaining, &mut handle).await.is_err() {
             tracing::debug!("reached timeout while solving orders");
+            // Abort the background task to prevent memory leaks
+            handle.abort();
         }
 
         let mut solutions = vec![];
@@ -150,7 +152,7 @@ impl Inner {
             &self.weth,
             &self.base_tokens,
             &auction.liquidity,
-            self.uni_v3_quoter_v2.as_ref(),
+            self.uni_v3_quoter_v2.clone(),
         );
 
         for (i, order) in auction.orders.into_iter().enumerate() {

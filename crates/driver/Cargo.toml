@@ -15,6 +15,7 @@ name = "driver"
 path = "src/main.rs"
 
 [dependencies]
+alloy = { workspace = true, features = ["sol-types"] }
 app-data = { workspace = true }
 bytes-hex = { workspace = true }
 chain = { workspace = true }
@@ -83,6 +84,10 @@ maplit = { workspace = true }
 mockall = { workspace = true }
 tokio = { workspace = true, features = ["test-util", "process"] }
 tempfile = { workspace = true }
+
+[build-dependencies]
+anyhow = { workspace = true }
+vergen = { workspace = true, features = ["git", "gitcl"] }
 
 [lints]
 workspace = true

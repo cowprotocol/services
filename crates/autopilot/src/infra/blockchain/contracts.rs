@@ -3,7 +3,9 @@ use {crate::domain, chain::Chain, ethcontract::dyns::DynWeb3, primitive_types::H
 #[derive(Debug, Clone)]
 pub struct Contracts {
     settlement: contracts::GPv2Settlement,
+    signatures: contracts::support::Signatures,
     weth: contracts::WETH9,
+    balances: contracts::support::Balances,
     chainalysis_oracle: Option<contracts::ChainalysisOracle>,
     trampoline: contracts::HooksTrampoline,
 
@@ -17,7 +19,9 @@ pub struct Contracts {
 #[derive(Debug, Clone)]
 pub struct Addresses {
     pub settlement: Option<H160>,
+    pub signatures: Option<H160>,
     pub weth: Option<H160>,
+    pub balances: Option<H160>,
     pub trampoline: Option<H160>,
 }
 
@@ -37,9 +41,25 @@ impl Contracts {
             ),
         );
 
+        let signatures = contracts::support::Signatures::at(
+            web3,
+            address_for(
+                contracts::support::Signatures::raw_contract(),
+                addresses.signatures,
+            ),
+        );
+
         let weth = contracts::WETH9::at(
             web3,
             address_for(contracts::WETH9::raw_contract(), addresses.weth),
+        );
+
+        let balances = contracts::support::Balances::at(
+            web3,
+            address_for(
+                contracts::support::Balances::raw_contract(),
+                addresses.balances,
+            ),
         );
 
         let trampoline = contracts::HooksTrampoline::at(
@@ -72,7 +92,9 @@ impl Contracts {
 
         Self {
             settlement,
+            signatures,
             weth,
+            balances,
             chainalysis_oracle,
             settlement_domain_separator,
             authenticator,
@@ -82,6 +104,14 @@ impl Contracts {
 
     pub fn settlement(&self) -> &contracts::GPv2Settlement {
         &self.settlement
+    }
+
+    pub fn balances(&self) -> &contracts::support::Balances {
+        &self.balances
+    }
+
+    pub fn signatures(&self) -> &contracts::support::Signatures {
+        &self.signatures
     }
 
     pub fn trampoline(&self) -> &contracts::HooksTrampoline {

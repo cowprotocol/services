@@ -55,6 +55,7 @@ use {
         collections::{BTreeMap, HashMap, HashSet},
         sync::Arc,
     },
+    tracing::instrument,
 };
 pub use {
     common::TokenState,
@@ -342,6 +343,7 @@ impl BalancerPoolFetcher {
 
 #[async_trait::async_trait]
 impl BalancerPoolFetching for BalancerPoolFetcher {
+    #[instrument(skip_all)]
     async fn fetch(
         &self,
         token_pairs: HashSet<TokenPair>,

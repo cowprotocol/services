@@ -16,6 +16,7 @@ use {
             chrono::{DateTime, Utc},
         },
     },
+    tracing::instrument,
 };
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, sqlx::Type)]
@@ -100,6 +101,7 @@ pub struct Order {
     pub class: OrderClass,
 }
 
+#[instrument(skip_all)]
 pub async fn insert_orders_and_ignore_conflicts(
     ex: &mut PgConnection,
     orders: &[Order],
@@ -145,6 +147,7 @@ INSERT INTO orders (
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
     "#;
 
+#[instrument(skip_all)]
 pub async fn insert_order_and_ignore_conflicts(
     ex: &mut PgConnection,
     order: &Order,
@@ -188,10 +191,12 @@ async fn insert_order_execute_sqlx(
     Ok(())
 }
 
+#[instrument(skip_all)]
 pub async fn insert_order(ex: &mut PgConnection, order: &Order) -> Result<(), sqlx::Error> {
     insert_order_execute_sqlx(INSERT_ORDER_QUERY, ex, order).await
 }
 
+#[instrument(skip_all)]
 pub async fn read_order(
     ex: &mut PgConnection,
     id: &OrderUid,
@@ -204,10 +209,10 @@ WHERE uid = $1
 }
 
 pub fn is_duplicate_record_error(err: &sqlx::Error) -> bool {
-    if let sqlx::Error::Database(db_err) = &err {
-        if let Some(code) = db_err.code() {
-            return code.as_ref() == "23505";
-        }
+    if let sqlx::Error::Database(db_err) = &err
+        && let Some(code) = db_err.code()
+    {
+        return code.as_ref() == "23505";
     }
     false
 }
@@ -236,6 +241,7 @@ pub struct Interaction {
     pub execution: ExecutionTime,
 }
 
+#[instrument(skip_all)]
 pub async fn insert_interactions(
     ex: &mut PgConnection,
     order: &OrderUid,
@@ -247,6 +253,7 @@ pub async fn insert_interactions(
     Ok(())
 }
 
+#[instrument(skip_all)]
 pub async fn insert_interaction(
     ex: &mut PgConnection,
     order: &OrderUid,
@@ -275,6 +282,7 @@ VALUES ($1, $2, $3, $4, $5, $6)
     Ok(())
 }
 
+#[instrument(skip_all)]
 pub async fn insert_or_overwrite_interactions(
     ex: &mut PgConnection,
     uid_and_interaction: &[(OrderUid, Interaction)],
@@ -285,6 +293,7 @@ pub async fn insert_or_overwrite_interactions(
     Ok(())
 }
 
+#[instrument(skip_all)]
 pub async fn insert_or_overwrite_interaction(
     ex: &mut PgConnection,
     interaction: &Interaction,
@@ -330,6 +339,7 @@ pub struct Quote {
     pub metadata: serde_json::Value,
 }
 
+#[instrument(skip_all)]
 pub async fn insert_quotes(ex: &mut PgConnection, quotes: &[Quote]) -> Result<(), sqlx::Error> {
     for quote in quotes {
         insert_quote_and_update_on_conflict(ex, quote).await?;
@@ -351,6 +361,7 @@ INSERT INTO order_quotes (
 )
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"#;
 
+#[instrument(skip_all)]
 pub async fn insert_quote_and_update_on_conflict(
     ex: &mut PgConnection,
     quote: &Quote,
@@ -381,6 +392,7 @@ buy_amount = $6, verified = $8, metadata = $9
     Ok(())
 }
 
+#[instrument(skip_all)]
 pub async fn insert_quote(ex: &mut PgConnection, quote: &Quote) -> Result<(), sqlx::Error> {
     sqlx::query(INSERT_ORDER_QUOTES_QUERY)
         .bind(quote.order_uid)
@@ -397,6 +409,7 @@ pub async fn insert_quote(ex: &mut PgConnection, quote: &Quote) -> Result<(), sq
     Ok(())
 }
 
+#[instrument(skip_all)]
 pub async fn read_quote(
     ex: &mut PgConnection,
     id: &OrderUid,
@@ -408,6 +421,7 @@ WHERE order_uid = $1
     sqlx::query_as(query).bind(id).fetch_optional(ex).await
 }
 
+#[instrument(skip_all)]
 pub async fn read_quotes(
     ex: &mut sqlx::PgConnection,
     order_ids: &[OrderUid],
@@ -428,6 +442,7 @@ pub async fn read_quotes(
     query.fetch_all(ex).await
 }
 
+#[instrument(skip_all)]
 pub async fn cancel_order(
     ex: &mut PgConnection,
     order_uid: &OrderUid,
@@ -612,6 +627,7 @@ COALESCE((SELECT executed_fee_token FROM order_execution oe WHERE oe.order_uid =
 
 pub const FROM: &str = "orders o";
 
+#[instrument(skip_all)]
 pub async fn single_full_order_with_quote(
     ex: &mut PgConnection,
     uid: &OrderUid,
@@ -659,6 +675,7 @@ WITH
     )
 "#;
 
+#[instrument(skip_all)]
 pub fn full_orders_in_tx<'a>(
     ex: &'a mut PgConnection,
     tx_hash: &'a TransactionHash,
@@ -688,27 +705,109 @@ WHERE
 /// - pending pre-signature
 /// - ethflow specific invalidation conditions
 #[rustfmt::skip]
-const OPEN_ORDERS: &str = const_format::concatcp!(
-"SELECT * FROM ( ",
-    "SELECT ", SELECT,
-    " FROM ", FROM,
-    " LEFT OUTER JOIN ethflow_orders eth_o on eth_o.uid = o.uid ",
-    " WHERE o.valid_to >= $1",
-    " AND CASE WHEN eth_o.valid_to IS NULL THEN true ELSE eth_o.valid_to >= $1 END",
-r#") AS unfiltered
-WHERE
-    CASE kind
-        WHEN 'sell' THEN sum_sell < sell_amount
-        WHEN 'buy' THEN sum_buy < buy_amount
-    END AND
-    (NOT invalidated) AND
-    (onchain_placement_error IS NULL)
-"#
-);
+const OPEN_ORDERS: &str = r#"
+WITH live_orders AS (
+    SELECT o.*
+    FROM   orders o
+    LEFT   JOIN ethflow_orders e ON e.uid = o.uid
+    WHERE  o.cancellation_timestamp IS NULL
+      AND  o.valid_to >= $1
+      AND (e.valid_to IS NULL OR e.valid_to >= $1)
+      AND NOT EXISTS (SELECT 1 FROM invalidations               i  WHERE i.order_uid = o.uid)
+      AND NOT EXISTS (SELECT 1 FROM onchain_order_invalidations oi WHERE oi.uid      = o.uid)
+      AND NOT EXISTS (SELECT 1 FROM onchain_placed_orders       op WHERE op.uid      = o.uid
+                                                                     AND op.placement_error IS NOT NULL)
+),
+trades_agg AS (
+     SELECT t.order_uid,
+            SUM(t.buy_amount) AS sum_buy,
+            SUM(t.sell_amount) AS sum_sell,
+            SUM(t.fee_amount) AS sum_fee
+     FROM trades t
+     JOIN live_orders lo ON lo.uid = t.order_uid
+     GROUP BY t.order_uid
+)
+SELECT
+    lo.uid,
+    lo.owner,
+    lo.creation_timestamp,
+    lo.sell_token,
+    lo.buy_token,
+    lo.sell_amount,
+    lo.buy_amount,
+    lo.valid_to,
+    lo.app_data,
+    lo.fee_amount,
+    lo.kind,
+    lo.partially_fillable,
+    lo.signature,
+    lo.receiver,
+    lo.signing_scheme,
+    lo.settlement_contract,
+    lo.sell_token_balance,
+    lo.buy_token_balance,
+    lo.class,
+
+    COALESCE(ta.sum_buy, 0) AS sum_buy,
+    COALESCE(ta.sum_sell, 0) AS sum_sell,
+    COALESCE(ta.sum_fee, 0) AS sum_fee,
+    false AS invalidated,
+    (lo.signing_scheme = 'presign' AND COALESCE(pe.unsigned, TRUE)) AS presignature_pending,
+    ARRAY(
+            SELECT (p.target, p.value, p.data)
+            FROM   interactions p
+            WHERE  p.order_uid = lo.uid AND p.execution = 'pre'
+            ORDER  BY p.index
+    ) AS pre_interactions,
+    ARRAY(
+            SELECT (p.target, p.value, p.data)
+            FROM   interactions p
+            WHERE  p.order_uid = lo.uid AND p.execution = 'post'
+            ORDER  BY p.index
+    ) AS post_interactions,
+    ed.ethflow_data,
+    opo.onchain_user,
+    NULL AS onchain_placement_error,
+    COALESCE(fee_agg.executed_fee,0)        AS executed_fee,
+    COALESCE(fee_agg.executed_fee_token, lo.sell_token) AS executed_fee_token,
+    ad.full_app_data
+FROM live_orders lo
+LEFT JOIN LATERAL (
+    SELECT NOT signed AS unsigned
+    FROM   presignature_events
+    WHERE  order_uid = lo.uid
+    ORDER  BY block_number DESC, log_index DESC
+    LIMIT  1
+    ) pe ON TRUE
+LEFT JOIN LATERAL (
+    SELECT sender AS onchain_user
+    FROM   onchain_placed_orders
+    WHERE  uid = lo.uid
+    ORDER  BY block_number DESC
+    LIMIT  1
+    ) opo ON TRUE
+LEFT JOIN LATERAL (
+    SELECT ROW(tx_hash, eo.valid_to) AS ethflow_data
+    FROM   ethflow_orders  eo
+    LEFT JOIN ethflow_refunds r ON r.order_uid = eo.uid
+    WHERE  eo.uid = lo.uid
+    ) ed ON TRUE
+LEFT JOIN LATERAL (
+    SELECT SUM(executed_fee) AS executed_fee,
+           (ARRAY_AGG(executed_fee_token))[1] AS executed_fee_token
+    FROM   order_execution
+    WHERE  order_uid = lo.uid
+) fee_agg ON TRUE
+LEFT JOIN app_data ad ON ad.contract_app_data = lo.app_data
+LEFT JOIN trades_agg ta ON  ta.order_uid = lo.uid
+WHERE ((lo.kind = 'sell' AND COALESCE(ta.sum_sell,0) < lo.sell_amount) OR
+       (lo.kind = 'buy'  AND COALESCE(ta.sum_buy ,0) < lo.buy_amount))
+"#;
 
 /// Uses the conditions from OPEN_ORDERS and checks the fok limit orders have
 /// surplus fee.
 /// cleanup: fok limit orders should be allowed to not have surplus fee
+#[instrument(skip_all)]
 pub fn solvable_orders(
     ex: &mut PgConnection,
     min_valid_to: i64,
@@ -716,6 +815,7 @@ pub fn solvable_orders(
     sqlx::query_as(OPEN_ORDERS).bind(min_valid_to).fetch(ex)
 }
 
+#[instrument(skip_all)]
 pub fn open_orders_by_time_or_uids<'a>(
     ex: &'a mut PgConnection,
     uids: &'a [OrderUid],
@@ -735,33 +835,13 @@ pub fn open_orders_by_time_or_uids<'a>(
         .fetch(ex)
 }
 
+#[instrument(skip_all)]
 pub async fn latest_settlement_block(ex: &mut PgConnection) -> Result<i64, sqlx::Error> {
     const QUERY: &str = r#"
 SELECT COALESCE(MAX(block_number), 0)
 FROM settlements
     "#;
     sqlx::query_scalar(QUERY).fetch_one(ex).await
-}
-
-/// Counts the number of limit orders with the conditions of OPEN_ORDERS. Used
-/// to enforce a maximum number of limit orders per user.
-pub async fn count_limit_orders_by_owner(
-    ex: &mut PgConnection,
-    min_valid_to: i64,
-    owner: &Address,
-) -> Result<i64, sqlx::Error> {
-    const QUERY: &str = const_format::concatcp!(
-        "SELECT COUNT (*) FROM (",
-        OPEN_ORDERS,
-        " AND class = 'limit'",
-        " AND owner = $2",
-        " ) AS subquery"
-    );
-    sqlx::query_scalar(QUERY)
-        .bind(min_valid_to)
-        .bind(owner)
-        .fetch_one(ex)
-        .await
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -776,6 +856,7 @@ pub struct OrderWithQuote {
     pub quote_sell_token_price: f64,
 }
 
+#[instrument(skip_all)]
 pub async fn user_orders_with_quote(
     ex: &mut PgConnection,
     min_valid_to: i64,
@@ -803,6 +884,7 @@ pub async fn user_orders_with_quote(
         .await
 }
 
+#[instrument(skip_all)]
 pub async fn updated_order_uids_after(
     ex: &mut PgConnection,
     after_block: i64,
@@ -834,6 +916,7 @@ pub struct InteractionIndices {
     pub next_post_interaction_index: i32,
 }
 
+#[instrument(skip_all)]
 pub async fn next_free_interaction_indices(
     db: &mut PgConnection,
     order: OrderUid,
@@ -1590,6 +1673,18 @@ mod tests {
         // solvable once again because of new presignature event.
         pre_signature_event(&mut db, 2, order.owner, order.uid, true).await;
         assert!(!get_full_order(&mut db).await.unwrap().presignature_pending);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn get_orders_with_quote() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        assert!(
+            user_orders_with_quote(&mut db, 0, &Default::default())
+                .await
+                .is_ok()
+        )
     }
 
     #[tokio::test]

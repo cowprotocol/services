@@ -3,6 +3,7 @@ use {
     bigdecimal::BigDecimal,
     sqlx::{PgConnection, QueryBuilder},
     std::ops::DerefMut,
+    tracing::instrument,
 };
 
 /// External token price for a given auction.
@@ -13,6 +14,7 @@ pub struct AuctionPrice {
     pub price: BigDecimal,
 }
 
+#[instrument(skip_all)]
 pub async fn insert(
     ex: &mut PgTransaction<'_>,
     prices: &[AuctionPrice],
@@ -36,6 +38,7 @@ pub async fn insert(
     Ok(())
 }
 
+#[instrument(skip_all)]
 pub async fn fetch(
     ex: &mut PgConnection,
     auction_id: AuctionId,
@@ -45,6 +48,7 @@ pub async fn fetch(
     Ok(prices)
 }
 
+#[instrument(skip_all)]
 pub async fn fetch_latest_prices(ex: &mut PgConnection) -> Result<Vec<AuctionPrice>, sqlx::Error> {
     const QUERY: &str = r#"
 SELECT * FROM auction_prices WHERE auction_id = (
@@ -55,6 +59,7 @@ SELECT * FROM auction_prices WHERE auction_id = (
     sqlx::query_as(QUERY).fetch_all(ex).await
 }
 
+#[instrument(skip_all)]
 pub async fn fetch_latest_token_price(
     ex: &mut PgConnection,
     token: Address,

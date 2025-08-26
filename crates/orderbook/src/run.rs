@@ -19,7 +19,7 @@ use {
     observe::metrics::{DEFAULT_METRICS_PORT, serve_metrics},
     order_validation,
     shared::{
-        account_balances,
+        account_balances::{self, BalanceSimulator},
         arguments::tracing_config,
         bad_token::{
             cache::CachingDetector,
@@ -44,7 +44,7 @@ use {
         sources::{self, BaselineSource, uniswap_v2::UniV2BaselineSourceParameters},
         token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
     },
-    std::{future::Future, net::SocketAddr, sync::Arc, time::Duration},
+    std::{convert::Infallible, future::Future, net::SocketAddr, sync::Arc, time::Duration},
     tokio::{task, task::JoinHandle},
     warp::Filter,
 };
@@ -96,11 +96,23 @@ pub async fn run(args: Arguments) {
             .await
             .expect("load settlement contract"),
     };
+    let balances_contract = match args.shared.balances_contract_address {
+        Some(address) => contracts::support::Balances::with_deployment_info(&web3, address, None),
+        None => contracts::support::Balances::deployed(&web3)
+            .await
+            .expect("load balances contract"),
+    };
     let vault_relayer = settlement_contract
         .vault_relayer()
         .call()
         .await
         .expect("Couldn't get vault relayer address");
+    let signatures_contract = match args.shared.signatures_contract_address {
+        Some(address) => contracts::support::Signatures::with_deployment_info(&web3, address, None),
+        None => contracts::support::Signatures::deployed(&web3)
+            .await
+            .expect("load signatures contract"),
+    };
     let native_token = match args.shared.native_token_address {
         Some(address) => contracts::WETH9::with_deployment_info(&web3, address, None),
         None => WETH9::deployed(&web3)
@@ -113,7 +125,8 @@ pub async fn run(args: Arguments) {
     let signature_validator = signature_validator::validator(
         &web3,
         signature_validator::Contracts {
-            settlement: settlement_contract.address(),
+            settlement: settlement_contract.clone(),
+            signatures: signatures_contract,
             vault_relayer,
         },
     );
@@ -147,11 +160,12 @@ pub async fn run(args: Arguments) {
 
     let balance_fetcher = account_balances::fetcher(
         &web3,
-        account_balances::Contracts {
-            settlement: settlement_contract.address(),
+        BalanceSimulator::new(
+            settlement_contract.clone(),
+            balances_contract.clone(),
             vault_relayer,
-            vault: vault.as_ref().map(|contract| contract.address()),
-        },
+            vault.as_ref().map(|contract| contract.address()),
+        ),
     );
 
     let gas_price_estimator = Arc::new(InstrumentedGasEstimator::new(
@@ -160,6 +174,7 @@ pub async fn run(args: Arguments) {
             &web3,
             args.shared.gas_estimators.as_slice(),
             args.shared.blocknative_api_key.clone(),
+            args.shared.gas_estimation_driver_url.clone(),
         )
         .await
         .expect("failed to create gas price estimator"),
@@ -289,7 +304,7 @@ pub async fn run(args: Arguments) {
         .await
         .unwrap();
     let prices = postgres.fetch_latest_prices().await.unwrap();
-    native_price_estimator.initialize_cache(prices).await;
+    native_price_estimator.initialize_cache(prices);
 
     let price_estimator = price_estimator_factory
         .price_estimator(
@@ -498,9 +513,12 @@ fn serve_api(
     .boxed();
     tracing::info!(%address, "serving order book");
     let warp_svc = warp::service(filter);
-    let warp_svc = observe::make_service_with_request_tracing!(warp_svc);
+    let make_svc = hyper::service::make_service_fn(move |_| {
+        let svc = warp_svc.clone();
+        async move { Ok::<_, Infallible>(svc) }
+    });
     let server = hyper::Server::bind(&address)
-        .serve(warp_svc)
+        .serve(make_svc)
         .with_graceful_shutdown(shutdown_receiver)
         .map(|_| ());
     task::spawn(server)

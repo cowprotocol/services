@@ -70,7 +70,7 @@ async fn forked_node_mainnet_usdt_quote() {
         usdt_quote_verification,
         std::env::var("FORK_URL_MAINNET")
             .expect("FORK_URL_MAINNET must be set to run forked tests"),
-        21422760,
+        23112197,
     )
     .await;
 }
@@ -115,7 +115,7 @@ async fn standard_verified_quote(web3: Web3) {
 }
 
 /// The block number from which we will fetch state for the forked tests.
-const FORK_BLOCK_MAINNET: u64 = 19796077;
+const FORK_BLOCK_MAINNET: u64 = 23112197;
 
 /// Tests that quotes requesting `tx_origin: 0x0000` bypass the verification
 /// because those are currently used by some solvers to provide market maker

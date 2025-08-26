@@ -1,8 +1,18 @@
 use {
-    crate::{nodes::forked_node::ForkedNodeApi, setup::deploy::Contracts},
+    crate::{
+        nodes::forked_node::ForkedNodeApi,
+        setup::{DeployedContracts, deploy::Contracts},
+    },
     app_data::Hook,
     contracts::{CowProtocolToken, ERC20Mintable},
-    ethcontract::{Account, Bytes, H160, PrivateKey, U256, transaction::TransactionBuilder},
+    ethcontract::{
+        Account,
+        Bytes,
+        H160,
+        PrivateKey,
+        U256,
+        transaction::{TransactionBuilder, TransactionResult},
+    },
     hex_literal::hex,
     model::{
         DomainSeparator,
@@ -38,6 +48,21 @@ macro_rules! tx {
     ($acc:expr_2021, $call:expr_2021) => {
         $crate::tx_value!($acc, U256::zero(), $call)
     };
+}
+
+#[macro_export]
+macro_rules! deploy {
+    ($web3:expr, $contract:ident) => { deploy!($web3, $contract ()) };
+    ($web3:expr, $contract:ident ( $($param:expr_2021),* $(,)? )) => {
+        deploy!($web3, $contract ($($param),*) as stringify!($contract))
+    };
+    ($web3:expr, $contract:ident ( $($param:expr_2021),* $(,)? ) as $name:expr_2021) => {{
+        let name = $name;
+        $contract::builder(&$web3 $(, $param)*)
+            .deploy()
+            .await
+            .unwrap_or_else(|e| panic!("failed to deploy {name}: {e:?}"))
+    }};
 }
 
 pub fn to_wei_with_exp(base: u32, exp: usize) -> U256 {
@@ -105,9 +130,17 @@ impl TestAccount {
     }
 }
 
-#[derive(Default)]
 struct AccountGenerator {
     id: usize,
+}
+
+impl Default for AccountGenerator {
+    fn default() -> Self {
+        // Start from a high number to avoid conflicts with existing accounts which may
+        // have clowny delegation contracts deployed (e.g. preventing to send ETH to
+        // that address)
+        AccountGenerator { id: 100500 }
+    }
 }
 
 impl Iterator for AccountGenerator {
@@ -227,7 +260,17 @@ impl OnchainComponents {
     }
 
     pub async fn deployed(web3: Web3) -> Self {
-        let contracts = Contracts::deployed(&web3).await;
+        let contracts = Contracts::deployed_with(&web3, DeployedContracts::default()).await;
+
+        Self {
+            web3,
+            contracts,
+            accounts: Default::default(),
+        }
+    }
+
+    pub async fn deployed_with(web3: Web3, deployed: DeployedContracts) -> Self {
+        let contracts = Contracts::deployed_with(&web3, deployed).await;
 
         Self {
             web3,
@@ -303,15 +346,15 @@ impl OnchainComponents {
                 .expect("failed to add solver");
         }
 
-        // TODO: remove when contract is actually deployed
-        // flashloan wrapper also needs to be authorized
-        self.contracts
-            .gp_authenticator
-            .add_solver(self.contracts.flashloan_router.address())
-            .from(auth_manager.clone())
-            .send()
-            .await
-            .expect("failed to add flashloan wrapper");
+        if let Some(router) = &self.contracts.flashloan_router {
+            self.contracts
+                .gp_authenticator
+                .add_solver(router.address())
+                .from(auth_manager.clone())
+                .send()
+                .await
+                .expect("failed to add flashloan wrapper");
+        }
 
         solvers
     }
@@ -539,12 +582,25 @@ impl OnchainComponents {
     }
 
     pub async fn send_wei(&self, to: H160, amount: U256) {
-        TransactionBuilder::new(self.web3.clone())
+        let balance_before = self.web3.eth().balance(to, None).await.unwrap();
+        let receipt = TransactionBuilder::new(self.web3.clone())
             .value(amount)
             .to(to)
             .send()
             .await
             .unwrap();
+        let TransactionResult::Receipt(receipt) = receipt else {
+            panic!("expected to get a transaction receipt");
+        };
+        assert_eq!(receipt.status, Some(1.into()));
+
+        // There seems to be a bug in anvil where sending ETH does not work
+        // reliably with a forked node. On some block numbers the transaction
+        // supposedly succeeds but the balances still don't get changed.
+        // If you hit this assert try using a different block number for your
+        // forked test.
+        let balance_after = self.web3.eth().balance(to, None).await.unwrap();
+        assert_eq!(balance_after, balance_before + amount);
     }
 
     pub async fn mint_block(&self) {

@@ -14,6 +14,7 @@ use {
             chrono::{DateTime, Utc},
         },
     },
+    tracing::instrument,
 };
 
 pub const SELECT: &str = r#"
@@ -38,6 +39,7 @@ NULL AS full_app_data
 
 pub const FROM: &str = "jit_orders o";
 
+#[instrument(skip_all)]
 pub async fn get_by_id(
     ex: &mut PgConnection,
     uid: &OrderUid,
@@ -52,6 +54,7 @@ SELECT,
     sqlx::query_as(QUERY).bind(uid).fetch_optional(ex).await
 }
 
+#[instrument(skip_all)]
 pub async fn get_by_tx(
     ex: &mut PgConnection,
     tx_hash: &TransactionHash,
@@ -100,6 +103,7 @@ pub struct JitOrder {
     pub buy_token_balance: BuyTokenDestination,
 }
 
+#[instrument(skip_all)]
 pub async fn insert(ex: &mut PgConnection, jit_orders: &[JitOrder]) -> Result<(), sqlx::Error> {
     if jit_orders.is_empty() {
         return Ok(());
@@ -195,7 +199,9 @@ mod tests {
         let jit_order = JitOrder::default();
 
         // insert a jit order and read it back
-        insert(&mut db, &[jit_order.clone()]).await.unwrap();
+        insert(&mut db, std::slice::from_ref(&jit_order))
+            .await
+            .unwrap();
         let read_jit_order = read_order(&mut db, &jit_order.uid).await.unwrap().unwrap();
         assert_eq!(jit_order, read_jit_order);
 
@@ -204,7 +210,9 @@ mod tests {
             creation_timestamp: DateTime::<Utc>::default() + chrono::Duration::days(1),
             ..jit_order.clone()
         };
-        insert(&mut db, &[jit_order_updated.clone()]).await.unwrap();
+        insert(&mut db, std::slice::from_ref(&jit_order))
+            .await
+            .unwrap();
         let read_jit_order = read_order(&mut db, &jit_order_updated.uid)
             .await
             .unwrap()
@@ -226,7 +234,9 @@ mod tests {
         let jit_order = JitOrder::default();
 
         // insert a jit order and make sure "SELECT" query works properly
-        insert(&mut db, &[jit_order.clone()]).await.unwrap();
+        insert(&mut db, std::slice::from_ref(&jit_order))
+            .await
+            .unwrap();
         get_by_id(&mut db, &jit_order.uid).await.unwrap().unwrap();
     }
 }

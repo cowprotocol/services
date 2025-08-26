@@ -9,7 +9,7 @@ use {
         sync::{Arc, RwLock},
         time::Duration,
     },
-    tracing::Instrument,
+    tracing::{Instrument, instrument},
 };
 
 #[derive(Clone, Debug, Default)]
@@ -22,6 +22,7 @@ pub struct TokenListConfiguration {
 }
 
 impl TokenListConfiguration {
+    #[instrument(skip_all)]
     async fn get_external_list(&self) -> Result<HashSet<H160>> {
         let model: TokenListModel = if let Some(url) = &self.url {
             self.client.get(url.clone()).send().await?.json().await?
@@ -46,6 +47,7 @@ pub struct AutoUpdatingTokenList {
 }
 
 impl AutoUpdatingTokenList {
+    #[instrument(skip_all)]
     pub async fn from_configuration(configuration: TokenListConfiguration) -> Self {
         let tokens = Arc::new(RwLock::new(match configuration.get_external_list().await {
             Ok(tokens) => tokens,

@@ -1,8 +1,10 @@
 use {
     crate::{Address, PgTransaction, TransactionHash},
     sqlx::{Executor, PgConnection},
+    tracing::instrument,
 };
 
+#[instrument(skip_all)]
 pub async fn find_settlement_transaction(
     ex: &mut PgConnection,
     auction_id: i64,
@@ -28,6 +30,7 @@ pub struct SettlementEvent {
     pub tx_hash: TransactionHash,
 }
 
+#[instrument(skip_all)]
 pub async fn get_settlement_without_auction(
     ex: &mut PgConnection,
 ) -> Result<Option<SettlementEvent>, sqlx::Error> {
@@ -41,6 +44,7 @@ LIMIT 1
     sqlx::query_as(QUERY).fetch_optional(ex).await
 }
 
+#[instrument(skip_all)]
 pub async fn update_settlement_auction(
     ex: &mut PgConnection,
     block_number: i64,
@@ -61,6 +65,7 @@ WHERE block_number = $2 AND log_index = $3
         .map(|_| ())
 }
 
+#[instrument(skip_all)]
 pub async fn update_settlement_solver(
     ex: &mut PgConnection,
     block_number: i64,
@@ -84,6 +89,7 @@ WHERE block_number = $3 AND log_index = $4
 }
 
 /// Deletes all database data that referenced the deleted settlement events.
+#[instrument(skip_all)]
 pub async fn delete(
     ex: &mut PgTransaction<'_>,
     delete_from_block_number: u64,
