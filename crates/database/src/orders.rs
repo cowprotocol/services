@@ -804,6 +804,27 @@ WHERE ((lo.kind = 'sell' AND COALESCE(ta.sum_sell,0) < lo.sell_amount) OR
        (lo.kind = 'buy'  AND COALESCE(ta.sum_buy ,0) < lo.buy_amount))
 "#;
 
+// Same functionality as OPEN_ORDERS but not optimized to fetch all live orders
+// at once. Performs better when used with filtering by user.
+#[rustfmt::skip]
+const OPEN_ORDERS_EMBEDDABLE: &str = const_format::concatcp!(
+"SELECT * FROM ( ",
+    "SELECT ", SELECT,
+    " FROM ", FROM,
+    " LEFT OUTER JOIN ethflow_orders eth_o on eth_o.uid = o.uid ",
+    " WHERE o.valid_to >= $1",
+    " AND CASE WHEN eth_o.valid_to IS NULL THEN true ELSE eth_o.valid_to >= $1 END",
+r#") AS unfiltered
+WHERE
+    CASE kind
+        WHEN 'sell' THEN sum_sell < sell_amount
+        WHEN 'buy' THEN sum_buy < buy_amount
+    END AND
+    (NOT invalidated) AND
+    (onchain_placement_error IS NULL)
+"#
+);
+
 /// Uses the conditions from OPEN_ORDERS and checks the fok limit orders have
 /// surplus fee.
 /// cleanup: fok limit orders should be allowed to not have surplus fee
@@ -870,7 +891,7 @@ pub async fn user_orders_with_quote(
         " o_quotes.gas_price as quote_gas_price, o_quotes.sell_token_price as quote_sell_token_price",
         " FROM (",
             " SELECT *",
-            " FROM (", OPEN_ORDERS,
+            " FROM (", OPEN_ORDERS_EMBEDDABLE,
             " AND owner = $2",
             " AND class = 'limit'",
             " ) AS subquery",
