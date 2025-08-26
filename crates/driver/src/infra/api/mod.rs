@@ -55,6 +55,7 @@ impl Api {
             self.eth.clone(),
             app_data_retriever.clone(),
             self.liquidity.clone(),
+            disable_access_list_simulation,
         ));
 
         let order_sorting_strategies =
