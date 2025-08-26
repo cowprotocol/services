@@ -137,7 +137,7 @@ impl RunLoop {
                 tracing::warn!(error=%err, "failed to become leader");
                 false
             });
-            self_arc.update_caches(&mut last_block, is_leader).await;
+            let start_block = self_arc.update_caches(&mut last_block, is_leader).await;
             if !is_leader {
                 // only the leader is supposed to run the auctions
                 continue;
@@ -161,7 +161,7 @@ impl RunLoop {
         }
     }
 
-    async fn update_caches(&self, prev_block: &mut Option<H256>, store_events: bool) -> BlockInfo {
+    async fn update_caches(&self, prev_block: &mut Option<H256>, is_leader: bool) -> BlockInfo {
         let current_block = *self.eth.current_block().borrow();
         let time_since_last_block = current_block.observed_at.elapsed();
         let auction_block = if time_since_last_block > self.config.max_run_loop_delay {
@@ -180,7 +180,7 @@ impl RunLoop {
         self.run_maintenance(&auction_block).await;
         match self
             .solvable_orders_cache
-            .update(auction_block.number, store_events)
+            .update(auction_block.number, is_leader)
             .await
         {
             Ok(()) => {
