@@ -98,25 +98,48 @@ async fn too_much_gas() {
 
 #[tokio::test]
 #[ignore]
-async fn high_gas_limit() {
+async fn submits_huge_solution() {
     let test = tests::setup()
         .name("high gas limit")
+        .allow_multiple_solve_requests()
         .pool(ab_pool())
         .order(ab_order())
-        .solution(ab_solution().increase_gas(4_000_000))
-        .rpc_args(vec!["--gas-limit".into(), "10000000".into()])
+        // the solution will end up using 5049130 gas, let's set 11M block limit so it's <half
+        .solution(ab_solution().increase_gas(2_000_000))
+        .rpc_args(vec!["--gas-limit".into(), "11000000".into()])
         .done()
         .await;
 
     let id = test.solve().await.ok().orders(&[ab_order()]).id();
 
-    // Assume validators downvoted gas limit, solution still settles
+    // Assume validators downvoted gas limit, solution still settles: even though we
+    // have a rule that in the _bidding phase_ the solution needs to use less than
+    // half of the block gas limit, we want it to be submitted/settled as long as it
+    // fits in the block.
     test.web3()
         .transport()
         .execute("evm_setBlockGasLimit", vec![serde_json::json!(9_000_000)])
         .await
         .unwrap();
     test.settle(id).await.ok().await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn does_not_bid_huge_solution() {
+    let test = tests::setup()
+        .name("high gas limit")
+        .pool(ab_pool())
+        .order(ab_order())
+        // the solution will end up using 5049130 gas, which is >half of block gas limit
+        .solution(ab_solution().increase_gas(2_000_000))
+        .rpc_args(vec!["--gas-limit".into(), "10000000".into()])
+        .done()
+        .await;
+
+    // The found solution is bigger than half of gas block limit which means it gets
+    // discarded
+    test.solve().await.ok().empty();
 }
 
 #[tokio::test]
