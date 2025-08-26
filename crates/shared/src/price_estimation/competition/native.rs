@@ -17,14 +17,30 @@ impl NativePriceEstimating for CompetitionEstimator<Arc<dyn NativePriceEstimatin
     fn estimate_native_price(
         &self,
         token: H160,
-        timeout: Duration,
+        total_timeout: Duration,
     ) -> BoxFuture<'_, NativePriceEstimateResult> {
-        let timeout_per_stage = timeout / self.stages.len() as u32;
+        let started_at = std::time::Instant::now();
+
         async move {
             let results = self
-                .produce_results(token, Result::is_ok, move |e, q| {
+                .produce_results(token, Result::is_ok, move |context| {
                     async move {
-                        let res = e.estimate_native_price(q, timeout_per_stage).await;
+                        // Computes timeout for current stage dynamically based on the total time
+                        // left and the remaining stages. That means if some stage finishes early,
+                        // subsequent stages will get a bit more time to always use the entire
+                        // total timeout.
+                        let stage_timeout = {
+                            let time_left = total_timeout.saturating_sub(started_at.elapsed());
+                            time_left
+                                // +1 as remaining_stages does not include our current stage
+                                .checked_div(context.remaining_stages() as u32 + 1)
+                                .unwrap_or_default()
+                        };
+
+                        let res = context
+                            .estimator
+                            .estimate_native_price(context.query, stage_timeout)
+                            .await;
                         if res.as_ref().is_ok_and(|price| is_price_malformed(*price)) {
                             let err = anyhow::anyhow!("estimator returned malformed price");
                             return Err(PriceEstimationError::EstimatorInternal(err));
@@ -65,30 +81,24 @@ mod tests {
             competition::PriceRanking,
             native::MockNativePriceEstimating,
         },
+        std::pin::Pin,
     };
 
-    fn native_price(native_price: f64) -> Result<f64, PriceEstimationError> {
-        Ok(native_price)
-    }
-
-    fn error<T>(err: PriceEstimationError) -> Result<T, PriceEstimationError> {
-        Err(err)
-    }
+    type NativePriceFuture =
+        Pin<Box<dyn Future<Output = Result<f64, PriceEstimationError>> + Send>>;
 
     /// Returns the best native estimate with respect to the provided ranking
     /// and order kind.
     async fn best_response(
         ranking: PriceRanking,
-        estimates: Vec<Result<f64, PriceEstimationError>>,
+        estimates: Vec<NativePriceFuture>,
     ) -> Result<f64, PriceEstimationError> {
-        fn estimator(
-            estimate: Result<f64, PriceEstimationError>,
-        ) -> Arc<dyn NativePriceEstimating> {
+        fn estimator(estimate: NativePriceFuture) -> Arc<dyn NativePriceEstimating> {
             let mut estimator = MockNativePriceEstimating::new();
             estimator
                 .expect_estimate_native_price()
                 .times(1)
-                .return_once(move |_, _| async move { estimate }.boxed());
+                .return_once(move |_, _| estimate);
             Arc::new(estimator)
         }
 
@@ -116,10 +126,10 @@ mod tests {
         // Returns errors with highest priority.
         let best = best_response(
             PriceRanking::MaxOutAmount,
-            vec![native_price(1.), native_price(2.)],
+            vec![async { Ok(1.) }.boxed(), async { Ok(2.) }.boxed()],
         )
         .await;
-        assert_eq!(best, native_price(2.));
+        assert_eq!(best, Ok(2.));
     }
 
     /// If all estimators returned an error we return the one with the highest
@@ -130,12 +140,12 @@ mod tests {
         let best = best_response(
             PriceRanking::MaxOutAmount,
             vec![
-                error(PriceEstimationError::RateLimited),
-                error(PriceEstimationError::ProtocolInternal(anyhow::anyhow!("!"))),
+                async { Err(PriceEstimationError::RateLimited) }.boxed(),
+                async { Err(PriceEstimationError::ProtocolInternal(anyhow::anyhow!("!"))) }.boxed(),
             ],
         )
         .await;
-        assert_eq!(best, error(PriceEstimationError::RateLimited));
+        assert_eq!(best, Err(PriceEstimationError::RateLimited));
     }
 
     /// Any native price estimate, no matter how bad, is preferred over an
@@ -144,10 +154,13 @@ mod tests {
     async fn prefer_estimate_over_error_native() {
         let best = best_response(
             PriceRanking::MaxOutAmount,
-            vec![native_price(1.), error(PriceEstimationError::RateLimited)],
+            vec![
+                async { Ok(1.) }.boxed(),
+                async { Err(PriceEstimationError::RateLimited) }.boxed(),
+            ],
         )
         .await;
-        assert_eq!(best, native_price(1.));
+        assert_eq!(best, Ok(1.));
     }
 
     /// Nonsensical prices like infinities, and non-positive values get ignored.
@@ -157,8 +170,91 @@ mod tests {
         assert!(!subnormal.is_normal());
 
         for price in [f64::NEG_INFINITY, -1., 0., f64::INFINITY, subnormal] {
-            let best = best_response(PriceRanking::MaxOutAmount, vec![native_price(price)]).await;
+            let best = best_response(
+                PriceRanking::MaxOutAmount,
+                vec![async move { Ok(price) }.boxed()],
+            )
+            .await;
             assert!(best.is_err());
         }
+    }
+
+    /// If early stages don't use some of their allocated time later stages
+    /// can use it instead.
+    #[tokio::test]
+    async fn later_stages_may_use_excess_time() {
+        fn estimator(
+            estimate: NativePriceFuture,
+            max_timeout: Duration,
+        ) -> Arc<dyn NativePriceEstimating> {
+            let mut estimator = MockNativePriceEstimating::new();
+            estimator
+                .expect_estimate_native_price()
+                .times(1)
+                .withf(move |_query, actual_timeout| {
+                    // allow for small difference due to tokio scheduling
+                    const BUFFER: Duration = Duration::from_millis(10);
+                    ((max_timeout - BUFFER)..=max_timeout).contains(actual_timeout)
+                })
+                .return_once(move |_, _| estimate);
+            Arc::new(estimator)
+        }
+
+        const TOTAL_TIMEOUT: Duration = Duration::from_millis(500);
+        const FIRST_STAGE: Duration = Duration::from_millis(100);
+
+        let priority: CompetitionEstimator<Arc<dyn NativePriceEstimating>> =
+            CompetitionEstimator::new(
+                vec![
+                    vec![
+                        (
+                            "1.1".into(),
+                            estimator(
+                                async {
+                                    // The first stage takes a bit of time but is still
+                                    // way faster than it needs to be.
+                                    tokio::time::sleep(FIRST_STAGE).await;
+                                    // return an error to require the second estimator to run
+                                    Err(PriceEstimationError::NoLiquidity)
+                                }
+                                .boxed(),
+                                // first stage gets half the total time
+                                TOTAL_TIMEOUT / 2,
+                            )
+                        ),
+                        // We add a second estimator in the first stage to catch
+                        // the error when you compute the remaining time based on the
+                        // number of estimator invocations instead of stage invocations.
+                        (
+                            "1.2".into(),
+                            estimator(
+                                // this task may return immediately because we need to process
+                                // the whole stage before we start the next one
+                                async { Err(PriceEstimationError::NoLiquidity) }.boxed(),
+                                TOTAL_TIMEOUT / 2
+                            ),
+                        ),
+                    ],
+                    vec![(
+                        "2.1".into(),
+                        estimator(
+                            async { Ok(1.) }.boxed(),
+                            // Because the first stage was faster than the allocated
+                            // time, the second stage now gets a bit more time.
+                            TOTAL_TIMEOUT - FIRST_STAGE,
+                        ),
+                    )],
+                ],
+                PriceRanking::MaxOutAmount,
+            )
+            // allow bailing out after 1 successful result to prevent both
+            // stages to be kicked-off at the same time (if we have too few stages
+            // configured the CompetitionEstimator will trigger them all concurrently)
+            .with_early_return(1.try_into().unwrap());
+
+        let res = priority
+            .estimate_native_price(Default::default(), TOTAL_TIMEOUT)
+            .await;
+        assert_eq!(res, Ok(1.));
     }
 }
