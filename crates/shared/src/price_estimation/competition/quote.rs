@@ -33,7 +33,9 @@ impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
             // subsidies.
             let gas_is_reasonable = |r: &PriceEstimateResult| r.as_ref().is_ok_and(|r| r.gas > 0);
             let get_results = self
-                .produce_results(query.clone(), gas_is_reasonable, |e, q| e.estimate(q))
+                .produce_results(query.clone(), gas_is_reasonable, |context| {
+                    context.estimator.estimate(context.query)
+                })
                 .map(Result::Ok);
 
             let (context, results) = futures::try_join!(get_context, get_results)?;
