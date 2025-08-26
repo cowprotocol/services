@@ -8,14 +8,7 @@ use {
     futures::{FutureExt, future::BoxFuture},
     model::order::OrderKind,
     primitive_types::H160,
-    std::{
-        cmp::Ordering,
-        sync::{
-            Arc,
-            atomic::{self, AtomicU32},
-        },
-        time::Duration,
-    },
+    std::{cmp::Ordering, sync::Arc, time::Duration},
     tracing::instrument,
 };
 
@@ -29,10 +22,8 @@ impl NativePriceEstimating for CompetitionEstimator<Arc<dyn NativePriceEstimatin
         let started_at = std::time::Instant::now();
 
         async move {
-            let remaining_stages = Arc::new(AtomicU32::new(self.stages.len() as u32));
             let results = self
-                .produce_results(token, Result::is_ok, move |estimator, query| {
-                    let remaining_stages = Arc::clone(&remaining_stages);
+                .produce_results(token, Result::is_ok, move |context| {
                     async move {
                         // Computes timeout for current stage dynamically based on the total time
                         // left and the remaining stages. That means if some stage finishes early,
@@ -40,12 +31,16 @@ impl NativePriceEstimating for CompetitionEstimator<Arc<dyn NativePriceEstimatin
                         // total timeout.
                         let stage_timeout = {
                             let time_left = total_timeout.saturating_sub(started_at.elapsed());
-                            let remaining_stages =
-                                remaining_stages.fetch_sub(1, atomic::Ordering::Relaxed);
-                            time_left.checked_div(remaining_stages).unwrap_or_default()
+                            time_left
+                                // +1 as remaining_stages does not include our current stage
+                                .checked_div(context.remaining_stages() as u32 + 1)
+                                .unwrap_or_default()
                         };
 
-                        let res = estimator.estimate_native_price(query, stage_timeout).await;
+                        let res = context
+                            .estimator
+                            .estimate_native_price(context.query, stage_timeout)
+                            .await;
                         if res.as_ref().is_ok_and(|price| is_price_malformed(*price)) {
                             let err = anyhow::anyhow!("estimator returned malformed price");
                             return Err(PriceEstimationError::EstimatorInternal(err));
