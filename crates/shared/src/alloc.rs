@@ -84,7 +84,8 @@ impl JemallocMemoryProfiler {
 
     async fn dump_prof(&self, socket: &mut UnixStream) {
         let state = self.active.lock().await;
-        // Hold the lock until the dump is complete.
+        // Hold the lock, so no other thread can disable profiling
+        // while the dump is being created.
         if !*state {
             log(
                 socket,
@@ -204,30 +205,43 @@ impl JemallocMemoryProfiler {
             ProfilerCommand::Enable => {
                 if self.set_enabled(true, socket).await {
                     log(socket, "jemalloc active profiling enabled".to_string()).await;
+                } else {
+                    log(
+                        socket,
+                        "jemalloc active profiling was already enabled".to_string(),
+                    )
+                    .await;
                 }
             }
             ProfilerCommand::Disable => {
                 if self.set_enabled(false, socket).await {
                     log(socket, "jemalloc active profiling disabled".to_string()).await;
+                } else {
+                    log(
+                        socket,
+                        "jemalloc active profiling was already disabled".to_string(),
+                    )
+                    .await;
                 }
             }
             ProfilerCommand::Dump => {
                 self.dump_prof(socket).await;
             }
+            // @todo: this needs to be improved to support concurrent access
             ProfilerCommand::RunFor(duration) => {
                 if self.set_enabled(true, socket).await {
                     log(socket, "jemalloc active profiling enabled".to_string()).await;
                 } else {
                     log(
                         socket,
-                        "jemalloc active profiling was already enabled, will run for the \
-                         specified duration"
-                            .to_string(),
+                        "jemalloc active profiling was already enabled".to_string(),
                     )
                     .await;
                     return Ok(());
                 }
 
+                // @todo: test dropping the connection, otherwise, execute it in a background
+                // task
                 log(
                     socket,
                     format!(
@@ -242,6 +256,12 @@ impl JemallocMemoryProfiler {
 
                 if self.set_enabled(false, socket).await {
                     log(socket, "jemalloc active profiling disabled".to_string()).await;
+                } else {
+                    log(
+                        socket,
+                        "jemalloc active profiling was already disabled".to_string(),
+                    )
+                    .await;
                 }
             }
         }
