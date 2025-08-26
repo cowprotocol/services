@@ -206,23 +206,37 @@ mod tests {
         let priority: CompetitionEstimator<Arc<dyn NativePriceEstimating>> =
             CompetitionEstimator::new(
                 vec![
-                    vec![(
-                        "first".into(),
-                        estimator(
-                            async {
-                                // The first stage takes a bit of time but is still
-                                // way faster than it needs to be.
-                                tokio::time::sleep(FIRST_STAGE).await;
-                                // return an error to require the second estimator to run
-                                Err(PriceEstimationError::NoLiquidity)
-                            }
-                            .boxed(),
-                            // first stage gets half the total time
-                            TOTAL_TIMEOUT / 2,
+                    vec![
+                        (
+                            "1.1".into(),
+                            estimator(
+                                async {
+                                    // The first stage takes a bit of time but is still
+                                    // way faster than it needs to be.
+                                    tokio::time::sleep(FIRST_STAGE).await;
+                                    // return an error to require the second estimator to run
+                                    Err(PriceEstimationError::NoLiquidity)
+                                }
+                                .boxed(),
+                                // first stage gets half the total time
+                                TOTAL_TIMEOUT / 2,
+                            )
                         ),
-                    )],
+                        // We add a second estimator in the first stage to catch
+                        // the error when you compute the remaining time based on the
+                        // number of estimator invocations instead of stage invocations.
+                        (
+                            "1.2".into(),
+                            estimator(
+                                // this task may return immediately because we need to process
+                                // the whole stage before we start the next one
+                                async { Err(PriceEstimationError::NoLiquidity) }.boxed(),
+                                TOTAL_TIMEOUT / 2
+                            ),
+                        ),
+                    ],
                     vec![(
-                        "second".into(),
+                        "2.1".into(),
                         estimator(
                             async { Ok(1.) }.boxed(),
                             // Because the first stage was faster than the allocated
