@@ -6,6 +6,7 @@ use {
         infra::{cli, config},
     },
     clap::Parser,
+    shared::alloc::JemallocMemoryProfiler,
     std::net::SocketAddr,
     tokio::sync::oneshot,
 };
@@ -40,6 +41,11 @@ async fn run_with(args: cli::Args, bind: Option<oneshot::Sender<SocketAddr>>) {
     let solver = match args.command {
         cli::Command::Baseline { config } => {
             let config = config::load(&config).await;
+
+            if let Some(profiler) = JemallocMemoryProfiler::new("baseline") {
+                profiler.run();
+            }
+
             solver::Solver::new(config).await
         }
     };
