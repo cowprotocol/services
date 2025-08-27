@@ -11,6 +11,68 @@ use {
     },
 };
 
+#[macro_export]
+macro_rules! bindings {
+    ($contract:ident, $($deployment_info:expr)?) => {
+        paste::paste! {
+            // Generate the main bindings in a private module. That allows
+            // us to re-export all items in our own module while also adding
+            // some items ourselves.
+            #[allow(non_snake_case)]
+            mod [<$contract Private>] {
+                alloy::sol!(
+                    #[allow(missing_docs, clippy::too_many_arguments)]
+                    #[sol(rpc)]
+                    $contract,
+                    concat!("./artifacts/", stringify!($contract), ".json"),
+                );
+            }
+
+            #[allow(non_snake_case)]
+            pub mod $contract {
+                use alloy::providers::DynProvider;
+
+                pub use super::[<$contract Private>]::*;
+                pub type Instance = $contract::[<$contract Instance>]<DynProvider>;
+
+                $(
+                use {
+                    std::{sync::LazyLock, collections::HashMap},
+                    alloy::{
+                        providers::Provider,
+                        primitives::{address, Address},
+                    },
+                    anyhow::{Context, Result},
+                };
+
+                pub static DEPLOYMENT_INFO: LazyLock<HashMap<u64, Address>> = LazyLock::new(|| {
+                    $deployment_info
+                });
+
+                impl $crate::alloy::InstanceExt for Instance {
+                    fn deployed(provider: &DynProvider) -> impl Future<Output = Result<Self>> + Send {
+                        async move {
+                            let chain_id = provider
+                                .get_chain_id()
+                                .await
+                                .context("could not fetch current chain id")?;
+                            let address = DEPLOYMENT_INFO
+                                .get(&chain_id)
+                                .with_context(|| format!("no deployment info for chain {chain_id:?}"))?;
+
+                            Ok(Instance::new(
+                                address.clone(),
+                                provider.clone(),
+                            ))
+                        }
+                    }
+                }
+                )*
+            }
+        }
+    };
+}
+
 pub fn deployment(contract: &Contract, chain_id: u64) -> Result<&Network> {
     contract
         .networks
@@ -98,7 +160,6 @@ include_contracts! {
     IUniswapLikePair;
     IUniswapLikeRouter;
     IUniswapV3Factory;
-    IZeroEx;
     PancakeRouter;
     Permit2;
     ChainalysisOracle;
@@ -133,20 +194,51 @@ pub mod test {
     }
 }
 
+const MAINNET: u64 = 1;
+#[allow(dead_code)]
+const GOERLI: u64 = 5;
+#[allow(dead_code)]
+const GNOSIS: u64 = 100;
+const SEPOLIA: u64 = 11155111;
+const ARBITRUM_ONE: u64 = 42161;
+const BASE: u64 = 8453;
+const POLYGON: u64 = 137;
+const AVALANCHE: u64 = 43114;
+const BNB: u64 = 56;
+const OPTIMISM: u64 = 10;
+#[allow(dead_code)]
+const LENS: u64 = 232;
+
+pub mod alloy {
+    pub use alloy::providers::DynProvider as AlloyProvider;
+
+    /// Extension trait to attach some useful functions to the contract instance.
+    pub trait InstanceExt: Sized {
+        /// Crates a contract instance at the expected address for the current
+        /// network.
+        fn deployed(
+            provider: &AlloyProvider,
+        ) -> impl std::future::Future<Output = anyhow::Result<Self>> + Send;
+    }
+
+    bindings!(
+        IZeroex,
+        maplit::hashmap! {
+            crate::MAINNET => address!("0xdef1c0ded9bec7f1a1670819833240f027b25eff"),
+            crate::SEPOLIA => address!("0xdef1c0ded9bec7f1a1670819833240f027b25eff"),
+            crate::ARBITRUM_ONE => address!("0xdef1c0ded9bec7f1a1670819833240f027b25eff"),
+            crate::BASE => address!("0xdef1c0ded9bec7f1a1670819833240f027b25eff"),
+            crate::AVALANCHE => address!("0xdef1c0ded9bec7f1a1670819833240f027b25eff"),
+            crate::BNB => address!("0xdef1c0ded9bec7f1a1670819833240f027b25eff"),
+            crate::OPTIMISM => address!("0xdef1abe32c034e558cdd535791643c58a13acc10"),
+            crate::POLYGON => address!("0xdef1c0ded9bec7f1a1670819833240f027b25eff"),
+            // Not available on Lens
+        }
+    );
+}
+
 #[cfg(test)]
 mod tests {
-    const MAINNET: u64 = 1;
-    const GOERLI: u64 = 5;
-    const GNOSIS: u64 = 100;
-    const SEPOLIA: u64 = 11155111;
-    const ARBITRUM_ONE: u64 = 42161;
-    const BASE: u64 = 8453;
-    const POLYGON: u64 = 137;
-    const AVALANCHE: u64 = 43114;
-    const BNB: u64 = 56;
-    const OPTIMISM: u64 = 10;
-    const LENS: u64 = 232;
-
     use {
         super::*,
         ethcontract::{
@@ -247,10 +339,6 @@ mod tests {
 
         for network in &[MAINNET, GOERLI] {
             assert_has_deployment_address!(BalancerV2WeightedPoolFactory for *network);
-        }
-
-        for network in &[MAINNET, SEPOLIA, ARBITRUM_ONE] {
-            assert_has_deployment_address!(IZeroEx for *network);
         }
 
         for network in &[MAINNET, GOERLI, GNOSIS, ARBITRUM_ONE] {
