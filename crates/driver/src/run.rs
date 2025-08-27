@@ -48,7 +48,7 @@ pub async fn run(
 async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAddr>>) {
     // Start a new span that measures the initialization phase of the driver
     let startup_span = tracing::info_span!("driver_startup");
-    let startup_span = startup_span.enter();
+    let startup_span_guard = startup_span.enter();
 
     infra::observe::init(observe::Config::new(
         &args.log,
@@ -106,7 +106,7 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
         config.disable_access_list_simulation,
     );
 
-    drop(startup_span);
+    drop(startup_span_guard);
     futures::pin_mut!(serve);
     tokio::select! {
         result = &mut serve => panic!("serve task exited: {result:?}"),
