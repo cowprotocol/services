@@ -89,18 +89,10 @@ docker-compose up
 
 ### Forked Test Network
 
-In order to run the `e2e forked_network` tests you have to have an EVM compatible network fork running locally.
-We make use of [anvil](https://github.com/foundry-rs/foundry) from the Foundry project to run the fork.
+In order to run the `e2e forked_network` tests you have to have [anvil](https://github.com/foundry-rs/foundry) installed,
+if you haven't installed `anvil` yet, refer to `foundry`'s [installation guide](https://book.getfoundry.sh/getting-started/installation) to get started.
 
-> If you haven't installed `anvil` yet, refer to the `foundry` [installation guide](https://book.getfoundry.sh/getting-started/installation) to get started.
-
-```bash
-anvil \
-  --fork-url <FORK_URL> \
-  --port <PORT>
-```
-
-> Some tests will require a `FORK_GNOSIS_URL`, to fork a Gnosis node you can refer to the list of [Gnosis RPC Providers](https://docs.gnosischain.com/tools/RPC%20Providers/).
+Some tests will require a `FORK_GNOSIS_URL`, refer to the list of [Gnosis RPC Providers](https://docs.gnosischain.com/tools/RPC%20Providers/) for publicly available nodes.
 
 ## Profiling
 
