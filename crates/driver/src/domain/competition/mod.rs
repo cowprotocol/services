@@ -516,10 +516,14 @@ impl Competition {
     }
 
     #[instrument(skip_all)]
-    async fn without_unsupported_orders(&self, mut auction: Auction) -> Auction {
-        if !self.solver.config().flashloans_enabled {
-            auction.orders.retain(|o| o.app_data.flashloan().is_none());
-        }
+    async fn without_unsupported_orders(&self, auction: Auction) -> Auction {
+        let auction = if !self.solver.config().flashloans_enabled {
+            let mut orders = (*auction.orders).clone();
+            orders.retain(|o| o.app_data.flashloan().is_none());
+            auction.with_orders(orders)
+        } else {
+            auction
+        };
         self.bad_tokens
             .filter_unsupported_orders_in_auction(auction)
             .await

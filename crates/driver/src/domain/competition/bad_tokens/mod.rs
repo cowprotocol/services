@@ -62,10 +62,10 @@ impl Detector {
     }
 
     /// Removes all unsupported orders from the auction.
-    pub async fn filter_unsupported_orders_in_auction(&self, mut auction: Auction) -> Auction {
+    pub async fn filter_unsupported_orders_in_auction(&self, auction: Auction) -> Auction {
         let now = Instant::now();
 
-        let token_quality_checks = auction.orders.into_iter().map(|order| async move {
+        let token_quality_checks = (*auction.orders).clone().into_iter().map(|order| async move {
             let sell = self.get_token_quality(order.sell.token, now);
             let buy = self.get_token_quality(order.buy.token, now);
             match (sell, buy) {
@@ -94,7 +94,7 @@ impl Detector {
             .into_iter()
             .partition_map(std::convert::identity);
 
-        auction.orders = supported_orders;
+        let auction = auction.with_orders(supported_orders);
         if !removed_uids.is_empty() {
             tracing::debug!(orders = ?removed_uids, "ignored orders with unsupported tokens");
         }

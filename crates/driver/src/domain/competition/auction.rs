@@ -39,12 +39,12 @@ pub struct Auction {
     /// See the [`Self::id`] method.
     id: Option<Id>,
     /// See the [`Self::orders`] method.
-    pub(crate) orders: Vec<competition::Order>,
+    pub(crate) orders: Arc<Vec<competition::Order>>,
     /// The tokens that are used in the orders of this auction.
-    tokens: Tokens,
+    tokens: Arc<Tokens>,
     gas_price: eth::GasPrice,
     deadline: time::Deadline,
-    surplus_capturing_jit_order_owners: HashSet<eth::Address>,
+    surplus_capturing_jit_order_owners: Arc<HashSet<eth::Address>>,
 }
 
 impl Auction {
@@ -77,11 +77,11 @@ impl Auction {
 
         Ok(Self {
             id,
-            orders,
-            tokens,
+            orders: Arc::new(orders),
+            tokens: Arc::new(tokens),
             gas_price: eth.gas_price(None).await?,
             deadline,
-            surplus_capturing_jit_order_owners,
+            surplus_capturing_jit_order_owners: Arc::new(surplus_capturing_jit_order_owners),
         })
     }
 
@@ -138,6 +138,18 @@ impl Auction {
     pub fn surplus_capturing_jit_order_owners(&self) -> &HashSet<eth::Address> {
         &self.surplus_capturing_jit_order_owners
     }
+
+    /// Creates a new auction with the same metadata but different orders
+    pub fn with_orders(&self, orders: Vec<competition::Order>) -> Self {
+        Self {
+            id: self.id,
+            orders: Arc::new(orders),
+            tokens: self.tokens.clone(),
+            gas_price: self.gas_price,
+            deadline: self.deadline,
+            surplus_capturing_jit_order_owners: self.surplus_capturing_jit_order_owners.clone(),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -164,7 +176,7 @@ impl AuctionProcessor {
     /// auction with updated orders.
     pub async fn prioritize(&self, auction: Auction, solver: &eth::H160) -> Auction {
         Auction {
-            orders: self.prioritize_orders(&auction, solver).await,
+            orders: Arc::new(self.prioritize_orders(&auction, solver).await),
             ..auction
         }
     }
@@ -192,10 +204,10 @@ impl AuctionProcessor {
         let eth = lock.eth.clone();
 
         let rt = tokio::runtime::Handle::current();
-        let tokens: Tokens = auction.tokens().clone();
+        let tokens = auction.tokens.clone();  // Cheap Arc clone
         let signature_validator = lock.signature_validator.clone();
-        let cow_amms = auction.surplus_capturing_jit_order_owners.clone();
-        let mut orders = auction.orders.clone();
+        let cow_amms = auction.surplus_capturing_jit_order_owners.clone();  // Cheap Arc clone
+        let mut orders = (*auction.orders).clone();  // Clone the Vec contents when mutation is needed
         let solver = *solver;
         let order_comparators = lock.order_sorting_strategies.clone();
         let app_data_retriever = lock.app_data_retriever.clone();
