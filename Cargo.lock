@@ -6223,6 +6223,7 @@ dependencies = [
  "tower-http",
  "tracing",
  "tracing-opentelemetry",
+ "url",
  "vergen",
  "web3",
 ]
