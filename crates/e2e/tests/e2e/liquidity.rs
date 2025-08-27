@@ -368,14 +368,14 @@ async fn fill_or_kill_zeroex_limit_order(
     zeroex_order: &shared::zeroex_api::OrderRecord,
     from_account: Account,
 ) -> anyhow::Result<H256> {
-    let signer = match from_account {
+    let signer = match &from_account {
         Account::Offline(pk, _) => {
-            ::alloy::signers::local::PrivateKeySigner::from_slice(&pk.secret_bytes())?
+            alloy::signers::local::PrivateKeySigner::from_slice(&pk.secret_bytes())?
         }
         _ => unimplemented!(),
     };
     let wallet = EthereumWallet::from(signer);
-    let request = zeroex
+    let tx = zeroex
         .fillOrKillLimitOrder(
             IZeroex::LibNativeOrder::LimitOrder {
                 makerToken: zeroex_order.order().maker_token.to_alloy(),
@@ -399,12 +399,22 @@ async fn fill_or_kill_zeroex_limit_order(
             },
             zeroex_order.order().taker_amount,
         )
-        .into_transaction_request();
-    let tx_envelope = request.build(&wallet).await?;
+        .into_transaction_request()
+        .nonce(
+            zeroex
+                .provider()
+                .get_transaction_count(from_account.address().to_alloy())
+                .await?,
+        )
+        .with_gas_limit(21_000)
+        .with_max_priority_fee_per_gas(1_000_000_000)
+        .with_max_fee_per_gas(20_000_000_000)
+        .build(&wallet)
+        .await?;
 
     Ok(zeroex
         .provider()
-        .send_raw_transaction(&tx_envelope.encoded_2718())
+        .send_raw_transaction(&tx.encoded_2718())
         .await?
         .tx_hash()
         .to_alloy())
