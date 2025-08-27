@@ -251,12 +251,13 @@ impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
 pub mod tests {
     use {
         super::*,
-        // crate::interactions::allowances::Approval,
-        // maplit::hashmap,
+        crate::interactions::allowances::Approval,
+        ethrpc::{alloy, alloy::conversions::ToAlloy},
+        maplit::hashmap,
         shared::{
             baseline_solver::BaseTokens,
-            // http_solver::model::InternalizationStrategy,
-            // interaction::Interaction,
+            http_solver::model::InternalizationStrategy,
+            interaction::Interaction,
             zeroex_api::{self, OrderMetadata},
         },
     };
@@ -389,82 +390,92 @@ pub mod tests {
         assert_eq!(filtered_zeroex_orders[1].order().taker_amount, 10_000_000);
     }
 
-    // #[tokio::test]
-    // async fn interaction_encodes_approval_when_insufficient() {
-    //     let sell_token = H160::from_low_u64_be(1);
-    //     let zeroex = Arc::new(contracts::dummy_contract!(IZeroex::Instance,
-    // H160::default()));     let allowances =
-    // Allowances::new(zeroex.address(), hashmap! { sell_token => 99.into() });
-    //     let order_record = OrderRecord::new(
-    //         zeroex_api::Order {
-    //             taker_amount: 100,
-    //             taker_token: sell_token,
-    //             ..Default::default()
-    //         },
-    //         OrderMetadata::default(),
-    //     );
-    //     let handler = OrderSettlementHandler {
-    //         order_record: order_record.clone(),
-    //         zeroex: zeroex.clone(),
-    //         allowances: Arc::new(allowances),
-    //     };
-    //     let mut encoder = SettlementEncoder::default();
-    //     let execution = LimitOrderExecution::new(100.into(), 0.into());
-    //     handler.encode(execution, &mut encoder).unwrap();
-    //     let [_, interactions, _] = encoder
-    //         .finish(InternalizationStrategy::SkipInternalizableInteraction)
-    //         .interactions;
-    //     assert_eq!(
-    //         interactions,
-    //         [
-    //             Approval {
-    //                 token: sell_token,
-    //                 spender: zeroex.address(),
-    //             }
-    //             .encode(),
-    //             ZeroExInteraction {
-    //                 order: order_record.order().clone(),
-    //                 taker_token_fill_amount: 100,
-    //                 zeroex: zeroex.clone(),
-    //             }
-    //             .encode(),
-    //         ],
-    //     );
-    // }
+    #[tokio::test]
+    async fn interaction_encodes_approval_when_insufficient() {
+        let sell_token = H160::from_low_u64_be(1);
+        let zeroex = Arc::new(IZeroex::Instance::new(
+            H160::default().to_alloy(),
+            alloy::provider("http:://localhost:8545"),
+        ));
+        let allowances = Allowances::new(
+            zeroex.address().to_legacy(),
+            hashmap! { sell_token => 99.into() },
+        );
+        let order_record = OrderRecord::new(
+            zeroex_api::Order {
+                taker_amount: 100,
+                taker_token: sell_token,
+                ..Default::default()
+            },
+            OrderMetadata::default(),
+        );
+        let handler = OrderSettlementHandler {
+            order_record: order_record.clone(),
+            zeroex: zeroex.clone(),
+            allowances: Arc::new(allowances),
+        };
+        let mut encoder = SettlementEncoder::default();
+        let execution = LimitOrderExecution::new(100.into(), 0.into());
+        handler.encode(execution, &mut encoder).unwrap();
+        let [_, interactions, _] = encoder
+            .finish(InternalizationStrategy::SkipInternalizableInteraction)
+            .interactions;
+        assert_eq!(
+            interactions,
+            [
+                Approval {
+                    token: sell_token,
+                    spender: zeroex.address().to_legacy(),
+                }
+                .encode(),
+                ZeroExInteraction {
+                    order: order_record.order().clone(),
+                    taker_token_fill_amount: 100,
+                    zeroex: zeroex.clone(),
+                }
+                .encode(),
+            ],
+        );
+    }
 
-    // #[tokio::test]
-    // async fn interaction_encodes_no_approval_when_sufficient() {
-    //     let sell_token = H160::from_low_u64_be(1);
-    //     let zeroex = Arc::new(contracts::dummy_contract!(IZeroEx,
-    // H160::default()));     let allowances =
-    // Allowances::new(zeroex.address(), hashmap! { sell_token => 100.into() });
-    //     let order_record = OrderRecord::new(
-    //         zeroex_api::Order {
-    //             taker_amount: 100,
-    //             taker_token: sell_token,
-    //             ..Default::default()
-    //         },
-    //         OrderMetadata::default(),
-    //     );
-    //     let handler = OrderSettlementHandler {
-    //         order_record: order_record.clone(),
-    //         zeroex: zeroex.clone(),
-    //         allowances: Arc::new(allowances),
-    //     };
-    //     let mut encoder = SettlementEncoder::default();
-    //     let execution = LimitOrderExecution::new(100.into(), 0.into());
-    //     handler.encode(execution, &mut encoder).unwrap();
-    //     let [_, interactions, _] = encoder
-    //         .finish(InternalizationStrategy::SkipInternalizableInteraction)
-    //         .interactions;
-    //     assert_eq!(
-    //         interactions,
-    //         [ZeroExInteraction {
-    //             order: order_record.order().clone(),
-    //             taker_token_fill_amount: 100,
-    //             zeroex: zeroex.clone(),
-    //         }
-    //         .encode()],
-    //     );
-    // }
+    #[tokio::test]
+    async fn interaction_encodes_no_approval_when_sufficient() {
+        let sell_token = H160::from_low_u64_be(1);
+        let zeroex = Arc::new(IZeroex::Instance::new(
+            H160::default().to_alloy(),
+            alloy::provider("http:://localhost:8545"),
+        ));
+        let allowances = Allowances::new(
+            zeroex.address().to_legacy(),
+            hashmap! { sell_token => 100.into() },
+        );
+        let order_record = OrderRecord::new(
+            zeroex_api::Order {
+                taker_amount: 100,
+                taker_token: sell_token,
+                ..Default::default()
+            },
+            OrderMetadata::default(),
+        );
+        let handler = OrderSettlementHandler {
+            order_record: order_record.clone(),
+            zeroex: zeroex.clone(),
+            allowances: Arc::new(allowances),
+        };
+        let mut encoder = SettlementEncoder::default();
+        let execution = LimitOrderExecution::new(100.into(), 0.into());
+        handler.encode(execution, &mut encoder).unwrap();
+        let [_, interactions, _] = encoder
+            .finish(InternalizationStrategy::SkipInternalizableInteraction)
+            .interactions;
+        assert_eq!(
+            interactions,
+            [ZeroExInteraction {
+                order: order_record.order().clone(),
+                taker_token_fill_amount: 100,
+                zeroex: zeroex.clone(),
+            }
+            .encode()],
+        );
+    }
 }
