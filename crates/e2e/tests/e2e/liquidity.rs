@@ -1,4 +1,9 @@
 use {
+    ::alloy::{
+        eips::Encodable2718,
+        network::{EthereumWallet, TransactionBuilder},
+        providers::Provider,
+    },
     chrono::{NaiveDateTime, Utc},
     contracts::{
         ERC20,
@@ -352,12 +357,10 @@ async fn get_zeroex_order_amounts(
         )
         .call()
         .await
-        .map(
-            |res /* ((_, _, filled), fillable, _) */| ZeroExOrderAmounts {
-                filled: res.orderInfo.takerTokenFilledAmount,
-                fillable: res.actualFillableTakerTokenAmount,
-            },
-        )?)
+        .map(|response| ZeroExOrderAmounts {
+            filled: response.orderInfo.takerTokenFilledAmount,
+            fillable: response.actualFillableTakerTokenAmount,
+        })?)
 }
 
 async fn fill_or_kill_zeroex_limit_order(
@@ -365,7 +368,14 @@ async fn fill_or_kill_zeroex_limit_order(
     zeroex_order: &shared::zeroex_api::OrderRecord,
     from_account: Account,
 ) -> anyhow::Result<H256> {
-    let tx_hash = zeroex
+    let signer = match from_account {
+        Account::Offline(pk, _) => {
+            ::alloy::signers::local::PrivateKeySigner::from_slice(&pk.secret_bytes())?
+        }
+        _ => unimplemented!(),
+    };
+    let wallet = EthereumWallet::from(signer);
+    let request = zeroex
         .fillOrKillLimitOrder(
             IZeroex::LibNativeOrder::LimitOrder {
                 makerToken: zeroex_order.order().maker_token.to_alloy(),
@@ -389,11 +399,13 @@ async fn fill_or_kill_zeroex_limit_order(
             },
             zeroex_order.order().taker_amount,
         )
-        .from(from_account.address().to_alloy())
-        .send()
+        .into_transaction_request();
+    let tx_envelope = request.build(&wallet).await?;
+
+    Ok(zeroex
+        .provider()
+        .send_raw_transaction(&tx_envelope.encoded_2718())
         .await?
         .tx_hash()
-        .to_alloy();
-
-    Ok(tx_hash)
+        .to_alloy())
 }
