@@ -395,7 +395,7 @@ pub mod tests {
         let sell_token = H160::from_low_u64_be(1);
         let zeroex = Arc::new(IZeroex::Instance::new(
             H160::default().to_alloy(),
-            alloy::provider("http:://localhost:8545"),
+            alloy::dummy_provider(),
         ));
         let allowances = Allowances::new(
             zeroex.address().to_legacy(),
@@ -443,7 +443,7 @@ pub mod tests {
         let sell_token = H160::from_low_u64_be(1);
         let zeroex = Arc::new(IZeroex::Instance::new(
             H160::default().to_alloy(),
-            alloy::provider("http:://localhost:8545"),
+            alloy::dummy_provider(),
         ));
         let allowances = Allowances::new(
             zeroex.address().to_legacy(),
