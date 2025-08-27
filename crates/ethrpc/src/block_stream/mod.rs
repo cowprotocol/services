@@ -120,12 +120,18 @@ pub async fn current_block_stream(
 ) -> Result<CurrentBlockWatcher> {
     // Build new Web3 specifically for the current block stream to avoid batching
     // requests together on chains with a very high block frequency.
-    let web3 = Web3::new(Web3Transport::new(HttpTransport::new(
+    let web3 = web3::Web3::new(Web3Transport::new(HttpTransport::new(
         Default::default(),
-        url,
+        url.clone(),
         "block_stream".into(),
     )));
+    let web3 = crate::Web3 {
+        legacy: web3,
+        // TODO: replace this with an unbuffered alloy provider
+        alloy: crate::alloy::provider(url.as_str()),
+    };
     let web3 = instrument_with_label(&web3, "base_currentBlockStream".into());
+
     let first_block = web3.current_block().await?;
     tracing::debug!(number=%first_block.number, hash=?first_block.hash, "polled block");
 
@@ -244,7 +250,7 @@ pub trait BlockRetrieving: Debug + Send + Sync + 'static {
 }
 
 #[async_trait::async_trait]
-impl BlockRetrieving for Web3 {
+impl BlockRetrieving for crate::Web3 {
     async fn current_block(&self) -> Result<BlockInfo> {
         get_block_at_id(self, BlockNumber::Latest.into())
             .await?
@@ -403,7 +409,6 @@ pub async fn next_block(current_block: &CurrentBlockWatcher) -> BlockInfo {
 mod tests {
     use {
         super::*,
-        crate::create_env_test_transport,
         futures::StreamExt,
         tokio::time::{Duration, timeout},
     };
@@ -434,8 +439,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn current_blocks_test() {
-        let transport = create_env_test_transport();
-        let web3 = Web3::new(transport);
+        let web3 = Web3::new_from_env();
 
         // single block
         let range = RangeInclusive::try_new(5, 5).unwrap();

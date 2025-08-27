@@ -84,7 +84,7 @@ pub async fn collector(
 ) -> anyhow::Result<Box<dyn LiquidityCollecting>> {
     let eth = eth.with_metric_label("zeroex".into());
     let settlement = eth.contracts().settlement().clone();
-    let web3 = settlement.raw_instance().web3().clone();
+    let web3 = eth.web3().clone();
     let contract = contracts::IZeroEx::deployed(&web3).await?;
     let http_client_factory = &HttpClientFactory::new(&shared::http_client::Arguments {
         http_timeout: config.http_timeout,

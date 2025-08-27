@@ -325,6 +325,7 @@ dependencies = [
  "alloy-signer",
  "alloy-sol-types",
  "alloy-transport",
+ "alloy-transport-http",
  "async-stream",
  "async-trait",
  "auto_impl",
@@ -336,11 +337,13 @@ dependencies = [
  "lru 0.13.0",
  "parking_lot",
  "pin-project",
+ "reqwest 0.12.12",
  "serde",
  "serde_json",
  "thiserror 2.0.12",
  "tokio",
  "tracing",
+ "url",
  "wasmtimer",
 ]
 
@@ -374,9 +377,11 @@ dependencies = [
  "alloy-json-rpc",
  "alloy-primitives",
  "alloy-transport",
+ "alloy-transport-http",
  "async-stream",
  "futures",
  "pin-project",
+ "reqwest 0.12.12",
  "serde",
  "serde_json",
  "tokio",
@@ -384,6 +389,7 @@ dependencies = [
  "tower 0.5.2",
  "tracing",
  "tracing-futures",
+ "url",
  "wasmtimer",
 ]
 
@@ -537,7 +543,12 @@ name = "alloy-transport-http"
 version = "1.0.17"
 source = "git+https://github.com/alloy-rs/alloy?rev=c15a4a3c04ce15bfa3796cc449f8407200b7599f#c15a4a3c04ce15bfa3796cc449f8407200b7599f"
 dependencies = [
+ "alloy-json-rpc",
  "alloy-transport",
+ "reqwest 0.12.12",
+ "serde_json",
+ "tower 0.5.2",
+ "tracing",
  "url",
 ]
 
@@ -899,6 +910,7 @@ checksum = "0c4b4d0bd25bd0b74681c0ad21497610ce1b7c91b1022cd21c80c6fbdd9476b0"
 name = "autopilot"
 version = "0.1.0"
 dependencies = [
+ "alloy",
  "anyhow",
  "app-data",
  "async-trait",
@@ -3688,6 +3700,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "hyper-tls"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "70206fc6890eaca9fde8a0bf71caa2ddfc9fe045ac9e5c70df101a7dbde866e0"
+dependencies = [
+ "bytes",
+ "http-body-util",
+ "hyper 1.6.0",
+ "hyper-util",
+ "native-tls",
+ "tokio",
+ "tokio-native-tls",
+ "tower-service",
+]
+
+[[package]]
 name = "hyper-util"
 version = "0.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5377,7 +5405,7 @@ dependencies = [
  "http 0.2.12",
  "http-body 0.4.6",
  "hyper 0.14.29",
- "hyper-tls",
+ "hyper-tls 0.5.0",
  "ipnet",
  "js-sys",
  "log",
@@ -5386,7 +5414,7 @@ dependencies = [
  "once_cell",
  "percent-encoding",
  "pin-project-lite",
- "rustls-pemfile",
+ "rustls-pemfile 1.0.4",
  "serde",
  "serde_json",
  "serde_urlencoded",
@@ -5418,19 +5446,23 @@ dependencies = [
  "http-body 1.0.0",
  "http-body-util",
  "hyper 1.6.0",
+ "hyper-tls 0.6.0",
  "hyper-util",
  "ipnet",
  "js-sys",
  "log",
  "mime",
+ "native-tls",
  "once_cell",
  "percent-encoding",
  "pin-project-lite",
+ "rustls-pemfile 2.2.0",
  "serde",
  "serde_json",
  "serde_urlencoded",
  "sync_wrapper 1.0.2",
  "tokio",
+ "tokio-native-tls",
  "tower 0.5.2",
  "tower-service",
  "url",
@@ -5667,7 +5699,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a9aace74cb666635c918e9c12bc0d348266037aa8eb599b5cba565709a8dff00"
 dependencies = [
  "openssl-probe",
- "rustls-pemfile",
+ "rustls-pemfile 1.0.4",
  "schannel",
  "security-framework",
 ]
@@ -5679,6 +5711,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c74cae0a4cf6ccbbf5f359f08efdf8ee7e1dc532573bf0db71968cb56b1448c"
 dependencies = [
  "base64 0.21.7",
+]
+
+[[package]]
+name = "rustls-pemfile"
+version = "2.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dce314e5fee3f39953d46bb63bb8a46d40c2f8fb7cc5a3b6cab2bde9721d6e50"
+dependencies = [
+ "rustls-pki-types",
+]
+
+[[package]]
+name = "rustls-pki-types"
+version = "1.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "229a4a4c221013e7e1f1a043678c5cc39fe5171437c88fb47151a21e6f5b5c79"
+dependencies = [
+ "zeroize",
 ]
 
 [[package]]

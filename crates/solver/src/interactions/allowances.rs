@@ -193,7 +193,7 @@ impl AllowanceManaging for AllowanceManager {
 }
 
 async fn fetch_allowances<T>(
-    web3: ethcontract::Web3<T>,
+    web3: Web3<T>,
     erc20: Arc<ERC20>,
     owner: H160,
     spender_tokens: HashMap<H160, HashSet<H160>>,

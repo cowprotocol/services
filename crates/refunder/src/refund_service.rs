@@ -55,7 +55,7 @@ impl RefundService {
             submitter: Submitter {
                 web3: web3.clone(),
                 account,
-                gas_estimator: Box::new(web3),
+                gas_estimator: Box::new(web3.legacy),
                 gas_parameters_of_last_tx: None,
                 nonce_of_last_submission: None,
             },
