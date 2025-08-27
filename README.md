@@ -54,6 +54,12 @@ docker compose up -f playground/docker-compose.fork.yml up -d
 
 You can read more about the services available and their respective ports in the [playground's README](./playground/README.md).
 
+> Binaries like `autopilot`, `orderbook`, `driver` and `solvers` have `-h` and `--help` for, respectively, short and long descriptions over available commands and options.
+> Furthermore, there's OpenAPI pages for the [`orderbook`](https://docs.cow.fi/cow-protocol/reference/apis/orderbook),
+> [`driver`](https://docs.cow.fi/cow-protocol/reference/apis/driver) and [`solver`](https://docs.cow.fi/cow-protocol/reference/apis/solver) APIs,
+> you can find more information about the services and the CoW Protocol at <docs.cow.fi>.
+
+
 ## Testing
 
 The CI (check [`.github/workflows/pull-request.yaml`](.github/workflows/pull-request.yaml)) runs
@@ -67,10 +73,6 @@ The CI system uses [cargo-nextest](https://nexte.st/) and therefor all tests are
 `cargo-nextest` and `cargo test` handle global state slightly differently which can cause some tests to fail with `cargo test`.
 That's why it's recommended to run tests with `cargo nextest run`.
 
-### DB & E2E Tests
-
-Database and E2E tests require some infrastructure, following is their setup process.
-
 ### Postgres
 
 The tests that require postgres connect to the default database of a locally running postgres instance on the default port.
@@ -81,26 +83,20 @@ Note: The migrations will be applied as well.
 docker-compose up
 ```
 
-### Local Test Network
+### Forked Test Network
 
-In order to run the `e2e` tests you have to have an EVM compatible testnet running locally.
-We make use of [anvil](https://github.com/foundry-rs/foundry) from the Foundry project to spin up a local testnet.
+In order to run the `e2e forked_network` tests you have to have an EVM compatible network fork running locally.
+We make use of [anvil](https://github.com/foundry-rs/foundry) from the Foundry project to run the fork.
 
-`anvil` supports all the RPC methods we need to run the services and tests.
-
-1. Install [foundryup](https://book.getfoundry.sh/getting-started/installation).
-2. Install foundry with `foundryup`.
-3. Run `anvil` with the following configuration:
+> If you haven't installed `anvil` yet, refer to the `foundry` [installation guide](https://book.getfoundry.sh/getting-started/installation) to get started.
 
 ```bash
-ANVIL_IP_ADDR=0.0.0.0 anvil \
-  --gas-price 1 \
-  --gas-limit 10000000 \
-  --base-fee 0 \
-  --balance 1000000 \
-  --chain-id 1 \
-  --timestamp 1577836800
+anvil \
+  --fork-url <FORK_URL> \
+  --port <PORT>
 ```
+
+> Some tests will require a `FORK_GNOSIS_URL`, to fork a Gnosis node you can refer to the list of [Gnosis RPC Providers](https://docs.gnosischain.com/tools/RPC%20Providers/).
 
 ## Profiling
 
