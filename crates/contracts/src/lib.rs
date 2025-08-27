@@ -24,7 +24,7 @@ macro_rules! bindings {
                     #[allow(missing_docs, clippy::too_many_arguments)]
                     #[sol(rpc)]
                     $contract,
-                    concat!("artifacts/", stringify!($contract), ".json"),
+                    concat!("./artifacts/", stringify!($contract), ".json"),
                 );
             }
 
