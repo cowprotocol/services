@@ -114,7 +114,7 @@ async fn unbuffered_ethrpc(url: &Url) -> infra::blockchain::Rpc {
     .await
 }
 
-#[instrument(skip_all, fields(chain = ?chain))]
+#[instrument(skip_all)]
 async fn ethereum(
     web3: DynWeb3,
     unbuffered_web3: DynWeb3,
@@ -158,7 +158,7 @@ pub async fn start(args: impl Iterator<Item = String>) {
 pub async fn run(args: Arguments) {
     assert!(args.shadow.is_none(), "cannot run in shadow mode");
     // Start a new span that measures the initialization phase of the autopilot
-    let startup_span = info_span!("autopilot_startup", ?args.shared.node_url);
+    let startup_span = info_span!("autopilot_startup");
     let startup_span = startup_span.enter();
 
     let db = Postgres::new(args.db_url.as_str(), args.insert_batch_size)
