@@ -277,8 +277,6 @@ pub async fn run(args: Arguments) {
             &http_factory,
             &web3,
             args.shared.gas_estimators.as_slice(),
-            args.shared.blocknative_api_key.clone(),
-            args.shared.gas_estimation_driver_url.clone(),
         )
         .await
         .expect("failed to create gas price estimator"),
