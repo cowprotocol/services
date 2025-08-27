@@ -73,6 +73,10 @@ The CI system uses [cargo-nextest](https://nexte.st/) and therefor all tests are
 `cargo-nextest` and `cargo test` handle global state slightly differently which can cause some tests to fail with `cargo test`.
 That's why it's recommended to run tests with `cargo nextest run`.
 
+### Flaky Tests
+
+In case a test is flaky and only fails **sometimes** in CI you can use the [`run-flaky-test`](.github/workflows/pull-request.yaml) github action to test your fix with the CI to get confidence that the fix that works locally also works in CI.
+
 ### Postgres
 
 The tests that require postgres connect to the default database of a locally running postgres instance on the default port.
