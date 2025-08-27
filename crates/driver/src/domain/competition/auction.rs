@@ -2,7 +2,9 @@ use {
     crate::{
         domain::{
             competition::{self},
-            eth, liquidity, time,
+            eth,
+            liquidity,
+            time,
         },
         infra::{Ethereum, blockchain},
     },

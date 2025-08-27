@@ -1,11 +1,14 @@
 use {
     crate::{
         domain::{
-            self, Mempools,
+            self,
+            Mempools,
             competition::{bad_tokens, order::app_data::AppDataRetriever, sorting},
         },
         infra::{
-            self, Ethereum, Simulator,
+            self,
+            Ethereum,
+            Simulator,
             config::file::OrderPriorityStrategy,
             liquidity,
             solver::{Solver, Timeouts},
