@@ -16,7 +16,8 @@ COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/src/target \
     CARGO_PROFILE_RELEASE_DEBUG=1 \
     cargo build -p autopilot --release --features jemalloc-allocator && \
-    cargo build --release -p alerter -p driver -p orderbook -p refunder -p solvers && \
+    cargo build -p solvers --release --features jemalloc-allocator && \
+    cargo build --release -p alerter -p driver -p orderbook -p refunder && \
     cp target/release/alerter / && \
     cp target/release/autopilot / && \
     cp target/release/driver / && \
