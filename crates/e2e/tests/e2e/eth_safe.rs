@@ -1,9 +1,18 @@
 use {
+    ::alloy::{primitives::U256, providers::Provider},
     e2e::{
-        setup::{safe::Safe, *},
+        setup::{
+            OnchainComponents,
+            Services,
+            TIMEOUT,
+            run_test,
+            safe::Safe,
+            to_wei,
+            wait_for_condition,
+        },
         tx,
     },
-    ethcontract::U256,
+    ethrpc::alloy::conversions::IntoLegacy,
     model::{
         order::{BUY_ETH_ADDRESS, OrderCreation, OrderKind},
         signature::{Signature, hashed_eip712_message},
@@ -23,7 +32,7 @@ async fn test(web3: Web3) {
 
     let [solver] = onchain.make_solvers(to_wei(10)).await;
     let [trader] = onchain.make_accounts(to_wei(10)).await;
-    let safe = Safe::deploy(trader.clone(), &web3).await;
+    let safe = Safe::deploy(trader.clone(), web3.alloy.clone()).await;
     let [token] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1000), to_wei(1000))
         .await;
@@ -31,7 +40,7 @@ async fn test(web3: Web3) {
     token.mint(trader.address(), to_wei(4)).await;
     safe.exec_call(token.approve(onchain.contracts().allowance, to_wei(4)))
         .await;
-    token.mint(safe.address(), to_wei(4)).await;
+    token.mint(safe.address().into_legacy(), to_wei(4)).await;
     tx!(
         trader.account(),
         token.approve(onchain.contracts().allowance, to_wei(4))
@@ -45,13 +54,13 @@ async fn test(web3: Web3) {
     let balance = onchain
         .contracts()
         .weth
-        .balance_of(safe.address())
+        .balance_of(safe.address().into_legacy())
         .call()
         .await
         .unwrap();
     assert_eq!(balance, 0.into());
     let mut order = OrderCreation {
-        from: Some(safe.address()),
+        from: Some(safe.address().into_legacy()),
         sell_token: token.address(),
         sell_amount: to_wei(4),
         buy_token: BUY_ETH_ADDRESS,
@@ -59,7 +68,7 @@ async fn test(web3: Web3) {
         valid_to: model::time::now_in_epoch_seconds() + 300,
         partially_fillable: true,
         kind: OrderKind::Sell,
-        receiver: Some(safe.address()),
+        receiver: Some(safe.address().into_legacy()),
         ..Default::default()
     };
     order.signature = Signature::Eip1271(safe.sign_message(&hashed_eip712_message(
@@ -71,10 +80,11 @@ async fn test(web3: Web3) {
 
     tracing::info!("Waiting for trade.");
     let trade_happened = || async {
-        let safe_balance = web3.eth().balance(safe.address(), None).await.unwrap();
+        let safe_balance = web3.alloy.get_balance(safe.address()).await.unwrap();
         // the balance is slightly less because of the fee
-        (3_899_000_000_000_000_000_u128..4_000_000_000_000_000_000_u128)
-            .contains(&safe_balance.as_u128())
+        U256::from(3_899_000_000_000_000_000_u128) <= safe_balance
+            && safe_balance <= U256::from(4_000_000_000_000_000_000_u128)
     };
+
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
 }
