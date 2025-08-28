@@ -92,7 +92,8 @@ docker-compose up
 In order to run the `e2e forked_network` tests you have to have [anvil](https://github.com/foundry-rs/foundry) installed,
 if you haven't installed `anvil` yet, refer to `foundry`'s [installation guide](https://book.getfoundry.sh/getting-started/installation) to get started.
 
-Some tests will require a `FORK_GNOSIS_URL`, refer to the list of [Gnosis RPC Providers](https://docs.gnosischain.com/tools/RPC%20Providers/) for publicly available nodes.
+All `forked_node` tests will require a `FORK_MAINNET_URL`, you can refer to [Chainlist](https://chainlist.org/chain/1) to find some publicly available RPCs (terms and conditions may apply).
+A subset of the `forked_node` tests will require a `FORK_GNOSIS_URL`, refer to the list of [Gnosis RPC Providers](https://docs.gnosischain.com/tools/RPC%20Providers/) for publicly available nodes.
 
 ## Profiling
 
