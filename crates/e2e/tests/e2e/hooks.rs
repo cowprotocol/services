@@ -1,12 +1,13 @@
 use {
+    alloy::providers::Provider,
     app_data::Hook,
-    contracts::GnosisSafe,
     e2e::{
         setup::{safe::Safe, *},
         tx,
         tx_value,
     },
-    ethcontract::{Bytes, H160, U256},
+    ethcontract::U256,
+    ethrpc::alloy::conversions::{ToAlloy, ToLegacy},
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
@@ -239,67 +240,71 @@ async fn allowance(web3: Web3) {
 async fn signature(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let chain_id = web3.eth().chain_id().await.unwrap();
+    let chain_id = alloy::primitives::U256::from(web3.alloy.get_chain_id().await.unwrap());
 
     let [solver] = onchain.make_solvers(to_wei(1)).await;
     let [trader] = onchain.make_accounts(to_wei(1)).await;
 
-    let safe_infra = safe::Infrastructure::new(&web3).await;
+    let safe_infra = safe::Infrastructure::new(trader.clone()).await;
 
     // Prepare the Safe creation transaction, but don't execute it! This will
     // be executed as a pre-hook.
-    let safe_creation_builder = safe_infra.factory.create_proxy(
-        safe_infra.singleton.address(),
-        ethcontract::Bytes(
-            safe_infra
-                .singleton
-                .setup(
-                    vec![trader.address()], // owners
-                    1.into(),               // threshold
-                    H160::default(),        // delegate call
-                    Bytes::default(),       // delegate call bytes
-                    safe_infra.fallback.address(),
-                    H160::default(), // relayer payment token
-                    0.into(),        // relayer payment amount
-                    H160::default(), // relayer address
-                )
-                .tx
-                .data
-                .unwrap()
-                .0,
-        ),
+    let safe_creation_builder = safe_infra.factory.createProxy(
+        *safe_infra.singleton.address(),
+        safe_infra
+            .singleton
+            .setup(
+                vec![trader.address().to_alloy()],     // owners
+                alloy::primitives::U256::ONE,          // threshold
+                alloy::primitives::Address::default(), // delegate call
+                alloy::primitives::Bytes::default(),   // delegate call bytes
+                *safe_infra.fallback.address(),
+                alloy::primitives::Address::default(), // relayer payment token
+                alloy::primitives::U256::ZERO,         // relayer payment amount
+                alloy::primitives::Address::default(), // relayer address
+            )
+            .calldata()
+            .clone(),
     );
-    let safe_creation = hook_for_transaction(safe_creation_builder.tx.clone()).await;
+    let safe_creation = alloy_hook::hook_for_transaction(safe_creation_builder.clone()).await;
 
     // Create a contract instance at the would-be address of the Safe we are
     // creating with the pre-hook.
-    let safe_address = safe_creation_builder.clone().view().call().await.unwrap();
+    let safe_address = safe_creation_builder.clone().call().await.unwrap();
     let safe = Safe::deployed(
         chain_id,
-        GnosisSafe::at(&web3, safe_address),
+        contracts::alloy::GnosisSafe::Instance::new(safe_address, web3.alloy.clone()),
         trader.clone(),
     );
 
     let [token] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(100_000), to_wei(100_000))
         .await;
-    token.mint(safe.address(), to_wei(5)).await;
+    token.mint(safe.address().to_legacy(), to_wei(5)).await;
 
     // Sign an approval transaction for trading. This will be at nonce 0 because
     // it is the first transaction evah!
     let approval_builder = safe.sign_transaction(
-        token.address(),
+        token.address().to_alloy(),
         token
             .approve(onchain.contracts().allowance, to_wei(5))
             .tx
             .data
             .unwrap()
             .0,
-        0.into(),
+        alloy::primitives::U256::ZERO,
     );
+    let call_data = approval_builder.calldata().to_vec();
+    let target = approval_builder
+        .into_transaction_request()
+        .to
+        .unwrap()
+        .into_to()
+        .unwrap()
+        .to_legacy();
     let approval = Hook {
-        target: approval_builder.tx.to.unwrap(),
-        call_data: approval_builder.tx.data.unwrap().0,
+        target,
+        call_data,
         // The contract isn't deployed, so we can't estimate this. Instead, we
         // just guess an amount that should be high enough.
         gas_limit: 100_000,
@@ -311,7 +316,7 @@ async fn signature(web3: Web3) {
 
     // Place Orders
     let mut order = OrderCreation {
-        from: Some(safe.address()),
+        from: Some(safe.address().to_legacy()),
         // Quotes for trades where the pre-interactions deploy a contract
         // at the `from` address currently can't be verified.
         // To not throw an error because we can't get a verifiable quote
@@ -344,17 +349,25 @@ async fn signature(web3: Web3) {
     services.create_order(&order).await.unwrap();
     onchain.mint_block().await;
 
-    let balance = token.balance_of(safe.address()).call().await.unwrap();
+    let balance = token
+        .balance_of(safe.address().to_legacy())
+        .call()
+        .await
+        .unwrap();
     assert_eq!(balance, to_wei(5));
 
     // Check that the Safe really hasn't been deployed yet.
-    let code = web3.eth().code(safe.address(), None).await.unwrap();
+    let code = web3
+        .eth()
+        .code(safe.address().to_legacy(), None)
+        .await
+        .unwrap();
     assert_eq!(code.0.len(), 0);
 
     tracing::info!("Waiting for trade.");
     let trade_happened = || async {
         token
-            .balance_of(safe.address())
+            .balance_of(safe.address().to_legacy())
             .call()
             .await
             .unwrap()
@@ -367,14 +380,18 @@ async fn signature(web3: Web3) {
     let balance = onchain
         .contracts()
         .weth
-        .balance_of(safe.address())
+        .balance_of(safe.address().to_legacy())
         .call()
         .await
         .unwrap();
     assert!(balance >= order.buy_amount);
 
     // Check Safe was deployed
-    let code = web3.eth().code(safe.address(), None).await.unwrap();
+    let code = web3
+        .eth()
+        .code(safe.address().to_legacy(), None)
+        .await
+        .unwrap();
     assert_ne!(code.0.len(), 0);
 
     tracing::info!("Waiting for auction to be cleared.");
@@ -489,69 +506,75 @@ async fn partial_fills(web3: Web3) {
 async fn quote_verification(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let chain_id = web3.eth().chain_id().await.unwrap();
+    let chain_id = alloy::primitives::U256::from(web3.alloy.get_chain_id().await.unwrap());
 
     let [trader] = onchain.make_accounts(to_wei(1)).await;
     let [solver] = onchain.make_solvers(to_wei(1)).await;
 
-    let safe_infra = safe::Infrastructure::new(&web3).await;
+    let safe_infra = safe::Infrastructure::new(trader.clone()).await;
 
     // Prepare the Safe creation transaction, but don't execute it! This will
     // be executed as a pre-hook.
-    let safe_creation_builder = safe_infra.factory.create_proxy(
-        safe_infra.singleton.address(),
-        ethcontract::Bytes(
-            safe_infra
-                .singleton
-                .setup(
-                    vec![trader.address()], // owners
-                    1.into(),               // threshold
-                    H160::default(),        // delegate call
-                    Bytes::default(),       // delegate call bytes
-                    safe_infra.fallback.address(),
-                    H160::default(), // relayer payment token
-                    0.into(),        // relayer payment amount
-                    H160::default(), // relayer address
-                )
-                .tx
-                .data
-                .unwrap()
-                .0,
-        ),
+    let safe_creation_builder = safe_infra.factory.createProxy(
+        *safe_infra.singleton.address(),
+        safe_infra
+            .singleton
+            .setup(
+                vec![trader.address().to_alloy()],     // owners
+                alloy::primitives::U256::ONE,          // threshold
+                alloy::primitives::Address::default(), // delegate call
+                alloy::primitives::Bytes::default(),   // delegate call bytes
+                *safe_infra.fallback.address(),
+                alloy::primitives::Address::default(), // relayer payment token
+                alloy::primitives::U256::ZERO,         // relayer payment amount
+                alloy::primitives::Address::default(), // relayer address
+            )
+            .calldata()
+            .clone(),
     );
-    let safe_address = safe_creation_builder.clone().view().call().await.unwrap();
-    safe_creation_builder.clone().send().await.unwrap();
+    let safe_address = safe_creation_builder.clone().call().await.unwrap();
+    contracts::alloy::macros::tx!(safe_creation_builder);
 
     let safe = Safe::deployed(
         chain_id,
-        GnosisSafe::at(&web3, safe_address),
+        contracts::alloy::GnosisSafe::Instance::new(safe_address, web3.alloy.clone()),
         trader.clone(),
     );
 
     let [token] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(100_000), to_wei(100_000))
         .await;
-    token.mint(safe.address(), to_wei(5)).await;
+    token.mint(safe.address().to_legacy(), to_wei(5)).await;
     tx!(
         trader.account(),
         token.approve(onchain.contracts().allowance, to_wei(5))
     );
 
-    // Sign transaction transfering 5 token from the safe to the trader
+    // Sign transaction transferring 5 token from the safe to the trader
     // to fund the trade in a pre-hook.
     let transfer_builder = safe.sign_transaction(
-        token.address(),
+        token.address().to_alloy(),
         token
             .transfer(trader.address(), to_wei(5))
             .tx
             .data
             .unwrap()
             .0,
-        0.into(),
+        alloy::primitives::U256::ZERO,
     );
+    let call_data = transfer_builder.calldata().to_vec();
+    let target = transfer_builder
+        .into_transaction_request()
+        .to
+        .unwrap()
+        .into_to()
+        .unwrap()
+        .to_legacy();
     let transfer = Hook {
-        target: transfer_builder.tx.to.unwrap(),
-        call_data: transfer_builder.tx.data.unwrap().0,
+        target,
+        call_data,
+        // The contract isn't deployed, so we can't estimate this. Instead, we
+        // just guess an amount that should be high enough.
         gas_limit: 100_000,
     };
 
