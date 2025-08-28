@@ -298,8 +298,8 @@ impl Blockchain {
         )
         .await
         .unwrap();
+        let vault_relayer = settlement.vault_relayer().call().await.unwrap();
         if let Some(settlement_address) = config.settlement_address {
-            let vault_relayer = settlement.vault_relayer().call().await.unwrap();
             let vault_relayer_code = {
                 // replace the vault relayer code to allow the settlement
                 // contract at a specific address.
@@ -325,9 +325,14 @@ impl Blockchain {
         } else {
             wait_for(
                 &web3,
-                contracts::support::Balances::builder(&web3)
-                    .from(main_trader_account.clone())
-                    .deploy(),
+                contracts::support::Balances::builder(
+                    &web3,
+                    settlement.address(),
+                    vault_relayer,
+                    vault.address(),
+                )
+                .from(main_trader_account.clone())
+                .deploy(),
             )
             .await
             .unwrap()

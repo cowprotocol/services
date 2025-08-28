@@ -388,7 +388,14 @@ async fn cow_amm_driver_support(web3: Web3) {
     // since changing the forked number would result in very costly ~1 year of event
     // syncing, we deploy the following SCs
     let deployed_contracts = {
-        let balances = deploy!(&web3, Balances());
+        let balances = deploy!(
+            &web3,
+            Balances(
+                addr!("9008D19f58AAbD9eD0D60971565AA8510560ab41"), // settlement
+                addr!("C92E8bdf79f0507f65a392b0ab4667716BFE0110"), // vault relayer
+                addr!("BA12222222228d8Ba445958a75a0704d566BF2C8")  // vault
+            )
+        );
         let signatures = deploy!(&web3, Signatures());
         DeployedContracts {
             balances: Some(balances.address()),

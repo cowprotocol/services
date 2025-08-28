@@ -163,26 +163,29 @@ impl Contracts {
             web3,
             GPv2Settlement(gp_authenticator.address(), balancer_vault.address(),)
         );
-        let balances = deploy!(web3, Balances());
+        let vault_relayer = gp_settlement
+            .vault_relayer()
+            .call()
+            .await
+            .expect("failed to retrieve Vault relayer contract address");
+        let balances = deploy!(
+            web3,
+            Balances(
+                gp_settlement.address(),
+                vault_relayer,
+                balancer_vault.address()
+            )
+        );
         let signatures = deploy!(web3, Signatures());
 
         contracts::vault::grant_required_roles(
             &balancer_authorizer,
             balancer_vault.address(),
-            gp_settlement
-                .vault_relayer()
-                .call()
-                .await
-                .expect("failed to retrieve Vault relayer contract address"),
+            vault_relayer,
         )
         .await
         .expect("failed to authorize Vault relayer");
 
-        let allowance = gp_settlement
-            .vault_relayer()
-            .call()
-            .await
-            .expect("Couldn't get vault relayer address");
         let domain_separator = DomainSeparator(
             gp_settlement
                 .domain_separator()
@@ -221,7 +224,7 @@ impl Contracts {
             uniswap_v2_factory,
             uniswap_v2_router,
             weth,
-            allowance,
+            allowance: vault_relayer,
             domain_separator,
             ethflows: vec![ethflow, ethflow_secondary],
             hooks,
