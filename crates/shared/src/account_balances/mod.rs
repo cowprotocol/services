@@ -1,5 +1,4 @@
 use {
-    alloy::sol_types::{SolType, sol_data},
     ethcontract::{Bytes, contract::MethodBuilder, dyns::DynTransport},
     ethrpc::{Web3, block_stream::CurrentBlockWatcher},
     model::{
@@ -84,7 +83,7 @@ pub fn cached(
 }
 
 pub struct BalanceSimulator {
-    settlement: contracts::GPv2Settlement,
+    _settlement: contracts::GPv2Settlement,
     balances: contracts::support::Balances,
     vault_relayer: H160,
     vault: H160,
@@ -92,13 +91,13 @@ pub struct BalanceSimulator {
 
 impl BalanceSimulator {
     pub fn new(
-        settlement: contracts::GPv2Settlement,
+        _settlement: contracts::GPv2Settlement,
         balances: contracts::support::Balances,
         vault_relayer: H160,
         vault: Option<H160>,
     ) -> Self {
         Self {
-            settlement,
+            _settlement,
             vault_relayer,
             vault: vault.unwrap_or_default(),
             balances,
@@ -120,22 +119,18 @@ impl BalanceSimulator {
         source: SellTokenSource,
         interactions: &[InteractionData],
         amount: Option<U256>,
-        add_access_lists: F,
+        _add_access_lists: F,
     ) -> Result<Simulation, SimulationError>
     where
         F: FnOnce(MethodBuilder<DynTransport, Bytes<Vec<u8>>>) -> Fut,
         Fut: Future<Output = MethodBuilder<DynTransport, Bytes<Vec<u8>>>>,
     {
-        // We simulate the balances from the Settlement contract's context. This
-        // allows us to check:
-        // 1. How the pre-interactions would behave as part of the settlement
-        // 2. Simulate the actual VaultRelayer transfers that would happen as part of a
-        //    settlement
-        //
-        // This allows us to end up with very accurate balance simulations.
-        // We use 3 different functions to avoid having to pass the source
-        // as an argument.
-        let balance_call = match source {
+        // Check how pre-interactions affect the effective balances by
+        // using a helper contract to execute those before fetching the
+        // balance and allowance.
+        // We use 3 seperate functions to avoid having to pass the sell
+        // token source as an argument.
+        let (balance, allowance) = match source {
             SellTokenSource::Erc20 => self.balances.balance_erc_20(
                 owner,
                 token,
@@ -143,7 +138,8 @@ impl BalanceSimulator {
                     .iter()
                     .map(|i| (i.target, Bytes(i.call_data.clone())))
                     .collect(),
-            ),
+            )
+                .call().await?,
             SellTokenSource::External => self.balances.balance_external(
                 owner,
                 token,
@@ -151,7 +147,8 @@ impl BalanceSimulator {
                     .iter()
                     .map(|i| (i.target, Bytes(i.call_data.clone())))
                     .collect(),
-            ),
+            )
+                .call().await?,
             SellTokenSource::Internal => self.balances.balance_internal(
                 owner,
                 token,
@@ -159,41 +156,17 @@ impl BalanceSimulator {
                     .iter()
                     .map(|i| (i.target, Bytes(i.call_data.clone())))
                     .collect(),
-            ),
-        };
-
-        let delegate_call = self
-            .settlement
-            .simulate_delegatecall(
-                self.balances.address(),
-                Bytes(balance_call.tx.data.unwrap_or_default().0),
             )
-            .from(crate::SIMULATION_ACCOUNT.clone());
-
-        let delegate_call = add_access_lists(delegate_call).await;
-
-        let response = delegate_call.call().await?;
-        let (token_balance, allowance) = <(sol_data::Uint<256>, sol_data::Uint<256>)>::abi_decode(
-            &response.0,
-        )
-        .map_err(|err| {
-            tracing::error!(?err, "failed to decode balance response");
-            web3::error::Error::Decoder("failed to decode balance response".to_string())
-        })?;
-
-        let token_balance = U256::from_little_endian(&token_balance.as_le_bytes());
-        let allowance = U256::from_little_endian(&allowance.as_le_bytes());
-        let effective_balance = if allowance < token_balance {
-            allowance
-        } else {
-            token_balance
+                .call().await?,
         };
 
         let simulation = Simulation {
-            token_balance,
+            token_balance: balance,
             allowance,
-            effective_balance,
+            effective_balance: std::cmp::min(balance, allowance),
         };
+
+        tracing::error!(?simulation);
 
         tracing::trace!(
             ?owner,

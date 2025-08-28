@@ -37,7 +37,7 @@ contract Balances {
     ) {
         executeInteractions(interactions);
         tokenBalance = token.balanceOf(trader);
-        allowance = token.allowance(trader, this.vaultRelayer.address);
+        allowance = token.allowance(trader, address(vaultRelayer));
     }
 
     function balanceExternal(
@@ -81,11 +81,6 @@ contract Balances {
     function executeInteractions(
         Interaction[] calldata interactions
     ) private {
-        require(
-            address(this) == address(settlement),
-            "incorrect calling context"
-        );
-
         for (uint256 i; i < interactions.length; i++) {
             address target = interactions[i].target;
             uint256 value = 0;
