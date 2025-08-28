@@ -2,15 +2,10 @@ use {
     crate::{
         database::competition::Competition,
         domain::{
-            self,
-            OrderUid,
+            self, OrderUid,
             auction::Id,
             competition::{
-                self,
-                Solution,
-                SolutionError,
-                SolverParticipationGuard,
-                Unranked,
+                self, Solution, SolutionError, SolverParticipationGuard, Unranked,
                 winner_selection::{self, Ranking},
             },
             eth::{self, TxId},
@@ -31,11 +26,7 @@ use {
     futures::{FutureExt, TryFutureExt},
     itertools::Itertools,
     model::solver_competition::{
-        CompetitionAuction,
-        Order,
-        Score,
-        SolverCompetitionDB,
-        SolverSettlement,
+        CompetitionAuction, Order, Score, SolverCompetitionDB, SolverSettlement,
     },
     num::ToPrimitive,
     primitive_types::H256,
@@ -119,11 +110,17 @@ impl RunLoop {
         }
     }
 
-    pub async fn run_forever(self) -> ! {
+    pub async fn run_forever(self) {
         Maintenance::spawn_cow_amm_indexing_task(
             self.maintenance.clone(),
             self.eth.current_block().clone(),
         );
+        let (shutdown_tx, mut shutdown_rx) = tokio::sync::broadcast::channel(1);
+        tokio::spawn(async move {
+            wait_for_shutdown().await;
+            let _ = shutdown_tx.send(());
+        });
+
         let mut last_auction = None;
         let mut last_block = None;
         let self_arc = Arc::new(self);
@@ -148,16 +145,21 @@ impl RunLoop {
                 readiness.store(true, Ordering::Release);
             }
 
-            let auction = self_arc
-                .next_auction(start_block, &mut last_auction, &mut last_block)
-                .await;
-            if let Some(auction) = auction {
-                let auction_id = auction.id;
-                self_arc
-                    .single_run(auction)
-                    .instrument(tracing::info_span!("auction", auction_id))
-                    .await
-            };
+            tokio::select!(
+                _ = shutdown_rx.recv() => {
+                    tracing::info!("Shutdown received, stepping down as the leader.");
+                    leader.step_down().await;
+                    return;
+                },
+                auction = self_arc.next_auction(start_block, &mut last_auction, &mut last_block) => {
+                    if let Some(auction) = auction {
+                        let auction_id = auction.id;
+                        self_arc.single_run(auction)
+                        .instrument(tracing::info_span!("auction", auction_id))
+                        .await
+                    }
+                }
+            )
         }
     }
 
@@ -886,6 +888,25 @@ impl RunLoop {
         );
 
         auction
+    }
+}
+
+async fn wait_for_shutdown() {
+    use tokio::signal;
+    // On Unix-like systems, we can listen for SIGTERM.
+    #[cfg(unix)]
+    let mut sigterm = signal::unix::signal(signal::unix::SignalKind::terminate()).unwrap();
+
+    // On all platforms, we can listen for Ctrl+C.
+    let ctrl_c = signal::ctrl_c();
+
+    tokio::select! {
+        _ = ctrl_c => {
+            tracing::info!("Received SIGINT");
+        },
+        _ = sigterm.recv() => {
+            tracing::info!("Received SIGTERM.");
+        },
     }
 }
 
