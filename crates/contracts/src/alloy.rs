@@ -252,3 +252,45 @@ mod tests {
         assert!(result3.is_err());
     }
 }
+
+crate::bindings!(GnosisSafe);
+crate::bindings!(GnosisSafeCompatibilityFallbackHandler);
+crate::bindings!(GnosisSafeProxy);
+crate::bindings!(GnosisSafeProxyFactory);
+
+pub mod macros {
+    #[macro_export]
+    macro_rules! tx_value {
+        ($call:expr, $value:expr) => {{
+            const NAME: &str = stringify!($call);
+            $call
+                .value($value)
+                .send()
+                .await
+                .expect(&format!("failed to send: {}", NAME))
+                .get_receipt()
+                .await
+                .expect(&format!("failed to get receipt: {}", NAME))
+        }};
+        ($call:expr, $value:expr, $acc:expr) => {{
+            const NAME: &str = stringify!($call);
+            $call
+                .from($acc)
+                .value($value)
+                .send()
+                .await
+                .expect(&format!("failed to send: {}", NAME))
+                .get_receipt()
+                .await
+                .expect(&format!("failed to get receipt: {}", NAME))
+        }};
+    }
+
+    #[macro_export]
+    macro_rules! tx {
+        ($call:expr) => {{ $crate::alloy::macros::tx_value!($call, ::alloy::primitives::U256::ZERO) }};
+        ($call:expr, $acc:expr) => {{ $crate::alloy::macros::tx_value!($call, ::alloy::primitives::U256::ZERO, $acc) }};
+    }
+
+    pub use {tx, tx_value};
+}

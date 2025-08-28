@@ -1,7 +1,6 @@
 use {
     driver::domain::eth::NonZeroU256,
     e2e::{nodes::local_node::TestNodeApi, setup::*, tx, tx_value},
-    ethcontract::U256,
     model::{
         order::{OrderCreation, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
