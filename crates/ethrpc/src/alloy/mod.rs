@@ -21,6 +21,8 @@ pub fn provider(url: &str) -> AlloyProvider {
         .layer(InstrumentationLayer)
         .layer(BatchCallLayer::new(Default::default()))
         .http(url.parse().unwrap());
+    tracing::info!("newlog url={:?}", url);
+    println!("newlog url={:?}", url);
     ProviderBuilder::new().connect_client(rpc).erased()
 }
 

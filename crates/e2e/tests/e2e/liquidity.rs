@@ -4,6 +4,7 @@ use {
         network::{EthereumWallet, TransactionBuilder},
         providers::Provider,
     },
+    alloy::eips::{BlockId, BlockNumberOrTag},
     chrono::{NaiveDateTime, Utc},
     contracts::{
         ERC20,
@@ -376,9 +377,9 @@ async fn fill_or_kill_zeroex_limit_order(
         _ => unimplemented!(),
     };
     let wallet = EthereumWallet::from(signer);
-    let block = zeroex.provider().get_block_number().await?;
+    let mut block = zeroex.provider().get_block_number().await?;
     tracing::info!("newlog block_before={:?}", block);
-    let tx = zeroex
+    let request = zeroex
         .fillOrKillLimitOrder(
             IZeroex::LibNativeOrder::LimitOrder {
                 makerToken: zeroex_order.order().maker_token.to_alloy(),
@@ -412,14 +413,16 @@ async fn fill_or_kill_zeroex_limit_order(
         )
         .with_gas_limit(21_000)
         .with_max_priority_fee_per_gas(1_000_000_000)
-        .with_max_fee_per_gas(20_000_000_000)
-        .build(&wallet)
-        .await?;
+        .with_max_fee_per_gas(20_000_000_000);
+    tracing::info!("newlog request={:?}", request);
+    let tx = request.build(&wallet).await?;
+    tracing::info!("newlog tx.tx_hash()={:?}", tx.tx_hash());
+    let encoded = &tx.encoded_2718();
+    let encoded_str = format!("0x{}", hex::encode(encoded));
+    tracing::info!("newlog encoded_str={:?}", encoded_str);
 
-    let builder = zeroex
-        .provider()
-        .send_raw_transaction(&tx.encoded_2718())
-        .await?;
+    let builder = zeroex.provider().send_raw_transaction(encoded).await?;
+
     let mut block_new = zeroex.provider().get_block_number().await?;
     while block_new == block {
         tokio::time::sleep(Duration::from_millis(1000)).await;
@@ -427,6 +430,34 @@ async fn fill_or_kill_zeroex_limit_order(
         block_new = zeroex.provider().get_block_number().await?;
     }
     tracing::info!("newlog block_new={:?}", block_new);
+    let stop_block = block + 10u64;
+    while block < stop_block {
+        tokio::time::sleep(Duration::from_millis(1000)).await;
+        let new_txs = zeroex
+            .provider()
+            .get_block(BlockId::Number(BlockNumberOrTag::Number(block)))
+            .await
+            .ok()
+            .flatten()
+            .map(|b| b.transactions);
+        block += 1;
+        tracing::info!("newlog block={:?} txs={:?}", block, new_txs);
+    }
+
+    // let block = zeroex
+    //     .provider()
+    //     .get_block(BlockId::Number(BlockNumberOrTag::Number(block_new)))
+    //     .await?;
+    // tracing::info!("newlog block={:?}", block);
+    // let txs = block.expect("no block").transactions;
+    // tracing::info!("newlog txs={:?}", txs);
+    // let block = zeroex
+    //     .provider()
+    //     .get_block(BlockId::Number(BlockNumberOrTag::Number(block_new - 1)))
+    //     .await?;
+    // let txs = block.expect("no block").transactions;
+    // tracing::info!("newlog pre_block_txs={:?}", txs);
+
     let tx_hash = builder.tx_hash().clone();
     let raw_tx = zeroex
         .provider()
@@ -434,6 +465,6 @@ async fn fill_or_kill_zeroex_limit_order(
         .await?;
     tracing::info!("newlog tx_hash={:?}", tx_hash);
     tracing::info!("newlog raw_tx={:?}", raw_tx);
-    tokio::time::timeout(Duration::from_secs(20), builder.get_receipt()).await??;
+    tokio::time::timeout(Duration::from_secs(60), builder.get_receipt()).await??;
     Ok(tx_hash.to_alloy())
 }

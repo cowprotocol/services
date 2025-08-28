@@ -138,6 +138,7 @@ where
                             tracing::trace!("all callers stopped awaiting their request");
                             return;
                         }
+                        tracing::info!("newlog sending requests={:?}", requests);
 
                         let result = inner
                             .call(RequestPacket::Batch(requests))
@@ -153,6 +154,7 @@ where
                         match result {
                             Err(err) => {
                                 let err = format!("batch call failed: {err:?}");
+                                tracing::error!("newlog failed={:?}", err);
                                 for sender in senders.into_values() {
                                     let _ = sender.send(Err(TransportErrorKind::custom_str(&err)));
                                 }
@@ -160,9 +162,10 @@ where
                             Ok(responses) => {
                                 for response in responses {
                                     let Some(sender) = senders.remove(&response.id) else {
-                                        tracing::warn!(id = ?response.id, "missing response for id");
+                                        tracing::warn!(id = ?response.id, "newlog missing response for id");
                                         continue;
                                     };
+                                    tracing::info!(id = ?response.id, "newlog response={:?}", response);
                                     let _ = sender.send(Ok(response));
                                 }
                             }
@@ -200,6 +203,7 @@ where
     fn call(&mut self, packet: RequestPacket) -> Self::Future {
         match packet {
             RequestPacket::Single(request) => {
+                tracing::info!("newlog received single request={:?}", request);
                 let response = self.enqueue_call(request);
                 Box::pin(async move {
                     let response = response.await.map_err(|err| {
@@ -215,6 +219,7 @@ where
             // don't need manual batching anyway with this layer so we just
             // don't support it.
             RequestPacket::Batch(_) => Box::pin(async {
+                tracing::info!("newlog received batched request");
                 Err(TransportErrorKind::custom_str(
                     "manually batching calls is not supported by the auto batching layer",
                 ))
