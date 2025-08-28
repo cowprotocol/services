@@ -138,8 +138,7 @@ impl BalanceSimulator {
                     .iter()
                     .map(|i| (i.target, Bytes(i.call_data.clone())))
                     .collect(),
-            )
-                .call().await?,
+            ).call().await?,
             SellTokenSource::External => self.balances.balance_external(
                 owner,
                 token,
@@ -147,8 +146,7 @@ impl BalanceSimulator {
                     .iter()
                     .map(|i| (i.target, Bytes(i.call_data.clone())))
                     .collect(),
-            )
-                .call().await?,
+            ).call().await?,
             SellTokenSource::Internal => self.balances.balance_internal(
                 owner,
                 token,
@@ -156,8 +154,7 @@ impl BalanceSimulator {
                     .iter()
                     .map(|i| (i.target, Bytes(i.call_data.clone())))
                     .collect(),
-            )
-                .call().await?,
+            ).call().await?,
         };
 
         let simulation = Simulation {
