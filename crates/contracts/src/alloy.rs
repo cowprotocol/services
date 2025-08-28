@@ -39,6 +39,12 @@ crate::bindings!(
     }
 );
 
+crate::bindings!(GnosisSafe);
+crate::bindings!(GnosisSafeCompatibilityFallbackHandler);
+crate::bindings!(GnosisSafeProxy);
+crate::bindings!(GnosisSafeProxyFactory);
+crate::bindings!(ERC20Mintable);
+
 pub use alloy::providers::DynProvider as Provider;
 
 /// Extension trait to attach some useful functions to the contract instance.
@@ -112,11 +118,6 @@ macro_rules! bindings {
         }
     };
 }
-
-crate::bindings!(GnosisSafe);
-crate::bindings!(GnosisSafeCompatibilityFallbackHandler);
-crate::bindings!(GnosisSafeProxy);
-crate::bindings!(GnosisSafeProxyFactory);
 
 pub mod macros {
     #[macro_export]

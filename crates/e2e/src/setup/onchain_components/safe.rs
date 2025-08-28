@@ -3,6 +3,7 @@ use {
     alloy::{
         primitives::{Address, Bytes, U256},
         providers::Provider,
+        rpc::types::TransactionRequest,
     },
     contracts::alloy::{
         GnosisSafe::{self, GnosisSafe::execTransactionCall},
@@ -39,10 +40,12 @@ pub struct Infrastructure {
 impl Infrastructure {
     pub async fn new(provider: AlloyProvider) -> Self {
         let first_account = *provider.get_accounts().await.unwrap().first().unwrap();
+        let nonce = provider.get_transaction_count(first_account).await.unwrap();
 
         let singleton = {
             let deployed_address = GnosisSafe::Instance::deploy_builder(provider.clone())
                 .from(first_account)
+                .nonce(nonce)
                 .deploy()
                 .await
                 .unwrap();
@@ -52,6 +55,7 @@ impl Infrastructure {
             let deployed_address =
                 GnosisSafeCompatibilityFallbackHandler::Instance::deploy_builder(provider.clone())
                     .from(first_account)
+                    .nonce(nonce + 1)
                     .deploy()
                     .await
                     .unwrap();
@@ -64,6 +68,7 @@ impl Infrastructure {
             let deployed_address =
                 GnosisSafeProxyFactory::Instance::deploy_builder(provider.clone())
                     .from(first_account)
+                    .nonce(nonce + 2)
                     .deploy()
                     .await
                     .unwrap();
@@ -160,6 +165,33 @@ impl Safe {
                 to.unwrap().into_alloy(),
                 value.unwrap_or_default().into_alloy(),
                 alloy::primitives::Bytes::from(data.unwrap_or_default().0),
+                Default::default(),
+                Default::default(),
+                Default::default(),
+                Default::default(),
+                Default::default(),
+                Default::default(),
+                crate::setup::safe::gnosis_safe_prevalidated_signature(
+                    self.owner.address().into_alloy(),
+                )
+            ),
+            self.owner.address().into_alloy()
+        );
+    }
+
+    pub async fn exec_alloy_call(&self, tx: TransactionRequest) {
+        // let tx = tx.with_input_and_data();
+        let to = tx.to.unwrap().into_to().unwrap();
+        let value = tx.value.unwrap_or_default();
+        let data = tx.input.input().unwrap_or_default().to_owned();
+
+        tracing::error!("{:?}, {:?}, {:?}", to, data, value);
+
+        contracts::alloy::macros::tx!(
+            self.contract.execTransaction(
+                to,
+                value,
+                data,
                 Default::default(),
                 Default::default(),
                 Default::default(),

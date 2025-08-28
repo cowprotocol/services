@@ -17,6 +17,9 @@ alloy = { workspace = true, default-features = false, features = [
     "reqwest",
     "signers",
     "signer-local",
+    "rpc",
+    "rpc-types",
+    "provider-anvil-node",
 ] }
 app-data = { workspace = true }
 anyhow = { workspace = true }

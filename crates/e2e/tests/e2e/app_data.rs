@@ -1,6 +1,11 @@
 use {
+    ::alloy::providers::Provider,
     app_data::{AppDataHash, hash_full_app_data},
-    e2e::{setup::*, tx},
+    e2e::setup::*,
+    ethrpc::alloy::{
+        ProviderSignerExt,
+        conversions::{IntoAlloy, IntoLegacy, TryIntoAlloyAsync},
+    },
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
@@ -35,18 +40,32 @@ async fn app_data(web3: Web3) {
         .await;
 
     token_a.mint(trader.address(), to_wei(10)).await;
-    tx!(
-        trader.account(),
-        token_a.approve(onchain.contracts().allowance, to_wei(10))
-    );
+    let tx = token_a
+        .approve(
+            onchain.contracts().allowance.into_alloy(),
+            to_wei(10).into_alloy(),
+        )
+        .from(trader.address().into_alloy())
+        .into_transaction_request();
+
+    onchain
+        .web3()
+        .alloy
+        .with_signer(trader.account().clone().try_into_alloy().await.unwrap())
+        .send_transaction(tx)
+        .await
+        .unwrap()
+        .watch()
+        .await
+        .unwrap();
 
     let mut valid_to: u32 = model::time::now_in_epoch_seconds() + 300;
     let mut create_order = |app_data| {
         let order = OrderCreation {
             app_data,
-            sell_token: token_a.address(),
+            sell_token: token_a.address().into_legacy(),
             sell_amount: to_wei(2),
-            buy_token: token_b.address(),
+            buy_token: token_b.address().into_legacy(),
             buy_amount: to_wei(1),
             valid_to,
             kind: OrderKind::Sell,
@@ -194,18 +213,31 @@ async fn app_data_full_format(web3: Web3) {
         .await;
 
     token_a.mint(trader.address(), to_wei(10)).await;
-    tx!(
-        trader.account(),
-        token_a.approve(onchain.contracts().allowance, to_wei(10))
-    );
+    let tx_req = token_a
+        .approve(
+            onchain.contracts().allowance.into_alloy(),
+            to_wei(10).into_alloy(),
+        )
+        .from(trader.address().into_alloy())
+        .into_transaction_request();
+    onchain
+        .web3()
+        .alloy
+        .with_signer(trader.account().to_owned().try_into_alloy().await.unwrap())
+        .send_transaction(tx_req)
+        .await
+        .unwrap()
+        .watch()
+        .await
+        .unwrap();
 
     let mut valid_to: u32 = model::time::now_in_epoch_seconds() + 300;
     let mut create_order = |app_data| {
         let order = OrderCreation {
             app_data,
-            sell_token: token_a.address(),
+            sell_token: token_a.address().into_legacy(),
             sell_amount: to_wei(2),
-            buy_token: token_b.address(),
+            buy_token: token_b.address().into_legacy(),
             buy_amount: to_wei(1),
             valid_to,
             kind: OrderKind::Sell,

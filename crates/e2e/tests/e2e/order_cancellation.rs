@@ -1,6 +1,11 @@
 use {
     database::order_events::OrderEventLabel,
-    e2e::{setup::*, tx},
+    e2e::setup::*,
+    ethrpc::alloy::{
+        ProviderExt,
+        ProviderSignerExt,
+        conversions::{IntoAlloy, IntoLegacy, TryIntoAlloyAsync},
+    },
     model::{
         order::{
             CancellationPayload,
@@ -40,10 +45,20 @@ async fn order_cancellation(web3: Web3) {
     token.mint(trader.address(), to_wei(10)).await;
 
     // Approve GPv2 for trading
-    tx!(
-        trader.account(),
-        token.approve(onchain.contracts().allowance, to_wei(10))
-    );
+    let tx = token
+        .approve(
+            onchain.contracts().allowance.into_alloy(),
+            to_wei(10).into_alloy(),
+        )
+        .from(trader.address().into_alloy())
+        .into_transaction_request();
+    onchain
+        .web3()
+        .alloy
+        .with_signer(trader.account().clone().try_into_alloy().await.unwrap())
+        .send_and_watch(tx)
+        .await
+        .unwrap();
 
     let services = Services::new(&onchain).await;
     colocation::start_driver(
@@ -86,7 +101,7 @@ async fn order_cancellation(web3: Web3) {
 
         let request = OrderQuoteRequest {
             from: trader.address(),
-            sell_token: token.address(),
+            sell_token: token.address().into_legacy(),
             buy_token: onchain.contracts().weth.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::AfterFee {
