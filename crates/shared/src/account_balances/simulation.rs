@@ -56,11 +56,7 @@ impl Balances {
                 |delegate_call| async move { delegate_call },
             )
             .await?;
-        Ok(if simulation.can_transfer {
-            simulation.effective_balance
-        } else {
-            U256::zero()
-        })
+        Ok(simulation.effective_balance)
     }
 
     async fn tradable_balance_simple(&self, query: &Query, token: &Contract) -> Result<U256> {
@@ -150,9 +146,6 @@ impl BalanceFetching for Balances {
         }
         if simulation.allowance < amount {
             return Err(TransferSimulationError::InsufficientAllowance);
-        }
-        if !simulation.can_transfer {
-            return Err(TransferSimulationError::TransferFailed);
         }
 
         Ok(())

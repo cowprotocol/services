@@ -133,17 +133,34 @@ impl BalanceSimulator {
         //    settlement
         //
         // This allows us to end up with very accurate balance simulations.
-        let balance_call = self.balances.balance(
-            (self.settlement.address(), self.vault_relayer, self.vault),
-            owner,
-            token,
-            amount.unwrap_or_default(),
-            Bytes(source.as_bytes()),
-            interactions
-                .iter()
-                .map(|i| (i.target, i.value, Bytes(i.call_data.clone())))
-                .collect(),
-        );
+        // We use 3 different functions to avoid having to pass the source
+        // as an argument.
+        let balance_call = match source {
+            SellTokenSource::Erc20 => self.balances.balance_erc_20(
+                owner,
+                token,
+                interactions
+                    .iter()
+                    .map(|i| (i.target, Bytes(i.call_data.clone())))
+                    .collect(),
+            ),
+            SellTokenSource::External => self.balances.balance_external(
+                owner,
+                token,
+                interactions
+                    .iter()
+                    .map(|i| (i.target, Bytes(i.call_data.clone())))
+                    .collect(),
+            ),
+            SellTokenSource::Internal => self.balances.balance_internal(
+                owner,
+                token,
+                interactions
+                    .iter()
+                    .map(|i| (i.target, Bytes(i.call_data.clone())))
+                    .collect(),
+            ),
+        };
 
         let delegate_call = self
             .settlement
@@ -156,23 +173,26 @@ impl BalanceSimulator {
         let delegate_call = add_access_lists(delegate_call).await;
 
         let response = delegate_call.call().await?;
-        let (token_balance, allowance, effective_balance, can_transfer) =
-            <(
-                sol_data::Uint<256>,
-                sol_data::Uint<256>,
-                sol_data::Uint<256>,
-                sol_data::Bool,
-            )>::abi_decode(&response.0)
-            .map_err(|err| {
-                tracing::error!(?err, "failed to decode balance response");
-                web3::error::Error::Decoder("failed to decode balance response".to_string())
-            })?;
+        let (token_balance, allowance) = <(sol_data::Uint<256>, sol_data::Uint<256>)>::abi_decode(
+            &response.0,
+        )
+        .map_err(|err| {
+            tracing::error!(?err, "failed to decode balance response");
+            web3::error::Error::Decoder("failed to decode balance response".to_string())
+        })?;
+
+        let token_balance = U256::from_little_endian(&token_balance.as_le_bytes());
+        let allowance = U256::from_little_endian(&allowance.as_le_bytes());
+        let effective_balance = if allowance < token_balance {
+            allowance
+        } else {
+            token_balance
+        };
 
         let simulation = Simulation {
-            token_balance: U256::from_little_endian(&token_balance.as_le_bytes()),
-            allowance: U256::from_little_endian(&allowance.as_le_bytes()),
-            effective_balance: U256::from_little_endian(&effective_balance.as_le_bytes()),
-            can_transfer,
+            token_balance,
+            allowance,
+            effective_balance,
         };
 
         tracing::trace!(
@@ -193,7 +213,6 @@ pub struct Simulation {
     pub token_balance: U256,
     pub allowance: U256,
     pub effective_balance: U256,
-    pub can_transfer: bool,
 }
 
 #[derive(Debug, Error)]
