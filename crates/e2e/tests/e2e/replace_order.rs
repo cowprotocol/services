@@ -374,9 +374,23 @@ async fn single_replace_order_test(web3: Web3) {
         token_a.approve(onchain.contracts().allowance, to_wei(15))
     );
 
-    // Place Orders
+    // disble solver to prevent orders from being settled while we
+    // want to replace them
+    onchain.set_solver_allowed(solver.address(), false).await;
+
     let services = Services::new(&onchain).await;
-    services.start_protocol(solver).await;
+    services
+        .start_protocol_with_args(
+            ExtraServiceArgs {
+                // To avoid race conditions we have to start the protocol
+                // with the solver being banned. To allow us to still create
+                // orders we override the quote verification to be disabled.
+                api: vec!["--quote-verification=prefer".into()],
+                ..Default::default()
+            },
+            solver.clone(),
+        )
+        .await;
 
     let balance_before = token_a.balance_of(trader.address()).call().await.unwrap();
     let order = OrderCreation {
@@ -428,11 +442,32 @@ async fn single_replace_order_test(web3: Web3) {
     );
     let new_order_uid = services.create_order(&new_order).await.unwrap();
 
+    {
+        // assert that the new order has the expected appdata
+        let new_order = services.get_order(&new_order_uid).await.unwrap();
+        let new_order_appdata = new_order
+            .metadata
+            .full_app_data
+            .expect("valid full appData");
+        assert_eq!(new_order_appdata, app_data);
+    }
+
     // Check the previous order is cancelled
     let old_order = services.get_order(&order_id).await.unwrap();
     assert_eq!(old_order.metadata.status, OrderStatus::Cancelled);
 
-    // Drive solution
+    tracing::info!("wait for old order to be removed");
+    wait_for_condition(TIMEOUT, || async {
+        let auction = services.get_auction().await.auction;
+        auction.orders.len() == 1 && auction.orders[0].uid == new_order_uid
+    })
+    .await
+    .unwrap();
+    // now that the order has been cancelled and the original order
+    // is no longer part of the auction we can reenable the solver
+    onchain.set_solver_allowed(solver.address(), true).await;
+
+    // Drive solution to verify that new order can be settled
     tracing::info!("Waiting for trade.");
     wait_for_condition(TIMEOUT, || async {
         let balance_after = token_a.balance_of(trader.address()).call().await.unwrap();
@@ -441,16 +476,4 @@ async fn single_replace_order_test(web3: Web3) {
     })
     .await
     .unwrap();
-
-    // Check the previous order is cancelled
-    wait_for_condition(TIMEOUT, || async {
-        let new_order = services.get_order(&new_order_uid).await.unwrap();
-        let new_order_appdata = new_order
-            .metadata
-            .full_app_data
-            .expect("valid full appData");
-        new_order_appdata == app_data
-    })
-    .await
-    .unwrap()
 }
