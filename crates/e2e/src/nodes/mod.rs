@@ -72,7 +72,7 @@ impl Node {
             const NEEDLE: &str = "Listening on ";
             let mut reader = tokio::io::BufReader::new(stdout).lines();
             while let Some(line) = reader.next_line().await.unwrap() {
-                tracing::trace!(line);
+                tracing::warn!(line);
                 if let Some(addr) = line.strip_prefix(NEEDLE) {
                     match sender.take() {
                         Some(sender) => sender.send(format!("http://{addr}")).unwrap(),
@@ -81,6 +81,16 @@ impl Node {
                 }
             }
         });
+
+        // stderr reader
+        if let Some(stderr) = process.stderr.take() {
+            tokio::task::spawn(async move {
+                let mut reader = tokio::io::BufReader::new(stderr).lines();
+                while let Some(line) = reader.next_line().await.unwrap() {
+                    tracing::error!(target: "anvil-stderr", "{}", line);
+                }
+            });
+        }
 
         let _url = tokio::time::timeout(tokio::time::Duration::from_secs(20), receiver)
             .await

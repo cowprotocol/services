@@ -38,6 +38,7 @@ use {
         signature::EcdsaSigningScheme,
     },
     secp256k1::SecretKey,
+    std::time::Duration,
     web3::signing::SecretKeyRef,
 };
 
@@ -375,6 +376,8 @@ async fn fill_or_kill_zeroex_limit_order(
         _ => unimplemented!(),
     };
     let wallet = EthereumWallet::from(signer);
+    let block = zeroex.provider().get_block_number().await?;
+    tracing::info!("newlog block_before={:?}", block);
     let tx = zeroex
         .fillOrKillLimitOrder(
             IZeroex::LibNativeOrder::LimitOrder {
@@ -400,6 +403,7 @@ async fn fill_or_kill_zeroex_limit_order(
             zeroex_order.order().taker_amount,
         )
         .into_transaction_request()
+        .from(from_account.address().to_alloy())
         .nonce(
             zeroex
                 .provider()
@@ -412,10 +416,24 @@ async fn fill_or_kill_zeroex_limit_order(
         .build(&wallet)
         .await?;
 
-    Ok(zeroex
+    let builder = zeroex
         .provider()
         .send_raw_transaction(&tx.encoded_2718())
-        .await?
-        .tx_hash()
-        .to_alloy())
+        .await?;
+    let mut block_new = zeroex.provider().get_block_number().await?;
+    while block_new == block {
+        tokio::time::sleep(Duration::from_millis(1000)).await;
+        tracing::info!("newlog the same block");
+        block_new = zeroex.provider().get_block_number().await?;
+    }
+    tracing::info!("newlog block_new={:?}", block_new);
+    let tx_hash = builder.tx_hash().clone();
+    let raw_tx = zeroex
+        .provider()
+        .get_raw_transaction_by_hash(tx_hash.clone())
+        .await?;
+    tracing::info!("newlog tx_hash={:?}", tx_hash);
+    tracing::info!("newlog raw_tx={:?}", raw_tx);
+    tokio::time::timeout(Duration::from_secs(20), builder.get_receipt()).await??;
+    Ok(tx_hash.to_alloy())
 }
