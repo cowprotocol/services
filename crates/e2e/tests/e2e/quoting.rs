@@ -4,7 +4,6 @@ use {
         tx,
         tx_value,
     },
-    ethcontract::prelude::U256,
     futures::FutureExt,
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind},

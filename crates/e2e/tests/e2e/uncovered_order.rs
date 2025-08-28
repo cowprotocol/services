@@ -1,6 +1,5 @@
 use {
     e2e::{setup::*, tx, tx_value},
-    ethcontract::U256,
     model::{
         order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
