@@ -70,3 +70,18 @@ macro_rules! bindings {
         }
     };
 }
+
+pub mod networks {
+    pub const MAINNET: u64 = 1;
+    pub const GNOSIS: u64 = 100;
+    pub const SEPOLIA: u64 = 11155111;
+    pub const ARBITRUM_ONE: u64 = 42161;
+    pub const BASE: u64 = 8453;
+    pub const POLYGON: u64 = 137;
+    pub const AVALANCHE: u64 = 43114;
+    pub const BNB: u64 = 56;
+    pub const OPTIMISM: u64 = 10;
+    pub const LENS: u64 = 232;
+}
+
+crate::bindings!(ERC20Mintable, maplit::hashmap! {});

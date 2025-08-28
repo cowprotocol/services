@@ -4,19 +4,15 @@ use {
         setup::{DeployedContracts, deploy::Contracts},
     },
     app_data::Hook,
-    contracts::{CowProtocolToken, ERC20Mintable},
+    contracts::CowProtocolToken,
     ethcontract::{
-        Account,
-        Bytes,
-        H160,
-        PrivateKey,
-        U256,
+        Account, Bytes, H160, PrivateKey, U256,
         transaction::{TransactionBuilder, TransactionResult},
     },
+    ethrpc::alloy::conversions::{ToAlloy, ToLegacy},
     hex_literal::hex,
     model::{
-        DomainSeparator,
-        TokenPair,
+        DomainSeparator, TokenPair,
         signature::{EcdsaSignature, EcdsaSigningScheme},
     },
     secp256k1::SecretKey,
@@ -167,18 +163,28 @@ impl Iterator for AccountGenerator {
 
 #[derive(Debug)]
 pub struct MintableToken {
-    contract: ERC20Mintable,
-    minter: Account,
+    contract: contracts::alloy::ERC20Mintable::Instance,
+    minter: Account, // TODO: replace this with an alloy account equivalent
 }
 
 impl MintableToken {
     pub async fn mint(&self, to: H160, amount: U256) {
-        tx!(self.minter, self.contract.mint(to, amount));
+        self.contract
+            .mint(self.minter.address().to_alloy(), amount.to_alloy())
+            .to(to.to_alloy())
+            .send()
+            .await
+            .expect("failed to send tx")
+            // most similar behavior to ethcontract's .send
+            // https://github.com/cowprotocol/ethcontract-rs/blob/main/ethcontract/src/contract/deploy.rs#L144-L164
+            .get_receipt()
+            .await
+            .expect("tx failed");
     }
 }
 
 impl Deref for MintableToken {
-    type Target = ERC20Mintable;
+    type Target = contracts::alloy::ERC20Mintable::Instance;
 
     fn deref(&self) -> &Self::Target {
         &self.contract
@@ -363,11 +369,17 @@ impl OnchainComponents {
     pub async fn deploy_tokens<const N: usize>(&self, minter: &Account) -> [MintableToken; N] {
         let mut res = Vec::with_capacity(N);
         for _ in 0..N {
-            let contract = ERC20Mintable::builder(&self.web3)
-                .from(minter.clone())
-                .deploy()
-                .await
-                .expect("MintableERC20 deployment failed");
+            let contract_address =
+                contracts::alloy::ERC20Mintable::Instance::deploy_builder(self.web3.alloy.clone())
+                    .from(minter.address().to_alloy())
+                    .deploy()
+                    .await
+                    .expect("MintableERC20 deployment failed");
+            let contract = contracts::alloy::ERC20Mintable::Instance::new(
+                contract_address,
+                self.web3.alloy.clone(),
+            );
+
             res.push(MintableToken {
                 contract,
                 minter: minter.clone(),
@@ -404,19 +416,35 @@ impl OnchainComponents {
         weth_amount: U256,
     ) {
         for MintableToken { contract, minter } in tokens {
-            tx!(minter, contract.mint(minter.address(), token_amount));
+            contract
+                .mint(minter.address().to_alloy(), token_amount.to_alloy())
+                .to(minter.address().to_alloy())
+                .send()
+                .await
+                .expect("failed to submit transaction")
+                .get_receipt()
+                .await
+                .expect("mint failed");
             tx_value!(minter, weth_amount, self.contracts.weth.deposit());
 
             tx!(
                 minter,
-                self.contracts
-                    .uniswap_v2_factory
-                    .create_pair(contract.address(), self.contracts.weth.address())
+                self.contracts.uniswap_v2_factory.create_pair(
+                    contract.address().to_legacy(),
+                    self.contracts.weth.address()
+                )
             );
-            tx!(
-                minter,
-                contract.approve(self.contracts.uniswap_v2_router.address(), token_amount)
-            );
+            contract
+                .approve(
+                    self.contracts.uniswap_v2_router.address().to_alloy(),
+                    token_amount.to_alloy(),
+                )
+                .send()
+                .await
+                .expect("failed to submit transaction")
+                .get_receipt()
+                .await
+                .expect("approve failed");
             tx!(
                 minter,
                 self.contracts
@@ -426,7 +454,7 @@ impl OnchainComponents {
             tx!(
                 minter,
                 self.contracts.uniswap_v2_router.add_liquidity(
-                    contract.address(),
+                    contract.address().to_legacy(),
                     self.contracts.weth.address(),
                     token_amount,
                     weth_amount,
@@ -450,27 +478,43 @@ impl OnchainComponents {
 
         tx!(
             lp,
-            self.contracts
-                .uniswap_v2_factory
-                .create_pair(asset_a.0.address(), asset_b.0.address())
+            self.contracts.uniswap_v2_factory.create_pair(
+                asset_a.0.address().to_legacy(),
+                asset_b.0.address().to_legacy()
+            )
         );
-        tx!(
-            lp,
-            asset_a
-                .0
-                .approve(self.contracts.uniswap_v2_router.address(), asset_a.1)
-        );
-        tx!(
-            lp,
-            asset_b
-                .0
-                .approve(self.contracts.uniswap_v2_router.address(), asset_b.1)
-        );
+        asset_a
+            .0
+            .approve(
+                self.contracts.uniswap_v2_router.address().to_alloy(),
+                asset_a.1.to_alloy(),
+            )
+            .from(lp.address().to_alloy())
+            .send()
+            .await
+            .expect("failed to submit transaction")
+            .get_receipt()
+            .await
+            .expect("approve failed");
+
+        asset_b
+            .0
+            .approve(
+                self.contracts.uniswap_v2_router.address().to_alloy(),
+                asset_b.1.to_alloy(),
+            )
+            .from(lp.address().to_alloy())
+            .send()
+            .await
+            .expect("failed to submit transaction")
+            .get_receipt()
+            .await
+            .expect("approve failed");
         tx!(
             lp,
             self.contracts.uniswap_v2_router.add_liquidity(
-                asset_a.0.address(),
-                asset_b.0.address(),
+                asset_a.0.address().to_legacy(),
+                asset_b.0.address().to_legacy(),
                 asset_a.1,
                 asset_b.1,
                 0_u64.into(),
@@ -489,7 +533,7 @@ impl OnchainComponents {
             &self.web3,
             self.contracts
                 .uniswap_v2_factory
-                .get_pair(self.contracts.weth.address(), token.address())
+                .get_pair(self.contracts.weth.address(), token.address().to_legacy())
                 .call()
                 .await
                 .expect("failed to get Uniswap V2 pair"),
@@ -499,16 +543,17 @@ impl OnchainComponents {
         // Mint amount + 1 to the pool, and then swap out 1 of the minted token
         // in order to force it to update its K-value.
         token.mint(pair.address(), amount + 1).await;
-        let (out0, out1) = if TokenPair::new(self.contracts.weth.address(), token.address())
-            .unwrap()
-            .get()
-            .0
-            == token.address()
-        {
-            (1, 0)
-        } else {
-            (0, 1)
-        };
+        let (out0, out1) =
+            if TokenPair::new(self.contracts.weth.address(), token.address().to_legacy())
+                .unwrap()
+                .get()
+                .0
+                == token.address().to_legacy()
+            {
+                (1, 0)
+            } else {
+                (0, 1)
+            };
         pair.swap(
             out0.into(),
             out1.into(),

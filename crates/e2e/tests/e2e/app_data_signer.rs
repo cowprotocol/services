@@ -3,14 +3,15 @@ use {
         setup::{safe::Safe, *},
         tx,
     },
-    ethcontract::{H160, prelude::U256},
+    ethcontract::{contract::MethodBuilder, prelude::U256, H160},
+    ethrpc::alloy::conversions::{ToAlloy, ToLegacy},
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind},
         signature::EcdsaSigningScheme,
     },
     secp256k1::SecretKey,
     shared::ethrpc::Web3,
-    web3::signing::SecretKeyRef,
+    web3::{ethabi::Function, signing::SecretKeyRef},
 };
 
 #[tokio::test]
@@ -30,21 +31,27 @@ async fn order_creation_checks_metadata_signer(web3: Web3) {
     token_a.mint(trader.address(), to_wei(10)).await;
     tx!(
         trader.account(),
-        token_a.approve(onchain.contracts().allowance, to_wei(10))
+        token_a.approve(
+            onchain.contracts().allowance.to_alloy(),
+            to_wei(10).to_alloy()
+        )
     );
     token_a.mint(adversary.address(), to_wei(10)).await;
     tx!(
         adversary.account(),
-        token_a.approve(onchain.contracts().allowance, to_wei(10))
+        token_a.approve(
+            onchain.contracts().allowance.to_alloy(),
+            to_wei(10).to_alloy()
+        )
     );
 
     let mut valid_to: u32 = model::time::now_in_epoch_seconds() + 300;
     let mut create_order = |app_data| {
         let order = OrderCreation {
             app_data,
-            sell_token: token_a.address(),
+            sell_token: token_a.address().to_legacy(),
             sell_amount: to_wei(2),
-            buy_token: token_b.address(),
+            buy_token: token_b.address().to_legacy(),
             buy_amount: to_wei(1),
             valid_to,
             kind: OrderKind::Sell,
@@ -93,8 +100,14 @@ async fn order_creation_checks_metadata_signer(web3: Web3) {
 
     let safe = Safe::deploy(safe_owner.clone(), &web3).await;
     token_a.mint(safe.address(), to_wei(10)).await;
-    safe.exec_call(token_a.approve(onchain.contracts().allowance, to_wei(10)))
-        .await;
+
+    MethodBuilder::new(web3.legacy, Function { name: (), inputs: (), outputs: (), constant: (), state_mutability: () }, address, data)
+
+    safe.exec_call(token_a.approve(
+        onchain.contracts().allowance.to_alloy(),
+        to_wei(10).to_alloy(),
+    ).)
+    .await;
 
     // Accepted: owner retrieved from app data.
     let full_app_data = full_app_data_with_signer(safe.address());

@@ -4,32 +4,21 @@ use {
     self::{driver::Driver, solver::Solver as SolverInstance},
     crate::{
         domain::{
-            competition::{order, order::app_data::AppData},
-            eth,
-            time,
+            competition::order::{self, app_data::AppData},
+            eth, time,
         },
         infra::{
             self,
             config::file::{
-                FeeHandler,
-                OrderPriorityStrategy,
-                default_http_time_buffer,
+                FeeHandler, OrderPriorityStrategy, default_http_time_buffer,
                 default_solving_share_of_deadline,
             },
         },
         tests::{
             cases::{
-                AB_ORDER_AMOUNT,
-                AD_ORDER_AMOUNT,
-                CD_ORDER_AMOUNT,
-                DEFAULT_POOL_AMOUNT_A,
-                DEFAULT_POOL_AMOUNT_B,
-                DEFAULT_POOL_AMOUNT_C,
-                DEFAULT_POOL_AMOUNT_D,
-                DEFAULT_SURPLUS_FACTOR,
-                ETH_ORDER_AMOUNT,
-                EtherExt,
-                is_approximately_equal,
+                AB_ORDER_AMOUNT, AD_ORDER_AMOUNT, CD_ORDER_AMOUNT, DEFAULT_POOL_AMOUNT_A,
+                DEFAULT_POOL_AMOUNT_B, DEFAULT_POOL_AMOUNT_C, DEFAULT_POOL_AMOUNT_D,
+                DEFAULT_SURPLUS_FACTOR, ETH_ORDER_AMOUNT, EtherExt, is_approximately_equal,
             },
             hex_address,
             setup::{
@@ -38,8 +27,10 @@ use {
             },
         },
     },
+    alloy::primitives::ruint,
     bigdecimal::{BigDecimal, FromPrimitive},
     ethcontract::dyns::DynTransport,
+    ethrpc::alloy::conversions::{ToAlloy, ToLegacy},
     futures::future::join_all,
     hyper::StatusCode,
     model::order::{BuyTokenDestination, SellTokenSource},
@@ -1187,10 +1178,11 @@ impl Test {
         let mut balances = HashMap::new();
         for (token, contract) in self.blockchain.tokens.iter() {
             let balance = contract
-                .balance_of(self.trader_address)
+                .balanceOf(self.trader_address.to_alloy())
                 .call()
                 .await
-                .unwrap();
+                .unwrap()
+                .to_legacy();
             balances.insert(*token, balance);
         }
         balances.insert(
