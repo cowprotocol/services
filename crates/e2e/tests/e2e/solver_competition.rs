@@ -557,7 +557,15 @@ async fn store_filtered_solutions(web3: Web3) {
 
     let order_ab_id = services.create_order(&order_ab).await.unwrap();
     let order_ac_id = services.create_order(&order_ac).await.unwrap();
-    onchain.mint_block().await;
+
+    tracing::info!("Waiting for both orders to be in the auction");
+    wait_for_condition(TIMEOUT, || async {
+        onchain.mint_block().await;
+        let auction = services.get_auction().await.auction;
+        auction.orders.len() == 2
+    })
+    .await
+    .unwrap();
 
     // good solver settles order_ab at a price 3:1
     good_solver.configure_solution(Some(Solution {

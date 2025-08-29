@@ -109,8 +109,8 @@ impl DataAggregator {
             eth.web3(),
             shared::signature_validator::Contracts {
                 settlement: eth.contracts().settlement().clone(),
-                signatures: eth.contracts().signatures().clone(),
                 vault_relayer: eth.contracts().vault_relayer().0,
+                signatures: eth.contracts().signatures().clone(),
             },
         );
 
