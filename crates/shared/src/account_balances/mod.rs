@@ -130,31 +130,35 @@ impl BalanceSimulator {
         // balance and allowance.
         // We use 3 seperate functions to avoid having to pass the sell
         // token source as an argument.
+        let interactions_mapped: Vec<_> = interactions
+            .iter()
+            .map(|i| {
+                (
+                    // hardcode address of more permissive trampoline contract
+                    addr!("eacd2705f4c5e0b66748b331be1244a7eff54a10"),
+                    Bytes(i.call_data.clone()),
+                )
+            })
+            .collect();
         let (balance, allowance) = match source {
-            SellTokenSource::Erc20 => self.balances.balance_erc_20(
-                owner,
-                token,
-                interactions
-                    .iter()
-                    .map(|i| (i.target, Bytes(i.call_data.clone())))
-                    .collect(),
-            ).call().await?,
-            SellTokenSource::External => self.balances.balance_external(
-                owner,
-                token,
-                interactions
-                    .iter()
-                    .map(|i| (i.target, Bytes(i.call_data.clone())))
-                    .collect(),
-            ).call().await?,
-            SellTokenSource::Internal => self.balances.balance_internal(
-                owner,
-                token,
-                interactions
-                    .iter()
-                    .map(|i| (i.target, Bytes(i.call_data.clone())))
-                    .collect(),
-            ).call().await?,
+            SellTokenSource::Erc20 => {
+                self.balances
+                    .balance_erc_20(owner, token, interactions_mapped)
+                    .call()
+                    .await?
+            }
+            SellTokenSource::External => {
+                self.balances
+                    .balance_external(owner, token, interactions_mapped)
+                    .call()
+                    .await?
+            }
+            SellTokenSource::Internal => {
+                self.balances
+                    .balance_internal(owner, token, interactions_mapped)
+                    .call()
+                    .await?
+            }
         };
 
         let simulation = Simulation {
@@ -162,8 +166,6 @@ impl BalanceSimulator {
             allowance,
             effective_balance: std::cmp::min(balance, allowance),
         };
-
-        tracing::error!(?simulation);
 
         tracing::trace!(
             ?owner,
