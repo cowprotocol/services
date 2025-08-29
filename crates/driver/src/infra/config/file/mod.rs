@@ -388,6 +388,10 @@ struct ContractsConfig {
     /// Address of the default flashloan lender that should be used as lender,
     /// for all flashloans that don't have a specific lender set.
     flashloan_default_lender: Option<eth::H160>,
+
+    /// Address of the flashloan tracker contract that does flash loan
+    /// bookkeeping and moves funds.
+    flashloan_tracker: Option<eth::H160>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

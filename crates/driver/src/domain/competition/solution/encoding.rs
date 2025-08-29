@@ -6,15 +6,20 @@ use {
                 self,
                 order::{self, Partial},
             },
-            eth::{self, Ether, allowance},
+            eth::{self, Ether, Flashloan, Interaction, allowance},
             liquidity,
         },
-        infra::{self, solver::ManageNativeToken},
+        infra::{
+            self,
+            blockchain::{Contracts, contracts::FlashloanWrapperData},
+            solver::ManageNativeToken,
+        },
         util::{Bytes, conv::u256::U256Ext},
     },
     allowance::Allowance,
-    ethcontract::H160,
+    contracts::flash_loan_tracker::Contract,
     itertools::Itertools,
+    primitive_types::U256,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -32,8 +37,8 @@ pub enum Error {
     FlashloanSupportDisabled,
     #[error("no flashloan helper configured for lender: {0}")]
     UnsupportedFlashloanLender(eth::H160),
-    #[error("incorrect flashloan payment (order: {order:?}): {error}")]
-    FlashloanPayment { order: order::Uid, error: String },
+    #[error("Flashloan tracker contract not configured")]
+    FlashLoanTrackerNotConfigured,
 }
 
 pub fn tx(
@@ -182,92 +187,43 @@ pub fn tx(
         prices: auction.native_prices().clone(),
     };
 
-    // Add all interactions needed to move flash loaned tokens around
-    // These interactions are executed before all other pre-interactions
     let flashloans = solution
         .flashloans
-        .iter()
-        .map(|(order, flashloan)| {
+        .values()
+        .map(|flashloan| {
             let flashloan_wrapper = contracts
                 .get_flashloan_wrapper(&flashloan.lender)
                 .ok_or(Error::UnsupportedFlashloanLender(flashloan.lender.0))?;
+            let flashloan_tracker = contracts
+                .flashloan_tracker()
+                .ok_or(Error::FlashLoanTrackerNotConfigured)?;
 
-            // Repayment amount needs to be increased by flash fee
+            // Repayment amount needs to be increased by a flash loan fee
             let fee_amount =
                 (flashloan.amount.0 * flashloan_wrapper.fee_in_bps).ceil_div(&10_000.into());
             let repayment_amount = flashloan.amount.0 + fee_amount;
 
-            ensure_flashloan_is_paid_for(
-                auction,
-                solution,
-                order,
-                contracts.settlement().address(),
-                eth::Asset {
-                    token: flashloan.token,
-                    amount: repayment_amount.into(),
-                },
-            )
-            .map_err(|error| Error::FlashloanPayment {
-                order: *order,
-                error,
-            })?;
-
-            // Allow settlement contract to pull borrowed tokens from flashloan wrapper
-            pre_interactions.insert(
-                0,
+            let flash_loan_pre_interactions = vec![
                 approve_flashloan(
                     flashloan.token,
-                    flashloan.amount,
-                    contracts.settlement().address().into(),
+                    flashloan.amount.0.into(),
+                    flashloan_tracker.address().into(),
                     &flashloan_wrapper.helper_contract,
                 ),
-            );
+                // Move the loaned money from the helper contract to the borrower address (most
+                // likely the user)
+                take_out_from_tracker(flashloan, flashloan_wrapper, flashloan_tracker),
+            ];
+            pre_interactions.splice(0..0, flash_loan_pre_interactions); // prepend interactions
 
-            // Transfer tokens from flashloan wrapper to user (i.e. borrower) to later allow
-            // settlement contract to pull in all the necessary sell tokens from the user.
-            let tx = contracts::ERC20::at(
-                &contracts.settlement().raw_instance().web3(),
-                flashloan.token.into(),
-            )
-            .transfer_from(
-                flashloan_wrapper.helper_contract.address(),
-                flashloan.borrower.into(),
-                flashloan.amount.0,
-            )
-            .into_inner();
-            pre_interactions.insert(
-                1,
-                eth::Interaction {
-                    target: tx.to.unwrap().into(),
-                    value: eth::U256::zero().into(),
-                    call_data: tx.data.unwrap().0.into(),
-                },
-            );
-
-            // Since the order receiver is expected to be the setttlement contract, we need
-            // to transfer tokens from the settlement contract to the flashloan wrapper
-            let tx = contracts::ERC20::at(
-                &contracts.settlement().raw_instance().web3(),
-                flashloan.token.into(),
-            )
-            .transfer(
-                flashloan_wrapper.helper_contract.address(),
-                repayment_amount,
-            )
-            .into_inner();
-            post_interactions.push(eth::Interaction {
-                target: tx.to.unwrap().into(),
-                value: eth::U256::zero().into(),
-                call_data: tx.data.unwrap().0.into(),
-            });
-
-            // Allow flash loan lender to take tokens from wrapper contract
-            post_interactions.push(approve_flashloan(
-                flashloan.token,
-                repayment_amount.into(),
-                flashloan.lender,
-                &flashloan_wrapper.helper_contract,
-            ));
+            let flash_loan_post_interactions = vec![
+                // Allow the flashloan lender to pull funds from the borrower contract (= pay back
+                // flash loan) after settlement execution
+                allow_lender_pull_funds(contracts, flashloan, flashloan_wrapper, repayment_amount),
+                // Call payBack() on the tracker; the user is expected to re-pay fee via post-hook
+                pay_back_via_tracker(flashloan, flashloan_wrapper, flashloan_tracker),
+            ];
+            post_interactions.splice(0..0, flash_loan_post_interactions); // prepend interactions
 
             Ok((
                 flashloan.amount.0,
@@ -341,41 +297,70 @@ pub fn tx(
     })
 }
 
-/// Makes sure that there is an order that intended to pay for a
-/// given flashloan and that the payment is sufficient.
-fn ensure_flashloan_is_paid_for(
-    auction: &competition::Auction,
-    solution: &super::Solution,
-    uid: &order::Uid,
-    settlement: H160,
-    expected_payment: eth::Asset,
-) -> Result<(), String> {
-    let Some(trade) = solution.trades().iter().find(|t| t.uid() == *uid) else {
-        return Err("no trade execution to repay the flashloan".into());
-    };
-    if trade.receiver().0 != settlement {
-        return Err("order does not pay the settlement contract".into());
+fn pay_back_via_tracker(
+    flashloan: &Flashloan,
+    flashloan_wrapper: &FlashloanWrapperData,
+    flashloan_tracker: &Contract,
+) -> Interaction {
+    let pay_back_call_data = flashloan_tracker
+        .pay_back(
+            flashloan_wrapper.helper_contract.address(),
+            flashloan.borrower.into(),
+            flashloan.token.into(),
+        )
+        .tx
+        .data
+        .unwrap();
+    eth::Interaction {
+        target: flashloan_tracker.address().into(),
+        value: 0.into(),
+        call_data: Bytes(pay_back_call_data.0),
     }
+}
 
-    let paid = trade.buy();
-    if paid.token != expected_payment.token {
-        return Err("order pays with the wrong token".into());
+fn allow_lender_pull_funds(
+    contracts: &Contracts,
+    flashloan: &Flashloan,
+    flashloan_wrapper: &FlashloanWrapperData,
+    repayment_amount: U256,
+) -> Interaction {
+    let allow_aave_funds_pull = flashloan_wrapper
+        .helper_contract
+        .approve(
+            contracts.weth().address(),
+            flashloan.lender.into(), // aave = 0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2
+            repayment_amount,
+        )
+        .tx
+        .data
+        .unwrap();
+    eth::Interaction {
+        target: flashloan_wrapper.helper_contract.address().into(),
+        value: 0.into(),
+        call_data: Bytes(allow_aave_funds_pull.0),
     }
-    if paid.amount < expected_payment.amount {
-        return Err("order does not pay enough".into());
-    }
+}
 
-    if auction
-        .orders
-        .iter()
-        .find(|o| o.uid == *uid)
-        .and_then(|o| o.app_data.flashloan())
-        .is_none()
-    {
-        return Err("order did not request a flashloan".into());
+fn take_out_from_tracker(
+    flashloan: &Flashloan,
+    flashloan_wrapper: &FlashloanWrapperData,
+    flashloan_tracker: &Contract,
+) -> Interaction {
+    let take_out_call_data = flashloan_tracker
+        .take_out(
+            flashloan_wrapper.helper_contract.address(),
+            flashloan.borrower.into(),
+            flashloan.token.into(),
+            flashloan.amount.into(),
+        )
+        .tx
+        .data
+        .unwrap();
+    eth::Interaction {
+        target: flashloan_tracker.address().into(),
+        value: 0.into(),
+        call_data: Bytes(take_out_call_data.0),
     }
-
-    Ok(())
 }
 
 pub fn liquidity_interaction(
