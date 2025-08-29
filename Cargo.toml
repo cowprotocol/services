@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/*"]
 
 [workspace.dependencies]
-alloy = { git = "https://github.com/alloy-rs/alloy", rev = "c15a4a3c04ce15bfa3796cc449f8407200b7599f", default-features = false }
+alloy = { version = "1.0.27", default-features = false }
 anyhow = "=1.0.76"
 async-trait = "0.1.80"
 axum = "0.6"
