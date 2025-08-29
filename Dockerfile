@@ -7,14 +7,16 @@ WORKDIR /src/
 
 # Install dependencies
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update && \
-    apt-get install -y git libssl-dev pkg-config
+    apt-get install -y git libssl-dev pkg-config make
 # Install Rust toolchain
 RUN rustup install stable && rustup default stable
 
 # Copy and Build Code
 COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/src/target \
-    CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release && \
+    CARGO_PROFILE_RELEASE_DEBUG=1 \
+    cargo build -p autopilot --release --features jemalloc-allocator && \
+    cargo build --release -p alerter -p driver -p orderbook -p refunder -p solvers && \
     cp target/release/alerter / && \
     cp target/release/autopilot / && \
     cp target/release/driver / && \
