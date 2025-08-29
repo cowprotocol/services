@@ -63,7 +63,6 @@ impl Postgres {
     pub async fn update_database_metrics(&self) -> sqlx::Result<()> {
         let metrics = Metrics::get();
 
-        // Use a single connection for all metrics collection to avoid N+1 query pattern
         let mut ex = self.pool.acquire().await?;
 
         // update table row metrics
@@ -86,7 +85,7 @@ impl Postgres {
     }
 
     pub async fn update_large_tables_stats(&self) -> sqlx::Result<()> {
-        // Use a single connection for all table analysis to avoid N+1 query pattern
+
         let mut ex = self.pool.acquire().await?;
         
         for &table in database::LARGE_TABLES {
