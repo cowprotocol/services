@@ -4,8 +4,15 @@ use {
     e2e::{
         nodes::forked_node::ForkedNodeApi,
         setup::{
-            Db, OnchainComponents, Services, TIMEOUT, run_forked_test_with_block_number,
-            safe::Safe, to_wei, to_wei_with_exp, wait_for_condition,
+            Db,
+            OnchainComponents,
+            Services,
+            TIMEOUT,
+            run_forked_test_with_block_number,
+            safe::Safe,
+            to_wei,
+            to_wei_with_exp,
+            wait_for_condition,
         },
         tx,
     },
