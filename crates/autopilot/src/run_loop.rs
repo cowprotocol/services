@@ -2,15 +2,10 @@ use {
     crate::{
         database::competition::{Competition, LegacyScore},
         domain::{
-            self,
-            OrderUid,
+            self, OrderUid,
             auction::Id,
             competition::{
-                self,
-                Solution,
-                SolutionError,
-                SolverParticipationGuard,
-                Unranked,
+                self, Solution, SolutionError, SolverParticipationGuard, Unranked,
                 winner_selection::{self, Ranking},
             },
             eth::{self, TxId},
@@ -31,11 +26,7 @@ use {
     futures::{FutureExt, TryFutureExt},
     itertools::Itertools,
     model::solver_competition::{
-        CompetitionAuction,
-        Order,
-        Score,
-        SolverCompetitionDB,
-        SolverSettlement,
+        CompetitionAuction, Order, Score, SolverCompetitionDB, SolverSettlement,
     },
     num::ToPrimitive,
     primitive_types::H256,
@@ -44,7 +35,10 @@ use {
     std::{
         collections::{HashMap, HashSet},
         num::NonZeroUsize,
-        sync::Arc,
+        sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+        },
         time::{Duration, Instant},
     },
     tokio::sync::Mutex,
@@ -91,6 +85,7 @@ pub struct RunLoop {
     trusted_tokens: AutoUpdatingTokenList,
     in_flight_orders: Arc<Mutex<HashSet<OrderUid>>>,
     liveness: Arc<Liveness>,
+    readiness: Arc<Option<AtomicBool>>,
     /// Maintenance tasks that should run before every runloop to have
     /// the most recent data available.
     maintenance: Arc<Maintenance>,
@@ -108,6 +103,7 @@ impl RunLoop {
         solvable_orders_cache: Arc<SolvableOrdersCache>,
         trusted_tokens: AutoUpdatingTokenList,
         liveness: Arc<Liveness>,
+        readiness: Arc<Option<AtomicBool>>,
         maintenance: Arc<Maintenance>,
         competition_updates_sender: tokio::sync::mpsc::UnboundedSender<()>,
     ) -> Self {
@@ -121,31 +117,97 @@ impl RunLoop {
             trusted_tokens,
             in_flight_orders: Default::default(),
             liveness,
+            readiness,
             maintenance,
             competition_updates_sender,
         }
     }
 
-    pub async fn run_forever(self) -> ! {
+    pub async fn run_forever(self) {
         Maintenance::spawn_cow_amm_indexing_task(
             self.maintenance.clone(),
             self.eth.current_block().clone(),
         );
+        let (shutdown_tx, mut shutdown_rx) = tokio::sync::broadcast::channel(1);
+        tokio::spawn(async move {
+            wait_for_shutdown().await;
+            let _ = shutdown_tx.send(());
+        });
+
         let mut last_auction = None;
         let mut last_block = None;
         let self_arc = Arc::new(self);
+        let mut leader = self_arc
+            .persistence
+            .leader("autopilot_startup".to_string())
+            .await;
+
         loop {
-            let auction = self_arc
-                .next_auction(&mut last_auction, &mut last_block)
-                .await;
-            if let Some(auction) = auction {
-                let auction_id = auction.id;
-                self_arc
-                    .single_run(auction)
-                    .instrument(tracing::info_span!("auction", auction_id))
-                    .await
-            };
+            let is_leader = leader.tick().await.unwrap_or_else(|err| {
+                tracing::warn!(error=%err, "failed to become leader");
+                false
+            });
+            let start_block = self_arc.update_caches(&mut last_block, is_leader).await;
+            if !is_leader {
+                // only the leader is supposed to run the auctions
+                continue;
+            }
+
+            // caches are warmed up, we're ready to do leader work
+            if let Some(readiness) = self_arc.readiness.as_ref() {
+                readiness.store(true, Ordering::Release);
+            }
+
+            tokio::select!(
+                _ = shutdown_rx.recv() => {
+                    tracing::info!("Shutdown received, stepping down as the leader.");
+                    leader.step_down().await;
+                    return;
+                },
+                auction = self_arc.next_auction(start_block, &mut last_auction, &mut last_block) => {
+                    if let Some(auction) = auction {
+                        let auction_id = auction.id;
+                        self_arc.single_run(auction)
+                        .instrument(tracing::info_span!("auction", auction_id))
+                        .await
+                    }
+                }
+            )
         }
+    }
+
+    async fn update_caches(&self, prev_block: &mut Option<H256>, is_leader: bool) -> BlockInfo {
+        let current_block = *self.eth.current_block().borrow();
+        let time_since_last_block = current_block.observed_at.elapsed();
+        let auction_block = if time_since_last_block > self.config.max_run_loop_delay {
+            if prev_block.is_some_and(|prev_block| prev_block != current_block.hash) {
+                // don't emit warning if we finished prev run loop within the same block
+                tracing::warn!(
+                    missed_by = ?time_since_last_block - self.config.max_run_loop_delay,
+                    "missed optimal auction start, wait for new block"
+                );
+            }
+            ethrpc::block_stream::next_block(self.eth.current_block()).await
+        } else {
+            current_block
+        };
+
+        self.run_maintenance(&auction_block).await;
+        match self
+            .solvable_orders_cache
+            .update(auction_block.number, is_leader)
+            .await
+        {
+            Ok(()) => {
+                tracing::trace!("solvable orders cache updated");
+                self.solvable_orders_cache.track_auction_update("success");
+            }
+            Err(err) => {
+                self.solvable_orders_cache.track_auction_update("failure");
+                tracing::warn!(?err, "failed to update auction");
+            }
+        }
+        auction_block
     }
 
     /// Sleeps until the next auction is supposed to start, builds it and
@@ -153,43 +215,11 @@ impl RunLoop {
     #[instrument(skip(self, prev_auction), fields(prev_auction = prev_auction.as_ref().map(|a| a.id)))]
     async fn next_auction(
         &self,
+        start_block: BlockInfo,
         prev_auction: &mut Option<domain::Auction>,
         prev_block: &mut Option<H256>,
     ) -> Option<domain::Auction> {
         // wait for appropriate time to start building the auction
-        let start_block = {
-            let current_block = *self.eth.current_block().borrow();
-            let time_since_last_block = current_block.observed_at.elapsed();
-            let auction_block = if time_since_last_block > self.config.max_run_loop_delay {
-                if prev_block.is_some_and(|prev_block| prev_block != current_block.hash) {
-                    // don't emit warning if we finished prev run loop within the same block
-                    tracing::warn!(
-                        missed_by = ?time_since_last_block - self.config.max_run_loop_delay,
-                        "missed optimal auction start, wait for new block"
-                    );
-                }
-                ethrpc::block_stream::next_block(self.eth.current_block()).await
-            } else {
-                current_block
-            };
-
-            self.run_maintenance(&auction_block).await;
-            match self
-                .solvable_orders_cache
-                .update(auction_block.number)
-                .await
-            {
-                Ok(()) => {
-                    tracing::trace!("solvable orders cache updated");
-                    self.solvable_orders_cache.track_auction_update("success");
-                }
-                Err(err) => {
-                    self.solvable_orders_cache.track_auction_update("failure");
-                    tracing::warn!(?err, "failed to update auction");
-                }
-            }
-            auction_block
-        };
 
         let auction = self.cut_auction().await?;
         tracing::trace!(auction_id = ?auction.id, "auction cut");
@@ -911,6 +941,25 @@ impl RunLoop {
         );
 
         auction
+    }
+}
+
+async fn wait_for_shutdown() {
+    use tokio::signal;
+    // On Unix-like systems, we can listen for SIGTERM.
+    #[cfg(unix)]
+    let mut sigterm = signal::unix::signal(signal::unix::SignalKind::terminate()).unwrap();
+
+    // On all platforms, we can listen for Ctrl+C.
+    let ctrl_c = signal::ctrl_c();
+
+    tokio::select! {
+        _ = ctrl_c => {
+            tracing::info!("Received SIGINT");
+        },
+        _ = sigterm.recv() => {
+            tracing::info!("Received SIGTERM.");
+        },
     }
 }
 
