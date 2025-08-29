@@ -4,7 +4,7 @@ use {
         tx,
     },
     ethcontract::{Bytes, H160, U256},
-    ethrpc::alloy::conversions::ToLegacy,
+    ethrpc::alloy::conversions::IntoLegacy,
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind, OrderStatus, OrderUid},
         signature::Signature,
@@ -36,7 +36,7 @@ async fn smart_contract_orders(web3: Web3) {
     let [token] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(100_000), to_wei(100_000))
         .await;
-    token.mint(safe.address().to_legacy(), to_wei(10)).await;
+    token.mint(safe.address().into_legacy(), to_wei(10)).await;
 
     // Approve GPv2 for trading
     safe.exec_call(token.approve(onchain.contracts().allowance, to_wei(10)))
@@ -59,7 +59,7 @@ async fn smart_contract_orders(web3: Web3) {
     // Check that we can't place invalid orders.
     let orders = [
         OrderCreation {
-            from: Some(safe.address().to_legacy()),
+            from: Some(safe.address().into_legacy()),
             signature: Signature::Eip1271(b"invalid signature".to_vec()),
             ..order_template.clone()
         },
@@ -77,7 +77,7 @@ async fn smart_contract_orders(web3: Web3) {
     // Place orders
     let orders = [
         OrderCreation {
-            from: Some(safe.address().to_legacy()),
+            from: Some(safe.address().into_legacy()),
             signature: Signature::Eip1271(signature1271),
             ..order_template.clone()
         },
@@ -85,7 +85,7 @@ async fn smart_contract_orders(web3: Web3) {
             app_data: OrderCreationAppData::Full {
                 full: "{\"salt\": \"second\"}".to_string(),
             },
-            from: Some(safe.address().to_legacy()),
+            from: Some(safe.address().into_legacy()),
             signature: Signature::PreSign,
             ..order_template.clone()
         },
@@ -130,14 +130,14 @@ async fn smart_contract_orders(web3: Web3) {
     tracing::info!("Waiting for trade.");
     wait_for_condition(TIMEOUT, || async {
         let token_balance = token
-            .balance_of(safe.address().to_legacy())
+            .balance_of(safe.address().into_legacy())
             .call()
             .await
             .expect("Couldn't fetch token balance");
         let weth_balance = onchain
             .contracts()
             .weth
-            .balance_of(safe.address().to_legacy())
+            .balance_of(safe.address().into_legacy())
             .call()
             .await
             .expect("Couldn't fetch native token balance");

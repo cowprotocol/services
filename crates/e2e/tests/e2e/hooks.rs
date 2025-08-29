@@ -7,7 +7,7 @@ use {
         tx_value,
     },
     ethcontract::U256,
-    ethrpc::alloy::conversions::{ToAlloy, ToLegacy},
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
@@ -254,7 +254,7 @@ async fn signature(web3: Web3) {
         safe_infra
             .singleton
             .setup(
-                vec![trader.address().to_alloy()],     // owners
+                vec![trader.address().into_alloy()],   // owners
                 alloy::primitives::U256::ONE,          // threshold
                 alloy::primitives::Address::default(), // delegate call
                 alloy::primitives::Bytes::default(),   // delegate call bytes
@@ -280,12 +280,12 @@ async fn signature(web3: Web3) {
     let [token] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(100_000), to_wei(100_000))
         .await;
-    token.mint(safe.address().to_legacy(), to_wei(5)).await;
+    token.mint(safe.address().into_legacy(), to_wei(5)).await;
 
     // Sign an approval transaction for trading. This will be at nonce 0 because
     // it is the first transaction evah!
     let approval_builder = safe.sign_transaction(
-        token.address().to_alloy(),
+        token.address().into_alloy(),
         token
             .approve(onchain.contracts().allowance, to_wei(5))
             .tx
@@ -301,7 +301,7 @@ async fn signature(web3: Web3) {
         .unwrap()
         .into_to()
         .unwrap()
-        .to_legacy();
+        .into_legacy();
     let approval = Hook {
         target,
         call_data,
@@ -316,7 +316,7 @@ async fn signature(web3: Web3) {
 
     // Place Orders
     let mut order = OrderCreation {
-        from: Some(safe.address().to_legacy()),
+        from: Some(safe.address().into_legacy()),
         // Quotes for trades where the pre-interactions deploy a contract
         // at the `from` address currently can't be verified.
         // To not throw an error because we can't get a verifiable quote
@@ -350,7 +350,7 @@ async fn signature(web3: Web3) {
     onchain.mint_block().await;
 
     let balance = token
-        .balance_of(safe.address().to_legacy())
+        .balance_of(safe.address().into_legacy())
         .call()
         .await
         .unwrap();
@@ -359,7 +359,7 @@ async fn signature(web3: Web3) {
     // Check that the Safe really hasn't been deployed yet.
     let code = web3
         .eth()
-        .code(safe.address().to_legacy(), None)
+        .code(safe.address().into_legacy(), None)
         .await
         .unwrap();
     assert_eq!(code.0.len(), 0);
@@ -367,7 +367,7 @@ async fn signature(web3: Web3) {
     tracing::info!("Waiting for trade.");
     let trade_happened = || async {
         token
-            .balance_of(safe.address().to_legacy())
+            .balance_of(safe.address().into_legacy())
             .call()
             .await
             .unwrap()
@@ -380,7 +380,7 @@ async fn signature(web3: Web3) {
     let balance = onchain
         .contracts()
         .weth
-        .balance_of(safe.address().to_legacy())
+        .balance_of(safe.address().into_legacy())
         .call()
         .await
         .unwrap();
@@ -389,7 +389,7 @@ async fn signature(web3: Web3) {
     // Check Safe was deployed
     let code = web3
         .eth()
-        .code(safe.address().to_legacy(), None)
+        .code(safe.address().into_legacy(), None)
         .await
         .unwrap();
     assert_ne!(code.0.len(), 0);
@@ -520,7 +520,7 @@ async fn quote_verification(web3: Web3) {
         safe_infra
             .singleton
             .setup(
-                vec![trader.address().to_alloy()],     // owners
+                vec![trader.address().into_alloy()],   // owners
                 alloy::primitives::U256::ONE,          // threshold
                 alloy::primitives::Address::default(), // delegate call
                 alloy::primitives::Bytes::default(),   // delegate call bytes
@@ -544,7 +544,7 @@ async fn quote_verification(web3: Web3) {
     let [token] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(100_000), to_wei(100_000))
         .await;
-    token.mint(safe.address().to_legacy(), to_wei(5)).await;
+    token.mint(safe.address().into_legacy(), to_wei(5)).await;
     tx!(
         trader.account(),
         token.approve(onchain.contracts().allowance, to_wei(5))
@@ -553,7 +553,7 @@ async fn quote_verification(web3: Web3) {
     // Sign transaction transferring 5 token from the safe to the trader
     // to fund the trade in a pre-hook.
     let transfer_builder = safe.sign_transaction(
-        token.address().to_alloy(),
+        token.address().into_alloy(),
         token
             .transfer(trader.address(), to_wei(5))
             .tx
@@ -569,7 +569,7 @@ async fn quote_verification(web3: Web3) {
         .unwrap()
         .into_to()
         .unwrap()
-        .to_legacy();
+        .into_legacy();
     let transfer = Hook {
         target,
         call_data,

@@ -4,7 +4,7 @@ use {
         tx,
     },
     ethcontract::prelude::U256,
-    ethrpc::alloy::conversions::{ToAlloy, ToLegacy},
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind},
         signature::EcdsaSigningScheme,
@@ -67,13 +67,13 @@ async fn order_creation_checks_metadata_signer(web3: Web3) {
     services.start_protocol(solver).await;
 
     // Rejected: app data with different signer.
-    let full_app_data = full_app_data_with_signer(adversary.address().to_alloy());
+    let full_app_data = full_app_data_with_signer(adversary.address().into_alloy());
     let order1 = sign(create_order(full_app_data), &trader);
     let err = services.create_order(&order1).await.unwrap_err();
     assert!(dbg!(err).1.contains("WrongOwner"));
 
     // Accepted: app data with correct signer.
-    let full_app_data = full_app_data_with_signer(trader.address().to_alloy());
+    let full_app_data = full_app_data_with_signer(trader.address().into_alloy());
     let order2 = sign(create_order(full_app_data.clone()), &trader);
     let uid = services.create_order(&order2).await.unwrap();
     assert!(matches!(services.get_order(&uid).await, Ok(..)));
@@ -93,7 +93,7 @@ async fn order_creation_checks_metadata_signer(web3: Web3) {
     // EIP-1271
 
     let safe = Safe::deploy(safe_owner.clone(), &web3).await;
-    token_a.mint(safe.address().to_legacy(), to_wei(10)).await;
+    token_a.mint(safe.address().into_legacy(), to_wei(10)).await;
     safe.exec_call(token_a.approve(onchain.contracts().allowance, to_wei(10)))
         .await;
 
@@ -104,9 +104,9 @@ async fn order_creation_checks_metadata_signer(web3: Web3) {
     assert!(matches!(services.create_order(&order4).await, Ok(..)));
 
     // Rejected: from and signer are inconsistent.
-    let full_app_data = full_app_data_with_signer(adversary.address().to_alloy());
+    let full_app_data = full_app_data_with_signer(adversary.address().into_alloy());
     let mut order5 = create_order(full_app_data);
-    order5.from = Some(safe.address().to_legacy());
+    order5.from = Some(safe.address().into_legacy());
     safe.sign_order(&mut order5, &onchain);
     let err = services.create_order(&order5).await.unwrap_err();
     assert!(err.1.contains("AppdataFromMismatch"));

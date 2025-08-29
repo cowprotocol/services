@@ -19,7 +19,7 @@ use {
     ethcontract::{H160, U256},
     ethrpc::{
         Web3,
-        alloy::conversions::{ToAlloy, ToLegacy},
+        alloy::conversions::{IntoAlloy, IntoLegacy},
     },
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind},
@@ -71,7 +71,7 @@ async fn forked_mainnet_repay_debt_with_collateral_of_safe(web3: Web3) {
     tx!(
         usdc_whale,
         usdc.transfer(
-            trader.address().to_legacy(),
+            trader.address().into_legacy(),
             collateral_amount + U256::from(1)
         )
     );
@@ -89,16 +89,16 @@ async fn forked_mainnet_repay_debt_with_collateral_of_safe(web3: Web3) {
     // Deposit collateral
     trader
         .exec_call(aave_pool.supply(
-            usdc.address(),               // token
-            collateral_amount,            // amount
-            trader.address().to_legacy(), // on_behalf
-            0,                            // referral code
+            usdc.address(),                 // token
+            collateral_amount,              // amount
+            trader.address().into_legacy(), // on_behalf
+            0,                              // referral code
         ))
         .await;
     // Exchange rate between USDC and aUSDC can differ from block to block.
     let slippage = 2;
     assert!(
-        balance(&web3, trader.address().to_legacy(), ausdc).await >= collateral_amount - slippage
+        balance(&web3, trader.address().into_legacy(), ausdc).await >= collateral_amount - slippage
     );
 
     tracing::info!("wait a bit to make `borrow()` call work");
@@ -112,7 +112,7 @@ async fn forked_mainnet_repay_debt_with_collateral_of_safe(web3: Web3) {
             flashloan_amount,                   // borrowed amount
             2.into(),                           // variable interest rate mode
             0,                                  // referral code
-            trader.address().to_legacy(),       // on_behalf
+            trader.address().into_legacy(),     // on_behalf
         ))
         .await;
 
@@ -136,13 +136,13 @@ async fn forked_mainnet_repay_debt_with_collateral_of_safe(web3: Web3) {
     // 3. withdraw the collateral it can be sold for WETH (2nd pre-hook)
     let app_data = {
         let repay_tx = trader.sign_transaction(
-            aave_pool.address().to_alloy(),
+            aave_pool.address().into_alloy(),
             aave_pool
                 .repay(
                     onchain.contracts().weth.address(),
                     to_wei(1),
                     2.into(),
-                    trader.address().to_legacy(),
+                    trader.address().into_legacy(),
                 )
                 .tx
                 .data
@@ -152,12 +152,12 @@ async fn forked_mainnet_repay_debt_with_collateral_of_safe(web3: Web3) {
             current_safe_nonce,
         );
         let withdraw_tx = trader.sign_transaction(
-            aave_pool.address().to_alloy(),
+            aave_pool.address().into_alloy(),
             aave_pool
                 .withdraw(
                     usdc.address(),
                     collateral_amount,
-                    trader.address().to_legacy(),
+                    trader.address().into_legacy(),
                 )
                 .tx
                 .data
@@ -257,7 +257,7 @@ async fn forked_mainnet_repay_debt_with_collateral_of_safe(web3: Web3) {
     services.start_protocol(solver.clone()).await;
 
     assert_eq!(
-        balance(&web3, trader.address().to_legacy(), usdc.address()).await,
+        balance(&web3, trader.address().into_legacy(), usdc.address()).await,
         1.into()
     );
     tracing::info!("trader just has 1 atom of USDC before placing order");
@@ -283,7 +283,7 @@ async fn forked_mainnet_repay_debt_with_collateral_of_safe(web3: Web3) {
     // Because the trader sold some of their collateral to repay their debt
     // (~4900 USDC for ~1 WETH) they have that much less `USDC` compared to
     // the original collateral.
-    let trader_usdc = balance(&web3, trader.address().to_legacy(), usdc.address()).await;
+    let trader_usdc = balance(&web3, trader.address().into_legacy(), usdc.address()).await;
     assert!(trader_usdc > to_wei_with_exp(45_000, 6));
     tracing::info!("trader got majority of collateral back");
 
@@ -291,7 +291,7 @@ async fn forked_mainnet_repay_debt_with_collateral_of_safe(web3: Web3) {
     assert!(settlement_weth < 300_000_000u128.into());
     tracing::info!("settlement contract only has dust amounts of WETH");
 
-    assert!(balance(&web3, trader.address().to_legacy(), ausdc).await < 10_000.into());
+    assert!(balance(&web3, trader.address().into_legacy(), ausdc).await < 10_000.into());
     tracing::info!("trader only has dust of aUSDC");
 
     // Check that the solver address is stored in the settlement table

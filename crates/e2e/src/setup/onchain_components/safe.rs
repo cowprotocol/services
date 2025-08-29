@@ -12,7 +12,7 @@ use {
         GnosisSafeProxyFactory,
     },
     ethcontract::transaction::TransactionBuilder,
-    ethrpc::alloy::{conversions::ToAlloy, provider_with_account},
+    ethrpc::alloy::{conversions::IntoAlloy, provider_with_account},
     hex_literal::hex,
     model::{
         DomainSeparator,
@@ -70,7 +70,7 @@ impl Infrastructure {
             safe.setup(
                 owners
                     .into_iter()
-                    .map(|owner| owner.address().to_alloy())
+                    .map(|owner| owner.address().into_alloy())
                     .collect(),
                 U256::from(threshold),
                 Address::default(), // delegate call
@@ -130,8 +130,8 @@ impl Safe {
 
         contracts::alloy::macros::tx!(
             contract.execTransaction(
-                to.unwrap().to_alloy(),
-                value.unwrap_or_default().to_alloy(),
+                to.unwrap().into_alloy(),
+                value.unwrap_or_default().into_alloy(),
                 alloy::primitives::Bytes::from(data.unwrap_or_default().0),
                 Default::default(),
                 Default::default(),
@@ -140,10 +140,10 @@ impl Safe {
                 Default::default(),
                 Default::default(),
                 crate::setup::safe::gnosis_safe_prevalidated_signature(
-                    self.owner.address().to_alloy(),
+                    self.owner.address().into_alloy(),
                 ),
             ),
-            self.owner.address().to_alloy()
+            self.owner.address().into_alloy()
         );
     }
 

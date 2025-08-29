@@ -94,7 +94,7 @@ pub mod alloy_hook {
     use {
         alloy::contract::{CallBuilder, CallDecoder},
         app_data::Hook,
-        ethrpc::{AlloyProvider, alloy::conversions::ToLegacy},
+        ethrpc::{AlloyProvider, alloy::conversions::IntoLegacy},
     };
 
     pub async fn hook_for_transaction<D>(tx: CallBuilder<&AlloyProvider, D>) -> Hook
@@ -112,7 +112,7 @@ pub mod alloy_hook {
             .unwrap()
             .into_to()
             .unwrap()
-            .to_legacy();
+            .into_legacy();
 
         Hook {
             target,
