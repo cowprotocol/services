@@ -458,6 +458,7 @@ async fn single_replace_order_test(web3: Web3) {
 
     tracing::info!("wait for old order to be removed");
     wait_for_condition(TIMEOUT, || async {
+        onchain.mint_block().await;
         let auction = services.get_auction().await.auction;
         auction.orders.len() == 1 && auction.orders[0].uid == new_order_uid
     })
