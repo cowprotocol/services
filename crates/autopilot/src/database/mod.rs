@@ -85,9 +85,7 @@ impl Postgres {
     }
 
     pub async fn update_large_tables_stats(&self) -> sqlx::Result<()> {
-
         let mut ex = self.pool.acquire().await?;
-        
         for &table in database::LARGE_TABLES {
             analyze_table(&mut ex, table).await?;
         }
