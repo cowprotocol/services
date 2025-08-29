@@ -85,7 +85,7 @@ impl TryIntoAlloyAsync for Account {
                 .await?;
                 Ok(AlloyAccount::Signer(Box::new(signer)))
             }
-            Account::Local(address, _) => Ok(AlloyAccount::Address(address.to_alloy())),
+            Account::Local(address, _) => Ok(AlloyAccount::Address(address.into_alloy())),
             Account::Locked(_, _, _) => {
                 anyhow::bail!("Locked accounts are not currently supported")
             }
