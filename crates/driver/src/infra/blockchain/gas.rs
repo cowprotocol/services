@@ -8,7 +8,7 @@ use {
         domain::eth,
         infra::{config::file::GasEstimatorType, mempool},
     },
-    ethcontract::dyns::DynWeb3,
+    ethrpc::Web3,
     gas_estimation::{
         DEFAULT_GAS_LIMIT,
         DEFAULT_TIME_LIMIT,
@@ -31,7 +31,7 @@ pub struct GasPriceEstimator {
 
 impl GasPriceEstimator {
     pub async fn new(
-        web3: &DynWeb3,
+        web3: &Web3,
         gas_estimator_type: &GasEstimatorType,
         mempools: &[mempool::Config],
     ) -> Result<Self, Error> {
@@ -53,7 +53,7 @@ impl GasPriceEstimator {
                 .await
                 .map_err(Error::GasPrice)?,
             ),
-            GasEstimatorType::Web3 => Arc::new(web3.clone()),
+            GasEstimatorType::Web3 => Arc::new(web3.legacy.clone()),
         };
         let additional_tip = mempools
             .iter()

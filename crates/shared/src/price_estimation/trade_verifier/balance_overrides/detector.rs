@@ -175,7 +175,7 @@ pub enum DetectionError {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, ethrpc::create_env_test_transport, web3::Web3};
+    use {super::*, ethrpc::Web3};
 
     /// Tests that we can detect storage slots by probing the first
     /// n slots or by checking hardcoded known slots.
@@ -183,7 +183,7 @@ mod tests {
     #[ignore]
     #[tokio::test]
     async fn detects_storage_slots_mainnet() {
-        let detector = Detector::new(Arc::new(Web3::new(create_env_test_transport())), 60);
+        let detector = Detector::new(Arc::new(Web3::new_from_env()), 60);
 
         let storage = detector
             .detect(addr!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"))
@@ -215,7 +215,7 @@ mod tests {
     #[ignore]
     #[tokio::test]
     async fn detects_storage_slots_arbitrum() {
-        let detector = Detector::new(Arc::new(Web3::new(create_env_test_transport())), 60);
+        let detector = Detector::new(Arc::new(Web3::new_from_env()), 60);
 
         // all bridged tokens on arbitrum require a ton of probing
         let storage = detector

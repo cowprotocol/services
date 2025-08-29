@@ -140,19 +140,12 @@ pub struct CallFrame {
 
 #[cfg(test)]
 mod tests {
-    use {
-        super::*,
-        crate::{Web3, create_env_test_transport},
-        hex_literal::hex,
-        maplit::hashmap,
-        web3::types::BlockNumber,
-    };
+    use {super::*, crate::Web3, hex_literal::hex, maplit::hashmap, web3::types::BlockNumber};
 
     #[ignore]
     #[tokio::test]
     async fn can_call_with_state_override() {
-        let transport = create_env_test_transport();
-        let web3 = Web3::new(transport);
+        let web3 = Web3::new_from_env();
 
         let address = H160(hex!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"));
         let output = web3

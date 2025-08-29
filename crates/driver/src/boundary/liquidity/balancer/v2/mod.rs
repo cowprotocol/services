@@ -105,7 +105,7 @@ async fn init_liquidity(
     block_retriever: Arc<dyn BlockRetrieving>,
     config: &infra::liquidity::config::BalancerV2,
 ) -> Result<impl LiquidityCollecting + use<>> {
-    let web3 = boundary::web3(eth);
+    let web3 = eth.web3().clone();
     let contracts = BalancerContracts {
         vault: BalancerV2Vault::at(&web3, config.vault.into()),
         factories: [

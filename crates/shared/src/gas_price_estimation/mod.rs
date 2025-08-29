@@ -54,7 +54,7 @@ pub async fn create_priority_estimator(
                     url.clone(),
                 )));
             }
-            GasEstimatorType::Web3 => estimators.push(Box::new(web3.clone())),
+            GasEstimatorType::Web3 => estimators.push(Box::new(web3.legacy.clone())),
             GasEstimatorType::Native => {
                 match NativeGasEstimator::new(web3.transport().clone(), None).await {
                     Ok(estimator) => estimators.push(Box::new(estimator)),

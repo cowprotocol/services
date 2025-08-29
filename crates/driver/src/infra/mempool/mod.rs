@@ -4,7 +4,7 @@ use {
         domain::{competition, eth, mempools},
         infra,
     },
-    ethcontract::dyns::DynWeb3,
+    ethrpc::Web3,
 };
 
 #[derive(Debug, Clone)]
@@ -56,7 +56,7 @@ pub enum RevertProtection {
 
 #[derive(Debug, Clone)]
 pub struct Mempool {
-    transport: DynWeb3,
+    transport: Web3,
     config: Config,
 }
 
@@ -67,7 +67,7 @@ impl std::fmt::Display for Mempool {
 }
 
 impl Mempool {
-    pub fn new(config: Config, transport: DynWeb3) -> Self {
+    pub fn new(config: Config, transport: Web3) -> Self {
         let transport = match &config.kind {
             Kind::Public { .. } => transport,
             // Flashbots Protect RPC fallback doesn't support buffered transport
@@ -84,7 +84,7 @@ impl Mempool {
         gas: competition::solution::settlement::Gas,
         solver: &infra::Solver,
     ) -> Result<eth::TxId, mempools::Error> {
-        ethcontract::transaction::TransactionBuilder::new(self.transport.clone())
+        ethcontract::transaction::TransactionBuilder::new(self.transport.legacy.clone())
             .from(solver.account().clone())
             .to(tx.to.into())
             .gas_price(ethcontract::GasPrice::Eip1559 {

@@ -1,6 +1,6 @@
 use {
+    crate::alloy::ProviderLabelingExt,
     ethcontract::{
-        dyns::DynWeb3,
         jsonrpc::types::{Call, Value},
         transport::DynTransport,
     },
@@ -72,13 +72,16 @@ impl InstrumentedTransport {
 }
 
 /// Adds metrics for RPC requests using the provided label.
-pub fn instrument_with_label(web3: &DynWeb3, label: String) -> DynWeb3 {
+pub fn instrument_with_label(web3: &crate::Web3, label: String) -> crate::Web3 {
     let transport = web3.transport().clone();
     let instrumented = match transport.downcast::<InstrumentedTransport>() {
-        Some(instrumented) => instrumented.with_additional_label(label),
-        _ => InstrumentedTransport::new(label, transport),
+        Some(instrumented) => instrumented.with_additional_label(label.clone()),
+        _ => InstrumentedTransport::new(label.clone(), transport),
     };
-    web3::Web3::new(DynTransport::new(instrumented))
+    crate::Web3 {
+        legacy: web3::Web3::new(DynTransport::new(instrumented)),
+        alloy: web3.alloy.labeled(label),
+    }
 }
 
 #[derive(Debug)]

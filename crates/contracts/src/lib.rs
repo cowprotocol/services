@@ -1,6 +1,7 @@
 #![allow(clippy::let_unit_value)]
 
 pub use ethcontract;
+pub mod alloy;
 pub mod errors;
 use {
     anyhow::{Result, anyhow, bail},

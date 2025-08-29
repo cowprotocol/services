@@ -161,16 +161,12 @@ impl BalanceFetching for Balances {
 
 #[cfg(test)]
 mod tests {
-    use {
-        super::*,
-        crate::ethrpc::{self, Web3},
-        model::order::SellTokenSource,
-    };
+    use {super::*, ethrpc::Web3, model::order::SellTokenSource};
 
     #[ignore]
     #[tokio::test]
     async fn test_for_user() {
-        let web3 = Web3::new(ethrpc::create_env_test_transport());
+        let web3 = Web3::new_from_env();
         let settlement =
             contracts::GPv2Settlement::at(&web3, addr!("9008d19f58aabd9ed0d60971565aa8510560ab41"));
         let balances = contracts::support::Balances::at(

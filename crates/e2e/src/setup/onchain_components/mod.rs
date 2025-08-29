@@ -601,7 +601,7 @@ impl OnchainComponents {
 
     pub async fn send_wei(&self, to: H160, amount: U256) {
         let balance_before = self.web3.eth().balance(to, None).await.unwrap();
-        let receipt = TransactionBuilder::new(self.web3.clone())
+        let receipt = TransactionBuilder::new(self.web3.legacy.clone())
             .value(amount)
             .to(to)
             .send()
