@@ -94,6 +94,7 @@ const DEFAULT_FILTERS: &[&str] = &[
     "solver=debug",
     "solvers=debug",
     "orderbook::api::request_summary=off",
+    "ethrpc=debug",
 ];
 
 fn with_default_filters<T>(custom_filters: impl IntoIterator<Item = T>) -> Vec<String>
@@ -111,7 +112,7 @@ where
 /// of the chain. The saved state is restored at the end of the test.
 /// The database is cleaned at the end of the test.
 ///
-/// This function also intializes tracing and sets panic hook.
+/// This function also initializes tracing and sets panic hook.
 ///
 /// Note that tests calling with this function will not be run simultaneously.
 pub async fn run_test<F, Fut>(f: F)

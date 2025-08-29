@@ -1,11 +1,15 @@
 [package]
 name = "e2e"
 version = "1.0.0"
-authors = ["Gnosis Developers <developers@gnosis.io>", "Cow Protocol Developers <dev@cow.fi>"]
+authors = [
+    "Gnosis Developers <developers@gnosis.io>",
+    "Cow Protocol Developers <dev@cow.fi>",
+]
 edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
+alloy = { workspace = true, features = ["contract"] }
 app-data = { workspace = true }
 anyhow = { workspace = true }
 autopilot = { workspace = true }

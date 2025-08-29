@@ -19,7 +19,7 @@ macro_rules! bindings {
             #[allow(non_snake_case)]
             mod [<$contract Private>] {
                 alloy::sol!(
-                    #[allow(missing_docs)]
+                    #[allow(missing_docs, clippy::too_many_arguments)]
                     #[sol(rpc)]
                     $contract,
                     concat!("./artifacts/", stringify!($contract), ".json"),
@@ -38,7 +38,7 @@ macro_rules! bindings {
                     std::{sync::LazyLock, collections::HashMap},
                     alloy::{
                         providers::Provider,
-                        primitives::{address, Address},
+                        primitives::{Address},
                     },
                     anyhow::{Context, Result},
                 };
@@ -69,4 +69,59 @@ macro_rules! bindings {
             }
         }
     };
+}
+
+pub mod networks {
+    pub const MAINNET: u64 = 1;
+    pub const GNOSIS: u64 = 100;
+    pub const SEPOLIA: u64 = 11155111;
+    pub const ARBITRUM_ONE: u64 = 42161;
+    pub const BASE: u64 = 8453;
+    pub const POLYGON: u64 = 137;
+    pub const AVALANCHE: u64 = 43114;
+    pub const BNB: u64 = 56;
+    pub const OPTIMISM: u64 = 10;
+    pub const LENS: u64 = 232;
+}
+
+crate::bindings!(GnosisSafe, maplit::hashmap! {});
+crate::bindings!(GnosisSafeCompatibilityFallbackHandler, maplit::hashmap! {});
+crate::bindings!(GnosisSafeProxy, maplit::hashmap! {});
+crate::bindings!(GnosisSafeProxyFactory, maplit::hashmap! {});
+
+pub mod macros {
+    #[macro_export]
+    macro_rules! tx_value {
+        ($call:expr_2021, $value:expr_2021) => {{
+            const NAME: &str = stringify!($call);
+            $call
+                .value($value)
+                .send()
+                .await
+                .expect(&format!("failed to send: {}", NAME))
+                .get_receipt()
+                .await
+                .expect(&format!("failed to get receipt: {}", NAME))
+        }};
+        ($call:expr_2021, $value:expr_2021, $acc:expr_2021) => {{
+            const NAME: &str = stringify!($call);
+            $call
+                .from($acc)
+                .value($value)
+                .send()
+                .await
+                .expect(&format!("failed to send: {}", NAME))
+                .get_receipt()
+                .await
+                .expect(&format!("failed to get receipt: {}", NAME))
+        }};
+    }
+
+    #[macro_export]
+    macro_rules! tx {
+        ($call:expr_2021) => {{ $crate::alloy::macros::tx_value!($call, ::alloy::primitives::U256::ZERO) }};
+        ($call:expr_2021, $acc:expr_2021) => {{ $crate::alloy::macros::tx_value!($call, ::alloy::primitives::U256::ZERO, $acc) }};
+    }
+
+    pub use {tx, tx_value};
 }
