@@ -4,15 +4,8 @@ use {
     e2e::{
         nodes::forked_node::ForkedNodeApi,
         setup::{
-            Db,
-            OnchainComponents,
-            Services,
-            TIMEOUT,
-            run_forked_test_with_block_number,
-            safe::Safe,
-            to_wei,
-            to_wei_with_exp,
-            wait_for_condition,
+            Db, OnchainComponents, Services, TIMEOUT, run_forked_test_with_block_number,
+            safe::Safe, to_wei, to_wei_with_exp, wait_for_condition,
         },
         tx,
     },
@@ -200,11 +193,11 @@ async fn forked_mainnet_repay_debt_with_collateral_of_safe(web3: Web3) {
             flashloan_amount,
             // 1st pre-hook
             trader.address(),
-            hex::encode(&repay_tx.calldata()),
+            hex::encode(repay_tx.calldata()),
             // 2nd pre-hook
             // ~200K gas
             trader.address(),
-            hex::encode(&withdraw_tx.calldata()),
+            hex::encode(withdraw_tx.calldata()),
             // signer
             trader.address(),
         );

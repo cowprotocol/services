@@ -19,7 +19,7 @@ macro_rules! bindings {
             #[allow(non_snake_case)]
             mod [<$contract Private>] {
                 alloy::sol!(
-                    #[allow(missing_docs)]
+                    #[allow(missing_docs, clippy::too_many_arguments)]
                     #[sol(rpc)]
                     $contract,
                     concat!("./artifacts/", stringify!($contract), ".json"),
