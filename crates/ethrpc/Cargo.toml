@@ -11,7 +11,7 @@ path = "src/lib.rs"
 doctest = false
 
 [dependencies]
-alloy = { workspace = true, default-features = false, features = ["json-rpc", "providers", "rpc-client", "transports", "reqwest"] }
+alloy = { workspace = true, default-features = false, features = ["json-rpc", "providers", "rpc-client", "transports", "reqwest", "signer-aws", "signer-local"] }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 futures = { workspace = true }
