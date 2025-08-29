@@ -2,6 +2,12 @@
 // Conversions to the alloy types
 /////////////////////////////////
 
+use {
+    alloy::{network::TxSigner, signers::Signature},
+    anyhow::Context,
+    ethcontract::Account,
+};
+
 pub trait ToAlloy {
     /// The corresponding Alloy type.
     type To;
@@ -43,6 +49,47 @@ impl ToAlloy for primitive_types::H256 {
 
     fn to_alloy(self) -> Self::To {
         alloy::primitives::aliases::B256::new(self.0)
+    }
+}
+
+pub enum AlloyAccount {
+    Address(alloy::primitives::Address),
+    Signer(Box<dyn TxSigner<Signature> + Send + Sync + 'static>),
+}
+
+#[async_trait::async_trait]
+pub trait TryIntoAlloyAsync {
+    type Into;
+
+    async fn try_into_alloy(self) -> anyhow::Result<Self::Into>;
+}
+
+#[async_trait::async_trait]
+impl TryIntoAlloyAsync for Account {
+    type Into = AlloyAccount;
+
+    async fn try_into_alloy(self) -> anyhow::Result<Self::Into> {
+        match self {
+            Account::Offline(pk, _) => {
+                let signer =
+                    alloy::signers::local::PrivateKeySigner::from_slice(&pk.secret_bytes())
+                        .context("invalid private key bytes")?;
+                Ok(AlloyAccount::Signer(Box::new(signer)))
+            }
+            Account::Kms(account, chain_id) => {
+                let signer = alloy::signers::aws::AwsSigner::new(
+                    account.client().clone(),
+                    account.key_id().to_string(),
+                    chain_id,
+                )
+                .await?;
+                Ok(AlloyAccount::Signer(Box::new(signer)))
+            }
+            Account::Local(address, _) => Ok(AlloyAccount::Address(address.to_alloy())),
+            Account::Locked(_, _, _) => {
+                anyhow::bail!("Locked accounts are not currently supported")
+            }
+        }
     }
 }
 
