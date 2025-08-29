@@ -102,6 +102,8 @@ dependencies = [
  "alloy-network",
  "alloy-provider",
  "alloy-rpc-client",
+ "alloy-signer",
+ "alloy-signer-local",
  "alloy-transport",
  "alloy-transport-http",
 ]
@@ -483,6 +485,21 @@ dependencies = [
  "either",
  "elliptic-curve",
  "k256",
+ "thiserror 2.0.12",
+]
+
+[[package]]
+name = "alloy-signer-local"
+version = "1.0.17"
+source = "git+https://github.com/alloy-rs/alloy?rev=c15a4a3c04ce15bfa3796cc449f8407200b7599f#c15a4a3c04ce15bfa3796cc449f8407200b7599f"
+dependencies = [
+ "alloy-consensus",
+ "alloy-network",
+ "alloy-primitives",
+ "alloy-signer",
+ "async-trait",
+ "k256",
+ "rand 0.8.5",
  "thiserror 2.0.12",
 ]
 
@@ -2703,6 +2720,7 @@ checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
 name = "e2e"
 version = "1.0.0"
 dependencies = [
+ "alloy",
  "anyhow",
  "app-data",
  "autopilot",

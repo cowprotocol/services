@@ -98,7 +98,6 @@ include_contracts! {
     IUniswapLikePair;
     IUniswapLikeRouter;
     IUniswapV3Factory;
-    IZeroEx;
     PancakeRouter;
     Permit2;
     ChainalysisOracle;
@@ -133,20 +132,23 @@ pub mod test {
     }
 }
 
+const MAINNET: u64 = 1;
+#[allow(dead_code)]
+const GOERLI: u64 = 5;
+#[allow(dead_code)]
+const GNOSIS: u64 = 100;
+const SEPOLIA: u64 = 11155111;
+const ARBITRUM_ONE: u64 = 42161;
+const BASE: u64 = 8453;
+const POLYGON: u64 = 137;
+const AVALANCHE: u64 = 43114;
+const BNB: u64 = 56;
+const OPTIMISM: u64 = 10;
+#[allow(dead_code)]
+const LENS: u64 = 232;
+
 #[cfg(test)]
 mod tests {
-    const MAINNET: u64 = 1;
-    const GOERLI: u64 = 5;
-    const GNOSIS: u64 = 100;
-    const SEPOLIA: u64 = 11155111;
-    const ARBITRUM_ONE: u64 = 42161;
-    const BASE: u64 = 8453;
-    const POLYGON: u64 = 137;
-    const AVALANCHE: u64 = 43114;
-    const BNB: u64 = 56;
-    const OPTIMISM: u64 = 10;
-    const LENS: u64 = 232;
-
     use {
         super::*,
         ethcontract::{
@@ -247,10 +249,6 @@ mod tests {
 
         for network in &[MAINNET, GOERLI] {
             assert_has_deployment_address!(BalancerV2WeightedPoolFactory for *network);
-        }
-
-        for network in &[MAINNET, SEPOLIA, ARBITRUM_ONE] {
-            assert_has_deployment_address!(IZeroEx for *network);
         }
 
         for network in &[MAINNET, GOERLI, GNOSIS, ARBITRUM_ONE] {

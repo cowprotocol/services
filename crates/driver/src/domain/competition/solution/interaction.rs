@@ -1,6 +1,9 @@
-use crate::{
-    domain::{self, eth, liquidity},
-    util::Bytes,
+use {
+    crate::{
+        domain::{self, eth, liquidity},
+        util::Bytes,
+    },
+    ethrpc::alloy::conversions::ToLegacy,
 };
 
 /// Interaction with a smart contract which is needed to execute this solution
@@ -42,7 +45,7 @@ impl Interaction {
                     liquidity::Kind::BalancerV2Stable(pool) => pool.vault.into(),
                     liquidity::Kind::BalancerV2Weighted(pool) => pool.vault.into(),
                     liquidity::Kind::Swapr(pool) => pool.base.router.into(),
-                    liquidity::Kind::ZeroEx(pool) => pool.zeroex.address().into(),
+                    liquidity::Kind::ZeroEx(pool) => pool.zeroex.address().to_legacy(),
                 };
                 // As a gas optimization, we always approve the max amount possible. This
                 // minimizes the number of approvals necessary, and therefore
@@ -52,7 +55,7 @@ impl Interaction {
                 vec![
                     eth::Allowance {
                         token: interaction.input.token,
-                        spender: address,
+                        spender: address.into(),
                         amount: eth::U256::max_value(),
                     }
                     .into(),

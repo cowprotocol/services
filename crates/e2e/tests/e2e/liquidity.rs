@@ -1,6 +1,15 @@
 use {
+    ::alloy::{
+        eips::Encodable2718,
+        network::{EthereumWallet, TransactionBuilder},
+        providers::Provider,
+    },
+    alloy::eips::{BlockId, BlockNumberOrTag},
     chrono::{NaiveDateTime, Utc},
-    contracts::{ERC20, IZeroEx, i_zero_ex::Contract},
+    contracts::{
+        ERC20,
+        alloy::{IZeroex, InstanceExt},
+    },
     driver::domain::eth::H160,
     e2e::{
         api::zeroex::{Eip712TypedZeroExOrder, ZeroExApi},
@@ -19,21 +28,18 @@ use {
         },
         tx,
     },
-    ethcontract::{
-        Account,
-        Bytes,
-        H256,
-        errors::MethodError,
-        prelude::U256,
-        transaction::TransactionResult,
+    ethcontract::{Account, H256, prelude::U256},
+    ethrpc::{
+        Web3,
+        alloy::conversions::{ToAlloy, ToLegacy},
     },
-    ethrpc::Web3,
     hex_literal::hex,
     model::{
         order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
     },
     secp256k1::SecretKey,
+    std::time::Duration,
     web3::signing::SecretKeyRef,
 };
 
@@ -75,7 +81,7 @@ async fn zero_ex_liquidity(web3: Web3) {
             .unwrap(),
     );
 
-    let zeroex = IZeroEx::deployed(&web3).await.unwrap();
+    let zeroex = IZeroex::Instance::deployed(&web3.alloy).await.unwrap();
 
     let amount = to_wei_with_exp(5, 8);
 
@@ -100,11 +106,11 @@ async fn zero_ex_liquidity(web3: Web3) {
     tx!(
         zeroex_maker.account(),
         // With a lower amount 0x contract shows much lower fillable amount
-        token_usdt.approve(zeroex.address(), amount * 4)
+        token_usdt.approve(zeroex.address().to_legacy(), amount * 4)
     );
     tx!(
         solver.account(),
-        token_usdc.approve(zeroex.address(), amount)
+        token_usdc.approve(zeroex.address().to_legacy(), amount)
     );
 
     let order = OrderCreation {
@@ -126,7 +132,7 @@ async fn zero_ex_liquidity(web3: Web3) {
     let zeroex_liquidity_orders = create_zeroex_liquidity_orders(
         order.clone(),
         zeroex_maker.clone(),
-        zeroex.address(),
+        zeroex.address().to_legacy(),
         chain_id,
         onchain.contracts().weth.address(),
     );
@@ -235,12 +241,12 @@ async fn zero_ex_liquidity(web3: Web3) {
         maker: zeroex_maker.address(),
         taker: Default::default(),
         sender: Default::default(),
-        fee_recipient: zeroex.address(),
+        fee_recipient: zeroex.address().to_legacy(),
         pool: H256::default(),
         expiry: NaiveDateTime::MAX.and_utc().timestamp() as u64,
         salt: U256::from(Utc::now().timestamp()),
     }
-    .to_order_record(chain_id, zeroex.address(), zeroex_maker);
+    .to_order_record(chain_id, zeroex.address().to_legacy(), zeroex_maker);
     fill_or_kill_zeroex_limit_order(&zeroex, &zeroex_order, solver.account().clone())
         .await
         .unwrap();
@@ -325,67 +331,140 @@ struct ZeroExOrderAmounts {
 }
 
 async fn get_zeroex_order_amounts(
-    zeroex: &Contract,
+    zeroex: &IZeroex::Instance,
     zeroex_order: &shared::zeroex_api::OrderRecord,
-) -> Result<ZeroExOrderAmounts, MethodError> {
-    zeroex
-        .get_limit_order_relevant_state(
-            (
-                zeroex_order.order().maker_token,
-                zeroex_order.order().taker_token,
-                zeroex_order.order().maker_amount,
-                zeroex_order.order().taker_amount,
-                zeroex_order.order().taker_token_fee_amount,
-                zeroex_order.order().maker,
-                zeroex_order.order().taker,
-                zeroex_order.order().sender,
-                zeroex_order.order().fee_recipient,
-                Bytes(zeroex_order.order().pool.0),
-                zeroex_order.order().expiry,
-                zeroex_order.order().salt,
-            ),
-            (
-                zeroex_order.order().signature.signature_type,
-                zeroex_order.order().signature.v,
-                Bytes(zeroex_order.order().signature.r.0),
-                Bytes(zeroex_order.order().signature.s.0),
-            ),
+) -> anyhow::Result<ZeroExOrderAmounts> {
+    Ok(zeroex
+        .getLimitOrderRelevantState(
+            IZeroex::LibNativeOrder::LimitOrder {
+                makerToken: zeroex_order.order().maker_token.to_alloy(),
+                takerToken: zeroex_order.order().taker_token.to_alloy(),
+                makerAmount: zeroex_order.order().maker_amount,
+                takerAmount: zeroex_order.order().taker_amount,
+                takerTokenFeeAmount: zeroex_order.order().taker_token_fee_amount,
+                maker: zeroex_order.order().maker.to_alloy(),
+                taker: zeroex_order.order().taker.to_alloy(),
+                sender: zeroex_order.order().sender.to_alloy(),
+                feeRecipient: zeroex_order.order().fee_recipient.to_alloy(),
+                pool: zeroex_order.order().pool.to_alloy(),
+                expiry: zeroex_order.order().expiry,
+                salt: zeroex_order.order().salt.to_alloy(),
+            },
+            IZeroex::LibSignature::Signature {
+                signatureType: zeroex_order.order().signature.signature_type,
+                v: zeroex_order.order().signature.v,
+                r: zeroex_order.order().signature.r.to_alloy(),
+                s: zeroex_order.order().signature.s.to_alloy(),
+            },
         )
         .call()
         .await
-        .map(|((_, _, filled), fillable, _)| ZeroExOrderAmounts { filled, fillable })
+        .map(|response| ZeroExOrderAmounts {
+            filled: response.orderInfo.takerTokenFilledAmount,
+            fillable: response.actualFillableTakerTokenAmount,
+        })?)
 }
 
 async fn fill_or_kill_zeroex_limit_order(
-    zeroex: &Contract,
+    zeroex: &IZeroex::Instance,
     zeroex_order: &shared::zeroex_api::OrderRecord,
     from_account: Account,
-) -> Result<TransactionResult, MethodError> {
-    zeroex
-        .fill_or_kill_limit_order(
-            (
-                zeroex_order.order().maker_token,
-                zeroex_order.order().taker_token,
-                zeroex_order.order().maker_amount,
-                zeroex_order.order().taker_amount,
-                zeroex_order.order().taker_token_fee_amount,
-                zeroex_order.order().maker,
-                zeroex_order.order().taker,
-                zeroex_order.order().sender,
-                zeroex_order.order().fee_recipient,
-                Bytes(zeroex_order.order().pool.0),
-                zeroex_order.order().expiry,
-                zeroex_order.order().salt,
-            ),
-            (
-                zeroex_order.order().signature.signature_type,
-                zeroex_order.order().signature.v,
-                Bytes(zeroex_order.order().signature.r.0),
-                Bytes(zeroex_order.order().signature.s.0),
-            ),
+) -> anyhow::Result<H256> {
+    let signer = match &from_account {
+        Account::Offline(pk, _) => {
+            alloy::signers::local::PrivateKeySigner::from_slice(&pk.secret_bytes())?
+        }
+        _ => unimplemented!(),
+    };
+    let wallet = EthereumWallet::from(signer);
+    let mut block = zeroex.provider().get_block_number().await?;
+    tracing::info!("newlog block_before={:?}", block);
+    let request = zeroex
+        .fillOrKillLimitOrder(
+            IZeroex::LibNativeOrder::LimitOrder {
+                makerToken: zeroex_order.order().maker_token.to_alloy(),
+                takerToken: zeroex_order.order().taker_token.to_alloy(),
+                makerAmount: zeroex_order.order().maker_amount,
+                takerAmount: zeroex_order.order().taker_amount,
+                takerTokenFeeAmount: zeroex_order.order().taker_token_fee_amount,
+                maker: zeroex_order.order().maker.to_alloy(),
+                taker: zeroex_order.order().taker.to_alloy(),
+                sender: zeroex_order.order().sender.to_alloy(),
+                feeRecipient: zeroex_order.order().fee_recipient.to_alloy(),
+                pool: zeroex_order.order().pool.to_alloy(),
+                expiry: zeroex_order.order().expiry,
+                salt: zeroex_order.order().salt.to_alloy(),
+            },
+            IZeroex::LibSignature::Signature {
+                signatureType: zeroex_order.order().signature.signature_type,
+                v: zeroex_order.order().signature.v,
+                r: zeroex_order.order().signature.r.to_alloy(),
+                s: zeroex_order.order().signature.s.to_alloy(),
+            },
             zeroex_order.order().taker_amount,
         )
-        .from(from_account)
-        .send()
-        .await
+        .into_transaction_request()
+        .from(from_account.address().to_alloy())
+        .nonce(
+            zeroex
+                .provider()
+                .get_transaction_count(from_account.address().to_alloy())
+                .await?,
+        )
+        .with_gas_limit(21_000)
+        .with_max_priority_fee_per_gas(1_000_000_000)
+        .with_max_fee_per_gas(20_000_000_000);
+    tracing::info!("newlog request={:?}", request);
+    let tx = request.build(&wallet).await?;
+    tracing::info!("newlog tx.tx_hash()={:?}", tx.tx_hash());
+    let encoded = &tx.encoded_2718();
+    let encoded_str = format!("0x{}", hex::encode(encoded));
+    tracing::info!("newlog encoded_str={:?}", encoded_str);
+
+    let builder = zeroex.provider().send_raw_transaction(encoded).await?;
+
+    let mut block_new = zeroex.provider().get_block_number().await?;
+    while block_new == block {
+        tokio::time::sleep(Duration::from_millis(1000)).await;
+        tracing::info!("newlog the same block");
+        block_new = zeroex.provider().get_block_number().await?;
+    }
+    tracing::info!("newlog block_new={:?}", block_new);
+    let stop_block = block + 10u64;
+    while block < stop_block {
+        tokio::time::sleep(Duration::from_millis(1000)).await;
+        let new_txs = zeroex
+            .provider()
+            .get_block(BlockId::Number(BlockNumberOrTag::Number(block)))
+            .await
+            .ok()
+            .flatten()
+            .map(|b| b.transactions);
+        block += 1;
+        tracing::info!("newlog block={:?} txs={:?}", block, new_txs);
+    }
+
+    // let block = zeroex
+    //     .provider()
+    //     .get_block(BlockId::Number(BlockNumberOrTag::Number(block_new)))
+    //     .await?;
+    // tracing::info!("newlog block={:?}", block);
+    // let txs = block.expect("no block").transactions;
+    // tracing::info!("newlog txs={:?}", txs);
+    // let block = zeroex
+    //     .provider()
+    //     .get_block(BlockId::Number(BlockNumberOrTag::Number(block_new - 1)))
+    //     .await?;
+    // let txs = block.expect("no block").transactions;
+    // tracing::info!("newlog pre_block_txs={:?}", txs);
+
+    let tx_hash = builder.tx_hash().clone();
+    let raw_tx = zeroex
+        .provider()
+        .get_raw_transaction_by_hash(tx_hash.clone())
+        .await?;
+    tracing::info!("newlog tx_hash={:?}", tx_hash);
+    tracing::info!("newlog raw_tx={:?}", raw_tx);
+    tokio::time::timeout(Duration::from_secs(60), builder.get_receipt()).await??;
+    Ok(tx_hash.to_alloy())
 }

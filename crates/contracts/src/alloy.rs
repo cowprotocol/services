@@ -1,3 +1,31 @@
+pub mod networks {
+    pub const MAINNET: u64 = 1;
+    pub const GNOSIS: u64 = 100;
+    pub const SEPOLIA: u64 = 11155111;
+    pub const ARBITRUM_ONE: u64 = 42161;
+    pub const BASE: u64 = 8453;
+    pub const POLYGON: u64 = 137;
+    pub const AVALANCHE: u64 = 43114;
+    pub const BNB: u64 = 56;
+    pub const OPTIMISM: u64 = 10;
+    pub const LENS: u64 = 232;
+}
+
+crate::bindings!(
+    IZeroex,
+    maplit::hashmap! {
+        crate::MAINNET => address!("0xdef1c0ded9bec7f1a1670819833240f027b25eff"),
+        crate::SEPOLIA => address!("0xdef1c0ded9bec7f1a1670819833240f027b25eff"),
+        crate::ARBITRUM_ONE => address!("0xdef1c0ded9bec7f1a1670819833240f027b25eff"),
+        crate::BASE => address!("0xdef1c0ded9bec7f1a1670819833240f027b25eff"),
+        crate::AVALANCHE => address!("0xdef1c0ded9bec7f1a1670819833240f027b25eff"),
+        crate::BNB => address!("0xdef1c0ded9bec7f1a1670819833240f027b25eff"),
+        crate::OPTIMISM => address!("0xdef1abe32c034e558cdd535791643c58a13acc10"),
+        crate::POLYGON => address!("0xdef1c0ded9bec7f1a1670819833240f027b25eff"),
+        // Not available on Lens
+    }
+);
+
 pub use alloy::providers::DynProvider as Provider;
 
 /// Extension trait to attach some useful functions to the contract instance.
@@ -19,7 +47,7 @@ macro_rules! bindings {
             #[allow(non_snake_case)]
             mod [<$contract Private>] {
                 alloy::sol!(
-                    #[allow(missing_docs)]
+                    #[allow(missing_docs, clippy::too_many_arguments)]
                     #[sol(rpc)]
                     $contract,
                     concat!("./artifacts/", stringify!($contract), ".json"),
