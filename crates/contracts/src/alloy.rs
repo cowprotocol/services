@@ -1,3 +1,29 @@
+pub mod networks {
+    pub const MAINNET: u64 = 1;
+    pub const GNOSIS: u64 = 100;
+    pub const SEPOLIA: u64 = 11155111;
+    pub const ARBITRUM_ONE: u64 = 42161;
+    pub const BASE: u64 = 8453;
+    pub const POLYGON: u64 = 137;
+    pub const AVALANCHE: u64 = 43114;
+    pub const BNB: u64 = 56;
+    pub const OPTIMISM: u64 = 10;
+    pub const LENS: u64 = 232;
+}
+
+crate::bindings!(
+    ChainalysisOracle,
+    maplit::hashmap! {
+        MAINNET => address!("0x40C57923924B5c5c5455c48D93317139ADDaC8fb"),
+        ARBITRUM_ONE => address!("0x40C57923924B5c5c5455c48D93317139ADDaC8fb"),
+        BASE => address!("0x3A91A31cB3dC49b4db9Ce721F50a9D076c8D739B"),
+        AVALANCHE => address!("0x40C57923924B5c5c5455c48D93317139ADDaC8fb"),
+        BNB => address!("0x40C57923924B5c5c5455c48D93317139ADDaC8fb"),
+        OPTIMISM => address!("0x40C57923924B5c5c5455c48D93317139ADDaC8fb"),
+        POLYGON => address!("0x40C57923924B5c5c5455c48D93317139ADDaC8fb"),
+    }
+);
+
 pub use alloy::providers::DynProvider as Provider;
 
 /// Extension trait to attach some useful functions to the contract instance.
@@ -41,6 +67,7 @@ macro_rules! bindings {
                         primitives::{address, Address},
                     },
                     anyhow::{Context, Result},
+                    $crate::alloy::networks::*,
                 };
 
                 pub static DEPLOYMENT_INFO: LazyLock<HashMap<u64, Address>> = LazyLock::new(|| {
