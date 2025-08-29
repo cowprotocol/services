@@ -54,8 +54,12 @@ async fn non_settling_solver(web3: Web3) {
 
     let services = Services::new(&onchain).await;
     let args = ExtraServiceArgs {
-        // The solver gets banned for 40s.
-        autopilot: vec!["--solver-blacklist-cache-ttl=40s".to_string()],
+        autopilot: vec![
+            "--non-settling-solvers-blacklisting-enabled=true".to_string(),
+            "--low-settling-solvers-blacklisting-enabled=true".to_string(),
+            // The solver gets banned for 40s.
+            "--solver-blacklist-cache-ttl=40s".to_string(),
+        ],
         ..Default::default()
     };
     services.start_protocol_with_args(args, solver).await;
@@ -122,6 +126,8 @@ async fn low_settling_solver(web3: Web3) {
     let services = Services::new(&onchain).await;
     let args = ExtraServiceArgs {
         autopilot: vec![
+            "--non-settling-solvers-blacklisting-enabled=true".to_string(),
+            "--low-settling-solvers-blacklisting-enabled=true".to_string(),
             // The solver gets banned for 40s.
             "--solver-blacklist-cache-ttl=40s".to_string(),
             // The solver is banned if the failure settlement rate is above 55%.

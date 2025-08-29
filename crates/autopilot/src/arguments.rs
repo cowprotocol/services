@@ -290,7 +290,8 @@ pub struct NonSettlingSolversFinderConfig {
         id = "non_settling_solvers_blacklisting_enabled",
         long = "non-settling-solvers-blacklisting-enabled",
         env = "NON_SETTLING_SOLVERS_BLACKLISTING_ENABLED",
-        default_value = "true"
+        default_value = "true",
+        action = clap::ArgAction::Set,
     )]
     pub enabled: bool,
 
@@ -311,7 +312,8 @@ pub struct LowSettlingSolversFinderConfig {
         id = "low_settling_solvers_blacklisting_enabled",
         long = "low-settling-solvers-blacklisting-enabled",
         env = "LOW_SETTLING_SOLVERS_BLACKLISTING_ENABLED",
-        default_value = "true"
+        default_value = "true",
+        action = clap::ArgAction::Set,
     )]
     pub enabled: bool,
 

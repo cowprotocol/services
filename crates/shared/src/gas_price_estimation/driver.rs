@@ -81,13 +81,11 @@ impl DriverGasEstimator {
         if let Some(cached) = cache.as_ref()
             && cached.timestamp.elapsed() < CACHE_DURATION
         {
-            tracing::debug!(gasPrice = ?cached.price, "returning cached gas price");
             return Ok(cached.price);
         }
 
         // Cache miss or expired, fetch new price and update cache
         let price = self.fetch_gas_price().await?;
-        tracing::debug!(gasPrice = ?price, "fetched fresh gas price from driver");
 
         *cache = Some(CachedGasPrice {
             price,

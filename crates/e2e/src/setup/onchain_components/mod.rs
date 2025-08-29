@@ -308,6 +308,24 @@ impl OnchainComponents {
         solvers
     }
 
+    pub async fn set_solver_allowed(&self, solver: H160, allowed: bool) {
+        if allowed {
+            self.contracts
+                .gp_authenticator
+                .add_solver(solver)
+                .send()
+                .await
+                .expect("failed to add solver");
+        } else {
+            self.contracts
+                .gp_authenticator
+                .remove_solver(solver)
+                .send()
+                .await
+                .expect("failed to remove solver");
+        }
+    }
+
     /// Generate next `N` accounts with the given initial balance and
     /// authenticate them as solvers on a forked network.
     pub async fn make_solvers_forked<const N: usize>(
