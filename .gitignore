@@ -5,3 +5,6 @@
 /.idea
 **/testing.*.toml
 /playground/.env
+services/
+e2e.log
+e2e_runs.log
