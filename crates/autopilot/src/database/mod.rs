@@ -63,33 +63,30 @@ impl Postgres {
     pub async fn update_database_metrics(&self) -> sqlx::Result<()> {
         let metrics = Metrics::get();
 
+        let mut ex = self.pool.acquire().await?;
+
         // update table row metrics
         for &table in database::TABLES {
-            let mut ex = self.pool.acquire().await?;
             let count = count_rows_in_table(&mut ex, table).await?;
             metrics.table_rows.with_label_values(&[table]).set(count);
         }
 
         // update table row metrics
         for &table in database::LARGE_TABLES {
-            let mut ex = self.pool.acquire().await?;
             let count = estimate_rows_in_table(&mut ex, table).await?;
             metrics.table_rows.with_label_values(&[table]).set(count);
         }
 
         // update unused app data metric
-        {
-            let mut ex = self.pool.acquire().await?;
-            let count = count_unused_app_data(&mut ex).await?;
-            metrics.unused_app_data.set(count);
-        }
+        let count = count_unused_app_data(&mut ex).await?;
+        metrics.unused_app_data.set(count);
 
         Ok(())
     }
 
     pub async fn update_large_tables_stats(&self) -> sqlx::Result<()> {
+        let mut ex = self.pool.acquire().await?;
         for &table in database::LARGE_TABLES {
-            let mut ex = self.pool.acquire().await?;
             analyze_table(&mut ex, table).await?;
         }
 
