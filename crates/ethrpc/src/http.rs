@@ -97,12 +97,20 @@ async fn execute_rpc<T: DeserializeOwned>(
         .send()
         .await
         .map_err(|err: reqwest::Error| {
-            tracing::warn!(name = %inner.name, %id, %err, "failed to send request");
+            if let Some(request_id) = observe::distributed_tracing::request_id::from_current_span() {
+                tracing::warn!(name = %inner.name, rpc_request_id = %id, request_id = %request_id, %err, "failed to send request");
+            } else {
+                tracing::warn!(name = %inner.name, rpc_request_id = %id, %err, "failed to send request");
+            }
             Web3Error::Transport(TransportError::Message(err.to_string()))
         })?;
     let status = response.status();
     let text = response.text().await.map_err(|err: reqwest::Error| {
-        tracing::warn!(name = %inner.name, %id, %err, "failed to get response body");
+        if let Some(request_id) = observe::distributed_tracing::request_id::from_current_span() {
+            tracing::warn!(name = %inner.name, rpc_request_id = %id, request_id = %request_id, %err, "failed to get response body");
+        } else {
+            tracing::warn!(name = %inner.name, rpc_request_id = %id, %err, "failed to get response body");
+        }
         Web3Error::Transport(TransportError::Message(err.to_string()))
     })?;
     // Log the raw text before decoding to get more information on responses that
@@ -110,19 +118,36 @@ async fn execute_rpc<T: DeserializeOwned>(
     // newlines in the output.
     tracing::trace!(name = %inner.name, %id, body = %text.trim(), "received response");
     if !status.is_success() {
-        return Err(Web3Error::Transport(TransportError::Message(format!(
-            "HTTP error {status}"
-        ))));
+        let error_msg = format!("HTTP error {status}");
+        if let Some(request_id) = observe::distributed_tracing::request_id::from_current_span() {
+            tracing::warn!(name = %inner.name, rpc_request_id = %id, request_id = %request_id, status = %status, "HTTP error response");
+        } else {
+            tracing::warn!(name = %inner.name, rpc_request_id = %id, status = %status, "HTTP error response");
+        }
+        return Err(Web3Error::Transport(TransportError::Message(error_msg)));
     }
 
     let result = jsonrpc_core::serde_from_str(&text).map_err(|err| {
-        Web3Error::Decoder(format!(
-            "{:?}, raw response: {}, {}, {}",
-            err,
-            inner.name,
-            id,
-            text.trim()
-        ))
+        if let Some(request_id) = observe::distributed_tracing::request_id::from_current_span() {
+            tracing::warn!(name = %inner.name, rpc_request_id = %id, request_id = %request_id, %err, "failed to decode JSON response");
+            Web3Error::Decoder(format!(
+                "{:?}, raw response: {}, rpc_request_id: {}, request_id: {}, {}",
+                err,
+                inner.name,
+                id,
+                request_id,
+                text.trim()
+            ))
+        } else {
+            tracing::warn!(name = %inner.name, rpc_request_id = %id, %err, "failed to decode JSON response");
+            Web3Error::Decoder(format!(
+                "{:?}, raw response: {}, rpc_request_id: {}, {}",
+                err,
+                inner.name,
+                id,
+                text.trim()
+            ))
+        }
     })?;
     Ok(result)
 }
