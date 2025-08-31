@@ -1,7 +1,6 @@
 use {
     crate::domain::{competition::Auction, eth},
     futures::future::join_all,
-    itertools::{Either, Itertools},
     std::{collections::HashMap, fmt, time::Instant},
 };
 
@@ -65,34 +64,46 @@ impl Detector {
     pub async fn filter_unsupported_orders_in_auction(&self, mut auction: Auction) -> Auction {
         let now = Instant::now();
 
-        let token_quality_checks = auction.orders.into_iter().map(|order| async move {
+        let mut supported_orders = Vec::with_capacity(auction.orders.len());
+        let mut token_quality_checks = Vec::with_capacity(auction.orders.len());
+        let mut removed_uids = Vec::with_capacity(auction.orders.len());
+
+        for order in auction.orders {
             let sell = self.get_token_quality(order.sell.token, now);
             let buy = self.get_token_quality(order.buy.token, now);
             match (sell, buy) {
                 // both tokens supported => keep order
-                (Quality::Supported, Quality::Supported) => Either::Left(order),
+                (Quality::Supported, Quality::Supported) => supported_orders.push(order),
                 // at least 1 token unsupported => drop order
-                (Quality::Unsupported, _) | (_, Quality::Unsupported) => Either::Right(order.uid),
+                (Quality::Unsupported, _) | (_, Quality::Unsupported) => {
+                    removed_uids.push(order.uid)
+                }
                 // sell token quality is unknown => keep order if token is supported
                 (Quality::Unknown, _) => {
                     let Some(detector) = &self.simulation_detector else {
                         // we can't determine quality => assume order is good
-                        return Either::Left(order);
+                        supported_orders.push(order);
+                        continue;
                     };
-                    match detector.determine_sell_token_quality(&order, now).await {
-                        Quality::Supported => Either::Left(order),
-                        _ => Either::Right(order.uid),
-                    }
+                    let check_tokens_fut = async move {
+                        let quality = detector.determine_sell_token_quality(&order, now).await;
+                        (order, quality)
+                    };
+                    token_quality_checks.push(check_tokens_fut);
                 }
                 // buy token quality is unknown => keep order (because we can't
                 // determine quality and assume it's good)
-                (_, Quality::Unknown) => Either::Left(order),
+                (_, Quality::Unknown) => supported_orders.push(order),
             }
-        });
-        let (supported_orders, removed_uids): (Vec<_>, Vec<_>) = join_all(token_quality_checks)
-            .await
-            .into_iter()
-            .partition_map(std::convert::identity);
+        }
+
+        for (order, quality) in join_all(token_quality_checks).await {
+            if quality == Quality::Supported {
+                supported_orders.push(order);
+            } else {
+                removed_uids.push(order.uid);
+            }
+        }
 
         auction.orders = supported_orders;
         if !removed_uids.is_empty() {
