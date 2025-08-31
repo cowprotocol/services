@@ -23,7 +23,7 @@ use {
 };
 
 mod error;
-mod routes;
+pub mod routes;
 
 const REQUEST_BODY_LIMIT: usize = 10 * 1024 * 1024;
 

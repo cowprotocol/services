@@ -1,4 +1,4 @@
-mod dto;
+pub mod dto;
 
 pub use dto::AuctionError;
 use {
