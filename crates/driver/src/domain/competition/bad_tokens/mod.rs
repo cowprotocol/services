@@ -1,6 +1,6 @@
 use {
     crate::domain::{competition::Auction, eth},
-    futures::future::join_all,
+    futures::{StreamExt, future::join_all, stream::FuturesUnordered},
     std::{collections::HashMap, fmt, time::Instant},
 };
 
@@ -65,7 +65,7 @@ impl Detector {
         let now = Instant::now();
 
         let mut supported_orders = Vec::with_capacity(auction.orders.len());
-        let mut token_quality_checks = Vec::with_capacity(auction.orders.len());
+        let mut token_quality_checks = FuturesUnordered::new();
         let mut removed_uids = Vec::with_capacity(auction.orders.len());
 
         for order in auction.orders {
@@ -97,7 +97,7 @@ impl Detector {
             }
         }
 
-        for (order, quality) in join_all(token_quality_checks).await {
+        while let Some((order, quality)) = token_quality_checks.next().await {
             if quality == Quality::Supported {
                 supported_orders.push(order);
             } else {
