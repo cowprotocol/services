@@ -89,7 +89,7 @@ impl DataAggregator {
         // the auction ids.
         if &request == current_auction {
             let id = lock.tasks.auction.clone().await.id;
-            init_auction_id_in_span(id.map(|i|i.0));
+            init_auction_id_in_span(id.map(|i| i.0));
             tracing::debug!("await running data aggregation task");
             return Ok(lock.tasks.clone());
         }
@@ -188,21 +188,30 @@ impl Utilities {
     /// Parses the JSON body of the `/solve` request during the unified
     /// auction pre-processing since eagerly deserializing these requests
     /// is surprisingly costly because their are so big.
-    async fn parse_request(&self, request: Arc<String>) -> Result<Arc<Auction>> {
-        // deserialization takes tens of milliseconds so run it on a blocking task
-        let parsed: SolveRequest = tokio::task::spawn_blocking(move || {
-            serde_json::from_str(&request).context("could not parse solve request")
-        })
-        .await
-        .context("failed to await blocking task")??;
+    async fn parse_request(&self, solve_request: Arc<String>) -> Result<Arc<Auction>> {
+        let auction_dto: SolveRequest = {
+            let _timer = metrics::get().processing_stage_timer("parse_dto");
+            // deserialization takes tens of milliseconds so run it on a blocking task
+            tokio::task::spawn_blocking(move || {
+                serde_json::from_str(&solve_request).context("could not parse solve request")
+            })
+            .await
+            .context("failed to await blocking task")??
+        };
 
         // now that we finally know the auction id we can set it in the span
-        init_auction_id_in_span(Some(parsed.id()));
-        let auction = parsed
-            .into_domain(&self.eth, &self.tokens)
-            .await
-            .context("could not convert auction DTO to domain type")?;
-        Ok(Arc::new(auction))
+        init_auction_id_in_span(Some(auction_dto.id()));
+
+        let auction_domain = {
+            let _timer = metrics::get().processing_stage_timer("convert_to_domain");
+            let auction = auction_dto
+                .into_domain(&self.eth, &self.tokens)
+                .await
+                .context("could not convert auction DTO to domain type")?;
+            Arc::new(auction)
+        };
+
+        Ok(auction_domain)
     }
 
     /// Fetches the tradable balance for every order owner.
