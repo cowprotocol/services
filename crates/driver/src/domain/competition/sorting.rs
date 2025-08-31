@@ -4,10 +4,9 @@ use {
             competition::{auction::Tokens, order},
             eth,
         },
-        util::{self, conv::u256::U256Ext},
+        util,
     },
     chrono::{Duration, Utc},
-    num::{CheckedDiv, ToPrimitive},
     std::{fmt::Debug, sync::Arc},
 };
 
@@ -37,13 +36,9 @@ impl SortingStrategy for ExternalPrice {
             tokens.get(order.sell.token).price,
         ) {
             (Some(buy_price), Some(sell_price)) => {
-                let buy = buy_price.in_eth(order.buy.amount);
-                let sell = sell_price.in_eth(order.sell.amount);
-                sell.0
-                    .to_big_rational()
-                    .checked_div(&buy.0.to_big_rational())
-                    .and_then(|l| l.to_f64())
-                    .unwrap_or_default()
+                let buy = buy_price.in_eth(order.buy.amount).0.to_f64_lossy();
+                let sell = sell_price.in_eth(order.sell.amount).0.to_f64_lossy();
+                if buy.is_subnormal() { 0. } else { sell / buy }
             }
             _ => 0.,
         };
