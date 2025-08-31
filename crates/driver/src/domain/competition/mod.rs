@@ -112,10 +112,16 @@ impl Competition {
     /// Solve an auction as part of this competition.
     #[instrument(skip_all)]
     pub async fn solve(&self, auction: Arc<String>) -> Result<Option<Solved>, Error> {
-        // let auction = Arc::new(auction);
-        let tasks = self.fetcher.start_or_get_tasks_for_auction(auction);
+        let tasks = self
+            .fetcher
+            .start_or_get_tasks_for_auction(auction)
+            .await
+            .map_err(|err| {
+                tracing::error!(?err, "failed to initialize data fetching tasks");
+                // todo better error type
+                Error::SolutionNotAvailable
+            })?;
         let mut auction = Arc::unwrap_or_clone(tasks.auction.await);
-        // populate the timeout here??
 
         let settlement_contract = self.eth.contracts().settlement().address();
         let solver_address = self.solver.account().address();
