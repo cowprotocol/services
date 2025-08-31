@@ -89,7 +89,7 @@ impl DataAggregator {
         // the auction ids.
         if &request == current_auction {
             let id = lock.tasks.auction.clone().await.id;
-            init_auction_id_in_span(id.map(|i|i.0).unwrap_or_default());
+            init_auction_id_in_span(id.map(|i|i.0));
             tracing::debug!("await running data aggregation task");
             return Ok(lock.tasks.clone());
         }
@@ -197,7 +197,7 @@ impl Utilities {
         .context("failed to await blocking task")??;
 
         // now that we finally know the auction id we can set it in the span
-        init_auction_id_in_span(parsed.id());
+        init_auction_id_in_span(Some(parsed.id()));
         let auction = parsed
             .into_domain(&self.eth, &self.tokens)
             .await
@@ -435,7 +435,10 @@ impl Utilities {
     }
 }
 
-fn init_auction_id_in_span(id: i64) {
+fn init_auction_id_in_span(id: Option<i64>) {
+    let Some(id) = id else {
+        return;
+    };
     let current_span = tracing::Span::current();
     debug_assert!(current_span.has_field("auction_id"));
     current_span.record("auction_id", id);
