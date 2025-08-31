@@ -1,8 +1,14 @@
 use {
-    super::{Auction, Order, auction, order},
+    super::{Auction, Order, order},
     crate::{
         domain::{eth, liquidity},
-        infra::{self, observe::metrics},
+        infra::{
+            self,
+            api::routes::solve::dto::SolveRequest,
+            observe::metrics,
+            solver::Timeouts,
+            tokens,
+        },
         util::Bytes,
     },
     chrono::Utc,
@@ -19,6 +25,7 @@ use {
         sync::{Arc, Mutex},
     },
     tap::TapFallible,
+    tokio::sync::broadcast,
 };
 
 type Shared<T> = futures::future::Shared<BoxFuture<'static, T>>;
@@ -34,6 +41,7 @@ type Balances = HashMap<BalanceGroup, order::SellAmount>;
 /// while the third task can continue in the background.
 #[derive(Clone, Debug)]
 pub struct DataFetchingTasks {
+    pub auction: Shared<Arc<Auction>>,
     pub balances: Shared<Arc<Balances>>,
     pub app_data: Shared<Arc<HashMap<order::app_data::AppDataHash, app_data::ValidatedAppData>>>,
     pub cow_amm_orders: Shared<Arc<Vec<Order>>>,
@@ -46,6 +54,8 @@ pub struct Utilities {
     signature_validator: Arc<dyn SignatureValidating>,
     app_data_retriever: Option<order::app_data::AppDataRetriever>,
     liquidity_fetcher: infra::liquidity::Fetcher,
+    tokens: tokens::Fetcher,
+    timeouts: Timeouts,
     disable_access_list_simulation: bool,
 }
 
@@ -60,7 +70,7 @@ impl std::fmt::Debug for Utilities {
 #[derive(Debug)]
 struct ControlBlock {
     /// Auction for which the data aggregation task was spawned.
-    auction: auction::Id,
+    auction: Arc<String>,
     /// Data aggregation task.
     tasks: DataFetchingTasks,
 }
@@ -75,25 +85,26 @@ impl DataAggregator {
     /// Aggregates all the data that is needed to pre-process the given auction.
     /// Uses a shared futures internally to make sure that the works happens
     /// only once for all connected solvers to share.
-    pub fn start_or_get_tasks_for_auction(&self, auction: Arc<Auction>) -> DataFetchingTasks {
-        let new_id = auction
-            .id()
-            .expect("auctions used for quoting do not have to be prioritized");
+    pub fn start_or_get_tasks_for_auction(&self, request: Arc<String>) -> DataFetchingTasks {
+        // let new_id = auction::Id(request.id());
 
         let mut lock = self.control.lock().unwrap();
-        let current_id = lock.auction;
-        if new_id.0 < current_id.0 {
-            tracing::error!(?current_id, ?new_id, "received an outdated auction");
-        }
-        if current_id.0 == new_id.0 {
+        let current_auction = &lock.auction;
+        // if new_id.0 < current_id.0 {
+        //     tracing::error!(?current_id, ?new_id, "received an outdated auction");
+        // }
+        if &request == current_auction {
             tracing::debug!("await running data aggregation task");
             return lock.tasks.clone();
         }
 
-        let tasks = self.assemble_tasks(auction);
+        let tasks = self.assemble_tasks(request.clone());
+
+        // todo assert that id is higher?
+        // todo assert that id is not equal (as all requests should be idential)
 
         tracing::debug!("started new data aggregation task");
-        lock.auction = new_id;
+        lock.auction = request;
         lock.tasks = tasks.clone();
 
         tasks
@@ -104,6 +115,8 @@ impl DataAggregator {
         app_data_retriever: Option<order::app_data::AppDataRetriever>,
         liquidity_fetcher: infra::liquidity::Fetcher,
         disable_access_list_simulation: bool,
+        tokens: tokens::Fetcher,
+        timeouts: Timeouts,
     ) -> Self {
         let signature_validator = shared::signature_validator::validator(
             eth.web3(),
@@ -121,10 +134,13 @@ impl DataAggregator {
                 app_data_retriever,
                 liquidity_fetcher,
                 disable_access_list_simulation,
+                tokens,
+                timeouts,
             }),
             control: Mutex::new(ControlBlock {
-                auction: auction::Id(0),
+                auction: Default::default(),
                 tasks: DataFetchingTasks {
+                    auction: futures::future::pending().boxed().shared(),
                     balances: futures::future::pending().boxed().shared(),
                     app_data: futures::future::pending().boxed().shared(),
                     cow_amm_orders: futures::future::pending().boxed().shared(),
@@ -134,21 +150,28 @@ impl DataAggregator {
         }
     }
 
-    fn assemble_tasks(&self, auction: Arc<Auction>) -> DataFetchingTasks {
+    fn assemble_tasks(&self, request: Arc<String>) -> DataFetchingTasks {
+        // now we finally parse the solve request fully and turn it into
+        // a domain object
+        let (sender, receiver) = broadcast::channel::<Arc<Auction>>(1);
+        let auction =
+            Self::spawn_shared(Arc::clone(&self.utilities).parse_request(request, sender.clone()));
+
+        // TODO pass watch channel into each task to have it await the result
         let balances =
-            Self::spawn_shared(Arc::clone(&self.utilities).fetch_balances(Arc::clone(&auction)));
+            Self::spawn_shared(Arc::clone(&self.utilities).fetch_balances(sender.subscribe()));
 
         let app_data = Self::spawn_shared(
-            Arc::clone(&self.utilities).collect_orders_app_data(Arc::clone(&auction)),
+            Arc::clone(&self.utilities).collect_orders_app_data(sender.subscribe()),
         );
 
         let cow_amm_orders =
-            Self::spawn_shared(Arc::clone(&self.utilities).cow_amm_orders(Arc::clone(&auction)));
+            Self::spawn_shared(Arc::clone(&self.utilities).cow_amm_orders(sender.subscribe()));
 
-        let liquidity =
-            Self::spawn_shared(Arc::clone(&self.utilities).fetch_liquidity(Arc::clone(&auction)));
+        let liquidity = Self::spawn_shared(Arc::clone(&self.utilities).fetch_liquidity(receiver));
 
         DataFetchingTasks {
+            auction,
             balances,
             app_data,
             cow_amm_orders,
@@ -175,11 +198,31 @@ impl DataAggregator {
 }
 
 impl Utilities {
+    async fn parse_request(
+        self: Arc<Self>,
+        request: Arc<String>,
+        sender: broadcast::Sender<Arc<Auction>>,
+    ) -> Arc<Auction> {
+        let parsed: SolveRequest = serde_json::from_str(&request).unwrap();
+        let auction = parsed
+            .into_domain(&self.eth, &self.tokens, self.timeouts)
+            .await
+            .unwrap();
+        let auction = Arc::new(auction);
+        let _ = sender.send(Arc::clone(&auction)).unwrap();
+        auction
+    }
+
     /// Fetches the tradable balance for every order owner.
-    async fn fetch_balances(self: Arc<Self>, auction: Arc<Auction>) -> Arc<Balances> {
+    async fn fetch_balances(
+        self: Arc<Self>,
+        mut auction: broadcast::Receiver<Arc<Auction>>,
+    ) -> Arc<Balances> {
         let _timer = metrics::get().processing_stage_timer("fetch_balances");
         let ethereum = self.eth.with_metric_label("orderBalances".into());
         let mut tokens: HashMap<_, _> = Default::default();
+        // await auction being parsed
+        let auction = auction.recv().await.unwrap();
         // Collect trader/token/source/interaction tuples for fetching available
         // balances. Note that we are pessimistic here, if a trader is selling
         // the same token with the same source in two different orders using a
@@ -236,8 +279,9 @@ impl Utilities {
     /// Returns a map from app data hash to the fetched app data.
     async fn collect_orders_app_data(
         self: Arc<Self>,
-        auction: Arc<Auction>,
+        mut auction: broadcast::Receiver<Arc<Auction>>,
     ) -> Arc<HashMap<order::app_data::AppDataHash, app_data::ValidatedAppData>> {
+        let auction = auction.recv().await.unwrap();
         let Some(app_data_retriever) = &self.app_data_retriever else {
             return Default::default();
         };
@@ -274,7 +318,11 @@ impl Utilities {
         Arc::new(app_data)
     }
 
-    async fn cow_amm_orders(self: Arc<Self>, auction: Arc<Auction>) -> Arc<Vec<Order>> {
+    async fn cow_amm_orders(
+        self: Arc<Self>,
+        mut auction: broadcast::Receiver<Arc<Auction>>,
+    ) -> Arc<Vec<Order>> {
+        let auction = auction.recv().await.unwrap();
         let _timer = metrics::get().processing_stage_timer("cow_amm_orders");
         let cow_amms = self.eth.contracts().cow_amm_registry().amms().await;
         let domain_separator = self.eth.contracts().settlement_domain_separator();
@@ -393,8 +441,9 @@ impl Utilities {
 
     async fn fetch_liquidity(
         self: Arc<Self>,
-        auction: Arc<Auction>,
+        mut auction: broadcast::Receiver<Arc<Auction>>,
     ) -> Arc<Vec<liquidity::Liquidity>> {
+        let auction = auction.recv().await.unwrap();
         let _timer = metrics::get().processing_stage_timer("fetch_liquidity");
         let pairs = auction.liquidity_pairs();
         Arc::new(
