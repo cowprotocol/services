@@ -6,7 +6,7 @@ use {
         },
         util,
     },
-    chrono::{Duration, Utc},
+    chrono::Duration,
     std::{fmt::Debug, sync::Arc},
 };
 
@@ -117,11 +117,11 @@ impl SortingStrategy for OwnQuotes {
         order: &order::Order,
         _tokens: &Tokens,
         solver: &eth::H160,
-        _now: chrono::DateTime<chrono::Utc>,
+        now: chrono::DateTime<chrono::Utc>,
     ) -> SortingKey {
         let is_order_outdated = self.max_order_age.is_some_and(|max_order_age| {
             let earliest_allowed_creation =
-                u32::try_from((Utc::now() - max_order_age).timestamp()).unwrap_or(u32::MAX);
+                u32::try_from((now - max_order_age).timestamp()).unwrap_or(u32::MAX);
             order.created.0 < earliest_allowed_creation
         });
         let is_own_quote = order.quote.as_ref().is_some_and(|q| &q.solver.0 == solver);
