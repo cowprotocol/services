@@ -66,7 +66,7 @@ impl Detector {
 
         let mut supported_orders = Vec::with_capacity(auction.orders.len());
         let mut token_quality_checks = FuturesUnordered::new();
-        let mut removed_uids = Vec::with_capacity(auction.orders.len());
+        let mut removed_uids = Vec::new();
 
         for order in auction.orders {
             let sell = self.get_token_quality(order.sell.token, now);
