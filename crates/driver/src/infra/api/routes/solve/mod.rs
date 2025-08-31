@@ -50,6 +50,6 @@ async fn route(
 
     // todo: find way to cheaply get the id back out!
     handle_request
-        .instrument(tracing::info_span!("/solve", solver = %state.solver().name()))
+        .instrument(tracing::info_span!("/solve", solver = %state.solver().name(), auction_id = tracing::field::Empty))
         .await
 }

@@ -20,6 +20,7 @@ use {
     },
     tap::TapFallible,
     tokio::sync::broadcast,
+    tracing::Instrument,
 };
 
 type Shared<T> = futures::future::Shared<BoxFuture<'static, T>>;
@@ -179,7 +180,7 @@ impl DataAggregator {
     where
         T: Send + Sync + Clone + 'static,
     {
-        let shared = fut.boxed().shared();
+        let shared = fut.instrument(tracing::Span::current()).boxed().shared();
 
         // Start the computation in the background
         tokio::spawn(shared.clone());
@@ -195,6 +196,7 @@ impl Utilities {
         sender: broadcast::Sender<Arc<Auction>>,
     ) -> Arc<Auction> {
         let parsed: SolveRequest = serde_json::from_str(&request).unwrap();
+        tracing::Span::current().record("auction_id", parsed.id());
         let auction = parsed.into_domain(&self.eth, &self.tokens).await.unwrap();
         let auction = Arc::new(auction);
         let _ = sender.send(Arc::clone(&auction)).unwrap();
