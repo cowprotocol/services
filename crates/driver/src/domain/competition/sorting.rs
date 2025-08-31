@@ -138,11 +138,12 @@ pub fn sort_orders(
     solver: &eth::H160,
     order_comparators: &[Arc<dyn SortingStrategy>],
 ) {
+    let now = chrono::Utc::now();
     orders.sort_by_cached_key(|order| {
         std::cmp::Reverse(
             order_comparators
                 .iter()
-                .map(|cmp| cmp.key(order, tokens, solver, chrono::Utc::now()))
+                .map(|cmp| cmp.key(order, tokens, solver, now))
                 .collect::<Vec<_>>(),
         )
     });
