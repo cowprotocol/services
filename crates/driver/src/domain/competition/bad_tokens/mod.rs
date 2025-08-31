@@ -64,41 +64,47 @@ impl Detector {
     pub async fn filter_unsupported_orders_in_auction(&self, mut auction: Auction) -> Auction {
         let now = Instant::now();
 
-        let mut supported_orders = Vec::with_capacity(auction.orders.len());
+        // reuse the original allocation
+        let supported_orders = std::mem::replace(&mut auction.orders, Vec::new());
         let mut token_quality_checks = FuturesUnordered::new();
         let mut removed_uids = Vec::new();
 
-        for order in auction.orders {
-            let sell = self.get_token_quality(order.sell.token, now);
-            let buy = self.get_token_quality(order.buy.token, now);
-            match (sell, buy) {
-                // both tokens supported => keep order
-                (Quality::Supported, Quality::Supported) => supported_orders.push(order),
-                // at least 1 token unsupported => drop order
-                (Quality::Unsupported, _) | (_, Quality::Unsupported) => {
-                    removed_uids.push(order.uid)
+        let mut supported_orders: Vec<_> = supported_orders
+            .into_iter()
+            .filter_map(|order| {
+                let sell = self.get_token_quality(order.sell.token, now);
+                let buy = self.get_token_quality(order.buy.token, now);
+                match (sell, buy) {
+                    // both tokens supported => keep order
+                    (Quality::Supported, Quality::Supported) => Some(order),
+                    // at least 1 token unsupported => drop order
+                    (Quality::Unsupported, _) | (_, Quality::Unsupported) => {
+                        removed_uids.push(order.uid);
+                        None
+                    }
+                    // sell token quality is unknown => keep order if token is supported
+                    (Quality::Unknown, _) => {
+                        let Some(detector) = &self.simulation_detector else {
+                            // we can't determine quality => assume order is good
+                            return Some(order);
+                        };
+                        let check_tokens_fut = async move {
+                            let quality = detector.determine_sell_token_quality(&order, now).await;
+                            (order, quality)
+                        };
+                        token_quality_checks.push(check_tokens_fut);
+                        None
+                    }
+                    // buy token quality is unknown => keep order (because we can't
+                    // determine quality and assume it's good)
+                    (_, Quality::Unknown) => Some(order),
                 }
-                // sell token quality is unknown => keep order if token is supported
-                (Quality::Unknown, _) => {
-                    let Some(detector) = &self.simulation_detector else {
-                        // we can't determine quality => assume order is good
-                        supported_orders.push(order);
-                        continue;
-                    };
-                    let check_tokens_fut = async move {
-                        let quality = detector.determine_sell_token_quality(&order, now).await;
-                        (order, quality)
-                    };
-                    token_quality_checks.push(check_tokens_fut);
-                }
-                // buy token quality is unknown => keep order (because we can't
-                // determine quality and assume it's good)
-                (_, Quality::Unknown) => supported_orders.push(order),
-            }
-        }
+            })
+            .collect();
 
         while let Some((order, quality)) = token_quality_checks.next().await {
             if quality == Quality::Supported {
+                // if we use retain to reuse the allocation we have to clone orders...
                 supported_orders.push(order);
             } else {
                 removed_uids.push(order.uid);
