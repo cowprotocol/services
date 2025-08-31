@@ -80,22 +80,19 @@ impl DataAggregator {
     /// Uses a shared futures internally to make sure that the works happens
     /// only once for all connected solvers to share.
     pub fn start_or_get_tasks_for_auction(&self, request: Arc<String>) -> DataFetchingTasks {
-        // let new_id = auction::Id(request.id());
-
         let mut lock = self.control.lock().unwrap();
         let current_auction = &lock.auction;
-        // if new_id.0 < current_id.0 {
-        //     tracing::error!(?current_id, ?new_id, "received an outdated auction");
-        // }
+
+        // The autopilot ensures that all drivers receive identical
+        // requests per auction. That means we can use the significantly
+        // cheaper string comparison instead of parsing the JSON to compare
+        // the auction ids.
         if &request == current_auction {
             tracing::debug!("await running data aggregation task");
             return lock.tasks.clone();
         }
 
         let tasks = self.assemble_tasks(request.clone());
-
-        // todo assert that id is higher?
-        // todo assert that id is not equal (as all requests should be idential)
 
         tracing::debug!("started new data aggregation task");
         lock.auction = request;
@@ -143,13 +140,10 @@ impl DataAggregator {
     }
 
     fn assemble_tasks(&self, request: Arc<String>) -> DataFetchingTasks {
-        // now we finally parse the solve request fully and turn it into
-        // a domain object
         let (sender, receiver) = broadcast::channel::<Arc<Auction>>(1);
         let auction =
             Self::spawn_shared(Arc::clone(&self.utilities).parse_request(request, sender.clone()));
 
-        // TODO pass watch channel into each task to have it await the result
         let balances =
             Self::spawn_shared(Arc::clone(&self.utilities).fetch_balances(sender.subscribe()));
 
@@ -190,12 +184,16 @@ impl DataAggregator {
 }
 
 impl Utilities {
+    /// Parses the JSON body of the `/solve` request during the unified
+    /// auction pre-processing since eagerly deserializing these requests
+    /// is surprisingly costly because their are so big.
     async fn parse_request(
         self: Arc<Self>,
         request: Arc<String>,
         sender: broadcast::Sender<Arc<Auction>>,
     ) -> Arc<Auction> {
         let parsed: SolveRequest = serde_json::from_str(&request).unwrap();
+        // now that we finally know the auction id we can set it in the span
         tracing::Span::current().record("auction_id", parsed.id());
         let auction = parsed.into_domain(&self.eth, &self.tokens).await.unwrap();
         let auction = Arc::new(auction);
@@ -211,7 +209,6 @@ impl Utilities {
         let _timer = metrics::get().processing_stage_timer("fetch_balances");
         let ethereum = self.eth.with_metric_label("orderBalances".into());
         let mut tokens: HashMap<_, _> = Default::default();
-        // await auction being parsed
         let auction = auction.recv().await.unwrap();
         // Collect trader/token/source/interaction tuples for fetching available
         // balances. Note that we are pessimistic here, if a trader is selling
