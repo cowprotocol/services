@@ -61,7 +61,7 @@ impl std::fmt::Debug for Utilities {
 #[derive(Debug)]
 struct ControlBlock {
     /// Auction for which the data aggregation task was spawned.
-    auction: Arc<String>,
+    solve_request: Arc<String>,
     /// Data aggregation task.
     tasks: DataFetchingTasks,
 }
@@ -81,13 +81,15 @@ impl DataAggregator {
         request: Arc<String>,
     ) -> Result<DataFetchingTasks> {
         let mut lock = self.control.lock().await;
-        let current_auction = &lock.auction;
+        let current_auction = &lock.solve_request;
 
         // The autopilot ensures that all drivers receive identical
         // requests per auction. That means we can use the significantly
         // cheaper string comparison instead of parsing the JSON to compare
         // the auction ids.
         if &request == current_auction {
+            let id = lock.tasks.auction.clone().await.id;
+            tracing::Span::current().record("auction_id", format!("{id:?}"));
             tracing::debug!("await running data aggregation task");
             return Ok(lock.tasks.clone());
         }
@@ -95,7 +97,7 @@ impl DataAggregator {
         let tasks = self.assemble_tasks(request.clone()).await?;
 
         tracing::debug!("started new data aggregation task");
-        lock.auction = request;
+        lock.solve_request = request;
         lock.tasks = tasks.clone();
 
         Ok(tasks)
@@ -127,7 +129,7 @@ impl DataAggregator {
                 tokens,
             }),
             control: Mutex::new(ControlBlock {
-                auction: Default::default(),
+                solve_request: Default::default(),
                 tasks: DataFetchingTasks {
                     auction: futures::future::pending().boxed().shared(),
                     balances: futures::future::pending().boxed().shared(),

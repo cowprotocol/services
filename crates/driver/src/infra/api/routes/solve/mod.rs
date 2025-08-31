@@ -17,26 +17,11 @@ pub(in crate::infra::api) fn solve(router: axum::Router<State>) -> axum::Router<
 async fn route(
     state: axum::extract::State<State>,
     // take the request body as a raw string to delay parsing as much
-    // as possible as many requests don't have to be parsed at all
+    // as possible because many requests don't have to be parsed at all
     req: String,
 ) -> Result<axum::Json<dto::SolveResponse>, (hyper::StatusCode, axum::Json<Error>)> {
-    // taking the id out is taking considerable time...
-    // let auction_id = req.id();
     let handle_request = async {
-        // observe::auction(auction_id);
-        // let start = Instant::now();
-        // let auction = req
-        //     .0
-        //     .into_domain(state.eth(), state.tokens(), state.timeouts())
-        //     .await
-        //     .tap_err(|err| {
-        //         observe::invalid_dto(err, "auction");
-        //     })?;
-        // tracing::debug!(elapsed = ?start.elapsed(), "auction task execution time");
         let competition = state.competition();
-        // if auction.orders.is_empty() {
-        //     return Err(domain::competition::Error::NoValidOrdersFound.into());
-        // }
         let result = competition.solve(Arc::new(req)).await;
         // Solving takes some time, so there is a chance for the settlement queue to
         // have capacity again.
@@ -48,7 +33,6 @@ async fn route(
         )))
     };
 
-    // todo: find way to cheaply get the id back out!
     handle_request
         .instrument(tracing::info_span!("/solve", solver = %state.solver().name(), auction_id = tracing::field::Empty))
         .await

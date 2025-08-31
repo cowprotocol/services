@@ -17,7 +17,7 @@ use {
             notify,
             observe::{self, metrics},
             simulator::{RevertError, SimulatorError},
-            solver::{self, SolutionMerging, Solver},
+            solver::{self, SolutionMerging, Solver, dto},
         },
         util::{Bytes, math},
     },
@@ -28,7 +28,7 @@ use {
         cmp::Reverse,
         collections::{HashMap, HashSet, VecDeque},
         sync::{Arc, Mutex},
-        time::Duration,
+        time::{Duration, Instant},
     },
     tap::TapFallible,
     tokio::{
@@ -110,16 +110,19 @@ impl Competition {
     }
 
     /// Solve an auction as part of this competition.
-    #[instrument(skip_all)]
     pub async fn solve(&self, auction: Arc<String>) -> Result<Option<Solved>, Error> {
+        let start = Instant::now();
+
         let tasks = self
             .fetcher
             .start_or_get_tasks_for_auction(auction)
             .await
             .map_err(|err| {
-                tracing::error!(?err, "failed to initialize data fetching tasks");
-                // todo better error type
-                Error::SolutionNotAvailable
+                // TODO: find a better error type
+                tracing::error!(?err, "pre-processing auction failed");
+                Error::Solver(solver::Error::Dto(dto::Error(
+                    "pre-processing auction failed".into(),
+                )))
             })?;
         let mut auction = Arc::unwrap_or_clone(tasks.auction.await);
 
@@ -160,7 +163,7 @@ impl Competition {
         })
         .await;
 
-        // We can tun bad token filtering and liquidity fetching in parallel
+        // We can run bad token filtering and liquidity fetching in parallel
         let (liquidity, auction) = tokio::join!(
             async {
                 match self.solver.liquidity() {
@@ -170,6 +173,7 @@ impl Competition {
             },
             self.without_unsupported_orders(auction)
         );
+        tracing::debug!(elapsed = ?start.elapsed(), "auction task execution time");
 
         let auction = &auction;
 
