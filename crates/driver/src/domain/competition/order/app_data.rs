@@ -30,9 +30,11 @@ pub struct AppDataRetriever(Arc<Inner>);
 struct Inner {
     client: reqwest::Client,
     base_url: Url,
-    request_sharing:
-        BoxRequestSharing<AppDataHash, Result<Option<app_data::ValidatedAppData>, FetchingError>>,
-    cache: Cache<AppDataHash, Option<app_data::ValidatedAppData>>,
+    request_sharing: BoxRequestSharing<
+        AppDataHash,
+        Result<Option<Arc<app_data::ValidatedAppData>>, FetchingError>,
+    >,
+    cache: Cache<AppDataHash, Option<Arc<app_data::ValidatedAppData>>>,
 }
 
 impl AppDataRetriever {
@@ -49,7 +51,7 @@ impl AppDataRetriever {
     pub async fn get(
         &self,
         app_data: &AppDataHash,
-    ) -> Result<Option<app_data::ValidatedAppData>, FetchingError> {
+    ) -> Result<Option<Arc<app_data::ValidatedAppData>>, FetchingError> {
         if let Some(app_data) = self.0.cache.get(app_data).await {
             return Ok(app_data.clone());
         }
@@ -72,11 +74,11 @@ impl AppDataRetriever {
                                 .context("invalid app data document")?;
                         match appdata.full_app_data == app_data::EMPTY {
                             true => None, // empty app data
-                            false => Some(app_data::ValidatedAppData {
+                            false => Some(Arc::new(app_data::ValidatedAppData {
                                 hash: app_data::AppDataHash(app_data.0.0),
                                 protocol: app_data::parse(appdata.full_app_data.as_bytes())?,
                                 document: appdata.full_app_data,
-                            }),
+                            })),
                         }
                     }
                 };
@@ -105,7 +107,7 @@ pub enum AppData {
     /// App data hash.
     Hash(AppDataHash),
     /// Validated full app data.
-    Full(Box<::app_data::ValidatedAppData>),
+    Full(Arc<::app_data::ValidatedAppData>),
 }
 
 impl Default for AppData {
@@ -138,7 +140,7 @@ impl From<[u8; APP_DATA_LEN]> for AppData {
 
 impl From<::app_data::ValidatedAppData> for AppData {
     fn from(value: ::app_data::ValidatedAppData) -> Self {
-        Self::Full(Box::new(value))
+        Self::Full(Arc::new(value))
     }
 }
 

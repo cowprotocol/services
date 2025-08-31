@@ -8,6 +8,7 @@ use {
     },
     app_data::{Flashloan, ProtocolAppData, hash_full_app_data},
     primitive_types::H160,
+    std::sync::Arc,
 };
 
 #[tokio::test]
@@ -23,7 +24,7 @@ async fn solutions_with_flashloan() {
         flashloan: Some(flashloan.clone()),
         ..Default::default()
     };
-    let app_data = AppData::Full(Box::new(protocol_app_data_into_validated(
+    let app_data = AppData::Full(Arc::new(protocol_app_data_into_validated(
         protocol_app_data,
     )));
 
@@ -59,7 +60,7 @@ async fn solutions_without_flashloan() {
         flashloan: Some(flashloan.clone()),
         ..Default::default()
     };
-    let app_data = AppData::Full(Box::new(protocol_app_data_into_validated(
+    let app_data = AppData::Full(Arc::new(protocol_app_data_into_validated(
         protocol_app_data,
     )));
     let settlement = H160([5; 20]);
