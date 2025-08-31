@@ -309,7 +309,7 @@ pub fn new(
             .collect(),
         tokens,
         effective_gas_price: auction.gas_price().effective().into(),
-        deadline: auction.deadline().solvers(),
+        deadline: auction.deadline,
         surplus_capturing_jit_order_owners: auction
             .surplus_capturing_jit_order_owners()
             .iter()

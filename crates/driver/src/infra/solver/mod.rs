@@ -252,7 +252,7 @@ impl Solver {
         let body = serde_json::to_string(&auction_dto).unwrap();
         let url = shared::url::join(&self.config.endpoint, "solve");
         super::observe::solver_request(&url, &body);
-        let timeout = match auction.deadline().solvers().remaining() {
+        let timeout = match auction.deadline(self.timeouts()).solvers().remaining() {
             Ok(timeout) => timeout,
             Err(_) => {
                 tracing::warn!("auction deadline exceeded before sending request to solver");

@@ -11,7 +11,7 @@ use {
             Simulator,
             config::file::OrderPriorityStrategy,
             liquidity,
-            solver::{Solver, Timeouts},
+            solver::{Solver,
             tokens,
         },
     },
@@ -60,9 +60,6 @@ impl Api {
             self.liquidity.clone(),
             disable_access_list_simulation,
             tokens.clone(),
-            // timeouts are defined on a per-solver basis - how do I handle this
-            // correctly in the pre-processing crap??
-            Default::default(),
         ));
 
         let order_sorting_strategies =
@@ -194,10 +191,6 @@ impl State {
 
     fn tokens(&self) -> &tokens::Fetcher {
         &self.0.tokens
-    }
-
-    fn timeouts(&self) -> Timeouts {
-        self.0.solver.timeouts()
     }
 }
 

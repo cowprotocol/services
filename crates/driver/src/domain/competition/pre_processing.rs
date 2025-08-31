@@ -2,13 +2,7 @@ use {
     super::{Auction, Order, order},
     crate::{
         domain::{eth, liquidity},
-        infra::{
-            self,
-            api::routes::solve::dto::SolveRequest,
-            observe::metrics,
-            solver::Timeouts,
-            tokens,
-        },
+        infra::{self, api::routes::solve::dto::SolveRequest, observe::metrics, tokens},
         util::Bytes,
     },
     chrono::Utc,
@@ -55,7 +49,6 @@ pub struct Utilities {
     app_data_retriever: Option<order::app_data::AppDataRetriever>,
     liquidity_fetcher: infra::liquidity::Fetcher,
     tokens: tokens::Fetcher,
-    timeouts: Timeouts,
     disable_access_list_simulation: bool,
 }
 
@@ -116,7 +109,6 @@ impl DataAggregator {
         liquidity_fetcher: infra::liquidity::Fetcher,
         disable_access_list_simulation: bool,
         tokens: tokens::Fetcher,
-        timeouts: Timeouts,
     ) -> Self {
         let signature_validator = shared::signature_validator::validator(
             eth.web3(),
@@ -135,7 +127,6 @@ impl DataAggregator {
                 liquidity_fetcher,
                 disable_access_list_simulation,
                 tokens,
-                timeouts,
             }),
             control: Mutex::new(ControlBlock {
                 auction: Default::default(),
@@ -204,10 +195,7 @@ impl Utilities {
         sender: broadcast::Sender<Arc<Auction>>,
     ) -> Arc<Auction> {
         let parsed: SolveRequest = serde_json::from_str(&request).unwrap();
-        let auction = parsed
-            .into_domain(&self.eth, &self.tokens, self.timeouts)
-            .await
-            .unwrap();
+        let auction = parsed.into_domain(&self.eth, &self.tokens).await.unwrap();
         let auction = Arc::new(auction);
         let _ = sender.send(Arc::clone(&auction)).unwrap();
         auction

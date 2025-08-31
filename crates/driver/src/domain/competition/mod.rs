@@ -178,7 +178,8 @@ impl Competition {
                 }
             })?;
 
-        observe::postprocessing(&solutions, auction.deadline().driver());
+        let deadline = auction.deadline(self.solver.timeouts()).driver();
+        observe::postprocessing(&solutions, deadline);
 
         // Discard solutions that don't have unique ID.
         let mut ids = HashSet::new();
@@ -254,12 +255,9 @@ impl Competition {
                 settlements.push(settlement);
             }
         };
-        if tokio::time::timeout(
-            auction.deadline().driver().remaining().unwrap_or_default(),
-            future,
-        )
-        .await
-        .is_err()
+        if tokio::time::timeout(deadline.remaining().unwrap_or_default(), future)
+            .await
+            .is_err()
         {
             observe::postprocessing_timed_out(&settlements);
             notify::postprocessing_timed_out(&self.solver, auction.id())
@@ -340,7 +338,7 @@ impl Competition {
         // Re-simulate the solution on every new block until the deadline ends to make
         // sure we actually submit a working solution close to when the winner
         // gets picked by the procotol.
-        if let Ok(remaining) = auction.deadline().driver().remaining() {
+        if let Ok(remaining) = deadline.remaining() {
             let score_ref = &mut score;
             let simulate_on_new_blocks = async move {
                 let mut stream =
