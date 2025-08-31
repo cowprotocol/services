@@ -187,8 +187,13 @@ impl Utilities {
     /// auction pre-processing since eagerly deserializing these requests
     /// is surprisingly costly because their are so big.
     async fn parse_request(&self, request: Arc<String>) -> Result<Arc<Auction>> {
-        let parsed: SolveRequest =
-            serde_json::from_str(&request).context("could not parse solve request")?;
+        // deserialization takes ~30ms so run it on a blocking task
+        let parsed = tokio::task::spawn_blocking(move || {
+            serde_json::from_str::<SolveRequest>(&request).context("could not parse solve request")
+        })
+        .await
+        .context("failed to spawn blocking task")??;
+
         // now that we finally know the auction id we can set it in the span
         tracing::Span::current().record("auction_id", parsed.id());
         let auction = parsed
