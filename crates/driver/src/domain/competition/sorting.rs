@@ -18,7 +18,13 @@ pub enum SortingKey {
 }
 
 pub trait SortingStrategy: Send + Sync + Debug {
-    fn key(&self, order: &order::Order, tokens: &Tokens, solver: &eth::H160) -> SortingKey;
+    fn key(
+        &self,
+        order: &order::Order,
+        tokens: &Tokens,
+        solver: &eth::H160,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> SortingKey;
 }
 
 /// Orders are sorted by their likelihood of being fulfilled, with the most
@@ -27,7 +33,13 @@ pub trait SortingStrategy: Send + Sync + Debug {
 #[derive(Debug)]
 pub struct ExternalPrice;
 impl SortingStrategy for ExternalPrice {
-    fn key(&self, order: &order::Order, tokens: &Tokens, _solver: &eth::H160) -> SortingKey {
+    fn key(
+        &self,
+        order: &order::Order,
+        tokens: &Tokens,
+        _solver: &eth::H160,
+        _now: chrono::DateTime<chrono::Utc>,
+    ) -> SortingKey {
         // The likelihood that this order will be fulfilled, based on token prices.
         // A larger value means that the order is more likely to be fulfilled.
         // This is used to prioritize orders when solving.
@@ -75,11 +87,17 @@ pub struct CreationTimestamp {
     pub max_order_age: Option<Duration>,
 }
 impl SortingStrategy for CreationTimestamp {
-    fn key(&self, order: &order::Order, _tokens: &Tokens, _solver: &eth::H160) -> SortingKey {
+    fn key(
+        &self,
+        order: &order::Order,
+        _tokens: &Tokens,
+        _solver: &eth::H160,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> SortingKey {
         SortingKey::Timestamp(match self.max_order_age {
             Some(max_order_age) => {
                 let earliest_allowed_creation =
-                    u32::try_from((Utc::now() - max_order_age).timestamp()).unwrap_or(u32::MAX);
+                    u32::try_from((now - max_order_age).timestamp()).unwrap_or(u32::MAX);
                 (order.created.0 >= earliest_allowed_creation).then_some(order.created)
             }
             None => Some(order.created),
@@ -94,7 +112,13 @@ pub struct OwnQuotes {
     pub max_order_age: Option<Duration>,
 }
 impl SortingStrategy for OwnQuotes {
-    fn key(&self, order: &order::Order, _tokens: &Tokens, solver: &eth::H160) -> SortingKey {
+    fn key(
+        &self,
+        order: &order::Order,
+        _tokens: &Tokens,
+        solver: &eth::H160,
+        _now: chrono::DateTime<chrono::Utc>,
+    ) -> SortingKey {
         let is_order_outdated = self.max_order_age.is_some_and(|max_order_age| {
             let earliest_allowed_creation =
                 u32::try_from((Utc::now() - max_order_age).timestamp()).unwrap_or(u32::MAX);
@@ -118,7 +142,7 @@ pub fn sort_orders(
         std::cmp::Reverse(
             order_comparators
                 .iter()
-                .map(|cmp| cmp.key(order, tokens, solver))
+                .map(|cmp| cmp.key(order, tokens, solver, chrono::Utc::now()))
                 .collect::<Vec<_>>(),
         )
     });
