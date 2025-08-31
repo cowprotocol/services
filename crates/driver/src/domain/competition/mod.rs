@@ -173,7 +173,13 @@ impl Competition {
             },
             self.without_unsupported_orders(auction)
         );
-        tracing::debug!(elapsed = ?start.elapsed(), "auction task execution time");
+
+        let elapsed = start.elapsed();
+        metrics::get()
+            .auction_preprocessing
+            .with_label_values(&["total"])
+            .observe(elapsed.as_secs_f64());
+        tracing::debug!(?elapsed, "auction task execution time");
 
         let auction = &auction;
 
