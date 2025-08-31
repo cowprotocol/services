@@ -11,7 +11,7 @@ use {
             Simulator,
             config::file::OrderPriorityStrategy,
             liquidity,
-            solver::{Solver,
+            solver::Solver,
             tokens,
         },
     },
