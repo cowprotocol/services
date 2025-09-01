@@ -33,6 +33,7 @@ pub type AlloyProvider = DynProvider;
 pub struct Web3<T: Transport = DynTransport> {
     pub legacy: web3::Web3<T>,
     pub alloy: AlloyProvider,
+    pub node_url: String,
 }
 
 impl<T: Transport> std::ops::Deref for Web3<T> {
@@ -56,6 +57,7 @@ impl Web3<DynTransport> {
         Self {
             legacy: web3,
             alloy: crate::alloy::provider(url),
+            node_url: url.to_string(),
         }
     }
 }
@@ -120,6 +122,7 @@ pub fn web3(
     Web3 {
         legacy: web3::Web3::new(Web3Transport::new(instrumented)),
         alloy: alloy::provider(url.as_str()),
+        node_url: url.to_string(),
     }
 }
 

@@ -30,7 +30,10 @@ use {
     ethcontract::{Account, H256, prelude::U256},
     ethrpc::{
         Web3,
-        alloy::conversions::{ToAlloy, ToLegacy},
+        alloy::{
+            conversions::{ToAlloy, ToLegacy},
+            provider_with_account,
+        },
     },
     hex_literal::hex,
     model::{
@@ -79,7 +82,12 @@ async fn zero_ex_liquidity(web3: Web3) {
             .unwrap(),
     );
 
-    let zeroex = IZeroex::Instance::deployed(&web3.alloy).await.unwrap();
+    let signer = match &solver.account() {
+        Account::Offline(pk, _) => pk.secret_bytes(),
+        _ => unimplemented!(),
+    };
+    let zeroex_provider = provider_with_account(&web3.node_url, &signer);
+    let zeroex = IZeroex::Instance::deployed(&zeroex_provider).await.unwrap();
 
     let amount = to_wei_with_exp(5, 8);
 
@@ -368,14 +376,7 @@ async fn fill_or_kill_zeroex_limit_order(
     zeroex_order: &shared::zeroex_api::OrderRecord,
     from_account: Account,
 ) -> anyhow::Result<H256> {
-    let signer = match &from_account {
-        Account::Offline(pk, _) => {
-            alloy::signers::local::PrivateKeySigner::from_slice(&pk.secret_bytes())?
-        }
-        _ => unimplemented!(),
-    };
-    let wallet = EthereumWallet::from(signer);
-    let tx = zeroex
+    let tx_hash = zeroex
         .fillOrKillLimitOrder(
             IZeroex::LibNativeOrder::LimitOrder {
                 makerToken: zeroex_order.order().maker_token.to_alloy(),
@@ -399,23 +400,11 @@ async fn fill_or_kill_zeroex_limit_order(
             },
             zeroex_order.order().taker_amount,
         )
-        .into_transaction_request()
-        .nonce(
-            zeroex
-                .provider()
-                .get_transaction_count(from_account.address().to_alloy())
-                .await?,
-        )
-        .with_gas_limit(21_000)
-        .with_max_priority_fee_per_gas(1_000_000_000)
-        .with_max_fee_per_gas(20_000_000_000)
-        .build(&wallet)
+        .from(from_account.address().to_alloy())
+        .send()
+        .await?
+        .watch()
         .await?;
 
-    Ok(zeroex
-        .provider()
-        .send_raw_transaction(&tx.encoded_2718())
-        .await?
-        .tx_hash()
-        .to_alloy())
+    Ok(tx_hash.to_alloy())
 }
