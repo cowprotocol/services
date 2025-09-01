@@ -18,7 +18,6 @@ use {
             SellTokenSource as DbSellTokenSource,
             SigningScheme as DbSigningScheme,
         },
-        settlement_observations::Observation,
         solver_competition_v2::{Order, Solution},
     },
     domain::auction::order::{
@@ -687,19 +686,6 @@ impl Persistence {
                 log_index,
                 solver,
                 settlement.solution_uid(),
-            )
-            .await?;
-
-            database::settlement_observations::upsert(
-                &mut ex,
-                Observation {
-                    block_number,
-                    log_index,
-                    gas_used: u256_to_big_decimal(&gas.0),
-                    effective_gas_price: u256_to_big_decimal(&gas_price.0.0),
-                    surplus: u256_to_big_decimal(&surplus.0),
-                    fee: u256_to_big_decimal(&fee.0),
-                },
             )
             .await?;
 
