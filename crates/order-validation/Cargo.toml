@@ -6,8 +6,10 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
+alloy = { workspace = true }
 contracts = { workspace = true }
 ethcontract = { workspace = true }
+ethrpc = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
