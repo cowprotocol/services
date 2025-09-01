@@ -140,7 +140,9 @@ impl Erc20 {
 
                         let access_list_call = CallRequest {
                             data: delegate_call.tx.data.clone(),
-                            from: delegate_call.tx.from.clone().map(|acc| acc.address()),
+                            // `from` field is not populated, since it is only required for ZkSync
+                            // chains, that currently don't support access lists. On other chains,
+                            // access lists creation fails when an arbitrary `from` is used.
                             ..Default::default()
                         };
                         let access_list = ethereum
