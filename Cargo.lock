@@ -159,8 +159,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-contract"
-version = "1.0.17"
-source = "git+https://github.com/alloy-rs/alloy?rev=c15a4a3c04ce15bfa3796cc449f8407200b7599f#c15a4a3c04ce15bfa3796cc449f8407200b7599f"
+version = "1.0.27"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e4c36bb4173892aeeba1c6b9e4eff923fa3fe8583f6d3e07afe1cbc5a96a853a"
 dependencies = [
  "alloy-consensus",
  "alloy-dyn-abi",
@@ -427,6 +428,7 @@ dependencies = [
  "alloy-json-rpc",
  "alloy-primitives",
  "alloy-transport",
+ "alloy-transport-http",
  "futures",
  "pin-project",
  "reqwest 0.12.12",
@@ -436,6 +438,7 @@ dependencies = [
  "tokio-stream",
  "tower 0.5.2",
  "tracing",
+ "url",
  "wasmtimer",
 ]
 
