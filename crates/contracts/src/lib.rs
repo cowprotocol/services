@@ -132,23 +132,12 @@ pub mod test {
     }
 }
 
-const MAINNET: u64 = 1;
-#[allow(dead_code)]
-const GOERLI: u64 = 5;
-#[allow(dead_code)]
-const GNOSIS: u64 = 100;
-const SEPOLIA: u64 = 11155111;
-const ARBITRUM_ONE: u64 = 42161;
-const BASE: u64 = 8453;
-const POLYGON: u64 = 137;
-const AVALANCHE: u64 = 43114;
-const BNB: u64 = 56;
-const OPTIMISM: u64 = 10;
-#[allow(dead_code)]
-const LENS: u64 = 232;
-
 #[cfg(test)]
 mod tests {
+    use crate::alloy::networks::{
+        ARBITRUM_ONE, AVALANCHE, BASE, BNB, GNOSIS, GOERLI, LENS, MAINNET, OPTIMISM, POLYGON,
+        SEPOLIA,
+    };
     use {
         super::*,
         ethcontract::{
