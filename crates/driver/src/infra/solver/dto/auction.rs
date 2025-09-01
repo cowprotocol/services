@@ -23,6 +23,7 @@ pub fn new(
     fee_handler: FeeHandler,
     solver_native_token: ManageNativeToken,
     flashloan_hints: &HashMap<order::Uid, eth::Flashloan>,
+    deadline: chrono::DateTime<chrono::Utc>,
 ) -> solvers_dto::auction::Auction {
     let mut tokens: HashMap<eth::H160, _> = auction
         .tokens()
@@ -309,7 +310,7 @@ pub fn new(
             .collect(),
         tokens,
         effective_gas_price: auction.gas_price().effective().into(),
-        deadline: auction.deadline,
+        deadline,
         surplus_capturing_jit_order_owners: auction
             .surplus_capturing_jit_order_owners()
             .iter()

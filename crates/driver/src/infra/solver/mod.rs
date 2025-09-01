@@ -243,6 +243,7 @@ impl Solver {
             self.config.fee_handler,
             self.config.solver_native_token,
             &flashloan_hints,
+            auction.deadline(self.timeouts()).solvers(),
         );
         // Only auctions with IDs are real auctions (/quote requests don't have an ID,
         // and it makes no sense to store them)
