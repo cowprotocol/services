@@ -2,8 +2,7 @@ use {
     self::contracts::Contracts,
     crate::{boundary, domain::eth},
     chain::Chain,
-    ethcontract::dyns::DynWeb3,
-    ethrpc::{block_stream::CurrentBlockWatcher, extensions::DebugNamespace},
+    ethrpc::{Web3, block_stream::CurrentBlockWatcher, extensions::DebugNamespace},
     primitive_types::U256,
     std::time::Duration,
     thiserror::Error,
@@ -14,7 +13,7 @@ pub mod contracts;
 
 /// An Ethereum RPC connection.
 pub struct Rpc {
-    web3: DynWeb3,
+    web3: Web3,
     chain: Chain,
     url: Url,
 }
@@ -43,7 +42,7 @@ impl Rpc {
     }
 
     /// Returns a reference to the underlying web3 client.
-    pub fn web3(&self) -> &DynWeb3 {
+    pub fn web3(&self) -> &Web3 {
         &self.web3
     }
 
@@ -56,8 +55,8 @@ impl Rpc {
 /// The Ethereum blockchain.
 #[derive(Clone)]
 pub struct Ethereum {
-    web3: DynWeb3,
-    unbuffered_web3: DynWeb3,
+    web3: Web3,
+    unbuffered_web3: Web3,
     chain: Chain,
     current_block: CurrentBlockWatcher,
     contracts: Contracts,
@@ -71,8 +70,8 @@ impl Ethereum {
     /// Since this type is essential for the program this method will panic on
     /// any initialization error.
     pub async fn new(
-        web3: DynWeb3,
-        unbuffered_web3: DynWeb3,
+        web3: Web3,
+        unbuffered_web3: Web3,
         chain: &Chain,
         url: Url,
         addresses: contracts::Addresses,

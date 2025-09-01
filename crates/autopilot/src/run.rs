@@ -26,15 +26,9 @@ use {
     chain::Chain,
     clap::Parser,
     contracts::{BalancerV2Vault, IUniswapV3Factory},
-    ethcontract::{
-        BlockNumber,
-        H160,
-        common::DeploymentInformation,
-        dyns::DynWeb3,
-        errors::DeployError,
-    },
-    ethrpc::block_stream::block_number_to_block_number_hash,
-    futures::stream::StreamExt,
+    ethcontract::{BlockNumber, H160, common::DeploymentInformation, errors::DeployError},
+    ethrpc::{Web3, block_stream::block_number_to_block_number_hash},
+    futures::StreamExt,
     model::DomainSeparator,
     observe::metrics::LivenessChecking,
     shared::{
@@ -116,8 +110,8 @@ async fn unbuffered_ethrpc(url: &Url) -> infra::blockchain::Rpc {
 
 #[instrument(skip_all)]
 async fn ethereum(
-    web3: DynWeb3,
-    unbuffered_web3: DynWeb3,
+    web3: Web3,
+    unbuffered_web3: Web3,
     chain: &Chain,
     url: Url,
     contracts: infra::blockchain::contracts::Addresses,

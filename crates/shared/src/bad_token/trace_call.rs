@@ -375,11 +375,11 @@ mod tests {
                     solver_finder::AutoUpdatingSolverTokenOwnerFinder,
                 },
             },
-            ethrpc::create_env_test_transport,
             sources::{BaselineSource, uniswap_v2},
         },
         chain::Chain,
         contracts::{BalancerV2Vault, IUniswapV3Factory},
+        ethrpc::Web3,
         hex_literal::hex,
         std::{env, time::Duration},
         web3::types::{
@@ -528,8 +528,7 @@ mod tests {
     async fn mainnet_tokens() {
         // observe::tracing::initialize("orderbook::bad_token=debug,
         // shared::transport=debug", tracing::level_filters::LevelFilter::OFF);
-        let http = create_env_test_transport();
-        let web3 = Web3::new(http);
+        let web3 = Web3::new_from_env();
         let version = web3.eth().chain_id().await.unwrap().to_string();
 
         let base_tokens = &[
@@ -772,8 +771,7 @@ mod tests {
     #[ignore]
     async fn mainnet_univ3() {
         observe::tracing::initialize(&observe::Config::default().with_env_filter("shared=debug"));
-        let http = create_env_test_transport();
-        let web3 = Web3::new(http);
+        let web3 = Web3::new_from_env();
         let base_tokens = vec![testlib::tokens::WETH];
         let settlement = contracts::GPv2Settlement::deployed(&web3).await.unwrap();
         let factory = IUniswapV3Factory::deployed(&web3).await.unwrap();
@@ -900,8 +898,7 @@ mod tests {
         // Force the cache to update at least once.
         solver_token_finder.update().await.unwrap();
 
-        let http = create_env_test_transport();
-        let web3 = Web3::new(http);
+        let web3 = Web3::new_from_env();
 
         let settlement = contracts::GPv2Settlement::deployed(&web3).await.unwrap();
         let finder = Arc::new(TokenOwnerFinder {
