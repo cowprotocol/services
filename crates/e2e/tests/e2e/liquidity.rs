@@ -1,9 +1,4 @@
 use {
-    ::alloy::{
-        eips::Encodable2718,
-        network::{EthereumWallet, TransactionBuilder},
-        providers::Provider,
-    },
     chrono::{NaiveDateTime, Utc},
     contracts::{
         ERC20,
@@ -31,7 +26,7 @@ use {
     ethrpc::{
         Web3,
         alloy::{
-            conversions::{ToAlloy, ToLegacy},
+            conversions::{IntoAlloy, IntoLegacy},
             provider_with_account,
         },
     },
@@ -112,11 +107,11 @@ async fn zero_ex_liquidity(web3: Web3) {
     tx!(
         zeroex_maker.account(),
         // With a lower amount 0x contract shows much lower fillable amount
-        token_usdt.approve(zeroex.address().to_legacy(), amount * 4)
+        token_usdt.approve(zeroex.address().into_legacy(), amount * 4)
     );
     tx!(
         solver.account(),
-        token_usdc.approve(zeroex.address().to_legacy(), amount)
+        token_usdc.approve(zeroex.address().into_legacy(), amount)
     );
 
     let order = OrderCreation {
@@ -138,7 +133,7 @@ async fn zero_ex_liquidity(web3: Web3) {
     let zeroex_liquidity_orders = create_zeroex_liquidity_orders(
         order.clone(),
         zeroex_maker.clone(),
-        zeroex.address().to_legacy(),
+        zeroex.address().into_legacy(),
         chain_id,
         onchain.contracts().weth.address(),
     );
@@ -247,12 +242,12 @@ async fn zero_ex_liquidity(web3: Web3) {
         maker: zeroex_maker.address(),
         taker: Default::default(),
         sender: Default::default(),
-        fee_recipient: zeroex.address().to_legacy(),
+        fee_recipient: zeroex.address().into_legacy(),
         pool: H256::default(),
         expiry: NaiveDateTime::MAX.and_utc().timestamp() as u64,
         salt: U256::from(Utc::now().timestamp()),
     }
-    .to_order_record(chain_id, zeroex.address().to_legacy(), zeroex_maker);
+    .to_order_record(chain_id, zeroex.address().into_legacy(), zeroex_maker);
     fill_or_kill_zeroex_limit_order(&zeroex, &zeroex_order, solver.account().clone())
         .await
         .unwrap();
@@ -343,24 +338,24 @@ async fn get_zeroex_order_amounts(
     Ok(zeroex
         .getLimitOrderRelevantState(
             IZeroex::LibNativeOrder::LimitOrder {
-                makerToken: zeroex_order.order().maker_token.to_alloy(),
-                takerToken: zeroex_order.order().taker_token.to_alloy(),
+                makerToken: zeroex_order.order().maker_token.into_alloy(),
+                takerToken: zeroex_order.order().taker_token.into_alloy(),
                 makerAmount: zeroex_order.order().maker_amount,
                 takerAmount: zeroex_order.order().taker_amount,
                 takerTokenFeeAmount: zeroex_order.order().taker_token_fee_amount,
-                maker: zeroex_order.order().maker.to_alloy(),
-                taker: zeroex_order.order().taker.to_alloy(),
-                sender: zeroex_order.order().sender.to_alloy(),
-                feeRecipient: zeroex_order.order().fee_recipient.to_alloy(),
-                pool: zeroex_order.order().pool.to_alloy(),
+                maker: zeroex_order.order().maker.into_alloy(),
+                taker: zeroex_order.order().taker.into_alloy(),
+                sender: zeroex_order.order().sender.into_alloy(),
+                feeRecipient: zeroex_order.order().fee_recipient.into_alloy(),
+                pool: zeroex_order.order().pool.into_alloy(),
                 expiry: zeroex_order.order().expiry,
-                salt: zeroex_order.order().salt.to_alloy(),
+                salt: zeroex_order.order().salt.into_alloy(),
             },
             IZeroex::LibSignature::Signature {
                 signatureType: zeroex_order.order().signature.signature_type,
                 v: zeroex_order.order().signature.v,
-                r: zeroex_order.order().signature.r.to_alloy(),
-                s: zeroex_order.order().signature.s.to_alloy(),
+                r: zeroex_order.order().signature.r.into_alloy(),
+                s: zeroex_order.order().signature.s.into_alloy(),
             },
         )
         .call()
@@ -379,32 +374,32 @@ async fn fill_or_kill_zeroex_limit_order(
     let tx_hash = zeroex
         .fillOrKillLimitOrder(
             IZeroex::LibNativeOrder::LimitOrder {
-                makerToken: zeroex_order.order().maker_token.to_alloy(),
-                takerToken: zeroex_order.order().taker_token.to_alloy(),
+                makerToken: zeroex_order.order().maker_token.into_alloy(),
+                takerToken: zeroex_order.order().taker_token.into_alloy(),
                 makerAmount: zeroex_order.order().maker_amount,
                 takerAmount: zeroex_order.order().taker_amount,
                 takerTokenFeeAmount: zeroex_order.order().taker_token_fee_amount,
-                maker: zeroex_order.order().maker.to_alloy(),
-                taker: zeroex_order.order().taker.to_alloy(),
-                sender: zeroex_order.order().sender.to_alloy(),
-                feeRecipient: zeroex_order.order().fee_recipient.to_alloy(),
-                pool: zeroex_order.order().pool.to_alloy(),
+                maker: zeroex_order.order().maker.into_alloy(),
+                taker: zeroex_order.order().taker.into_alloy(),
+                sender: zeroex_order.order().sender.into_alloy(),
+                feeRecipient: zeroex_order.order().fee_recipient.into_alloy(),
+                pool: zeroex_order.order().pool.into_alloy(),
                 expiry: zeroex_order.order().expiry,
-                salt: zeroex_order.order().salt.to_alloy(),
+                salt: zeroex_order.order().salt.into_alloy(),
             },
             IZeroex::LibSignature::Signature {
                 signatureType: zeroex_order.order().signature.signature_type,
                 v: zeroex_order.order().signature.v,
-                r: zeroex_order.order().signature.r.to_alloy(),
-                s: zeroex_order.order().signature.s.to_alloy(),
+                r: zeroex_order.order().signature.r.into_alloy(),
+                s: zeroex_order.order().signature.s.into_alloy(),
             },
             zeroex_order.order().taker_amount,
         )
-        .from(from_account.address().to_alloy())
+        .from(from_account.address().into_alloy())
         .send()
         .await?
         .watch()
         .await?;
 
-    Ok(tx_hash.to_alloy())
+    Ok(tx_hash.into_alloy())
 }

@@ -13,7 +13,7 @@ use {
     arc_swap::ArcSwap,
     contracts::{GPv2Settlement, alloy::IZeroex},
     ethrpc::{
-        alloy::conversions::ToLegacy,
+        alloy::conversions::IntoLegacy,
         block_stream::{CurrentBlockWatcher, into_stream},
     },
     futures::StreamExt,
@@ -147,7 +147,7 @@ impl LiquidityCollecting for ZeroExLiquidity {
 
         let allowances = Arc::new(
             self.allowance_manager
-                .get_allowances(tokens, self.zeroex.address().to_legacy())
+                .get_allowances(tokens, self.zeroex.address().into_legacy())
                 .await?,
         );
 
@@ -252,7 +252,7 @@ pub mod tests {
     use {
         super::*,
         crate::interactions::allowances::Approval,
-        ethrpc::{alloy, alloy::conversions::ToAlloy},
+        ethrpc::{alloy, alloy::conversions::IntoAlloy},
         maplit::hashmap,
         shared::{
             baseline_solver::BaseTokens,
@@ -394,11 +394,11 @@ pub mod tests {
     async fn interaction_encodes_approval_when_insufficient() {
         let sell_token = H160::from_low_u64_be(1);
         let zeroex = Arc::new(IZeroex::Instance::new(
-            H160::default().to_alloy(),
+            H160::default().into_alloy(),
             alloy::dummy_provider(),
         ));
         let allowances = Allowances::new(
-            zeroex.address().to_legacy(),
+            zeroex.address().into_legacy(),
             hashmap! { sell_token => 99.into() },
         );
         let order_record = OrderRecord::new(
@@ -425,7 +425,7 @@ pub mod tests {
             [
                 Approval {
                     token: sell_token,
-                    spender: zeroex.address().to_legacy(),
+                    spender: zeroex.address().into_legacy(),
                 }
                 .encode(),
                 ZeroExInteraction {
@@ -442,11 +442,11 @@ pub mod tests {
     async fn interaction_encodes_no_approval_when_sufficient() {
         let sell_token = H160::from_low_u64_be(1);
         let zeroex = Arc::new(IZeroex::Instance::new(
-            H160::default().to_alloy(),
+            H160::default().into_alloy(),
             alloy::dummy_provider(),
         ));
         let allowances = Allowances::new(
-            zeroex.address().to_legacy(),
+            zeroex.address().into_legacy(),
             hashmap! { sell_token => 100.into() },
         );
         let order_record = OrderRecord::new(
