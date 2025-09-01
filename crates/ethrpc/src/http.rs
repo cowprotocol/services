@@ -101,42 +101,24 @@ async fn execute_rpc<T: DeserializeOwned>(
         .send()
         .await
         .map_err(|err: reqwest::Error| {
-            if let Some(ref req_id) = request_id {
-                tracing::warn!(
-                    name = %inner.name,
-                    rpc_request_id = %id,
-                    request_id = %req_id,
-                    error = %err,
-                    "failed to send request"
-                );
-            } else {
-                tracing::warn!(
-                    name = %inner.name,
-                    rpc_request_id = %id,
-                    error = %err,
-                    "failed to send request"
-                );
-            }
+            tracing::warn!(
+                name = %inner.name,
+                rpc_request_id = %id,
+                request_id,
+                error = %err,
+                "failed to send request"
+            );
             Web3Error::Transport(TransportError::Message(err.to_string()))
         })?;
     let status = response.status();
     let text = response.text().await.map_err(|err: reqwest::Error| {
-        if let Some(ref req_id) = request_id {
-            tracing::warn!(
-                name = %inner.name,
-                rpc_request_id = %id,
-                request_id = %req_id,
-                error = %err,
-                "failed to get response body"
-            );
-        } else {
-            tracing::warn!(
-                name = %inner.name,
-                rpc_request_id = %id,
-                error = %err,
-                "failed to get response body"
-            );
-        }
+        tracing::warn!(
+            name = %inner.name,
+            rpc_request_id = %id,
+            request_id,
+            error = %err,
+            "failed to get response body"
+        );
         Web3Error::Transport(TransportError::Message(err.to_string()))
     })?;
     // Log the raw text before decoding to get more information on responses that
@@ -145,35 +127,26 @@ async fn execute_rpc<T: DeserializeOwned>(
     tracing::trace!(name = %inner.name, %id, body = %text.trim(), "received response");
     if !status.is_success() {
         let error_msg = format!("HTTP error {status}");
-        if let Some(ref req_id) = request_id {
-            tracing::warn!(
-                name = %inner.name,
-                rpc_request_id = %id,
-                request_id = %req_id,
-                status = %status,
-                "HTTP error response"
-            );
-        } else {
-            tracing::warn!(
-                name = %inner.name,
-                rpc_request_id = %id,
-                status = %status,
-                "HTTP error response"
-            );
-        }
+        tracing::warn!(
+            name = %inner.name,
+            rpc_request_id = %id,
+            request_id,
+            status = %status,
+            "HTTP error response"
+        );
         return Err(Web3Error::Transport(TransportError::Message(error_msg)));
     }
 
     let result = jsonrpc_core::serde_from_str(&text).map_err(|err| {
+        tracing::warn!(
+            name = %inner.name,
+            rpc_request_id = %id,
+            request_id,
+            error = %err,
+            raw_response = %text.trim(),
+            "failed to decode JSON response"
+        );
         if let Some(ref req_id) = request_id {
-            tracing::warn!(
-                name = %inner.name,
-                rpc_request_id = %id,
-                request_id = %req_id,
-                error = %err,
-                raw_response = %text.trim(),
-                "failed to decode JSON response"
-            );
             Web3Error::Decoder(format!(
                 "{:?}, raw response: {}, rpc_request_id: {}, request_id: {}, {}",
                 err,
@@ -183,13 +156,6 @@ async fn execute_rpc<T: DeserializeOwned>(
                 text.trim()
             ))
         } else {
-            tracing::warn!(
-                name = %inner.name,
-                rpc_request_id = %id,
-                error = %err,
-                raw_response = %text.trim(),
-                "failed to decode JSON response"
-            );
             Web3Error::Decoder(format!(
                 "{:?}, raw response: {}, rpc_request_id: {}, {}",
                 err,
