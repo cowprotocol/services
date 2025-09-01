@@ -1,6 +1,6 @@
 use {
     crate::{
-        database::competition::{Competition, LegacyScore},
+        database::competition::Competition,
         domain::{
             self,
             OrderUid,
@@ -305,7 +305,6 @@ impl RunLoop {
                 &ranking,
                 block_deadline,
                 winner_selection,
-                is_single_winner_selection,
             )
             .await
         {
@@ -419,7 +418,6 @@ impl RunLoop {
         ranking: &Ranking,
         block_deadline: u64,
         winner_selection: Box<dyn winner_selection::Arbitrator>,
-        is_single_winner_selection: bool,
     ) -> Result<()> {
         let start = Instant::now();
         let reference_scores = winner_selection.compute_reference_scores(ranking);
