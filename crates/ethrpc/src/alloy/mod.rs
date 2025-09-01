@@ -12,6 +12,7 @@ use {
         signers::local::PrivateKeySigner,
     },
     buffering::BatchCallLayer,
+    ethcontract::PrivateKey,
     instrumentation::{InstrumentationLayer, LabelingLayer},
 };
 
@@ -26,7 +27,7 @@ pub fn provider(url: &str) -> AlloyProvider {
     ProviderBuilder::new().connect_client(rpc).erased()
 }
 
-pub fn provider_with_account(url: &str, private_key: &[u8; 32]) -> anyhow::Result<AlloyProvider> {
+pub fn provider_with_account(url: &str, private_key: &PrivateKey) -> anyhow::Result<AlloyProvider> {
     let rpc = ClientBuilder::default()
         .layer(LabelingLayer {
             label: "main".into(),
@@ -35,7 +36,7 @@ pub fn provider_with_account(url: &str, private_key: &[u8; 32]) -> anyhow::Resul
         .layer(BatchCallLayer::new(Default::default()))
         .http(url.parse().unwrap());
 
-    let signer = PrivateKeySigner::from_slice(private_key)?;
+    let signer = PrivateKeySigner::from_slice(&private_key.secret_bytes())?;
     let wallet = EthereumWallet::new(signer);
 
     Ok(ProviderBuilder::new()

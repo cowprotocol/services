@@ -78,7 +78,7 @@ async fn zero_ex_liquidity(web3: Web3) {
     );
 
     let signer_pk = match &solver.account() {
-        Account::Offline(pk, _) => pk.secret_bytes(),
+        Account::Offline(pk, _) => pk.clone(),
         _ => unimplemented!(),
     };
     let zeroex_provider = provider_with_account(&web3.node_url, &signer_pk).unwrap();
