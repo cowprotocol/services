@@ -1,6 +1,5 @@
 use {
     crate::{
-        boundary,
         domain::{eth, liquidity},
         infra::{self, blockchain::Ethereum},
     },
@@ -65,7 +64,7 @@ impl Fetcher {
         };
 
         let block_stream = eth.current_block();
-        let block_retriever = blocks.retriever(boundary::web3(eth));
+        let block_retriever = blocks.retriever(eth.web3().clone());
 
         let uni_v2: Vec<_> = future::try_join_all(
             config

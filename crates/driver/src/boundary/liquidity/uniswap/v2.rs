@@ -134,7 +134,6 @@ where
 {
     let router = eth.contract_at::<IUniswapLikeRouter>(config.router);
     let settlement = eth.contracts().settlement().clone();
-    let web3 = router.raw_instance().web3().clone();
     let pool_fetcher = {
         let factory = router.factory().call().await?;
         let pair_provider = PairProvider {
@@ -143,8 +142,8 @@ where
         };
 
         let pool_fetcher = PoolFetcher::new(
-            reader(web3.clone(), pair_provider),
-            web3.clone(),
+            reader(eth.web3().clone(), pair_provider),
+            eth.web3().clone(),
             config.missing_pool_cache_time,
         );
 

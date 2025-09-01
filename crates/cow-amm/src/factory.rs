@@ -18,7 +18,7 @@ impl EventRetrieving for Factory {
     type Event = CowAmmEvent;
 
     fn get_events(&self) -> AllEventsBuilder<DynTransport, Self::Event> {
-        let mut events = AllEventsBuilder::new(self.web3.clone(), self.address, None);
+        let mut events = AllEventsBuilder::new(self.web3.legacy.clone(), self.address, None);
         events.filter = events.filter.topic0(Some(AMM_DEPLOYED_TOPIC).into());
         events
     }
