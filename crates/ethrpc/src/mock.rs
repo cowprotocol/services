@@ -1,8 +1,9 @@
 //! Mockable Web3 transport implementation.
 
 use {
+    crate::Web3,
+    alloy::providers::{Provider, ProviderBuilder, mock::Asserter},
     ethcontract::{
-        Web3,
         futures::future::{self, Ready},
         jsonrpc::{Call, Id, MethodCall, Params},
         web3::{self, BatchTransport, RequestId, Transport},
@@ -20,7 +21,15 @@ use {
 };
 
 pub fn web3() -> Web3<MockTransport> {
-    Web3::new(MockTransport::new())
+    Web3 {
+        legacy: web3::Web3::new(MockTransport::new()),
+        // this will not behave like the original mock transport but it's only used
+        // in one place so let's keep this for now and fix it when we switch to
+        // alloy in the 1 place that uses the mock provider.
+        alloy: ProviderBuilder::new()
+            .connect_mocked_client(Asserter::new())
+            .erased(),
+    }
 }
 
 /// An intermediate trait used for `mockall` to automatically generate a mock

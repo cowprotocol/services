@@ -6,8 +6,7 @@ use {
     },
     chain::Chain,
     contracts::FlashLoanRouter,
-    ethcontract::dyns::DynWeb3,
-    ethrpc::block_stream::CurrentBlockWatcher,
+    ethrpc::{Web3, block_stream::CurrentBlockWatcher},
     std::collections::HashMap,
     thiserror::Error,
 };
@@ -57,7 +56,7 @@ pub struct Addresses {
 
 impl Contracts {
     pub(super) async fn new(
-        web3: &DynWeb3,
+        web3: &Web3,
         chain: Chain,
         addresses: Addresses,
         block_stream: CurrentBlockWatcher,
