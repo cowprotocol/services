@@ -1,6 +1,6 @@
 use {
     crate::domain::{competition::Auction, eth},
-    futures::{StreamExt, future::join_all, stream::FuturesUnordered},
+    futures::{StreamExt, stream::FuturesUnordered},
     std::{collections::HashMap, fmt, time::Instant},
 };
 
@@ -65,7 +65,7 @@ impl Detector {
         let now = Instant::now();
 
         // reuse the original allocation
-        let supported_orders = std::mem::replace(&mut auction.orders, Vec::new());
+        let supported_orders = std::mem::take(&mut auction.orders);
         let mut token_quality_checks = FuturesUnordered::new();
         let mut removed_uids = Vec::new();
 
