@@ -297,9 +297,9 @@ impl Utilities {
                         .iter()
                         .map(|t| {
                             auction.tokens
-                                .get(eth::TokenAddress(eth::ContractAddress(*t)))
-                                .price
-                                .map(|p| p.0.0)
+                                .get(&eth::TokenAddress(eth::ContractAddress(*t)))
+                                .and_then(|token| token.price)
+                                .map(|price| price.0.0)
                         })
                         .collect::<Option<Vec<_>>>()?;
                     Some((amm, prices))

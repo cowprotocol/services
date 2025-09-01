@@ -126,15 +126,8 @@ impl Auction {
 pub struct Tokens(HashMap<eth::TokenAddress, Token>);
 
 impl Tokens {
-    pub fn get(&self, address: eth::TokenAddress) -> Token {
-        self.0.get(&address).cloned().unwrap_or(Token {
-            decimals: None,
-            symbol: None,
-            address,
-            price: None,
-            available_balance: Default::default(),
-            trusted: false,
-        })
+    pub fn get(&self, address: &eth::TokenAddress) -> Option<&Token> {
+        self.0.get(address)
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &Token> {
