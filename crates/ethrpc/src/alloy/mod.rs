@@ -26,7 +26,7 @@ pub fn provider(url: &str) -> AlloyProvider {
     ProviderBuilder::new().connect_client(rpc).erased()
 }
 
-pub fn provider_with_account(url: &str, private_key: &[u8; 32]) -> AlloyProvider {
+pub fn provider_with_account(url: &str, private_key: &[u8; 32]) -> anyhow::Result<AlloyProvider> {
     let rpc = ClientBuilder::default()
         .layer(LabelingLayer {
             label: "main".into(),
@@ -35,13 +35,13 @@ pub fn provider_with_account(url: &str, private_key: &[u8; 32]) -> AlloyProvider
         .layer(BatchCallLayer::new(Default::default()))
         .http(url.parse().unwrap());
 
-    let signer = PrivateKeySigner::from_slice(private_key).unwrap();
+    let signer = PrivateKeySigner::from_slice(private_key)?;
     let wallet = EthereumWallet::new(signer);
 
-    ProviderBuilder::new()
+    Ok(ProviderBuilder::new()
         .wallet(wallet)
         .connect_client(rpc)
-        .erased()
+        .erased())
 }
 
 pub fn dummy_provider() -> AlloyProvider {

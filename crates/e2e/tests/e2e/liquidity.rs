@@ -81,7 +81,7 @@ async fn zero_ex_liquidity(web3: Web3) {
         Account::Offline(pk, _) => pk.secret_bytes(),
         _ => unimplemented!(),
     };
-    let zeroex_provider = provider_with_account(&web3.node_url, &signer_pk);
+    let zeroex_provider = provider_with_account(&web3.node_url, &signer_pk).unwrap();
     let zeroex = IZeroex::Instance::deployed(&zeroex_provider).await.unwrap();
 
     let amount = to_wei_with_exp(5, 8);
