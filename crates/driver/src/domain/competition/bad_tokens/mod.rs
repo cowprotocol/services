@@ -104,7 +104,6 @@ impl Detector {
 
         while let Some((order, quality)) = token_quality_checks.next().await {
             if quality == Quality::Supported {
-                // if we use retain to reuse the allocation we have to clone orders...
                 supported_orders.push(order);
             } else {
                 removed_uids.push(order.uid);
