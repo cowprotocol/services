@@ -1499,19 +1499,6 @@ fn main() {
         builder.add_network_str(SEPOLIA, "0x86dcd3293C53Cf8EFd7303B57beb2a3F671dDE98")
     });
 
-    // Chainalysis oracle for sanctions screening
-    generate_contract_with_config("ChainalysisOracle", |builder| {
-        builder
-            .add_network_str(MAINNET, "0x40C57923924B5c5c5455c48D93317139ADDaC8fb")
-            .add_network_str(ARBITRUM_ONE, "0x40C57923924B5c5c5455c48D93317139ADDaC8fb")
-            .add_network_str(BASE, "0x3A91A31cB3dC49b4db9Ce721F50a9D076c8D739B")
-            .add_network_str(AVALANCHE, "0x40C57923924B5c5c5455c48D93317139ADDaC8fb")
-            .add_network_str(BNB, "0x40C57923924B5c5c5455c48D93317139ADDaC8fb")
-            .add_network_str(OPTIMISM, "0x40C57923924B5c5c5455c48D93317139ADDaC8fb")
-            .add_network_str(POLYGON, "0x40C57923924B5c5c5455c48D93317139ADDaC8fb")
-        // Not available on Lens: <https://go.chainalysis.com/chainalysis-oracle-docs.html>
-    });
-
     generate_contract("CowAmm");
     generate_contract_with_config("CowAmmConstantProductFactory", |builder| {
         builder
