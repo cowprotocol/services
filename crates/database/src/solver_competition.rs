@@ -38,14 +38,11 @@ pub async fn load_by_id(
     id: AuctionId,
 ) -> Result<Option<LoadCompetition>, sqlx::Error> {
     const QUERY: &str = r#"
-SELECT sc.json, sc.id, COALESCE(ARRAY_AGG(s.tx_hash) FILTER (WHERE so.block_number IS NOT NULL), '{}') AS tx_hashes
+SELECT sc.json, sc.id, COALESCE(ARRAY_AGG(s.tx_hash) FILTER (WHERE s.solution_uid IS NOT NULL), '{}') AS tx_hashes
 FROM solver_competitions sc
 -- outer joins because the data might not have been indexed yet
 LEFT OUTER JOIN settlements s ON sc.id = s.auction_id
 -- exclude settlements from another environment for which observation is guaranteed to not exist
-LEFT OUTER JOIN settlement_observations so 
-    ON s.block_number = so.block_number 
-    AND s.log_index = so.log_index
 WHERE sc.id = $1
 GROUP BY sc.id
     ;"#;
@@ -58,14 +55,10 @@ pub async fn load_latest_competitions(
     latest_competitions_count: u32,
 ) -> Result<Vec<LoadCompetition>, sqlx::Error> {
     const QUERY: &str = r#"
-SELECT sc.json, sc.id, COALESCE(ARRAY_AGG(s.tx_hash) FILTER (WHERE so.block_number IS NOT NULL), '{}') AS tx_hashes
+SELECT sc.json, sc.id, COALESCE(ARRAY_AGG(s.tx_hash) FILTER (WHERE s.solution_uid IS NOT NULL), '{}') AS tx_hashes
 FROM solver_competitions sc
 -- outer joins because the data might not have been indexed yet
 LEFT OUTER JOIN settlements s ON sc.id = s.auction_id
--- exclude settlements from another environment for which observation is guaranteed to not exist
-LEFT OUTER JOIN settlement_observations so 
-    ON s.block_number = so.block_number 
-    AND s.log_index = so.log_index
 GROUP BY sc.id
 ORDER BY sc.id DESC
 LIMIT $1
@@ -94,18 +87,12 @@ WITH competition AS (
     SELECT sc.id
     FROM solver_competitions sc
     JOIN settlements s ON sc.id = s.auction_id
-    JOIN settlement_observations so 
-        ON s.block_number = so.block_number 
-        AND s.log_index = so.log_index
-    WHERE s.tx_hash = $1
+    WHERE s.solution_uid IS NOT NULL AND s.tx_hash = $1
 )
-SELECT sc.json, sc.id, COALESCE(ARRAY_AGG(s.tx_hash) FILTER (WHERE so.block_number IS NOT NULL), '{}') AS tx_hashes
+SELECT sc.json, sc.id, COALESCE(ARRAY_AGG(s.tx_hash) FILTER (WHERE s.solution_uid IS NOT NULL), '{}') AS tx_hashes
 FROM solver_competitions sc
 JOIN settlements s ON sc.id = s.auction_id
-JOIN settlement_observations so 
-    ON s.block_number = so.block_number 
-    AND s.log_index = so.log_index
-WHERE sc.id = (SELECT id FROM competition)
+WHERE sc.id = (SELECT id FROM competition) AND s.solution_uid IS NOT NULL
 GROUP BY sc.id
     ;"#;
     sqlx::query_as(QUERY).bind(tx_hash).fetch_optional(ex).await
@@ -152,7 +139,7 @@ mod tests {
         assert!(load_by_id(&mut db, 1).await.unwrap().is_none());
 
         // insert three settlement events for the same auction id, with one of them not
-        // having observation (in practice usually meaning it's from different
+        // having solution UID (in practice, usually meaning it's from a different
         // environment)
         crate::events::insert_settlement(
             &mut db,
@@ -167,16 +154,6 @@ mod tests {
         )
         .await
         .unwrap();
-        crate::settlement_observations::upsert(
-            &mut db,
-            crate::settlement_observations::Observation {
-                block_number: 0,
-                log_index: 0,
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
         crate::events::insert_settlement(
             &mut db,
             &EventIndex {
@@ -186,16 +163,6 @@ mod tests {
             &Settlement {
                 solver: Default::default(),
                 transaction_hash: ByteArray([1u8; 32]),
-            },
-        )
-        .await
-        .unwrap();
-        crate::settlement_observations::upsert(
-            &mut db,
-            crate::settlement_observations::Observation {
-                block_number: 0,
-                log_index: 1,
-                ..Default::default()
             },
         )
         .await
@@ -220,6 +187,13 @@ mod tests {
             .await
             .unwrap();
         crate::settlements::update_settlement_auction(&mut db, 0, 2, 0)
+            .await
+            .unwrap();
+
+        crate::settlements::update_settlement_solver(&mut db, 0, 0, Default::default(), 0)
+            .await
+            .unwrap();
+        crate::settlements::update_settlement_solver(&mut db, 0, 1, Default::default(), 1)
             .await
             .unwrap();
 
