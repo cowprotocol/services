@@ -145,17 +145,17 @@ impl DataAggregator {
         let auction = self.utilities.parse_request(request).await?;
 
         let balances =
-            Self::spawn_shared(Arc::clone(&self.utilities).fetch_balances(auction.clone()));
+            Self::spawn_shared(Arc::clone(&self.utilities).fetch_balances(Arc::clone(&auction)));
 
         let app_data = Self::spawn_shared(
-            Arc::clone(&self.utilities).collect_orders_app_data(auction.clone()),
+            Arc::clone(&self.utilities).collect_orders_app_data(Arc::clone(&auction)),
         );
 
         let cow_amm_orders =
-            Self::spawn_shared(Arc::clone(&self.utilities).cow_amm_orders(auction.clone()));
+            Self::spawn_shared(Arc::clone(&self.utilities).cow_amm_orders(Arc::clone(&auction)));
 
         let liquidity =
-            Self::spawn_shared(Arc::clone(&self.utilities).fetch_liquidity(auction.clone()));
+            Self::spawn_shared(Arc::clone(&self.utilities).fetch_liquidity(Arc::clone(&auction)));
 
         Ok(DataFetchingTasks {
             auction: futures::future::ready(auction).boxed().shared(),
