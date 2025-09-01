@@ -28,7 +28,7 @@ use {
     anyhow::{Context, Result},
     database::order_events::OrderEventLabel,
     ethrpc::block_stream::BlockInfo,
-    futures::{FutureExt, TryFutureExt},
+    futures::FutureExt,
     itertools::Itertools,
     model::solver_competition::{
         CompetitionAuction,
@@ -535,45 +535,37 @@ impl RunLoop {
             competition_table,
         };
 
-        match futures::try_join!(
-            self.persistence
-                .save_auction(auction, block_deadline)
-                .map_err(|e| e.0.context("failed to save auction")),
-            self.persistence
-                .save_solutions(auction.id, ranking.all())
-                .map_err(|e| e.0.context("failed to save solutions")),
-        ) {
-            Ok(_) => {
-                // Notify the solver participation guard that the proposed solutions have been
-                // saved.
-                if let Err(err) = self.competition_updates_sender.send(()) {
-                    tracing::error!(?err, "failed to notify solver participation guard");
-                }
-            }
-            Err(err) => {
-                // Don't error if saving of auction and solution fails, until stable.
-                // Various edge cases with JIT orders verifiable only in production.
-                tracing::warn!(?err, "failed to save new competition data");
-            }
-        }
-        tracing::trace!(auction_id = ?auction.id, "auction saved");
+        let mut tx = self.persistence.db_transaction().await?;
 
-        tracing::trace!(?competition, "saving competition");
-        futures::try_join!(
-            self.persistence
-                .save_competition(&competition)
-                .map_err(|e| e.0.context("failed to save competition")),
-            self.persistence
-                .save_surplus_capturing_jit_order_owners(
-                    auction.id,
-                    &auction.surplus_capturing_jit_order_owners,
-                )
-                .map_err(|e| e.0.context("failed to save jit order owners")),
-            self.persistence
-                .store_fee_policies(auction.id, fee_policies)
-                .map_err(|e| e.context("failed to fee_policies")),
-        )?;
-        tracing::trace!(auction_id = ?auction.id, "competition saved");
+        self.persistence
+            .save_auction(&mut tx, auction, block_deadline)
+            .await?;
+        self.persistence
+            .save_solutions(&mut tx, auction.id, ranking.all())
+            .await?;
+
+        self.persistence
+            .save_competition(&mut tx, &competition)
+            .await?;
+        self.persistence
+            .save_surplus_capturing_jit_order_owners(
+                &mut tx,
+                auction.id,
+                &auction.surplus_capturing_jit_order_owners,
+            )
+            .await?;
+
+        self.persistence
+            .store_fee_policies(&mut tx, auction.id, fee_policies)
+            .await?;
+
+        tx.commit().await?;
+
+        if let Err(err) = self.competition_updates_sender.send(()) {
+            tracing::error!(?err, "failed to notify solver participation guard");
+        }
+
+        tracing::trace!(auction_id = ?auction.id, "auction results saved atomically");
 
         Metrics::post_processed(start.elapsed());
         Ok(())

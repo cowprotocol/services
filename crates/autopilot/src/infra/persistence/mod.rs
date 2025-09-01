@@ -57,6 +57,12 @@ impl Persistence {
         }
     }
 
+    pub async fn db_transaction(
+        &self,
+    ) -> Result<sqlx::Transaction<'_, sqlx::Postgres>, sqlx::Error> {
+        self.postgres.pool.begin().await
+    }
+
     /// There is always only one `current` auction.
     ///
     /// This method replaces the current auction with the given one.
@@ -119,10 +125,10 @@ impl Persistence {
     /// Saves the competition data to the DB
     pub async fn save_competition(
         &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         competition: &boundary::Competition,
     ) -> Result<(), DatabaseError> {
-        self.postgres
-            .save_competition(competition)
+        Postgres::save_competition(tx, competition)
             .await
             .map_err(DatabaseError)
     }
@@ -131,6 +137,7 @@ impl Persistence {
     /// auction.
     pub async fn save_solutions(
         &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         auction_id: domain::auction::Id,
         solutions: impl Iterator<Item = &domain::competition::Participant>,
     ) -> Result<(), DatabaseError> {
@@ -139,10 +146,8 @@ impl Persistence {
             .with_label_values(&["save_solutions"])
             .start_timer();
 
-        let mut ex = self.postgres.pool.begin().await?;
-
         database::solver_competition_v2::save(
-            &mut ex,
+            tx,
             auction_id,
             &solutions
                 .enumerate()
@@ -188,25 +193,26 @@ impl Persistence {
         )
         .await?;
 
-        Ok(ex.commit().await?)
+        Ok(())
     }
 
     /// Saves the surplus capturing jit order owners to the DB
     pub async fn save_surplus_capturing_jit_order_owners(
         &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         auction_id: AuctionId,
         surplus_capturing_jit_order_owners: &[domain::eth::Address],
     ) -> Result<(), DatabaseError> {
-        self.postgres
-            .save_surplus_capturing_jit_order_owners(
-                auction_id,
-                &surplus_capturing_jit_order_owners
-                    .iter()
-                    .map(|address| ByteArray(address.0.into()))
-                    .collect::<Vec<_>>(),
-            )
-            .await
-            .map_err(DatabaseError)
+        Postgres::save_surplus_capturing_jit_order_owners(
+            tx,
+            auction_id,
+            &surplus_capturing_jit_order_owners
+                .iter()
+                .map(|address| ByteArray(address.0.into()))
+                .collect::<Vec<_>>(),
+        )
+        .await
+        .map_err(DatabaseError)
     }
 
     /// Inserts an order event for each order uid in the given set.
@@ -233,6 +239,7 @@ impl Persistence {
     /// Saves the given fee policies to the DB as a single batch.
     pub async fn store_fee_policies(
         &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         auction_id: domain::auction::Id,
         fee_policies: Vec<(domain::OrderUid, Vec<domain::fee::Policy>)>,
     ) -> anyhow::Result<()> {
@@ -241,14 +248,13 @@ impl Persistence {
             .with_label_values(&["store_fee_policies"])
             .start_timer();
 
-        let mut ex = self.postgres.pool.begin().await.context("begin")?;
         for chunk in fee_policies.chunks(self.postgres.config.insert_batch_size.get()) {
-            crate::database::fee_policies::insert_batch(&mut ex, auction_id, chunk.iter().cloned())
+            crate::database::fee_policies::insert_batch(tx, auction_id, chunk.iter().cloned())
                 .await
                 .context("fee_policies::insert_batch")?;
         }
 
-        ex.commit().await.context("commit")
+        Ok(())
     }
 
     /// For a given auction and solver, tries to find the settlement
@@ -276,6 +282,7 @@ impl Persistence {
     /// Save auction related data to the database.
     pub async fn save_auction(
         &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         auction: &domain::Auction,
         deadline: u64, // to become part of the auction struct
     ) -> Result<(), DatabaseError> {
@@ -284,10 +291,8 @@ impl Persistence {
             .with_label_values(&["save_auction"])
             .start_timer();
 
-        let mut ex = self.postgres.pool.begin().await?;
-
         database::auction::save(
-            &mut ex,
+            tx,
             database::auction::Auction {
                 id: auction.id,
                 block: i64::try_from(auction.block).context("block overflow")?,
@@ -316,7 +321,7 @@ impl Persistence {
         )
         .await?;
 
-        Ok(ex.commit().await?)
+        Ok(())
     }
 
     /// Get auction data.

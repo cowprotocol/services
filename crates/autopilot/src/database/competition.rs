@@ -3,6 +3,7 @@ use {
     anyhow::Context,
     database::{
         Address,
+        PgTransaction,
         auction::AuctionId,
         auction_participants::Participant,
         auction_prices::AuctionPrice,
@@ -46,7 +47,10 @@ pub struct LegacyScore {
 }
 
 impl super::Postgres {
-    pub async fn save_competition(&self, competition: &Competition) -> anyhow::Result<()> {
+    pub async fn save_competition(
+        tx: &mut PgTransaction<'_>,
+        competition: &Competition,
+    ) -> anyhow::Result<()> {
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["save_competition"])
@@ -54,9 +58,7 @@ impl super::Postgres {
 
         let json = &serde_json::to_value(&competition.competition_table)?;
 
-        let mut ex = self.pool.begin().await.context("begin")?;
-
-        database::solver_competition::save(&mut ex, competition.auction_id, json)
+        database::solver_competition::save(tx, competition.auction_id, json)
             .await
             .context("solver_competition::save")?;
 
@@ -67,7 +69,7 @@ impl super::Postgres {
         // stored in the old format anymore.
         if let Some(legacy) = &competition.legacy {
             database::settlement_scores::insert(
-                &mut ex,
+                tx,
                 database::settlement_scores::Score {
                     auction_id: competition.auction_id,
                     winner: ByteArray(legacy.winner.0),
@@ -97,12 +99,12 @@ impl super::Postgres {
             })
             .collect();
 
-        database::reference_scores::insert(&mut ex, &reference_scores)
+        database::reference_scores::insert(tx, &reference_scores)
             .await
             .context("reference_scores::insert")?;
 
         database::auction_participants::insert(
-            &mut ex,
+            tx,
             competition
                 .participants
                 .iter()
@@ -117,7 +119,7 @@ impl super::Postgres {
         .context("auction_participants::insert")?;
 
         database::auction_prices::insert(
-            &mut ex,
+            tx,
             competition
                 .prices
                 .iter()
@@ -133,7 +135,7 @@ impl super::Postgres {
         .context("auction_prices::insert")?;
 
         database::auction_orders::insert(
-            &mut ex,
+            tx,
             competition.auction_id,
             competition
                 .competition_table
@@ -147,19 +149,17 @@ impl super::Postgres {
         .await
         .context("auction_orders::insert")?;
 
-        ex.commit().await.context("commit")
+        Ok(())
     }
 
     /// Saves the surplus capturing jit order owners to the DB
     pub async fn save_surplus_capturing_jit_order_owners(
-        &self,
+        tx: &mut PgTransaction<'_>,
         auction_id: AuctionId,
         surplus_capturing_jit_order_owners: &[Address],
     ) -> anyhow::Result<()> {
-        let mut ex = self.pool.acquire().await.context("acquire")?;
-
         surplus_capturing_jit_order_owners::insert(
-            &mut ex,
+            tx,
             auction_id,
             surplus_capturing_jit_order_owners,
         )
