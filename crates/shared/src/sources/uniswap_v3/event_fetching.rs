@@ -80,7 +80,7 @@ impl EventRetrieving for UniswapV3PoolEventFetcher {
     type Event = UniswapV3Event;
 
     fn get_events(&self) -> DynAllEventsBuilder<Self::Event> {
-        let mut events = DynAllEventsBuilder::new(self.0.clone(), H160::default(), None);
+        let mut events = DynAllEventsBuilder::new(self.0.legacy.clone(), H160::default(), None);
         let events_signatures = vec![H256(SWAP_TOPIC), H256(BURN_TOPIC), H256(MINT_TOPIC)];
         events.filter = events
             .filter
