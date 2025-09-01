@@ -7,7 +7,8 @@ use {
         },
         tests::{self, boundary, cases::EtherExt},
     },
-    ethcontract::{PrivateKey, Web3, dyns::DynWeb3, transport::DynTransport},
+    ethcontract::PrivateKey,
+    ethrpc::Web3,
     futures::Future,
     secp256k1::SecretKey,
     serde_json::json,
@@ -30,7 +31,7 @@ pub struct Pair {
 #[derive(Debug)]
 pub struct Blockchain {
     pub trader_secret_key: SecretKey,
-    pub web3: Web3<DynTransport>,
+    pub web3: Web3,
     pub web3_url: String,
     pub tokens: HashMap<&'static str, contracts::ERC20Mintable>,
     pub weth: contracts::WETH9,
@@ -212,9 +213,7 @@ impl Blockchain {
         // later
 
         let node = Node::new(&config.rpc_args).await;
-        let web3 = Web3::new(DynTransport::new(
-            web3::transports::Http::new(&node.url()).expect("valid URL"),
-        ));
+        let web3 = Web3::new_from_url(&node.url());
 
         let main_trader_account = ethcontract::Account::Offline(
             ethcontract::PrivateKey::from_slice(config.main_trader_secret_key.as_ref()).unwrap(),
@@ -250,7 +249,7 @@ impl Blockchain {
         .unwrap();
         wait_for(
             &web3,
-            ethcontract::transaction::TransactionBuilder::new(web3.clone())
+            ethcontract::transaction::TransactionBuilder::new(web3.legacy.clone())
                 .from(primary_account(&web3).await)
                 .to(weth.address())
                 .value(balance / 5)
@@ -922,11 +921,11 @@ impl Blockchain {
     }
 }
 
-async fn primary_address(web3: &DynWeb3) -> ethcontract::H160 {
+async fn primary_address(web3: &Web3) -> ethcontract::H160 {
     web3.eth().accounts().await.unwrap()[0]
 }
 
-async fn primary_account(web3: &DynWeb3) -> ethcontract::Account {
+async fn primary_account(web3: &Web3) -> ethcontract::Account {
     ethcontract::Account::Local(web3.eth().accounts().await.unwrap()[0], None)
 }
 
@@ -1012,7 +1011,7 @@ impl Drop for Node {
 /// introduces a subtle race condition, so it's necessary to
 /// wait for transactions to be confirmed before proceeding with the test. When
 /// switching from geth back to hardhat, this function can be removed.
-pub async fn wait_for<T>(web3: &DynWeb3, fut: impl Future<Output = T>) -> T {
+pub async fn wait_for<T>(web3: &Web3, fut: impl Future<Output = T>) -> T {
     let block = web3.eth().block_number().await.unwrap().as_u64();
     let result = fut.await;
     wait_for_block(web3, block + 1).await;
@@ -1020,7 +1019,7 @@ pub async fn wait_for<T>(web3: &DynWeb3, fut: impl Future<Output = T>) -> T {
 }
 
 /// Waits for the block height to be at least the specified value.
-pub async fn wait_for_block(web3: &DynWeb3, block: u64) {
+pub async fn wait_for_block(web3: &Web3, block: u64) {
     tokio::time::timeout(std::time::Duration::from_secs(15), async {
         loop {
             let next_block = web3.eth().block_number().await.unwrap().as_u64();
@@ -1035,7 +1034,7 @@ pub async fn wait_for_block(web3: &DynWeb3, block: u64) {
 }
 
 /// Sets code at a specific address for testing.
-pub async fn set_code(web3: &DynWeb3, address: eth::H160, code: &[u8]) {
+pub async fn set_code(web3: &Web3, address: eth::H160, code: &[u8]) {
     use web3::Transport;
 
     web3.transport()

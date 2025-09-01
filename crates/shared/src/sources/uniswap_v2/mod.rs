@@ -214,8 +214,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn baseline_mainnet() {
-        let http = crate::ethrpc::create_env_test_transport();
-        let web3 = Web3::new(http);
+        let web3 = ethrpc::Web3::new_from_env();
         let version = web3.eth().chain_id().await.unwrap().to_string();
         assert_eq!(version, "1", "test must be run with mainnet node");
         let test = |source, token0, token1, expected| {
@@ -248,8 +247,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn baseline_sepolia() {
-        let http = crate::ethrpc::create_env_test_transport();
-        let web3 = Web3::new(http);
+        let web3 = ethrpc::Web3::new_from_env();
         let version = web3.eth().chain_id().await.unwrap().to_string();
         assert_eq!(version, "11155111", "test must be run with mainnet node");
         let test = |source, token0, token1, expected| {
@@ -269,8 +267,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn baseline_xdai() {
-        let http = crate::ethrpc::create_env_test_transport();
-        let web3 = Web3::new(http);
+        let web3 = ethrpc::Web3::new_from_env();
         let version = web3.eth().chain_id().await.unwrap().to_string();
         assert_eq!(version, "100", "test must be run with xdai node");
         let test = |source, token0, token1, expected| {
