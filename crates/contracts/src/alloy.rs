@@ -13,6 +13,19 @@ pub mod networks {
 }
 
 crate::bindings!(
+    ChainalysisOracle,
+    maplit::hashmap! {
+        MAINNET => address!("0x40C57923924B5c5c5455c48D93317139ADDaC8fb"),
+        ARBITRUM_ONE => address!("0x40C57923924B5c5c5455c48D93317139ADDaC8fb"),
+        BASE => address!("0x3A91A31cB3dC49b4db9Ce721F50a9D076c8D739B"),
+        AVALANCHE => address!("0x40C57923924B5c5c5455c48D93317139ADDaC8fb"),
+        BNB => address!("0x40C57923924B5c5c5455c48D93317139ADDaC8fb"),
+        OPTIMISM => address!("0x40C57923924B5c5c5455c48D93317139ADDaC8fb"),
+        POLYGON => address!("0x40C57923924B5c5c5455c48D93317139ADDaC8fb"),
+    }
+);
+
+crate::bindings!(
     IZeroex,
     maplit::hashmap! {
         crate::alloy::networks::MAINNET => address!("0xdef1c0ded9bec7f1a1670819833240f027b25eff"),
@@ -70,6 +83,7 @@ macro_rules! bindings {
                         primitives::{address, Address},
                     },
                     anyhow::{Context, Result},
+                    $crate::alloy::networks::*,
                 };
 
                 pub static DEPLOYMENT_INFO: LazyLock<HashMap<u64, Address>> = LazyLock::new(|| {

@@ -100,7 +100,6 @@ include_contracts! {
     IUniswapV3Factory;
     PancakeRouter;
     Permit2;
-    ChainalysisOracle;
     SushiSwapRouter;
     SwaprRouter;
     TestnetUniswapV2Router02;

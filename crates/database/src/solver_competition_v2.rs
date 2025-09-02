@@ -78,10 +78,7 @@ pub async fn load_by_tx_hash(
     const FETCH_AUCTION_ID: &str = r#"
         SELECT s.auction_id
         FROM settlements s
-        JOIN settlement_observations so ON
-             s.block_number = so.block_number
-             AND s.log_index = so.log_index
-        WHERE s.tx_hash = $1 AND s.auction_id IS NOT NULL;
+        WHERE s.tx_hash = $1 AND s.auction_id IS NOT NULL AND s.solution_uid IS NOT NULL;
     "#;
     let auction_id = sqlx::query_scalar(FETCH_AUCTION_ID)
         .bind(tx_hash)
@@ -133,10 +130,7 @@ pub async fn load_by_id(
     const FETCH_SETTLEMENTS: &str = r#"
         SELECT s.solution_uid, s.tx_hash
         FROM settlements s
-        JOIN settlement_observations so ON
-             s.block_number = so.block_number
-             AND s.log_index = so.log_index
-        WHERE s.auction_id = $1 AND s.solution_uid IS NOT NULL;
+        WHERE s.auction_id = $1 AND s.solution_uid IS NOT NULL AND s.solver IS NOT NULL;
     "#;
     let settlements: Vec<Settlement> = sqlx::query_as(FETCH_SETTLEMENTS)
         .bind(id)
@@ -558,7 +552,6 @@ mod tests {
             events::{self, EventIndex, Settlement},
             orders::insert_order_and_ignore_conflicts,
             reference_scores,
-            settlement_observations,
             settlements,
         },
         sqlx::{Connection, Row},
@@ -1027,16 +1020,6 @@ mod tests {
         let solver_competition = load_by_tx_hash(&mut db, tx_hash).await.unwrap();
         assert!(solver_competition.is_none());
 
-        // settlement_observations
-        let observation = settlement_observations::Observation {
-            block_number: 1,
-            log_index: 0,
-            ..Default::default()
-        };
-        settlement_observations::upsert(&mut db, observation)
-            .await
-            .unwrap();
-
         let solver_competition = load_by_tx_hash(&mut db, tx_hash).await.unwrap();
         assert!(solver_competition.is_none());
 
@@ -1129,16 +1112,6 @@ mod tests {
         let solver_competition = solver_competition.unwrap();
         assert!(solver_competition.settlements.is_empty());
         assert_eq!(solver_competition.auction.id, 1);
-
-        // settlement_observations
-        let observation = settlement_observations::Observation {
-            block_number,
-            log_index,
-            ..Default::default()
-        };
-        settlement_observations::upsert(&mut db, observation)
-            .await
-            .unwrap();
 
         // Check after the joined table is populated
         let solver_competition = load_by_id(&mut db, auction_id).await.unwrap();
