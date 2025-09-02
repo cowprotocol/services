@@ -19,6 +19,7 @@ pub struct LimitOrder {
     /// Scaled amounts according to how much of the partially fillable amounts
     /// were already used in the order.
     pub fillable: Amounts,
+    // todo: remove Arc
     pub zeroex: Arc<IZeroex::Instance>,
 }
 

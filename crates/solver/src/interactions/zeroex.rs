@@ -13,6 +13,7 @@ use {
 pub struct ZeroExInteraction {
     pub order: Order,
     pub taker_token_fill_amount: u128,
+    // todo: remove Arc
     pub zeroex: Arc<IZeroex::Instance>,
 }
 

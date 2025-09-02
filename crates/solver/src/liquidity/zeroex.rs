@@ -37,6 +37,7 @@ type OrderBuckets = HashMap<(H160, H160), Vec<OrderRecord>>;
 type OrderbookCache = ArcSwap<OrderBuckets>;
 
 pub struct ZeroExLiquidity {
+    // todo: remove Arc
     pub zeroex: Arc<IZeroex::Instance>,
     pub allowance_manager: Box<dyn AllowanceManaging>,
     pub orderbook_cache: Arc<OrderbookCache>,
@@ -214,6 +215,7 @@ fn get_useful_orders(
 #[derive(Clone)]
 pub struct OrderSettlementHandler {
     pub order_record: OrderRecord,
+    // todo: remove Arc
     pub zeroex: Arc<IZeroex::Instance>,
     allowances: Arc<Allowances>,
 }
