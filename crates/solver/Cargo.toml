@@ -16,7 +16,7 @@ arc-swap = { workspace = true }
 async-trait = { workspace = true }
 contracts = { workspace = true }
 ethcontract = { workspace = true }
-ethrpc = { workspace = true }
+ethrpc = { workspace = true, features = ["test-util"] }
 futures = { workspace = true }
 observe = { workspace = true }
 hex = { workspace = true }

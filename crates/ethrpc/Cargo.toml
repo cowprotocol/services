@@ -42,3 +42,6 @@ testlib = { workspace = true }
 
 [lints]
 workspace = true
+
+[features]
+test-util = []
