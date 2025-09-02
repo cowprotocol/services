@@ -515,7 +515,7 @@ fn serve_api(
     .boxed();
     tracing::info!(%address, "serving order book");
     let warp_svc = warp::service(filter);
-    let make_svc = hyper::service::make_service_fn(move |_| {
+    let make_svc = hyper::service::service_fn(move |_| {
         let svc = warp_svc.clone();
         async move { Ok::<_, Infallible>(svc) }
     });

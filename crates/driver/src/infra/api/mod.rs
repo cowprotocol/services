@@ -47,7 +47,7 @@ impl Api {
         order_priority_strategies: Vec<OrderPriorityStrategy>,
         app_data_retriever: Option<AppDataRetriever>,
         disable_access_list_simulation: bool,
-    ) -> Result<(), hyper::Error> {
+    ) -> hyper::Result<()> {
         // Add middleware.
         let mut app = axum::Router::new().layer(tower::ServiceBuilder::new().layer(
             tower_http::limit::RequestBodyLimitLayer::new(REQUEST_BODY_LIMIT),

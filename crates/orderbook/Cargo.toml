@@ -31,7 +31,8 @@ futures = { workspace = true }
 hex = { workspace = true }
 hex-literal = { workspace = true }
 humantime = { workspace = true }
-hyper = { workspace = true }
+hyper = { workspace = true, features = ["full"] }
+hyper-util = { version = "0.1", features = ["full"] }
 mimalloc = { workspace = true }
 model = { workspace = true }
 multibase = { workspace = true }
@@ -53,7 +54,7 @@ thiserror = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
 tracing = { workspace = true }
 url = { workspace = true }
-warp = { workspace = true }
+warp = { workspace = true, features = ["test"] }
 
 [dev-dependencies]
 mockall = { workspace = true }

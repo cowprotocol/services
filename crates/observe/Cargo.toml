@@ -25,7 +25,7 @@ tokio = { workspace = true, features = ["fs"] }
 tracing = { workspace = true }
 tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt", "time"] }
-warp = { workspace = true }
+warp = { workspace = true, features = ["server"] }
 tracing-serde = { workspace = true }
 
 [lints]

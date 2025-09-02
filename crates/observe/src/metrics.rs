@@ -79,7 +79,7 @@ pub trait LivenessChecking: Send + Sync {
 pub fn serve_metrics(liveness: Arc<dyn LivenessChecking>, address: SocketAddr) -> JoinHandle<()> {
     let filter = handle_metrics().or(handle_liveness(liveness));
     tracing::info!(%address, "serving metrics");
-    task::spawn(warp::serve(filter).bind(address))
+    task::spawn(async move { warp::serve(filter).bind(address).await.run().await })
 }
 
 // `/metrics` route exposing encoded prometheus data to monitoring system
