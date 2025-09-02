@@ -395,7 +395,7 @@ impl Competition {
     fn update_orders(
         mut auction: Auction,
         balances: Arc<Balances>,
-        app_data: Arc<HashMap<order::app_data::AppDataHash, app_data::ValidatedAppData>>,
+        app_data: Arc<HashMap<order::app_data::AppDataHash, Arc<app_data::ValidatedAppData>>>,
         cow_amm_orders: Arc<Vec<Order>>,
         settlement_contract: &eth::Address,
     ) -> Auction {
