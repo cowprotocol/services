@@ -28,14 +28,14 @@ crate::bindings!(
 crate::bindings!(
     IZeroex,
     maplit::hashmap! {
-        crate::alloy::networks::MAINNET => address!("0xdef1c0ded9bec7f1a1670819833240f027b25eff"),
-        crate::alloy::networks::SEPOLIA => address!("0xdef1c0ded9bec7f1a1670819833240f027b25eff"),
-        crate::alloy::networks::ARBITRUM_ONE => address!("0xdef1c0ded9bec7f1a1670819833240f027b25eff"),
-        crate::alloy::networks::BASE => address!("0xdef1c0ded9bec7f1a1670819833240f027b25eff"),
-        crate::alloy::networks::AVALANCHE => address!("0xdef1c0ded9bec7f1a1670819833240f027b25eff"),
-        crate::alloy::networks::BNB => address!("0xdef1c0ded9bec7f1a1670819833240f027b25eff"),
-        crate::alloy::networks::OPTIMISM => address!("0xdef1abe32c034e558cdd535791643c58a13acc10"),
-        crate::alloy::networks::POLYGON => address!("0xdef1c0ded9bec7f1a1670819833240f027b25eff"),
+        MAINNET => address!("0xdef1c0ded9bec7f1a1670819833240f027b25eff"),
+        SEPOLIA => address!("0xdef1c0ded9bec7f1a1670819833240f027b25eff"),
+        ARBITRUM_ONE => address!("0xdef1c0ded9bec7f1a1670819833240f027b25eff"),
+        BASE => address!("0xdef1c0ded9bec7f1a1670819833240f027b25eff"),
+        AVALANCHE => address!("0xdef1c0ded9bec7f1a1670819833240f027b25eff"),
+        BNB => address!("0xdef1c0ded9bec7f1a1670819833240f027b25eff"),
+        OPTIMISM => address!("0xdef1abe32c034e558cdd535791643c58a13acc10"),
+        POLYGON => address!("0xdef1c0ded9bec7f1a1670819833240f027b25eff"),
         // Not available on Lens
     }
 );
