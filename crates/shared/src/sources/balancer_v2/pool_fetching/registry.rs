@@ -43,7 +43,10 @@ impl EventRetrieving for BasePoolFactoryContract {
 
     fn get_events(&self) -> DynAllEventsBuilder<Self::Event> {
         let mut events = self.0.all_events();
-        events.filter = events.filter.topic0(POOL_CREATED_TOPIC.into());
+        events.filter = events
+            .filter
+            .topic0(POOL_CREATED_TOPIC.into())
+            .address(vec![self.0.address()]);
         events
     }
 }
