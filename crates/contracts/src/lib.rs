@@ -101,7 +101,6 @@ include_contracts! {
     IZeroEx;
     PancakeRouter;
     Permit2;
-    ChainalysisOracle;
     SushiSwapRouter;
     SwaprRouter;
     TestnetUniswapV2Router02;
