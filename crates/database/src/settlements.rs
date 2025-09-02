@@ -95,10 +95,6 @@ pub async fn delete(
     delete_from_block_number: u64,
 ) -> Result<(), sqlx::Error> {
     let delete_from_block_number = i64::try_from(delete_from_block_number).unwrap_or(i64::MAX);
-    const QUERY_OBSERVATIONS: &str =
-        "DELETE FROM settlement_observations WHERE block_number >= $1;";
-    ex.execute(sqlx::query(QUERY_OBSERVATIONS).bind(delete_from_block_number))
-        .await?;
 
     const QUERY_ORDER_EXECUTIONS: &str = "DELETE FROM order_execution WHERE block_number >= $1;";
     ex.execute(sqlx::query(QUERY_ORDER_EXECUTIONS).bind(delete_from_block_number))
