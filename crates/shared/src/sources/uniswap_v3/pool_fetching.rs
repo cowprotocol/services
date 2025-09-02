@@ -279,12 +279,17 @@ impl UniswapV3PoolFetcher {
         let checkpoint =
             PoolsCheckpointHandler::new(subgraph_url, client, max_pools_to_initialize).await?;
 
+        let pools: Vec<_> = checkpoint
+            .pools_by_token_pair
+            .values()
+            .flat_map(|pools| pools.iter().cloned())
+            .collect();
         let init_block = checkpoint.pools_checkpoint.lock().unwrap().block_number;
         let init_block = block_retriever.block(init_block).await?;
 
         let events = tokio::sync::Mutex::new(EventHandler::new(
             block_retriever,
-            UniswapV3PoolEventFetcher(web3),
+            UniswapV3PoolEventFetcher { web3, pools },
             RecentEventsCache::default(),
             Some(init_block),
         ));

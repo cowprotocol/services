@@ -74,17 +74,20 @@ impl ParseLog for UniswapV3Event {
     }
 }
 
-pub struct UniswapV3PoolEventFetcher(pub Web3);
+pub struct UniswapV3PoolEventFetcher {
+    pub web3: Web3,
+    pub pools: Vec<H160>,
+}
 
 impl EventRetrieving for UniswapV3PoolEventFetcher {
     type Event = UniswapV3Event;
 
     fn get_events(&self) -> DynAllEventsBuilder<Self::Event> {
-        let mut events = DynAllEventsBuilder::new(self.0.legacy.clone(), H160::default(), None);
+        let mut events = DynAllEventsBuilder::new(self.web3.legacy.clone(), H160::default(), None);
         let events_signatures = vec![H256(SWAP_TOPIC), H256(BURN_TOPIC), H256(MINT_TOPIC)];
         events.filter = events
             .filter
-            .address(vec![])
+            .address(self.pools.clone())
             .topic0(events_signatures.into());
         events
     }
