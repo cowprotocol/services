@@ -1,6 +1,5 @@
 pub mod networks {
     pub const MAINNET: u64 = 1;
-    pub const GOERLI: u64 = 5;
     pub const GNOSIS: u64 = 100;
     pub const SEPOLIA: u64 = 11155111;
     pub const ARBITRUM_ONE: u64 = 42161;
