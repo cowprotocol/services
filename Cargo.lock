@@ -5088,6 +5088,7 @@ dependencies = [
 name = "order-validation"
 version = "0.1.0"
 dependencies = [
+ "alloy",
  "contracts",
  "ethcontract",
  "thiserror 1.0.69",
