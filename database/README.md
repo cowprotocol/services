@@ -402,22 +402,6 @@ Solvers report orders they solved on each competition. Orders that don't exist i
 Indexes:
 - PRIMARY KEY: btree(`auction_id`, `solution_uid`, `order_uid`)
 
-### settlement\_scores (deprecated)
-
-Stores the best and second best solution quality (score) of every auction promised by solvers for [CIP-20](https://snapshot.org/#/cow.eth/proposal/0x2d3f9bd1ea72dca84b03e97dda3efc1f4a42a772c54bd2037e8b62e7d09a491f) reward computation.
-
- Column           | Type     | Nullable | Details
-------------------|----------|----------|--------
- auction\_id      | bigint   | not null | id of the auction the scores belong to
- winner           | bytea    | not null | public address of the winning solver
- winning\_score   | numeric  | not null | highest submitted score (submitted by `winner`). This is the quality the auction observed on-chain should achieve to not result in slashing of the solver.
- reference\_score | numeric  | not null | score of the runner up solver. If only 1 solver submitted a valid solution this value is 0.
- block\_deadline  | bigint   | not null | block at which the solver should have executed the solution at the latest before getting slashed for executing too slowly
- simulated_block  | bigint   | not null | block at which the simulation of the competing solutions is done
-
-Indexes:
-- PRIMARY KEY: btree(`auction_id`)
-
 ### reference\_scores
 
 Stores the reference score per solver, defined as the total score of the auction if the reference solver had not participated.
