@@ -464,8 +464,8 @@ async fn store_filtered_solutions(web3: Web3) {
 
     let services = Services::new(&onchain).await;
 
-    let good_solver = Mock::default();
-    let bad_solver = Mock::default();
+    let good_solver = Mock::default().await.unwrap();
+    let bad_solver = Mock::default().await.unwrap();
 
     // Start system
     let base_tokens = vec![token_a.address(), token_b.address(), token_c.address()];

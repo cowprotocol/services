@@ -14,7 +14,7 @@ use {
     clap::Parser,
     contracts::{BalancerV2Vault, GPv2Settlement, HooksTrampoline, IUniswapV3Factory, WETH9},
     ethcontract::errors::DeployError,
-    futures::{FutureExt, StreamExt},
+    futures::StreamExt,
     model::{DomainSeparator, order::BUY_ETH_ADDRESS},
     observe::metrics::{DEFAULT_METRICS_PORT, serve_metrics},
     order_validation,
@@ -44,7 +44,7 @@ use {
         sources::{self, BaselineSource, uniswap_v2::UniV2BaselineSourceParameters},
         token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
     },
-    std::{convert::Infallible, future::Future, net::SocketAddr, sync::Arc, time::Duration},
+    std::{future::Future, net::SocketAddr, sync::Arc, time::Duration},
     tokio::{task, task::JoinHandle},
     warp::Filter,
 };
@@ -436,7 +436,8 @@ pub async fn run(args: Arguments) {
         },
         native_price_estimator,
         args.price_estimation.quote_timeout,
-    );
+    )
+    .await;
 
     let mut metrics_address = args.bind_address;
     metrics_address.set_port(DEFAULT_METRICS_PORT);
@@ -494,7 +495,7 @@ async fn check_database_connection(orderbook: &Orderbook) {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn serve_api(
+async fn serve_api(
     database: Postgres,
     orderbook: Arc<Orderbook>,
     quotes: Arc<QuoteHandler>,
@@ -514,15 +515,11 @@ fn serve_api(
     )
     .boxed();
     tracing::info!(%address, "serving order book");
-    let warp_svc = warp::service(filter);
-    let make_svc = hyper::service::service_fn(move |_| {
-        let svc = warp_svc.clone();
-        async move { Ok::<_, Infallible>(svc) }
-    });
-    let server = hyper::Server::bind(&address)
-        .serve(make_svc)
-        .with_graceful_shutdown(shutdown_receiver)
-        .map(|_| ());
+    let server = warp::serve(filter)
+        .bind(address)
+        .await
+        .graceful(shutdown_receiver)
+        .run();
     task::spawn(server)
 }
 

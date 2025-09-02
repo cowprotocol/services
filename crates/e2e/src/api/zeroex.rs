@@ -11,6 +11,7 @@ use {
         zeroex_api::{Order, OrderMetadata, OrderRecord, ZeroExSignature},
     },
     std::{net::SocketAddr, sync::LazyLock},
+    tokio::net::TcpListener,
     warp::{Filter, Reply},
     web3::{signing, types::H160},
 };
@@ -39,14 +40,13 @@ impl ZeroExApi {
         });
 
         let addr: SocketAddr = ([0, 0, 0, 0], 0).into();
-        let server = warp::serve(orders_route);
-        let (addr, server) = server.bind_ephemeral(addr);
+        let listener = TcpListener::bind(addr).await.unwrap();
+        let addr = listener.local_addr().unwrap();
         let port = addr.port();
+        let server = warp::serve(orders_route).bind(addr).await.run();
         assert!(port > 0, "assigned port must be greater than 0");
 
-        tokio::spawn(async move {
-            server.await;
-        });
+        tokio::spawn(server);
 
         tracing::info!("Started ZeroEx API server at {}", addr);
 

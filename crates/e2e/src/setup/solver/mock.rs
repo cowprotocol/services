@@ -32,6 +32,34 @@ pub struct State {
 type SolutionFuture = Arc<dyn Fn() -> BoxFuture<'static, Option<Solution>> + Send + Sync>;
 
 impl Mock {
+    pub async fn default() -> anyhow::Result<Self> {
+        let state = State {
+            solution: Arc::new(Mutex::new(Arc::new(|| async { None }.boxed()))),
+            auctions: Arc::new(Mutex::new(vec![])),
+        };
+
+        let app = axum::Router::new()
+            .route("/solve", axum::routing::post(solve))
+            .with_state(state.clone());
+
+        let listener = tokio::net::TcpListener::bind("0.0.0.0:0").await?;
+        let addr = listener.local_addr()?;
+
+        tokio::spawn(async move {
+            if let Err(err) = axum::serve(listener, app)
+                .with_graceful_shutdown(shutdown_signal())
+                .await
+            {
+                tracing::error!(?err, "Mock solver server error");
+            }
+        });
+
+        Ok(Mock {
+            state,
+            url: format!("http://{}", addr).parse().unwrap(),
+        })
+    }
+
     /// Instructs the solver to return a new solution from now on.
     pub fn configure_solution(&self, solution: Option<Solution>) {
         *self.state.solution.lock().unwrap() = Arc::new(move || {
@@ -48,31 +76,6 @@ impl Mock {
     /// Returns all the auctions received by the solver
     pub fn get_auctions(&self) -> MutexGuard<'_, Vec<Auction>> {
         self.state.auctions.lock().unwrap()
-    }
-}
-
-impl Default for Mock {
-    fn default() -> Self {
-        let state = State {
-            solution: Arc::new(Mutex::new(Arc::new(|| async { None }.boxed()))),
-            auctions: Arc::new(Mutex::new(vec![])),
-        };
-
-        let app = axum::Router::new()
-            .route("/solve", axum::routing::post(solve))
-            .with_state(state.clone());
-
-        let server =
-            axum::Server::bind(&"0.0.0.0:0".parse().unwrap()).serve(app.into_make_service());
-
-        let mock = Mock {
-            state,
-            url: format!("http://{}", server.local_addr()).parse().unwrap(),
-        };
-
-        tokio::task::spawn(server.with_graceful_shutdown(shutdown_signal()));
-
-        mock
     }
 }
 

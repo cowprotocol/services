@@ -1,6 +1,7 @@
 use {
     crate::{app_data, database::Postgres, orderbook::Orderbook, quoter::QuoteHandler},
     anyhow::Result,
+    http_body_util::BodyExt,
     observe::distributed_tracing::tracing_warp::make_span,
     serde::{Serialize, de::DeserializeOwned},
     shared::price_estimation::{PriceEstimationError, native::NativePriceEstimating},
@@ -141,7 +142,15 @@ pub type ApiReply = WithStatus<Json>;
 // We turn Rejection into Reply to workaround warp not setting CORS headers on
 // rejections.
 async fn handle_rejection(err: Rejection) -> Result<impl Reply, Infallible> {
-    let response = err.default_response();
+    // @TODO: fix it
+    let response = {
+        tracing::error!(?err, "unhandled rejection");
+        with_status(
+            error("InternalServerError", "An internal server error occurred"),
+            StatusCode::INTERNAL_SERVER_ERROR,
+        )
+        .into_response()
+    };
 
     let metrics = ApiMetrics::instance(observe::metrics::get_storage_registry()).unwrap();
     metrics
@@ -264,13 +273,15 @@ pub trait IntoWarpReply {
     fn into_warp_reply(self) -> ApiReply;
 }
 
-pub async fn response_body(response: warp::hyper::Response<warp::hyper::Body>) -> Vec<u8> {
-    let mut body = response.into_body();
-    let mut result = Vec::new();
-    while let Some(bytes) = futures::StreamExt::next(&mut body).await {
-        result.extend_from_slice(bytes.unwrap().as_ref());
-    }
-    result
+pub async fn response_body(response: warp::reply::Response) -> Vec<u8> {
+    // @TODO: remove unwrap
+    response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes()
+        .to_vec()
 }
 
 const MAX_JSON_BODY_PAYLOAD: u64 = 1024 * 16;
@@ -425,13 +436,14 @@ mod tests {
             }
         }
 
-        let body = warp::hyper::body::to_bytes(
-            rich_error("foo", "bar", AlwaysErrors)
-                .into_response()
-                .into_body(),
-        )
-        .await
-        .unwrap();
+        let body = rich_error("foo", "bar", AlwaysErrors)
+            .into_response()
+            .into_body()
+            .collect()
+            .await
+            .unwrap()
+            .to_bytes()
+            .to_vec();
 
         assert_eq!(
             serde_json::from_slice::<serde_json::Value>(&body).unwrap(),

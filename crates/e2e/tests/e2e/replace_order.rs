@@ -1,6 +1,7 @@
 use {
     e2e::{nodes::local_node::TestNodeApi, setup::*, tx},
     ethcontract::prelude::U256,
+    http_body_util::BodyExt,
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind, OrderStatus},
         signature::EcdsaSigningScheme,
@@ -160,10 +161,13 @@ async fn try_replace_unreplaceable_order_test(web3: Web3) {
         .into_warp_reply()
         .into_response()
         .into_body();
-    let expected_body_bytes = warp::hyper::body::to_bytes(expected_response)
+    let expected_body_bytes = expected_response
+        .collect()
         .await
-        .unwrap();
-    let expected_body = String::from_utf8(expected_body_bytes.to_vec()).unwrap();
+        .unwrap()
+        .to_bytes()
+        .to_vec();
+    let expected_body = String::from_utf8(expected_body_bytes).unwrap();
     assert_eq!(error_message, expected_body);
 
     // Continue automining so our order can be executed
@@ -191,10 +195,13 @@ async fn try_replace_unreplaceable_order_test(web3: Web3) {
         .into_warp_reply()
         .into_response()
         .into_body();
-    let expected_body_bytes = warp::hyper::body::to_bytes(expected_response)
+    let expected_body_bytes = expected_response
+        .collect()
         .await
-        .unwrap();
-    let expected_body = String::from_utf8(expected_body_bytes.to_vec()).unwrap();
+        .unwrap()
+        .to_bytes()
+        .to_vec();
+    let expected_body = String::from_utf8(expected_body_bytes).unwrap();
     assert_eq!(error_message, expected_body);
 }
 

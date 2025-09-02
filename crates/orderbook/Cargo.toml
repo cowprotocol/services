@@ -33,6 +33,7 @@ hex-literal = { workspace = true }
 humantime = { workspace = true }
 hyper = { workspace = true, features = ["full"] }
 hyper-util = { version = "0.1", features = ["full"] }
+http-body-util = "0.1"
 mimalloc = { workspace = true }
 model = { workspace = true }
 multibase = { workspace = true }

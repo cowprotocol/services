@@ -975,7 +975,7 @@ impl Setup {
                 flashloans: solution.flashloans.clone(),
             });
         }
-        let orderbook = Orderbook::start(&orders);
+        let orderbook = Orderbook::start(&orders).await.unwrap();
         let quotes = orders
             .into_iter()
             .map(|order| blockchain.quote(&order))
