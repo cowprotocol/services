@@ -36,7 +36,7 @@ pub fn provider_with_account(url: &str, private_key: &PrivateKey) -> anyhow::Res
             label: "main".into(),
         })
         .layer(InstrumentationLayer)
-        .http(url.parse().unwrap());
+        .http(url.parse()?);
 
     let signer = PrivateKeySigner::from_slice(&private_key.secret_bytes())?;
     let wallet = EthereumWallet::new(signer);
