@@ -92,7 +92,7 @@ impl Settlement {
                     .tokens()
                     .get(&asset.token)
                     .map(|token| token.trusted)
-                    .unwrap_or(false)
+                    .unwrap_or_default()
             })
             .map(|asset| asset.token)
             .collect::<BTreeSet<_>>();
