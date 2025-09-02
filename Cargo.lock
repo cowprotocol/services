@@ -4903,6 +4903,7 @@ dependencies = [
 name = "number"
 version = "0.1.0"
 dependencies = [
+ "alloy",
  "anyhow",
  "bigdecimal",
  "num",

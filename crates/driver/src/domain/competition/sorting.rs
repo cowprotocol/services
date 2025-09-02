@@ -44,8 +44,8 @@ impl SortingStrategy for ExternalPrice {
         // A larger value means that the order is more likely to be fulfilled.
         // This is used to prioritize orders when solving.
         let chance_to_settle = match (
-            tokens.get(order.buy.token).price,
-            tokens.get(order.sell.token).price,
+            tokens.get(&order.buy.token).and_then(|token| token.price),
+            tokens.get(&order.sell.token).and_then(|token| token.price),
         ) {
             (Some(buy_price), Some(sell_price)) => {
                 let buy = buy_price.in_eth(order.buy.amount).0.to_f64_lossy();

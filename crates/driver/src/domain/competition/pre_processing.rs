@@ -35,7 +35,8 @@ type Balances = HashMap<BalanceGroup, order::SellAmount>;
 #[derive(Clone, Debug)]
 pub struct DataFetchingTasks {
     pub balances: Shared<Arc<Balances>>,
-    pub app_data: Shared<Arc<HashMap<order::app_data::AppDataHash, app_data::ValidatedAppData>>>,
+    pub app_data:
+        Shared<Arc<HashMap<order::app_data::AppDataHash, Arc<app_data::ValidatedAppData>>>>,
     pub cow_amm_orders: Shared<Arc<Vec<Order>>>,
     pub liquidity: Shared<Arc<Vec<liquidity::Liquidity>>>,
 }
@@ -237,7 +238,7 @@ impl Utilities {
     async fn collect_orders_app_data(
         self: Arc<Self>,
         auction: Arc<Auction>,
-    ) -> Arc<HashMap<order::app_data::AppDataHash, app_data::ValidatedAppData>> {
+    ) -> Arc<HashMap<order::app_data::AppDataHash, Arc<app_data::ValidatedAppData>>> {
         let Some(app_data_retriever) = &self.app_data_retriever else {
             return Default::default();
         };
@@ -297,9 +298,9 @@ impl Utilities {
                         .iter()
                         .map(|t| {
                             auction.tokens
-                                .get(eth::TokenAddress(eth::ContractAddress(*t)))
-                                .price
-                                .map(|p| p.0.0)
+                                .get(&eth::TokenAddress(eth::ContractAddress(*t)))
+                                .and_then(|token| token.price)
+                                .map(|price| price.0.0)
                         })
                         .collect::<Option<Vec<_>>>()?;
                     Some((amm, prices))
