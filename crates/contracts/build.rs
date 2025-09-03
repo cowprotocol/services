@@ -658,6 +658,58 @@ fn main() {
             // Not available on Lens
         },
     );
+    generate_contract_with_config("BalancerQueries", |builder| {
+        builder
+            .contract_mod_override("balancer_queries")
+            .add_network(
+                MAINNET,
+                Network {
+                    address: addr("0xE39B5e3B6D74016b2F6A9673D7d7493B6DF549d5"),
+                    // <https://etherscan.io/tx/0x30799534f3a0ab8c7fa492b88b56e9354152ffaddad15415184a3926c0dd9b09>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(15188261)),
+                },
+            )
+            .add_network(
+                ARBITRUM_ONE,
+                Network {
+                    address: addr("0xE39B5e3B6D74016b2F6A9673D7d7493B6DF549d5"),
+                    // <https://arbiscan.io/tx/0x710d93aab52b6c10197eab20f9d6db1af3931f9890233d8832268291ef2f54b3>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(18238624)),
+                },
+            )
+            .add_network(
+                OPTIMISM,
+                Network {
+                    address: addr("0xE39B5e3B6D74016b2F6A9673D7d7493B6DF549d5"),
+                    // <https://optimistic.etherscan.io/tx/0xf3b2aaf3e12c7de0987dc99a26242b227b9bc055342dda2e013dab0657d6f9f1>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(15288107)),
+                },
+            )
+            .add_network(
+                BASE,
+                Network {
+                    address: addr("0x300Ab2038EAc391f26D9F895dc61F8F66a548833"),
+                    // <https://basescan.org/tx/0x425d04ee79511c17d06cd96fe1df9e0727f7e7d46b31f36ecaa044ada6a0d29a>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(1205869)),
+                },
+            )
+            .add_network(
+                GNOSIS,
+                Network {
+                    address: addr("0x0F3e0c4218b7b0108a3643cFe9D3ec0d4F57c54e"),
+                    // <https://gnosisscan.io/tx/0x5beb3051d393aac24cb236dc850c644f345af65c4927030bd1033403e2f2e503>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(24821845)),
+                },
+            )
+            .add_network(
+                AVALANCHE,
+                Network {
+                    address: addr("0xC128468b7Ce63eA702C1f104D55A2566b13D3ABD"),
+                    // <https://snowtrace.io/tx/0xf484e1efde47209bad5f72642bcb8d8e2a4092a5036434724ffa2d039e93a1bf?chainid=43114>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(26387068)),
+                },
+            )
+    });
     generate_contract_with_config("BalancerV2ComposableStablePoolFactory", |builder| {
         builder
             .contract_mod_override("balancer_v2_composable_stable_pool_factory")
