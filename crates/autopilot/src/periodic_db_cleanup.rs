@@ -35,7 +35,6 @@ impl OrderEventsCleaner {
             interval.tick().await;
 
             let timestamp: DateTime<Utc> = Utc::now() - self.config.event_age_threshold;
-            tracing::debug!("before call to clean up");
             match self.db.delete_order_events_before(timestamp).await {
                 Ok(affected_rows_count) => {
                     tracing::debug!(affected_rows_count, timestamp = %timestamp.to_string(), "order events cleanup");
@@ -82,12 +81,9 @@ mod tests {
     // behavior in tests. Given these issues, tests were designed without
     // manipulating the timer, to maintain stability and reliability in the
     // database connection handling.
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     #[ignore]
     async fn postgres_order_events_cleaner_flow() {
-        observe::tracing::initialize_reentrant(
-            &observe::Config::default().with_env_filter("autopilot=debug"),
-        );
         let db = Postgres::with_defaults().await.unwrap();
         let mut ex = db.pool.begin().await.unwrap();
         database::clear_DANGER_(&mut ex).await.unwrap();
@@ -149,11 +145,8 @@ mod tests {
         assert!(ids.contains(&event_c.order_uid));
 
         // delete `event_b` only
-        tracing::debug!("before waiting for cleanup");
         time::sleep(Duration::from_millis(100)).await;
-        tracing::debug!("after waiting for cleanup");
         let ids = order_event_ids_before(&db.pool).await;
-        tracing::debug!("after fetching current ids");
         assert_eq!(ids.len(), 1);
         assert!(!ids.contains(&event_b.order_uid));
         assert!(ids.contains(&event_c.order_uid));
