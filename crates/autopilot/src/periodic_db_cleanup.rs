@@ -84,6 +84,9 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_order_events_cleaner_flow() {
+        observe::tracing::initialize_reentrant(
+            &observe::Config::default().with_env_filter("autopilot=debug"),
+        );
         let db = Postgres::with_defaults().await.unwrap();
         let mut ex = db.pool.begin().await.unwrap();
         database::clear_DANGER_(&mut ex).await.unwrap();
@@ -145,8 +148,11 @@ mod tests {
         assert!(ids.contains(&event_c.order_uid));
 
         // delete `event_b` only
+        tracing::debug!("before waiting for cleanup");
         time::sleep(Duration::from_millis(100)).await;
+        tracing::debug!("after waiting for cleanup");
         let ids = order_event_ids_before(&db.pool).await;
+        tracing::debug!("after fetching current ids");
         assert_eq!(ids.len(), 1);
         assert!(!ids.contains(&event_b.order_uid));
         assert!(ids.contains(&event_c.order_uid));

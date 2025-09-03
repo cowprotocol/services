@@ -260,7 +260,7 @@ jobs:
           attempt=1
           while true; do
             echo "Running test attempt #$attempt"
-            if ! cargo nextest run -p e2e forked_node_mainnet_repay_debt_with_collateral_of_safe --test-threads 1 --failure-output final --run-ignored ignored-only; then
+            if ! cargo nextest run --failure-output immediate --success-output immediate -- --ignored postgres_order_events_cleaner_flow; then
               exit 1
             fi
             attempt=$((attempt+1))
