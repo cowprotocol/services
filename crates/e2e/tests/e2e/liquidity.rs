@@ -28,7 +28,6 @@ use {
         alloy::{
             ProviderSignerExt,
             conversions::{IntoAlloy, IntoLegacy, TryIntoAlloyAsync},
-            provider_with_signer,
         },
     },
     hex_literal::hex,

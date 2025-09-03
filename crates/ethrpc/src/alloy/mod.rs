@@ -7,8 +7,6 @@ use alloy::{network::EthereumWallet, providers::mock};
 use {
     crate::AlloyProvider,
     alloy::{
-        network::TxSigner,
-        primitives::Signature,
         providers::{Provider, ProviderBuilder},
         rpc::client::{ClientBuilder, RpcClient},
     },
@@ -26,25 +24,6 @@ pub fn provider(url: &str) -> AlloyProvider {
         .layer(BatchCallLayer::new(Default::default()))
         .http(url.parse().unwrap());
     ProviderBuilder::new().connect_client(rpc).erased()
-}
-
-#[cfg(any(test, feature = "test-util"))]
-pub fn provider_with_signer(
-    url: &str,
-    signer: Box<dyn TxSigner<Signature> + Send + Sync + 'static>,
-) -> anyhow::Result<AlloyProvider> {
-    let rpc = ClientBuilder::default()
-        .layer(LabelingLayer {
-            label: "main".into(),
-        })
-        .layer(InstrumentationLayer)
-        .http(url.parse()?);
-    let wallet = EthereumWallet::new(signer);
-
-    Ok(ProviderBuilder::new()
-        .wallet(wallet)
-        .connect_client(rpc)
-        .erased())
 }
 
 #[cfg(any(test, feature = "test-util"))]
