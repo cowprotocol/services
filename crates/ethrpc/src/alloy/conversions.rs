@@ -1,12 +1,11 @@
-/////////////////////////////////
-// Conversions to the alloy types
-/////////////////////////////////
-
 use {
     alloy::{network::TxSigner, signers::Signature},
     anyhow::Context,
-    ethcontract::Account,
 };
+
+/////////////////////////////////
+// Conversions to the alloy types
+/////////////////////////////////
 
 pub trait IntoAlloy {
     /// The corresponding Alloy type.
@@ -52,7 +51,7 @@ impl IntoAlloy for primitive_types::H256 {
     }
 }
 
-pub enum AlloyAccount {
+pub enum Account {
     Address(alloy::primitives::Address),
     Signer(Box<dyn TxSigner<Signature> + Send + Sync + 'static>),
 }
@@ -65,28 +64,28 @@ pub trait TryIntoAlloyAsync {
 }
 
 #[async_trait::async_trait]
-impl TryIntoAlloyAsync for Account {
-    type Into = AlloyAccount;
+impl TryIntoAlloyAsync for ethcontract::Account {
+    type Into = Account;
 
     async fn try_into_alloy(self) -> anyhow::Result<Self::Into> {
         match self {
-            Account::Offline(pk, _) => {
+            ethcontract::Account::Offline(pk, _) => {
                 let signer =
                     alloy::signers::local::PrivateKeySigner::from_slice(&pk.secret_bytes())
                         .context("invalid private key bytes")?;
-                Ok(AlloyAccount::Signer(Box::new(signer)))
+                Ok(Account::Signer(Box::new(signer)))
             }
-            Account::Kms(account, chain_id) => {
+            ethcontract::Account::Kms(account, chain_id) => {
                 let signer = alloy::signers::aws::AwsSigner::new(
                     account.client().clone(),
                     account.key_id().to_string(),
                     chain_id,
                 )
                 .await?;
-                Ok(AlloyAccount::Signer(Box::new(signer)))
+                Ok(Account::Signer(Box::new(signer)))
             }
-            Account::Local(address, _) => Ok(AlloyAccount::Address(address.into_alloy())),
-            Account::Locked(_, _, _) => {
+            ethcontract::Account::Local(address, _) => Ok(Account::Address(address.into_alloy())),
+            ethcontract::Account::Locked(_, _, _) => {
                 anyhow::bail!("Locked accounts are not currently supported")
             }
         }
