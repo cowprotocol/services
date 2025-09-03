@@ -3,10 +3,11 @@ pub mod conversions;
 mod instrumentation;
 
 #[cfg(any(test, feature = "test-util"))]
-use alloy::{network::EthereumWallet, providers::mock};
+use alloy::providers::mock;
 use {
     crate::AlloyProvider,
     alloy::{
+        network::EthereumWallet,
         providers::{Provider, ProviderBuilder},
         rpc::client::{ClientBuilder, RpcClient},
     },
