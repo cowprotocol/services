@@ -244,12 +244,22 @@ impl Solver {
             self.config.solver_native_token,
             &flashloan_hints,
         );
-        // Only auctions with IDs are real auctions (/quote requests don't have an ID,
-        // and it makes no sense to store them)
+
         if let Some(id) = auction.id() {
+            // Only auctions with IDs are real auctions (/quote requests don't have an ID,
+            // and it makes no sense to store them)
             self.persistence.archive_auction(id, &auction_dto);
+        }
+
+        let body = {
+            // pre-allocate a big enough buffer to avoid re-allocating memory
+            // as the request gets serialized
+            const BYTES_PER_ORDER: usize = 1_300;
+            let mut buffer = Vec::with_capacity(auction.orders().len() * BYTES_PER_ORDER);
+            serde_json::to_writer(&mut buffer, &auction_dto).unwrap();
+            String::from_utf8(buffer).expect("serde_json only writes valid utf8")
         };
-        let body = serde_json::to_string(&auction_dto).unwrap();
+
         let url = shared::url::join(&self.config.endpoint, "solve");
         super::observe::solver_request(&url, &body);
         let timeout = match auction.deadline().solvers().remaining() {
