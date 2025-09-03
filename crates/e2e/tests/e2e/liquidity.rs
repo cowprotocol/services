@@ -80,10 +80,10 @@ async fn zero_ex_liquidity(web3: Web3) {
     let zeroex_provider = {
         let signer = solver.account().clone().try_into_alloy().await.unwrap();
         match signer {
-            ethrpc::alloy::conversions::Account::Signer(signer) => {
+            ethrpc::alloy::Account::Signer(signer) => {
                 provider_with_signer(&web3.node_url, signer).unwrap()
             }
-            ethrpc::alloy::conversions::Account::Address(_) => web3.alloy.clone(),
+            ethrpc::alloy::Account::Address(_) => web3.alloy.clone(),
         }
     };
     let zeroex = IZeroex::Instance::deployed(&zeroex_provider).await.unwrap();

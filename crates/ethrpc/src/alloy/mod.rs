@@ -4,7 +4,6 @@ mod instrumentation;
 
 #[cfg(any(test, feature = "test-util"))]
 use alloy::{network::EthereumWallet, providers::mock};
-pub use instrumentation::ProviderLabelingExt;
 use {
     crate::AlloyProvider,
     alloy::{
@@ -16,6 +15,7 @@ use {
     buffering::BatchCallLayer,
     instrumentation::{InstrumentationLayer, LabelingLayer},
 };
+pub use {conversions::Account, instrumentation::ProviderLabelingExt};
 
 pub fn provider(url: &str) -> AlloyProvider {
     let rpc = ClientBuilder::default()
