@@ -35,6 +35,7 @@ impl OrderEventsCleaner {
             interval.tick().await;
 
             let timestamp: DateTime<Utc> = Utc::now() - self.config.event_age_threshold;
+            tracing::debug!("before call to clean up");
             match self.db.delete_order_events_before(timestamp).await {
                 Ok(affected_rows_count) => {
                     tracing::debug!(affected_rows_count, timestamp = %timestamp.to_string(), "order events cleanup");
