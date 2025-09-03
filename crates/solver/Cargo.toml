@@ -16,7 +16,7 @@ arc-swap = { workspace = true }
 async-trait = { workspace = true }
 contracts = { workspace = true }
 ethcontract = { workspace = true }
-ethrpc = { workspace = true, features = ["test-util"] }
+ethrpc = { workspace = true }
 futures = { workspace = true }
 observe = { workspace = true }
 hex = { workspace = true }
@@ -40,6 +40,7 @@ web3 = { workspace = true }
 
 [dev-dependencies]
 derivative = { workspace = true }
+ethrpc = { workspace = true, features = ["test-util"] }
 tokio = { workspace = true, features = ["test-util"] }
 testlib = { workspace = true }
 
