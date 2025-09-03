@@ -428,7 +428,7 @@ impl RunLoop {
         let order_lookup: std::collections::HashMap<_, _> = auction
             .orders
             .iter()
-            .map(|order| (order.uid, order))
+            .map(|order| (&order.uid, order))
             .collect();
 
         let fee_policies: Vec<_> = ranking
