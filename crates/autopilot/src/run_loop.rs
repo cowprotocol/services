@@ -425,25 +425,30 @@ impl RunLoop {
             .all()
             .map(|participant| participant.solution().solver().into())
             .collect::<HashSet<_>>();
-        let mut fee_policies = Vec::new();
-        for order_id in ranking
+        // Create a HashMap for O(1) order lookups instead of O(n) linear search
+        let order_lookup: std::collections::HashMap<_, _> = auction
+            .orders
+            .iter()
+            .map(|order| (order.uid, order))
+            .collect();
+
+        let fee_policies: Vec<_> = ranking
             .ranked()
             .flat_map(|participant| participant.solution().order_ids())
             .unique()
-        {
-            match auction
-                .orders
-                .iter()
-                .find(|auction_order| &auction_order.uid == order_id)
-            {
-                Some(auction_order) => {
-                    fee_policies.push((auction_order.uid, auction_order.protocol_fees.clone()));
+            .filter_map(|order_id| {
+                match order_lookup.get(order_id) {
+                    Some(auction_order) => {
+                        // Clone only when we actually need to store the policies
+                        Some((auction_order.uid, auction_order.protocol_fees.clone()))
+                    }
+                    None => {
+                        tracing::debug!(?order_id, "order not found in auction");
+                        None
+                    }
                 }
-                None => {
-                    tracing::debug!(?order_id, "order not found in auction");
-                }
-            }
-        }
+            })
+            .collect();
 
         let mut solutions: Vec<_> = ranking
             .enumerated()
