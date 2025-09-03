@@ -438,7 +438,6 @@ impl RunLoop {
             .filter_map(|order_id| {
                 match order_lookup.get(order_id) {
                     Some(auction_order) => {
-                        // Clone only when we actually need to store the policies
                         Some((auction_order.uid, auction_order.protocol_fees.clone()))
                     }
                     None => {
