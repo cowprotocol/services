@@ -10,7 +10,7 @@ use {
         network::TxSigner,
         primitives::Signature,
         providers::{Provider, ProviderBuilder},
-        rpc::client::ClientBuilder,
+        rpc::client::{ClientBuilder, RpcClient},
     },
     buffering::BatchCallLayer,
     instrumentation::{InstrumentationLayer, LabelingLayer},
@@ -53,4 +53,28 @@ pub fn dummy_provider() -> AlloyProvider {
     ProviderBuilder::new()
         .connect_mocked_client(asserter)
         .erased()
+}
+
+pub trait ProviderSignerExt {
+    /// Creates a new provider with the given signer.
+    fn with_signer(&self, signer: Account) -> Self;
+}
+
+impl ProviderSignerExt for AlloyProvider {
+    fn with_signer(&self, signer: Account) -> Self {
+        let Account::Signer(signer) = signer else {
+            // Otherwise an unlocked account is used, not need to change anything.
+            return self.clone();
+        };
+
+        let is_local = self.client().is_local();
+        let transport = self.client().transport().clone();
+        let wallet = EthereumWallet::new(signer);
+        let client = RpcClient::new(transport, is_local);
+
+        ProviderBuilder::new()
+            .wallet(wallet)
+            .connect_client(client)
+            .erased()
+    }
 }
