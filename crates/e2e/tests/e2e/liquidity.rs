@@ -26,8 +26,8 @@ use {
     ethrpc::{
         Web3,
         alloy::{
-            conversions::{IntoAlloy, IntoLegacy},
-            provider_with_account,
+            conversions::{IntoAlloy, IntoLegacy, TryIntoAlloyAsync},
+            provider_with_signer,
         },
     },
     hex_literal::hex,
@@ -77,11 +77,15 @@ async fn zero_ex_liquidity(web3: Web3) {
             .unwrap(),
     );
 
-    let signer_pk = match &solver.account() {
-        Account::Offline(pk, _) => pk.clone(),
-        _ => unimplemented!(),
+    let zeroex_provider = {
+        let signer = solver.account().clone().try_into_alloy().await.unwrap();
+        match signer {
+            ethrpc::alloy::conversions::Account::Signer(signer) => {
+                provider_with_signer(&web3.node_url, signer).unwrap()
+            }
+            ethrpc::alloy::conversions::Account::Address(_) => web3.alloy.clone(),
+        }
     };
-    let zeroex_provider = provider_with_account(&web3.node_url, &signer_pk).unwrap();
     let zeroex = IZeroex::Instance::deployed(&zeroex_provider).await.unwrap();
 
     let amount = to_wei_with_exp(5, 8);

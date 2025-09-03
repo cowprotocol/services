@@ -2,20 +2,19 @@ mod buffering;
 pub mod conversions;
 mod instrumentation;
 
+#[cfg(any(test, feature = "test-util"))]
+use alloy::{network::EthereumWallet, providers::mock};
 pub use instrumentation::ProviderLabelingExt;
 use {
     crate::AlloyProvider,
     alloy::{
+        network::TxSigner,
+        primitives::Signature,
         providers::{Provider, ProviderBuilder},
         rpc::client::ClientBuilder,
     },
     buffering::BatchCallLayer,
     instrumentation::{InstrumentationLayer, LabelingLayer},
-};
-#[cfg(any(test, feature = "test-util"))]
-use {
-    alloy::{network::EthereumWallet, providers::mock, signers::local::PrivateKeySigner},
-    ethcontract::PrivateKey,
 };
 
 pub fn provider(url: &str) -> AlloyProvider {
@@ -30,15 +29,16 @@ pub fn provider(url: &str) -> AlloyProvider {
 }
 
 #[cfg(any(test, feature = "test-util"))]
-pub fn provider_with_account(url: &str, private_key: &PrivateKey) -> anyhow::Result<AlloyProvider> {
+pub fn provider_with_signer(
+    url: &str,
+    signer: Box<dyn TxSigner<Signature> + Send + Sync + 'static>,
+) -> anyhow::Result<AlloyProvider> {
     let rpc = ClientBuilder::default()
         .layer(LabelingLayer {
             label: "main".into(),
         })
         .layer(InstrumentationLayer)
         .http(url.parse()?);
-
-    let signer = PrivateKeySigner::from_slice(&private_key.secret_bytes())?;
     let wallet = EthereumWallet::new(signer);
 
     Ok(ProviderBuilder::new()
