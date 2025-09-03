@@ -76,7 +76,7 @@ impl DataAggregator {
     /// Aggregates all the data that is needed to pre-process the given auction.
     /// Uses a shared futures internally to make sure that the works happens
     /// only once for all connected solvers to share.
-    pub fn start_or_get_tasks_for_auction(&self, auction: Arc<Auction>) -> DataFetchingTasks {
+    pub fn start_or_get_tasks_for_auction(&self, auction: &Auction) -> DataFetchingTasks {
         let new_id = auction
             .id()
             .expect("auctions used for quoting do not have to be prioritized");
@@ -135,19 +135,22 @@ impl DataAggregator {
         }
     }
 
-    fn assemble_tasks(&self, auction: Arc<Auction>) -> DataFetchingTasks {
+    fn assemble_tasks(&self, auction: &Auction) -> DataFetchingTasks {
+        let auction_arc = Arc::new(auction.clone());
+        let utilities = Arc::clone(&self.utilities);
+        
         let balances =
-            Self::spawn_shared(Arc::clone(&self.utilities).fetch_balances(Arc::clone(&auction)));
+            Self::spawn_shared(utilities.clone().fetch_balances(auction_arc.clone()));
 
         let app_data = Self::spawn_shared(
-            Arc::clone(&self.utilities).collect_orders_app_data(Arc::clone(&auction)),
+            utilities.clone().collect_orders_app_data(auction_arc.clone()),
         );
 
         let cow_amm_orders =
-            Self::spawn_shared(Arc::clone(&self.utilities).cow_amm_orders(Arc::clone(&auction)));
+            Self::spawn_shared(utilities.clone().cow_amm_orders(auction_arc.clone()));
 
         let liquidity =
-            Self::spawn_shared(Arc::clone(&self.utilities).fetch_liquidity(Arc::clone(&auction)));
+            Self::spawn_shared(utilities.clone().fetch_liquidity(auction_arc.clone()));
 
         DataFetchingTasks {
             balances,
