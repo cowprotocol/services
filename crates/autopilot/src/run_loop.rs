@@ -425,7 +425,6 @@ impl RunLoop {
             .all()
             .map(|participant| participant.solution().solver().into())
             .collect::<HashSet<_>>();
-        // Create a HashMap for O(1) order lookups instead of O(n) linear search
         let order_lookup: std::collections::HashMap<_, _> = auction
             .orders
             .iter()
