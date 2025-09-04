@@ -1,6 +1,5 @@
 use {
     super::{OnchainComponents, TestAccount},
-    crate::nodes::NODE_HOST,
     alloy::{
         primitives::{Address, Bytes, U256},
         providers::Provider,
@@ -17,7 +16,6 @@ use {
         alloy::{
             ProviderSignerExt,
             conversions::{IntoAlloy, TryIntoAlloyAsync},
-            provider,
         },
     },
     hex_literal::hex,
