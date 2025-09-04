@@ -255,7 +255,7 @@ async fn signature(web3: Web3) {
     let [solver] = onchain.make_solvers(to_wei(1)).await;
     let [trader] = onchain.make_accounts(to_wei(1)).await;
 
-    let safe_infra = onchain_components::safe::Infrastructure::new().await;
+    let safe_infra = onchain_components::safe::Infrastructure::new(web3.alloy.clone()).await;
 
     // Prepare the Safe creation transaction, but don't execute it! This will
     // be executed as a pre-hook.
@@ -522,7 +522,7 @@ async fn quote_verification(web3: Web3) {
     let [trader] = onchain.make_accounts(to_wei(1)).await;
     let [solver] = onchain.make_solvers(to_wei(1)).await;
 
-    let safe_infra = onchain_components::safe::Infrastructure::new().await;
+    let safe_infra = onchain_components::safe::Infrastructure::new(web3.alloy.clone()).await;
 
     // Prepare the Safe creation transaction, but don't execute it! This will
     // be executed as a pre-hook.
