@@ -17,7 +17,7 @@ use {
             notify,
             observe::{self, metrics},
             simulator::{RevertError, SimulatorError},
-            solver::{self, SolutionMerging, Solver},
+            solver::{self, SolutionMerging, Solver, dto},
         },
         util::{Bytes, math},
     },
@@ -28,7 +28,7 @@ use {
         cmp::Reverse,
         collections::{HashMap, HashSet, VecDeque},
         sync::{Arc, Mutex},
-        time::Duration,
+        time::{Duration, Instant},
     },
     tap::TapFallible,
     tokio::{
@@ -110,11 +110,21 @@ impl Competition {
     }
 
     /// Solve an auction as part of this competition.
-    #[instrument(skip_all)]
-    pub async fn solve(&self, auction: Auction) -> Result<Option<Solved>, Error> {
-        let auction = Arc::new(auction);
-        let tasks = self.fetcher.start_or_get_tasks_for_auction(auction.clone());
-        let mut auction = Arc::unwrap_or_clone(auction);
+    pub async fn solve(&self, auction: Arc<String>) -> Result<Option<Solved>, Error> {
+        let start = Instant::now();
+
+        let tasks = self
+            .fetcher
+            .start_or_get_tasks_for_auction(auction)
+            .await
+            .map_err(|err| {
+                // TODO: find a better error type
+                tracing::error!(?err, "pre-processing auction failed");
+                Error::Solver(solver::Error::Dto(dto::Error(
+                    "pre-processing auction failed".into(),
+                )))
+            })?;
+        let mut auction = Arc::unwrap_or_clone(tasks.auction.await);
 
         let settlement_contract = self.eth.contracts().settlement().address();
         let solver_address = self.solver.account().address();
@@ -153,7 +163,7 @@ impl Competition {
         })
         .await;
 
-        // We can tun bad token filtering and liquidity fetching in parallel
+        // We can run bad token filtering and liquidity fetching in parallel
         let (liquidity, auction) = tokio::join!(
             async {
                 match self.solver.liquidity() {
@@ -163,6 +173,13 @@ impl Competition {
             },
             self.without_unsupported_orders(auction)
         );
+
+        let elapsed = start.elapsed();
+        metrics::get()
+            .auction_preprocessing
+            .with_label_values(&["total"])
+            .observe(elapsed.as_secs_f64());
+        tracing::debug!(?elapsed, "auction task execution time");
 
         let auction = &auction;
 
@@ -177,7 +194,8 @@ impl Competition {
                 }
             })?;
 
-        observe::postprocessing(&solutions, auction.deadline().driver());
+        let deadline = auction.deadline(self.solver.timeouts()).driver();
+        observe::postprocessing(&solutions, deadline);
 
         // Discard solutions that don't have unique ID.
         let mut ids = HashSet::new();
@@ -253,12 +271,9 @@ impl Competition {
                 settlements.push(settlement);
             }
         };
-        if tokio::time::timeout(
-            auction.deadline().driver().remaining().unwrap_or_default(),
-            future,
-        )
-        .await
-        .is_err()
+        if tokio::time::timeout(deadline.remaining().unwrap_or_default(), future)
+            .await
+            .is_err()
         {
             observe::postprocessing_timed_out(&settlements);
             notify::postprocessing_timed_out(&self.solver, auction.id())
@@ -339,7 +354,7 @@ impl Competition {
         // Re-simulate the solution on every new block until the deadline ends to make
         // sure we actually submit a working solution close to when the winner
         // gets picked by the procotol.
-        if let Ok(remaining) = auction.deadline().driver().remaining() {
+        if let Ok(remaining) = deadline.remaining() {
             let score_ref = &mut score;
             let simulate_on_new_blocks = async move {
                 let mut stream =

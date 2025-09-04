@@ -3,9 +3,8 @@ use {
         domain::{
             competition::{self, auction, order},
             eth,
-            time,
         },
-        infra::{Ethereum, solver::Timeouts, tokens},
+        infra::{Ethereum, tokens},
         util::serialize,
     },
     serde::Deserialize,
@@ -20,7 +19,6 @@ impl SolveRequest {
         self,
         eth: &Ethereum,
         tokens: &tokens::Fetcher,
-        timeouts: Timeouts,
     ) -> Result<competition::Auction, Error> {
         let token_addresses: Vec<_> = self
             .tokens
@@ -155,7 +153,7 @@ impl SolveRequest {
                     trusted: token.trusted,
                 }
             }),
-            time::Deadline::new(self.deadline, timeouts),
+            self.deadline,
             eth,
             self.surplus_capturing_jit_order_owners
                 .into_iter()

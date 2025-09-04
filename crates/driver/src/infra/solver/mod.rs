@@ -243,6 +243,7 @@ impl Solver {
             self.config.fee_handler,
             self.config.solver_native_token,
             &flashloan_hints,
+            auction.deadline(self.timeouts()).solvers(),
         );
 
         if let Some(id) = auction.id() {
@@ -262,7 +263,7 @@ impl Solver {
 
         let url = shared::url::join(&self.config.endpoint, "solve");
         super::observe::solver_request(&url, &body);
-        let timeout = match auction.deadline().solvers().remaining() {
+        let timeout = match auction.deadline(self.timeouts()).solvers().remaining() {
             Ok(timeout) => timeout,
             Err(_) => {
                 tracing::warn!("auction deadline exceeded before sending request to solver");

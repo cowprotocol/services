@@ -73,7 +73,7 @@ pub struct Order {
     pub tokens: Tokens,
     pub amount: order::TargetAmount,
     pub side: order::Side,
-    pub deadline: time::Deadline,
+    pub deadline: chrono::DateTime<chrono::Utc>,
 }
 
 impl Order {

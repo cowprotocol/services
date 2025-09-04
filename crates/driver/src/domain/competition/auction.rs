@@ -6,7 +6,7 @@ use {
             liquidity,
             time,
         },
-        infra::{Ethereum, blockchain},
+        infra::{Ethereum, blockchain, solver::Timeouts},
     },
     std::collections::{HashMap, HashSet},
     thiserror::Error,
@@ -24,7 +24,7 @@ pub struct Auction {
     /// The tokens that are used in the orders of this auction.
     pub(crate) tokens: Tokens,
     pub(crate) gas_price: eth::GasPrice,
-    pub(crate) deadline: time::Deadline,
+    pub(crate) deadline: chrono::DateTime<chrono::Utc>,
     pub(crate) surplus_capturing_jit_order_owners: HashSet<eth::Address>,
 }
 
@@ -33,7 +33,7 @@ impl Auction {
         id: Option<Id>,
         mut orders: Vec<competition::Order>,
         tokens: impl Iterator<Item = Token>,
-        deadline: time::Deadline,
+        deadline: chrono::DateTime<chrono::Utc>,
         eth: &Ethereum,
         surplus_capturing_jit_order_owners: HashSet<eth::Address>,
     ) -> Result<Self, Error> {
@@ -98,8 +98,8 @@ impl Auction {
     }
 
     /// The deadline for the driver to start sending solution to autopilot.
-    pub fn deadline(&self) -> time::Deadline {
-        self.deadline
+    pub fn deadline(&self, timeouts: Timeouts) -> time::Deadline {
+        time::Deadline::new(self.deadline, timeouts)
     }
 
     /// Prices used to convert token amounts to an equivalent amount of the
