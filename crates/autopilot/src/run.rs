@@ -87,6 +87,63 @@ impl Liveness {
     }
 }
 
+pub struct Control {
+    shutdown: tokio::sync::broadcast::Receiver<()>,
+}
+
+pub struct ManualShutdown(tokio::sync::broadcast::Sender<()>);
+
+impl Control {
+    pub fn new_shutdown_on_signal() -> Self {
+        let (sender, receiver) = tokio::sync::broadcast::channel(1);
+        tokio::spawn(Self::wait_for_signal(sender));
+
+        Self { shutdown: receiver }
+    }
+
+    pub fn new_manual_shutdown() -> (ManualShutdown, Self) {
+        let (sender, receiver) = tokio::sync::broadcast::channel(1);
+
+        (ManualShutdown(sender), Self { shutdown: receiver })
+    }
+
+    async fn wait_for_signal(shutdown: tokio::sync::broadcast::Sender<()>) {
+        use tokio::signal;
+        // On Unix-like systems, we can listen for SIGTERM.
+        #[cfg(unix)]
+        let mut sigterm = signal::unix::signal(signal::unix::SignalKind::terminate()).unwrap();
+
+        // On all platforms, we can listen for Ctrl+C.
+        let ctrl_c = signal::ctrl_c();
+
+        tokio::select! {
+            _ = ctrl_c => {
+                tracing::info!("Received SIGINT");
+            },
+            _ = sigterm.recv() => {
+                tracing::info!("Received SIGTERM.");
+            },
+        }
+        shutdown.send(()).unwrap();
+    }
+
+    pub async fn should_shutdown(&mut self) {
+        self.shutdown.recv().await.unwrap();
+    }
+}
+
+impl Default for Control {
+    fn default() -> Self {
+        Self::new_shutdown_on_signal()
+    }
+}
+
+impl ManualShutdown {
+    pub fn shutdown(&self) {
+        self.0.send(()).unwrap();
+    }
+}
+
 /// Creates Web3 transport based on the given config.
 #[instrument(skip_all)]
 async fn ethrpc(url: &Url, ethrpc_args: &shared::ethrpc::Arguments) -> infra::blockchain::Rpc {
@@ -144,12 +201,12 @@ pub async fn start(args: impl Iterator<Item = String>) {
     if args.shadow.is_some() {
         shadow_mode(args).await;
     } else {
-        run(args).await;
+        run(args, Control::default()).await;
     }
 }
 
 /// Assumes tracing and metrics registry have already been set up.
-pub async fn run(args: Arguments) {
+pub async fn run(args: Arguments, control: Control) {
     assert!(args.shadow.is_none(), "cannot run in shadow mode");
     // Start a new span that measures the initialization phase of the autopilot
     let startup_span = info_span!("autopilot_startup");
@@ -665,7 +722,7 @@ pub async fn run(args: Arguments) {
         competition_updates_sender,
     );
     drop(startup_span_guard);
-    run.run_forever().await;
+    run.run_forever(control).await;
 }
 
 async fn shadow_mode(args: Arguments) -> ! {

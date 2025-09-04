@@ -4,6 +4,7 @@ pub mod database;
 pub mod domain;
 pub mod event_updater;
 pub mod infra;
+// pub mod inspector;
 mod maintenance;
 pub mod periodic_db_cleanup;
 pub mod run;
