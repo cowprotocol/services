@@ -136,12 +136,14 @@ impl RunLoop {
 
         let mut was_leader = false;
 
-        loop {
+        while !control.should_shutdown() {
             let is_leader = leader.tick().await.unwrap_or_else(|err| {
                 tracing::warn!(error=%err, "failed to become leader");
                 false
             });
+
             if is_leader && !was_leader {
+                tracing::info!("Stepped up as a leader");
                 Metrics::leader_step_up();
             }
             was_leader = is_leader;
@@ -158,12 +160,8 @@ impl RunLoop {
             }
 
             tokio::select!(
-                _ = control.should_shutdown() => {
-                    tracing::info!("Shutdown received, stepping down as the leader.");
-                    leader.step_down().await;
-                    Metrics::leader_step_down();
-
-                    return;
+                _ = control.wait_for_shutdown() => {
+                    break
                 },
                 auction = self_arc.next_auction(start_block, &mut last_auction, &mut last_block) => {
                     if let Some(auction) = auction {
@@ -173,8 +171,12 @@ impl RunLoop {
                         .await
                     }
                 }
-            )
+            );
         }
+
+        tracing::info!("Shutdown received, stepping down as the leader");
+        leader.step_down().await;
+        Metrics::leader_step_down();
     }
 
     async fn update_caches(&self, prev_block: &mut Option<H256>, is_leader: bool) -> BlockInfo {
@@ -194,6 +196,7 @@ impl RunLoop {
         };
 
         self.run_maintenance(&auction_block).await;
+
         match self
             .solvable_orders_cache
             .update(auction_block.number, is_leader)
@@ -221,7 +224,6 @@ impl RunLoop {
         prev_block: &mut Option<H256>,
     ) -> Option<domain::Auction> {
         // wait for appropriate time to start building the auction
-
         let auction = self.cut_auction().await?;
         tracing::trace!(auction_id = ?auction.id, "auction cut");
 

@@ -91,23 +91,24 @@ pub struct Control {
     shutdown: tokio::sync::broadcast::Receiver<()>,
 }
 
-pub struct ManualShutdown(tokio::sync::broadcast::Sender<()>);
+pub struct ShutdownSignal(tokio::sync::broadcast::Sender<()>);
 
 impl Control {
+    /// Creates a new Control which reacts to sigint/sigterm from the OS
     pub fn new_shutdown_on_signal() -> Self {
         let (sender, receiver) = tokio::sync::broadcast::channel(1);
-        tokio::spawn(Self::wait_for_signal(sender));
-
+        tokio::spawn(Self::wait_for_signal(ShutdownSignal(sender)));
         Self { shutdown: receiver }
     }
 
-    pub fn new_manual_shutdown() -> (ManualShutdown, Self) {
+    /// Creates a new Control that can be manually instructed to shut down
+    /// the autopilot.
+    pub fn new_manual_shutdown() -> (ShutdownSignal, Self) {
         let (sender, receiver) = tokio::sync::broadcast::channel(1);
-
-        (ManualShutdown(sender), Self { shutdown: receiver })
+        (ShutdownSignal(sender), Self { shutdown: receiver })
     }
 
-    async fn wait_for_signal(shutdown: tokio::sync::broadcast::Sender<()>) {
+    async fn wait_for_signal(shutdown: ShutdownSignal) {
         use tokio::signal;
         // On Unix-like systems, we can listen for SIGTERM.
         #[cfg(unix)]
@@ -124,11 +125,17 @@ impl Control {
                 tracing::info!("Received SIGTERM.");
             },
         }
-        shutdown.send(()).unwrap();
+        shutdown.shutdown();
     }
 
-    pub async fn should_shutdown(&mut self) {
+    /// Waits for shutdown signal to be received
+    pub async fn wait_for_shutdown(&mut self) {
         self.shutdown.recv().await.unwrap();
+    }
+
+    /// Non-blocking check if shutdown signal has been received yet
+    pub fn should_shutdown(&mut self) -> bool {
+        self.shutdown.try_recv().is_ok()
     }
 }
 
@@ -138,7 +145,8 @@ impl Default for Control {
     }
 }
 
-impl ManualShutdown {
+impl ShutdownSignal {
+    /// Send shutdown signal to the associated Control
     pub fn shutdown(&self) {
         self.0.send(()).unwrap();
     }
