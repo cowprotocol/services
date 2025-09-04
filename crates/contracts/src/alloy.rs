@@ -24,6 +24,21 @@ crate::bindings!(
     }
 );
 
+crate::bindings!(
+    IZeroex,
+    maplit::hashmap! {
+        MAINNET => address!("0xdef1c0ded9bec7f1a1670819833240f027b25eff"),
+        SEPOLIA => address!("0xdef1c0ded9bec7f1a1670819833240f027b25eff"),
+        ARBITRUM_ONE => address!("0xdef1c0ded9bec7f1a1670819833240f027b25eff"),
+        BASE => address!("0xdef1c0ded9bec7f1a1670819833240f027b25eff"),
+        AVALANCHE => address!("0xdef1c0ded9bec7f1a1670819833240f027b25eff"),
+        BNB => address!("0xdef1c0ded9bec7f1a1670819833240f027b25eff"),
+        OPTIMISM => address!("0xdef1abe32c034e558cdd535791643c58a13acc10"),
+        POLYGON => address!("0xdef1c0ded9bec7f1a1670819833240f027b25eff"),
+        // Not available on Lens
+    }
+);
+
 pub use alloy::providers::DynProvider as Provider;
 
 /// Extension trait to attach some useful functions to the contract instance.
@@ -45,7 +60,7 @@ macro_rules! bindings {
             #[allow(non_snake_case)]
             mod [<$contract Private>] {
                 alloy::sol!(
-                    #[allow(missing_docs)]
+                    #[allow(missing_docs, clippy::too_many_arguments)]
                     #[sol(rpc)]
                     $contract,
                     concat!("./artifacts/", stringify!($contract), ".json"),

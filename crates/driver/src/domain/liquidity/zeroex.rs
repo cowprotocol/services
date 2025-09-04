@@ -1,8 +1,8 @@
 use {
     crate::domain::{eth, liquidity},
     anyhow::anyhow,
-    contracts::IZeroEx,
-    ethcontract::Bytes,
+    contracts::alloy::IZeroex,
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     primitive_types::{H160, H256, U256},
     std::sync::Arc,
 };
@@ -19,7 +19,8 @@ pub struct LimitOrder {
     /// Scaled amounts according to how much of the partially fillable amounts
     /// were already used in the order.
     pub fillable: Amounts,
-    pub zeroex: Arc<IZeroEx>,
+    // todo: remove Arc
+    pub zeroex: Arc<IZeroex::Instance>,
 }
 
 #[derive(Clone, Debug)]
@@ -48,27 +49,27 @@ pub struct ZeroExSignature {
 
 impl LimitOrder {
     pub fn to_interaction(&self, input: &liquidity::MaxInput) -> anyhow::Result<eth::Interaction> {
-        let method = self.zeroex.fill_or_kill_limit_order(
-            (
-                self.order.maker_token,
-                self.order.taker_token,
-                self.order.amounts.maker,
-                self.order.amounts.taker,
-                self.order.taker_token_fee_amount,
-                self.order.maker,
-                self.order.taker,
-                self.order.sender,
-                self.order.fee_recipient,
-                Bytes(self.order.pool.0),
-                self.order.expiry,
-                self.order.salt,
-            ),
-            (
-                self.order.signature.signature_type,
-                self.order.signature.v,
-                Bytes(self.order.signature.r.0),
-                Bytes(self.order.signature.s.0),
-            ),
+        let method = self.zeroex.fillOrKillLimitOrder(
+            IZeroex::LibNativeOrder::LimitOrder {
+                makerToken: self.order.maker_token.into_alloy(),
+                takerToken: self.order.taker_token.into_alloy(),
+                makerAmount: self.order.amounts.maker,
+                takerAmount: self.order.amounts.taker,
+                takerTokenFeeAmount: self.order.taker_token_fee_amount,
+                maker: self.order.maker.into_alloy(),
+                taker: self.order.taker.into_alloy(),
+                sender: self.order.sender.into_alloy(),
+                feeRecipient: self.order.fee_recipient.into_alloy(),
+                pool: self.order.pool.into_alloy(),
+                expiry: self.order.expiry,
+                salt: self.order.salt.into_alloy(),
+            },
+            IZeroex::LibSignature::Signature {
+                signatureType: self.order.signature.signature_type,
+                v: self.order.signature.v,
+                r: self.order.signature.r.into_alloy(),
+                s: self.order.signature.s.into_alloy(),
+            },
             input
                 .0
                 .amount
@@ -76,12 +77,12 @@ impl LimitOrder {
                 .try_into()
                 .map_err(|_| anyhow!("executed amount does not fit into u128"))?,
         );
-        let calldata = method.tx.data.ok_or(anyhow!("no calldata"))?;
+        let calldata = method.calldata();
 
         Ok(eth::Interaction {
-            target: self.zeroex.address().into(),
+            target: self.zeroex.address().into_legacy().into(),
             value: 0.into(),
-            call_data: calldata.0.into(),
+            call_data: calldata.to_vec().into(),
         })
     }
 }
