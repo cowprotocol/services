@@ -155,14 +155,17 @@ pub async fn run(args: Arguments) {
     let startup_span = info_span!("autopilot_startup");
     let startup_span_guard = startup_span.enter();
 
-    let db = Postgres::new(args.db_url.as_str(), args.insert_batch_size)
+    let db_write = Postgres::new(args.db_write_url.as_str(), args.insert_batch_size)
         .await
         .unwrap();
 
-    let db_replica = Postgres::new(args.db_replica_url.as_str(), args.insert_batch_size)
-        .await
-        .unwrap();
-    crate::database::run_database_metrics_work(db_replica.clone());
+    let db_read = Postgres::new(
+        args.db_read_url.unwrap_or(args.db_write_url).as_str(),
+        args.insert_batch_size,
+    )
+    .await
+    .unwrap();
+    crate::database::run_database_metrics_work(db_read.clone());
 
     let http_factory = HttpClientFactory::new(&args.http_client);
     let web3 = shared::ethrpc::web3(
@@ -394,7 +397,7 @@ pub async fn run(args: Arguments) {
         .instrument(info_span!("native_price_estimator"))
         .await
         .unwrap();
-    let prices = db.fetch_latest_prices().await.unwrap();
+    let prices = db_write.fetch_latest_prices().await.unwrap();
     native_price_estimator.initialize_cache(prices);
 
     let price_estimator = price_estimator_factory
@@ -424,7 +427,7 @@ pub async fn run(args: Arguments) {
         tokio::sync::mpsc::unbounded_channel();
 
     let persistence =
-        infra::persistence::Persistence::new(args.s3.into().unwrap(), Arc::new(db.clone()))
+        infra::persistence::Persistence::new(args.s3.into().unwrap(), Arc::new(db_write.clone()))
             .instrument(info_span!("persistence_init"))
             .await;
     let settlement_observer =
@@ -452,7 +455,7 @@ pub async fn run(args: Arguments) {
             eth.contracts().settlement().clone(),
         ),
         boundary::events::settlement::Indexer::new(
-            db.clone(),
+            db_write.clone(),
             settlement_observer,
             settlement_contract_start_index,
         ),
@@ -475,7 +478,7 @@ pub async fn run(args: Arguments) {
         price_estimator,
         native_price_estimator.clone(),
         gas_price_estimator,
-        Arc::new(db.clone()),
+        Arc::new(db_write.clone()),
         order_quoting::Validity {
             eip1271_onchain_quote: chrono::Duration::from_std(
                 args.order_quoting.eip1271_onchain_quote_validity,
@@ -525,7 +528,7 @@ pub async fn run(args: Arguments) {
     );
     let order_events_cleaner = crate::periodic_db_cleanup::OrderEventsCleaner::new(
         order_events_cleaner_config,
-        db.clone(),
+        db_write.clone(),
     );
 
     tokio::task::spawn(
@@ -545,7 +548,7 @@ pub async fn run(args: Arguments) {
     let trusted_tokens =
         AutoUpdatingTokenList::from_configuration(market_makable_token_list_configuration).await;
 
-    let mut maintenance = Maintenance::new(settlement_event_indexer, db.clone());
+    let mut maintenance = Maintenance::new(settlement_event_indexer, db_write.clone());
     maintenance.with_cow_amms(&cow_amm_registry);
 
     if !args.ethflow_contracts.is_empty() {
@@ -554,7 +557,7 @@ pub async fn run(args: Arguments) {
             args.ethflow_indexing_start,
             &web3,
             chain_id,
-            db.clone(),
+            db_write.clone(),
         )
         .await;
 
@@ -562,7 +565,7 @@ pub async fn run(args: Arguments) {
             // This cares only about ethflow refund events because all the other ethflow
             // events are already indexed by the OnchainOrderParser.
             EthFlowRefundRetriever::new(web3.clone(), args.ethflow_contracts.clone()),
-            db.clone(),
+            db_write.clone(),
             block_retriever.clone(),
             ethflow_refund_start_block,
         )
@@ -572,7 +575,7 @@ pub async fn run(args: Arguments) {
 
         let custom_ethflow_order_parser = EthFlowOnchainOrderParser {};
         let onchain_order_event_parser = OnchainOrderParser::new(
-            db.clone(),
+            db_write.clone(),
             web3.clone(),
             quoter.clone(),
             Box::new(custom_ethflow_order_parser),
@@ -586,7 +589,7 @@ pub async fn run(args: Arguments) {
             args.ethflow_indexing_start,
             &web3,
             chain_id,
-            &db,
+            &db_write,
         )
         .await;
 

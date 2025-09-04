@@ -133,6 +133,8 @@ impl<'a> Services<'a> {
                 "--hooks-contract-address={:?}",
                 self.contracts.hooks.address()
             ),
+            "--db-read-url".to_string(),
+            LOCAL_READ_ONLY_DB_URL.clone(),
         ]
         .into_iter()
     }
@@ -159,14 +161,6 @@ impl<'a> Services<'a> {
                 "--balancer-v2-vault-address={:?}",
                 self.contracts.balancer_vault.address()
             ),
-        ]
-        .into_iter()
-    }
-
-    fn api_database_arguments(&self) -> impl Iterator<Item = String> + use<> {
-        [
-            "--db-replica-url".to_string(),
-            LOCAL_READ_ONLY_DB_URL.clone(),
         ]
         .into_iter()
     }
@@ -199,7 +193,6 @@ impl<'a> Services<'a> {
         .into_iter()
         .chain(self.api_autopilot_solver_arguments())
         .chain(self.api_autopilot_arguments())
-        .chain(self.api_database_arguments())
         .chain(extra_args)
         .collect();
         let args = ignore_overwritten_cli_params(args);
@@ -220,7 +213,6 @@ impl<'a> Services<'a> {
         .into_iter()
         .chain(self.api_autopilot_solver_arguments())
         .chain(self.api_autopilot_arguments())
-        .chain(self.api_database_arguments())
         .chain(extra_args)
         .collect();
         let args = ignore_overwritten_cli_params(args);
@@ -734,43 +726,54 @@ pub async fn ensure_e2e_readonly_user() {
     const PSQL_DUPLICATE_OBJECT_ERROR_CODE: &str = "42710";
 
     tracing::info!("Ensuring read-only user exists");
-    async fn create_readonly_user() -> Result<(), sqlx::Error> {
-        let mut db = sqlx::PgConnection::connect(LOCAL_DB_URL).await?;
-        let mut db: sqlx::Transaction<'_, sqlx::Postgres> = db.begin().await?;
-        let current_db: String = db.fetch_one("SELECT current_database();").await?.get(0);
+    let mut db = sqlx::PgConnection::connect(LOCAL_DB_URL)
+        .await
+        .expect("Database connection error");
+    let mut db: sqlx::Transaction<'_, sqlx::Postgres> = db
+        .begin()
+        .await
+        .expect("Database transaction creation error");
+    let current_db: String = db
+        .fetch_one("SELECT current_database();")
+        .await
+        .expect("Current database name fetching error")
+        .get(0);
 
-        let res = db
-            .execute(
-                format!(
-                    r#"
-        CREATE ROLE readonly WITH LOGIN PASSWORD 'password';
-        GRANT CONNECT ON DATABASE "{current_db}" TO readonly;
-        GRANT USAGE ON SCHEMA public TO readonly;
-        GRANT SELECT ON ALL TABLES IN SCHEMA public TO readonly;
-        GRANT SELECT ON ALL SEQUENCES IN SCHEMA public TO readonly;
-        ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO readonly;
-        ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON SEQUENCES TO readonly;
-        "#
-                )
-                .as_str(),
+    let res = db
+        .execute(
+            format!(
+                r#"
+    CREATE ROLE readonly WITH LOGIN PASSWORD 'password';
+    GRANT CONNECT ON DATABASE "{current_db}" TO readonly;
+    GRANT USAGE ON SCHEMA public TO readonly;
+    GRANT SELECT ON ALL TABLES IN SCHEMA public TO readonly;
+    GRANT SELECT ON ALL SEQUENCES IN SCHEMA public TO readonly;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO readonly;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON SEQUENCES TO readonly;
+    "#
             )
-            .await;
+            .as_str(),
+        )
+        .await;
 
-        match res {
-            Err(sqlx::Error::Database(e))
-                if e.code()
-                    .is_some_and(|c| c == PSQL_DUPLICATE_OBJECT_ERROR_CODE) =>
-            {
-                tracing::info!("Read-only user already exists! {:?}", e)
-            }
-            Err(e) => tracing::error!("Read-only user creation failed {:?}", e),
-            _ => tracing::info!("Read only user created"),
+    match res {
+        Err(sqlx::Error::Database(e))
+            if e.code()
+                .is_some_and(|c| c == PSQL_DUPLICATE_OBJECT_ERROR_CODE) =>
+        {
+            // this is considered expected, if multiple tests are run against the same
+            // database
+            tracing::info!("Read-only user already exists! {:?}", e);
         }
-
-        db.commit().await
+        Err(e) => {
+            tracing::error!("Read-only user creation failed {:?}", e);
+            panic!("Read-only user creation failed {:?}", e);
+        }
+        Ok(_) => {
+            tracing::info!("Read only user created");
+            db.commit().await.expect("Transaction commit error");
+        }
     }
-
-    create_readonly_user().await.unwrap();
 }
 
 pub type Db = sqlx::Pool<sqlx::Postgres>;
