@@ -2,10 +2,15 @@ use {
     crate::{
         database::competition::Competition,
         domain::{
-            self, OrderUid,
+            self,
+            OrderUid,
             auction::Id,
             competition::{
-                self, Solution, SolutionError, SolverParticipationGuard, Unranked,
+                self,
+                Solution,
+                SolutionError,
+                SolverParticipationGuard,
+                Unranked,
                 winner_selection::{self, Ranking},
             },
             eth::{self, TxId},
@@ -26,7 +31,11 @@ use {
     futures::{FutureExt, TryFutureExt},
     itertools::Itertools,
     model::solver_competition::{
-        CompetitionAuction, Order, Score, SolverCompetitionDB, SolverSettlement,
+        CompetitionAuction,
+        Order,
+        Score,
+        SolverCompetitionDB,
+        SolverSettlement,
     },
     num::ToPrimitive,
     primitive_types::H256,
@@ -110,30 +119,33 @@ impl RunLoop {
         }
     }
 
-    pub async fn run_forever(self) {
+    pub async fn run_forever(self, mut control: crate::run::Control) {
         Maintenance::spawn_cow_amm_indexing_task(
             self.maintenance.clone(),
             self.eth.current_block().clone(),
         );
-        let (shutdown_tx, mut shutdown_rx) = tokio::sync::broadcast::channel(1);
-        tokio::spawn(async move {
-            wait_for_shutdown().await;
-            let _ = shutdown_tx.send(());
-        });
 
         let mut last_auction = None;
         let mut last_block = None;
+
         let self_arc = Arc::new(self);
         let mut leader = self_arc
             .persistence
             .leader("autopilot_startup".to_string())
             .await;
 
+        let mut was_leader = false;
+
         loop {
             let is_leader = leader.tick().await.unwrap_or_else(|err| {
                 tracing::warn!(error=%err, "failed to become leader");
                 false
             });
+            if is_leader && !was_leader {
+                Metrics::leader_step_up();
+            }
+            was_leader = is_leader;
+
             let start_block = self_arc.update_caches(&mut last_block, is_leader).await;
             if !is_leader {
                 // only the leader is supposed to run the auctions
@@ -146,9 +158,11 @@ impl RunLoop {
             }
 
             tokio::select!(
-                _ = shutdown_rx.recv() => {
+                _ = control.should_shutdown() => {
                     tracing::info!("Shutdown received, stepping down as the leader.");
                     leader.step_down().await;
+                    Metrics::leader_step_down();
+
                     return;
                 },
                 auction = self_arc.next_auction(start_block, &mut last_auction, &mut last_block) => {
@@ -891,25 +905,6 @@ impl RunLoop {
     }
 }
 
-async fn wait_for_shutdown() {
-    use tokio::signal;
-    // On Unix-like systems, we can listen for SIGTERM.
-    #[cfg(unix)]
-    let mut sigterm = signal::unix::signal(signal::unix::SignalKind::terminate()).unwrap();
-
-    // On all platforms, we can listen for Ctrl+C.
-    let ctrl_c = signal::ctrl_c();
-
-    tokio::select! {
-        _ = ctrl_c => {
-            tracing::info!("Received SIGINT");
-        },
-        _ = sigterm.recv() => {
-            tracing::info!("Received SIGTERM.");
-        },
-    }
-}
-
 #[derive(Debug, thiserror::Error)]
 enum SolveError {
     #[error("the solver timed out")]
@@ -994,6 +989,11 @@ struct Metrics {
     /// function is started.
     #[metric(buckets(0, 0.25, 0.5, 0.75, 1, 1.5, 2, 2.5, 3, 4, 5, 6))]
     current_block_delay: prometheus::Histogram,
+
+    /// Tracks the number of times autopilot stepped down from being leader
+    leader_step_down: prometheus::IntCounter,
+    /// Tracks the number of times autopilot became leader
+    leader_step_up: prometheus::IntCounter,
 }
 
 impl Metrics {
@@ -1093,6 +1093,14 @@ impl Metrics {
         Self::get()
             .current_block_delay
             .observe(init_block_timestamp.elapsed().as_secs_f64())
+    }
+
+    fn leader_step_down() {
+        Self::get().leader_step_down.inc();
+    }
+
+    fn leader_step_up() {
+        Self::get().leader_step_up.inc();
     }
 }
 
