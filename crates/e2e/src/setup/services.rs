@@ -133,6 +133,8 @@ impl<'a> Services<'a> {
                 "--hooks-contract-address={:?}",
                 self.contracts.hooks.address()
             ),
+            "--db-read-url".to_string(),
+            LOCAL_READ_ONLY_DB_URL.clone(),
         ]
         .into_iter()
     }
@@ -159,14 +161,6 @@ impl<'a> Services<'a> {
                 "--balancer-v2-vault-address={:?}",
                 self.contracts.balancer_vault.address()
             ),
-        ]
-        .into_iter()
-    }
-
-    fn api_database_arguments(&self) -> impl Iterator<Item = String> + use<> {
-        [
-            "--db-replica-url".to_string(),
-            LOCAL_READ_ONLY_DB_URL.clone(),
         ]
         .into_iter()
     }
@@ -199,7 +193,6 @@ impl<'a> Services<'a> {
         .into_iter()
         .chain(self.api_autopilot_solver_arguments())
         .chain(self.api_autopilot_arguments())
-        .chain(self.api_database_arguments())
         .chain(extra_args)
         .collect();
         let args = ignore_overwritten_cli_params(args);
@@ -220,7 +213,6 @@ impl<'a> Services<'a> {
         .into_iter()
         .chain(self.api_autopilot_solver_arguments())
         .chain(self.api_autopilot_arguments())
-        .chain(self.api_database_arguments())
         .chain(extra_args)
         .collect();
         let args = ignore_overwritten_cli_params(args);
@@ -761,13 +753,20 @@ pub async fn ensure_e2e_readonly_user() {
                 if e.code()
                     .is_some_and(|c| c == PSQL_DUPLICATE_OBJECT_ERROR_CODE) =>
             {
-                tracing::info!("Read-only user already exists! {:?}", e)
+                tracing::info!("Read-only user already exists! {:?}", e);
+                // this is considered expected, as if multiple tests are run against the same
+                // database
+                Ok(())
             }
-            Err(e) => tracing::error!("Read-only user creation failed {:?}", e),
-            _ => tracing::info!("Read only user created"),
+            Err(e) => {
+                tracing::error!("Read-only user creation failed {:?}", e);
+                Err(e)
+            }
+            Ok(_) => {
+                tracing::info!("Read only user created");
+                db.commit().await
+            }
         }
-
-        db.commit().await
     }
 
     create_readonly_user().await.unwrap();
