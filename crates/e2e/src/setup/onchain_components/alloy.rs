@@ -4,14 +4,11 @@ use {
     ethrpc::{AlloyProvider, alloy::conversions::IntoLegacy},
 };
 
-pub async fn hook_for_transaction<D>(tx: CallBuilder<&AlloyProvider, D>) -> Hook
+pub async fn hook_for_transaction<D>(tx: CallBuilder<&AlloyProvider, D>) -> anyhow::Result<Hook>
 where
     D: CallDecoder,
 {
-    let gas_limit = tx
-        .estimate_gas()
-        .await
-        .expect("transaction reverted when estimating gas");
+    let gas_limit = tx.estimate_gas().await?;
     let call_data = tx.calldata().to_vec();
     let target = tx
         .into_transaction_request()
@@ -21,9 +18,9 @@ where
         .unwrap()
         .into_legacy();
 
-    Hook {
+    Ok(Hook {
         target,
         call_data,
         gas_limit,
-    }
+    })
 }

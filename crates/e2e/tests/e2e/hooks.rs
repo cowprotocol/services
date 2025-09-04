@@ -277,7 +277,9 @@ async fn signature(web3: Web3) {
             .clone(),
     );
     let safe_creation =
-        onchain_components::alloy::hook_for_transaction(safe_creation_builder.clone()).await;
+        onchain_components::alloy::hook_for_transaction(safe_creation_builder.clone())
+            .await
+            .unwrap();
 
     // Create a contract instance at the would-be address of the Safe we are
     // creating with the pre-hook.
