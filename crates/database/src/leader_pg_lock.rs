@@ -18,7 +18,7 @@ impl PgLockGuard {
 
     async fn unlock(mut self) {
         // TODO what can we do with the result?
-        let _ = sqlx::query("SELECT pg_advisory_unlock($1)")
+        let _ = sqlx::query("SELECT pg_advisory_unlock(hashtextextended($1, 0))")
             .bind(self.key)
             .execute(&mut *self.conn)
             .await
@@ -79,7 +79,6 @@ impl LeaderLock {
         Ok(self.lock_guard.is_some())
     }
 
-    // TODO: call on SIGTERM for graceful step-down
     pub async fn step_down(&mut self) {
         if let Some(lock) = self.lock_guard.take() {
             lock.unlock().await;
