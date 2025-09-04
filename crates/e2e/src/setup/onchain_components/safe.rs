@@ -39,10 +39,7 @@ pub struct Infrastructure {
 }
 
 impl Infrastructure {
-    pub async fn new() -> Self {
-        // Using the NODE_HOST here kind of sucks but this is a workaround
-        // for the alloy provider signing issue
-        let provider = provider(NODE_HOST);
+    pub async fn new(provider: AlloyProvider) -> Self {
         let first_account = *provider.get_accounts().await.unwrap().first().unwrap();
 
         let singleton = {
@@ -141,8 +138,8 @@ impl Safe {
         // but it leads to boilerplate code that we don't need. Redeploying the
         // infrastructure contracts every time should have no appreciable impact in the
         // tests.
-        let infra = Infrastructure::new().await;
         let chain_id = U256::from(alloy.get_chain_id().await.unwrap());
+        let infra = Infrastructure::new(alloy).await;
         let contract = infra.deploy_safe(vec![owner.clone()], 1).await;
         Self {
             chain_id,
