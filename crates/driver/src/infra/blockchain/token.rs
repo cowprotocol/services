@@ -141,7 +141,11 @@ impl Erc20 {
                         let access_list_call = CallRequest {
                             data: delegate_call.tx.data.clone(),
                             to: delegate_call.tx.to,
-                            from: delegate_call.tx.from.as_ref().map(|account| account.address()),
+                            from: delegate_call
+                                .tx
+                                .from
+                                .as_ref()
+                                .map(|account| account.address()),
                             ..Default::default()
                         };
                         let access_list = ethereum
