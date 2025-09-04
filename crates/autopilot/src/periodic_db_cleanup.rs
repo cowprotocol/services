@@ -29,24 +29,21 @@ impl OrderEventsCleaner {
         OrderEventsCleaner { config, db }
     }
 
-    pub async fn clean_up(&self) {
-        let timestamp: DateTime<Utc> = Utc::now() - self.config.event_age_threshold;
-        match self.db.delete_order_events_before(timestamp).await {
-            Ok(affected_rows_count) => {
-                tracing::debug!(affected_rows_count, timestamp = %timestamp.to_string(), "order events cleanup");
-                Metrics::get().order_events_cleanup_total.inc()
-            }
-            Err(err) => {
-                tracing::warn!(?err, "failed to delete order events before {}", timestamp)
-            }
-        }
-    }
-
     pub async fn run_forever(self) -> ! {
         let mut interval = time::interval(self.config.cleanup_interval);
         loop {
             interval.tick().await;
-            self.clean_up().await;
+
+            let timestamp: DateTime<Utc> = Utc::now() - self.config.event_age_threshold;
+            match self.db.delete_order_events_before(timestamp).await {
+                Ok(affected_rows_count) => {
+                    tracing::debug!(affected_rows_count, timestamp = %timestamp.to_string(), "order events cleanup");
+                    Metrics::get().order_events_cleanup_total.inc()
+                }
+                Err(err) => {
+                    tracing::warn!(?err, "failed to delete order events before {}", timestamp)
+                }
+            }
         }
     }
 }
@@ -84,7 +81,7 @@ mod tests {
     // behavior in tests. Given these issues, tests were designed without
     // manipulating the timer, to maintain stability and reliability in the
     // database connection handling.
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
     #[ignore]
     async fn postgres_order_events_cleaner_flow() {
         let db = Postgres::with_defaults().await.unwrap();
@@ -129,9 +126,10 @@ mod tests {
             OrderEventsCleanerConfig::new(Duration::from_millis(50), Duration::from_millis(200));
         let cleaner = OrderEventsCleaner::new(config, db.clone());
 
+        tokio::task::spawn(cleaner.run_forever());
+
         // delete `order_a` after the initialization
         time::sleep(Duration::from_millis(20)).await;
-        cleaner.clean_up().await;
         let ids = order_event_ids_before(&db.pool).await;
         assert_eq!(ids.len(), 2);
         assert!(!ids.contains(&event_a.order_uid));
@@ -140,7 +138,6 @@ mod tests {
 
         // nothing deleted after the first interval
         time::sleep(Duration::from_millis(50)).await;
-        cleaner.clean_up().await;
         let ids = order_event_ids_before(&db.pool).await;
         assert_eq!(ids.len(), 2);
         assert!(!ids.contains(&event_a.order_uid));
@@ -149,7 +146,6 @@ mod tests {
 
         // delete `event_b` only
         time::sleep(Duration::from_millis(100)).await;
-        cleaner.clean_up().await;
         let ids = order_event_ids_before(&db.pool).await;
         assert_eq!(ids.len(), 1);
         assert!(!ids.contains(&event_b.order_uid));
@@ -157,7 +153,6 @@ mod tests {
 
         // delete `event_c`
         time::sleep(Duration::from_millis(200)).await;
-        cleaner.clean_up().await;
         let ids = order_event_ids_before(&db.pool).await;
         assert!(ids.is_empty());
     }
