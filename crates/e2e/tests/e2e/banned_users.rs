@@ -11,7 +11,7 @@ use {
         },
         tx,
     },
-    ethcontract::{H160, prelude::U256},
+    ethcontract::H160,
     ethrpc::Web3,
     model::quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
     reqwest::StatusCode,
