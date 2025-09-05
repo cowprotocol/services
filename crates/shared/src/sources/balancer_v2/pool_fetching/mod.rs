@@ -41,7 +41,7 @@ use {
         BalancerV2LiquidityBootstrappingPoolFactory,
         BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory,
         BalancerV2StablePoolFactoryV2,
-        BalancerV2Vault,
+        alloy::BalancerV2Vault,
         BalancerV2WeightedPool2TokensFactory,
         BalancerV2WeightedPoolFactory,
         BalancerV2WeightedPoolFactoryV3,
@@ -62,6 +62,7 @@ pub use {
     stable::AmplificationParameter,
     weighted::{TokenState as WeightedTokenState, Version as WeightedPoolVersion},
 };
+use contracts::alloy::InstanceExt;
 
 mod aggregate;
 mod cache;
@@ -225,14 +226,14 @@ impl BalancerFactoryKind {
 
 /// All balancer related contracts that we expect to exist.
 pub struct BalancerContracts {
-    pub vault: BalancerV2Vault,
+    pub vault: BalancerV2Vault::Instance,
     pub factories: Vec<(BalancerFactoryKind, DynInstance)>,
 }
 
 impl BalancerContracts {
     pub async fn try_new(web3: &Web3, factory_kinds: Vec<BalancerFactoryKind>) -> Result<Self> {
         let web3 = ethrpc::instrumented::instrument_with_label(web3, "balancerV2".into());
-        let vault = BalancerV2Vault::deployed(&web3)
+        let vault = BalancerV2Vault::Instance::deployed(&web3.alloy)
             .await
             .context("Cannot retrieve balancer vault")?;
 
