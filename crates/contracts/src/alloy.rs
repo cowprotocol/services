@@ -95,7 +95,9 @@ macro_rules! deployments {
 macro_rules! bindings {
     ($contract:ident $(, $deployment_info:expr)?) => {
         paste::paste! {
-            // Private module with the generated Alloy types from the JSON artifact.
+            // Generate the main bindings in a private module. That allows
+            // us to re-export all items in our own module while also adding
+            // some items ourselves.
             #[allow(non_snake_case)]
             mod [<$contract Private>] {
                 alloy::sol!(
