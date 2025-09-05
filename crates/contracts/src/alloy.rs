@@ -129,7 +129,7 @@ macro_rules! bindings {
                         "../artifacts/", stringify!($contract), ".json"
                     )))
                     .expect(concat!("failed to parse artifact JSON for ", stringify!($contract)));
-                    obj.abi.expect("artifact missing `abi` field")
+                    obj.abi.expect(&format!("artifact for {} missing `abi` field", stringify!($contract)))
                 });
 
                 /// Return all overloads by *name* and their 4-byte selectors.
