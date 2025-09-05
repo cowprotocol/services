@@ -168,10 +168,10 @@ impl IntoLegacy for alloy::primitives::Address {
     }
 }
 
-impl IntoAlloy for alloy::primitives::aliases::B256 {
+impl IntoLegacy for alloy::primitives::aliases::B256 {
     type To = primitive_types::H256;
 
-    fn into_alloy(self) -> Self::To {
+    fn into_legacy(self) -> Self::To {
         primitive_types::H256(self.into())
     }
 }

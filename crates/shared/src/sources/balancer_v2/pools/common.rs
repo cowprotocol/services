@@ -10,7 +10,7 @@ use {
         token_info::TokenInfoFetching,
     },
     anyhow::{Context, Result, anyhow, ensure},
-    contracts::{BalancerV2BasePool, alloy::BalancerV2Vault},
+    contracts::alloy::{BalancerV2BasePool, BalancerV2Vault},
     ethcontract::{BlockId, H160, H256, U256},
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::{FutureExt as _, future::BoxFuture},
@@ -60,10 +60,9 @@ impl<Factory> PoolInfoFetcher<Factory> {
     }
 
     /// Returns a Balancer base pool contract instance at the specified address.
-    fn base_pool_at(&self, _pool_address: H160) -> BalancerV2BasePool {
-        unimplemented!()
-        // let web3 = self.vault.raw_instance().web3();
-        // BalancerV2BasePool::at(&web3, pool_address)
+    fn base_pool_at(&self, pool_address: H160) -> BalancerV2BasePool::Instance {
+        let provider = self.vault.provider().clone();
+        BalancerV2BasePool::Instance::new(pool_address.into_alloy(), provider)
     }
 
     /// Retrieves the scaling exponents for the specified tokens.
@@ -89,7 +88,7 @@ impl<Factory> PoolInfoFetcher<Factory> {
     ) -> Result<PoolInfo> {
         let pool = self.base_pool_at(pool_address);
 
-        let pool_id = H256(pool.methods().get_pool_id().call().await?.0);
+        let pool_id = pool.getPoolId().call().await?.into_legacy();
         let tokens = self
             .vault
             .getPoolTokens(pool_id.0.into())
@@ -121,19 +120,20 @@ impl<Factory> PoolInfoFetcher<Factory> {
         let pool_contract_paused = self.base_pool_at(pool_address);
         let pool_contract_fee = self.base_pool_at(pool_address);
 
+        // @todo: revert back without moves
         let fetch_paused = async move {
             pool_contract_paused
-                .get_paused_state()
-                .block(block)
+                .getPausedState()
+                .block(block.into_alloy())
                 .call()
                 .await
-                .map(|result| result.0)
+                .map(|result| result.paused)
                 .map_err(anyhow::Error::from)
         };
         let fetch_swap_fee = async move {
             pool_contract_fee
-                .get_swap_fee_percentage()
-                .block(block)
+                .getSwapFeePercentage()
+                .block(block.into_alloy())
                 .call()
                 .await
                 .map_err(anyhow::Error::from)
@@ -155,7 +155,7 @@ impl<Factory> PoolInfoFetcher<Factory> {
         async move {
             let (paused, swap_fee, pool_tokens) =
                 futures::try_join!(fetch_paused, fetch_swap_fee, fetch_balances)?;
-            let swap_fee = Bfp::from_wei(swap_fee);
+            let swap_fee = Bfp::from_wei(swap_fee.into_legacy());
 
             let balances = pool_tokens.balances;
             let tokens = pool_tokens

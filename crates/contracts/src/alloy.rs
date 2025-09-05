@@ -42,7 +42,7 @@ crate::bindings!(
 // Balancer addresses can be obtained from:
 // <https://github.com/balancer/balancer-subgraph-v2/blob/master/networks.yaml>
 // crate::bindings!(BalancerV2Authorizer);
-// crate::bindings!(BalancerV2BasePool);
+crate::bindings!(BalancerV2BasePool);
 // crate::bindings!(BalancerV2BasePoolFactory);
 crate::bindings!(
     BalancerV2Vault,
