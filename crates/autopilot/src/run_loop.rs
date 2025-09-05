@@ -408,15 +408,13 @@ impl RunLoop {
             .ranked()
             .flat_map(|participant| participant.solution().order_ids())
             .unique()
-            .filter_map(|order_id| {
-                match order_lookup.get(order_id) {
-                    Some(auction_order) => {
-                        Some((auction_order.uid, auction_order.protocol_fees.clone()))
-                    }
-                    None => {
-                        tracing::debug!(?order_id, "order not found in auction");
-                        None
-                    }
+            .filter_map(|order_id| match order_lookup.get(order_id) {
+                Some(auction_order) => {
+                    Some((auction_order.uid, auction_order.protocol_fees.clone()))
+                }
+                None => {
+                    tracing::debug!(?order_id, "order not found in auction");
+                    None
                 }
             })
             .collect();
