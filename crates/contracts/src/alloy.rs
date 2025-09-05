@@ -131,12 +131,11 @@ macro_rules! bindings {
                 });
 
                 /// Return all overloads by *name* and their 4-byte selectors.
-                /// Example: `selector_by_name("swap")` -> `[("swap(address,uint256,...)", 0x....), ...]`
-                pub fn selector_by_name(name: &str) -> Result<Vec<(String, Selector)>> {
+                pub fn selector_by_name(name: &str) -> Result<Vec<Selector>> {
                     let Some(funcs) = ABI.functions.get(name) else {
                         return Err(anyhow!("no function named `{name}` in ABI"));
                     };
-                    Ok(funcs.iter().map(|f| (f.signature(), f.selector())).collect())
+                    Ok(funcs.iter().map(|f| f.selector()).collect())
                 }
 
                 $(
@@ -206,9 +205,7 @@ mod tests {
         let selectors = result.unwrap();
         assert_eq!(selectors.len(), 1);
 
-        let (signature, selector) = &selectors[0];
-        assert_eq!(signature, "isSanctioned(address)");
-        // The selector for isSanctioned(address) - using the actual computed value
+        let selector = &selectors[0];
         assert_eq!(selector, &Selector::from([0xdf, 0x59, 0x2f, 0x7d]));
     }
 
@@ -219,14 +216,10 @@ mod tests {
         let result = IZeroex::selector_by_name("transformERC20");
 
         let selectors = result.unwrap();
-        // Should have at least one overload
+
         assert!(!selectors.is_empty());
 
-        // Each entry should have a signature and selector
-        for (signature, selector) in &selectors {
-            assert!(signature.starts_with("transformERC20("));
-            assert!(signature.ends_with(')'));
-            // Selector should be 4 bytes
+        for selector in &selectors {
             assert_eq!(selector.as_slice().len(), 4);
         }
     }
