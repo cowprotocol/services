@@ -128,9 +128,9 @@ pub mod macros {
                 .send()
                 .await
                 .expect(&format!("failed to send: {}", NAME))
-                .get_receipt()
+                .watch()
                 .await
-                .expect(&format!("failed to get receipt: {}", NAME))
+                .expect(&format!("failed to get confirmations for: {}", NAME))
         }};
         ($call:expr, $value:expr, $acc:expr) => {{
             const NAME: &str = stringify!($call);
@@ -140,9 +140,9 @@ pub mod macros {
                 .send()
                 .await
                 .expect(&format!("failed to send: {}", NAME))
-                .get_receipt()
+                .watch()
                 .await
-                .expect(&format!("failed to get receipt: {}", NAME))
+                .expect(&format!("failed to get confirmations for: {}", NAME))
         }};
     }
 
