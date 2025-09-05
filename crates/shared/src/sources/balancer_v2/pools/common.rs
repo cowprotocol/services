@@ -120,7 +120,6 @@ impl<Factory> PoolInfoFetcher<Factory> {
         let pool_contract_paused = self.base_pool_at(pool_address);
         let pool_contract_fee = self.base_pool_at(pool_address);
 
-        // @todo: revert back without moves
         let fetch_paused = async move {
             pool_contract_paused
                 .getPausedState()
@@ -128,7 +127,6 @@ impl<Factory> PoolInfoFetcher<Factory> {
                 .call()
                 .await
                 .map(|result| result.paused)
-                .map_err(anyhow::Error::from)
         };
         let fetch_swap_fee = async move {
             pool_contract_fee
@@ -136,7 +134,6 @@ impl<Factory> PoolInfoFetcher<Factory> {
                 .block(block.into_alloy())
                 .call()
                 .await
-                .map_err(anyhow::Error::from)
         };
         let fetch_balances = async move {
             vault
@@ -144,7 +141,6 @@ impl<Factory> PoolInfoFetcher<Factory> {
                 .block(block.into_alloy())
                 .call()
                 .await
-                .map_err(anyhow::Error::from)
         };
 
         // Because of a `mockall` limitation, we **need** the future returned
