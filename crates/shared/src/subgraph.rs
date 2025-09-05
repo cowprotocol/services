@@ -42,11 +42,6 @@ impl SubgraphClient {
         })
     }
 
-    pub fn with_max_pools_per_tick_query(mut self, max_pools_per_tick_query: usize) -> Self {
-        self.max_pools_per_tick_query = max_pools_per_tick_query;
-        self
-    }
-
     /// Performs the specified GraphQL query on the current subgraph.
     pub async fn query<T>(&self, query: &str, variables: Option<Map<String, Value>>) -> Result<T>
     where

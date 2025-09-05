@@ -603,6 +603,7 @@ mod uniswap_v3 {
     pub fn default_max_pools_to_initialize() -> usize {
         100
     }
+
     pub fn default_max_pools_per_tick_query() -> usize {
         usize::MAX
     }
