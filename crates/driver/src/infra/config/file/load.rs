@@ -222,12 +222,17 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                         max_pools_to_initialize,
                         graph_url,
                         reinit_interval,
+                        max_pools_per_tick_query,
                     } => liquidity::config::UniswapV3 {
                         max_pools_to_initialize,
                         reinit_interval,
                         ..match preset {
                             file::UniswapV3Preset::UniswapV3 => {
-                                liquidity::config::UniswapV3::uniswap_v3(&graph_url, chain)
+                                liquidity::config::UniswapV3::uniswap_v3(
+                                    &graph_url,
+                                    chain,
+                                    max_pools_per_tick_query,
+                                )
                             }
                         }
                         .expect("no Uniswap V3 preset for current network")
@@ -237,11 +242,13 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                         max_pools_to_initialize,
                         graph_url,
                         reinit_interval,
+                        max_pools_per_tick_query,
                     } => liquidity::config::UniswapV3 {
                         router: router.into(),
                         max_pools_to_initialize,
                         graph_url,
                         reinit_interval,
+                        max_pools_per_tick_query,
                     },
                 })
                 .collect(),

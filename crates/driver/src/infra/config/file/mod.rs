@@ -556,6 +556,12 @@ enum UniswapV3Config {
 
         graph_url: Url,
 
+        /// How many pool IDs can be present in a where clause of a Tick query
+        /// at once. Some subgraphs are overloaded and throw errors when
+        /// there are too many.
+        #[serde(default = "uniswap_v3::default_max_pools_per_tick_query")]
+        max_pools_per_tick_query: usize,
+
         /// How often the liquidity source should be reinitialized to get
         /// access to new pools.
         #[serde(with = "humantime_serde", default = "default_reinit_interval")]
@@ -570,6 +576,12 @@ enum UniswapV3Config {
         /// How many pools to initialize during start up.
         #[serde(default = "uniswap_v3::default_max_pools_to_initialize")]
         max_pools_to_initialize: usize,
+
+        /// How many pool IDs can be present in a where clause of a Tick query
+        /// at once. Some subgraphs are overloaded and throw errors when
+        /// there are too many.
+        #[serde(default = "uniswap_v3::default_max_pools_per_tick_query")]
+        max_pools_per_tick_query: usize,
 
         /// The URL used to connect to uniswap v3 subgraph client.
         graph_url: Url,
@@ -590,6 +602,9 @@ enum UniswapV3Preset {
 mod uniswap_v3 {
     pub fn default_max_pools_to_initialize() -> usize {
         100
+    }
+    pub fn default_max_pools_per_tick_query() -> usize {
+        usize::MAX
     }
 }
 

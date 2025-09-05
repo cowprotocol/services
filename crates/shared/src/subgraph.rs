@@ -15,6 +15,7 @@ const MAX_NUMBER_OF_RETRIES: usize = 10;
 pub struct SubgraphClient {
     client: Client,
     subgraph_url: Url,
+    max_pools_per_tick_query: usize,
 }
 
 pub trait ContainsId {
@@ -29,11 +30,21 @@ pub struct Data<T> {
 
 impl SubgraphClient {
     /// Creates a new subgraph client from the specified organization and name.
-    pub fn try_new(subgraph_url: Url, client: Client) -> Result<Self> {
+    pub fn try_new(
+        subgraph_url: Url,
+        client: Client,
+        max_pools_per_tick_query: usize,
+    ) -> Result<Self> {
         Ok(Self {
             client,
             subgraph_url,
+            max_pools_per_tick_query,
         })
+    }
+
+    pub fn with_max_pools_per_tick_query(mut self, max_pools_per_tick_query: usize) -> Self {
+        self.max_pools_per_tick_query = max_pools_per_tick_query;
+        self
     }
 
     /// Performs the specified GraphQL query on the current subgraph.
@@ -103,6 +114,10 @@ impl SubgraphClient {
         }
 
         Ok(result)
+    }
+
+    pub fn max_pools_per_tick_query(&self) -> usize {
+        self.max_pools_per_tick_query
     }
 }
 
