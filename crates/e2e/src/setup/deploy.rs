@@ -3,7 +3,6 @@ use {
     contracts::{
         AaveFlashLoanSolverWrapper,
         BalancerV2Authorizer,
-        BalancerV2Vault,
         CoWSwapEthFlow,
         CowAmmLegacyHelper,
         ERC3156FlashLoanSolverWrapper,
@@ -14,9 +13,11 @@ use {
         UniswapV2Factory,
         UniswapV2Router02,
         WETH9,
+        alloy::{BalancerV2Vault, InstanceExt},
         support::{Balances, Signatures},
     },
-    ethcontract::{Address, H256, U256, errors::DeployError},
+    ethcontract::{Address, H256, errors::DeployError},
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::DomainSeparator,
     shared::ethrpc::Web3,
 };
@@ -29,7 +30,7 @@ pub struct DeployedContracts {
 
 pub struct Contracts {
     pub chain_id: u64,
-    pub balancer_vault: BalancerV2Vault,
+    pub balancer_vault: BalancerV2Vault::Instance,
     pub gp_settlement: GPv2Settlement,
     pub signatures: Signatures,
     pub gp_authenticator: GPv2AllowListAuthentication,
@@ -92,7 +93,9 @@ impl Contracts {
             chain_id: network_id
                 .parse()
                 .expect("Couldn't parse network ID to u64"),
-            balancer_vault: BalancerV2Vault::deployed(web3).await.unwrap(),
+            balancer_vault: BalancerV2Vault::Instance::deployed(&web3.alloy)
+                .await
+                .unwrap(),
             gp_authenticator: GPv2AllowListAuthentication::deployed(web3).await.unwrap(),
             uniswap_v2_factory: UniswapV2Factory::deployed(web3).await.unwrap(),
             uniswap_v2_router: UniswapV2Router02::deployed(web3).await.unwrap(),
@@ -137,15 +140,18 @@ impl Contracts {
         let weth = deploy!(web3, WETH9());
 
         let balancer_authorizer = deploy!(web3, BalancerV2Authorizer(admin));
-        let balancer_vault = deploy!(
-            web3,
-            BalancerV2Vault(
-                balancer_authorizer.address(),
-                weth.address(),
-                U256::from(0),
-                U256::from(0),
-            )
-        );
+        let balancer_vault_address = BalancerV2Vault::Instance::deploy_builder(
+            web3.alloy.clone(),
+            balancer_authorizer.address().into_alloy(),
+            weth.address().into_alloy(),
+            alloy::primitives::U256::from(0),
+            alloy::primitives::U256::from(0),
+        )
+        .deploy()
+        .await
+        .unwrap();
+        let balancer_vault =
+            BalancerV2Vault::Instance::new(balancer_vault_address, web3.alloy.clone());
 
         let uniswap_v2_factory = deploy!(web3, UniswapV2Factory(accounts[0]));
         let uniswap_v2_router = deploy!(
@@ -161,14 +167,17 @@ impl Contracts {
             .expect("failed to initialize manager");
         let gp_settlement = deploy!(
             web3,
-            GPv2Settlement(gp_authenticator.address(), balancer_vault.address(),)
+            GPv2Settlement(
+                gp_authenticator.address(),
+                balancer_vault.address().into_legacy(),
+            )
         );
         let balances = deploy!(web3, Balances());
         let signatures = deploy!(web3, Signatures());
 
         contracts::vault::grant_required_roles(
             &balancer_authorizer,
-            balancer_vault.address(),
+            balancer_vault.address().into_legacy(),
             gp_settlement
                 .vault_relayer()
                 .call()

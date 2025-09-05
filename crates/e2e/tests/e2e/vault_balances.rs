@@ -1,6 +1,7 @@
 use {
     e2e::{setup::*, tx},
     ethcontract::prelude::U256,
+    ethrpc::alloy::conversions::IntoLegacy,
     model::{
         order::{OrderCreation, OrderKind, SellTokenSource},
         signature::EcdsaSigningScheme,
@@ -30,16 +31,20 @@ async fn vault_balances(web3: Web3) {
     // Approve GPv2 for trading
     tx!(
         trader.account(),
-        token.approve(onchain.contracts().balancer_vault.address(), to_wei(10))
-    );
-    tx!(
-        trader.account(),
-        onchain.contracts().balancer_vault.set_relayer_approval(
-            trader.address(),
-            onchain.contracts().allowance,
-            true
+        token.approve(
+            onchain.contracts().balancer_vault.address().into_legacy(),
+            to_wei(10)
         )
     );
+    // // @todo: build provider here
+    // contracts::tx!(
+    //     onchain.contracts().balancer_vault.setRelayerApproval(
+    //         trader.address().into_alloy(),
+    //         onchain.contracts().allowance.into_alloy(),
+    //         true
+    //     ),
+    //     trader.account().address().into_alloy(),
+    // );
 
     let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;

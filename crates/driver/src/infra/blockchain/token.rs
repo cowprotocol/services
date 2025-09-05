@@ -1,7 +1,7 @@
 use {
     super::{Error, Ethereum},
     crate::domain::{competition::order, eth},
-    futures::TryFutureExt,
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     tap::TapFallible,
     web3::types::CallRequest,
 };
@@ -189,14 +189,16 @@ impl Erc20 {
                 std::cmp::min(balance.0, allowance.0.amount)
             }
             SellTokenBalance::External => {
-                let vault = self.ethereum.contracts().vault();
+                let vault = self.ethereum.contracts().vault().clone();
                 let balance = self.balance(trader);
-                let approved = vault
-                    .methods()
-                    .has_approved_relayer(trader.0, relayer.into())
-                    .call()
-                    .map_err(Error::from);
-                let allowance = self.allowance(trader, vault.address().into());
+                let approved = async {
+                    vault
+                        .hasApprovedRelayer(trader.0.into_alloy(), relayer.0.into_alloy())
+                        .call()
+                        .await
+                        .map_err(Error::from)
+                };
+                let allowance = self.allowance(trader, vault.address().into_legacy().into());
                 let (balance, approved, allowance) =
                     futures::try_join!(balance, approved, allowance)?;
                 match approved {
@@ -205,20 +207,27 @@ impl Erc20 {
                 }
             }
             SellTokenBalance::Internal => {
-                let vault = self.ethereum.contracts().vault();
-                let balance = vault
-                    .methods()
-                    .get_internal_balance(trader.0, vec![self.token.address()])
-                    .call()
-                    .map_err(Error::from);
-                let approved = vault
-                    .methods()
-                    .has_approved_relayer(trader.0, relayer.into())
-                    .call()
-                    .map_err(Error::from);
+                let vault = self.ethereum.contracts().vault().clone();
+                let balance = async {
+                    vault
+                        .getInternalBalance(
+                            trader.0.into_alloy(),
+                            vec![self.token.address().into_alloy()],
+                        )
+                        .call()
+                        .await
+                        .map_err(Error::from)
+                };
+                let approved = async {
+                    vault
+                        .hasApprovedRelayer(trader.0.into_alloy(), relayer.0.into_alloy())
+                        .call()
+                        .await
+                        .map_err(Error::from)
+                };
                 let (balance, approved) = futures::try_join!(balance, approved)?;
                 match approved {
-                    true => balance[0], // internal approvals are always U256::MAX
+                    true => balance[0].into_legacy(), // internal approvals are always U256::MAX
                     false => 0.into(),
                 }
             }

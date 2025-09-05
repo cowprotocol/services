@@ -40,7 +40,6 @@ web3 = { workspace = true }
 
 [dev-dependencies]
 derivative = { workspace = true }
-ethrpc = { workspace = true, features = ["test-util"] }
 tokio = { workspace = true, features = ["test-util"] }
 testlib = { workspace = true }
 

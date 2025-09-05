@@ -378,7 +378,10 @@ mod tests {
             sources::{BaselineSource, uniswap_v2},
         },
         chain::Chain,
-        contracts::{alloy::BalancerV2Vault, IUniswapV3Factory},
+        contracts::{
+            IUniswapV3Factory,
+            alloy::{BalancerV2Vault, InstanceExt},
+        },
         ethrpc::Web3,
         hex_literal::hex,
         std::{env, time::Duration},
@@ -393,7 +396,6 @@ mod tests {
             TransactionTrace,
         },
     };
-    use contracts::alloy::InstanceExt;
 
     fn encode_u256(u256: U256) -> Bytes {
         let mut bytes = vec![0u8; 32];
@@ -733,7 +735,9 @@ mod tests {
                     base_tokens: base_tokens.to_vec(),
                 }),
                 Arc::new(BalancerVaultFinder(
-                    BalancerV2Vault::Instance::deployed(&web3.alloy).await.unwrap(),
+                    BalancerV2Vault::Instance::deployed(&web3.alloy)
+                        .await
+                        .unwrap(),
                 )),
                 Arc::new(
                     UniswapV3Finder::new(

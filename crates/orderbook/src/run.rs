@@ -13,14 +13,14 @@ use {
     chain::Chain,
     clap::Parser,
     contracts::{
-        BalancerV2Vault,
         GPv2Settlement,
         HooksTrampoline,
         IUniswapV3Factory,
         WETH9,
-        alloy::{ChainalysisOracle, InstanceExt},
+        alloy::{BalancerV2Vault, ChainalysisOracle, InstanceExt},
     },
     ethcontract::errors::DeployError,
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::{FutureExt, StreamExt},
     model::{DomainSeparator, order::BUY_ETH_ADDRESS},
     observe::metrics::{DEFAULT_METRICS_PORT, serve_metrics},
@@ -142,15 +142,12 @@ pub async fn run(args: Arguments) {
     );
 
     let vault = match args.shared.balancer_v2_vault_address {
-        Some(address) => Some(contracts::BalancerV2Vault::with_deployment_info(
-            &web3, address, None,
+        Some(address) => Some(BalancerV2Vault::Instance::new(
+            address.into_alloy(),
+            web3.alloy.clone(),
         )),
-        None => match BalancerV2Vault::deployed(&web3).await {
+        None => match BalancerV2Vault::Instance::deployed(&web3.alloy).await {
             Ok(contract) => Some(contract),
-            Err(DeployError::NotFound(_)) => {
-                tracing::warn!("balancer contracts are not deployed on this network");
-                None
-            }
             Err(err) => panic!("failed to get balancer vault contract: {err}"),
         },
     };
@@ -174,7 +171,9 @@ pub async fn run(args: Arguments) {
             settlement_contract.clone(),
             balances_contract.clone(),
             vault_relayer,
-            vault.as_ref().map(|contract| contract.address()),
+            vault
+                .as_ref()
+                .map(|contract| contract.address().into_legacy()),
         ),
     );
 

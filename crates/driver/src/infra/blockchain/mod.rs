@@ -3,7 +3,7 @@ use {
     crate::{boundary, domain::eth},
     chain::Chain,
     ethcontract::errors::ExecutionError,
-    ethrpc::{Web3, block_stream::CurrentBlockWatcher},
+    ethrpc::{Web3, alloy::conversions::IntoLegacy, block_stream::CurrentBlockWatcher},
     shared::account_balances::{BalanceSimulator, SimulationError},
     std::{fmt, sync::Arc, time::Duration},
     thiserror::Error,
@@ -116,7 +116,7 @@ impl Ethereum {
             contracts.settlement().clone(),
             contracts.balance_helper().clone(),
             contracts.vault_relayer().0,
-            Some(contracts.vault().address()),
+            Some(contracts.vault().address().into_legacy()),
         );
 
         Self {
@@ -336,6 +336,8 @@ pub enum Error {
     GasPrice(boundary::Error),
     #[error("access list estimation error: {0:?}")]
     AccessList(serde_json::Value),
+    #[error("alloy error: {0:?}")]
+    Alloy(#[from] alloy::contract::Error),
 }
 
 impl Error {
@@ -350,6 +352,8 @@ impl Error {
                 matches!(error, ExecutionError::Revert(_))
             }
             Error::GasPrice(_) => false,
+            // @todo: double check this
+            Error::Alloy(_) => false,
             Error::AccessList(_) => true,
         }
     }

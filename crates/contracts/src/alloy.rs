@@ -312,3 +312,40 @@ mod tests {
         assert!(result3.is_err());
     }
 }
+
+pub mod macros {
+    #[macro_export]
+    macro_rules! tx_value {
+        ($call:expr, $value:expr) => {{
+            const NAME: &str = stringify!($call); 2Code has comments. Press enter to view.
+            $call
+                .value($value)
+                .send()
+                .await
+                .expect(&format!("failed to send: {}", NAME)) 3Code has comments. Press enter to view.
+                .watch()
+                .await
+                .expect(&format!("failed to get confirmations for: {}", NAME))
+        }};
+        ($call:expr, $value:expr, $acc:expr) => {{
+            const NAME: &str = stringify!($call);
+            $call
+                .from($acc)
+                .value($value)
+                .send()
+                .await
+                .expect(&format!("failed to send: {}", NAME))
+                .watch()
+                .await
+                .expect(&format!("failed to get confirmations for: {}", NAME))
+        }};
+    }
+
+    #[macro_export]
+    macro_rules! tx {
+        ($call:expr) => {{ $crate::alloy::macros::tx_value!($call, ::alloy::primitives::U256::ZERO) }};
+        ($call:expr, $acc:expr) => {{ $crate::alloy::macros::tx_value!($call, ::alloy::primitives::U256::ZERO, $acc) }};
+    }
+
+    pub use {tx, tx_value};
+}

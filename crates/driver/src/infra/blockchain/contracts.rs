@@ -6,7 +6,7 @@ use {
     },
     chain::Chain,
     contracts::FlashLoanRouter,
-    ethrpc::{Web3, block_stream::CurrentBlockWatcher},
+    ethrpc::{Web3, alloy::conversions::IntoAlloy, block_stream::CurrentBlockWatcher},
     std::collections::HashMap,
     thiserror::Error,
 };
@@ -15,7 +15,7 @@ use {
 pub struct Contracts {
     settlement: contracts::GPv2Settlement,
     vault_relayer: eth::ContractAddress,
-    vault: contracts::BalancerV2Vault,
+    vault: contracts::alloy::BalancerV2Vault::Instance,
     signatures: contracts::support::Signatures,
     weth: contracts::WETH9,
 
@@ -78,8 +78,10 @@ impl Contracts {
             ),
         );
         let vault_relayer = settlement.methods().vault_relayer().call().await?.into();
-        let vault =
-            contracts::BalancerV2Vault::at(web3, settlement.methods().vault().call().await?);
+        let vault = contracts::alloy::BalancerV2Vault::Instance::new(
+            settlement.methods().vault().call().await?.into_alloy(),
+            web3.alloy.clone(),
+        );
         let balance_helper = contracts::support::Balances::at(
             web3,
             address_for(
@@ -181,7 +183,7 @@ impl Contracts {
         self.vault_relayer
     }
 
-    pub fn vault(&self) -> &contracts::BalancerV2Vault {
+    pub fn vault(&self) -> &contracts::alloy::BalancerV2Vault::Instance {
         &self.vault
     }
 

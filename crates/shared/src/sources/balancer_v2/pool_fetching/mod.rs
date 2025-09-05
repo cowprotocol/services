@@ -41,11 +41,11 @@ use {
         BalancerV2LiquidityBootstrappingPoolFactory,
         BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory,
         BalancerV2StablePoolFactoryV2,
-        alloy::BalancerV2Vault,
         BalancerV2WeightedPool2TokensFactory,
         BalancerV2WeightedPoolFactory,
         BalancerV2WeightedPoolFactoryV3,
         BalancerV2WeightedPoolFactoryV4,
+        alloy::{BalancerV2Vault, InstanceExt},
     },
     ethcontract::{BlockId, H160, H256, Instance, dyns::DynInstance},
     ethrpc::block_stream::{BlockRetrieving, CurrentBlockWatcher},
@@ -62,7 +62,6 @@ pub use {
     stable::AmplificationParameter,
     weighted::{TokenState as WeightedTokenState, Version as WeightedPoolVersion},
 };
-use contracts::alloy::InstanceExt;
 
 mod aggregate;
 mod cache;
@@ -464,7 +463,7 @@ async fn create_aggregate_pool_fetcher(
 /// Helper method for creating a boxed `InternalPoolFetching` instance for the
 /// specified factory and parameters.
 fn create_internal_pool_fetcher<Factory>(
-    vault: BalancerV2Vault,
+    vault: BalancerV2Vault::Instance,
     factory: Factory,
     block_retriever: Arc<dyn BlockRetrieving>,
     token_infos: Arc<dyn TokenInfoFetching>,

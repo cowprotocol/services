@@ -83,6 +83,14 @@ impl IntoAlloy for web3::types::BlockId {
     }
 }
 
+impl IntoAlloy for ethcontract::tokens::Bytes<Vec<u8>> {
+    type To = alloy::primitives::Bytes;
+
+    fn into_alloy(self) -> Self::To {
+        alloy::primitives::Bytes::copy_from_slice(self.0.as_slice())
+    }
+}
+
 pub enum Account {
     Address(alloy::primitives::Address),
     Signer(Box<dyn TxSigner<Signature> + Send + Sync + 'static>),

@@ -25,9 +25,16 @@ use {
     },
     chain::Chain,
     clap::Parser,
-    contracts::{BalancerV2Vault, IUniswapV3Factory},
+    contracts::{
+        IUniswapV3Factory,
+        alloy::{BalancerV2Vault, InstanceExt},
+    },
     ethcontract::{BlockNumber, H160, common::DeploymentInformation, errors::DeployError},
-    ethrpc::{Web3, block_stream::block_number_to_block_number_hash},
+    ethrpc::{
+        Web3,
+        alloy::conversions::{IntoAlloy, IntoLegacy},
+        block_stream::block_number_to_block_number_hash,
+    },
     futures::StreamExt,
     model::DomainSeparator,
     observe::metrics::LivenessChecking,
@@ -216,18 +223,15 @@ pub async fn run(args: Arguments) {
         .await
         .expect("Couldn't get vault relayer address");
     let vault = match args.shared.balancer_v2_vault_address {
-        Some(address) => Some(contracts::BalancerV2Vault::with_deployment_info(
-            &web3, address, None,
+        Some(address) => Some(BalancerV2Vault::Instance::new(
+            address.into_alloy(),
+            web3.alloy.clone(),
         )),
-        None => match BalancerV2Vault::deployed(&web3)
+        None => match BalancerV2Vault::Instance::deployed(&web3.alloy)
             .instrument(info_span!("balancerV2vault_deployed"))
             .await
         {
             Ok(contract) => Some(contract),
-            Err(DeployError::NotFound(_)) => {
-                tracing::warn!("balancer contracts are not deployed on this network");
-                None
-            }
             Err(err) => panic!("failed to get balancer vault contract: {err}"),
         },
     };
@@ -256,7 +260,9 @@ pub async fn run(args: Arguments) {
             eth.contracts().settlement().clone(),
             eth.contracts().balances().clone(),
             vault_relayer,
-            vault.as_ref().map(|contract| contract.address()),
+            vault
+                .as_ref()
+                .map(|contract| contract.address().into_legacy()),
         ),
         eth.current_block().clone(),
     );

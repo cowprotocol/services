@@ -2,13 +2,11 @@ mod buffering;
 pub mod conversions;
 mod instrumentation;
 
-#[cfg(any(test, feature = "test-util"))]
-use alloy::providers::mock;
 use {
     crate::AlloyProvider,
     alloy::{
         network::EthereumWallet,
-        providers::{Provider, ProviderBuilder},
+        providers::{Provider, ProviderBuilder, mock},
         rpc::client::{ClientBuilder, RpcClient},
     },
     buffering::BatchCallLayer,
@@ -27,7 +25,6 @@ pub fn provider(url: &str) -> AlloyProvider {
     ProviderBuilder::new().connect_client(rpc).erased()
 }
 
-#[cfg(any(test, feature = "test-util"))]
 pub fn dummy_provider() -> AlloyProvider {
     let asserter = mock::Asserter::new();
     ProviderBuilder::new()

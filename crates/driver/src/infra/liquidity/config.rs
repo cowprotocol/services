@@ -2,6 +2,7 @@ use {
     crate::{domain::eth, infra::blockchain::contracts::deployment_address},
     chain::Chain,
     derive_more::Debug,
+    ethrpc::alloy::conversions::IntoLegacy,
     hex_literal::hex,
     reqwest::Url,
     std::{collections::HashSet, time::Duration},
@@ -221,7 +222,10 @@ impl BalancerV2 {
             };
 
         Some(Self {
-            vault: deployment_address(contracts::BalancerV2Vault::raw_contract(), chain)?,
+            // @todo: improve this chain id stuff retrieving
+            vault: contracts::alloy::BalancerV2Vault::DEPLOYMENT_INFO
+                .get(&chain.id())
+                .map(|(addr, _)| addr.into_legacy().into())?,
             weighted: factory_addresses(&[
                 contracts::BalancerV2WeightedPoolFactory::raw_contract(),
                 contracts::BalancerV2WeightedPool2TokensFactory::raw_contract(),

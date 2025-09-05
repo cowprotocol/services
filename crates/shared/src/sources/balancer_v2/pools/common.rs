@@ -13,7 +13,7 @@ use {
     contracts::{BalancerV2BasePool, alloy::BalancerV2Vault},
     ethcontract::{BlockId, H160, H256, U256},
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
-    futures::{FutureExt as _, TryFutureExt, future::BoxFuture},
+    futures::{FutureExt as _, future::BoxFuture},
     std::{collections::BTreeMap, future::Future, sync::Arc},
     tokio::sync::oneshot,
 };
@@ -60,7 +60,7 @@ impl<Factory> PoolInfoFetcher<Factory> {
     }
 
     /// Returns a Balancer base pool contract instance at the specified address.
-    fn base_pool_at(&self, pool_address: H160) -> BalancerV2BasePool {
+    fn base_pool_at(&self, _pool_address: H160) -> BalancerV2BasePool {
         unimplemented!()
         // let web3 = self.vault.raw_instance().web3();
         // BalancerV2BasePool::at(&web3, pool_address)
@@ -115,9 +115,14 @@ impl<Factory> PoolInfoFetcher<Factory> {
         pool: &PoolInfo,
         block: BlockId,
     ) -> BoxFuture<'static, Result<PoolState>> {
-        let pool_contract = self.base_pool_at(pool.address);
-        let fetch_paused = async {
-            pool_contract
+        let pool_address = pool.address;
+        let pool_id = pool.id;
+        let vault = self.vault.clone();
+        let pool_contract_paused = self.base_pool_at(pool_address);
+        let pool_contract_fee = self.base_pool_at(pool_address);
+
+        let fetch_paused = async move {
+            pool_contract_paused
                 .get_paused_state()
                 .block(block)
                 .call()
@@ -125,18 +130,17 @@ impl<Factory> PoolInfoFetcher<Factory> {
                 .map(|result| result.0)
                 .map_err(anyhow::Error::from)
         };
-        let fetch_swap_fee = async {
-            pool_contract
+        let fetch_swap_fee = async move {
+            pool_contract_fee
                 .get_swap_fee_percentage()
                 .block(block)
                 .call()
                 .await
                 .map_err(anyhow::Error::from)
         };
-        let fetch_balances = async {
-            self.vault
-                .clone()
-                .getPoolTokens(pool.id.0.into())
+        let fetch_balances = async move {
+            vault
+                .getPoolTokens(pool_id.0.into())
                 .block(block.into_alloy())
                 .call()
                 .await

@@ -4,11 +4,11 @@ use {
     super::TokenOwnerProposing,
     crate::sources::{uniswap_v2::pair_provider::PairProvider, uniswap_v3_pair_provider},
     anyhow::Result,
-    contracts::{alloy::BalancerV2Vault, IUniswapV3Factory},
+    contracts::{IUniswapV3Factory, alloy::BalancerV2Vault},
     ethcontract::{BlockNumber, H160},
+    ethrpc::alloy::conversions::IntoLegacy,
     model::TokenPair,
 };
-use ethrpc::alloy::conversions::IntoLegacy;
 
 pub struct UniswapLikePairProviderFinder {
     pub inner: PairProvider,

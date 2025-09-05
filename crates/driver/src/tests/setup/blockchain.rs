@@ -8,7 +8,13 @@ use {
         tests::{self, boundary, cases::EtherExt},
     },
     ethcontract::PrivateKey,
-    ethrpc::Web3,
+    ethrpc::{
+        Web3,
+        alloy::{
+            ProviderSignerExt,
+            conversions::{IntoAlloy, IntoLegacy, TryIntoAlloyAsync},
+        },
+    },
     futures::Future,
     secp256k1::SecretKey,
     serde_json::json,
@@ -269,14 +275,15 @@ impl Blockchain {
         .unwrap();
         let vault = wait_for(
             &web3,
-            contracts::BalancerV2Vault::builder(
-                &web3,
-                vault_authorizer.address(),
-                weth.address(),
-                0.into(),
-                0.into(),
+            contracts::alloy::BalancerV2Vault::Instance::deploy_builder(
+                web3.alloy
+                    .clone()
+                    .with_signer(main_trader_account.clone().try_into_alloy().await.unwrap()),
+                vault_authorizer.address().into_alloy(),
+                weth.address().into_alloy(),
+                alloy::primitives::U256::from(0),
+                alloy::primitives::U256::from(0),
             )
-            .from(main_trader_account.clone())
             .deploy(),
         )
         .await
@@ -291,7 +298,7 @@ impl Blockchain {
         .unwrap();
         let mut settlement = wait_for(
             &web3,
-            contracts::GPv2Settlement::builder(&web3, authenticator.address(), vault.address())
+            contracts::GPv2Settlement::builder(&web3, authenticator.address(), vault.into_legacy())
                 .from(main_trader_account.clone())
                 .deploy(),
         )
