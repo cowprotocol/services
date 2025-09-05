@@ -622,11 +622,7 @@ mod tests {
         super::*,
         contracts::{GPv2Settlement, gpv2_settlement},
         ethcontract::{BlockNumber, H256},
-        ethrpc::{
-            Web3,
-            block_stream::block_number_to_block_number_hash,
-            create_env_test_transport,
-        },
+        ethrpc::{Web3, block_stream::block_number_to_block_number_hash},
         std::str::FromStr,
     };
 
@@ -781,8 +777,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn past_events_by_block_hashes_test() {
-        let transport = create_env_test_transport();
-        let web3 = Web3::new(transport);
+        let web3 = Web3::new_from_env();
         let contract = GPv2Settlement::deployed(&web3).await.unwrap();
         let storage = EventStorage { events: vec![] };
         let blocks = vec![
@@ -828,8 +823,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn update_events_test() {
-        let transport = create_env_test_transport();
-        let web3 = Web3::new(transport);
+        let web3 = Web3::new_from_env();
         let contract = GPv2Settlement::deployed(&web3).await.unwrap();
         let storage = EventStorage { events: vec![] };
         let current_block = web3.eth().block_number().await.unwrap();
@@ -860,8 +854,7 @@ mod tests {
     #[ignore]
     async fn multiple_new_blocks_but_no_reorg_test() {
         tracing_subscriber::fmt::init();
-        let transport = create_env_test_transport();
-        let web3 = Web3::new(transport);
+        let web3 = Web3::new_from_env();
         let contract = GPv2Settlement::deployed(&web3).await.unwrap();
         let storage = EventStorage { events: vec![] };
         let current_block = web3.eth().block_number().await.unwrap();
@@ -893,8 +886,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn optional_block_skipping() {
-        let transport = create_env_test_transport();
-        let web3 = Web3::new(transport);
+        let web3 = Web3::new_from_env();
         let contract = GPv2Settlement::deployed(&web3).await.unwrap();
 
         let current_block = web3.eth().block_number().await.unwrap();

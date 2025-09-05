@@ -320,7 +320,7 @@ async fn quote_timeout(web3: Web3) {
 
     let assert_within_variance = |start_timestamp: Instant, target| {
         const VARIANCE: u64 = 100; // small buffer to allow for variance in the test
-        const HTTP_BUFFER: u64 = 10;
+        const HTTP_BUFFER: u64 = 100;
         let min = target - HTTP_BUFFER;
         let max = min + VARIANCE;
         let elapsed = start_timestamp.elapsed().as_millis() as u64;

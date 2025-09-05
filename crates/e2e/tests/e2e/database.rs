@@ -44,11 +44,10 @@ pub struct AuctionTransaction {
 #[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub struct Cip20Data {
-    pub observations: Vec<database::settlement_observations::Observation>,
     pub txs: Vec<AuctionTransaction>,
     pub participants: Vec<database::auction_participants::Participant>,
     pub prices: Vec<database::auction_prices::AuctionPrice>,
-    pub score: database::settlement_scores::Score,
+    pub reference_scores: Vec<database::reference_scores::Score>,
     pub competition: serde_json::Value,
 }
 
@@ -73,32 +72,25 @@ SELECT * FROM settlements WHERE auction_id = $1";
         .await
         .ok()?;
 
-    let observations = database::settlement_observations::fetch(
-        &mut db,
-        &txs.iter().map(|tx| tx.tx_hash).collect::<Vec<_>>(),
-    )
-    .await
-    .ok()?;
     let participants = database::auction_participants::fetch(&mut db, auction_id)
         .await
         .unwrap();
     let prices = database::auction_prices::fetch(&mut db, auction_id)
         .await
         .unwrap();
-    let score = database::settlement_scores::fetch(&mut db, auction_id)
+    let reference_scores = database::reference_scores::fetch(&mut db, auction_id)
         .await
-        .unwrap()?;
+        .unwrap();
     let competition = database::solver_competition::load_by_id(&mut db, auction_id)
         .await
         .unwrap()?
         .json;
 
     Some(Cip20Data {
-        observations,
         txs,
         participants,
         prices,
-        score,
+        reference_scores,
         competition,
     })
 }

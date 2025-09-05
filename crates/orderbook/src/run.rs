@@ -12,7 +12,14 @@ use {
     app_data::Validator,
     chain::Chain,
     clap::Parser,
-    contracts::{BalancerV2Vault, GPv2Settlement, HooksTrampoline, IUniswapV3Factory, WETH9},
+    contracts::{
+        BalancerV2Vault,
+        GPv2Settlement,
+        HooksTrampoline,
+        IUniswapV3Factory,
+        WETH9,
+        alloy::{ChainalysisOracle, InstanceExt},
+    },
     ethcontract::errors::DeployError,
     futures::{FutureExt, StreamExt},
     model::{DomainSeparator, order::BUY_ETH_ADDRESS},
@@ -45,7 +52,7 @@ use {
         token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
     },
     std::{convert::Infallible, future::Future, net::SocketAddr, sync::Arc, time::Duration},
-    tokio::{task, task::JoinHandle},
+    tokio::task::{self, JoinHandle},
     warp::Filter,
 };
 
@@ -373,7 +380,9 @@ pub async fn run(args: Arguments) {
     let fast_quoter = create_quoter(fast_price_estimator, QuoteVerificationMode::Unverified);
 
     let app_data_validator = Validator::new(args.app_data_size_limit);
-    let chainalysis_oracle = contracts::ChainalysisOracle::deployed(&web3).await.ok();
+    let chainalysis_oracle = ChainalysisOracle::Instance::deployed(&web3.alloy)
+        .await
+        .ok();
     let order_validator = Arc::new(OrderValidator::new(
         native_token.clone(),
         Arc::new(order_validation::banned::Users::new(

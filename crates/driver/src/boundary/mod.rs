@@ -27,21 +27,13 @@ pub mod liquidity;
 
 // The [`anyhow::Error`] type is re-exported because the legacy code mostly
 // returns that error. This will change as the legacy code gets refactored away.
-use {crate::infra::blockchain::Ethereum, url::Url};
+use url::Url;
 pub use {
     anyhow::{Error, Result},
     contracts,
     model::order::OrderData,
     shared::ethrpc::Web3,
 };
-
-/// Returns a Web3 instance with a trait object transport needed by various
-/// boundary components.
-fn web3(eth: &Ethereum) -> Web3 {
-    // Ugly way to get access to one of these... However, this way we don't
-    // leak this into our domain logic.
-    eth.contracts().settlement().raw_instance().web3()
-}
 
 /// Builds a web3 client that buffers requests and sends them in a
 /// batch call.

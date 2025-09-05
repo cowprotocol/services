@@ -11,8 +11,11 @@ use {
     },
     anyhow::Result,
     arc_swap::ArcSwap,
-    contracts::{GPv2Settlement, IZeroEx},
-    ethrpc::block_stream::{CurrentBlockWatcher, into_stream},
+    contracts::{GPv2Settlement, alloy::IZeroex},
+    ethrpc::{
+        alloy::conversions::IntoLegacy,
+        block_stream::{CurrentBlockWatcher, into_stream},
+    },
     futures::StreamExt,
     itertools::Itertools,
     model::{TokenPair, order::OrderKind},
@@ -34,7 +37,8 @@ type OrderBuckets = HashMap<(H160, H160), Vec<OrderRecord>>;
 type OrderbookCache = ArcSwap<OrderBuckets>;
 
 pub struct ZeroExLiquidity {
-    pub zeroex: Arc<IZeroEx>,
+    // todo: remove Arc
+    pub zeroex: Arc<IZeroex::Instance>,
     pub allowance_manager: Box<dyn AllowanceManaging>,
     pub orderbook_cache: Arc<OrderbookCache>,
 }
@@ -43,7 +47,7 @@ impl ZeroExLiquidity {
     pub async fn new(
         web3: Web3,
         api: Arc<dyn ZeroExApi>,
-        zeroex: IZeroEx,
+        zeroex: IZeroex::Instance,
         gpv2: GPv2Settlement,
         blocks_stream: CurrentBlockWatcher,
     ) -> Self {
@@ -144,7 +148,7 @@ impl LiquidityCollecting for ZeroExLiquidity {
 
         let allowances = Arc::new(
             self.allowance_manager
-                .get_allowances(tokens, self.zeroex.address())
+                .get_allowances(tokens, self.zeroex.address().into_legacy())
                 .await?,
         );
 
@@ -211,7 +215,8 @@ fn get_useful_orders(
 #[derive(Clone)]
 pub struct OrderSettlementHandler {
     pub order_record: OrderRecord,
-    pub zeroex: Arc<IZeroEx>,
+    // todo: remove Arc
+    pub zeroex: Arc<IZeroex::Instance>,
     allowances: Arc<Allowances>,
 }
 
@@ -249,6 +254,7 @@ pub mod tests {
     use {
         super::*,
         crate::interactions::allowances::Approval,
+        ethrpc::{alloy, alloy::conversions::IntoAlloy},
         maplit::hashmap,
         shared::{
             baseline_solver::BaseTokens,
@@ -389,8 +395,14 @@ pub mod tests {
     #[tokio::test]
     async fn interaction_encodes_approval_when_insufficient() {
         let sell_token = H160::from_low_u64_be(1);
-        let zeroex = Arc::new(contracts::dummy_contract!(IZeroEx, H160::default()));
-        let allowances = Allowances::new(zeroex.address(), hashmap! { sell_token => 99.into() });
+        let zeroex = Arc::new(IZeroex::Instance::new(
+            H160::default().into_alloy(),
+            alloy::dummy_provider(),
+        ));
+        let allowances = Allowances::new(
+            zeroex.address().into_legacy(),
+            hashmap! { sell_token => 99.into() },
+        );
         let order_record = OrderRecord::new(
             zeroex_api::Order {
                 taker_amount: 100,
@@ -415,7 +427,7 @@ pub mod tests {
             [
                 Approval {
                     token: sell_token,
-                    spender: zeroex.address(),
+                    spender: zeroex.address().into_legacy(),
                 }
                 .encode(),
                 ZeroExInteraction {
@@ -431,8 +443,14 @@ pub mod tests {
     #[tokio::test]
     async fn interaction_encodes_no_approval_when_sufficient() {
         let sell_token = H160::from_low_u64_be(1);
-        let zeroex = Arc::new(contracts::dummy_contract!(IZeroEx, H160::default()));
-        let allowances = Allowances::new(zeroex.address(), hashmap! { sell_token => 100.into() });
+        let zeroex = Arc::new(IZeroex::Instance::new(
+            H160::default().into_alloy(),
+            alloy::dummy_provider(),
+        ));
+        let allowances = Allowances::new(
+            zeroex.address().into_legacy(),
+            hashmap! { sell_token => 100.into() },
+        );
         let order_record = OrderRecord::new(
             zeroex_api::Order {
                 taker_amount: 100,

@@ -10,16 +10,55 @@ pub mod multicall;
 
 use {
     self::{buffered::BufferedTransport, http::HttpTransport},
-    ethcontract::{batch::CallBatch, dyns::DynWeb3, transport::DynTransport},
+    ::alloy::providers::DynProvider,
+    ethcontract::{batch::CallBatch, transport::DynTransport},
     reqwest::{Client, Url},
     std::{num::NonZeroUsize, time::Duration},
+    web3::Transport,
 };
 
 pub const MAX_BATCH_SIZE: usize = 100;
 
-pub type Web3 = DynWeb3;
 pub type Web3Transport = DynTransport;
 pub type Web3CallBatch = CallBatch<Web3Transport>;
+pub type AlloyProvider = DynProvider;
+
+/// This is just a thin wrapper around providers (clients communicating
+/// with the blockchain) to aid the migration from `web3` to `alloy-provider`.
+/// It's able to dereference into the current provider (`web3`) but already
+/// providers access to the new provider (`alloy`). That way we should be able
+/// to convert each call site to use the new provider bit by bit instead of
+/// having to everything at once.
+#[derive(Debug, Clone)]
+pub struct Web3<T: Transport = DynTransport> {
+    pub legacy: web3::Web3<T>,
+    pub alloy: AlloyProvider,
+}
+
+impl<T: Transport> std::ops::Deref for Web3<T> {
+    type Target = web3::Web3<T>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.legacy
+    }
+}
+
+impl Web3<DynTransport> {
+    // for tests
+    pub fn new_from_env() -> Self {
+        let url = &std::env::var("NODE_URL").unwrap();
+        Self::new_from_url(url)
+    }
+
+    pub fn new_from_url(url: &str) -> Self {
+        let legacy_transport = create_test_transport(url);
+        let web3 = web3::Web3::new(legacy_transport);
+        Self {
+            legacy: web3,
+            alloy: crate::alloy::provider(url),
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -59,7 +98,7 @@ impl Default for Config {
         Self {
             ethrpc_max_batch_size: 20,
             ethrpc_max_concurrent_requests: 10,
-            ethrpc_batch_delay: Default::default(),
+            ethrpc_batch_delay: Duration::from_millis(5),
         }
     }
 }
@@ -78,11 +117,14 @@ pub fn web3(
         None => Web3Transport::new(http),
     };
     let instrumented = instrumented::InstrumentedTransport::new(name.to_string(), transport);
-    Web3::new(Web3Transport::new(instrumented))
+    Web3 {
+        legacy: web3::Web3::new(Web3Transport::new(instrumented)),
+        alloy: alloy::provider(url.as_str()),
+    }
 }
 
 /// Convenience method to create a transport from a URL.
-pub fn create_test_transport(url: &str) -> Web3Transport {
+fn create_test_transport(url: &str) -> Web3Transport {
     let http_transport = HttpTransport::new(
         Client::builder()
             .timeout(Duration::from_secs(10))
@@ -94,9 +136,4 @@ pub fn create_test_transport(url: &str) -> Web3Transport {
     let dyn_transport = Web3Transport::new(http_transport);
     let instrumented = instrumented::InstrumentedTransport::new("test".into(), dyn_transport);
     Web3Transport::new(instrumented)
-}
-
-/// Like above but takes url from the environment NODE_URL.
-pub fn create_env_test_transport() -> Web3Transport {
-    create_test_transport(&std::env::var("NODE_URL").unwrap())
 }
