@@ -10,8 +10,9 @@ use {
         token_info::TokenInfoFetching,
     },
     anyhow::{Context, Result, anyhow, ensure},
-    contracts::{BalancerV2BasePool, BalancerV2Vault},
+    contracts::{BalancerV2BasePool, alloy::BalancerV2Vault},
     ethcontract::{BlockId, Bytes, H160, H256, U256},
+    ethrpc::alloy::conversions::IntoLegacy,
     futures::{FutureExt as _, TryFutureExt, future::BoxFuture},
     std::{collections::BTreeMap, future::Future, sync::Arc},
     tokio::sync::oneshot,
@@ -40,14 +41,14 @@ where
 /// Generic pool info fetcher for fetching pool info and state that is generic
 /// on a pool factory type and its inner pool type.
 pub struct PoolInfoFetcher<Factory> {
-    vault: BalancerV2Vault,
+    vault: BalancerV2Vault::Instance,
     factory: Factory,
     token_infos: Arc<dyn TokenInfoFetching>,
 }
 
 impl<Factory> PoolInfoFetcher<Factory> {
     pub fn new(
-        vault: BalancerV2Vault,
+        vault: BalancerV2Vault::Instance,
         factory: Factory,
         token_infos: Arc<dyn TokenInfoFetching>,
     ) -> Self {
@@ -60,8 +61,9 @@ impl<Factory> PoolInfoFetcher<Factory> {
 
     /// Returns a Balancer base pool contract instance at the specified address.
     fn base_pool_at(&self, pool_address: H160) -> BalancerV2BasePool {
-        let web3 = self.vault.raw_instance().web3();
-        BalancerV2BasePool::at(&web3, pool_address)
+        unimplemented!()
+        // let web3 = self.vault.raw_instance().web3();
+        // BalancerV2BasePool::at(&web3, pool_address)
     }
 
     /// Retrieves the scaling exponents for the specified tokens.
@@ -88,12 +90,15 @@ impl<Factory> PoolInfoFetcher<Factory> {
         let pool = self.base_pool_at(pool_address);
 
         let pool_id = H256(pool.methods().get_pool_id().call().await?.0);
-        let (tokens, _, _) = self
+        let tokens = self
             .vault
-            .methods()
-            .get_pool_tokens(Bytes(pool_id.0))
+            .getPoolTokens(pool_id.0.into())
             .call()
-            .await?;
+            .await?
+            .tokens
+            .into_iter()
+            .map(|token| token.into_legacy())
+            .collect::<Vec<_>>();
         let scaling_factors = self.scaling_factors(&tokens).await?;
 
         Ok(PoolInfo {
@@ -119,7 +124,7 @@ impl<Factory> PoolInfoFetcher<Factory> {
         let fetch_swap_fee = pool_contract.get_swap_fee_percentage().block(block).call();
         let fetch_balances = self
             .vault
-            .get_pool_tokens(Bytes(pool.id.0))
+            .getPoolTokens(pool.id.0.into())
             .block(block)
             .call();
 

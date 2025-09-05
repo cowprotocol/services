@@ -2,23 +2,23 @@
 //! contract.
 
 use {
-    crate::{BalancerV2Authorizer, BalancerV2Vault},
-    ethcontract::{Bytes, H160, common::FunctionExt as _, errors::MethodError, web3::signing},
+    crate::BalancerV2Authorizer,
+    crate::alloy::BalancerV2Vault,
+    ethcontract::{Bytes, H160, web3::signing},
 };
 
 fn role_id(target: H160, function_name: &str) -> Bytes<[u8; 32]> {
-    let function = match BalancerV2Vault::raw_contract()
-        .interface
-        .abi
-        .function(function_name)
+    let function = match BalancerV2Vault::selector_by_name(function_name)
+        .ok()
+        .and_then(|s| s.first().cloned())
     {
-        Ok(function) => function,
-        Err(_) => return Bytes([0u8; 32]),
+        Some(function) => function,
+        None => return Bytes([0u8; 32]),
     };
 
     let mut data = [0u8; 36];
     data[12..32].copy_from_slice(&target.0);
-    data[32..36].copy_from_slice(&function.selector());
+    data[32..36].copy_from_slice(function.as_slice());
     Bytes(signing::keccak256(&data))
 }
 
@@ -26,7 +26,7 @@ pub async fn grant_required_roles(
     authorizer: &BalancerV2Authorizer,
     vault: H160,
     vault_relayer: H160,
-) -> Result<(), MethodError> {
+) -> anyhow::Result<()> {
     authorizer
         .grant_roles(
             vec![
@@ -50,9 +50,9 @@ mod tests {
         // `batchSwap` transactions in Tenderly and then inspecting the `role`
         // value that was passed to the authenticator contract.
 
-        let vault = BalancerV2Vault::raw_contract().networks["1"].address;
+        let (vault_address, _) = BalancerV2Vault::DEPLOYMENT_INFO.get(&1u64).unwrap();
         assert_eq!(
-            role_id(vault, "manageUserBalance"),
+            role_id(H160(*vault_address.0), "manageUserBalance"),
             Bytes(
                 "0xeba777d811cd36c06d540d7ff2ed18ed042fd67bbf7c9afcf88c818c7ee6b498"
                     .parse::<H256>()
@@ -61,7 +61,7 @@ mod tests {
             )
         );
         assert_eq!(
-            role_id(vault, "batchSwap"),
+            role_id(H160(*vault_address.0), "batchSwap"),
             Bytes(
                 "0x1282ab709b2b70070f829c46bc36f76b32ad4989fecb2fcb09a1b3ce00bbfc30"
                     .parse::<H256>()

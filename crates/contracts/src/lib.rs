@@ -64,7 +64,6 @@ include_contracts! {
     BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory;
     BalancerV2StablePool;
     BalancerV2StablePoolFactoryV2;
-    BalancerV2Vault;
     BalancerV2WeightedPool2TokensFactory;
     BalancerV2WeightedPool;
     BalancerV2WeightedPoolFactory;
@@ -133,6 +132,7 @@ pub mod test {
 
 #[cfg(test)]
 mod tests {
+    use crate::alloy::BalancerV2Vault;
     use crate::alloy::networks::{
         ARBITRUM_ONE, AVALANCHE, BASE, BNB, GNOSIS, LENS, MAINNET, OPTIMISM, POLYGON, SEPOLIA,
     };
@@ -201,8 +201,17 @@ mod tests {
             assert_has_deployment_address!(GPv2Settlement for *network);
             assert_has_deployment_address!(WETH9 for *network);
             assert_has_deployment_address!(HooksTrampoline for *network);
-            assert_has_deployment_address!(BalancerV2Vault for *network);
             assert_has_deployment_address!(BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory for *network);
+        }
+        for network in &[MAINNET, GNOSIS, SEPOLIA, ARBITRUM_ONE] {
+            let deployment_block = BalancerV2Vault::DEPLOYMENT_INFO
+                .get(network)
+                .and_then(|(_, block)| *block);
+            assert!(
+                deployment_block.is_some(),
+                "missing BalancerV2Vault deployment for {}",
+                network
+            );
         }
         for network in &[MAINNET, GNOSIS, SEPOLIA] {
             assert_has_deployment_address!(CowProtocolToken for *network);
@@ -267,7 +276,6 @@ mod tests {
 
         for network in &[MAINNET, GNOSIS, SEPOLIA, ARBITRUM_ONE] {
             assert_has_deployment_information!(GPv2Settlement for *network);
-            assert_has_deployment_information!(BalancerV2Vault for *network);
         }
         assert_has_deployment_information!(BalancerV2WeightedPoolFactory for MAINNET);
         for network in &[MAINNET, ARBITRUM_ONE] {
