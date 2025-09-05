@@ -156,17 +156,27 @@ pub struct UniswapV3 {
     /// How often the liquidity source should be reinitialized to
     /// become aware of new pools.
     pub reinit_interval: Option<Duration>,
+
+    /// How many pool IDs can be present in a where clause of a Tick query at
+    /// once. Some subgraphs are overloaded and throw errors when there are
+    /// too many.
+    pub max_pools_per_tick_query: usize,
 }
 
 impl UniswapV3 {
     /// Returns the liquidity configuration for Uniswap V3.
     #[allow(clippy::self_named_constructors)]
-    pub fn uniswap_v3(graph_url: &Url, chain: Chain) -> Option<Self> {
+    pub fn uniswap_v3(
+        graph_url: &Url,
+        chain: Chain,
+        max_pools_per_tick_query: usize,
+    ) -> Option<Self> {
         Some(Self {
             router: deployment_address(contracts::UniswapV3SwapRouterV2::raw_contract(), chain)?,
             max_pools_to_initialize: 100,
             graph_url: graph_url.clone(),
             reinit_interval: None,
+            max_pools_per_tick_query,
         })
     }
 }
