@@ -156,8 +156,8 @@ macro_rules! bindings {
                                 .get_chain_id()
                                 .await
                                 .context("could not fetch current chain id")?;
-                            if let Some((_addr, block)) = DEPLOYMENT_INFO.get(&chain_id) {
-                                return Ok(*block);
+                            if let Some((_address, deployed_block)) = DEPLOYMENT_INFO.get(&chain_id) {
+                                return Ok(*deployed_block); 
                             }
                             Ok(None)
                         }
