@@ -232,6 +232,7 @@ pub struct Orderbook {
     domain_separator: DomainSeparator,
     settlement_contract: H160,
     database: crate::database::Postgres,
+    database_replica: crate::database::Postgres,
     order_validator: Arc<dyn OrderValidating>,
     app_data: Arc<crate::app_data::Registry>,
     active_order_competition_threshold: u32,
@@ -243,6 +244,7 @@ impl Orderbook {
         domain_separator: DomainSeparator,
         settlement_contract: H160,
         database: crate::database::Postgres,
+        database_replica: crate::database::Postgres,
         order_validator: Arc<dyn OrderValidating>,
         app_data: Arc<crate::app_data::Registry>,
         active_order_competition_threshold: u32,
@@ -252,6 +254,7 @@ impl Orderbook {
             domain_separator,
             settlement_contract,
             database,
+            database_replica,
             order_validator,
             app_data,
             active_order_competition_threshold,
@@ -477,11 +480,11 @@ impl Orderbook {
     }
 
     pub async fn get_order(&self, uid: &OrderUid) -> Result<Option<Order>> {
-        self.database.single_order(uid).await
+        self.database_replica.single_order(uid).await
     }
 
     pub async fn get_orders_for_tx(&self, hash: &H256) -> Result<Vec<Order>> {
-        self.database.orders_for_tx(hash).await
+        self.database_replica.orders_for_tx(hash).await
     }
 
     pub async fn get_auction(&self) -> Result<Option<dto::AuctionWithId>> {
@@ -501,7 +504,7 @@ impl Orderbook {
         offset: u64,
         limit: u64,
     ) -> Result<Vec<Order>> {
-        self.database
+        self.database_replica
             .user_orders(owner, offset, Some(limit))
             .await
             .context("get_user_orders error")
@@ -674,6 +677,8 @@ mod tests {
         let database = crate::database::Postgres::try_new("postgresql://").unwrap();
         database::clear_DANGER(&database.pool).await.unwrap();
         database.insert_order(&old_order).await.unwrap();
+
+        let database_replica = database.clone();
         let app_data = Arc::new(crate::app_data::Registry::new(
             Validator::new(8192),
             database.clone(),
@@ -681,6 +686,7 @@ mod tests {
         ));
         let orderbook = Orderbook {
             database,
+            database_replica,
             order_validator: Arc::new(order_validator),
             domain_separator: Default::default(),
             settlement_contract: H160([0xba; 20]),
