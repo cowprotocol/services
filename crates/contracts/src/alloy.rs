@@ -49,6 +49,7 @@ pub trait InstanceExt: Sized {
         provider: &Provider,
     ) -> impl std::future::Future<Output = anyhow::Result<Self>> + Send;
 
+    /// Returns the block number at which the contract was deployed, if known.
     fn deployed_block(
         &self,
     ) -> impl std::future::Future<Output = anyhow::Result<Option<u64>>> + Send;
