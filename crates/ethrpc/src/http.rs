@@ -73,7 +73,6 @@ async fn execute_rpc<T: DeserializeOwned>(
 ) -> Result<T, Web3Error> {
     let body = serde_json::to_string(&request)?;
 
-    // Get request_id once at the beginning to ensure consistency across all logs
     let request_id = observe::distributed_tracing::request_id::from_current_span();
 
     tracing::trace!(name = %inner.name, %id, %body, "executing request");
