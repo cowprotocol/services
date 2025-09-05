@@ -3,8 +3,9 @@ use {
         nodes::forked_node::ForkedNodeApi,
         setup::{DeployedContracts, deploy::Contracts},
     },
+    ::alloy::providers::Provider,
     app_data::Hook,
-    contracts::{CowProtocolToken, ERC20Mintable},
+    contracts::CowProtocolToken,
     ethcontract::{
         Account,
         Bytes,
@@ -12,6 +13,12 @@ use {
         PrivateKey,
         U256,
         transaction::{TransactionBuilder, TransactionResult},
+    },
+    ethrpc::alloy::{
+        CallBuilderExt,
+        ProviderExt,
+        ProviderSignerExt,
+        conversions::{IntoAlloy, IntoLegacy, TryIntoAlloyAsync},
     },
     hex_literal::hex,
     model::{
@@ -28,6 +35,7 @@ use {
     },
 };
 
+pub mod alloy;
 pub mod safe;
 
 #[macro_export]
@@ -46,7 +54,7 @@ macro_rules! tx_value {
 #[macro_export]
 macro_rules! tx {
     ($acc:expr_2021, $call:expr_2021) => {
-        $crate::tx_value!($acc, U256::zero(), $call)
+        $crate::tx_value!($acc, ethcontract::U256::zero(), $call)
     };
 }
 
@@ -167,18 +175,40 @@ impl Iterator for AccountGenerator {
 
 #[derive(Debug)]
 pub struct MintableToken {
-    contract: ERC20Mintable,
+    contract: contracts::alloy::ERC20Mintable::Instance,
     minter: Account,
 }
 
 impl MintableToken {
     pub async fn mint(&self, to: H160, amount: U256) {
-        tx!(self.minter, self.contract.mint(to, amount));
+        // Due to interleaving of providers, this is the only way to ensure we have the
+        // right nonce once we fully (or at the very least, these paths) migrate
+        // to alloy we can remove this
+        let nonce = self
+            .contract
+            .provider()
+            .get_transaction_count(self.minter.address().into_alloy())
+            .await
+            .unwrap();
+        let signing_provider = self
+            .contract
+            .provider()
+            .with_signer(self.minter.clone().try_into_alloy().await.unwrap());
+        signing_provider
+            .send_and_watch(
+                self.contract
+                    .mint(to.into_alloy(), amount.into_alloy())
+                    .nonce(nonce)
+                    .from(self.minter.address().into_alloy())
+                    .into_transaction_request(),
+            )
+            .await
+            .unwrap();
     }
 }
 
 impl Deref for MintableToken {
-    type Target = ERC20Mintable;
+    type Target = contracts::alloy::ERC20Mintable::Instance;
 
     fn deref(&self) -> &Self::Target {
         &self.contract
@@ -380,12 +410,31 @@ impl OnchainComponents {
     /// Deploy `N` tokens without any onchain liquidity
     pub async fn deploy_tokens<const N: usize>(&self, minter: &Account) -> [MintableToken; N] {
         let mut res = Vec::with_capacity(N);
-        for _ in 0..N {
-            let contract = ERC20Mintable::builder(&self.web3)
-                .from(minter.clone())
-                .deploy()
-                .await
-                .expect("MintableERC20 deployment failed");
+        let signing_provider = self
+            .web3()
+            .alloy
+            .with_signer(minter.clone().try_into_alloy().await.unwrap());
+
+        let nonce = self
+            .web3
+            .alloy
+            .get_transaction_count(minter.address().into_alloy())
+            .await
+            .unwrap();
+
+        for n in 0..N {
+            let contract_address =
+                contracts::alloy::ERC20Mintable::Instance::deploy_builder(signing_provider.clone())
+                    .from(minter.address().into_alloy())
+                    .nonce(nonce + (n as u64))
+                    .deploy()
+                    .await
+                    .expect("MintableERC20 deployment failed");
+            let contract = contracts::alloy::ERC20Mintable::Instance::new(
+                contract_address,
+                self.web3.alloy.clone(),
+            );
+
             res.push(MintableToken {
                 contract,
                 minter: minter.clone(),
@@ -422,19 +471,58 @@ impl OnchainComponents {
         weth_amount: U256,
     ) {
         for MintableToken { contract, minter } in tokens {
-            tx!(minter, contract.mint(minter.address(), token_amount));
+            let signing_provider = self
+                .web3()
+                .alloy
+                .with_signer(minter.clone().try_into_alloy().await.unwrap());
+
+            let nonce = self
+                .web3()
+                .alloy
+                .get_transaction_count(minter.address().into_alloy())
+                .await
+                .unwrap();
+
+            signing_provider
+                .send_and_watch(
+                    contract
+                        .mint(minter.address().into_alloy(), token_amount.into_alloy())
+                        .from(minter.address().into_alloy())
+                        .nonce(nonce)
+                        .into_transaction_request(),
+                )
+                .await
+                .unwrap();
             tx_value!(minter, weth_amount, self.contracts.weth.deposit());
 
             tx!(
                 minter,
-                self.contracts
-                    .uniswap_v2_factory
-                    .create_pair(contract.address(), self.contracts.weth.address())
+                self.contracts.uniswap_v2_factory.create_pair(
+                    contract.address().into_legacy(),
+                    self.contracts.weth.address()
+                )
             );
-            tx!(
-                minter,
-                contract.approve(self.contracts.uniswap_v2_router.address(), token_amount)
-            );
+
+            let nonce = self
+                .web3
+                .alloy
+                .get_transaction_count(minter.address().into_alloy())
+                .await
+                .unwrap();
+            signing_provider
+                .send_and_watch(
+                    contract
+                        .approve(
+                            self.contracts.uniswap_v2_router.address().into_alloy(),
+                            token_amount.into_alloy(),
+                        )
+                        .from(minter.address().into_alloy())
+                        .nonce(nonce)
+                        .into_transaction_request(),
+                )
+                .await
+                .unwrap();
+
             tx!(
                 minter,
                 self.contracts
@@ -444,7 +532,7 @@ impl OnchainComponents {
             tx!(
                 minter,
                 self.contracts.uniswap_v2_router.add_liquidity(
-                    contract.address(),
+                    contract.address().into_legacy(),
                     self.contracts.weth.address(),
                     token_amount,
                     weth_amount,
@@ -468,27 +556,44 @@ impl OnchainComponents {
 
         tx!(
             lp,
-            self.contracts
-                .uniswap_v2_factory
-                .create_pair(asset_a.0.address(), asset_b.0.address())
+            self.contracts.uniswap_v2_factory.create_pair(
+                asset_a.0.address().into_legacy(),
+                asset_b.0.address().into_legacy()
+            )
         );
-        tx!(
-            lp,
-            asset_a
-                .0
-                .approve(self.contracts.uniswap_v2_router.address(), asset_a.1)
-        );
-        tx!(
-            lp,
-            asset_b
-                .0
-                .approve(self.contracts.uniswap_v2_router.address(), asset_b.1)
-        );
+        let lp_nonce = self
+            .web3
+            .alloy
+            .get_transaction_count(lp.address().into_alloy())
+            .await
+            .unwrap();
+        asset_a
+            .0
+            .approve(
+                self.contracts.uniswap_v2_router.address().into_alloy(),
+                asset_a.1.into_alloy(),
+            )
+            .from(lp.address().into_alloy())
+            .nonce(lp_nonce)
+            .send_and_watch()
+            .await
+            .unwrap();
+        asset_b
+            .0
+            .approve(
+                self.contracts.uniswap_v2_router.address().into_alloy(),
+                asset_b.1.into_alloy(),
+            )
+            .from(lp.address().into_alloy())
+            .nonce(lp_nonce + 1)
+            .send_and_watch()
+            .await
+            .unwrap();
         tx!(
             lp,
             self.contracts.uniswap_v2_router.add_liquidity(
-                asset_a.0.address(),
-                asset_b.0.address(),
+                asset_a.0.address().into_legacy(),
+                asset_b.0.address().into_legacy(),
                 asset_a.1,
                 asset_b.1,
                 0_u64.into(),
@@ -507,7 +612,7 @@ impl OnchainComponents {
             &self.web3,
             self.contracts
                 .uniswap_v2_factory
-                .get_pair(self.contracts.weth.address(), token.address())
+                .get_pair(self.contracts.weth.address(), token.address().into_legacy())
                 .call()
                 .await
                 .expect("failed to get Uniswap V2 pair"),
@@ -517,16 +622,17 @@ impl OnchainComponents {
         // Mint amount + 1 to the pool, and then swap out 1 of the minted token
         // in order to force it to update its K-value.
         token.mint(pair.address(), amount + 1).await;
-        let (out0, out1) = if TokenPair::new(self.contracts.weth.address(), token.address())
-            .unwrap()
-            .get()
-            .0
-            == token.address()
-        {
-            (1, 0)
-        } else {
-            (0, 1)
-        };
+        let (out0, out1) =
+            if TokenPair::new(self.contracts.weth.address(), token.address().into_legacy())
+                .unwrap()
+                .get()
+                .0
+                == token.address().into_legacy()
+            {
+                (1, 0)
+            } else {
+                (0, 1)
+            };
         pair.swap(
             out0.into(),
             out1.into(),

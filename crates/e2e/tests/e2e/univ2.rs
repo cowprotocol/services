@@ -1,7 +1,8 @@
 use {
+    ::alloy::primitives::U256,
     database::order_events::{OrderEvent, OrderEventLabel},
     e2e::{setup::*, tx, tx_value},
-    ethcontract::U256,
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::{
         order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
@@ -45,12 +46,16 @@ async fn test(web3: Web3) {
     services.start_protocol(solver.clone()).await;
 
     tracing::info!("Placing order");
-    let balance = token.balance_of(trader.address()).call().await.unwrap();
-    assert_eq!(balance, 0.into());
+    let balance = token
+        .balanceOf(trader.address().into_alloy())
+        .call()
+        .await
+        .unwrap();
+    assert_eq!(balance, U256::ZERO);
     let order = OrderCreation {
         sell_token: onchain.contracts().weth.address(),
         sell_amount: to_wei(2),
-        buy_token: token.address(),
+        buy_token: token.address().into_legacy(),
         buy_amount: to_wei(1),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Buy,
@@ -72,7 +77,11 @@ async fn test(web3: Web3) {
             Default::default(),
             Default::default(),
             [
-                vec![(trader.address(), U256::from(0), Default::default())],
+                vec![(
+                    trader.address(),
+                    U256::ZERO.into_legacy(),
+                    Default::default()
+                )],
                 Default::default(),
                 Default::default()
             ],
@@ -80,12 +89,22 @@ async fn test(web3: Web3) {
     );
 
     tracing::info!("Waiting for trade.");
-    let trade_happened =
-        || async { token.balance_of(trader.address()).call().await.unwrap() != 0.into() };
+    let trade_happened = || async {
+        token
+            .balanceOf(trader.address().into_alloy())
+            .call()
+            .await
+            .unwrap()
+            != U256::ZERO
+    };
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
 
-    let balance = token.balance_of(trader.address()).call().await.unwrap();
-    assert_eq!(balance, to_wei(1));
+    let balance = token
+        .balanceOf(trader.address().into_alloy())
+        .call()
+        .await
+        .unwrap();
+    assert_eq!(balance, to_wei(1).into_alloy());
 
     let all_events_registered = || async {
         let events = crate::database::events_of_order(services.db(), &uid).await;

@@ -7,9 +7,16 @@ use {
         },
         tests::{self, boundary, cases::EtherExt},
     },
+    alloy::primitives::U256,
     ethcontract::PrivateKey,
-    ethrpc::Web3,
-    futures::Future,
+    ethrpc::{
+        Web3,
+        alloy::{
+            CallBuilderExt,
+            conversions::{IntoAlloy, IntoLegacy},
+        },
+    },
+    futures::{Future, FutureExt},
     secp256k1::SecretKey,
     serde_json::json,
     solvers_dto::solution::Flashloan,
@@ -33,7 +40,7 @@ pub struct Blockchain {
     pub trader_secret_key: SecretKey,
     pub web3: Web3,
     pub web3_url: String,
-    pub tokens: HashMap<&'static str, contracts::ERC20Mintable>,
+    pub tokens: HashMap<&'static str, contracts::alloy::ERC20Mintable::Instance>,
     pub weth: contracts::WETH9,
     pub settlement: contracts::GPv2Settlement,
     pub balances: contracts::support::Balances,
@@ -408,29 +415,35 @@ impl Blockchain {
         let domain_separator =
             boundary::DomainSeparator(settlement.domain_separator().call().await.unwrap().0);
 
+        async fn deploy_token(
+            web3: &Web3,
+            from_account: alloy::primitives::Address,
+        ) -> Result<contracts::alloy::ERC20Mintable::Instance, alloy::contract::Error> {
+            wait_for(&web3, async {
+                let contract_address =
+                    contracts::alloy::ERC20Mintable::Instance::deploy_builder(web3.alloy.clone())
+                        .from(from_account)
+                        .deploy()
+                        .await
+                        .unwrap();
+                contracts::alloy::ERC20Mintable::Instance::new(contract_address, web3.alloy.clone())
+            })
+            .await
+        }
+
         // Create (deploy) the tokens needed by the pools.
         let mut tokens = HashMap::new();
         for pool in config.pools.iter() {
             if pool.reserve_a.token != "WETH" && !tokens.contains_key(pool.reserve_a.token) {
-                let token = wait_for(
-                    &web3,
-                    contracts::ERC20Mintable::builder(&web3)
-                        .from(main_trader_account.clone())
-                        .deploy(),
-                )
-                .await
-                .unwrap();
+                let token = deploy_token(&web3, main_trader_account.address().into_alloy())
+                    .await
+                    .unwrap();
                 tokens.insert(pool.reserve_a.token, token);
             }
             if pool.reserve_b.token != "WETH" && !tokens.contains_key(pool.reserve_b.token) {
-                let token = wait_for(
-                    &web3,
-                    contracts::ERC20Mintable::builder(&web3)
-                        .from(main_trader_account.clone())
-                        .deploy(),
-                )
-                .await
-                .unwrap();
+                let token = deploy_token(&web3, main_trader_account.address().into_alloy())
+                    .await
+                    .unwrap();
                 tokens.insert(pool.reserve_b.token, token);
             }
         }
@@ -452,12 +465,20 @@ impl Blockchain {
             let token_a = if pool.reserve_a.token == "WETH" {
                 weth.address()
             } else {
-                tokens.get(pool.reserve_a.token).unwrap().address()
+                tokens
+                    .get(pool.reserve_a.token)
+                    .unwrap()
+                    .address()
+                    .into_legacy()
             };
             let token_b = if pool.reserve_b.token == "WETH" {
                 weth.address()
             } else {
-                tokens.get(pool.reserve_b.token).unwrap().address()
+                tokens
+                    .get(pool.reserve_b.token)
+                    .unwrap()
+                    .address()
+                    .into_legacy()
             };
             // Create the pair.
             wait_for(
@@ -519,9 +540,9 @@ impl Blockchain {
                         tokens
                             .get(pool.reserve_a.token)
                             .unwrap()
-                            .approve(vault_relayer, ethcontract::U256::max_value())
-                            .from(trader_account.clone())
-                            .send(),
+                            .approve(vault_relayer.into_alloy(), U256::MAX)
+                            .from(trader_account.address().into_alloy())
+                            .send_and_watch(),
                     )
                     .await
                     .unwrap();
@@ -532,9 +553,12 @@ impl Blockchain {
                     tokens
                         .get(pool.reserve_a.token)
                         .unwrap()
-                        .mint(pair.address(), pool.reserve_a.amount)
-                        .from(main_trader_account.clone())
-                        .send(),
+                        .mint(
+                            pair.address().into_alloy(),
+                            pool.reserve_a.amount.into_alloy(),
+                        )
+                        .from(main_trader_account.address().into_alloy())
+                        .send_and_watch(),
                 )
                 .await
                 .unwrap();
@@ -543,9 +567,12 @@ impl Blockchain {
                     tokens
                         .get(pool.reserve_a.token)
                         .unwrap()
-                        .mint(settlement.address(), pool.reserve_a.amount)
-                        .from(main_trader_account.clone())
-                        .send(),
+                        .mint(
+                            settlement.address().into_alloy(),
+                            pool.reserve_a.amount.into_alloy(),
+                        )
+                        .from(main_trader_account.address().into_alloy())
+                        .send_and_watch(),
                 )
                 .await
                 .unwrap();
@@ -556,9 +583,12 @@ impl Blockchain {
                         tokens
                             .get(pool.reserve_a.token)
                             .unwrap()
-                            .mint(trader_account.address(), pool.reserve_a.amount)
-                            .from(main_trader_account.clone())
-                            .send(),
+                            .mint(
+                                trader_account.address().into_alloy(),
+                                pool.reserve_a.amount.into_alloy(),
+                            )
+                            .from(main_trader_account.address().into_alloy())
+                            .send_and_watch(),
                     )
                     .await
                     .unwrap();
@@ -599,12 +629,10 @@ impl Blockchain {
                         tokens
                             .get(pool.reserve_b.token)
                             .unwrap()
-                            .approve(vault_relayer, ethcontract::U256::max_value())
-                            .from(trader_account.clone())
-                            .send(),
+                            .approve(vault_relayer.into_alloy(), U256::MAX)
+                            .from(trader_account.address().into_alloy())
+                            .send_and_watch(),
                     )
-                    .await
-                    .unwrap();
                 }
 
                 wait_for(
@@ -612,9 +640,12 @@ impl Blockchain {
                     tokens
                         .get(pool.reserve_b.token)
                         .unwrap()
-                        .mint(pair.address(), pool.reserve_b.amount)
-                        .from(main_trader_account.clone())
-                        .send(),
+                        .mint(
+                            pair.address().into_alloy(),
+                            pool.reserve_b.amount.into_alloy(),
+                        )
+                        .from(main_trader_account.address().into_alloy())
+                        .send_and_watch(),
                 )
                 .await
                 .unwrap();
@@ -623,9 +654,12 @@ impl Blockchain {
                     tokens
                         .get(pool.reserve_b.token)
                         .unwrap()
-                        .mint(settlement.address(), pool.reserve_b.amount)
-                        .from(main_trader_account.clone())
-                        .send(),
+                        .mint(
+                            settlement.address().into_alloy(),
+                            pool.reserve_b.amount.into_alloy(),
+                        )
+                        .from(main_trader_account.address().into_alloy())
+                        .send_and_watch(),
                 )
                 .await
                 .unwrap();
@@ -635,9 +669,12 @@ impl Blockchain {
                         tokens
                             .get(pool.reserve_b.token)
                             .unwrap()
-                            .mint(trader_account.address(), pool.reserve_b.amount)
-                            .from(main_trader_account.clone())
-                            .send(),
+                            .mint(
+                                trader_account.address().into_alloy(),
+                                pool.reserve_b.amount.into_alloy(),
+                            )
+                            .from(main_trader_account.address().into_alloy())
+                            .send_and_watch(),
                     )
                     .await
                     .unwrap();
@@ -797,11 +834,11 @@ impl Blockchain {
                         .get(order.sell_token)
                         .unwrap()
                         .mint(
-                            trader_account.address(),
-                            "1e-7".ether().into_wei() * execution.sell,
+                            trader_account.address().into_alloy(),
+                            ("1e-7".ether().into_wei() * execution.sell).into_alloy(),
                         )
-                        .from(trader_account.clone())
-                        .send(),
+                        .from(trader_account.address().into_alloy())
+                        .send_and_watch(),
                 )
                 .await
                 .unwrap();
@@ -814,9 +851,9 @@ impl Blockchain {
                 self.tokens
                     .get(order.sell_token)
                     .unwrap()
-                    .approve(vault_relayer, ethcontract::U256::max_value())
-                    .from(trader_account.clone())
-                    .send(),
+                    .approve(vault_relayer.into_alloy(), U256::MAX)
+                    .from(trader_account.address().into_alloy())
+                    .send_and_watch(),
             )
             .await
             .unwrap();
@@ -899,7 +936,7 @@ impl Blockchain {
         match token {
             "WETH" => self.weth.address(),
             "ETH" => eth::ETH_TOKEN.into(),
-            _ => self.tokens.get(token).unwrap().address(),
+            _ => self.tokens.get(token).unwrap().address().into_legacy(),
         }
     }
 
@@ -908,7 +945,7 @@ impl Blockchain {
     pub fn get_token_wrapped(&self, token: &str) -> eth::H160 {
         match token {
             "WETH" | "ETH" => self.weth.address(),
-            _ => self.tokens.get(token).unwrap().address(),
+            _ => self.tokens.get(token).unwrap().address().into_legacy(),
         }
     }
 

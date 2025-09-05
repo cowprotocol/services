@@ -39,6 +39,12 @@ crate::bindings!(
     }
 );
 
+crate::bindings!(GnosisSafe);
+crate::bindings!(GnosisSafeCompatibilityFallbackHandler);
+crate::bindings!(GnosisSafeProxy);
+crate::bindings!(GnosisSafeProxyFactory);
+crate::bindings!(ERC20Mintable);
+
 pub use alloy::providers::DynProvider as Provider;
 
 /// Extension trait to attach some useful functions to the contract instance.
@@ -52,7 +58,7 @@ pub trait InstanceExt: Sized {
 
 #[macro_export]
 macro_rules! bindings {
-    ($contract:ident, $($deployment_info:expr)?) => {
+    ($contract:ident $(, $deployment_info:expr)?) => {
         paste::paste! {
             // Generate the main bindings in a private module. That allows
             // us to re-export all items in our own module while also adding
@@ -111,4 +117,41 @@ macro_rules! bindings {
             }
         }
     };
+}
+
+pub mod macros {
+    #[macro_export]
+    macro_rules! tx_value {
+        ($call:expr, $value:expr) => {{
+            const NAME: &str = stringify!($call);
+            $call
+                .value($value)
+                .send()
+                .await
+                .expect(&format!("failed to send: {}", NAME))
+                .watch()
+                .await
+                .expect(&format!("failed to get confirmations for: {}", NAME))
+        }};
+        ($call:expr, $value:expr, $acc:expr) => {{
+            const NAME: &str = stringify!($call);
+            $call
+                .from($acc)
+                .value($value)
+                .send()
+                .await
+                .expect(&format!("failed to send: {}", NAME))
+                .watch()
+                .await
+                .expect(&format!("failed to get confirmations for: {}", NAME))
+        }};
+    }
+
+    #[macro_export]
+    macro_rules! tx {
+        ($call:expr) => {{ $crate::alloy::macros::tx_value!($call, ::alloy::primitives::U256::ZERO) }};
+        ($call:expr, $acc:expr) => {{ $crate::alloy::macros::tx_value!($call, ::alloy::primitives::U256::ZERO, $acc) }};
+    }
+
+    pub use {tx, tx_value};
 }

@@ -7,9 +7,17 @@ use alloy::providers::mock;
 use {
     crate::AlloyProvider,
     alloy::{
-        network::EthereumWallet,
-        providers::{Provider, ProviderBuilder},
-        rpc::client::{ClientBuilder, RpcClient},
+        contract::{CallBuilder, CallDecoder},
+        network::{EthereumWallet, Network},
+        primitives::FixedBytes,
+        providers::{
+            Provider,
+            ProviderBuilder,
+        },
+        rpc::{
+            client::{ClientBuilder, RpcClient},
+            types::TransactionRequest,
+        },
     },
     buffering::BatchCallLayer,
     instrumentation::{InstrumentationLayer, LabelingLayer},
@@ -56,5 +64,35 @@ impl ProviderSignerExt for AlloyProvider {
             .wallet(wallet)
             .connect_client(client)
             .erased()
+    }
+}
+
+pub trait ProviderExt {
+    /// Sends a transaction and watches it for completion.
+    fn send_and_watch(
+        &self,
+        tx: TransactionRequest,
+    ) -> impl Future<Output = anyhow::Result<FixedBytes<32>>>;
+}
+
+impl ProviderExt for AlloyProvider {
+    fn send_and_watch(
+        &self,
+        tx: TransactionRequest,
+    ) -> impl Future<Output = anyhow::Result<FixedBytes<32>>> {
+        async move { Ok(self.send_transaction(tx).await?.watch().await?) }
+    }
+}
+
+pub trait CallBuilderExt<N>
+where
+    N: Network,
+{
+    fn send_and_watch(&self) -> impl Future<Output = anyhow::Result<FixedBytes<32>>>;
+}
+
+impl<P: Provider<N>, D: CallDecoder, N: Network> CallBuilderExt<N> for CallBuilder<P, D, N> {
+    fn send_and_watch(&self) -> impl Future<Output = anyhow::Result<FixedBytes<32>>> {
+        async { Ok(self.send().await?.watch().await?) }
     }
 }
