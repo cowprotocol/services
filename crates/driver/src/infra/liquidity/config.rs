@@ -222,10 +222,9 @@ impl BalancerV2 {
             };
 
         Some(Self {
-            // @todo: improve this chain id stuff retrieving
-            vault: contracts::alloy::BalancerV2Vault::DEPLOYMENT_INFO
-                .get(&chain.id())
-                .map(|(addr, _)| addr.into_legacy().into())?,
+            vault: contracts::alloy::BalancerV2Vault::deployed_address(chain.id())?
+                .into_legacy()
+                .into(),
             weighted: factory_addresses(&[
                 contracts::BalancerV2WeightedPoolFactory::raw_contract(),
                 contracts::BalancerV2WeightedPool2TokensFactory::raw_contract(),

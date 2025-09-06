@@ -215,6 +215,13 @@ macro_rules! bindings {
                     $deployment_info
                 });
 
+                /// Returns the deployed address for a given chain ID.
+                pub fn deployed_address(chain_id: u64) -> Option<Address> {
+                    DEPLOYMENT_INFO
+                        .get(&chain_id)
+                        .map(|(addr, _)| *addr)
+                }
+
                 impl $crate::alloy::InstanceExt for Instance {
                     fn deployed(provider: &DynProvider) -> impl Future<Output = Result<Self>> + Send {
                         async move {
@@ -258,6 +265,7 @@ macro_rules! bindings {
 mod tests {
     use super::*;
     use alloy::primitives::Selector;
+    use crate::alloy::networks::{GNOSIS, MAINNET};
 
     #[test]
     fn test_selector_by_name_valid_function() {
@@ -310,6 +318,22 @@ mod tests {
         assert!(result1.is_ok());
         assert!(result2.is_err());
         assert!(result3.is_err());
+    }
+
+    #[test]
+    fn test_deployed_address() {
+        let mainnet_address = BalancerV2Vault::deployed_address(MAINNET);
+        assert!(mainnet_address.is_some());
+
+        let gnosis_address = BalancerV2Vault::deployed_address(GNOSIS);
+        assert!(gnosis_address.is_some());
+
+        let unknown_chain_address = BalancerV2Vault::deployed_address(999999);
+        assert!(unknown_chain_address.is_none());
+
+        if let (Some(mainnet), Some(gnosis)) = (mainnet_address, gnosis_address) {
+            assert_eq!(mainnet, gnosis);
+        }
     }
 }
 

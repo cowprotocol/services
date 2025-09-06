@@ -10,6 +10,8 @@ use {
     shared::ethrpc::Web3,
     web3::signing::SecretKeyRef,
 };
+use ethrpc::alloy::conversions::TryIntoAlloyAsync;
+use ethrpc::alloy::ProviderSignerExt;
 
 #[tokio::test]
 #[ignore]
@@ -37,14 +39,15 @@ async fn vault_balances(web3: Web3) {
         )
     );
     // // @todo: build provider here
-    // contracts::tx!(
-    //     onchain.contracts().balancer_vault.setRelayerApproval(
-    //         trader.address().into_alloy(),
-    //         onchain.contracts().allowance.into_alloy(),
-    //         true
-    //     ),
-    //     trader.account().address().into_alloy(),
-    // );
+    onchain.contracts().balancer_vault.provider().with_signer(trader.account().clone().try_into_alloy().await.unwrap());
+    contracts::tx!(
+        onchain.contracts().balancer_vault.setRelayerApproval(
+            trader.address().into_alloy(),
+            onchain.contracts().allowance.into_alloy(),
+            true
+        ),
+        trader.account().address().into_alloy(),
+    );
 
     let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;

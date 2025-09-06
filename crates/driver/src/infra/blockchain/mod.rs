@@ -352,7 +352,6 @@ impl Error {
                 matches!(error, ExecutionError::Revert(_))
             }
             Error::GasPrice(_) => false,
-            // @todo: double check this
             Error::Alloy(_) => false,
             Error::AccessList(_) => true,
         }
