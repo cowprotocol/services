@@ -254,7 +254,7 @@ pub mod tests {
     use {
         super::*,
         crate::interactions::allowances::Approval,
-        ethrpc::{alloy, alloy::conversions::IntoAlloy},
+        ethrpc::alloy::conversions::IntoAlloy,
         maplit::hashmap,
         shared::{
             baseline_solver::BaseTokens,
@@ -397,7 +397,7 @@ pub mod tests {
         let sell_token = H160::from_low_u64_be(1);
         let zeroex = Arc::new(IZeroex::Instance::new(
             H160::default().into_alloy(),
-            alloy::dummy_provider(),
+            ethrpc::mock::web3().alloy,
         ));
         let allowances = Allowances::new(
             zeroex.address().into_legacy(),
@@ -445,7 +445,7 @@ pub mod tests {
         let sell_token = H160::from_low_u64_be(1);
         let zeroex = Arc::new(IZeroex::Instance::new(
             H160::default().into_alloy(),
-            alloy::dummy_provider(),
+            ethrpc::mock::web3().alloy,
         ));
         let allowances = Allowances::new(
             zeroex.address().into_legacy(),
