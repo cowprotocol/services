@@ -1,7 +1,6 @@
 use {
     database::order_events::OrderEventLabel,
     e2e::{setup::*, tx},
-    ethcontract::prelude::U256,
     model::{
         order::{
             CancellationPayload,

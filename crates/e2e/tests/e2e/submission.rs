@@ -1,6 +1,6 @@
 use {
     e2e::{nodes::local_node::TestNodeApi, setup::*, tx, tx_value},
-    ethcontract::{BlockId, H160, H256, U256},
+    ethcontract::{BlockId, H160, H256},
     futures::{Stream, StreamExt},
     model::{
         order::{OrderCreation, OrderKind},
