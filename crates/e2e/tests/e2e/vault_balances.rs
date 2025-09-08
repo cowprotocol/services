@@ -1,7 +1,11 @@
 use {
+    contracts::alloy::{BalancerV2Vault, InstanceExt},
     e2e::{setup::*, tx},
     ethcontract::prelude::U256,
-    ethrpc::alloy::conversions::IntoLegacy,
+    ethrpc::alloy::{
+        ProviderSignerExt,
+        conversions::{IntoAlloy, IntoLegacy, TryIntoAlloyAsync},
+    },
     model::{
         order::{OrderCreation, OrderKind, SellTokenSource},
         signature::EcdsaSigningScheme,
@@ -10,8 +14,6 @@ use {
     shared::ethrpc::Web3,
     web3::signing::SecretKeyRef,
 };
-use ethrpc::alloy::conversions::TryIntoAlloyAsync;
-use ethrpc::alloy::ProviderSignerExt;
 
 #[tokio::test]
 #[ignore]
@@ -38,15 +40,22 @@ async fn vault_balances(web3: Web3) {
             to_wei(10)
         )
     );
-    // // @todo: build provider here
-    onchain.contracts().balancer_vault.provider().with_signer(trader.account().clone().try_into_alloy().await.unwrap());
+    let provider = onchain
+        .contracts()
+        .balancer_vault
+        .provider()
+        .with_signer(trader.account().clone().try_into_alloy().await.unwrap());
+    // @todo: find a better workaround that doesn't require creating a new instance
+    let balancer_vault = BalancerV2Vault::Instance::deployed(&provider)
+        .await
+        .unwrap();
     contracts::tx!(
-        onchain.contracts().balancer_vault.setRelayerApproval(
+        balancer_vault.setRelayerApproval(
             trader.address().into_alloy(),
             onchain.contracts().allowance.into_alloy(),
             true
         ),
-        trader.account().address().into_alloy(),
+        trader.account().address().into_alloy()
     );
 
     let services = Services::new(&onchain).await;

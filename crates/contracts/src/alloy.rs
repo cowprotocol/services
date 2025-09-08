@@ -264,8 +264,8 @@ macro_rules! bindings {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloy::primitives::Selector;
     use crate::alloy::networks::{GNOSIS, MAINNET};
+    use alloy::primitives::Selector;
 
     #[test]
     fn test_selector_by_name_valid_function() {
