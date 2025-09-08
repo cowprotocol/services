@@ -369,6 +369,7 @@ mod tests {
             token_info::{MockTokenInfoFetching, TokenInfo},
         },
         alloy::{
+            dyn_abi::{DynSolValue, FunctionExt},
             providers::{Provider, ProviderBuilder},
             transports::mock::Asserter,
         },
@@ -377,21 +378,12 @@ mod tests {
         maplit::hashmap,
     };
 
-    // @todo: support this
     #[tokio::test]
     async fn fetch_common_pool_info() {
         let pool_id = alloy::primitives::FixedBytes([0x90; 32]);
         let tokens = [H160([1; 20]), H160([2; 20]), H160([3; 20])];
 
-        // Asserter is used to push responses to the provided whether success or failure
-        // as you'll see in the next steps. Note that the `Asserter` wraps a
-        // FIFO queue and responses are returned in the order they are pushed.
         let asserter = Asserter::new();
-
-        // Initialize the provider with the `MockTransport` that intercepts incoming
-        // requests and uses the `Asserter` to return the next response.
-        // `Asserter` is cheaply cloneable as the underlying queue is wrapped in an
-        // `Arc`.
         let provider = ProviderBuilder::new()
             .connect_mocked_client(asserter.clone())
             .erased();
@@ -399,19 +391,23 @@ mod tests {
         let vault = BalancerV2Vault::Instance::new(H160::random().into_alloy(), provider.clone());
         asserter.push_success(&pool_id);
 
-        #[derive(serde::Serialize)]
-        #[serde(rename_all = "camelCase")]
-        struct GetPoolTokensReturn {
-            tokens: Vec<alloy::primitives::Address>,
-            balances: Vec<alloy::primitives::U256>,
-            last_changed_block: alloy::primitives::U256,
-        }
-        let get_pool_tokens_response = GetPoolTokensReturn {
-            tokens: tokens.iter().copied().map(|t| t.into_alloy()).collect(),
-            balances: vec![],
-            last_changed_block: U256::zero().into_alloy(),
-        };
-        asserter.push_success(&get_pool_tokens_response);
+        let t = tokens
+            .iter()
+            .copied()
+            .map(|t| DynSolValue::Address(t.into_alloy()))
+            .collect::<Vec<_>>();
+        let b = DynSolValue::Array(vec![]);
+        let l = DynSolValue::Uint(U256::zero().into_alloy(), 256);
+
+        let encoded = BalancerV2Vault::ABI
+            .functions
+            .get("getPoolTokens")
+            .unwrap()
+            .first()
+            .unwrap()
+            .abi_encode_output(&[DynSolValue::Array(t), b, l])
+            .unwrap();
+        asserter.push_success(&encoded);
 
         let mut token_infos = MockTokenInfoFetching::new();
         token_infos

@@ -71,13 +71,12 @@ mod tests {
     use {
         super::*,
         contracts::dummy_contract,
-        ethrpc::alloy::dummy_provider,
         primitive_types::H160,
     };
 
     #[test]
     fn encode_unwrap_weth() {
-        let vault = BalancerV2Vault::Instance::new([0x01; 20].into(), dummy_provider());
+        let vault = BalancerV2Vault::Instance::new([0x01; 20].into(), alloydummy_provider());
         let interaction = BalancerSwapGivenOutInteraction {
             settlement: dummy_contract!(GPv2Settlement, [0x02; 20]),
             vault: vault.clone(),
