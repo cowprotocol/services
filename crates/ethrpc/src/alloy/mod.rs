@@ -22,7 +22,10 @@ pub fn provider(url: &str) -> AlloyProvider {
         .layer(InstrumentationLayer)
         .layer(BatchCallLayer::new(Default::default()))
         .http(url.parse().unwrap());
-    ProviderBuilder::new().with_simple_nonce_management().connect_client(rpc).erased()
+    ProviderBuilder::new()
+        .with_simple_nonce_management()
+        .connect_client(rpc)
+        .erased()
 }
 
 pub trait ProviderSignerExt {
