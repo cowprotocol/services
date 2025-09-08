@@ -1,7 +1,6 @@
 use {
     contracts::alloy::BalancerV2Vault,
     e2e::{setup::*, tx},
-    ethcontract::prelude::U256,
     ethrpc::alloy::{
         ProviderSignerExt,
         conversions::{IntoAlloy, IntoLegacy, TryIntoAlloyAsync},

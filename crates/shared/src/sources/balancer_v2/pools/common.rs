@@ -406,7 +406,7 @@ mod tests {
             );
             let balances_response = DynSolValue::Array(vec![]);
             let last_block_reponse = DynSolValue::Uint(U256::zero().into_alloy(), 256);
-            BalancerV2Vault::get_abi_function("getPoolTokens")
+            BalancerV2Vault::abi_functions_by_name("getPoolTokens")
                 .unwrap()
                 .first()
                 .unwrap()
@@ -464,7 +464,7 @@ mod tests {
         let pool = BalancerV2BasePool::Instance::new(H160::random().into_alloy(), provider.clone());
         let vault = BalancerV2Vault::Instance::new(H160::random().into_alloy(), provider.clone());
 
-        let get_paused_state_response = BalancerV2BasePool::get_abi_function("getPausedState")
+        let get_paused_state_response = BalancerV2BasePool::abi_functions_by_name("getPausedState")
             .unwrap()
             .first()
             .unwrap()
@@ -476,7 +476,7 @@ mod tests {
             .unwrap();
         asserter.push_success(&get_paused_state_response);
         let get_swap_fee_percentage_response =
-            BalancerV2BasePool::get_abi_function("getSwapFeePercentage")
+            BalancerV2BasePool::abi_functions_by_name("getSwapFeePercentage")
                 .unwrap()
                 .first()
                 .unwrap()
@@ -502,7 +502,7 @@ mod tests {
                     .collect(),
             );
             let last_block_reponse = DynSolValue::Uint(U256::zero().into_alloy(), 256);
-            BalancerV2Vault::get_abi_function("getPoolTokens")
+            BalancerV2Vault::abi_functions_by_name("getPoolTokens")
                 .unwrap()
                 .first()
                 .unwrap()
@@ -570,7 +570,7 @@ mod tests {
         let pool = BalancerV2BasePool::Instance::new(H160::random().into_alloy(), provider.clone());
         let vault = BalancerV2Vault::Instance::new(H160::random().into_alloy(), provider.clone());
 
-        let get_paused_state_response = BalancerV2BasePool::get_abi_function("getPausedState")
+        let get_paused_state_response = BalancerV2BasePool::abi_functions_by_name("getPausedState")
             .unwrap()
             .first()
             .unwrap()
@@ -583,7 +583,7 @@ mod tests {
         asserter.push_success(&get_paused_state_response);
 
         let get_swap_fee_percentage_response =
-            BalancerV2BasePool::get_abi_function("getSwapFeePercentage")
+            BalancerV2BasePool::abi_functions_by_name("getSwapFeePercentage")
                 .unwrap()
                 .first()
                 .unwrap()
@@ -601,7 +601,7 @@ mod tests {
                 DynSolValue::Uint(U256::zero().into_alloy(), 256),
             ]);
             let last_block_reponse = DynSolValue::Uint(U256::zero().into_alloy(), 256);
-            BalancerV2Vault::get_abi_function("getPoolTokens")
+            BalancerV2Vault::abi_functions_by_name("getPoolTokens")
                 .unwrap()
                 .first()
                 .unwrap()
@@ -649,7 +649,7 @@ mod tests {
         let pool = BalancerV2BasePool::Instance::new(H160::random().into_alloy(), provider.clone());
         let vault = BalancerV2Vault::Instance::new(H160::random().into_alloy(), provider.clone());
 
-        let get_paused_state_response = BalancerV2BasePool::get_abi_function("getPausedState")
+        let get_paused_state_response = BalancerV2BasePool::abi_functions_by_name("getPausedState")
             .unwrap()
             .first()
             .unwrap()
@@ -661,7 +661,7 @@ mod tests {
             .unwrap();
         asserter.push_success(&get_paused_state_response);
         let get_swap_fee_percentage_response =
-            BalancerV2BasePool::get_abi_function("getSwapFeePercentage")
+            BalancerV2BasePool::abi_functions_by_name("getSwapFeePercentage")
                 .unwrap()
                 .first()
                 .unwrap()
@@ -725,7 +725,7 @@ mod tests {
                     .collect(),
             );
             let last_block_reponse = DynSolValue::Uint(U256::zero().into_alloy(), 256);
-            BalancerV2Vault::get_abi_function("getPoolTokens")
+            BalancerV2Vault::abi_functions_by_name("getPoolTokens")
                 .unwrap()
                 .first()
                 .unwrap()
@@ -778,7 +778,7 @@ mod tests {
         let pool = BalancerV2BasePool::Instance::new(H160::random().into_alloy(), provider.clone());
         let vault = BalancerV2Vault::Instance::new(H160::random().into_alloy(), provider.clone());
 
-        let get_paused_state_response = BalancerV2BasePool::get_abi_function("getPausedState")
+        let get_paused_state_response = BalancerV2BasePool::abi_functions_by_name("getPausedState")
             .unwrap()
             .first()
             .unwrap()
@@ -791,7 +791,7 @@ mod tests {
         asserter.push_success(&get_paused_state_response);
 
         let get_swap_fee_percentage_response =
-            BalancerV2BasePool::get_abi_function("getSwapFeePercentage")
+            BalancerV2BasePool::abi_functions_by_name("getSwapFeePercentage")
                 .unwrap()
                 .first()
                 .unwrap()
@@ -803,7 +803,7 @@ mod tests {
             let tokens_response = DynSolValue::Array(vec![]);
             let balances_response = DynSolValue::Array(vec![]);
             let last_block_reponse = DynSolValue::Uint(U256::zero().into_alloy(), 256);
-            BalancerV2Vault::get_abi_function("getPoolTokens")
+            BalancerV2Vault::abi_functions_by_name("getPoolTokens")
                 .unwrap()
                 .first()
                 .unwrap()
@@ -865,7 +865,7 @@ mod tests {
         let pool = BalancerV2BasePool::Instance::new(H160::random().into_alloy(), provider.clone());
         let vault = BalancerV2Vault::Instance::new(H160::random().into_alloy(), provider.clone());
 
-        let get_paused_state_response = BalancerV2BasePool::get_abi_function("getPausedState")
+        let get_paused_state_response = BalancerV2BasePool::abi_functions_by_name("getPausedState")
             .unwrap()
             .first()
             .unwrap()
@@ -878,7 +878,7 @@ mod tests {
         asserter.push_success(&get_paused_state_response);
 
         let get_swap_fee_percentage_response =
-            BalancerV2BasePool::get_abi_function("getSwapFeePercentage")
+            BalancerV2BasePool::abi_functions_by_name("getSwapFeePercentage")
                 .unwrap()
                 .first()
                 .unwrap()
@@ -890,7 +890,7 @@ mod tests {
             let tokens_response = DynSolValue::Array(vec![]);
             let balances_response = DynSolValue::Array(vec![]);
             let last_block_reponse = DynSolValue::Uint(U256::zero().into_alloy(), 256);
-            BalancerV2Vault::get_abi_function("getPoolTokens")
+            BalancerV2Vault::abi_functions_by_name("getPoolTokens")
                 .unwrap()
                 .first()
                 .unwrap()

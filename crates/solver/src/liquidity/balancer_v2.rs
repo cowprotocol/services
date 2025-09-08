@@ -234,7 +234,6 @@ mod tests {
         super::*,
         crate::interactions::allowances::{Approval, MockAllowanceManaging},
         contracts::dummy_contract,
-        ethrpc::alloy::dummy_provider,
         maplit::{btreemap, hashmap, hashset},
         mockall::predicate::*,
         model::TokenPair,
@@ -263,7 +262,7 @@ mod tests {
     fn dummy_contracts() -> (GPv2Settlement, BalancerV2Vault::Instance) {
         (
             dummy_contract!(GPv2Settlement, H160([0xc0; 20])),
-            BalancerV2Vault::Instance::new([0xc1; 20].into(), dummy_provider()),
+            BalancerV2Vault::Instance::new([0xc1; 20].into(), ethrpc::mock::web3().alloy),
         )
     }
 

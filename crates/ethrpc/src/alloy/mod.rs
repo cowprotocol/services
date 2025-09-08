@@ -6,7 +6,7 @@ use {
     crate::AlloyProvider,
     alloy::{
         network::EthereumWallet,
-        providers::{Provider, ProviderBuilder, mock},
+        providers::{Provider, ProviderBuilder},
         rpc::client::{ClientBuilder, RpcClient},
     },
     buffering::BatchCallLayer,
