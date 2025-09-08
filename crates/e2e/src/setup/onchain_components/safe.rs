@@ -93,7 +93,7 @@ impl Infrastructure {
                 .unwrap();
         let safe = GnosisSafe::Instance::new(safe_proxy, provider.clone());
 
-        contracts::alloy::macros::tx!(
+        contracts::alloy::tx!(
             safe.setup(
                 owners
                     .into_iter()
@@ -155,7 +155,7 @@ impl Safe {
             data, value, to, ..
         } = tx.tx;
 
-        contracts::alloy::macros::tx!(
+        contracts::alloy::tx!(
             contract.execTransaction(
                 to.unwrap().into_alloy(),
                 value.unwrap_or_default().into_alloy(),
