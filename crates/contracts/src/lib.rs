@@ -86,10 +86,6 @@ include_contracts! {
     FlashLoanRouter;
     GPv2AllowListAuthentication;
     GPv2Settlement;
-    GnosisSafe;
-    GnosisSafeCompatibilityFallbackHandler;
-    GnosisSafeProxy;
-    GnosisSafeProxyFactory;
     HoneyswapRouter;
     HooksTrampoline;
     IAavePool;
