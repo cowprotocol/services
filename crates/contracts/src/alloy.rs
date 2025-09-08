@@ -132,7 +132,7 @@ macro_rules! bindings {
                     obj.abi.expect(&format!("artifact for {} missing `abi` field", stringify!($contract)))
                 });
 
-                /// Return all overloads by *name* and their 4-byte selectors.
+                /// Return all function overloads 4-byte selectors by *name*.
                 pub fn selector_by_name(name: &str) -> Result<Vec<Selector>> {
                     let Some(funcs) = ABI.functions.get(name) else {
                         return Err(anyhow!("no function named `{name}` in ABI"));
