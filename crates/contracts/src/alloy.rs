@@ -1,3 +1,6 @@
+#[cfg(feature = "test-util")]
+pub use crate::{tx, tx_value};
+
 pub mod networks {
     pub const MAINNET: u64 = 1;
     pub const GNOSIS: u64 = 100;
@@ -66,6 +69,11 @@ crate::bindings!(
         // Not available on Lens
     }
 );
+
+crate::bindings!(GnosisSafe);
+crate::bindings!(GnosisSafeCompatibilityFallbackHandler);
+crate::bindings!(GnosisSafeProxy);
+crate::bindings!(GnosisSafeProxyFactory);
 
 pub use alloy::providers::DynProvider as Provider;
 
@@ -160,7 +168,7 @@ macro_rules! bindings {
                     obj.abi.expect(&format!("artifact for {} missing `abi` field", stringify!($contract)))
                 });
 
-                /// Return all overloads by *name* and their 4-byte selectors.
+                /// Return all function overloads 4-byte selectors by *name*.
                 pub fn selector_by_name(name: &str) -> Result<Vec<Selector>> {
                     let Some(funcs) = ABI.functions.get(name) else {
                         return Err(anyhow!("no function named `{name}` in ABI"));
@@ -169,7 +177,7 @@ macro_rules! bindings {
                 }
 
                 /// Return all abi function overloads by *name*.
-                pub fn get_abi_function(name: &str) -> Result<Vec<Function>> {
+                pub fn abi_functions_by_name(name: &str) -> Result<Vec<Function>> {
                     let Some(funcs) = ABI.functions.get(name) else {
                         return Err(anyhow!("no function named `{name}` in ABI"));
                     };
@@ -235,6 +243,41 @@ macro_rules! bindings {
             }
         }
     };
+}
+
+#[cfg(feature = "test-util")]
+#[macro_export]
+macro_rules! tx_value {
+    ($call:expr, $value:expr) => {{
+        const NAME: &str = stringify!($call);
+        $call
+            .value($value)
+            .send()
+            .await
+            .expect(&format!("failed to send: {}", NAME))
+            .watch()
+            .await
+            .expect(&format!("failed to get confirmations for: {}", NAME))
+    }};
+    ($call:expr, $value:expr, $acc:expr) => {{
+        const NAME: &str = stringify!($call);
+        $call
+            .from($acc)
+            .value($value)
+            .send()
+            .await
+            .expect(&format!("failed to send: {}", NAME))
+            .watch()
+            .await
+            .expect(&format!("failed to get confirmations for: {}", NAME))
+    }};
+}
+
+#[cfg(feature = "test-util")]
+#[macro_export]
+macro_rules! tx {
+    ($call:expr) => {{ $crate::tx_value!($call, ::alloy::primitives::U256::ZERO) }};
+    ($call:expr, $acc:expr) => {{ $crate::tx_value!($call, ::alloy::primitives::U256::ZERO, $acc) }};
 }
 
 #[cfg(test)]
@@ -314,47 +357,10 @@ mod tests {
 
     #[test]
     fn test_get_function_valid() {
-        let functions = ChainalysisOracle::get_abi_function("isSanctioned").unwrap();
+        let functions = ChainalysisOracle::abi_functions_by_name("isSanctioned").unwrap();
         assert_eq!(functions.len(), 1);
 
         let function = &functions[0];
         assert_eq!(function.name, "isSanctioned");
     }
-}
-
-pub mod macros {
-    #[macro_export]
-    macro_rules! tx_value {
-        ($call:expr, $value:expr) => {{
-            const NAME: &str = stringify!($call); 2Code has comments. Press enter to view.
-            $call
-                .value($value)
-                .send()
-                .await
-                .expect(&format!("failed to send: {}", NAME)) 3Code has comments. Press enter to view.
-                .watch()
-                .await
-                .expect(&format!("failed to get confirmations for: {}", NAME))
-        }};
-        ($call:expr, $value:expr, $acc:expr) => {{
-            const NAME: &str = stringify!($call);
-            $call
-                .from($acc)
-                .value($value)
-                .send()
-                .await
-                .expect(&format!("failed to send: {}", NAME))
-                .watch()
-                .await
-                .expect(&format!("failed to get confirmations for: {}", NAME))
-        }};
-    }
-
-    #[macro_export]
-    macro_rules! tx {
-        ($call:expr) => {{ $crate::alloy::macros::tx_value!($call, ::alloy::primitives::U256::ZERO) }};
-        ($call:expr, $acc:expr) => {{ $crate::alloy::macros::tx_value!($call, ::alloy::primitives::U256::ZERO, $acc) }};
-    }
-
-    pub use {tx, tx_value};
 }

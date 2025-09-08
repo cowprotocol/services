@@ -25,13 +25,6 @@ pub fn provider(url: &str) -> AlloyProvider {
     ProviderBuilder::new().connect_client(rpc).erased()
 }
 
-pub fn dummy_provider() -> AlloyProvider {
-    let asserter = mock::Asserter::new();
-    ProviderBuilder::new()
-        .connect_mocked_client(asserter)
-        .erased()
-}
-
 pub trait ProviderSignerExt {
     /// Creates a new provider with the given signer.
     fn with_signer(&self, signer: Account) -> Self;

@@ -28,6 +28,7 @@ use {
     },
 };
 
+pub mod alloy;
 pub mod safe;
 
 #[macro_export]
@@ -46,7 +47,7 @@ macro_rules! tx_value {
 #[macro_export]
 macro_rules! tx {
     ($acc:expr_2021, $call:expr_2021) => {
-        $crate::tx_value!($acc, U256::zero(), $call)
+        $crate::tx_value!($acc, ethcontract::U256::zero(), $call)
     };
 }
 
