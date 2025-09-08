@@ -145,24 +145,14 @@ async fn execute_rpc<T: DeserializeOwned>(
             raw_response = %text.trim(),
             "failed to decode JSON response"
         );
-        if let Some(ref req_id) = request_id {
-            Web3Error::Decoder(format!(
-                "{:?}, raw response: {}, rpc_request_id: {}, request_id: {}, {}",
-                err,
-                inner.name,
-                id,
-                req_id,
-                text.trim()
-            ))
-        } else {
-            Web3Error::Decoder(format!(
-                "{:?}, raw response: {}, rpc_request_id: {}, {}",
-                err,
-                inner.name,
-                id,
-                text.trim()
-            ))
-        }
+        Web3Error::Decoder(format!(
+            "{:?}, raw response: {}, rpc_request_id: {}, request_id: {:?}, {}",
+            err,
+            inner.name,
+            id,
+            request_id,
+            text.trim()
+        ))
     })?;
     Ok(result)
 }
