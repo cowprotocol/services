@@ -2,8 +2,6 @@ mod buffering;
 pub mod conversions;
 mod instrumentation;
 
-#[cfg(any(test, feature = "test-util"))]
-use alloy::providers::mock;
 use {
     crate::AlloyProvider,
     alloy::{
@@ -25,14 +23,6 @@ pub fn provider(url: &str) -> AlloyProvider {
         .layer(BatchCallLayer::new(Default::default()))
         .http(url.parse().unwrap());
     ProviderBuilder::new().connect_client(rpc).erased()
-}
-
-#[cfg(any(test, feature = "test-util"))]
-pub fn dummy_provider() -> AlloyProvider {
-    let asserter = mock::Asserter::new();
-    ProviderBuilder::new()
-        .connect_mocked_client(asserter)
-        .erased()
 }
 
 pub trait ProviderSignerExt {
