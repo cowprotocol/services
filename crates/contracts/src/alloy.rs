@@ -41,9 +41,7 @@ crate::bindings!(
 
 // Balancer addresses can be obtained from:
 // <https://github.com/balancer/balancer-subgraph-v2/blob/master/networks.yaml>
-// crate::bindings!(BalancerV2Authorizer);
 crate::bindings!(BalancerV2BasePool);
-// crate::bindings!(BalancerV2BasePoolFactory);
 crate::bindings!(
     BalancerV2Vault,
     crate::deployments! {
@@ -68,37 +66,7 @@ crate::bindings!(
         // Not available on Lens
     }
 );
-// crate::bindings!(
-//     BalancerV2WeightedPoolFactory,
-//     crate::deployments! {
-//         // <https://docs.balancer.fi/reference/contracts/deployment-addresses/mainnet.html#ungrouped-active-current-contracts>
-//         // <https://etherscan.io/tx/0x0f9bb3624c185b4e107eaf9176170d2dc9cb1c48d0f070ed18416864b3202792>
-//         MAINNET => (address!("0x8E9aa87E45e92bad84D5F8DD1bff34Fb92637dE9"), 12272147),
-//     } // Not available on Sepolia (only version ≥ 4)
-//       // <https://docs.balancer.fi/reference/contracts/deployment-addresses/sepolia.html>
-//       // Not available on Lens
-// );
-// crate::bindings!(
-//     BalancerV2WeightedPoolFactoryV3,
-//     crate::deployments! {
-//         // <https://docs.balancer.fi/reference/contracts/deployment-addresses/mainnet.html#ungrouped-active-current-contracts>
-//         // <https://etherscan.io/tx/0x39f357b78c03954f0bcee2288bf3b223f454816c141ef20399a7bf38057254c4>
-//         MAINNET => (address!("0x5Dd94Da3644DDD055fcf6B3E1aa310Bb7801EB8b"), 16520627),
-//         // <https://gnosisscan.io/tx/0x2ac3d873b6f43de6dd77525c7e5b68a8fc3a1dee40303e1b6a680b0285b26091>
-//         GNOSIS => (address!("0xC128a9954e6c874eA3d62ce62B468bA073093F25"), 26226256),
-//         // <https://snowscan.xyz/tx/0xdf2c77743cc9287df2022cd6c5f9209ecfecde07371717ab0427d96042a88640>
-//         AVALANCHE => (address!("0x94f68b54191F62f781Fe8298A8A5Fa3ed772d227"), 26389236),
-//         // <https://optimistic.etherscan.io/tx/0xc5e79fb00b9a8e2c89b136aae0be098e58f8e832ede13e8079213a75c9cd9c08>
-//         OPTIMISM => (address!("0x94f68b54191F62f781Fe8298A8A5Fa3ed772d227"), 72832703),
-//         // <https://polygonscan.com/tx/0x2bc079c0e725f43670898b474afedf38462feee72ef8e874a1efcec0736672fc>
-//         POLYGON => (address!("0x82e4cFaef85b1B6299935340c964C942280327f4"), 39036828),
-//         // <https://bscscan.com/tx/0x91107b9581e18ec0a4a575d4713bdd7b1fc08656c35522d216307930aa4de7b6>
-//         BNB => (address!("0x82e4cFaef85b1B6299935340c964C942280327f4"), 25474982),
-//         // Not available on Sepolia (only version ≥ 4)
-//         // <https://docs.balancer.fi/reference/contracts/deployment-addresses/sepolia.html>
-//         // Not available on Lens
-//     }
-// );
+
 pub use alloy::providers::DynProvider as Provider;
 
 /// Extension trait to attach some useful functions to the contract instance.
