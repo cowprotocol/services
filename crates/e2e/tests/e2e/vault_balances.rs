@@ -1,5 +1,5 @@
 use {
-    contracts::alloy::{BalancerV2Vault, InstanceExt},
+    contracts::alloy::BalancerV2Vault,
     e2e::{setup::*, tx},
     ethcontract::prelude::U256,
     ethrpc::alloy::{
@@ -32,23 +32,21 @@ async fn vault_balances(web3: Web3) {
 
     token.mint(trader.address(), to_wei(10)).await;
 
+    let balancer_vault = {
+        let provider = onchain
+            .contracts()
+            .balancer_vault
+            .provider()
+            .with_signer(trader.account().clone().try_into_alloy().await.unwrap());
+        // @todo: find a better workaround that doesn't require creating a new instance
+        BalancerV2Vault::Instance::new(*onchain.contracts().balancer_vault.address(), provider)
+    };
+
     // Approve GPv2 for trading
     tx!(
         trader.account(),
-        token.approve(
-            onchain.contracts().balancer_vault.address().into_legacy(),
-            to_wei(10)
-        )
+        token.approve(balancer_vault.address().into_legacy(), to_wei(10))
     );
-    let provider = onchain
-        .contracts()
-        .balancer_vault
-        .provider()
-        .with_signer(trader.account().clone().try_into_alloy().await.unwrap());
-    // @todo: find a better workaround that doesn't require creating a new instance
-    let balancer_vault = BalancerV2Vault::Instance::deployed(&provider)
-        .await
-        .unwrap();
     contracts::tx!(
         balancer_vault.setRelayerApproval(
             trader.address().into_alloy(),
