@@ -1,6 +1,6 @@
 use {
     e2e::{setup::*, tx},
-    ethcontract::prelude::{Address, U256},
+    ethcontract::prelude::Address,
     model::{
         order::{BUY_ETH_ADDRESS, OrderCreation, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},

@@ -51,6 +51,38 @@ impl IntoAlloy for primitive_types::H256 {
     }
 }
 
+impl IntoAlloy for web3::types::BlockNumber {
+    type To = alloy::eips::BlockNumberOrTag;
+
+    fn into_alloy(self) -> Self::To {
+        match self {
+            web3::types::BlockNumber::Finalized => alloy::eips::BlockNumberOrTag::Finalized,
+            web3::types::BlockNumber::Safe => alloy::eips::BlockNumberOrTag::Safe,
+            web3::types::BlockNumber::Latest => alloy::eips::BlockNumberOrTag::Latest,
+            web3::types::BlockNumber::Earliest => alloy::eips::BlockNumberOrTag::Earliest,
+            web3::types::BlockNumber::Pending => alloy::eips::BlockNumberOrTag::Pending,
+            web3::types::BlockNumber::Number(number) => {
+                alloy::eips::BlockNumberOrTag::Number(number.as_u64())
+            }
+        }
+    }
+}
+
+impl IntoAlloy for web3::types::BlockId {
+    type To = alloy::eips::BlockId;
+
+    fn into_alloy(self) -> Self::To {
+        match self {
+            web3::types::BlockId::Hash(hash) => {
+                alloy::eips::BlockId::Hash(alloy::eips::RpcBlockHash::from(hash.into_alloy()))
+            }
+            web3::types::BlockId::Number(number) => {
+                alloy::eips::BlockId::Number(number.into_alloy())
+            }
+        }
+    }
+}
+
 pub enum Account {
     Address(alloy::primitives::Address),
     Signer(Box<dyn TxSigner<Signature> + Send + Sync + 'static>),
