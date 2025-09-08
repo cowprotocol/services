@@ -110,19 +110,44 @@ macro_rules! bindings {
 
             #[allow(non_snake_case)]
             pub mod $contract {
-                use alloy::providers::DynProvider;
+                use {
+                    std::sync::LazyLock,
+                    anyhow::{anyhow, Result},
+                    alloy::{
+                        json_abi::{ContractObject, JsonAbi},
+                        primitives::Selector,
+                        providers::DynProvider,
+                    },
+                };
 
                 pub use super::[<$contract Private>]::*;
                 pub type Instance = $contract::[<$contract Instance>]<DynProvider>;
 
+                /// The contract's ABI parsed from the bundled artifact.
+                pub static ABI: LazyLock<JsonAbi> = LazyLock::new(|| {
+                    let obj: ContractObject = serde_json::from_str(include_str!(concat!(
+                        "../artifacts/", stringify!($contract), ".json"
+                    )))
+                    .expect(concat!("failed to parse artifact JSON for ", stringify!($contract)));
+                    obj.abi.expect(&format!("artifact for {} missing `abi` field", stringify!($contract)))
+                });
+
+                /// Return all function overloads 4-byte selectors by *name*.
+                pub fn selector_by_name(name: &str) -> Result<Vec<Selector>> {
+                    let Some(funcs) = ABI.functions.get(name) else {
+                        return Err(anyhow!("no function named `{name}` in ABI"));
+                    };
+                    Ok(funcs.iter().map(|f| f.selector()).collect())
+                }
+
                 $(
                 use {
-                    std::{sync::LazyLock, collections::HashMap},
+                    std::collections::HashMap,
                     alloy::{
                         providers::Provider,
                         primitives::{address, Address},
                     },
-                    anyhow::{Context, Result},
+                    anyhow::Context,
                     $crate::alloy::networks::*,
                 };
 
@@ -167,4 +192,63 @@ macro_rules! bindings {
             }
         }
     };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy::primitives::Selector;
+
+    #[test]
+    fn test_selector_by_name_valid_function() {
+        let result = ChainalysisOracle::selector_by_name("isSanctioned");
+        assert!(result.is_ok());
+
+        let selectors = result.unwrap();
+        assert_eq!(selectors.len(), 1);
+
+        let selector = &selectors[0];
+        assert_eq!(selector, &Selector::from([0xdf, 0x59, 0x2f, 0x7d]));
+    }
+
+    #[test]
+    fn test_selector_by_name_multiple_overloads() {
+        // Test with a contract that might have function overloads
+        // Using IZeroex which likely has multiple swap functions
+        let result = IZeroex::selector_by_name("transformERC20");
+
+        let selectors = result.unwrap();
+
+        assert!(!selectors.is_empty());
+
+        for selector in &selectors {
+            assert_eq!(selector.as_slice().len(), 4);
+        }
+    }
+
+    #[test]
+    fn test_selector_by_name_invalid_function() {
+        let result = ChainalysisOracle::selector_by_name("nonExistentFunction");
+        assert!(result.is_err());
+
+        let error_msg = result.unwrap_err().to_string();
+        assert!(error_msg.contains("no function named `nonExistentFunction` in ABI"));
+    }
+
+    #[test]
+    fn test_selector_by_name_empty_string() {
+        let result = ChainalysisOracle::selector_by_name("");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_selector_by_name_case_sensitive() {
+        let result1 = ChainalysisOracle::selector_by_name("isSanctioned");
+        let result2 = ChainalysisOracle::selector_by_name("IsSanctioned");
+        let result3 = ChainalysisOracle::selector_by_name("ISSANCTIONED");
+
+        assert!(result1.is_ok());
+        assert!(result2.is_err());
+        assert!(result3.is_err());
+    }
 }
