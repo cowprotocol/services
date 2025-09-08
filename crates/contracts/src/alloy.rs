@@ -141,7 +141,7 @@ macro_rules! bindings {
                 }
 
                 /// Return all abi function overloads by *name*.
-                pub fn get_abi_function(name: &str) -> Result<Vec<Function>> {
+                pub fn abi_functions_by_name(name: &str) -> Result<Vec<Function>> {
                     let Some(funcs) = ABI.functions.get(name) else {
                         return Err(anyhow!("no function named `{name}` in ABI"));
                     };
@@ -262,7 +262,7 @@ mod tests {
 
     #[test]
     fn test_get_function_valid() {
-        let functions = ChainalysisOracle::get_abi_function("isSanctioned").unwrap();
+        let functions = ChainalysisOracle::abi_functions_by_name("isSanctioned").unwrap();
         assert_eq!(functions.len(), 1);
 
         let function = &functions[0];
