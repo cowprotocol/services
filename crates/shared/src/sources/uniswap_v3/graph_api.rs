@@ -164,7 +164,7 @@ impl UniV3SubgraphClient {
         let mut all = Vec::new();
 
         // Default chunk size is usize::MAX - all pool ids in one `where`. We want to
-        // run reqeusts sequntially to avoid overwhelming the node.
+        // run requests sequentially to avoid overwhelming the node.
         for chunk in pool_ids.chunks(self.0.max_pools_per_tick_query()) {
             let variables = json_map! {
                 "block" => block_number,
