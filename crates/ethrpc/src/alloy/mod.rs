@@ -5,9 +5,14 @@ mod instrumentation;
 use {
     crate::AlloyProvider,
     alloy::{
-        network::EthereumWallet,
+        contract::{CallBuilder, CallDecoder},
+        network::{EthereumWallet, Network},
+        primitives::FixedBytes,
         providers::{Provider, ProviderBuilder},
-        rpc::client::{ClientBuilder, RpcClient},
+        rpc::{
+            client::{ClientBuilder, RpcClient},
+            types::TransactionRequest,
+        },
     },
     buffering::BatchCallLayer,
     instrumentation::{InstrumentationLayer, LabelingLayer},
@@ -52,5 +57,32 @@ impl ProviderSignerExt for AlloyProvider {
             .with_simple_nonce_management()
             .connect_client(client)
             .erased()
+    }
+}
+
+pub trait ProviderExt {
+    /// Sends a transaction and watches it for completion.
+    fn send_and_watch(
+        &self,
+        tx: TransactionRequest,
+    ) -> impl Future<Output = anyhow::Result<FixedBytes<32>>>;
+}
+
+impl ProviderExt for AlloyProvider {
+    async fn send_and_watch(&self, tx: TransactionRequest) -> anyhow::Result<FixedBytes<32>> {
+        Ok(self.send_transaction(tx).await?.watch().await?)
+    }
+}
+
+pub trait CallBuilderExt<N>
+where
+    N: Network,
+{
+    fn send_and_watch(&self) -> impl Future<Output = anyhow::Result<FixedBytes<32>>>;
+}
+
+impl<P: Provider<N>, D: CallDecoder, N: Network> CallBuilderExt<N> for CallBuilder<P, D, N> {
+    async fn send_and_watch(&self) -> anyhow::Result<FixedBytes<32>> {
+        Ok(self.send().await?.watch().await?)
     }
 }
