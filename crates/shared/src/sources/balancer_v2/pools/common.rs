@@ -364,73 +364,88 @@ mod tests {
         crate::{
             sources::balancer_v2::{
                 graph_api::{PoolType, Token},
-                // pools::{MockFactoryIndexing, PoolKind, weighted},
+                pools::MockFactoryIndexing,
             },
-            // token_info::{MockTokenInfoFetching, TokenInfo},
+            token_info::{MockTokenInfoFetching, TokenInfo},
+        },
+        alloy::{
+            providers::{Provider, ProviderBuilder},
+            transports::mock::Asserter,
         },
         anyhow::bail,
-        // contracts::{BalancerV2WeightedPool, dummy_contract},
         ethcontract::U256,
-        // ethcontract_mock::Mock,
-        // futures::future,
-        // maplit::{btreemap, hashmap},
-        // mockall::predicate,
+        maplit::hashmap,
     };
 
     // @todo: support this
-    // #[tokio::test]
-    // async fn fetch_common_pool_info() {
-    //     let pool_id = H256([0x90; 32]);
-    //     let tokens = [H160([1; 20]), H160([2; 20]), H160([3; 20])];
-    //
-    //     let mock = Mock::new(42);
-    //     let web3 = mock.web3();
-    //
-    //     let pool =
-    // mock.deploy(BalancerV2BasePool::raw_contract().interface.abi.clone());
-    //     pool.expect_call(BalancerV2BasePool::signatures().get_pool_id())
-    //         .returns(Bytes(pool_id.0));
-    //
-    //     let vault =
-    // mock.deploy(BalancerV2Vault::raw_contract().interface.abi.clone());
-    //     vault
-    //         .expect_call(BalancerV2Vault::signatures().get_pool_tokens())
-    //         .predicate((predicate::eq(Bytes(pool_id.0)),))
-    //         .returns((tokens.to_vec(), vec![], U256::zero()));
-    //
-    //     let mut token_infos = MockTokenInfoFetching::new();
-    //     token_infos
-    //         .expect_get_token_infos()
-    //         .withf(move |t| t == tokens)
-    //         .returning(move |_| {
-    //             hashmap! {
-    //                 tokens[0] => TokenInfo { decimals: Some(18), symbol: None },
-    //                 tokens[1] => TokenInfo { decimals: Some(18), symbol: None },
-    //                 tokens[2] => TokenInfo { decimals: Some(6), symbol: None },
-    //             }
-    //         });
-    //
-    //     let pool_info_fetcher = PoolInfoFetcher {
-    //         vault: BalancerV2Vault::at(&web3, vault.address()),
-    //         factory: MockFactoryIndexing::new(),
-    //         token_infos: Arc::new(token_infos),
-    //     };
-    //     let pool_info = pool_info_fetcher
-    //         .fetch_common_pool_info(pool.address(), 1337)
-    //         .await
-    //         .unwrap();
-    //
-    //     assert_eq!(
-    //         pool_info,
-    //         PoolInfo {
-    //             id: pool_id,
-    //             address: pool.address(),
-    //             tokens: tokens.to_vec(),
-    //             scaling_factors: vec![Bfp::exp10(0), Bfp::exp10(0),
-    // Bfp::exp10(12)],             block_created: 1337,
-    //         }
-    //     );
-    // }
+    #[tokio::test]
+    async fn fetch_common_pool_info() {
+        let pool_id = alloy::primitives::FixedBytes([0x90; 32]);
+        let tokens = [H160([1; 20]), H160([2; 20]), H160([3; 20])];
+
+        // Asserter is used to push responses to the provided whether success or failure
+        // as you'll see in the next steps. Note that the `Asserter` wraps a
+        // FIFO queue and responses are returned in the order they are pushed.
+        let asserter = Asserter::new();
+
+        // Initialize the provider with the `MockTransport` that intercepts incoming
+        // requests and uses the `Asserter` to return the next response.
+        // `Asserter` is cheaply cloneable as the underlying queue is wrapped in an
+        // `Arc`.
+        let provider = ProviderBuilder::new()
+            .connect_mocked_client(asserter.clone())
+            .erased();
+        let pool = BalancerV2BasePool::Instance::new(H160::random().into_alloy(), provider.clone());
+        let vault = BalancerV2Vault::Instance::new(H160::random().into_alloy(), provider.clone());
+        asserter.push_success(&pool_id);
+
+        #[derive(serde::Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct GetPoolTokensReturn {
+            tokens: Vec<alloy::primitives::Address>,
+            balances: Vec<alloy::primitives::U256>,
+            last_changed_block: alloy::primitives::U256,
+        }
+        let get_pool_tokens_response = GetPoolTokensReturn {
+            tokens: tokens.iter().copied().map(|t| t.into_alloy()).collect(),
+            balances: vec![],
+            last_changed_block: U256::zero().into_alloy(),
+        };
+        asserter.push_success(&get_pool_tokens_response);
+
+        let mut token_infos = MockTokenInfoFetching::new();
+        token_infos
+            .expect_get_token_infos()
+            .withf(move |t| t == tokens)
+            .returning(move |_| {
+                hashmap! {
+                    tokens[0] => TokenInfo { decimals: Some(18), symbol: None },
+                    tokens[1] => TokenInfo { decimals: Some(18), symbol: None },
+                    tokens[2] => TokenInfo { decimals: Some(6), symbol: None },
+                }
+            });
+
+        let pool_info_fetcher = PoolInfoFetcher {
+            vault,
+            factory: MockFactoryIndexing::new(),
+            token_infos: Arc::new(token_infos),
+        };
+        let pool_info = pool_info_fetcher
+            .fetch_common_pool_info(pool.address().into_legacy(), 1337)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            pool_info,
+            PoolInfo {
+                id: pool_id.into_legacy(),
+                address: pool.address().into_legacy(),
+                tokens: tokens.to_vec(),
+                scaling_factors: vec![Bfp::exp10(0), Bfp::exp10(0), Bfp::exp10(12)],
+                block_created: 1337,
+            }
+        );
+    }
     //
     // #[tokio::test]
     // async fn fetch_common_pool_state() {
