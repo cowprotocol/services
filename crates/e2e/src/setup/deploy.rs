@@ -1,5 +1,6 @@
 use {
     crate::deploy,
+    alloy::providers::Provider,
     contracts::{
         AaveFlashLoanSolverWrapper,
         BalancerV2Authorizer,
@@ -140,6 +141,7 @@ impl Contracts {
         let weth = deploy!(web3, WETH9());
 
         let balancer_authorizer = deploy!(web3, BalancerV2Authorizer(admin));
+        let first_account = *web3.alloy.get_accounts().await.unwrap().first().unwrap();
         let balancer_vault_address = BalancerV2Vault::Instance::deploy_builder(
             web3.alloy.clone(),
             balancer_authorizer.address().into_alloy(),
@@ -147,6 +149,7 @@ impl Contracts {
             alloy::primitives::U256::from(0),
             alloy::primitives::U256::from(0),
         )
+        .from(first_account)
         .deploy()
         .await
         .unwrap();
