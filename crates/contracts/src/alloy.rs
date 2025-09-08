@@ -114,7 +114,7 @@ macro_rules! bindings {
                     std::sync::LazyLock,
                     anyhow::{anyhow, Result},
                     alloy::{
-                        json_abi::{ContractObject, JsonAbi},
+                        json_abi::{ContractObject, Function, JsonAbi},
                         primitives::Selector,
                         providers::DynProvider,
                     },
@@ -138,6 +138,14 @@ macro_rules! bindings {
                         return Err(anyhow!("no function named `{name}` in ABI"));
                     };
                     Ok(funcs.iter().map(|f| f.selector()).collect())
+                }
+
+                /// Return all abi function overloads by *name*.
+                pub fn get_abi_function(name: &str) -> Result<Vec<Function>> {
+                    let Some(funcs) = ABI.functions.get(name) else {
+                        return Err(anyhow!("no function named `{name}` in ABI"));
+                    };
+                    Ok(funcs.clone())
                 }
 
                 $(
@@ -250,5 +258,14 @@ mod tests {
         assert!(result1.is_ok());
         assert!(result2.is_err());
         assert!(result3.is_err());
+    }
+
+    #[test]
+    fn test_get_function_valid() {
+        let functions = ChainalysisOracle::get_abi_function("isSanctioned").unwrap();
+        assert_eq!(functions.len(), 1);
+
+        let function = &functions[0];
+        assert_eq!(function.name, "isSanctioned");
     }
 }
