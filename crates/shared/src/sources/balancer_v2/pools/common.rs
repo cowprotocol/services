@@ -375,7 +375,8 @@ mod tests {
         },
         anyhow::bail,
         ethcontract::U256,
-        maplit::hashmap,
+        maplit::{btreemap, hashmap},
+        web3::types::BlockNumber,
     };
 
     #[tokio::test]
@@ -391,23 +392,24 @@ mod tests {
         let vault = BalancerV2Vault::Instance::new(H160::random().into_alloy(), provider.clone());
         asserter.push_success(&pool_id);
 
-        let t = tokens
-            .iter()
-            .copied()
-            .map(|t| DynSolValue::Address(t.into_alloy()))
-            .collect::<Vec<_>>();
-        let b = DynSolValue::Array(vec![]);
-        let l = DynSolValue::Uint(U256::zero().into_alloy(), 256);
-
-        let encoded = BalancerV2Vault::ABI
-            .functions
-            .get("getPoolTokens")
-            .unwrap()
-            .first()
-            .unwrap()
-            .abi_encode_output(&[DynSolValue::Array(t), b, l])
-            .unwrap();
-        asserter.push_success(&encoded);
+        let get_pool_tokens_response = {
+            let tokens_response = DynSolValue::Array(
+                tokens
+                    .iter()
+                    .copied()
+                    .map(|t| DynSolValue::Address(t.into_alloy()))
+                    .collect(),
+            );
+            let balances_response = DynSolValue::Array(vec![]);
+            let last_block_reponse = DynSolValue::Uint(U256::zero().into_alloy(), 256);
+            BalancerV2Vault::get_abi_function("getPoolTokens")
+                .unwrap()
+                .first()
+                .unwrap()
+                .abi_encode_output(&[tokens_response, balances_response, last_block_reponse])
+                .unwrap()
+        };
+        asserter.push_success(&get_pool_tokens_response);
 
         let mut token_infos = MockTokenInfoFetching::new();
         token_infos
@@ -442,81 +444,115 @@ mod tests {
             }
         );
     }
-    //
-    // #[tokio::test]
-    // async fn fetch_common_pool_state() {
-    //     let pool_id = H256([0x90; 32]);
-    //     let tokens = [H160([1; 20]), H160([2; 20]), H160([3; 20])];
-    //     let balances = [bfp!("1000.0"), bfp!("10.0"), bfp!("15.0")];
-    //     let scaling_factors = [Bfp::exp10(0), Bfp::exp10(0), Bfp::exp10(12)];
-    //
-    //     let mock = Mock::new(42);
-    //     let web3 = mock.web3();
-    //
-    //     let pool =
-    // mock.deploy(BalancerV2BasePool::raw_contract().interface.abi.clone());
-    //     pool.expect_call(BalancerV2BasePool::signatures().get_paused_state())
-    //         .returns((false, 0.into(), 0.into()));
-    //     pool.expect_call(BalancerV2BasePool::signatures().
-    // get_swap_fee_percentage())         .returns(bfp!("0.003").as_uint256());
-    //
-    //     let vault =
-    // mock.deploy(BalancerV2Vault::raw_contract().interface.abi.clone());
-    //     vault
-    //         .expect_call(BalancerV2Vault::signatures().get_pool_tokens())
-    //         .predicate((predicate::eq(Bytes(pool_id.0)),))
-    //         .returns((
-    //             tokens.to_vec(),
-    //             balances.into_iter().map(Bfp::as_uint256).collect(),
-    //             0.into(),
-    //         ));
-    //
-    //     let token_infos = MockTokenInfoFetching::new();
-    //
-    //     let pool_info_fetcher = PoolInfoFetcher {
-    //         vault: BalancerV2Vault::at(&web3, vault.address()),
-    //         factory: MockFactoryIndexing::new(),
-    //         token_infos: Arc::new(token_infos),
-    //     };
-    //     let pool_info = PoolInfo {
-    //         id: pool_id,
-    //         address: pool.address(),
-    //         tokens: tokens.to_vec(),
-    //         scaling_factors: scaling_factors.to_vec(),
-    //         block_created: 1337,
-    //     };
-    //
-    //     let pool_state = {
-    //         let block = web3.eth().block_number().await.unwrap();
-    //
-    //         let pool_state =
-    // pool_info_fetcher.fetch_common_pool_state(&pool_info, block.into());
-    //
-    //         pool_state.await.unwrap()
-    //     };
-    //
-    //     assert_eq!(
-    //         pool_state,
-    //         PoolState {
-    //             paused: false,
-    //             swap_fee: bfp!("0.003"),
-    //             tokens: btreemap! {
-    //                 tokens[0] => TokenState {
-    //                     balance: balances[0].as_uint256(),
-    //                     scaling_factor: scaling_factors[0],
-    //                 },
-    //                 tokens[1] => TokenState {
-    //                     balance: balances[1].as_uint256(),
-    //                     scaling_factor: scaling_factors[1],
-    //                 },
-    //                 tokens[2] => TokenState {
-    //                     balance: balances[2].as_uint256(),
-    //                     scaling_factor: scaling_factors[2],
-    //                 },
-    //             },
-    //         }
-    //     );
-    // }
+
+    #[tokio::test]
+    async fn fetch_common_pool_state() {
+        let pool_id = H256([0x90; 32]);
+        let tokens = [H160([1; 20]), H160([2; 20]), H160([3; 20])];
+        let balances = [bfp!("1000.0"), bfp!("10.0"), bfp!("15.0")];
+        let scaling_factors = [Bfp::exp10(0), Bfp::exp10(0), Bfp::exp10(12)];
+
+        let asserter = Asserter::new();
+        let provider = ProviderBuilder::new()
+            .connect_mocked_client(asserter.clone())
+            .erased();
+
+        let pool = BalancerV2BasePool::Instance::new(H160::random().into_alloy(), provider.clone());
+        let vault = BalancerV2Vault::Instance::new(H160::random().into_alloy(), provider.clone());
+
+        let get_paused_state_response = BalancerV2BasePool::get_abi_function("getPausedState")
+            .unwrap()
+            .first()
+            .unwrap()
+            .abi_encode_output(&[
+                DynSolValue::Bool(false),
+                DynSolValue::Uint(U256::zero().into_alloy(), 256),
+                DynSolValue::Uint(U256::zero().into_alloy(), 256),
+            ])
+            .unwrap();
+        asserter.push_success(&get_paused_state_response);
+        let get_swap_fee_percentage_response =
+            BalancerV2BasePool::get_abi_function("getSwapFeePercentage")
+                .unwrap()
+                .first()
+                .unwrap()
+                .abi_encode_output(&[DynSolValue::Uint(
+                    bfp!("0.003").as_uint256().into_alloy(),
+                    256,
+                )])
+                .unwrap();
+        asserter.push_success(&get_swap_fee_percentage_response);
+
+        let get_pool_tokens_response = {
+            let tokens_response = DynSolValue::Array(
+                tokens
+                    .iter()
+                    .copied()
+                    .map(|t| DynSolValue::Address(t.into_alloy()))
+                    .collect(),
+            );
+            let balances_response = DynSolValue::Array(
+                balances
+                    .iter()
+                    .map(|b| DynSolValue::Uint(b.as_uint256().into_alloy(), 256))
+                    .collect(),
+            );
+            let last_block_reponse = DynSolValue::Uint(U256::zero().into_alloy(), 256);
+            BalancerV2Vault::get_abi_function("getPoolTokens")
+                .unwrap()
+                .first()
+                .unwrap()
+                .abi_encode_output(&[tokens_response, balances_response, last_block_reponse])
+                .unwrap()
+        };
+        asserter.push_success(&get_pool_tokens_response);
+
+        let token_infos = MockTokenInfoFetching::new();
+
+        let pool_info_fetcher = PoolInfoFetcher {
+            vault,
+            factory: MockFactoryIndexing::new(),
+            token_infos: Arc::new(token_infos),
+        };
+        let pool_info = PoolInfo {
+            id: pool_id,
+            address: pool.address().into_legacy(),
+            tokens: tokens.to_vec(),
+            scaling_factors: scaling_factors.to_vec(),
+            block_created: 1337,
+        };
+
+        let pool_state = {
+            let pool_state = pool_info_fetcher.fetch_common_pool_state(
+                &pool_info,
+                BlockId::Number(BlockNumber::Number(1.into())),
+            );
+
+            pool_state.await.unwrap()
+        };
+
+        assert_eq!(
+            pool_state,
+            PoolState {
+                paused: false,
+                swap_fee: bfp!("0.003"),
+                tokens: btreemap! {
+                    tokens[0] => TokenState {
+                        balance: balances[0].as_uint256(),
+                        scaling_factor: scaling_factors[0],
+                    },
+                    tokens[1] => TokenState {
+                        balance: balances[1].as_uint256(),
+                        scaling_factor: scaling_factors[1],
+                    },
+                    tokens[2] => TokenState {
+                        balance: balances[2].as_uint256(),
+                        scaling_factor: scaling_factors[2],
+                    },
+                },
+            }
+        );
+    }
     //
     // #[tokio::test]
     // async fn fetch_state_errors_on_token_mismatch() {
