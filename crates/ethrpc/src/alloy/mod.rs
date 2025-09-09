@@ -7,7 +7,7 @@ use {
     alloy::{
         contract::{CallBuilder, CallDecoder},
         network::{EthereumWallet, Network},
-        primitives::FixedBytes,
+        primitives::{FixedBytes, TxHash},
         providers::{Provider, ProviderBuilder},
         rpc::{
             client::{ClientBuilder, RpcClient},
@@ -16,6 +16,8 @@ use {
     },
     buffering::BatchCallLayer,
     instrumentation::{InstrumentationLayer, LabelingLayer},
+    std::time::Duration,
+    tokio::time::timeout,
 };
 pub use {conversions::Account, instrumentation::ProviderLabelingExt};
 
@@ -34,6 +36,8 @@ pub fn provider(url: &str) -> AlloyProvider {
         .connect_client(rpc)
         .erased()
 }
+
+const DEFAULT_WATCH_TIMEOUT: Duration = Duration::from_secs(25);
 
 pub trait ProviderSignerExt {
     /// Creates a new provider with the given signer.
@@ -61,7 +65,10 @@ impl ProviderSignerExt for AlloyProvider {
 }
 
 pub trait ProviderExt {
-    /// Sends a transaction and watches it for completion.
+    /// Sends the transaction to the node and waits for confirmations.
+    ///
+    /// If confirmation takes longer than 25 seconds, the operation will
+    /// timeout.
     fn send_and_watch(
         &self,
         tx: TransactionRequest,
@@ -69,20 +76,26 @@ pub trait ProviderExt {
 }
 
 impl ProviderExt for AlloyProvider {
-    async fn send_and_watch(&self, tx: TransactionRequest) -> anyhow::Result<FTxHash> {
-        Ok(self.send_transaction(tx).await?.watch().await?)
+    async fn send_and_watch(&self, tx: TransactionRequest) -> anyhow::Result<TxHash> {
+        let pending = self.send_transaction(tx).await?;
+        let result = timeout(DEFAULT_WATCH_TIMEOUT, pending.watch()).await??;
+        Ok(result)
     }
 }
 
-pub trait CallBuilderExt<N>
-where
-    N: Network,
-{
-    fn send_and_watch(&self) -> impl Future<Output = anyhow::Result<TxHash>>;
+pub trait CallBuilderExt<N> {
+    /// Converts the current call into a [`TransactionRequest`], sends it to the
+    /// node and waits for confirmations.
+    ///
+    /// If confirmation takes longer than 25 seconds, the operation will
+    /// timeout.
+    fn send_and_watch(&self) -> impl Future<Output = anyhow::Result<FixedBytes<32>>>;
 }
 
 impl<P: Provider<N>, D: CallDecoder, N: Network> CallBuilderExt<N> for CallBuilder<P, D, N> {
     async fn send_and_watch(&self) -> anyhow::Result<TxHash> {
-        Ok(self.send().await?.watch().await?)
+        let pending = self.send().await?;
+        let result = timeout(DEFAULT_WATCH_TIMEOUT, pending.watch()).await??;
+        Ok(result)
     }
 }
