@@ -28,6 +28,7 @@ use {
     },
 };
 
+pub mod alloy;
 pub mod safe;
 
 #[macro_export]
@@ -46,7 +47,7 @@ macro_rules! tx_value {
 #[macro_export]
 macro_rules! tx {
     ($acc:expr_2021, $call:expr_2021) => {
-        $crate::tx_value!($acc, U256::zero(), $call)
+        $crate::tx_value!($acc, ethcontract::U256::zero(), $call)
     };
 }
 
@@ -306,6 +307,24 @@ impl OnchainComponents {
         }
 
         solvers
+    }
+
+    pub async fn set_solver_allowed(&self, solver: H160, allowed: bool) {
+        if allowed {
+            self.contracts
+                .gp_authenticator
+                .add_solver(solver)
+                .send()
+                .await
+                .expect("failed to add solver");
+        } else {
+            self.contracts
+                .gp_authenticator
+                .remove_solver(solver)
+                .send()
+                .await
+                .expect("failed to remove solver");
+        }
     }
 
     /// Generate next `N` accounts with the given initial balance and
@@ -583,7 +602,7 @@ impl OnchainComponents {
 
     pub async fn send_wei(&self, to: H160, amount: U256) {
         let balance_before = self.web3.eth().balance(to, None).await.unwrap();
-        let receipt = TransactionBuilder::new(self.web3.clone())
+        let receipt = TransactionBuilder::new(self.web3.legacy.clone())
             .value(amount)
             .to(to)
             .send()

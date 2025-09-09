@@ -173,16 +173,10 @@ pub struct Arguments {
         long,
         env,
         default_value = "Web3",
-        value_enum,
-        ignore_case = true,
-        use_value_delimiter = true
+        use_value_delimiter = true,
+        value_parser = clap::value_parser!(GasEstimatorType)
     )]
     pub gas_estimators: Vec<GasEstimatorType>,
-
-    /// BlockNative requires api key to work. Optional since BlockNative could
-    /// be skipped in gas estimators.
-    #[clap(long, env)]
-    pub blocknative_api_key: Option<String>,
 
     /// Base tokens used for finding multi-hop paths between multiple AMMs
     /// Should be the most liquid tokens of the given network.
@@ -381,7 +375,6 @@ impl Display for Arguments {
             chain_id,
             simulation_node_url,
             gas_estimators,
-            blocknative_api_key,
             base_tokens,
             baseline_sources,
             pool_cache_blocks,
@@ -414,7 +407,6 @@ impl Display for Arguments {
         display_option(f, "chain_id", chain_id)?;
         display_option(f, "simulation_node_url", simulation_node_url)?;
         writeln!(f, "gas_estimators: {gas_estimators:?}")?;
-        display_secret_option(f, "blocknative_api_key", blocknative_api_key.as_ref())?;
         writeln!(f, "base_tokens: {base_tokens:?}")?;
         writeln!(f, "baseline_sources: {baseline_sources:?}")?;
         writeln!(f, "pool_cache_blocks: {pool_cache_blocks}")?;

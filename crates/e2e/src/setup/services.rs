@@ -173,6 +173,8 @@ impl<'a> Services<'a> {
 
         let args = [
             "autopilot".to_string(),
+            "--non-settling-solvers-blacklisting-enabled=false".to_string(),
+            "--low-settling-solvers-blacklisting-enabled=false".to_string(),
             "--max-run-loop-delay=100ms".to_string(),
             "--run-loop-native-price-timeout=500ms".to_string(),
             format!("--ethflow-contracts={ethflow_contracts}"),
@@ -245,6 +247,7 @@ impl<'a> Services<'a> {
                     ),
                     "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                         .to_string(),
+                    "--gas-estimators=http://localhost:11088/gasprice".to_string(),
                 ],
                 args.autopilot,
             ]
@@ -256,6 +259,7 @@ impl<'a> Services<'a> {
                 vec![
                     "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                         .to_string(),
+                    "--gas-estimators=http://localhost:11088/gasprice".to_string(),
                 ],
                 args.api,
             ]

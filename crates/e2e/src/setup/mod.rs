@@ -10,7 +10,7 @@ use {
     crate::nodes::{NODE_HOST, Node},
     anyhow::{Result, anyhow},
     ethcontract::futures::FutureExt,
-    shared::ethrpc::{Web3, create_test_transport},
+    ethrpc::Web3,
     std::{
         future::Future,
         io::Write,
@@ -111,7 +111,7 @@ where
 /// of the chain. The saved state is restored at the end of the test.
 /// The database is cleaned at the end of the test.
 ///
-/// This function also intializes tracing and sets panic hook.
+/// This function also initializes tracing and sets panic hook.
 ///
 /// Note that tests calling with this function will not be run simultaneously.
 pub async fn run_test<F, Fut>(f: F)
@@ -212,8 +212,7 @@ async fn run<F, Fut, T>(
         let _ = node_panic_handle.lock().unwrap().take();
     }));
 
-    let http = create_test_transport(NODE_HOST);
-    let web3 = Web3::new(http);
+    let web3 = Web3::new_from_url(NODE_HOST);
 
     services::clear_database().await;
     // Hack: the closure may actually be unwind unsafe; moreover, `catch_unwind`

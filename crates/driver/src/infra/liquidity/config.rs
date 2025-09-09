@@ -91,10 +91,14 @@ impl UniswapV2 {
 
     /// Returns the liquidity configuration for PancakeSwap.
     pub fn pancake_swap(chain: Chain) -> Option<Self> {
+        let pool_code = match chain {
+            Chain::Bnb => hex!("00fb7f630766e6a796048ea87d01acd3068e8ff67d078148a3fa3f4a84f69bd5"),
+            _ => hex!("57224589c67f3f30a6b0d7a1b54cf3153ab84563bc609ef41dfb34f8b2974d2d"),
+        }
+        .into();
         Some(Self {
             router: deployment_address(contracts::PancakeRouter::raw_contract(), chain)?,
-            pool_code: hex!("57224589c67f3f30a6b0d7a1b54cf3153ab84563bc609ef41dfb34f8b2974d2d")
-                .into(),
+            pool_code,
             missing_pool_cache_time: Duration::from_secs(60 * 60),
         })
     }
@@ -152,17 +156,27 @@ pub struct UniswapV3 {
     /// How often the liquidity source should be reinitialized to
     /// become aware of new pools.
     pub reinit_interval: Option<Duration>,
+
+    /// How many pool IDs can be present in a where clause of a Tick query at
+    /// once. Some subgraphs are overloaded and throw errors when there are
+    /// too many.
+    pub max_pools_per_tick_query: usize,
 }
 
 impl UniswapV3 {
     /// Returns the liquidity configuration for Uniswap V3.
     #[allow(clippy::self_named_constructors)]
-    pub fn uniswap_v3(graph_url: &Url, chain: Chain) -> Option<Self> {
+    pub fn uniswap_v3(
+        graph_url: &Url,
+        chain: Chain,
+        max_pools_per_tick_query: usize,
+    ) -> Option<Self> {
         Some(Self {
             router: deployment_address(contracts::UniswapV3SwapRouterV2::raw_contract(), chain)?,
             max_pools_to_initialize: 100,
             graph_url: graph_url.clone(),
             reinit_interval: None,
+            max_pools_per_tick_query,
         })
     }
 }

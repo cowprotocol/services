@@ -7,7 +7,13 @@ use {
     },
     gas_estimation::GasPriceEstimating,
     model::order::OrderKind,
-    std::{cmp::Ordering, fmt::Debug, num::NonZeroUsize, sync::Arc, time::Instant},
+    std::{
+        cmp::Ordering,
+        fmt::Debug,
+        num::NonZeroUsize,
+        sync::{Arc, OnceLock},
+        time::Instant,
+    },
 };
 
 mod native;
@@ -73,7 +79,7 @@ impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
         &self,
         query: Q,
         result_is_usable: impl Fn(&Result<R, PriceEstimationError>) -> bool,
-        get_single_result: impl Fn(&T, Q) -> BoxFuture<'_, Result<R, PriceEstimationError>>
+        get_single_result: impl Fn(Context<'_, T, Q>) -> BoxFuture<'_, Result<R, PriceEstimationError>>
         + Send
         + 'static,
     ) -> Vec<ResultWithIndex<R>>
@@ -98,17 +104,27 @@ impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
             // Collect requests until it's at least theoretically possible to produce enough
             // results to return early.
             let requests_for_batch = missing_results(&results);
+            let remaining_stages = Arc::new(OnceLock::new());
+
             while stage_index < self.stages.len() && requests.len() < requests_for_batch {
                 let stage = &self.stages.get(stage_index).expect("index checked by loop");
                 let futures = stage.iter().enumerate().map(|(index, (_name, estimator))| {
-                    get_single_result(estimator, query.clone())
-                        .map(move |result| (EstimatorIndex(stage_index, index), result))
-                        .boxed()
+                    get_single_result(Context {
+                        estimator,
+                        query: query.clone(),
+                        remaining_stages: Arc::clone(&remaining_stages),
+                    })
+                    .map(move |result| (EstimatorIndex(stage_index, index), result))
+                    .boxed()
                 });
-
                 requests.extend(futures);
                 stage_index += 1;
             }
+            // Init remaining stages once we know how many stages we had to kick-off and
+            // BEFORE we start polling the futures.
+            remaining_stages
+                .set(self.stages.len() - stage_index)
+                .expect("this is the only place where we init the value");
 
             while let Some((estimator_index, result)) = requests.next().await {
                 let (name, _estimator) = &self.stages[estimator_index.0][estimator_index.1];
@@ -148,6 +164,25 @@ impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
                 .inc();
         }
         result
+    }
+}
+
+struct Context<'a, ESTIMATOR, QUERY> {
+    /// the estimator that is supposed to compute a price
+    estimator: &'a ESTIMATOR,
+    /// which query to compute a price for
+    query: QUERY,
+    /// the number of stages that are left after the queries
+    /// produced by this Context's stages.
+    remaining_stages: Arc<OnceLock<usize>>,
+}
+
+impl<'a, E, Q> Context<'a, E, Q> {
+    fn remaining_stages(&self) -> usize {
+        *self
+            .remaining_stages
+            .get()
+            .expect("initialization happens before the first use")
     }
 }
 

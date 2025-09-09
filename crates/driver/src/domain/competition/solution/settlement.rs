@@ -87,7 +87,13 @@ impl Settlement {
             .iter()
             .filter(|interaction| interaction.internalize())
             .flat_map(|interaction| interaction.inputs())
-            .filter(|asset| !auction.tokens().get(asset.token).trusted)
+            .filter(|asset| {
+                !auction
+                    .tokens()
+                    .get(&asset.token)
+                    .map(|token| token.trusted)
+                    .unwrap_or_default()
+            })
             .map(|asset| asset.token)
             .collect::<BTreeSet<_>>();
         if !untrusted_tokens.is_empty() {

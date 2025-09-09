@@ -128,7 +128,7 @@ async fn init_liquidity(
     block_retriever: Arc<dyn BlockRetrieving>,
     config: &infra::liquidity::config::UniswapV3,
 ) -> anyhow::Result<impl LiquidityCollecting + use<>> {
-    let web3 = boundary::web3(eth);
+    let web3 = eth.web3().clone();
     let router = UniswapV3SwapRouterV2::at(&web3, config.router.0);
 
     let pool_fetcher = Arc::new(
@@ -138,6 +138,7 @@ async fn init_liquidity(
             boundary::liquidity::http_client(),
             block_retriever,
             config.max_pools_to_initialize,
+            config.max_pools_per_tick_query,
         )
         .await
         .context("failed to initialise UniswapV3 liquidity")?,

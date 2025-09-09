@@ -26,15 +26,9 @@ use {
     chain::Chain,
     clap::Parser,
     contracts::{BalancerV2Vault, IUniswapV3Factory},
-    ethcontract::{
-        BlockNumber,
-        H160,
-        common::DeploymentInformation,
-        dyns::DynWeb3,
-        errors::DeployError,
-    },
-    ethrpc::block_stream::block_number_to_block_number_hash,
-    futures::stream::StreamExt,
+    ethcontract::{BlockNumber, H160, common::DeploymentInformation, errors::DeployError},
+    ethrpc::{Web3, block_stream::block_number_to_block_number_hash},
+    futures::StreamExt,
     model::DomainSeparator,
     observe::metrics::LivenessChecking,
     shared::{
@@ -114,10 +108,10 @@ async fn unbuffered_ethrpc(url: &Url) -> infra::blockchain::Rpc {
     .await
 }
 
-#[instrument(skip_all, fields(chain = ?chain))]
+#[instrument(skip_all)]
 async fn ethereum(
-    web3: DynWeb3,
-    unbuffered_web3: DynWeb3,
+    web3: Web3,
+    unbuffered_web3: Web3,
     chain: &Chain,
     url: Url,
     contracts: infra::blockchain::contracts::Addresses,
@@ -158,8 +152,8 @@ pub async fn start(args: impl Iterator<Item = String>) {
 pub async fn run(args: Arguments) {
     assert!(args.shadow.is_none(), "cannot run in shadow mode");
     // Start a new span that measures the initialization phase of the autopilot
-    let startup_span = info_span!("autopilot_startup", ?args.shared.node_url);
-    let startup_span = startup_span.enter();
+    let startup_span = info_span!("autopilot_startup");
+    let startup_span_guard = startup_span.enter();
 
     let db = Postgres::new(args.db_url.as_str(), args.insert_batch_size)
         .await
@@ -272,7 +266,6 @@ pub async fn run(args: Arguments) {
             &http_factory,
             &web3,
             args.shared.gas_estimators.as_slice(),
-            args.shared.blocknative_api_key.clone(),
         )
         .await
         .expect("failed to create gas price estimator"),
@@ -619,7 +612,6 @@ pub async fn run(args: Arguments) {
         max_settlement_transaction_wait: args.max_settlement_transaction_wait,
         solve_deadline: args.solve_deadline,
         max_run_loop_delay: args.max_run_loop_delay,
-        combinatorial_auctions_cutover: args.combinatorial_auctions_cutover,
         max_winners_per_auction: args.max_winners_per_auction,
         max_solutions_per_solver: args.max_solutions_per_solver,
     };
@@ -667,7 +659,7 @@ pub async fn run(args: Arguments) {
         Arc::new(maintenance),
         competition_updates_sender,
     );
-    drop(startup_span);
+    drop(startup_span_guard);
     run.run_forever().await;
 }
 

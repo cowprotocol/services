@@ -8,7 +8,7 @@ use {
         domain::eth,
         infra::{config::file::GasEstimatorType, mempool},
     },
-    ethcontract::dyns::DynWeb3,
+    ethrpc::Web3,
     gas_estimation::{
         DEFAULT_GAS_LIMIT,
         DEFAULT_TIME_LIMIT,
@@ -23,8 +23,7 @@ type AdditionalTipPercentage = f64;
 type AdditionalTip = (MaxAdditionalTip, AdditionalTipPercentage);
 
 pub struct GasPriceEstimator {
-    //TODO: remove visibility once boundary is removed
-    pub(super) gas: Arc<dyn GasPriceEstimating>,
+    gas: Arc<dyn GasPriceEstimating>,
     additional_tip: AdditionalTip,
     max_fee_per_gas: eth::U256,
     min_priority_fee: eth::U256,
@@ -32,7 +31,7 @@ pub struct GasPriceEstimator {
 
 impl GasPriceEstimator {
     pub async fn new(
-        web3: &DynWeb3,
+        web3: &Web3,
         gas_estimator_type: &GasEstimatorType,
         mempools: &[mempool::Config],
     ) -> Result<Self, Error> {
@@ -54,7 +53,7 @@ impl GasPriceEstimator {
                 .await
                 .map_err(Error::GasPrice)?,
             ),
-            GasEstimatorType::Web3 => Arc::new(web3.clone()),
+            GasEstimatorType::Web3 => Arc::new(web3.legacy.clone()),
         };
         let additional_tip = mempools
             .iter()

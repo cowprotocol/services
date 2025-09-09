@@ -135,7 +135,7 @@ merge-solutions = {merge_solutions}
 quote-using-limit-orders = {quote_using_limit_orders}
 enable-simulation-bad-token-detection = true
 enable-metrics-bad-token-detection = true
-http-time-buffer = "10ms"
+http-time-buffer = "100ms"
 solving-share-of-deadline = 1.0
 "#
                 )

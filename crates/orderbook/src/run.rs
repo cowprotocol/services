@@ -12,7 +12,14 @@ use {
     app_data::Validator,
     chain::Chain,
     clap::Parser,
-    contracts::{BalancerV2Vault, GPv2Settlement, HooksTrampoline, IUniswapV3Factory, WETH9},
+    contracts::{
+        BalancerV2Vault,
+        GPv2Settlement,
+        HooksTrampoline,
+        IUniswapV3Factory,
+        WETH9,
+        alloy::{ChainalysisOracle, InstanceExt},
+    },
     ethcontract::errors::DeployError,
     futures::{FutureExt, StreamExt},
     model::{DomainSeparator, order::BUY_ETH_ADDRESS},
@@ -45,7 +52,7 @@ use {
         token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
     },
     std::{convert::Infallible, future::Future, net::SocketAddr, sync::Arc, time::Duration},
-    tokio::{task, task::JoinHandle},
+    tokio::task::{self, JoinHandle},
     warp::Filter,
 };
 
@@ -65,6 +72,9 @@ pub async fn start(args: impl Iterator<Item = String>) {
 }
 
 pub async fn run(args: Arguments) {
+    // Start a new span that measures the initialization phase of the orderbook
+    let startup_span = tracing::info_span!("orderbook_startup");
+    let startup_span_guard = startup_span.enter();
     let http_factory = HttpClientFactory::new(&args.http_client);
 
     let web3 = shared::ethrpc::web3(
@@ -173,7 +183,6 @@ pub async fn run(args: Arguments) {
             &http_factory,
             &web3,
             args.shared.gas_estimators.as_slice(),
-            args.shared.blocknative_api_key.clone(),
         )
         .await
         .expect("failed to create gas price estimator"),
@@ -371,7 +380,9 @@ pub async fn run(args: Arguments) {
     let fast_quoter = create_quoter(fast_price_estimator, QuoteVerificationMode::Unverified);
 
     let app_data_validator = Validator::new(args.app_data_size_limit);
-    let chainalysis_oracle = contracts::ChainalysisOracle::deployed(&web3).await.ok();
+    let chainalysis_oracle = ChainalysisOracle::Instance::deployed(&web3.alloy)
+        .await
+        .ok();
     let order_validator = Arc::new(OrderValidator::new(
         native_token.clone(),
         Arc::new(order_validation::banned::Users::new(
@@ -441,6 +452,7 @@ pub async fn run(args: Arguments) {
     tracing::info!(%metrics_address, "serving metrics");
     let metrics_task = serve_metrics(orderbook, metrics_address);
 
+    drop(startup_span_guard);
     futures::pin_mut!(serve_api);
     tokio::select! {
         result = &mut serve_api => panic!("API task exited {result:?}"),
