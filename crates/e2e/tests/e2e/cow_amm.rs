@@ -158,7 +158,6 @@ async fn cow_amm_jit(web3: Web3) {
         ],
         colocation::LiquidityProvider::UniswapV2,
         false,
-        None,
     );
     let services = Services::new(&onchain).await;
     services
@@ -502,7 +501,6 @@ async fn cow_amm_driver_support(web3: Web3) {
         ],
         colocation::LiquidityProvider::UniswapV2,
         false,
-        None,
     );
     let services = Services::new(&onchain).await;
 
@@ -763,7 +761,6 @@ async fn cow_amm_opposite_direction(web3: Web3) {
         ],
         colocation::LiquidityProvider::UniswapV2,
         true,
-        None,
     );
     let services = Services::new(&onchain).await;
     services

@@ -62,7 +62,6 @@ async fn order_cancellation(web3: Web3) {
         ],
         colocation::LiquidityProvider::UniswapV2,
         false,
-        None,
     );
     services
         .start_autopilot(

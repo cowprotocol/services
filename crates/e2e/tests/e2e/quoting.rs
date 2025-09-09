@@ -280,7 +280,6 @@ async fn quote_timeout(web3: Web3) {
         ],
         colocation::LiquidityProvider::UniswapV2,
         false,
-        None,
     );
 
     /// The default and maximum quote timeout enforced by the backend.

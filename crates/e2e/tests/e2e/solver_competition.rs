@@ -83,7 +83,6 @@ async fn solver_competition(web3: Web3) {
         ],
         colocation::LiquidityProvider::UniswapV2,
         false,
-        None,
     );
 
     let services = Services::new(&onchain).await;
@@ -360,7 +359,6 @@ async fn wrong_solution_submission_address(web3: Web3) {
         ],
         colocation::LiquidityProvider::UniswapV2,
         false,
-        None,
     );
 
     let services = Services::new(&onchain).await;
@@ -501,7 +499,6 @@ async fn store_filtered_solutions(web3: Web3) {
         ],
         colocation::LiquidityProvider::UniswapV2,
         false,
-        None,
     );
 
     // We start the quoter as the baseline solver, and the mock solver as the one
