@@ -25,9 +25,6 @@ pub struct Client {
 }
 
 impl Client {
-    /// Default Liquorice API URL.
-    pub const DEFAULT_URL: &'static str = "https://api.liquorice.tech/";
-
     /// Creates a new Liquorice HTTP API client with the specified API key and
     /// base URL.
     pub fn new(
