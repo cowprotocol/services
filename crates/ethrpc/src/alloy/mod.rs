@@ -37,7 +37,7 @@ pub fn provider(url: &str) -> AlloyProvider {
         .erased()
 }
 
-const DEFAULT_WATCH_TIMEOUT: Duration = Duration::from_secs(25);
+const DEFAULT_WATCH_TIMEOUT: Duration = Duration::from_secs(2);
 
 pub trait ProviderSignerExt {
     /// Creates a new provider with the given signer.
