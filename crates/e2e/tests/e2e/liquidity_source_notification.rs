@@ -9,7 +9,7 @@ use {
             OnchainComponents,
             Services,
             TIMEOUT,
-            colocation::{self, LiquiditySourceNotifier, SolverEngine},
+            colocation::{self, SolverEngine},
             mock::Mock,
             run_forked_test_with_block_number,
             to_wei,
@@ -157,9 +157,6 @@ async fn liquidity_source_notification(web3: Web3) {
         ],
         colocation::LiquidityProvider::UniswapV2,
         false,
-        Some(LiquiditySourceNotifier::Liquorice {
-            api_port: liquorice_api.port,
-        }),
     );
     services
         .start_autopilot(
