@@ -135,7 +135,7 @@ async fn liquidity_source_notification(web3: Web3) {
     let liquorice_solver_api_mock = Mock::default();
     let services = Services::new(&onchain).await;
 
-    colocation::start_driver(
+    colocation::start_driver_with_config_override(
         onchain.contracts(),
         vec![
             colocation::start_baseline_solver(
@@ -157,6 +157,16 @@ async fn liquidity_source_notification(web3: Web3) {
         ],
         colocation::LiquidityProvider::UniswapV2,
         false,
+        Some(&format!(
+            r#"
+[liquidity-sources-notifier]
+[liquidity-sources-notifier.liquorice]
+base-url = "http://0.0.0.0:{}"
+api-key = ""
+http-timeout = "10s"
+        "#,
+            liquorice_api.port
+        )),
     );
     services
         .start_autopilot(
