@@ -6,6 +6,8 @@ use {
     tokio::task::JoinHandle,
 };
 
+pub mod config_override;
+
 pub struct SolverEngine {
     pub name: String,
     pub endpoint: Url,
@@ -108,6 +110,22 @@ pub fn start_driver(
     liquidity: LiquidityProvider,
     quote_using_limit_orders: bool,
 ) -> JoinHandle<()> {
+    start_driver_with_config_override(
+        contracts,
+        solvers,
+        liquidity,
+        quote_using_limit_orders,
+        None,
+    )
+}
+
+pub fn start_driver_with_config_override(
+    contracts: &Contracts,
+    solvers: Vec<SolverEngine>,
+    liquidity: LiquidityProvider,
+    quote_using_limit_orders: bool,
+    config_override: Option<&str>,
+) -> JoinHandle<()> {
     let base_tokens: HashSet<_> = solvers
         .iter()
         .flat_map(|solver| solver.base_tokens.iter())
@@ -208,7 +226,7 @@ factory = "{:?}"
         })
         .unwrap_or_default();
 
-    let config_file = config_tmp_file(format!(
+    let base_config = format!(
         r#"
 app-data-fetching-enabled = true
 orderbook-url = "http://localhost:8080"
@@ -246,7 +264,12 @@ mempool = "public"
         contracts.weth.address(),
         contracts.balances.address(),
         contracts.signatures.address(),
-    ));
+    );
+
+    let final_config = config_override::TomlConfigBuilder::new(base_config)
+        .build_with_override(config_override)
+        .expect("Failed to build driver config");
+    let config_file = config_tmp_file(final_config);
     let args = vec![
         "driver".to_string(),
         format!("--config={}", config_file.display()),
