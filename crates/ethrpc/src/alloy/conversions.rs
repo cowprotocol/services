@@ -1,3 +1,8 @@
+use {
+    alloy::{network::TxSigner, signers::Signature},
+    anyhow::Context,
+};
+
 /////////////////////////////////
 // Conversions to the alloy types
 /////////////////////////////////
@@ -43,6 +48,79 @@ impl IntoAlloy for primitive_types::H256 {
 
     fn into_alloy(self) -> Self::To {
         alloy::primitives::aliases::B256::new(self.0)
+    }
+}
+
+impl IntoAlloy for web3::types::BlockNumber {
+    type To = alloy::eips::BlockNumberOrTag;
+
+    fn into_alloy(self) -> Self::To {
+        match self {
+            web3::types::BlockNumber::Finalized => alloy::eips::BlockNumberOrTag::Finalized,
+            web3::types::BlockNumber::Safe => alloy::eips::BlockNumberOrTag::Safe,
+            web3::types::BlockNumber::Latest => alloy::eips::BlockNumberOrTag::Latest,
+            web3::types::BlockNumber::Earliest => alloy::eips::BlockNumberOrTag::Earliest,
+            web3::types::BlockNumber::Pending => alloy::eips::BlockNumberOrTag::Pending,
+            web3::types::BlockNumber::Number(number) => {
+                alloy::eips::BlockNumberOrTag::Number(number.as_u64())
+            }
+        }
+    }
+}
+
+impl IntoAlloy for web3::types::BlockId {
+    type To = alloy::eips::BlockId;
+
+    fn into_alloy(self) -> Self::To {
+        match self {
+            web3::types::BlockId::Hash(hash) => {
+                alloy::eips::BlockId::Hash(alloy::eips::RpcBlockHash::from(hash.into_alloy()))
+            }
+            web3::types::BlockId::Number(number) => {
+                alloy::eips::BlockId::Number(number.into_alloy())
+            }
+        }
+    }
+}
+
+pub enum Account {
+    Address(alloy::primitives::Address),
+    Signer(Box<dyn TxSigner<Signature> + Send + Sync + 'static>),
+}
+
+#[async_trait::async_trait]
+pub trait TryIntoAlloyAsync {
+    type Into;
+
+    async fn try_into_alloy(self) -> anyhow::Result<Self::Into>;
+}
+
+#[async_trait::async_trait]
+impl TryIntoAlloyAsync for ethcontract::Account {
+    type Into = Account;
+
+    async fn try_into_alloy(self) -> anyhow::Result<Self::Into> {
+        match self {
+            ethcontract::Account::Offline(pk, _) => {
+                let signer =
+                    alloy::signers::local::PrivateKeySigner::from_slice(&pk.secret_bytes())
+                        .context("invalid private key bytes")?;
+                Ok(Account::Signer(Box::new(signer)))
+            }
+            ethcontract::Account::Kms(account, chain_id) => {
+                let signer = alloy::signers::aws::AwsSigner::new(
+                    account.client().clone(),
+                    account.key_id().to_string(),
+                    chain_id,
+                )
+                .await?;
+                Ok(Account::Signer(Box::new(signer)))
+            }
+            ethcontract::Account::Local(address, _) => Ok(Account::Address(address.into_alloy())),
+            ethcontract::Account::Locked(_, _, _) => {
+                anyhow::bail!("Locked accounts are not currently supported")
+            }
+        }
     }
 }
 

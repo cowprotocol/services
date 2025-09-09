@@ -19,8 +19,6 @@ use {
 #[derive(Clone, Default, Debug)]
 pub struct Competition {
     pub auction_id: AuctionId,
-    // TODO: remove when `settlement_scores` table is no longer used
-    pub legacy: Option<LegacyScore>,
     pub reference_scores: HashMap<eth::Address, Score>,
     /// Addresses to which the CIP20 participation rewards will be payed out.
     /// Usually the same as the solver addresses.
@@ -32,17 +30,6 @@ pub struct Competition {
     pub block_deadline: u64,
     pub competition_simulation_block: u64,
     pub competition_table: SolverCompetitionDB,
-}
-
-/// Score containing the data relevant for the single winner auction algorithm
-#[derive(Clone, Default, Debug)]
-pub struct LegacyScore {
-    /// Single winner of the auction.
-    pub winner: H160,
-    /// Score of the winning solution.
-    pub winning_score: U256,
-    /// Score of the second best solution.
-    pub reference_score: U256,
 }
 
 impl super::Postgres {
@@ -59,33 +46,6 @@ impl super::Postgres {
         database::solver_competition::save(&mut ex, competition.auction_id, json)
             .await
             .context("solver_competition::save")?;
-
-        // TODO: this is deprecated and needs to be removed once the solver team has
-        // switched to the reference_scores table.
-        // If we enable combinatorial auctions before that switch the solver rewards
-        // payout will be blocked until the switch happens since no data would be
-        // stored in the old format anymore.
-        if let Some(legacy) = &competition.legacy {
-            database::settlement_scores::insert(
-                &mut ex,
-                database::settlement_scores::Score {
-                    auction_id: competition.auction_id,
-                    winner: ByteArray(legacy.winner.0),
-                    winning_score: u256_to_big_decimal(&legacy.winning_score),
-                    reference_score: u256_to_big_decimal(&legacy.reference_score),
-                    block_deadline: competition
-                        .block_deadline
-                        .try_into()
-                        .context("convert block deadline")?,
-                    simulation_block: competition
-                        .competition_simulation_block
-                        .try_into()
-                        .context("convert simulation block")?,
-                },
-            )
-            .await
-            .context("settlement_scores::insert")?;
-        }
 
         let reference_scores: Vec<_> = competition
             .reference_scores

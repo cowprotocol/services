@@ -1297,12 +1297,6 @@ fn main() {
                 },
             )
     });
-    generate_contract("GnosisSafe");
-    generate_contract_with_config("GnosisSafeCompatibilityFallbackHandler", |builder| {
-        builder.add_method_alias("isValidSignature(bytes,bytes)", "is_valid_signature_legacy")
-    });
-    generate_contract("GnosisSafeProxy");
-    generate_contract("GnosisSafeProxyFactory");
     generate_contract_with_config("HoneyswapRouter", |builder| {
         builder.add_network_str(GNOSIS, "0x1C232F01118CB8B424793ae03F870aa7D0ac7f77")
     });
@@ -1446,41 +1440,6 @@ fn main() {
             // not official
             .add_network_str(LENS, "0xc3A5b857Ba82a2586A45a8B59ECc3AA50Bc3D0e3")
         // Not available on Gnosis Chain
-    });
-    generate_contract_with_config("IZeroEx", |builder| {
-        // <https://docs.0xprotocol.org/en/latest/basics/addresses.html?highlight=contracts#addresses>
-        // <https://github.com/0xProject/protocol/blob/652d4226229c97895ae9350bbf276370ebb38c5e/packages/contract-addresses/addresses.json>
-        builder
-            .add_network_str(MAINNET, "0xdef1c0ded9bec7f1a1670819833240f027b25eff")
-            .add_network_str(SEPOLIA, "0xdef1c0ded9bec7f1a1670819833240f027b25eff")
-            .add_network_str(ARBITRUM_ONE, "0xdef1c0ded9bec7f1a1670819833240f027b25eff")
-            .add_network_str(BASE, "0xdef1c0ded9bec7f1a1670819833240f027b25eff")
-            .add_network_str(AVALANCHE, "0xdef1c0ded9bec7f1a1670819833240f027b25eff")
-            .add_network_str(BNB, "0xdef1c0ded9bec7f1a1670819833240f027b25eff")
-            .add_network_str(OPTIMISM, "0xdef1abe32c034e558cdd535791643c58a13acc10")
-            .add_network_str(POLYGON, "0xdef1c0ded9bec7f1a1670819833240f027b25eff")
-            // Not available on Lens
-            .add_method_alias(
-                "_transformERC20((address,address,address,uint256,uint256,(uint32,bytes)[],bool,\
-                 address))",
-                "_transform_erc_20",
-            )
-            .add_method_alias(
-                "_fillRfqOrder((address,address,uint128,uint128,address,address,address,bytes32,\
-                 uint64,uint256),(uint8,uint8,bytes32,bytes32),uint128,address,bool,address)",
-                "_fill_rfq_order",
-            )
-            .add_method_alias(
-                "_fillLimitOrder((address,address,uint128,uint128,uint128,address,address,address,\
-                 address,bytes32,uint64,uint256),(uint8,uint8,bytes32,bytes32),uint128,address,\
-                 address)",
-                "_fill_limit_order",
-            )
-            .add_method_alias(
-                "_fillOtcOrder((address,address,uint128,uint128,address,address,address,uint256),\
-                 (uint8,uint8,bytes32,bytes32),uint128,address,bool,address)",
-                "_fill_otc_order",
-            )
     });
     generate_contract_with_config("CowProtocolToken", |builder| {
         builder

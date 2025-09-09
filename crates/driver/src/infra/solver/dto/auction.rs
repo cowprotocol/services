@@ -12,6 +12,7 @@ use {
         util::conv::{rational_to_big_decimal, u256::U256Ext},
     },
     app_data::AppDataHash,
+    ethrpc::alloy::conversions::IntoLegacy,
     model::order::{BuyTokenDestination, SellTokenSource},
     std::collections::HashMap,
 };
@@ -295,7 +296,7 @@ pub fn new(
                     solvers_dto::auction::Liquidity::LimitOrder(
                         solvers_dto::auction::ForeignLimitOrder {
                             id: liquidity.id.0.to_string(),
-                            address: limit_order.zeroex.address(),
+                            address: limit_order.zeroex.address().into_legacy(),
                             gas_estimate: liquidity.gas.into(),
                             hash: Default::default(),
                             maker_token: limit_order.order.maker_token,

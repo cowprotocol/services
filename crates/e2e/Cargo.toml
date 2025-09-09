@@ -1,11 +1,15 @@
 [package]
 name = "e2e"
 version = "1.0.0"
-authors = ["Gnosis Developers <developers@gnosis.io>", "Cow Protocol Developers <dev@cow.fi>"]
+authors = [
+    "Gnosis Developers <developers@gnosis.io>",
+    "Cow Protocol Developers <dev@cow.fi>",
+]
 edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
+alloy = { workspace = true, default-features = false, features = ["json-rpc", "providers", "rpc-client", "rpc-types", "transports", "reqwest", "signers", "signer-local"] }
 app-data = { workspace = true }
 anyhow = { workspace = true }
 autopilot = { workspace = true }
@@ -13,7 +17,7 @@ axum = { workspace = true }
 bigdecimal = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
-contracts = { workspace = true }
+contracts = { workspace = true, features = ["test-util"] }
 database = { workspace = true }
 driver = { workspace = true }
 ethcontract = { workspace = true }
