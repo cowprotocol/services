@@ -22,7 +22,12 @@ pub fn provider(url: &str) -> AlloyProvider {
         .layer(InstrumentationLayer)
         .layer(BatchCallLayer::new(Default::default()))
         .http(url.parse().unwrap());
-    ProviderBuilder::new().connect_client(rpc).erased()
+    ProviderBuilder::new()
+        // will query the node for the nonce every time that it is needed
+        // adds overhead but makes working with alloy/ethcontract at the same time much simpler
+        .with_simple_nonce_management()
+        .connect_client(rpc)
+        .erased()
 }
 
 pub trait ProviderSignerExt {
@@ -44,6 +49,7 @@ impl ProviderSignerExt for AlloyProvider {
 
         ProviderBuilder::new()
             .wallet(wallet)
+            .with_simple_nonce_management()
             .connect_client(client)
             .erased()
     }
