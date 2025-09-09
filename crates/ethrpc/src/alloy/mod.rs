@@ -65,11 +65,11 @@ pub trait ProviderExt {
     fn send_and_watch(
         &self,
         tx: TransactionRequest,
-    ) -> impl Future<Output = anyhow::Result<FixedBytes<32>>>;
+    ) -> impl Future<Output = anyhow::Result<TxHash>>;
 }
 
 impl ProviderExt for AlloyProvider {
-    async fn send_and_watch(&self, tx: TransactionRequest) -> anyhow::Result<FixedBytes<32>> {
+    async fn send_and_watch(&self, tx: TransactionRequest) -> anyhow::Result<FTxHash> {
         Ok(self.send_transaction(tx).await?.watch().await?)
     }
 }
@@ -78,11 +78,11 @@ pub trait CallBuilderExt<N>
 where
     N: Network,
 {
-    fn send_and_watch(&self) -> impl Future<Output = anyhow::Result<FixedBytes<32>>>;
+    fn send_and_watch(&self) -> impl Future<Output = anyhow::Result<TxHash>>;
 }
 
 impl<P: Provider<N>, D: CallDecoder, N: Network> CallBuilderExt<N> for CallBuilder<P, D, N> {
-    async fn send_and_watch(&self) -> anyhow::Result<FixedBytes<32>> {
+    async fn send_and_watch(&self) -> anyhow::Result<TxHash> {
         Ok(self.send().await?.watch().await?)
     }
 }
