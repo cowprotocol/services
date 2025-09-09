@@ -110,10 +110,7 @@ async fn init_liquidity(
 ) -> Result<impl LiquidityCollecting + use<>> {
     let web3 = eth.web3().clone();
     let contracts = BalancerContracts {
-        vault: BalancerV2Vault::Instance::new(
-            config.vault.0.into_alloy(),
-            ethrpc::mock::web3().alloy,
-        ),
+        vault: BalancerV2Vault::Instance::new(config.vault.0.into_alloy(), web3.alloy.clone()),
         factories: [
             config
                 .weighted
