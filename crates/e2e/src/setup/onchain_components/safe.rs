@@ -3,6 +3,7 @@ use {
     alloy::{
         primitives::{Address, Bytes, U256},
         providers::Provider,
+        rpc::types::TransactionRequest,
     },
     contracts::alloy::{
         GnosisSafe::{self, GnosisSafe::execTransactionCall},
@@ -146,20 +147,12 @@ impl Safe {
         }
     }
 
-    pub async fn exec_call<T: ethcontract::tokens::Tokenize>(
-        &self,
-        tx: ethcontract::dyns::DynMethodBuilder<T>,
-    ) {
-        let contract = &self.contract;
-        let TransactionBuilder {
-            data, value, to, ..
-        } = tx.tx;
-
+    async fn exec_alloy_tx(&self, to: Address, value: U256, calldata: Bytes) {
         contracts::alloy::tx!(
-            contract.execTransaction(
-                to.unwrap().into_alloy(),
-                value.unwrap_or_default().into_alloy(),
-                alloy::primitives::Bytes::from(data.unwrap_or_default().0),
+            self.contract.execTransaction(
+                to,
+                value,
+                calldata,
                 Default::default(),
                 Default::default(),
                 Default::default(),
@@ -172,6 +165,28 @@ impl Safe {
             ),
             self.owner.address().into_alloy()
         );
+    }
+
+    pub async fn exec_call<T: ethcontract::tokens::Tokenize>(
+        &self,
+        tx: ethcontract::dyns::DynMethodBuilder<T>,
+    ) {
+        let TransactionBuilder {
+            data, value, to, ..
+        } = tx.tx;
+        self.exec_alloy_tx(
+            to.unwrap().into_alloy(),
+            value.unwrap_or_default().into_alloy(),
+            alloy::primitives::Bytes::from(data.unwrap_or_default().0),
+        )
+        .await;
+    }
+
+    pub async fn exec_alloy_call(&self, tx: TransactionRequest) {
+        let to = tx.to.unwrap().into_to().unwrap();
+        let value = tx.value.unwrap_or_default();
+        let data = tx.input.input().unwrap_or_default().to_owned();
+        self.exec_alloy_tx(to, value, data).await;
     }
 
     /// Returns the address of the Safe.
