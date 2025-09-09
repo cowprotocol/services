@@ -71,7 +71,28 @@ key = "value"
     }
 
     #[test]
-    fn test_raw_override() {
+    fn test_field_override() {
+        let base_config = r#"
+orderbook-url = "http://localhost:8080"
+"#
+        .to_string();
+
+        let raw_override = r#"
+orderbook-url = "http://remotehost:8080"
+"#;
+
+        let builder = TomlConfigBuilder::new(base_config);
+        let result = builder.build_with_override(Some(raw_override)).unwrap();
+
+        let parsed: Table = toml::from_str(&result).unwrap();
+
+        // Check that database section was merged
+        let orderbook_url = parsed.get("orderbook-url").unwrap().as_str().unwrap();
+        assert_eq!(orderbook_url, "http://remotehost:8080");
+    }
+
+    #[test]
+    fn test_section_override() {
         let base_config = r#"
 [database]
 host = "localhost"
