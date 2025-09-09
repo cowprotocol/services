@@ -266,9 +266,14 @@ mempool = "public"
         contracts.signatures.address(),
     );
 
-    let final_config = config_override::TomlConfigBuilder::new(base_config)
-        .build_with_override(config_override)
-        .expect("Failed to build driver config");
+    let final_config = if let Some(override_str) = config_override {
+        config_override::TomlConfigBuilder::new(base_config)
+            .build_with_override(override_str)
+            .expect("Failed to build driver config")
+    } else {
+        base_config
+    };
+
     let config_file = config_tmp_file(final_config);
     let args = vec![
         "driver".to_string(),

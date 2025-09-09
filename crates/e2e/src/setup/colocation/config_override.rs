@@ -14,25 +14,20 @@ impl TomlConfigBuilder {
     }
 
     /// Build config with optional raw TOML override
-    pub fn build_with_override(&self, raw_override: Option<&str>) -> Result<String> {
-        if let Some(override_toml) = raw_override {
-            // Parse base config
-            let mut base: Table =
-                toml::from_str(&self.base_template).context("Failed to parse base TOML config")?;
+    pub fn build_with_override(&self, raw_override: &str) -> Result<String> {
+        // Parse base config
+        let mut base: Table =
+            toml::from_str(&self.base_template).context("Failed to parse base TOML config")?;
 
-            // Parse override config
-            let override_table: Table =
-                toml::from_str(override_toml).context("Failed to parse override TOML")?;
+        // Parse override config
+        let override_table: Table =
+            toml::from_str(raw_override).context("Failed to parse override TOML")?;
 
-            // Merge override into base
-            merge_tables(&mut base, &override_table);
+        // Merge override into base
+        merge_tables(&mut base, &override_table);
 
-            // Serialize back to string
-            toml::to_string_pretty(&base).context("Failed to serialize TOML config")
-        } else {
-            // No override, return base template as-is
-            Ok(self.base_template.clone())
-        }
+        // Serialize back to string
+        toml::to_string_pretty(&base).context("Failed to serialize TOML config")
     }
 }
 
@@ -57,20 +52,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_no_override() {
-        let base_config = r#"
-[section]
-key = "value"
-"#
-        .to_string();
-
-        let builder = TomlConfigBuilder::new(base_config.clone());
-        let result = builder.build_with_override(None).unwrap();
-
-        assert_eq!(result, base_config);
-    }
-
-    #[test]
     fn test_field_override() {
         let base_config = r#"
 orderbook-url = "http://localhost:8080"
@@ -82,7 +63,7 @@ orderbook-url = "http://remotehost:8080"
 "#;
 
         let builder = TomlConfigBuilder::new(base_config);
-        let result = builder.build_with_override(Some(raw_override)).unwrap();
+        let result = builder.build_with_override(raw_override).unwrap();
 
         let parsed: Table = toml::from_str(&result).unwrap();
 
@@ -115,7 +96,7 @@ port = 9090
 "#;
 
         let builder = TomlConfigBuilder::new(base_config);
-        let result = builder.build_with_override(Some(raw_override)).unwrap();
+        let result = builder.build_with_override(raw_override).unwrap();
 
         let parsed: Table = toml::from_str(&result).unwrap();
 
@@ -161,7 +142,7 @@ port = 9001
 "#;
 
         let builder = TomlConfigBuilder::new(base_config);
-        let result = builder.build_with_override(Some(raw_override)).unwrap();
+        let result = builder.build_with_override(raw_override).unwrap();
 
         let parsed: Table = toml::from_str(&result).unwrap();
 
