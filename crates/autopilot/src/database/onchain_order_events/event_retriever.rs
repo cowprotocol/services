@@ -1,19 +1,12 @@
 use {
     contracts::cowswap_onchain_orders,
-    ethcontract::{
-        H160,
-        H256,
-        contract::AllEventsBuilder,
-        dyns::DynAllEventsBuilder,
-        jsonrpc::futures_util::Stream,
-    },
+    ethcontract::{H160, H256, contract::AllEventsBuilder, dyns::DynAllEventsBuilder},
     ethrpc::block_stream::RangeInclusive,
     hex_literal::hex,
     shared::{
         ethrpc::Web3,
-        event_handling::{EthcontractEventQueryBuilder, EventRetrieving},
+        event_handling::{EthcontractEventQueryBuilder, EventRetrieving, EventStream},
     },
-    std::pin::Pin,
     web3::types::Address,
 };
 
@@ -80,14 +73,7 @@ impl EventRetrieving for CoWSwapOnchainOrdersContract {
     async fn get_events_by_block_range(
         &self,
         block_range: &RangeInclusive<u64>,
-    ) -> anyhow::Result<
-        Pin<
-            Box<
-                dyn Stream<Item = anyhow::Result<ethcontract::Event<cowswap_onchain_orders::Event>>>
-                    + Send,
-            >,
-        >,
-    > {
+    ) -> anyhow::Result<EventStream<ethcontract::Event<cowswap_onchain_orders::Event>>> {
         self.get_events_by_block_range_default(block_range).await
     }
 

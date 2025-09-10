@@ -81,6 +81,8 @@ pub trait EventStoring<Event>: Send + Sync {
     async fn persist_last_indexed_block(&mut self, last_block: u64) -> Result<()>;
 }
 
+pub type EventStream<T> = Pin<Box<dyn Stream<Item = Result<T>> + Send>>;
+
 /// Common `ethcontract` crate-related event retrieval patterns are extracted to
 /// this trait to avoid code duplication and any dependencies on the
 /// `ethcontract` crate in the main event handling traits. This will be removed
@@ -101,7 +103,7 @@ pub trait EthcontractEventQueryBuilder {
     async fn get_events_by_block_range_default(
         &self,
         block_range: &RangeInclusive<u64>,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<ethcontract::Event<Self::Event>>> + Send>>> {
+    ) -> Result<EventStream<ethcontract::Event<Self::Event>>> {
         let stream = self
             .get_events()
             .from_block((*block_range.start()).into())
@@ -131,7 +133,7 @@ pub trait EventRetrieving {
     async fn get_events_by_block_range(
         &self,
         block_range: &RangeInclusive<u64>,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<Self::Event>> + Send>>>;
+    ) -> Result<EventStream<Self::Event>>;
 
     fn address(&self) -> Vec<ethcontract::Address>;
 }
@@ -638,7 +640,7 @@ macro_rules! impl_event_retrieving {
             async fn get_events_by_block_range(
                 &self,
                 block_range: &::ethrpc::block_stream::RangeInclusive<u64>,
-            ) -> ::anyhow::Result<::std::pin::Pin<::std::boxed::Box<dyn ::futures::Stream<Item = ::anyhow::Result<::ethcontract::Event<$($contract_module)*::Event>>> + Send>>> {
+            ) -> ::anyhow::Result<$crate::event_handling::EventStream<::ethcontract::Event<$($contract_module)*::Event>>> {
                 use ::futures::TryStreamExt;
 
                 let stream = self.0

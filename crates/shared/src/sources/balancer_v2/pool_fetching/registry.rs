@@ -4,7 +4,12 @@
 use {
     super::{internal::InternalPoolFetching, pool_storage::PoolStorage},
     crate::{
-        event_handling::{EthcontractEventQueryBuilder, EventHandler, EventRetrieving},
+        event_handling::{
+            EthcontractEventQueryBuilder,
+            EventHandler,
+            EventRetrieving,
+            EventStream,
+        },
         maintenance::Maintaining,
         recent_block_cache::Block,
         sources::balancer_v2::pools::{
@@ -20,14 +25,7 @@ use {
         balancer_v2_base_pool_factory,
         errors::EthcontractErrorType,
     },
-    ethcontract::{
-        BlockId,
-        H256,
-        Instance,
-        dyns::DynAllEventsBuilder,
-        errors::MethodError,
-        jsonrpc::futures_util::Stream,
-    },
+    ethcontract::{BlockId, H256, Instance, dyns::DynAllEventsBuilder, errors::MethodError},
     ethrpc::{
         Web3Transport,
         block_stream::{BlockNumberHash, BlockRetrieving, RangeInclusive},
@@ -35,7 +33,7 @@ use {
     futures::future,
     hex_literal::hex,
     model::TokenPair,
-    std::{collections::HashSet, pin::Pin, sync::Arc},
+    std::{collections::HashSet, sync::Arc},
     tokio::sync::Mutex,
     web3::types::Address,
 };
@@ -70,14 +68,7 @@ impl EventRetrieving for BasePoolFactoryContract {
     async fn get_events_by_block_range(
         &self,
         block_range: &RangeInclusive<u64>,
-    ) -> Result<
-        Pin<
-            Box<
-                dyn Stream<Item = Result<ethcontract::Event<balancer_v2_base_pool_factory::Event>>>
-                    + Send,
-            >,
-        >,
-    > {
+    ) -> Result<EventStream<ethcontract::Event<balancer_v2_base_pool_factory::Event>>> {
         self.get_events_by_block_range_default(block_range).await
     }
 

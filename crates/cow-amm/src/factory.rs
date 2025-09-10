@@ -1,15 +1,8 @@
 use {
     contracts::cow_amm_legacy_helper::Event as CowAmmEvent,
-    ethcontract::{
-        Address,
-        H256,
-        contract::AllEventsBuilder,
-        dyns::DynAllEventsBuilder,
-        futures::Stream,
-    },
+    ethcontract::{Address, H256, contract::AllEventsBuilder, dyns::DynAllEventsBuilder},
     ethrpc::{Web3, block_stream::RangeInclusive},
-    shared::event_handling::{EthcontractEventQueryBuilder, EventRetrieving},
-    std::pin::Pin,
+    shared::event_handling::{EthcontractEventQueryBuilder, EventRetrieving, EventStream},
 };
 
 const AMM_DEPLOYED_TOPIC: H256 = H256(hex_literal::hex!(
@@ -45,9 +38,7 @@ impl EventRetrieving for Factory {
     async fn get_events_by_block_range(
         &self,
         block_range: &RangeInclusive<u64>,
-    ) -> anyhow::Result<
-        Pin<Box<dyn Stream<Item = anyhow::Result<ethcontract::Event<CowAmmEvent>>> + Send>>,
-    > {
+    ) -> anyhow::Result<EventStream<ethcontract::Event<CowAmmEvent>>> {
         self.get_events_by_block_range_default(block_range).await
     }
 

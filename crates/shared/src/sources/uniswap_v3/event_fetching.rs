@@ -1,5 +1,10 @@
 use {
-    crate::event_handling::{EthcontractEventQueryBuilder, EventRetrieving, EventStoring},
+    crate::event_handling::{
+        EthcontractEventQueryBuilder,
+        EventRetrieving,
+        EventStoring,
+        EventStream,
+    },
     anyhow::{Context, Result},
     contracts::{
         UniswapV3Pool,
@@ -14,11 +19,10 @@ use {
         contract::ParseLog,
         dyns::DynAllEventsBuilder,
         errors::ExecutionError,
-        jsonrpc::futures_util::Stream,
     },
     ethrpc::{Web3, block_stream::RangeInclusive},
     hex_literal::hex,
-    std::{collections::BTreeMap, pin::Pin},
+    std::collections::BTreeMap,
 };
 
 const SWAP_TOPIC: [u8; 32] =
@@ -105,8 +109,7 @@ impl EventRetrieving for UniswapV3PoolEventFetcher {
     async fn get_events_by_block_range(
         &self,
         block_range: &RangeInclusive<u64>,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<ethcontract::Event<UniswapV3Event>>> + Send>>>
-    {
+    ) -> Result<EventStream<ethcontract::Event<UniswapV3Event>>> {
         self.get_events_by_block_range_default(block_range).await
     }
 
