@@ -17,7 +17,7 @@ use {
             notify,
             observe::{self, metrics},
             simulator::{RevertError, SimulatorError},
-            solver::{self, SolutionMerging, Solver, dto},
+            solver::{self, SolutionMerging, Solver},
         },
         util::{Bytes, math},
     },
@@ -118,11 +118,8 @@ impl Competition {
             .start_or_get_tasks_for_auction(auction)
             .await
             .map_err(|err| {
-                // TODO: find a better error type
                 tracing::error!(?err, "pre-processing auction failed");
-                Error::Solver(solver::Error::Dto(dto::Error(
-                    "pre-processing auction failed".into(),
-                )))
+                Error::MalformedRequest
             })?;
         let mut auction = Arc::unwrap_or_clone(tasks.auction.await);
 
@@ -885,4 +882,6 @@ pub enum Error {
     TooManyPendingSettlements,
     #[error("no valid orders found in the auction")]
     NoValidOrdersFound,
+    #[error("could not parse the request")]
+    MalformedRequest,
 }
