@@ -6,7 +6,7 @@ use {
     tokio::task::JoinHandle,
 };
 
-pub mod config_override;
+pub mod utils;
 
 pub struct SolverEngine {
     pub name: String,
@@ -267,9 +267,7 @@ mempool = "public"
     );
 
     let final_config = if let Some(override_str) = config_override {
-        config_override::TomlConfigBuilder::new(base_config)
-            .build_with_override(override_str)
-            .expect("Failed to build driver config")
+        utils::toml::merge_raw(&base_config, override_str).expect("Failed to merge driver config")
     } else {
         base_config
     };

@@ -3,32 +3,29 @@ use {
     toml::{Table, Value},
 };
 
-/// Simple TOML config builder that supports raw TOML merging
-pub struct TomlConfigBuilder {
-    base_template: String,
-}
+/// Merge two TOML strings, with the override taking precedence
+///
+/// # Arguments
+/// * `base` - The base TOML configuration as a string
+/// * `overlay` - The override TOML configuration as a string
+///
+/// # Returns
+/// A merged TOML configuration string where override values take precedence
+/// over base values. Tables are merged recursively, while arrays and primitive
+/// values are replaced entirely.
+pub fn merge_raw(base: &str, overlay: &str) -> Result<String> {
+    // Parse base config
+    let mut base_table: Table = toml::from_str(base).context("Failed to parse base TOML config")?;
 
-impl TomlConfigBuilder {
-    pub fn new(base_template: String) -> Self {
-        Self { base_template }
-    }
+    // Parse overlay config
+    let overlay_table: Table =
+        toml::from_str(overlay).context("Failed to parse overlay TOML config")?;
 
-    /// Build config with optional raw TOML override
-    pub fn build_with_override(&self, raw_override: &str) -> Result<String> {
-        // Parse base config
-        let mut base: Table =
-            toml::from_str(&self.base_template).context("Failed to parse base TOML config")?;
+    // Apply overlay to base
+    merge_tables(&mut base_table, &overlay_table);
 
-        // Parse override config
-        let override_table: Table =
-            toml::from_str(raw_override).context("Failed to parse override TOML")?;
-
-        // Merge override into base
-        merge_tables(&mut base, &override_table);
-
-        // Serialize back to string
-        toml::to_string_pretty(&base).context("Failed to serialize TOML config")
-    }
+    // Serialize back to string
+    toml::to_string_pretty(&base_table).context("Failed to serialize TOML config")
 }
 
 /// Recursively merge two TOML tables
@@ -55,19 +52,17 @@ mod tests {
     fn test_field_override() {
         let base_config = r#"
 orderbook-url = "http://localhost:8080"
-"#
-        .to_string();
+"#;
 
         let raw_override = r#"
 orderbook-url = "http://remotehost:8080"
 "#;
 
-        let builder = TomlConfigBuilder::new(base_config);
-        let result = builder.build_with_override(raw_override).unwrap();
+        let result = merge_raw(base_config, raw_override).unwrap();
 
         let parsed: Table = toml::from_str(&result).unwrap();
 
-        // Check that database section was merged
+        // Check that field was overridden
         let orderbook_url = parsed.get("orderbook-url").unwrap().as_str().unwrap();
         assert_eq!(orderbook_url, "http://remotehost:8080");
     }
@@ -81,8 +76,7 @@ port = 5432
 
 [logging]
 level = "info"
-"#
-        .to_string();
+"#;
 
         let raw_override = r#"
 [database]
@@ -95,8 +89,7 @@ enabled = true
 port = 9090
 "#;
 
-        let builder = TomlConfigBuilder::new(base_config);
-        let result = builder.build_with_override(raw_override).unwrap();
+        let result = merge_raw(base_config, raw_override).unwrap();
 
         let parsed: Table = toml::from_str(&result).unwrap();
 
@@ -128,8 +121,7 @@ port = 8080
 
 [config]
 active = true
-"#
-        .to_string();
+"#;
 
         let raw_override = r#"
 [[servers]]
@@ -141,8 +133,7 @@ name = "new-server2"
 port = 9001
 "#;
 
-        let builder = TomlConfigBuilder::new(base_config);
-        let result = builder.build_with_override(raw_override).unwrap();
+        let result = merge_raw(base_config, raw_override).unwrap();
 
         let parsed: Table = toml::from_str(&result).unwrap();
 
