@@ -9,7 +9,6 @@ use {
     contracts::{ERC1271SignatureValidator, errors::EthcontractErrorType},
     ethcontract::Bytes,
     ethrpc::Web3,
-    futures::future,
     primitive_types::{H160, U256},
     tracing::instrument,
 };
@@ -107,19 +106,15 @@ impl Validator {
 #[async_trait::async_trait]
 impl SignatureValidating for Validator {
     #[instrument(skip_all)]
-    async fn validate_signatures(
+    async fn validate_signature(
         &self,
-        checks: Vec<SignatureCheck>,
-    ) -> Vec<Result<(), SignatureValidationError>> {
-        future::join_all(checks.into_iter().map(|check| async move {
-            if check.interactions.is_empty() {
-                self.simulate_without_pre_interactions(&check).await?;
-            } else {
-                self.simulate(&check).await?;
-            }
-            Ok(())
-        }))
-        .await
+        check: SignatureCheck,
+    ) -> Result<(), SignatureValidationError> {
+        if check.interactions.is_empty() {
+            self.simulate_without_pre_interactions(&check).await
+        } else {
+            self.simulate(&check).await.map(|_| ())
+        }
     }
 
     async fn validate_signature_and_get_additional_gas(
