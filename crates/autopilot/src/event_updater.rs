@@ -9,14 +9,16 @@ use {
     tokio::sync::Mutex,
 };
 
+type ContractEventOf<C> = ethcontract::Event<<C as EventRetrieving>::Event>;
+
 pub struct EventUpdater<
-    Database: EventStoring<<W as EventRetrieving>::Event>,
+    Database: EventStoring<ContractEventOf<W>>,
     W: EventRetrieving + Send + Sync,
 >(Mutex<EventHandler<W, Database>>);
 
 impl<Database, W> EventUpdater<Database, W>
 where
-    Database: EventStoring<<W as EventRetrieving>::Event>,
+    Database: EventStoring<ContractEventOf<W>>,
     W: EventRetrieving + Send + Sync,
 {
     /// Creates a new event updater.
@@ -66,7 +68,7 @@ where
 #[async_trait::async_trait]
 impl<Database, W> Maintaining for EventUpdater<Database, W>
 where
-    Database: EventStoring<<W>::Event>,
+    Database: EventStoring<ContractEventOf<W>>,
     W: EventRetrieving + Send + Sync,
 {
     async fn run_maintenance(&self) -> Result<()> {

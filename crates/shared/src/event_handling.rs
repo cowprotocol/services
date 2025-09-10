@@ -44,7 +44,7 @@ const MAX_PARALLEL_RPC_CALLS: usize = 128;
 pub struct EventHandler<C, S>
 where
     C: EventRetrieving,
-    S: EventStoring<C::Event>,
+    S: EventStoring<EthcontractEvent<C::Event>>,
 {
     block_retriever: Arc<dyn BlockRetrieving>,
     contract: C,
@@ -59,7 +59,7 @@ where
 /// Databases: might transform, filter and classify which events are inserted
 /// HashSet: For less persistent (in memory) storing, insert events into a set.
 #[async_trait::async_trait]
-pub trait EventStoring<T>: Send + Sync {
+pub trait EventStoring<Event>: Send + Sync {
     /// Returns ok, on successful execution, otherwise an appropriate error
     ///
     /// # Arguments
@@ -67,7 +67,7 @@ pub trait EventStoring<T>: Send + Sync {
     /// * `range` indicates a particular range of blocks on which to operate.
     async fn replace_events(
         &mut self,
-        events: Vec<EthcontractEvent<T>>,
+        events: Vec<Event>,
         range: RangeInclusive<u64>,
     ) -> Result<()>;
 
@@ -75,7 +75,7 @@ pub trait EventStoring<T>: Send + Sync {
     ///
     /// # Arguments
     /// * `events` the contract events to be appended by the implementer
-    async fn append_events(&mut self, events: Vec<EthcontractEvent<T>>) -> Result<()>;
+    async fn append_events(&mut self, events: Vec<Event>) -> Result<()>;
 
     /// Fetches the last processed block to know where to resume indexing after
     /// a restart.
@@ -104,7 +104,7 @@ struct EventRange {
 impl<C, S> EventHandler<C, S>
 where
     C: EventRetrieving,
-    S: EventStoring<C::Event>,
+    S: EventStoring<EthcontractEvent<C::Event>>,
 {
     pub fn new(
         block_retriever: Arc<dyn BlockRetrieving>,
@@ -535,7 +535,7 @@ impl<C, S> Maintaining for Mutex<EventHandler<C, S>>
 where
     C: EventRetrieving + Send + Sync,
     C::Event: Send,
-    S: EventStoring<C::Event> + Send + Sync,
+    S: EventStoring<EthcontractEvent<C::Event>> + Send + Sync,
 {
     async fn run_maintenance(&self) -> Result<()> {
         let mut inner = self.lock().await;
@@ -636,7 +636,7 @@ mod tests {
     }
 
     #[async_trait::async_trait]
-    impl<T> EventStoring<T> for EventStorage<T>
+    impl<T> EventStoring<EthcontractEvent<T>> for EventStorage<T>
     where
         T: Send + Sync,
     {

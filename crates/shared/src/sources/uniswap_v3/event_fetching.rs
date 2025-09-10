@@ -118,7 +118,7 @@ impl RecentEventsCache {
 }
 
 #[async_trait::async_trait]
-impl EventStoring<UniswapV3Event> for RecentEventsCache {
+impl EventStoring<Event<UniswapV3Event>> for RecentEventsCache {
     async fn replace_events(
         &mut self,
         events: Vec<Event<UniswapV3Event>>,
