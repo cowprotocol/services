@@ -2,6 +2,8 @@ mod buffering;
 pub mod conversions;
 mod instrumentation;
 
+mod wallet;
+
 use {
     crate::AlloyProvider,
     alloy::{
@@ -12,22 +14,49 @@ use {
     buffering::BatchCallLayer,
     instrumentation::{InstrumentationLayer, LabelingLayer},
 };
-pub use {conversions::Account, instrumentation::ProviderLabelingExt};
+pub use {conversions::Account, instrumentation::ProviderLabelingExt, wallet::MutWallet};
 
-pub fn provider(url: &str) -> AlloyProvider {
-    let rpc = ClientBuilder::default()
+/// Creates an [`RpcClient`] from the given URL with [`LabelingLayer`],
+/// [`InstrumentationLayer`] and [`BatchCallLayer`].
+fn rpc(url: &str) -> RpcClient {
+    ClientBuilder::default()
         .layer(LabelingLayer {
             label: "main".into(),
         })
         .layer(InstrumentationLayer)
         .layer(BatchCallLayer::new(Default::default()))
-        .http(url.parse().unwrap());
+        .http(url.parse().unwrap())
+}
+
+pub fn provider(url: &str) -> AlloyProvider {
+    let rpc = rpc(url);
     ProviderBuilder::new()
         // will query the node for the nonce every time that it is needed
         // adds overhead but makes working with alloy/ethcontract at the same time much simpler
         .with_simple_nonce_management()
         .connect_client(rpc)
         .erased()
+}
+
+/// Creates a provider just like [`provider`] does,
+/// but will add the testing Anvil keys to the wallet and said wallet to the
+/// provider.
+///
+/// Returns the provider and the [`MutWallet`] so the caller can register
+/// new signers.
+pub fn anvil_provider(url: &str) -> (AlloyProvider, MutWallet) {
+    let wallet = MutWallet::anvil_wallet();
+    let rpc = rpc(url);
+
+    let provider = ProviderBuilder::new()
+        .wallet(wallet.clone())
+        // will query the node for the nonce every time that it is needed
+        // adds overhead but makes working with alloy/ethcontract at the same time much simpler
+        .with_simple_nonce_management()
+        .connect_client(rpc)
+        .erased();
+
+    (provider, wallet)
 }
 
 pub trait ProviderSignerExt {

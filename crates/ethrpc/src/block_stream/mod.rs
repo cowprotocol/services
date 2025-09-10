@@ -129,6 +129,7 @@ pub async fn current_block_stream(
         legacy: web3,
         // TODO: replace this with an unbuffered alloy provider
         alloy: crate::alloy::provider(url.as_str()),
+        wallet: None,
     };
     let web3 = instrument_with_label(&web3, "base_currentBlockStream".into());
 

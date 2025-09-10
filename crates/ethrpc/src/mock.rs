@@ -29,6 +29,7 @@ pub fn web3() -> Web3<MockTransport> {
         alloy: ProviderBuilder::new()
             .connect_mocked_client(Asserter::new())
             .erased(),
+        wallet: None,
     }
 }
 
