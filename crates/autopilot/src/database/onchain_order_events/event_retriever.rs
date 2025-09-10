@@ -94,7 +94,7 @@ impl EventRetrieving for CoWSwapOnchainOrdersContract {
         Ok(Box::pin(stream))
     }
 
-    fn address(&self) -> Address {
-        todo!()
+    fn address(&self) -> Vec<Address> {
+        self.get_events().filter.address
     }
 }

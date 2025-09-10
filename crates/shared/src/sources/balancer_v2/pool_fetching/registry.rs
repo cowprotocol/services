@@ -87,8 +87,8 @@ impl EventRetrieving for BasePoolFactoryContract {
         Ok(Box::pin(stream))
     }
 
-    fn address(&self) -> Address {
-        self.0.address()
+    fn address(&self) -> Vec<Address> {
+        self.get_events().filter.address
     }
 }
 

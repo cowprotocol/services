@@ -58,13 +58,7 @@ impl EventRetrieving for Factory {
         Ok(Box::pin(stream))
     }
 
-    fn address(&self) -> ethcontract::Address {
-        self.address
+    fn address(&self) -> Vec<ethcontract::Address> {
+        self.get_events().filter.address
     }
-
-    // fn get_events(&self) -> AllEventsBuilder<DynTransport, Self::Event> {
-    //     let mut events = AllEventsBuilder::new(self.web3.legacy.clone(),
-    // self.address, None);     events.filter =
-    // events.filter.topic0(Some(AMM_DEPLOYED_TOPIC).into());     events
-    // }
 }

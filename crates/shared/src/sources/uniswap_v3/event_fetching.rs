@@ -118,8 +118,8 @@ impl EventRetrieving for UniswapV3PoolEventFetcher {
         Ok(Box::pin(stream))
     }
 
-    fn address(&self) -> ethcontract::Address {
-        unimplemented!()
+    fn address(&self) -> Vec<ethcontract::Address> {
+        self.get_events().filter.address
     }
 }
 

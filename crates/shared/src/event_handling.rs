@@ -95,7 +95,7 @@ pub trait EventRetrieving {
         block_range: &RangeInclusive<u64>,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<Self::Event>> + Send>>>;
 
-    fn address(&self) -> ethcontract::Address;
+    fn address(&self) -> Vec<ethcontract::Address>;
 }
 
 #[derive(Debug)]
@@ -615,8 +615,8 @@ macro_rules! impl_event_retrieving {
                 Ok(::std::boxed::Box::pin(stream))
             }
 
-            fn address(&self) -> ::ethcontract::Address {
-                self.0.address()
+            fn address(&self) -> Vec<::ethcontract::Address> {
+                self.0.all_events().filter.address
             }
         }
     };

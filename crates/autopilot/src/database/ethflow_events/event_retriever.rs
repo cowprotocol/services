@@ -83,8 +83,7 @@ impl EventRetrieving for EthFlowRefundRetriever {
         Ok(Box::pin(stream))
     }
 
-    fn address(&self) -> Address {
-        // @todo: fix it
-        *self.addresses.first().unwrap()
+    fn address(&self) -> Vec<Address> {
+        self.get_events().filter.address
     }
 }
