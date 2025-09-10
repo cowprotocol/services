@@ -1,5 +1,5 @@
 use {
-    crate::event_handling::{EventRetrieving, EventStoring},
+    crate::event_handling::{EthcontractEventQueryBuilder, EventRetrieving, EventStoring},
     anyhow::{Context, Result},
     contracts::{
         UniswapV3Pool,
@@ -17,7 +17,6 @@ use {
         jsonrpc::futures_util::Stream,
     },
     ethrpc::{Web3, block_stream::RangeInclusive},
-    futures::TryStreamExt,
     hex_literal::hex,
     std::{collections::BTreeMap, pin::Pin},
 };
@@ -78,7 +77,9 @@ impl ParseLog for UniswapV3Event {
 
 pub struct UniswapV3PoolEventFetcher(pub Web3);
 
-impl UniswapV3PoolEventFetcher {
+impl EthcontractEventQueryBuilder for UniswapV3PoolEventFetcher {
+    type Event = UniswapV3Event;
+
     fn get_events(&self) -> DynAllEventsBuilder<UniswapV3Event> {
         let mut events = DynAllEventsBuilder::new(self.0.legacy.clone(), H160::default(), None);
         let events_signatures = vec![H256(SWAP_TOPIC), H256(BURN_TOPIC), H256(MINT_TOPIC)];
@@ -98,7 +99,7 @@ impl EventRetrieving for UniswapV3PoolEventFetcher {
         &self,
         block_hash: H256,
     ) -> Result<Vec<ethcontract::Event<UniswapV3Event>>> {
-        Ok(self.get_events().block_hash(block_hash).query().await?)
+        self.get_events_by_block_hash_default(block_hash).await
     }
 
     async fn get_events_by_block_range(
@@ -106,20 +107,11 @@ impl EventRetrieving for UniswapV3PoolEventFetcher {
         block_range: &RangeInclusive<u64>,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<ethcontract::Event<UniswapV3Event>>> + Send>>>
     {
-        let stream = self
-            .get_events()
-            .from_block((*block_range.start()).into())
-            .to_block((*block_range.end()).into())
-            .block_page_size(500)
-            .query_paginated()
-            .await?
-            .map_err(anyhow::Error::from);
-
-        Ok(Box::pin(stream))
+        self.get_events_by_block_range_default(block_range).await
     }
 
     fn address(&self) -> Vec<ethcontract::Address> {
-        self.get_events().filter.address
+        self.address_default()
     }
 }
 

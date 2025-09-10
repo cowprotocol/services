@@ -8,9 +8,11 @@ use {
         jsonrpc::futures_util::Stream,
     },
     ethrpc::block_stream::RangeInclusive,
-    futures::TryStreamExt,
     hex_literal::hex,
-    shared::{ethrpc::Web3, event_handling::EventRetrieving},
+    shared::{
+        ethrpc::Web3,
+        event_handling::{EthcontractEventQueryBuilder, EventRetrieving},
+    },
     std::pin::Pin,
     web3::types::Address,
 };
@@ -44,6 +46,10 @@ impl CoWSwapOnchainOrdersContract {
         );
         Self { web3, addresses }
     }
+}
+
+impl EthcontractEventQueryBuilder for CoWSwapOnchainOrdersContract {
+    type Event = cowswap_onchain_orders::Event;
 
     fn get_events(&self) -> DynAllEventsBuilder<cowswap_onchain_orders::Event> {
         let mut events = AllEventsBuilder::new(self.web3.legacy.clone(), H160::default(), None);
@@ -68,7 +74,7 @@ impl EventRetrieving for CoWSwapOnchainOrdersContract {
         &self,
         block_hash: H256,
     ) -> anyhow::Result<Vec<ethcontract::Event<cowswap_onchain_orders::Event>>> {
-        Ok(self.get_events().block_hash(block_hash).query().await?)
+        self.get_events_by_block_hash_default(block_hash).await
     }
 
     async fn get_events_by_block_range(
@@ -82,19 +88,10 @@ impl EventRetrieving for CoWSwapOnchainOrdersContract {
             >,
         >,
     > {
-        let stream = self
-            .get_events()
-            .from_block((*block_range.start()).into())
-            .to_block((*block_range.end()).into())
-            .block_page_size(500)
-            .query_paginated()
-            .await?
-            .map_err(anyhow::Error::from);
-
-        Ok(Box::pin(stream))
+        self.get_events_by_block_range_default(block_range).await
     }
 
     fn address(&self) -> Vec<Address> {
-        self.get_events().filter.address
+        self.address_default()
     }
 }

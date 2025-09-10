@@ -5,10 +5,10 @@ use {
         H256,
         contract::AllEventsBuilder,
         dyns::DynAllEventsBuilder,
-        futures::{Stream, TryStreamExt},
+        futures::Stream,
     },
     ethrpc::{Web3, block_stream::RangeInclusive},
-    shared::event_handling::EventRetrieving,
+    shared::event_handling::{EthcontractEventQueryBuilder, EventRetrieving},
     std::pin::Pin,
 };
 
@@ -21,7 +21,9 @@ pub(crate) struct Factory {
     pub(crate) address: Address,
 }
 
-impl Factory {
+impl EthcontractEventQueryBuilder for Factory {
+    type Event = CowAmmEvent;
+
     fn get_events(&self) -> DynAllEventsBuilder<CowAmmEvent> {
         let mut events = AllEventsBuilder::new(self.web3.legacy.clone(), self.address, None);
         events.filter = events.filter.topic0(Some(AMM_DEPLOYED_TOPIC).into());
@@ -37,7 +39,7 @@ impl EventRetrieving for Factory {
         &self,
         block_hash: H256,
     ) -> anyhow::Result<Vec<ethcontract::Event<CowAmmEvent>>> {
-        Ok(self.get_events().block_hash(block_hash).query().await?)
+        self.get_events_by_block_hash_default(block_hash).await
     }
 
     async fn get_events_by_block_range(
@@ -46,19 +48,10 @@ impl EventRetrieving for Factory {
     ) -> anyhow::Result<
         Pin<Box<dyn Stream<Item = anyhow::Result<ethcontract::Event<CowAmmEvent>>> + Send>>,
     > {
-        let stream = self
-            .get_events()
-            .from_block((*block_range.start()).into())
-            .to_block((*block_range.end()).into())
-            .block_page_size(500)
-            .query_paginated()
-            .await?
-            .map_err(anyhow::Error::from);
-
-        Ok(Box::pin(stream))
+        self.get_events_by_block_range_default(block_range).await
     }
 
     fn address(&self) -> Vec<ethcontract::Address> {
-        self.get_events().filter.address
+        self.address_default()
     }
 }

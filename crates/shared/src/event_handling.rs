@@ -1,9 +1,9 @@
 use {
     crate::maintenance::Maintaining,
     anyhow::{Context, Result},
-    ethcontract::EventMetadata,
+    ethcontract::{EventMetadata, dyns::DynAllEventsBuilder},
     ethrpc::block_stream::{BlockNumberHash, BlockRetrieving, RangeInclusive},
-    futures::{Stream, StreamExt, future},
+    futures::{Stream, StreamExt, TryStreamExt, future},
     std::{pin::Pin, sync::Arc},
     tokio::sync::Mutex,
     tracing::Instrument,
@@ -79,6 +79,44 @@ pub trait EventStoring<Event>: Send + Sync {
     /// Stores the last processed block to know where to resume indexing after a
     /// restart.
     async fn persist_last_indexed_block(&mut self, last_block: u64) -> Result<()>;
+}
+
+/// Common `ethcontract` crate-related event retrieval patterns are extracted to
+/// this trait to avoid code duplication and any dependencies on the
+/// `ethcontract` crate in the main event handling traits. This will be removed
+/// once fully migrated to alloy.
+#[async_trait::async_trait]
+pub trait EthcontractEventQueryBuilder {
+    type Event: ethcontract::contract::ParseLog + 'static;
+
+    fn get_events(&self) -> DynAllEventsBuilder<Self::Event>;
+
+    async fn get_events_by_block_hash_default(
+        &self,
+        block_hash: ethcontract::H256,
+    ) -> Result<Vec<ethcontract::Event<Self::Event>>> {
+        Ok(self.get_events().block_hash(block_hash).query().await?)
+    }
+
+    async fn get_events_by_block_range_default(
+        &self,
+        block_range: &RangeInclusive<u64>,
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<ethcontract::Event<Self::Event>>> + Send>>> {
+        let stream = self
+            .get_events()
+            .from_block((*block_range.start()).into())
+            .to_block((*block_range.end()).into())
+            .block_page_size(500)
+            .query_paginated()
+            .await?
+            .map_err(anyhow::Error::from);
+
+        Ok(Box::pin(stream))
+    }
+
+    fn address_default(&self) -> Vec<ethcontract::Address> {
+        self.get_events().filter.address
+    }
 }
 
 #[async_trait::async_trait]
