@@ -1252,14 +1252,18 @@ mod tests {
                     call_data: vec![5, 6],
                 }],
             }))
-            .returning(|_| Ok(()))
+            .returning(|_| Ok(()));
+        signature_validator
+            .expect_validate_signature()
             .with(eq(SignatureCheck {
                 signer: H160([44; 20]),
                 hash: [4; 32],
                 signature: vec![4, 4, 4, 4],
                 interactions: vec![],
             }))
-            .returning(|_| Err(SignatureValidationError::Invalid))
+            .returning(|_| Err(SignatureValidationError::Invalid));
+        signature_validator
+            .expect_validate_signature()
             .with(eq(SignatureCheck {
                 signer: H160([55; 20]),
                 hash: [5; 32],
