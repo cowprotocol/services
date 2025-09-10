@@ -141,6 +141,7 @@ async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
         onchain.contracts().gp_settlement.address(),
         onchain.contracts().weth.address(),
         BigDecimal::zero(),
+        Default::default(),
     )
     .await
     .unwrap();
