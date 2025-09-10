@@ -43,7 +43,7 @@ impl Validator {
     /// pre-interactions
     async fn simulate_without_pre_interactions(
         &self,
-        check: &SignatureCheck,
+        check: SignatureCheck,
     ) -> Result<(), SignatureValidationError> {
         // Since there are no interactions (no dynamic conditions / complex pre-state
         // change), the order's validity can be directly determined by whether
@@ -67,7 +67,7 @@ impl Validator {
     #[instrument(skip_all, fields(interactions_len = check.interactions.len()))]
     async fn simulate(
         &self,
-        check: &SignatureCheck,
+        check: SignatureCheck,
     ) -> Result<Simulation, SignatureValidationError> {
         // We simulate the signature verification from the Settlement contract's
         // context. This allows us to check:
@@ -78,11 +78,11 @@ impl Validator {
             (self.settlement.address(), self.vault_relayer),
             check.signer,
             Bytes(check.hash),
-            Bytes(check.signature.clone()),
+            Bytes(check.signature),
             check
                 .interactions
-                .iter()
-                .map(|i| (i.target, i.value, Bytes(i.call_data.clone())))
+                .into_iter()
+                .map(|i| (i.target, i.value, Bytes(i.call_data)))
                 .collect(),
         );
         let gas_cost_call = self
@@ -98,7 +98,6 @@ impl Validator {
             .await
             .map_err(|_| SignatureValidationError::Invalid);
 
-        tracing::trace!(?check, ?result, "simulated signature");
         Ok(Simulation { gas_used: result? })
     }
 }
@@ -111,9 +110,9 @@ impl SignatureValidating for Validator {
         check: SignatureCheck,
     ) -> Result<(), SignatureValidationError> {
         if check.interactions.is_empty() {
-            self.simulate_without_pre_interactions(&check).await
+            self.simulate_without_pre_interactions(check).await
         } else {
-            self.simulate(&check).await.map(|_| ())
+            self.simulate(check).await.map(|_| ())
         }
     }
 
@@ -122,7 +121,7 @@ impl SignatureValidating for Validator {
         check: SignatureCheck,
     ) -> Result<u64, SignatureValidationError> {
         Ok(self
-            .simulate(&check)
+            .simulate(check)
             .await?
             .gas_used
             .try_into()
