@@ -1,8 +1,18 @@
 use {
     contracts::cowswap_onchain_orders,
-    ethcontract::{H160, H256, contract::AllEventsBuilder, transport::DynTransport},
+    ethcontract::{
+        H160,
+        H256,
+        contract::AllEventsBuilder,
+        dyns::DynAllEventsBuilder,
+        jsonrpc::futures_util::Stream,
+    },
+    ethrpc::block_stream::RangeInclusive,
+    futures::TryStreamExt,
     hex_literal::hex,
     shared::{ethrpc::Web3, event_handling::EventRetrieving},
+    std::pin::Pin,
+    web3::types::Address,
 };
 
 const ORDER_PLACEMENT_TOPIC: H256 = H256(hex!(
@@ -34,12 +44,8 @@ impl CoWSwapOnchainOrdersContract {
         );
         Self { web3, addresses }
     }
-}
 
-impl EventRetrieving for CoWSwapOnchainOrdersContract {
-    type Event = cowswap_onchain_orders::Event;
-
-    fn get_events(&self) -> AllEventsBuilder<DynTransport, Self::Event> {
+    fn get_events(&self) -> DynAllEventsBuilder<cowswap_onchain_orders::Event> {
         let mut events = AllEventsBuilder::new(self.web3.legacy.clone(), H160::default(), None);
         // We want to observe multiple addresses for events.
         events.filter = events.filter.address(self.addresses.clone());
@@ -51,5 +57,44 @@ impl EventRetrieving for CoWSwapOnchainOrdersContract {
             .filter
             .topic0(ALL_VALID_ONCHAIN_ORDER_TOPICS.to_vec().into());
         events
+    }
+}
+
+#[async_trait::async_trait]
+impl EventRetrieving for CoWSwapOnchainOrdersContract {
+    type Event = ethcontract::Event<cowswap_onchain_orders::Event>;
+
+    async fn get_events_by_block_hash(
+        &self,
+        block_hash: H256,
+    ) -> anyhow::Result<Vec<ethcontract::Event<cowswap_onchain_orders::Event>>> {
+        Ok(self.get_events().block_hash(block_hash).query().await?)
+    }
+
+    async fn get_events_by_block_range(
+        &self,
+        block_range: &RangeInclusive<u64>,
+    ) -> anyhow::Result<
+        Pin<
+            Box<
+                dyn Stream<Item = anyhow::Result<ethcontract::Event<cowswap_onchain_orders::Event>>>
+                    + Send,
+            >,
+        >,
+    > {
+        let stream = self
+            .get_events()
+            .from_block((*block_range.start()).into())
+            .to_block((*block_range.end()).into())
+            .block_page_size(500)
+            .query_paginated()
+            .await?
+            .map_err(anyhow::Error::from);
+
+        Ok(Box::pin(stream))
+    }
+
+    fn address(&self) -> Address {
+        todo!()
     }
 }

@@ -20,36 +20,86 @@ use {
         balancer_v2_base_pool_factory,
         errors::EthcontractErrorType,
     },
-    ethcontract::{BlockId, H256, Instance, dyns::DynAllEventsBuilder, errors::MethodError},
+    ethcontract::{
+        BlockId,
+        H256,
+        Instance,
+        dyns::DynAllEventsBuilder,
+        errors::MethodError,
+        jsonrpc::futures_util::Stream,
+    },
     ethrpc::{
         Web3Transport,
-        block_stream::{BlockNumberHash, BlockRetrieving},
+        block_stream::{BlockNumberHash, BlockRetrieving, RangeInclusive},
     },
-    futures::future,
+    futures::{TryStreamExt, future},
     hex_literal::hex,
     model::TokenPair,
-    std::{collections::HashSet, sync::Arc},
+    std::{collections::HashSet, pin::Pin, sync::Arc},
     tokio::sync::Mutex,
+    web3::types::Address,
 };
 
 pub struct BasePoolFactoryContract(BalancerV2BasePoolFactory);
 
-const POOL_CREATED_TOPIC: H256 = H256(hex!(
-    "83a48fbcfc991335314e74d0496aab6a1987e992ddc85dddbcc4d6dd6ef2e9fc"
-));
-
-impl EventRetrieving for BasePoolFactoryContract {
-    type Event = balancer_v2_base_pool_factory::Event;
-
-    fn get_events(&self) -> DynAllEventsBuilder<Self::Event> {
+impl BasePoolFactoryContract {
+    fn get_events(&self) -> DynAllEventsBuilder<balancer_v2_base_pool_factory::Event> {
         let mut events = self.0.all_events();
         events.filter = events.filter.topic0(POOL_CREATED_TOPIC.into());
         events
     }
 }
 
+const POOL_CREATED_TOPIC: H256 = H256(hex!(
+    "83a48fbcfc991335314e74d0496aab6a1987e992ddc85dddbcc4d6dd6ef2e9fc"
+));
+
+#[async_trait::async_trait]
+impl EventRetrieving for BasePoolFactoryContract {
+    type Event = ethcontract::Event<balancer_v2_base_pool_factory::Event>;
+
+    async fn get_events_by_block_hash(
+        &self,
+        block_hash: H256,
+    ) -> Result<Vec<ethcontract::Event<balancer_v2_base_pool_factory::Event>>> {
+        Ok(self.get_events().block_hash(block_hash).query().await?)
+    }
+
+    async fn get_events_by_block_range(
+        &self,
+        block_range: &RangeInclusive<u64>,
+    ) -> Result<
+        Pin<
+            Box<
+                dyn Stream<Item = Result<ethcontract::Event<balancer_v2_base_pool_factory::Event>>>
+                    + Send,
+            >,
+        >,
+    > {
+        let stream = self
+            .get_events()
+            .from_block((*block_range.start()).into())
+            .to_block((*block_range.end()).into())
+            .block_page_size(500)
+            .query_paginated()
+            .await?
+            .map_err(anyhow::Error::from);
+        Ok(Box::pin(stream))
+    }
+
+    fn address(&self) -> Address {
+        self.0.address()
+    }
+}
+
 /// Type alias for the internal event updater type.
-type PoolUpdater<Factory> = Mutex<EventHandler<BasePoolFactoryContract, PoolStorage<Factory>>>;
+type PoolUpdater<Factory> = Mutex<
+    EventHandler<
+        BasePoolFactoryContract,
+        PoolStorage<Factory>,
+        ethcontract::Event<balancer_v2_base_pool_factory::Event>,
+    >,
+>;
 
 /// The Pool Registry maintains an event handler for each of the Balancer Pool
 /// Factory contracts and maintains a `PoolStorage` for each.

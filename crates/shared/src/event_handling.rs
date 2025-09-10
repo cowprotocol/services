@@ -1,16 +1,10 @@
 use {
     crate::maintenance::Maintaining,
-    anyhow::{Context, Error, Result},
-    ethcontract::{
-        Event as EthcontractEvent,
-        EventMetadata,
-        contract::{AllEventsBuilder, ParseLog},
-        dyns::DynTransport,
-        errors::ExecutionError,
-    },
+    anyhow::{Context, Result},
+    ethcontract::EventMetadata,
     ethrpc::block_stream::{BlockNumberHash, BlockRetrieving, RangeInclusive},
-    futures::{Stream, StreamExt, TryStreamExt, future},
-    std::sync::Arc,
+    futures::{Stream, StreamExt, future},
+    std::{pin::Pin, sync::Arc},
     tokio::sync::Mutex,
     tracing::Instrument,
 };
@@ -41,15 +35,16 @@ const MAX_PARALLEL_RPC_CALLS: usize = 128;
 ///    `last_handled_blocks` to make sure the data is consistent. 5. If history
 ///    update is successful, proceed with latest update, and if successful
 ///    update `last_handled_blocks`.
-pub struct EventHandler<C, S>
+pub struct EventHandler<C, S, E>
 where
-    C: EventRetrieving,
-    S: EventStoring<EthcontractEvent<C::Event>>,
+    C: EventRetrieving<Event = E>,
+    S: EventStoring<E>,
 {
     block_retriever: Arc<dyn BlockRetrieving>,
     contract: C,
     store: S,
     last_handled_blocks: Vec<BlockNumberHash>,
+    _phantom: std::marker::PhantomData<E>,
 }
 
 /// `EventStoring` is used by `EventHandler` for the purpose of giving the user
@@ -86,9 +81,21 @@ pub trait EventStoring<Event>: Send + Sync {
     async fn persist_last_indexed_block(&mut self, last_block: u64) -> Result<()>;
 }
 
+#[async_trait::async_trait]
 pub trait EventRetrieving {
-    type Event: ParseLog;
-    fn get_events(&self) -> AllEventsBuilder<DynTransport, Self::Event>;
+    type Event;
+
+    async fn get_events_by_block_hash(
+        &self,
+        block_hash: ethcontract::H256,
+    ) -> Result<Vec<Self::Event>>;
+
+    async fn get_events_by_block_range(
+        &self,
+        block_range: &RangeInclusive<u64>,
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<Self::Event>> + Send>>>;
+
+    fn address(&self) -> ethcontract::Address;
 }
 
 #[derive(Debug)]
@@ -101,10 +108,10 @@ struct EventRange {
     is_reorg: bool,
 }
 
-impl<C, S> EventHandler<C, S>
+impl<C, S, E> EventHandler<C, S, E>
 where
-    C: EventRetrieving,
-    S: EventStoring<EthcontractEvent<C::Event>>,
+    C: EventRetrieving<Event = E>,
+    S: EventStoring<E>,
 {
     pub fn new(
         block_retriever: Arc<dyn BlockRetrieving>,
@@ -122,6 +129,7 @@ where
                     None => vec![],
                 }
             },
+            _phantom: std::marker::PhantomData,
         }
     }
 
@@ -407,13 +415,13 @@ where
     async fn past_events_by_block_hashes(
         &self,
         blocks: &[BlockNumberHash],
-    ) -> (Vec<BlockNumberHash>, Vec<EthcontractEvent<C::Event>>) {
+    ) -> (Vec<BlockNumberHash>, Vec<E>) {
         let (mut blocks_filtered, mut events) = (vec![], vec![]);
         for chunk in blocks.chunks(MAX_PARALLEL_RPC_CALLS) {
             for (i, result) in future::join_all(
                 chunk
                     .iter()
-                    .map(|block| self.contract.get_events().block_hash(block.1).query()),
+                    .map(|block| self.contract.get_events_by_block_hash(block.1)),
             )
             .await
             .into_iter()
@@ -442,17 +450,8 @@ where
     async fn past_events_by_block_number_range(
         &self,
         block_range: &RangeInclusive<u64>,
-    ) -> Result<impl Stream<Item = Result<EthcontractEvent<C::Event>>> + use<C, S>, ExecutionError>
-    {
-        Ok(self
-            .contract
-            .get_events()
-            .from_block((*block_range.start()).into())
-            .to_block((*block_range.end()).into())
-            .block_page_size(500)
-            .query_paginated()
-            .await?
-            .map_err(Error::from))
+    ) -> Result<impl Stream<Item = Result<E>> + use<C, S, E> + Send> {
+        self.contract.get_events_by_block_range(block_range).await
     }
 
     fn update_last_handled_blocks(&mut self, blocks: &[BlockNumberHash]) {
@@ -531,15 +530,15 @@ fn split_range(range: RangeInclusive<u64>) -> (Option<RangeInclusive<u64>>, Rang
 }
 
 #[async_trait::async_trait]
-impl<C, S> Maintaining for Mutex<EventHandler<C, S>>
+impl<C, S, E> Maintaining for Mutex<EventHandler<C, S, E>>
 where
-    C: EventRetrieving + Send + Sync,
-    C::Event: Send,
-    S: EventStoring<EthcontractEvent<C::Event>> + Send + Sync,
+    E: Send + Sync,
+    C: EventRetrieving<Event = E> + Send + Sync,
+    S: EventStoring<E> + Send + Sync,
 {
     async fn run_maintenance(&self) -> Result<()> {
         let mut inner = self.lock().await;
-        let address = inner.contract.get_events().filter.address;
+        let address = inner.contract.address();
         inner
             .update_events()
             .instrument(tracing::info_span!("address", ?address))
@@ -587,14 +586,37 @@ macro_rules! impl_event_retrieving {
             }
         }
 
+        #[::async_trait::async_trait]
         impl $crate::event_handling::EventRetrieving for $name {
-            type Event = $($contract_module)*::Event;
+            type Event = ::ethcontract::Event<$($contract_module)*::Event>;
 
-            fn get_events(&self) -> ::ethcontract::contract::AllEventsBuilder<
-                ::ethcontract::dyns::DynTransport,
-                Self::Event,
-            > {
-                self.0.all_events()
+            async fn get_events_by_block_hash(
+                &self,
+                block_hash: ::ethcontract::H256,
+            ) -> ::anyhow::Result<Vec<::ethcontract::Event<$($contract_module)*::Event>>> {
+                Ok(self.0.all_events().block_hash(block_hash).query().await?)
+            }
+
+            async fn get_events_by_block_range(
+                &self,
+                block_range: &::ethrpc::block_stream::RangeInclusive<u64>,
+            ) -> ::anyhow::Result<::std::pin::Pin<::std::boxed::Box<dyn ::futures::Stream<Item = ::anyhow::Result<::ethcontract::Event<$($contract_module)*::Event>>> + Send>>> {
+                use ::futures::TryStreamExt;
+
+                let stream = self.0
+                    .all_events()
+                    .from_block((*block_range.start()).into())
+                    .to_block((*block_range.end()).into())
+                    .block_page_size(500)
+                    .query_paginated()
+                    .await?
+                    .map_err(::anyhow::Error::from);
+
+                Ok(::std::boxed::Box::pin(stream))
+            }
+
+            fn address(&self) -> ::ethcontract::Address {
+                self.0.address()
             }
         }
     };
@@ -621,7 +643,7 @@ mod tests {
     use {
         super::*,
         contracts::{GPv2Settlement, gpv2_settlement},
-        ethcontract::{BlockNumber, H256},
+        ethcontract::{BlockNumber, Event as EthcontractEvent, H256},
         ethrpc::{Web3, block_stream::block_number_to_block_number_hash},
         std::str::FromStr,
     };

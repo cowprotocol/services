@@ -14,10 +14,12 @@ use {
         contract::ParseLog,
         dyns::DynAllEventsBuilder,
         errors::ExecutionError,
+        jsonrpc::futures_util::Stream,
     },
     ethrpc::{Web3, block_stream::RangeInclusive},
+    futures::TryStreamExt,
     hex_literal::hex,
-    std::collections::BTreeMap,
+    std::{collections::BTreeMap, pin::Pin},
 };
 
 const SWAP_TOPIC: [u8; 32] =
@@ -76,10 +78,8 @@ impl ParseLog for UniswapV3Event {
 
 pub struct UniswapV3PoolEventFetcher(pub Web3);
 
-impl EventRetrieving for UniswapV3PoolEventFetcher {
-    type Event = UniswapV3Event;
-
-    fn get_events(&self) -> DynAllEventsBuilder<Self::Event> {
+impl UniswapV3PoolEventFetcher {
+    fn get_events(&self) -> DynAllEventsBuilder<UniswapV3Event> {
         let mut events = DynAllEventsBuilder::new(self.0.legacy.clone(), H160::default(), None);
         let events_signatures = vec![H256(SWAP_TOPIC), H256(BURN_TOPIC), H256(MINT_TOPIC)];
         events.filter = events
@@ -87,6 +87,39 @@ impl EventRetrieving for UniswapV3PoolEventFetcher {
             .address(vec![])
             .topic0(events_signatures.into());
         events
+    }
+}
+
+#[async_trait::async_trait]
+impl EventRetrieving for UniswapV3PoolEventFetcher {
+    type Event = ethcontract::Event<UniswapV3Event>;
+
+    async fn get_events_by_block_hash(
+        &self,
+        block_hash: H256,
+    ) -> Result<Vec<ethcontract::Event<UniswapV3Event>>> {
+        Ok(self.get_events().block_hash(block_hash).query().await?)
+    }
+
+    async fn get_events_by_block_range(
+        &self,
+        block_range: &RangeInclusive<u64>,
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<ethcontract::Event<UniswapV3Event>>> + Send>>>
+    {
+        let stream = self
+            .get_events()
+            .from_block((*block_range.start()).into())
+            .to_block((*block_range.end()).into())
+            .block_page_size(500)
+            .query_paginated()
+            .await?
+            .map_err(anyhow::Error::from);
+
+        Ok(Box::pin(stream))
+    }
+
+    fn address(&self) -> ethcontract::Address {
+        unimplemented!()
     }
 }
 
