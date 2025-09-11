@@ -1,7 +1,6 @@
 use {
     crate::{
-        domain::{competition, eth, quote, time},
-        infra::solver::Timeouts,
+        domain::{competition, eth, quote},
         util::serialize,
     },
     serde::Deserialize,
@@ -9,7 +8,7 @@ use {
 };
 
 impl Order {
-    pub fn into_domain(self, timeouts: Timeouts) -> Result<quote::Order, Error> {
+    pub fn into_domain(self) -> Result<quote::Order, Error> {
         Ok(quote::Order {
             tokens: quote::Tokens::try_new(self.sell_token.into(), self.buy_token.into())
                 .map_err(|quote::SameTokens| Error::SameTokens)?,
@@ -18,7 +17,7 @@ impl Order {
                 Kind::Sell => competition::order::Side::Sell,
                 Kind::Buy => competition::order::Side::Buy,
             },
-            deadline: time::Deadline::new(self.deadline, timeouts),
+            deadline: self.deadline,
         })
     }
 }

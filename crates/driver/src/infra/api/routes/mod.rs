@@ -6,7 +6,7 @@ mod notify;
 mod quote;
 mod reveal;
 mod settle;
-mod solve;
+pub mod solve;
 
 pub(super) use {
     gasprice::gasprice,
