@@ -85,30 +85,6 @@ impl MutWallet {
             _ => panic!("unsupported runtime flavor"),
         }
     }
-
-    /// Creates a [`MutWallet`], pre-registering Anvil's default mnemonic and
-    /// first 10 derived keys.
-    #[cfg(feature = "test-util")]
-    pub fn anvil_wallet() -> Self {
-        use alloy::signers::local::{MnemonicBuilder, coins_bip39::English};
-
-        let phrase = "test test test test test test test test test test test junk";
-        let mut signers = (0..10).map(|i| {
-            MnemonicBuilder::<English>::default()
-                .phrase(phrase)
-                .index(i)
-                .unwrap()
-                .build()
-                .unwrap()
-        });
-
-        let mut wallet = EthereumWallet::new(signers.next().unwrap());
-        for signer in signers {
-            wallet.register_signer(signer);
-        }
-
-        Self::new(wallet)
-    }
 }
 
 impl<N> NetworkWallet<N> for MutWallet
