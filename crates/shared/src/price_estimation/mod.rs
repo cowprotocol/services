@@ -264,7 +264,7 @@ pub struct Arguments {
     pub native_price_approximation_tokens: Vec<(H160, H160)>,
 
     /// Tokens for which quote verification should not be attempted. This is an
-    /// escapte hatch when there is a very bad but verifiable liquidity source
+    /// escape hatch when there is a very bad but verifiable liquidity source
     /// that would win against a very good but unverifiable liquidity source
     /// (e.g. private liquidity that exists but can't be verified).
     #[clap(long, env, value_delimiter = ',')]
