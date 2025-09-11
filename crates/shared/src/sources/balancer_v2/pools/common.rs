@@ -10,9 +10,10 @@ use {
         token_info::TokenInfoFetching,
     },
     anyhow::{Context, Result, anyhow, ensure},
-    contracts::{BalancerV2BasePool, BalancerV2Vault},
-    ethcontract::{BlockId, Bytes, H160, H256, U256},
-    futures::{FutureExt as _, TryFutureExt, future::BoxFuture},
+    contracts::alloy::{BalancerV2BasePool, BalancerV2Vault},
+    ethcontract::{BlockId, H160, H256, U256},
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    futures::{FutureExt as _, future::BoxFuture},
     std::{collections::BTreeMap, future::Future, sync::Arc},
     tokio::sync::oneshot,
 };
@@ -40,14 +41,14 @@ where
 /// Generic pool info fetcher for fetching pool info and state that is generic
 /// on a pool factory type and its inner pool type.
 pub struct PoolInfoFetcher<Factory> {
-    vault: BalancerV2Vault,
+    vault: BalancerV2Vault::Instance,
     factory: Factory,
     token_infos: Arc<dyn TokenInfoFetching>,
 }
 
 impl<Factory> PoolInfoFetcher<Factory> {
     pub fn new(
-        vault: BalancerV2Vault,
+        vault: BalancerV2Vault::Instance,
         factory: Factory,
         token_infos: Arc<dyn TokenInfoFetching>,
     ) -> Self {
@@ -59,9 +60,9 @@ impl<Factory> PoolInfoFetcher<Factory> {
     }
 
     /// Returns a Balancer base pool contract instance at the specified address.
-    fn base_pool_at(&self, pool_address: H160) -> BalancerV2BasePool {
-        let web3 = self.vault.raw_instance().web3();
-        BalancerV2BasePool::at(&web3, pool_address)
+    fn base_pool_at(&self, pool_address: H160) -> BalancerV2BasePool::Instance {
+        let provider = self.vault.provider().clone();
+        BalancerV2BasePool::Instance::new(pool_address.into_alloy(), provider)
     }
 
     /// Retrieves the scaling exponents for the specified tokens.
@@ -87,13 +88,16 @@ impl<Factory> PoolInfoFetcher<Factory> {
     ) -> Result<PoolInfo> {
         let pool = self.base_pool_at(pool_address);
 
-        let pool_id = H256(pool.methods().get_pool_id().call().await?.0);
-        let (tokens, _, _) = self
+        let pool_id = pool.getPoolId().call().await?.into_legacy();
+        let tokens = self
             .vault
-            .methods()
-            .get_pool_tokens(Bytes(pool_id.0))
+            .getPoolTokens(pool_id.0.into())
             .call()
-            .await?;
+            .await?
+            .tokens
+            .into_iter()
+            .map(|token| token.into_legacy())
+            .collect::<Vec<_>>();
         let scaling_factors = self.scaling_factors(&tokens).await?;
 
         Ok(PoolInfo {
@@ -110,18 +114,35 @@ impl<Factory> PoolInfoFetcher<Factory> {
         pool: &PoolInfo,
         block: BlockId,
     ) -> BoxFuture<'static, Result<PoolState>> {
-        let pool_contract = self.base_pool_at(pool.address);
-        let fetch_paused = pool_contract
-            .get_paused_state()
-            .block(block)
-            .call()
-            .map_ok(|result| result.0);
-        let fetch_swap_fee = pool_contract.get_swap_fee_percentage().block(block).call();
-        let fetch_balances = self
-            .vault
-            .get_pool_tokens(Bytes(pool.id.0))
-            .block(block)
-            .call();
+        let block = block.into_alloy();
+        let pool_address = pool.address;
+        let pool_id = pool.id;
+        let vault = self.vault.clone();
+        let pool_contract_paused = self.base_pool_at(pool_address);
+        let pool_contract_fee = self.base_pool_at(pool_address);
+
+        let fetch_paused = async move {
+            pool_contract_paused
+                .getPausedState()
+                .block(block)
+                .call()
+                .await
+                .map(|result| result.paused)
+        };
+        let fetch_swap_fee = async move {
+            pool_contract_fee
+                .getSwapFeePercentage()
+                .block(block)
+                .call()
+                .await
+        };
+        let pool_tokens = async move {
+            vault
+                .getPoolTokens(pool_id.0.into())
+                .block(block)
+                .call()
+                .await
+        };
 
         // Because of a `mockall` limitation, we **need** the future returned
         // here to be `'static`. This requires us to clone and move `pool` into
@@ -129,18 +150,23 @@ impl<Factory> PoolInfoFetcher<Factory> {
         // `pool`, i.e. `'_`.
         let pool = pool.clone();
         async move {
-            let (paused, swap_fee, balances) =
-                futures::try_join!(fetch_paused, fetch_swap_fee, fetch_balances)?;
-            let swap_fee = Bfp::from_wei(swap_fee);
+            let (paused, swap_fee, pool_tokens) =
+                futures::try_join!(fetch_paused, fetch_swap_fee, pool_tokens)?;
+            let swap_fee = Bfp::from_wei(swap_fee.into_legacy());
 
-            let (token_addresses, balances, _) = balances;
-            ensure!(pool.tokens == token_addresses, "pool token mismatch");
+            let balances = pool_tokens.balances;
+            let tokens = pool_tokens
+                .tokens
+                .into_iter()
+                .map(|t| t.into_legacy())
+                .collect::<Vec<_>>();
+            ensure!(pool.tokens == tokens, "pool token mismatch");
             let tokens = itertools::izip!(&pool.tokens, balances, &pool.scaling_factors)
                 .map(|(&address, balance, &scaling_factor)| {
                     (
                         address,
                         TokenState {
-                            balance,
+                            balance: balance.into_legacy(),
                             scaling_factor,
                         },
                     )
@@ -338,37 +364,57 @@ mod tests {
         super::*,
         crate::{
             sources::balancer_v2::{
+                PoolKind,
                 graph_api::{PoolType, Token},
-                pools::{MockFactoryIndexing, PoolKind, weighted},
+                pools::{MockFactoryIndexing, weighted},
             },
             token_info::{MockTokenInfoFetching, TokenInfo},
         },
+        alloy::{
+            dyn_abi::{DynSolValue, FunctionExt},
+            providers::{Provider, ProviderBuilder},
+            transports::mock::Asserter,
+        },
         anyhow::bail,
-        contracts::{BalancerV2WeightedPool, dummy_contract},
         ethcontract::U256,
-        ethcontract_mock::Mock,
-        futures::future,
         maplit::{btreemap, hashmap},
         mockall::predicate,
+        std::future,
+        web3::types::BlockNumber,
     };
 
     #[tokio::test]
     async fn fetch_common_pool_info() {
-        let pool_id = H256([0x90; 32]);
+        let pool_id = alloy::primitives::FixedBytes([0x90; 32]);
         let tokens = [H160([1; 20]), H160([2; 20]), H160([3; 20])];
 
-        let mock = Mock::new(42);
-        let web3 = mock.web3();
+        let asserter = Asserter::new();
+        let provider = ProviderBuilder::new()
+            .connect_mocked_client(asserter.clone())
+            .erased();
 
-        let pool = mock.deploy(BalancerV2BasePool::raw_contract().interface.abi.clone());
-        pool.expect_call(BalancerV2BasePool::signatures().get_pool_id())
-            .returns(Bytes(pool_id.0));
+        let pool = BalancerV2BasePool::Instance::new(H160::random().into_alloy(), provider.clone());
+        let vault = BalancerV2Vault::Instance::new(H160::random().into_alloy(), provider.clone());
+        asserter.push_success(&pool_id);
 
-        let vault = mock.deploy(BalancerV2Vault::raw_contract().interface.abi.clone());
-        vault
-            .expect_call(BalancerV2Vault::signatures().get_pool_tokens())
-            .predicate((predicate::eq(Bytes(pool_id.0)),))
-            .returns((tokens.to_vec(), vec![], U256::zero()));
+        let get_pool_tokens_response = {
+            let tokens_response = DynSolValue::Array(
+                tokens
+                    .iter()
+                    .copied()
+                    .map(|t| DynSolValue::Address(t.into_alloy()))
+                    .collect(),
+            );
+            let balances_response = DynSolValue::Array(vec![]);
+            let last_block_reponse = DynSolValue::Uint(U256::zero().into_alloy(), 256);
+            BalancerV2Vault::abi_functions_by_name("getPoolTokens")
+                .unwrap()
+                .first()
+                .unwrap()
+                .abi_encode_output(&[tokens_response, balances_response, last_block_reponse])
+                .unwrap()
+        };
+        asserter.push_success(&get_pool_tokens_response);
 
         let mut token_infos = MockTokenInfoFetching::new();
         token_infos
@@ -383,20 +429,20 @@ mod tests {
             });
 
         let pool_info_fetcher = PoolInfoFetcher {
-            vault: BalancerV2Vault::at(&web3, vault.address()),
+            vault,
             factory: MockFactoryIndexing::new(),
             token_infos: Arc::new(token_infos),
         };
         let pool_info = pool_info_fetcher
-            .fetch_common_pool_info(pool.address(), 1337)
+            .fetch_common_pool_info(pool.address().into_legacy(), 1337)
             .await
             .unwrap();
 
         assert_eq!(
             pool_info,
             PoolInfo {
-                id: pool_id,
-                address: pool.address(),
+                id: pool_id.into_legacy(),
+                address: pool.address().into_legacy(),
                 tokens: tokens.to_vec(),
                 scaling_factors: vec![Bfp::exp10(0), Bfp::exp10(0), Bfp::exp10(12)],
                 block_created: 1337,
@@ -411,44 +457,81 @@ mod tests {
         let balances = [bfp!("1000.0"), bfp!("10.0"), bfp!("15.0")];
         let scaling_factors = [Bfp::exp10(0), Bfp::exp10(0), Bfp::exp10(12)];
 
-        let mock = Mock::new(42);
-        let web3 = mock.web3();
+        let asserter = Asserter::new();
+        let provider = ProviderBuilder::new()
+            .connect_mocked_client(asserter.clone())
+            .erased();
 
-        let pool = mock.deploy(BalancerV2BasePool::raw_contract().interface.abi.clone());
-        pool.expect_call(BalancerV2BasePool::signatures().get_paused_state())
-            .returns((false, 0.into(), 0.into()));
-        pool.expect_call(BalancerV2BasePool::signatures().get_swap_fee_percentage())
-            .returns(bfp!("0.003").as_uint256());
+        let pool = BalancerV2BasePool::Instance::new(H160::random().into_alloy(), provider.clone());
+        let vault = BalancerV2Vault::Instance::new(H160::random().into_alloy(), provider.clone());
 
-        let vault = mock.deploy(BalancerV2Vault::raw_contract().interface.abi.clone());
-        vault
-            .expect_call(BalancerV2Vault::signatures().get_pool_tokens())
-            .predicate((predicate::eq(Bytes(pool_id.0)),))
-            .returns((
-                tokens.to_vec(),
-                balances.into_iter().map(Bfp::as_uint256).collect(),
-                0.into(),
-            ));
+        let get_paused_state_response = BalancerV2BasePool::abi_functions_by_name("getPausedState")
+            .unwrap()
+            .first()
+            .unwrap()
+            .abi_encode_output(&[
+                DynSolValue::Bool(false),
+                DynSolValue::Uint(U256::zero().into_alloy(), 256),
+                DynSolValue::Uint(U256::zero().into_alloy(), 256),
+            ])
+            .unwrap();
+        asserter.push_success(&get_paused_state_response);
+        let get_swap_fee_percentage_response =
+            BalancerV2BasePool::abi_functions_by_name("getSwapFeePercentage")
+                .unwrap()
+                .first()
+                .unwrap()
+                .abi_encode_output(&[DynSolValue::Uint(
+                    bfp!("0.003").as_uint256().into_alloy(),
+                    256,
+                )])
+                .unwrap();
+        asserter.push_success(&get_swap_fee_percentage_response);
+
+        let get_pool_tokens_response = {
+            let tokens_response = DynSolValue::Array(
+                tokens
+                    .iter()
+                    .copied()
+                    .map(|t| DynSolValue::Address(t.into_alloy()))
+                    .collect(),
+            );
+            let balances_response = DynSolValue::Array(
+                balances
+                    .iter()
+                    .map(|b| DynSolValue::Uint(b.as_uint256().into_alloy(), 256))
+                    .collect(),
+            );
+            let last_block_reponse = DynSolValue::Uint(U256::zero().into_alloy(), 256);
+            BalancerV2Vault::abi_functions_by_name("getPoolTokens")
+                .unwrap()
+                .first()
+                .unwrap()
+                .abi_encode_output(&[tokens_response, balances_response, last_block_reponse])
+                .unwrap()
+        };
+        asserter.push_success(&get_pool_tokens_response);
 
         let token_infos = MockTokenInfoFetching::new();
 
         let pool_info_fetcher = PoolInfoFetcher {
-            vault: BalancerV2Vault::at(&web3, vault.address()),
+            vault,
             factory: MockFactoryIndexing::new(),
             token_infos: Arc::new(token_infos),
         };
         let pool_info = PoolInfo {
             id: pool_id,
-            address: pool.address(),
+            address: pool.address().into_legacy(),
             tokens: tokens.to_vec(),
             scaling_factors: scaling_factors.to_vec(),
             block_created: 1337,
         };
 
         let pool_state = {
-            let block = web3.eth().block_number().await.unwrap();
-
-            let pool_state = pool_info_fetcher.fetch_common_pool_state(&pool_info, block.into());
+            let pool_state = pool_info_fetcher.fetch_common_pool_state(
+                &pool_info,
+                BlockId::Number(BlockNumber::Number(1.into())),
+            );
 
             pool_state.await.unwrap()
         };
@@ -480,44 +563,74 @@ mod tests {
     async fn fetch_state_errors_on_token_mismatch() {
         let tokens = [H160([1; 20]), H160([2; 20]), H160([3; 20])];
 
-        let mock = Mock::new(42);
-        let web3 = mock.web3();
+        let asserter = Asserter::new();
+        let provider = ProviderBuilder::new()
+            .connect_mocked_client(asserter.clone())
+            .erased();
 
-        let pool = mock.deploy(BalancerV2BasePool::raw_contract().interface.abi.clone());
-        pool.expect_call(BalancerV2BasePool::signatures().get_paused_state())
-            .returns((false, 0.into(), 0.into()));
-        pool.expect_call(BalancerV2BasePool::signatures().get_swap_fee_percentage())
-            .returns(0.into());
+        let pool = BalancerV2BasePool::Instance::new(H160::random().into_alloy(), provider.clone());
+        let vault = BalancerV2Vault::Instance::new(H160::random().into_alloy(), provider.clone());
 
-        let vault = mock.deploy(BalancerV2Vault::raw_contract().interface.abi.clone());
-        vault
-            .expect_call(BalancerV2Vault::signatures().get_pool_tokens())
-            .predicate((predicate::eq(Bytes(Default::default())),))
-            .returns((
-                vec![H160([1; 20]), H160([4; 20])],
-                vec![0.into(), 0.into()],
-                0.into(),
-            ));
+        let get_paused_state_response = BalancerV2BasePool::abi_functions_by_name("getPausedState")
+            .unwrap()
+            .first()
+            .unwrap()
+            .abi_encode_output(&[
+                DynSolValue::Bool(false),
+                DynSolValue::Uint(U256::zero().into_alloy(), 256),
+                DynSolValue::Uint(U256::zero().into_alloy(), 256),
+            ])
+            .unwrap();
+        asserter.push_success(&get_paused_state_response);
+
+        let get_swap_fee_percentage_response =
+            BalancerV2BasePool::abi_functions_by_name("getSwapFeePercentage")
+                .unwrap()
+                .first()
+                .unwrap()
+                .abi_encode_output(&[DynSolValue::Uint(U256::zero().into_alloy(), 256)])
+                .unwrap();
+        asserter.push_success(&get_swap_fee_percentage_response);
+
+        let get_pool_tokens_response = {
+            let tokens_response = DynSolValue::Array(vec![
+                DynSolValue::Address(H160([1; 20]).into_alloy()),
+                DynSolValue::Address(H160([4; 20]).into_alloy()), // Mismatched token
+            ]);
+            let balances_response = DynSolValue::Array(vec![
+                DynSolValue::Uint(U256::zero().into_alloy(), 256),
+                DynSolValue::Uint(U256::zero().into_alloy(), 256),
+            ]);
+            let last_block_reponse = DynSolValue::Uint(U256::zero().into_alloy(), 256);
+            BalancerV2Vault::abi_functions_by_name("getPoolTokens")
+                .unwrap()
+                .first()
+                .unwrap()
+                .abi_encode_output(&[tokens_response, balances_response, last_block_reponse])
+                .unwrap()
+        };
+        asserter.push_success(&get_pool_tokens_response);
 
         let token_infos = MockTokenInfoFetching::new();
 
         let pool_info_fetcher = PoolInfoFetcher {
-            vault: BalancerV2Vault::at(&web3, vault.address()),
+            vault,
             factory: MockFactoryIndexing::new(),
             token_infos: Arc::new(token_infos),
         };
         let pool_info = PoolInfo {
             id: Default::default(),
-            address: pool.address(),
+            address: pool.address().into_legacy(),
             tokens: tokens.to_vec(),
             scaling_factors: vec![Bfp::exp10(0), Bfp::exp10(0), Bfp::exp10(0)],
             block_created: 1337,
         };
 
         let pool_state = {
-            let block = web3.eth().block_number().await.unwrap();
-
-            let pool_state = pool_info_fetcher.fetch_common_pool_state(&pool_info, block.into());
+            let pool_state = pool_info_fetcher.fetch_common_pool_state(
+                &pool_info,
+                BlockId::Number(BlockNumber::Number(1.into())),
+            );
 
             pool_state.await
         };
@@ -529,19 +642,38 @@ mod tests {
     async fn fetch_specialized_pool_state() {
         let swap_fee = bfp!("0.003");
 
-        let mock = Mock::new(42);
-        let web3 = mock.web3();
+        let asserter = Asserter::new();
+        let provider = ProviderBuilder::new()
+            .connect_mocked_client(asserter.clone())
+            .erased();
 
-        let pool = mock.deploy(BalancerV2WeightedPool::raw_contract().interface.abi.clone());
-        pool.expect_call(BalancerV2WeightedPool::signatures().get_paused_state())
-            .returns((false, 0.into(), 0.into()));
-        pool.expect_call(BalancerV2WeightedPool::signatures().get_swap_fee_percentage())
-            .returns(swap_fee.as_uint256());
+        let pool = BalancerV2BasePool::Instance::new(H160::random().into_alloy(), provider.clone());
+        let vault = BalancerV2Vault::Instance::new(H160::random().into_alloy(), provider.clone());
+
+        let get_paused_state_response = BalancerV2BasePool::abi_functions_by_name("getPausedState")
+            .unwrap()
+            .first()
+            .unwrap()
+            .abi_encode_output(&[
+                DynSolValue::Bool(false),
+                DynSolValue::Uint(U256::zero().into_alloy(), 256),
+                DynSolValue::Uint(U256::zero().into_alloy(), 256),
+            ])
+            .unwrap();
+        asserter.push_success(&get_paused_state_response);
+        let get_swap_fee_percentage_response =
+            BalancerV2BasePool::abi_functions_by_name("getSwapFeePercentage")
+                .unwrap()
+                .first()
+                .unwrap()
+                .abi_encode_output(&[DynSolValue::Uint(swap_fee.as_uint256().into_alloy(), 256)])
+                .unwrap();
+        asserter.push_success(&get_swap_fee_percentage_response);
 
         let pool_info = weighted::PoolInfo {
             common: PoolInfo {
                 id: H256([0x90; 32]),
-                address: pool.address(),
+                address: pool.address().into_legacy(),
                 tokens: vec![H160([1; 20]), H160([2; 20]), H160([3; 20])],
                 scaling_factors: vec![Bfp::exp10(0), Bfp::exp10(0), Bfp::exp10(12)],
                 block_created: 1337,
@@ -576,29 +708,41 @@ mod tests {
             version: Default::default(),
         };
 
-        let vault = mock.deploy(BalancerV2Vault::raw_contract().interface.abi.clone());
-        vault
-            .expect_call(BalancerV2Vault::signatures().get_pool_tokens())
-            .predicate((predicate::eq(Bytes(pool_info.common.id.0)),))
-            .returns((
-                pool_info.common.tokens.clone(),
+        let get_pool_tokens_response = {
+            let tokens_response = DynSolValue::Array(
+                pool_info
+                    .common
+                    .tokens
+                    .iter()
+                    .copied()
+                    .map(|t| DynSolValue::Address(t.into_alloy()))
+                    .collect(),
+            );
+            let balances_response = DynSolValue::Array(
                 pool_state
                     .tokens
                     .values()
-                    .map(|token| token.common.balance)
+                    .map(|token| DynSolValue::Uint(token.common.balance.into_alloy(), 256))
                     .collect(),
-                0.into(),
-            ));
-
-        let block = web3.eth().block_number().await.unwrap();
+            );
+            let last_block_reponse = DynSolValue::Uint(U256::zero().into_alloy(), 256);
+            BalancerV2Vault::abi_functions_by_name("getPoolTokens")
+                .unwrap()
+                .first()
+                .unwrap()
+                .abi_encode_output(&[tokens_response, balances_response, last_block_reponse])
+                .unwrap()
+        };
+        asserter.push_success(&get_pool_tokens_response);
 
         let mut factory = MockFactoryIndexing::new();
+        let block_id = BlockId::Number(BlockNumber::Number(1.into()));
         factory
             .expect_fetch_pool_state()
             .with(
                 predicate::eq(pool_info.clone()),
                 predicate::always(),
-                predicate::eq(BlockId::from(block)),
+                predicate::eq(block_id),
             )
             .returning({
                 let pool_state = pool_state.clone();
@@ -606,13 +750,13 @@ mod tests {
             });
 
         let pool_info_fetcher = PoolInfoFetcher {
-            vault: BalancerV2Vault::at(&web3, vault.address()),
+            vault,
             factory,
             token_infos: Arc::new(MockTokenInfoFetching::new()),
         };
 
         let pool_status = pool_info_fetcher
-            .fetch_pool(&pool_info, block.into())
+            .fetch_pool(&pool_info, block_id)
             .await
             .unwrap();
 
@@ -627,19 +771,47 @@ mod tests {
 
     #[tokio::test]
     async fn fetch_specialized_pool_state_for_paused_pool() {
-        let mock = Mock::new(42);
-        let web3 = mock.web3();
+        let asserter = Asserter::new();
+        let provider = ProviderBuilder::new()
+            .connect_mocked_client(asserter.clone())
+            .erased();
 
-        let pool = mock.deploy(BalancerV2WeightedPool::raw_contract().interface.abi.clone());
-        pool.expect_call(BalancerV2WeightedPool::signatures().get_paused_state())
-            .returns((true, 0.into(), 0.into()));
-        pool.expect_call(BalancerV2WeightedPool::signatures().get_swap_fee_percentage())
-            .returns(Default::default());
+        let pool = BalancerV2BasePool::Instance::new(H160::random().into_alloy(), provider.clone());
+        let vault = BalancerV2Vault::Instance::new(H160::random().into_alloy(), provider.clone());
 
-        let vault = mock.deploy(BalancerV2Vault::raw_contract().interface.abi.clone());
-        vault
-            .expect_call(BalancerV2Vault::signatures().get_pool_tokens())
-            .returns(Default::default());
+        let get_paused_state_response = BalancerV2BasePool::abi_functions_by_name("getPausedState")
+            .unwrap()
+            .first()
+            .unwrap()
+            .abi_encode_output(&[
+                DynSolValue::Bool(true),
+                DynSolValue::Uint(U256::zero().into_alloy(), 256),
+                DynSolValue::Uint(U256::zero().into_alloy(), 256),
+            ])
+            .unwrap();
+        asserter.push_success(&get_paused_state_response);
+
+        let get_swap_fee_percentage_response =
+            BalancerV2BasePool::abi_functions_by_name("getSwapFeePercentage")
+                .unwrap()
+                .first()
+                .unwrap()
+                .abi_encode_output(&[DynSolValue::Uint(U256::zero().into_alloy(), 256)])
+                .unwrap();
+        asserter.push_success(&get_swap_fee_percentage_response);
+
+        let get_pool_tokens_response = {
+            let tokens_response = DynSolValue::Array(vec![]);
+            let balances_response = DynSolValue::Array(vec![]);
+            let last_block_reponse = DynSolValue::Uint(U256::zero().into_alloy(), 256);
+            BalancerV2Vault::abi_functions_by_name("getPoolTokens")
+                .unwrap()
+                .first()
+                .unwrap()
+                .abi_encode_output(&[tokens_response, balances_response, last_block_reponse])
+                .unwrap()
+        };
+        asserter.push_success(&get_pool_tokens_response);
 
         let mut factory = MockFactoryIndexing::new();
         factory
@@ -659,14 +831,14 @@ mod tests {
             });
 
         let pool_info_fetcher = PoolInfoFetcher {
-            vault: BalancerV2Vault::at(&web3, vault.address()),
+            vault,
             factory,
             token_infos: Arc::new(MockTokenInfoFetching::new()),
         };
         let pool_info = weighted::PoolInfo {
             common: PoolInfo {
                 id: Default::default(),
-                address: pool.address(),
+                address: pool.address().into_legacy(),
                 tokens: Default::default(),
                 scaling_factors: Default::default(),
                 block_created: Default::default(),
@@ -675,9 +847,8 @@ mod tests {
         };
 
         let pool_status = {
-            let block = web3.eth().block_number().await.unwrap();
             pool_info_fetcher
-                .fetch_pool(&pool_info, block.into())
+                .fetch_pool(&pool_info, BlockId::Number(BlockNumber::Number(1.into())))
                 .await
                 .unwrap()
         };
@@ -687,19 +858,47 @@ mod tests {
 
     #[tokio::test]
     async fn fetch_specialized_pool_state_for_disabled_pool() {
-        let mock = Mock::new(42);
-        let web3 = mock.web3();
+        let asserter = Asserter::new();
+        let provider = ProviderBuilder::new()
+            .connect_mocked_client(asserter.clone())
+            .erased();
 
-        let pool = mock.deploy(BalancerV2WeightedPool::raw_contract().interface.abi.clone());
-        pool.expect_call(BalancerV2WeightedPool::signatures().get_paused_state())
-            .returns((false, 0.into(), 0.into()));
-        pool.expect_call(BalancerV2WeightedPool::signatures().get_swap_fee_percentage())
-            .returns(Default::default());
+        let pool = BalancerV2BasePool::Instance::new(H160::random().into_alloy(), provider.clone());
+        let vault = BalancerV2Vault::Instance::new(H160::random().into_alloy(), provider.clone());
 
-        let vault = mock.deploy(BalancerV2Vault::raw_contract().interface.abi.clone());
-        vault
-            .expect_call(BalancerV2Vault::signatures().get_pool_tokens())
-            .returns(Default::default());
+        let get_paused_state_response = BalancerV2BasePool::abi_functions_by_name("getPausedState")
+            .unwrap()
+            .first()
+            .unwrap()
+            .abi_encode_output(&[
+                DynSolValue::Bool(false),
+                DynSolValue::Uint(U256::zero().into_alloy(), 256),
+                DynSolValue::Uint(U256::zero().into_alloy(), 256),
+            ])
+            .unwrap();
+        asserter.push_success(&get_paused_state_response);
+
+        let get_swap_fee_percentage_response =
+            BalancerV2BasePool::abi_functions_by_name("getSwapFeePercentage")
+                .unwrap()
+                .first()
+                .unwrap()
+                .abi_encode_output(&[DynSolValue::Uint(U256::zero().into_alloy(), 256)])
+                .unwrap();
+        asserter.push_success(&get_swap_fee_percentage_response);
+
+        let get_pool_tokens_response = {
+            let tokens_response = DynSolValue::Array(vec![]);
+            let balances_response = DynSolValue::Array(vec![]);
+            let last_block_reponse = DynSolValue::Uint(U256::zero().into_alloy(), 256);
+            BalancerV2Vault::abi_functions_by_name("getPoolTokens")
+                .unwrap()
+                .first()
+                .unwrap()
+                .abi_encode_output(&[tokens_response, balances_response, last_block_reponse])
+                .unwrap()
+        };
+        asserter.push_success(&get_pool_tokens_response);
 
         let mut factory = MockFactoryIndexing::new();
         factory
@@ -712,14 +911,14 @@ mod tests {
             .returning(|_, _, _| future::ready(Ok(None)).boxed());
 
         let pool_info_fetcher = PoolInfoFetcher {
-            vault: BalancerV2Vault::at(&web3, vault.address()),
+            vault,
             factory,
             token_infos: Arc::new(MockTokenInfoFetching::new()),
         };
         let pool_info = weighted::PoolInfo {
             common: PoolInfo {
                 id: Default::default(),
-                address: pool.address(),
+                address: pool.address().into_legacy(),
                 tokens: Default::default(),
                 scaling_factors: Default::default(),
                 block_created: Default::default(),
@@ -728,9 +927,8 @@ mod tests {
         };
 
         let pool_status = {
-            let block = web3.eth().block_number().await.unwrap();
             pool_info_fetcher
-                .fetch_pool(&pool_info, block.into())
+                .fetch_pool(&pool_info, BlockId::Number(BlockNumber::Number(1.into())))
                 .await
                 .unwrap()
         };
@@ -746,7 +944,10 @@ mod tests {
             .returning(|_| hashmap! {});
 
         let pool_info_fetcher = PoolInfoFetcher {
-            vault: dummy_contract!(BalancerV2Vault, H160([0xba; 20])),
+            vault: BalancerV2Vault::Instance::new(
+                H160([0xba; 20]).into_alloy(),
+                ethrpc::mock::web3().alloy,
+            ),
             factory: MockFactoryIndexing::new(),
             token_infos: Arc::new(token_infos),
         };
@@ -769,7 +970,10 @@ mod tests {
         });
 
         let pool_info_fetcher = PoolInfoFetcher {
-            vault: dummy_contract!(BalancerV2Vault, H160([0xba; 20])),
+            vault: BalancerV2Vault::Instance::new(
+                H160([0xba; 20]).into_alloy(),
+                ethrpc::mock::web3().alloy,
+            ),
             factory: MockFactoryIndexing::new(),
             token_infos: Arc::new(token_infos),
         };
