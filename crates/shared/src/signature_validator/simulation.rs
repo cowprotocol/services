@@ -9,7 +9,6 @@ use {
     contracts::{ERC1271SignatureValidator, errors::EthcontractErrorType},
     ethcontract::Bytes,
     ethrpc::Web3,
-    futures::future,
     primitive_types::{H160, U256},
     tracing::instrument,
 };
@@ -44,7 +43,7 @@ impl Validator {
     /// pre-interactions
     async fn simulate_without_pre_interactions(
         &self,
-        check: &SignatureCheck,
+        check: SignatureCheck,
     ) -> Result<(), SignatureValidationError> {
         // Since there are no interactions (no dynamic conditions / complex pre-state
         // change), the order's validity can be directly determined by whether
@@ -68,7 +67,7 @@ impl Validator {
     #[instrument(skip_all, fields(interactions_len = check.interactions.len()))]
     async fn simulate(
         &self,
-        check: &SignatureCheck,
+        check: SignatureCheck,
     ) -> Result<Simulation, SignatureValidationError> {
         // We simulate the signature verification from the Settlement contract's
         // context. This allows us to check:
@@ -79,11 +78,11 @@ impl Validator {
             (self.settlement.address(), self.vault_relayer),
             check.signer,
             Bytes(check.hash),
-            Bytes(check.signature.clone()),
+            Bytes(check.signature),
             check
                 .interactions
-                .iter()
-                .map(|i| (i.target, i.value, Bytes(i.call_data.clone())))
+                .into_iter()
+                .map(|i| (i.target, i.value, Bytes(i.call_data)))
                 .collect(),
         );
         let gas_cost_call = self
@@ -99,7 +98,6 @@ impl Validator {
             .await
             .map_err(|_| SignatureValidationError::Invalid);
 
-        tracing::trace!(?check, ?result, "simulated signature");
         Ok(Simulation { gas_used: result? })
     }
 }
@@ -107,19 +105,15 @@ impl Validator {
 #[async_trait::async_trait]
 impl SignatureValidating for Validator {
     #[instrument(skip_all)]
-    async fn validate_signatures(
+    async fn validate_signature(
         &self,
-        checks: Vec<SignatureCheck>,
-    ) -> Vec<Result<(), SignatureValidationError>> {
-        future::join_all(checks.into_iter().map(|check| async move {
-            if check.interactions.is_empty() {
-                self.simulate_without_pre_interactions(&check).await?;
-            } else {
-                self.simulate(&check).await?;
-            }
-            Ok(())
-        }))
-        .await
+        check: SignatureCheck,
+    ) -> Result<(), SignatureValidationError> {
+        if check.interactions.is_empty() {
+            self.simulate_without_pre_interactions(check).await
+        } else {
+            self.simulate(check).await.map(|_| ())
+        }
     }
 
     async fn validate_signature_and_get_additional_gas(
@@ -127,7 +121,7 @@ impl SignatureValidating for Validator {
         check: SignatureCheck,
     ) -> Result<u64, SignatureValidationError> {
         Ok(self
-            .simulate(&check)
+            .simulate(check)
             .await?
             .gas_used
             .try_into()

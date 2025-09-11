@@ -21,7 +21,7 @@ contracts = { workspace = true, features = ["test-util"] }
 database = { workspace = true }
 driver = { workspace = true }
 ethcontract = { workspace = true }
-ethrpc = { workspace = true }
+ethrpc = { workspace = true, features = ["test-util"] }
 futures = { workspace = true }
 hex = { workspace = true }
 hex-literal = { workspace = true }
