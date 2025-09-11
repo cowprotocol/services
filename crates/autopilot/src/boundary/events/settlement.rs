@@ -1,12 +1,40 @@
 use {
     crate::{database::Postgres, domain::settlement},
     anyhow::Result,
+    ethcontract::{H256, contract::AllEventsBuilder},
     ethrpc::block_stream::RangeInclusive,
-    shared::{event_handling::EventStoring, impl_event_retrieving},
+    hex_literal::hex,
+    shared::event_handling::{EventRetrieving, EventStoring},
 };
 
-impl_event_retrieving! {
-    pub GPv2SettlementContract for contracts::gpv2_settlement
+const SETTLEMENT: H256 = H256(hex!(
+    "40338ce1a7c49204f0099533b1e9a7ee0a3d261f84974ab7af36105b8c4e9db4"
+));
+const TRADE: H256 = H256(hex!(
+    "a07a543ab8a018198e99ca0184c93fe9050a79400a0a723441f84de1d972cc17"
+));
+const ORDER_INVALIDATED: H256 = H256(hex!(
+    "875b6cb035bbd4ac6500fabc6d1e4ca5bdc58a3e2b424ccb5c24cdbebeb009a9"
+));
+const PRE_SIGNATURE: H256 = H256(hex!(
+    "01bf7c8b0ca55deecbea89d7e58295b7ffbf685fd0d96801034ba8c6ffe1c68d"
+));
+
+static RELEVANT_EVENTS: &[H256] = &[SETTLEMENT, TRADE, ORDER_INVALIDATED, PRE_SIGNATURE];
+
+pub struct GPv2SettlementContract(pub contracts::GPv2Settlement);
+
+impl EventRetrieving for GPv2SettlementContract {
+    type Event = contracts::gpv2_settlement::Event;
+
+    fn get_events(
+        &self,
+    ) -> ethcontract::contract::AllEventsBuilder<ethcontract::dyns::DynTransport, Self::Event> {
+        let mut events =
+            AllEventsBuilder::new(self.0.raw_instance().web3().clone(), self.0.address(), None);
+        events.filter = events.filter.topic0(RELEVANT_EVENTS.to_vec().into());
+        events
+    }
 }
 
 pub struct Indexer {

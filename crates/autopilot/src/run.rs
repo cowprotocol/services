@@ -444,9 +444,7 @@ pub async fn run(args: Arguments) {
         }
     };
     let settlement_event_indexer = EventUpdater::new(
-        boundary::events::settlement::GPv2SettlementContract::new(
-            eth.contracts().settlement().clone(),
-        ),
+        boundary::events::settlement::GPv2SettlementContract(eth.contracts().settlement().clone()),
         boundary::events::settlement::Indexer::new(
             db.clone(),
             settlement_observer,
