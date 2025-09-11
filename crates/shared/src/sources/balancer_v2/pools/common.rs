@@ -114,6 +114,7 @@ impl<Factory> PoolInfoFetcher<Factory> {
         pool: &PoolInfo,
         block: BlockId,
     ) -> BoxFuture<'static, Result<PoolState>> {
+        let block = block.into_alloy();
         let pool_address = pool.address;
         let pool_id = pool.id;
         let vault = self.vault.clone();
@@ -123,7 +124,7 @@ impl<Factory> PoolInfoFetcher<Factory> {
         let fetch_paused = async move {
             pool_contract_paused
                 .getPausedState()
-                .block(block.into_alloy())
+                .block(block)
                 .call()
                 .await
                 .map(|result| result.paused)
@@ -131,14 +132,14 @@ impl<Factory> PoolInfoFetcher<Factory> {
         let fetch_swap_fee = async move {
             pool_contract_fee
                 .getSwapFeePercentage()
-                .block(block.into_alloy())
+                .block(block)
                 .call()
                 .await
         };
         let pool_tokens = async move {
             vault
                 .getPoolTokens(pool_id.0.into())
-                .block(block.into_alloy())
+                .block(block)
                 .call()
                 .await
         };

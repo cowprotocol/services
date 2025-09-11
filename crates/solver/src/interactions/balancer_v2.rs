@@ -1,8 +1,8 @@
 use {
+    alloy::primitives::U256,
     contracts::{GPv2Settlement, alloy::BalancerV2Vault},
     ethcontract::{Bytes, H256},
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
-    primitive_types::U256,
     shared::{
         http_solver::model::TokenAmount,
         interaction::{EncodedInteraction, Interaction},
@@ -47,7 +47,7 @@ impl BalancerSwapGivenOutInteraction {
                 single_swap,
                 funds,
                 self.asset_in_max.amount.into_alloy(),
-                (*NEVER).into_alloy(),
+                *NEVER,
             )
             .calldata()
             .clone();
