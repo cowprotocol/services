@@ -699,6 +699,14 @@ fn main() {
                 },
             )
             .add_network(
+                POLYGON,
+                Network {
+                    address: addr("0xE39B5e3B6D74016b2F6A9673D7d7493B6DF549d5"),
+                    // <https://polygonscan.com/tx/0x0b74f5c230f9b7df8c7a7f0d1ebd5e6c3fab51a67a9bcc8f05c350180041682e>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(30988035)),
+                },
+            )
+            .add_network(
                 AVALANCHE,
                 Network {
                     address: addr("0xC128468b7Ce63eA702C1f104D55A2566b13D3ABD"),
