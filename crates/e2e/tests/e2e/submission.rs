@@ -1,6 +1,8 @@
 use {
+    ::alloy::primitives::U256,
     e2e::{nodes::local_node::TestNodeApi, setup::*, tx, tx_value},
     ethcontract::{BlockId, H160, H256},
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::{Stream, StreamExt},
     model::{
         order::{OrderCreation, OrderKind},
@@ -52,12 +54,16 @@ async fn test_cancel_on_expiry(web3: Web3) {
         .expect("Must be able to disable automine");
 
     tracing::info!("Placing order");
-    let balance = token.balance_of(trader.address()).call().await.unwrap();
-    assert_eq!(balance, 0.into());
+    let balance = token
+        .balanceOf(trader.address().into_alloy())
+        .call()
+        .await
+        .unwrap();
+    assert_eq!(balance, U256::ZERO);
     let order = OrderCreation {
         sell_token: onchain.contracts().weth.address(),
         sell_amount: to_wei(2),
-        buy_token: token.address(),
+        buy_token: token.address().into_legacy(),
         buy_amount: to_wei(1),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Buy,

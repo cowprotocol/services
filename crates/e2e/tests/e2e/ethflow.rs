@@ -1,11 +1,32 @@
 use {
     anyhow::bail,
     autopilot::database::onchain_order_events::ethflow_events::WRAP_ALL_SELECTOR,
-    contracts::{CoWSwapEthFlow, ERC20Mintable, WETH9},
+    contracts::{CoWSwapEthFlow, WETH9, alloy::ERC20Mintable},
     database::order_events::OrderEventLabel,
-    e2e::{nodes::local_node::TestNodeApi, setup::*, tx, tx_value},
+    e2e::{
+        nodes::local_node::TestNodeApi,
+        setup::{
+            ACCOUNT_ENDPOINT,
+            API_HOST,
+            Contracts,
+            OnchainComponents,
+            Services,
+            TIMEOUT,
+            TRADES_ENDPOINT,
+            TestAccount,
+            run_test,
+            to_wei,
+            wait_for_condition,
+        },
+        tx,
+        tx_value,
+    },
     ethcontract::{Account, Bytes, H160, H256, U256, transaction::TransactionResult},
-    ethrpc::{Web3, block_stream::timestamp_of_current_block_in_seconds},
+    ethrpc::{
+        Web3,
+        alloy::conversions::{IntoAlloy, IntoLegacy},
+        block_stream::timestamp_of_current_block_in_seconds,
+    },
     hex_literal::hex,
     model::{
         DomainSeparator,
@@ -81,7 +102,7 @@ async fn eth_flow_tx(web3: Web3) {
         .await;
 
     // Get a quote from the services
-    let buy_token = dai.address();
+    let buy_token = dai.address().into_legacy();
     let receiver = H160([0x42; 20]);
     let sell_amount = to_wei(1);
     let intent = EthFlowTradeIntent {
@@ -94,8 +115,9 @@ async fn eth_flow_tx(web3: Web3) {
     services.start_protocol(solver).await;
 
     let approve_call_data = {
-        let bytes = dai.approve(trader.address(), to_wei(10)).tx.data.unwrap();
-        format!("0x{}", hex::encode(&bytes.0))
+        let call_builder = dai.approve(trader.address().into_alloy(), to_wei(10).into_alloy());
+        let calldata = call_builder.calldata();
+        format!("0x{}", hex::encode(calldata))
     };
 
     let hash = services
@@ -122,7 +144,7 @@ async fn eth_flow_tx(web3: Web3) {
          }}
     }}
 }}"#,
-                dai.address(),
+                dai.address().into_legacy(),
                 approve_call_data,
                 onchain.contracts().weth.address(),
                 approve_call_data,
@@ -197,11 +219,11 @@ async fn eth_flow_tx(web3: Web3) {
     // which proofs that the interactions were correctly sandboxed.
     let trampoline = onchain.contracts().hooks.address();
     let allowance = dai
-        .allowance(trampoline, trader.address())
+        .allowance(trampoline.into_alloy(), trader.address().into_alloy())
         .call()
         .await
         .unwrap();
-    assert_eq!(allowance, to_wei(10));
+    assert_eq!(allowance, to_wei(10).into_alloy());
 
     let allowance = onchain
         .contracts()
@@ -216,11 +238,11 @@ async fn eth_flow_tx(web3: Web3) {
     // able to set an allowance on behalf of the settlement contract.
     let settlement = onchain.contracts().gp_settlement.address();
     let allowance = dai
-        .allowance(settlement, trader.address())
+        .allowance(settlement.into_alloy(), trader.address().into_alloy())
         .call()
         .await
         .unwrap();
-    assert_eq!(allowance, 0.into());
+    assert_eq!(allowance, alloy::primitives::U256::ZERO);
 
     let allowance = onchain
         .contracts()
@@ -250,7 +272,7 @@ async fn eth_flow_without_quote(web3: Web3) {
         + timestamp_of_current_block_in_seconds(&web3).await.unwrap()
         + 3600;
     let ethflow_order = ExtendedEthFlowOrder(EthflowOrder {
-        buy_token: dai.address(),
+        buy_token: dai.address().into_legacy(),
         sell_amount: to_wei(1),
         buy_amount: 1.into(),
         valid_to,
@@ -302,7 +324,7 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
             &services,
             &(EthFlowTradeIntent {
                 sell_amount: 42.into(),
-                buy_token: dai.address(),
+                buy_token: dai.address().into_legacy(),
                 receiver: H160([42; 20]),
             })
             .to_quote_request(dummy_trader.account().address(), &onchain.contracts().weth),
@@ -328,7 +350,7 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
         .await;
 
     // Create the actual order that should be picked up by the services and matched.
-    let buy_token = dai.address();
+    let buy_token = dai.address().into_legacy();
     let receiver = H160([0x42; 20]);
     let sell_amount = to_wei(1);
     let valid_to = chrono::offset::Utc::now().timestamp() as u32
@@ -478,14 +500,17 @@ async fn test_trade_availability_in_api(
 
 async fn test_order_was_settled(ethflow_order: &ExtendedEthFlowOrder, web3: &Web3) {
     wait_for_condition(TIMEOUT, || async {
-        let buy_token = ERC20Mintable::at(web3, ethflow_order.0.buy_token);
+        let buy_token = ERC20Mintable::Instance::new(
+            ethflow_order.0.buy_token.into_alloy(),
+            web3.alloy.clone(),
+        );
         let receiver_buy_token_balance = buy_token
-            .balance_of(ethflow_order.0.receiver)
+            .balanceOf(ethflow_order.0.receiver.into_alloy())
             .call()
             .await
             .expect("Unable to get token balance");
 
-        receiver_buy_token_balance >= ethflow_order.0.buy_amount
+        receiver_buy_token_balance >= ethflow_order.0.buy_amount.into_alloy()
     })
     .await
     .unwrap();
@@ -817,7 +842,7 @@ async fn eth_flow_zero_buy_amount(web3: Web3) {
             + timestamp_of_current_block_in_seconds(&web3).await.unwrap()
             + 3600;
         let ethflow_order = ExtendedEthFlowOrder(EthflowOrder {
-            buy_token: dai.address(),
+            buy_token: dai.address().into_legacy(),
             sell_amount: to_wei(1),
             buy_amount: buy_amount.into(),
             valid_to,

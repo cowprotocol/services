@@ -1,6 +1,8 @@
 use {
+    ::alloy::primitives::U256,
     driver::domain::eth::NonZeroU256,
     e2e::{nodes::local_node::TestNodeApi, setup::*, tx, tx_value},
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::{
         order::{OrderCreation, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
@@ -55,7 +57,7 @@ async fn place_order_with_quote(web3: Web3) {
     let quote_request = OrderQuoteRequest {
         from: trader.address(),
         sell_token: onchain.contracts().weth.address(),
-        buy_token: token.address(),
+        buy_token: token.address().into_legacy(),
         side: OrderQuoteSide::Sell {
             sell_amount: SellAmount::BeforeFee {
                 value: NonZeroU256::try_from(quote_sell_amount).unwrap(),
@@ -74,13 +76,17 @@ async fn place_order_with_quote(web3: Web3) {
     tracing::debug!(?quote_metadata);
 
     tracing::info!("Placing order");
-    let balance = token.balance_of(trader.address()).call().await.unwrap();
-    assert_eq!(balance, 0.into());
+    let balance = token
+        .balanceOf(trader.address().into_alloy())
+        .call()
+        .await
+        .unwrap();
+    assert_eq!(balance, U256::ZERO);
     let order = OrderCreation {
         quote_id: quote_response.id,
         sell_token: onchain.contracts().weth.address(),
         sell_amount: quote_sell_amount,
-        buy_token: token.address(),
+        buy_token: token.address().into_legacy(),
         buy_amount: quote_response.quote.buy_amount,
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,

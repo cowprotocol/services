@@ -7,8 +7,15 @@ use {
         },
         tests::{self, boundary, cases::EtherExt},
     },
+    alloy::{primitives::U256, signers::local::PrivateKeySigner},
     ethcontract::PrivateKey,
-    ethrpc::Web3,
+    ethrpc::{
+        Web3,
+        alloy::{
+            CallBuilderExt,
+            conversions::{IntoAlloy, IntoLegacy},
+        },
+    },
     futures::Future,
     secp256k1::SecretKey,
     serde_json::json,
@@ -33,7 +40,7 @@ pub struct Blockchain {
     pub trader_secret_key: SecretKey,
     pub web3: Web3,
     pub web3_url: String,
-    pub tokens: HashMap<&'static str, contracts::ERC20Mintable>,
+    pub tokens: HashMap<&'static str, contracts::alloy::ERC20Mintable::Instance>,
     pub weth: contracts::WETH9,
     pub settlement: contracts::GPv2Settlement,
     pub balances: contracts::support::Balances,
@@ -211,14 +218,16 @@ impl Blockchain {
         // TODO All these various deployments that are happening from the trader account
         // should be happening from the primary_account of the node, will do this
         // later
-
         let node = Node::new(&config.rpc_args).await;
-        let web3 = Web3::new_from_url(&node.url());
+        let mut web3 = Web3::new_from_url(&node.url());
 
+        let private_key = config.main_trader_secret_key.as_ref();
         let main_trader_account = ethcontract::Account::Offline(
-            ethcontract::PrivateKey::from_slice(config.main_trader_secret_key.as_ref()).unwrap(),
+            ethcontract::PrivateKey::from_slice(private_key).unwrap(),
             None,
         );
+        let signer = PrivateKeySigner::from_slice(private_key).unwrap();
+        web3.wallet.register_signer(signer);
 
         // Use the primary account to fund the trader, cow amm and the solver with ETH.
         let balance = web3
@@ -397,8 +406,11 @@ impl Blockchain {
             .unwrap();
 
             if !config.balance.is_zero() {
+                let private_key = config.private_key.as_ref();
+                let signer = PrivateKeySigner::from_slice(private_key).unwrap();
+                web3.wallet.register_signer(signer);
                 let trader_account = ethcontract::Account::Offline(
-                    ethcontract::PrivateKey::from_slice(config.private_key.as_ref()).unwrap(),
+                    ethcontract::PrivateKey::from_slice(private_key).unwrap(),
                     None,
                 );
                 trader_accounts.push(trader_account);
@@ -412,25 +424,32 @@ impl Blockchain {
         let mut tokens = HashMap::new();
         for pool in config.pools.iter() {
             if pool.reserve_a.token != "WETH" && !tokens.contains_key(pool.reserve_a.token) {
-                let token = wait_for(
-                    &web3,
-                    contracts::ERC20Mintable::builder(&web3)
-                        .from(main_trader_account.clone())
-                        .deploy(),
-                )
+                let token = wait_for(&web3, async {
+                    contracts::alloy::ERC20Mintable::Instance::deploy_builder(web3.alloy.clone())
+                        .deploy()
+                        .await
+                        .map(|contract_address| {
+                            contracts::alloy::ERC20Mintable::Instance::new(
+                                contract_address,
+                                web3.alloy.clone(),
+                            )
+                        })
+                })
                 .await
                 .unwrap();
+
                 tokens.insert(pool.reserve_a.token, token);
             }
             if pool.reserve_b.token != "WETH" && !tokens.contains_key(pool.reserve_b.token) {
-                let token = wait_for(
-                    &web3,
-                    contracts::ERC20Mintable::builder(&web3)
-                        .from(main_trader_account.clone())
-                        .deploy(),
-                )
-                .await
-                .unwrap();
+                let contract_address =
+                    contracts::alloy::ERC20Mintable::Instance::deploy_builder(web3.alloy.clone())
+                        .deploy()
+                        .await
+                        .unwrap();
+                let token = contracts::alloy::ERC20Mintable::Instance::new(
+                    contract_address,
+                    web3.alloy.clone(),
+                );
                 tokens.insert(pool.reserve_b.token, token);
             }
         }
@@ -452,12 +471,20 @@ impl Blockchain {
             let token_a = if pool.reserve_a.token == "WETH" {
                 weth.address()
             } else {
-                tokens.get(pool.reserve_a.token).unwrap().address()
+                tokens
+                    .get(pool.reserve_a.token)
+                    .unwrap()
+                    .address()
+                    .into_legacy()
             };
             let token_b = if pool.reserve_b.token == "WETH" {
                 weth.address()
             } else {
-                tokens.get(pool.reserve_b.token).unwrap().address()
+                tokens
+                    .get(pool.reserve_b.token)
+                    .unwrap()
+                    .address()
+                    .into_legacy()
             };
             // Create the pair.
             wait_for(
@@ -514,54 +541,53 @@ impl Blockchain {
             } else {
                 for trader_account in trader_accounts.iter() {
                     let vault_relayer = settlement.vault_relayer().call().await.unwrap();
-                    wait_for(
-                        &web3,
-                        tokens
-                            .get(pool.reserve_a.token)
-                            .unwrap()
-                            .approve(vault_relayer, ethcontract::U256::max_value())
-                            .from(trader_account.clone())
-                            .send(),
-                    )
-                    .await
-                    .unwrap();
+
+                    tokens
+                        .get(pool.reserve_a.token)
+                        .unwrap()
+                        .approve(vault_relayer.into_alloy(), U256::MAX)
+                        .from(trader_account.address().into_alloy())
+                        .send_and_watch()
+                        .await
+                        .unwrap();
                 }
 
-                wait_for(
-                    &web3,
-                    tokens
-                        .get(pool.reserve_a.token)
-                        .unwrap()
-                        .mint(pair.address(), pool.reserve_a.amount)
-                        .from(main_trader_account.clone())
-                        .send(),
-                )
-                .await
-                .unwrap();
-                wait_for(
-                    &web3,
-                    tokens
-                        .get(pool.reserve_a.token)
-                        .unwrap()
-                        .mint(settlement.address(), pool.reserve_a.amount)
-                        .from(main_trader_account.clone())
-                        .send(),
-                )
-                .await
-                .unwrap();
-
-                for trader_account in trader_accounts.iter() {
-                    wait_for(
-                        &web3,
-                        tokens
-                            .get(pool.reserve_a.token)
-                            .unwrap()
-                            .mint(trader_account.address(), pool.reserve_a.amount)
-                            .from(main_trader_account.clone())
-                            .send(),
+                tokens
+                    .get(pool.reserve_a.token)
+                    .unwrap()
+                    .mint(
+                        pair.address().into_alloy(),
+                        pool.reserve_a.amount.into_alloy(),
                     )
+                    .from(main_trader_account.address().into_alloy())
+                    .send_and_watch()
                     .await
                     .unwrap();
+
+                tokens
+                    .get(pool.reserve_a.token)
+                    .unwrap()
+                    .mint(
+                        settlement.address().into_alloy(),
+                        pool.reserve_a.amount.into_alloy(),
+                    )
+                    .from(main_trader_account.address().into_alloy())
+                    .send_and_watch()
+                    .await
+                    .unwrap();
+
+                for trader_account in trader_accounts.iter() {
+                    tokens
+                        .get(pool.reserve_a.token)
+                        .unwrap()
+                        .mint(
+                            trader_account.address().into_alloy(),
+                            pool.reserve_a.amount.into_alloy(),
+                        )
+                        .from(main_trader_account.address().into_alloy())
+                        .send_and_watch()
+                        .await
+                        .unwrap();
                 }
             }
             if pool.reserve_b.token == "WETH" {
@@ -594,53 +620,49 @@ impl Blockchain {
             } else {
                 for trader_account in trader_accounts.iter() {
                     let vault_relayer = settlement.vault_relayer().call().await.unwrap();
-                    wait_for(
-                        &web3,
-                        tokens
-                            .get(pool.reserve_b.token)
-                            .unwrap()
-                            .approve(vault_relayer, ethcontract::U256::max_value())
-                            .from(trader_account.clone())
-                            .send(),
-                    )
-                    .await
-                    .unwrap();
+                    tokens
+                        .get(pool.reserve_b.token)
+                        .unwrap()
+                        .approve(vault_relayer.into_alloy(), U256::MAX)
+                        .from(trader_account.address().into_alloy())
+                        .send_and_watch()
+                        .await
+                        .unwrap();
                 }
-
-                wait_for(
-                    &web3,
-                    tokens
-                        .get(pool.reserve_b.token)
-                        .unwrap()
-                        .mint(pair.address(), pool.reserve_b.amount)
-                        .from(main_trader_account.clone())
-                        .send(),
-                )
-                .await
-                .unwrap();
-                wait_for(
-                    &web3,
-                    tokens
-                        .get(pool.reserve_b.token)
-                        .unwrap()
-                        .mint(settlement.address(), pool.reserve_b.amount)
-                        .from(main_trader_account.clone())
-                        .send(),
-                )
-                .await
-                .unwrap();
-                for trader_account in trader_accounts.iter() {
-                    wait_for(
-                        &web3,
-                        tokens
-                            .get(pool.reserve_b.token)
-                            .unwrap()
-                            .mint(trader_account.address(), pool.reserve_b.amount)
-                            .from(main_trader_account.clone())
-                            .send(),
+                tokens
+                    .get(pool.reserve_b.token)
+                    .unwrap()
+                    .mint(
+                        pair.address().into_alloy(),
+                        pool.reserve_b.amount.into_alloy(),
                     )
+                    .from(main_trader_account.address().into_alloy())
+                    .send_and_watch()
                     .await
                     .unwrap();
+                tokens
+                    .get(pool.reserve_b.token)
+                    .unwrap()
+                    .mint(
+                        settlement.address().into_alloy(),
+                        pool.reserve_b.amount.into_alloy(),
+                    )
+                    .from(main_trader_account.address().into_alloy())
+                    .send_and_watch()
+                    .await
+                    .unwrap();
+                for trader_account in trader_accounts.iter() {
+                    tokens
+                        .get(pool.reserve_b.token)
+                        .unwrap()
+                        .mint(
+                            trader_account.address().into_alloy(),
+                            pool.reserve_b.amount.into_alloy(),
+                        )
+                        .from(main_trader_account.address().into_alloy())
+                        .send_and_watch()
+                        .await
+                        .unwrap();
                 }
             }
             wait_for(
@@ -791,35 +813,29 @@ impl Blockchain {
             if order.sell_token == "WETH" {
                 todo!("deposit trader funds into the weth contract, none of the tests do this yet")
             } else if order.funded {
-                wait_for(
-                    &self.web3,
-                    self.tokens
-                        .get(order.sell_token)
-                        .unwrap()
-                        .mint(
-                            trader_account.address(),
-                            "1e-7".ether().into_wei() * execution.sell,
-                        )
-                        .from(trader_account.clone())
-                        .send(),
-                )
-                .await
-                .unwrap();
+                self.tokens
+                    .get(order.sell_token)
+                    .unwrap()
+                    .mint(
+                        trader_account.address().into_alloy(),
+                        ("1e-7".ether().into_wei() * execution.sell).into_alloy(),
+                    )
+                    .from(trader_account.address().into_alloy())
+                    .send_and_watch()
+                    .await
+                    .unwrap();
             }
 
             // Approve the tokens needed for the solution.
             let vault_relayer = self.settlement.vault_relayer().call().await.unwrap();
-            wait_for(
-                &self.web3,
-                self.tokens
-                    .get(order.sell_token)
-                    .unwrap()
-                    .approve(vault_relayer, ethcontract::U256::max_value())
-                    .from(trader_account.clone())
-                    .send(),
-            )
-            .await
-            .unwrap();
+            self.tokens
+                .get(order.sell_token)
+                .unwrap()
+                .approve(vault_relayer.into_alloy(), U256::MAX)
+                .from(trader_account.address().into_alloy())
+                .send_and_watch()
+                .await
+                .unwrap();
 
             // Create the interactions fulfilling the order.
             let transfer_interaction = sell_token
@@ -899,7 +915,7 @@ impl Blockchain {
         match token {
             "WETH" => self.weth.address(),
             "ETH" => eth::ETH_TOKEN.into(),
-            _ => self.tokens.get(token).unwrap().address(),
+            _ => self.tokens.get(token).unwrap().address().into_legacy(),
         }
     }
 
@@ -908,7 +924,7 @@ impl Blockchain {
     pub fn get_token_wrapped(&self, token: &str) -> eth::H160 {
         match token {
             "WETH" | "ETH" => self.weth.address(),
-            _ => self.tokens.get(token).unwrap().address(),
+            _ => self.tokens.get(token).unwrap().address().into_legacy(),
         }
     }
 
