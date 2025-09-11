@@ -41,7 +41,7 @@ maplit = { workspace = true }
 testlib = { workspace = true }
 
 [features]
-test-util = ["alloy/signer-mnemonic"]
+test-util = []
 
 [lints]
 workspace = true
