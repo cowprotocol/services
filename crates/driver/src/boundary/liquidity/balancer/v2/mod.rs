@@ -12,12 +12,15 @@ use {
         BalancerV2ComposableStablePoolFactory,
         BalancerV2LiquidityBootstrappingPoolFactory,
         BalancerV2StablePoolFactoryV2,
-        BalancerV2Vault,
         BalancerV2WeightedPoolFactory,
         BalancerV2WeightedPoolFactoryV3,
         GPv2Settlement,
+        alloy::BalancerV2Vault,
     },
-    ethrpc::block_stream::{BlockRetrieving, CurrentBlockWatcher},
+    ethrpc::{
+        alloy::conversions::IntoAlloy,
+        block_stream::{BlockRetrieving, CurrentBlockWatcher},
+    },
     shared::{
         http_solver::model::TokenAmount,
         sources::balancer_v2::{
@@ -56,7 +59,7 @@ fn to_interaction(
         // also baked into the Balancer V2 logic in the `shared` crate, so to
         // change this assumption, we would need to change it there as well.
         GPv2Settlement::at(&web3, receiver.0),
-        BalancerV2Vault::at(&web3, pool.vault.into()),
+        BalancerV2Vault::Instance::new(pool.vault.0.into_alloy(), ethrpc::mock::web3().alloy),
         Allowances::empty(receiver.0),
     );
 
@@ -107,7 +110,7 @@ async fn init_liquidity(
 ) -> Result<impl LiquidityCollecting + use<>> {
     let web3 = eth.web3().clone();
     let contracts = BalancerContracts {
-        vault: BalancerV2Vault::at(&web3, config.vault.into()),
+        vault: BalancerV2Vault::Instance::new(config.vault.0.into_alloy(), web3.alloy.clone()),
         factories: [
             config
                 .weighted
