@@ -28,26 +28,12 @@ fn rpc(url: &str) -> RpcClient {
         .http(url.parse().unwrap())
 }
 
-pub fn provider(url: &str) -> AlloyProvider {
-    let rpc = rpc(url);
-    ProviderBuilder::new()
-        // will query the node for the nonce every time that it is needed
-        // adds overhead but makes working with alloy/ethcontract at the same time much simpler
-        .with_simple_nonce_management()
-        .connect_client(rpc)
-        .erased()
-}
-
-/// Creates a provider just like [`provider`] does,
-/// but will add the testing Anvil keys to the wallet and said wallet to the
-/// provider.
+/// Creates a provider with the provided URL and an empty [`MutWallet`].
 ///
-/// Returns the provider and the [`MutWallet`] so the caller can register
-/// new signers.
-pub fn anvil_provider(url: &str) -> (AlloyProvider, MutWallet) {
-    let wallet = MutWallet::anvil_wallet();
+/// Returns a copy of the [`MutWallet`] so the caller can modify it later.
+pub fn provider(url: &str) -> (AlloyProvider, MutWallet) {
     let rpc = rpc(url);
-
+    let wallet = MutWallet::default();
     let provider = ProviderBuilder::new()
         .wallet(wallet.clone())
         // will query the node for the nonce every time that it is needed

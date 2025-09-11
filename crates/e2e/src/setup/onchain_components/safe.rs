@@ -33,11 +33,8 @@ pub struct Infrastructure {
 
 impl Infrastructure {
     pub async fn new(provider: AlloyProvider) -> Self {
-        let first_account = *provider.get_accounts().await.unwrap().first().unwrap();
-
         let singleton = {
             let deployed_address = GnosisSafe::Instance::deploy_builder(provider.clone())
-                .from(first_account)
                 .deploy()
                 .await
                 .unwrap();
@@ -46,7 +43,6 @@ impl Infrastructure {
         let fallback = {
             let deployed_address =
                 GnosisSafeCompatibilityFallbackHandler::Instance::deploy_builder(provider.clone())
-                    .from(first_account)
                     .deploy()
                     .await
                     .unwrap();
@@ -58,7 +54,6 @@ impl Infrastructure {
         let factory = {
             let deployed_address =
                 GnosisSafeProxyFactory::Instance::deploy_builder(provider.clone())
-                    .from(first_account)
                     .deploy()
                     .await
                     .unwrap();

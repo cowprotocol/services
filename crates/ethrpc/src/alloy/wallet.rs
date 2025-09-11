@@ -1,19 +1,20 @@
 use {
     alloy::{
         consensus::{TxEnvelope, TypedTransaction},
-        network::{EthereumWallet, Network, NetworkWallet, TxSigner},
+        network::{Ethereum, EthereumWallet, Network, NetworkWallet, TxSigner},
         primitives::Address,
-        signers::{
-            Signature,
-            local::{MnemonicBuilder, coins_bip39::English},
-        },
+        signers::Signature,
         transports::impl_future,
     },
     std::{sync::Arc, thread},
     tokio::sync::RwLock,
 };
 
-#[derive(Debug, Clone)]
+/// A mutable version of [`EthereumWallet`], cheaply cloneable (through
+/// [`Arc`]).
+///
+/// Requires a tokio runtime to be present, otherwise operations will panic.
+#[derive(Debug, Clone, Default)]
 pub struct MutWallet(Arc<RwLock<EthereumWallet>>);
 
 impl MutWallet {
@@ -23,7 +24,74 @@ impl MutWallet {
 }
 
 impl MutWallet {
+    /// Calls the inner [`EthereumWallet`]'s
+    /// [`register_signer`](EthereumWallet::register_signer), if no default
+    /// signer has been setup (i.e. the wallet was created using
+    /// [`MutWallet::default`]) it will register one.
+    pub fn register_signer<S>(&mut self, signer: S)
+    where
+        S: TxSigner<Signature> + Send + Sync + 'static,
+    {
+        self.handle_blocking_operation(move |wallet| {
+            // If the wallet is created using MutWallet::default(), there will not be
+            // default signer; this stops us from *not* using `.from` (since it
+            // is filled with the default signer). At the same time, we can't
+            // constantly register new default signers, because it breaks the caller's
+            // expectations. As such, if the current default signer address is
+            // the default address (0x000...000) we register the signer as the
+            // default one.
+            let register_default = {
+                let r_lock = wallet.0.blocking_read();
+                let default_address =
+                    <EthereumWallet as NetworkWallet<Ethereum>>::default_signer_address(&r_lock);
+
+                default_address == Address::default()
+            };
+
+            let mut w_lock = wallet.0.blocking_write();
+            if register_default {
+                w_lock.register_default_signer(signer);
+            } else {
+                w_lock.register_signer(signer);
+            }
+        });
+    }
+
+    /// Handles blocking operations such as the
+    /// [`blocking_read`](RwLock::blocking_read)
+    /// and [`blocking_write`](RwLock::blocking_write).
+    ///
+    /// This function *will panic* in case there is no runtime present, or the
+    /// runtime flavor is not `current_thread` or `multi_thread`.
+    // This function is necessary to handle the blocking lock operations under
+    // required by synchronous function calls which are problematic when the runtime
+    // flavour is `current_thread` (which will panic when blocked by certain
+    // operations).
+    fn handle_blocking_operation<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(Self) -> R + Send + 'static,
+        R: Send + 'static,
+    {
+        let wallet = self.clone();
+        let rt = tokio::runtime::Handle::current();
+
+        match rt.runtime_flavor() {
+            tokio::runtime::RuntimeFlavor::CurrentThread => thread::spawn(move || f(wallet))
+                .join()
+                .expect("failed to join thread"),
+            tokio::runtime::RuntimeFlavor::MultiThread => {
+                tokio::task::block_in_place(move || f(wallet))
+            }
+            _ => panic!("unsupported runtime flavor"),
+        }
+    }
+
+    /// Creates a [`MutWallet`], pre-registering Anvil's default mnemonic and
+    /// first 10 derived keys.
+    #[cfg(feature = "test-util")]
     pub fn anvil_wallet() -> Self {
+        use alloy::signers::local::{MnemonicBuilder, coins_bip39::English};
+
         let phrase = "test test test test test test test test test test test junk";
         let mut signers = (0..10).map(|i| {
             MnemonicBuilder::<English>::default()
@@ -41,19 +109,6 @@ impl MutWallet {
 
         Self::new(wallet)
     }
-
-    pub fn register_signer<S>(&mut self, signer: S)
-    where
-        S: TxSigner<Signature> + Send + Sync + 'static,
-    {
-        let wallet = self.0.clone();
-        thread::spawn(move || {
-            let mut w_lock = wallet.blocking_write();
-            w_lock.register_signer(signer);
-        })
-        .join()
-        .expect("failed to join spawned thread")
-    }
 }
 
 impl<N> NetworkWallet<N> for MutWallet
@@ -64,36 +119,27 @@ where
     /// in [`NetworkWallet::sign_transaction_from`] when no specific signer is
     /// specified.
     fn default_signer_address(&self) -> Address {
-        let wallet = self.0.clone();
-        thread::spawn(move || {
-            let r_lock = wallet.blocking_read();
+        self.handle_blocking_operation(|wallet| {
+            let r_lock = wallet.0.blocking_read();
             <EthereumWallet as NetworkWallet<N>>::default_signer_address(&r_lock)
         })
-        .join()
-        .expect("failed to join the thread")
     }
 
     /// Return true if the signer contains a credential for the given address.
     fn has_signer_for(&self, address: &Address) -> bool {
         let address = *address;
-        let wallet = self.0.clone();
-        thread::spawn(move || {
-            let r_lock = wallet.blocking_read();
+        self.handle_blocking_operation(move |wallet| {
+            let r_lock = wallet.0.blocking_read();
             <EthereumWallet as NetworkWallet<N>>::has_signer_for(&r_lock, &address)
         })
-        .join()
-        .expect("failed to join the thread")
     }
 
     /// Return an iterator of all signer addresses.
     fn signer_addresses(&self) -> impl Iterator<Item = Address> {
-        let wallet = self.0.clone();
-        thread::spawn(move || {
-            let r_lock = wallet.blocking_read();
+        self.handle_blocking_operation(move |wallet| {
+            let r_lock = wallet.0.blocking_read();
             <EthereumWallet as NetworkWallet<N>>::signer_addresses(&r_lock).collect::<Vec<_>>()
         })
-        .join()
-        .expect("failed to join the thread")
         .into_iter()
     }
 

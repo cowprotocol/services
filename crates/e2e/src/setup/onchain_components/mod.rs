@@ -287,11 +287,8 @@ impl OnchainComponents {
         assert_eq!(res.len(), N);
 
         for account in &res {
-            self.web3
-                .wallet
-                .as_mut()
-                .expect("wallet must be setup for tests")
-                .register_signer(PrivateKeySigner::from_slice(account.private_key()).unwrap());
+            let signer = PrivateKeySigner::from_slice(account.private_key()).unwrap();
+            self.web3.wallet.register_signer(signer);
 
             self.send_wei(account.address(), with_wei).await;
         }
@@ -307,8 +304,6 @@ impl OnchainComponents {
         for solver in &solvers {
             self.web3
                 .wallet
-                .as_mut()
-                .expect("wallet must be setup for tests")
                 .register_signer(PrivateKeySigner::from_slice(solver.private_key()).unwrap());
 
             self.contracts
