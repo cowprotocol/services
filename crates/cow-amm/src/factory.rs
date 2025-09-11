@@ -1,8 +1,8 @@
 use {
     contracts::cow_amm_legacy_helper::Event as CowAmmEvent,
     ethcontract::{Address, H256, contract::AllEventsBuilder, dyns::DynAllEventsBuilder},
-    ethrpc::{Web3, block_stream::RangeInclusive},
-    shared::event_handling::{EthcontractEventQueryBuilder, EventRetrieving, EventStream},
+    ethrpc::Web3,
+    shared::event_handling::EthcontractEventRetrieving,
 };
 
 const AMM_DEPLOYED_TOPIC: H256 = H256(hex_literal::hex!(
@@ -14,32 +14,12 @@ pub(crate) struct Factory {
     pub(crate) address: Address,
 }
 
-impl EthcontractEventQueryBuilder for Factory {
+impl EthcontractEventRetrieving for Factory {
     type Event = CowAmmEvent;
 
     fn get_events(&self) -> DynAllEventsBuilder<Self::Event> {
         let mut events = AllEventsBuilder::new(self.web3.legacy.clone(), self.address, None);
         events.filter = events.filter.topic0(Some(AMM_DEPLOYED_TOPIC).into());
         events
-    }
-}
-
-#[async_trait::async_trait]
-impl EventRetrieving for Factory {
-    type Event = ethcontract::Event<CowAmmEvent>;
-
-    async fn get_events_by_block_hash(&self, block_hash: H256) -> anyhow::Result<Vec<Self::Event>> {
-        self.get_events_by_block_hash_default(block_hash).await
-    }
-
-    async fn get_events_by_block_range(
-        &self,
-        block_range: &RangeInclusive<u64>,
-    ) -> anyhow::Result<EventStream<Self::Event>> {
-        self.get_events_by_block_range_default(block_range).await
-    }
-
-    fn address(&self) -> Vec<ethcontract::Address> {
-        self.address_default()
     }
 }

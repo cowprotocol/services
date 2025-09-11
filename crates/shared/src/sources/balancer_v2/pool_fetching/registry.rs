@@ -4,12 +4,7 @@
 use {
     super::{internal::InternalPoolFetching, pool_storage::PoolStorage},
     crate::{
-        event_handling::{
-            EthcontractEventQueryBuilder,
-            EventHandler,
-            EventRetrieving,
-            EventStream,
-        },
+        event_handling::{EthcontractEventRetrieving, EventHandler},
         maintenance::Maintaining,
         recent_block_cache::Block,
         sources::balancer_v2::pools::{
@@ -28,14 +23,13 @@ use {
     ethcontract::{BlockId, H256, Instance, dyns::DynAllEventsBuilder, errors::MethodError},
     ethrpc::{
         Web3Transport,
-        block_stream::{BlockNumberHash, BlockRetrieving, RangeInclusive},
+        block_stream::{BlockNumberHash, BlockRetrieving},
     },
     futures::future,
     hex_literal::hex,
     model::TokenPair,
     std::{collections::HashSet, sync::Arc},
     tokio::sync::Mutex,
-    web3::types::Address,
 };
 
 pub struct BasePoolFactoryContract(BalancerV2BasePoolFactory);
@@ -44,33 +38,13 @@ const POOL_CREATED_TOPIC: H256 = H256(hex!(
     "83a48fbcfc991335314e74d0496aab6a1987e992ddc85dddbcc4d6dd6ef2e9fc"
 ));
 
-impl EthcontractEventQueryBuilder for BasePoolFactoryContract {
+impl EthcontractEventRetrieving for BasePoolFactoryContract {
     type Event = balancer_v2_base_pool_factory::Event;
 
     fn get_events(&self) -> DynAllEventsBuilder<balancer_v2_base_pool_factory::Event> {
         let mut events = self.0.all_events();
         events.filter = events.filter.topic0(POOL_CREATED_TOPIC.into());
         events
-    }
-}
-
-#[async_trait::async_trait]
-impl EventRetrieving for BasePoolFactoryContract {
-    type Event = ethcontract::Event<balancer_v2_base_pool_factory::Event>;
-
-    async fn get_events_by_block_hash(&self, block_hash: H256) -> Result<Vec<Self::Event>> {
-        self.get_events_by_block_hash_default(block_hash).await
-    }
-
-    async fn get_events_by_block_range(
-        &self,
-        block_range: &RangeInclusive<u64>,
-    ) -> Result<EventStream<Self::Event>> {
-        self.get_events_by_block_range_default(block_range).await
-    }
-
-    fn address(&self) -> Vec<Address> {
-        self.address_default()
     }
 }
 

@@ -2,20 +2,9 @@
 //! contract.
 
 use {
-    ethcontract::{
-        H160,
-        H256,
-        contract::AllEventsBuilder,
-        dyns::DynAllEventsBuilder,
-        jsonrpc::futures_util::TryStreamExt,
-    },
-    ethrpc::block_stream::RangeInclusive,
+    ethcontract::{H160, H256, contract::AllEventsBuilder, dyns::DynAllEventsBuilder},
     hex_literal::hex,
-    shared::{
-        ethrpc::Web3,
-        event_handling::{EthcontractEventQueryBuilder, EventRetrieving, EventStream},
-    },
-    web3::types::Address,
+    shared::{ethrpc::Web3, event_handling::EthcontractEventRetrieving},
 };
 
 const ORDER_REFUND_TOPIC: H256 = H256(hex!(
@@ -37,7 +26,7 @@ impl EthFlowRefundRetriever {
     }
 }
 
-impl EthcontractEventQueryBuilder for EthFlowRefundRetriever {
+impl EthcontractEventRetrieving for EthFlowRefundRetriever {
     type Event = contracts::cowswap_eth_flow::Event;
 
     fn get_events(&self) -> DynAllEventsBuilder<Self::Event> {
@@ -49,25 +38,5 @@ impl EthcontractEventQueryBuilder for EthFlowRefundRetriever {
         // the query more efficient.
         events.filter = events.filter.topic0(vec![ORDER_REFUND_TOPIC].into());
         events
-    }
-}
-
-#[async_trait::async_trait]
-impl EventRetrieving for EthFlowRefundRetriever {
-    type Event = ethcontract::Event<contracts::cowswap_eth_flow::Event>;
-
-    async fn get_events_by_block_hash(&self, block_hash: H256) -> anyhow::Result<Vec<Self::Event>> {
-        self.get_events_by_block_hash_default(block_hash).await
-    }
-
-    async fn get_events_by_block_range(
-        &self,
-        block_range: &RangeInclusive<u64>,
-    ) -> anyhow::Result<EventStream<Self::Event>> {
-        self.get_events_by_block_range_default(block_range).await
-    }
-
-    fn address(&self) -> Vec<Address> {
-        self.address_default()
     }
 }

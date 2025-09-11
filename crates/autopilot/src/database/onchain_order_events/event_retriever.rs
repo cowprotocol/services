@@ -1,13 +1,8 @@
 use {
     contracts::cowswap_onchain_orders,
     ethcontract::{H160, H256, contract::AllEventsBuilder, dyns::DynAllEventsBuilder},
-    ethrpc::block_stream::RangeInclusive,
     hex_literal::hex,
-    shared::{
-        ethrpc::Web3,
-        event_handling::{EthcontractEventQueryBuilder, EventRetrieving, EventStream},
-    },
-    web3::types::Address,
+    shared::{ethrpc::Web3, event_handling::EthcontractEventRetrieving},
 };
 
 const ORDER_PLACEMENT_TOPIC: H256 = H256(hex!(
@@ -41,7 +36,7 @@ impl CoWSwapOnchainOrdersContract {
     }
 }
 
-impl EthcontractEventQueryBuilder for CoWSwapOnchainOrdersContract {
+impl EthcontractEventRetrieving for CoWSwapOnchainOrdersContract {
     type Event = cowswap_onchain_orders::Event;
 
     fn get_events(&self) -> DynAllEventsBuilder<Self::Event> {
@@ -56,25 +51,5 @@ impl EthcontractEventQueryBuilder for CoWSwapOnchainOrdersContract {
             .filter
             .topic0(ALL_VALID_ONCHAIN_ORDER_TOPICS.to_vec().into());
         events
-    }
-}
-
-#[async_trait::async_trait]
-impl EventRetrieving for CoWSwapOnchainOrdersContract {
-    type Event = ethcontract::Event<cowswap_onchain_orders::Event>;
-
-    async fn get_events_by_block_hash(&self, block_hash: H256) -> anyhow::Result<Vec<Self::Event>> {
-        self.get_events_by_block_hash_default(block_hash).await
-    }
-
-    async fn get_events_by_block_range(
-        &self,
-        block_range: &RangeInclusive<u64>,
-    ) -> anyhow::Result<EventStream<Self::Event>> {
-        self.get_events_by_block_range_default(block_range).await
-    }
-
-    fn address(&self) -> Vec<Address> {
-        self.address_default()
     }
 }

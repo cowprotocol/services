@@ -83,27 +83,36 @@ pub trait EventStoring<Event>: Send + Sync {
 
 pub type EventStream<T> = Pin<Box<dyn Stream<Item = Result<T>> + Send>>;
 
+/// Defines an interface for retrieving events from a `ethcontract` crate
+/// contract. Should be removed once fully migrated to alloy.
+pub trait EthcontractEventRetrieving {
+    type Event: ethcontract::contract::ParseLog + 'static;
+
+    fn get_events(&self) -> DynAllEventsBuilder<Self::Event>;
+}
+
 /// Common `ethcontract` crate-related event retrieval patterns are extracted to
 /// this trait to avoid code duplication and any dependencies on the
 /// `ethcontract` crate in the main event handling traits. This will be removed
 /// once fully migrated to alloy.
 #[async_trait::async_trait]
-pub trait EthcontractEventQueryBuilder {
-    type Event: ethcontract::contract::ParseLog + 'static;
+impl<T> EventRetrieving for T
+where
+    T: EthcontractEventRetrieving + Send + Sync,
+{
+    type Event = ethcontract::Event<T::Event>;
 
-    fn get_events(&self) -> DynAllEventsBuilder<Self::Event>;
-
-    async fn get_events_by_block_hash_default(
+    async fn get_events_by_block_hash(
         &self,
         block_hash: ethcontract::H256,
-    ) -> Result<Vec<ethcontract::Event<Self::Event>>> {
+    ) -> Result<Vec<Self::Event>> {
         Ok(self.get_events().block_hash(block_hash).query().await?)
     }
 
-    async fn get_events_by_block_range_default(
+    async fn get_events_by_block_range(
         &self,
         block_range: &RangeInclusive<u64>,
-    ) -> Result<EventStream<ethcontract::Event<Self::Event>>> {
+    ) -> Result<EventStream<Self::Event>> {
         let stream = self
             .get_events()
             .from_block((*block_range.start()).into())
@@ -116,7 +125,7 @@ pub trait EthcontractEventQueryBuilder {
         Ok(Box::pin(stream))
     }
 
-    fn address_default(&self) -> Vec<ethcontract::Address> {
+    fn address(&self) -> Vec<ethcontract::Address> {
         self.get_events().filter.address
     }
 }
@@ -626,37 +635,11 @@ macro_rules! impl_event_retrieving {
             }
         }
 
-        #[::async_trait::async_trait]
-        impl $crate::event_handling::EventRetrieving for $name {
-            type Event = ::ethcontract::Event<$($contract_module)*::Event>;
+        impl $crate::event_handling::EthcontractEventRetrieving for $name {
+            type Event = $($contract_module)*::Event;
 
-            async fn get_events_by_block_hash(
-                &self,
-                block_hash: ::ethcontract::H256,
-            ) -> ::anyhow::Result<Vec<::ethcontract::Event<$($contract_module)*::Event>>> {
-                Ok(self.0.all_events().block_hash(block_hash).query().await?)
-            }
-
-            async fn get_events_by_block_range(
-                &self,
-                block_range: &::ethrpc::block_stream::RangeInclusive<u64>,
-            ) -> ::anyhow::Result<$crate::event_handling::EventStream<::ethcontract::Event<$($contract_module)*::Event>>> {
-                use ::futures::TryStreamExt;
-
-                let stream = self.0
-                    .all_events()
-                    .from_block((*block_range.start()).into())
-                    .to_block((*block_range.end()).into())
-                    .block_page_size(500)
-                    .query_paginated()
-                    .await?
-                    .map_err(::anyhow::Error::from);
-
-                Ok(::std::boxed::Box::pin(stream))
-            }
-
-            fn address(&self) -> Vec<::ethcontract::Address> {
-                self.0.all_events().filter.address
+            fn get_events(&self) -> ::ethcontract::dyns::DynAllEventsBuilder<Self::Event> {
+                self.0.all_events()
             }
         }
     };

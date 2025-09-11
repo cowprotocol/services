@@ -1,10 +1,5 @@
 use {
-    crate::event_handling::{
-        EthcontractEventQueryBuilder,
-        EventRetrieving,
-        EventStoring,
-        EventStream,
-    },
+    crate::event_handling::{EthcontractEventRetrieving, EventStoring},
     anyhow::{Context, Result},
     contracts::{
         UniswapV3Pool,
@@ -81,7 +76,7 @@ impl ParseLog for UniswapV3Event {
 
 pub struct UniswapV3PoolEventFetcher(pub Web3);
 
-impl EthcontractEventQueryBuilder for UniswapV3PoolEventFetcher {
+impl EthcontractEventRetrieving for UniswapV3PoolEventFetcher {
     type Event = UniswapV3Event;
 
     fn get_events(&self) -> DynAllEventsBuilder<Self::Event> {
@@ -92,26 +87,6 @@ impl EthcontractEventQueryBuilder for UniswapV3PoolEventFetcher {
             .address(vec![])
             .topic0(events_signatures.into());
         events
-    }
-}
-
-#[async_trait::async_trait]
-impl EventRetrieving for UniswapV3PoolEventFetcher {
-    type Event = ethcontract::Event<UniswapV3Event>;
-
-    async fn get_events_by_block_hash(&self, block_hash: H256) -> Result<Vec<Self::Event>> {
-        self.get_events_by_block_hash_default(block_hash).await
-    }
-
-    async fn get_events_by_block_range(
-        &self,
-        block_range: &RangeInclusive<u64>,
-    ) -> Result<EventStream<Self::Event>> {
-        self.get_events_by_block_range_default(block_range).await
-    }
-
-    fn address(&self) -> Vec<ethcontract::Address> {
-        self.address_default()
     }
 }
 
