@@ -88,7 +88,7 @@ impl<Factory> PoolInfoFetcher<Factory> {
     ) -> Result<PoolInfo> {
         let pool = self.base_pool_at(pool_address);
 
-        let pool_id = pool.getPoolId().call().await?.into_alloy();
+        let pool_id = pool.getPoolId().call().await?.into_legacy();
         let tokens = self
             .vault
             .getPoolTokens(pool_id.0.into())
@@ -135,7 +135,7 @@ impl<Factory> PoolInfoFetcher<Factory> {
                 .call()
                 .await
         };
-        let fetch_balances = async move {
+        let pool_tokens = async move {
             vault
                 .getPoolTokens(pool_id.0.into())
                 .block(block.into_alloy())
@@ -150,7 +150,7 @@ impl<Factory> PoolInfoFetcher<Factory> {
         let pool = pool.clone();
         async move {
             let (paused, swap_fee, pool_tokens) =
-                futures::try_join!(fetch_paused, fetch_swap_fee, fetch_balances)?;
+                futures::try_join!(fetch_paused, fetch_swap_fee, pool_tokens)?;
             let swap_fee = Bfp::from_wei(swap_fee.into_legacy());
 
             let balances = pool_tokens.balances;
@@ -440,7 +440,7 @@ mod tests {
         assert_eq!(
             pool_info,
             PoolInfo {
-                id: pool_id.into_alloy(),
+                id: pool_id.into_legacy(),
                 address: pool.address().into_legacy(),
                 tokens: tokens.to_vec(),
                 scaling_factors: vec![Bfp::exp10(0), Bfp::exp10(0), Bfp::exp10(12)],
