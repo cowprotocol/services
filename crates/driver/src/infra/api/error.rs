@@ -22,6 +22,7 @@ enum Kind {
     QuoteSameTokens,
     FailedToSubmit,
     NoValidOrders,
+    MalformedRequest,
 }
 
 #[derive(Debug, Serialize)]
@@ -55,6 +56,7 @@ impl From<Kind> for (hyper::StatusCode, axum::Json<Error>) {
             Kind::FailedToSubmit => "Could not submit the solution to the blockchain",
             Kind::TooManyPendingSettlements => "Settlement queue is full",
             Kind::NoValidOrders => "No valid orders found in the auction",
+            Kind::MalformedRequest => "Could not parse the request",
         };
         (
             hyper::StatusCode::BAD_REQUEST,
@@ -89,6 +91,7 @@ impl From<competition::Error> for (hyper::StatusCode, axum::Json<Error>) {
             competition::Error::SubmissionError => Kind::FailedToSubmit,
             competition::Error::TooManyPendingSettlements => Kind::TooManyPendingSettlements,
             competition::Error::NoValidOrdersFound => Kind::NoValidOrders,
+            competition::Error::MalformedRequest => Kind::MalformedRequest,
         };
         error.into()
     }

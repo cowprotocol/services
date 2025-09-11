@@ -52,7 +52,6 @@ include_contracts! {
     AaveFlashLoanSolverWrapper;
     BalancerQueries;
     BalancerV2Authorizer;
-    BalancerV2BasePool;
     BalancerV2BasePoolFactory;
     BalancerV2ComposableStablePool;
     BalancerV2ComposableStablePoolFactory;
