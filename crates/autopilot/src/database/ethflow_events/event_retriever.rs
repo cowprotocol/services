@@ -13,7 +13,7 @@ use {
     hex_literal::hex,
     shared::{
         ethrpc::Web3,
-        event_handling::{EventRetrieving, EventStream},
+        event_handling::{EthcontractEventQueryBuilder, EventRetrieving, EventStream},
     },
     web3::types::Address,
 };
@@ -35,8 +35,12 @@ impl EthFlowRefundRetriever {
         );
         Self { web3, addresses }
     }
+}
 
-    fn get_events(&self) -> DynAllEventsBuilder<contracts::cowswap_eth_flow::Event> {
+impl EthcontractEventQueryBuilder for EthFlowRefundRetriever {
+    type Event = contracts::cowswap_eth_flow::Event;
+
+    fn get_events(&self) -> DynAllEventsBuilder<Self::Event> {
         let mut events = AllEventsBuilder::new(self.web3.legacy.clone(), H160::default(), None);
         // We want to observe multiple addresses for events.
         events.filter = events.filter.address(self.addresses.clone());
@@ -52,30 +56,18 @@ impl EthFlowRefundRetriever {
 impl EventRetrieving for EthFlowRefundRetriever {
     type Event = ethcontract::Event<contracts::cowswap_eth_flow::Event>;
 
-    async fn get_events_by_block_hash(
-        &self,
-        block_hash: H256,
-    ) -> anyhow::Result<Vec<ethcontract::Event<contracts::cowswap_eth_flow::Event>>> {
-        Ok(self.get_events().block_hash(block_hash).query().await?)
+    async fn get_events_by_block_hash(&self, block_hash: H256) -> anyhow::Result<Vec<Self::Event>> {
+        self.get_events_by_block_hash_default(block_hash).await
     }
 
     async fn get_events_by_block_range(
         &self,
         block_range: &RangeInclusive<u64>,
-    ) -> anyhow::Result<EventStream<ethcontract::Event<contracts::cowswap_eth_flow::Event>>> {
-        let stream = self
-            .get_events()
-            .from_block((*block_range.start()).into())
-            .to_block((*block_range.end()).into())
-            .block_page_size(500)
-            .query_paginated()
-            .await?
-            .map_err(anyhow::Error::from);
-
-        Ok(Box::pin(stream))
+    ) -> anyhow::Result<EventStream<Self::Event>> {
+        self.get_events_by_block_range_default(block_range).await
     }
 
     fn address(&self) -> Vec<Address> {
-        self.get_events().filter.address
+        self.address_default()
     }
 }

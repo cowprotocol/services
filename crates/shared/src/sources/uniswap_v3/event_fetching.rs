@@ -84,7 +84,7 @@ pub struct UniswapV3PoolEventFetcher(pub Web3);
 impl EthcontractEventQueryBuilder for UniswapV3PoolEventFetcher {
     type Event = UniswapV3Event;
 
-    fn get_events(&self) -> DynAllEventsBuilder<UniswapV3Event> {
+    fn get_events(&self) -> DynAllEventsBuilder<Self::Event> {
         let mut events = DynAllEventsBuilder::new(self.0.legacy.clone(), H160::default(), None);
         let events_signatures = vec![H256(SWAP_TOPIC), H256(BURN_TOPIC), H256(MINT_TOPIC)];
         events.filter = events
@@ -99,17 +99,14 @@ impl EthcontractEventQueryBuilder for UniswapV3PoolEventFetcher {
 impl EventRetrieving for UniswapV3PoolEventFetcher {
     type Event = ethcontract::Event<UniswapV3Event>;
 
-    async fn get_events_by_block_hash(
-        &self,
-        block_hash: H256,
-    ) -> Result<Vec<ethcontract::Event<UniswapV3Event>>> {
+    async fn get_events_by_block_hash(&self, block_hash: H256) -> Result<Vec<Self::Event>> {
         self.get_events_by_block_hash_default(block_hash).await
     }
 
     async fn get_events_by_block_range(
         &self,
         block_range: &RangeInclusive<u64>,
-    ) -> Result<EventStream<ethcontract::Event<UniswapV3Event>>> {
+    ) -> Result<EventStream<Self::Event>> {
         self.get_events_by_block_range_default(block_range).await
     }
 

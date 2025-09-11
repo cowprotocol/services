@@ -58,17 +58,14 @@ impl EthcontractEventQueryBuilder for BasePoolFactoryContract {
 impl EventRetrieving for BasePoolFactoryContract {
     type Event = ethcontract::Event<balancer_v2_base_pool_factory::Event>;
 
-    async fn get_events_by_block_hash(
-        &self,
-        block_hash: H256,
-    ) -> Result<Vec<ethcontract::Event<balancer_v2_base_pool_factory::Event>>> {
+    async fn get_events_by_block_hash(&self, block_hash: H256) -> Result<Vec<Self::Event>> {
         self.get_events_by_block_hash_default(block_hash).await
     }
 
     async fn get_events_by_block_range(
         &self,
         block_range: &RangeInclusive<u64>,
-    ) -> Result<EventStream<ethcontract::Event<balancer_v2_base_pool_factory::Event>>> {
+    ) -> Result<EventStream<Self::Event>> {
         self.get_events_by_block_range_default(block_range).await
     }
 

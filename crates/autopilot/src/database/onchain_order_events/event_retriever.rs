@@ -44,7 +44,7 @@ impl CoWSwapOnchainOrdersContract {
 impl EthcontractEventQueryBuilder for CoWSwapOnchainOrdersContract {
     type Event = cowswap_onchain_orders::Event;
 
-    fn get_events(&self) -> DynAllEventsBuilder<cowswap_onchain_orders::Event> {
+    fn get_events(&self) -> DynAllEventsBuilder<Self::Event> {
         let mut events = AllEventsBuilder::new(self.web3.legacy.clone(), H160::default(), None);
         // We want to observe multiple addresses for events.
         events.filter = events.filter.address(self.addresses.clone());
@@ -63,17 +63,14 @@ impl EthcontractEventQueryBuilder for CoWSwapOnchainOrdersContract {
 impl EventRetrieving for CoWSwapOnchainOrdersContract {
     type Event = ethcontract::Event<cowswap_onchain_orders::Event>;
 
-    async fn get_events_by_block_hash(
-        &self,
-        block_hash: H256,
-    ) -> anyhow::Result<Vec<ethcontract::Event<cowswap_onchain_orders::Event>>> {
+    async fn get_events_by_block_hash(&self, block_hash: H256) -> anyhow::Result<Vec<Self::Event>> {
         self.get_events_by_block_hash_default(block_hash).await
     }
 
     async fn get_events_by_block_range(
         &self,
         block_range: &RangeInclusive<u64>,
-    ) -> anyhow::Result<EventStream<ethcontract::Event<cowswap_onchain_orders::Event>>> {
+    ) -> anyhow::Result<EventStream<Self::Event>> {
         self.get_events_by_block_range_default(block_range).await
     }
 

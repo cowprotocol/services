@@ -17,7 +17,7 @@ pub(crate) struct Factory {
 impl EthcontractEventQueryBuilder for Factory {
     type Event = CowAmmEvent;
 
-    fn get_events(&self) -> DynAllEventsBuilder<CowAmmEvent> {
+    fn get_events(&self) -> DynAllEventsBuilder<Self::Event> {
         let mut events = AllEventsBuilder::new(self.web3.legacy.clone(), self.address, None);
         events.filter = events.filter.topic0(Some(AMM_DEPLOYED_TOPIC).into());
         events
@@ -28,17 +28,14 @@ impl EthcontractEventQueryBuilder for Factory {
 impl EventRetrieving for Factory {
     type Event = ethcontract::Event<CowAmmEvent>;
 
-    async fn get_events_by_block_hash(
-        &self,
-        block_hash: H256,
-    ) -> anyhow::Result<Vec<ethcontract::Event<CowAmmEvent>>> {
+    async fn get_events_by_block_hash(&self, block_hash: H256) -> anyhow::Result<Vec<Self::Event>> {
         self.get_events_by_block_hash_default(block_hash).await
     }
 
     async fn get_events_by_block_range(
         &self,
         block_range: &RangeInclusive<u64>,
-    ) -> anyhow::Result<EventStream<ethcontract::Event<CowAmmEvent>>> {
+    ) -> anyhow::Result<EventStream<Self::Event>> {
         self.get_events_by_block_range_default(block_range).await
     }
 
