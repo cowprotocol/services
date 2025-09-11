@@ -47,6 +47,32 @@ crate::bindings!(GnosisSafeCompatibilityFallbackHandler);
 crate::bindings!(GnosisSafeProxy);
 crate::bindings!(GnosisSafeProxyFactory);
 
+crate::bindings!(BalancerV2BasePool);
+crate::bindings!(
+    BalancerV2Vault,
+    crate::deployments! {
+        // <https://etherscan.io/tx/0x28c44bb10d469cbd42accf97bd00b73eabbace138e9d44593e851231fbed1cb7>
+        MAINNET => (address!("0xBA12222222228d8Ba445958a75a0704d566BF2C8"), 12272146),
+        // <https://gnosisscan.io/tx/0x21947751661e1b9197492f22779af1f5175b71dc7057869e5a8593141d40edf1>
+        GNOSIS => (address!("0xBA12222222228d8Ba445958a75a0704d566BF2C8"), 24821598),
+        // <https://sepolia.etherscan.io/tx/0xb22509c6725dd69a975ecb96a0c594901eeee6a279cc66d9d5191022a7039ee6>
+        SEPOLIA => (address!("0xBA12222222228d8Ba445958a75a0704d566BF2C8"), 3418831),
+        // <https://arbiscan.io/tx/0xe2c3826bd7b15ef8d338038769fe6140a44f1957a36b0f27ab321ab6c68d5a8e>
+        ARBITRUM_ONE => (address!("0xBA12222222228d8Ba445958a75a0704d566BF2C8"), 222832),
+        // <https://basescan.org/tx/0x0dc2e3d436424f2f038774805116896d31828c0bf3795a6901337bdec4e0dff6>
+        BASE => (address!("0xBA12222222228d8Ba445958a75a0704d566BF2C8"), 1196036),
+        // <https://snowscan.xyz/tx/0xc49af0372feb032e0edbba6988410304566b1fd65546c01ced620ac3c934120f>
+        AVALANCHE => (address!("0xBA12222222228d8Ba445958a75a0704d566BF2C8"), 26386141),
+        // <https://bscscan.com/tx/0x1de8caa6c54ff9a25600e26d80865d84c9cc4d33c2b98611240529ee7de5cd74>
+        BNB => (address!("0xBA12222222228d8Ba445958a75a0704d566BF2C8"), 22691002),
+        // <https://optimistic.etherscan.io/tx/0xa03cb990595df9eed6c5db17a09468cab534aed5f5589a06c0bb3d19dd2f7ce9>
+        OPTIMISM => (address!("0xBA12222222228d8Ba445958a75a0704d566BF2C8"), 7003431),
+        // <https://polygonscan.com/tx/0x66f275a2ed102a5b679c0894ced62c4ebcb2a65336d086a916eb83bd1fe5c8d2>
+        POLYGON => (address!("0xBA12222222228d8Ba445958a75a0704d566BF2C8"), 15832990),
+        // Not available on Lens
+    }
+);
+
 pub use alloy::providers::DynProvider as Provider;
 
 /// Extension trait to attach some useful functions to the contract instance.

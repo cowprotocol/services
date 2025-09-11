@@ -41,11 +41,11 @@ use {
         BalancerV2LiquidityBootstrappingPoolFactory,
         BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory,
         BalancerV2StablePoolFactoryV2,
-        BalancerV2Vault,
         BalancerV2WeightedPool2TokensFactory,
         BalancerV2WeightedPoolFactory,
         BalancerV2WeightedPoolFactoryV3,
         BalancerV2WeightedPoolFactoryV4,
+        alloy::{BalancerV2Vault, InstanceExt},
     },
     ethcontract::{BlockId, H160, H256, Instance, dyns::DynInstance},
     ethrpc::block_stream::{BlockRetrieving, CurrentBlockWatcher},
@@ -225,14 +225,14 @@ impl BalancerFactoryKind {
 
 /// All balancer related contracts that we expect to exist.
 pub struct BalancerContracts {
-    pub vault: BalancerV2Vault,
+    pub vault: BalancerV2Vault::Instance,
     pub factories: Vec<(BalancerFactoryKind, DynInstance)>,
 }
 
 impl BalancerContracts {
     pub async fn try_new(web3: &Web3, factory_kinds: Vec<BalancerFactoryKind>) -> Result<Self> {
         let web3 = ethrpc::instrumented::instrument_with_label(web3, "balancerV2".into());
-        let vault = BalancerV2Vault::deployed(&web3)
+        let vault = BalancerV2Vault::Instance::deployed(&web3.alloy)
             .await
             .context("Cannot retrieve balancer vault")?;
 
@@ -463,7 +463,7 @@ async fn create_aggregate_pool_fetcher(
 /// Helper method for creating a boxed `InternalPoolFetching` instance for the
 /// specified factory and parameters.
 fn create_internal_pool_fetcher<Factory>(
-    vault: BalancerV2Vault,
+    vault: BalancerV2Vault::Instance,
     factory: Factory,
     block_retriever: Arc<dyn BlockRetrieving>,
     token_infos: Arc<dyn TokenInfoFetching>,

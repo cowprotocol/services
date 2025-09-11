@@ -400,5 +400,5 @@ async fn fill_or_kill_zeroex_limit_order(
         .watch()
         .await?;
 
-    Ok(tx_hash.into_alloy())
+    Ok(tx_hash.into_legacy())
 }
