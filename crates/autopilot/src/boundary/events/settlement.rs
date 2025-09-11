@@ -16,7 +16,7 @@ impl EventRetrieving for GPv2SettlementContract {
     ) -> ethcontract::contract::AllEventsBuilder<ethcontract::dyns::DynTransport, Self::Event> {
         let mut events =
             AllEventsBuilder::new(self.0.raw_instance().web3().clone(), self.0.address(), None);
-        events.filter = events.filter.topic0(
+        events.filter = events.filter.address(vec![self.0.address()]).topic0(
             vec![
                 contracts::gpv2_settlement::event_data::Settlement::signature(),
                 contracts::gpv2_settlement::event_data::Trade::signature(),
