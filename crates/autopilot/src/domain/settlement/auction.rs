@@ -2,10 +2,15 @@
 
 use {
     crate::domain::{self},
+    serde::Deserialize,
     std::collections::{HashMap, HashSet},
 };
 
-#[derive(Debug)]
+/// Auction data that is relevant for processing a specific onchain
+/// transaction. e.g. `prices` will contain only prices for tokens
+/// that were actually traded in the transaction - not ALL the prices
+/// that were provided in the original auction.
+#[derive(Debug, Deserialize)]
 pub struct Auction {
     pub id: domain::auction::Id,
     /// The block on top of which the auction was created.

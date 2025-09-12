@@ -2,7 +2,7 @@ use {
     crate::{
         boundary,
         database::{Postgres, order_events::store_order_events},
-        domain::{self, eth},
+        domain::{self, eth, settlement::transaction::EncodedTrade},
         infra::persistence::dto::AuctionId,
     },
     anyhow::Context,
@@ -26,6 +26,7 @@ use {
         SigningScheme as DomainSigningScheme,
     },
     futures::{StreamExt, TryStreamExt},
+    itertools::Itertools,
     number::conversions::{big_decimal_to_u256, u256_to_big_decimal, u256_to_big_uint},
     primitive_types::H256,
     shared::db_order_conversions::full_order_into_model_order,
@@ -320,7 +321,7 @@ impl Persistence {
     }
 
     /// Get auction data.
-    pub async fn get_auction(
+    pub async fn get_auction_original(
         &self,
         auction_id: domain::auction::Id,
     ) -> Result<domain::settlement::Auction, error::Auction> {
@@ -437,6 +438,125 @@ impl Persistence {
             prices,
             surplus_capturing_jit_order_owners,
         })
+    }
+
+    /// Similar to get_auction but this function only returns data that is
+    /// relevant for the passed in orders.
+    pub async fn get_auction(
+        &self,
+        trades: &[EncodedTrade],
+        auction_id: AuctionId,
+    ) -> Result<domain::settlement::Auction, error::Auction> {
+        const QUERY: &str = r#"
+WITH
+    -- only the native prices of tokens that were traded
+    prices AS (
+        SELECT '0x' || encode(token, 'hex') as token, price::text
+        FROM auction_prices
+        WHERE auction_id = $1
+          AND token = ANY($2)
+    ),
+
+    -- only jit order owners that traded in the settlement
+    jit_owners AS (
+        -- only keep owners that traded in the auction
+        SELECT ARRAY (
+            SELECT unnest(owners)
+            INTERSECT
+            SELECT unnest($3)
+        ) as addresses
+        FROM surplus_capturing_jit_order_owners
+        WHERE auction_id = $1
+    ),
+
+    -- only fee policies of orders that were settled
+    fee_policies_json AS (
+        SELECT json_agg(
+            CASE fp.kind
+            WHEN 'surplus' THEN
+                jsonb_build_object(
+                    'factor', fp.surplus_factor,
+                    'max_volume_factor', fp.surplus_max_volume_factor
+                )
+
+            WHEN 'volume' THEN
+                jsonb_build_object(
+                    'factor', fp.volume_factor
+                )
+
+            WHEN 'priceimprovement' THEN
+                jsonb_build_object(
+                    'factor', fp.price_improvement_factor,
+                    'max_volume_factor', fp.price_improvement_max_volume_factor,
+                    'quote', jsonb_build_object(
+                        'sell_amount', oq.sell_amount::text,
+                        'buy_amount', oq.buy_amount::text,
+                        'fee', trunc(oq.gas_amount * oq.gas_price / oq.sell_token_price)::text,
+                        'solver', '0x' || encode(oq.solver, 'hex')
+                    )
+                )
+            END
+            ) as fee_policy,
+            encode(fp.order_uid, 'hex') as order_uid
+        FROM fee_policies fp
+        LEFT JOIN order_quotes oq ON oq.order_uid = fp.order_uid
+            AND fp.kind = 'priceimprovement'
+        WHERE fp.auction_id = $1
+          AND fp.order_uid = ANY($4)
+        GROUP BY fp.order_uid
+    ),
+
+    -- start block of the auction
+    competition AS (
+        SELECT json->>'auctionStartBlock' AS block
+        FROM solver_competitions
+        WHERE id = $1
+    )
+
+    -- assemble final JSON response
+    SELECT jsonb_build_object(
+        'id', $1,
+        'prices', (SELECT coalesce(jsonb_object_agg(token, price), '{}') FROM prices),
+        'block', (SELECT block::int from competition),
+        'orders', (SELECT coalesce(jsonb_object_agg(fpj.order_uid, fpj.fee_policy), '{}') FROM fee_policies_json fpj),
+        'surplus_capturing_jit_order_owners', COALESCE((
+            SELECT jsonb_agg('0x' || encode(address, 'hex')) 
+            FROM unnest((SELECT addresses FROM jit_owners)) AS address
+        ), '[]'::jsonb) 
+    )"#;
+
+        let mut traded_tokens = HashSet::with_capacity(trades.len() * 2);
+        let mut order_uids = Vec::with_capacity(trades.len());
+        let mut traders = Vec::with_capacity(trades.len());
+        for trade in trades {
+            traded_tokens.insert(ByteArray(trade.sell.token.0.0));
+            traded_tokens.insert(ByteArray(trade.buy.token.0.0));
+            order_uids.push(ByteArray(trade.uid.0));
+            traders.push(ByteArray(trade.uid.owner().0.0));
+        }
+        let traded_tokens = traded_tokens.into_iter().collect_vec();
+
+        let mut tx = self.postgres.pool.acquire().await?;
+        let res: sqlx::types::JsonValue = sqlx::query_scalar(QUERY)
+            .bind(auction_id)
+            .bind(&traded_tokens)
+            .bind(&traders)
+            .bind(&order_uids)
+            .fetch_one(tx.deref_mut())
+            .await?;
+
+        if res.get("block").is_none_or(|val| val.is_null()) {
+            tracing::error!(auction_id, "could not find the auction");
+            return Err(error::Auction::NotFound);
+        }
+        let str = serde_json::to_string_pretty(&res).unwrap();
+        let res = serde_json::from_value(res).map_err(|err| {
+            tracing::error!(auction_id, ?err, str, "failed to deserialize auction");
+            error::Auction::NotFound
+        })?;
+        let original_value = self.get_auction_original(auction_id).await?;
+        tracing::error!(trades = ?trades, new = ?res, old =? original_value);
+        Ok(res)
     }
 
     /// Computes solvable orders based on the latest observed block number,
@@ -933,6 +1053,15 @@ impl Persistence {
             .context("solver_competition::fetch_solver_winning_solutions")?,
         )
     }
+}
+
+pub struct AuctionSummary {
+    pub block: eth::BlockNo,
+    pub trades_in_orders: HashSet<domain::OrderUid>,
+    pub surplus_capturing_jit_order_owners: HashSet<domain::OrderUid>,
+    // orders in the auction + fee policies
+    // surplus capturing jit order owner
+    // native price of all the traded tokens
 }
 
 #[derive(prometheus_metric_storage::MetricStorage)]
