@@ -2,11 +2,14 @@ use {
     self::contracts::Contracts,
     crate::{boundary, domain::eth},
     chain::Chain,
+    ethcontract::H256,
     ethrpc::{Web3, block_stream::CurrentBlockWatcher, extensions::DebugNamespace},
+    futures::TryFutureExt,
     primitive_types::U256,
     std::time::Duration,
     thiserror::Error,
     url::Url,
+    web3::types::{Block, TransactionReceipt},
 };
 
 pub mod contracts;
@@ -104,28 +107,46 @@ impl Ethereum {
         &self.contracts
     }
 
-    pub async fn transaction(&self, hash: eth::TxId) -> Result<eth::Transaction, Error> {
-        let (transaction, receipt, traces) = tokio::try_join!(
-            self.web3.eth().transaction(hash.0.into()),
-            self.web3.eth().transaction_receipt(hash.0),
-            // Use unbuffered transport for the Debug API since not all providers support
-            // batched debug calls.
-            self.unbuffered_web3.debug().transaction(hash.0),
-        )?;
-        let transaction = transaction.ok_or(Error::TransactionNotFound)?;
-        let receipt = receipt.ok_or(Error::TransactionNotFound)?;
+    // We fetch the receipt and the block in 1 future to enable
+    // fetching the block while the other joint futures in `transaction()`
+    // are still executing.
+    async fn get_receipt_and_block(
+        &self,
+        hash: eth::TxId,
+    ) -> Result<(TransactionReceipt, Block<H256>), Error> {
+        let receipt = self
+            .web3
+            .eth()
+            .transaction_receipt(hash.0)
+            .await?
+            .ok_or(Error::TransactionNotFound)?;
         let block_hash =
             receipt
                 .block_hash
                 .ok_or(Error::IncompleteTransactionData(anyhow::anyhow!(
                     "missing block_hash"
                 )))?;
-        let block = self
-            .web3
-            .eth()
-            .block(block_hash.into())
-            .await?
-            .ok_or(Error::TransactionNotFound)?;
+        let block = self.web3.eth().block(block_hash.into()).await?.ok_or(
+            Error::IncompleteTransactionData(anyhow::anyhow!("block not found")),
+        )?;
+        Ok((receipt, block))
+    }
+
+    pub async fn transaction(&self, hash: eth::TxId) -> Result<eth::Transaction, Error> {
+        let (transaction, (receipt, block), traces) = tokio::try_join!(
+            self.web3
+                .eth()
+                .transaction(hash.0.into())
+                .map_err(Error::Web3),
+            self.get_receipt_and_block(hash),
+            // Use unbuffered transport for the Debug API since not all providers support
+            // batched debug calls.
+            self.unbuffered_web3
+                .debug()
+                .transaction(hash.0)
+                .map_err(Error::Web3),
+        )?;
+        let transaction = transaction.ok_or(Error::TransactionNotFound)?;
         into_domain(transaction, receipt, traces, block.timestamp)
             .map_err(Error::IncompleteTransactionData)
     }
