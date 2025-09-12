@@ -100,11 +100,11 @@ port = 9090
             "remote-host"
         );
         assert_eq!(database.get("port").unwrap().as_integer().unwrap(), 3306);
-        assert_eq!(database.get("ssl").unwrap().as_bool().unwrap(), true);
+        assert!(database.get("ssl").unwrap().as_bool().unwrap());
 
         // Check that new metrics section was added
         let metrics = parsed.get("metrics").unwrap().as_table().unwrap();
-        assert_eq!(metrics.get("enabled").unwrap().as_bool().unwrap(), true);
+        assert!(metrics.get("enabled").unwrap().as_bool().unwrap());
         assert_eq!(metrics.get("port").unwrap().as_integer().unwrap(), 9090);
 
         // Check that logging section remains unchanged
@@ -151,6 +151,6 @@ port = 9001
 
         // Other sections remain
         let config = parsed.get("config").unwrap().as_table().unwrap();
-        assert_eq!(config.get("active").unwrap().as_bool().unwrap(), true);
+        assert!(config.get("active").unwrap().as_bool().unwrap());
     }
 }
