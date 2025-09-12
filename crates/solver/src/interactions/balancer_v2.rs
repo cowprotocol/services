@@ -1,7 +1,8 @@
 use {
-    contracts::{BalancerV2Vault, GPv2Settlement},
+    alloy::primitives::U256,
+    contracts::{GPv2Settlement, alloy::BalancerV2Vault},
     ethcontract::{Bytes, H256},
-    primitive_types::U256,
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     shared::{
         http_solver::model::TokenAmount,
         interaction::{EncodedInteraction, Interaction},
@@ -12,7 +13,7 @@ use {
 #[derive(Clone, Debug)]
 pub struct BalancerSwapGivenOutInteraction {
     pub settlement: GPv2Settlement,
-    pub vault: BalancerV2Vault,
+    pub vault: BalancerV2Vault::Instance,
     pub pool_id: H256,
     pub asset_in_max: TokenAmount,
     pub asset_out: TokenAmount,
@@ -26,26 +27,36 @@ pub static NEVER: LazyLock<U256> = LazyLock::new(|| U256::from(1) << 255);
 
 impl BalancerSwapGivenOutInteraction {
     pub fn encode_swap(&self) -> EncodedInteraction {
-        let method = self.vault.swap(
-            (
-                Bytes(self.pool_id.0),
-                1, // GivenOut,
-                self.asset_in_max.token,
-                self.asset_out.token,
-                self.asset_out.amount,
-                self.user_data.clone(),
-            ),
-            (
-                self.settlement.address(), // sender
-                false,                     // fromInternalBalance
-                self.settlement.address(), // recipient
-                false,                     // toInternalBalance
-            ),
-            self.asset_in_max.amount,
-            *NEVER,
-        );
-        let calldata = method.tx.data.expect("no calldata").0;
-        (self.vault.address(), 0.into(), Bytes(calldata))
+        let single_swap = BalancerV2Vault::IVault::SingleSwap {
+            poolId: self.pool_id.into_alloy(),
+            kind: 1, // GivenOut
+            assetIn: self.asset_in_max.token.into_alloy(),
+            assetOut: self.asset_out.token.into_alloy(),
+            amount: self.asset_out.amount.into_alloy(),
+            userData: self.user_data.clone().into_alloy(),
+        };
+        let funds = BalancerV2Vault::IVault::FundManagement {
+            sender: self.settlement.address().into_alloy(),
+            fromInternalBalance: false,
+            recipient: self.settlement.address().into_alloy(),
+            toInternalBalance: false,
+        };
+        let method = self
+            .vault
+            .swap(
+                single_swap,
+                funds,
+                self.asset_in_max.amount.into_alloy(),
+                *NEVER,
+            )
+            .calldata()
+            .clone();
+
+        (
+            self.vault.address().into_legacy(),
+            0.into(),
+            Bytes(method.to_vec()),
+        )
     }
 }
 
@@ -61,7 +72,7 @@ mod tests {
 
     #[test]
     fn encode_unwrap_weth() {
-        let vault = dummy_contract!(BalancerV2Vault, [0x01; 20]);
+        let vault = BalancerV2Vault::Instance::new([0x01; 20].into(), ethrpc::mock::web3().alloy);
         let interaction = BalancerSwapGivenOutInteraction {
             settlement: dummy_contract!(GPv2Settlement, [0x02; 20]),
             vault: vault.clone(),
@@ -95,7 +106,7 @@ mod tests {
         assert_eq!(
             interaction.encode(),
             (
-                vault.address(),
+                vault.address().into_legacy(),
                 0.into(),
                 Bytes(
                     hex::decode(
