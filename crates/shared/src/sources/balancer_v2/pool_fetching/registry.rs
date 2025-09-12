@@ -41,7 +41,7 @@ const POOL_CREATED_TOPIC: H256 = H256(hex!(
 impl EthcontractEventRetrieving for BasePoolFactoryContract {
     type Event = balancer_v2_base_pool_factory::Event;
 
-    fn get_events(&self) -> DynAllEventsBuilder<balancer_v2_base_pool_factory::Event> {
+    fn get_events(&self) -> DynAllEventsBuilder<Self::Event> {
         let mut events = self.0.all_events();
         events.filter = events.filter.topic0(POOL_CREATED_TOPIC.into());
         events
