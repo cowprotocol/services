@@ -330,6 +330,7 @@ impl Persistence {
     ) -> Result<domain::settlement::Auction, error::Auction> {
         const QUERY: &str = r#"
             WITH
+
             -- only the native prices of tokens that were traded
             prices AS (
                 SELECT '0x' || encode(token, 'hex') as token, price::text
@@ -340,7 +341,6 @@ impl Persistence {
 
             -- only jit order owners that traded in the settlement
             jit_owners AS (
-                -- only keep owners that traded in the auction
                 SELECT ARRAY (
                     SELECT unnest(owners)
                     INTERSECT
@@ -381,6 +381,7 @@ impl Persistence {
                 FROM fee_policies fp
                 LEFT JOIN order_quotes oq
                     ON oq.order_uid = fp.order_uid
+                    -- only fetch quotes for orders that need it for the fee policy
                     AND fp.kind = 'priceimprovement'
                 WHERE fp.auction_id = $1
                   AND fp.order_uid = ANY($4)
@@ -392,10 +393,14 @@ impl Persistence {
                 SELECT
                     '0x' || encode(order_uid, 'hex') as order_uid,
                     COALESCE(
-                        (SELECT fee_policy FROM fee_policies_json fpj WHERE fpj.order_uid = o.order_uid),
+                        (SELECT fee_policy FROM fee_policies_json fpj WHERE fpj.order_uid = input.order_uid),
                         '[]'::jsonb
                     ) as fee_policy
-                FROM unnest($4) AS o(order_uid)
+                FROM unnest($4) AS input(order_uid)
+                -- make sure that we only create entries for orders we actually had
+                -- in the database
+                JOIN orders o
+                    ON o.uid = input.order_uid
             ),
 
             -- start block of the auction
