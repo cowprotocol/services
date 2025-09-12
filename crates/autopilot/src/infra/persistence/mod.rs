@@ -27,7 +27,7 @@ use {
     },
     futures::{StreamExt, TryStreamExt},
     itertools::Itertools,
-    number::conversions::{big_decimal_to_u256, u256_to_big_decimal, u256_to_big_uint},
+    number::conversions::{u256_to_big_decimal, u256_to_big_uint},
     primitive_types::H256,
     shared::db_order_conversions::full_order_into_model_order,
     std::{
@@ -320,210 +320,103 @@ impl Persistence {
         Ok(ex.commit().await?)
     }
 
-    /// Get auction data.
-    pub async fn get_auction_original(
-        &self,
-        auction_id: domain::auction::Id,
-    ) -> Result<domain::settlement::Auction, error::Auction> {
-        let _timer = Metrics::get()
-            .database_queries
-            .with_label_values(&["get_auction"])
-            .start_timer();
-
-        let mut ex = self
-            .postgres
-            .pool
-            .begin()
-            .await
-            .map_err(error::Auction::DatabaseError)?;
-
-        let surplus_capturing_jit_order_owners =
-            database::surplus_capturing_jit_order_owners::fetch(&mut ex, auction_id)
-                .await
-                .map_err(error::Auction::DatabaseError)?
-                .ok_or(error::Auction::NotFound)?
-                .into_iter()
-                .map(|owner| eth::H160(owner.0).into())
-                .collect();
-
-        let prices = database::auction_prices::fetch(&mut ex, auction_id)
-            .await
-            .map_err(error::Auction::DatabaseError)?
-            .into_iter()
-            .map(|price| {
-                let token = eth::H160(price.token.0).into();
-                let price = big_decimal_to_u256(&price.price)
-                    .ok_or(domain::auction::InvalidPrice)
-                    .and_then(|p| domain::auction::Price::try_new(p.into()))
-                    .map_err(|_err| error::Auction::InvalidPrice(token));
-                price.map(|price| (token, price))
-            })
-            .collect::<Result<_, _>>()?;
-
-        let orders = {
-            // get all orders from a competition auction
-            let auction_orders = database::auction_orders::fetch(&mut ex, auction_id)
-                .await
-                .map_err(error::Auction::DatabaseError)?
-                .ok_or(error::Auction::NotFound)?
-                .into_iter()
-                .map(|order| domain::OrderUid(order.0))
-                .collect::<HashSet<_>>();
-
-            // get fee policies for all orders that were part of the competition auction
-            let fee_policies = database::fee_policies::fetch_all(
-                &mut ex,
-                auction_orders
-                    .iter()
-                    .map(|o| (auction_id, ByteArray(o.0)))
-                    .collect::<Vec<_>>()
-                    .as_slice(),
-            )
-            .await
-            .map_err(error::Auction::DatabaseError)?
-            .into_iter()
-            .map(|((_, order), policies)| (domain::OrderUid(order.0), policies))
-            .collect::<HashMap<_, _>>();
-
-            // get quotes for all orders with PriceImprovement fee policy
-            let quotes = self
-                .postgres
-                .read_quotes(fee_policies.iter().filter_map(|(order_uid, policies)| {
-                    policies
-                        .iter()
-                        .any(|policy| {
-                            matches!(
-                                policy.kind,
-                                database::fee_policies::FeePolicyKind::PriceImprovement
-                            )
-                        })
-                        .then_some(order_uid)
-                }))
-                .await
-                .map_err(error::Auction::DatabaseError)?;
-
-            // compile order data
-            let mut orders = HashMap::new();
-            for order in auction_orders.iter() {
-                let order_policies = match fee_policies.get(order) {
-                    Some(policies) => policies
-                        .iter()
-                        .cloned()
-                        .map(|policy| {
-                            dto::fee_policy::try_into_domain(policy, quotes.get(order))
-                                .map_err(|err| error::Auction::InvalidFeePolicy(err, *order))
-                        })
-                        .collect::<Result<Vec<_>, _>>()?,
-                    None => vec![],
-                };
-                orders.insert(*order, order_policies);
-            }
-            orders
-        };
-
-        let block = {
-            let competition = database::solver_competition::load_by_id(&mut ex, auction_id)
-                .await?
-                .ok_or(error::Auction::NotFound)?;
-            serde_json::from_value::<boundary::SolverCompetitionDB>(competition.json)
-                .map_err(|_| error::Auction::NotFound)?
-                .auction_start_block
-                .into()
-        };
-
-        Ok(domain::settlement::Auction {
-            id: auction_id,
-            block,
-            orders,
-            prices,
-            surplus_capturing_jit_order_owners,
-        })
-    }
-
-    /// Similar to get_auction but this function only returns data that is
-    /// relevant for the passed in orders.
+    /// Returns only auction data that is relvant for processing the
+    /// settled trades. e.g. only native prices for traded tokens are
+    /// included - not ALL native prices provided in the auction.
     pub async fn get_auction(
         &self,
         trades: &[EncodedTrade],
         auction_id: AuctionId,
     ) -> Result<domain::settlement::Auction, error::Auction> {
         const QUERY: &str = r#"
-WITH
-    -- only the native prices of tokens that were traded
-    prices AS (
-        SELECT '0x' || encode(token, 'hex') as token, price::text
-        FROM auction_prices
-        WHERE auction_id = $1
-          AND token = ANY($2)
-    ),
+            WITH
+            -- only the native prices of tokens that were traded
+            prices AS (
+                SELECT '0x' || encode(token, 'hex') as token, price::text
+                FROM auction_prices
+                WHERE auction_id = $1
+                  AND token = ANY($2)
+            ),
 
-    -- only jit order owners that traded in the settlement
-    jit_owners AS (
-        -- only keep owners that traded in the auction
-        SELECT ARRAY (
-            SELECT unnest(owners)
-            INTERSECT
-            SELECT unnest($3)
-        ) as addresses
-        FROM surplus_capturing_jit_order_owners
-        WHERE auction_id = $1
-    ),
+            -- only jit order owners that traded in the settlement
+            jit_owners AS (
+                -- only keep owners that traded in the auction
+                SELECT ARRAY (
+                    SELECT unnest(owners)
+                    INTERSECT
+                    SELECT unnest($3)
+                ) as addresses
+                FROM surplus_capturing_jit_order_owners
+                WHERE auction_id = $1
+            ),
 
-    -- only fee policies of orders that were settled
-    fee_policies_json AS (
-        SELECT json_agg(
-            CASE fp.kind
-            WHEN 'surplus' THEN
-                jsonb_build_object(
-                    'factor', fp.surplus_factor,
-                    'max_volume_factor', fp.surplus_max_volume_factor
-                )
+            -- only fee policies of orders that were settled
+            fee_policies_json AS (
+                SELECT
+                    fp.order_uid as order_uid,
+                    jsonb_agg(
+                        CASE fp.kind
+                            WHEN 'surplus' THEN
+                                jsonb_build_object(
+                                    'factor', fp.surplus_factor,
+                                    'max_volume_factor', fp.surplus_max_volume_factor
+                                )
+                            WHEN 'volume' THEN
+                                jsonb_build_object(
+                                    'factor', fp.volume_factor
+                                )
+                            WHEN 'priceimprovement' THEN
+                                jsonb_build_object(
+                                    'factor', fp.price_improvement_factor,
+                                    'max_volume_factor', fp.price_improvement_max_volume_factor,
+                                    'quote', jsonb_build_object(
+                                        'sell_amount', oq.sell_amount::text,
+                                        'buy_amount', oq.buy_amount::text,
+                                        'fee', trunc(oq.gas_amount * oq.gas_price / oq.sell_token_price)::text,
+                                        'solver', '0x' || encode(oq.solver, 'hex')
+                                    )
+                                )
+                        END
+                    ) as fee_policy
+                FROM fee_policies fp
+                LEFT JOIN order_quotes oq
+                    ON oq.order_uid = fp.order_uid
+                    AND fp.kind = 'priceimprovement'
+                WHERE fp.auction_id = $1
+                  AND fp.order_uid = ANY($4)
+                GROUP BY fp.order_uid
+            ),
 
-            WHEN 'volume' THEN
-                jsonb_build_object(
-                    'factor', fp.volume_factor
-                )
+            -- ensure orders that don't have fee policies get an entry with an empty array
+            all_orders AS (
+                SELECT
+                    '0x' || encode(order_uid, 'hex') as order_uid,
+                    COALESCE(
+                        (SELECT fee_policy FROM fee_policies_json fpj WHERE fpj.order_uid = o.order_uid),
+                        '[]'::jsonb
+                    ) as fee_policy
+                FROM unnest($4) AS o(order_uid)
+            ),
 
-            WHEN 'priceimprovement' THEN
-                jsonb_build_object(
-                    'factor', fp.price_improvement_factor,
-                    'max_volume_factor', fp.price_improvement_max_volume_factor,
-                    'quote', jsonb_build_object(
-                        'sell_amount', oq.sell_amount::text,
-                        'buy_amount', oq.buy_amount::text,
-                        'fee', trunc(oq.gas_amount * oq.gas_price / oq.sell_token_price)::text,
-                        'solver', '0x' || encode(oq.solver, 'hex')
-                    )
-                )
-            END
-            ) as fee_policy,
-            encode(fp.order_uid, 'hex') as order_uid
-        FROM fee_policies fp
-        LEFT JOIN order_quotes oq ON oq.order_uid = fp.order_uid
-            AND fp.kind = 'priceimprovement'
-        WHERE fp.auction_id = $1
-          AND fp.order_uid = ANY($4)
-        GROUP BY fp.order_uid
-    ),
+            -- start block of the auction
+            competition AS (
+                SELECT json->>'auctionStartBlock' AS block
+                FROM solver_competitions
+                WHERE id = $1
+            )
 
-    -- start block of the auction
-    competition AS (
-        SELECT json->>'auctionStartBlock' AS block
-        FROM solver_competitions
-        WHERE id = $1
-    )
-
-    -- assemble final JSON response
-    SELECT jsonb_build_object(
-        'id', $1,
-        'prices', (SELECT coalesce(jsonb_object_agg(token, price), '{}') FROM prices),
-        'block', (SELECT block::int from competition),
-        'orders', (SELECT coalesce(jsonb_object_agg(fpj.order_uid, fpj.fee_policy), '{}') FROM fee_policies_json fpj),
-        'surplus_capturing_jit_order_owners', COALESCE((
-            SELECT jsonb_agg('0x' || encode(address, 'hex')) 
-            FROM unnest((SELECT addresses FROM jit_owners)) AS address
-        ), '[]'::jsonb) 
-    )"#;
+            -- assemble final JSON response
+            SELECT jsonb_build_object(
+                'id', $1,
+                'prices', (SELECT coalesce(jsonb_object_agg(token, price), '{}') FROM prices),
+                'block', (SELECT block::int FROM competition),
+                'orders', (SELECT coalesce(jsonb_object_agg(ao.order_uid, ao.fee_policy), '{}') FROM all_orders ao),
+                'surplus_capturing_jit_order_owners', COALESCE((
+                    SELECT jsonb_agg('0x' || encode(address, 'hex')) 
+                    FROM unnest((SELECT addresses FROM jit_owners)) AS address
+                ), '[]'::jsonb)
+            )
+        "#;
 
         let mut traded_tokens = HashSet::with_capacity(trades.len() * 2);
         let mut order_uids = Vec::with_capacity(trades.len());
@@ -549,13 +442,11 @@ WITH
             tracing::error!(auction_id, "could not find the auction");
             return Err(error::Auction::NotFound);
         }
-        let str = serde_json::to_string_pretty(&res).unwrap();
         let res = serde_json::from_value(res).map_err(|err| {
-            tracing::error!(auction_id, ?err, str, "failed to deserialize auction");
+            tracing::error!(auction_id, ?err, "failed to deserialize auction");
             error::Auction::NotFound
         })?;
-        let original_value = self.get_auction_original(auction_id).await?;
-        tracing::error!(trades = ?trades, new = ?res, old =? original_value);
+
         Ok(res)
     }
 
