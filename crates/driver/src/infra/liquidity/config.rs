@@ -222,58 +222,52 @@ impl BalancerV2 {
     /// Returns the liquidity configuration for Balancer V2.
     #[allow(clippy::self_named_constructors)]
     pub fn balancer_v2(graph_url: &Url, chain: Chain) -> Option<Self> {
-        // @todo: implement macro to reduce repetition
+        macro_rules! address_for {
+            ( $chain:expr, [ $( $($p:ident)::+ ),* $(,)? ] ) => {{
+                let arr = [ $({
+                    $($p)::+::DEPLOYMENT_INFO.get(&$chain.id())
+                }),* ];
+                arr.into_iter()
+                    .flatten()
+                    .map(|(addr, _)| *addr)
+                    .collect::<Vec<_>>()
+            }};
+        }
+
         Some(Self {
             vault: deployment_address(contracts::BalancerV2Vault::raw_contract(), chain)?,
-            weighted: [
-                contracts::alloy::BalancerV2WeightedPoolFactory::DEPLOYMENT_INFO.get(&chain.id()),
-                contracts::alloy::BalancerV2WeightedPool2TokensFactory::DEPLOYMENT_INFO
-                    .get(&chain.id()),
-            ]
-            .into_iter()
-            .flatten()
-            .map(|(addr, _)| *addr)
-            .collect(),
-            weighted_v3plus: [
-                contracts::alloy::BalancerV2WeightedPoolFactoryV3::DEPLOYMENT_INFO.get(&chain.id()),
-                contracts::alloy::BalancerV2WeightedPoolFactoryV4::DEPLOYMENT_INFO.get(&chain.id()),
-            ]
-            .into_iter()
-            .flatten()
-            .map(|(addr, _)| *addr)
-            .collect(),
-            stable: [
-                contracts::alloy::BalancerV2StablePoolFactoryV2::DEPLOYMENT_INFO.get(&chain.id()),
-            ]
-            .into_iter()
-            .flatten()
-            .map(|(addr, _)| *addr)
-            .collect(),
-            liquidity_bootstrapping: [
-                contracts::alloy::BalancerV2LiquidityBootstrappingPoolFactory::DEPLOYMENT_INFO
-                    .get(&chain.id()),
-                contracts::alloy::BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory::
-                    DEPLOYMENT_INFO.get(&chain.id()),
-            ]
-            .into_iter()
-            .flatten()
-            .map(|(addr, _)| *addr)
-            .collect(),
-            composable_stable: [
-                contracts::alloy::BalancerV2ComposableStablePoolFactory::DEPLOYMENT_INFO
-                    .get(&chain.id()),
-                contracts::alloy::BalancerV2ComposableStablePoolFactoryV3::DEPLOYMENT_INFO
-                    .get(&chain.id()),
-                contracts::alloy::BalancerV2ComposableStablePoolFactoryV4::DEPLOYMENT_INFO
-                    .get(&chain.id()),
-                contracts::alloy::BalancerV2ComposableStablePoolFactoryV5::DEPLOYMENT_INFO
-                    .get(&chain.id()),
-                contracts::alloy::BalancerV2ComposableStablePoolFactoryV6::DEPLOYMENT_INFO
-                    .get(&chain.id()),
-            ].into_iter()
-            .flatten()
-            .map(|(addr, _)| *addr)
-            .collect(),
+            weighted: address_for!(
+                chain,
+                [
+                    contracts::alloy::BalancerV2WeightedPoolFactory,
+                    contracts::alloy::BalancerV2WeightedPool2TokensFactory,
+                ]
+            ),
+            weighted_v3plus: address_for!(
+                chain,
+                [
+                    contracts::alloy::BalancerV2WeightedPoolFactoryV3,
+                    contracts::alloy::BalancerV2WeightedPoolFactoryV4,
+                ]
+            ),
+            stable: address_for!(chain, [contracts::alloy::BalancerV2StablePoolFactoryV2,]),
+            liquidity_bootstrapping: address_for!(
+                chain,
+                [
+                    contracts::alloy::BalancerV2LiquidityBootstrappingPoolFactory,
+                    contracts::alloy::BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory,
+                ]
+            ),
+            composable_stable: address_for!(
+                chain,
+                [
+                    contracts::alloy::BalancerV2ComposableStablePoolFactory,
+                    contracts::alloy::BalancerV2ComposableStablePoolFactoryV3,
+                    contracts::alloy::BalancerV2ComposableStablePoolFactoryV4,
+                    contracts::alloy::BalancerV2ComposableStablePoolFactoryV5,
+                    contracts::alloy::BalancerV2ComposableStablePoolFactoryV6,
+                ]
+            ),
             pool_deny_list: Vec::new(),
             graph_url: graph_url.clone(),
             reinit_interval: None,
