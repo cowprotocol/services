@@ -1,5 +1,6 @@
 use {
     e2e::{
+        eth,
         setup::{colocation::SolverEngine, mock::Mock, *},
         tx,
         tx_value,
@@ -363,10 +364,7 @@ async fn quote_timeout(web3: Web3) {
     // set up trader to pass balance checks during order creation
     sell_token.mint(trader.address(), to_wei(1)).await;
     contracts::alloy::tx!(
-        sell_token.approve(
-            onchain.contracts().allowance.into_alloy(),
-            to_wei(1).into_alloy(),
-        ),
+        sell_token.approve(onchain.contracts().allowance.into_alloy(), eth!(1),),
         trader.address().into_alloy()
     );
 

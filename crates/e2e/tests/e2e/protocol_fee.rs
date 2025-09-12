@@ -2,6 +2,7 @@ use {
     driver::domain::eth::NonZeroU256,
     e2e::{
         assert_approximately_eq,
+        eth,
         setup::{fee::*, *},
         tx,
         tx_value,
@@ -94,14 +95,14 @@ async fn combined_protocol_fees(web3: Web3) {
         contracts::alloy::tx!(
             token.approve(
                 onchain.contracts().uniswap_v2_router.address().into_alloy(),
-                to_wei(1000).into_alloy(),
+                eth!(1000),
             ),
             solver.address().into_alloy()
         );
         contracts::alloy::tx!(
             token.approve(
                 onchain.contracts().uniswap_v2_router.address().into_alloy(),
-                to_wei(100).into_alloy(),
+                eth!(100),
             ),
             trader.address().into_alloy()
         );
@@ -424,14 +425,14 @@ async fn surplus_partner_fee(web3: Web3) {
     contracts::alloy::tx!(
         token.approve(
             onchain.contracts().uniswap_v2_router.address().into_alloy(),
-            to_wei(1000).into_alloy(),
+            eth!(1000),
         ),
         solver.address().into_alloy()
     );
     contracts::alloy::tx!(
         token.approve(
             onchain.contracts().uniswap_v2_router.address().into_alloy(),
-            to_wei(100).into_alloy(),
+            eth!(100),
         ),
         trader.address().into_alloy()
     );
@@ -639,14 +640,14 @@ async fn volume_fee_buy_order_test(web3: Web3) {
     contracts::alloy::tx!(
         token_gno.approve(
             onchain.contracts().uniswap_v2_router.address().into_alloy(),
-            to_wei(1000).into_alloy(),
+            eth!(1000),
         ),
         solver.address().into_alloy()
     );
     contracts::alloy::tx!(
         token_dai.approve(
             onchain.contracts().uniswap_v2_router.address().into_alloy(),
-            to_wei(1000).into_alloy(),
+            eth!(1000),
         ),
         solver.address().into_alloy()
     );
@@ -666,10 +667,7 @@ async fn volume_fee_buy_order_test(web3: Web3) {
 
     // Approve GPv2 for trading
     contracts::alloy::tx!(
-        token_gno.approve(
-            onchain.contracts().allowance.into_alloy(),
-            to_wei(100).into_alloy(),
-        ),
+        token_gno.approve(onchain.contracts().allowance.into_alloy(), eth!(100),),
         trader.address().into_alloy()
     );
 

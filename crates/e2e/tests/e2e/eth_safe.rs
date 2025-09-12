@@ -1,13 +1,16 @@
 use {
     ::alloy::{primitives::U256, providers::Provider},
-    e2e::setup::{
-        OnchainComponents,
-        Services,
-        TIMEOUT,
-        run_test,
-        safe::Safe,
-        to_wei,
-        wait_for_condition,
+    e2e::{
+        eth,
+        setup::{
+            OnchainComponents,
+            Services,
+            TIMEOUT,
+            run_test,
+            safe::Safe,
+            to_wei,
+            wait_for_condition,
+        },
     },
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::{
@@ -37,19 +40,13 @@ async fn test(web3: Web3) {
     token.mint(trader.address(), to_wei(4)).await;
     safe.exec_alloy_call(
         token
-            .approve(
-                onchain.contracts().allowance.into_alloy(),
-                to_wei(4).into_alloy(),
-            )
+            .approve(onchain.contracts().allowance.into_alloy(), eth!(4))
             .into_transaction_request(),
     )
     .await;
     token.mint(safe.address().into_legacy(), to_wei(4)).await;
     contracts::alloy::tx!(
-        token.approve(
-            onchain.contracts().allowance.into_alloy(),
-            to_wei(4).into_alloy(),
-        ),
+        token.approve(onchain.contracts().allowance.into_alloy(), eth!(4),),
         trader.address().into_alloy()
     );
 

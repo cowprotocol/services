@@ -1,5 +1,5 @@
 use {
-    e2e::{setup::*, tx},
+    e2e::{eth, setup::*, tx},
     ethcontract::prelude::U256,
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::{
@@ -39,14 +39,14 @@ async fn test(web3: Web3) {
     contracts::alloy::tx!(
         token_a.approve(
             onchain.contracts().uniswap_v2_router.address().into_alloy(),
-            to_wei(1000).into_alloy(),
+            eth!(1000),
         ),
         solver.address().into_alloy()
     );
     contracts::alloy::tx!(
         token_b.approve(
             onchain.contracts().uniswap_v2_router.address().into_alloy(),
-            to_wei(1000).into_alloy(),
+            eth!(1000),
         ),
         solver.address().into_alloy()
     );
@@ -65,10 +65,7 @@ async fn test(web3: Web3) {
     );
 
     contracts::alloy::tx!(
-        token_a.approve(
-            onchain.contracts().allowance.into_alloy(),
-            to_wei(500).into_alloy(),
-        ),
+        token_a.approve(onchain.contracts().allowance.into_alloy(), eth!(500),),
         trader_a.address().into_alloy()
     );
 

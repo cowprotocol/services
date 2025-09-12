@@ -1,5 +1,6 @@
 use {
     e2e::{
+        eth,
         setup::{
             Db,
             ExtraServiceArgs,
@@ -262,14 +263,14 @@ async fn setup(
     contracts::alloy::tx!(
         token_a.approve(
             onchain.contracts().uniswap_v2_router.address().into_alloy(),
-            to_wei(1000).into_alloy(),
+            eth!(1000),
         ),
         solver.address().into_alloy()
     );
     contracts::alloy::tx!(
         token_b.approve(
             onchain.contracts().uniswap_v2_router.address().into_alloy(),
-            to_wei(1000).into_alloy(),
+            eth!(1000),
         ),
         solver.address().into_alloy()
     );
@@ -289,10 +290,7 @@ async fn setup(
 
     // Approve GPv2 for trading
     contracts::alloy::tx!(
-        token_a.approve(
-            onchain.contracts().allowance.into_alloy(),
-            to_wei(1000).into_alloy(),
-        ),
+        token_a.approve(onchain.contracts().allowance.into_alloy(), eth!(1000),),
         trader_a.address().into_alloy()
     );
 
@@ -363,8 +361,7 @@ async fn execute_order(
             .call()
             .await
             .unwrap();
-        let balance_changes =
-            balance_after.checked_sub(balance_before).unwrap() >= to_wei(5).into_alloy();
+        let balance_changes = balance_after.checked_sub(balance_before).unwrap() >= eth!(5);
         let auction_ids_after =
             fetch_last_settled_auction_ids(services.db()).await.len() > auction_ids_before;
         balance_changes && auction_ids_after

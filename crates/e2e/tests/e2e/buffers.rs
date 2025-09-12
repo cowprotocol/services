@@ -1,6 +1,6 @@
 use {
     ::alloy::primitives::U256,
-    e2e::setup::*,
+    e2e::{eth, setup::*},
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::{
         order::{OrderCreation, OrderKind},
@@ -36,10 +36,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
 
     // Approve GPv2 for trading
     contracts::alloy::tx!(
-        token_a.approve(
-            onchain.contracts().allowance.into_alloy(),
-            to_wei(100).into_alloy(),
-        ),
+        token_a.approve(onchain.contracts().allowance.into_alloy(), eth!(100),),
         trader.address().into_alloy()
     );
 

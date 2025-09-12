@@ -1,6 +1,9 @@
 use {
     ::alloy::primitives::U256,
-    e2e::setup::{colocation::SolverEngine, mock::Mock, *},
+    e2e::{
+        eth,
+        setup::{colocation::SolverEngine, mock::Mock, *},
+    },
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::{
         order::{OrderCreation, OrderKind},
@@ -46,10 +49,7 @@ async fn solver_competition(web3: Web3) {
 
     // Approve GPv2 for trading
     contracts::alloy::tx!(
-        token_a.approve(
-            onchain.contracts().allowance.into_alloy(),
-            to_wei(100).into_alloy(),
-        ),
+        token_a.approve(onchain.contracts().allowance.into_alloy(), eth!(100),),
         trader.address().into_alloy()
     );
 
@@ -178,17 +178,11 @@ async fn wrong_solution_submission_address(web3: Web3) {
 
     // Approve GPv2 for trading
     contracts::alloy::tx!(
-        token_a.approve(
-            onchain.contracts().allowance.into_alloy(),
-            to_wei(100).into_alloy(),
-        ),
+        token_a.approve(onchain.contracts().allowance.into_alloy(), eth!(100),),
         trader_a.address().into_alloy()
     );
     contracts::alloy::tx!(
-        token_b.approve(
-            onchain.contracts().allowance.into_alloy(),
-            to_wei(100).into_alloy(),
-        ),
+        token_b.approve(onchain.contracts().allowance.into_alloy(), eth!(100),),
         trader_b.address().into_alloy()
     );
 
@@ -318,10 +312,7 @@ async fn store_filtered_solutions(web3: Web3) {
     // set up trader for their order
     token_a.mint(trader.address(), to_wei(2)).await;
     contracts::alloy::tx!(
-        token_a.approve(
-            onchain.contracts().allowance.into_alloy(),
-            to_wei(2).into_alloy(),
-        ),
+        token_a.approve(onchain.contracts().allowance.into_alloy(), eth!(2),),
         trader.address().into_alloy()
     );
 

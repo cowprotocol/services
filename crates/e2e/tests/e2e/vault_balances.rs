@@ -1,5 +1,5 @@
 use {
-    e2e::{setup::*, tx},
+    e2e::{eth, setup::*, tx},
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::{
         order::{OrderCreation, OrderKind, SellTokenSource},
@@ -31,7 +31,7 @@ async fn vault_balances(web3: Web3) {
     contracts::alloy::tx!(
         token.approve(
             onchain.contracts().balancer_vault.address().into_alloy(),
-            to_wei(10).into_alloy(),
+            eth!(10),
         ),
         trader.address().into_alloy()
     );

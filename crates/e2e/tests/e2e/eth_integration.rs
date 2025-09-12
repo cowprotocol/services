@@ -1,5 +1,5 @@
 use {
-    e2e::setup::*,
+    e2e::{eth, setup::*},
     ethcontract::prelude::Address,
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::{
@@ -34,17 +34,11 @@ async fn eth_integration(web3: Web3) {
 
     // Approve GPv2 for trading
     contracts::alloy::tx!(
-        token.approve(
-            onchain.contracts().allowance.into_alloy(),
-            to_wei(51).into_alloy(),
-        ),
+        token.approve(onchain.contracts().allowance.into_alloy(), eth!(51),),
         trader_a.address().into_alloy()
     );
     contracts::alloy::tx!(
-        token.approve(
-            onchain.contracts().allowance.into_alloy(),
-            to_wei(51).into_alloy(),
-        ),
+        token.approve(onchain.contracts().allowance.into_alloy(), eth!(51),),
         trader_b.address().into_alloy()
     );
 

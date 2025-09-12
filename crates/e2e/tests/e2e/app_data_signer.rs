@@ -1,6 +1,9 @@
 use {
     alloy::primitives::Address,
-    e2e::setup::{OnchainComponents, Services, TestAccount, run_test, safe::Safe, to_wei},
+    e2e::{
+        eth,
+        setup::{OnchainComponents, Services, TestAccount, run_test, safe::Safe, to_wei},
+    },
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind},
@@ -27,18 +30,12 @@ async fn order_creation_checks_metadata_signer(web3: Web3) {
 
     token_a.mint(trader.address(), to_wei(10)).await;
     contracts::alloy::tx!(
-        token_a.approve(
-            onchain.contracts().allowance.into_alloy(),
-            to_wei(10).into_alloy(),
-        ),
+        token_a.approve(onchain.contracts().allowance.into_alloy(), eth!(10),),
         trader.address().into_alloy()
     );
     token_a.mint(adversary.address(), to_wei(10)).await;
     contracts::alloy::tx!(
-        token_a.approve(
-            onchain.contracts().allowance.into_alloy(),
-            to_wei(10).into_alloy(),
-        ),
+        token_a.approve(onchain.contracts().allowance.into_alloy(), eth!(10),),
         adversary.address().into_alloy()
     );
 
@@ -99,10 +96,7 @@ async fn order_creation_checks_metadata_signer(web3: Web3) {
     token_a.mint(safe.address().into_legacy(), to_wei(10)).await;
     safe.exec_alloy_call(
         token_a
-            .approve(
-                onchain.contracts().allowance.into_alloy(),
-                to_wei(10).into_alloy(),
-            )
+            .approve(onchain.contracts().allowance.into_alloy(), eth!(10))
             .into_transaction_request(),
     )
     .await;

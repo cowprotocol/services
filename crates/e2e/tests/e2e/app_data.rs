@@ -1,6 +1,6 @@
 use {
     app_data::{AppDataHash, hash_full_app_data},
-    e2e::setup::*,
+    e2e::{eth, setup::*},
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind},
@@ -37,10 +37,7 @@ async fn app_data(web3: Web3) {
 
     token_a.mint(trader.address(), to_wei(10)).await;
     contracts::alloy::tx!(
-        token_a.approve(
-            onchain.contracts().allowance.into_alloy(),
-            to_wei(10).into_alloy(),
-        ),
+        token_a.approve(onchain.contracts().allowance.into_alloy(), eth!(10),),
         trader.address().into_alloy()
     );
 
@@ -199,10 +196,7 @@ async fn app_data_full_format(web3: Web3) {
 
     token_a.mint(trader.address(), to_wei(10)).await;
     contracts::alloy::tx!(
-        token_a.approve(
-            onchain.contracts().allowance.into_alloy(),
-            to_wei(10).into_alloy(),
-        ),
+        token_a.approve(onchain.contracts().allowance.into_alloy(), eth!(10),),
         trader.address().into_alloy()
     );
 
