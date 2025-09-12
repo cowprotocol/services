@@ -149,6 +149,10 @@ mod tests {
     use {
         super::*,
         crate::sources::balancer_v2::graph_api::Token,
+        alloy::{
+            dyn_abi::{DynSolValue, FunctionExt},
+            providers::{Provider, ProviderBuilder, mock::Asserter},
+        },
         ethcontract::{H160, H256},
         ethcontract_mock::Mock,
         futures::future,
@@ -220,34 +224,52 @@ mod tests {
         assert!(PoolInfo::from_graph_data(&pool, 42).is_err());
     }
 
-    // @todo: support it
-    // #[tokio::test]
-    // async fn fetch_weighted_pool() {
-    //     let weights = [bfp!("0.5"), bfp!("0.25"), bfp!("0.25")];
-    //
-    //     let mock = Mock::new(42);
-    //     let web3 = mock.web3();
-    //
-    //     let pool =
-    // mock.deploy(BalancerV2WeightedPool::raw_contract().interface.abi.clone());
-    //     pool.expect_call(BalancerV2WeightedPool::signatures().
-    // get_normalized_weights())         .returns(weights.iter().copied().
-    // map(Bfp::as_uint256).collect());
-    //
-    //     let factory = BalancerV2WeightedPoolFactory::at(&web3, H160([0xfa; 20]));
-    //     let pool = factory
-    //         .specialize_pool_info(common::PoolInfo {
-    //             id: H256([0x90; 32]),
-    //             tokens: vec![H160([1; 20]), H160([2; 20]), H160([3; 20])],
-    //             address: pool.address(),
-    //             scaling_factors: vec![Bfp::exp10(0), Bfp::exp10(0),
-    // Bfp::exp10(0)],             block_created: 42,
-    //         })
-    //         .await
-    //         .unwrap();
-    //
-    //     assert_eq!(pool.weights, weights);
-    // }
+    #[tokio::test]
+    async fn fetch_weighted_pool() {
+        let weights = [bfp!("0.5"), bfp!("0.25"), bfp!("0.25")];
+
+        let asserter = Asserter::new();
+        let provider = ProviderBuilder::new()
+            .connect_mocked_client(asserter.clone())
+            .erased();
+
+        let pool =
+            BalancerV2WeightedPool::Instance::new(H160([0x90; 20]).into_alloy(), provider.clone());
+        let factory = BalancerV2WeightedPoolFactory::Instance::new(
+            H160([0xfa; 20]).into_alloy(),
+            provider.clone(),
+        );
+        let get_normalized_weights_response = {
+            let weighted_response = DynSolValue::Array(
+                weights
+                    .iter()
+                    .copied()
+                    .map(|w| DynSolValue::Uint(w.as_uint256().into_alloy(), 256))
+                    .collect(),
+            );
+
+            BalancerV2WeightedPool::abi_functions_by_name("getNormalizedWeights")
+                .unwrap()
+                .first()
+                .unwrap()
+                .abi_encode_output(&[weighted_response])
+                .unwrap()
+        };
+        asserter.push_success(&get_normalized_weights_response);
+
+        let pool = factory
+            .specialize_pool_info(common::PoolInfo {
+                id: H256([0x90; 32]),
+                tokens: vec![H160([1; 20]), H160([2; 20]), H160([3; 20])],
+                address: pool.address().into_legacy(),
+                scaling_factors: vec![Bfp::exp10(0), Bfp::exp10(0), Bfp::exp10(0)],
+                block_created: 42,
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(pool.weights, weights);
+    }
 
     #[tokio::test]
     async fn fetch_pool_state() {
