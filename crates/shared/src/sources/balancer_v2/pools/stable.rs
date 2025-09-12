@@ -10,8 +10,9 @@ use {
         },
     },
     anyhow::{Result, ensure},
-    contracts::{BalancerV2StablePool, BalancerV2StablePoolFactoryV2},
+    contracts::alloy::{BalancerV2StablePool, BalancerV2StablePoolFactoryV2},
     ethcontract::{BlockId, H160, U256},
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::{FutureExt as _, future::BoxFuture},
     num::BigRational,
     std::collections::BTreeMap,
@@ -78,7 +79,7 @@ impl AmplificationParameter {
 }
 
 #[async_trait::async_trait]
-impl FactoryIndexing for BalancerV2StablePoolFactoryV2 {
+impl FactoryIndexing for BalancerV2StablePoolFactoryV2::Instance {
     type PoolInfo = PoolInfo;
     type PoolState = PoolState;
 
@@ -92,21 +93,29 @@ impl FactoryIndexing for BalancerV2StablePoolFactoryV2 {
         common_pool_state: BoxFuture<'static, common::PoolState>,
         block: BlockId,
     ) -> BoxFuture<'static, Result<Option<Self::PoolState>>> {
-        let pool_contract =
-            BalancerV2StablePool::at(&self.raw_instance().web3(), pool_info.common.address);
+        let pool_contract = BalancerV2StablePool::Instance::new(
+            pool_info.common.address.into_alloy(),
+            self.provider().clone(),
+        );
 
         let fetch_common = common_pool_state.map(Result::Ok);
-        let fetch_amplification_parameter = pool_contract
-            .get_amplification_parameter()
-            .block(block)
-            .call();
+        let fetch_amplification_parameter = async move {
+            pool_contract
+                .getAmplificationParameter()
+                .block(block.into_alloy())
+                .call()
+                .await
+                .map_err(anyhow::Error::from)
+        };
 
         async move {
             let (common, amplification_parameter) =
                 futures::try_join!(fetch_common, fetch_amplification_parameter)?;
             let amplification_parameter = {
-                let (factor, _, precision) = amplification_parameter;
-                AmplificationParameter::try_new(factor, precision)?
+                AmplificationParameter::try_new(
+                    amplification_parameter.value.into_legacy(),
+                    amplification_parameter.precision.into_legacy(),
+                )?
             };
 
             Ok(Some(PoolState {
