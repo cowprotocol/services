@@ -252,7 +252,7 @@ impl Utilities {
                         SellTokenBalance::Internal => SellTokenSource::Internal,
                         SellTokenBalance::External => SellTokenSource::External,
                     },
-                    interactions: if all_interactions_equal && !first.pre_interactions.is_empty() {
+                    interactions: if all_interactions_equal {
                         first
                             .pre_interactions
                             .iter()
