@@ -6,6 +6,7 @@
 // Each of the following modules contains tests.
 mod app_data;
 mod app_data_signer;
+mod autopilot_leader;
 mod banned_users;
 mod buffers;
 mod cow_amm;
