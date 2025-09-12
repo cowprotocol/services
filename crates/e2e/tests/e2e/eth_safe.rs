@@ -1,18 +1,15 @@
 use {
     ::alloy::{primitives::U256, providers::Provider},
-    e2e::{
-        setup::{
-            OnchainComponents,
-            Services,
-            TIMEOUT,
-            run_test,
-            safe::Safe,
-            to_wei,
-            wait_for_condition,
-        },
-        tx,
+    e2e::setup::{
+        OnchainComponents,
+        Services,
+        TIMEOUT,
+        run_test,
+        safe::Safe,
+        to_wei,
+        wait_for_condition,
     },
-    ethrpc::alloy::conversions::IntoLegacy,
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::{
         order::{BUY_ETH_ADDRESS, OrderCreation, OrderKind},
         signature::{Signature, hashed_eip712_message},
@@ -38,12 +35,22 @@ async fn test(web3: Web3) {
         .await;
 
     token.mint(trader.address(), to_wei(4)).await;
-    safe.exec_call(token.approve(onchain.contracts().allowance, to_wei(4)))
-        .await;
+    safe.exec_alloy_call(
+        token
+            .approve(
+                onchain.contracts().allowance.into_alloy(),
+                to_wei(4).into_alloy(),
+            )
+            .into_transaction_request(),
+    )
+    .await;
     token.mint(safe.address().into_legacy(), to_wei(4)).await;
-    tx!(
-        trader.account(),
-        token.approve(onchain.contracts().allowance, to_wei(4))
+    contracts::alloy::tx!(
+        token.approve(
+            onchain.contracts().allowance.into_alloy(),
+            to_wei(4).into_alloy(),
+        ),
+        trader.address().into_alloy()
     );
 
     tracing::info!("Starting services.");
@@ -61,7 +68,7 @@ async fn test(web3: Web3) {
     assert_eq!(balance, 0.into());
     let mut order = OrderCreation {
         from: Some(safe.address().into_legacy()),
-        sell_token: token.address(),
+        sell_token: token.address().into_legacy(),
         sell_amount: to_wei(4),
         buy_token: BUY_ETH_ADDRESS,
         buy_amount: to_wei(3),

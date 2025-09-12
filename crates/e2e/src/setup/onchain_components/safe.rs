@@ -149,7 +149,7 @@ impl Safe {
                 Default::default(),
                 crate::setup::safe::gnosis_safe_prevalidated_signature(
                     self.owner.address().into_alloy(),
-                ),
+                )
             ),
             self.owner.address().into_alloy()
         );

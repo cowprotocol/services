@@ -4,7 +4,7 @@ use {
     self::{driver::Driver, solver::Solver as SolverInstance},
     crate::{
         domain::{
-            competition::{order, order::app_data::AppData},
+            competition::order::{self, app_data::AppData},
             eth,
             time,
         },
@@ -40,6 +40,7 @@ use {
     },
     bigdecimal::{BigDecimal, FromPrimitive},
     ethcontract::dyns::DynTransport,
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::future::join_all,
     hyper::StatusCode,
     model::order::{BuyTokenDestination, SellTokenSource},
@@ -1187,10 +1188,11 @@ impl Test {
         let mut balances = HashMap::new();
         for (token, contract) in self.blockchain.tokens.iter() {
             let balance = contract
-                .balance_of(self.trader_address)
+                .balanceOf(self.trader_address.into_alloy())
                 .call()
                 .await
-                .unwrap();
+                .unwrap()
+                .into_legacy();
             balances.insert(*token, balance);
         }
         balances.insert(

@@ -1,6 +1,7 @@
 use {
     database::order_events::OrderEventLabel,
-    e2e::{setup::*, tx},
+    e2e::setup::*,
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::{
         order::{
             CancellationPayload,
@@ -40,9 +41,12 @@ async fn order_cancellation(web3: Web3) {
     token.mint(trader.address(), to_wei(10)).await;
 
     // Approve GPv2 for trading
-    tx!(
-        trader.account(),
-        token.approve(onchain.contracts().allowance, to_wei(10))
+    contracts::alloy::tx!(
+        token.approve(
+            onchain.contracts().allowance.into_alloy(),
+            to_wei(10).into_alloy(),
+        ),
+        trader.address().into_alloy()
     );
 
     let services = Services::new(&onchain).await;
@@ -86,7 +90,7 @@ async fn order_cancellation(web3: Web3) {
 
         let request = OrderQuoteRequest {
             from: trader.address(),
-            sell_token: token.address(),
+            sell_token: token.address().into_legacy(),
             buy_token: onchain.contracts().weth.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::AfterFee {
