@@ -125,6 +125,11 @@ fn run() -> Result<()> {
              ComposableStablePool.json",
         )?
         .github(
+            "BalancerQueries",
+            "balancer/balancer-deployments/80505f7061ff668dc55173344564fa1ddd83b726/\
+            v2/tasks/20220721-balancer-queries/artifact/BalancerQueries.json",
+        )?
+        .github(
             "BalancerV2ComposableStablePoolFactory",
             "balancer/balancer-deployments/7211ed9f209d767f8ff411bb57262daf83ecb439/\
              tasks/deprecated/20230206-composable-stable-pool-v3/artifact/\
