@@ -2547,6 +2547,7 @@ dependencies = [
  "sqlx",
  "tempfile",
  "tokio",
+ "toml",
  "tracing",
  "warp",
  "web3",

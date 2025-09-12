@@ -262,6 +262,13 @@ pub struct Arguments {
         value_parser = parse_tuple::<H160, H160>
     )]
     pub native_price_approximation_tokens: Vec<(H160, H160)>,
+
+    /// Tokens for which quote verification should not be attempted. This is an
+    /// escape hatch when there is a very bad but verifiable liquidity source
+    /// that would win against a very good but unverifiable liquidity source
+    /// (e.g. private liquidity that exists but can't be verified).
+    #[clap(long, env, value_delimiter = ',')]
+    pub tokens_without_verification: Vec<H160>,
 }
 
 /// Custom Clap parser for tuple pair
@@ -354,6 +361,7 @@ impl Display for Arguments {
             quote_timeout,
             balance_overrides,
             native_price_approximation_tokens,
+            tokens_without_verification,
         } = self;
 
         display_option(
@@ -422,6 +430,10 @@ impl Display for Arguments {
         writeln!(
             f,
             "native_price_approximation_tokens: {native_price_approximation_tokens:?}"
+        )?;
+        writeln!(
+            f,
+            "tokens_without_verification: {tokens_without_verification:?}"
         )?;
 
         Ok(())

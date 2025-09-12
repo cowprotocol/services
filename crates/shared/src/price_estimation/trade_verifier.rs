@@ -37,7 +37,10 @@ use {
         conversions::{big_decimal_to_big_rational, u256_to_big_rational},
         nonzero::U256 as NonZeroU256,
     },
-    std::{collections::HashMap, sync::Arc},
+    std::{
+        collections::{HashMap, HashSet},
+        sync::Arc,
+    },
     tracing::instrument,
     web3::{ethabi::Token, types::CallRequest},
 };
@@ -67,6 +70,7 @@ pub struct TradeVerifier {
     native_token: H160,
     quote_inaccuracy_limit: BigRational,
     domain_separator: DomainSeparator,
+    tokens_without_verification: HashSet<H160>,
 }
 
 impl TradeVerifier {
@@ -84,6 +88,7 @@ impl TradeVerifier {
         settlement: H160,
         native_token: H160,
         quote_inaccuracy_limit: BigDecimal,
+        tokens_without_verification: HashSet<H160>,
     ) -> Result<Self> {
         let settlement_contract = GPv2Settlement::at(&web3, settlement);
         let domain_separator =
@@ -98,6 +103,7 @@ impl TradeVerifier {
             quote_inaccuracy_limit: big_decimal_to_big_rational(&quote_inaccuracy_limit),
             web3,
             domain_separator,
+            tokens_without_verification,
         })
     }
 
@@ -412,42 +418,41 @@ impl TradeVerifying for TradeVerifier {
                 &query.kind,
             )
             .context("failed to compute trade out amount")?;
+
+        let unverified_result = trade
+            .gas_estimate()
+            .map(|gas| Estimate {
+                out_amount,
+                gas,
+                solver: trade.solver(),
+                verified: false,
+                execution: QuoteExecution {
+                    interactions: map_interactions_data(&trade.interactions()),
+                    pre_interactions: map_interactions_data(&trade.pre_interactions()),
+                    jit_orders: trade.jit_orders(),
+                },
+            })
+            .context("solver provided no gas estimate");
+
+        let skip_verification = [&query.buy_token, &query.sell_token]
+            .iter()
+            .any(|token| self.tokens_without_verification.contains(token));
+        if skip_verification {
+            tracing::debug!(estimate = ?unverified_result, "quote verification skipped");
+            return unverified_result;
+        }
+
         match self
             .verify_inner(query, verification.clone(), &trade, &out_amount)
             .await
         {
             Ok(verified) => Ok(verified),
-            Err(Error::SimulationFailed(err)) => match trade.gas_estimate() {
-                Some(gas) => {
-                    let estimate = Estimate {
-                        out_amount,
-                        gas,
-                        solver: trade.solver(),
-                        verified: false,
-                        execution: QuoteExecution {
-                            interactions: map_interactions_data(&trade.interactions()),
-                            pre_interactions: map_interactions_data(&trade.pre_interactions()),
-                            jit_orders: trade.jit_orders(),
-                        },
-                    };
-                    tracing::warn!(
-                        ?err,
-                        estimate = ?trade,
-                        "failed verification; returning unverified estimate"
-                    );
-                    Ok(estimate)
-                }
-                None => {
-                    tracing::warn!(
-                        ?err,
-                        estimate = ?trade,
-                        "failed verification and no gas estimate provided; discarding estimate"
-                    );
-                    Err(err)
-                }
-            },
+            Err(Error::SimulationFailed(err)) => {
+                tracing::debug!(estimate = ?unverified_result, ?err, "quote verification failed");
+                unverified_result
+            }
             Err(err @ Error::TooInaccurate) => {
-                tracing::warn!("discarding quote because it's too inaccurate");
+                tracing::debug!("discarding quote because it's too inaccurate");
                 Err(err.into())
             }
         }
