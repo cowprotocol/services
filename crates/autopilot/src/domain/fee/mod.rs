@@ -268,6 +268,7 @@ impl ProtocolFees {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Deserialize)]
+#[serde(tag = "type")]
 pub enum Policy {
     /// If the order receives more than limit price, take the protocol fee as a
     /// percentage of the difference. The fee is taken in `sell` token for

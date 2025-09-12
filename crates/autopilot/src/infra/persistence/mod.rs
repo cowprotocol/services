@@ -358,15 +358,18 @@ impl Persistence {
                         CASE fp.kind
                             WHEN 'surplus' THEN
                                 jsonb_build_object(
+                                    'type', 'Surplus',
                                     'factor', fp.surplus_factor,
                                     'max_volume_factor', fp.surplus_max_volume_factor
                                 )
                             WHEN 'volume' THEN
                                 jsonb_build_object(
+                                    'type', 'Volume',
                                     'factor', fp.volume_factor
                                 )
                             WHEN 'priceimprovement' THEN
                                 jsonb_build_object(
+                                    'type', 'PriceImprovement',
                                     'factor', fp.price_improvement_factor,
                                     'max_volume_factor', fp.price_improvement_max_volume_factor,
                                     'quote', jsonb_build_object(
