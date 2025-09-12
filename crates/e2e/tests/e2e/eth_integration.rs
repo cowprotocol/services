@@ -38,24 +38,20 @@ async fn eth_integration(web3: Web3) {
     token.mint(trader_b.address(), to_wei(51)).await;
 
     // Approve GPv2 for trading
-    token
-        .approve(
+    contracts::alloy::tx!(
+        token.approve(
             onchain.contracts().allowance.into_alloy(),
             to_wei(51).into_alloy(),
-        )
-        .from(trader_a.address().into_alloy())
-        .send_and_watch()
-        .await
-        .unwrap();
-    token
-        .approve(
+        ),
+        trader_a.address().into_alloy()
+    );
+    contracts::alloy::tx!(
+        token.approve(
             onchain.contracts().allowance.into_alloy(),
             to_wei(51).into_alloy(),
-        )
-        .from(trader_b.address().into_alloy())
-        .send_and_watch()
-        .await
-        .unwrap();
+        ),
+        trader_b.address().into_alloy()
+    );
 
     let trader_a_eth_balance_before = web3.eth().balance(trader_a.address(), None).await.unwrap();
 

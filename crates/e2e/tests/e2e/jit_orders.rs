@@ -51,15 +51,13 @@ async fn single_limit_order_test(web3: Web3) {
             .weth
             .approve(onchain.contracts().allowance, U256::MAX)
     );
-    token
-        .approve(
+    contracts::alloy::tx!(
+        token.approve(
             onchain.contracts().allowance.into_alloy(),
             U256::MAX.into_alloy(),
-        )
-        .from(solver.address().into_alloy())
-        .send_and_watch()
-        .await
-        .unwrap();
+        ),
+        solver.address().into_alloy()
+    );
 
     let services = Services::new(&onchain).await;
 

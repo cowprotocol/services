@@ -31,25 +31,21 @@ async fn order_creation_checks_metadata_signer(web3: Web3) {
         .await;
 
     token_a.mint(trader.address(), to_wei(10)).await;
-    token_a
-        .approve(
+    contracts::alloy::tx!(
+        token_a.approve(
             onchain.contracts().allowance.into_alloy(),
             to_wei(10).into_alloy(),
-        )
-        .from(trader.address().into_alloy())
-        .send_and_watch()
-        .await
-        .unwrap();
+        ),
+        trader.address().into_alloy()
+    );
     token_a.mint(adversary.address(), to_wei(10)).await;
-    token_a
-        .approve(
+    contracts::alloy::tx!(
+        token_a.approve(
             onchain.contracts().allowance.into_alloy(),
             to_wei(10).into_alloy(),
-        )
-        .from(adversary.address().into_alloy())
-        .send_and_watch()
-        .await
-        .unwrap();
+        ),
+        adversary.address().into_alloy()
+    );
 
     let mut valid_to: u32 = model::time::now_in_epoch_seconds() + 300;
     let mut create_order = |app_data| {

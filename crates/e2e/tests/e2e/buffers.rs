@@ -38,15 +38,13 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
     token_b.mint(solver.address(), to_wei(1000)).await;
 
     // Approve GPv2 for trading
-    token_a
-        .approve(
+    contracts::alloy::tx!(
+        token_a.approve(
             onchain.contracts().allowance.into_alloy(),
             to_wei(100).into_alloy(),
-        )
-        .from(trader.address().into_alloy())
-        .send_and_watch()
-        .await
-        .unwrap();
+        ),
+        trader.address().into_alloy()
+    );
 
     // Start system
     colocation::start_driver(

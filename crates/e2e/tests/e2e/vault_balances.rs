@@ -33,15 +33,13 @@ async fn vault_balances(web3: Web3) {
     token.mint(trader.address(), to_wei(10)).await;
 
     // Approve GPv2 for trading
-    token
-        .approve(
+    contracts::alloy::tx!(
+        token.approve(
             onchain.contracts().balancer_vault.address().into_alloy(),
             to_wei(10).into_alloy(),
-        )
-        .from(trader.address().into_alloy())
-        .send_and_watch()
-        .await
-        .unwrap();
+        ),
+        trader.address().into_alloy()
+    );
     tx!(
         trader.account(),
         onchain.contracts().balancer_vault.set_relayer_approval(

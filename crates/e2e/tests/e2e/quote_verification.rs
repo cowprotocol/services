@@ -95,15 +95,13 @@ async fn standard_verified_quote(web3: Web3) {
         .await;
 
     token.mint(trader.address(), to_wei(1)).await;
-    token
-        .approve(
+    contracts::alloy::tx!(
+        token.approve(
             onchain.contracts().allowance.into_alloy(),
             to_wei(1).into_alloy(),
-        )
-        .from(trader.address().into_alloy())
-        .send_and_watch()
-        .await
-        .unwrap();
+        ),
+        trader.address().into_alloy()
+    );
 
     tracing::info!("Starting services.");
     let services = Services::new(&onchain).await;
