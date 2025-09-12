@@ -8,13 +8,11 @@ use {
         tests::{self, boundary, cases::EtherExt},
     },
     alloy::{primitives::U256, signers::local::PrivateKeySigner},
+    contracts::alloy::ERC20Mintable,
     ethcontract::PrivateKey,
     ethrpc::{
         Web3,
-        alloy::{
-            CallBuilderExt,
-            conversions::{IntoAlloy, IntoLegacy},
-        },
+        alloy::conversions::{IntoAlloy, IntoLegacy},
     },
     futures::Future,
     secp256k1::SecretKey,
@@ -40,7 +38,7 @@ pub struct Blockchain {
     pub trader_secret_key: SecretKey,
     pub web3: Web3,
     pub web3_url: String,
-    pub tokens: HashMap<&'static str, contracts::alloy::ERC20Mintable::Instance>,
+    pub tokens: HashMap<&'static str, ERC20Mintable::Instance>,
     pub weth: contracts::WETH9,
     pub settlement: contracts::GPv2Settlement,
     pub balances: contracts::support::Balances,
@@ -425,14 +423,11 @@ impl Blockchain {
         for pool in config.pools.iter() {
             if pool.reserve_a.token != "WETH" && !tokens.contains_key(pool.reserve_a.token) {
                 let token = wait_for(&web3, async {
-                    contracts::alloy::ERC20Mintable::Instance::deploy_builder(web3.alloy.clone())
+                    ERC20Mintable::Instance::deploy_builder(web3.alloy.clone())
                         .deploy()
                         .await
                         .map(|contract_address| {
-                            contracts::alloy::ERC20Mintable::Instance::new(
-                                contract_address,
-                                web3.alloy.clone(),
-                            )
+                            ERC20Mintable::Instance::new(contract_address, web3.alloy.clone())
                         })
                 })
                 .await
@@ -441,15 +436,11 @@ impl Blockchain {
                 tokens.insert(pool.reserve_a.token, token);
             }
             if pool.reserve_b.token != "WETH" && !tokens.contains_key(pool.reserve_b.token) {
-                let contract_address =
-                    contracts::alloy::ERC20Mintable::Instance::deploy_builder(web3.alloy.clone())
-                        .deploy()
-                        .await
-                        .unwrap();
-                let token = contracts::alloy::ERC20Mintable::Instance::new(
-                    contract_address,
-                    web3.alloy.clone(),
-                );
+                let contract_address = ERC20Mintable::Instance::deploy_builder(web3.alloy.clone())
+                    .deploy()
+                    .await
+                    .unwrap();
+                let token = ERC20Mintable::Instance::new(contract_address, web3.alloy.clone());
                 tokens.insert(pool.reserve_b.token, token);
             }
         }

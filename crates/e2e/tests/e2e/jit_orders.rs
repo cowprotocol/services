@@ -54,7 +54,7 @@ async fn single_limit_order_test(web3: Web3) {
     contracts::alloy::tx!(
         token.approve(
             onchain.contracts().allowance.into_alloy(),
-            U256::MAX.into_alloy(),
+            ::alloy::primitives::U256::MAX,
         ),
         solver.address().into_alloy()
     );
