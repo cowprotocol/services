@@ -1,12 +1,7 @@
 use {
     e2e::{nodes::local_node::TestNodeApi, setup::*, tx},
     ethcontract::prelude::U256,
-    ethrpc::alloy::{
-        CallBuilderExt,
-        ProviderExt,
-        ProviderSignerExt,
-        conversions::{IntoAlloy, IntoLegacy, TryIntoAlloyAsync},
-    },
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind, OrderStatus},
         signature::EcdsaSigningScheme,

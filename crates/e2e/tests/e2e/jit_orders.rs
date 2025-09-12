@@ -5,12 +5,7 @@ use {
         tx_value,
     },
     ethcontract::prelude::U256,
-    ethrpc::alloy::{
-        CallBuilderExt,
-        ProviderExt,
-        ProviderSignerExt,
-        conversions::{IntoAlloy, IntoLegacy, TryIntoAlloyAsync},
-    },
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::{
         order::{OrderClass, OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,

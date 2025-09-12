@@ -1,18 +1,12 @@
 use {
     crate::database::AuctionTransaction,
-    ::alloy::signers::aws::aws_sdk_kms::config::IntoShared,
     bigdecimal::BigDecimal,
     contracts::ERC20,
     database::byte_array::ByteArray,
     driver::domain::eth::NonZeroU256,
     e2e::{nodes::forked_node::ForkedNodeApi, setup::*, tx},
     ethcontract::{H160, prelude::U256},
-    ethrpc::alloy::{
-        CallBuilderExt,
-        ProviderExt,
-        ProviderSignerExt,
-        conversions::{IntoAlloy, IntoLegacy, TryIntoAlloyAsync},
-    },
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     fee::{FeePolicyOrderClass, ProtocolFee, ProtocolFeesConfig},
     model::{
         order::{OrderClass, OrderCreation, OrderKind},

@@ -4,12 +4,7 @@ use {
     ethcontract::{H160, U256},
     ethrpc::{
         Web3,
-        alloy::{
-            CallBuilderExt,
-            ProviderExt,
-            ProviderSignerExt,
-            conversions::{IntoAlloy, IntoLegacy, TryIntoAlloyAsync},
-        },
+        alloy::conversions::{IntoAlloy, IntoLegacy},
     },
     model::{
         interaction::InteractionData,

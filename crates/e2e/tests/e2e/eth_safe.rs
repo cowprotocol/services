@@ -9,10 +9,7 @@ use {
         to_wei,
         wait_for_condition,
     },
-    ethrpc::alloy::{
-        CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
-    },
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::{
         order::{BUY_ETH_ADDRESS, OrderCreation, OrderKind},
         signature::{Signature, hashed_eip712_message},

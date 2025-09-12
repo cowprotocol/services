@@ -7,12 +7,7 @@ use {
         tx_value,
     },
     ethcontract::{Address, prelude::U256},
-    ethrpc::alloy::{
-        CallBuilderExt,
-        ProviderExt,
-        ProviderSignerExt,
-        conversions::{IntoAlloy, IntoLegacy, TryIntoAlloyAsync},
-    },
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::{
         order::{Order, OrderCreation, OrderCreationAppData, OrderKind},
         quote::{

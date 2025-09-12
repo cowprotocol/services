@@ -17,12 +17,7 @@ use {
         tx_value,
     },
     ethcontract::U256,
-    ethrpc::alloy::{
-        CallBuilderExt,
-        ProviderExt,
-        ProviderSignerExt,
-        conversions::{IntoAlloy, IntoLegacy, TryIntoAlloyAsync},
-    },
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
