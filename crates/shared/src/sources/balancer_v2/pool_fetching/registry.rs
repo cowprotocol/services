@@ -4,58 +4,92 @@
 use {
     super::{internal::InternalPoolFetching, pool_storage::PoolStorage},
     crate::{
-        event_handling::{EthcontractEventRetrieving, EventHandler},
+        event_handling::{EventHandler, EventRetrieving, EventStream},
         maintenance::Maintaining,
         recent_block_cache::Block,
-        sources::balancer_v2::pools::{
-            FactoryIndexing,
-            Pool,
-            PoolStatus,
-            common::PoolInfoFetching,
+        sources::balancer_v2::{
+            pool_fetching::BalancerFactoryInstance,
+            pools::{FactoryIndexing, Pool, PoolStatus, common::PoolInfoFetching},
         },
     },
+    alloy::rpc::types::Log,
     anyhow::Result,
     contracts::{
-        BalancerV2BasePoolFactory,
-        balancer_v2_base_pool_factory,
+        alloy::{
+            BalancerV2BasePoolFactory,
+            BalancerV2BasePoolFactory::BalancerV2BasePoolFactory::PoolCreated,
+        },
         errors::EthcontractErrorType,
     },
-    ethcontract::{BlockId, H256, Instance, dyns::DynAllEventsBuilder, errors::MethodError},
+    ethcontract::{BlockId, H256, errors::MethodError},
     ethrpc::{
-        Web3Transport,
-        block_stream::{BlockNumberHash, BlockRetrieving},
+        alloy::conversions::{IntoAlloy, IntoLegacy},
+        block_stream::{BlockNumberHash, BlockRetrieving, RangeInclusive},
     },
-    futures::future,
+    futures::{TryStreamExt, future},
     hex_literal::hex,
+    itertools::Itertools,
     model::TokenPair,
     std::{collections::HashSet, sync::Arc},
     tokio::sync::Mutex,
+    web3::types::Address,
 };
 
-pub struct BasePoolFactoryContract(BalancerV2BasePoolFactory);
+pub struct BasePoolFactoryContract(BalancerV2BasePoolFactory::Instance);
 
 const POOL_CREATED_TOPIC: H256 = H256(hex!(
     "83a48fbcfc991335314e74d0496aab6a1987e992ddc85dddbcc4d6dd6ef2e9fc"
 ));
 
-impl EthcontractEventRetrieving for BasePoolFactoryContract {
-    type Event = balancer_v2_base_pool_factory::Event;
+#[async_trait::async_trait]
+impl EventRetrieving for BasePoolFactoryContract {
+    type Event = (PoolCreated, Log);
 
-    fn get_events(&self) -> DynAllEventsBuilder<balancer_v2_base_pool_factory::Event> {
-        let mut events = self.0.all_events();
-        events.filter = events.filter.topic0(POOL_CREATED_TOPIC.into());
-        events
+    async fn get_events_by_block_hash(&self, block_hash: H256) -> Result<Vec<Self::Event>> {
+        self.0
+            .event_filter()
+            .address(*self.0.address())
+            .topic1(POOL_CREATED_TOPIC.into_alloy())
+            .at_block_hash(block_hash.into_alloy())
+            .query()
+            .await
+            .map_err(anyhow::Error::from)
+    }
+
+    async fn get_events_by_block_range(
+        &self,
+        block_range: &RangeInclusive<u64>,
+    ) -> Result<EventStream<Self::Event>> {
+        let stream = self
+            .0
+            .event_filter::<PoolCreated>()
+            .address(*self.0.address())
+            .topic1(POOL_CREATED_TOPIC.into_alloy())
+            .from_block(*block_range.start())
+            .to_block(*block_range.end())
+            .watch()
+            .await
+            .map_err(anyhow::Error::from)?
+            .into_stream()
+            .map_err(anyhow::Error::from);
+
+        Ok(Box::pin(stream))
+    }
+
+    fn address(&self) -> Vec<Address> {
+        self.0
+            .event_filter::<PoolCreated>()
+            .filter
+            .address
+            .iter()
+            .map(|addr| addr.into_legacy())
+            .collect_vec()
     }
 }
 
 /// Type alias for the internal event updater type.
-type PoolUpdater<Factory> = Mutex<
-    EventHandler<
-        BasePoolFactoryContract,
-        PoolStorage<Factory>,
-        ethcontract::Event<balancer_v2_base_pool_factory::Event>,
-    >,
->;
+type PoolUpdater<Factory> =
+    Mutex<EventHandler<BasePoolFactoryContract, PoolStorage<Factory>, (PoolCreated, Log)>>;
 
 /// The Pool Registry maintains an event handler for each of the Balancer Pool
 /// Factory contracts and maintains a `PoolStorage` for each.
@@ -79,7 +113,7 @@ where
     pub fn new(
         block_retreiver: Arc<dyn BlockRetrieving>,
         fetcher: Arc<dyn PoolInfoFetching<Factory>>,
-        factory_instance: &Instance<Web3Transport>,
+        factory_instance: &BalancerFactoryInstance,
         initial_pools: Vec<Factory::PoolInfo>,
         start_sync_at_block: Option<BlockNumberHash>,
     ) -> Self {
@@ -134,11 +168,12 @@ where
     }
 }
 
-fn base_pool_factory(contract_instance: &Instance<Web3Transport>) -> BalancerV2BasePoolFactory {
-    BalancerV2BasePoolFactory::with_deployment_info(
-        &contract_instance.web3(),
-        contract_instance.address(),
-        contract_instance.deployment_information(),
+fn base_pool_factory(
+    contract_instance: &BalancerFactoryInstance,
+) -> BalancerV2BasePoolFactory::Instance {
+    BalancerV2BasePoolFactory::Instance::new(
+        *contract_instance.address(),
+        contract_instance.provider().clone(),
     )
 }
 

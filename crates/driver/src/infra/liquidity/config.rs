@@ -1,5 +1,6 @@
 use {
     crate::{domain::eth, infra::blockchain::contracts::deployment_address},
+    alloy::primitives::Address,
     chain::Chain,
     derive_more::Debug,
     hex_literal::hex,
@@ -188,19 +189,19 @@ pub struct BalancerV2 {
     pub vault: eth::ContractAddress,
 
     /// Weighted pool factory addresses.
-    pub weighted: Vec<eth::ContractAddress>,
+    pub weighted: Vec<Address>,
 
     /// Weighted pool factory v3+ addresses.
-    pub weighted_v3plus: Vec<eth::ContractAddress>,
+    pub weighted_v3plus: Vec<Address>,
 
     /// Stable pool factory addresses.
-    pub stable: Vec<eth::ContractAddress>,
+    pub stable: Vec<Address>,
 
     /// Liquidity bootstrapping pool factory addresses.
-    pub liquidity_bootstrapping: Vec<eth::ContractAddress>,
+    pub liquidity_bootstrapping: Vec<Address>,
 
     /// Composable stable pool factory addresses.
-    pub composable_stable: Vec<eth::ContractAddress>,
+    pub composable_stable: Vec<Address>,
 
     /// Deny listed Balancer V2 pools.
     ///
@@ -221,37 +222,58 @@ impl BalancerV2 {
     /// Returns the liquidity configuration for Balancer V2.
     #[allow(clippy::self_named_constructors)]
     pub fn balancer_v2(graph_url: &Url, chain: Chain) -> Option<Self> {
-        let factory_addresses =
-            |contracts: &[&ethcontract::Contract]| -> Vec<eth::ContractAddress> {
-                contracts
-                    .iter()
-                    .copied()
-                    .filter_map(|c| deployment_address(c, chain))
-                    .collect()
-            };
-
+        // @todo: implement macro to reduce repetition
         Some(Self {
             vault: deployment_address(contracts::BalancerV2Vault::raw_contract(), chain)?,
-            weighted: factory_addresses(&[
-                contracts::BalancerV2WeightedPoolFactory::raw_contract(),
-                contracts::BalancerV2WeightedPool2TokensFactory::raw_contract(),
-            ]),
-            weighted_v3plus: factory_addresses(&[
-                contracts::BalancerV2WeightedPoolFactoryV3::raw_contract(),
-                contracts::BalancerV2WeightedPoolFactoryV4::raw_contract(),
-            ]),
-            stable: factory_addresses(&[contracts::BalancerV2StablePoolFactoryV2::raw_contract()]),
-            liquidity_bootstrapping: factory_addresses(&[
-                contracts::BalancerV2LiquidityBootstrappingPoolFactory::raw_contract(),
-                contracts::BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory::raw_contract(),
-            ]),
-            composable_stable: factory_addresses(&[
-                contracts::BalancerV2ComposableStablePoolFactory::raw_contract(),
-                contracts::BalancerV2ComposableStablePoolFactoryV3::raw_contract(),
-                contracts::BalancerV2ComposableStablePoolFactoryV4::raw_contract(),
-                contracts::BalancerV2ComposableStablePoolFactoryV5::raw_contract(),
-                contracts::BalancerV2ComposableStablePoolFactoryV6::raw_contract(),
-            ]),
+            weighted: [
+                contracts::alloy::BalancerV2WeightedPoolFactory::DEPLOYMENT_INFO.get(&chain.id()),
+                contracts::alloy::BalancerV2WeightedPool2TokensFactory::DEPLOYMENT_INFO
+                    .get(&chain.id()),
+            ]
+            .into_iter()
+            .flatten()
+            .map(|(addr, _)| *addr)
+            .collect(),
+            weighted_v3plus: [
+                contracts::alloy::BalancerV2WeightedPoolFactoryV3::DEPLOYMENT_INFO.get(&chain.id()),
+                contracts::alloy::BalancerV2WeightedPoolFactoryV4::DEPLOYMENT_INFO.get(&chain.id()),
+            ]
+            .into_iter()
+            .flatten()
+            .map(|(addr, _)| *addr)
+            .collect(),
+            stable: [
+                contracts::alloy::BalancerV2StablePoolFactoryV2::DEPLOYMENT_INFO.get(&chain.id()),
+            ]
+            .into_iter()
+            .flatten()
+            .map(|(addr, _)| *addr)
+            .collect(),
+            liquidity_bootstrapping: [
+                contracts::alloy::BalancerV2LiquidityBootstrappingPoolFactory::DEPLOYMENT_INFO
+                    .get(&chain.id()),
+                contracts::alloy::BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory::
+                    DEPLOYMENT_INFO.get(&chain.id()),
+            ]
+            .into_iter()
+            .flatten()
+            .map(|(addr, _)| *addr)
+            .collect(),
+            composable_stable: [
+                contracts::alloy::BalancerV2ComposableStablePoolFactory::DEPLOYMENT_INFO
+                    .get(&chain.id()),
+                contracts::alloy::BalancerV2ComposableStablePoolFactoryV3::DEPLOYMENT_INFO
+                    .get(&chain.id()),
+                contracts::alloy::BalancerV2ComposableStablePoolFactoryV4::DEPLOYMENT_INFO
+                    .get(&chain.id()),
+                contracts::alloy::BalancerV2ComposableStablePoolFactoryV5::DEPLOYMENT_INFO
+                    .get(&chain.id()),
+                contracts::alloy::BalancerV2ComposableStablePoolFactoryV6::DEPLOYMENT_INFO
+                    .get(&chain.id()),
+            ].into_iter()
+            .flatten()
+            .map(|(addr, _)| *addr)
+            .collect(),
             pool_deny_list: Vec::new(),
             graph_url: graph_url.clone(),
             reinit_interval: None,

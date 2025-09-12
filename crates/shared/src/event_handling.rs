@@ -130,6 +130,11 @@ where
     }
 }
 
+pub struct AlloyEvent<T> {
+    pub event: T,
+    pub block_created: alloy::primitives::BlockNumber,
+}
+
 #[async_trait::async_trait]
 pub trait EventRetrieving {
     type Event;
