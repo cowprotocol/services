@@ -62,13 +62,13 @@ impl FactoryIndexing for BalancerV2LiquidityBootstrappingPoolFactory::Instance {
         let fetch_common = common_pool_state.map(Result::Ok);
         // Liquidity bootstrapping pools use dynamic weights, meaning that we
         // need to fetch them every time.
-        let block = block.into_alloy();
-        let block_clone = block;
+        let weights_block = block.into_alloy();
+        let swap_block = weights_block;
         let pool_contract_clone = pool_contract.clone();
         let fetch_weights = async move {
             pool_contract
                 .getNormalizedWeights()
-                .block(block)
+                .block(weights_block)
                 .call()
                 .await
                 .map_err(anyhow::Error::from)
@@ -76,7 +76,7 @@ impl FactoryIndexing for BalancerV2LiquidityBootstrappingPoolFactory::Instance {
         let fetch_swap_enabled = async move {
             pool_contract_clone
                 .getSwapEnabled()
-                .block(block_clone)
+                .block(swap_block)
                 .call()
                 .await
                 .map_err(anyhow::Error::from)

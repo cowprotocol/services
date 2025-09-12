@@ -53,13 +53,13 @@ impl FactoryIndexing for BalancerV2ComposableStablePoolFactory::Instance {
         );
 
         let fetch_common = common_pool_state.map(Result::Ok);
-        let block = block.into_alloy();
-        let block_clone = block;
+        let scaling_factors_block = block.into_alloy();
+        let amp_param_block = scaling_factors_block;
         let pool_contract_clone = pool_contract.clone();
         let fetch_scaling_factors = async move {
             pool_contract
                 .getScalingFactors()
-                .block(block)
+                .block(scaling_factors_block)
                 .call()
                 .await
                 .map_err(anyhow::Error::from)
@@ -67,7 +67,7 @@ impl FactoryIndexing for BalancerV2ComposableStablePoolFactory::Instance {
         let fetch_amplification_parameter = async move {
             pool_contract_clone
                 .getAmplificationParameter()
-                .block(block_clone)
+                .block(amp_param_block)
                 .call()
                 .await
                 .map_err(anyhow::Error::from)
