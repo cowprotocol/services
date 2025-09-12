@@ -2,6 +2,7 @@ use {
     alloy::providers::Provider,
     app_data::Hook,
     e2e::{
+        eth,
         setup::{
             OnchainComponents,
             Services,
@@ -297,14 +298,13 @@ async fn signature(web3: Web3) {
 
     // Sign an approval transaction for trading. This will be at nonce 0 because
     // it is the first transaction evah!
+    let approval_call_data = token
+        .approve(onchain.contracts().allowance.into_alloy(), eth!(5))
+        .calldata()
+        .to_vec();
     let approval_builder = safe.sign_transaction(
-        token.address().into_alloy(),
-        token
-            .approve(onchain.contracts().allowance, to_wei(5))
-            .tx
-            .data
-            .unwrap()
-            .0,
+        *token.address(),
+        approval_call_data,
         alloy::primitives::U256::ZERO,
     );
     let call_data = approval_builder.calldata().to_vec();
@@ -337,7 +337,7 @@ async fn signature(web3: Web3) {
         // `from` currently has.
         sell_amount: to_wei(6),
         partially_fillable: true,
-        sell_token: token.address(),
+        sell_token: token.address().into_legacy(),
         buy_token: onchain.contracts().weth.address(),
         buy_amount: to_wei(3),
         valid_to: model::time::now_in_epoch_seconds() + 300,
@@ -363,10 +363,11 @@ async fn signature(web3: Web3) {
     onchain.mint_block().await;
 
     let balance = token
-        .balance_of(safe.address().into_legacy())
+        .balanceOf(safe.address())
         .call()
         .await
-        .unwrap();
+        .unwrap()
+        .into_legacy();
     assert_eq!(balance, to_wei(5));
 
     // Check that the Safe really hasn't been deployed yet.
@@ -380,7 +381,7 @@ async fn signature(web3: Web3) {
     tracing::info!("Waiting for trade.");
     let trade_happened = || async {
         token
-            .balance_of(safe.address().into_legacy())
+            .balanceOf(safe.address())
             .call()
             .await
             .unwrap()
@@ -448,7 +449,7 @@ async fn partial_fills(web3: Web3) {
     let order = OrderCreation {
         sell_token: onchain.contracts().weth.address(),
         sell_amount: to_wei(2),
-        buy_token: token.address(),
+        buy_token: token.address().into_legacy(),
         buy_amount: to_wei(1),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
@@ -558,21 +559,19 @@ async fn quote_verification(web3: Web3) {
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(100_000), to_wei(100_000))
         .await;
     token.mint(safe.address().into_legacy(), to_wei(5)).await;
-    tx!(
-        trader.account(),
-        token.approve(onchain.contracts().allowance, to_wei(5))
+    contracts::alloy::tx!(
+        token.approve(onchain.contracts().allowance.into_alloy(), eth!(5),),
+        trader.address().into_alloy()
     );
 
     // Sign transaction transferring 5 token from the safe to the trader
     // to fund the trade in a pre-hook.
     let transfer_builder = safe.sign_transaction(
-        token.address().into_alloy(),
+        *token.address(),
         token
-            .transfer(trader.address(), to_wei(5))
-            .tx
-            .data
-            .unwrap()
-            .0,
+            .transfer(trader.address().into_alloy(), eth!(5))
+            .calldata()
+            .to_vec(),
         alloy::primitives::U256::ZERO,
     );
     let call_data = transfer_builder.calldata().to_vec();
@@ -596,7 +595,7 @@ async fn quote_verification(web3: Web3) {
     let quote = services
         .submit_quote(&OrderQuoteRequest {
             from: trader.address(),
-            sell_token: token.address(),
+            sell_token: token.address().into_legacy(),
             buy_token: onchain.contracts().weth.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {

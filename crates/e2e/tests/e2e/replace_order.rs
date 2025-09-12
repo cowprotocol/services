@@ -1,6 +1,7 @@
 use {
-    e2e::{nodes::local_node::TestNodeApi, setup::*, tx},
+    e2e::{eth, nodes::local_node::TestNodeApi, setup::*, tx},
     ethcontract::prelude::U256,
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind, OrderStatus},
         signature::EcdsaSigningScheme,
@@ -51,30 +52,30 @@ async fn try_replace_unreplaceable_order_test(web3: Web3) {
     token_b.mint(solver.address(), to_wei(1000)).await;
     tx!(
         solver.account(),
-        onchain
-            .contracts()
-            .uniswap_v2_factory
-            .create_pair(token_a.address(), token_b.address())
+        onchain.contracts().uniswap_v2_factory.create_pair(
+            token_a.address().into_legacy(),
+            token_b.address().into_legacy()
+        )
     );
-    tx!(
-        solver.account(),
+    contracts::alloy::tx!(
         token_a.approve(
-            onchain.contracts().uniswap_v2_router.address(),
-            to_wei(1000)
-        )
+            onchain.contracts().uniswap_v2_router.address().into_alloy(),
+            eth!(1000),
+        ),
+        solver.address().into_alloy()
     );
-    tx!(
-        solver.account(),
+    contracts::alloy::tx!(
         token_b.approve(
-            onchain.contracts().uniswap_v2_router.address(),
-            to_wei(1000)
-        )
+            onchain.contracts().uniswap_v2_router.address().into_alloy(),
+            eth!(1000),
+        ),
+        solver.address().into_alloy()
     );
     tx!(
         solver.account(),
         onchain.contracts().uniswap_v2_router.add_liquidity(
-            token_a.address(),
-            token_b.address(),
+            token_a.address().into_legacy(),
+            token_b.address().into_legacy(),
             to_wei(1000),
             to_wei(1000),
             0_u64.into(),
@@ -85,9 +86,9 @@ async fn try_replace_unreplaceable_order_test(web3: Web3) {
     );
 
     // Approve GPv2 for trading
-    tx!(
-        trader.account(),
-        token_a.approve(onchain.contracts().allowance, to_wei(15))
+    contracts::alloy::tx!(
+        token_a.approve(onchain.contracts().allowance.into_alloy(), eth!(15),),
+        trader.address().into_alloy()
     );
 
     // disable auto mining to prevent order being immediately executed
@@ -101,9 +102,9 @@ async fn try_replace_unreplaceable_order_test(web3: Web3) {
     services.start_protocol(solver).await;
 
     let order = OrderCreation {
-        sell_token: token_a.address(),
+        sell_token: token_a.address().into_legacy(),
         sell_amount: to_wei(10),
-        buy_token: token_b.address(),
+        buy_token: token_b.address().into_legacy(),
         buy_amount: to_wei(5),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
@@ -114,7 +115,11 @@ async fn try_replace_unreplaceable_order_test(web3: Web3) {
         &onchain.contracts().domain_separator,
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
-    let balance_before = token_a.balance_of(trader.address()).call().await.unwrap();
+    let balance_before = token_a
+        .balanceOf(trader.address().into_alloy())
+        .call()
+        .await
+        .unwrap();
     onchain.mint_block().await;
     let order_id = services.create_order(&order).await.unwrap();
 
@@ -132,9 +137,9 @@ async fn try_replace_unreplaceable_order_test(web3: Web3) {
 
     // Replace order
     let new_order = OrderCreation {
-        sell_token: token_a.address(),
+        sell_token: token_a.address().into_legacy(),
         sell_amount: to_wei(3),
-        buy_token: token_b.address(),
+        buy_token: token_b.address().into_legacy(),
         buy_amount: to_wei(1),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
@@ -174,8 +179,12 @@ async fn try_replace_unreplaceable_order_test(web3: Web3) {
 
     tracing::info!("Waiting for the old order to be executed");
     wait_for_condition(TIMEOUT, || async {
-        let balance_after = token_a.balance_of(trader.address()).call().await.unwrap();
-        balance_before.saturating_sub(balance_after) == to_wei(10)
+        let balance_after = token_a
+            .balanceOf(trader.address().into_alloy())
+            .call()
+            .await
+            .unwrap();
+        balance_before.saturating_sub(balance_after) == eth!(10)
             && !services.get_trades(&order_id).await.unwrap().is_empty()
     })
     .await
@@ -216,30 +225,30 @@ async fn try_replace_someone_else_order_test(web3: Web3) {
     token_b.mint(solver.address(), to_wei(1000)).await;
     tx!(
         solver.account(),
-        onchain
-            .contracts()
-            .uniswap_v2_factory
-            .create_pair(token_a.address(), token_b.address())
+        onchain.contracts().uniswap_v2_factory.create_pair(
+            token_a.address().into_legacy(),
+            token_b.address().into_legacy()
+        )
     );
-    tx!(
-        solver.account(),
+    contracts::alloy::tx!(
         token_a.approve(
-            onchain.contracts().uniswap_v2_router.address(),
-            to_wei(1000)
-        )
+            onchain.contracts().uniswap_v2_router.address().into_alloy(),
+            eth!(1000),
+        ),
+        solver.address().into_alloy()
     );
-    tx!(
-        solver.account(),
+    contracts::alloy::tx!(
         token_b.approve(
-            onchain.contracts().uniswap_v2_router.address(),
-            to_wei(1000)
-        )
+            onchain.contracts().uniswap_v2_router.address().into_alloy(),
+            eth!(1000),
+        ),
+        solver.address().into_alloy()
     );
     tx!(
         solver.account(),
         onchain.contracts().uniswap_v2_router.add_liquidity(
-            token_a.address(),
-            token_b.address(),
+            token_a.address().into_legacy(),
+            token_b.address().into_legacy(),
             to_wei(1000),
             to_wei(1000),
             0_u64.into(),
@@ -250,13 +259,13 @@ async fn try_replace_someone_else_order_test(web3: Web3) {
     );
 
     // Approve GPv2 for trading
-    tx!(
-        trader_a.account(),
-        token_a.approve(onchain.contracts().allowance, to_wei(15))
+    contracts::alloy::tx!(
+        token_a.approve(onchain.contracts().allowance.into_alloy(), eth!(15),),
+        trader_a.address().into_alloy()
     );
-    tx!(
-        trader_b.account(),
-        token_a.approve(onchain.contracts().allowance, to_wei(15))
+    contracts::alloy::tx!(
+        token_a.approve(onchain.contracts().allowance.into_alloy(), eth!(15),),
+        trader_b.address().into_alloy()
     );
 
     // Place Orders
@@ -266,9 +275,9 @@ async fn try_replace_someone_else_order_test(web3: Web3) {
     onchain.mint_block().await;
 
     let order = OrderCreation {
-        sell_token: token_a.address(),
+        sell_token: token_a.address().into_legacy(),
         sell_amount: to_wei(10),
-        buy_token: token_b.address(),
+        buy_token: token_b.address().into_legacy(),
         buy_amount: to_wei(5),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         partially_fillable: false,
@@ -284,9 +293,9 @@ async fn try_replace_someone_else_order_test(web3: Web3) {
 
     // Replace order
     let new_order = OrderCreation {
-        sell_token: token_a.address(),
+        sell_token: token_a.address().into_legacy(),
         sell_amount: to_wei(3),
-        buy_token: token_b.address(),
+        buy_token: token_b.address().into_legacy(),
         buy_amount: to_wei(1),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
@@ -303,7 +312,11 @@ async fn try_replace_someone_else_order_test(web3: Web3) {
         &onchain.contracts().domain_separator,
         SecretKeyRef::from(&SecretKey::from_slice(trader_b.private_key()).unwrap()),
     );
-    let balance_before = token_a.balance_of(trader_a.address()).call().await.unwrap();
+    let balance_before = token_a
+        .balanceOf(trader_a.address().into_alloy())
+        .call()
+        .await
+        .unwrap();
     let response = services.create_order(&new_order).await;
     let (error_code, _) = response.err().unwrap();
     assert_eq!(error_code, StatusCode::UNAUTHORIZED);
@@ -311,8 +324,12 @@ async fn try_replace_someone_else_order_test(web3: Web3) {
     // Drive solution
     tracing::info!("Waiting for trade.");
     wait_for_condition(TIMEOUT, || async {
-        let balance_after = token_a.balance_of(trader_a.address()).call().await.unwrap();
-        balance_before.saturating_sub(balance_after) == to_wei(10)
+        let balance_after = token_a
+            .balanceOf(trader_a.address().into_alloy())
+            .call()
+            .await
+            .unwrap();
+        balance_before.saturating_sub(balance_after) == eth!(10)
     })
     .await
     .unwrap();
@@ -335,30 +352,30 @@ async fn single_replace_order_test(web3: Web3) {
     token_b.mint(solver.address(), to_wei(1000)).await;
     tx!(
         solver.account(),
-        onchain
-            .contracts()
-            .uniswap_v2_factory
-            .create_pair(token_a.address(), token_b.address())
+        onchain.contracts().uniswap_v2_factory.create_pair(
+            token_a.address().into_legacy(),
+            token_b.address().into_legacy()
+        )
     );
-    tx!(
-        solver.account(),
+    contracts::alloy::tx!(
         token_a.approve(
-            onchain.contracts().uniswap_v2_router.address(),
-            to_wei(1000)
-        )
+            onchain.contracts().uniswap_v2_router.address().into_alloy(),
+            eth!(1000),
+        ),
+        solver.address().into_alloy()
     );
-    tx!(
-        solver.account(),
+    contracts::alloy::tx!(
         token_b.approve(
-            onchain.contracts().uniswap_v2_router.address(),
-            to_wei(1000)
-        )
+            onchain.contracts().uniswap_v2_router.address().into_alloy(),
+            eth!(1000),
+        ),
+        solver.address().into_alloy()
     );
     tx!(
         solver.account(),
         onchain.contracts().uniswap_v2_router.add_liquidity(
-            token_a.address(),
-            token_b.address(),
+            token_a.address().into_legacy(),
+            token_b.address().into_legacy(),
             to_wei(1000),
             to_wei(1000),
             0_u64.into(),
@@ -369,9 +386,9 @@ async fn single_replace_order_test(web3: Web3) {
     );
 
     // Approve GPv2 for trading
-    tx!(
-        trader.account(),
-        token_a.approve(onchain.contracts().allowance, to_wei(15))
+    contracts::alloy::tx!(
+        token_a.approve(onchain.contracts().allowance.into_alloy(), eth!(15),),
+        trader.address().into_alloy()
     );
 
     // disble solver to prevent orders from being settled while we
@@ -392,11 +409,15 @@ async fn single_replace_order_test(web3: Web3) {
         )
         .await;
 
-    let balance_before = token_a.balance_of(trader.address()).call().await.unwrap();
+    let balance_before = token_a
+        .balanceOf(trader.address().into_alloy())
+        .call()
+        .await
+        .unwrap();
     let order = OrderCreation {
-        sell_token: token_a.address(),
+        sell_token: token_a.address().into_legacy(),
         sell_amount: to_wei(10),
-        buy_token: token_b.address(),
+        buy_token: token_b.address().into_legacy(),
         buy_amount: to_wei(5),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
@@ -423,9 +444,9 @@ async fn single_replace_order_test(web3: Web3) {
 
     // Replace order
     let new_order = OrderCreation {
-        sell_token: token_a.address(),
+        sell_token: token_a.address().into_legacy(),
         sell_amount: to_wei(3),
-        buy_token: token_b.address(),
+        buy_token: token_b.address().into_legacy(),
         buy_amount: to_wei(1),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
@@ -471,9 +492,13 @@ async fn single_replace_order_test(web3: Web3) {
     // Drive solution to verify that new order can be settled
     tracing::info!("Waiting for trade.");
     wait_for_condition(TIMEOUT, || async {
-        let balance_after = token_a.balance_of(trader.address()).call().await.unwrap();
+        let balance_after = token_a
+            .balanceOf(trader.address().into_alloy())
+            .call()
+            .await
+            .unwrap();
         onchain.mint_block().await;
-        balance_before.saturating_sub(balance_after) == to_wei(3)
+        balance_before.saturating_sub(balance_after) == eth!(3)
     })
     .await
     .unwrap();

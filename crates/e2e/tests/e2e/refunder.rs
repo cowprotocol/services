@@ -3,7 +3,11 @@ use {
     chrono::{TimeZone, Utc},
     e2e::{nodes::local_node::TestNodeApi, setup::*},
     ethcontract::{H160, U256},
-    ethrpc::{Web3, block_stream::timestamp_of_current_block_in_seconds},
+    ethrpc::{
+        Web3,
+        alloy::conversions::IntoLegacy,
+        block_stream::timestamp_of_current_block_in_seconds,
+    },
     model::quote::{OrderQuoteRequest, OrderQuoteSide, QuoteSigningScheme, Validity},
     number::nonzero::U256 as NonZeroU256,
     refunder::refund_service::RefundService,
@@ -29,7 +33,7 @@ async fn refunder_tx(web3: Web3) {
     services.start_protocol(solver).await;
 
     // Get quote id for order placement
-    let buy_token = token.address();
+    let buy_token = token.address().into_legacy();
     let receiver = Some(H160([42; 20]));
     let sell_amount = U256::from("3000000000000000");
 

@@ -1,6 +1,7 @@
 use {
+    ::alloy::primitives::U256,
     e2e::{setup::*, tx, tx_value},
-    ethcontract::U256,
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::{
         order::{OrderCreation, OrderKind},
         signature::{EcdsaSigningScheme, Signature, SigningScheme},
@@ -46,12 +47,16 @@ async fn test(web3: Web3) {
     services.start_protocol(solver.clone()).await;
 
     tracing::info!("Placing order");
-    let balance = token.balance_of(trader.address()).call().await.unwrap();
-    assert_eq!(balance, 0.into());
+    let balance = token
+        .balanceOf(trader.address().into_alloy())
+        .call()
+        .await
+        .unwrap();
+    assert_eq!(balance, U256::ZERO);
     let order = OrderCreation {
         sell_token: onchain.contracts().weth.address(),
         sell_amount: to_wei(4),
-        buy_token: token.address(),
+        buy_token: token.address().into_legacy(),
         buy_amount: to_wei(3),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         partially_fillable: true,
@@ -69,8 +74,14 @@ async fn test(web3: Web3) {
     onchain.mint_block().await;
 
     tracing::info!("Waiting for trade.");
-    let trade_happened =
-        || async { token.balance_of(trader.address()).call().await.unwrap() != 0.into() };
+    let trade_happened = || async {
+        token
+            .balanceOf(trader.address().into_alloy())
+            .call()
+            .await
+            .unwrap()
+            != U256::ZERO
+    };
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
 
     // We expect the partially fillable order to only fill half-way.
@@ -84,18 +95,22 @@ async fn test(web3: Web3) {
     assert!(
         // Sell balance is strictly less than 2.0 because of the fee.
         (1_999_000_000_000_000_000_u128..2_000_000_000_000_000_000_u128)
-            .contains(&sell_balance.as_u128())
+            .contains(&u128::try_from(sell_balance).unwrap())
     );
-    let buy_balance = token.balance_of(trader.address()).call().await.unwrap();
+    let buy_balance = token
+        .balanceOf(trader.address().into_alloy())
+        .call()
+        .await
+        .unwrap();
     assert!(
         (1_650_000_000_000_000_000_u128..1_670_000_000_000_000_000_u128)
-            .contains(&buy_balance.as_u128())
+            .contains(&u128::try_from(buy_balance).unwrap())
     );
 
     let settlement_event_processed = || async {
         onchain.mint_block().await;
         let order = services.get_order(&uid).await.unwrap();
-        order.metadata.executed_fee > U256::zero()
+        order.metadata.executed_fee > U256::ZERO.into_legacy()
     };
     wait_for_condition(TIMEOUT, settlement_event_processed)
         .await

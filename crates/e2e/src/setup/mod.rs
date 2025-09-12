@@ -8,6 +8,7 @@ mod solver;
 
 use {
     crate::nodes::{NODE_HOST, Node},
+    ::alloy::signers::local::{MnemonicBuilder, coins_bip39::English},
     anyhow::{Result, anyhow},
     ethcontract::futures::FutureExt,
     ethrpc::Web3,
@@ -212,7 +213,20 @@ async fn run<F, Fut, T>(
         let _ = node_panic_handle.lock().unwrap().take();
     }));
 
-    let web3 = Web3::new_from_url(NODE_HOST);
+    let mut web3 = Web3::new_from_url(NODE_HOST);
+    let phrase = "test test test test test test test test test test test junk";
+    let signers = (0..10).map(|i| {
+        MnemonicBuilder::<English>::default()
+            .phrase(phrase)
+            .index(i)
+            .unwrap()
+            .build()
+            .unwrap()
+    });
+
+    for signer in signers {
+        web3.wallet.register_signer(signer);
+    }
 
     services::clear_database().await;
     // Hack: the closure may actually be unwind unsafe; moreover, `catch_unwind`
