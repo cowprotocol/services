@@ -1,12 +1,7 @@
 use {
     e2e::{setup::*, tx},
     ethcontract::prelude::U256,
-    ethrpc::alloy::{
-        CallBuilderExt,
-        ProviderExt,
-        ProviderSignerExt,
-        conversions::{IntoAlloy, IntoLegacy, TryIntoAlloyAsync},
-    },
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::{
         order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,

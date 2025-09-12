@@ -1,12 +1,7 @@
 use {
     database::order_events::OrderEventLabel,
     e2e::setup::*,
-    ethrpc::alloy::{
-        CallBuilderExt,
-        ProviderExt,
-        ProviderSignerExt,
-        conversions::{IntoAlloy, IntoLegacy, TryIntoAlloyAsync},
-    },
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::{
         order::{
             CancellationPayload,

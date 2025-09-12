@@ -25,12 +25,7 @@ use {
         tx_value,
     },
     ethcontract::{BlockId, BlockNumber, H160, U256, web3::ethabi::Token},
-    ethrpc::alloy::{
-        CallBuilderExt,
-        ProviderExt,
-        ProviderSignerExt,
-        conversions::{IntoAlloy, IntoLegacy, TryIntoAlloyAsync},
-    },
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::{
         order::{OrderClass, OrderCreation, OrderData, OrderKind, OrderUid},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},

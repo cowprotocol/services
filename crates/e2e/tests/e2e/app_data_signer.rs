@@ -1,12 +1,7 @@
 use {
     alloy::primitives::Address,
     e2e::setup::{OnchainComponents, Services, TestAccount, run_test, safe::Safe, to_wei},
-    ethrpc::alloy::{
-        CallBuilderExt,
-        ProviderExt,
-        ProviderSignerExt,
-        conversions::{IntoAlloy, IntoLegacy, TryIntoAlloyAsync},
-    },
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind},
         signature::EcdsaSigningScheme,
