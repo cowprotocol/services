@@ -1,5 +1,5 @@
 use {
-    crate::event_handling::{EventRetrieving, EventStoring},
+    crate::event_handling::{EthcontractEventRetrieving, EventStoring},
     anyhow::{Context, Result},
     contracts::{
         UniswapV3Pool,
@@ -76,7 +76,7 @@ impl ParseLog for UniswapV3Event {
 
 pub struct UniswapV3PoolEventFetcher(pub Web3);
 
-impl EventRetrieving for UniswapV3PoolEventFetcher {
+impl EthcontractEventRetrieving for UniswapV3PoolEventFetcher {
     type Event = UniswapV3Event;
 
     fn get_events(&self) -> DynAllEventsBuilder<Self::Event> {
@@ -118,7 +118,7 @@ impl RecentEventsCache {
 }
 
 #[async_trait::async_trait]
-impl EventStoring<UniswapV3Event> for RecentEventsCache {
+impl EventStoring<Event<UniswapV3Event>> for RecentEventsCache {
     async fn replace_events(
         &mut self,
         events: Vec<Event<UniswapV3Event>>,

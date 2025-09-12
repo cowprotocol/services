@@ -50,7 +50,7 @@ struct Inner {
 }
 
 #[async_trait::async_trait]
-impl EventStoring<CowAmmEvent> for Storage {
+impl EventStoring<ethcontract::Event<CowAmmEvent>> for Storage {
     async fn replace_events(
         &mut self,
         events: Vec<ethcontract::Event<CowAmmEvent>>,

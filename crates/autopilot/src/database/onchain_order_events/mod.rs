@@ -155,7 +155,7 @@ where
 pub(crate) const INDEX_NAME: &str = "onchain_orders";
 
 #[async_trait::async_trait]
-impl<T: Sync + Send + Clone, W: Sync + Send + Clone> EventStoring<ContractEvent>
+impl<T: Sync + Send + Clone, W: Sync + Send + Clone> EventStoring<EthContractEvent<ContractEvent>>
     for OnchainOrderParser<T, W>
 {
     async fn last_event_block(&self) -> Result<u64> {

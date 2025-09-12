@@ -29,7 +29,7 @@ impl Indexer {
 pub(crate) const INDEX_NAME: &str = "settlements";
 
 #[async_trait::async_trait]
-impl EventStoring<contracts::gpv2_settlement::Event> for Indexer {
+impl EventStoring<ethcontract::Event<contracts::gpv2_settlement::Event>> for Indexer {
     async fn last_event_block(&self) -> Result<u64> {
         super::read_last_block_from_db(&self.db.pool, INDEX_NAME)
             .await

@@ -1,8 +1,8 @@
 use {
     contracts::cow_amm_legacy_helper::Event as CowAmmEvent,
-    ethcontract::{Address, H256, contract::AllEventsBuilder, dyns::DynTransport},
+    ethcontract::{Address, H256, contract::AllEventsBuilder, dyns::DynAllEventsBuilder},
     ethrpc::Web3,
-    shared::event_handling::EventRetrieving,
+    shared::event_handling::EthcontractEventRetrieving,
 };
 
 const AMM_DEPLOYED_TOPIC: H256 = H256(hex_literal::hex!(
@@ -14,10 +14,10 @@ pub(crate) struct Factory {
     pub(crate) address: Address,
 }
 
-impl EventRetrieving for Factory {
+impl EthcontractEventRetrieving for Factory {
     type Event = CowAmmEvent;
 
-    fn get_events(&self) -> AllEventsBuilder<DynTransport, Self::Event> {
+    fn get_events(&self) -> DynAllEventsBuilder<Self::Event> {
         let mut events = AllEventsBuilder::new(self.web3.legacy.clone(), self.address, None);
         events.filter = events.filter.topic0(Some(AMM_DEPLOYED_TOPIC).into());
         events
