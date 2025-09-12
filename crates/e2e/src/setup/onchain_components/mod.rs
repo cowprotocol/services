@@ -5,7 +5,7 @@ use {
     },
     ::alloy::signers::local::PrivateKeySigner,
     app_data::Hook,
-    contracts::CowProtocolToken,
+    contracts::{CowProtocolToken, alloy::ERC20Mintable},
     core::panic,
     ethcontract::{
         Account,
@@ -15,12 +15,7 @@ use {
         U256,
         transaction::{TransactionBuilder, TransactionResult},
     },
-    ethrpc::alloy::{
-        CallBuilderExt,
-        ProviderExt,
-        ProviderSignerExt,
-        conversions::{IntoAlloy, IntoLegacy, TryIntoAlloyAsync},
-    },
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     hex_literal::hex,
     model::{
         DomainSeparator,
@@ -176,7 +171,7 @@ impl Iterator for AccountGenerator {
 
 #[derive(Debug)]
 pub struct MintableToken {
-    contract: contracts::alloy::ERC20Mintable::Instance,
+    contract: ERC20Mintable::Instance,
     minter: Account,
 }
 
@@ -190,7 +185,7 @@ impl MintableToken {
 }
 
 impl Deref for MintableToken {
-    type Target = contracts::alloy::ERC20Mintable::Instance;
+    type Target = ERC20Mintable::Instance;
 
     fn deref(&self) -> &Self::Target {
         &self.contract
@@ -401,16 +396,12 @@ impl OnchainComponents {
         let mut res = Vec::with_capacity(N);
 
         for _ in 0..N {
-            let contract_address =
-                contracts::alloy::ERC20Mintable::Instance::deploy_builder(self.web3.alloy.clone())
-                    .from(minter.address().into_alloy())
-                    .deploy()
-                    .await
-                    .expect("MintableERC20 deployment failed");
-            let contract = contracts::alloy::ERC20Mintable::Instance::new(
-                contract_address,
-                self.web3.alloy.clone(),
-            );
+            let contract_address = ERC20Mintable::Instance::deploy_builder(self.web3.alloy.clone())
+                .from(minter.address().into_alloy())
+                .deploy()
+                .await
+                .expect("MintableERC20 deployment failed");
+            let contract = ERC20Mintable::Instance::new(contract_address, self.web3.alloy.clone());
 
             res.push(MintableToken {
                 contract,
