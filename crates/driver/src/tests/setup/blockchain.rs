@@ -422,16 +422,11 @@ impl Blockchain {
         let mut tokens = HashMap::new();
         for pool in config.pools.iter() {
             if pool.reserve_a.token != "WETH" && !tokens.contains_key(pool.reserve_a.token) {
-                let token = wait_for(&web3, async {
-                    ERC20Mintable::Instance::deploy_builder(web3.alloy.clone())
-                        .deploy()
-                        .await
-                        .map(|contract_address| {
-                            ERC20Mintable::Instance::new(contract_address, web3.alloy.clone())
-                        })
-                })
-                .await
-                .unwrap();
+                let contract_address = ERC20Mintable::Instance::deploy_builder(web3.alloy.clone())
+                    .deploy()
+                    .await
+                    .unwrap();
+                let token = ERC20Mintable::Instance::new(contract_address, web3.alloy.clone());
 
                 tokens.insert(pool.reserve_a.token, token);
             }
