@@ -106,6 +106,10 @@ fn run() -> Result<()> {
             "HooksTrampoline",
             "Manually vendored ABI and bytecode for hooks trampoline contract",
         )
+        .manual(
+            "ILiquoriceSettlement",
+            "Liquorice does not publish its code",
+        )
         .npm(
             "UniswapV2Factory",
             "@uniswap/v2-core@1.0.1/build/UniswapV2Factory.json",
