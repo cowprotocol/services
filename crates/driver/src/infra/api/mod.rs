@@ -11,8 +11,8 @@ use {
             Simulator,
             config::file::OrderPriorityStrategy,
             liquidity,
+            solver::Solver,
             notify,
-            solver::{Solver, Timeouts},
             tokens,
         },
     },
@@ -24,7 +24,7 @@ use {
 };
 
 mod error;
-mod routes;
+pub mod routes;
 
 const REQUEST_BODY_LIMIT: usize = 10 * 1024 * 1024;
 
@@ -61,6 +61,7 @@ impl Api {
             app_data_retriever.clone(),
             self.liquidity.clone(),
             disable_access_list_simulation,
+            tokens.clone(),
         ));
 
         let order_sorting_strategies =
@@ -193,10 +194,6 @@ impl State {
 
     fn tokens(&self) -> &tokens::Fetcher {
         &self.0.tokens
-    }
-
-    fn timeouts(&self) -> Timeouts {
-        self.0.solver.timeouts()
     }
 }
 

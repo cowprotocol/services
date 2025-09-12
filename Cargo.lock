@@ -6009,6 +6009,7 @@ dependencies = [
 name = "solver"
 version = "0.1.0"
 dependencies = [
+ "alloy",
  "anyhow",
  "arc-swap",
  "async-trait",

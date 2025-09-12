@@ -6,6 +6,7 @@ use {
             liquidity::{self, balancer},
         },
     },
+    ethrpc::alloy::conversions::IntoLegacy,
     shared::sources::balancer_v2::pool_fetching::WeightedPoolVersion,
     solver::liquidity::{WeightedProductOrder, balancer_v2},
 };
@@ -56,6 +57,7 @@ fn vault(pool: &WeightedProductOrder) -> eth::ContractAddress {
         .expect("downcast balancer settlement handler")
         .vault()
         .address()
+        .into_legacy()
         .into()
 }
 

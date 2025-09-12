@@ -7,9 +7,9 @@ use {
     anyhow::{Context, Result},
     bigdecimal::BigDecimal,
     database::order_events::OrderEventLabel,
-    futures::{FutureExt, future::join_all},
+    futures::{FutureExt, StreamExt, future::join_all, stream::FuturesUnordered},
     indexmap::IndexSet,
-    itertools::{Either, Itertools},
+    itertools::Itertools,
     model::{
         order::{Order, OrderClass, OrderUid},
         signature::Signature,
@@ -461,51 +461,40 @@ async fn find_invalid_signature_orders(
     orders: &[Order],
     signature_validator: &dyn SignatureValidating,
 ) -> Vec<OrderUid> {
-    let (mut invalid_orders, orders): (Vec<_>, Vec<_>) = orders.iter().partition_map(|order| {
+    let mut invalid_orders = vec![];
+    let mut signature_check_futures = FuturesUnordered::new();
+
+    for order in orders {
         if matches!(
             order.metadata.status,
             model::order::OrderStatus::PresignaturePending
         ) {
-            Either::Left(order.metadata.uid)
-        } else {
-            Either::Right(order)
-        }
-    });
-
-    let checks = orders
-        .iter()
-        .filter_map(|order| match &order.signature {
-            Signature::Eip1271(signature) => {
-                let (H256(hash), signer, _) = order.metadata.uid.parts();
-                Some(SignatureCheck {
-                    signer,
-                    hash,
-                    signature: signature.clone(),
-                    interactions: order.interactions.pre.clone(),
-                })
-            }
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-
-    if checks.is_empty() {
-        return invalid_orders;
-    }
-
-    let mut validations = signature_validator
-        .validate_signatures(checks)
-        .await
-        .into_iter();
-    for order in orders {
-        if !matches!(&order.signature, Signature::Eip1271(_)) {
+            invalid_orders.push(order.metadata.uid);
             continue;
         }
-        if let Err(err) = validations.next().unwrap() {
-            tracing::warn!(
-                order =% order.metadata.uid, ?err,
-                "invalid EIP-1271 signature"
-            );
-            invalid_orders.push(order.metadata.uid)
+
+        if let Signature::Eip1271(signature) = &order.signature {
+            signature_check_futures.push(async {
+                let (H256(hash), signer, _) = order.metadata.uid.parts();
+                match signature_validator
+                    .validate_signature(SignatureCheck {
+                        signer,
+                        hash,
+                        signature: signature.clone(),
+                        interactions: order.interactions.pre.clone(),
+                    })
+                    .await
+                {
+                    Ok(_) => None,
+                    Err(_) => Some(order.metadata.uid),
+                }
+            });
+        }
+    }
+
+    while let Some(res) = signature_check_futures.next().await {
+        if let Some(invalid_order_uid) = res {
+            invalid_orders.push(invalid_order_uid);
         }
     }
 
@@ -1252,32 +1241,36 @@ mod tests {
 
         let mut signature_validator = MockSignatureValidating::new();
         signature_validator
-            .expect_validate_signatures()
-            .with(eq(vec![
-                SignatureCheck {
-                    signer: H160([22; 20]),
-                    hash: [2; 32],
-                    signature: vec![2, 2],
-                    interactions: vec![InteractionData {
-                        target: H160([0xe3; 20]),
-                        value: U256::zero(),
-                        call_data: vec![5, 6],
-                    }],
-                },
-                SignatureCheck {
-                    signer: H160([44; 20]),
-                    hash: [4; 32],
-                    signature: vec![4, 4, 4, 4],
-                    interactions: vec![],
-                },
-                SignatureCheck {
-                    signer: H160([55; 20]),
-                    hash: [5; 32],
-                    signature: vec![5, 5, 5, 5, 5],
-                    interactions: vec![],
-                },
-            ]))
-            .returning(|_| vec![Ok(()), Err(SignatureValidationError::Invalid), Ok(())]);
+            .expect_validate_signature()
+            .with(eq(SignatureCheck {
+                signer: H160([22; 20]),
+                hash: [2; 32],
+                signature: vec![2, 2],
+                interactions: vec![InteractionData {
+                    target: H160([0xe3; 20]),
+                    value: U256::zero(),
+                    call_data: vec![5, 6],
+                }],
+            }))
+            .returning(|_| Ok(()));
+        signature_validator
+            .expect_validate_signature()
+            .with(eq(SignatureCheck {
+                signer: H160([44; 20]),
+                hash: [4; 32],
+                signature: vec![4, 4, 4, 4],
+                interactions: vec![],
+            }))
+            .returning(|_| Err(SignatureValidationError::Invalid));
+        signature_validator
+            .expect_validate_signature()
+            .with(eq(SignatureCheck {
+                signer: H160([55; 20]),
+                hash: [5; 32],
+                signature: vec![5, 5, 5, 5, 5],
+                interactions: vec![],
+            }))
+            .returning(|_| Ok(()));
 
         let invalid_signature_orders =
             find_invalid_signature_orders(&orders, &signature_validator).await;

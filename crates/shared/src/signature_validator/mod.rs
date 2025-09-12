@@ -48,10 +48,10 @@ pub enum SignatureValidationError {
 #[async_trait::async_trait]
 /// <https://eips.ethereum.org/EIPS/eip-1271>
 pub trait SignatureValidating: Send + Sync {
-    async fn validate_signatures(
+    async fn validate_signature(
         &self,
-        checks: Vec<SignatureCheck>,
-    ) -> Vec<Result<(), SignatureValidationError>>;
+        check: SignatureCheck,
+    ) -> Result<(), SignatureValidationError>;
 
     /// Validates the signature and returns the `eth_estimateGas` of the
     /// isValidSignature call minus the tx initation gas amount of 21k.
