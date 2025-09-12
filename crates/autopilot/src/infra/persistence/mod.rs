@@ -946,15 +946,6 @@ impl Persistence {
     }
 }
 
-pub struct AuctionSummary {
-    pub block: eth::BlockNo,
-    pub trades_in_orders: HashSet<domain::OrderUid>,
-    pub surplus_capturing_jit_order_owners: HashSet<domain::OrderUid>,
-    // orders in the auction + fee policies
-    // surplus capturing jit order owner
-    // native price of all the traded tokens
-}
-
 #[derive(prometheus_metric_storage::MetricStorage)]
 struct Metrics {
     /// Timing of db queries.
