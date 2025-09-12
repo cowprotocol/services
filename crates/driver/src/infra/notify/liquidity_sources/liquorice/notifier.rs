@@ -142,7 +142,7 @@ mod utils {
     /// Extracts Liquorice maker RFQ ID from CoW interaction.
     /// RFQ ID is extracted from the calldata corresponding to the
     /// `settleSingle` function of the LiquoriceSettlement contract
-    /// <https://etherscan.io/address/0xaca684a3f64e0eae4812b734e3f8f205d3eed167#code#F6#L83>
+    /// <https://etherscan.io/address/0x0448633eb8b0a42efed924c42069e0dcf08fb552#code#F8#L83>
     pub fn extract_rfq_id_from_interaction(
         interaction: &eth::Interaction,
         liquorice_settlement_contract_address: eth::Address,
@@ -167,11 +167,11 @@ mod utils {
         }?;
 
         // Token at index 1 corresponds to `Single` order
-        // <https://etherscan.io/address/0xaca684a3f64e0eae4812b734e3f8f205d3eed167#code#F6#L85>
+        // <https://etherscan.io/address/0x0448633eb8b0a42efed924c42069e0dcf08fb552#code#F8#L85>
         tokens.get(1).and_then(|token| match token {
             Token::Tuple(tokens) => {
                 // Token at index 0 corresponds to `rfqId` field
-                // <https://etherscan.io/address/0xaca684a3f64e0eae4812b734e3f8f205d3eed167#code#F6#L42>
+                // <https://etherscan.io/address/0x0448633eb8b0a42efed924c42069e0dcf08fb552#code#F8#L42>
                 tokens.first().and_then(|token| match token {
                     Token::String(rfq_id) => Some(rfq_id.clone()),
                     _ => None,

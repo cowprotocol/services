@@ -30,7 +30,7 @@ pub mod order {
         }
 
         impl Single {
-            // See <https://etherscan.io/address/0xaca684a3f64e0eae4812b734e3f8f205d3eed167#code#F11#L46>
+            // See <https://etherscan.io/address/0x0448633eb8b0a42efed924c42069e0dcf08fb552#code#F8#L41>
             const LIQUORICE_SINGLE_ORDER_TYPEHASH: [u8; 32] =
                 hex!("d28e809b708f5ee38be8347d6d869d8232493c094ab2dde98369e4102369a99d");
 
@@ -66,7 +66,7 @@ pub mod order {
                 }
             }
 
-            // See <https://etherscan.io/address/0xaca684a3f64e0eae4812b734e3f8f205d3eed167#code#F11#L180>
+            // See <https://etherscan.io/address/0x0448633eb8b0a42efed924c42069e0dcf08fb552#code#F13#L180>
             pub fn hash(&self) -> [u8; 32] {
                 let order_data_part_1 = {
                     let mut hash_data = [0u8; 128];
