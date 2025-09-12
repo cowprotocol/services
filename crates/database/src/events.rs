@@ -99,6 +99,7 @@ pub async fn append(
     // SELECT 1;
 
     let mut qb: QueryBuilder<Postgres> = QueryBuilder::new("WITH ");
+    let mut needs_comma = false;
     if !settlements.is_empty() {
         qb.push(
             "insSettlements AS (INSERT INTO settlements (tx_hash, block_number, log_index, \
@@ -110,12 +111,17 @@ pub async fn append(
             builder.push_bind(index.log_index);
             builder.push_bind(settlement.solver);
         });
+        qb.push(")");
+        needs_comma = true;
     }
 
     if !trades.is_empty() {
+        if needs_comma {
+            qb.push(",");
+        }
         qb.push(
-            "), insTrades AS (INSERT INTO trades (block_number, log_index, order_uid, \
-             sell_amount, buy_amount, fee_amount)",
+            " insTrades AS (INSERT INTO trades (block_number, log_index, order_uid, sell_amount, \
+             buy_amount, fee_amount)",
         );
         qb.push_values(trades, |mut builder, (index, trade)| {
             builder.push_bind(index.block_number);
@@ -125,23 +131,32 @@ pub async fn append(
             builder.push_bind(&trade.buy_amount);
             builder.push_bind(&trade.fee_amount);
         });
+        qb.push(")");
+        needs_comma = true;
     }
 
     if !invalidations.is_empty() {
+        if needs_comma {
+            qb.push(",");
+        }
         qb.push(
-            "), insInvalidations AS (INSERT INTO invalidations (block_number, log_index, \
-             order_uid) ",
+            "insInvalidations AS (INSERT INTO invalidations (block_number, log_index, order_uid) ",
         );
         qb.push_values(invalidations, |mut builder, (index, invalidation)| {
             builder.push_bind(index.block_number);
             builder.push_bind(index.log_index);
             builder.push_bind(invalidation.order_uid);
         });
+        qb.push(")");
+        needs_comma = true;
     }
 
     if !pre_signatures.is_empty() {
+        if needs_comma {
+            qb.push(",");
+        }
         qb.push(
-            "), insPreSignatures AS (INSERT INTO presignature_events (block_number, log_index, \
+            "insPreSignatures AS (INSERT INTO presignature_events (block_number, log_index, \
              owner, order_uid, signed)",
         );
         qb.push_values(pre_signatures, |mut builder, (index, pre_signature)| {
@@ -151,16 +166,12 @@ pub async fn append(
             builder.push_bind(pre_signature.order_uid);
             builder.push_bind(pre_signature.signed);
         });
+        qb.push(")");
     }
 
     // final select just to complete the CTE chain
-    qb.push(") SELECT 1;");
-
-    let start = std::time::Instant::now();
-    let query = qb.sql().to_string();
-    tracing::error!(time = ?start.elapsed(), query, "finished insert");
+    qb.push(" SELECT 1;");
     qb.build().execute(ex).await?;
-    tracing::error!(time = ?start.elapsed(), query, "finished insert");
 
     Ok(())
 }
