@@ -14,13 +14,17 @@ use {
 pub async fn save(
     ex: &mut PgConnection,
     id: AuctionId,
-    data: &JsonValue,
+    json_string: &str,
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
 INSERT INTO solver_competitions (id, json)
-VALUES ($1, $2)
+VALUES ($1, $2::jsonb)
     ;"#;
-    sqlx::query(QUERY).bind(id).bind(data).execute(ex).await?;
+    sqlx::query(QUERY)
+        .bind(id)
+        .bind(json_string)
+        .execute(ex)
+        .await?;
     Ok(())
 }
 
@@ -117,7 +121,8 @@ mod tests {
         crate::clear_DANGER_(&mut db).await.unwrap();
 
         let value = JsonValue::Bool(true);
-        save(&mut db, 0, &value).await.unwrap();
+        let value_str = serde_json::to_string(&value).unwrap();
+        save(&mut db, 0, &value_str).await.unwrap();
 
         // load by id works
         let value_ = load_by_id(&mut db, 0).await.unwrap().unwrap();
