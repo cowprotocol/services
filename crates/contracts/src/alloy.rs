@@ -438,9 +438,13 @@ macro_rules! bindings {
                     $crate::alloy::networks::*,
                 };
 
-                pub static DEPLOYMENT_INFO: LazyLock<HashMap<u64, (Address, Option<u64>)>> = LazyLock::new(|| {
+                static DEPLOYMENT_INFO: LazyLock<HashMap<u64, (Address, Option<u64>)>> = LazyLock::new(|| {
                     $deployment_info
                 });
+
+                pub fn deployment_address(chain_id: &u64) -> Option<alloy::primitives::Address> {
+                    DEPLOYMENT_INFO.get(chain_id).map(|(addr, _)| *addr)
+                }
 
                 impl $crate::alloy::InstanceExt for Instance {
                     fn deployed(provider: &DynProvider) -> impl Future<Output = Result<Self>> + Send {

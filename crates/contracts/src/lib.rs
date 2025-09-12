@@ -181,9 +181,7 @@ mod tests {
             assert_has_deployment_address!(HooksTrampoline for *network);
             assert_has_deployment_address!(BalancerV2Vault for *network);
             assert!(
-                alloy::BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory::DEPLOYMENT_INFO
-                    .get(network)
-                    .is_some()
+                alloy::BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory::deployment_address(network).is_some()
             )
         }
         for network in &[MAINNET, GNOSIS, SEPOLIA] {
@@ -209,13 +207,10 @@ mod tests {
         }
         for network in &[MAINNET, ARBITRUM_ONE] {
             assert!(
-                alloy::BalancerV2WeightedPool2TokensFactory::DEPLOYMENT_INFO
-                    .get(network)
-                    .is_some()
+                alloy::BalancerV2WeightedPool2TokensFactory::deployment_address(network).is_some()
             );
             assert!(
-                alloy::BalancerV2LiquidityBootstrappingPoolFactory::DEPLOYMENT_INFO
-                    .get(network)
+                alloy::BalancerV2LiquidityBootstrappingPoolFactory::deployment_address(network)
                     .is_some()
             );
         }
@@ -224,18 +219,10 @@ mod tests {
             assert_has_deployment_address!(PancakeRouter for *network);
         }
 
-        assert!(
-            alloy::BalancerV2WeightedPoolFactory::DEPLOYMENT_INFO
-                .get(&MAINNET)
-                .is_some()
-        );
+        assert!(alloy::BalancerV2WeightedPoolFactory::deployment_address(&MAINNET).is_some());
 
         for network in &[MAINNET, GNOSIS, ARBITRUM_ONE] {
-            assert!(
-                alloy::BalancerV2StablePoolFactoryV2::DEPLOYMENT_INFO
-                    .get(network)
-                    .is_some()
-            );
+            assert!(alloy::BalancerV2StablePoolFactoryV2::deployment_address(network).is_some());
         }
 
         for network in &[MAINNET, GNOSIS, ARBITRUM_ONE] {
@@ -267,24 +254,14 @@ mod tests {
             assert_has_deployment_information!(GPv2Settlement for *network);
             assert_has_deployment_information!(BalancerV2Vault for *network);
         }
-        assert!(
-            alloy::BalancerV2WeightedPoolFactory::DEPLOYMENT_INFO
-                .get(&MAINNET)
-                .is_some()
-        );
+        assert!(alloy::BalancerV2WeightedPoolFactory::deployment_address(&MAINNET).is_some());
         for network in &[MAINNET, ARBITRUM_ONE] {
             assert!(
-                alloy::BalancerV2WeightedPool2TokensFactory::DEPLOYMENT_INFO
-                    .get(network)
-                    .is_some()
+                alloy::BalancerV2WeightedPool2TokensFactory::deployment_address(network).is_some()
             );
         }
         for network in &[MAINNET, GNOSIS, ARBITRUM_ONE] {
-            assert!(
-                alloy::BalancerV2StablePoolFactoryV2::DEPLOYMENT_INFO
-                    .get(network)
-                    .is_some()
-            );
+            assert!(alloy::BalancerV2StablePoolFactoryV2::deployment_address(network).is_some());
         }
     }
 

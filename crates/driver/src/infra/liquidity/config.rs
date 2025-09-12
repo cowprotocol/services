@@ -225,11 +225,10 @@ impl BalancerV2 {
         macro_rules! address_for {
             ( $chain:expr, [ $( $($p:ident)::+ ),* $(,)? ] ) => {{
                 let arr = [ $({
-                    $($p)::+::DEPLOYMENT_INFO.get(&$chain.id())
+                    $($p)::+::deployment_address(&$chain.id())
                 }),* ];
                 arr.into_iter()
                     .flatten()
-                    .map(|(addr, _)| *addr)
                     .collect::<Vec<_>>()
             }};
         }
