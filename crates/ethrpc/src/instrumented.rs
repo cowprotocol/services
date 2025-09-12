@@ -81,6 +81,7 @@ pub fn instrument_with_label(web3: &crate::Web3, label: String) -> crate::Web3 {
     crate::Web3 {
         legacy: web3::Web3::new(DynTransport::new(instrumented)),
         alloy: web3.alloy.labeled(label),
+        wallet: web3.wallet.clone(),
     }
 }
 

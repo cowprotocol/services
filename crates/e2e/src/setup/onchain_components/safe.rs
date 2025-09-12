@@ -12,13 +12,7 @@ use {
         GnosisSafeProxyFactory,
     },
     ethcontract::transaction::TransactionBuilder,
-    ethrpc::{
-        AlloyProvider,
-        alloy::{
-            ProviderSignerExt,
-            conversions::{IntoAlloy, TryIntoAlloyAsync},
-        },
-    },
+    ethrpc::{AlloyProvider, alloy::conversions::IntoAlloy},
     hex_literal::hex,
     model::{
         DomainSeparator,
@@ -39,11 +33,8 @@ pub struct Infrastructure {
 
 impl Infrastructure {
     pub async fn new(provider: AlloyProvider) -> Self {
-        let first_account = *provider.get_accounts().await.unwrap().first().unwrap();
-
         let singleton = {
             let deployed_address = GnosisSafe::Instance::deploy_builder(provider.clone())
-                .from(first_account)
                 .deploy()
                 .await
                 .unwrap();
@@ -52,7 +43,6 @@ impl Infrastructure {
         let fallback = {
             let deployed_address =
                 GnosisSafeCompatibilityFallbackHandler::Instance::deploy_builder(provider.clone())
-                    .from(first_account)
                     .deploy()
                     .await
                     .unwrap();
@@ -64,7 +54,6 @@ impl Infrastructure {
         let factory = {
             let deployed_address =
                 GnosisSafeProxyFactory::Instance::deploy_builder(provider.clone())
-                    .from(first_account)
                     .deploy()
                     .await
                     .unwrap();
@@ -84,15 +73,14 @@ impl Infrastructure {
         owners: Vec<TestAccount>,
         threshold: usize,
     ) -> GnosisSafe::Instance {
-        let provider = self
-            .provider
-            .with_signer(owners[0].account().clone().try_into_alloy().await.unwrap());
-        let safe_proxy =
-            GnosisSafeProxy::Instance::deploy_builder(provider.clone(), *self.singleton.address())
-                .deploy()
-                .await
-                .unwrap();
-        let safe = GnosisSafe::Instance::new(safe_proxy, provider.clone());
+        let safe_proxy = GnosisSafeProxy::Instance::deploy_builder(
+            self.provider.clone(),
+            *self.singleton.address(),
+        )
+        .deploy()
+        .await
+        .unwrap();
+        let safe = GnosisSafe::Instance::new(safe_proxy, self.provider.clone());
 
         contracts::alloy::tx!(
             safe.setup(

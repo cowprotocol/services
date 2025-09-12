@@ -546,8 +546,7 @@ async fn quote_verification(web3: Web3) {
             .clone(),
     );
     let safe_address = safe_creation_builder.clone().call().await.unwrap();
-    let first_account = *web3.alloy.get_accounts().await.unwrap().first().unwrap();
-    contracts::alloy::tx!(safe_creation_builder, first_account);
+    contracts::alloy::tx!(safe_creation_builder);
 
     let safe = Safe::deployed(
         chain_id,

@@ -3,6 +3,7 @@ use {
         nodes::forked_node::ForkedNodeApi,
         setup::{DeployedContracts, deploy::Contracts},
     },
+    ::alloy::signers::local::PrivateKeySigner,
     app_data::Hook,
     contracts::{CowProtocolToken, ERC20Mintable},
     ethcontract::{
@@ -286,6 +287,9 @@ impl OnchainComponents {
         assert_eq!(res.len(), N);
 
         for account in &res {
+            let signer = PrivateKeySigner::from_slice(account.private_key()).unwrap();
+            self.web3.wallet.register_signer(signer);
+
             self.send_wei(account.address(), with_wei).await;
         }
 
@@ -298,6 +302,10 @@ impl OnchainComponents {
         let solvers = self.make_accounts::<N>(with_wei).await;
 
         for solver in &solvers {
+            self.web3
+                .wallet
+                .register_signer(PrivateKeySigner::from_slice(solver.private_key()).unwrap());
+
             self.contracts
                 .gp_authenticator
                 .add_solver(solver.address())

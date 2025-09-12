@@ -29,7 +29,7 @@ reqwest = { workspace = true, features = ["cookies"] }
 scopeguard = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-tokio = { workspace = true, features = [] }
+tokio = { workspace = true, features = ["rt", "rt-multi-thread"] }
 tokio-stream = { workspace = true }
 tower = { workspace = true }
 tracing = { workspace = true }
