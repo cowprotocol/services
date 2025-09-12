@@ -2547,6 +2547,7 @@ dependencies = [
  "sqlx",
  "tempfile",
  "tokio",
+ "toml",
  "tracing",
  "warp",
  "web3",
@@ -6008,6 +6009,7 @@ dependencies = [
 name = "solver"
 version = "0.1.0"
 dependencies = [
+ "alloy",
  "anyhow",
  "arc-swap",
  "async-trait",
