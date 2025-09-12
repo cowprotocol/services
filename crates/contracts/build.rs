@@ -1441,8 +1441,8 @@ fn main() {
     generate_contract_with_config("ILiquoriceSettlement", |builder| {
         // <https://liquorice.gitbook.io/liquorice-docs/links/smart-contracts>
         builder
-            .add_network_str(MAINNET, "0xAcA684A3F64e0eae4812B734E3f8f205D3EEd167")
-            .add_network_str(ARBITRUM_ONE, "0xAcA684A3F64e0eae4812B734E3f8f205D3EEd167")
+            .add_network_str(MAINNET, "0x0448633eb8B0A42EfED924C42069E0DcF08fb552")
+            .add_network_str(ARBITRUM_ONE, "0x0448633eb8B0A42EfED924C42069E0DcF08fb552")
     });
     generate_contract_with_config("CowProtocolToken", |builder| {
         builder
