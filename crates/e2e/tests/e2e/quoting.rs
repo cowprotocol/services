@@ -367,15 +367,13 @@ async fn quote_timeout(web3: Web3) {
 
     // set up trader to pass balance checks during order creation
     sell_token.mint(trader.address(), to_wei(1)).await;
-    sell_token
-        .approve(
+    contracts::alloy::tx!(
+        sell_token.approve(
             onchain.contracts().allowance.into_alloy(),
             to_wei(1).into_alloy(),
-        )
-        .from(trader.address().into_alloy())
-        .send_and_watch()
-        .await
-        .unwrap();
+        ),
+        trader.address().into_alloy()
+    );
 
     let order = OrderCreation {
         sell_token: sell_token.address().into_legacy(),

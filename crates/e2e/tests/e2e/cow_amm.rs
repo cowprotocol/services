@@ -90,14 +90,13 @@ async fn cow_amm_jit(web3: Web3) {
 
     // Fund cow amm owner with 2_000 dai and allow factory take them
     dai.mint(cow_amm_owner.address(), to_wei(2_000)).await;
-    dai.approve(
-        cow_amm_factory.address().into_alloy(),
-        to_wei(2_000).into_alloy(),
-    )
-    .from(cow_amm_owner.address().into_alloy())
-    .send_and_watch()
-    .await
-    .unwrap();
+    contracts::alloy::tx!(
+        dai.approve(
+            cow_amm_factory.address().into_alloy(),
+            to_wei(2_000).into_alloy(),
+        ),
+        cow_amm_owner.address().into_alloy()
+    );
     // Fund cow amm owner with 1 WETH and allow factory take them
     tx_value!(
         cow_amm_owner.account(),
@@ -712,14 +711,13 @@ async fn cow_amm_opposite_direction(web3: Web3) {
     // Fund the CoW AMM owner with DAI and WETH and approve the factory to transfer
     // them
     dai.mint(cow_amm_owner.address(), to_wei(2_000)).await;
-    dai.approve(
-        cow_amm_factory.address().into_alloy(),
-        to_wei(2_000).into_alloy(),
-    )
-    .from(cow_amm_owner.address().into_alloy())
-    .send_and_watch()
-    .await
-    .unwrap();
+    contracts::alloy::tx!(
+        dai.approve(
+            cow_amm_factory.address().into_alloy(),
+            to_wei(2_000).into_alloy(),
+        ),
+        cow_amm_owner.address().into_alloy()
+    );
 
     tx_value!(
         cow_amm_owner.account(),
@@ -918,14 +916,13 @@ async fn cow_amm_opposite_direction(web3: Web3) {
 
     // Fund trader "bob" with DAI and approve allowance
     dai.mint(bob.address(), to_wei(250)).await;
-    dai.approve(
-        onchain.contracts().allowance.into_alloy(),
-        alloy::primitives::U256::MAX,
-    )
-    .from(bob.address().into_alloy())
-    .send_and_watch()
-    .await
-    .unwrap();
+    contracts::alloy::tx!(
+        dai.approve(
+            onchain.contracts().allowance.into_alloy(),
+            alloy::primitives::U256::MAX,
+        ),
+        bob.address().into_alloy()
+    );
 
     // Get balances before the trade
     let amm_weth_balance_before = onchain

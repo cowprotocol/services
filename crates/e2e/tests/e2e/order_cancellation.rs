@@ -46,15 +46,13 @@ async fn order_cancellation(web3: Web3) {
     token.mint(trader.address(), to_wei(10)).await;
 
     // Approve GPv2 for trading
-    token
-        .approve(
+    contracts::alloy::tx!(
+        token.approve(
             onchain.contracts().allowance.into_alloy(),
             to_wei(10).into_alloy(),
-        )
-        .from(trader.address().into_alloy())
-        .send_and_watch()
-        .await
-        .unwrap();
+        ),
+        trader.address().into_alloy()
+    );
 
     let services = Services::new(&onchain).await;
     colocation::start_driver(

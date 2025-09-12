@@ -62,24 +62,20 @@ async fn try_replace_unreplaceable_order_test(web3: Web3) {
             token_b.address().into_legacy()
         )
     );
-    token_a
-        .approve(
+    contracts::alloy::tx!(
+        token_a.approve(
             onchain.contracts().uniswap_v2_router.address().into_alloy(),
             to_wei(1000).into_alloy(),
-        )
-        .from(solver.address().into_alloy())
-        .send_and_watch()
-        .await
-        .unwrap();
-    token_b
-        .approve(
+        ),
+        solver.address().into_alloy()
+    );
+    contracts::alloy::tx!(
+        token_b.approve(
             onchain.contracts().uniswap_v2_router.address().into_alloy(),
             to_wei(1000).into_alloy(),
-        )
-        .from(solver.address().into_alloy())
-        .send_and_watch()
-        .await
-        .unwrap();
+        ),
+        solver.address().into_alloy()
+    );
     tx!(
         solver.account(),
         onchain.contracts().uniswap_v2_router.add_liquidity(
@@ -95,15 +91,13 @@ async fn try_replace_unreplaceable_order_test(web3: Web3) {
     );
 
     // Approve GPv2 for trading
-    token_a
-        .approve(
+    contracts::alloy::tx!(
+        token_a.approve(
             onchain.contracts().allowance.into_alloy(),
             to_wei(15).into_alloy(),
-        )
-        .from(trader.address().into_alloy())
-        .send_and_watch()
-        .await
-        .unwrap();
+        ),
+        trader.address().into_alloy()
+    );
 
     // disable auto mining to prevent order being immediately executed
     web3.api::<TestNodeApi<_>>()
@@ -244,24 +238,20 @@ async fn try_replace_someone_else_order_test(web3: Web3) {
             token_b.address().into_legacy()
         )
     );
-    token_a
-        .approve(
+    contracts::alloy::tx!(
+        token_a.approve(
             onchain.contracts().uniswap_v2_router.address().into_alloy(),
             to_wei(1000).into_alloy(),
-        )
-        .from(solver.address().into_alloy())
-        .send_and_watch()
-        .await
-        .unwrap();
-    token_b
-        .approve(
+        ),
+        solver.address().into_alloy()
+    );
+    contracts::alloy::tx!(
+        token_b.approve(
             onchain.contracts().uniswap_v2_router.address().into_alloy(),
             to_wei(1000).into_alloy(),
-        )
-        .from(solver.address().into_alloy())
-        .send_and_watch()
-        .await
-        .unwrap();
+        ),
+        solver.address().into_alloy()
+    );
     tx!(
         solver.account(),
         onchain.contracts().uniswap_v2_router.add_liquidity(
@@ -277,24 +267,20 @@ async fn try_replace_someone_else_order_test(web3: Web3) {
     );
 
     // Approve GPv2 for trading
-    token_a
-        .approve(
+    contracts::alloy::tx!(
+        token_a.approve(
             onchain.contracts().allowance.into_alloy(),
             to_wei(15).into_alloy(),
-        )
-        .from(trader_a.address().into_alloy())
-        .send_and_watch()
-        .await
-        .unwrap();
-    token_a
-        .approve(
+        ),
+        trader_a.address().into_alloy()
+    );
+    contracts::alloy::tx!(
+        token_a.approve(
             onchain.contracts().allowance.into_alloy(),
             to_wei(15).into_alloy(),
-        )
-        .from(trader_b.address().into_alloy())
-        .send_and_watch()
-        .await
-        .unwrap();
+        ),
+        trader_b.address().into_alloy()
+    );
 
     // Place Orders
     let services = Services::new(&onchain).await;
@@ -385,24 +371,20 @@ async fn single_replace_order_test(web3: Web3) {
             token_b.address().into_legacy()
         )
     );
-    token_a
-        .approve(
+    contracts::alloy::tx!(
+        token_a.approve(
             onchain.contracts().uniswap_v2_router.address().into_alloy(),
             to_wei(1000).into_alloy(),
-        )
-        .from(solver.address().into_alloy())
-        .send_and_watch()
-        .await
-        .unwrap();
-    token_b
-        .approve(
+        ),
+        solver.address().into_alloy()
+    );
+    contracts::alloy::tx!(
+        token_b.approve(
             onchain.contracts().uniswap_v2_router.address().into_alloy(),
             to_wei(1000).into_alloy(),
-        )
-        .from(solver.address().into_alloy())
-        .send_and_watch()
-        .await
-        .unwrap();
+        ),
+        solver.address().into_alloy()
+    );
     tx!(
         solver.account(),
         onchain.contracts().uniswap_v2_router.add_liquidity(
@@ -418,15 +400,13 @@ async fn single_replace_order_test(web3: Web3) {
     );
 
     // Approve GPv2 for trading
-    token_a
-        .approve(
+    contracts::alloy::tx!(
+        token_a.approve(
             onchain.contracts().allowance.into_alloy(),
             to_wei(15).into_alloy(),
-        )
-        .from(trader.address().into_alloy())
-        .send_and_watch()
-        .await
-        .unwrap();
+        ),
+        trader.address().into_alloy()
+    );
 
     // disble solver to prevent orders from being settled while we
     // want to replace them
