@@ -1,6 +1,6 @@
 use {
     crate::{Address, OrderUid, PgTransaction, TransactionHash},
-    sqlx::{Executor, PgConnection, types::BigDecimal},
+    sqlx::{Executor, PgConnection, Postgres, QueryBuilder, types::BigDecimal},
     tracing::instrument,
 };
 
@@ -71,21 +71,97 @@ pub async fn delete(
 
 #[instrument(skip_all)]
 pub async fn append(
-    ex: &mut PgTransaction<'_>,
+    ex: &mut PgConnection,
     events: &[(EventIndex, Event)],
 ) -> Result<(), sqlx::Error> {
-    // TODO: there might be a more efficient way to do this like execute_many or
-    // COPY but my tests show that even if we sleep during the transaction it
-    // does not block other connections from using the database, so it's not
-    // high priority.
+    if events.is_empty() {
+        return Ok(());
+    }
+
+    let mut settlements = vec![];
+    let mut trades = vec![];
+    let mut invalidations = vec![];
+    let mut pre_signatures = vec![];
+
     for (index, event) in events {
         match event {
-            Event::Trade(event) => insert_trade(ex, index, event).await?,
-            Event::Invalidation(event) => insert_invalidation(ex, index, event).await?,
-            Event::Settlement(event) => insert_settlement(ex, index, event).await?,
-            Event::PreSignature(event) => insert_presignature(ex, index, event).await?,
-        };
+            Event::Settlement(settlement) => settlements.push((index, settlement)),
+            Event::Trade(trade) => trades.push((index, trade)),
+            Event::Invalidation(invalidation) => invalidations.push((index, invalidation)),
+            Event::PreSignature(pre_signature) => pre_signatures.push((index, pre_signature)),
+        }
     }
+
+    // In order to minimize round trips we insert into multiple tables at once using
+    // a CTE chain like:
+    // WITH insertion1 AS (INSERT INTO <TABLE> (field1, field2) VALUES ($1, $2)),
+    // insertion3 AS (INSERT INTO <TABLE2> (field1, field2) VALUES ($1, $2)),
+    // SELECT 1;
+
+    let mut qb: QueryBuilder<Postgres> = QueryBuilder::new("WITH ");
+    if !settlements.is_empty() {
+        qb.push(
+            "insSettlements AS (INSERT INTO settlements (tx_hash, block_number, log_index, \
+             solver) ",
+        );
+        qb.push_values(settlements, |mut builder, (index, settlement)| {
+            builder.push_bind(settlement.transaction_hash);
+            builder.push_bind(index.block_number);
+            builder.push_bind(index.log_index);
+            builder.push_bind(settlement.solver);
+        });
+    }
+
+    if !trades.is_empty() {
+        qb.push(
+            "), insTrades AS (INSERT INTO trades (block_number, log_index, order_uid, \
+             sell_amount, buy_amount, fee_amount)",
+        );
+        qb.push_values(trades, |mut builder, (index, trade)| {
+            builder.push_bind(index.block_number);
+            builder.push_bind(index.log_index);
+            builder.push_bind(trade.order_uid);
+            builder.push_bind(&trade.sell_amount_including_fee);
+            builder.push_bind(&trade.buy_amount);
+            builder.push_bind(&trade.fee_amount);
+        });
+    }
+
+    if !invalidations.is_empty() {
+        qb.push(
+            "), insInvalidations AS (INSERT INTO invalidations (block_number, log_index, \
+             order_uid) ",
+        );
+        qb.push_values(invalidations, |mut builder, (index, invalidation)| {
+            builder.push_bind(index.block_number);
+            builder.push_bind(index.log_index);
+            builder.push_bind(invalidation.order_uid);
+        });
+    }
+
+    if !pre_signatures.is_empty() {
+        qb.push(
+            "), insPreSignatures AS (INSERT INTO presignature_events (block_number, log_index, \
+             owner, order_uid, signed)",
+        );
+        qb.push_values(pre_signatures, |mut builder, (index, pre_signature)| {
+            builder.push_bind(index.block_number);
+            builder.push_bind(index.log_index);
+            builder.push_bind(pre_signature.owner);
+            builder.push_bind(pre_signature.order_uid);
+            builder.push_bind(pre_signature.signed);
+        });
+    }
+
+    // final select just to complete the CTE chain
+    qb.push(") SELECT 1;");
+
+    let start = std::time::Instant::now();
+    let query = qb.sql().to_string();
+    tracing::error!(time = ?start.elapsed(), query, "finished insert");
+    qb.build().execute(ex).await?;
+    tracing::error!(time = ?start.elapsed(), query, "finished insert");
+
     Ok(())
 }
 
@@ -95,18 +171,7 @@ async fn insert_invalidation(
     index: &EventIndex,
     event: &Invalidation,
 ) -> Result<(), sqlx::Error> {
-    // We use ON CONFLICT so that multiple updates running at the same do not error
-    // because of events already existing. This can happen when multiple
-    // orderbook apis run in HPA. See #444 .
-    const QUERY: &str = "INSERT INTO invalidations (block_number, log_index, order_uid) VALUES \
-                         ($1, $2, $3) ON CONFLICT DO NOTHING;";
-    sqlx::query(QUERY)
-        .bind(index.block_number)
-        .bind(index.log_index)
-        .bind(event.order_uid)
-        .execute(ex)
-        .await?;
-    Ok(())
+    append(ex, &[(*index, Event::Invalidation(*event))]).await
 }
 
 #[instrument(skip_all)]
@@ -115,19 +180,7 @@ pub async fn insert_trade(
     index: &EventIndex,
     event: &Trade,
 ) -> Result<(), sqlx::Error> {
-    const QUERY: &str = "\
-        INSERT INTO trades (block_number, log_index, order_uid, sell_amount, buy_amount, \
-                         fee_amount) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING;";
-    sqlx::query(QUERY)
-        .bind(index.block_number)
-        .bind(index.log_index)
-        .bind(event.order_uid)
-        .bind(&event.sell_amount_including_fee)
-        .bind(&event.buy_amount)
-        .bind(&event.fee_amount)
-        .execute(ex)
-        .await?;
-    Ok(())
+    append(ex, &[(*index, Event::Trade(event.clone()))]).await
 }
 
 #[instrument(skip_all)]
@@ -136,18 +189,7 @@ pub async fn insert_settlement(
     index: &EventIndex,
     event: &Settlement,
 ) -> Result<(), sqlx::Error> {
-    const QUERY: &str = "\
-    INSERT INTO settlements (tx_hash, block_number, log_index, solver) VALUES ($1, $2, $3, $4) ON \
-                         CONFLICT DO NOTHING;";
-    sqlx::query(QUERY)
-        .bind(event.transaction_hash)
-        .bind(index.block_number)
-        .bind(index.log_index)
-        .bind(event.solver)
-        .execute(ex)
-        .await?;
-
-    Ok(())
+    append(ex, &[(*index, Event::Settlement(*event))]).await
 }
 
 #[instrument(skip_all)]
@@ -156,16 +198,5 @@ async fn insert_presignature(
     index: &EventIndex,
     event: &PreSignature,
 ) -> Result<(), sqlx::Error> {
-    const QUERY: &str = "\
-        INSERT INTO presignature_events (block_number, log_index, owner, order_uid, signed) VALUES \
-                         ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING;";
-    sqlx::query(QUERY)
-        .bind(index.block_number)
-        .bind(index.log_index)
-        .bind(event.owner)
-        .bind(event.order_uid)
-        .bind(event.signed)
-        .execute(ex)
-        .await?;
-    Ok(())
+    append(ex, &[(*index, Event::PreSignature(*event))]).await
 }

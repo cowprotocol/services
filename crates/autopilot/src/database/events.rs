@@ -17,6 +17,7 @@ use {
     },
     ethcontract::{Event as EthContractEvent, EventMetadata},
     number::conversions::u256_to_big_decimal,
+    sqlx::PgConnection,
     std::convert::TryInto,
 };
 
@@ -43,7 +44,7 @@ pub fn contract_to_db_events(
 }
 
 pub async fn append_events(
-    transaction: &mut PgTransaction<'_>,
+    ex: &mut PgConnection,
     events: Vec<EthContractEvent<ContractEvent>>,
 ) -> Result<()> {
     let _timer = super::Metrics::get()
@@ -52,7 +53,7 @@ pub async fn append_events(
         .start_timer();
 
     let events = contract_to_db_events(events)?;
-    database::events::append(transaction, &events)
+    database::events::append(ex, &events)
         .await
         .context("append_events")?;
     Ok(())

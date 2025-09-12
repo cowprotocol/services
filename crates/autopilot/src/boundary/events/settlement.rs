@@ -59,9 +59,8 @@ impl EventStoring<contracts::gpv2_settlement::Event> for Indexer {
         &mut self,
         events: Vec<ethcontract::Event<contracts::gpv2_settlement::Event>>,
     ) -> Result<()> {
-        let mut transaction = self.db.pool.begin().await?;
-        crate::database::events::append_events(&mut transaction, events).await?;
-        transaction.commit().await?;
+        let mut ex = self.db.pool.acquire().await?;
+        crate::database::events::append_events(&mut ex, events).await?;
 
         self.settlement_observer.update().await;
         Ok(())
