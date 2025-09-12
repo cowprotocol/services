@@ -84,7 +84,7 @@ async fn execute_rpc<T: DeserializeOwned>(
         .body(body);
     match request {
         Request::Single(Call::MethodCall(call)) => {
-            if let Some(ref metadata) = request_id {
+            if let Some(metadata) = &request_id {
                 request_builder = request_builder.header("X-REQUEST-ID", metadata);
             }
             request_builder = request_builder.header("X-RPC-METHOD", call.method.clone());
