@@ -46,15 +46,17 @@ pub struct OrderEvent {
     pub label: OrderEventLabel,
 }
 
-/// Inserts a row into the `order_events` table only if the latest event for the
-/// corresponding order UID has a different label than the provided event..
+/// Inserts a row into the `order_events` table only if no exact duplicate exists.
+/// An exact duplicate is defined as the same (order_uid, timestamp, label) combination.
+/// Additionally, if the event label is the same as the latest event, it won't be inserted
+/// to maintain the original behavior for consecutive events with the same label.
 #[instrument(skip_all)]
 pub async fn insert_order_event(
     ex: &mut PgConnection,
     event: &OrderEvent,
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
-        WITH cte AS (
+        WITH latest_event AS (
             SELECT label
             FROM order_events
             WHERE order_uid = $1
@@ -64,9 +66,12 @@ pub async fn insert_order_event(
         INSERT INTO order_events (order_uid, timestamp, label)
         SELECT $1, $2, $3
         WHERE NOT EXISTS (
-            SELECT 1
-            FROM cte
-            WHERE label = $3
+            -- Prevent exact duplicates (same order_uid, timestamp, label)
+            SELECT 1 FROM order_events 
+            WHERE order_uid = $1 AND timestamp = $2 AND label = $3
+        ) AND NOT EXISTS (
+            -- Maintain original behavior: don't insert if latest event has same label
+            SELECT 1 FROM latest_event WHERE label = $3
         )
     "#;
     sqlx::query(QUERY)
@@ -174,6 +179,143 @@ mod tests {
             latest.timestamp.timestamp_micros(),
             event_b.timestamp.timestamp_micros()
         );
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_prevents_duplicate_order_events() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut ex = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut ex).await.unwrap();
+
+        let now = Utc::now();
+        let uid_a = ByteArray([1; 56]);
+        
+        // Create initial "created" event
+        let event_created = OrderEvent {
+            order_uid: uid_a,
+            timestamp: now,
+            label: OrderEventLabel::Created,
+        };
+        insert_order_event(&mut ex, &event_created).await.unwrap();
+        
+        // Test 1: Try to insert exact duplicate - should be blocked
+        let duplicate_event = OrderEvent {
+            order_uid: uid_a,
+            timestamp: now, // Same timestamp
+            label: OrderEventLabel::Created, // Same label
+        };
+        insert_order_event(&mut ex, &duplicate_event).await.unwrap();
+        
+        // Test 2: Try to insert another "created" event with different timestamp 
+        // Should be blocked due to consecutive same label prevention
+        let consecutive_created = OrderEvent {
+            order_uid: uid_a,
+            timestamp: now + chrono::Duration::milliseconds(100),
+            label: OrderEventLabel::Created, // Same label as latest
+        };
+        insert_order_event(&mut ex, &consecutive_created).await.unwrap();
+        
+        // Test 3: Insert different label - should succeed
+        let ready_event = OrderEvent {
+            order_uid: uid_a,
+            timestamp: now + chrono::Duration::milliseconds(200),
+            label: OrderEventLabel::Ready, // Different label
+        };
+        insert_order_event(&mut ex, &ready_event).await.unwrap();
+        
+        // Test 4: Try to insert duplicate "ready" event - should be blocked
+        let duplicate_ready = OrderEvent {
+            order_uid: uid_a,
+            timestamp: now + chrono::Duration::milliseconds(200), // Same timestamp as ready_event
+            label: OrderEventLabel::Ready,
+        };
+        insert_order_event(&mut ex, &duplicate_ready).await.unwrap();
+
+        ex.commit().await.unwrap();
+
+        let events = all_order_events(&mut db).await;
+
+        // Verify only 2 events were actually inserted (no duplicates)
+        assert_eq!(events.len(), 2, "Should have exactly 2 events (created + ready)");
+        
+        // Verify first event
+        assert_eq!(events[0].order_uid, uid_a);
+        assert_eq!(events[0].label, OrderEventLabel::Created);
+        assert_eq!(events[0].timestamp.timestamp_micros(), now.timestamp_micros());
+
+        // Verify second event  
+        assert_eq!(events[1].order_uid, uid_a);
+        assert_eq!(events[1].label, OrderEventLabel::Ready);
+        assert_eq!(
+            events[1].timestamp.timestamp_micros(), 
+            (now + chrono::Duration::milliseconds(200)).timestamp_micros()
+        );
+                
+        // Verify latest event is "ready"
+        let latest = get_latest(&mut db, &uid_a).await.unwrap().unwrap();
+        assert_eq!(latest.label, OrderEventLabel::Ready);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_prevents_consecutive_same_label_across_different_orders() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut ex = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut ex).await.unwrap();
+
+        let now = Utc::now();
+        let uid_a = ByteArray([1; 56]); // ABC
+        let uid_b = ByteArray([2; 56]); // BBC
+        
+        // Step 1: ABC → Created
+        let abc_created = OrderEvent {
+            order_uid: uid_a,
+            timestamp: now,
+            label: OrderEventLabel::Created,
+        };
+        insert_order_event(&mut ex, &abc_created).await.unwrap();
+        
+        // Step 2: BBC → Created (different order, should succeed)
+        let bbc_created = OrderEvent {
+            order_uid: uid_b,
+            timestamp: now + chrono::Duration::milliseconds(100),
+            label: OrderEventLabel::Created,
+        };
+        insert_order_event(&mut ex, &bbc_created).await.unwrap();
+        
+        // Step 3: ABC → Created again (should be blocked by consecutive same label)
+        let abc_created_again = OrderEvent {
+            order_uid: uid_a, // Same order as step 1
+            timestamp: now + chrono::Duration::milliseconds(200), // Different timestamp
+            label: OrderEventLabel::Created, // Same label as ABC's latest
+        };
+        insert_order_event(&mut ex, &abc_created_again).await.unwrap();
+
+        ex.commit().await.unwrap();
+
+        let events = all_order_events(&mut db).await;
+
+        // Should have exactly 2 events: ABC→Created and BBC→Created
+        // The third attempt (ABC→Created again) should be blocked
+        assert_eq!(events.len(), 2, "Should have exactly 2 events (ABC→Created, BBC→Created)");
+        
+        // Verify first event (ABC→Created)
+        assert_eq!(events[0].order_uid, uid_a);
+        assert_eq!(events[0].label, OrderEventLabel::Created);
+        
+        // Verify second event (BBC→Created)  
+        assert_eq!(events[1].order_uid, uid_b);
+        assert_eq!(events[1].label, OrderEventLabel::Created);
+        
+        // Verify ABC's latest event is still the original "Created"
+        let abc_latest = get_latest(&mut db, &uid_a).await.unwrap().unwrap();
+        assert_eq!(abc_latest.label, OrderEventLabel::Created);
+        assert_eq!(abc_latest.timestamp.timestamp_micros(), now.timestamp_micros());
+        
+        // Verify BBC's latest event is "Created"
+        let bbc_latest = get_latest(&mut db, &uid_b).await.unwrap().unwrap();
+        assert_eq!(bbc_latest.label, OrderEventLabel::Created);
     }
 
     async fn all_order_events(ex: &mut PgConnection) -> Vec<OrderEvent> {
