@@ -126,13 +126,7 @@ async fn execute_rpc<T: DeserializeOwned>(
     tracing::trace!(name = %inner.name, %id, body = %text.trim(), "received response");
     if !status.is_success() {
         let error_msg = format!("HTTP error {status}");
-        tracing::warn!(
-            name = %inner.name,
-            rpc_request_id = %id,
-            request_id,
-            status = %status,
-            "HTTP error response"
-        );
+
         return Err(Web3Error::Transport(TransportError::Message(error_msg)));
     }
 
