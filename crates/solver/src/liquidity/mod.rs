@@ -1,4 +1,5 @@
 pub mod balancer_v2;
+pub mod euler_vault;
 pub mod order_converter;
 pub mod slippage;
 pub mod uniswap_v2;
@@ -11,8 +12,8 @@ use {
     crate::settlement::SettlementEncoder,
     anyhow::Result,
     model::{
-        TokenPair,
         order::{Order, OrderKind, OrderUid},
+        TokenPair,
     },
     num::rational::Ratio,
     primitive_types::{H160, U256},
@@ -21,10 +22,7 @@ use {
         sources::{
             balancer_v2::{
                 pool_fetching::{
-                    AmplificationParameter,
-                    TokenState,
-                    WeightedPoolVersion,
-                    WeightedTokenState,
+                    AmplificationParameter, TokenState, WeightedPoolVersion, WeightedTokenState,
                 },
                 swap::fixed_point::Bfp,
             },
@@ -44,7 +42,8 @@ pub enum Liquidity {
     BalancerWeighted(WeightedProductOrder),
     BalancerStable(StablePoolOrder),
     LimitOrder(LimitOrder),
-    Concentrated(ConcentratedLiquidity),
+    Concentrated(ConcentratedLiquidityOrder),
+    Wrapped(WrappedLiquidityOrder),
 }
 
 /// A trait associating some liquidity model to how it is executed and encoded
@@ -372,20 +371,51 @@ impl Settleable for StablePoolOrder {
 #[derive(Clone)]
 #[cfg_attr(test, derive(Derivative))]
 #[cfg_attr(test, derivative(PartialEq))]
-pub struct ConcentratedLiquidity {
-    pub tokens: TokenPair,
+pub struct ConcentratedLiquidityOrder {
     pub pool: PoolInfo,
     #[cfg_attr(test, derivative(PartialEq = "ignore"))]
     pub settlement_handling: Arc<dyn SettlementHandling<Self>>,
 }
 
-impl std::fmt::Debug for ConcentratedLiquidity {
+impl std::fmt::Debug for ConcentratedLiquidityOrder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Concentrated liquidity {:?}", self.pool)
     }
 }
 
-impl Settleable for ConcentratedLiquidity {
+impl Settleable for ConcentratedLiquidityOrder {
+    type Execution = AmmOrderExecution;
+
+    fn settlement_handling(&self) -> &dyn SettlementHandling<Self> {
+        &*self.settlement_handling
+    }
+}
+
+/// Liquidity where a token is deposited to a vault in exchange for shares via EIP4626 (ex. Aave, Euler)
+#[derive(Clone)]
+#[cfg_attr(test, derive(Derivative))]
+#[cfg_attr(test, derivative(PartialEq))]
+pub struct WrappedLiquidityOrder {
+    pub pool_address: H160,
+    pub wrapped_token: H160,
+    pub shares_token: H160,
+    /// number of tokens
+    pub rate: U256,
+    #[cfg_attr(test, derivative(PartialEq = "ignore"))]
+    pub settlement_handling: Arc<dyn SettlementHandling<Self>>,
+}
+
+impl std::fmt::Debug for WrappedLiquidityOrder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Wrapped liquidity {:?} => {:?} @ {:?}",
+            self.wrapped_token, self.shares_token, self.pool_address
+        )
+    }
+}
+
+impl Settleable for WrappedLiquidityOrder {
     type Execution = AmmOrderExecution;
 
     fn settlement_handling(&self) -> &dyn SettlementHandling<Self> {

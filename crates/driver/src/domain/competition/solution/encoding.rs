@@ -302,7 +302,7 @@ pub fn tx(
         interactions.push(unwrap(native_unwrap, contracts.weth()));
     }
 
-    let tx = contracts
+    let mut tx = contracts
         .settlement()
         .settle(
             tokens,
@@ -315,6 +315,10 @@ pub fn tx(
             ],
         )
         .into_inner();
+
+    if let wrapper = Some(solution.wrapper) {
+        tx.to = wrapper
+    }
 
     // Encode the auction id into the calldata
     let mut settle_calldata = tx.data.unwrap().0;

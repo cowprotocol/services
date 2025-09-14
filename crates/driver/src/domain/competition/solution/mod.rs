@@ -1,29 +1,17 @@
 use {
-    self::trade::{ClearingPrices, Fee, Fulfillment},
-    super::auction,
-    crate::{
+    self::trade::{ClearingPrices, Fee, Fulfillment}, super::auction, crate::{
         boundary,
         domain::{
             competition::{self, order},
             eth::{self, Flashloan, TokenAddress},
         },
         infra::{
-            Simulator,
-            blockchain::{self, Ethereum},
-            config::file::FeeHandler,
-            simulator,
-            solver::{ManageNativeToken, Solver},
+            blockchain::{self, Ethereum}, config::file::FeeHandler, simulator, solver::{ManageNativeToken, Solver}, Simulator
         },
-    },
-    chrono::Utc,
-    futures::future::try_join_all,
-    itertools::Itertools,
-    num::{BigRational, One},
-    std::{
-        collections::{BTreeSet, HashMap, HashSet, hash_map::Entry},
+    }, chrono::Utc, ethcontract::H160, futures::future::try_join_all, itertools::Itertools, num::{BigRational, One}, std::{
+        collections::{hash_map::Entry, BTreeSet, HashMap, HashSet},
         sync::atomic::{AtomicU64, Ordering},
-    },
-    thiserror::Error,
+    }, thiserror::Error
 };
 
 pub mod encoding;
@@ -55,6 +43,7 @@ pub struct Solution {
     weth: eth::WethAddress,
     gas: Option<eth::Gas>,
     flashloans: HashMap<order::Uid, Flashloan>,
+    wrapper: Option<H160>,
 }
 
 impl Solution {
@@ -72,6 +61,7 @@ impl Solution {
         fee_handler: FeeHandler,
         surplus_capturing_jit_order_owners: &HashSet<eth::Address>,
         flashloans: HashMap<order::Uid, Flashloan>,
+        wrapper: Option<H160>,
     ) -> Result<Self, error::Solution> {
         // Surplus capturing JIT orders behave like Fulfillment orders. They capture
         // surplus, pay network fees and contribute to score of a solution.
@@ -128,6 +118,7 @@ impl Solution {
             weth,
             gas,
             flashloans,
+            wrapper,
         };
 
         // Check that the solution includes clearing prices for all user trades.

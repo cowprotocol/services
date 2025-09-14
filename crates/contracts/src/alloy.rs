@@ -73,6 +73,8 @@ crate::bindings!(
     }
 );
 
+crate::bindings!(EulerVault);
+
 pub use alloy::providers::DynProvider as Provider;
 
 /// Extension trait to attach some useful functions to the contract instance.
@@ -267,8 +269,12 @@ macro_rules! tx_value {
 #[cfg(feature = "test-util")]
 #[macro_export]
 macro_rules! tx {
-    ($call:expr) => {{ $crate::tx_value!($call, ::alloy::primitives::U256::ZERO) }};
-    ($call:expr, $acc:expr) => {{ $crate::tx_value!($call, ::alloy::primitives::U256::ZERO, $acc) }};
+    ($call:expr) => {{
+        $crate::tx_value!($call, ::alloy::primitives::U256::ZERO)
+    }};
+    ($call:expr, $acc:expr) => {{
+        $crate::tx_value!($call, ::alloy::primitives::U256::ZERO, $acc)
+    }};
 }
 
 #[cfg(test)]

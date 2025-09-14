@@ -27,6 +27,7 @@ pub struct ValidatedAppData {
 pub struct ProtocolAppData {
     #[serde(default)]
     pub hooks: Hooks,
+    pub wrapper: Option<H160>,
     pub signer: Option<H160>,
     pub replaced_order: Option<ReplacedOrder>,
     #[serde(default)]
@@ -422,12 +423,14 @@ impl<'de> Deserialize<'de> for PartnerFees {
 struct BackendAppData {
     #[serde(default)]
     pub hooks: Hooks,
+    pub wrapper: Option<H160>,
 }
 
 impl From<BackendAppData> for ProtocolAppData {
     fn from(value: BackendAppData) -> Self {
         Self {
             hooks: value.hooks,
+            wrapper: value.wrapper,
             signer: None,
             replaced_order: None,
             partner_fee: PartnerFees::default(),
