@@ -12,10 +12,7 @@ use {
             pools::{FactoryIndexing, Pool, PoolStatus, common::PoolInfoFetching},
         },
     },
-    alloy::{
-        primitives::{B256, b256},
-        rpc::types::Log,
-    },
+    alloy::rpc::types::Log,
     anyhow::Result,
     contracts::{
         alloy::{
@@ -39,9 +36,6 @@ use {
 
 pub struct BasePoolFactoryContract(BalancerV2BasePoolFactory::Instance);
 
-const POOL_CREATED_TOPIC: B256 =
-    b256!("83a48fbcfc991335314e74d0496aab6a1987e992ddc85dddbcc4d6dd6ef2e9fc");
-
 #[async_trait::async_trait]
 impl EventRetrieving for BasePoolFactoryContract {
     type Event = (PoolCreated, Log);
@@ -49,8 +43,6 @@ impl EventRetrieving for BasePoolFactoryContract {
     async fn get_events_by_block_hash(&self, block_hash: H256) -> Result<Vec<Self::Event>> {
         self.0
             .event_filter()
-            .address(*self.0.address())
-            .topic1(POOL_CREATED_TOPIC)
             .at_block_hash(block_hash.into_alloy())
             .query()
             .await
@@ -64,8 +56,6 @@ impl EventRetrieving for BasePoolFactoryContract {
         let stream = self
             .0
             .event_filter::<PoolCreated>()
-            .address(*self.0.address())
-            .topic1(POOL_CREATED_TOPIC)
             .from_block(*block_range.start())
             .to_block(*block_range.end())
             .watch()
