@@ -151,6 +151,7 @@ mod tests {
         crate::sources::balancer_v2::graph_api::Token,
         alloy::{
             dyn_abi::{DynSolValue, FunctionExt},
+            primitives::Address,
             providers::{Provider, ProviderBuilder, mock::Asserter},
         },
         ethcontract::{H160, H256},
@@ -234,9 +235,9 @@ mod tests {
             .erased();
 
         let pool =
-            BalancerV2WeightedPool::Instance::new(H160([0x90; 20]).into_alloy(), provider.clone());
+            BalancerV2WeightedPool::Instance::new(Address::new([0x90; 20]), provider.clone());
         let factory = BalancerV2WeightedPoolFactory::Instance::new(
-            H160([0xfa; 20]).into_alloy(),
+            Address::new([0xfa; 20]),
             provider.clone(),
         );
         let get_normalized_weights_response = {
@@ -290,7 +291,7 @@ mod tests {
         let web3 = mock.web3();
 
         let factory = BalancerV2WeightedPoolFactory::Instance::new(
-            H160::default().into_alloy(),
+            Address::default(),
             ethrpc::mock::web3().alloy,
         );
         let pool_info = PoolInfo {

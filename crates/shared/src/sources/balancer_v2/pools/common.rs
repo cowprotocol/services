@@ -471,8 +471,8 @@ mod tests {
             .unwrap()
             .abi_encode_output(&[
                 DynSolValue::Bool(false),
-                DynSolValue::Uint(U256::zero().into_alloy(), 256),
-                DynSolValue::Uint(U256::zero().into_alloy(), 256),
+                DynSolValue::Uint(alloy::primitives::U256::ZERO, 256),
+                DynSolValue::Uint(alloy::primitives::U256::ZERO, 256),
             ])
             .unwrap();
         asserter.push_success(&get_paused_state_response);

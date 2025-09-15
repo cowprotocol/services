@@ -12,7 +12,10 @@ use {
             pools::{FactoryIndexing, Pool, PoolStatus, common::PoolInfoFetching},
         },
     },
-    alloy::rpc::types::Log,
+    alloy::{
+        primitives::{B256, b256},
+        rpc::types::Log,
+    },
     anyhow::Result,
     contracts::{
         alloy::{
@@ -27,7 +30,6 @@ use {
         block_stream::{BlockNumberHash, BlockRetrieving, RangeInclusive},
     },
     futures::{TryStreamExt, future},
-    hex_literal::hex,
     itertools::Itertools,
     model::TokenPair,
     std::{collections::HashSet, sync::Arc},
@@ -37,9 +39,8 @@ use {
 
 pub struct BasePoolFactoryContract(BalancerV2BasePoolFactory::Instance);
 
-const POOL_CREATED_TOPIC: H256 = H256(hex!(
-    "83a48fbcfc991335314e74d0496aab6a1987e992ddc85dddbcc4d6dd6ef2e9fc"
-));
+const POOL_CREATED_TOPIC: B256 =
+    b256!("83a48fbcfc991335314e74d0496aab6a1987e992ddc85dddbcc4d6dd6ef2e9fc");
 
 #[async_trait::async_trait]
 impl EventRetrieving for BasePoolFactoryContract {
@@ -49,7 +50,7 @@ impl EventRetrieving for BasePoolFactoryContract {
         self.0
             .event_filter()
             .address(*self.0.address())
-            .topic1(POOL_CREATED_TOPIC.into_alloy())
+            .topic1(POOL_CREATED_TOPIC)
             .at_block_hash(block_hash.into_alloy())
             .query()
             .await
@@ -64,7 +65,7 @@ impl EventRetrieving for BasePoolFactoryContract {
             .0
             .event_filter::<PoolCreated>()
             .address(*self.0.address())
-            .topic1(POOL_CREATED_TOPIC.into_alloy())
+            .topic1(POOL_CREATED_TOPIC)
             .from_block(*block_range.start())
             .to_block(*block_range.end())
             .watch()
