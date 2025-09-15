@@ -552,7 +552,7 @@ async fn quote_verification(web3: Web3) {
             .clone(),
     );
     let safe_address = safe_creation_builder.clone().call().await.unwrap();
-    contracts::alloy::tx!(safe_creation_builder);
+    safe_creation_builder.send_and_watch().await.unwrap();
 
     let safe = Safe::deployed(
         chain_id,
