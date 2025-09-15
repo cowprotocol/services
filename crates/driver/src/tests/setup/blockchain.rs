@@ -14,6 +14,7 @@ use {
         Web3,
         alloy::{
             CallBuilderExt,
+            MutWallet,
             conversions::{IntoAlloy, IntoLegacy},
         },
     },
@@ -211,6 +212,16 @@ pub struct Config {
     pub rpc_args: Vec<String>,
 }
 
+impl Config {
+    fn register_solvers(&self, wallet: &mut MutWallet) {
+        self.solvers.iter().for_each(|solver| {
+            let private_key = solver.private_key.as_ref();
+            let signer = PrivateKeySigner::from_slice(private_key).unwrap();
+            wallet.register_signer(signer);
+        });
+    }
+}
+
 impl Blockchain {
     /// Start a local node and deploy the
     /// settlement contract, token contracts, and all supporting contracts
@@ -229,6 +240,8 @@ impl Blockchain {
         );
         let signer = PrivateKeySigner::from_slice(private_key).unwrap();
         web3.wallet.register_signer(signer);
+
+        config.register_solvers(&mut web3.wallet);
 
         // Use the primary account to fund the trader, cow amm and the solver with ETH.
         let balance = web3
@@ -407,9 +420,6 @@ impl Blockchain {
             .unwrap();
 
             if !config.balance.is_zero() {
-                let private_key = config.private_key.as_ref();
-                let signer = PrivateKeySigner::from_slice(private_key).unwrap();
-                web3.wallet.register_signer(signer);
                 let trader_account = ethcontract::Account::Offline(
                     ethcontract::PrivateKey::from_slice(private_key).unwrap(),
                     None,
