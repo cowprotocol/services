@@ -54,23 +54,19 @@ where
 /// Databases: might transform, filter and classify which events are inserted
 /// HashSet: For less persistent (in memory) storing, insert events into a set.
 #[async_trait::async_trait]
-pub trait EventStoring<Event>: Send + Sync {
+pub trait EventStoring<E>: Send + Sync {
     /// Returns ok, on successful execution, otherwise an appropriate error
     ///
     /// # Arguments
     /// * `events` the contract events to be replaced by the implementer
     /// * `range` indicates a particular range of blocks on which to operate.
-    async fn replace_events(
-        &mut self,
-        events: Vec<Event>,
-        range: RangeInclusive<u64>,
-    ) -> Result<()>;
+    async fn replace_events(&mut self, events: Vec<E>, range: RangeInclusive<u64>) -> Result<()>;
 
     /// Returns ok, on successful execution, otherwise an appropriate error
     ///
     /// # Arguments
     /// * `events` the contract events to be appended by the implementer
-    async fn append_events(&mut self, events: Vec<Event>) -> Result<()>;
+    async fn append_events(&mut self, events: Vec<E>) -> Result<()>;
 
     /// Fetches the last processed block to know where to resume indexing after
     /// a restart.
