@@ -36,7 +36,7 @@ impl AlloyEventRetrieving for BasePoolFactoryContract {
     type Event = PoolCreated;
 
     fn get_events(&self) -> Event<&DynProvider, Self::Event> {
-        self.0.event_filter()
+        self.0.event_filter::<Self::Event>()
     }
 }
 
