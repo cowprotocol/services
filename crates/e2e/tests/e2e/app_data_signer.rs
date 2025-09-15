@@ -1,7 +1,10 @@
 use {
     alloy::primitives::Address,
     e2e::setup::{OnchainComponents, Services, TestAccount, run_test, safe::Safe, to_wei},
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    ethrpc::alloy::{
+        CallBuilderExt,
+        conversions::{IntoAlloy, IntoLegacy},
+    },
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind},
         signature::EcdsaSigningScheme,
@@ -26,21 +29,27 @@ async fn order_creation_checks_metadata_signer(web3: Web3) {
         .await;
 
     token_a.mint(trader.address(), to_wei(10)).await;
-    contracts::alloy::tx!(
-        token_a.approve(
+
+    token_a
+        .approve(
             onchain.contracts().allowance.into_alloy(),
             to_wei(10).into_alloy(),
-        ),
-        trader.address().into_alloy()
-    );
+        )
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
     token_a.mint(adversary.address(), to_wei(10)).await;
-    contracts::alloy::tx!(
-        token_a.approve(
+
+    token_a
+        .approve(
             onchain.contracts().allowance.into_alloy(),
             to_wei(10).into_alloy(),
-        ),
-        adversary.address().into_alloy()
-    );
+        )
+        .from(adversary.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     let mut valid_to: u32 = model::time::now_in_epoch_seconds() + 300;
     let mut create_order = |app_data| {

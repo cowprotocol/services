@@ -1,7 +1,10 @@
 use {
     ::alloy::primitives::U256,
     e2e::setup::*,
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    ethrpc::alloy::{
+        CallBuilderExt,
+        conversions::{IntoAlloy, IntoLegacy},
+    },
     model::{
         order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
@@ -35,13 +38,16 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
     token_b.mint(solver.address(), to_wei(1000)).await;
 
     // Approve GPv2 for trading
-    contracts::alloy::tx!(
-        token_a.approve(
+
+    token_a
+        .approve(
             onchain.contracts().allowance.into_alloy(),
             to_wei(100).into_alloy(),
-        ),
-        trader.address().into_alloy()
-    );
+        )
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     // Start system
     colocation::start_driver(

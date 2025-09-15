@@ -528,39 +528,52 @@ impl Blockchain {
                 for trader_account in trader_accounts.iter() {
                     let vault_relayer = settlement.vault_relayer().call().await.unwrap();
 
-                    contracts::alloy::tx!(
-                        tokens
-                            .get(pool.reserve_a.token)
-                            .unwrap()
-                            .approve(vault_relayer.into_alloy(), U256::MAX),
-                        trader_account.address().into_alloy()
-                    );
+                    tokens
+                        .get(pool.reserve_a.token)
+                        .unwrap()
+                        .approve(vault_relayer.into_alloy(), U256::MAX)
+                        .from(trader_account.address().into_alloy())
+                        .send_and_watch()
+                        .await
+                        .unwrap();
                 }
 
-                contracts::alloy::tx!(
-                    tokens.get(pool.reserve_a.token).unwrap().mint(
+                tokens
+                    .get(pool.reserve_a.token)
+                    .unwrap()
+                    .mint(
                         pair.address().into_alloy(),
                         pool.reserve_a.amount.into_alloy(),
-                    ),
-                    main_trader_account.address().into_alloy()
-                );
+                    )
+                    .from(main_trader_account.address().into_alloy())
+                    .send_and_watch()
+                    .await
+                    .unwrap();
 
-                contracts::alloy::tx!(
-                    tokens.get(pool.reserve_a.token).unwrap().mint(
+                tokens
+                    .get(pool.reserve_a.token)
+                    .unwrap()
+                    .mint(
                         settlement.address().into_alloy(),
                         pool.reserve_a.amount.into_alloy(),
-                    ),
-                    main_trader_account.address().into_alloy()
-                );
+                    )
+                    .from(main_trader_account.address().into_alloy())
+                    .send_and_watch()
+                    .await
+                    .unwrap();
 
                 for trader_account in trader_accounts.iter() {
-                    contracts::alloy::tx!(
-                        tokens.get(pool.reserve_a.token).unwrap().mint(
+                    tokens
+                        .get(pool.reserve_a.token)
+                        .unwrap()
+                        .mint(
                             trader_account.address().into_alloy(),
                             pool.reserve_a.amount.into_alloy(),
-                        ),
-                        main_trader_account.address().into_alloy()
-                    );
+                        )
+                        .from(main_trader_account.address().into_alloy())
+                        .send_and_watch()
+                        .await
+                        .unwrap();
                 }
             }
             if pool.reserve_b.token == "WETH" {
@@ -593,36 +606,52 @@ impl Blockchain {
             } else {
                 for trader_account in trader_accounts.iter() {
                     let vault_relayer = settlement.vault_relayer().call().await.unwrap();
-                    contracts::alloy::tx!(
-                        tokens
-                            .get(pool.reserve_b.token)
-                            .unwrap()
-                            .approve(vault_relayer.into_alloy(), U256::MAX),
-                        trader_account.address().into_alloy()
-                    );
+
+                    tokens
+                        .get(pool.reserve_b.token)
+                        .unwrap()
+                        .approve(vault_relayer.into_alloy(), U256::MAX)
+                        .from(trader_account.address().into_alloy())
+                        .send_and_watch()
+                        .await
+                        .unwrap();
                 }
-                contracts::alloy::tx!(
-                    tokens.get(pool.reserve_b.token).unwrap().mint(
+
+                tokens
+                    .get(pool.reserve_b.token)
+                    .unwrap()
+                    .mint(
                         pair.address().into_alloy(),
                         pool.reserve_b.amount.into_alloy(),
-                    ),
-                    main_trader_account.address().into_alloy()
-                );
-                contracts::alloy::tx!(
-                    tokens.get(pool.reserve_b.token).unwrap().mint(
+                    )
+                    .from(main_trader_account.address().into_alloy())
+                    .send_and_watch()
+                    .await
+                    .unwrap();
+
+                tokens
+                    .get(pool.reserve_b.token)
+                    .unwrap()
+                    .mint(
                         settlement.address().into_alloy(),
                         pool.reserve_b.amount.into_alloy(),
-                    ),
-                    main_trader_account.address().into_alloy()
-                );
+                    )
+                    .from(main_trader_account.address().into_alloy())
+                    .send_and_watch()
+                    .await
+                    .unwrap();
                 for trader_account in trader_accounts.iter() {
-                    contracts::alloy::tx!(
-                        tokens.get(pool.reserve_b.token).unwrap().mint(
+                    tokens
+                        .get(pool.reserve_b.token)
+                        .unwrap()
+                        .mint(
                             trader_account.address().into_alloy(),
                             pool.reserve_b.amount.into_alloy(),
-                        ),
-                        main_trader_account.address().into_alloy()
-                    );
+                        )
+                        .from(main_trader_account.address().into_alloy())
+                        .send_and_watch()
+                        .await
+                        .unwrap();
                 }
             }
             wait_for(
@@ -773,24 +802,30 @@ impl Blockchain {
             if order.sell_token == "WETH" {
                 todo!("deposit trader funds into the weth contract, none of the tests do this yet")
             } else if order.funded {
-                contracts::alloy::tx!(
-                    self.tokens.get(order.sell_token).unwrap().mint(
+                self.tokens
+                    .get(order.sell_token)
+                    .unwrap()
+                    .mint(
                         trader_account.address().into_alloy(),
                         ("1e-7".ether().into_wei() * execution.sell).into_alloy(),
-                    ),
-                    trader_account.address().into_alloy()
-                );
+                    )
+                    .from(trader_account.address().into_alloy())
+                    .send_and_watch()
+                    .await
+                    .unwrap();
             }
 
             // Approve the tokens needed for the solution.
             let vault_relayer = self.settlement.vault_relayer().call().await.unwrap();
-            contracts::alloy::tx!(
-                self.tokens
-                    .get(order.sell_token)
-                    .unwrap()
-                    .approve(vault_relayer.into_alloy(), U256::MAX),
-                trader_account.address().into_alloy()
-            );
+
+            self.tokens
+                .get(order.sell_token)
+                .unwrap()
+                .approve(vault_relayer.into_alloy(), U256::MAX)
+                .from(trader_account.address().into_alloy())
+                .send_and_watch()
+                .await
+                .unwrap();
 
             // Create the interactions fulfilling the order.
             let transfer_interaction = sell_token

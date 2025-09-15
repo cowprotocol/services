@@ -12,7 +12,10 @@ use {
         GnosisSafeProxyFactory,
     },
     ethcontract::transaction::TransactionBuilder,
-    ethrpc::{AlloyProvider, alloy::conversions::IntoAlloy},
+    ethrpc::{
+        AlloyProvider,
+        alloy::{CallBuilderExt, conversions::IntoAlloy},
+    },
     hex_literal::hex,
     model::{
         DomainSeparator,
@@ -136,8 +139,8 @@ impl Safe {
     }
 
     async fn exec_alloy_tx(&self, to: Address, value: U256, calldata: Bytes) {
-        contracts::alloy::tx!(
-            self.contract.execTransaction(
+        self.contract
+            .execTransaction(
                 to,
                 value,
                 calldata,
@@ -149,10 +152,12 @@ impl Safe {
                 Default::default(),
                 crate::setup::safe::gnosis_safe_prevalidated_signature(
                     self.owner.address().into_alloy(),
-                )
-            ),
-            self.owner.address().into_alloy()
-        );
+                ),
+            )
+            .from(self.owner.address().into_alloy())
+            .send_and_watch()
+            .await
+            .unwrap();
     }
 
     pub async fn exec_call<T: ethcontract::tokens::Tokenize>(

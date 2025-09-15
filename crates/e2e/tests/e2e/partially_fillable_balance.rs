@@ -1,7 +1,10 @@
 use {
     ::alloy::primitives::U256,
     e2e::{setup::*, tx},
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    ethrpc::alloy::{
+        CallBuilderExt,
+        conversions::{IntoAlloy, IntoLegacy},
+    },
     model::{
         order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
@@ -37,20 +40,26 @@ async fn test(web3: Web3) {
             token_b.address().into_legacy()
         )
     );
-    contracts::alloy::tx!(
-        token_a.approve(
+
+    token_a
+        .approve(
             onchain.contracts().uniswap_v2_router.address().into_alloy(),
             to_wei(1000).into_alloy(),
-        ),
-        solver.address().into_alloy()
-    );
-    contracts::alloy::tx!(
-        token_b.approve(
+        )
+        .from(solver.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    token_b
+        .approve(
             onchain.contracts().uniswap_v2_router.address().into_alloy(),
             to_wei(1000).into_alloy(),
-        ),
-        solver.address().into_alloy()
-    );
+        )
+        .from(solver.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
     tx!(
         solver.account(),
         onchain.contracts().uniswap_v2_router.add_liquidity(
@@ -65,13 +74,15 @@ async fn test(web3: Web3) {
         )
     );
 
-    contracts::alloy::tx!(
-        token_a.approve(
+    token_a
+        .approve(
             onchain.contracts().allowance.into_alloy(),
             to_wei(500).into_alloy(),
-        ),
-        trader_a.address().into_alloy()
-    );
+        )
+        .from(trader_a.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;

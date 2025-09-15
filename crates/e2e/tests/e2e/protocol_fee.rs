@@ -7,7 +7,10 @@ use {
         tx_value,
     },
     ethcontract::{Address, prelude::U256},
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    ethrpc::alloy::{
+        CallBuilderExt,
+        conversions::{IntoAlloy, IntoLegacy},
+    },
     model::{
         order::{Order, OrderCreation, OrderCreationAppData, OrderKind},
         quote::{
@@ -91,20 +94,26 @@ async fn combined_protocol_fees(web3: Web3) {
         &partner_fee_order_token,
     ] {
         token.mint(solver.address(), to_wei(1000)).await;
-        contracts::alloy::tx!(
-            token.approve(
+
+        token
+            .approve(
                 onchain.contracts().uniswap_v2_router.address().into_alloy(),
                 to_wei(1000).into_alloy(),
-            ),
-            solver.address().into_alloy()
-        );
-        contracts::alloy::tx!(
-            token.approve(
+            )
+            .from(solver.address().into_alloy())
+            .send_and_watch()
+            .await
+            .unwrap();
+
+        token
+            .approve(
                 onchain.contracts().uniswap_v2_router.address().into_alloy(),
                 to_wei(100).into_alloy(),
-            ),
-            trader.address().into_alloy()
-        );
+            )
+            .from(trader.address().into_alloy())
+            .send_and_watch()
+            .await
+            .unwrap();
     }
 
     tx!(
@@ -421,20 +430,26 @@ async fn surplus_partner_fee(web3: Web3) {
         .await;
 
     token.mint(solver.address(), to_wei(1000)).await;
-    contracts::alloy::tx!(
-        token.approve(
+
+    token
+        .approve(
             onchain.contracts().uniswap_v2_router.address().into_alloy(),
             to_wei(1000).into_alloy(),
-        ),
-        solver.address().into_alloy()
-    );
-    contracts::alloy::tx!(
-        token.approve(
+        )
+        .from(solver.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    token
+        .approve(
             onchain.contracts().uniswap_v2_router.address().into_alloy(),
             to_wei(100).into_alloy(),
-        ),
-        trader.address().into_alloy()
-    );
+        )
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
     tx!(
         trader.account(),
         onchain
@@ -636,20 +651,26 @@ async fn volume_fee_buy_order_test(web3: Web3) {
             token_dai.address().into_legacy()
         )
     );
-    contracts::alloy::tx!(
-        token_gno.approve(
+
+    token_gno
+        .approve(
             onchain.contracts().uniswap_v2_router.address().into_alloy(),
             to_wei(1000).into_alloy(),
-        ),
-        solver.address().into_alloy()
-    );
-    contracts::alloy::tx!(
-        token_dai.approve(
+        )
+        .from(solver.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    token_dai
+        .approve(
             onchain.contracts().uniswap_v2_router.address().into_alloy(),
             to_wei(1000).into_alloy(),
-        ),
-        solver.address().into_alloy()
-    );
+        )
+        .from(solver.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
     tx!(
         solver.account(),
         onchain.contracts().uniswap_v2_router.add_liquidity(
@@ -665,13 +686,16 @@ async fn volume_fee_buy_order_test(web3: Web3) {
     );
 
     // Approve GPv2 for trading
-    contracts::alloy::tx!(
-        token_gno.approve(
+
+    token_gno
+        .approve(
             onchain.contracts().allowance.into_alloy(),
             to_wei(100).into_alloy(),
-        ),
-        trader.address().into_alloy()
-    );
+        )
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     // Place Orders
     let services = Services::new(&onchain).await;

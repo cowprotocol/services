@@ -17,7 +17,10 @@ use {
         tx_value,
     },
     ethcontract::U256,
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    ethrpc::alloy::{
+        CallBuilderExt,
+        conversions::{IntoAlloy, IntoLegacy},
+    },
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
@@ -561,13 +564,16 @@ async fn quote_verification(web3: Web3) {
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(100_000), to_wei(100_000))
         .await;
     token.mint(safe.address().into_legacy(), to_wei(5)).await;
-    contracts::alloy::tx!(
-        token.approve(
+
+    token
+        .approve(
             onchain.contracts().allowance.into_alloy(),
             to_wei(5).into_alloy(),
-        ),
-        trader.address().into_alloy()
-    );
+        )
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     // Sign transaction transferring 5 token from the safe to the trader
     // to fund the trade in a pre-hook.

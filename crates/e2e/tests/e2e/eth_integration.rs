@@ -1,7 +1,10 @@
 use {
     e2e::setup::*,
     ethcontract::prelude::Address,
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    ethrpc::alloy::{
+        CallBuilderExt,
+        conversions::{IntoAlloy, IntoLegacy},
+    },
     model::{
         order::{BUY_ETH_ADDRESS, OrderCreation, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
@@ -33,20 +36,26 @@ async fn eth_integration(web3: Web3) {
     token.mint(trader_b.address(), to_wei(51)).await;
 
     // Approve GPv2 for trading
-    contracts::alloy::tx!(
-        token.approve(
+
+    token
+        .approve(
             onchain.contracts().allowance.into_alloy(),
             to_wei(51).into_alloy(),
-        ),
-        trader_a.address().into_alloy()
-    );
-    contracts::alloy::tx!(
-        token.approve(
+        )
+        .from(trader_a.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    token
+        .approve(
             onchain.contracts().allowance.into_alloy(),
             to_wei(51).into_alloy(),
-        ),
-        trader_b.address().into_alloy()
-    );
+        )
+        .from(trader_b.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     let trader_a_eth_balance_before = web3.eth().balance(trader_a.address(), None).await.unwrap();
 

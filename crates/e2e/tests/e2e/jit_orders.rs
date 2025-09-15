@@ -5,7 +5,10 @@ use {
         tx_value,
     },
     ethcontract::prelude::U256,
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    ethrpc::alloy::{
+        CallBuilderExt,
+        conversions::{IntoAlloy, IntoLegacy},
+    },
     model::{
         order::{OrderClass, OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
@@ -46,13 +49,16 @@ async fn single_limit_order_test(web3: Web3) {
             .weth
             .approve(onchain.contracts().allowance, U256::MAX)
     );
-    contracts::alloy::tx!(
-        token.approve(
+
+    token
+        .approve(
             onchain.contracts().allowance.into_alloy(),
             ::alloy::primitives::U256::MAX,
-        ),
-        solver.address().into_alloy()
-    );
+        )
+        .from(solver.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     let services = Services::new(&onchain).await;
 

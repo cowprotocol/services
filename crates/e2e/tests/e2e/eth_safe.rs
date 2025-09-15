@@ -9,7 +9,10 @@ use {
         to_wei,
         wait_for_condition,
     },
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    ethrpc::alloy::{
+        CallBuilderExt,
+        conversions::{IntoAlloy, IntoLegacy},
+    },
     model::{
         order::{BUY_ETH_ADDRESS, OrderCreation, OrderKind},
         signature::{Signature, hashed_eip712_message},
@@ -45,13 +48,16 @@ async fn test(web3: Web3) {
     )
     .await;
     token.mint(safe.address().into_legacy(), to_wei(4)).await;
-    contracts::alloy::tx!(
-        token.approve(
+
+    token
+        .approve(
             onchain.contracts().allowance.into_alloy(),
             to_wei(4).into_alloy(),
-        ),
-        trader.address().into_alloy()
-    );
+        )
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     tracing::info!("Starting services.");
     let services = Services::new(&onchain).await;

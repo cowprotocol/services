@@ -1,7 +1,10 @@
 use {
     ::alloy::primitives::U256,
     e2e::setup::{colocation::SolverEngine, mock::Mock, *},
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    ethrpc::alloy::{
+        CallBuilderExt,
+        conversions::{IntoAlloy, IntoLegacy},
+    },
     model::{
         order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
@@ -45,13 +48,16 @@ async fn solver_competition(web3: Web3) {
     token_a.mint(solver.address(), to_wei(1000)).await;
 
     // Approve GPv2 for trading
-    contracts::alloy::tx!(
-        token_a.approve(
+
+    token_a
+        .approve(
             onchain.contracts().allowance.into_alloy(),
             to_wei(100).into_alloy(),
-        ),
-        trader.address().into_alloy()
-    );
+        )
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     // Start system
     colocation::start_driver(
@@ -177,20 +183,26 @@ async fn wrong_solution_submission_address(web3: Web3) {
         .await;
 
     // Approve GPv2 for trading
-    contracts::alloy::tx!(
-        token_a.approve(
+
+    token_a
+        .approve(
             onchain.contracts().allowance.into_alloy(),
             to_wei(100).into_alloy(),
-        ),
-        trader_a.address().into_alloy()
-    );
-    contracts::alloy::tx!(
-        token_b.approve(
+        )
+        .from(trader_a.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    token_b
+        .approve(
             onchain.contracts().allowance.into_alloy(),
             to_wei(100).into_alloy(),
-        ),
-        trader_b.address().into_alloy()
-    );
+        )
+        .from(trader_b.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     // Start system, with two solvers, one that knows about base_a and one that
     // knows about base_b
@@ -317,13 +329,16 @@ async fn store_filtered_solutions(web3: Web3) {
 
     // set up trader for their order
     token_a.mint(trader.address(), to_wei(2)).await;
-    contracts::alloy::tx!(
-        token_a.approve(
+
+    token_a
+        .approve(
             onchain.contracts().allowance.into_alloy(),
             to_wei(2).into_alloy(),
-        ),
-        trader.address().into_alloy()
-    );
+        )
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     let services = Services::new(&onchain).await;
 

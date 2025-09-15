@@ -4,7 +4,10 @@ use {
         tx,
         tx_value,
     },
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    ethrpc::alloy::{
+        CallBuilderExt,
+        conversions::{IntoAlloy, IntoLegacy},
+    },
     futures::FutureExt,
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind},
@@ -362,13 +365,16 @@ async fn quote_timeout(web3: Web3) {
 
     // set up trader to pass balance checks during order creation
     sell_token.mint(trader.address(), to_wei(1)).await;
-    contracts::alloy::tx!(
-        sell_token.approve(
+
+    sell_token
+        .approve(
             onchain.contracts().allowance.into_alloy(),
             to_wei(1).into_alloy(),
-        ),
-        trader.address().into_alloy()
-    );
+        )
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     let order = OrderCreation {
         sell_token: sell_token.address().into_legacy(),

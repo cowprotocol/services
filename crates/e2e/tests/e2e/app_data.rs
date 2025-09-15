@@ -1,7 +1,10 @@
 use {
     app_data::{AppDataHash, hash_full_app_data},
     e2e::setup::*,
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    ethrpc::alloy::{
+        CallBuilderExt,
+        conversions::{IntoAlloy, IntoLegacy},
+    },
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
@@ -36,13 +39,16 @@ async fn app_data(web3: Web3) {
         .await;
 
     token_a.mint(trader.address(), to_wei(10)).await;
-    contracts::alloy::tx!(
-        token_a.approve(
+
+    token_a
+        .approve(
             onchain.contracts().allowance.into_alloy(),
             to_wei(10).into_alloy(),
-        ),
-        trader.address().into_alloy()
-    );
+        )
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     let mut valid_to: u32 = model::time::now_in_epoch_seconds() + 300;
     let mut create_order = |app_data| {
@@ -198,13 +204,16 @@ async fn app_data_full_format(web3: Web3) {
         .await;
 
     token_a.mint(trader.address(), to_wei(10)).await;
-    contracts::alloy::tx!(
-        token_a.approve(
+
+    token_a
+        .approve(
             onchain.contracts().allowance.into_alloy(),
             to_wei(10).into_alloy(),
-        ),
-        trader.address().into_alloy()
-    );
+        )
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     let mut valid_to: u32 = model::time::now_in_epoch_seconds() + 300;
     let mut create_order = |app_data| {

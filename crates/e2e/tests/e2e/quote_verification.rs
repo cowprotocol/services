@@ -4,7 +4,10 @@ use {
     ethcontract::{H160, U256},
     ethrpc::{
         Web3,
-        alloy::conversions::{IntoAlloy, IntoLegacy},
+        alloy::{
+            CallBuilderExt,
+            conversions::{IntoAlloy, IntoLegacy},
+        },
     },
     model::{
         interaction::InteractionData,
@@ -90,13 +93,16 @@ async fn standard_verified_quote(web3: Web3) {
         .await;
 
     token.mint(trader.address(), to_wei(1)).await;
-    contracts::alloy::tx!(
-        token.approve(
+
+    token
+        .approve(
             onchain.contracts().allowance.into_alloy(),
             to_wei(1).into_alloy(),
-        ),
-        trader.address().into_alloy()
-    );
+        )
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     tracing::info!("Starting services.");
     let services = Services::new(&onchain).await;

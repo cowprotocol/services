@@ -15,7 +15,10 @@ use {
         U256,
         transaction::{TransactionBuilder, TransactionResult},
     },
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    ethrpc::alloy::{
+        CallBuilderExt,
+        conversions::{IntoAlloy, IntoLegacy},
+    },
     hex_literal::hex,
     model::{
         DomainSeparator,
@@ -177,10 +180,12 @@ pub struct MintableToken {
 
 impl MintableToken {
     pub async fn mint(&self, to: H160, amount: U256) {
-        contracts::alloy::tx!(
-            self.contract.mint(to.into_alloy(), amount.into_alloy()),
-            self.minter.address().into_alloy()
-        );
+        self.contract
+            .mint(to.into_alloy(), amount.into_alloy())
+            .from(self.minter.address().into_alloy())
+            .send_and_watch()
+            .await
+            .unwrap();
     }
 }
 
@@ -439,10 +444,12 @@ impl OnchainComponents {
         weth_amount: U256,
     ) {
         for MintableToken { contract, minter } in tokens {
-            contracts::alloy::tx!(
-                contract.mint(minter.address().into_alloy(), token_amount.into_alloy()),
-                minter.address().into_alloy()
-            );
+            contract
+                .mint(minter.address().into_alloy(), token_amount.into_alloy())
+                .from(minter.address().into_alloy())
+                .send_and_watch()
+                .await
+                .unwrap();
             tx_value!(minter, weth_amount, self.contracts.weth.deposit());
 
             tx!(
@@ -453,13 +460,15 @@ impl OnchainComponents {
                 )
             );
 
-            contracts::alloy::tx!(
-                contract.approve(
+            contract
+                .approve(
                     self.contracts.uniswap_v2_router.address().into_alloy(),
                     token_amount.into_alloy(),
-                ),
-                minter.address().into_alloy()
-            );
+                )
+                .from(minter.address().into_alloy())
+                .send_and_watch()
+                .await
+                .unwrap();
 
             tx!(
                 minter,
@@ -499,20 +508,28 @@ impl OnchainComponents {
                 asset_b.0.address().into_legacy()
             )
         );
-        contracts::alloy::tx!(
-            asset_a.0.approve(
+
+        asset_a
+            .0
+            .approve(
                 self.contracts.uniswap_v2_router.address().into_alloy(),
                 asset_a.1.into_alloy(),
-            ),
-            lp.address().into_alloy()
-        );
-        contracts::alloy::tx!(
-            asset_b.0.approve(
+            )
+            .from(lp.address().into_alloy())
+            .send_and_watch()
+            .await
+            .unwrap();
+
+        asset_b
+            .0
+            .approve(
                 self.contracts.uniswap_v2_router.address().into_alloy(),
                 asset_b.1.into_alloy(),
-            ),
-            lp.address().into_alloy()
-        );
+            )
+            .from(lp.address().into_alloy())
+            .send_and_watch()
+            .await
+            .unwrap();
         tx!(
             lp,
             self.contracts.uniswap_v2_router.add_liquidity(

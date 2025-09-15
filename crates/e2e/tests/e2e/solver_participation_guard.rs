@@ -16,7 +16,10 @@ use {
     },
     ethrpc::{
         Web3,
-        alloy::conversions::{IntoAlloy, IntoLegacy},
+        alloy::{
+            CallBuilderExt,
+            conversions::{IntoAlloy, IntoLegacy},
+        },
     },
     model::{
         order::{OrderClass, OrderCreation, OrderKind},
@@ -259,20 +262,26 @@ async fn setup(
             token_b.address().into_legacy()
         )
     );
-    contracts::alloy::tx!(
-        token_a.approve(
+
+    token_a
+        .approve(
             onchain.contracts().uniswap_v2_router.address().into_alloy(),
             to_wei(1000).into_alloy(),
-        ),
-        solver.address().into_alloy()
-    );
-    contracts::alloy::tx!(
-        token_b.approve(
+        )
+        .from(solver.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    token_b
+        .approve(
             onchain.contracts().uniswap_v2_router.address().into_alloy(),
             to_wei(1000).into_alloy(),
-        ),
-        solver.address().into_alloy()
-    );
+        )
+        .from(solver.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
     tx!(
         solver.account(),
         onchain.contracts().uniswap_v2_router.add_liquidity(
@@ -288,13 +297,16 @@ async fn setup(
     );
 
     // Approve GPv2 for trading
-    contracts::alloy::tx!(
-        token_a.approve(
+
+    token_a
+        .approve(
             onchain.contracts().allowance.into_alloy(),
             to_wei(1000).into_alloy(),
-        ),
-        trader_a.address().into_alloy()
-    );
+        )
+        .from(trader_a.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     (trader_a, token_a, token_b)
 }

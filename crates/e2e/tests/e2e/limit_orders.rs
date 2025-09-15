@@ -6,7 +6,10 @@ use {
     driver::domain::eth::NonZeroU256,
     e2e::{nodes::forked_node::ForkedNodeApi, setup::*, tx},
     ethcontract::{H160, prelude::U256},
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    ethrpc::alloy::{
+        CallBuilderExt,
+        conversions::{IntoAlloy, IntoLegacy},
+    },
     fee::{FeePolicyOrderClass, ProtocolFee, ProtocolFeesConfig},
     model::{
         order::{OrderClass, OrderCreation, OrderKind},
@@ -114,20 +117,26 @@ async fn single_limit_order_test(web3: Web3) {
             token_b.address().into_legacy()
         )
     );
-    contracts::alloy::tx!(
-        token_a.approve(
+
+    token_a
+        .approve(
             onchain.contracts().uniswap_v2_router.address().into_alloy(),
             to_wei(1000).into_alloy(),
-        ),
-        solver.address().into_alloy()
-    );
-    contracts::alloy::tx!(
-        token_b.approve(
+        )
+        .from(solver.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    token_b
+        .approve(
             onchain.contracts().uniswap_v2_router.address().into_alloy(),
             to_wei(1000).into_alloy(),
-        ),
-        solver.address().into_alloy()
-    );
+        )
+        .from(solver.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
     tx!(
         solver.account(),
         onchain.contracts().uniswap_v2_router.add_liquidity(
@@ -143,13 +152,16 @@ async fn single_limit_order_test(web3: Web3) {
     );
 
     // Approve GPv2 for trading
-    contracts::alloy::tx!(
-        token_a.approve(
+
+    token_a
+        .approve(
             onchain.contracts().allowance.into_alloy(),
             to_wei(10).into_alloy(),
-        ),
-        trader_a.address().into_alloy()
-    );
+        )
+        .from(trader_a.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     // Place Orders
     let services = Services::new(&onchain).await;
@@ -233,20 +245,26 @@ async fn two_limit_orders_test(web3: Web3) {
             token_b.address().into_legacy()
         )
     );
-    contracts::alloy::tx!(
-        token_a.approve(
+
+    token_a
+        .approve(
             onchain.contracts().uniswap_v2_router.address().into_alloy(),
             to_wei(1000).into_alloy(),
-        ),
-        solver.address().into_alloy()
-    );
-    contracts::alloy::tx!(
-        token_b.approve(
+        )
+        .from(solver.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    token_b
+        .approve(
             onchain.contracts().uniswap_v2_router.address().into_alloy(),
             to_wei(1000).into_alloy(),
-        ),
-        solver.address().into_alloy()
-    );
+        )
+        .from(solver.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
     tx!(
         solver.account(),
         onchain.contracts().uniswap_v2_router.add_liquidity(
@@ -262,20 +280,26 @@ async fn two_limit_orders_test(web3: Web3) {
     );
 
     // Approve GPv2 for trading
-    contracts::alloy::tx!(
-        token_a.approve(
+
+    token_a
+        .approve(
             onchain.contracts().allowance.into_alloy(),
             to_wei(10).into_alloy(),
-        ),
-        trader_a.address().into_alloy()
-    );
-    contracts::alloy::tx!(
-        token_b.approve(
+        )
+        .from(trader_a.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    token_b
+        .approve(
             onchain.contracts().allowance.into_alloy(),
             to_wei(10).into_alloy(),
-        ),
-        trader_b.address().into_alloy()
-    );
+        )
+        .from(trader_b.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     // Place Orders
     let services = Services::new(&onchain).await;
@@ -383,20 +407,26 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
         .await;
 
     // Approve GPv2 for trading
-    contracts::alloy::tx!(
-        token_a.approve(
+
+    token_a
+        .approve(
             onchain.contracts().allowance.into_alloy(),
             to_wei(100).into_alloy(),
-        ),
-        trader_a.address().into_alloy()
-    );
-    contracts::alloy::tx!(
-        token_b.approve(
+        )
+        .from(trader_a.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    token_b
+        .approve(
             onchain.contracts().allowance.into_alloy(),
             to_wei(100).into_alloy(),
-        ),
-        trader_b.address().into_alloy()
-    );
+        )
+        .from(trader_b.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     // Start system, with two solvers, one that knows about base_a and one that
     // knows about base_b
@@ -609,13 +639,16 @@ async fn too_many_limit_orders_test(web3: Web3) {
     token_a.mint(trader.address(), to_wei(1)).await;
 
     // Approve GPv2 for trading
-    contracts::alloy::tx!(
-        token_a.approve(
+
+    token_a
+        .approve(
             onchain.contracts().allowance.into_alloy(),
             to_wei(101).into_alloy(),
-        ),
-        trader.address().into_alloy()
-    );
+        )
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     // Place Orders
     let services = Services::new(&onchain).await;
@@ -691,13 +724,16 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
     token.mint(trader.address(), to_wei(100)).await;
 
     // Approve GPv2 for trading
-    contracts::alloy::tx!(
-        token.approve(
+
+    token
+        .approve(
             onchain.contracts().allowance.into_alloy(),
             to_wei(101).into_alloy(),
-        ),
-        trader.address().into_alloy()
-    );
+        )
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     // Place Orders
     let services = Services::new(&onchain).await;
@@ -1025,13 +1061,16 @@ async fn no_liquidity_limit_order(web3: Web3) {
     token_a.mint(trader_a.address(), to_wei(10)).await;
 
     // Approve GPv2 for trading
-    contracts::alloy::tx!(
-        token_a.approve(
+
+    token_a
+        .approve(
             onchain.contracts().allowance.into_alloy(),
             to_wei(10).into_alloy(),
-        ),
-        trader_a.address().into_alloy()
-    );
+        )
+        .from(trader_a.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     // Setup services
     let protocol_fees_config = ProtocolFeesConfig(vec![
