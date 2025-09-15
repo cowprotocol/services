@@ -402,10 +402,11 @@ impl OnchainComponents {
 
         for _ in 0..N {
             let contract_address = ERC20Mintable::Instance::deploy_builder(self.web3.alloy.clone())
+                // We can't escape the .from here because we need to ensure Minter permissions later on
                 .from(minter.address().into_alloy())
                 .deploy()
                 .await
-                .expect("MintableERC20 deployment failed");
+                .expect("ERC20Mintable deployment failed");
             let contract = ERC20Mintable::Instance::new(contract_address, self.web3.alloy.clone());
 
             res.push(MintableToken {
