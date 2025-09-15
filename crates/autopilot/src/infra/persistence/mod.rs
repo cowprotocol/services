@@ -119,7 +119,7 @@ impl Persistence {
     /// Saves the competition data to the DB
     pub async fn save_competition(
         &self,
-        competition: &boundary::Competition,
+        competition: boundary::Competition,
     ) -> Result<(), DatabaseError> {
         self.postgres
             .save_competition(competition)
