@@ -80,6 +80,13 @@ pub fn to_wei(base: u32) -> U256 {
     to_wei_with_exp(base, 18)
 }
 
+/// Returns the provided Eth amount in wei.
+///
+/// Equivalent to `amount * 10^18`.
+pub fn eth(amount: u32) -> ::alloy::primitives::U256 {
+    ::alloy::primitives::U256::from(amount) * ::alloy::primitives::utils::Unit::ETHER.wei()
+}
+
 pub async fn hook_for_transaction<T>(tx: TransactionBuilder<T>) -> Hook
 where
     T: web3::Transport,

@@ -1,5 +1,8 @@
 use {
-    e2e::{setup::*, tx},
+    e2e::{
+        setup::{eth, *},
+        tx,
+    },
     ethrpc::alloy::{
         CallBuilderExt,
         conversions::{IntoAlloy, IntoLegacy},
@@ -35,7 +38,7 @@ async fn vault_balances(web3: Web3) {
     token
         .approve(
             onchain.contracts().balancer_vault.address().into_alloy(),
-            to_wei(10).into_alloy(),
+            eth(10),
         )
         .from(trader.address().into_alloy())
         .send_and_watch()
