@@ -14,10 +14,7 @@ use {
     ethcontract::transaction::TransactionBuilder,
     ethrpc::{
         AlloyProvider,
-        alloy::{
-            ProviderSignerExt,
-            conversions::{IntoAlloy, TryIntoAlloyAsync},
-        },
+        alloy::{CallBuilderExt, conversions::IntoAlloy},
     },
     hex_literal::hex,
     model::{
@@ -39,37 +36,15 @@ pub struct Infrastructure {
 
 impl Infrastructure {
     pub async fn new(provider: AlloyProvider) -> Self {
-        let first_account = *provider.get_accounts().await.unwrap().first().unwrap();
-
-        let singleton = {
-            let deployed_address = GnosisSafe::Instance::deploy_builder(provider.clone())
-                .from(first_account)
-                .deploy()
-                .await
-                .unwrap();
-            GnosisSafe::Instance::new(deployed_address, provider.clone())
-        };
-        let fallback = {
-            let deployed_address =
-                GnosisSafeCompatibilityFallbackHandler::Instance::deploy_builder(provider.clone())
-                    .from(first_account)
-                    .deploy()
-                    .await
-                    .unwrap();
-            GnosisSafeCompatibilityFallbackHandler::Instance::new(
-                deployed_address,
-                provider.clone(),
-            )
-        };
-        let factory = {
-            let deployed_address =
-                GnosisSafeProxyFactory::Instance::deploy_builder(provider.clone())
-                    .from(first_account)
-                    .deploy()
-                    .await
-                    .unwrap();
-            GnosisSafeProxyFactory::Instance::new(deployed_address, provider.clone())
-        };
+        let singleton = GnosisSafe::Instance::deploy(provider.clone())
+            .await
+            .unwrap();
+        let fallback = GnosisSafeCompatibilityFallbackHandler::Instance::deploy(provider.clone())
+            .await
+            .unwrap();
+        let factory = GnosisSafeProxyFactory::Instance::deploy(provider.clone())
+            .await
+            .unwrap();
 
         Self {
             singleton,
@@ -84,15 +59,14 @@ impl Infrastructure {
         owners: Vec<TestAccount>,
         threshold: usize,
     ) -> GnosisSafe::Instance {
-        let provider = self
-            .provider
-            .with_signer(owners[0].account().clone().try_into_alloy().await.unwrap());
-        let safe_proxy =
-            GnosisSafeProxy::Instance::deploy_builder(provider.clone(), *self.singleton.address())
-                .deploy()
-                .await
-                .unwrap();
-        let safe = GnosisSafe::Instance::new(safe_proxy, provider.clone());
+        let safe_proxy = GnosisSafeProxy::Instance::deploy_builder(
+            self.provider.clone(),
+            *self.singleton.address(),
+        )
+        .deploy()
+        .await
+        .unwrap();
+        let safe = GnosisSafe::Instance::new(safe_proxy, self.provider.clone());
 
         contracts::alloy::tx!(
             safe.setup(
@@ -148,8 +122,8 @@ impl Safe {
     }
 
     async fn exec_alloy_tx(&self, to: Address, value: U256, calldata: Bytes) {
-        contracts::alloy::tx!(
-            self.contract.execTransaction(
+        self.contract
+            .execTransaction(
                 to,
                 value,
                 calldata,
@@ -162,9 +136,11 @@ impl Safe {
                 crate::setup::safe::gnosis_safe_prevalidated_signature(
                     self.owner.address().into_alloy(),
                 ),
-            ),
-            self.owner.address().into_alloy()
-        );
+            )
+            .from(self.owner.address().into_alloy())
+            .send_and_watch()
+            .await
+            .unwrap();
     }
 
     pub async fn exec_call<T: ethcontract::tokens::Tokenize>(

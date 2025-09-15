@@ -33,23 +33,31 @@ pub struct Competition {
 }
 
 impl super::Postgres {
-    pub async fn save_competition(&self, competition: &Competition) -> anyhow::Result<()> {
+    pub async fn save_competition(&self, competition: Competition) -> anyhow::Result<()> {
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["save_competition"])
             .start_timer();
 
-        let json = &serde_json::to_value(&competition.competition_table)?;
+        let competition_orders = competition
+            .competition_table
+            .auction
+            .orders
+            .iter()
+            .map(|order| ByteArray(order.0))
+            .collect::<Vec<_>>();
+
+        // offload CPU intensive work of serializing to a blocking thread so we can
+        // already start with the DB queries in the mean time.
+        let json = tokio::task::spawn_blocking(move || {
+            serde_json::to_string(&competition.competition_table)
+        });
 
         let mut ex = self.pool.begin().await.context("begin")?;
 
-        database::solver_competition::save(&mut ex, competition.auction_id, json)
-            .await
-            .context("solver_competition::save")?;
-
         let reference_scores: Vec<_> = competition
             .reference_scores
-            .iter()
+            .into_iter()
             .map(|(solver, score)| database::reference_scores::Score {
                 auction_id: competition.auction_id,
                 solver: ByteArray(solver.0.0),
@@ -65,7 +73,7 @@ impl super::Postgres {
             &mut ex,
             competition
                 .participants
-                .iter()
+                .into_iter()
                 .map(|p| Participant {
                     auction_id: competition.auction_id,
                     participant: ByteArray(p.0),
@@ -80,11 +88,11 @@ impl super::Postgres {
             &mut ex,
             competition
                 .prices
-                .iter()
+                .into_iter()
                 .map(|(token, price)| AuctionPrice {
                     auction_id: competition.auction_id,
                     token: ByteArray(token.0),
-                    price: u256_to_big_decimal(price),
+                    price: u256_to_big_decimal(&price),
                 })
                 .collect::<Vec<_>>()
                 .as_slice(),
@@ -92,20 +100,17 @@ impl super::Postgres {
         .await
         .context("auction_prices::insert")?;
 
-        database::auction_orders::insert(
-            &mut ex,
-            competition.auction_id,
-            competition
-                .competition_table
-                .auction
-                .orders
-                .iter()
-                .map(|order| ByteArray(order.0))
-                .collect::<Vec<_>>()
-                .as_slice(),
-        )
-        .await
-        .context("auction_orders::insert")?;
+        database::auction_orders::insert(&mut ex, competition.auction_id, &competition_orders)
+            .await
+            .context("auction_orders::insert")?;
+
+        let json = json
+            .await
+            .context("failed to await blocking task")?
+            .context("failed to serialize solver competition")?;
+        database::solver_competition::save(&mut ex, competition.auction_id, &json)
+            .await
+            .context("solver_competition::save")?;
 
         ex.commit().await.context("commit")
     }

@@ -40,6 +40,7 @@ Now with Rabby configured, and the services started, you can browse to http://lo
 > Initially you will start with 10000 ETH, to run proper transaction you will need to wrap some ETH first.
 > The EthFlow is not configured by default, the next section explains how to set it up.
 > You can follow along with watching the logs of the `autopilot`, `driver`, and `baseline` solver to see how the Protocol interacts.
+> The CoW Explorer is avialable at http://localhost:8001 to see more information about transaction status
 
 ### Resetting the playground
 

@@ -9,7 +9,7 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-alloy = { workspace = true, default-features = false, features = ["json-rpc", "providers", "rpc-client", "rpc-types", "transports", "reqwest", "signers", "signer-local"] }
+alloy = { workspace = true, default-features = false, features = ["json-rpc", "providers", "rpc-client", "rpc-types", "transports", "reqwest", "signers", "signer-local", "signer-mnemonic"] }
 app-data = { workspace = true }
 anyhow = { workspace = true }
 autopilot = { workspace = true }
@@ -40,6 +40,7 @@ solvers-dto = { workspace = true }
 sqlx = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["macros", "process"] }
+toml = { workspace = true }
 tracing = { workspace = true }
 warp = { workspace = true }
 web3 = { workspace = true, features = ["http"] }

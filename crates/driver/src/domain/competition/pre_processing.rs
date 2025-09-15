@@ -1,7 +1,7 @@
 use {
     super::{Auction, Order, order},
     crate::{
-        domain::{eth, liquidity},
+        domain::{competition::order::SellTokenBalance, eth, liquidity},
         infra::{self, api::routes::solve::dto::SolveRequest, observe::metrics, tokens},
         util::Bytes,
     },
@@ -12,8 +12,15 @@ use {
         future::{BoxFuture, join_all},
     },
     itertools::Itertools,
-    model::{order::OrderKind, signature::Signature},
-    shared::signature_validator::SignatureValidating,
+    model::{
+        interaction::InteractionData,
+        order::{OrderKind, SellTokenSource},
+        signature::Signature,
+    },
+    shared::{
+        account_balances::{BalanceFetching, Query},
+        signature_validator::SignatureValidating,
+    },
     std::{collections::HashMap, future::Future, sync::Arc},
     tap::TapFallible,
     tokio::sync::Mutex,
@@ -21,6 +28,7 @@ use {
 };
 
 type Shared<T> = futures::future::Shared<BoxFuture<'static, T>>;
+
 type BalanceGroup = (order::Trader, eth::TokenAddress, order::SellTokenBalance);
 type Balances = HashMap<BalanceGroup, order::SellAmount>;
 
@@ -48,7 +56,7 @@ pub struct Utilities {
     app_data_retriever: Option<order::app_data::AppDataRetriever>,
     liquidity_fetcher: infra::liquidity::Fetcher,
     tokens: tokens::Fetcher,
-    disable_access_list_simulation: bool,
+    balance_fetcher: Arc<dyn BalanceFetching>,
 }
 
 impl std::fmt::Debug for Utilities {
@@ -108,8 +116,8 @@ impl DataAggregator {
         eth: infra::Ethereum,
         app_data_retriever: Option<order::app_data::AppDataRetriever>,
         liquidity_fetcher: infra::liquidity::Fetcher,
-        disable_access_list_simulation: bool,
         tokens: tokens::Fetcher,
+        balance_fetcher: Arc<dyn BalanceFetching>,
     ) -> Self {
         let signature_validator = shared::signature_validator::validator(
             eth.web3(),
@@ -126,8 +134,8 @@ impl DataAggregator {
                 signature_validator,
                 app_data_retriever,
                 liquidity_fetcher,
-                disable_access_list_simulation,
                 tokens,
+                balance_fetcher,
             }),
             control: Mutex::new(ControlBlock {
                 solve_request: Default::default(),
@@ -218,8 +226,7 @@ impl Utilities {
     /// Fetches the tradable balance for every order owner.
     async fn fetch_balances(self: Arc<Self>, auction: Arc<Auction>) -> Arc<Balances> {
         let _timer = metrics::get().processing_stage_timer("fetch_balances");
-        let ethereum = self.eth.with_metric_label("orderBalances".into());
-        let mut tokens: HashMap<_, _> = Default::default();
+
         // Collect trader/token/source/interaction tuples for fetching available
         // balances. Note that we are pessimistic here, if a trader is selling
         // the same token with the same source in two different orders using a
@@ -227,7 +234,7 @@ impl Utilities {
         // pre-interactions were specified. This is done to avoid creating
         // dependencies between orders (i.e. order 1 is required for executing
         // order 2) which we currently cannot express with the solver interface.
-        let traders = auction
+        let queries = auction
             .orders
             .iter()
             .chunk_by(|order| (order.trader(), order.sell.token, order.sell_token_balance))
@@ -235,41 +242,56 @@ impl Utilities {
             .map(|((trader, token, source), mut orders)| {
                 let first = orders.next().expect("group contains at least 1 order");
                 let mut others = orders;
-                tokens.entry(token).or_insert_with(|| ethereum.erc20(token));
-                if others.all(|order| order.pre_interactions == first.pre_interactions) {
-                    (trader, token, source, &first.pre_interactions[..])
-                } else {
-                    (trader, token, source, Default::default())
+                let all_interactions_equal =
+                    others.all(|order| order.pre_interactions == first.pre_interactions);
+                Query {
+                    owner: trader.0.0,
+                    token: token.0.0,
+                    source: match source {
+                        SellTokenBalance::Erc20 => SellTokenSource::Erc20,
+                        SellTokenBalance::Internal => SellTokenSource::Internal,
+                        SellTokenBalance::External => SellTokenSource::External,
+                    },
+                    interactions: if all_interactions_equal {
+                        first
+                            .pre_interactions
+                            .iter()
+                            .map(|i| InteractionData {
+                                target: i.target.0,
+                                value: i.value.0,
+                                call_data: i.call_data.0.clone(),
+                            })
+                            .collect()
+                    } else {
+                        Vec::default()
+                    },
                 }
             })
             .collect::<Vec<_>>();
 
-        let balances = join_all(traders.into_iter().map(
-            |(trader, token, source, interactions)| {
-                let token_contract = tokens.get(&token);
-                let token_contract = token_contract.expect("all tokens were created earlier");
-                let fetch_balance = token_contract.tradable_balance(
-                    trader.into(),
-                    source,
-                    interactions,
-                    self.disable_access_list_simulation,
-                );
+        let balances = self.balance_fetcher.get_balances(&queries).await;
 
-                async move {
-                    let balance = fetch_balance.await;
+        let result: HashMap<_, _> = queries
+            .into_iter()
+            .zip(balances)
+            .filter_map(|(query, balance)| {
+                let balance = balance.ok()?;
+                Some((
                     (
-                        (trader, token, source),
-                        balance.map(order::SellAmount::from).ok(),
-                    )
-                }
-            },
-        ))
-        .await
-        .into_iter()
-        .filter_map(|(key, value)| Some((key, value?)))
-        .collect();
+                        order::Trader(query.owner.into()),
+                        query.token.into(),
+                        match query.source {
+                            SellTokenSource::Erc20 => SellTokenBalance::Erc20,
+                            SellTokenSource::Internal => SellTokenBalance::Internal,
+                            SellTokenSource::External => SellTokenBalance::External,
+                        },
+                    ),
+                    order::SellAmount(balance),
+                ))
+            })
+            .collect();
 
-        Arc::new(balances)
+        Arc::new(result)
     }
 
     /// Fetches the app data for all orders in the auction.
