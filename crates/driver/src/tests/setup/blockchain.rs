@@ -12,7 +12,10 @@ use {
     ethcontract::PrivateKey,
     ethrpc::{
         Web3,
-        alloy::conversions::{IntoAlloy, IntoLegacy},
+        alloy::{
+            CallBuilderExt,
+            conversions::{IntoAlloy, IntoLegacy},
+        },
     },
     futures::Future,
     secp256k1::SecretKey,
