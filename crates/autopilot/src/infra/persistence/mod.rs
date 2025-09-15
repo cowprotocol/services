@@ -320,7 +320,7 @@ impl Persistence {
         Ok(ex.commit().await?)
     }
 
-    /// Returns only auction data that is relvant for processing the
+    /// Returns only auction data that is relevant for processing the
     /// settled trades. e.g. only native prices for traded tokens are
     /// included - not ALL native prices provided in the auction.
     pub async fn get_auction(
