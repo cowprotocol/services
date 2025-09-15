@@ -64,8 +64,7 @@ impl LiquiditySourceNotifying for Notifier {
             self.liquorice_settlement_contract_address,
         );
 
-        let _ = self
-            .client
+        self.client
             .send_request(notification::post::Request {
                 source: NOTIFICATION_SOURCE.to_string(),
                 timestamp: Utc::now(),

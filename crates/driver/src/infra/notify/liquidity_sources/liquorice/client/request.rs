@@ -19,6 +19,8 @@ pub mod error {
         Reqwest(#[from] reqwest::Error),
         #[error("status error: {0}")]
         Status(StatusError),
+        #[error("unexpected error: {0}")]
+        Unexpected(#[from] anyhow::Error),
     }
     #[derive(Debug, thiserror::Error)]
     #[error("{code}: {text}")]
@@ -91,8 +93,7 @@ pub mod v1 {
                         let url = base_url
                             .to_owned()
                             .join("v1/intent-origin/notification")
-                            .context("request url")
-                            .unwrap();
+                            .context("Parsing URL failed")?;
 
                         let response = client.post(url).json(&self).send().await?;
                         decode_response(response).await
