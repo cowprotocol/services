@@ -4,7 +4,7 @@
 use {
     super::{internal::InternalPoolFetching, pool_storage::PoolStorage},
     crate::{
-        event_handling::{EventHandler, EventRetrieving},
+        event_handling::{EthcontractEventRetrieving, EventHandler},
         maintenance::Maintaining,
         recent_block_cache::Block,
         sources::balancer_v2::pools::{
@@ -38,7 +38,7 @@ const POOL_CREATED_TOPIC: H256 = H256(hex!(
     "83a48fbcfc991335314e74d0496aab6a1987e992ddc85dddbcc4d6dd6ef2e9fc"
 ));
 
-impl EventRetrieving for BasePoolFactoryContract {
+impl EthcontractEventRetrieving for BasePoolFactoryContract {
     type Event = balancer_v2_base_pool_factory::Event;
 
     fn get_events(&self) -> DynAllEventsBuilder<Self::Event> {
@@ -49,7 +49,13 @@ impl EventRetrieving for BasePoolFactoryContract {
 }
 
 /// Type alias for the internal event updater type.
-type PoolUpdater<Factory> = Mutex<EventHandler<BasePoolFactoryContract, PoolStorage<Factory>>>;
+type PoolUpdater<Factory> = Mutex<
+    EventHandler<
+        BasePoolFactoryContract,
+        PoolStorage<Factory>,
+        ethcontract::Event<balancer_v2_base_pool_factory::Event>,
+    >,
+>;
 
 /// The Pool Registry maintains an event handler for each of the Balancer Pool
 /// Factory contracts and maintains a `PoolStorage` for each.

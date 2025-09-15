@@ -1,16 +1,10 @@
 use {
     crate::maintenance::Maintaining,
-    anyhow::{Context, Error, Result},
-    ethcontract::{
-        Event as EthcontractEvent,
-        EventMetadata,
-        contract::{AllEventsBuilder, ParseLog},
-        dyns::DynTransport,
-        errors::ExecutionError,
-    },
+    anyhow::{Context, Result},
+    ethcontract::{EventMetadata, dyns::DynAllEventsBuilder},
     ethrpc::block_stream::{BlockNumberHash, BlockRetrieving, RangeInclusive},
     futures::{Stream, StreamExt, TryStreamExt, future},
-    std::sync::Arc,
+    std::{pin::Pin, sync::Arc},
     tokio::sync::Mutex,
     tracing::Instrument,
 };
@@ -41,15 +35,16 @@ const MAX_PARALLEL_RPC_CALLS: usize = 128;
 ///    `last_handled_blocks` to make sure the data is consistent. 5. If history
 ///    update is successful, proceed with latest update, and if successful
 ///    update `last_handled_blocks`.
-pub struct EventHandler<C, S>
+pub struct EventHandler<C, S, E>
 where
-    C: EventRetrieving,
-    S: EventStoring<C::Event>,
+    C: EventRetrieving<Event = E>,
+    S: EventStoring<E>,
 {
     block_retriever: Arc<dyn BlockRetrieving>,
     contract: C,
     store: S,
     last_handled_blocks: Vec<BlockNumberHash>,
+    _phantom: std::marker::PhantomData<E>,
 }
 
 /// `EventStoring` is used by `EventHandler` for the purpose of giving the user
@@ -59,23 +54,19 @@ where
 /// Databases: might transform, filter and classify which events are inserted
 /// HashSet: For less persistent (in memory) storing, insert events into a set.
 #[async_trait::async_trait]
-pub trait EventStoring<T>: Send + Sync {
+pub trait EventStoring<E>: Send + Sync {
     /// Returns ok, on successful execution, otherwise an appropriate error
     ///
     /// # Arguments
     /// * `events` the contract events to be replaced by the implementer
     /// * `range` indicates a particular range of blocks on which to operate.
-    async fn replace_events(
-        &mut self,
-        events: Vec<EthcontractEvent<T>>,
-        range: RangeInclusive<u64>,
-    ) -> Result<()>;
+    async fn replace_events(&mut self, events: Vec<E>, range: RangeInclusive<u64>) -> Result<()>;
 
     /// Returns ok, on successful execution, otherwise an appropriate error
     ///
     /// # Arguments
     /// * `events` the contract events to be appended by the implementer
-    async fn append_events(&mut self, events: Vec<EthcontractEvent<T>>) -> Result<()>;
+    async fn append_events(&mut self, events: Vec<E>) -> Result<()>;
 
     /// Fetches the last processed block to know where to resume indexing after
     /// a restart.
@@ -86,9 +77,70 @@ pub trait EventStoring<T>: Send + Sync {
     async fn persist_last_indexed_block(&mut self, last_block: u64) -> Result<()>;
 }
 
+pub type EventStream<T> = Pin<Box<dyn Stream<Item = Result<T>> + Send>>;
+
+/// Defines an interface for retrieving events from a `ethcontract` crate
+/// contract. Should be removed once fully migrated to alloy.
+pub trait EthcontractEventRetrieving {
+    type Event: ethcontract::contract::ParseLog + 'static;
+
+    fn get_events(&self) -> DynAllEventsBuilder<Self::Event>;
+}
+
+/// Common `ethcontract` crate-related event retrieval patterns are extracted to
+/// this trait to avoid code duplication and any dependencies on the
+/// `ethcontract` crate in the main event handling traits. This will be removed
+/// once fully migrated to alloy.
+#[async_trait::async_trait]
+impl<T> EventRetrieving for T
+where
+    T: EthcontractEventRetrieving + Send + Sync,
+{
+    type Event = ethcontract::Event<T::Event>;
+
+    async fn get_events_by_block_hash(
+        &self,
+        block_hash: ethcontract::H256,
+    ) -> Result<Vec<Self::Event>> {
+        Ok(self.get_events().block_hash(block_hash).query().await?)
+    }
+
+    async fn get_events_by_block_range(
+        &self,
+        block_range: &RangeInclusive<u64>,
+    ) -> Result<EventStream<Self::Event>> {
+        let stream = self
+            .get_events()
+            .from_block((*block_range.start()).into())
+            .to_block((*block_range.end()).into())
+            .block_page_size(500)
+            .query_paginated()
+            .await?
+            .map_err(anyhow::Error::from);
+
+        Ok(Box::pin(stream))
+    }
+
+    fn address(&self) -> Vec<ethcontract::Address> {
+        self.get_events().filter.address
+    }
+}
+
+#[async_trait::async_trait]
 pub trait EventRetrieving {
-    type Event: ParseLog;
-    fn get_events(&self) -> AllEventsBuilder<DynTransport, Self::Event>;
+    type Event;
+
+    async fn get_events_by_block_hash(
+        &self,
+        block_hash: ethcontract::H256,
+    ) -> Result<Vec<Self::Event>>;
+
+    async fn get_events_by_block_range(
+        &self,
+        block_range: &RangeInclusive<u64>,
+    ) -> Result<EventStream<Self::Event>>;
+
+    fn address(&self) -> Vec<ethcontract::Address>;
 }
 
 #[derive(Debug)]
@@ -101,10 +153,10 @@ struct EventRange {
     is_reorg: bool,
 }
 
-impl<C, S> EventHandler<C, S>
+impl<C, S, E> EventHandler<C, S, E>
 where
-    C: EventRetrieving,
-    S: EventStoring<C::Event>,
+    C: EventRetrieving<Event = E>,
+    S: EventStoring<E>,
 {
     pub fn new(
         block_retriever: Arc<dyn BlockRetrieving>,
@@ -122,6 +174,7 @@ where
                     None => vec![],
                 }
             },
+            _phantom: std::marker::PhantomData,
         }
     }
 
@@ -407,13 +460,13 @@ where
     async fn past_events_by_block_hashes(
         &self,
         blocks: &[BlockNumberHash],
-    ) -> (Vec<BlockNumberHash>, Vec<EthcontractEvent<C::Event>>) {
+    ) -> (Vec<BlockNumberHash>, Vec<E>) {
         let (mut blocks_filtered, mut events) = (vec![], vec![]);
         for chunk in blocks.chunks(MAX_PARALLEL_RPC_CALLS) {
             for (i, result) in future::join_all(
                 chunk
                     .iter()
-                    .map(|block| self.contract.get_events().block_hash(block.1).query()),
+                    .map(|block| self.contract.get_events_by_block_hash(block.1)),
             )
             .await
             .into_iter()
@@ -442,17 +495,8 @@ where
     async fn past_events_by_block_number_range(
         &self,
         block_range: &RangeInclusive<u64>,
-    ) -> Result<impl Stream<Item = Result<EthcontractEvent<C::Event>>> + use<C, S>, ExecutionError>
-    {
-        Ok(self
-            .contract
-            .get_events()
-            .from_block((*block_range.start()).into())
-            .to_block((*block_range.end()).into())
-            .block_page_size(500)
-            .query_paginated()
-            .await?
-            .map_err(Error::from))
+    ) -> Result<impl Stream<Item = Result<E>> + use<C, S, E> + Send> {
+        self.contract.get_events_by_block_range(block_range).await
     }
 
     fn update_last_handled_blocks(&mut self, blocks: &[BlockNumberHash]) {
@@ -531,15 +575,15 @@ fn split_range(range: RangeInclusive<u64>) -> (Option<RangeInclusive<u64>>, Rang
 }
 
 #[async_trait::async_trait]
-impl<C, S> Maintaining for Mutex<EventHandler<C, S>>
+impl<C, S, E> Maintaining for Mutex<EventHandler<C, S, E>>
 where
-    C: EventRetrieving + Send + Sync,
-    C::Event: Send,
-    S: EventStoring<C::Event> + Send + Sync,
+    E: Send + Sync,
+    C: EventRetrieving<Event = E> + Send + Sync,
+    S: EventStoring<E> + Send + Sync,
 {
     async fn run_maintenance(&self) -> Result<()> {
         let mut inner = self.lock().await;
-        let address = inner.contract.get_events().filter.address;
+        let address = inner.contract.address();
         inner
             .update_events()
             .instrument(tracing::info_span!("address", ?address))
@@ -587,13 +631,10 @@ macro_rules! impl_event_retrieving {
             }
         }
 
-        impl $crate::event_handling::EventRetrieving for $name {
+        impl $crate::event_handling::EthcontractEventRetrieving for $name {
             type Event = $($contract_module)*::Event;
 
-            fn get_events(&self) -> ::ethcontract::contract::AllEventsBuilder<
-                ::ethcontract::dyns::DynTransport,
-                Self::Event,
-            > {
+            fn get_events(&self) -> ::ethcontract::dyns::DynAllEventsBuilder<Self::Event> {
                 self.0.all_events()
             }
         }
@@ -621,7 +662,7 @@ mod tests {
     use {
         super::*,
         contracts::{GPv2Settlement, gpv2_settlement},
-        ethcontract::{BlockNumber, H256},
+        ethcontract::{BlockNumber, Event as EthcontractEvent, H256},
         ethrpc::{Web3, block_stream::block_number_to_block_number_hash},
         std::str::FromStr,
     };
@@ -636,7 +677,7 @@ mod tests {
     }
 
     #[async_trait::async_trait]
-    impl<T> EventStoring<T> for EventStorage<T>
+    impl<T> EventStoring<EthcontractEvent<T>> for EventStorage<T>
     where
         T: Send + Sync,
     {
