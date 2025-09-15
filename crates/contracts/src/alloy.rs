@@ -42,6 +42,8 @@ crate::bindings!(
     }
 );
 
+crate::bindings!(ERC20Mintable);
+
 crate::bindings!(GnosisSafe);
 crate::bindings!(GnosisSafeCompatibilityFallbackHandler);
 crate::bindings!(GnosisSafeProxy);

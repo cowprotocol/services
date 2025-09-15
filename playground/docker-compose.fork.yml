@@ -99,7 +99,7 @@ services:
     restart: always
     environment:
       - DB_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
-      - LOG_FILTER=warn,autopilot=trace,shared=info,shared::price_estimation=debug
+      - LOG_FILTER=warn,autopilot=info,shared=info,shared::price_estimation=info
       - NODE_URL=http://chain:8545
       - SIMULATION_NODE_URL=http://chain:8545
       - SETTLE_INTERVAL=15s

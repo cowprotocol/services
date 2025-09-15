@@ -2,6 +2,8 @@ mod buffering;
 pub mod conversions;
 mod instrumentation;
 
+mod wallet;
+
 use {
     crate::AlloyProvider,
     alloy::{
@@ -12,22 +14,35 @@ use {
     buffering::BatchCallLayer,
     instrumentation::{InstrumentationLayer, LabelingLayer},
 };
-pub use {conversions::Account, instrumentation::ProviderLabelingExt};
+pub use {conversions::Account, instrumentation::ProviderLabelingExt, wallet::MutWallet};
 
-pub fn provider(url: &str) -> AlloyProvider {
-    let rpc = ClientBuilder::default()
+/// Creates an [`RpcClient`] from the given URL with [`LabelingLayer`],
+/// [`InstrumentationLayer`] and [`BatchCallLayer`].
+fn rpc(url: &str) -> RpcClient {
+    ClientBuilder::default()
         .layer(LabelingLayer {
             label: "main".into(),
         })
         .layer(InstrumentationLayer)
         .layer(BatchCallLayer::new(Default::default()))
-        .http(url.parse().unwrap());
-    ProviderBuilder::new()
+        .http(url.parse().unwrap())
+}
+
+/// Creates a provider with the provided URL and an empty [`MutWallet`].
+///
+/// Returns a copy of the [`MutWallet`] so the caller can modify it later.
+pub fn provider(url: &str) -> (AlloyProvider, MutWallet) {
+    let rpc = rpc(url);
+    let wallet = MutWallet::default();
+    let provider = ProviderBuilder::new()
+        .wallet(wallet.clone())
         // will query the node for the nonce every time that it is needed
         // adds overhead but makes working with alloy/ethcontract at the same time much simpler
         .with_simple_nonce_management()
         .connect_client(rpc)
-        .erased()
+        .erased();
+
+    (provider, wallet)
 }
 
 pub trait ProviderSignerExt {
