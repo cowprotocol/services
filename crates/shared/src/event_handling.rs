@@ -153,22 +153,23 @@ where
         let stream = futures::stream::iter((start..=end).step_by(CHUNK_SIZE))
             .then(move |chunk_start| {
                 let provider = provider.clone();
+                let chunk_end = std::cmp::min(chunk_start + (CHUNK_SIZE as u64) - 1, end);
                 let filter = base_filter
                     .clone()
                     .from_block(chunk_start)
-                    .to_block(std::cmp::min(chunk_start + (CHUNK_SIZE as u64) - 1, end));
+                    .to_block(chunk_end);
 
                 async move {
-                    let logs = provider
-                        .get_logs(&filter)
-                        .await
-                        .map_err(anyhow::Error::from)?;
+                    let logs = provider.get_logs(&filter).await.context(format!(
+                        "unable to get logs for blocks range {}-{}",
+                        chunk_start, chunk_end
+                    ))?;
 
                     let events: Result<Vec<_>> = logs
                         .into_iter()
                         .map(|log| {
-                            let event =
-                                T::Event::decode_log(&log.inner).map_err(anyhow::Error::from)?;
+                            let event = T::Event::decode_log(&log.inner)
+                                .context(format!("unable to parse log: {:?}", log))?;
                             Ok((event.data, log))
                         })
                         .collect();
