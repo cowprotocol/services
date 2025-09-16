@@ -385,7 +385,7 @@ macro_rules! bindings {
             mod [<$contract Private>] {
                 alloy::sol!(
                     #[allow(missing_docs, clippy::too_many_arguments)]
-                    #[sol(rpc, extra_derives(Debug, Eq, PartialEq))]
+                    #[sol(rpc)]
                     $contract,
                     concat!("./artifacts/", stringify!($contract), ".json"),
                 );
