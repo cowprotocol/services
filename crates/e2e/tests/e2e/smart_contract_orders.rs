@@ -4,7 +4,7 @@ use {
         tx,
     },
     ethcontract::{Bytes, H160, U256},
-    ethrpc::alloy::conversions::IntoLegacy,
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind, OrderStatus, OrderUid},
         signature::Signature,
@@ -39,15 +39,22 @@ async fn smart_contract_orders(web3: Web3) {
     token.mint(safe.address().into_legacy(), to_wei(10)).await;
 
     // Approve GPv2 for trading
-    safe.exec_call(token.approve(onchain.contracts().allowance, to_wei(10)))
-        .await;
+    safe.exec_alloy_call(
+        token
+            .approve(
+                onchain.contracts().allowance.into_alloy(),
+                to_wei(10).into_alloy(),
+            )
+            .into_transaction_request(),
+    )
+    .await;
 
     let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
     let order_template = OrderCreation {
         kind: OrderKind::Sell,
-        sell_token: token.address(),
+        sell_token: token.address().into_legacy(),
         sell_amount: to_wei(5),
         buy_token: onchain.contracts().weth.address(),
         buy_amount: to_wei(3),
@@ -130,7 +137,7 @@ async fn smart_contract_orders(web3: Web3) {
     tracing::info!("Waiting for trade.");
     wait_for_condition(TIMEOUT, || async {
         let token_balance = token
-            .balance_of(safe.address().into_legacy())
+            .balanceOf(safe.address())
             .call()
             .await
             .expect("Couldn't fetch token balance");

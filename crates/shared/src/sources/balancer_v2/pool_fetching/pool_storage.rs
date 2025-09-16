@@ -183,7 +183,7 @@ where
 }
 
 #[async_trait::async_trait]
-impl<Factory> EventStoring<BasePoolFactoryEvent> for PoolStorage<Factory>
+impl<Factory> EventStoring<Event<BasePoolFactoryEvent>> for PoolStorage<Factory>
 where
     Factory: FactoryIndexing,
 {

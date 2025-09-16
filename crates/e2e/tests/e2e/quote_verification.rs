@@ -1,8 +1,14 @@
 use {
     bigdecimal::{BigDecimal, Zero},
-    e2e::{setup::*, tx},
+    e2e::setup::*,
     ethcontract::{H160, U256},
-    ethrpc::Web3,
+    ethrpc::{
+        Web3,
+        alloy::{
+            CallBuilderExt,
+            conversions::{IntoAlloy, IntoLegacy},
+        },
+    },
     model::{
         interaction::InteractionData,
         order::{BuyTokenDestination, OrderKind, SellTokenSource},
@@ -87,10 +93,16 @@ async fn standard_verified_quote(web3: Web3) {
         .await;
 
     token.mint(trader.address(), to_wei(1)).await;
-    tx!(
-        trader.account(),
-        token.approve(onchain.contracts().allowance, to_wei(1))
-    );
+
+    token
+        .approve(
+            onchain.contracts().allowance.into_alloy(),
+            to_wei(1).into_alloy(),
+        )
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     tracing::info!("Starting services.");
     let services = Services::new(&onchain).await;
@@ -100,7 +112,7 @@ async fn standard_verified_quote(web3: Web3) {
     let response = services
         .submit_quote(&OrderQuoteRequest {
             from: trader.address(),
-            sell_token: token.address(),
+            sell_token: token.address().into_legacy(),
             buy_token: onchain.contracts().weth.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
@@ -193,9 +205,9 @@ async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
         verified: true,
         execution: QuoteExecution {
             interactions: vec![InteractionData {
-                target: H160::from_str("0xdef1c0ded9bec7f1a1670819833240f027b25eff").unwrap(), 
+                target: H160::from_str("0xdef1c0ded9bec7f1a1670819833240f027b25eff").unwrap(),
                 value: 0.into(),
-                call_data: hex::decode("aa77476c000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc20000000000000000000000002260fac5e5542a773aa44fbcfedf7c193bc2c599000000000000000000000000000000000000000000000000e357b42c3a9d8ccf0000000000000000000000000000000000000000000000000000000004d0e79e000000000000000000000000a69babef1ca67a37ffaf7a485dfff3382056e78c0000000000000000000000009008d19f58aabd9ed0d60971565aa8510560ab41000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000066360af101ffffffffffffffffffffffffffffffffffffff0f3f47f166360a8d0000003f0000000000000000000000000000000000000000000000000000000000000003000000000000000000000000000000000000000000000000000000000000001c66b3383f287dd9c85ad90e7c5a576ea4ba1bdf5a001d794a9afa379e6b2517b47e487a1aef32e75af432cbdbd301ada42754eaeac21ec4ca744afd92732f47540000000000000000000000000000000000000000000000000000000004d0c80f").unwrap() 
+                call_data: hex::decode("aa77476c000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc20000000000000000000000002260fac5e5542a773aa44fbcfedf7c193bc2c599000000000000000000000000000000000000000000000000e357b42c3a9d8ccf0000000000000000000000000000000000000000000000000000000004d0e79e000000000000000000000000a69babef1ca67a37ffaf7a485dfff3382056e78c0000000000000000000000009008d19f58aabd9ed0d60971565aa8510560ab41000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000066360af101ffffffffffffffffffffffffffffffffffffff0f3f47f166360a8d0000003f0000000000000000000000000000000000000000000000000000000000000003000000000000000000000000000000000000000000000000000000000000001c66b3383f287dd9c85ad90e7c5a576ea4ba1bdf5a001d794a9afa379e6b2517b47e487a1aef32e75af432cbdbd301ada42754eaeac21ec4ca744afd92732f47540000000000000000000000000000000000000000000000000000000004d0c80f").unwrap()
             }],
             pre_interactions: vec![],
             jit_orders: vec![],
@@ -251,7 +263,7 @@ async fn verified_quote_eth_balance(web3: Web3) {
         .submit_quote(&OrderQuoteRequest {
             from: trader.address(),
             sell_token: weth.address(),
-            buy_token: token.address(),
+            buy_token: token.address().into_legacy(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
                     value: to_wei(1).try_into().unwrap(),
@@ -288,7 +300,7 @@ async fn verified_quote_for_settlement_contract(web3: Web3) {
 
     let request = OrderQuoteRequest {
         sell_token: onchain.contracts().weth.address(),
-        buy_token: token.address(),
+        buy_token: token.address().into_legacy(),
         side: OrderQuoteSide::Sell {
             sell_amount: SellAmount::BeforeFee {
                 value: to_wei(3).try_into().unwrap(),
@@ -377,19 +389,29 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
     // quote where the trader has no balances or approval set from TOKEN->WETH
     assert_eq!(
         (
-            token.balance_of(trader.address()).call().await.unwrap(),
             token
-                .allowance(trader.address(), onchain.contracts().allowance)
+                .balanceOf(trader.address().into_alloy())
+                .call()
+                .await
+                .unwrap(),
+            token
+                .allowance(
+                    trader.address().into_alloy(),
+                    onchain.contracts().allowance.into_alloy()
+                )
                 .call()
                 .await
                 .unwrap(),
         ),
-        (U256::zero(), U256::zero()),
+        (
+            ::alloy::primitives::U256::ZERO,
+            ::alloy::primitives::U256::ZERO
+        ),
     );
     let response = services
         .submit_quote(&OrderQuoteRequest {
             from: trader.address(),
-            sell_token: token.address(),
+            sell_token: token.address().into_legacy(),
             buy_token: weth.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
@@ -423,7 +445,7 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
         .submit_quote(&OrderQuoteRequest {
             from: trader.address(),
             sell_token: weth.address(),
-            buy_token: token.address(),
+            buy_token: token.address().into_legacy(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
                     value: to_wei(1).try_into().unwrap(),
@@ -441,7 +463,7 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
         .submit_quote(&OrderQuoteRequest {
             from: H160::zero(),
             sell_token: weth.address(),
-            buy_token: token.address(),
+            buy_token: token.address().into_legacy(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
                     value: to_wei(1).try_into().unwrap(),
@@ -459,7 +481,7 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
         .submit_quote(&OrderQuoteRequest {
             from: H160::zero(),
             sell_token: weth.address(),
-            buy_token: token.address(),
+            buy_token: token.address().into_legacy(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
                     value: to_wei(1).try_into().unwrap(),

@@ -1,6 +1,10 @@
 use {
-    e2e::{setup::*, tx},
+    e2e::setup::*,
     ethcontract::prelude::Address,
+    ethrpc::alloy::{
+        CallBuilderExt,
+        conversions::{IntoAlloy, IntoLegacy},
+    },
     model::{
         order::{BUY_ETH_ADDRESS, OrderCreation, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
@@ -32,14 +36,26 @@ async fn eth_integration(web3: Web3) {
     token.mint(trader_b.address(), to_wei(51)).await;
 
     // Approve GPv2 for trading
-    tx!(
-        trader_a.account(),
-        token.approve(onchain.contracts().allowance, to_wei(51))
-    );
-    tx!(
-        trader_b.account(),
-        token.approve(onchain.contracts().allowance, to_wei(51))
-    );
+
+    token
+        .approve(
+            onchain.contracts().allowance.into_alloy(),
+            to_wei(51).into_alloy(),
+        )
+        .from(trader_a.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    token
+        .approve(
+            onchain.contracts().allowance.into_alloy(),
+            to_wei(51).into_alloy(),
+        )
+        .from(trader_b.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     let trader_a_eth_balance_before = web3.eth().balance(trader_a.address(), None).await.unwrap();
 
@@ -63,16 +79,20 @@ async fn eth_integration(web3: Web3) {
             services.submit_quote(&request).await
         }
     };
-    quote(token.address(), BUY_ETH_ADDRESS).await.unwrap();
+    quote(token.address().into_legacy(), BUY_ETH_ADDRESS)
+        .await
+        .unwrap();
     // Eth is only supported as the buy token
-    let (status, body) = quote(BUY_ETH_ADDRESS, token.address()).await.unwrap_err();
+    let (status, body) = quote(BUY_ETH_ADDRESS, token.address().into_legacy())
+        .await
+        .unwrap_err();
     assert_eq!(status, 400, "{body}");
 
     // Place Orders
     assert_ne!(onchain.contracts().weth.address(), BUY_ETH_ADDRESS);
     let order_buy_eth_a = OrderCreation {
         kind: OrderKind::Buy,
-        sell_token: token.address(),
+        sell_token: token.address().into_legacy(),
         sell_amount: to_wei(50),
         buy_token: BUY_ETH_ADDRESS,
         buy_amount: to_wei(49),
@@ -87,7 +107,7 @@ async fn eth_integration(web3: Web3) {
     services.create_order(&order_buy_eth_a).await.unwrap();
     let order_buy_eth_b = OrderCreation {
         kind: OrderKind::Sell,
-        sell_token: token.address(),
+        sell_token: token.address().into_legacy(),
         sell_amount: to_wei(50),
         buy_token: BUY_ETH_ADDRESS,
         buy_amount: to_wei(49),

@@ -6,6 +6,10 @@ use {
     driver::domain::eth::NonZeroU256,
     e2e::{nodes::forked_node::ForkedNodeApi, setup::*, tx},
     ethcontract::{H160, prelude::U256},
+    ethrpc::alloy::{
+        CallBuilderExt,
+        conversions::{IntoAlloy, IntoLegacy},
+    },
     fee::{FeePolicyOrderClass, ProtocolFee, ProtocolFeesConfig},
     model::{
         order::{OrderClass, OrderCreation, OrderKind},
@@ -108,30 +112,36 @@ async fn single_limit_order_test(web3: Web3) {
     token_b.mint(solver.address(), to_wei(1000)).await;
     tx!(
         solver.account(),
-        onchain
-            .contracts()
-            .uniswap_v2_factory
-            .create_pair(token_a.address(), token_b.address())
-    );
-    tx!(
-        solver.account(),
-        token_a.approve(
-            onchain.contracts().uniswap_v2_router.address(),
-            to_wei(1000)
+        onchain.contracts().uniswap_v2_factory.create_pair(
+            token_a.address().into_legacy(),
+            token_b.address().into_legacy()
         )
     );
-    tx!(
-        solver.account(),
-        token_b.approve(
-            onchain.contracts().uniswap_v2_router.address(),
-            to_wei(1000)
+
+    token_a
+        .approve(
+            onchain.contracts().uniswap_v2_router.address().into_alloy(),
+            to_wei(1000).into_alloy(),
         )
-    );
+        .from(solver.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    token_b
+        .approve(
+            onchain.contracts().uniswap_v2_router.address().into_alloy(),
+            to_wei(1000).into_alloy(),
+        )
+        .from(solver.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
     tx!(
         solver.account(),
         onchain.contracts().uniswap_v2_router.add_liquidity(
-            token_a.address(),
-            token_b.address(),
+            token_a.address().into_legacy(),
+            token_b.address().into_legacy(),
             to_wei(1000),
             to_wei(1000),
             0_u64.into(),
@@ -142,19 +152,25 @@ async fn single_limit_order_test(web3: Web3) {
     );
 
     // Approve GPv2 for trading
-    tx!(
-        trader_a.account(),
-        token_a.approve(onchain.contracts().allowance, to_wei(10))
-    );
+
+    token_a
+        .approve(
+            onchain.contracts().allowance.into_alloy(),
+            to_wei(10).into_alloy(),
+        )
+        .from(trader_a.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     // Place Orders
     let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
     let order = OrderCreation {
-        sell_token: token_a.address(),
+        sell_token: token_a.address().into_legacy(),
         sell_amount: to_wei(10),
-        buy_token: token_b.address(),
+        buy_token: token_b.address().into_legacy(),
         buy_amount: to_wei(5),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
@@ -165,7 +181,11 @@ async fn single_limit_order_test(web3: Web3) {
         &onchain.contracts().domain_separator,
         SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
     );
-    let balance_before = token_b.balance_of(trader_a.address()).call().await.unwrap();
+    let balance_before = token_b
+        .balanceOf(trader_a.address().into_alloy())
+        .call()
+        .await
+        .unwrap();
     let order_id = services.create_order(&order).await.unwrap();
 
     // we hide the quote's execution plan while the order is still fillable
@@ -182,8 +202,12 @@ async fn single_limit_order_test(web3: Web3) {
     // Drive solution
     tracing::info!("Waiting for trade.");
     wait_for_condition(TIMEOUT, || async {
-        let balance_after = token_b.balance_of(trader_a.address()).call().await.unwrap();
-        balance_after.checked_sub(balance_before).unwrap() >= to_wei(5)
+        let balance_after = token_b
+            .balanceOf(trader_a.address().into_alloy())
+            .call()
+            .await
+            .unwrap();
+        balance_after.checked_sub(balance_before).unwrap() >= to_wei(5).into_alloy()
     })
     .await
     .unwrap();
@@ -216,30 +240,36 @@ async fn two_limit_orders_test(web3: Web3) {
     // Create and fund Uniswap pool
     tx!(
         solver.account(),
-        onchain
-            .contracts()
-            .uniswap_v2_factory
-            .create_pair(token_a.address(), token_b.address())
-    );
-    tx!(
-        solver.account(),
-        token_a.approve(
-            onchain.contracts().uniswap_v2_router.address(),
-            to_wei(1000)
+        onchain.contracts().uniswap_v2_factory.create_pair(
+            token_a.address().into_legacy(),
+            token_b.address().into_legacy()
         )
     );
-    tx!(
-        solver.account(),
-        token_b.approve(
-            onchain.contracts().uniswap_v2_router.address(),
-            to_wei(1000)
+
+    token_a
+        .approve(
+            onchain.contracts().uniswap_v2_router.address().into_alloy(),
+            to_wei(1000).into_alloy(),
         )
-    );
+        .from(solver.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    token_b
+        .approve(
+            onchain.contracts().uniswap_v2_router.address().into_alloy(),
+            to_wei(1000).into_alloy(),
+        )
+        .from(solver.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
     tx!(
         solver.account(),
         onchain.contracts().uniswap_v2_router.add_liquidity(
-            token_a.address(),
-            token_b.address(),
+            token_a.address().into_legacy(),
+            token_b.address().into_legacy(),
             to_wei(1000),
             to_wei(1000),
             0_u64.into(),
@@ -250,23 +280,35 @@ async fn two_limit_orders_test(web3: Web3) {
     );
 
     // Approve GPv2 for trading
-    tx!(
-        trader_a.account(),
-        token_a.approve(onchain.contracts().allowance, to_wei(10))
-    );
-    tx!(
-        trader_b.account(),
-        token_b.approve(onchain.contracts().allowance, to_wei(10))
-    );
+
+    token_a
+        .approve(
+            onchain.contracts().allowance.into_alloy(),
+            to_wei(10).into_alloy(),
+        )
+        .from(trader_a.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    token_b
+        .approve(
+            onchain.contracts().allowance.into_alloy(),
+            to_wei(10).into_alloy(),
+        )
+        .from(trader_b.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     // Place Orders
     let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
     let order_a = OrderCreation {
-        sell_token: token_a.address(),
+        sell_token: token_a.address().into_legacy(),
         sell_amount: to_wei(10),
-        buy_token: token_b.address(),
+        buy_token: token_b.address().into_legacy(),
         buy_amount: to_wei(5),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
@@ -278,8 +320,16 @@ async fn two_limit_orders_test(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
     );
 
-    let balance_before_a = token_b.balance_of(trader_a.address()).call().await.unwrap();
-    let balance_before_b = token_a.balance_of(trader_b.address()).call().await.unwrap();
+    let balance_before_a = token_b
+        .balanceOf(trader_a.address().into_alloy())
+        .call()
+        .await
+        .unwrap();
+    let balance_before_b = token_a
+        .balanceOf(trader_b.address().into_alloy())
+        .call()
+        .await
+        .unwrap();
 
     let order_id = services.create_order(&order_a).await.unwrap();
     onchain.mint_block().await;
@@ -288,9 +338,9 @@ async fn two_limit_orders_test(web3: Web3) {
     assert!(limit_order.metadata.class.is_limit());
 
     let order_b = OrderCreation {
-        sell_token: token_b.address(),
+        sell_token: token_b.address().into_legacy(),
         sell_amount: to_wei(5),
-        buy_token: token_a.address(),
+        buy_token: token_a.address().into_legacy(),
         buy_amount: to_wei(2),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
@@ -309,10 +359,20 @@ async fn two_limit_orders_test(web3: Web3) {
     // Drive solution
     tracing::info!("Waiting for trade.");
     wait_for_condition(TIMEOUT, || async {
-        let balance_after_a = token_b.balance_of(trader_a.address()).call().await.unwrap();
-        let balance_after_b = token_a.balance_of(trader_b.address()).call().await.unwrap();
-        let order_a_settled = balance_after_a.saturating_sub(balance_before_a) >= to_wei(5);
-        let order_b_settled = balance_after_b.saturating_sub(balance_before_b) >= to_wei(2);
+        let balance_after_a = token_b
+            .balanceOf(trader_a.address().into_alloy())
+            .call()
+            .await
+            .unwrap();
+        let balance_after_b = token_a
+            .balanceOf(trader_b.address().into_alloy())
+            .call()
+            .await
+            .unwrap();
+        let order_a_settled =
+            balance_after_a.saturating_sub(balance_before_a) >= to_wei(5).into_alloy();
+        let order_b_settled =
+            balance_after_b.saturating_sub(balance_before_b) >= to_wei(2).into_alloy();
         order_a_settled && order_b_settled
     })
     .await
@@ -347,14 +407,26 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
         .await;
 
     // Approve GPv2 for trading
-    tx!(
-        trader_a.account(),
-        token_a.approve(onchain.contracts().allowance, to_wei(100))
-    );
-    tx!(
-        trader_b.account(),
-        token_b.approve(onchain.contracts().allowance, to_wei(100))
-    );
+
+    token_a
+        .approve(
+            onchain.contracts().allowance.into_alloy(),
+            to_wei(100).into_alloy(),
+        )
+        .from(trader_a.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    token_b
+        .approve(
+            onchain.contracts().allowance.into_alloy(),
+            to_wei(100).into_alloy(),
+        )
+        .from(trader_b.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     // Start system, with two solvers, one that knows about base_a and one that
     // knows about base_b
@@ -365,7 +437,7 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
                 "test_solver".into(),
                 solver_a.clone(),
                 onchain.contracts().weth.address(),
-                vec![base_a.address()],
+                vec![base_a.address().into_legacy()],
                 2,
                 false,
             )
@@ -374,7 +446,7 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
                 "solver2".into(),
                 solver_b.clone(),
                 onchain.contracts().weth.address(),
-                vec![base_b.address()],
+                vec![base_b.address().into_legacy()],
                 2,
                 false,
             )
@@ -393,9 +465,9 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
 
     // Place Orders
     let order_a = OrderCreation {
-        sell_token: token_a.address(),
+        sell_token: token_a.address().into_legacy(),
         sell_amount: to_wei(10),
-        buy_token: token_c.address(),
+        buy_token: token_c.address().into_legacy(),
         buy_amount: to_wei(5),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
@@ -409,9 +481,9 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
     let uid_a = services.create_order(&order_a).await.unwrap();
 
     let order_b = OrderCreation {
-        sell_token: token_b.address(),
+        sell_token: token_b.address().into_legacy(),
         sell_amount: to_wei(10),
-        buy_token: token_d.address(),
+        buy_token: token_d.address().into_legacy(),
         buy_amount: to_wei(5),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
@@ -567,10 +639,16 @@ async fn too_many_limit_orders_test(web3: Web3) {
     token_a.mint(trader.address(), to_wei(1)).await;
 
     // Approve GPv2 for trading
-    tx!(
-        trader.account(),
-        token_a.approve(onchain.contracts().allowance, to_wei(101))
-    );
+
+    token_a
+        .approve(
+            onchain.contracts().allowance.into_alloy(),
+            to_wei(101).into_alloy(),
+        )
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     // Place Orders
     let services = Services::new(&onchain).await;
@@ -598,7 +676,7 @@ async fn too_many_limit_orders_test(web3: Web3) {
         .await;
 
     let order = OrderCreation {
-        sell_token: token_a.address(),
+        sell_token: token_a.address().into_legacy(),
         sell_amount: to_wei(1),
         buy_token: onchain.contracts().weth.address(),
         buy_amount: to_wei(1),
@@ -616,7 +694,7 @@ async fn too_many_limit_orders_test(web3: Web3) {
     // Attempt to place another order, but the orderbook is configured to allow only
     // one limit order per user.
     let order = OrderCreation {
-        sell_token: token_a.address(),
+        sell_token: token_a.address().into_legacy(),
         sell_amount: to_wei(1),
         buy_token: onchain.contracts().weth.address(),
         buy_amount: to_wei(2),
@@ -646,10 +724,16 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
     token.mint(trader.address(), to_wei(100)).await;
 
     // Approve GPv2 for trading
-    tx!(
-        trader.account(),
-        token.approve(onchain.contracts().allowance, to_wei(101))
-    );
+
+    token
+        .approve(
+            onchain.contracts().allowance.into_alloy(),
+            to_wei(101).into_alloy(),
+        )
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     // Place Orders
     let services = Services::new(&onchain).await;
@@ -678,7 +762,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
 
     let quote_request = OrderQuoteRequest {
         from: trader.address(),
-        sell_token: token.address(),
+        sell_token: token.address().into_legacy(),
         buy_token: onchain.contracts().weth.address(),
         side: OrderQuoteSide::Sell {
             sell_amount: SellAmount::BeforeFee {
@@ -691,7 +775,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
 
     // Place "in-market" order
     let order = OrderCreation {
-        sell_token: token.address(),
+        sell_token: token.address().into_legacy(),
         sell_amount: quote.quote.sell_amount,
         buy_token: onchain.contracts().weth.address(),
         buy_amount: quote.quote.buy_amount.saturating_sub(to_wei(4)),
@@ -708,7 +792,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
 
     // Place a "limit" order
     let order = OrderCreation {
-        sell_token: token.address(),
+        sell_token: token.address().into_legacy(),
         sell_amount: to_wei(1),
         buy_token: onchain.contracts().weth.address(),
         buy_amount: to_wei(3),
@@ -727,7 +811,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
 
     // Place another "in-market" order in order to check it is not limited
     let order = OrderCreation {
-        sell_token: token.address(),
+        sell_token: token.address().into_legacy(),
         sell_amount: quote.quote.sell_amount,
         buy_token: onchain.contracts().weth.address(),
         buy_amount: quote.quote.buy_amount.saturating_sub(to_wei(2)),
@@ -744,7 +828,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
 
     // Place a "limit" order in order to see if fails
     let order = OrderCreation {
-        sell_token: token.address(),
+        sell_token: token.address().into_legacy(),
         sell_amount: to_wei(1),
         buy_token: onchain.contracts().weth.address(),
         buy_amount: to_wei(2),
@@ -977,10 +1061,16 @@ async fn no_liquidity_limit_order(web3: Web3) {
     token_a.mint(trader_a.address(), to_wei(10)).await;
 
     // Approve GPv2 for trading
-    tx!(
-        trader_a.account(),
-        token_a.approve(onchain.contracts().allowance, to_wei(10))
-    );
+
+    token_a
+        .approve(
+            onchain.contracts().allowance.into_alloy(),
+            to_wei(10).into_alloy(),
+        )
+        .from(trader_a.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     // Setup services
     let protocol_fees_config = ProtocolFeesConfig(vec![
@@ -1017,7 +1107,7 @@ async fn no_liquidity_limit_order(web3: Web3) {
 
     // Place order
     let mut order = OrderCreation {
-        sell_token: token_a.address(),
+        sell_token: token_a.address().into_legacy(),
         sell_amount: to_wei(10),
         buy_token: onchain.contracts().weth.address(),
         buy_amount: to_wei(1),
@@ -1036,7 +1126,7 @@ async fn no_liquidity_limit_order(web3: Web3) {
     assert_eq!(limit_order.metadata.class, OrderClass::Limit);
 
     // Cannot place orders with unsupported tokens
-    order.sell_token = unsupported.address();
+    order.sell_token = unsupported.address().into_legacy();
     services
         .create_order(&order.sign(
             EcdsaSigningScheme::Eip712,
