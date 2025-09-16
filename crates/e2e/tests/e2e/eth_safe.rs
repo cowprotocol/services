@@ -4,6 +4,7 @@ use {
         OnchainComponents,
         Services,
         TIMEOUT,
+        eth,
         run_test,
         safe::Safe,
         to_wei,
@@ -40,20 +41,14 @@ async fn test(web3: Web3) {
     token.mint(trader.address(), to_wei(4)).await;
     safe.exec_alloy_call(
         token
-            .approve(
-                onchain.contracts().allowance.into_alloy(),
-                to_wei(4).into_alloy(),
-            )
+            .approve(onchain.contracts().allowance.into_alloy(), eth(4))
             .into_transaction_request(),
     )
     .await;
     token.mint(safe.address().into_legacy(), to_wei(4)).await;
 
     token
-        .approve(
-            onchain.contracts().allowance.into_alloy(),
-            to_wei(4).into_alloy(),
-        )
+        .approve(onchain.contracts().allowance.into_alloy(), eth(4))
         .from(trader.address().into_alloy())
         .send_and_watch()
         .await

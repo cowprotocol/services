@@ -14,6 +14,7 @@ use {
             Services,
             TIMEOUT,
             colocation::{self, SolverEngine},
+            eth,
             mock::Mock,
             run_forked_test_with_block_number,
             run_test,
@@ -89,14 +90,11 @@ async fn cow_amm_jit(web3: Web3) {
     // Fund cow amm owner with 2_000 dai and allow factory take them
     dai.mint(cow_amm_owner.address(), to_wei(2_000)).await;
 
-    dai.approve(
-        cow_amm_factory.address().into_alloy(),
-        to_wei(2_000).into_alloy(),
-    )
-    .from(cow_amm_owner.address().into_alloy())
-    .send_and_watch()
-    .await
-    .unwrap();
+    dai.approve(cow_amm_factory.address().into_alloy(), eth(2_000))
+        .from(cow_amm_owner.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
     // Fund cow amm owner with 1 WETH and allow factory take them
     tx_value!(
         cow_amm_owner.account(),
@@ -712,14 +710,11 @@ async fn cow_amm_opposite_direction(web3: Web3) {
     // them
     dai.mint(cow_amm_owner.address(), to_wei(2_000)).await;
 
-    dai.approve(
-        cow_amm_factory.address().into_alloy(),
-        to_wei(2_000).into_alloy(),
-    )
-    .from(cow_amm_owner.address().into_alloy())
-    .send_and_watch()
-    .await
-    .unwrap();
+    dai.approve(cow_amm_factory.address().into_alloy(), eth(2_000))
+        .from(cow_amm_owner.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     tx_value!(
         cow_amm_owner.account(),

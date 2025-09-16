@@ -1,6 +1,6 @@
 use {
     e2e::{
-        setup::{colocation::SolverEngine, mock::Mock, solution::JitOrder, *},
+        setup::{colocation::SolverEngine, eth, mock::Mock, solution::JitOrder, *},
         tx,
         tx_value,
     },
@@ -206,11 +206,11 @@ async fn single_limit_order_test(web3: Web3) {
             .unwrap();
 
         let trader_balance_increased =
-            trader_balance_after.saturating_sub(trader_balance_before) >= to_wei(5).into_alloy();
+            trader_balance_after.saturating_sub(trader_balance_before) >= eth(5);
         // Since the fee is 0 in the custom solution, the balance difference has to be
         // exactly 10 wei
         let solver_balance_decreased =
-            solver_balance_before.saturating_sub(solver_balance_after) == to_wei(10).into_alloy();
+            solver_balance_before.saturating_sub(solver_balance_after) == eth(10);
         trader_balance_increased && solver_balance_decreased
     })
     .await

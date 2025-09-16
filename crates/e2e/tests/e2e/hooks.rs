@@ -6,6 +6,7 @@ use {
             OnchainComponents,
             Services,
             TIMEOUT,
+            eth,
             hook_for_transaction,
             onchain_components,
             run_test,
@@ -301,10 +302,7 @@ async fn signature(web3: Web3) {
     // Sign an approval transaction for trading. This will be at nonce 0 because
     // it is the first transaction evah!
     let approval_call_data = token
-        .approve(
-            onchain.contracts().allowance.into_alloy(),
-            to_wei(5).into_alloy(),
-        )
+        .approve(onchain.contracts().allowance.into_alloy(), eth(5))
         .calldata()
         .to_vec();
     let approval_builder = safe.sign_transaction(
@@ -566,10 +564,7 @@ async fn quote_verification(web3: Web3) {
     token.mint(safe.address().into_legacy(), to_wei(5)).await;
 
     token
-        .approve(
-            onchain.contracts().allowance.into_alloy(),
-            to_wei(5).into_alloy(),
-        )
+        .approve(onchain.contracts().allowance.into_alloy(), eth(5))
         .from(trader.address().into_alloy())
         .send_and_watch()
         .await
@@ -580,7 +575,7 @@ async fn quote_verification(web3: Web3) {
     let transfer_builder = safe.sign_transaction(
         *token.address(),
         token
-            .transfer(trader.address().into_alloy(), to_wei(5).into_alloy())
+            .transfer(trader.address().into_alloy(), eth(5))
             .calldata()
             .to_vec(),
         alloy::primitives::U256::ZERO,
