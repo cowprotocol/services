@@ -511,235 +511,230 @@ impl Maintaining for UniswapV3PoolFetcher {
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use {
-//         super::*,
-//         contracts::uniswap_v3_pool::event_data::{Burn, Mint, Swap},
-//         ethcontract::EventMetadata,
-//         serde_json::json,
-//         std::str::FromStr,
-//         testlib::assert_json_matches,
-//     };
-//
-//     #[test]
-//     fn encode_decode_pool_info() {
-//         let json = json!({
-//             "tokens": [
-//                 {
-//                     "id": "0xbef81556ef066ec840a540595c8d12f516b6378f",
-//                     "decimals": "18",
-//                 },
-//                 {
-//                     "id": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
-//                     "decimals": "18",
-//                 }
-//             ],
-//             "state": {
-//                 "sqrt_price": "792216481398733702759960397",
-//                 "liquidity": "303015134493562686441",
-//                 "tick": "-92110",
-//                 "liquidity_net":
-//                     {
-//                         "-122070": "104713649338178916454" ,
-//                         "-77030": "1182024318125220460617" ,
-//                         "67260": "5812623076452005012674" ,
-//                     }
-//                 ,
-//             },
-//             "gas_stats": {
-//                 "mean": "300000",
-//             }
-//         });
-//
-//         let pool = PoolInfo {
-//             address:
-// H160::from_str("0x0001fcbba8eb491c3ccfeddc5a5caba1a98c4c28").unwrap(),
-//             tokens: vec![
-//                 Token {
-//                     id:
-// H160::from_str("0xbef81556ef066ec840a540595c8d12f516b6378f").unwrap(),
-//                     decimals: 18,
-//                 },
-//                 Token {
-//                     id:
-// H160::from_str("0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2").unwrap(),
-//                     decimals: 18,
-//                 },
-//             ],
-//             state: PoolState {
-//                 sqrt_price:
-// U256::from_dec_str("792216481398733702759960397").unwrap(),
-// liquidity: U256::from_dec_str("303015134493562686441").unwrap(),
-// tick: BigInt::from_str("-92110").unwrap(),                 liquidity_net:
-// BTreeMap::from([                     (
-//                         BigInt::from_str("-122070").unwrap(),
-//                         BigInt::from_str("104713649338178916454").unwrap(),
-//                     ),
-//                     (
-//                         BigInt::from_str("-77030").unwrap(),
-//                         BigInt::from_str("1182024318125220460617").unwrap(),
-//                     ),
-//                     (
-//                         BigInt::from_str("67260").unwrap(),
-//                         BigInt::from_str("5812623076452005012674").unwrap(),
-//                     ),
-//                 ]),
-//                 fee: Ratio::new(10_000u32, 1_000_000u32),
-//             },
-//             gas_stats: PoolStats {
-//                 mean_gas: U256::from(300000),
-//             },
-//         };
-//
-//         let serialized = serde_json::to_value(pool).unwrap();
-//         assert_json_matches!(json, serialized);
-//     }
-//
-//     #[test]
-//     fn append_events_test_empty() {
-//         let pools = HashMap::from([(H160::from_low_u64_be(1),
-// Default::default())]);         let mut new_pools = pools.clone();
-//         let events = vec![];
-//         append_events(&mut new_pools, events);
-//         assert_eq!(new_pools, pools);
-//     }
-//
-//     #[test]
-//     fn append_events_test_swap() {
-//         let address = H160::from_low_u64_be(1);
-//         let pool = PoolInfo {
-//             address,
-//             ..Default::default()
-//         };
-//         let mut pools = HashMap::from([(address, pool)]);
-//
-//         let event = Event {
-//             data: UniswapV3Event::Swap(Swap {
-//                 sqrt_price_x96: 1.into(),
-//                 liquidity: 2,
-//                 tick: 3,
-//                 ..Default::default()
-//             }),
-//             meta: Some(EventMetadata {
-//                 address,
-//                 ..Default::default()
-//             }),
-//         };
-//         append_events(&mut pools, vec![event]);
-//
-//         assert_eq!(pools[&address].state.tick, BigInt::from(3));
-//         assert_eq!(pools[&address].state.liquidity, U256::from(2));
-//         assert_eq!(pools[&address].state.sqrt_price, U256::from(1));
-//     }
-//
-//     #[test]
-//     fn append_events_test_burn() {
-//         let address = H160::from_low_u64_be(1);
-//         let pool = PoolInfo {
-//             address,
-//             ..Default::default()
-//         };
-//         let mut pools = HashMap::from([(address, pool)]);
-//
-//         // add first burn event
-//         let event = Event {
-//             data: UniswapV3Event::Burn(Burn {
-//                 tick_lower: 100000,
-//                 tick_upper: 110000,
-//                 amount: 12345,
-//                 ..Default::default()
-//             }),
-//             meta: Some(EventMetadata {
-//                 address,
-//                 ..Default::default()
-//             }),
-//         };
-//         append_events(&mut pools, vec![event]);
-//         assert_eq!(
-//             pools[&address].state.liquidity_net,
-//             BTreeMap::from([
-//                 (BigInt::from(100_000), BigInt::from(-12345)),
-//                 (BigInt::from(110_000), BigInt::from(12345))
-//             ])
-//         );
-//
-//         // add second burn event
-//         let event = Event {
-//             data: UniswapV3Event::Burn(Burn {
-//                 tick_lower: 105000,
-//                 tick_upper: 110000,
-//                 amount: 54321,
-//                 ..Default::default()
-//             }),
-//             meta: Some(EventMetadata {
-//                 address,
-//                 ..Default::default()
-//             }),
-//         };
-//         append_events(&mut pools, vec![event]);
-//         assert_eq!(
-//             pools[&address].state.liquidity_net,
-//             BTreeMap::from([
-//                 (BigInt::from(100_000), BigInt::from(-12345)),
-//                 (BigInt::from(105_000), BigInt::from(-54321)),
-//                 (BigInt::from(110_000), BigInt::from(66666))
-//             ])
-//         );
-//     }
-//
-//     #[test]
-//     fn append_events_test_mint() {
-//         let address = H160::from_low_u64_be(1);
-//         let pool = PoolInfo {
-//             address,
-//             ..Default::default()
-//         };
-//         let mut pools = HashMap::from([(address, pool)]);
-//
-//         // add first mint event
-//         let event = Event {
-//             data: UniswapV3Event::Mint(Mint {
-//                 tick_lower: 100000,
-//                 tick_upper: 110000,
-//                 amount: 12345,
-//                 ..Default::default()
-//             }),
-//             meta: Some(EventMetadata {
-//                 address,
-//                 ..Default::default()
-//             }),
-//         };
-//         append_events(&mut pools, vec![event]);
-//         assert_eq!(
-//             pools[&address].state.liquidity_net,
-//             BTreeMap::from([
-//                 (BigInt::from(100_000), BigInt::from(12345)),
-//                 (BigInt::from(110_000), BigInt::from(-12345))
-//             ])
-//         );
-//
-//         // add second burn event
-//         let event = Event {
-//             data: UniswapV3Event::Mint(Mint {
-//                 tick_lower: 105000,
-//                 tick_upper: 110000,
-//                 amount: 54321,
-//                 ..Default::default()
-//             }),
-//             meta: Some(EventMetadata {
-//                 address,
-//                 ..Default::default()
-//             }),
-//         };
-//         append_events(&mut pools, vec![event]);
-//         assert_eq!(
-//             pools[&address].state.liquidity_net,
-//             BTreeMap::from([
-//                 (BigInt::from(100_000), BigInt::from(12345)),
-//                 (BigInt::from(105_000), BigInt::from(54321)),
-//                 (BigInt::from(110_000), BigInt::from(-66666))
-//             ])
-//         );
-//     }
-// }
+#[cfg(test)]
+mod tests {
+    use {
+        super::*,
+        alloy::primitives::{U160, aliases::I24},
+        contracts::alloy::UniswapV3Pool::UniswapV3Pool::{Burn, Mint, Swap},
+        serde_json::json,
+        std::str::FromStr,
+        testlib::assert_json_matches,
+    };
+
+    #[test]
+    fn encode_decode_pool_info() {
+        let json = json!({
+            "tokens": [
+                {
+                    "id": "0xbef81556ef066ec840a540595c8d12f516b6378f",
+                    "decimals": "18",
+                },
+                {
+                    "id": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+                    "decimals": "18",
+                }
+            ],
+            "state": {
+                "sqrt_price": "792216481398733702759960397",
+                "liquidity": "303015134493562686441",
+                "tick": "-92110",
+                "liquidity_net":
+                    {
+                        "-122070": "104713649338178916454" ,
+                        "-77030": "1182024318125220460617" ,
+                        "67260": "5812623076452005012674" ,
+                    }
+                ,
+            },
+            "gas_stats": {
+                "mean": "300000",
+            }
+        });
+
+        let pool = PoolInfo {
+            address: H160::from_str("0x0001fcbba8eb491c3ccfeddc5a5caba1a98c4c28").unwrap(),
+            tokens: vec![
+                Token {
+                    id: H160::from_str("0xbef81556ef066ec840a540595c8d12f516b6378f").unwrap(),
+                    decimals: 18,
+                },
+                Token {
+                    id: H160::from_str("0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2").unwrap(),
+                    decimals: 18,
+                },
+            ],
+            state: PoolState {
+                sqrt_price: U256::from_dec_str("792216481398733702759960397").unwrap(),
+                liquidity: U256::from_dec_str("303015134493562686441").unwrap(),
+                tick: BigInt::from_str("-92110").unwrap(),
+                liquidity_net: BTreeMap::from([
+                    (
+                        BigInt::from_str("-122070").unwrap(),
+                        BigInt::from_str("104713649338178916454").unwrap(),
+                    ),
+                    (
+                        BigInt::from_str("-77030").unwrap(),
+                        BigInt::from_str("1182024318125220460617").unwrap(),
+                    ),
+                    (
+                        BigInt::from_str("67260").unwrap(),
+                        BigInt::from_str("5812623076452005012674").unwrap(),
+                    ),
+                ]),
+                fee: Ratio::new(10_000u32, 1_000_000u32),
+            },
+            gas_stats: PoolStats {
+                mean_gas: U256::from(300000),
+            },
+        };
+
+        let serialized = serde_json::to_value(pool).unwrap();
+        assert_json_matches!(json, serialized);
+    }
+
+    #[test]
+    fn append_events_test_empty() {
+        let pools = HashMap::from([(H160::from_low_u64_be(1), Default::default())]);
+        let mut new_pools = pools.clone();
+        let events = vec![];
+        append_events(&mut new_pools, events);
+        assert_eq!(new_pools, pools);
+    }
+
+    #[test]
+    fn append_events_test_swap() {
+        let address = H160::from_low_u64_be(1);
+        let pool = PoolInfo {
+            address,
+            ..Default::default()
+        };
+        let mut pools = HashMap::from([(address, pool)]);
+
+        let event = UniswapV3PoolEvent::Swap(WithAddress(
+            Swap {
+                sqrtPriceX96: U160::try_from(1).unwrap(),
+                liquidity: 2u128,
+                tick: I24::try_from(3).unwrap(),
+                sender: Default::default(),
+                recipient: Default::default(),
+                amount0: Default::default(),
+                amount1: Default::default(),
+            },
+            Default::default(),
+        ));
+        append_events(&mut pools, vec![event]);
+
+        assert_eq!(pools[&address].state.tick, BigInt::from(3));
+        assert_eq!(pools[&address].state.liquidity, U256::from(2));
+        assert_eq!(pools[&address].state.sqrt_price, U256::from(1));
+    }
+
+    #[test]
+    fn append_events_test_burn() {
+        let address = H160::from_low_u64_be(1);
+        let pool = PoolInfo {
+            address,
+            ..Default::default()
+        };
+        let mut pools = HashMap::from([(address, pool)]);
+
+        // add first burn event
+        let event = UniswapV3PoolEvent::Burn(WithAddress(
+            Burn {
+                tickLower: I24::try_from(100000).unwrap(),
+                tickUpper: I24::try_from(110000).unwrap(),
+                amount: 12345u128,
+                owner: Default::default(),
+                amount0: Default::default(),
+                amount1: Default::default(),
+            },
+            Default::default(),
+        ));
+        append_events(&mut pools, vec![event]);
+        assert_eq!(
+            pools[&address].state.liquidity_net,
+            BTreeMap::from([
+                (BigInt::from(100_000), BigInt::from(-12345)),
+                (BigInt::from(110_000), BigInt::from(12345))
+            ])
+        );
+
+        // add second burn event
+        let event = UniswapV3PoolEvent::Burn(WithAddress(
+            Burn {
+                tickLower: I24::try_from(105000).unwrap(),
+                tickUpper: I24::try_from(110000).unwrap(),
+                amount: 54321u128,
+                owner: Default::default(),
+                amount0: Default::default(),
+                amount1: Default::default(),
+            },
+            Default::default(),
+        ));
+        append_events(&mut pools, vec![event]);
+        assert_eq!(
+            pools[&address].state.liquidity_net,
+            BTreeMap::from([
+                (BigInt::from(100_000), BigInt::from(-12345)),
+                (BigInt::from(105_000), BigInt::from(-54321)),
+                (BigInt::from(110_000), BigInt::from(66666))
+            ])
+        );
+    }
+
+    #[test]
+    fn append_events_test_mint() {
+        let address = H160::from_low_u64_be(1);
+        let pool = PoolInfo {
+            address,
+            ..Default::default()
+        };
+        let mut pools = HashMap::from([(address, pool)]);
+
+        // add first mint event
+        let event = UniswapV3PoolEvent::Mint(WithAddress(
+            Mint {
+                tickLower: I24::try_from(100000).unwrap(),
+                tickUpper: I24::try_from(110000).unwrap(),
+                amount: 12345u128,
+                owner: Default::default(),
+                amount0: Default::default(),
+                amount1: Default::default(),
+                sender: Default::default(),
+            },
+            Default::default(),
+        ));
+        append_events(&mut pools, vec![event]);
+        assert_eq!(
+            pools[&address].state.liquidity_net,
+            BTreeMap::from([
+                (BigInt::from(100_000), BigInt::from(12345)),
+                (BigInt::from(110_000), BigInt::from(-12345))
+            ])
+        );
+
+        // add second burn event
+        let event = UniswapV3PoolEvent::Mint(WithAddress(
+            Mint {
+                tickLower: I24::try_from(105000).unwrap(),
+                tickUpper: I24::try_from(110000).unwrap(),
+                amount: 54321u128,
+                owner: Default::default(),
+                amount0: Default::default(),
+                amount1: Default::default(),
+                sender: Default::default(),
+            },
+            Default::default(),
+        ));
+        append_events(&mut pools, vec![event]);
+        assert_eq!(
+            pools[&address].state.liquidity_net,
+            BTreeMap::from([
+                (BigInt::from(100_000), BigInt::from(12345)),
+                (BigInt::from(105_000), BigInt::from(54321)),
+                (BigInt::from(110_000), BigInt::from(-66666))
+            ])
+        );
+    }
+}
