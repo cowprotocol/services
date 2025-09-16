@@ -10,6 +10,7 @@ pub mod multicall;
 
 use {
     self::{buffered::BufferedTransport, http::HttpTransport},
+    crate::alloy::MutWallet,
     ::alloy::providers::DynProvider,
     ethcontract::{batch::CallBatch, transport::DynTransport},
     reqwest::{Client, Url},
@@ -33,6 +34,7 @@ pub type AlloyProvider = DynProvider;
 pub struct Web3<T: Transport = DynTransport> {
     pub legacy: web3::Web3<T>,
     pub alloy: AlloyProvider,
+    pub wallet: MutWallet,
 }
 
 impl<T: Transport> std::ops::Deref for Web3<T> {
@@ -53,9 +55,11 @@ impl Web3<DynTransport> {
     pub fn new_from_url(url: &str) -> Self {
         let legacy_transport = create_test_transport(url);
         let web3 = web3::Web3::new(legacy_transport);
+        let (alloy, wallet) = crate::alloy::provider(url);
         Self {
             legacy: web3,
-            alloy: crate::alloy::provider(url),
+            alloy,
+            wallet,
         }
     }
 }
@@ -117,14 +121,16 @@ pub fn web3(
         None => Web3Transport::new(http),
     };
     let instrumented = instrumented::InstrumentedTransport::new(name.to_string(), transport);
+    let (alloy, wallet) = alloy::provider(url.as_str());
     Web3 {
         legacy: web3::Web3::new(Web3Transport::new(instrumented)),
-        alloy: alloy::provider(url.as_str()),
+        alloy,
+        wallet,
     }
 }
 
 /// Convenience method to create a transport from a URL.
-fn create_test_transport(url: &str) -> Web3Transport {
+pub fn create_test_transport(url: &str) -> Web3Transport {
     let http_transport = HttpTransport::new(
         Client::builder()
             .timeout(Duration::from_secs(10))

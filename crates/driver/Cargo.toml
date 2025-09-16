@@ -84,6 +84,8 @@ maplit = { workspace = true }
 mockall = { workspace = true }
 tokio = { workspace = true, features = ["test-util", "process"] }
 tempfile = { workspace = true }
+ethrpc = {workspace = true, features = ["test-util"]}
+contracts = { workspace = true , features  = ["test-util"]}
 
 [build-dependencies]
 anyhow = { workspace = true }

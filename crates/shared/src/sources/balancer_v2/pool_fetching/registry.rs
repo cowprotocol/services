@@ -4,7 +4,7 @@
 use {
     super::{internal::InternalPoolFetching, pool_storage::PoolStorage},
     crate::{
-        event_handling::{EventHandler, EventRetrieving, EventStream},
+        event_handling::{AlloyEventRetriever, AlloyEventRetrieving, EventHandler},
         maintenance::Maintaining,
         recent_block_cache::Block,
         sources::balancer_v2::{
@@ -12,10 +12,7 @@ use {
             pools::{FactoryIndexing, Pool, PoolStatus, common::PoolInfoFetching},
         },
     },
-    alloy::{
-        primitives::{B256, b256},
-        rpc::types::Log,
-    },
+    alloy::{contract::Event, providers::DynProvider, rpc::types::Log},
     anyhow::Result,
     contracts::{
         alloy::{
@@ -25,72 +22,32 @@ use {
         errors::EthcontractErrorType,
     },
     ethcontract::{BlockId, H256, errors::MethodError},
-    ethrpc::{
-        alloy::conversions::{IntoAlloy, IntoLegacy},
-        block_stream::{BlockNumberHash, BlockRetrieving, RangeInclusive},
-    },
-    futures::{TryStreamExt, future},
-    itertools::Itertools,
+    ethrpc::block_stream::{BlockNumberHash, BlockRetrieving},
+    futures::future,
     model::TokenPair,
     std::{collections::HashSet, sync::Arc},
     tokio::sync::Mutex,
-    web3::types::Address,
 };
 
 pub struct BasePoolFactoryContract(BalancerV2BasePoolFactory::Instance);
 
-const POOL_CREATED_TOPIC: B256 =
-    b256!("83a48fbcfc991335314e74d0496aab6a1987e992ddc85dddbcc4d6dd6ef2e9fc");
-
 #[async_trait::async_trait]
-impl EventRetrieving for BasePoolFactoryContract {
-    type Event = (PoolCreated, Log);
+impl AlloyEventRetrieving for BasePoolFactoryContract {
+    type Event = PoolCreated;
 
-    async fn get_events_by_block_hash(&self, block_hash: H256) -> Result<Vec<Self::Event>> {
-        self.0
-            .event_filter()
-            .address(*self.0.address())
-            .topic1(POOL_CREATED_TOPIC)
-            .at_block_hash(block_hash.into_alloy())
-            .query()
-            .await
-            .map_err(anyhow::Error::from)
-    }
-
-    async fn get_events_by_block_range(
-        &self,
-        block_range: &RangeInclusive<u64>,
-    ) -> Result<EventStream<Self::Event>> {
-        let stream = self
-            .0
-            .event_filter::<PoolCreated>()
-            .address(*self.0.address())
-            .topic1(POOL_CREATED_TOPIC)
-            .from_block(*block_range.start())
-            .to_block(*block_range.end())
-            .watch()
-            .await
-            .map_err(anyhow::Error::from)?
-            .into_stream()
-            .map_err(anyhow::Error::from);
-
-        Ok(Box::pin(stream))
-    }
-
-    fn address(&self) -> Vec<Address> {
-        self.0
-            .event_filter::<PoolCreated>()
-            .filter
-            .address
-            .iter()
-            .map(|addr| addr.into_legacy())
-            .collect_vec()
+    fn get_events(&self) -> Event<&DynProvider, Self::Event> {
+        self.0.PoolCreated_filter()
     }
 }
 
 /// Type alias for the internal event updater type.
-type PoolUpdater<Factory> =
-    Mutex<EventHandler<BasePoolFactoryContract, PoolStorage<Factory>, (PoolCreated, Log)>>;
+type PoolUpdater<Factory> = Mutex<
+    EventHandler<
+        AlloyEventRetriever<BasePoolFactoryContract>,
+        PoolStorage<Factory>,
+        (PoolCreated, Log),
+    >,
+>;
 
 /// The Pool Registry maintains an event handler for each of the Balancer Pool
 /// Factory contracts and maintains a `PoolStorage` for each.
@@ -120,7 +77,7 @@ where
     ) -> Self {
         let updater = Mutex::new(EventHandler::new(
             block_retreiver,
-            BasePoolFactoryContract(base_pool_factory(factory_instance)),
+            AlloyEventRetriever(BasePoolFactoryContract(base_pool_factory(factory_instance))),
             PoolStorage::new(initial_pools, fetcher.clone()),
             start_sync_at_block,
         ));

@@ -1,7 +1,7 @@
 //! Mockable Web3 transport implementation.
 
 use {
-    crate::Web3,
+    crate::{Web3, alloy::MutWallet},
     alloy::providers::{Provider, ProviderBuilder, mock::Asserter},
     ethcontract::{
         futures::future::{self, Ready},
@@ -29,6 +29,7 @@ pub fn web3() -> Web3<MockTransport> {
         alloy: ProviderBuilder::new()
             .connect_mocked_client(Asserter::new())
             .erased(),
+        wallet: MutWallet::default(),
     }
 }
 
