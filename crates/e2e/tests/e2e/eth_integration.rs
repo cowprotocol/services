@@ -1,5 +1,5 @@
 use {
-    e2e::setup::*,
+    e2e::setup::{eth, *},
     ethcontract::prelude::Address,
     ethrpc::alloy::{
         CallBuilderExt,
@@ -38,20 +38,14 @@ async fn eth_integration(web3: Web3) {
     // Approve GPv2 for trading
 
     token
-        .approve(
-            onchain.contracts().allowance.into_alloy(),
-            to_wei(51).into_alloy(),
-        )
+        .approve(onchain.contracts().allowance.into_alloy(), eth(51))
         .from(trader_a.address().into_alloy())
         .send_and_watch()
         .await
         .unwrap();
 
     token
-        .approve(
-            onchain.contracts().allowance.into_alloy(),
-            to_wei(51).into_alloy(),
-        )
+        .approve(onchain.contracts().allowance.into_alloy(), eth(51))
         .from(trader_b.address().into_alloy())
         .send_and_watch()
         .await

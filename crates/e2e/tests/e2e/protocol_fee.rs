@@ -2,7 +2,7 @@ use {
     driver::domain::eth::NonZeroU256,
     e2e::{
         assert_approximately_eq,
-        setup::{fee::*, *},
+        setup::{eth, fee::*, *},
         tx,
         tx_value,
     },
@@ -98,7 +98,7 @@ async fn combined_protocol_fees(web3: Web3) {
         token
             .approve(
                 onchain.contracts().uniswap_v2_router.address().into_alloy(),
-                to_wei(1000).into_alloy(),
+                eth(1000),
             )
             .from(solver.address().into_alloy())
             .send_and_watch()
@@ -108,7 +108,7 @@ async fn combined_protocol_fees(web3: Web3) {
         token
             .approve(
                 onchain.contracts().uniswap_v2_router.address().into_alloy(),
-                to_wei(100).into_alloy(),
+                eth(100),
             )
             .from(trader.address().into_alloy())
             .send_and_watch()
@@ -434,7 +434,7 @@ async fn surplus_partner_fee(web3: Web3) {
     token
         .approve(
             onchain.contracts().uniswap_v2_router.address().into_alloy(),
-            to_wei(1000).into_alloy(),
+            eth(1000),
         )
         .from(solver.address().into_alloy())
         .send_and_watch()
@@ -444,7 +444,7 @@ async fn surplus_partner_fee(web3: Web3) {
     token
         .approve(
             onchain.contracts().uniswap_v2_router.address().into_alloy(),
-            to_wei(100).into_alloy(),
+            eth(100),
         )
         .from(trader.address().into_alloy())
         .send_and_watch()
@@ -655,7 +655,7 @@ async fn volume_fee_buy_order_test(web3: Web3) {
     token_gno
         .approve(
             onchain.contracts().uniswap_v2_router.address().into_alloy(),
-            to_wei(1000).into_alloy(),
+            eth(1000),
         )
         .from(solver.address().into_alloy())
         .send_and_watch()
@@ -665,7 +665,7 @@ async fn volume_fee_buy_order_test(web3: Web3) {
     token_dai
         .approve(
             onchain.contracts().uniswap_v2_router.address().into_alloy(),
-            to_wei(1000).into_alloy(),
+            eth(1000),
         )
         .from(solver.address().into_alloy())
         .send_and_watch()
@@ -688,10 +688,7 @@ async fn volume_fee_buy_order_test(web3: Web3) {
     // Approve GPv2 for trading
 
     token_gno
-        .approve(
-            onchain.contracts().allowance.into_alloy(),
-            to_wei(100).into_alloy(),
-        )
+        .approve(onchain.contracts().allowance.into_alloy(), eth(100))
         .from(trader.address().into_alloy())
         .send_and_watch()
         .await
