@@ -100,12 +100,10 @@ pub trait EthcontractEventRetrieving {
 pub trait AlloyEventRetrieving {
     type Event: SolEventInterface + Send + Sync + 'static;
 
-    // fn topics_filter(&self) -> Vec<B256>;
-    //
-    // fn address_filter(&self) -> Vec<alloy::primitives::Address>;
+    /// Returns a filter that is used to query for the events of interest.
+    fn filter(&self) -> Filter;
 
     fn provider(&self) -> &DynProvider;
-    fn filter(&self) -> Filter;
 }
 
 /// A thin wrapper to avoid conflicts with EthcontractEventRetrieving
