@@ -16,6 +16,7 @@ use {
     anyhow::{Context, Result},
     contracts::IUniswapLikeRouter,
     ethcontract::{H160, H256},
+    ethrpc::alloy::conversions::IntoLegacy,
     hex_literal::hex,
     std::{fmt::Display, str::FromStr, sync::Arc},
 };
@@ -63,6 +64,7 @@ pub struct UniV2BaselineSource {
 impl UniV2BaselineSourceParameters {
     pub fn from_baseline_source(source: BaselineSource, chain: &str) -> Option<Self> {
         use BaselineSource as BS;
+
         let (contract, init_code_digest, pool_reading) = match source {
             BS::None | BS::BalancerV2 | BS::ZeroEx | BS::UniswapV3 => None,
             BS::UniswapV2 => Some((
@@ -80,11 +82,6 @@ impl UniV2BaselineSourceParameters {
                 SUSHISWAP_INIT,
                 PoolReadingStyle::Default,
             )),
-            BS::Baoswap => Some((
-                contracts::BaoswapRouter::raw_contract(),
-                BAOSWAP_INIT,
-                PoolReadingStyle::Default,
-            )),
             BS::Swapr => Some((
                 contracts::SwaprRouter::raw_contract(),
                 SWAPR_INIT,
@@ -95,6 +92,16 @@ impl UniV2BaselineSourceParameters {
                 TESTNET_UNISWAP_INIT,
                 PoolReadingStyle::Default,
             )),
+            BS::Baoswap => {
+                return Some(Self {
+                    router: contracts::alloy::BaoswapRouter::deployment_address(
+                        &chain.parse::<u64>().expect("chain id should be an integer"),
+                    )
+                    .map(|address| address.into_legacy())?,
+                    init_code_digest: H256(BAOSWAP_INIT),
+                    pool_reading: PoolReadingStyle::Default,
+                });
+            }
         }?;
         Some(Self {
             router: contract.networks.get(chain)?.address,

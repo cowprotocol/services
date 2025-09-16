@@ -317,6 +317,15 @@ crate::bindings!(
     }
 );
 
+// UniV2
+crate::bindings!(
+    BaoswapRouter,
+    crate::deployments! {
+       // https://gnosisscan.io/tx/0xdcbfa037f2c6c7456022df0632ec8d6a75d0f9a195238eec679d5d26895eb7b1
+       GNOSIS => (address!("0x6093AeBAC87d62b1A5a4cEec91204e35020E38bE"))
+    }
+);
+
 pub use alloy::providers::DynProvider as Provider;
 
 /// Extension trait to attach some useful functions to the contract instance.
@@ -441,6 +450,7 @@ macro_rules! bindings {
                     $deployment_info
                 });
 
+                /// Returns the contract's deployment address (if one exists) for the given chain.
                 pub fn deployment_address(chain_id: &u64) -> Option<alloy::primitives::Address> {
                     DEPLOYMENT_INFO.get(chain_id).map(|(addr, _)| *addr)
                 }
@@ -486,8 +496,14 @@ macro_rules! bindings {
 
 #[cfg(test)]
 mod tests {
+    use super::networks::*;
     use super::*;
     use alloy::primitives::Selector;
+
+    #[test]
+    fn test_has_address() {
+        assert!(BaoswapRouter::deployment_address(&GNOSIS).is_some());
+    }
 
     #[test]
     fn test_selector_by_name_valid_function() {

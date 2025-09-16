@@ -359,9 +359,6 @@ fn main() {
                 },
             )
     });
-    generate_contract_with_config("BaoswapRouter", |builder| {
-        builder.add_network_str(GNOSIS, "0x6093AeBAC87d62b1A5a4cEec91204e35020E38bE")
-    });
     generate_contract("ERC20");
     generate_contract("ERC3156FlashLoanSolverWrapper");
     generate_contract_with_config("FlashLoanRouter", |builder| {

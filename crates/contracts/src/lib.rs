@@ -54,7 +54,6 @@ include_contracts! {
     BalancerV2Authorizer;
     BalancerV2Vault;
     BalancerV3BatchRouter;
-    BaoswapRouter;
     CowAmm;
     CowAmmConstantProductFactory;
     CowAmmLegacyHelper;
@@ -230,7 +229,6 @@ mod tests {
         }
 
         // only gnosis
-        assert_has_deployment_address!(BaoswapRouter for GNOSIS);
         assert_has_deployment_address!(HoneyswapRouter for GNOSIS);
 
         // only sepolia

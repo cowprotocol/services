@@ -1,10 +1,15 @@
 use {
-    crate::{domain::eth, infra::blockchain::contracts::deployment_address},
+    crate::{
+        domain::{eth, eth::ContractAddress},
+        infra::blockchain::contracts::deployment_address,
+    },
     alloy::primitives::Address,
     chain::Chain,
     derive_more::Debug,
+    ethrpc::alloy::conversions::IntoLegacy,
     hex_literal::hex,
     reqwest::Url,
+    shared::sources::uniswap_v2::BAOSWAP_INIT,
     std::{collections::HashSet, time::Duration},
 };
 
@@ -83,9 +88,10 @@ impl UniswapV2 {
     /// Returns the liquidity configuration for Baoswap.
     pub fn baoswap(chain: Chain) -> Option<Self> {
         Some(Self {
-            router: deployment_address(contracts::BaoswapRouter::raw_contract(), chain)?,
-            pool_code: hex!("0bae3ead48c325ce433426d2e8e6b07dac10835baec21e163760682ea3d3520d")
-                .into(),
+            router: ContractAddress::from(
+                contracts::alloy::BaoswapRouter::deployment_address(&chain.id())?.into_legacy(),
+            ),
+            pool_code: BAOSWAP_INIT.into(),
             missing_pool_cache_time: Duration::from_secs(60 * 60),
         })
     }
