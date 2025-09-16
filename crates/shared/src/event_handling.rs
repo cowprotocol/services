@@ -1,6 +1,10 @@
 use {
     crate::maintenance::Maintaining,
-    alloy::{contract::Event, providers::DynProvider, rpc::types::Log, sol_types::SolEvent},
+    alloy::{
+        providers::{DynProvider, Provider},
+        rpc::types::{Filter, Log},
+        sol_types::SolEventInterface,
+    },
     anyhow::{Context, Result},
     ethcontract::{EventMetadata, dyns::DynAllEventsBuilder},
     ethrpc::{
@@ -8,7 +12,6 @@ use {
         block_stream::{BlockNumberHash, BlockRetrieving, RangeInclusive},
     },
     futures::{Stream, StreamExt, TryStreamExt, future},
-    itertools::Itertools,
     primitive_types::H256,
     std::{pin::Pin, sync::Arc},
     tokio::sync::Mutex,
@@ -95,9 +98,12 @@ pub trait EthcontractEventRetrieving {
 }
 
 pub trait AlloyEventRetrieving {
-    type Event: SolEvent + Send + Sync + 'static;
+    type Event: SolEventInterface + Send + Sync + 'static;
 
-    fn get_events(&self) -> Event<&DynProvider, Self::Event>;
+    /// Returns a filter that is used to query for the events of interest.
+    fn filter(&self) -> Filter;
+
+    fn provider(&self) -> &DynProvider;
 }
 
 /// A thin wrapper to avoid conflicts with EthcontractEventRetrieving
@@ -109,45 +115,61 @@ pub struct AlloyEventRetriever<T>(pub T);
 #[async_trait::async_trait]
 impl<T> EventRetrieving for AlloyEventRetriever<T>
 where
-    T: AlloyEventRetrieving + Send + Sync + 'static,
+    T: AlloyEventRetrieving + Send + Sync,
 {
     type Event = (T::Event, Log);
 
     async fn get_events_by_block_hash(&self, block_hash: H256) -> Result<Vec<Self::Event>> {
-        self.0
-            .get_events()
-            .at_block_hash(block_hash.into_alloy())
-            .query()
+        let filter = self.0.filter().at_block_hash(block_hash.into_alloy());
+        let events = self
+            .0
+            .provider()
+            .get_logs(&filter)
             .await
-            .map_err(anyhow::Error::from)
+            .map_err(anyhow::Error::from)?
+            .into_iter()
+            .filter_map(|log| {
+                let event = T::Event::decode_log(&log.inner).ok()?;
+                Some((event.data, log))
+            })
+            .collect();
+
+        Ok(events)
     }
 
     async fn get_events_by_block_range(
         &self,
         block_range: &RangeInclusive<u64>,
     ) -> Result<EventStream<Self::Event>> {
+        let filter = self
+            .0
+            .filter()
+            .from_block(*block_range.start())
+            .to_block(*block_range.end());
         let stream = self
             .0
-            .get_events()
-            .from_block(*block_range.start())
-            .to_block(*block_range.end())
-            .watch()
+            .provider()
+            .watch_logs(&filter)
             .await
             .map_err(anyhow::Error::from)?
             .into_stream()
-            .map_err(anyhow::Error::from);
+            .flat_map(futures::stream::iter)
+            .map(|log| {
+                let event = T::Event::decode_log(&log.inner).map_err(anyhow::Error::from)?;
+                Ok((event.data, log))
+            });
 
         Ok(Box::pin(stream))
     }
 
     fn address(&self) -> Vec<Address> {
         self.0
-            .get_events()
-            .filter
+            .filter()
             .address
             .iter()
-            .map(|addr| addr.into_legacy())
-            .collect_vec()
+            .cloned()
+            .map(IntoLegacy::into_legacy)
+            .collect()
     }
 }
 
@@ -204,7 +226,7 @@ pub trait EventRetrieving {
         block_range: &RangeInclusive<u64>,
     ) -> Result<EventStream<Self::Event>>;
 
-    fn address(&self) -> Vec<ethcontract::Address>;
+    fn address(&self) -> Vec<Address>;
 }
 
 #[derive(Debug)]
