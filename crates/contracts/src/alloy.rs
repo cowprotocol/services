@@ -451,8 +451,8 @@ macro_rules! bindings {
                 });
 
                 /// Returns the contract's deployment address (if one exists) for the given chain.
-                pub fn deployment_address(chain_id: u64) -> Option<Address> {
-                    DEPLOYMENT_INFO.get(&chain_id).map(|(address, _)| *address)
+                pub fn deployment_address(chain_id: &u64) -> Option<Address> {
+                    DEPLOYMENT_INFO.get(chain_id).map(|(address, _)| *address)
                 }
 
                 impl $crate::alloy::InstanceExt for Instance {

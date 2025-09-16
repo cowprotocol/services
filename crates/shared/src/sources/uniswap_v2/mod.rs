@@ -95,7 +95,7 @@ impl UniV2BaselineSourceParameters {
             BS::Baoswap => {
                 return Some(Self {
                     router: contracts::alloy::BaoswapRouter::deployment_address(
-                        chain.parse::<u64>().expect("chain id should be an integer"),
+                        &chain.parse::<u64>().expect("chain id should be an integer"),
                     )
                     .map(|address| address.into_legacy())?,
                     init_code_digest: H256(BAOSWAP_INIT),
