@@ -137,7 +137,7 @@ where
         Ok(events)
     }
 
-    // Unfortunatelly, alloy's `watch_logs` does not support pagination yet, so it
+    // Unfortunately, alloy's `watch_logs` does not support pagination yet, so it
     // is implemented manually here
     async fn get_events_by_block_range(
         &self,
