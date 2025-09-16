@@ -517,11 +517,11 @@ mod tests {
         super::*,
         alloy::primitives::{U160, aliases::I24},
         contracts::alloy::UniswapV3Pool::UniswapV3Pool::{Burn, Mint, Swap},
+        ethrpc::alloy::conversions::IntoAlloy,
         serde_json::json,
         std::str::FromStr,
         testlib::assert_json_matches,
     };
-    use ethrpc::alloy::conversions::IntoAlloy;
 
     #[test]
     fn encode_decode_pool_info() {
