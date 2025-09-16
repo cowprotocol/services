@@ -192,7 +192,7 @@ where
             .filter()
             .address
             .iter()
-            .cloned()
+            .copied()
             .map(IntoLegacy::into_legacy)
             .collect()
     }
