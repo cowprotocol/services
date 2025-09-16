@@ -130,7 +130,10 @@ impl Observer {
                     .await
                 {
                     Ok(settlement) => Ok(Some(settlement)),
-                    Err(err) if retryable(&err) => Err(err.into()),
+                    Err(settlement::Error::Infra(err)) => {
+                        // bubble up retryable error
+                        Err(err.into())
+                    }
                     Err(err) => {
                         tracing::warn!(?tx, ?auction_id, ?err, "invalid settlement");
                         Ok(None)
@@ -161,14 +164,5 @@ impl Observer {
                 }
             }
         }
-    }
-}
-
-/// Whether Observer loop should retry on the given error.
-fn retryable(err: &settlement::Error) -> bool {
-    match err {
-        settlement::Error::Infra(_) => true,
-        settlement::Error::InconsistentData(_) => false,
-        settlement::Error::WrongEnvironment => false,
     }
 }
