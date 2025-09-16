@@ -1,6 +1,6 @@
 use {
     app_data::{AppDataHash, hash_full_app_data},
-    e2e::setup::*,
+    e2e::setup::{eth, *},
     ethrpc::alloy::{
         CallBuilderExt,
         conversions::{IntoAlloy, IntoLegacy},
@@ -41,10 +41,7 @@ async fn app_data(web3: Web3) {
     token_a.mint(trader.address(), to_wei(10)).await;
 
     token_a
-        .approve(
-            onchain.contracts().allowance.into_alloy(),
-            to_wei(10).into_alloy(),
-        )
+        .approve(onchain.contracts().allowance.into_alloy(), eth(10))
         .from(trader.address().into_alloy())
         .send_and_watch()
         .await
@@ -206,10 +203,7 @@ async fn app_data_full_format(web3: Web3) {
     token_a.mint(trader.address(), to_wei(10)).await;
 
     token_a
-        .approve(
-            onchain.contracts().allowance.into_alloy(),
-            to_wei(10).into_alloy(),
-        )
+        .approve(onchain.contracts().allowance.into_alloy(), eth(10))
         .from(trader.address().into_alloy())
         .send_and_watch()
         .await
