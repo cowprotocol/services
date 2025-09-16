@@ -589,14 +589,6 @@ fn main() {
     generate_contract("IUniswapLikePair");
     // EIP-1271 contract - SignatureValidator
     generate_contract("ERC1271SignatureValidator");
-    generate_contract_with_config("PancakeRouter", |builder| {
-        builder
-            .add_network_str(MAINNET, "0xEfF92A263d31888d860bD50809A8D171709b7b1c")
-            .add_network_str(ARBITRUM_ONE, "0x8cFe327CEc66d1C090Dd72bd0FF11d690C33a2Eb")
-            .add_network_str(BASE, "0x8cFe327CEc66d1C090Dd72bd0FF11d690C33a2Eb")
-            .add_network_str(BNB, "0x10ED43C718714eb63d5aA57B78B54704E256024E")
-        // Not available on Lens
-    });
     generate_contract_with_config("SushiSwapRouter", |builder| {
         // <https://docs.sushi.com/contracts/cpamm>
         builder

@@ -331,6 +331,19 @@ crate::bindings!(
         GNOSIS => (address!("0x1C232F01118CB8B424793ae03F870aa7D0ac7f77"))
     }
 );
+crate::bindings!(
+    PancakeRouter,
+    crate::deployments! {
+        // <https://etherscan.io/tx/0x6e441248a9835ca10a3c29a19f2e1ed61d2e35f3ecb3a5b9e4ee170d62a22d16>
+        MAINNET => (address!("0xEfF92A263d31888d860bD50809A8D171709b7b1c")),
+        // <https://arbiscan.io/tx/0x4a2da73cbfcaafb0347e4525307a095e38bf7532435cb0327d1f5ee2ee15a011>
+        ARBITRUM_ONE => (address!("0x8cFe327CEc66d1C090Dd72bd0FF11d690C33a2Eb")),
+        // <https://basescan.org/tx/0xda322aef5776698ac6da56be1ffaa0f9994a983cdeb9f2aeaba47437809ae6ef>
+        BASE => (address!("0x8cFe327CEc66d1C090Dd72bd0FF11d690C33a2Eb")),
+        // <https://bscscan.com/tx/0x1bfbff8411ed44e609d911476b0d35a28284545b690902806ea0a7ff0453e931>
+        BNB => (address!("0x10ED43C718714eb63d5aA57B78B54704E256024E"))
+    }
+);
 
 pub use alloy::providers::DynProvider as Provider;
 
@@ -510,6 +523,10 @@ mod tests {
     fn test_has_address() {
         assert!(BaoswapRouter::deployment_address(&GNOSIS).is_some());
         assert!(HoneyswapRouter::deployment_address(&GNOSIS).is_some());
+
+        for chain_id in &[MAINNET, ARBITRUM_ONE, BASE, BNB] {
+            assert!(PancakeRouter::deployment_address(chain_id).is_some());
+        }
     }
 
     #[test]

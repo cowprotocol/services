@@ -105,7 +105,9 @@ impl UniswapV2 {
         }
         .into();
         Some(Self {
-            router: deployment_address(contracts::PancakeRouter::raw_contract(), chain)?,
+            router: ContractAddress::from(
+                contracts::alloy::PancakeRouter::deployment_address(&chain.id())?.into_legacy(),
+            ),
             pool_code,
             missing_pool_cache_time: Duration::from_secs(60 * 60),
         })
