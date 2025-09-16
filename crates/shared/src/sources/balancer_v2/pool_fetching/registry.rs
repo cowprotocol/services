@@ -18,7 +18,6 @@ use {
         rpc::types::{Filter, Log},
         sol_types::SolEvent,
     },
-    alloy::{contract::Event, providers::DynProvider, rpc::types::Log},
     anyhow::Result,
     contracts::{
         alloy::{
