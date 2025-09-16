@@ -39,7 +39,7 @@ type EthFlowEvent = contracts::cowswap_eth_flow::Event;
 pub(crate) const INDEX_NAME: &str = "ethflow_refunds";
 
 #[async_trait::async_trait]
-impl EventStoring<EthFlowEvent> for Postgres {
+impl EventStoring<ethcontract::Event<EthFlowEvent>> for Postgres {
     async fn last_event_block(&self) -> Result<u64> {
         crate::boundary::events::read_last_block_from_db(&self.pool, INDEX_NAME).await
     }

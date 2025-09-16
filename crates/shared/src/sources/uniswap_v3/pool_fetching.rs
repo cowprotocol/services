@@ -266,7 +266,13 @@ pub struct UniswapV3PoolFetcher {
     checkpoint: PoolsCheckpointHandler,
     /// Recent events used on top of pools_checkpoint to get the `latest_block`
     /// pools state.
-    events: tokio::sync::Mutex<EventHandler<UniswapV3PoolEventFetcher, RecentEventsCache>>,
+    events: tokio::sync::Mutex<
+        EventHandler<
+            UniswapV3PoolEventFetcher,
+            RecentEventsCache,
+            ethcontract::Event<UniswapV3Event>,
+        >,
+    >,
 }
 
 impl UniswapV3PoolFetcher {
