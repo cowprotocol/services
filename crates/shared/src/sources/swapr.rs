@@ -63,7 +63,7 @@ mod tests {
         },
         contracts::errors::testing_contract_error,
         ethcontract::H160,
-        ethrpc::alloy::conversions::IntoLegacy,
+        ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
         maplit::hashset,
     };
 
@@ -141,6 +141,10 @@ mod tests {
             .unwrap();
 
         println!("WETH <> wxDAI pool: {pool:#?}");
+        assert_eq!(
+            pool.address.into_alloy(),
+            address!("8c36f7ca02d50bf8e705f582328b873acbe9438d")
+        );
     }
 
     #[tokio::test]
