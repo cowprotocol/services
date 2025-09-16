@@ -57,7 +57,7 @@ impl Observer {
                 }
                 Ok(IndexSuccess::SkippedInvalidTransaction) => {
                     tracing::warn!("stored default values for unindexable transaction");
-                    break;
+                    continue;
                 }
                 Err(err) => {
                     tracing::debug!(?err, "encountered retryable error");
