@@ -521,6 +521,7 @@ mod tests {
         std::str::FromStr,
         testlib::assert_json_matches,
     };
+    use ethrpc::alloy::conversions::IntoAlloy;
 
     #[test]
     fn encode_decode_pool_info() {
@@ -621,7 +622,7 @@ mod tests {
                 amount0: Default::default(),
                 amount1: Default::default(),
             },
-            Default::default(),
+            address.into_alloy(),
         ));
         append_events(&mut pools, vec![event]);
 
@@ -649,7 +650,7 @@ mod tests {
                 amount0: Default::default(),
                 amount1: Default::default(),
             },
-            Default::default(),
+            address.into_alloy(),
         ));
         append_events(&mut pools, vec![event]);
         assert_eq!(
@@ -670,7 +671,7 @@ mod tests {
                 amount0: Default::default(),
                 amount1: Default::default(),
             },
-            Default::default(),
+            address.into_alloy(),
         ));
         append_events(&mut pools, vec![event]);
         assert_eq!(
@@ -703,7 +704,7 @@ mod tests {
                 amount1: Default::default(),
                 sender: Default::default(),
             },
-            Default::default(),
+            address.into_alloy(),
         ));
         append_events(&mut pools, vec![event]);
         assert_eq!(
@@ -725,7 +726,7 @@ mod tests {
                 amount1: Default::default(),
                 sender: Default::default(),
             },
-            Default::default(),
+            address.into_alloy(),
         ));
         append_events(&mut pools, vec![event]);
         assert_eq!(
