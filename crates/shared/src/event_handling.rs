@@ -137,27 +137,62 @@ where
         Ok(events)
     }
 
+    // Unfortunatelly, alloy's `watch_logs` does not support pagination yet, so it
+    // is implemented manually here
     async fn get_events_by_block_range(
         &self,
         block_range: &RangeInclusive<u64>,
     ) -> Result<EventStream<Self::Event>> {
-        let filter = self
-            .0
-            .filter()
-            .from_block(*block_range.start())
-            .to_block(*block_range.end());
-        let stream = self
-            .0
-            .provider()
-            .watch_logs(&filter)
-            .await
-            .map_err(anyhow::Error::from)?
-            .into_stream()
-            .flat_map(futures::stream::iter)
-            .map(|log| {
-                let event = T::Event::decode_log(&log.inner).map_err(anyhow::Error::from)?;
-                Ok((event.data, log))
-            });
+        const CHUNK_SIZE: u64 = 500;
+
+        let start = *block_range.start();
+        let end = *block_range.end();
+
+        let mut chunks = Vec::new();
+        let mut current_start = start;
+
+        while current_start <= end {
+            let current_end = std::cmp::min(current_start + CHUNK_SIZE - 1, end);
+            chunks.push(current_start..=current_end);
+            current_start = current_end + 1;
+        }
+
+        let provider = self.0.provider().clone();
+        let base_filter = self.0.filter();
+
+        let stream = futures::stream::iter(chunks)
+            .then(move |chunk_range| {
+                let provider = provider.clone();
+                let filter = base_filter
+                    .clone()
+                    .from_block(*chunk_range.start())
+                    .to_block(*chunk_range.end());
+
+                async move {
+                    let logs = provider
+                        .get_logs(&filter)
+                        .await
+                        .map_err(anyhow::Error::from)?;
+
+                    let events: Result<Vec<_>> = logs
+                        .into_iter()
+                        .map(|log| {
+                            let event =
+                                T::Event::decode_log(&log.inner).map_err(anyhow::Error::from)?;
+                            Ok((event.data, log))
+                        })
+                        .collect();
+
+                    events
+                }
+            })
+            .map(|chunk_result| {
+                futures::stream::iter(match chunk_result {
+                    Ok(events) => events.into_iter().map(Ok).collect::<Vec<_>>(),
+                    Err(e) => vec![Err(e)],
+                })
+            })
+            .flatten();
 
         Ok(Box::pin(stream))
     }

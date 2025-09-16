@@ -1,5 +1,9 @@
 use {
-    e2e::{nodes::local_node::TestNodeApi, setup::*, tx},
+    e2e::{
+        nodes::local_node::TestNodeApi,
+        setup::{eth, *},
+        tx,
+    },
     ethcontract::prelude::U256,
     ethrpc::alloy::{
         CallBuilderExt,
@@ -64,7 +68,7 @@ async fn try_replace_unreplaceable_order_test(web3: Web3) {
     token_a
         .approve(
             onchain.contracts().uniswap_v2_router.address().into_alloy(),
-            to_wei(1000).into_alloy(),
+            eth(1000),
         )
         .from(solver.address().into_alloy())
         .send_and_watch()
@@ -74,7 +78,7 @@ async fn try_replace_unreplaceable_order_test(web3: Web3) {
     token_b
         .approve(
             onchain.contracts().uniswap_v2_router.address().into_alloy(),
-            to_wei(1000).into_alloy(),
+            eth(1000),
         )
         .from(solver.address().into_alloy())
         .send_and_watch()
@@ -97,10 +101,7 @@ async fn try_replace_unreplaceable_order_test(web3: Web3) {
     // Approve GPv2 for trading
 
     token_a
-        .approve(
-            onchain.contracts().allowance.into_alloy(),
-            to_wei(15).into_alloy(),
-        )
+        .approve(onchain.contracts().allowance.into_alloy(), eth(15))
         .from(trader.address().into_alloy())
         .send_and_watch()
         .await
@@ -199,7 +200,7 @@ async fn try_replace_unreplaceable_order_test(web3: Web3) {
             .call()
             .await
             .unwrap();
-        balance_before.saturating_sub(balance_after) == to_wei(10).into_alloy()
+        balance_before.saturating_sub(balance_after) == eth(10)
             && !services.get_trades(&order_id).await.unwrap().is_empty()
     })
     .await
@@ -249,7 +250,7 @@ async fn try_replace_someone_else_order_test(web3: Web3) {
     token_a
         .approve(
             onchain.contracts().uniswap_v2_router.address().into_alloy(),
-            to_wei(1000).into_alloy(),
+            eth(1000),
         )
         .from(solver.address().into_alloy())
         .send_and_watch()
@@ -259,7 +260,7 @@ async fn try_replace_someone_else_order_test(web3: Web3) {
     token_b
         .approve(
             onchain.contracts().uniswap_v2_router.address().into_alloy(),
-            to_wei(1000).into_alloy(),
+            eth(1000),
         )
         .from(solver.address().into_alloy())
         .send_and_watch()
@@ -282,20 +283,14 @@ async fn try_replace_someone_else_order_test(web3: Web3) {
     // Approve GPv2 for trading
 
     token_a
-        .approve(
-            onchain.contracts().allowance.into_alloy(),
-            to_wei(15).into_alloy(),
-        )
+        .approve(onchain.contracts().allowance.into_alloy(), eth(15))
         .from(trader_a.address().into_alloy())
         .send_and_watch()
         .await
         .unwrap();
 
     token_a
-        .approve(
-            onchain.contracts().allowance.into_alloy(),
-            to_wei(15).into_alloy(),
-        )
+        .approve(onchain.contracts().allowance.into_alloy(), eth(15))
         .from(trader_b.address().into_alloy())
         .send_and_watch()
         .await
@@ -362,7 +357,7 @@ async fn try_replace_someone_else_order_test(web3: Web3) {
             .call()
             .await
             .unwrap();
-        balance_before.saturating_sub(balance_after) == to_wei(10).into_alloy()
+        balance_before.saturating_sub(balance_after) == eth(10)
     })
     .await
     .unwrap();
@@ -394,7 +389,7 @@ async fn single_replace_order_test(web3: Web3) {
     token_a
         .approve(
             onchain.contracts().uniswap_v2_router.address().into_alloy(),
-            to_wei(1000).into_alloy(),
+            eth(1000),
         )
         .from(solver.address().into_alloy())
         .send_and_watch()
@@ -404,7 +399,7 @@ async fn single_replace_order_test(web3: Web3) {
     token_b
         .approve(
             onchain.contracts().uniswap_v2_router.address().into_alloy(),
-            to_wei(1000).into_alloy(),
+            eth(1000),
         )
         .from(solver.address().into_alloy())
         .send_and_watch()
@@ -427,10 +422,7 @@ async fn single_replace_order_test(web3: Web3) {
     // Approve GPv2 for trading
 
     token_a
-        .approve(
-            onchain.contracts().allowance.into_alloy(),
-            to_wei(15).into_alloy(),
-        )
+        .approve(onchain.contracts().allowance.into_alloy(), eth(15))
         .from(trader.address().into_alloy())
         .send_and_watch()
         .await
@@ -543,7 +535,7 @@ async fn single_replace_order_test(web3: Web3) {
             .await
             .unwrap();
         onchain.mint_block().await;
-        balance_before.saturating_sub(balance_after) == to_wei(3).into_alloy()
+        balance_before.saturating_sub(balance_after) == eth(3)
     })
     .await
     .unwrap();

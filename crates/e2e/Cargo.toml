@@ -17,7 +17,7 @@ axum = { workspace = true }
 bigdecimal = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
-contracts = { workspace = true, features = ["test-util"] }
+contracts = { workspace = true }
 database = { workspace = true }
 driver = { workspace = true }
 ethcontract = { workspace = true }

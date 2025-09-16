@@ -1,6 +1,6 @@
 use {
     e2e::{
-        setup::{colocation::SolverEngine, mock::Mock, *},
+        setup::{colocation::SolverEngine, eth, mock::Mock, *},
         tx,
         tx_value,
     },
@@ -367,10 +367,7 @@ async fn quote_timeout(web3: Web3) {
     sell_token.mint(trader.address(), to_wei(1)).await;
 
     sell_token
-        .approve(
-            onchain.contracts().allowance.into_alloy(),
-            to_wei(1).into_alloy(),
-        )
+        .approve(onchain.contracts().allowance.into_alloy(), eth(1))
         .from(trader.address().into_alloy())
         .send_and_watch()
         .await

@@ -14,6 +14,7 @@ use {
             TIMEOUT,
             TRADES_ENDPOINT,
             TestAccount,
+            eth,
             run_test,
             to_wei,
             wait_for_condition,
@@ -115,7 +116,7 @@ async fn eth_flow_tx(web3: Web3) {
     services.start_protocol(solver).await;
 
     let approve_call_data = {
-        let call_builder = dai.approve(trader.address().into_alloy(), to_wei(10).into_alloy());
+        let call_builder = dai.approve(trader.address().into_alloy(), eth(10));
         let calldata = call_builder.calldata();
         format!("0x{}", hex::encode(calldata))
     };
@@ -223,7 +224,7 @@ async fn eth_flow_tx(web3: Web3) {
         .call()
         .await
         .unwrap();
-    assert_eq!(allowance, to_wei(10).into_alloy());
+    assert_eq!(allowance, eth(10));
 
     let allowance = onchain
         .contracts()

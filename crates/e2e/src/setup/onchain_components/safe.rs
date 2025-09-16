@@ -68,21 +68,22 @@ impl Infrastructure {
         .unwrap();
         let safe = GnosisSafe::Instance::new(safe_proxy, self.provider.clone());
 
-        contracts::alloy::tx!(
-            safe.setup(
-                owners
-                    .into_iter()
-                    .map(|owner| owner.address().into_alloy())
-                    .collect(),
-                U256::from(threshold),
-                Address::default(), // delegate call
-                Bytes::default(),   // delegate call bytes
-                *self.fallback.address(),
-                Address::default(), // relayer payment token
-                U256::ZERO,         // relayer payment amount
-                Address::default(), // relayer address
-            )
-        );
+        safe.setup(
+            owners
+                .into_iter()
+                .map(|owner| owner.address().into_alloy())
+                .collect(),
+            U256::from(threshold),
+            Address::default(), // delegate call
+            Bytes::default(),   // delegate call bytes
+            *self.fallback.address(),
+            Address::default(), // relayer payment token
+            U256::ZERO,         // relayer payment amount
+            Address::default(), // relayer address
+        )
+        .send_and_watch()
+        .await
+        .unwrap();
 
         safe
     }

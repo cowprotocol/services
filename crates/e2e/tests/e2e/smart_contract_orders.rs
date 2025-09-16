@@ -1,6 +1,6 @@
 use {
     e2e::{
-        setup::{safe::Safe, *},
+        setup::{eth, safe::Safe, *},
         tx,
     },
     ethcontract::{Bytes, H160, U256},
@@ -41,10 +41,7 @@ async fn smart_contract_orders(web3: Web3) {
     // Approve GPv2 for trading
     safe.exec_alloy_call(
         token
-            .approve(
-                onchain.contracts().allowance.into_alloy(),
-                to_wei(10).into_alloy(),
-            )
+            .approve(onchain.contracts().allowance.into_alloy(), eth(10))
             .into_transaction_request(),
     )
     .await;

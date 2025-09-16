@@ -1,5 +1,8 @@
 use {
-    e2e::{setup::*, tx},
+    e2e::{
+        setup::{eth, *},
+        tx,
+    },
     ethcontract::prelude::U256,
     ethrpc::alloy::{
         CallBuilderExt,
@@ -43,7 +46,7 @@ async fn test(web3: Web3) {
     token_a
         .approve(
             onchain.contracts().uniswap_v2_router.address().into_alloy(),
-            to_wei(1000).into_alloy(),
+            eth(1000),
         )
         .from(solver.address().into_alloy())
         .send_and_watch()
@@ -53,7 +56,7 @@ async fn test(web3: Web3) {
     token_b
         .approve(
             onchain.contracts().uniswap_v2_router.address().into_alloy(),
-            to_wei(1000).into_alloy(),
+            eth(1000),
         )
         .from(solver.address().into_alloy())
         .send_and_watch()
@@ -74,10 +77,7 @@ async fn test(web3: Web3) {
     );
 
     token_a
-        .approve(
-            onchain.contracts().allowance.into_alloy(),
-            to_wei(500).into_alloy(),
-        )
+        .approve(onchain.contracts().allowance.into_alloy(), eth(500))
         .from(trader_a.address().into_alloy())
         .send_and_watch()
         .await

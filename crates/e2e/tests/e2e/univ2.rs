@@ -1,7 +1,11 @@
 use {
     ::alloy::primitives::U256,
     database::order_events::{OrderEvent, OrderEventLabel},
-    e2e::{setup::*, tx, tx_value},
+    e2e::{
+        setup::{eth, *},
+        tx,
+        tx_value,
+    },
     ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::{
         order::{OrderCreation, OrderKind},
@@ -104,7 +108,7 @@ async fn test(web3: Web3) {
         .call()
         .await
         .unwrap();
-    assert_eq!(balance, to_wei(1).into_alloy());
+    assert_eq!(balance, eth(1));
 
     let all_events_registered = || async {
         let events = crate::database::events_of_order(services.db(), &uid).await;
