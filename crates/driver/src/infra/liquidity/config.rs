@@ -92,7 +92,7 @@ impl UniswapV2 {
     pub fn baoswap(chain: Chain) -> Option<Self> {
         Some(Self {
             router: ContractAddress::from(
-                contracts::alloy::BaoswapRouter::deployment_address(&chain.id())?.into_legacy(),
+                contracts::alloy::BaoswapRouter::deployment_address(chain.id())?.into_legacy(),
             ),
             pool_code: BAOSWAP_INIT.into(),
             missing_pool_cache_time: Duration::from_secs(60 * 60),
