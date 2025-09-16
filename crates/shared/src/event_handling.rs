@@ -143,30 +143,20 @@ where
         &self,
         block_range: &RangeInclusive<u64>,
     ) -> Result<EventStream<Self::Event>> {
-        const CHUNK_SIZE: u64 = 500;
+        const CHUNK_SIZE: usize = 500;
 
         let start = *block_range.start();
         let end = *block_range.end();
-
-        let mut chunks = Vec::new();
-        let mut current_start = start;
-
-        while current_start <= end {
-            let current_end = std::cmp::min(current_start + CHUNK_SIZE - 1, end);
-            chunks.push(current_start..=current_end);
-            current_start = current_end + 1;
-        }
-
         let provider = self.0.provider().clone();
         let base_filter = self.0.filter();
 
-        let stream = futures::stream::iter(chunks)
-            .then(move |chunk_range| {
+        let stream = futures::stream::iter((start..=end).step_by(CHUNK_SIZE))
+            .then(move |chunk_start| {
                 let provider = provider.clone();
                 let filter = base_filter
                     .clone()
-                    .from_block(*chunk_range.start())
-                    .to_block(*chunk_range.end());
+                    .from_block(chunk_start)
+                    .to_block(std::cmp::min(chunk_start + (CHUNK_SIZE as u64) - 1, end));
 
                 async move {
                     let logs = provider
