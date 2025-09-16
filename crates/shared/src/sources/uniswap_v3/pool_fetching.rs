@@ -7,7 +7,7 @@ use {
         event_handling::{AlloyEventRetriever, EventHandler, EventStoring, MAX_REORG_BLOCK_COUNT},
         maintenance::Maintaining,
         recent_block_cache::Block,
-        sources::uniswap_v3::event_fetching::{UniswapV3PoolEvents, WithAddress},
+        sources::uniswap_v3::event_fetching::{UniswapV3PoolEvent, WithAddress},
     },
     alloy::rpc::types::Log,
     anyhow::{Context, Result},
@@ -411,14 +411,14 @@ impl PoolFetching for UniswapV3PoolFetcher {
 }
 
 /// For a given checkpoint, append events to get a new checkpoint
-fn append_events(pools: &mut HashMap<H160, PoolInfo>, events: Vec<UniswapV3PoolEvents>) {
+fn append_events(pools: &mut HashMap<H160, PoolInfo>, events: Vec<UniswapV3PoolEvent>) {
     for event in events {
         if let Some(pool) = pools
             .get_mut(&event.address().into_legacy())
             .map(|pool| &mut pool.state)
         {
             match event {
-                UniswapV3PoolEvents::Burn(WithAddress(burn, _)) => {
+                UniswapV3PoolEvent::Burn(WithAddress(burn, _)) => {
                     let tick_lower = BigInt::from(burn.tickLower.as_i32());
                     let tick_upper = BigInt::from(burn.tickUpper.as_i32());
 
@@ -447,7 +447,7 @@ fn append_events(pools: &mut HashMap<H160, PoolInfo>, events: Vec<UniswapV3PoolE
                         pool.liquidity_net.remove(&tick_upper);
                     }
                 }
-                UniswapV3PoolEvents::Mint(WithAddress(mint, _)) => {
+                UniswapV3PoolEvent::Mint(WithAddress(mint, _)) => {
                     let tick_lower = BigInt::from(mint.tickLower.as_i32());
                     let tick_upper = BigInt::from(mint.tickUpper.as_i32());
 
@@ -476,7 +476,7 @@ fn append_events(pools: &mut HashMap<H160, PoolInfo>, events: Vec<UniswapV3PoolE
                         pool.liquidity_net.remove(&tick_upper);
                     }
                 }
-                UniswapV3PoolEvents::Swap(WithAddress(swap, _)) => {
+                UniswapV3PoolEvent::Swap(WithAddress(swap, _)) => {
                     pool.tick = BigInt::from(swap.tick.as_i32());
                     pool.liquidity = swap.liquidity.into();
                     pool.sqrt_price = U256::from(swap.sqrtPriceX96.to_be_bytes());
