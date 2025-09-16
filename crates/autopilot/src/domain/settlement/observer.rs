@@ -19,6 +19,7 @@ use {
         infra,
     },
     anyhow::{Context, Result, anyhow},
+    std::time::Duration,
 };
 
 #[derive(Clone)]
@@ -44,26 +45,32 @@ impl Observer {
     /// This needs to get called after indexing a new settlement event
     /// since this code needs that data to already be present in the DB.
     pub async fn update(&self) {
-        loop {
+        const MAX_RETRIES: usize = 5;
+        let mut attempts = 0;
+        while attempts < MAX_RETRIES {
             match self.single_update().await {
                 Ok(IndexSuccess::IndexedSettlement) => {
                     tracing::debug!("on settlement event updater ran and processed event");
-                    // There might be more pending updates, continue immediately.
-                    continue;
-                }
-                Ok(IndexSuccess::NothingToDo) => {
-                    tracing::debug!("on settlement event updater ran without update");
-                    break;
                 }
                 Ok(IndexSuccess::SkippedInvalidTransaction) => {
                     tracing::warn!("stored default values for unindexable transaction");
-                    continue;
+                }
+                Ok(IndexSuccess::NothingToDo) => {
+                    tracing::debug!("on settlement event updater ran without update");
+                    return;
                 }
                 Err(err) => {
                     tracing::debug!(?err, "encountered retryable error");
+                    // wait a little to give temporary errors a chance to resolve themselves
+                    const TEMP_ERROR_BACK_OFF: Duration = Duration::from_millis(100);
+                    tokio::time::sleep(TEMP_ERROR_BACK_OFF).await;
+                    attempts += 1;
                     continue;
                 }
             }
+
+            // everything worked fine -> reset our attempts for the next settlement
+            attempts = 0;
         }
     }
 
