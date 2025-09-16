@@ -115,7 +115,7 @@ pub struct AlloyEventRetriever<T>(pub T);
 #[async_trait::async_trait]
 impl<T> EventRetrieving for AlloyEventRetriever<T>
 where
-    T: AlloyEventRetrieving + Send + Sync + 'static,
+    T: AlloyEventRetrieving + Send + Sync,
 {
     type Event = (T::Event, Log);
 
