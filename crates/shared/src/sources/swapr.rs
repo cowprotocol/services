@@ -57,8 +57,13 @@ mod tests {
             recent_block_cache::Block,
             sources::{BaselineSource, uniswap_v2},
         },
+        alloy::{
+            primitives::{Address, address},
+            providers::Provider,
+        },
         contracts::errors::testing_contract_error,
         ethcontract::H160,
+        ethrpc::alloy::conversions::IntoLegacy,
         maplit::hashset,
     };
 
@@ -99,6 +104,43 @@ mod tests {
             .unwrap()
             .is_none()
         );
+    }
+
+    const GNOSIS_CHAIN_WETH: Address = address!("6A023CCd1ff6F2045C3309768eAd9E68F978f6e1");
+    const GNOSIS_CHAIN_WXDAI: Address = address!("e91D153E0b41518A2Ce8Dd3D7944Fa863463a97d");
+
+    #[tokio::test]
+    #[ignore]
+    async fn fetch_baoswap_pool() {
+        let web3 = Web3::new_from_env();
+        let version = web3.alloy.get_chain_id().await.unwrap().to_string();
+        let pool_fetcher = uniswap_v2::UniV2BaselineSourceParameters::from_baseline_source(
+            BaselineSource::Baoswap,
+            &version,
+        )
+        .unwrap()
+        .into_source(&web3)
+        .await
+        .unwrap()
+        .pool_fetching;
+        let pool = pool_fetcher
+            .fetch(
+                hashset! {
+                    TokenPair::new(
+                        GNOSIS_CHAIN_WETH.into_legacy(),
+                        GNOSIS_CHAIN_WXDAI.into_legacy(),
+                    )
+                    .unwrap(),
+                },
+                Block::Recent,
+            )
+            .await
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
+
+        println!("WETH <> wxDAI pool: {pool:#?}");
     }
 
     #[tokio::test]
