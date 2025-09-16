@@ -19,7 +19,6 @@ bin = [
     "tracing",
     "tracing-subscriber",
 ]
-test-util = []
 
 [dependencies]
 alloy = { workspace = true, features = ["sol-types", "json", "contract", "json-abi"] }
