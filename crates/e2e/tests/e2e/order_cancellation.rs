@@ -1,6 +1,6 @@
 use {
     database::order_events::OrderEventLabel,
-    e2e::setup::*,
+    e2e::setup::{eth, *},
     ethrpc::alloy::{
         CallBuilderExt,
         conversions::{IntoAlloy, IntoLegacy},
@@ -46,10 +46,7 @@ async fn order_cancellation(web3: Web3) {
     // Approve GPv2 for trading
 
     token
-        .approve(
-            onchain.contracts().allowance.into_alloy(),
-            to_wei(10).into_alloy(),
-        )
+        .approve(onchain.contracts().allowance.into_alloy(), eth(10))
         .from(trader.address().into_alloy())
         .send_and_watch()
         .await

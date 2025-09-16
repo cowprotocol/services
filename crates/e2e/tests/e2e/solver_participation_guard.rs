@@ -8,6 +8,7 @@ use {
             Services,
             TIMEOUT,
             TestAccount,
+            eth,
             run_test,
             to_wei,
             wait_for_condition,
@@ -266,7 +267,7 @@ async fn setup(
     token_a
         .approve(
             onchain.contracts().uniswap_v2_router.address().into_alloy(),
-            to_wei(1000).into_alloy(),
+            eth(1000),
         )
         .from(solver.address().into_alloy())
         .send_and_watch()
@@ -276,7 +277,7 @@ async fn setup(
     token_b
         .approve(
             onchain.contracts().uniswap_v2_router.address().into_alloy(),
-            to_wei(1000).into_alloy(),
+            eth(1000),
         )
         .from(solver.address().into_alloy())
         .send_and_watch()
@@ -299,10 +300,7 @@ async fn setup(
     // Approve GPv2 for trading
 
     token_a
-        .approve(
-            onchain.contracts().allowance.into_alloy(),
-            to_wei(1000).into_alloy(),
-        )
+        .approve(onchain.contracts().allowance.into_alloy(), eth(1000))
         .from(trader_a.address().into_alloy())
         .send_and_watch()
         .await
@@ -375,8 +373,7 @@ async fn execute_order(
             .call()
             .await
             .unwrap();
-        let balance_changes =
-            balance_after.checked_sub(balance_before).unwrap() >= to_wei(5).into_alloy();
+        let balance_changes = balance_after.checked_sub(balance_before).unwrap() >= eth(5);
         let auction_ids_after =
             fetch_last_settled_auction_ids(services.db()).await.len() > auction_ids_before;
         balance_changes && auction_ids_after
