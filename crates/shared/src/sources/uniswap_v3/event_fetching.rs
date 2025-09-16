@@ -23,6 +23,9 @@ impl AlloyEventRetrieving for UniswapV3PoolEventFetcher {
     type Event = AlloyUniswapV3PoolEvents;
 
     fn filter(&self) -> Filter {
+        // No pool address filter since the generated request might be too large
+        // leading to RPC performance issues.
+        // More details: <https://github.com/cowprotocol/services/pull/3620>
         Filter::new().address(vec![]).event_signature(hashset![
             Swap::SIGNATURE_HASH,
             Burn::SIGNATURE_HASH,
