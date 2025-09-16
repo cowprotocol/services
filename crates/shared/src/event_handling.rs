@@ -1,12 +1,19 @@
 use {
     crate::maintenance::Maintaining,
+    alloy::{contract::Event, providers::DynProvider, rpc::types::Log, sol_types::SolEvent},
     anyhow::{Context, Result},
     ethcontract::{EventMetadata, dyns::DynAllEventsBuilder},
-    ethrpc::block_stream::{BlockNumberHash, BlockRetrieving, RangeInclusive},
+    ethrpc::{
+        alloy::conversions::{IntoAlloy, IntoLegacy},
+        block_stream::{BlockNumberHash, BlockRetrieving, RangeInclusive},
+    },
     futures::{Stream, StreamExt, TryStreamExt, future},
+    itertools::Itertools,
+    primitive_types::H256,
     std::{pin::Pin, sync::Arc},
     tokio::sync::Mutex,
     tracing::Instrument,
+    web3::types::Address,
 };
 
 // We expect that there is never a reorg that changes more than the last n
@@ -85,6 +92,63 @@ pub trait EthcontractEventRetrieving {
     type Event: ethcontract::contract::ParseLog + 'static;
 
     fn get_events(&self) -> DynAllEventsBuilder<Self::Event>;
+}
+
+pub trait AlloyEventRetrieving {
+    type Event: SolEvent + Send + Sync + 'static;
+
+    fn get_events(&self) -> Event<&DynProvider, Self::Event>;
+}
+
+/// A thin wrapper to avoid conflicts with EthcontractEventRetrieving
+/// implementation. Will be dropped once fully migrated to alloy.
+pub struct AlloyEventRetriever<T>(pub T);
+
+/// Common `alloy` crate-related event retrieval patterns are extracted to
+/// this trait to avoid code duplication in implementations.
+#[async_trait::async_trait]
+impl<T> EventRetrieving for AlloyEventRetriever<T>
+where
+    T: AlloyEventRetrieving + Send + Sync + 'static,
+{
+    type Event = (T::Event, Log);
+
+    async fn get_events_by_block_hash(&self, block_hash: H256) -> Result<Vec<Self::Event>> {
+        self.0
+            .get_events()
+            .at_block_hash(block_hash.into_alloy())
+            .query()
+            .await
+            .map_err(anyhow::Error::from)
+    }
+
+    async fn get_events_by_block_range(
+        &self,
+        block_range: &RangeInclusive<u64>,
+    ) -> Result<EventStream<Self::Event>> {
+        let stream = self
+            .0
+            .get_events()
+            .from_block(*block_range.start())
+            .to_block(*block_range.end())
+            .watch()
+            .await
+            .map_err(anyhow::Error::from)?
+            .into_stream()
+            .map_err(anyhow::Error::from);
+
+        Ok(Box::pin(stream))
+    }
+
+    fn address(&self) -> Vec<Address> {
+        self.0
+            .get_events()
+            .filter
+            .address
+            .iter()
+            .map(|addr| addr.into_legacy())
+            .collect_vec()
+    }
 }
 
 /// Common `ethcontract` crate-related event retrieval patterns are extracted to

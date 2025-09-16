@@ -7,8 +7,9 @@ use {
         swap::fixed_point::Bfp,
     },
     anyhow::Result,
-    contracts::{BalancerV2ComposableStablePool, BalancerV2ComposableStablePoolFactory},
+    contracts::alloy::{BalancerV2ComposableStablePool, BalancerV2ComposableStablePoolFactory},
     ethcontract::BlockId,
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::{FutureExt as _, future::BoxFuture},
 };
 
@@ -32,7 +33,7 @@ impl PoolIndexing for PoolInfo {
 }
 
 #[async_trait::async_trait]
-impl FactoryIndexing for BalancerV2ComposableStablePoolFactory {
+impl FactoryIndexing for BalancerV2ComposableStablePoolFactory::Instance {
     type PoolInfo = PoolInfo;
     type PoolState = PoolState;
 
@@ -46,17 +47,31 @@ impl FactoryIndexing for BalancerV2ComposableStablePoolFactory {
         common_pool_state: BoxFuture<'static, common::PoolState>,
         block: BlockId,
     ) -> BoxFuture<'static, Result<Option<Self::PoolState>>> {
-        let pool_contract = BalancerV2ComposableStablePool::at(
-            &self.raw_instance().web3(),
-            pool_info.common.address,
+        let pool_contract = BalancerV2ComposableStablePool::Instance::new(
+            pool_info.common.address.into_alloy(),
+            self.provider().clone(),
         );
 
         let fetch_common = common_pool_state.map(Result::Ok);
-        let fetch_scaling_factors = pool_contract.get_scaling_factors().block(block).call();
-        let fetch_amplification_parameter = pool_contract
-            .get_amplification_parameter()
-            .block(block)
-            .call();
+        let scaling_factors_block = block.into_alloy();
+        let amp_param_block = scaling_factors_block;
+        let pool_contract_clone = pool_contract.clone();
+        let fetch_scaling_factors = async move {
+            pool_contract
+                .getScalingFactors()
+                .block(scaling_factors_block)
+                .call()
+                .await
+                .map_err(anyhow::Error::from)
+        };
+        let fetch_amplification_parameter = async move {
+            pool_contract_clone
+                .getAmplificationParameter()
+                .block(amp_param_block)
+                .call()
+                .await
+                .map_err(anyhow::Error::from)
+        };
 
         async move {
             let (common, scaling_factors, amplification_parameter) = futures::try_join!(
@@ -65,8 +80,10 @@ impl FactoryIndexing for BalancerV2ComposableStablePoolFactory {
                 fetch_amplification_parameter
             )?;
             let amplification_parameter = {
-                let (factor, _, precision) = amplification_parameter;
-                AmplificationParameter::try_new(factor, precision)?
+                AmplificationParameter::try_new(
+                    amplification_parameter.value.into_legacy(),
+                    amplification_parameter.precision.into_legacy(),
+                )?
             };
 
             Ok(Some(PoolState {
@@ -78,7 +95,7 @@ impl FactoryIndexing for BalancerV2ComposableStablePoolFactory {
                         (
                             address,
                             common::TokenState {
-                                scaling_factor: Bfp::from_wei(scaling_factor),
+                                scaling_factor: Bfp::from_wei(scaling_factor.into_legacy()),
                                 ..token
                             },
                         )
