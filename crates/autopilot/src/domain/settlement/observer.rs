@@ -132,7 +132,7 @@ impl Observer {
                     Ok(settlement) => Ok(Some(settlement)),
                     Err(settlement::Error::Infra(err)) => {
                         // bubble up retryable error
-                        Err(err.into())
+                        Err(err)
                     }
                     Err(err) => {
                         tracing::warn!(?tx, ?auction_id, ?err, "invalid settlement");
