@@ -67,7 +67,6 @@ include_contracts! {
     FlashLoanRouter;
     GPv2AllowListAuthentication;
     GPv2Settlement;
-    HoneyswapRouter;
     HooksTrampoline;
     IAavePool;
     IFlashLoanSolverWrapper;
@@ -227,9 +226,6 @@ mod tests {
         for network in &[MAINNET, GNOSIS, ARBITRUM_ONE] {
             assert_has_deployment_address!(SwaprRouter for *network);
         }
-
-        // only gnosis
-        assert_has_deployment_address!(HoneyswapRouter for GNOSIS);
 
         // only sepolia
         assert_has_deployment_address!(TestnetUniswapV2Router02 for SEPOLIA);

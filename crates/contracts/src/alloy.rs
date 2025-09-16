@@ -325,6 +325,12 @@ crate::bindings!(
        GNOSIS => (address!("0x6093AeBAC87d62b1A5a4cEec91204e35020E38bE"))
     }
 );
+crate::bindings!(
+    HoneyswapRouter,
+    crate::deployments! {
+        GNOSIS => (address!("0x1C232F01118CB8B424793ae03F870aa7D0ac7f77"))
+    }
+);
 
 pub use alloy::providers::DynProvider as Provider;
 
@@ -503,6 +509,7 @@ mod tests {
     #[test]
     fn test_has_address() {
         assert!(BaoswapRouter::deployment_address(&GNOSIS).is_some());
+        assert!(HoneyswapRouter::deployment_address(&GNOSIS).is_some());
     }
 
     #[test]
