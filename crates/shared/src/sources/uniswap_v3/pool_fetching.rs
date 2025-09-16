@@ -479,7 +479,8 @@ fn append_events(pools: &mut HashMap<H160, PoolInfo>, events: Vec<UniswapV3PoolE
                 UniswapV3PoolEvent::Swap(WithAddress(swap, _)) => {
                     pool.tick = BigInt::from(swap.tick.as_i32());
                     pool.liquidity = swap.liquidity.into();
-                    pool.sqrt_price = U256::from(swap.sqrtPriceX96.to_be_bytes());
+                    pool.sqrt_price =
+                        alloy::primitives::U256::from(swap.sqrtPriceX96).into_legacy();
                 }
             }
         }
