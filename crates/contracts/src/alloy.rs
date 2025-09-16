@@ -320,6 +320,8 @@ crate::bindings!(
     }
 );
 
+crate::bindings!(UniswapV3Pool);
+
 pub use alloy::providers::DynProvider as Provider;
 
 /// Extension trait to attach some useful functions to the contract instance.
