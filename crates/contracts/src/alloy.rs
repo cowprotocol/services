@@ -74,6 +74,13 @@ crate::bindings!(
 );
 
 crate::bindings!(EulerVault);
+crate::bindings!(
+    EulerPerspective,
+    crate::deployments! {
+        // <https://etherscan.io/tx/0x12073e42b4e754c10ccba7dcf5ea24b2798acd0b05a66a1c65b7569c2de24fee>
+        MAINNET => (address!("0xC0121817FF224a018840e4D15a864747d36e6Eb2"), 20649250)
+    }
+);
 
 pub use alloy::providers::DynProvider as Provider;
 

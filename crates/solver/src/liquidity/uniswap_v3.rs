@@ -1,5 +1,5 @@
 use {
-    super::{AmmOrderExecution, ConcentratedLiquidity, SettlementHandling},
+    super::{AmmOrderExecution, ConcentratedLiquidityOrder, SettlementHandling},
     crate::{
         interactions::{
             ExactOutputSingleParams,
@@ -138,7 +138,7 @@ impl LiquidityCollecting for UniswapV3Liquidity {
             tokens.insert(pool.tokens[0].id);
             tokens.insert(pool.tokens[1].id);
 
-            result.push(Liquidity::Concentrated(ConcentratedLiquidity {
+            result.push(Liquidity::Concentrated(ConcentratedLiquidityOrder {
                 tokens: token_pair,
                 settlement_handling: Arc::new(UniswapV3SettlementHandler {
                     inner: self.inner.clone(),
@@ -181,7 +181,7 @@ impl UniswapV3SettlementHandler {
     }
 }
 
-impl SettlementHandling<ConcentratedLiquidity> for UniswapV3SettlementHandler {
+impl SettlementHandling<ConcentratedLiquidityOrder> for UniswapV3SettlementHandler {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }

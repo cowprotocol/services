@@ -10,7 +10,8 @@ mod zeroex;
 pub use {
     balancer_v2::BalancerSwapGivenOutInteraction,
     erc20::Erc20ApproveInteraction,
-    euler_vault::EulerVaultInteraction,
+    euler_vault::EulerVaultDepositInteraction,
+    euler_vault::EulerVaultWithdrawInteraction,
     uniswap_v2::UniswapInteraction,
     uniswap_v3::{ExactOutputSingleParams, UniswapV3Interaction},
     weth::UnwrapWethInteraction,

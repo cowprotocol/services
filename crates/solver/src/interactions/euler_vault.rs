@@ -8,18 +8,43 @@ use {
 };
 
 #[derive(Clone, Debug)]
-pub struct EulerVaultInteraction {
-    pub max: U256,
+pub struct EulerVaultDepositInteraction {
+    pub deposit_amount: U256,
     pub receiver: H160,
     // todo: remove Arc
     pub vault: Arc<EulerVault::Instance>,
 }
 
-impl Interaction for EulerVaultInteraction {
+impl Interaction for EulerVaultDepositInteraction {
     fn encode(&self) -> EncodedInteraction {
         let method = self
             .vault
-            .skim(self.max.into_alloy(), self.receiver.into_alloy());
+            .deposit(self.deposit_amount.into_alloy(), self.receiver.into_alloy());
+        let calldata = method.calldata();
+        (
+            self.vault.address().into_legacy(),
+            0.into(),
+            Bytes(calldata.to_vec()),
+        )
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct EulerVaultWithdrawInteraction {
+    pub redeem_amount: U256,
+    pub receiver: H160,
+    pub provider: H160,
+    // todo: remove Arc
+    pub vault: Arc<EulerVault::Instance>,
+}
+
+impl Interaction for EulerVaultWithdrawInteraction {
+    fn encode(&self) -> EncodedInteraction {
+        let method = self.vault.redeem(
+            self.redeem_amount.into_alloy(),
+            self.receiver.into_alloy(),
+            self.provider.into_alloy(),
+        );
         let calldata = method.calldata();
         (
             self.vault.address().into_legacy(),

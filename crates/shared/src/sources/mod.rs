@@ -1,6 +1,7 @@
 //! Top-level module organizing all baseline liquidity sources.
 
 pub mod balancer_v2;
+pub mod euler_vault;
 pub mod swapr;
 pub mod uniswap_v2;
 pub mod uniswap_v3;
@@ -30,6 +31,7 @@ pub enum BaselineSource {
     ZeroEx,
     UniswapV3,
     TestnetUniswapV2,
+    EulerVault
 }
 
 pub fn defaults_for_network(chain: &Chain) -> Vec<BaselineSource> {
@@ -41,6 +43,7 @@ pub fn defaults_for_network(chain: &Chain) -> Vec<BaselineSource> {
             BaselineSource::BalancerV2,
             BaselineSource::ZeroEx,
             BaselineSource::UniswapV3,
+            BaselineSource::EulerVault,
         ],
         Chain::Goerli => vec![
             BaselineSource::UniswapV2,
