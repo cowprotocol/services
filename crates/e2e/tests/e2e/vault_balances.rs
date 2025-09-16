@@ -1,5 +1,9 @@
 use {
     e2e::{setup::*, tx},
+    ethrpc::alloy::{
+        CallBuilderExt,
+        conversions::{IntoAlloy, IntoLegacy},
+    },
     model::{
         order::{OrderCreation, OrderKind, SellTokenSource},
         signature::EcdsaSigningScheme,
@@ -27,10 +31,16 @@ async fn vault_balances(web3: Web3) {
     token.mint(trader.address(), to_wei(10)).await;
 
     // Approve GPv2 for trading
-    tx!(
-        trader.account(),
-        token.approve(onchain.contracts().balancer_vault.address(), to_wei(10))
-    );
+
+    token
+        .approve(
+            onchain.contracts().balancer_vault.address().into_alloy(),
+            to_wei(10).into_alloy(),
+        )
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
     tx!(
         trader.account(),
         onchain.contracts().balancer_vault.set_relayer_approval(
@@ -46,7 +56,7 @@ async fn vault_balances(web3: Web3) {
     // Place Orders
     let order = OrderCreation {
         kind: OrderKind::Sell,
-        sell_token: token.address(),
+        sell_token: token.address().into_legacy(),
         sell_amount: to_wei(10),
         sell_token_balance: SellTokenSource::External,
         buy_token: onchain.contracts().weth.address(),
@@ -73,7 +83,7 @@ async fn vault_balances(web3: Web3) {
     tracing::info!("Waiting for trade.");
     wait_for_condition(TIMEOUT, || async {
         let token_balance = token
-            .balance_of(trader.address())
+            .balanceOf(trader.address().into_alloy())
             .call()
             .await
             .expect("Couldn't fetch token balance");

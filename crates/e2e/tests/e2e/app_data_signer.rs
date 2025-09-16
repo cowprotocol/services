@@ -1,9 +1,10 @@
 use {
-    e2e::{
-        setup::{OnchainComponents, Services, TestAccount, run_test, safe::Safe, to_wei},
-        tx,
+    alloy::primitives::Address,
+    e2e::setup::{OnchainComponents, Services, TestAccount, run_test, safe::Safe, to_wei},
+    ethrpc::alloy::{
+        CallBuilderExt,
+        conversions::{IntoAlloy, IntoLegacy},
     },
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind},
         signature::EcdsaSigningScheme,
@@ -28,23 +29,35 @@ async fn order_creation_checks_metadata_signer(web3: Web3) {
         .await;
 
     token_a.mint(trader.address(), to_wei(10)).await;
-    tx!(
-        trader.account(),
-        token_a.approve(onchain.contracts().allowance, to_wei(10))
-    );
+
+    token_a
+        .approve(
+            onchain.contracts().allowance.into_alloy(),
+            to_wei(10).into_alloy(),
+        )
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
     token_a.mint(adversary.address(), to_wei(10)).await;
-    tx!(
-        adversary.account(),
-        token_a.approve(onchain.contracts().allowance, to_wei(10))
-    );
+
+    token_a
+        .approve(
+            onchain.contracts().allowance.into_alloy(),
+            to_wei(10).into_alloy(),
+        )
+        .from(adversary.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     let mut valid_to: u32 = model::time::now_in_epoch_seconds() + 300;
     let mut create_order = |app_data| {
         let order = OrderCreation {
             app_data,
-            sell_token: token_a.address(),
+            sell_token: token_a.address().into_legacy(),
             sell_amount: to_wei(2),
-            buy_token: token_b.address(),
+            buy_token: token_b.address().into_legacy(),
             buy_amount: to_wei(1),
             valid_to,
             kind: OrderKind::Sell,
@@ -93,8 +106,15 @@ async fn order_creation_checks_metadata_signer(web3: Web3) {
 
     let safe = Safe::deploy(safe_owner.clone(), web3.alloy.clone()).await;
     token_a.mint(safe.address().into_legacy(), to_wei(10)).await;
-    safe.exec_call(token_a.approve(onchain.contracts().allowance, to_wei(10)))
-        .await;
+    safe.exec_alloy_call(
+        token_a
+            .approve(
+                onchain.contracts().allowance.into_alloy(),
+                to_wei(10).into_alloy(),
+            )
+            .into_transaction_request(),
+    )
+    .await;
 
     // Accepted: owner retrieved from app data.
     let full_app_data = full_app_data_with_signer(safe.address());
@@ -111,7 +131,7 @@ async fn order_creation_checks_metadata_signer(web3: Web3) {
     assert!(err.1.contains("AppdataFromMismatch"));
 }
 
-fn full_app_data_with_signer(signer: alloy::primitives::Address) -> OrderCreationAppData {
+fn full_app_data_with_signer(signer: Address) -> OrderCreationAppData {
     let app_data = format!("{{\"metadata\": {{\"signer\": \"{signer:?}\"}}}}");
     OrderCreationAppData::Full {
         full: app_data.to_string(),

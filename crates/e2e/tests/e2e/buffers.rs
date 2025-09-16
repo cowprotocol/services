@@ -1,5 +1,10 @@
 use {
-    e2e::{setup::*, tx},
+    ::alloy::primitives::U256,
+    e2e::setup::*,
+    ethrpc::alloy::{
+        CallBuilderExt,
+        conversions::{IntoAlloy, IntoLegacy},
+    },
     model::{
         order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
@@ -33,10 +38,16 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
     token_b.mint(solver.address(), to_wei(1000)).await;
 
     // Approve GPv2 for trading
-    tx!(
-        trader.account(),
-        token_a.approve(onchain.contracts().allowance, to_wei(100))
-    );
+
+    token_a
+        .approve(
+            onchain.contracts().allowance.into_alloy(),
+            to_wei(100).into_alloy(),
+        )
+        .from(trader.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     // Start system
     colocation::start_driver(
@@ -83,9 +94,9 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
 
     // Place Order
     let order = OrderCreation {
-        sell_token: token_a.address(),
+        sell_token: token_a.address().into_legacy(),
         sell_amount: to_wei(9),
-        buy_token: token_b.address(),
+        buy_token: token_b.address().into_legacy(),
         buy_amount: to_wei(5),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Buy,
@@ -100,18 +111,24 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
 
     tracing::info!("waiting for first trade");
     onchain.mint_block().await;
-    let trade_happened =
-        || async { token_b.balance_of(trader.address()).call().await.unwrap() == order.buy_amount };
+    let trade_happened = || async {
+        token_b
+            .balanceOf(trader.address().into_alloy())
+            .call()
+            .await
+            .unwrap()
+            == order.buy_amount.into_alloy()
+    };
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
 
     // Check that settlement buffers were traded.
     let settlement_contract_balance = token_b
-        .balance_of(onchain.contracts().gp_settlement.address())
+        .balanceOf(onchain.contracts().gp_settlement.address().into_alloy())
         .call()
         .await
         .unwrap();
     // Check that internal buffers were used
-    assert!(settlement_contract_balance == 0.into());
+    assert!(settlement_contract_balance == U256::ZERO);
 
     // Same order can trade again with external liquidity
     let order = OrderCreation {
@@ -127,7 +144,12 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
 
     tracing::info!("waiting for second trade");
     let trade_happened = || async {
-        token_b.balance_of(trader.address()).call().await.unwrap() == order.buy_amount * 2
+        token_b
+            .balanceOf(trader.address().into_alloy())
+            .call()
+            .await
+            .unwrap()
+            == (order.buy_amount.into_alloy() * U256::from(2))
     };
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
 }
