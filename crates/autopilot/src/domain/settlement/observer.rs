@@ -12,16 +12,26 @@
 
 use {
     crate::{
-        domain::settlement::{self},
+        domain::{
+            eth,
+            settlement::{self, Settlement},
+        },
         infra,
     },
-    anyhow::{Result, anyhow},
+    anyhow::{Context, Result, anyhow},
+    std::time::Duration,
 };
 
 #[derive(Clone)]
 pub struct Observer {
     eth: infra::Ethereum,
     persistence: infra::Persistence,
+}
+
+enum IndexSuccess {
+    NothingToDo,
+    IndexedSettlement,
+    SkippedInvalidTransaction,
 }
 
 impl Observer {
@@ -35,38 +45,73 @@ impl Observer {
     /// This needs to get called after indexing a new settlement event
     /// since this code needs that data to already be present in the DB.
     pub async fn update(&self) {
-        loop {
+        const MAX_RETRIES: usize = 5;
+        let mut attempts = 0;
+        while attempts < MAX_RETRIES {
             match self.single_update().await {
-                Ok(true) => {
+                Ok(IndexSuccess::IndexedSettlement) => {
                     tracing::debug!("on settlement event updater ran and processed event");
-                    // There might be more pending updates, continue immediately.
-                    continue;
                 }
-                Ok(false) => {
+                Ok(IndexSuccess::SkippedInvalidTransaction) => {
+                    tracing::warn!("stored default values for unindexable transaction");
+                }
+                Ok(IndexSuccess::NothingToDo) => {
                     tracing::debug!("on settlement event updater ran without update");
-                    break;
+                    return;
                 }
                 Err(err) => {
-                    tracing::error!(?err, "on settlement event update task failed");
-                    break;
+                    tracing::debug!(?err, "encountered retryable error");
+                    // wait a little to give temporary errors a chance to resolve themselves
+                    const TEMP_ERROR_BACK_OFF: Duration = Duration::from_millis(100);
+                    tokio::time::sleep(TEMP_ERROR_BACK_OFF).await;
+                    attempts += 1;
+                    continue;
                 }
             }
+
+            // everything worked fine -> reset our attempts for the next settlement
+            attempts = 0;
         }
     }
 
     /// Update database for settlement events that have not been processed yet.
     ///
     /// Returns whether an update was performed.
-    async fn single_update(&self) -> Result<bool> {
+    async fn single_update(&self) -> Result<IndexSuccess> {
         // Find a settlement event that has not been processed yet.
-        let Some(event) = self.persistence.get_settlement_without_auction().await? else {
-            return Ok(false);
+        let Some(event) = self
+            .persistence
+            .get_settlement_without_auction()
+            .await
+            .context("failed to fetch unprocessed tx from DB")?
+        else {
+            return Ok(IndexSuccess::NothingToDo);
         };
 
-        tracing::debug!(tx = ?event.transaction, "updating settlement details");
+        tracing::debug!(tx = ?event.transaction, "found unprocessed settlement");
 
-        // Reconstruct the settlement transaction based on the transaction hash
-        let transaction = match self.eth.transaction(event.transaction).await {
+        let settlement_data = self
+            .fetch_auction_data_for_transaction(event.transaction)
+            .await?;
+        self.persistence
+            .save_settlement(event, settlement_data.as_ref())
+            .await
+            .context("failed to update settlement")?;
+
+        match settlement_data {
+            None => Ok(IndexSuccess::SkippedInvalidTransaction),
+            Some(_) => Ok(IndexSuccess::IndexedSettlement),
+        }
+    }
+
+    /// Inspects the calldata of the transaction, decodes the arguments, and
+    /// finds off-chain data associated with it based on the attached auction_id
+    /// bytes.
+    async fn fetch_auction_data_for_transaction(
+        &self,
+        tx: eth::TxId,
+    ) -> Result<Option<Settlement>> {
+        let transaction = match self.eth.transaction(tx).await {
             Ok(transaction) => {
                 let separator = self.eth.contracts().settlement_domain_separator();
                 let settlement_contract = self.eth.contracts().settlement().address().into();
@@ -79,74 +124,52 @@ impl Observer {
                 .await
             }
             Err(err) => {
-                tracing::warn!(hash = ?event.transaction, ?err, "no tx found");
-                return Ok(false);
+                return Err(anyhow!(format!(
+                    "node could not find the transaction - tx: {tx:?}, err: {err:?}",
+                )));
             }
         };
 
-        // Build the <auction_id, settlement> association
-        let (auction_id, settlement) = match transaction {
+        match transaction {
             Ok(transaction) => {
                 let auction_id = transaction.auction_id;
-                let settlement = match settlement::Settlement::new(
-                    transaction,
-                    &self.persistence,
-                    self.eth.chain(),
-                )
-                .await
+                match settlement::Settlement::new(transaction, &self.persistence, self.eth.chain())
+                    .await
                 {
-                    Ok(settlement) => Some(settlement),
-                    Err(err) if retryable(&err) => return Err(err.into()),
-                    Err(err) => {
-                        tracing::warn!(hash = ?event.transaction, ?auction_id, ?err, "invalid settlement");
-                        None
+                    Ok(settlement) => Ok(Some(settlement)),
+                    Err(settlement::Error::Infra(err)) => {
+                        // bubble up retryable error
+                        Err(err)
                     }
-                };
-                (auction_id, settlement)
+                    Err(err) => {
+                        tracing::warn!(?tx, ?auction_id, ?err, "invalid settlement");
+                        Ok(None)
+                    }
+                }
             }
             Err(err) => {
                 match err {
                     settlement::transaction::Error::MissingCalldata => {
-                        tracing::error!(hash = ?event.transaction, ?err, "invalid settlement transaction")
+                        tracing::error!(?tx, ?err, "invalid settlement transaction");
+                        Ok(None)
                     }
                     settlement::transaction::Error::MissingAuctionId
                     | settlement::transaction::Error::Decoding(_)
                     | settlement::transaction::Error::SignatureRecover(_)
                     | settlement::transaction::Error::OrderUidRecover(_)
                     | settlement::transaction::Error::MissingSolver => {
-                        tracing::warn!(hash = ?event.transaction, ?err, "invalid settlement transaction")
+                        tracing::warn!(?tx, ?err, "invalid settlement transaction");
+                        Ok(None)
                     }
                     settlement::transaction::Error::Authentication(_) => {
-                        tracing::warn!(hash = ?event.transaction, ?err, "failed authentication")
+                        // This has to be a temporary error because the settlement contract
+                        // guarantees that SOME allow listed contract executed the transaction.
+                        Err(anyhow!(format!(
+                            "could not determing solver address - err: {err:?}"
+                        )))
                     }
                 }
-                // default values so we don't get stuck on invalid settlement transactions
-                (0.into(), None)
             }
-        };
-
-        tracing::debug!(hash = ?event.transaction, ?auction_id, "saving settlement details for tx");
-
-        if let Err(err) = self
-            .persistence
-            .save_settlement(event, auction_id, settlement.as_ref())
-            .await
-        {
-            return Err(anyhow!(
-                "save settlement: {:?}, {auction_id}, {err}",
-                event.transaction
-            ));
         }
-
-        Ok(true)
-    }
-}
-
-/// Whether Observer loop should retry on the given error.
-fn retryable(err: &settlement::Error) -> bool {
-    match err {
-        settlement::Error::Infra(_) => true,
-        settlement::Error::InconsistentData(_) => false,
-        settlement::Error::WrongEnvironment => false,
     }
 }
