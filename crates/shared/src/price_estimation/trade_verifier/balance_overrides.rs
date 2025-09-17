@@ -239,6 +239,16 @@ pub struct BalanceOverrides {
 }
 
 impl BalanceOverrides {
+    pub fn new(simulator: Arc<dyn CodeSimulating>, probing_depth: u8, cache_size: usize) -> Self {
+        Self {
+            hardcoded: Default::default(),
+            detector: Some((
+                Detector::new(simulator, probing_depth),
+                Mutex::new(SizedCache::with_size(cache_size)),
+            ))
+        }
+    }
+
     async fn cached_detection(&self, token: Address) -> Option<Strategy> {
         let (detector, cache) = self.detector.as_ref()?;
         tracing::trace!(?token, "attempting to auto-detect");

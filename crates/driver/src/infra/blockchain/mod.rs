@@ -4,7 +4,10 @@ use {
     chain::Chain,
     ethcontract::errors::ExecutionError,
     ethrpc::{Web3, block_stream::CurrentBlockWatcher},
-    shared::account_balances::{BalanceSimulator, SimulationError},
+    shared::{
+        account_balances::{BalanceSimulator, SimulationError},
+        price_estimation::trade_verifier::balance_overrides::BalanceOverrides,
+    },
     std::{fmt, sync::Arc, time::Duration},
     thiserror::Error,
     url::Url,
@@ -112,11 +115,14 @@ impl Ethereum {
         )
         .await
         .expect("could not initialize important smart contracts");
+        // TODO make this configurable
+        let balance_overrides = Arc::new(BalanceOverrides::new(Arc::new(web3.clone()), 60, 100));
         let balance_simulator = BalanceSimulator::new(
             contracts.settlement().clone(),
             contracts.balance_helper().clone(),
             contracts.vault_relayer().0,
             Some(contracts.vault().address()),
+            balance_overrides,
         );
 
         Self {

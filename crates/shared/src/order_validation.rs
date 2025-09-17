@@ -1,6 +1,6 @@
 use {
     crate::{
-        account_balances::{self, BalanceFetching, TransferSimulationError},
+        account_balances::{self, BalanceFetching, Flashloan, TransferSimulationError},
         bad_token::{BadTokenDetecting, TokenQuality},
         code_fetching::CodeFetching,
         order_quoting::{
@@ -14,32 +14,15 @@ use {
         signature_validator::{SignatureCheck, SignatureValidating, SignatureValidationError},
         trade_finding,
     },
-    anyhow::{Result, anyhow},
+    anyhow::{anyhow, Result},
     app_data::{AppDataHash, Hook, Hooks, ValidatedAppData, Validator},
     async_trait::async_trait,
     contracts::{HooksTrampoline, WETH9},
     ethcontract::{Bytes, H160, H256, U256},
     model::{
-        DomainSeparator,
-        interaction::InteractionData,
-        order::{
-            AppdataFromMismatch,
-            BUY_ETH_ADDRESS,
-            BuyTokenDestination,
-            Interactions,
-            Order,
-            OrderClass,
-            OrderCreation,
-            OrderCreationAppData,
-            OrderData,
-            OrderKind,
-            OrderMetadata,
-            SellTokenSource,
-            VerificationError,
-        },
-        quote::{OrderQuoteSide, QuoteSigningScheme, SellAmount},
-        signature::{self, Signature, SigningScheme, hashed_eip712_message},
-        time,
+        interaction::InteractionData, order::{
+            AppdataFromMismatch, BuyTokenDestination, Interactions, Order, OrderClass, OrderCreation, OrderCreationAppData, OrderData, OrderKind, OrderMetadata, SellTokenSource, VerificationError, BUY_ETH_ADDRESS
+        }, quote::{OrderQuoteSide, QuoteSigningScheme, SellAmount}, signature::{self, hashed_eip712_message, Signature, SigningScheme}, time, DomainSeparator
     },
     std::{sync::Arc, time::Duration},
     tracing::instrument,
@@ -375,19 +358,6 @@ impl OrderValidator {
     ) -> Result<(), ValidationError> {
         let mut res = Ok(());
 
-        // Check if there's a flashloan hint that could provide the sell token
-        let has_flashloan_for_sell_token =
-            app_data
-                .inner
-                .protocol
-                .flashloan
-                .as_ref()
-                .is_some_and(|flashloan| {
-                    flashloan.borrower.is_none_or(|b| b == owner)
-                        && flashloan.token == order.data().sell_token
-                        && flashloan.amount >= order.data().sell_amount
-                });
-
         // Simulate transferring a small token balance into the settlement contract.
         // As a spam protection we require that an account must have at least 1 atom
         // of the sell_token. However, some tokens (e.g. rebasing tokens) actually run
@@ -405,6 +375,13 @@ impl OrderValidator {
                         owner,
                         source: order.data().sell_token_balance,
                         interactions: app_data.interactions.pre.clone(),
+                        flashloan: app_data.inner.protocol.flashloan.as_ref().map(|f| {
+                            Flashloan {
+                                token: f.token,
+                                receiver: f.borrower.unwrap_or(owner),
+                                amount: f.amount,
+                            }
+                        })
                     },
                     transfer_amount,
                 )
@@ -415,16 +392,13 @@ impl OrderValidator {
                     TransferSimulationError::InsufficientAllowance
                     | TransferSimulationError::InsufficientBalance
                     | TransferSimulationError::TransferFailed,
-                ) if order.signature == Signature::PreSign || has_flashloan_for_sell_token => {
-                    // We have exceptions for:
-                    // 1. Pre-sign orders where they do not require sufficient balance or allowance.
-                    //    The idea is that this allows smart contracts to place orders bundled with
-                    //    other transactions that either produce the required balance or set the
-                    //    allowance. This would, for example, allow a Gnosis Safe to bundle the
-                    //    pre-signature transaction with a WETH wrap and WETH approval to the vault
-                    //    relayer contract.
-                    // 2. Orders with flashloan hints that match the sell token, since the flashloan
-                    //    will provide the necessary tokens during settlement.
+                ) if order.signature == Signature::PreSign => {
+                    // Pre-sign orders do not require sufficient balance or allowance.
+                    // The idea is that this allows smart contracts to place orders bundled with
+                    // other transactions that either produce the required balance or set the
+                    // allowance. This would, for example, allow a Gnosis Safe to bundle the
+                    // pre-signature transaction with a WETH wrap and WETH approval to the vault
+                    // relayer contract.
                     return Ok(());
                 }
                 Err(err) => match err {

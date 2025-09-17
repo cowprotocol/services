@@ -18,7 +18,10 @@ use {
     error::Error,
     futures::Future,
     observe::distributed_tracing::tracing_axum::{make_span, record_trace_id},
-    shared::account_balances::{self, BalanceSimulator},
+    shared::{
+        account_balances::{self, BalanceSimulator},
+        price_estimation::trade_verifier::balance_overrides::BalanceOverrides,
+    },
     std::{net::SocketAddr, sync::Arc},
     tokio::sync::oneshot,
 };
@@ -53,6 +56,11 @@ impl Api {
             tower_http::limit::RequestBodyLimitLayer::new(REQUEST_BODY_LIMIT),
         ));
 
+        let balance_overrides = Arc::new(BalanceOverrides::new(
+            Arc::new(self.eth.web3().clone()),
+            60,
+            100,
+        ));
         let balance_fetcher = account_balances::cached(
             self.eth.web3(),
             BalanceSimulator::new(
@@ -60,6 +68,7 @@ impl Api {
                 self.eth.contracts().balance_helper().clone(),
                 self.eth.contracts().vault_relayer().0,
                 Some(self.eth.contracts().vault().address()),
+                balance_overrides,
             ),
             self.eth.current_block().clone(),
         );

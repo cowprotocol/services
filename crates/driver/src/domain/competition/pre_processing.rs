@@ -1,5 +1,5 @@
 use {
-    super::{Auction, Order, order},
+    super::{order, Auction, Order},
     crate::{
         domain::{competition::order::SellTokenBalance, eth, liquidity},
         infra::{self, api::routes::solve::dto::SolveRequest, observe::metrics, tokens},
@@ -8,8 +8,7 @@ use {
     anyhow::{Context, Result},
     chrono::Utc,
     futures::{
-        FutureExt,
-        future::{BoxFuture, join_all},
+        future::{join_all, BoxFuture}, FutureExt
     },
     itertools::Itertools,
     model::{
@@ -18,7 +17,7 @@ use {
         signature::Signature,
     },
     shared::{
-        account_balances::{BalanceFetching, Query},
+        account_balances::{BalanceFetching, Flashloan, Query},
         signature_validator::SignatureValidating,
     },
     std::{collections::HashMap, future::Future, sync::Arc},
@@ -242,8 +241,10 @@ impl Utilities {
             .map(|((trader, token, source), mut orders)| {
                 let first = orders.next().expect("group contains at least 1 order");
                 let mut others = orders;
-                let all_interactions_equal =
-                    others.all(|order| order.pre_interactions == first.pre_interactions);
+                let all_interactions_equal = others.all(|order| {
+                    order.pre_interactions == first.pre_interactions
+                        && order.app_data.flashloan() == first.app_data.flashloan()
+                });
                 Query {
                     owner: trader.0.0,
                     token: token.0.0,
@@ -265,6 +266,15 @@ impl Utilities {
                     } else {
                         Vec::default()
                     },
+                    flashloan: if all_interactions_equal {
+                        first.app_data.flashloan().map(|f| Flashloan {
+                            token: f.token,
+                            receiver: f.borrower.unwrap_or(trader.0.0),
+                            amount: f.amount,
+                        })
+                    } else {
+                        None
+                    }
                 }
             })
             .collect::<Vec<_>>();

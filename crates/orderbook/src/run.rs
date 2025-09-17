@@ -168,6 +168,7 @@ pub async fn run(args: Arguments) {
     let domain_separator = DomainSeparator::new(chain_id, settlement_contract.address());
     let postgres = Postgres::try_new(args.db_url.as_str()).expect("failed to create database");
 
+    let balance_overrides = args.price_estimation.balance_overrides.init(Arc::new(web3.clone()));
     let balance_fetcher = account_balances::fetcher(
         &web3,
         BalanceSimulator::new(
@@ -175,6 +176,7 @@ pub async fn run(args: Arguments) {
             balances_contract.clone(),
             vault_relayer,
             vault.as_ref().map(|contract| contract.address()),
+            balance_overrides,
         ),
     );
 

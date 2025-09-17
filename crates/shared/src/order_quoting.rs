@@ -572,6 +572,7 @@ impl OrderQuoter {
                     call_data: i.data.clone(),
                 })
                 .collect(),
+            flashloan: None,
         };
         let mut balances = self.balance_fetcher.get_balances(&[query]).await;
         balances.pop().context("missing balance result")?

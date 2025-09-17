@@ -130,6 +130,7 @@ impl BalanceSimulator {
         self.vault
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn simulate<F, Fut>(
         &self,
         owner: H160,
@@ -177,7 +178,7 @@ impl BalanceSimulator {
 
         let web3 = self.settlement.raw_instance().web3();
         let response = delegate_call.call_with_state_overrides(
-            &web3.transport(),
+            web3.transport(),
             state_overrides,
         )
             .await?;

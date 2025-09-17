@@ -213,6 +213,7 @@ mod tests {
             token: H160([token; 20]),
             source: SellTokenSource::Erc20,
             interactions: vec![],
+            flashloan: None,
         }
     }
 

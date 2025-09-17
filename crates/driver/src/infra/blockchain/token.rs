@@ -1,9 +1,5 @@
 use {
-    super::{Error, Ethereum},
-    crate::domain::{competition::order, eth},
-    futures::TryFutureExt,
-    tap::TapFallible,
-    web3::types::CallRequest,
+    super::{Error, Ethereum}, crate::domain::{competition::order, eth}, futures::TryFutureExt, shared::account_balances::Flashloan, tap::TapFallible, web3::types::CallRequest
 };
 
 /// An ERC-20 token.
@@ -114,8 +110,8 @@ impl Erc20 {
         trader: eth::Address,
         source: order::SellTokenBalance,
         interactions: &[eth::Interaction],
-        flashloan: Option<&Flashloan>,
         disable_access_lists: bool,
+        flashloan: Option<&Flashloan>,
     ) -> Result<eth::TokenAmount, Error> {
         let interactions: Vec<_> = interactions.iter().map(|i| i.clone().into()).collect();
         let shared::account_balances::Simulation {

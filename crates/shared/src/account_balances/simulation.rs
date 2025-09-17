@@ -163,11 +163,20 @@ impl BalanceFetching for Balances {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, ethrpc::Web3, model::order::SellTokenSource, std::sync::Arc};
+    use {super::*, crate::price_estimation::trade_verifier::balance_overrides::{BalanceOverrideRequest, BalanceOverriding}, ethrpc::{extensions::StateOverride, Web3}, model::order::SellTokenSource, std::sync::Arc};
 
     #[ignore]
     #[tokio::test]
     async fn test_for_user() {
+        struct DummyBalanceOverriding;
+
+        #[async_trait::async_trait]
+        impl BalanceOverriding for DummyBalanceOverriding {
+            async fn state_override(&self, _request: BalanceOverrideRequest) -> Option<StateOverride> {
+                None
+            }
+        }
+
         let web3 = Web3::new_from_env();
         let settlement =
             contracts::GPv2Settlement::at(&web3, addr!("9008d19f58aabd9ed0d60971565aa8510560ab41"));
@@ -182,7 +191,7 @@ mod tests {
                 balances,
                 addr!("C92E8bdf79f0507f65a392b0ab4667716BFE0110"),
                 Some(addr!("BA12222222228d8Ba445958a75a0704d566BF2C8")),
-                Arc::new(BalanceOverriding),
+                Arc::new(DummyBalanceOverriding),
             ),
         );
 

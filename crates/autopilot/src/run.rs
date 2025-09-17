@@ -250,6 +250,10 @@ pub async fn run(args: Arguments) {
         },
     );
 
+    let balance_overrides = args
+        .price_estimation
+        .balance_overrides
+        .init(Arc::new(web3.clone()));
     let balance_fetcher = account_balances::cached(
         &web3,
         BalanceSimulator::new(
@@ -257,6 +261,7 @@ pub async fn run(args: Arguments) {
             eth.contracts().balances().clone(),
             vault_relayer,
             vault.as_ref().map(|contract| contract.address()),
+            balance_overrides,
         ),
         eth.current_block().clone(),
     );
