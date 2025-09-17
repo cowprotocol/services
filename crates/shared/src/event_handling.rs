@@ -150,21 +150,19 @@ where
         let provider = self.0.provider().clone();
         let base_filter = self.0.filter();
 
-        let stream = futures::stream::iter((start..=end).step_by(CHUNK_SIZE))
-            .then(move |chunk_start| {
+        let stream = futures::stream::iter(start..=end)
+            .chunks(CHUNK_SIZE)
+            .then(move |range| {
                 let provider = provider.clone();
-                let chunk_end = std::cmp::min(chunk_start + (CHUNK_SIZE as u64) - 1, end);
-                let filter = base_filter
-                    .clone()
-                    .from_block(chunk_start)
-                    .to_block(chunk_end);
+                let (start, end) = match range.first().zip(range.last()) {
+                    Some((&s, &e)) => (s, e),
+                    None => return Ok(Vec::new()),
+                };
+                let filter = base_filter.clone().from_block(start).to_block(end);
 
                 async move {
                     let logs = provider.get_logs(&filter).await.with_context(|| {
-                        format!(
-                            "unable to get logs for blocks range {}-{}",
-                            chunk_start, chunk_end
-                        )
+                        format!("unable to get logs for blocks range {}-{}", start, end)
                     })?;
 
                     let events: Vec<Result<_>> = logs
