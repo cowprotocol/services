@@ -132,10 +132,7 @@ pub async fn run(args: Arguments) {
 
     let chain = Chain::try_from(chain_id).expect("incorrect chain ID");
 
-    let balance_overrides = args
-        .price_estimation
-        .balance_overrides
-        .init(Arc::new(web3.clone()));
+    let balance_overrides = args.price_estimation.balance_overrides.init(web3.clone());
     let signature_validator = signature_validator::validator(
         &web3,
         signature_validator::Contracts {

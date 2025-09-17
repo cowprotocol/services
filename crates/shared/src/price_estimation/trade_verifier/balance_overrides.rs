@@ -2,10 +2,9 @@ mod detector;
 
 use {
     self::detector::{DetectionError, Detector},
-    crate::code_simulation::CodeSimulating,
     anyhow::Context as _,
     cached::{Cached, SizedCache},
-    ethcontract::{state_overrides::StateOverride, Address, H256, U256},
+    ethcontract::{Address, H256, U256, state_overrides::StateOverride},
     maplit::hashmap,
     std::{
         collections::HashMap,
@@ -50,13 +49,13 @@ pub struct Arguments {
 
 impl Arguments {
     /// Creates a balance overrides instance from the current configuration.
-    pub fn init(&self, simulator: Arc<dyn CodeSimulating>) -> Arc<dyn BalanceOverriding> {
+    pub fn init(&self, web3: ethrpc::Web3) -> Arc<dyn BalanceOverriding> {
         Arc::new(BalanceOverrides {
             hardcoded: self.quote_token_balance_overrides.0.clone(),
             detector: self.quote_autodetect_token_balance_overrides.then(|| {
                 (
                     Detector::new(
-                        simulator,
+                        web3,
                         self.quote_autodetect_token_balance_overrides_probing_depth,
                     ),
                     Mutex::new(SizedCache::with_size(
@@ -238,11 +237,11 @@ pub struct BalanceOverrides {
 }
 
 impl BalanceOverrides {
-    pub fn new(simulator: Arc<dyn CodeSimulating>, probing_depth: u8, cache_size: usize) -> Self {
+    pub fn new(web3: ethrpc::Web3, probing_depth: u8, cache_size: usize) -> Self {
         Self {
             hardcoded: Default::default(),
             detector: Some((
-                Detector::new(simulator, probing_depth),
+                Detector::new(web3, probing_depth),
                 Mutex::new(SizedCache::with_size(cache_size)),
             )),
         }

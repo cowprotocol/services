@@ -116,7 +116,7 @@ impl Ethereum {
         .await
         .expect("could not initialize important smart contracts");
         // TODO make this configurable
-        let balance_overrides = Arc::new(BalanceOverrides::new(Arc::new(web3.clone()), 60, 100));
+        let balance_overrides = Arc::new(BalanceOverrides::new(web3.clone(), 60, 100));
         let balance_simulator = BalanceSimulator::new(
             contracts.settlement().clone(),
             contracts.balance_helper().clone(),

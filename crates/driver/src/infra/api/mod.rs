@@ -56,11 +56,7 @@ impl Api {
             tower_http::limit::RequestBodyLimitLayer::new(REQUEST_BODY_LIMIT),
         ));
 
-        let balance_overrides = Arc::new(BalanceOverrides::new(
-            Arc::new(self.eth.web3().clone()),
-            60,
-            100,
-        ));
+        let balance_overrides = Arc::new(BalanceOverrides::new(self.eth.web3().clone(), 60, 100));
         let balance_fetcher = account_balances::cached(
             self.eth.web3(),
             BalanceSimulator::new(

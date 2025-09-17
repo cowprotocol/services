@@ -5,6 +5,7 @@ use {
     super::{Estimate, Verification},
     crate::{
         code_fetching::CodeFetching,
+        code_simulation::CodeSimulating,
         encoded_settlement::{EncodedSettlement, EncodedTrade, encode_trade},
         interaction::EncodedInteraction,
         trade_finding::{
@@ -24,8 +25,8 @@ use {
         dummy_contract,
         support::{AnyoneAuthenticator, Solver, Spardose, Trader},
     },
-    ethcontract::{Bytes, H160, U256, state_overrides::StateOverride},
-    ethrpc::Web3,
+    ethcontract::{Bytes, H160, U256, state_overrides::StateOverride, tokens::Tokenize},
+    ethrpc::{Web3, block_stream::CurrentBlockWatcher},
     model::{
         DomainSeparator,
         order::{BUY_ETH_ADDRESS, OrderData, OrderKind},
@@ -41,6 +42,7 @@ use {
         sync::Arc,
     },
     tracing::instrument,
+    web3::{ethabi::Token, types::CallRequest},
 };
 
 #[async_trait::async_trait]
@@ -60,8 +62,10 @@ pub trait TradeVerifying: Send + Sync + 'static {
 #[derive(Clone)]
 pub struct TradeVerifier {
     web3: Web3,
+    simulator: Arc<dyn CodeSimulating>,
     code_fetcher: Arc<dyn CodeFetching>,
     balance_overrides: Arc<dyn BalanceOverriding>,
+    block_stream: CurrentBlockWatcher,
     settlement: GPv2Settlement,
     native_token: H160,
     quote_inaccuracy_limit: BigRational,
@@ -70,14 +74,17 @@ pub struct TradeVerifier {
 }
 
 impl TradeVerifier {
+    const DEFAULT_GAS: u64 = 12_000_000;
     const SPARDOSE: H160 = addr!("0000000000000000000000000000000000020000");
     const TRADER_IMPL: H160 = addr!("0000000000000000000000000000000000010000");
 
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
         web3: Web3,
+        simulator: Arc<dyn CodeSimulating>,
         code_fetcher: Arc<dyn CodeFetching>,
         balance_overrides: Arc<dyn BalanceOverriding>,
+        block_stream: CurrentBlockWatcher,
         settlement: H160,
         native_token: H160,
         quote_inaccuracy_limit: BigDecimal,
@@ -87,8 +94,10 @@ impl TradeVerifier {
         let domain_separator =
             DomainSeparator(settlement_contract.domain_separator().call().await?.0);
         Ok(Self {
+            simulator,
             code_fetcher,
             balance_overrides,
+            block_stream,
             settlement: settlement_contract,
             native_token,
             quote_inaccuracy_limit: big_decimal_to_big_rational(&quote_inaccuracy_limit),
@@ -157,7 +166,7 @@ impl TradeVerifier {
             )
             .tx;
 
-        let output = solver
+        let simulation = solver
             .methods()
             .swap(
                 self.settlement.address(),
@@ -165,7 +174,23 @@ impl TradeVerifier {
                 verification.receiver,
                 Bytes(settlement.data.unwrap().0),
             )
-            .call_with_state_overrides(&overrides)
+            .tx;
+
+        let block = *self.block_stream.borrow();
+
+        let call = CallRequest {
+            // Initiate tx as solver so gas doesn't get deducted from user's ETH.
+            from: Some(solver.address()),
+            to: Some(solver.address()),
+            data: simulation.data,
+            gas: Some(Self::DEFAULT_GAS.into()),
+            gas_price: Some(block.gas_price),
+            ..Default::default()
+        };
+
+        let output = self
+            .simulator
+            .simulate(call, overrides, Some(block.number))
             .await
             .context("failed to simulate quote")
             .map_err(Error::SimulationFailed);
@@ -201,8 +226,7 @@ impl TradeVerifier {
             }
         };
 
-        let (gas_used, balances) = output?;
-        let mut summary = SettleOutput::decode(gas_used, balances, query.kind, &tokens)
+        let mut summary = SettleOutput::decode(&output?, query.kind, &tokens)
             .context("could not decode simulation output")
             .map_err(Error::SimulationFailed)?;
 
@@ -712,7 +736,15 @@ struct SettleOutput {
 }
 
 impl SettleOutput {
-    fn decode(gas_used: U256, balances: Vec<U256>, kind: OrderKind, tokens_vec: &[H160]) -> Result<Self> {
+    fn decode(output: &[u8], kind: OrderKind, tokens_vec: &[H160]) -> Result<Self> {
+        let function = Solver::raw_contract()
+            .interface
+            .abi
+            .function("swap")
+            .unwrap();
+        let tokens = function.decode_output(output).context("decode")?;
+        let (gas_used, balances): (U256, Vec<U256>) = Tokenize::from_token(Token::Tuple(tokens))?;
+
         // The balances are stored in the following order:
         // [...tokens_before, user_balance_before, user_balance_after, ...tokens_after]
         let mut i = 0;

@@ -1,9 +1,16 @@
 //! Module containing Ethereum RPC extension methods.
 
 use {
-    ethcontract::state_overrides::{StateOverride, StateOverrides}, serde::Deserialize, std::collections::HashMap, web3::{
-        self, api::Namespace, helpers::{self, CallFuture}, types::{BlockId, Bytes, CallRequest, H160, H256}, Transport
-    }
+    ethcontract::state_overrides::{StateOverride, StateOverrides},
+    serde::Deserialize,
+    std::collections::HashMap,
+    web3::{
+        self,
+        Transport,
+        api::Namespace,
+        helpers::{self, CallFuture},
+        types::{BlockId, Bytes, CallRequest, H160, H256},
+    },
 };
 
 /// Web3 convenience extension trait.
