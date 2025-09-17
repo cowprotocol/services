@@ -82,11 +82,14 @@ impl UniV2BaselineSourceParameters {
                     pool_reading: PoolReadingStyle::Default,
                 });
             }
-            BS::SushiSwap => Some((
-                contracts::SushiSwapRouter::raw_contract(),
-                SUSHISWAP_INIT,
-                PoolReadingStyle::Default,
-            )),
+            BS::SushiSwap => {
+                return Some(Self {
+                    router: contracts::alloy::SushiSwapRouter::deployment_address(&chain_id)
+                        .map(IntoLegacy::into_legacy)?,
+                    init_code_digest: SUSHISWAP_INIT.into(),
+                    pool_reading: PoolReadingStyle::Default,
+                });
+            }
             BS::Swapr => Some((
                 contracts::SwaprRouter::raw_contract(),
                 SWAPR_INIT,
