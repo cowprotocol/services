@@ -344,6 +344,29 @@ crate::bindings!(
         BNB => (address!("0x10ED43C718714eb63d5aA57B78B54704E256024E"))
     }
 );
+crate::bindings!(
+    SushiSwapRouter,
+    // <https://docs.sushi.com/contracts/cpamm>
+    crate::deployments! {
+        // <https://etherscan.io/tx/0x4ff39eceee7ba9a63736eae38be69b10347975ff5fa4d9b85743a51e1c384094>
+        MAINNET => (address!("0xd9e1ce17f2641f24ae83637ab66a2cca9c378b9f")),
+        // <https://gnosisscan.io/tx/0x8b45ccbc2afd0132ef8b636064e0e745ff93b53942a56e320bb930666dd0fb18>
+        GNOSIS => (address!("0x1b02da8cb0d097eb8d57a175b88c7d8b47997506")),
+        // <https://arbiscan.io/tx/0x40b22402bcac46330149ac9848f8bddd02b0a1e79d4a71934655a634051be1a1>
+        ARBITRUM_ONE => (address!("0x1b02da8cb0d097eb8d57a175b88c7d8b47997506")),
+        // <https://basescan.org/tx/0xbb673c483292e03d202e95a023048b8bda459bf12402e7688f7e10be8b4dc67d>
+        BASE => (address!("0x6bded42c6da8fbf0d2ba55b2fa120c5e0c8d7891")),
+        // <https://snowtrace.io/tx/0x8185bcd3cc8544f8767e5270c4d7eb1e9b170fc0532fc4f0d7e7a1018e1f13ba>
+        AVALANCHE => (address!("0x1b02da8cb0d097eb8d57a175b88c7d8b47997506")),
+        // <https://bscscan.com/tx/0xf22f827ae797390f6e478b0a11aa6e92d6da527f47130ef70d313ff0e0b2a83f>
+        BNB => (address!("0x1b02da8cb0d097eb8d57a175b88c7d8b47997506")),
+        // <https://optimistic.etherscan.io/tx/0x88be6cc83f5bfccb8196db351866bac5c99ab8f7b451ea9975319ba05c3bf8f7>
+        OPTIMISM => (address!("0x2abf469074dc0b54d793850807e6eb5faf2625b1")),
+        // <https://polygonscan.com/tx/0x3dcf8fc780ae6fbe40b1ae57927a8fb405f54cbe89d0021a781a100d2086e5ba>
+        POLYGON => (address!("0x1b02da8cb0d097eb8d57a175b88c7d8b47997506")),
+        // Not available on Lens
+    }
+);
 
 pub use alloy::providers::DynProvider as Provider;
 
@@ -526,6 +549,19 @@ mod tests {
 
         for chain_id in &[MAINNET, ARBITRUM_ONE, BASE, BNB] {
             assert!(PancakeRouter::deployment_address(chain_id).is_some());
+        }
+
+        for chain_id in &[
+            MAINNET,
+            GNOSIS,
+            ARBITRUM_ONE,
+            BASE,
+            AVALANCHE,
+            BNB,
+            OPTIMISM,
+            POLYGON,
+        ] {
+            assert!(SushiSwapRouter::deployment_address(chain_id).is_some());
         }
     }
 

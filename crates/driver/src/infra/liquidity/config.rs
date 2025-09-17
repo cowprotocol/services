@@ -9,7 +9,7 @@ use {
     ethrpc::alloy::conversions::IntoLegacy,
     hex_literal::hex,
     reqwest::Url,
-    shared::sources::uniswap_v2::{BAOSWAP_INIT, HONEYSWAP_INIT},
+    shared::sources::uniswap_v2::{BAOSWAP_INIT, HONEYSWAP_INIT, SUSHISWAP_INIT},
     std::{collections::HashSet, time::Duration},
 };
 
@@ -68,9 +68,10 @@ impl UniswapV2 {
     /// Returns the liquidity configuration for SushiSwap.
     pub fn sushi_swap(chain: Chain) -> Option<Self> {
         Some(Self {
-            router: deployment_address(contracts::SushiSwapRouter::raw_contract(), chain)?,
-            pool_code: hex!("e18a34eb0e04b04f7a0ac29a6e80748dca96319b42c54d679cb821dca90c6303")
-                .into(),
+            router: ContractAddress::from(
+                contracts::alloy::SushiSwapRouter::deployment_address(&chain.id())?.into_legacy(),
+            ),
+            pool_code: SUSHISWAP_INIT.into(),
             missing_pool_cache_time: Duration::from_secs(60 * 60),
         })
     }
