@@ -20,14 +20,17 @@ jobs:
           profile: minimal
           toolchain: nightly
           components: rustfmt
+      - uses: extractions/setup-just@e33e0265a09d6d736e2ee1e0eb685ef1de4669ff
+        with:
+          just-version: 1.39.0
       - run: |
           rustup --version
           rustup show
           cargo --version
           cargo +nightly fmt --version
           cargo clippy --version
-      - run: cargo +nightly fmt --all -- --check
-      - run: cargo clippy --locked --workspace --all-features --all-targets -- -D warnings
+      - run: just fmt --check
+      - run: just clippy 
   
   trivy:
     runs-on: ubuntu-latest
@@ -66,9 +69,12 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
+      - uses: extractions/setup-just@e33e0265a09d6d736e2ee1e0eb685ef1de4669ff
+        with:
+          just-version: 1.39.0
       - run: rustup toolchain install stable --profile minimal
       - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
-      - run: cargo test --doc
+      - run: just test-doc
 
   unit-tests:
     timeout-minutes: 60
@@ -85,8 +91,11 @@ jobs:
       - run: rustup toolchain install stable --profile minimal
       - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
       - uses: taiki-e/install-action@e4767ccc6762bc4347ef2275c75ea77f5f36e27f # nextest
+      - uses: extractions/setup-just@e33e0265a09d6d736e2ee1e0eb685ef1de4669ff
+        with:
+          just-version: 1.39.0
       - run: cargo build --tests
-      - run: cargo nextest run
+      - run: just test-unit
 
   test-db:
     timeout-minutes: 60
@@ -114,7 +123,10 @@ jobs:
         with:
           file: docker-compose.yaml
           up-opts: migrations --abort-on-container-failure
-      - run: cargo nextest run postgres -p orderbook -p database -p autopilot --test-threads 1 --run-ignored ignored-only
+      - uses: extractions/setup-just@e33e0265a09d6d736e2ee1e0eb685ef1de4669ff
+        with:
+          just-version: 1.39.0
+      - run: just test-db
 
   test-local-node:
     timeout-minutes: 60
@@ -144,7 +156,10 @@ jobs:
         with:
           file: docker-compose.yaml
           up-opts: migrations --abort-on-container-failure
-      - run: cargo nextest run -p e2e local_node --test-threads 1 --failure-output final --run-ignored ignored-only
+      - uses: extractions/setup-just@e33e0265a09d6d736e2ee1e0eb685ef1de4669ff
+        with:
+          just-version: 1.39.0
+      - run: just test-e2e-local
 
   test-forked-node:
     # Do not run this job on forks since some secrets are required for it.
@@ -184,7 +199,10 @@ jobs:
         with:
           file: docker-compose.yaml
           up-opts: migrations --abort-on-container-failure
-      - run: cargo nextest run -p e2e forked_node --test-threads 1 --run-ignored ignored-only --failure-output final
+      - uses: extractions/setup-just@e33e0265a09d6d736e2ee1e0eb685ef1de4669ff
+        with:
+          just-version: 1.39.0
+      - run: just test-e2e-forked
 
   test-driver:
     timeout-minutes: 60
@@ -203,10 +221,13 @@ jobs:
       - uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
       - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
       - uses: taiki-e/install-action@e4767ccc6762bc4347ef2275c75ea77f5f36e27f # nextest
+      - uses: extractions/setup-just@e33e0265a09d6d736e2ee1e0eb685ef1de4669ff
+        with:
+          just-version: 1.39.0
       # Build the driver's tests.
       - run: cargo build -p driver --tests
       # Don't spawn any docker containers. The driver's tests will spawn anvil itself.
-      - run: RUST_MIN_STACK=3145728 cargo nextest run -p driver --test-threads 1 --run-ignored ignored-only
+      - run: just test-driver
 
   openapi:
     timeout-minutes: 60
@@ -255,12 +276,15 @@ jobs:
         with:
           file: docker-compose.yaml
           up-opts: migrations --abort-on-container-failure
+      - uses: extractions/setup-just@e33e0265a09d6d736e2ee1e0eb685ef1de4669ff
+        with:
+          just-version: 1.39.0
       - name: Run test in a loop
         run: |
           attempt=1
           while true; do
             echo "Running test attempt #$attempt"
-            if ! cargo nextest run -p e2e forked_node_mainnet_repay_debt_with_collateral_of_safe --test-threads 1 --failure-output final --run-ignored ignored-only; then
+            if ! just test-e2e forked_node_mainnet_repay_debt_with_collateral_of_safe; then
               exit 1
             fi
             attempt=$((attempt+1))

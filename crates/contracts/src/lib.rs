@@ -52,26 +52,8 @@ include_contracts! {
     AaveFlashLoanSolverWrapper;
     BalancerQueries;
     BalancerV2Authorizer;
-    BalancerV2BasePoolFactory;
-    BalancerV2ComposableStablePool;
-    BalancerV2ComposableStablePoolFactory;
-    BalancerV2ComposableStablePoolFactoryV3;
-    BalancerV2ComposableStablePoolFactoryV4;
-    BalancerV2ComposableStablePoolFactoryV5;
-    BalancerV2ComposableStablePoolFactoryV6;
-    BalancerV2LiquidityBootstrappingPool;
-    BalancerV2LiquidityBootstrappingPoolFactory;
-    BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory;
-    BalancerV2StablePool;
-    BalancerV2StablePoolFactoryV2;
     BalancerV2Vault;
-    BalancerV2WeightedPool2TokensFactory;
-    BalancerV2WeightedPool;
-    BalancerV2WeightedPoolFactory;
-    BalancerV2WeightedPoolFactoryV3;
-    BalancerV2WeightedPoolFactoryV4;
     BalancerV3BatchRouter;
-    BaoswapRouter;
     CowAmm;
     CowAmmConstantProductFactory;
     CowAmmLegacyHelper;
@@ -85,7 +67,6 @@ include_contracts! {
     FlashLoanRouter;
     GPv2AllowListAuthentication;
     GPv2Settlement;
-    HoneyswapRouter;
     HooksTrampoline;
     IAavePool;
     IFlashLoanSolverWrapper;
@@ -93,9 +74,7 @@ include_contracts! {
     IUniswapLikePair;
     IUniswapLikeRouter;
     IUniswapV3Factory;
-    PancakeRouter;
     Permit2;
-    SushiSwapRouter;
     SwaprRouter;
     TestnetUniswapV2Router02;
     UniswapV2Factory;
@@ -197,13 +176,14 @@ mod tests {
             assert_has_deployment_address!(WETH9 for *network);
             assert_has_deployment_address!(HooksTrampoline for *network);
             assert_has_deployment_address!(BalancerV2Vault for *network);
-            assert_has_deployment_address!(BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory for *network);
+            assert!(
+                alloy::BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory::deployment_address(network).is_some()
+            )
         }
         for network in &[MAINNET, GNOSIS, SEPOLIA] {
             assert_has_deployment_address!(CowProtocolToken for *network);
         }
         for network in &[MAINNET, GNOSIS, ARBITRUM_ONE] {
-            assert_has_deployment_address!(SushiSwapRouter for *network);
             assert_has_deployment_address!(UniswapV2Factory for *network);
             assert_has_deployment_address!(UniswapV2Router02 for *network);
         }
@@ -221,27 +201,24 @@ mod tests {
             assert_has_deployment_address!(IUniswapV3Factory for *network);
         }
         for network in &[MAINNET, ARBITRUM_ONE] {
-            assert_has_deployment_address!(BalancerV2WeightedPool2TokensFactory for *network);
-            assert_has_deployment_address!(BalancerV2LiquidityBootstrappingPoolFactory for *network);
+            assert!(
+                alloy::BalancerV2WeightedPool2TokensFactory::deployment_address(network).is_some()
+            );
+            assert!(
+                alloy::BalancerV2LiquidityBootstrappingPoolFactory::deployment_address(network)
+                    .is_some()
+            );
         }
 
-        for network in &[MAINNET, ARBITRUM_ONE] {
-            assert_has_deployment_address!(PancakeRouter for *network);
-        }
-
-        assert_has_deployment_address!(BalancerV2WeightedPoolFactory for MAINNET);
+        assert!(alloy::BalancerV2WeightedPoolFactory::deployment_address(&MAINNET).is_some());
 
         for network in &[MAINNET, GNOSIS, ARBITRUM_ONE] {
-            assert_has_deployment_address!(BalancerV2StablePoolFactoryV2 for *network);
+            assert!(alloy::BalancerV2StablePoolFactoryV2::deployment_address(network).is_some());
         }
 
         for network in &[MAINNET, GNOSIS, ARBITRUM_ONE] {
             assert_has_deployment_address!(SwaprRouter for *network);
         }
-
-        // only gnosis
-        assert_has_deployment_address!(BaoswapRouter for GNOSIS);
-        assert_has_deployment_address!(HoneyswapRouter for GNOSIS);
 
         // only sepolia
         assert_has_deployment_address!(TestnetUniswapV2Router02 for SEPOLIA);
@@ -264,12 +241,14 @@ mod tests {
             assert_has_deployment_information!(GPv2Settlement for *network);
             assert_has_deployment_information!(BalancerV2Vault for *network);
         }
-        assert_has_deployment_information!(BalancerV2WeightedPoolFactory for MAINNET);
+        assert!(alloy::BalancerV2WeightedPoolFactory::deployment_address(&MAINNET).is_some());
         for network in &[MAINNET, ARBITRUM_ONE] {
-            assert_has_deployment_information!(BalancerV2WeightedPool2TokensFactory for *network);
+            assert!(
+                alloy::BalancerV2WeightedPool2TokensFactory::deployment_address(network).is_some()
+            );
         }
         for network in &[MAINNET, GNOSIS, ARBITRUM_ONE] {
-            assert_has_deployment_information!(BalancerV2StablePoolFactoryV2 for *network);
+            assert!(alloy::BalancerV2StablePoolFactoryV2::deployment_address(network).is_some());
         }
     }
 

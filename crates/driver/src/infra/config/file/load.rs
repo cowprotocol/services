@@ -285,23 +285,11 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                         reinit_interval,
                     } => liquidity::config::BalancerV2 {
                         vault: vault.into(),
-                        weighted: weighted
-                            .into_iter()
-                            .map(eth::ContractAddress::from)
-                            .collect(),
-                        weighted_v3plus: weighted_v3plus
-                            .into_iter()
-                            .map(eth::ContractAddress::from)
-                            .collect(),
-                        stable: stable.into_iter().map(eth::ContractAddress::from).collect(),
-                        liquidity_bootstrapping: liquidity_bootstrapping
-                            .into_iter()
-                            .map(eth::ContractAddress::from)
-                            .collect(),
-                        composable_stable: composable_stable
-                            .into_iter()
-                            .map(eth::ContractAddress::from)
-                            .collect(),
+                        weighted,
+                        weighted_v3plus,
+                        stable,
+                        liquidity_bootstrapping,
+                        composable_stable,
                         pool_deny_list: pool_deny_list.clone(),
                         graph_url,
                         reinit_interval,
