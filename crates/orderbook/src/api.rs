@@ -24,6 +24,7 @@ mod cancel_order;
 mod cancel_orders;
 mod get_app_data;
 mod get_auction;
+mod get_heap;
 mod get_native_price;
 mod get_order_by_uid;
 mod get_order_status;
@@ -130,6 +131,10 @@ pub fn handle_all_routes(
         (
             "v1/get_token_metadata",
             box_filter(get_token_metadata::get_token_metadata(database)),
+        ),
+        (
+            "v1/get_heap",
+            box_filter(get_heap::get_heap()),
         ),
     ];
 
