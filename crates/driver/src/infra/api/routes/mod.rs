@@ -3,6 +3,7 @@ mod healthz;
 mod info;
 mod metrics;
 mod notify;
+pub mod pprof;
 mod quote;
 mod reveal;
 mod settle;

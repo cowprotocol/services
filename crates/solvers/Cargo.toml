@@ -41,6 +41,8 @@ toml = { workspace = true }
 tower = { workspace = true }
 tower-http = { workspace = true, features = ["limit", "trace"] }
 web3 = { workspace = true }
+tikv-jemallocator = { version = "0.6.0", features = ["profiling", "unprefixed_malloc_on_supported_platforms"] }
+jemalloc_pprof = { version = "0.8.1", features = ["symbolize"] }
 
 # TODO Once solvers are ported and E2E tests set up, slowly migrate code and
 # remove/re-evaluate these dependencies.

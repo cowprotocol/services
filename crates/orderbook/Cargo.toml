@@ -54,6 +54,8 @@ tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "
 tracing = { workspace = true }
 url = { workspace = true }
 warp = { workspace = true }
+tikv-jemallocator = { version = "0.6.0", features = ["profiling", "unprefixed_malloc_on_supported_platforms"] }
+jemalloc_pprof = { version = "0.8.1", features = ["symbolize"] }
 
 [dev-dependencies]
 mockall = { workspace = true }
