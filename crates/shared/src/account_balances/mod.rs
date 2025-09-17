@@ -3,9 +3,13 @@ use {
         BalanceOverrideRequest,
         BalanceOverriding,
     },
-    alloy::sol_types::{sol_data, SolType},
-    ethcontract::{contract::MethodBuilder, dyns::DynTransport, Bytes},
-    ethrpc::{block_stream::CurrentBlockWatcher, extensions::{CallBuilderExt, StateOverrides}, Web3},
+    alloy::sol_types::{SolType, sol_data},
+    ethcontract::{Bytes, contract::MethodBuilder, dyns::DynTransport},
+    ethrpc::{
+        Web3,
+        block_stream::CurrentBlockWatcher,
+        extensions::{CallBuilderExt, StateOverrides},
+    },
     model::{
         interaction::InteractionData,
         order::{Order, SellTokenSource},
@@ -145,7 +149,8 @@ impl BalanceSimulator {
         F: FnOnce(MethodBuilder<DynTransport, Bytes<Vec<u8>>>) -> Fut,
         Fut: Future<Output = MethodBuilder<DynTransport, Bytes<Vec<u8>>>>,
     {
-        let state_overrides = prepare_state_overrides(flashloan, self.balance_overrides.as_ref()).await;
+        let state_overrides =
+            prepare_state_overrides(flashloan, self.balance_overrides.as_ref()).await;
 
         // We simulate the balances from the Settlement contract's context. This
         // allows us to check:
@@ -177,10 +182,8 @@ impl BalanceSimulator {
         let delegate_call = add_access_lists(delegate_call).await;
 
         let web3 = self.settlement.raw_instance().web3();
-        let response = delegate_call.call_with_state_overrides(
-            web3.transport(),
-            state_overrides,
-        )
+        let response = delegate_call
+            .call_with_state_overrides(web3.transport(), state_overrides)
             .await?;
         let (token_balance, allowance, effective_balance, can_transfer) =
             <(
@@ -214,16 +217,22 @@ impl BalanceSimulator {
     }
 }
 
-async fn prepare_state_overrides(flashloan: Option<&Flashloan>, helper: &dyn BalanceOverriding) -> StateOverrides {
+async fn prepare_state_overrides(
+    flashloan: Option<&Flashloan>,
+    helper: &dyn BalanceOverriding,
+) -> StateOverrides {
     let Some(flashloan) = flashloan else {
         return Default::default();
     };
 
-    let Some(overrides) = helper.state_override(BalanceOverrideRequest{
-        token: flashloan.token,
-        amount: flashloan.amount,
-        holder: flashloan.receiver,
-    }).await else {
+    let Some(overrides) = helper
+        .state_override(BalanceOverrideRequest {
+            token: flashloan.token,
+            amount: flashloan.amount,
+            holder: flashloan.receiver,
+        })
+        .await
+    else {
         return Default::default();
     };
 

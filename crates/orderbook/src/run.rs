@@ -132,6 +132,10 @@ pub async fn run(args: Arguments) {
 
     let chain = Chain::try_from(chain_id).expect("incorrect chain ID");
 
+    let balance_overrides = args
+        .price_estimation
+        .balance_overrides
+        .init(Arc::new(web3.clone()));
     let signature_validator = signature_validator::validator(
         &web3,
         signature_validator::Contracts {
@@ -139,6 +143,7 @@ pub async fn run(args: Arguments) {
             signatures: signatures_contract,
             vault_relayer,
         },
+        balance_overrides.clone(),
     );
 
     let vault = match args.shared.balancer_v2_vault_address {
@@ -168,7 +173,6 @@ pub async fn run(args: Arguments) {
     let domain_separator = DomainSeparator::new(chain_id, settlement_contract.address());
     let postgres = Postgres::try_new(args.db_url.as_str()).expect("failed to create database");
 
-    let balance_overrides = args.price_estimation.balance_overrides.init(Arc::new(web3.clone()));
     let balance_fetcher = account_balances::fetcher(
         &web3,
         BalanceSimulator::new(

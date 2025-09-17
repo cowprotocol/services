@@ -1,5 +1,5 @@
 use {
-    super::{order, Auction, Order},
+    super::{Auction, Order, order},
     crate::{
         domain::{competition::order::SellTokenBalance, eth, liquidity},
         infra::{self, api::routes::solve::dto::SolveRequest, observe::metrics, tokens},
@@ -8,7 +8,8 @@ use {
     anyhow::{Context, Result},
     chrono::Utc,
     futures::{
-        future::{join_all, BoxFuture}, FutureExt
+        FutureExt,
+        future::{BoxFuture, join_all},
     },
     itertools::Itertools,
     model::{
@@ -18,6 +19,7 @@ use {
     },
     shared::{
         account_balances::{BalanceFetching, Flashloan, Query},
+        price_estimation::trade_verifier::balance_overrides::BalanceOverriding,
         signature_validator::SignatureValidating,
     },
     std::{collections::HashMap, future::Future, sync::Arc},
@@ -117,6 +119,7 @@ impl DataAggregator {
         liquidity_fetcher: infra::liquidity::Fetcher,
         tokens: tokens::Fetcher,
         balance_fetcher: Arc<dyn BalanceFetching>,
+        balance_overrides: Arc<dyn BalanceOverriding>,
     ) -> Self {
         let signature_validator = shared::signature_validator::validator(
             eth.web3(),
@@ -125,6 +128,7 @@ impl DataAggregator {
                 vault_relayer: eth.contracts().vault_relayer().0,
                 signatures: eth.contracts().signatures().clone(),
             },
+            balance_overrides,
         );
 
         Self {
@@ -274,7 +278,7 @@ impl Utilities {
                         })
                     } else {
                         None
-                    }
+                    },
                 }
             })
             .collect::<Vec<_>>();

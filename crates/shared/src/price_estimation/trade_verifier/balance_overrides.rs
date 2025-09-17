@@ -245,7 +245,7 @@ impl BalanceOverrides {
             detector: Some((
                 Detector::new(simulator, probing_depth),
                 Mutex::new(SizedCache::with_size(cache_size)),
-            ))
+            )),
         }
     }
 

@@ -5,11 +5,24 @@
 
 use {
     super::{SignatureCheck, SignatureValidating, SignatureValidationError},
-    anyhow::Result,
+    crate::{
+        account_balances::Flashloan,
+        price_estimation::trade_verifier::balance_overrides::{
+            BalanceOverrideRequest,
+            BalanceOverriding,
+        },
+    },
+    alloy::{dyn_abi::SolType, sol_types::sol_data},
+    anyhow::{Context, Result},
     contracts::{ERC1271SignatureValidator, errors::EthcontractErrorType},
     ethcontract::Bytes,
-    ethrpc::Web3,
+    ethrpc::{
+        Web3,
+        alloy::conversions::IntoLegacy,
+        extensions::{CallBuilderExt, StateOverrides},
+    },
     primitive_types::{H160, U256},
+    std::sync::Arc,
     tracing::instrument,
 };
 
@@ -18,6 +31,7 @@ pub struct Validator {
     settlement: contracts::GPv2Settlement,
     vault_relayer: H160,
     web3: Web3,
+    balance_overrides: Arc<dyn BalanceOverriding>,
 }
 
 impl Validator {
@@ -29,6 +43,7 @@ impl Validator {
         settlement: contracts::GPv2Settlement,
         signatures: contracts::support::Signatures,
         vault_relayer: H160,
+        balance_overrides: Arc<dyn BalanceOverriding>,
     ) -> Self {
         let web3 = ethrpc::instrumented::instrument_with_label(web3, "signatureValidation".into());
         Self {
@@ -36,12 +51,13 @@ impl Validator {
             settlement,
             vault_relayer,
             web3: web3.clone(),
+            balance_overrides,
         }
     }
 
-    /// Simulate isValidSignature for the cases in which the order does not have
-    /// pre-interactions
-    async fn simulate_without_pre_interactions(
+    /// Simulate isValidSignature for the cases in which the order does not
+    /// require any setup in the form of pre-hooks or flashloans.
+    async fn simulate_without_setup(
         &self,
         check: SignatureCheck,
     ) -> Result<(), SignatureValidationError> {
@@ -69,6 +85,9 @@ impl Validator {
         &self,
         check: SignatureCheck,
     ) -> Result<Simulation, SignatureValidationError> {
+        let state_overrides =
+            prepare_state_overrides(check.flashloan.as_ref(), self.balance_overrides.as_ref())
+                .await;
         // We simulate the signature verification from the Settlement contract's
         // context. This allows us to check:
         // 1. How the pre-interactions would behave as part of the settlement
@@ -85,21 +104,43 @@ impl Validator {
                 .map(|i| (i.target, i.value, Bytes(i.call_data)))
                 .collect(),
         );
-        let gas_cost_call = self
+        let response_bytes = self
             .settlement
             .simulate_delegatecall(
                 self.signatures.address(),
                 Bytes(validate_call.tx.data.unwrap_or_default().0),
             )
-            .from(crate::SIMULATION_ACCOUNT.clone());
-        let result = gas_cost_call
-            .tx
-            .estimate_gas()
-            .await
-            .map_err(|_| SignatureValidationError::Invalid);
+            .from(crate::SIMULATION_ACCOUNT.clone())
+            .call_with_state_overrides(self.web3.transport(), state_overrides)
+            .await?;
+        let gas_used = <sol_data::Uint<256>>::abi_decode(&response_bytes.0)
+            .context("could not decode signature check result")?
+            .into_legacy();
 
-        Ok(Simulation { gas_used: result? })
+        Ok(Simulation { gas_used })
     }
+}
+
+async fn prepare_state_overrides(
+    flashloan: Option<&Flashloan>,
+    helper: &dyn BalanceOverriding,
+) -> StateOverrides {
+    let Some(flashloan) = flashloan else {
+        return Default::default();
+    };
+
+    let Some(overrides) = helper
+        .state_override(BalanceOverrideRequest {
+            token: flashloan.token,
+            amount: flashloan.amount,
+            holder: flashloan.receiver,
+        })
+        .await
+    else {
+        return Default::default();
+    };
+
+    [(flashloan.token, overrides)].into_iter().collect()
 }
 
 #[async_trait::async_trait]
@@ -109,8 +150,8 @@ impl SignatureValidating for Validator {
         &self,
         check: SignatureCheck,
     ) -> Result<(), SignatureValidationError> {
-        if check.interactions.is_empty() {
-            self.simulate_without_pre_interactions(check).await
+        if check.interactions.is_empty() && check.flashloan.is_none() {
+            self.simulate_without_setup(check).await
         } else {
             self.simulate(check).await.map(|_| ())
         }

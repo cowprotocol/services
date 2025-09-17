@@ -163,7 +163,16 @@ impl BalanceFetching for Balances {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::price_estimation::trade_verifier::balance_overrides::{BalanceOverrideRequest, BalanceOverriding}, ethrpc::{extensions::StateOverride, Web3}, model::order::SellTokenSource, std::sync::Arc};
+    use {
+        super::*,
+        crate::price_estimation::trade_verifier::balance_overrides::{
+            BalanceOverrideRequest,
+            BalanceOverriding,
+        },
+        ethrpc::{Web3, extensions::StateOverride},
+        model::order::SellTokenSource,
+        std::sync::Arc,
+    };
 
     #[ignore]
     #[tokio::test]
@@ -172,7 +181,10 @@ mod tests {
 
         #[async_trait::async_trait]
         impl BalanceOverriding for DummyBalanceOverriding {
-            async fn state_override(&self, _request: BalanceOverrideRequest) -> Option<StateOverride> {
+            async fn state_override(
+                &self,
+                _request: BalanceOverrideRequest,
+            ) -> Option<StateOverride> {
                 None
             }
         }

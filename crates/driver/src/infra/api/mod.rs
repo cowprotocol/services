@@ -68,7 +68,7 @@ impl Api {
                 self.eth.contracts().balance_helper().clone(),
                 self.eth.contracts().vault_relayer().0,
                 Some(self.eth.contracts().vault().address()),
-                balance_overrides,
+                balance_overrides.clone(),
             ),
             self.eth.current_block().clone(),
         );
@@ -80,6 +80,7 @@ impl Api {
             self.liquidity.clone(),
             tokens.clone(),
             balance_fetcher,
+            balance_overrides,
         ));
 
         let order_sorting_strategies =

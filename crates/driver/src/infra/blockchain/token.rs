@@ -1,5 +1,10 @@
 use {
-    super::{Error, Ethereum}, crate::domain::{competition::order, eth}, futures::TryFutureExt, shared::account_balances::Flashloan, tap::TapFallible, web3::types::CallRequest
+    super::{Error, Ethereum},
+    crate::domain::{competition::order, eth},
+    futures::TryFutureExt,
+    shared::account_balances::Flashloan,
+    tap::TapFallible,
+    web3::types::CallRequest,
 };
 
 /// An ERC-20 token.
