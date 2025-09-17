@@ -118,10 +118,8 @@ impl<'a> PriceEstimatorFactory<'a> {
 
         let verifier = TradeVerifier::new(
             web3,
-            simulator,
             components.code_fetcher.clone(),
             balance_overrides,
-            network.block_stream.clone(),
             network.settlement,
             network.native_token,
             args.quote_inaccuracy_limit.clone(),

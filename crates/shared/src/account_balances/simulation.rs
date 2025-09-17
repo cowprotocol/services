@@ -169,7 +169,8 @@ mod tests {
             BalanceOverrideRequest,
             BalanceOverriding,
         },
-        ethrpc::{Web3, extensions::StateOverride},
+        ethcontract::state_overrides::StateOverride,
+        ethrpc::Web3,
         model::order::SellTokenSource,
         std::sync::Arc,
     };

@@ -4,12 +4,13 @@ use {
         BalanceOverriding,
     },
     alloy::sol_types::{SolType, sol_data},
-    ethcontract::{Bytes, contract::MethodBuilder, dyns::DynTransport},
-    ethrpc::{
-        Web3,
-        block_stream::CurrentBlockWatcher,
-        extensions::{CallBuilderExt, StateOverrides},
+    ethcontract::{
+        Bytes,
+        contract::MethodBuilder,
+        dyns::DynTransport,
+        state_overrides::StateOverrides,
     },
+    ethrpc::{Web3, block_stream::CurrentBlockWatcher},
     model::{interaction::InteractionData, order::SellTokenSource},
     primitive_types::{H160, U256},
     std::sync::Arc,
@@ -165,9 +166,8 @@ impl BalanceSimulator {
 
         let delegate_call = add_access_lists(delegate_call).await;
 
-        let web3 = self.settlement.raw_instance().web3();
         let response = delegate_call
-            .call_with_state_overrides(web3.transport(), state_overrides)
+            .call_with_state_overrides(&state_overrides)
             .await?;
         let (token_balance, allowance, effective_balance, can_transfer) =
             <(

@@ -15,12 +15,8 @@ use {
     alloy::{dyn_abi::SolType, sol_types::sol_data},
     anyhow::{Context, Result},
     contracts::{ERC1271SignatureValidator, errors::EthcontractErrorType},
-    ethcontract::Bytes,
-    ethrpc::{
-        Web3,
-        alloy::conversions::IntoLegacy,
-        extensions::{CallBuilderExt, StateOverrides},
-    },
+    ethcontract::{Bytes, state_overrides::StateOverrides},
+    ethrpc::{Web3, alloy::conversions::IntoLegacy},
     primitive_types::{H160, U256},
     std::sync::Arc,
     tracing::instrument,
@@ -114,9 +110,7 @@ impl Validator {
 
         tracing::info!(?check, tx = ?call.tx, ?state_overrides, "signature simulation tx");
 
-        let response_bytes = call
-            .call_with_state_overrides(self.web3.transport(), state_overrides)
-            .await?;
+        let response_bytes = call.call_with_state_overrides(&state_overrides).await?;
         tracing::info!(response = hex::encode(&response_bytes.0));
         let gas_used = <sol_data::Uint<256>>::abi_decode(&response_bytes.0)
             .context("could not decode signature check result")?

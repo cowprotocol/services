@@ -2,8 +2,7 @@ use {
     super::Strategy,
     crate::code_simulation::{CodeSimulating, SimulationError},
     contracts::{ERC20, dummy_contract},
-    ethcontract::{Address, H256, U256},
-    ethrpc::extensions::StateOverride,
+    ethcontract::{Address, H256, U256, state_overrides::StateOverride},
     maplit::hashmap,
     std::{
         collections::HashMap,
@@ -100,6 +99,7 @@ impl Detector {
     /// Returns an `Err` if it cannot detect the strategy or an internal
     /// simulation fails.
     pub async fn detect(&self, token: Address) -> Result<Strategy, DetectionError> {
+        tracing::error!("do we get here?!");
         let token = dummy_contract!(ERC20, token);
         let call = CallRequest {
             to: Some(token.address()),
@@ -114,6 +114,7 @@ impl Detector {
         };
 
         let output = self.simulator.simulate(call, overrides, None).await?;
+        tracing::error!(?output);
         let balance = (output.len() == 32)
             .then(|| U256::from_big_endian(&output))
             .ok_or(DetectionError::Decode)?;
