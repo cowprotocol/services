@@ -1,6 +1,6 @@
 use {
     bigdecimal::{BigDecimal, Zero},
-    e2e::setup::*,
+    e2e::setup::{eth, *},
     ethcontract::{H160, U256},
     ethrpc::{
         Web3,
@@ -95,10 +95,7 @@ async fn standard_verified_quote(web3: Web3) {
     token.mint(trader.address(), to_wei(1)).await;
 
     token
-        .approve(
-            onchain.contracts().allowance.into_alloy(),
-            to_wei(1).into_alloy(),
-        )
+        .approve(onchain.contracts().allowance.into_alloy(), eth(1))
         .from(trader.address().into_alloy())
         .send_and_watch()
         .await

@@ -4,7 +4,11 @@ use {
     contracts::ERC20,
     database::byte_array::ByteArray,
     driver::domain::eth::NonZeroU256,
-    e2e::{nodes::forked_node::ForkedNodeApi, setup::*, tx},
+    e2e::{
+        nodes::forked_node::ForkedNodeApi,
+        setup::{eth, *},
+        tx,
+    },
     ethcontract::{H160, prelude::U256},
     ethrpc::alloy::{
         CallBuilderExt,
@@ -121,7 +125,7 @@ async fn single_limit_order_test(web3: Web3) {
     token_a
         .approve(
             onchain.contracts().uniswap_v2_router.address().into_alloy(),
-            to_wei(1000).into_alloy(),
+            eth(1000),
         )
         .from(solver.address().into_alloy())
         .send_and_watch()
@@ -131,7 +135,7 @@ async fn single_limit_order_test(web3: Web3) {
     token_b
         .approve(
             onchain.contracts().uniswap_v2_router.address().into_alloy(),
-            to_wei(1000).into_alloy(),
+            eth(1000),
         )
         .from(solver.address().into_alloy())
         .send_and_watch()
@@ -154,10 +158,7 @@ async fn single_limit_order_test(web3: Web3) {
     // Approve GPv2 for trading
 
     token_a
-        .approve(
-            onchain.contracts().allowance.into_alloy(),
-            to_wei(10).into_alloy(),
-        )
+        .approve(onchain.contracts().allowance.into_alloy(), eth(10))
         .from(trader_a.address().into_alloy())
         .send_and_watch()
         .await
@@ -207,7 +208,7 @@ async fn single_limit_order_test(web3: Web3) {
             .call()
             .await
             .unwrap();
-        balance_after.checked_sub(balance_before).unwrap() >= to_wei(5).into_alloy()
+        balance_after.checked_sub(balance_before).unwrap() >= eth(5)
     })
     .await
     .unwrap();
@@ -249,7 +250,7 @@ async fn two_limit_orders_test(web3: Web3) {
     token_a
         .approve(
             onchain.contracts().uniswap_v2_router.address().into_alloy(),
-            to_wei(1000).into_alloy(),
+            eth(1000),
         )
         .from(solver.address().into_alloy())
         .send_and_watch()
@@ -259,7 +260,7 @@ async fn two_limit_orders_test(web3: Web3) {
     token_b
         .approve(
             onchain.contracts().uniswap_v2_router.address().into_alloy(),
-            to_wei(1000).into_alloy(),
+            eth(1000),
         )
         .from(solver.address().into_alloy())
         .send_and_watch()
@@ -282,20 +283,14 @@ async fn two_limit_orders_test(web3: Web3) {
     // Approve GPv2 for trading
 
     token_a
-        .approve(
-            onchain.contracts().allowance.into_alloy(),
-            to_wei(10).into_alloy(),
-        )
+        .approve(onchain.contracts().allowance.into_alloy(), eth(10))
         .from(trader_a.address().into_alloy())
         .send_and_watch()
         .await
         .unwrap();
 
     token_b
-        .approve(
-            onchain.contracts().allowance.into_alloy(),
-            to_wei(10).into_alloy(),
-        )
+        .approve(onchain.contracts().allowance.into_alloy(), eth(10))
         .from(trader_b.address().into_alloy())
         .send_and_watch()
         .await
@@ -369,10 +364,8 @@ async fn two_limit_orders_test(web3: Web3) {
             .call()
             .await
             .unwrap();
-        let order_a_settled =
-            balance_after_a.saturating_sub(balance_before_a) >= to_wei(5).into_alloy();
-        let order_b_settled =
-            balance_after_b.saturating_sub(balance_before_b) >= to_wei(2).into_alloy();
+        let order_a_settled = balance_after_a.saturating_sub(balance_before_a) >= eth(5);
+        let order_b_settled = balance_after_b.saturating_sub(balance_before_b) >= eth(2);
         order_a_settled && order_b_settled
     })
     .await
@@ -409,20 +402,14 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
     // Approve GPv2 for trading
 
     token_a
-        .approve(
-            onchain.contracts().allowance.into_alloy(),
-            to_wei(100).into_alloy(),
-        )
+        .approve(onchain.contracts().allowance.into_alloy(), eth(100))
         .from(trader_a.address().into_alloy())
         .send_and_watch()
         .await
         .unwrap();
 
     token_b
-        .approve(
-            onchain.contracts().allowance.into_alloy(),
-            to_wei(100).into_alloy(),
-        )
+        .approve(onchain.contracts().allowance.into_alloy(), eth(100))
         .from(trader_b.address().into_alloy())
         .send_and_watch()
         .await
@@ -641,10 +628,7 @@ async fn too_many_limit_orders_test(web3: Web3) {
     // Approve GPv2 for trading
 
     token_a
-        .approve(
-            onchain.contracts().allowance.into_alloy(),
-            to_wei(101).into_alloy(),
-        )
+        .approve(onchain.contracts().allowance.into_alloy(), eth(101))
         .from(trader.address().into_alloy())
         .send_and_watch()
         .await
@@ -726,10 +710,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
     // Approve GPv2 for trading
 
     token
-        .approve(
-            onchain.contracts().allowance.into_alloy(),
-            to_wei(101).into_alloy(),
-        )
+        .approve(onchain.contracts().allowance.into_alloy(), eth(101))
         .from(trader.address().into_alloy())
         .send_and_watch()
         .await
@@ -1063,10 +1044,7 @@ async fn no_liquidity_limit_order(web3: Web3) {
     // Approve GPv2 for trading
 
     token_a
-        .approve(
-            onchain.contracts().allowance.into_alloy(),
-            to_wei(10).into_alloy(),
-        )
+        .approve(onchain.contracts().allowance.into_alloy(), eth(10))
         .from(trader_a.address().into_alloy())
         .send_and_watch()
         .await

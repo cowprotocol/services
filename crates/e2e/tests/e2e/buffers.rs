@@ -1,6 +1,6 @@
 use {
     ::alloy::primitives::U256,
-    e2e::setup::*,
+    e2e::setup::{eth, *},
     ethrpc::alloy::{
         CallBuilderExt,
         conversions::{IntoAlloy, IntoLegacy},
@@ -40,10 +40,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
     // Approve GPv2 for trading
 
     token_a
-        .approve(
-            onchain.contracts().allowance.into_alloy(),
-            to_wei(100).into_alloy(),
-        )
+        .approve(onchain.contracts().allowance.into_alloy(), eth(100))
         .from(trader.address().into_alloy())
         .send_and_watch()
         .await

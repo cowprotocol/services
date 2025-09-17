@@ -155,8 +155,10 @@ where
 pub(crate) const INDEX_NAME: &str = "onchain_orders";
 
 #[async_trait::async_trait]
-impl<T: Sync + Send + Clone, W: Sync + Send + Clone> EventStoring<EthContractEvent<ContractEvent>>
-    for OnchainOrderParser<T, W>
+impl<T, W> EventStoring<EthContractEvent<ContractEvent>> for OnchainOrderParser<T, W>
+where
+    T: Send + Sync + Clone,
+    W: Send + Sync + Clone,
 {
     async fn last_event_block(&self) -> Result<u64> {
         let _timer = DatabaseMetrics::get()
