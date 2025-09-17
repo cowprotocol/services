@@ -70,14 +70,14 @@ impl GasPriceEstimating for AlloyGasPriceEstimator {
 
 fn u128_to_f64(val: u128) -> Result<f64> {
     if val > 2u128.pow(f64::MANTISSA_DIGITS) {
-        anyhow::bail!(format!("could not convert u64 to f64: {val}"));
+        anyhow::bail!(format!("could not convert u128 to f64: {val}"));
     }
     Ok(val as f64)
 }
 
 fn u64_to_f64(val: u64) -> Result<f64> {
     if val > 2u64.pow(f64::MANTISSA_DIGITS) {
-        anyhow::bail!(format!("could not convert u128 to f64: {val}"));
+        anyhow::bail!(format!("could not convert u64 to f64: {val}"));
     }
     Ok(val as f64)
 }
