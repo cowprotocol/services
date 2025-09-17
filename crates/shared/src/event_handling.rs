@@ -165,21 +165,21 @@ where
                         chunk_start, chunk_end
                     ))?;
 
-                    let events: Result<Vec<_>> = logs
+                    let events: Vec<Result<_>> = logs
                         .into_iter()
                         .map(|log| {
-                            let event = T::Event::decode_log(&log.inner)
-                                .context(format!("unable to parse log: {:?}", log))?;
-                            Ok((event.data, log))
+                            T::Event::decode_log(&log.inner)
+                                .context(format!("unable to parse log: {:?}", log))
+                                .map(|event| (event.data, log))
                         })
                         .collect();
 
-                    events
+                    Ok(events)
                 }
             })
             .map(|chunk_result| {
                 futures::stream::iter(match chunk_result {
-                    Ok(events) => events.into_iter().map(Ok).collect::<Vec<_>>(),
+                    Ok(events) => events,
                     Err(e) => vec![Err(e)],
                 })
             })
