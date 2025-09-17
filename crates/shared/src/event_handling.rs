@@ -154,13 +154,13 @@ where
             .chunks(CHUNK_SIZE)
             .then(move |range| {
                 let provider = provider.clone();
-                let (start, end) = match range.first().zip(range.last()) {
-                    Some((&s, &e)) => (s, e),
-                    None => return Ok(Vec::new()),
-                };
-                let filter = base_filter.clone().from_block(start).to_block(end);
+                let filter = base_filter.clone();
 
                 async move {
+                    let Some((start, end)) = range.first().zip(range.last()) else {
+                        return Ok(Vec::new());
+                    };
+                    let filter = filter.from_block(*start).to_block(*end);
                     let logs = provider.get_logs(&filter).await.with_context(|| {
                         format!("unable to get logs for blocks range {}-{}", start, end)
                     })?;
@@ -938,28 +938,28 @@ mod tests {
                 H256::from_str(
                     "0xa21ba3de6ac42185aa2b21e37cd63ff1572b763adff7e828f86590df1d1be118",
                 )
-                .unwrap(),
+                    .unwrap(),
             ),
             (
                 15575560,
                 H256::from_str(
                     "0x5a737331194081e99b73d7a8b7a2ccff84e0aff39fa0e39aca0b660f3d6694c4",
                 )
-                .unwrap(),
+                    .unwrap(),
             ),
             (
                 15575561,
                 H256::from_str(
                     "0xe91ec1a5a795c0739d99a60ac1df37cdf90b6c75c8150ace1cbad5b21f473b75", //WRONG HASH!
                 )
-                .unwrap(),
+                    .unwrap(),
             ),
             (
                 15575562,
                 H256::from_str(
                     "0xac1ca15622f17c62004de1f746728d4051103d8b7e558d39fd9fcec4d3348937",
                 )
-                .unwrap(),
+                    .unwrap(),
             ),
         ];
         let event_handler = EventHandler::new(
