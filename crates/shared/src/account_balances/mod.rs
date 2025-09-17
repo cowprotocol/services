@@ -12,7 +12,7 @@ use {
     },
     model::{
         interaction::InteractionData,
-        order::{Order, SellTokenSource},
+        order::SellTokenSource,
     },
     primitive_types::{H160, U256},
     std::sync::Arc,
@@ -36,19 +36,6 @@ pub struct Flashloan {
     pub receiver: H160,
     pub token: H160,
     pub amount: U256,
-}
-
-impl Query {
-    pub fn from_order(o: &Order) -> Self {
-        Self {
-            owner: o.metadata.owner,
-            token: o.data.sell_token,
-            source: o.data.sell_token_balance,
-            interactions: o.interactions.pre.clone(),
-            // TODO get flashloan from appdata
-            flashloan: None,
-        }
-    }
 }
 
 #[derive(Debug)]
