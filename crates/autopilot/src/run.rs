@@ -159,12 +159,13 @@ pub async fn run(args: Arguments) {
         .await
         .unwrap();
 
-    let db_read = Postgres::new(
-        args.db_read_url.unwrap_or(args.db_write_url).as_str(),
-        args.insert_batch_size,
-    )
-    .await
-    .unwrap();
+    let db_read = match args.db_read_url {
+        Some(url) => Postgres::new(url.as_str(), args.insert_batch_size)
+            .await
+            .unwrap(),
+        None => db_write.clone(),
+    };
+
     crate::database::run_database_metrics_work(db_read.clone());
 
     let http_factory = HttpClientFactory::new(&args.http_client);
