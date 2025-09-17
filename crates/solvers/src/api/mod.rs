@@ -28,6 +28,7 @@ impl Api {
             ))
             .route("/metrics", axum::routing::get(routes::metrics))
             .route("/healthz", axum::routing::get(routes::healthz))
+            .route("/get_heap", axum::routing::get(routes::get_heap))
             .route("/solve", axum::routing::post(routes::solve))
             .layer(
                 tower::ServiceBuilder::new()
