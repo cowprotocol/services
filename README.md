@@ -63,15 +63,16 @@ You can read more about the services available and their respective ports in the
 ## Testing
 
 The CI (check [`.github/workflows/pull-request.yaml`](.github/workflows/pull-request.yaml)) runs
-[doc-tests](https://github.com/cowprotocol/services/tree/main/.github/workflows/pull-request.yaml#L71),
-[unit tests](https://github.com/cowprotocol/services/tree/main/.github/workflows/pull-request.yaml#L88-L89),
-[DB tests](https://github.com/cowprotocol/services/tree/main/.github/workflows/pull-request.yaml#L117),
-[E2E tests with a local node](https://github.com/cowprotocol/services/tree/main/.github/workflows/pull-request.yaml#L147),
-[E2E tests with a forked node](https://github.com/cowprotocol/services/tree/main/.github/workflows/pull-request.yaml#L187) and
-[driver tests](https://github.com/cowprotocol/services/tree/main/.github/workflows/pull-request.yaml#L206-L209) (and more).
-The CI system uses [cargo-nextest](https://nexte.st/) and therefor all tests are getting verified by it.
+- doc tests: `just test-doc`
+- unit tests: `just test-unit`
+- DB tests: `just test-db`
+- E2E tests with a local node: `just test-e2e-local`
+- E2E tests with a forked node: `just test-e2e-forked`
+- driver tests: `just test-driver`
+
+The CI system uses [cargo-nextest](https://nexte.st/) and therefore all tests are getting verified by it.
 `cargo-nextest` and `cargo test` handle global state slightly differently which can cause some tests to fail with `cargo test`.
-That's why it's recommended to run tests with `cargo nextest run`.
+That's why it's recommended to run tests with the provided `just` commands.
 
 ### Flaky Tests
 
