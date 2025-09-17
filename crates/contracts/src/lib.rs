@@ -83,7 +83,6 @@ include_contracts! {
     TestnetUniswapV2Router02;
     UniswapV2Factory;
     UniswapV2Router02;
-    UniswapV3Pool;
     UniswapV3QuoterV2;
     UniswapV3SwapRouterV2;
     WETH9;
