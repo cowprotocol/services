@@ -97,25 +97,31 @@ impl Validator {
             (self.settlement.address(), self.vault_relayer),
             check.signer,
             Bytes(check.hash),
-            Bytes(check.signature),
+            Bytes(check.signature.clone()),
             check
                 .interactions
-                .into_iter()
-                .map(|i| (i.target, i.value, Bytes(i.call_data)))
+                .iter()
+                .map(|i| (i.target, i.value, Bytes(i.call_data.clone())))
                 .collect(),
         );
-        let response_bytes = self
+        let call = self
             .settlement
             .simulate_delegatecall(
                 self.signatures.address(),
                 Bytes(validate_call.tx.data.unwrap_or_default().0),
             )
-            .from(crate::SIMULATION_ACCOUNT.clone())
+            .from(crate::SIMULATION_ACCOUNT.clone());
+
+        tracing::info!(?check, tx = ?call.tx, ?state_overrides, "signature simulation tx");
+
+        let response_bytes = call
             .call_with_state_overrides(self.web3.transport(), state_overrides)
             .await?;
+        tracing::info!(response = hex::encode(&response_bytes.0));
         let gas_used = <sol_data::Uint<256>>::abi_decode(&response_bytes.0)
             .context("could not decode signature check result")?
             .into_legacy();
+        tracing::info!(?gas_used);
 
         Ok(Simulation { gas_used })
     }

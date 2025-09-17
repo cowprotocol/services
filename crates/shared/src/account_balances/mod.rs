@@ -10,10 +10,7 @@ use {
         block_stream::CurrentBlockWatcher,
         extensions::{CallBuilderExt, StateOverrides},
     },
-    model::{
-        interaction::InteractionData,
-        order::SellTokenSource,
-    },
+    model::{interaction::InteractionData, order::SellTokenSource},
     primitive_types::{H160, U256},
     std::sync::Arc,
     thiserror::Error,
