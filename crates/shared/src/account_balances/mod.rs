@@ -1,7 +1,11 @@
 use {
-    alloy::sol_types::{SolType, sol_data},
-    ethcontract::{Bytes, contract::MethodBuilder, dyns::DynTransport},
-    ethrpc::{Web3, block_stream::CurrentBlockWatcher},
+    crate::price_estimation::trade_verifier::balance_overrides::{
+        BalanceOverrideRequest,
+        BalanceOverriding,
+    },
+    alloy::sol_types::{sol_data, SolType},
+    ethcontract::{contract::MethodBuilder, dyns::DynTransport, Bytes},
+    ethrpc::{block_stream::CurrentBlockWatcher, extensions::{CallBuilderExt, StateOverrides}, Web3},
     model::{
         interaction::InteractionData,
         order::{Order, SellTokenSource},
@@ -20,6 +24,14 @@ pub struct Query {
     pub token: H160,
     pub source: SellTokenSource,
     pub interactions: Vec<InteractionData>,
+    pub flashloan: Option<Flashloan>,
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub struct Flashloan {
+    pub receiver: H160,
+    pub token: H160,
+    pub amount: U256,
 }
 
 impl Query {
@@ -29,6 +41,8 @@ impl Query {
             token: o.data.sell_token,
             source: o.data.sell_token_balance,
             interactions: o.interactions.pre.clone(),
+            // TODO get flashloan from appdata
+            flashloan: None,
         }
     }
 }
@@ -88,6 +102,7 @@ pub struct BalanceSimulator {
     balances: contracts::support::Balances,
     vault_relayer: H160,
     vault: H160,
+    balance_overrides: Arc<dyn BalanceOverriding>,
 }
 
 impl BalanceSimulator {
@@ -96,12 +111,14 @@ impl BalanceSimulator {
         balances: contracts::support::Balances,
         vault_relayer: H160,
         vault: Option<H160>,
+        balance_overrides: Arc<dyn BalanceOverriding>,
     ) -> Self {
         Self {
             settlement,
             vault_relayer,
             vault: vault.unwrap_or_default(),
             balances,
+            balance_overrides,
         }
     }
 
@@ -121,11 +138,14 @@ impl BalanceSimulator {
         interactions: &[InteractionData],
         amount: Option<U256>,
         add_access_lists: F,
+        flashloan: Option<&Flashloan>,
     ) -> Result<Simulation, SimulationError>
     where
         F: FnOnce(MethodBuilder<DynTransport, Bytes<Vec<u8>>>) -> Fut,
         Fut: Future<Output = MethodBuilder<DynTransport, Bytes<Vec<u8>>>>,
     {
+        let state_overrides = prepare_state_overrides(flashloan, self.balance_overrides.as_ref()).await;
+
         // We simulate the balances from the Settlement contract's context. This
         // allows us to check:
         // 1. How the pre-interactions would behave as part of the settlement
@@ -155,7 +175,12 @@ impl BalanceSimulator {
 
         let delegate_call = add_access_lists(delegate_call).await;
 
-        let response = delegate_call.call().await?;
+        let web3 = self.settlement.raw_instance().web3();
+        let response = delegate_call.call_with_state_overrides(
+            &web3.transport(),
+            state_overrides,
+        )
+            .await?;
         let (token_balance, allowance, effective_balance, can_transfer) =
             <(
                 sol_data::Uint<256>,
@@ -186,6 +211,22 @@ impl BalanceSimulator {
         );
         Ok(simulation)
     }
+}
+
+async fn prepare_state_overrides(flashloan: Option<&Flashloan>, helper: &dyn BalanceOverriding) -> StateOverrides {
+    let Some(flashloan) = flashloan else {
+        return Default::default();
+    };
+
+    let Some(overrides) = helper.state_override(BalanceOverrideRequest{
+        token: flashloan.token,
+        amount: flashloan.amount,
+        holder: flashloan.receiver,
+    }).await else {
+        return Default::default();
+    };
+
+    [(flashloan.token, overrides)].into_iter().collect()
 }
 
 #[derive(Debug)]
