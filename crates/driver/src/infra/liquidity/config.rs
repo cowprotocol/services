@@ -5,7 +5,6 @@ use {
     },
     alloy::primitives::Address,
     chain::Chain,
-    contracts::alloy::SwaprRouter,
     derive_more::Debug,
     ethrpc::alloy::conversions::IntoLegacy,
     hex_literal::hex,
@@ -146,7 +145,7 @@ impl Swapr {
     pub fn swapr(chain: Chain) -> Option<Self> {
         Some(Self {
             router: ContractAddress::from(
-                SwaprRouter::deployment_address(&chain.id())?.into_legacy(),
+                contracts::alloy::SwaprRouter::deployment_address(&chain.id())?.into_legacy(),
             ),
             pool_code: SWAPR_INIT.into(),
             missing_pool_cache_time: Duration::from_secs(60 * 60),
