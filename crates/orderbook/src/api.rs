@@ -132,10 +132,7 @@ pub fn handle_all_routes(
             "v1/get_token_metadata",
             box_filter(get_token_metadata::get_token_metadata(database)),
         ),
-        (
-            "v1/get_heap",
-            box_filter(get_heap::get_heap()),
-        ),
+        ("v1/get_heap", box_filter(get_heap::get_heap())),
     ];
 
     finalize_router(routes, "orderbook::api::request_summary")

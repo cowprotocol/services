@@ -1,7 +1,9 @@
 use {
     std::convert::Infallible,
     warp::{
-        Filter, Rejection, Reply,
+        Filter,
+        Rejection,
+        Reply,
         hyper::{Body, Response, StatusCode},
     },
 };
@@ -14,12 +16,10 @@ pub fn get_heap() -> impl Filter<Extract = (Box<dyn Reply>,), Error = Rejection>
                 Some(ctl) => ctl.lock().await,
                 None => {
                     tracing::error!("Profiling not enabled");
-                    return Result::<_, Infallible>::Ok(Box::new(
-                        warp::reply::with_status(
-                            "Profiling not enabled",
-                            StatusCode::INTERNAL_SERVER_ERROR,
-                        )
-                    ) as Box<dyn Reply>);
+                    return Result::<_, Infallible>::Ok(Box::new(warp::reply::with_status(
+                        "Profiling not enabled",
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                    )) as Box<dyn Reply>);
                 }
             };
 
@@ -27,12 +27,10 @@ pub fn get_heap() -> impl Filter<Extract = (Box<dyn Reply>,), Error = Rejection>
                 Ok(data) => data,
                 Err(err) => {
                     tracing::error!(?err, "Failed to generate heap profile");
-                    return Result::<_, Infallible>::Ok(Box::new(
-                        warp::reply::with_status(
-                            "Failed to generate heap profile",
-                            StatusCode::INTERNAL_SERVER_ERROR,
-                        )
-                    ) as Box<dyn Reply>);
+                    return Result::<_, Infallible>::Ok(Box::new(warp::reply::with_status(
+                        "Failed to generate heap profile",
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                    )) as Box<dyn Reply>);
                 }
             };
 
@@ -45,12 +43,10 @@ pub fn get_heap() -> impl Filter<Extract = (Box<dyn Reply>,), Error = Rejection>
                 Ok(response) => response,
                 Err(err) => {
                     tracing::error!(?err, "Failed to build heap profile response");
-                    return Result::<_, Infallible>::Ok(Box::new(
-                        warp::reply::with_status(
-                            "Failed to build response",
-                            StatusCode::INTERNAL_SERVER_ERROR,
-                        )
-                    ) as Box<dyn Reply>);
+                    return Result::<_, Infallible>::Ok(Box::new(warp::reply::with_status(
+                        "Failed to build response",
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                    )) as Box<dyn Reply>);
                 }
             };
 

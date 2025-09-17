@@ -1,6 +1,6 @@
 use axum::{
     body::Bytes,
-    http::{header, HeaderMap, StatusCode},
+    http::{HeaderMap, StatusCode, header},
     response::IntoResponse,
 };
 
@@ -17,7 +17,11 @@ pub async fn get_heap() -> impl IntoResponse {
         Ok(data) => data,
         Err(err) => {
             tracing::error!(?err, "Failed to generate heap profile");
-            return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to generate heap profile").into_response();
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to generate heap profile",
+            )
+                .into_response();
         }
     };
 
@@ -26,14 +30,22 @@ pub async fn get_heap() -> impl IntoResponse {
         headers.insert(header::CONTENT_TYPE, content_type);
     } else {
         tracing::error!("Failed to parse content type header");
-        return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to build response headers").into_response();
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Failed to build response headers",
+        )
+            .into_response();
     }
 
     if let Ok(content_disposition) = "attachment; filename=\"heap.pprof\"".parse() {
         headers.insert(header::CONTENT_DISPOSITION, content_disposition);
     } else {
         tracing::error!("Failed to parse content disposition header");
-        return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to build response headers").into_response();
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Failed to build response headers",
+        )
+            .into_response();
     }
 
     (headers, Bytes::from(pprof)).into_response()
