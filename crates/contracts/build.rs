@@ -589,7 +589,6 @@ fn main() {
     generate_contract("IUniswapLikePair");
     // EIP-1271 contract - SignatureValidator
     generate_contract("ERC1271SignatureValidator");
-    generate_contract("ISwaprPair");
     generate_contract_with_config("UniswapV2Factory", |builder| {
         // <https://docs.uniswap.org/contracts/v2/reference/smart-contracts/factory>
         builder

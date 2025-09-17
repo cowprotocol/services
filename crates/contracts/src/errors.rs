@@ -57,6 +57,11 @@ pub fn testing_contract_error() -> MethodError {
     }
 }
 
+/// Create an arbitrary alloy error. Useful for testing.
+pub fn testing_alloy_contract_error() -> alloy::contract::Error {
+    alloy::contract::Error::NotADeploymentTransaction
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
