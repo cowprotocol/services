@@ -145,7 +145,9 @@ impl Swapr {
     #[allow(clippy::self_named_constructors)]
     pub fn swapr(chain: Chain) -> Option<Self> {
         Some(Self {
-            router: SwaprRouter::deployment_address(&chain.id()),
+            router: ContractAddress::from(
+                SwaprRouter::deployment_address(&chain.id())?.into_legacy(),
+            ),
             pool_code: SWAPR_INIT.into(),
             missing_pool_cache_time: Duration::from_secs(60 * 60),
         })
