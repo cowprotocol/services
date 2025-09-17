@@ -74,7 +74,6 @@ include_contracts! {
     IUniswapLikePair;
     IUniswapLikeRouter;
     IUniswapV3Factory;
-    PancakeRouter;
     Permit2;
     SushiSwapRouter;
     SwaprRouter;
@@ -211,10 +210,6 @@ mod tests {
                 alloy::BalancerV2LiquidityBootstrappingPoolFactory::deployment_address(network)
                     .is_some()
             );
-        }
-
-        for network in &[MAINNET, ARBITRUM_ONE] {
-            assert_has_deployment_address!(PancakeRouter for *network);
         }
 
         assert!(alloy::BalancerV2WeightedPoolFactory::deployment_address(&MAINNET).is_some());
