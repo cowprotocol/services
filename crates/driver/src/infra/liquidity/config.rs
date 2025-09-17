@@ -1,6 +1,6 @@
 use {
     crate::{
-        domain::{eth, eth::ContractAddress},
+        domain::eth::{self, ContractAddress},
         infra::blockchain::contracts::deployment_address,
     },
     alloy::primitives::Address,
@@ -9,7 +9,7 @@ use {
     ethrpc::alloy::conversions::IntoLegacy,
     hex_literal::hex,
     reqwest::Url,
-    shared::sources::uniswap_v2::BAOSWAP_INIT,
+    shared::sources::uniswap_v2::{BAOSWAP_INIT, HONEYSWAP_INIT},
     std::{collections::HashSet, time::Duration},
 };
 
@@ -78,9 +78,10 @@ impl UniswapV2 {
     /// Returns the liquidity configuration for Honeyswap.
     pub fn honeyswap(chain: Chain) -> Option<Self> {
         Some(Self {
-            router: deployment_address(contracts::HoneyswapRouter::raw_contract(), chain)?,
-            pool_code: hex!("3f88503e8580ab941773b59034fb4b2a63e86dbc031b3633a925533ad3ed2b93")
-                .into(),
+            router: ContractAddress::from(
+                contracts::alloy::BaoswapRouter::deployment_address(&chain.id())?.into_legacy(),
+            ),
+            pool_code: HONEYSWAP_INIT.into(),
             missing_pool_cache_time: Duration::from_secs(60 * 60),
         })
     }
