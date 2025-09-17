@@ -160,16 +160,18 @@ where
                     .to_block(chunk_end);
 
                 async move {
-                    let logs = provider.get_logs(&filter).await.context(format!(
-                        "unable to get logs for blocks range {}-{}",
-                        chunk_start, chunk_end
-                    ))?;
+                    let logs = provider.get_logs(&filter).await.with_context(|| {
+                        format!(
+                            "unable to get logs for blocks range {}-{}",
+                            chunk_start, chunk_end
+                        )
+                    })?;
 
                     let events: Vec<Result<_>> = logs
                         .into_iter()
                         .map(|log| {
                             T::Event::decode_log(&log.inner)
-                                .context(format!("unable to parse log: {:?}", log))
+                                .with_context(|| format!("unable to parse log: {:?}", log))
                                 .map(|event| (event.data, log))
                         })
                         .collect();
@@ -177,13 +179,12 @@ where
                     Ok(events)
                 }
             })
-            .map(|chunk_result| {
+            .flat_map(|chunk_result| {
                 futures::stream::iter(match chunk_result {
                     Ok(events) => events,
                     Err(e) => vec![Err(e)],
                 })
-            })
-            .flatten();
+            });
 
         Ok(Box::pin(stream))
     }
