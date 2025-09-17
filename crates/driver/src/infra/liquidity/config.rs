@@ -5,6 +5,7 @@ use {
     },
     alloy::primitives::Address,
     chain::Chain,
+    contracts::alloy::SwaprRouter,
     derive_more::Debug,
     ethrpc::alloy::conversions::IntoLegacy,
     hex_literal::hex,
