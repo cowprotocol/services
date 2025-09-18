@@ -131,6 +131,7 @@ impl DataAggregator {
                 vault_relayer: eth.contracts().vault_relayer().0,
                 signatures: eth.contracts().signatures().clone(),
             },
+            eth.balance_overrider(),
         );
 
         Self {

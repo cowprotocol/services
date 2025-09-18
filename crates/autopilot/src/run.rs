@@ -241,6 +241,7 @@ pub async fn run(args: Arguments) {
 
     let chain = Chain::try_from(chain_id).expect("incorrect chain ID");
 
+    let balance_overrider = args.price_estimation.balance_overrides.init(web3.clone());
     let signature_validator = signature_validator::validator(
         &web3,
         signature_validator::Contracts {
@@ -248,9 +249,9 @@ pub async fn run(args: Arguments) {
             signatures: eth.contracts().signatures().clone(),
             vault_relayer,
         },
+        balance_overrider.clone(),
     );
 
-    let overrider = args.price_estimation.balance_overrides.init(web3.clone());
     let balance_fetcher = account_balances::cached(
         &web3,
         BalanceSimulator::new(
@@ -258,7 +259,7 @@ pub async fn run(args: Arguments) {
             eth.contracts().balances().clone(),
             vault_relayer,
             vault.as_ref().map(|contract| contract.address()),
-            overrider,
+            balance_overrider,
         ),
         eth.current_block().clone(),
     );
