@@ -300,6 +300,20 @@ impl BalanceOverriding for BalanceOverrides {
     }
 }
 
+/// Balance overrider that always returns `None`. That can be
+/// useful for testing.
+pub struct DummyOverrider;
+
+#[async_trait::async_trait]
+impl BalanceOverriding for DummyOverrider {
+    async fn state_override(
+        &self,
+        _request: BalanceOverrideRequest,
+    ) -> Option<(Address, StateOverride)> {
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use {super::*, hex_literal::hex};

@@ -175,6 +175,7 @@ pub async fn run(args: Arguments) {
             balances_contract.clone(),
             vault_relayer,
             vault.as_ref().map(|contract| contract.address()),
+            args.price_estimation.balance_overrides.init(web3.clone()),
         ),
     );
 

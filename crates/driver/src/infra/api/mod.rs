@@ -18,7 +18,10 @@ use {
     error::Error,
     futures::Future,
     observe::distributed_tracing::tracing_axum::{make_span, record_trace_id},
-    shared::account_balances::{self, BalanceSimulator},
+    shared::{
+        account_balances::{self, BalanceSimulator},
+        price_estimation::trade_verifier::balance_overrides::DummyOverrider,
+    },
     std::{net::SocketAddr, sync::Arc},
     tokio::sync::oneshot,
 };
@@ -60,6 +63,8 @@ impl Api {
                 self.eth.contracts().balance_helper().clone(),
                 self.eth.contracts().vault_relayer().0,
                 Some(self.eth.contracts().vault().address()),
+                // TODO: fix in follow up PR
+                Arc::new(DummyOverrider),
             ),
             self.eth.current_block().clone(),
         );
