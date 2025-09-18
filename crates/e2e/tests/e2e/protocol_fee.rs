@@ -644,13 +644,14 @@ async fn volume_fee_buy_order_test(web3: Web3) {
     // Create and fund Uniswap pool
     token_gno.mint(solver.address(), to_wei(1000)).await;
     token_dai.mint(solver.address(), to_wei(1000)).await;
-    tx!(
-        solver.account(),
-        onchain.contracts().uniswap_v2_factory.create_pair(
-            token_gno.address().into_legacy(),
-            token_dai.address().into_legacy()
-        )
-    );
+    onchain
+        .contracts()
+        .uniswap_v2_factory
+        .createPair(*token_gno.address(), *token_dai.address())
+        .from(solver.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     token_gno
         .approve(

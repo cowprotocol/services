@@ -114,13 +114,14 @@ async fn single_limit_order_test(web3: Web3) {
     // Create and fund Uniswap pool
     token_a.mint(solver.address(), to_wei(1000)).await;
     token_b.mint(solver.address(), to_wei(1000)).await;
-    tx!(
-        solver.account(),
-        onchain.contracts().uniswap_v2_factory.create_pair(
-            token_a.address().into_legacy(),
-            token_b.address().into_legacy()
-        )
-    );
+    onchain
+        .contracts()
+        .uniswap_v2_factory
+        .createPair(*token_a.address(), *token_b.address())
+        .from(solver.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     token_a
         .approve(
@@ -239,13 +240,14 @@ async fn two_limit_orders_test(web3: Web3) {
     token_b.mint(solver.address(), to_wei(1_000)).await;
 
     // Create and fund Uniswap pool
-    tx!(
-        solver.account(),
-        onchain.contracts().uniswap_v2_factory.create_pair(
-            token_a.address().into_legacy(),
-            token_b.address().into_legacy()
-        )
-    );
+    onchain
+        .contracts()
+        .uniswap_v2_factory
+        .createPair(*token_a.address(), *token_b.address())
+        .from(solver.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     token_a
         .approve(

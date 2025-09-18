@@ -11,12 +11,13 @@ use {
         GPv2AllowListAuthentication,
         GPv2Settlement,
         HooksTrampoline,
-        UniswapV2Factory,
         UniswapV2Router02,
         WETH9,
+        alloy::{InstanceExt, UniswapV2Factory},
         support::{Balances, Signatures},
     },
     ethcontract::{Address, H256, U256, errors::DeployError},
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::DomainSeparator,
     shared::ethrpc::Web3,
 };
@@ -34,7 +35,7 @@ pub struct Contracts {
     pub signatures: Signatures,
     pub gp_authenticator: GPv2AllowListAuthentication,
     pub balances: Balances,
-    pub uniswap_v2_factory: UniswapV2Factory,
+    pub uniswap_v2_factory: UniswapV2Factory::Instance,
     pub uniswap_v2_router: UniswapV2Router02,
     pub weth: WETH9,
     pub allowance: Address,
@@ -94,7 +95,9 @@ impl Contracts {
                 .expect("Couldn't parse network ID to u64"),
             balancer_vault: BalancerV2Vault::deployed(web3).await.unwrap(),
             gp_authenticator: GPv2AllowListAuthentication::deployed(web3).await.unwrap(),
-            uniswap_v2_factory: UniswapV2Factory::deployed(web3).await.unwrap(),
+            uniswap_v2_factory: UniswapV2Factory::Instance::deployed(&web3.alloy)
+                .await
+                .unwrap(),
             uniswap_v2_router: UniswapV2Router02::deployed(web3).await.unwrap(),
             weth: WETH9::deployed(web3).await.unwrap(),
             allowance: gp_settlement
@@ -147,10 +150,13 @@ impl Contracts {
             )
         );
 
-        let uniswap_v2_factory = deploy!(web3, UniswapV2Factory(accounts[0]));
+        let uniswap_v2_factory =
+            UniswapV2Factory::Instance::deploy(web3.alloy.clone(), accounts[0].into_alloy())
+                .await
+                .unwrap();
         let uniswap_v2_router = deploy!(
             web3,
-            UniswapV2Router02(uniswap_v2_factory.address(), weth.address())
+            UniswapV2Router02(uniswap_v2_factory.address().into_legacy(), weth.address())
         );
 
         let gp_authenticator = deploy!(web3, GPv2AllowListAuthentication);
