@@ -1,5 +1,6 @@
 use {
     crate::database::AuctionTransaction,
+    ::alloy::primitives::U256,
     bigdecimal::BigDecimal,
     contracts::ERC20,
     database::byte_array::ByteArray,
@@ -9,7 +10,7 @@ use {
         setup::{eth, *},
         tx,
     },
-    ethcontract::{H160, prelude::U256},
+    ethcontract::H160,
     ethrpc::alloy::{
         CallBuilderExt,
         conversions::{IntoAlloy, IntoLegacy},
@@ -124,37 +125,35 @@ async fn single_limit_order_test(web3: Web3) {
         .unwrap();
 
     token_a
-        .approve(
-            onchain.contracts().uniswap_v2_router.address().into_alloy(),
-            eth(1000),
-        )
+        .approve(*onchain.contracts().uniswap_v2_router.address(), eth(1000))
         .from(solver.address().into_alloy())
         .send_and_watch()
         .await
         .unwrap();
 
     token_b
-        .approve(
-            onchain.contracts().uniswap_v2_router.address().into_alloy(),
+        .approve(*onchain.contracts().uniswap_v2_router.address(), eth(1000))
+        .from(solver.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
+    onchain
+        .contracts()
+        .uniswap_v2_router
+        .addLiquidity(
+            *token_a.address(),
+            *token_b.address(),
             eth(1000),
+            eth(1000),
+            U256::ZERO,
+            U256::ZERO,
+            solver.address().into_alloy(),
+            U256::MAX,
         )
         .from(solver.address().into_alloy())
         .send_and_watch()
         .await
         .unwrap();
-    tx!(
-        solver.account(),
-        onchain.contracts().uniswap_v2_router.add_liquidity(
-            token_a.address().into_legacy(),
-            token_b.address().into_legacy(),
-            to_wei(1000),
-            to_wei(1000),
-            0_u64.into(),
-            0_u64.into(),
-            solver.address(),
-            U256::max_value(),
-        )
-    );
 
     // Approve GPv2 for trading
 
@@ -250,37 +249,35 @@ async fn two_limit_orders_test(web3: Web3) {
         .unwrap();
 
     token_a
-        .approve(
-            onchain.contracts().uniswap_v2_router.address().into_alloy(),
-            eth(1000),
-        )
+        .approve(*onchain.contracts().uniswap_v2_router.address(), eth(1000))
         .from(solver.address().into_alloy())
         .send_and_watch()
         .await
         .unwrap();
 
     token_b
-        .approve(
-            onchain.contracts().uniswap_v2_router.address().into_alloy(),
+        .approve(*onchain.contracts().uniswap_v2_router.address(), eth(1000))
+        .from(solver.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
+    onchain
+        .contracts()
+        .uniswap_v2_router
+        .addLiquidity(
+            *token_a.address(),
+            *token_b.address(),
             eth(1000),
+            eth(1000),
+            U256::ZERO,
+            U256::ZERO,
+            solver.address().into_alloy(),
+            U256::MAX,
         )
         .from(solver.address().into_alloy())
         .send_and_watch()
         .await
         .unwrap();
-    tx!(
-        solver.account(),
-        onchain.contracts().uniswap_v2_router.add_liquidity(
-            token_a.address().into_legacy(),
-            token_b.address().into_legacy(),
-            to_wei(1000),
-            to_wei(1000),
-            0_u64.into(),
-            0_u64.into(),
-            solver.address(),
-            U256::max_value(),
-        )
-    );
 
     // Approve GPv2 for trading
 
