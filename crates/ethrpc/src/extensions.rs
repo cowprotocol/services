@@ -1,16 +1,9 @@
 //! Module containing Ethereum RPC extension methods.
 
 use {
-    serde::{Deserialize, Serialize},
-    std::collections::HashMap,
-    tracing::{Instrument, instrument::Instrumented},
-    web3::{
-        self,
-        Transport,
-        api::Namespace,
-        helpers::{self, CallFuture},
-        types::{BlockId, Bytes, CallRequest, H160, H256, U64, U256},
-    },
+    ethcontract::state_overrides::StateOverrides, serde::Deserialize, tracing::{instrument::Instrumented, Instrument}, web3::{
+        self, api::Namespace, helpers::{self, CallFuture}, types::{BlockId, Bytes, CallRequest, H256}, Transport
+    }
 };
 
 /// Web3 convenience extension trait.
@@ -22,7 +15,7 @@ where
         &self,
         call: CallRequest,
         block: BlockId,
-        overrides: HashMap<H160, StateOverride>,
+        overrides: StateOverrides,
     ) -> Instrumented<CallFuture<Bytes, T::Out>>;
 }
 
@@ -46,36 +39,6 @@ where
         )
         .instrument(tracing::info_span!("eth_call"))
     }
-}
-
-/// State overrides.
-pub type StateOverrides = HashMap<H160, StateOverride>;
-
-/// State override object.
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct StateOverride {
-    /// Fake balance to set for the account before executing the call.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub balance: Option<U256>,
-
-    /// Fake nonce to set for the account before executing the call.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub nonce: Option<U64>,
-
-    /// Fake EVM bytecode to inject into the account before executing the call.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub code: Option<Bytes>,
-
-    /// Fake key-value mapping to override **all** slots in the account storage
-    /// before executing the call.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub state: Option<HashMap<H256, H256>>,
-
-    /// Fake key-value mapping to override **individual** slots in the account
-    /// storage before executing the call.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub state_diff: Option<HashMap<H256, H256>>,
 }
 
 /// Debug namespace extension trait.
@@ -140,7 +103,7 @@ pub struct CallFrame {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::Web3, hex_literal::hex, maplit::hashmap, web3::types::BlockNumber};
+    use {super::*, crate::Web3, ethcontract::{state_overrides::StateOverride, H160}, hex_literal::hex, maplit::hashmap, web3::types::BlockNumber};
 
     #[ignore]
     #[tokio::test]
