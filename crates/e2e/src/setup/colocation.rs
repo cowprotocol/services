@@ -229,7 +229,7 @@ factory = "{:?}"
     let db_url = contracts
         .cow_amm_helper
         .as_ref()
-        .map(|_| format!("db-url = \"{LOCAL_DB_URL}\")"))
+        .map(|_| format!("db-url = \"{LOCAL_DB_URL}\""))
         .unwrap_or_default();
 
     let base_config = format!(
