@@ -380,6 +380,7 @@ crate::bindings!(
         // Not available on Base and Lens
     }
 );
+crate::bindings!(ISwaprPair);
 
 pub use alloy::providers::DynProvider as Provider;
 
