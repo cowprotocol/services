@@ -226,7 +226,7 @@ factory = "{:?}"
         })
         .unwrap_or_default();
 
-    let db_url = contracts
+    let db_url_config = contracts
         .cow_amm_helper
         .as_ref()
         .map(|_| format!("db-url = \"{LOCAL_DB_URL}\""))
@@ -237,7 +237,7 @@ factory = "{:?}"
 app-data-fetching-enabled = true
 orderbook-url = "http://localhost:8080"
 flashloans-enabled = true
-{db_url}
+{db_url_config}
 
 [gas-estimator]
 estimator = "web3"
