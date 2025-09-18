@@ -160,10 +160,14 @@ impl FromStr for TokenConfiguration {
 /// are not available for the quoter.
 #[async_trait::async_trait]
 pub trait BalanceOverriding: Send + Sync + 'static {
-    async fn state_override(&self, request: BalanceOverrideRequest) -> Option<StateOverride>;
+    async fn state_override(
+        &self,
+        request: BalanceOverrideRequest,
+    ) -> Option<(Address, StateOverride)>;
 }
 
 /// Parameters for computing a balance override request.
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct BalanceOverrideRequest {
     /// The token for the override.
     pub token: Address,
@@ -272,7 +276,10 @@ impl BalanceOverrides {
 
 #[async_trait::async_trait]
 impl BalanceOverriding for BalanceOverrides {
-    async fn state_override(&self, request: BalanceOverrideRequest) -> Option<StateOverride> {
+    async fn state_override(
+        &self,
+        request: BalanceOverrideRequest,
+    ) -> Option<(Address, StateOverride)> {
         let strategy = if let Some(strategy) = self.hardcoded.get(&request.token) {
             tracing::trace!(token = ?request.token, "using pre-configured balance override strategy");
             Some(strategy.clone())
@@ -283,10 +290,13 @@ impl BalanceOverriding for BalanceOverrides {
         let (key, value) = strategy.state_override(&request.holder, &request.amount);
         tracing::trace!(?strategy, ?key, ?value, "overriding token balance");
 
-        Some(StateOverride {
-            state_diff: Some(hashmap! { key => value }),
-            ..Default::default()
-        })
+        Some((
+            request.token,
+            StateOverride {
+                state_diff: Some(hashmap! { key => value }),
+                ..Default::default()
+            },
+        ))
     }
 }
 
@@ -296,9 +306,10 @@ mod tests {
 
     #[tokio::test]
     async fn balance_override_computation() {
+        let cow = addr!("DEf1CA1fb7FBcDC777520aa7f396b4E015F497aB");
         let balance_overrides = BalanceOverrides {
             hardcoded: hashmap! {
-                addr!("DEf1CA1fb7FBcDC777520aa7f396b4E015F497aB") => Strategy::SolidityMapping {
+                cow => Strategy::SolidityMapping {
                     slot: U256::from(0),
                 },
             },
@@ -308,18 +319,21 @@ mod tests {
         assert_eq!(
             balance_overrides
                 .state_override(BalanceOverrideRequest {
-                    token: addr!("DEf1CA1fb7FBcDC777520aa7f396b4E015F497aB"),
+                    token: cow,
                     holder: addr!("d8dA6BF26964aF9D7eEd9e03E53415D37aA96045"),
                     amount: 0x42_u64.into(),
                 })
                 .await,
-            Some(StateOverride {
-                state_diff: Some(hashmap! {
-                    H256(hex!("fca351f4d96129454cfc8ef7930b638ac71fea35eb69ee3b8d959496beb04a33")) =>
-                        H256(hex!("0000000000000000000000000000000000000000000000000000000000000042")),
-                }),
-                ..Default::default()
-            }),
+            Some((
+                cow,
+                StateOverride {
+                    state_diff: Some(hashmap! {
+                        H256(hex!("fca351f4d96129454cfc8ef7930b638ac71fea35eb69ee3b8d959496beb04a33")) =>
+                            H256(hex!("0000000000000000000000000000000000000000000000000000000000000042")),
+                    }),
+                    ..Default::default()
+                }
+            )),
         );
 
         // You can verify the state override computation is correct by running:
@@ -364,9 +378,10 @@ mod tests {
 
     #[tokio::test]
     async fn balance_override_computation_solady() {
+        let token = addr!("0000000000c5dc95539589fbd24be07c6c14eca4");
         let balance_overrides = BalanceOverrides {
             hardcoded: hashmap! {
-                addr!("0000000000c5dc95539589fbd24be07c6c14eca4") => Strategy::SoladyMapping,
+                token => Strategy::SoladyMapping,
             },
             ..Default::default()
         };
@@ -374,18 +389,21 @@ mod tests {
         assert_eq!(
             balance_overrides
                 .state_override(BalanceOverrideRequest {
-                    token: addr!("0000000000c5dc95539589fbd24be07c6c14eca4"),
+                    token,
                     holder: addr!("d8dA6BF26964aF9D7eEd9e03E53415D37aA96045"),
                     amount: 0x42_u64.into(),
                 })
                 .await,
-            Some(StateOverride {
-                state_diff: Some(hashmap! {
-                    H256(hex!("f6a6656ed2d14bad3cdd3e8871db3f535a136a1b6cd5ae2dced8eb813f3d4e4f")) =>
-                        H256(hex!("0000000000000000000000000000000000000000000000000000000000000042")),
-                }),
-                ..Default::default()
-            }),
+            Some((
+                token,
+                StateOverride {
+                    state_diff: Some(hashmap! {
+                        H256(hex!("f6a6656ed2d14bad3cdd3e8871db3f535a136a1b6cd5ae2dced8eb813f3d4e4f")) =>
+                            H256(hex!("0000000000000000000000000000000000000000000000000000000000000042")),
+                    }),
+                    ..Default::default()
+                }
+            )),
         );
 
         // You can verify the state override computation is correct by running:
