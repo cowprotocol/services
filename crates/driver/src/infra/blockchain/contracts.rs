@@ -46,7 +46,6 @@ pub struct Addresses {
     pub signatures: Option<eth::ContractAddress>,
     pub weth: Option<eth::ContractAddress>,
     pub balances: Option<eth::ContractAddress>,
-    pub cow_amms: Vec<CowAmmConfig>,
     pub flashloan_wrappers: Vec<config::file::FlashloanWrapperConfig>,
     pub flashloan_router: Option<eth::ContractAddress>,
     pub flashloan_default_lender: Option<eth::ContractAddress>,

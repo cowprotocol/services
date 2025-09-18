@@ -370,11 +370,6 @@ struct ContractsConfig {
     /// Override the default address of the Signatures contract.
     signatures: Option<eth::H160>,
 
-    /// List of all cow amm factories the driver should generate
-    /// rebalancing orders for.
-    #[serde(default)]
-    cow_amms: Vec<CowAmmConfig>,
-
     /// Flashloan wrapper-related configs.
     #[serde(default)]
     flashloan_wrappers: Vec<FlashloanWrapperConfig>,
@@ -399,17 +394,6 @@ pub struct FlashloanWrapperConfig {
     /// Flashloan fee in bps.
     #[serde(default)]
     pub fee_in_bps: eth::U256,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct CowAmmConfig {
-    /// Which contract to index for CoW AMM deployment events.
-    pub factory: eth::H160,
-    /// Which helper contract to use for interfacing with the indexed CoW AMMs.
-    pub helper: eth::H160,
-    /// At which block indexing should start on the factory.
-    pub index_start: u64,
 }
 
 #[derive(Debug, Deserialize)]

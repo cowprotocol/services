@@ -376,16 +376,6 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
             weth: config.contracts.weth.map(Into::into),
             balances: config.contracts.balances.map(Into::into),
             signatures: config.contracts.signatures.map(Into::into),
-            cow_amms: config
-                .contracts
-                .cow_amms
-                .into_iter()
-                .map(|cfg| blockchain::contracts::CowAmmConfig {
-                    index_start: cfg.index_start,
-                    factory: cfg.factory,
-                    helper: cfg.helper,
-                })
-                .collect(),
             flashloan_default_lender: {
                 // Make sure flashloan default lender exists in the flashloan wrappers
                 if let Some(default_lender) = config.contracts.flashloan_default_lender
