@@ -157,7 +157,6 @@ impl PoolsCheckpointHandler {
         // liquidity
         let pool_ids = registered_pools
             .pools
-            .clone()
             .into_iter()
             .map(|pool| pool.id)
             .rev()

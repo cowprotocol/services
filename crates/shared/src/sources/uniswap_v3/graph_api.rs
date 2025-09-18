@@ -123,7 +123,7 @@ impl UniV3SubgraphClient {
             .paginated_query(query, variables)
             .await?
             .into_iter()
-            .filter(|pool: &PoolData| !pool.liquidity.is_zero())
+            .filter(|pool: &PoolData| pool.liquidity > U256::zero())
             .collect())
     }
 
