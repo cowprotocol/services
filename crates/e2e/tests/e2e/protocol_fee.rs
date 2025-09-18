@@ -367,7 +367,7 @@ async fn combined_protocol_fees(web3: Web3) {
                 .balanceOf(onchain.contracts().gp_settlement.address().into_alloy())
                 .call()
                 .await
-                .map(|balance| balance.into_legacy())
+                .map(IntoLegacy::into_legacy)
         }),
     )
     .await
