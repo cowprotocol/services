@@ -163,7 +163,13 @@ impl BalanceFetching for Balances {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::price_estimation::trade_verifier::balance_overrides::DummyOverrider, ethrpc::Web3, model::order::SellTokenSource, std::sync::Arc};
+    use {
+        super::*,
+        crate::price_estimation::trade_verifier::balance_overrides::DummyOverrider,
+        ethrpc::Web3,
+        model::order::SellTokenSource,
+        std::sync::Arc,
+    };
 
     #[ignore]
     #[tokio::test]

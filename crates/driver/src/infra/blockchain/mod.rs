@@ -6,7 +6,7 @@ use {
     ethrpc::{Web3, block_stream::CurrentBlockWatcher},
     shared::{
         account_balances::{BalanceSimulator, SimulationError},
-        price_estimation::trade_verifier::balance_overrides::DummyOverrider,
+        price_estimation::trade_verifier::balance_overrides::BalanceOverrides,
     },
     std::{fmt, sync::Arc, time::Duration},
     thiserror::Error,
@@ -120,8 +120,7 @@ impl Ethereum {
             contracts.balance_helper().clone(),
             contracts.vault_relayer().0,
             Some(contracts.vault().address()),
-            // TODO: use actual overrider struct
-            Arc::new(DummyOverrider),
+            Arc::new(BalanceOverrides::new(web3.clone())),
         );
 
         Self {

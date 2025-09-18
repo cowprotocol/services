@@ -241,6 +241,17 @@ pub struct BalanceOverrides {
 }
 
 impl BalanceOverrides {
+    /// Creates a new instance with sensible defaults.
+    pub fn new(web3: ethrpc::Web3) -> Self {
+        Self {
+            hardcoded: Default::default(),
+            detector: Some((
+                Detector::new(web3, 60),
+                Mutex::new(SizedCache::with_size(1000)),
+            )),
+        }
+    }
+
     async fn cached_detection(&self, token: Address) -> Option<Strategy> {
         let (detector, cache) = self.detector.as_ref()?;
         tracing::trace!(?token, "attempting to auto-detect");

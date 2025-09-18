@@ -96,6 +96,7 @@ pub fn cached(
     cached
 }
 
+#[derive(Clone)]
 pub struct BalanceSimulator {
     settlement: contracts::GPv2Settlement,
     balances: contracts::support::Balances,
