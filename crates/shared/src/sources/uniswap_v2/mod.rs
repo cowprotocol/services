@@ -98,11 +98,16 @@ impl UniV2BaselineSourceParameters {
                     pool_reading: PoolReadingStyle::Swapr,
                 });
             }
-            BS::TestnetUniswapV2 => Some((
-                contracts::TestnetUniswapV2Router02::raw_contract(),
-                TESTNET_UNISWAP_INIT,
-                PoolReadingStyle::Default,
-            )),
+            BS::TestnetUniswapV2 => {
+                return Some(Self {
+                    router: contracts::alloy::TestnetUniswapV2Router02::deployment_address(
+                        &chain_id,
+                    )
+                    .map(IntoLegacy::into_legacy)?,
+                    init_code_digest: TESTNET_UNISWAP_INIT.into(),
+                    pool_reading: PoolReadingStyle::Default,
+                });
+            }
             BS::Baoswap => {
                 return Some(Self {
                     router: contracts::alloy::BaoswapRouter::deployment_address(&chain_id)

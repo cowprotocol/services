@@ -688,13 +688,6 @@ fn main() {
             .add_network_str(BASE, "0xc694a91e6b071bF030A18BD3053A7fE09B6DaE69")
         // Not available on Lens
     });
-
-    // Unofficial Uniswap v2 liquidity on the Sepolia testnet.
-    generate_contract_with_config("TestnetUniswapV2Router02", |builder| {
-        // <https://github.com/eth-clients/sepolia/issues/47#issuecomment-1681562464>
-        builder.add_network_str(SEPOLIA, "0x86dcd3293C53Cf8EFd7303B57beb2a3F671dDE98")
-    });
-
     generate_contract("CowAmm");
     generate_contract_with_config("CowAmmConstantProductFactory", |builder| {
         builder

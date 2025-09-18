@@ -381,6 +381,13 @@ crate::bindings!(
     }
 );
 crate::bindings!(ISwaprPair);
+crate::bindings!(
+    TestnetUniswapV2Router02,
+    crate::deployments! {
+        // <https://sepolia.etherscan.io/tx/0x2bf9a91a42d53e161897d9c581f798df9db6fb00587803dde7e7b8859118d821>
+        SEPOLIA => address!("0x86dcd3293C53Cf8EFd7303B57beb2a3F671dDE98"),
+    }
+);
 
 pub use alloy::providers::DynProvider as Provider;
 
@@ -581,6 +588,8 @@ mod tests {
         for chain_id in &[MAINNET, GNOSIS, ARBITRUM_ONE] {
             assert!(SwaprRouter::deployment_address(chain_id).is_some());
         }
+
+        assert!(TestnetUniswapV2Router02::deployment_address(&SEPOLIA).is_some());
     }
 
     #[test]
