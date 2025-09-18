@@ -19,7 +19,7 @@ const GAS_PER_SWAP: u64 = 90_171;
 pub fn to_domain(id: liquidity::Id, pool: ConstantProductOrder) -> Result<liquidity::Liquidity> {
     // invalid Swapr fee ratio; does not have exact BPS representation
     anyhow::ensure!(
-        (pool.fee.numer() * BPS_BASE) % pool.fee.denom() == 0,
+        (pool.fee.numer() * BPS_BASE).is_multiple_of(*pool.fee.denom()),
         "invalid Swapr fee ratio; does not have exact BPS representation",
     );
 
