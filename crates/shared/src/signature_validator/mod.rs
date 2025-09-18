@@ -24,6 +24,15 @@ pub struct SignatureCheck {
     pub flashloan: Option<Flashloan>,
 }
 
+impl SignatureCheck {
+    /// Returns whether the check should work as is or if setup
+    /// steps before performing the check are needed (e.g. pre-interactions,
+    /// flashloan).
+    pub fn requires_setup(&self) -> bool {
+        !self.interactions.is_empty() || self.flashloan.is_some()
+    }
+}
+
 impl std::fmt::Debug for SignatureCheck {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SignatureCheck")
