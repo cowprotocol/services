@@ -1,9 +1,16 @@
 //! Module containing Ethereum RPC extension methods.
 
 use {
-    ethcontract::state_overrides::StateOverrides, serde::Deserialize, tracing::{instrument::Instrumented, Instrument}, web3::{
-        self, api::Namespace, helpers::{self, CallFuture}, types::{BlockId, Bytes, CallRequest, H256}, Transport
-    }
+    ethcontract::state_overrides::StateOverrides,
+    serde::Deserialize,
+    tracing::{Instrument, instrument::Instrumented},
+    web3::{
+        self,
+        Transport,
+        api::Namespace,
+        helpers::{self, CallFuture},
+        types::{BlockId, Bytes, CallRequest, H256},
+    },
 };
 
 /// Web3 convenience extension trait.
@@ -103,7 +110,14 @@ pub struct CallFrame {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::Web3, ethcontract::{state_overrides::StateOverride, H160}, hex_literal::hex, maplit::hashmap, web3::types::BlockNumber};
+    use {
+        super::*,
+        crate::Web3,
+        ethcontract::{H160, state_overrides::StateOverride},
+        hex_literal::hex,
+        maplit::hashmap,
+        web3::types::BlockNumber,
+    };
 
     #[ignore]
     #[tokio::test]

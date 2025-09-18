@@ -6,21 +6,31 @@ use {
     crate::{
         code_fetching::CodeFetching,
         code_simulation::CodeSimulating,
-        encoded_settlement::{encode_trade, EncodedSettlement, EncodedTrade},
+        encoded_settlement::{EncodedSettlement, EncodedTrade, encode_trade},
         interaction::EncodedInteraction,
         trade_finding::{
-            external::dto::{self, JitOrder}, map_interactions_data, Interaction, QuoteExecution, TradeKind
+            Interaction,
+            QuoteExecution,
+            TradeKind,
+            external::dto::{self, JitOrder},
+            map_interactions_data,
         },
     },
     anyhow::{Context, Result},
     bigdecimal::BigDecimal,
     contracts::{
-        deployed_bytecode, dummy_contract, support::{AnyoneAuthenticator, Solver, Spardose, Trader}, GPv2Settlement, WETH9
+        GPv2Settlement,
+        WETH9,
+        deployed_bytecode,
+        dummy_contract,
+        support::{AnyoneAuthenticator, Solver, Spardose, Trader},
     },
-    ethcontract::{state_overrides::StateOverride, tokens::Tokenize, Bytes, H160, U256},
-    ethrpc::{block_stream::CurrentBlockWatcher, Web3},
+    ethcontract::{Bytes, H160, U256, state_overrides::StateOverride, tokens::Tokenize},
+    ethrpc::{Web3, block_stream::CurrentBlockWatcher},
     model::{
-        order::{OrderData, OrderKind, BUY_ETH_ADDRESS}, signature::{Signature, SigningScheme}, DomainSeparator
+        DomainSeparator,
+        order::{BUY_ETH_ADDRESS, OrderData, OrderKind},
+        signature::{Signature, SigningScheme},
     },
     num::BigRational,
     number::{
