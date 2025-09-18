@@ -317,6 +317,57 @@ crate::bindings!(
     }
 );
 
+// UniV2
+crate::bindings!(
+    BaoswapRouter,
+    crate::deployments! {
+       // https://gnosisscan.io/tx/0xdcbfa037f2c6c7456022df0632ec8d6a75d0f9a195238eec679d5d26895eb7b1
+       GNOSIS => (address!("0x6093AeBAC87d62b1A5a4cEec91204e35020E38bE"))
+    }
+);
+crate::bindings!(
+    HoneyswapRouter,
+    crate::deployments! {
+        GNOSIS => (address!("0x1C232F01118CB8B424793ae03F870aa7D0ac7f77"))
+    }
+);
+crate::bindings!(
+    PancakeRouter,
+    crate::deployments! {
+        // <https://etherscan.io/tx/0x6e441248a9835ca10a3c29a19f2e1ed61d2e35f3ecb3a5b9e4ee170d62a22d16>
+        MAINNET => (address!("0xEfF92A263d31888d860bD50809A8D171709b7b1c")),
+        // <https://arbiscan.io/tx/0x4a2da73cbfcaafb0347e4525307a095e38bf7532435cb0327d1f5ee2ee15a011>
+        ARBITRUM_ONE => (address!("0x8cFe327CEc66d1C090Dd72bd0FF11d690C33a2Eb")),
+        // <https://basescan.org/tx/0xda322aef5776698ac6da56be1ffaa0f9994a983cdeb9f2aeaba47437809ae6ef>
+        BASE => (address!("0x8cFe327CEc66d1C090Dd72bd0FF11d690C33a2Eb")),
+        // <https://bscscan.com/tx/0x1bfbff8411ed44e609d911476b0d35a28284545b690902806ea0a7ff0453e931>
+        BNB => (address!("0x10ED43C718714eb63d5aA57B78B54704E256024E"))
+    }
+);
+crate::bindings!(
+    SushiSwapRouter,
+    // <https://docs.sushi.com/contracts/cpamm>
+    crate::deployments! {
+        // <https://etherscan.io/tx/0x4ff39eceee7ba9a63736eae38be69b10347975ff5fa4d9b85743a51e1c384094>
+        MAINNET => (address!("0xd9e1ce17f2641f24ae83637ab66a2cca9c378b9f")),
+        // <https://gnosisscan.io/tx/0x8b45ccbc2afd0132ef8b636064e0e745ff93b53942a56e320bb930666dd0fb18>
+        GNOSIS => (address!("0x1b02da8cb0d097eb8d57a175b88c7d8b47997506")),
+        // <https://arbiscan.io/tx/0x40b22402bcac46330149ac9848f8bddd02b0a1e79d4a71934655a634051be1a1>
+        ARBITRUM_ONE => (address!("0x1b02da8cb0d097eb8d57a175b88c7d8b47997506")),
+        // <https://basescan.org/tx/0xbb673c483292e03d202e95a023048b8bda459bf12402e7688f7e10be8b4dc67d>
+        BASE => (address!("0x6bded42c6da8fbf0d2ba55b2fa120c5e0c8d7891")),
+        // <https://snowtrace.io/tx/0x8185bcd3cc8544f8767e5270c4d7eb1e9b170fc0532fc4f0d7e7a1018e1f13ba>
+        AVALANCHE => (address!("0x1b02da8cb0d097eb8d57a175b88c7d8b47997506")),
+        // <https://bscscan.com/tx/0xf22f827ae797390f6e478b0a11aa6e92d6da527f47130ef70d313ff0e0b2a83f>
+        BNB => (address!("0x1b02da8cb0d097eb8d57a175b88c7d8b47997506")),
+        // <https://optimistic.etherscan.io/tx/0x88be6cc83f5bfccb8196db351866bac5c99ab8f7b451ea9975319ba05c3bf8f7>
+        OPTIMISM => (address!("0x2abf469074dc0b54d793850807e6eb5faf2625b1")),
+        // <https://polygonscan.com/tx/0x3dcf8fc780ae6fbe40b1ae57927a8fb405f54cbe89d0021a781a100d2086e5ba>
+        POLYGON => (address!("0x1b02da8cb0d097eb8d57a175b88c7d8b47997506")),
+        // Not available on Lens
+    }
+);
+
 pub use alloy::providers::DynProvider as Provider;
 
 /// Extension trait to attach some useful functions to the contract instance.
@@ -441,6 +492,7 @@ macro_rules! bindings {
                     $deployment_info
                 });
 
+                /// Returns the contract's deployment address (if one exists) for the given chain.
                 pub fn deployment_address(chain_id: &u64) -> Option<alloy::primitives::Address> {
                     DEPLOYMENT_INFO.get(chain_id).map(|(addr, _)| *addr)
                 }
@@ -486,8 +538,32 @@ macro_rules! bindings {
 
 #[cfg(test)]
 mod tests {
+    use super::networks::*;
     use super::*;
     use alloy::primitives::Selector;
+
+    #[test]
+    fn test_has_address() {
+        assert!(BaoswapRouter::deployment_address(&GNOSIS).is_some());
+        assert!(HoneyswapRouter::deployment_address(&GNOSIS).is_some());
+
+        for chain_id in &[MAINNET, ARBITRUM_ONE, BASE, BNB] {
+            assert!(PancakeRouter::deployment_address(chain_id).is_some());
+        }
+
+        for chain_id in &[
+            MAINNET,
+            GNOSIS,
+            ARBITRUM_ONE,
+            BASE,
+            AVALANCHE,
+            BNB,
+            OPTIMISM,
+            POLYGON,
+        ] {
+            assert!(SushiSwapRouter::deployment_address(chain_id).is_some());
+        }
+    }
 
     #[test]
     fn test_selector_by_name_valid_function() {

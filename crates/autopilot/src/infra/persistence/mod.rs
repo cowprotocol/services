@@ -637,7 +637,6 @@ impl Persistence {
     pub async fn save_settlement(
         &self,
         event: domain::eth::SettlementEvent,
-        auction_id: domain::auction::Id,
         settlement: Option<&domain::settlement::Settlement>,
     ) -> Result<(), DatabaseError> {
         let _timer = Metrics::get()
@@ -649,6 +648,8 @@ impl Persistence {
 
         let block_number = i64::try_from(event.block.0).context("block overflow")?;
         let log_index = i64::try_from(event.log_index).context("log index overflow")?;
+        let auction_id = settlement.map(|s| s.auction_id()).unwrap_or_default();
+        tracing::debug!(hash = ?event.transaction, ?auction_id, "saving settlement details for tx");
 
         database::settlements::update_settlement_auction(
             &mut ex,
