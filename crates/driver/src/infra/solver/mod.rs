@@ -299,7 +299,10 @@ impl Solver {
             &flashloan_hints,
         )?;
 
-        super::observe::solutions(&solutions, auction.surplus_capturing_jit_order_owners());
+        super::observe::solutions(
+            &solutions,
+            auction.surplus_capturing_jit_order_owners_with_helper(),
+        );
         Ok(solutions)
     }
 

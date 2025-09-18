@@ -70,7 +70,7 @@ impl Solution {
         weth: eth::WethAddress,
         gas: Option<eth::Gas>,
         fee_handler: FeeHandler,
-        surplus_capturing_jit_order_owners: &HashSet<eth::Address>,
+        surplus_capturing_jit_order_owners_with_helper: &HashMap<eth::Address, eth::Address>,
         flashloans: HashMap<order::Uid, Flashloan>,
     ) -> Result<Self, error::Solution> {
         // Surplus capturing JIT orders behave like Fulfillment orders. They capture
@@ -79,7 +79,9 @@ impl Solution {
         // right away.
         for trade in &mut trades {
             let Trade::Jit(jit) = trade else { continue };
-            if !surplus_capturing_jit_order_owners.contains(&jit.order().signature.signer) {
+            if !surplus_capturing_jit_order_owners_with_helper
+                .contains_key(&jit.order().signature.signer)
+            {
                 continue;
             }
 
@@ -210,13 +212,12 @@ impl Solution {
     fn trade_count_for_scorable(
         &self,
         trade: &Trade,
-        surplus_capturing_jit_order_owners: &HashSet<eth::Address>,
+        surplus_capturing_jit_order_owners_with_helper: &HashMap<eth::Address, eth::Address>,
     ) -> bool {
         match trade {
             Trade::Fulfillment(_) => true,
-            Trade::Jit(jit) => {
-                surplus_capturing_jit_order_owners.contains(&jit.order().signature.signer)
-            }
+            Trade::Jit(jit) => surplus_capturing_jit_order_owners_with_helper
+                .contains_key(&jit.order().signature.signer),
         }
     }
 
@@ -224,11 +225,11 @@ impl Solution {
     pub fn scoring(
         &self,
         native_prices: &auction::Prices,
-        surplus_capturing_jit_order_owners: &HashSet<eth::Address>,
+        surplus_capturing_jit_order_owners_with_helper: &HashMap<eth::Address, eth::Address>,
     ) -> Result<eth::Ether, error::Scoring> {
         let mut trades = Vec::with_capacity(self.trades.len());
         for trade in self.trades().iter().filter(|trade| {
-            self.trade_count_for_scorable(trade, surplus_capturing_jit_order_owners)
+            self.trade_count_for_scorable(trade, surplus_capturing_jit_order_owners_with_helper)
         }) {
             // Solver generated fulfillment does not include the fee in the executed amount
             // for sell orders.
@@ -282,7 +283,10 @@ impl Solution {
 
     /// An empty solution has no trades which is allowed to capture surplus and
     /// a score of 0.
-    pub fn is_empty(&self, surplus_capturing_jit_order_owners: &HashSet<eth::Address>) -> bool {
+    pub fn is_empty(
+        &self,
+        surplus_capturing_jit_order_owners: &HashMap<eth::Address, eth::Address>,
+    ) -> bool {
         !self
             .trades
             .iter()

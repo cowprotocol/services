@@ -208,7 +208,7 @@ impl Competition {
 
         // Discard empty solutions.
         let solutions = solutions.filter(|solution| {
-            if solution.is_empty(auction.surplus_capturing_jit_order_owners()) {
+            if solution.is_empty(auction.surplus_capturing_jit_order_owners_with_helper()) {
                 observe::empty_solution(self.solver.name(), solution.id());
                 notify::empty_solution(&self.solver, auction.id(), solution.id().clone());
                 false
@@ -284,7 +284,7 @@ impl Competition {
                 (
                     settlement.score(
                         &auction.native_prices(),
-                        auction.surplus_capturing_jit_order_owners(),
+                        auction.surplus_capturing_jit_order_owners_with_helper(),
                     ),
                     settlement,
                 )
@@ -775,7 +775,7 @@ fn merge(
             solution
                 .scoring(
                     &auction.native_prices(),
-                    auction.surplus_capturing_jit_order_owners(),
+                    auction.surplus_capturing_jit_order_owners_with_helper(),
                 )
                 .map(|score| score.0)
                 .unwrap_or_default(),

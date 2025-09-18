@@ -348,7 +348,7 @@ impl Utilities {
                 // Only generate orders for cow amms the auction told us about.
                 // Otherwise the solver would expect the order to get surplus but
                 // the autopilot would actually not count it.
-                .filter(|amm| auction.surplus_capturing_jit_order_owners.contains(&eth::Address(*amm.address())))
+                .filter(|amm| auction.surplus_capturing_jit_order_owners_with_helper.contains_key(&eth::Address(*amm.address())))
                 // Only generate orders where the auction provided the required
                 // reference prices. Otherwise there will be an error during the
                 // surplus calculation which will also result in 0 surplus for

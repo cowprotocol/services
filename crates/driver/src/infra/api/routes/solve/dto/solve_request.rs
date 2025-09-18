@@ -9,7 +9,7 @@ use {
     },
     serde::Deserialize,
     serde_with::serde_as,
-    std::collections::HashSet,
+    std::collections::HashMap,
     tracing::instrument,
 };
 
@@ -155,10 +155,15 @@ impl SolveRequest {
             }),
             self.deadline,
             eth,
-            self.surplus_capturing_jit_order_owners
+            self.surplus_capturing_jit_order_owners_by_helper
                 .into_iter()
-                .map(Into::into)
-                .collect::<HashSet<_>>(),
+                .flat_map(|(helper, owners)| {
+                    owners
+                        .into_iter()
+                        .map(|owner| (owner.into(), helper.into()))
+                        .collect::<Vec<_>>()
+                })
+                .collect::<HashMap<_, _>>(),
         )
         .await
         .map_err(Into::into)
@@ -203,7 +208,7 @@ pub struct SolveRequest {
     orders: Vec<Order>,
     deadline: chrono::DateTime<chrono::Utc>,
     #[serde(default)]
-    surplus_capturing_jit_order_owners: Vec<eth::H160>,
+    surplus_capturing_jit_order_owners_by_helper: Vec<(eth::H160, Vec<eth::H160>)>,
 }
 
 impl SolveRequest {

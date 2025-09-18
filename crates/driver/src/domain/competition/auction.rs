@@ -25,7 +25,7 @@ pub struct Auction {
     pub(crate) tokens: Tokens,
     pub(crate) gas_price: eth::GasPrice,
     pub(crate) deadline: chrono::DateTime<chrono::Utc>,
-    pub(crate) surplus_capturing_jit_order_owners: HashSet<eth::Address>,
+    pub(crate) surplus_capturing_jit_order_owners_with_helper: HashMap<eth::Address, eth::Address>,
 }
 
 impl Auction {
@@ -35,7 +35,7 @@ impl Auction {
         tokens: impl Iterator<Item = Token>,
         deadline: chrono::DateTime<chrono::Utc>,
         eth: &Ethereum,
-        surplus_capturing_jit_order_owners: HashSet<eth::Address>,
+        surplus_capturing_jit_order_owners_with_helper: HashMap<eth::Address, eth::Address>,
     ) -> Result<Self, Error> {
         let tokens = Tokens(tokens.map(|token| (token.address, token)).collect());
         let weth = eth.contracts().weth_address();
@@ -62,7 +62,7 @@ impl Auction {
             tokens,
             gas_price: eth.gas_price(None).await?,
             deadline,
-            surplus_capturing_jit_order_owners,
+            surplus_capturing_jit_order_owners_with_helper,
         })
     }
 
@@ -116,8 +116,10 @@ impl Auction {
             .collect()
     }
 
-    pub fn surplus_capturing_jit_order_owners(&self) -> &HashSet<eth::Address> {
-        &self.surplus_capturing_jit_order_owners
+    pub fn surplus_capturing_jit_order_owners_with_helper(
+        &self,
+    ) -> &HashMap<eth::Address, eth::Address> {
+        &self.surplus_capturing_jit_order_owners_with_helper
     }
 }
 
