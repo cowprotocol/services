@@ -6,8 +6,9 @@ use {
     },
     chain::Chain,
     contracts::FlashLoanRouter,
+    cow_amm::Amm,
     ethrpc::{Web3, block_stream::CurrentBlockWatcher},
-    std::collections::HashMap,
+    std::{collections::HashMap, sync::Arc},
     thiserror::Error,
 };
 
@@ -21,7 +22,7 @@ pub struct Contracts {
 
     /// The domain separator for settlement contract used for signing orders.
     settlement_domain_separator: eth::DomainSeparator,
-    cow_amm_registry: cow_amm::Registry,
+    cow_amm_registry: Option<cow_amm::Registry>,
 
     /// Each lender potentially has different solver wrapper.
     flashloan_wrapper_by_lender: HashMap<eth::ContractAddress, FlashloanWrapperData>,
@@ -117,16 +118,22 @@ impl Contracts {
                 args.max_concurrent_requests,
             )
         });
-        let mut cow_amm_registry = cow_amm::Registry::new(archive_node_web3);
-        for config in addresses.cow_amms {
-            let db = db
-                .clone()
-                .expect("database is required when CoW AMMs are configured");
-            cow_amm_registry
-                .add_listener(config.index_start, config.factory, config.helper, db)
-                .await;
-        }
-        cow_amm_registry.spawn_maintenance_task(block_stream);
+        let cow_amm_registry = if !addresses.cow_amms.is_empty() {
+            let mut cow_amm_registry = cow_amm::Registry::new(
+                archive_node_web3,
+                db.clone()
+                    .expect("database is required when CoW AMMs are configured"),
+            );
+            for config in addresses.cow_amms {
+                cow_amm_registry
+                    .add_listener(config.index_start, config.factory, config.helper)
+                    .await;
+            }
+            cow_amm_registry.spawn_maintenance_task(block_stream);
+            Some(cow_amm_registry)
+        } else {
+            None
+        };
 
         let flashloan_wrapper_by_lender = addresses
             .flashloan_wrappers
@@ -201,8 +208,11 @@ impl Contracts {
         &self.settlement_domain_separator
     }
 
-    pub fn cow_amm_registry(&self) -> &cow_amm::Registry {
-        &self.cow_amm_registry
+    pub async fn cow_amms(&self) -> Vec<Arc<Amm>> {
+        match &self.cow_amm_registry {
+            Some(registry) => registry.amms().await,
+            None => Default::default(),
+        }
     }
 
     pub fn get_flashloan_wrapper(

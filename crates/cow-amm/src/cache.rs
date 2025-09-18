@@ -4,7 +4,6 @@ use {
     ethcontract::{Address, errors::ExecutionError},
     ethrpc::block_stream::RangeInclusive,
     shared::event_handling::EventStoring,
-    sqlx::PgPool,
     std::{collections::BTreeMap, sync::Arc},
     tokio::sync::RwLock,
 };
@@ -13,10 +12,9 @@ use {
 pub(crate) struct Storage(Arc<Inner>);
 
 impl Storage {
-    pub(crate) fn new(deployment_block: u64, helper: CowAmmLegacyHelper, db: PgPool) -> Self {
+    pub(crate) fn new(deployment_block: u64, helper: CowAmmLegacyHelper) -> Self {
         Self(Arc::new(Inner {
             cache: Default::default(),
-            db,
             // make sure to start 1 block **before** the deployment to get all the events
             start_of_index: deployment_block - 1,
             helper,
@@ -44,9 +42,6 @@ struct Inner {
     /// That type erasure allows us to index multiple concrete contracts
     /// in a single Registry to make for a nicer user facing API.
     cache: RwLock<BTreeMap<u64, Vec<Arc<Amm>>>>,
-    /// Database connection to persist CoW AMMs and the last indexed block.
-    #[allow(dead_code)]
-    db: PgPool,
     /// The earliest block where indexing the contract makes sense.
     /// The contract did not emit any events before this block.
     start_of_index: u64,

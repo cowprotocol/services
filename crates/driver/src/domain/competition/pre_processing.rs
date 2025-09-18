@@ -338,7 +338,7 @@ impl Utilities {
 
     async fn cow_amm_orders(self: Arc<Self>, auction: Arc<Auction>) -> Arc<Vec<Order>> {
         let _timer = metrics::get().processing_stage_timer("cow_amm_orders");
-        let cow_amms = self.eth.contracts().cow_amm_registry().amms().await;
+        let cow_amms = self.eth.contracts().cow_amms().await;
         let domain_separator = self.eth.contracts().settlement_domain_separator();
         let domain_separator = model::DomainSeparator(domain_separator.0);
         let validator = self.signature_validator.as_ref();

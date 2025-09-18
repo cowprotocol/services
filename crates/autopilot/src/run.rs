@@ -460,15 +460,10 @@ pub async fn run(args: Arguments) {
         boundary::web3_client(url, &args.shared.ethrpc)
     });
 
-    let mut cow_amm_registry = cow_amm::Registry::new(archive_node_web3);
+    let mut cow_amm_registry = cow_amm::Registry::new(archive_node_web3, db.pool.clone());
     for config in &args.cow_amm_configs {
         cow_amm_registry
-            .add_listener(
-                config.index_start,
-                config.factory,
-                config.helper,
-                db.pool.clone(),
-            )
+            .add_listener(config.index_start, config.factory, config.helper)
             .await;
     }
 

@@ -7,6 +7,7 @@ use {
         event_handling::EventHandler,
         maintenance::{Maintaining, ServiceMaintenance},
     },
+    sqlx::PgPool,
     std::sync::Arc,
     tokio::sync::{Mutex, RwLock},
     tracing::instrument,
@@ -17,13 +18,17 @@ use {
 pub struct Registry {
     web3: Web3,
     storage: Arc<RwLock<Vec<Storage>>>,
+    /// Database connection to persist CoW AMMs and the last indexed block.
+    #[allow(dead_code)]
+    db: PgPool,
     maintenance_tasks: Vec<Arc<dyn Maintaining>>,
 }
 
 impl Registry {
-    pub fn new(web3: Web3) -> Self {
+    pub fn new(web3: Web3, db: PgPool) -> Self {
         Self {
             storage: Default::default(),
+            db,
             web3,
             maintenance_tasks: vec![],
         }
@@ -39,12 +44,10 @@ impl Registry {
         deployment_block: u64,
         factory: Address,
         helper_contract: Address,
-        db: sqlx::PgPool,
     ) {
         let storage = Storage::new(
             deployment_block,
             CowAmmLegacyHelper::at(&self.web3, helper_contract),
-            db,
         );
         self.storage.write().await.push(storage.clone());
 
