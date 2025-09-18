@@ -27,7 +27,6 @@ impl PoolReading for SwaprPoolReader {
         let fetch_pool = self.0.read_state(pair, block);
 
         async move {
-            // Inside the future because `.call` keeps a reference to the instance
             let pair_contract =
                 ISwaprPair::Instance::new(pair_address.into_alloy(), self.0.web3.alloy.clone());
             let fetch_fee = pair_contract.swapFee().block(block.into_alloy());
