@@ -10,7 +10,8 @@ use {
         settlement::SettlementEncoder,
     },
     anyhow::Result,
-    contracts::{GPv2Settlement, IUniswapLikeRouter},
+    contracts::{GPv2Settlement, alloy::IUniswapLikeRouter},
+    ethrpc::alloy::conversions::IntoLegacy,
     model::TokenPair,
     primitive_types::H160,
     shared::{
@@ -33,7 +34,7 @@ pub struct UniswapLikeLiquidity {
 }
 
 pub struct Inner {
-    router: IUniswapLikeRouter,
+    router: IUniswapLikeRouter::Instance,
     gpv2_settlement: GPv2Settlement,
     // Mapping of how much allowance the router has per token to spend on behalf of the settlement
     // contract
@@ -42,7 +43,7 @@ pub struct Inner {
 
 impl UniswapLikeLiquidity {
     pub fn new(
-        router: IUniswapLikeRouter,
+        router: IUniswapLikeRouter::Instance,
         gpv2_settlement: GPv2Settlement,
         web3: Web3,
         pool_fetcher: Arc<dyn PoolFetching>,
@@ -53,17 +54,17 @@ impl UniswapLikeLiquidity {
     }
 
     pub fn with_allowances(
-        router: IUniswapLikeRouter,
+        router: IUniswapLikeRouter::Instance,
         gpv2_settlement: GPv2Settlement,
         settlement_allowances: Box<dyn AllowanceManaging>,
         pool_fetcher: Arc<dyn PoolFetching>,
     ) -> Self {
-        let router_address = router.address();
+        let router_address = *router.address();
         Self {
             inner: Arc::new(Inner {
                 router,
                 gpv2_settlement,
-                allowances: Mutex::new(Allowances::empty(router_address)),
+                allowances: Mutex::new(Allowances::empty(router_address.into_legacy())),
             }),
             pool_fetcher,
             settlement_allowances,
@@ -74,7 +75,7 @@ impl UniswapLikeLiquidity {
         let router = self.inner.router.address();
         let allowances = self
             .settlement_allowances
-            .get_allowances(tokens, router)
+            .get_allowances(tokens, router.into_legacy())
             .await?;
 
         self.inner
@@ -118,7 +119,7 @@ impl LiquidityCollecting for UniswapLikeLiquidity {
 
 impl Inner {
     pub fn new(
-        router: IUniswapLikeRouter,
+        router: IUniswapLikeRouter::Instance,
         gpv2_settlement: GPv2Settlement,
         allowances: Mutex<Allowances>,
     ) -> Self {
@@ -153,7 +154,7 @@ impl Inner {
         )
     }
 
-    pub fn router(&self) -> &IUniswapLikeRouter {
+    pub fn router(&self) -> &IUniswapLikeRouter::Instance {
         &self.router
     }
 }
@@ -180,12 +181,27 @@ impl SettlementHandling<ConstantProductOrder> for Inner {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, contracts::dummy_contract, primitive_types::U256, std::collections::HashMap};
+    use {
+        super::*,
+        alloy::{
+            primitives::Address,
+            providers::{Provider, ProviderBuilder, mock::Asserter},
+        },
+        contracts::dummy_contract,
+        primitive_types::U256,
+        std::collections::HashMap,
+    };
 
     impl Inner {
         fn new_dummy(allowances: HashMap<H160, U256>) -> Self {
+            let router = IUniswapLikeRouter::Instance::new(
+                Address::default(),
+                ProviderBuilder::new()
+                    .connect_mocked_client(Asserter::default())
+                    .erased(),
+            );
             Self {
-                router: dummy_contract!(IUniswapLikeRouter, H160::zero()),
+                router,
                 gpv2_settlement: dummy_contract!(GPv2Settlement, H160::zero()),
                 allowances: Mutex::new(Allowances::new(H160::zero(), allowances)),
             }
