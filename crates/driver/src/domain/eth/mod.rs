@@ -425,8 +425,9 @@ impl From<CodeDigest> for [u8; 32] {
 
 #[derive(Debug, Clone)]
 pub struct Flashloan {
-    pub lender: ContractAddress,
-    pub borrower: Address,
+    pub liquidity_provider: ContractAddress,
+    pub protocol_adapter: ContractAddress,
+    pub receiver: Address,
     pub token: TokenAddress,
     pub amount: TokenAmount,
 }
@@ -434,8 +435,9 @@ pub struct Flashloan {
 impl From<&solvers_dto::solution::Flashloan> for Flashloan {
     fn from(value: &solvers_dto::solution::Flashloan) -> Self {
         Self {
-            lender: value.lender.into(),
-            borrower: value.borrower.into(),
+            liquidity_provider: value.liquidity_provider.into(),
+            protocol_adapter: value.protocol_adapter.into(),
+            receiver: value.receiver.into(),
             token: value.token.into(),
             amount: value.amount.into(),
         }
@@ -446,8 +448,9 @@ impl From<&solvers_dto::solution::Flashloan> for Flashloan {
 impl Into<FlashloanHint> for &Flashloan {
     fn into(self) -> FlashloanHint {
         FlashloanHint {
-            lender: self.lender.into(),
-            borrower: self.borrower.into(),
+            liquidity_provider: self.liquidity_provider.into(),
+            protocol_adapter: self.protocol_adapter.into(),
+            receiver: self.receiver.into(),
             token: self.token.into(),
             amount: self.amount.into(),
         }

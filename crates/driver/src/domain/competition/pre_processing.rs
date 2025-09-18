@@ -273,7 +273,7 @@ impl Utilities {
                     flashloan: if all_interactions_equal {
                         first.app_data.flashloan().map(|f| Flashloan {
                             token: f.token,
-                            receiver: f.borrower.unwrap_or(trader.0.0),
+                            receiver: f.receiver,
                             amount: f.amount,
                         })
                     } else {

@@ -399,7 +399,7 @@ impl OrderValidator {
                             .as_ref()
                             .map(|f| Flashloan {
                                 token: f.token,
-                                receiver: f.borrower.unwrap_or(owner),
+                                receiver: f.receiver,
                                 amount: f.amount,
                             }),
                     },
@@ -591,7 +591,7 @@ impl OrderValidating for OrderValidator {
                             interactions: app_data.interactions.pre.clone(),
                             flashloan: app_data.inner.protocol.flashloan.as_ref().map(|f| {
                                 Flashloan {
-                                    receiver: f.borrower.unwrap_or(owner),
+                                    receiver: f.receiver,
                                     token: f.token,
                                     amount: f.amount,
                                 }
