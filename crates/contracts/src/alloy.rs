@@ -367,6 +367,19 @@ crate::bindings!(
         // Not available on Lens
     }
 );
+crate::bindings!(
+    SwaprRouter,
+    // <https://swapr.gitbook.io/swapr/contracts>
+    crate::deployments! {
+        // <https://etherscan.io/tx/0x3f4ccc676637906db24caf043c89dafce959321c02266c6a4ab706fcec79a5f7>
+        MAINNET => address!("0xb9960d9bca016e9748be75dd52f02188b9d0829f"),
+        // <https://gnosisscan.io/tx/0x0406e774caced468b8f84d7c7ed9b6e9c324601af38f44e385aecf7a7d01feb4>
+        GNOSIS => address!("0xE43e60736b1cb4a75ad25240E2f9a62Bff65c0C0"),
+        // <https://arbiscan.io/tx/0x09771774fc138775472910f6bb0f2e03ff74e1e32a658e9c3e4d8f59f6431ba8>
+        ARBITRUM_ONE => address!("0x530476d5583724A89c8841eB6Da76E7Af4C0F17E"),
+        // Not available on Base and Lens
+    }
+);
 
 pub use alloy::providers::DynProvider as Provider;
 
@@ -562,6 +575,10 @@ mod tests {
             POLYGON,
         ] {
             assert!(SushiSwapRouter::deployment_address(chain_id).is_some());
+        }
+
+        for chain_id in &[MAINNET, GNOSIS, ARBITRUM_ONE] {
+            assert!(SwaprRouter::deployment_address(chain_id).is_some());
         }
     }
 

@@ -9,7 +9,7 @@ use {
     ethrpc::alloy::conversions::IntoLegacy,
     hex_literal::hex,
     reqwest::Url,
-    shared::sources::uniswap_v2::{BAOSWAP_INIT, HONEYSWAP_INIT, SUSHISWAP_INIT},
+    shared::sources::uniswap_v2::{BAOSWAP_INIT, HONEYSWAP_INIT, SUSHISWAP_INIT, SWAPR_INIT},
     std::{collections::HashSet, time::Duration},
 };
 
@@ -144,9 +144,10 @@ impl Swapr {
     #[allow(clippy::self_named_constructors)]
     pub fn swapr(chain: Chain) -> Option<Self> {
         Some(Self {
-            router: deployment_address(contracts::SwaprRouter::raw_contract(), chain)?,
-            pool_code: hex!("d306a548755b9295ee49cc729e13ca4a45e00199bbd890fa146da43a50571776")
-                .into(),
+            router: ContractAddress::from(
+                contracts::alloy::SwaprRouter::deployment_address(&chain.id())?.into_legacy(),
+            ),
+            pool_code: SWAPR_INIT.into(),
             missing_pool_cache_time: Duration::from_secs(60 * 60),
         })
     }

@@ -589,14 +589,6 @@ fn main() {
     generate_contract("IUniswapLikePair");
     // EIP-1271 contract - SignatureValidator
     generate_contract("ERC1271SignatureValidator");
-    generate_contract_with_config("SwaprRouter", |builder| {
-        // <https://swapr.gitbook.io/swapr/contracts>
-        builder
-            .add_network_str(MAINNET, "0xb9960d9bca016e9748be75dd52f02188b9d0829f")
-            .add_network_str(GNOSIS, "0xE43e60736b1cb4a75ad25240E2f9a62Bff65c0C0")
-            .add_network_str(ARBITRUM_ONE, "0x530476d5583724A89c8841eB6Da76E7Af4C0F17E")
-        // Not available on Base and Lens
-    });
     generate_contract("ISwaprPair");
     generate_contract_with_config("UniswapV2Factory", |builder| {
         // <https://docs.uniswap.org/contracts/v2/reference/smart-contracts/factory>
