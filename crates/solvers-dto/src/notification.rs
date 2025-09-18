@@ -70,6 +70,9 @@ pub enum Kind {
         reason: BanReason,
         until: DateTime<Utc>,
     },
+    SerializationError {
+        reason: String,
+    },
 }
 
 type BlockNo = u64;
