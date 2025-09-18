@@ -30,6 +30,8 @@ pub struct Solution {
     pub gas: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub flashloans: Option<HashMap<OrderUid, Flashloan>>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub wrapper: Option<H160>,
 }
 
 #[serde_as]

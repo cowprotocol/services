@@ -55,6 +55,7 @@ pub struct Solution {
     weth: eth::WethAddress,
     gas: Option<eth::Gas>,
     flashloans: HashMap<order::Uid, Flashloan>,
+    wrapper: Option<eth::Address>,
 }
 
 impl Solution {
@@ -72,6 +73,7 @@ impl Solution {
         fee_handler: FeeHandler,
         surplus_capturing_jit_order_owners: &HashSet<eth::Address>,
         flashloans: HashMap<order::Uid, Flashloan>,
+        wrapper: Option<eth::Address>,
     ) -> Result<Self, error::Solution> {
         // Surplus capturing JIT orders behave like Fulfillment orders. They capture
         // surplus, pay network fees and contribute to score of a solution.
@@ -128,6 +130,7 @@ impl Solution {
             weth,
             gas,
             flashloans,
+            wrapper,
         };
 
         // Check that the solution includes clearing prices for all user trades.
@@ -375,6 +378,7 @@ impl Solution {
                 (None, None) => None,
             },
             flashloans,
+            wrapper: self.wrapper,
         })
     }
 

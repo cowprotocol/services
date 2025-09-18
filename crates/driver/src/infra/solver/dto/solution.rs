@@ -7,8 +7,8 @@ use {
     app_data::AppDataHash,
     itertools::Itertools,
     model::{
-        DomainSeparator,
         order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
+        DomainSeparator,
     },
     std::{collections::HashMap, str::FromStr},
 };
@@ -224,6 +224,7 @@ impl Solutions {
                                 flashloan_hints.get(&uid).cloned()?,
                             ))
                         }).collect()),
+                    solution.wrapper.map(|w| w.into())
                 )
                 .map_err(|err| match err {
                     competition::solution::error::Solution::InvalidClearingPrices => {

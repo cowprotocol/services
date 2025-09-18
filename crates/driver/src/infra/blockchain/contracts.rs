@@ -3,12 +3,7 @@ use {
         boundary,
         domain::eth,
         infra::{blockchain::Ethereum, config},
-    },
-    chain::Chain,
-    contracts::FlashLoanRouter,
-    ethrpc::{Web3, block_stream::CurrentBlockWatcher},
-    std::collections::HashMap,
-    thiserror::Error,
+    }, chain::Chain, contracts::FlashLoanRouter, ethrpc::{block_stream::CurrentBlockWatcher, Web3}, std::collections::HashMap, thiserror::Error
 };
 
 #[derive(Debug, Clone)]
@@ -34,6 +29,7 @@ pub struct Contracts {
     /// specified.
     flashloan_default_lender: Option<eth::ContractAddress>,
     balance_helper: contracts::support::Balances,
+    web3: Web3,
 }
 
 #[derive(Debug, Clone)]
@@ -166,6 +162,7 @@ impl Contracts {
             flashloan_router,
             flashloan_default_lender: addresses.flashloan_default_lender,
             balance_helper,
+            web3: web3.clone(),
         })
     }
 
@@ -218,6 +215,10 @@ impl Contracts {
 
     pub fn balance_helper(&self) -> &contracts::support::Balances {
         &self.balance_helper
+    }
+
+    pub fn web3(&self) -> &Web3 {
+        &self.web3
     }
 }
 

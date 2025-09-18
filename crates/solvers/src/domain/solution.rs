@@ -17,6 +17,7 @@ pub struct Solution {
     pub interactions: Vec<Interaction>,
     pub post_interactions: Vec<eth::Interaction>,
     pub gas: Option<eth::Gas>,
+    pub wrapper: Option<eth::Address>,
 }
 
 impl Solution {
@@ -180,6 +181,8 @@ impl Single {
             post_interactions: Default::default(),
             gas: Some(gas),
             trades: vec![Trade::Fulfillment(Fulfillment::new(order, executed, fee)?)],
+            // The baseline solver has no knowledge of adding wrappers; driver will handle
+            wrapper: None,
         })
     }
 }

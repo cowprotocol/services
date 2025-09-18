@@ -6,13 +6,14 @@ use {
                 self,
                 order::{self, Partial},
             },
-            eth::{self, Ether, allowance},
+            eth::{self, allowance, Ether},
             liquidity,
         },
         infra::{self, solver::ManageNativeToken},
-        util::{Bytes, conv::u256::U256Ext},
+        util::{conv::u256::U256Ext, Bytes},
     },
     allowance::Allowance,
+    contracts::GPv2Settlement,
     ethcontract::H160,
     itertools::Itertools,
 };
@@ -101,7 +102,7 @@ pub fn tx(
                         sell_amount: trade.order().sell.amount.into(),
                         buy_amount: trade.order().buy.amount.into(),
                         valid_to: trade.order().valid_to.into(),
-                        app_data: trade.order().app_data.hash().0.0.into(),
+                        app_data: trade.order().app_data.hash().0 .0.into(),
                         fee_amount: eth::U256::zero(),
                         flags: Flags {
                             side: trade.order().side,
@@ -139,7 +140,7 @@ pub fn tx(
                         sell_amount: trade.order().sell.amount.into(),
                         buy_amount: trade.order().buy.amount.into(),
                         valid_to: trade.order().valid_to.into(),
-                        app_data: trade.order().app_data.0.0.into(),
+                        app_data: trade.order().app_data.0 .0.into(),
                         fee_amount: eth::U256::zero(),
                         flags: Flags {
                             side: trade.order().side,
@@ -273,7 +274,7 @@ pub fn tx(
                 flashloan.amount.0,
                 flashloan_wrapper.helper_contract.address(),
                 flashloan.lender.0,
-                flashloan.token.0.0,
+                flashloan.token.0 .0,
             ))
         })
         .collect::<Result<Vec<(eth::U256, eth::H160, eth::H160, eth::H160)>, Error>>()?;
@@ -302,8 +303,13 @@ pub fn tx(
         interactions.push(unwrap(native_unwrap, contracts.weth()));
     }
 
-    let tx = contracts
-        .settlement()
+    let settlement_target = if let Some(w) = solution.wrapper {
+        &GPv2Settlement::at(contracts.web3(), w.into())
+    } else {
+        contracts.settlement()
+    };
+
+    let tx = settlement_target
         .settle(
             tokens,
             clearing_prices,
