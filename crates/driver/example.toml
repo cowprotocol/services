@@ -1,4 +1,5 @@
-db-url = "postgres://"
+## Currently only required for CoW AMMs
+#db-url = "postgres://"
 
 [[solver]]
 name = "mysolver" # Arbitrary name given to this solver, must be unique
@@ -44,13 +45,14 @@ flashloan-router = "0x0000000000000000000000000000000000000000"
 lender = "0x0000000000000000000000000000000000000000"
 helper-contract = "0x0000000000000000000000000000000000000000"
 
-[[contracts.cow-amms]]
-# address of factory creating new CoW AMMs
-factory = "0x86f3df416979136cb4fdea2c0886301b911c163b"
-# address of contract to help interfacing with the created CoW AMMs
-helper = "0x86f3df416979136cb4fdea2c0886301b911c163b"
-# at which block the driver should start indexing the factory (1 block before deployment)
-index-start = 20188649
+## This config requires db-url to be configured on the top level
+#[[contracts.cow-amms]]
+## address of factory creating new CoW AMMs
+#factory = "0x86f3df416979136cb4fdea2c0886301b911c163b"
+## address of contract to help interfacing with the created CoW AMMs
+#helper = "0x86f3df416979136cb4fdea2c0886301b911c163b"
+## at which block the driver should start indexing the factory (1 block before deployment)
+#index-start = 20188649
 
 [liquidity]
 base-tokens = [
