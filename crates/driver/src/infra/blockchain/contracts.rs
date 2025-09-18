@@ -1,12 +1,11 @@
 use {
     crate::{
-        boundary,
         domain::eth,
         infra::{blockchain::Ethereum, config},
     },
     chain::Chain,
     contracts::FlashLoanRouter,
-    ethrpc::{Web3, block_stream::CurrentBlockWatcher},
+    ethrpc::Web3,
     std::collections::HashMap,
     thiserror::Error,
 };
@@ -21,7 +20,6 @@ pub struct Contracts {
 
     /// The domain separator for settlement contract used for signing orders.
     settlement_domain_separator: eth::DomainSeparator,
-    cow_amm_registry: cow_amm::Registry,
 
     /// Each lender potentially has different solver wrapper.
     flashloan_wrapper_by_lender: HashMap<eth::ContractAddress, FlashloanWrapperData>,
@@ -59,8 +57,6 @@ impl Contracts {
         web3: &Web3,
         chain: Chain,
         addresses: Addresses,
-        block_stream: CurrentBlockWatcher,
-        archive_node: Option<super::RpcArgs>,
     ) -> Result<Self, Error> {
         let address_for = |contract: &ethcontract::Contract,
                            address: Option<eth::ContractAddress>| {
@@ -109,21 +105,6 @@ impl Contracts {
                 .0,
         );
 
-        let archive_node_web3 = archive_node.as_ref().map_or(web3.clone(), |args| {
-            boundary::buffered_web3_client(
-                &args.url,
-                args.max_batch_size,
-                args.max_concurrent_requests,
-            )
-        });
-        let mut cow_amm_registry = cow_amm::Registry::new(archive_node_web3);
-        for config in addresses.cow_amms {
-            cow_amm_registry
-                .add_listener(config.index_start, config.factory, config.helper)
-                .await;
-        }
-        cow_amm_registry.spawn_maintenance_task(block_stream);
-
         let flashloan_wrapper_by_lender = addresses
             .flashloan_wrappers
             .iter()
@@ -161,7 +142,6 @@ impl Contracts {
             signatures,
             weth,
             settlement_domain_separator,
-            cow_amm_registry,
             flashloan_wrapper_by_lender,
             flashloan_router,
             flashloan_default_lender: addresses.flashloan_default_lender,
@@ -195,10 +175,6 @@ impl Contracts {
 
     pub fn settlement_domain_separator(&self) -> &eth::DomainSeparator {
         &self.settlement_domain_separator
-    }
-
-    pub fn cow_amm_registry(&self) -> &cow_amm::Registry {
-        &self.cow_amm_registry
     }
 
     pub fn get_flashloan_wrapper(

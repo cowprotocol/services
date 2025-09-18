@@ -491,7 +491,6 @@ impl Solver {
                 flashloan_router: Some(config.blockchain.flashloan_wrapper.address().into()),
             },
             gas,
-            None,
         )
         .await;
 

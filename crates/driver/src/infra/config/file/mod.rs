@@ -64,9 +64,6 @@ struct Config {
     )]
     order_priority_strategies: Vec<OrderPriorityStrategy>,
 
-    /// Archive node URL used to index CoW AMM
-    archive_node_url: Option<Url>,
-
     /// How long should the token quality computed by the simulation
     /// based logic be cached.
     #[serde(
