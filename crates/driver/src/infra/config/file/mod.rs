@@ -67,6 +67,9 @@ struct Config {
     /// Archive node URL used to index CoW AMM
     archive_node_url: Option<Url>,
 
+    /// Database URL used to store indexed CoW AMMs
+    db_url: Option<Url>,
+
     /// How long should the token quality computed by the simulation
     /// based logic be cached.
     #[serde(

@@ -61,6 +61,7 @@ impl Contracts {
         addresses: Addresses,
         block_stream: CurrentBlockWatcher,
         archive_node: Option<super::RpcArgs>,
+        db: Option<sqlx::PgPool>,
     ) -> Result<Self, Error> {
         let address_for = |contract: &ethcontract::Contract,
                            address: Option<eth::ContractAddress>| {
@@ -118,8 +119,11 @@ impl Contracts {
         });
         let mut cow_amm_registry = cow_amm::Registry::new(archive_node_web3);
         for config in addresses.cow_amms {
+            let db = db
+                .clone()
+                .expect("database is required when CoW AMMs are configured");
             cow_amm_registry
-                .add_listener(config.index_start, config.factory, config.helper)
+                .add_listener(config.index_start, config.factory, config.helper, db)
                 .await;
         }
         cow_amm_registry.spawn_maintenance_task(block_stream);

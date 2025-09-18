@@ -39,10 +39,12 @@ impl Registry {
         deployment_block: u64,
         factory: Address,
         helper_contract: Address,
+        db: sqlx::PgPool,
     ) {
         let storage = Storage::new(
             deployment_block,
             CowAmmLegacyHelper::at(&self.web3, helper_contract),
+            db,
         );
         self.storage.write().await.push(storage.clone());
 

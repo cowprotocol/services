@@ -5,6 +5,7 @@ use {
     ethcontract::errors::ExecutionError,
     ethrpc::{Web3, block_stream::CurrentBlockWatcher},
     shared::account_balances::{BalanceSimulator, SimulationError},
+    sqlx::PgPool,
     std::{fmt, sync::Arc, time::Duration},
     thiserror::Error,
     url::Url,
@@ -89,6 +90,7 @@ impl Ethereum {
         addresses: contracts::Addresses,
         gas: Arc<GasPriceEstimator>,
         archive_node_url: Option<&Url>,
+        db_url: Option<&Url>,
     ) -> Self {
         let Rpc { web3, chain, args } = rpc;
 
@@ -98,6 +100,15 @@ impl Ethereum {
         )
         .await
         .expect("couldn't initialize current block stream");
+
+        let db = match db_url {
+            Some(url) => Some(
+                PgPool::connect(url.as_str())
+                    .await
+                    .expect("couldn't connect to Postgres database"),
+            ),
+            None => None,
+        };
 
         let contracts = Contracts::new(
             &web3,
@@ -109,6 +120,7 @@ impl Ethereum {
                 max_batch_size: args.max_batch_size,
                 max_concurrent_requests: args.max_concurrent_requests,
             }),
+            db,
         )
         .await
         .expect("could not initialize important smart contracts");

@@ -2117,6 +2117,7 @@ dependencies = [
  "hex-literal",
  "model",
  "shared",
+ "sqlx",
  "tokio",
  "tracing",
 ]
@@ -2561,6 +2562,7 @@ dependencies = [
  "shared",
  "solver",
  "solvers-dto",
+ "sqlx",
  "tap",
  "tempfile",
  "thiserror 1.0.61",
