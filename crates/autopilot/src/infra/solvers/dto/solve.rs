@@ -61,9 +61,15 @@ impl Request {
                 .collect(),
             deadline: Utc::now() + chrono::Duration::from_std(time_limit).unwrap(),
             surplus_capturing_jit_order_owners: auction
-                .surplus_capturing_jit_order_owners
-                .iter()
+                .surplus_capturing_jit_order_owners_by_helper
+                .values()
+                .flatten()
                 .map(|address| address.0)
+                .collect::<Vec<_>>(),
+            surplus_capturing_jit_order_owners_by_helper: auction
+                .surplus_capturing_jit_order_owners_by_helper
+                .iter()
+                .map(|(helper, owners)| (helper.0, owners.iter().map(|owner| owner.0).collect()))
                 .collect::<Vec<_>>(),
         };
         Self(Arc::from(serde_json::value::to_raw_value(&helper).expect(
@@ -93,6 +99,7 @@ struct RequestHelper {
     pub orders: Vec<Order>,
     pub deadline: DateTime<Utc>,
     pub surplus_capturing_jit_order_owners: Vec<H160>,
+    pub surplus_capturing_jit_order_owners_by_helper: Vec<(H160, Vec<H160>)>,
 }
 
 #[serde_as]

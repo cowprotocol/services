@@ -14,9 +14,13 @@ use {
     },
     app_data::Validator,
     derive_more::Into,
+    itertools::Itertools,
     primitive_types::{H160, U256},
     rust_decimal::Decimal,
-    std::{collections::HashSet, str::FromStr},
+    std::{
+        collections::{HashMap, HashSet},
+        str::FromStr,
+    },
 };
 
 #[derive(Debug)]
@@ -200,7 +204,7 @@ impl ProtocolFees {
         &self,
         order: boundary::Order,
         quote: Option<domain::Quote>,
-        surplus_capturing_jit_order_owners: &[eth::Address],
+        surplus_capturing_jit_order_owners_by_helper: &HashMap<eth::Address, Vec<eth::Address>>,
     ) -> domain::Order {
         // In case there is no quote, we assume 0 buy amount so that the order ends up
         // being considered out of market price.
@@ -215,7 +219,11 @@ impl ProtocolFees {
         let partner_fee =
             Self::get_partner_fee(&order, &reference_quote, self.max_partner_fee.into());
 
-        if surplus_capturing_jit_order_owners.contains(&order.metadata.owner.into()) {
+        if surplus_capturing_jit_order_owners_by_helper
+            .values()
+            .flatten()
+            .contains::<eth::Address>(&order.metadata.owner.into())
+        {
             return boundary::order::to_domain(order, partner_fee, quote);
         }
 

@@ -195,13 +195,17 @@ impl Persistence {
     pub async fn save_surplus_capturing_jit_order_owners(
         &self,
         auction_id: AuctionId,
-        surplus_capturing_jit_order_owners: &[domain::eth::Address],
+        surplus_capturing_jit_order_owners_by_helper: &HashMap<
+            domain::eth::Address,
+            Vec<domain::eth::Address>,
+        >,
     ) -> Result<(), DatabaseError> {
         self.postgres
             .save_surplus_capturing_jit_order_owners(
                 auction_id,
-                &surplus_capturing_jit_order_owners
-                    .iter()
+                &surplus_capturing_jit_order_owners_by_helper
+                    .values()
+                    .flatten()
                     .map(|address| ByteArray(address.0.into()))
                     .collect::<Vec<_>>(),
             )
@@ -308,8 +312,9 @@ impl Persistence {
                     .map(|price| u256_to_big_decimal(&price.get().0))
                     .collect(),
                 surplus_capturing_jit_order_owners: auction
-                    .surplus_capturing_jit_order_owners
-                    .iter()
+                    .surplus_capturing_jit_order_owners_by_helper
+                    .values()
+                    .flatten()
                     .map(|owner| ByteArray(owner.0.0))
                     .collect(),
             },

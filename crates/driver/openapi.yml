@@ -464,14 +464,24 @@ components:
             Information about tokens used in the auction.
         deadline:
           $ref: "#/components/schemas/DateTime"
-        surplusCapturingJitOrderOwners:
+        surplusCapturingJitOrderOwnersByHelper:
           type: array
           items:
-            $ref: "#/components/schemas/Address"
+            type: array
+            items:
+              oneOf:
+                - $ref: "#/components/schemas/Address"
+                - type: array
+                  items:
+                    $ref: "#/components/schemas/Address"
+            minItems: 2
+            maxItems: 2
+            description: Tuple of [helper_address, [amm_addresses]]
           description: >
-            List of addresses on whose surplus will count towards the objective
-            value of their solution (unlike other orders that were created by
-            the solver).
+            Array of tuples where each tuple contains a helper contract address
+            and an array of CoW AMM addresses using that helper. This provides
+            more detailed information than surplusCapturingJitOrderOwners by
+            grouping AMMs by their helper contracts.
     SolveResponse:
       description: |
         Response of the solve endpoint.

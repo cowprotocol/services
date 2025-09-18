@@ -251,7 +251,7 @@ impl SolvableOrdersCache {
             OrderEventLabel::Filtered,
         );
 
-        let surplus_capturing_jit_order_owners = cow_amms
+        let valid_cow_amms: Vec<_> = cow_amms
             .iter()
             .filter(|cow_amm| {
                 cow_amm.traded_tokens().iter().all(|token| {
@@ -266,10 +266,21 @@ impl SolvableOrdersCache {
                     price_exist
                 })
             })
-            .map(|cow_amm| cow_amm.address())
-            .cloned()
-            .map(eth::Address::from)
-            .collect::<Vec<_>>();
+            .collect();
+
+        let surplus_capturing_jit_order_owners_by_helper = {
+            let mut by_helper: std::collections::HashMap<eth::Address, Vec<eth::Address>> =
+                std::collections::HashMap::new();
+            for cow_amm in &valid_cow_amms {
+                let helper_address = eth::Address::from(cow_amm.helper_address());
+                let amm_address = eth::Address::from(*cow_amm.address());
+                by_helper
+                    .entry(helper_address)
+                    .or_default()
+                    .push(amm_address);
+            }
+            by_helper
+        };
         let auction = domain::RawAuctionData {
             block,
             orders: orders
@@ -279,8 +290,11 @@ impl SolvableOrdersCache {
                         .quotes
                         .get(&order.metadata.uid.into())
                         .cloned();
-                    self.protocol_fees
-                        .apply(order, quote, &surplus_capturing_jit_order_owners)
+                    self.protocol_fees.apply(
+                        order,
+                        quote,
+                        &surplus_capturing_jit_order_owners_by_helper,
+                    )
                 })
                 .collect(),
             prices: prices
@@ -289,7 +303,7 @@ impl SolvableOrdersCache {
                     Price::try_new(value.into()).map(|price| (eth::TokenAddress(key), price))
                 })
                 .collect::<Result<_, _>>()?,
-            surplus_capturing_jit_order_owners,
+            surplus_capturing_jit_order_owners_by_helper,
         };
 
         *self.cache.lock().await = Some(Inner {

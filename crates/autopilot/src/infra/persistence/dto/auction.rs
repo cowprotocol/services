@@ -24,10 +24,15 @@ pub fn from_domain(auction: domain::RawAuctionData) -> RawAuctionData {
             .into_iter()
             .map(|(key, value)| (key.into(), value.get().into()))
             .collect(),
-        surplus_capturing_jit_order_owners: auction
-            .surplus_capturing_jit_order_owners
+        surplus_capturing_jit_order_owners_by_helper: auction
+            .surplus_capturing_jit_order_owners_by_helper
             .into_iter()
-            .map(Into::into)
+            .map(|(helper, owners)| {
+                (
+                    helper.into(),
+                    owners.into_iter().map(Into::into).collect::<Vec<_>>(),
+                )
+            })
             .collect(),
     }
 }
@@ -41,7 +46,7 @@ pub struct RawAuctionData {
     #[serde_as(as = "BTreeMap<_, HexOrDecimalU256>")]
     pub prices: BTreeMap<H160, U256>,
     #[serde(default)]
-    pub surplus_capturing_jit_order_owners: Vec<H160>,
+    pub surplus_capturing_jit_order_owners_by_helper: Vec<(H160, Vec<H160>)>,
 }
 
 pub type AuctionId = i64;
@@ -74,11 +79,16 @@ impl Auction {
                     Price::try_new(value.into()).map(|price| (eth::TokenAddress(key), price))
                 })
                 .collect::<Result<_, _>>()?,
-            surplus_capturing_jit_order_owners: self
+            surplus_capturing_jit_order_owners_by_helper: self
                 .auction
-                .surplus_capturing_jit_order_owners
+                .surplus_capturing_jit_order_owners_by_helper
                 .into_iter()
-                .map(Into::into)
+                .map(|(helper, owners)| {
+                    (
+                        helper.into(),
+                        owners.into_iter().map(Into::into).collect::<Vec<_>>(),
+                    )
+                })
                 .collect(),
         })
     }
