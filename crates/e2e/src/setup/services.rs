@@ -36,7 +36,7 @@ pub const AUCTION_ENDPOINT: &str = "/api/v1/auction";
 pub const TRADES_ENDPOINT: &str = "/api/v1/trades";
 pub const VERSION_ENDPOINT: &str = "/api/v1/version";
 pub const SOLVER_COMPETITION_ENDPOINT: &str = "/api/v2/solver_competition";
-const LOCAL_DB_URL: &str = "postgresql://";
+pub const LOCAL_DB_URL: &str = "postgresql://";
 
 fn order_status_endpoint(uid: &OrderUid) -> String {
     format!("/api/v1/orders/{uid}/status")

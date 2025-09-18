@@ -231,6 +231,7 @@ factory = "{:?}"
 app-data-fetching-enabled = true
 orderbook-url = "http://localhost:8080"
 flashloans-enabled = true
+db-url = "{LOCAL_DB_URL}"
 
 [gas-estimator]
 estimator = "web3"
