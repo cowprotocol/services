@@ -465,23 +465,13 @@ components:
         deadline:
           $ref: "#/components/schemas/DateTime"
         surplusCapturingJitOrderOwnersByHelper:
-          type: array
-          items:
+          type: object
+          additionalProperties:
             type: array
             items:
-              oneOf:
-                - $ref: "#/components/schemas/Address"
-                - type: array
-                  items:
-                    $ref: "#/components/schemas/Address"
-            minItems: 2
-            maxItems: 2
-            description: Tuple of [helper_address, [amm_addresses]]
+              $ref: "#/components/schemas/Address"
           description: >
-            Array of tuples where each tuple contains a helper contract address
-            and an array of CoW AMM addresses using that helper. This provides
-            more detailed information than surplusCapturingJitOrderOwners by
-            grouping AMMs by their helper contracts.
+            HashMap of CoW AMM owner addresses grouped by their helper SC address.
     SolveResponse:
       description: |
         Response of the solve endpoint.

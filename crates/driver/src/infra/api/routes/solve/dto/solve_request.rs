@@ -208,7 +208,7 @@ pub struct SolveRequest {
     orders: Vec<Order>,
     deadline: chrono::DateTime<chrono::Utc>,
     #[serde(default)]
-    surplus_capturing_jit_order_owners_by_helper: Vec<(eth::H160, Vec<eth::H160>)>,
+    surplus_capturing_jit_order_owners_by_helper: HashMap<eth::H160, Vec<eth::H160>>,
 }
 
 impl SolveRequest {
