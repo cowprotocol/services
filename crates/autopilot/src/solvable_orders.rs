@@ -482,6 +482,9 @@ async fn find_invalid_signature_orders(
                         hash,
                         signature: signature.clone(),
                         interactions: order.interactions.pre.clone(),
+                        // TODO delete balance and signature logic in the autopilot
+                        // altogether
+                        balance_override: None,
                     })
                     .await
                 {
@@ -1251,6 +1254,7 @@ mod tests {
                     value: U256::zero(),
                     call_data: vec![5, 6],
                 }],
+                balance_override: None,
             }))
             .returning(|_| Ok(()));
         signature_validator
@@ -1260,6 +1264,7 @@ mod tests {
                 hash: [4; 32],
                 signature: vec![4, 4, 4, 4],
                 interactions: vec![],
+                balance_override: None,
             }))
             .returning(|_| Err(SignatureValidationError::Invalid));
         signature_validator
@@ -1269,6 +1274,7 @@ mod tests {
                 hash: [5; 32],
                 signature: vec![5, 5, 5, 5, 5],
                 interactions: vec![],
+                balance_override: None,
             }))
             .returning(|_| Ok(()));
 

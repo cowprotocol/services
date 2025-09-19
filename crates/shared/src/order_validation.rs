@@ -589,6 +589,13 @@ impl OrderValidating for OrderValidator {
                         hash,
                         signature: signature.to_owned(),
                         interactions: app_data.interactions.pre.clone(),
+                        balance_override: app_data.inner.protocol.flashloan.as_ref().map(|loan| {
+                            BalanceOverrideRequest {
+                                token: loan.token,
+                                holder: loan.borrower.unwrap_or(owner),
+                                amount: loan.amount,
+                            }
+                        }),
                     })
                     .await
                     .map_err(|err| match err {
@@ -1400,6 +1407,7 @@ mod tests {
                 hash: order_hash,
                 signature: vec![1, 2, 3],
                 interactions: pre_interactions.clone(),
+                balance_override: None,
             }))
             .returning(|_| Ok(0u64));
 
@@ -1428,6 +1436,7 @@ mod tests {
                 hash: order_hash,
                 signature: vec![1, 2, 3],
                 interactions: pre_interactions.clone(),
+                balance_override: None,
             }))
             .returning(|_| Err(SignatureValidationError::Invalid));
 

@@ -1,4 +1,8 @@
 use {
+    crate::price_estimation::trade_verifier::balance_overrides::{
+        BalanceOverrideRequest,
+        BalanceOverriding,
+    },
     ethcontract::Bytes,
     ethrpc::Web3,
     hex_literal::hex,
@@ -17,6 +21,13 @@ pub struct SignatureCheck {
     pub hash: [u8; 32],
     pub signature: Vec<u8>,
     pub interactions: Vec<InteractionData>,
+    pub balance_override: Option<BalanceOverrideRequest>,
+}
+
+impl SignatureCheck {
+    fn requires_setup(&self) -> bool {
+        !self.interactions.is_empty() || self.balance_override.is_some()
+    }
 }
 
 impl std::fmt::Debug for SignatureCheck {
@@ -80,11 +91,16 @@ pub struct Contracts {
 }
 
 /// Creates the default [`SignatureValidating`] instance.
-pub fn validator(web3: &Web3, contracts: Contracts) -> Arc<dyn SignatureValidating> {
+pub fn validator(
+    web3: &Web3,
+    contracts: Contracts,
+    balance_overrider: Arc<dyn BalanceOverriding>,
+) -> Arc<dyn SignatureValidating> {
     Arc::new(simulation::Validator::new(
         web3,
         contracts.settlement,
         contracts.signatures,
         contracts.vault_relayer,
+        balance_overrider,
     ))
 }

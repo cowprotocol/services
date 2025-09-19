@@ -132,6 +132,7 @@ pub async fn run(args: Arguments) {
 
     let chain = Chain::try_from(chain_id).expect("incorrect chain ID");
 
+    let balance_overrider = args.price_estimation.balance_overrides.init(web3.clone());
     let signature_validator = signature_validator::validator(
         &web3,
         signature_validator::Contracts {
@@ -139,6 +140,7 @@ pub async fn run(args: Arguments) {
             signatures: signatures_contract,
             vault_relayer,
         },
+        balance_overrider.clone(),
     );
 
     let vault = match args.shared.balancer_v2_vault_address {
@@ -175,7 +177,7 @@ pub async fn run(args: Arguments) {
             balances_contract.clone(),
             vault_relayer,
             vault.as_ref().map(|contract| contract.address()),
-            args.price_estimation.balance_overrides.init(web3.clone()),
+            balance_overrider,
         ),
     );
 
