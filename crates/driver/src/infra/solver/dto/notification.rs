@@ -69,6 +69,9 @@ pub fn new(
                 },
                 until,
             },
+            notify::Kind::SerializationError(reason) => {
+                solvers_dto::notification::Kind::SerializationError { reason }
+            }
         },
     }
 }
