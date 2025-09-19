@@ -269,8 +269,7 @@ impl SolvableOrdersCache {
             .collect();
 
         let surplus_capturing_jit_order_owners_by_helper = {
-            let mut by_helper: std::collections::HashMap<eth::Address, Vec<eth::Address>> =
-                std::collections::HashMap::new();
+            let mut by_helper: HashMap<eth::Address, Vec<eth::Address>> = HashMap::new();
             for cow_amm in &valid_cow_amms {
                 let helper_address = eth::Address::from(cow_amm.helper_address());
                 let amm_address = eth::Address::from(*cow_amm.address());
