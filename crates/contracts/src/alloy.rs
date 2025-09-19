@@ -381,6 +381,38 @@ crate::bindings!(
     }
 );
 crate::bindings!(ISwaprPair);
+crate::bindings!(
+    TestnetUniswapV2Router02,
+    crate::deployments! {
+        // <https://sepolia.etherscan.io/tx/0x2bf9a91a42d53e161897d9c581f798df9db6fb00587803dde7e7b8859118d821>
+        SEPOLIA => address!("0x86dcd3293C53Cf8EFd7303B57beb2a3F671dDE98"),
+    }
+);
+crate::bindings!(
+    UniswapV2Factory,
+    // <https://docs.uniswap.org/contracts/v2/reference/smart-contracts/factory>
+    crate::deployments! {
+        // <https://etherscan.io/tx/0xc31d7e7e85cab1d38ce1b8ac17e821ccd47dbde00f9d57f2bd8613bff9428396>
+        MAINNET => address!("0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f"),
+        // <https://gnosisscan.io/tx/0x446de52c460bed3f49a4342eab247bb4b2fe2993962c284fb9bc14a983c7a3d4>
+        GNOSIS => address!("0xA818b4F111Ccac7AA31D0BCc0806d64F2E0737D7"),
+        // <https://arbiscan.io/tx/0x83b597d54496c0b64d66a3b9a65c312e406262511c908f702ef06755d13ab2f3>
+        ARBITRUM_ONE => address!("0xf1D7CC64Fb4452F05c498126312eBE29f30Fbcf9"),
+        // <https://basescan.org/tx/0x3c94031f81d9afe3beeb8fbcf4dcf1bd5b5688b86081d94e3d0231514dc00d31>
+        BASE => address!("0x8909Dc15e40173Ff4699343b6eB8132c65e18eC6"),
+        // <https://sepolia.etherscan.io/tx/0x0a5e26b22f6b470857957a1d5a92ad4a7d3c5e7cf254ddd80edfe23df70eae71>
+        SEPOLIA => address!("0xF62c03E08ada871A0bEb309762E260a7a6a880E6"),
+        // <https://snowtrace.io/tx/0xd06a069b11fc0c998b404c5736957cc16c71cf1f7dbf8a7d4244c84036ea6edd>
+        AVALANCHE => address!("0x9e5A52f57b3038F1B8EeE45F28b3C1967e22799C"),
+        // <https://bscscan.com/tx/0x7305a4bddc54eee158f245a09526969697ac1a9f56d090b124ebfc85ff71a5cf>
+        BNB => address!("0x8909Dc15e40173Ff4699343b6eB8132c65e18eC6"),
+        // <https://optimistic.etherscan.io/tx/0xf7227dcbbfa4ea2bb2634f2a1f364a64b028f9e9e393974fea8d435cd097c72e>
+        OPTIMISM => address!("0x0c3c1c532F1e39EdF36BE9Fe0bE1410313E074Bf"),
+        // <https://polygonscan.com/tx/0x712ac56155a301fca4b7a761e232233f41a104865a74b1a59293835da355292a>
+        POLYGON => address!("0x9e5A52f57b3038F1B8EeE45F28b3C1967e22799C"),
+        // Not available on Lens
+    }
+);
 
 pub use alloy::providers::DynProvider as Provider;
 
@@ -580,6 +612,22 @@ mod tests {
 
         for chain_id in &[MAINNET, GNOSIS, ARBITRUM_ONE] {
             assert!(SwaprRouter::deployment_address(chain_id).is_some());
+        }
+
+        assert!(TestnetUniswapV2Router02::deployment_address(&SEPOLIA).is_some());
+
+        for chain_id in &[
+            MAINNET,
+            GNOSIS,
+            ARBITRUM_ONE,
+            BASE,
+            SEPOLIA,
+            AVALANCHE,
+            BNB,
+            OPTIMISM,
+            POLYGON,
+        ] {
+            assert!(UniswapV2Factory::deployment_address(chain_id).is_some());
         }
     }
 

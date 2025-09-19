@@ -74,8 +74,6 @@ include_contracts! {
     IUniswapLikeRouter;
     IUniswapV3Factory;
     Permit2;
-    TestnetUniswapV2Router02;
-    UniswapV2Factory;
     UniswapV2Router02;
     UniswapV3Pool;
     UniswapV3QuoterV2;
@@ -182,7 +180,6 @@ mod tests {
             assert_has_deployment_address!(CowProtocolToken for *network);
         }
         for network in &[MAINNET, GNOSIS, ARBITRUM_ONE] {
-            assert_has_deployment_address!(UniswapV2Factory for *network);
             assert_has_deployment_address!(UniswapV2Router02 for *network);
         }
         for network in &[
@@ -213,9 +210,6 @@ mod tests {
         for network in &[MAINNET, GNOSIS, ARBITRUM_ONE] {
             assert!(alloy::BalancerV2StablePoolFactoryV2::deployment_address(network).is_some());
         }
-
-        // only sepolia
-        assert_has_deployment_address!(TestnetUniswapV2Router02 for SEPOLIA);
     }
 
     #[test]

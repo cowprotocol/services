@@ -9,7 +9,13 @@ use {
     ethrpc::alloy::conversions::IntoLegacy,
     hex_literal::hex,
     reqwest::Url,
-    shared::sources::uniswap_v2::{BAOSWAP_INIT, HONEYSWAP_INIT, SUSHISWAP_INIT, SWAPR_INIT},
+    shared::sources::uniswap_v2::{
+        BAOSWAP_INIT,
+        HONEYSWAP_INIT,
+        SUSHISWAP_INIT,
+        SWAPR_INIT,
+        TESTNET_UNISWAP_INIT,
+    },
     std::{collections::HashSet, time::Duration},
 };
 
@@ -118,9 +124,11 @@ impl UniswapV2 {
     /// test networks.
     pub fn testnet_uniswapv2(chain: Chain) -> Option<Self> {
         Some(Self {
-            router: deployment_address(contracts::TestnetUniswapV2Router02::raw_contract(), chain)?,
-            pool_code: hex!("0efd7612822d579e24a8851501d8c2ad854264a1050e3dfcee8afcca08f80a86")
-                .into(),
+            router: ContractAddress::from(
+                contracts::alloy::TestnetUniswapV2Router02::deployment_address(&chain.id())?
+                    .into_legacy(),
+            ),
+            pool_code: TESTNET_UNISWAP_INIT.into(),
             missing_pool_cache_time: Duration::from_secs(60 * 60),
         })
     }
