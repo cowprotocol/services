@@ -439,15 +439,16 @@ impl Blockchain {
             }
         }
         // Create the uniswap factory.
-        let uniswap_factory = wait_for(
-            &web3,
-            contracts::UniswapV2Factory::builder(&web3, main_trader_account.address())
-                .from(main_trader_account.clone())
-                .deploy(),
+        let contract_address = contracts::alloy::UniswapV2Factory::Instance::deploy_builder(
+            web3.alloy.clone(),
+            main_trader_account.address().into_alloy(),
         )
+        .from(main_trader_account.address().into_alloy())
+        .deploy()
         .await
         .unwrap();
-
+        let uniswap_factory =
+            contracts::alloy::UniswapV2Factory::Instance::new(contract_address, web3.alloy.clone());
         // Create and fund a uniswap pair for each pool. Fund the settlement contract
         // with the same liquidity as the pool, to allow for internalized interactions.
         let mut pairs = Vec::new();
@@ -472,23 +473,21 @@ impl Blockchain {
                     .into_legacy()
             };
             // Create the pair.
-            wait_for(
-                &web3,
-                uniswap_factory
-                    .create_pair(token_a, token_b)
-                    .from(main_trader_account.clone())
-                    .send(),
-            )
-            .await
-            .unwrap();
+            uniswap_factory
+                .createPair(token_a.into_alloy(), token_b.into_alloy())
+                .from(main_trader_account.address().into_alloy())
+                .send_and_watch()
+                .await
+                .unwrap();
             // Fund the pair and the settlement contract.
             let pair = contracts::IUniswapLikePair::at(
                 &web3,
                 uniswap_factory
-                    .get_pair(token_a, token_b)
+                    .getPair(token_a.into_alloy(), token_b.into_alloy())
                     .call()
                     .await
-                    .unwrap(),
+                    .unwrap()
+                    .into_legacy(),
             );
             pairs.push(Pair {
                 token_a: pool.reserve_a.token,

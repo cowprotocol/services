@@ -1,8 +1,13 @@
+pub mod alloy;
 pub mod driver;
 pub mod fake;
 
 use {
-    crate::{ethrpc::Web3, http_client::HttpClientFactory},
+    crate::{
+        ethrpc::Web3,
+        gas_price_estimation::alloy::AlloyGasPriceEstimator,
+        http_client::HttpClientFactory,
+    },
     anyhow::Result,
     gas_estimation::{
         GasPriceEstimating,
@@ -20,6 +25,7 @@ pub enum GasEstimatorType {
     Web3,
     Native,
     Driver(Url),
+    Alloy,
 }
 
 impl FromStr for GasEstimatorType {
@@ -28,6 +34,7 @@ impl FromStr for GasEstimatorType {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_ascii_lowercase().as_str() {
             "web3" => Ok(GasEstimatorType::Web3),
+            "alloy" => Ok(GasEstimatorType::Alloy),
             "native" => Ok(GasEstimatorType::Native),
             _ => Url::parse(s).map(GasEstimatorType::Driver).map_err(|e| {
                 format!("expected 'web3', 'native', or a valid driver URL; got {s:?}: {e}")
@@ -55,6 +62,9 @@ pub async fn create_priority_estimator(
                 )));
             }
             GasEstimatorType::Web3 => estimators.push(Box::new(web3.legacy.clone())),
+            GasEstimatorType::Alloy => {
+                estimators.push(Box::new(AlloyGasPriceEstimator::new(web3.alloy.clone())))
+            }
             GasEstimatorType::Native => {
                 match NativeGasEstimator::new(web3.transport().clone(), None).await {
                     Ok(estimator) => estimators.push(Box::new(estimator)),
