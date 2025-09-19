@@ -155,11 +155,9 @@ impl PoolsCheckpointHandler {
         // can't fetch the state of all pools in constructor for performance reasons,
         // so let's fetch the top `max_pools_to_initialize_cache` pools with the highest
         // liquidity
-        registered_pools.pools.sort_unstable_by(|a, b| {
-            a.total_value_locked_eth
-                .partial_cmp(&b.total_value_locked_eth)
-                .unwrap()
-        });
+        registered_pools
+            .pools
+            .sort_unstable_by(|a, b| a.liquidity.partial_cmp(&b.liquidity).unwrap());
         let pool_ids = registered_pools
             .pools
             .clone()
@@ -266,7 +264,13 @@ pub struct UniswapV3PoolFetcher {
     checkpoint: PoolsCheckpointHandler,
     /// Recent events used on top of pools_checkpoint to get the `latest_block`
     /// pools state.
-    events: tokio::sync::Mutex<EventHandler<UniswapV3PoolEventFetcher, RecentEventsCache>>,
+    events: tokio::sync::Mutex<
+        EventHandler<
+            UniswapV3PoolEventFetcher,
+            RecentEventsCache,
+            ethcontract::Event<UniswapV3Event>,
+        >,
+    >,
 }
 
 impl UniswapV3PoolFetcher {

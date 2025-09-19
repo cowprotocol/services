@@ -96,7 +96,7 @@ impl<Factory> PoolInfoFetcher<Factory> {
             .await?
             .tokens
             .into_iter()
-            .map(|token| token.into_legacy())
+            .map(IntoLegacy::into_legacy)
             .collect::<Vec<_>>();
         let scaling_factors = self.scaling_factors(&tokens).await?;
 
@@ -158,7 +158,7 @@ impl<Factory> PoolInfoFetcher<Factory> {
             let tokens = pool_tokens
                 .tokens
                 .into_iter()
-                .map(|t| t.into_legacy())
+                .map(IntoLegacy::into_legacy)
                 .collect::<Vec<_>>();
             ensure!(pool.tokens == tokens, "pool token mismatch");
             let tokens = itertools::izip!(&pool.tokens, balances, &pool.scaling_factors)
@@ -471,8 +471,8 @@ mod tests {
             .unwrap()
             .abi_encode_output(&[
                 DynSolValue::Bool(false),
-                DynSolValue::Uint(U256::zero().into_alloy(), 256),
-                DynSolValue::Uint(U256::zero().into_alloy(), 256),
+                DynSolValue::Uint(alloy::primitives::U256::ZERO, 256),
+                DynSolValue::Uint(alloy::primitives::U256::ZERO, 256),
             ])
             .unwrap();
         asserter.push_success(&get_paused_state_response);

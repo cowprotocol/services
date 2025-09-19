@@ -4,52 +4,62 @@
 use {
     super::{internal::InternalPoolFetching, pool_storage::PoolStorage},
     crate::{
-        event_handling::{EventHandler, EventRetrieving},
+        event_handling::{AlloyEventRetriever, AlloyEventRetrieving, EventHandler},
         maintenance::Maintaining,
         recent_block_cache::Block,
-        sources::balancer_v2::pools::{
-            FactoryIndexing,
-            Pool,
-            PoolStatus,
-            common::PoolInfoFetching,
+        sources::balancer_v2::{
+            pool_fetching::BalancerFactoryInstance,
+            pools::{FactoryIndexing, Pool, PoolStatus, common::PoolInfoFetching},
         },
+    },
+    BalancerV2BasePoolFactory::BalancerV2BasePoolFactory::BalancerV2BasePoolFactoryEvents,
+    alloy::{
+        providers::DynProvider,
+        rpc::types::{Filter, Log},
+        sol_types::SolEvent,
     },
     anyhow::Result,
     contracts::{
-        BalancerV2BasePoolFactory,
-        balancer_v2_base_pool_factory,
+        alloy::{
+            BalancerV2BasePoolFactory,
+            BalancerV2BasePoolFactory::BalancerV2BasePoolFactory::PoolCreated,
+        },
         errors::EthcontractErrorType,
     },
-    ethcontract::{BlockId, H256, Instance, dyns::DynAllEventsBuilder, errors::MethodError},
-    ethrpc::{
-        Web3Transport,
-        block_stream::{BlockNumberHash, BlockRetrieving},
-    },
+    ethcontract::{BlockId, H256, errors::MethodError},
+    ethrpc::block_stream::{BlockNumberHash, BlockRetrieving},
     futures::future,
-    hex_literal::hex,
+    maplit::hashset,
     model::TokenPair,
     std::{collections::HashSet, sync::Arc},
     tokio::sync::Mutex,
 };
 
-pub struct BasePoolFactoryContract(BalancerV2BasePoolFactory);
+pub struct BasePoolFactoryContract(BalancerV2BasePoolFactory::Instance);
 
-const POOL_CREATED_TOPIC: H256 = H256(hex!(
-    "83a48fbcfc991335314e74d0496aab6a1987e992ddc85dddbcc4d6dd6ef2e9fc"
-));
+#[async_trait::async_trait]
+impl AlloyEventRetrieving for BasePoolFactoryContract {
+    type Event = BalancerV2BasePoolFactoryEvents;
 
-impl EventRetrieving for BasePoolFactoryContract {
-    type Event = balancer_v2_base_pool_factory::Event;
+    fn provider(&self) -> &DynProvider {
+        self.0.provider()
+    }
 
-    fn get_events(&self) -> DynAllEventsBuilder<Self::Event> {
-        let mut events = self.0.all_events();
-        events.filter = events.filter.topic0(POOL_CREATED_TOPIC.into());
-        events
+    fn filter(&self) -> Filter {
+        Filter::new()
+            .event_signature(hashset![PoolCreated::SIGNATURE_HASH])
+            .address(*self.0.address())
     }
 }
 
 /// Type alias for the internal event updater type.
-type PoolUpdater<Factory> = Mutex<EventHandler<BasePoolFactoryContract, PoolStorage<Factory>>>;
+type PoolUpdater<Factory> = Mutex<
+    EventHandler<
+        AlloyEventRetriever<BasePoolFactoryContract>,
+        PoolStorage<Factory>,
+        (BalancerV2BasePoolFactoryEvents, Log),
+    >,
+>;
 
 /// The Pool Registry maintains an event handler for each of the Balancer Pool
 /// Factory contracts and maintains a `PoolStorage` for each.
@@ -73,13 +83,13 @@ where
     pub fn new(
         block_retreiver: Arc<dyn BlockRetrieving>,
         fetcher: Arc<dyn PoolInfoFetching<Factory>>,
-        factory_instance: &Instance<Web3Transport>,
+        factory_instance: &BalancerFactoryInstance,
         initial_pools: Vec<Factory::PoolInfo>,
         start_sync_at_block: Option<BlockNumberHash>,
     ) -> Self {
         let updater = Mutex::new(EventHandler::new(
             block_retreiver,
-            BasePoolFactoryContract(base_pool_factory(factory_instance)),
+            AlloyEventRetriever(BasePoolFactoryContract(base_pool_factory(factory_instance))),
             PoolStorage::new(initial_pools, fetcher.clone()),
             start_sync_at_block,
         ));
@@ -128,11 +138,12 @@ where
     }
 }
 
-fn base_pool_factory(contract_instance: &Instance<Web3Transport>) -> BalancerV2BasePoolFactory {
-    BalancerV2BasePoolFactory::with_deployment_info(
-        &contract_instance.web3(),
-        contract_instance.address(),
-        contract_instance.deployment_information(),
+fn base_pool_factory(
+    contract_instance: &BalancerFactoryInstance,
+) -> BalancerV2BasePoolFactory::Instance {
+    BalancerV2BasePoolFactory::Instance::new(
+        *contract_instance.address(),
+        contract_instance.provider().clone(),
     )
 }
 

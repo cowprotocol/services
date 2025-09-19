@@ -1,6 +1,13 @@
 use {
-    e2e::{setup::*, tx},
-    ethcontract::prelude::U256,
+    ::alloy::primitives::U256,
+    e2e::{
+        setup::{eth, *},
+        tx,
+    },
+    ethrpc::alloy::{
+        CallBuilderExt,
+        conversions::{IntoAlloy, IntoLegacy},
+    },
     model::{
         order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
@@ -29,53 +36,62 @@ async fn test(web3: Web3) {
     token_a.mint(solver.address(), to_wei(1000)).await;
     token_b.mint(solver.address(), to_wei(1000)).await;
 
-    tx!(
-        solver.account(),
-        onchain
-            .contracts()
-            .uniswap_v2_factory
-            .create_pair(token_a.address(), token_b.address())
-    );
-    tx!(
-        solver.account(),
-        token_a.approve(
-            onchain.contracts().uniswap_v2_router.address(),
-            to_wei(1000)
+    onchain
+        .contracts()
+        .uniswap_v2_factory
+        .createPair(*token_a.address(), *token_b.address())
+        .from(solver.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    token_a
+        .approve(
+            onchain.contracts().uniswap_v2_router.address().into_alloy(),
+            eth(1000),
         )
-    );
-    tx!(
-        solver.account(),
-        token_b.approve(
-            onchain.contracts().uniswap_v2_router.address(),
-            to_wei(1000)
+        .from(solver.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    token_b
+        .approve(
+            onchain.contracts().uniswap_v2_router.address().into_alloy(),
+            eth(1000),
         )
-    );
+        .from(solver.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
     tx!(
         solver.account(),
         onchain.contracts().uniswap_v2_router.add_liquidity(
-            token_a.address(),
-            token_b.address(),
+            token_a.address().into_legacy(),
+            token_b.address().into_legacy(),
             to_wei(1000),
             to_wei(1000),
             0_u64.into(),
             0_u64.into(),
             solver.address(),
-            U256::max_value(),
+            U256::MAX.into_legacy(),
         )
     );
 
-    tx!(
-        trader_a.account(),
-        token_a.approve(onchain.contracts().allowance, to_wei(500))
-    );
+    token_a
+        .approve(onchain.contracts().allowance.into_alloy(), eth(500))
+        .from(trader_a.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
     let order_a = OrderCreation {
-        sell_token: token_a.address(),
+        sell_token: token_a.address().into_legacy(),
         sell_amount: to_wei(100),
-        buy_token: token_b.address(),
+        buy_token: token_b.address().into_legacy(),
         buy_amount: to_wei(50),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
@@ -95,7 +111,11 @@ async fn test(web3: Web3) {
 
     tracing::info!("Waiting for trade.");
     wait_for_condition(TIMEOUT, || async {
-        let balance = token_b.balance_of(trader_a.address()).call().await.unwrap();
+        let balance = token_b
+            .balanceOf(trader_a.address().into_alloy())
+            .call()
+            .await
+            .unwrap();
         !balance.is_zero()
     })
     .await
@@ -104,19 +124,20 @@ async fn test(web3: Web3) {
     // Expecting a partial fill because order sells 100 but user only has balance of
     // 50.
     let sell_balance = token_a
-        .balance_of(trader_a.address())
+        .balanceOf(trader_a.address().into_alloy())
         .call()
         .await
-        .unwrap()
-        .to_f64_lossy();
+        .unwrap();
     // Depending on how the solver works might not have sold all balance.
-    assert!((0e18..=1e18).contains(&sell_balance));
+    assert!(U256::ZERO <= sell_balance && sell_balance < U256::from(10u64.pow(18)));
     let buy_balance = token_b
-        .balance_of(trader_a.address())
+        .balanceOf(trader_a.address().into_alloy())
         .call()
         .await
-        .unwrap()
-        .to_f64_lossy();
+        .unwrap();
     // We don't know exact buy balance because of the fee.
-    assert!((45e18..=55e18).contains(&buy_balance));
+    assert!(
+        U256::from(45) * U256::from(10u64.pow(18)) <= buy_balance
+            && buy_balance <= U256::from(55) * U256::from(10u64.pow(18))
+    );
 }

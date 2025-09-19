@@ -9,14 +9,14 @@ use {
     tokio::sync::Mutex,
 };
 
-pub struct EventUpdater<
-    Database: EventStoring<<W as EventRetrieving>::Event>,
-    W: EventRetrieving + Send + Sync,
->(Mutex<EventHandler<W, Database>>);
-
-impl<Database, W> EventUpdater<Database, W>
+pub struct EventUpdater<DB, W>(Mutex<EventHandler<W, DB, W::Event>>)
 where
-    Database: EventStoring<<W as EventRetrieving>::Event>,
+    DB: EventStoring<W::Event>,
+    W: EventRetrieving + Send + Sync;
+
+impl<DB, W> EventUpdater<DB, W>
+where
+    DB: EventStoring<W::Event>,
     W: EventRetrieving + Send + Sync,
 {
     /// Creates a new event updater.
@@ -26,7 +26,7 @@ where
     /// in the database.
     pub fn new(
         contract: W,
-        db: Database,
+        db: DB,
         block_retriever: Arc<dyn BlockRetrieving>,
         start_sync_at_block: Option<BlockNumberHash>,
     ) -> Self {
@@ -47,7 +47,7 @@ where
     /// there are more recent events available, then the sync start is ignored.
     pub async fn new_skip_blocks_before(
         contract: W,
-        db: Database,
+        db: DB,
         block_retriever: Arc<dyn BlockRetrieving>,
         start_sync_at_block: BlockNumberHash,
     ) -> Result<Self> {
@@ -64,10 +64,11 @@ where
 }
 
 #[async_trait::async_trait]
-impl<Database, W> Maintaining for EventUpdater<Database, W>
+impl<DB, W> Maintaining for EventUpdater<DB, W>
 where
-    Database: EventStoring<<W>::Event>,
+    DB: EventStoring<W::Event> + Send + Sync,
     W: EventRetrieving + Send + Sync,
+    W::Event: Send + Sync,
 {
     async fn run_maintenance(&self) -> Result<()> {
         self.0.run_maintenance().await
