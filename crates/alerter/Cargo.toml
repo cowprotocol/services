@@ -15,11 +15,11 @@ model = { workspace = true }
 number = { workspace = true }
 primitive-types = { workspace = true }
 prometheus = { workspace = true }
-reqwest = { workspace = true, features = ["json"] }
+reqwest = { workspace = true }
 serde_with = { workspace = true }
 serde = { workspace = true }
 shared = { workspace = true }
-tokio = { workspace = true, features = ["macros", "time", "rt-multi-thread"] }
+tokio = { workspace = true }
 tracing = { workspace = true }
 url = { workspace = true }
 warp = { workspace = true }
