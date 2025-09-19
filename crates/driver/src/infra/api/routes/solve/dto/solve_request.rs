@@ -1,7 +1,14 @@
 use {
     crate::{
         domain::{
-            competition::{self, auction, order},
+            competition::{
+                self,
+                auction,
+                order::{
+                    self,
+                    app_data::{AppData, AppDataHash},
+                },
+            },
             eth,
         },
         infra::{Ethereum, tokens},
@@ -9,7 +16,10 @@ use {
     },
     serde::Deserialize,
     serde_with::serde_as,
-    std::collections::HashSet,
+    std::{
+        collections::{HashMap, HashSet},
+        sync::Arc,
+    },
     tracing::instrument,
 };
 
@@ -19,6 +29,7 @@ impl SolveRequest {
         self,
         eth: &Ethereum,
         tokens: &tokens::Fetcher,
+        app_data: HashMap<Arc<AppDataHash>, Arc<app_data::ValidatedAppData>>,
     ) -> Result<competition::Auction, Error> {
         let token_addresses: Vec<_> = self
             .tokens
@@ -52,7 +63,10 @@ impl SolveRequest {
                         Class::Market => competition::order::Kind::Market,
                         Class::Limit => competition::order::Kind::Limit,
                     },
-                    app_data: order.app_data.into(),
+                    app_data: match app_data.get(&AppDataHash::from(order.app_data)) {
+                        Some(data) => AppData::Full(data.clone()),
+                        None => AppData::Hash(AppDataHash::from(order.app_data)),
+                    },
                     partial: if order.partially_fillable {
                         competition::order::Partial::Yes {
                             available: match order.kind {
