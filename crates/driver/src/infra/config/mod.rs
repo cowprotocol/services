@@ -11,7 +11,6 @@ use {
         },
     },
     std::time::Duration,
-    url::Url,
 };
 
 pub mod file;
@@ -28,7 +27,6 @@ pub struct Config {
     pub mempools: Vec<mempool::Config>,
     pub contracts: blockchain::contracts::Addresses,
     pub order_priority_strategies: Vec<OrderPriorityStrategy>,
-    pub archive_node_url: Option<Url>,
     pub simulation_bad_token_max_age: Duration,
     pub app_data_fetching: AppDataFetching,
 }

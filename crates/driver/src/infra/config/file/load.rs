@@ -376,15 +376,11 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
             weth: config.contracts.weth.map(Into::into),
             balances: config.contracts.balances.map(Into::into),
             signatures: config.contracts.signatures.map(Into::into),
-            cow_amms: config
+            cow_amm_helper_by_factory: config
                 .contracts
                 .cow_amms
                 .into_iter()
-                .map(|cfg| blockchain::contracts::CowAmmConfig {
-                    index_start: cfg.index_start,
-                    factory: cfg.factory,
-                    helper: cfg.helper,
-                })
+                .map(|cfg| (cfg.factory.into(), cfg.helper.into()))
                 .collect(),
             flashloan_default_lender: {
                 // Make sure flashloan default lender exists in the flashloan wrappers
@@ -409,7 +405,6 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
         disable_gas_simulation: config.disable_gas_simulation.map(Into::into),
         gas_estimator: config.gas_estimator,
         order_priority_strategies: config.order_priority_strategies,
-        archive_node_url: config.archive_node_url,
         simulation_bad_token_max_age: config.simulation_bad_token_max_age,
         app_data_fetching: config.app_data_fetching,
     }
