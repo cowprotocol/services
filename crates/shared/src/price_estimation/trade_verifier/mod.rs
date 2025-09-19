@@ -25,8 +25,8 @@ use {
         dummy_contract,
         support::{AnyoneAuthenticator, Solver, Spardose, Trader},
     },
-    ethcontract::{Bytes, H160, U256, tokens::Tokenize},
-    ethrpc::{Web3, block_stream::CurrentBlockWatcher, extensions::StateOverride},
+    ethcontract::{Bytes, H160, U256, state_overrides::StateOverride, tokens::Tokenize},
+    ethrpc::{Web3, block_stream::CurrentBlockWatcher},
     model::{
         DomainSeparator,
         order::{BUY_ETH_ADDRESS, OrderData, OrderKind},
