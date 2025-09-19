@@ -10,13 +10,12 @@ use {
         GPv2AllowListAuthentication,
         GPv2Settlement,
         HooksTrampoline,
-        UniswapV2Router02,
         WETH9,
-        alloy::{InstanceExt, UniswapV2Factory},
+        alloy::{InstanceExt, UniswapV2Factory, UniswapV2Router02},
         support::{Balances, Signatures},
     },
     ethcontract::{Address, H256, U256},
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    ethrpc::alloy::conversions::IntoAlloy,
     model::DomainSeparator,
     shared::ethrpc::Web3,
 };
@@ -35,7 +34,7 @@ pub struct Contracts {
     pub gp_authenticator: GPv2AllowListAuthentication,
     pub balances: Balances,
     pub uniswap_v2_factory: UniswapV2Factory::Instance,
-    pub uniswap_v2_router: UniswapV2Router02,
+    pub uniswap_v2_router: UniswapV2Router02::Instance,
     pub weth: WETH9,
     pub allowance: Address,
     pub domain_separator: DomainSeparator,
@@ -90,7 +89,9 @@ impl Contracts {
             uniswap_v2_factory: UniswapV2Factory::Instance::deployed(&web3.alloy)
                 .await
                 .unwrap(),
-            uniswap_v2_router: UniswapV2Router02::deployed(web3).await.unwrap(),
+            uniswap_v2_router: UniswapV2Router02::Instance::deployed(&web3.alloy)
+                .await
+                .unwrap(),
             weth: WETH9::deployed(web3).await.unwrap(),
             allowance: gp_settlement
                 .vault_relayer()
@@ -145,10 +146,13 @@ impl Contracts {
             UniswapV2Factory::Instance::deploy(web3.alloy.clone(), accounts[0].into_alloy())
                 .await
                 .unwrap();
-        let uniswap_v2_router = deploy!(
-            web3,
-            UniswapV2Router02(uniswap_v2_factory.address().into_legacy(), weth.address())
-        );
+        let uniswap_v2_router = UniswapV2Router02::Instance::deploy(
+            web3.alloy.clone(),
+            *uniswap_v2_factory.address(),
+            weth.address().into_alloy(),
+        )
+        .await
+        .unwrap();
 
         let gp_authenticator = deploy!(web3, GPv2AllowListAuthentication);
         gp_authenticator
