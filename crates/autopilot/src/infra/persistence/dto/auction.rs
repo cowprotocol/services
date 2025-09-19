@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use {
     super::order::Order,
     crate::{
@@ -47,7 +46,7 @@ pub struct RawAuctionData {
     #[serde_as(as = "BTreeMap<_, HexOrDecimalU256>")]
     pub prices: BTreeMap<H160, U256>,
     #[serde(default)]
-    pub surplus_capturing_jit_order_owners_by_helper: HashMap<H160, Vec<H160>>,
+    pub surplus_capturing_jit_order_owners_by_helper: Vec<(H160, Vec<H160>)>,
 }
 
 pub type AuctionId = i64;
