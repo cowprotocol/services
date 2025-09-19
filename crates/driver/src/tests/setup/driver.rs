@@ -145,17 +145,12 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
             }
         }
     }
-    let surplus_capturing_owners = test
-        .surplus_capturing_jit_order_owners_by_helper
-        .clone()
-        .into_iter()
-        .collect::<Vec<_>>();
     json!({
         "id": test.auction_id.to_string(),
         "tokens": tokens_json,
         "orders": orders_json,
         "deadline": test.deadline,
-        "surplusCapturingJitOrderOwnersByHelper": surplus_capturing_owners,
+        "surplusCapturingJitOrderOwnersByHelper": test.surplus_capturing_jit_order_owners_by_helper,
     })
 }
 
