@@ -279,7 +279,7 @@ components:
       properties:
         liquidityProvider:
           $ref: "#/components/schemas/Address"
-        protocolAdatper:
+        protocolAdapter:
           $ref: "#/components/schemas/Address"
         receiver:
           $ref: "#/components/schemas/Address"
