@@ -413,6 +413,31 @@ crate::bindings!(
         // Not available on Lens
     }
 );
+crate::bindings!(
+    UniswapV2Router02,
+    // <https://docs.uniswap.org/contracts/v2/reference/smart-contracts/router-02>
+    crate::deployments! {
+        // <https://etherscan.io/tx/0x4fc1580e7f66c58b7c26881cce0aab9c3509afe6e507527f30566fbf8039bcd0>
+        MAINNET => address!("0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D"),
+        // <https://gnosisscan.io/tx/0xfcc495cdb313b48bbb0cd0a25cb2e8fd512eb8fb0b15f75947a9d5668e47a918>
+        GNOSIS => address!("0x1C232F01118CB8B424793ae03F870aa7D0ac7f77"),
+        // <https://arbiscan.io/tx/0x630cd9d56a85e1bac7795d254fef861304a6838e28869badef19f19defb48ba6>
+        ARBITRUM_ONE => address!("0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24"),
+        // <https://basescan.org/tx/0x039224ce16ebe5574f51da761acbdfbd21099d6230c39fcd8ff566bbfd6a50a9>
+        BASE => address!("0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24"),
+        // <https://sepolia.etherscan.io/tx/0x92674b51681d2e99e71e03bd387bc0f0e79f2412302b49ed5626d1fa2311bab9>
+        SEPOLIA => address!("0xeE567Fe1712Faf6149d80dA1E6934E354124CfE3"),
+        // <https://snowtrace.io/tx/0x7372f1eedf9d32fb4185d486911f44542723dae766eea04bc3f14724bae9552e>
+        AVALANCHE => address!("0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24"),
+        // <https://bscscan.com/tx/0x9e940f846abea7dcc1f0bd5c261f405c104628c855346f8cac966f52905ee0fa>
+        BNB => address!("0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24"),
+        // <https://optimistic.etherscan.io/tx/0x2dcb9a76100e5be49e89085b87bd447b1966a9d823d5985e1a8197834c60e6bd>
+        OPTIMISM => address!("0x4A7b5Da61326A6379179b40d00F57E5bbDC962c2"),
+        // <https://polygonscan.com/tx/0x66186e0cacd2f6b3ad2eae586bd331daafd0572eb80bf71be694181858198025>
+        POLYGON => address!("0xedf6066a2b290C185783862C7F4776A2C8077AD1"),
+        // Not available on Lens
+    }
+);
 
 pub use alloy::providers::DynProvider as Provider;
 
@@ -628,6 +653,7 @@ mod tests {
             POLYGON,
         ] {
             assert!(UniswapV2Factory::deployment_address(chain_id).is_some());
+            assert!(UniswapV2Router02::deployment_address(chain_id).is_some());
         }
     }
 
