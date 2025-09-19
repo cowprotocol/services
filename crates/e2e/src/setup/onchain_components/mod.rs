@@ -567,21 +567,20 @@ impl OnchainComponents {
     ///
     /// This can be used to modify the pool reserves during a test.
     pub async fn mint_token_to_weth_uni_v2_pool(&self, token: &MintableToken, amount: U256) {
-        let pair = contracts::IUniswapLikePair::at(
-            &self.web3,
+        let pair = contracts::alloy::IUniswapLikePair::Instance::new(
             self.contracts
                 .uniswap_v2_factory
                 .getPair(self.contracts.weth.address().into_alloy(), *token.address())
                 .call()
                 .await
-                .expect("failed to get Uniswap V2 pair")
-                .into_legacy(),
+                .expect("failed to get Uniswap V2 pair"),
+            self.web3.alloy.clone(),
         );
         assert!(!pair.address().is_zero(), "Uniswap V2 pair is not deployed");
 
         // Mint amount + 1 to the pool, and then swap out 1 of the minted token
         // in order to force it to update its K-value.
-        token.mint(pair.address(), amount + 1).await;
+        token.mint(pair.address().into_legacy(), amount + 1).await;
         let (out0, out1) =
             if TokenPair::new(self.contracts.weth.address(), token.address().into_legacy())
                 .unwrap()
@@ -594,13 +593,13 @@ impl OnchainComponents {
                 (0, 1)
             };
         pair.swap(
-            out0.into(),
-            out1.into(),
-            token.minter.address(),
+            ::alloy::primitives::U256::from(out0),
+            ::alloy::primitives::U256::from(out1),
+            token.minter.address().into_alloy(),
             Default::default(),
         )
-        .from(token.minter.clone())
-        .send()
+        .from(token.minter.address().into_alloy())
+        .send_and_watch()
         .await
         .expect("Uniswap V2 pair couldn't mint");
     }
