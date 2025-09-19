@@ -4,7 +4,13 @@ use {
     chain::Chain,
     ethcontract::errors::ExecutionError,
     ethrpc::{Web3, block_stream::CurrentBlockWatcher},
-    shared::account_balances::{BalanceSimulator, SimulationError},
+    shared::{
+        account_balances::{BalanceSimulator, SimulationError},
+        price_estimation::trade_verifier::balance_overrides::{
+            BalanceOverrides,
+            BalanceOverriding,
+        },
+    },
     std::{fmt, sync::Arc, time::Duration},
     thiserror::Error,
     url::Url,
@@ -75,6 +81,7 @@ struct Inner {
     gas: Arc<GasPriceEstimator>,
     current_block: CurrentBlockWatcher,
     balance_simulator: BalanceSimulator,
+    balance_overrider: Arc<dyn BalanceOverriding>,
 }
 
 impl Ethereum {
@@ -101,11 +108,13 @@ impl Ethereum {
         let contracts = Contracts::new(&web3, chain, addresses)
             .await
             .expect("could not initialize important smart contracts");
+        let balance_overrider = Arc::new(BalanceOverrides::new(web3.clone()));
         let balance_simulator = BalanceSimulator::new(
             contracts.settlement().clone(),
             contracts.balance_helper().clone(),
             contracts.vault_relayer().0,
             Some(contracts.vault().address()),
+            balance_overrider.clone(),
         );
 
         Self {
@@ -115,6 +124,7 @@ impl Ethereum {
                 contracts,
                 gas,
                 balance_simulator,
+                balance_overrider,
             }),
             web3,
         }
@@ -126,6 +136,10 @@ impl Ethereum {
 
     pub fn balance_simulator(&self) -> &BalanceSimulator {
         &self.inner.balance_simulator
+    }
+
+    pub fn balance_overrider(&self) -> Arc<dyn BalanceOverriding> {
+        Arc::clone(&self.inner.balance_overrider)
     }
 
     /// Clones self and returns an instance that captures metrics extended with

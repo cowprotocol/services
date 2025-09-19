@@ -24,6 +24,7 @@ use {
     },
     shared::{
         account_balances::{BalanceFetching, Query},
+        price_estimation::trade_verifier::balance_overrides::BalanceOverrideRequest,
         signature_validator::SignatureValidating,
     },
     std::{collections::HashMap, future::Future, sync::Arc},
@@ -132,6 +133,7 @@ impl DataAggregator {
                 vault_relayer: eth.contracts().vault_relayer().0,
                 signatures: eth.contracts().signatures().clone(),
             },
+            eth.balance_overrider(),
         );
 
         let cow_amm_helper_by_factory = eth
@@ -262,8 +264,10 @@ impl Utilities {
             .map(|((trader, token, source), mut orders)| {
                 let first = orders.next().expect("group contains at least 1 order");
                 let mut others = orders;
-                let all_interactions_equal =
-                    others.all(|order| order.pre_interactions == first.pre_interactions);
+                let all_setups_equal = others.all(|order| {
+                    order.pre_interactions == first.pre_interactions
+                        && order.app_data.flashloan() == first.app_data.flashloan()
+                });
                 Query {
                     owner: trader.0.0,
                     token: token.0.0,
@@ -272,7 +276,7 @@ impl Utilities {
                         SellTokenBalance::Internal => SellTokenSource::Internal,
                         SellTokenBalance::External => SellTokenSource::External,
                     },
-                    interactions: if all_interactions_equal {
+                    interactions: if all_setups_equal {
                         first
                             .pre_interactions
                             .iter()
@@ -284,6 +288,18 @@ impl Utilities {
                             .collect()
                     } else {
                         Vec::default()
+                    },
+                    balance_override: if all_setups_equal {
+                        first
+                            .app_data
+                            .flashloan()
+                            .map(|loan| BalanceOverrideRequest {
+                                token: loan.token,
+                                amount: loan.amount,
+                                holder: loan.borrower.unwrap_or(trader.0.0),
+                            })
+                    } else {
+                        None
                     },
                 }
             })
