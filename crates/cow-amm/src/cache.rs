@@ -27,7 +27,7 @@ impl Storage {
 
     pub(crate) async fn initialize_from_database(&self) -> anyhow::Result<()> {
         let mut ex = self.0.db.acquire().await?;
-        let helper_address = database::byte_array::ByteArray(self.0.helper.address().0);
+        let helper_address = ByteArray(self.0.helper.address().0);
         let db_amms = database::cow_amms::fetch_by_helper(&mut ex, &helper_address).await?;
 
         if db_amms.is_empty() {
@@ -37,22 +37,15 @@ impl Storage {
         let mut processed_amms = Vec::new();
         for db_amm in db_amms {
             let amm_address = ethcontract::Address::from_slice(&db_amm.address.0);
-            match Amm::new(amm_address, &self.0.helper).await {
-                Ok(amm) => {
-                    processed_amms.push(Arc::new(amm));
-                }
-                Err(err) => {
-                    tracing::warn!(?amm_address, ?err, "failed to initialize AMM from database");
-                }
-            }
+            let amm = Amm::new(amm_address, &self.0.helper).await?;
+            processed_amms.push(Arc::new(amm));
         }
 
-        // @todo: refine it
         if !processed_amms.is_empty() {
             let count = processed_amms.len();
             let mut cache = self.0.cache.write().await;
             cache.insert(self.0.start_of_index + 1, processed_amms);
-            tracing::info!(count, "initialized AMMs from database");
+            tracing::info!(count, ?helper_address, "initialized AMMs from database");
         }
 
         Ok(())
@@ -103,7 +96,6 @@ impl EventStoring<ethcontract::Event<CowAmmEvent>> for Storage {
                 .collect::<Vec<_>>()
         };
 
-        // @todo: use IntoIterator here as well
         if !amm_addresses_to_delete.is_empty() {
             let mut ex = self.0.db.acquire().await?;
             database::cow_amms::delete_by_addresses(&mut ex, &amm_addresses_to_delete).await?;
@@ -151,7 +143,6 @@ impl EventStoring<ethcontract::Event<CowAmmEvent>> for Storage {
         }
 
         if !processed_events.is_empty() {
-            // @todo: use IntoIterator here as well
             let db_amms = processed_events
                 .iter()
                 .map(|(_, amm)| amm.as_ref().into())

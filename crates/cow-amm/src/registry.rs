@@ -48,9 +48,12 @@ impl Registry {
             db,
         );
 
-        // @todo: return Err here
         if let Err(err) = storage.initialize_from_database().await {
-            tracing::error!(?err, "failed to initialize AMM cache from database");
+            tracing::error!(
+                ?err,
+                ?helper_contract,
+                "failed to initialize AMM cache from database"
+            );
         }
 
         self.storage.write().await.push(storage.clone());
