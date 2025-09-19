@@ -223,12 +223,32 @@ impl Utilities {
             Arc::new(auction)
         };
 
+        // TODO fetch already cached app_data here to make things easier in `fetch_balance()`.
+
         Ok(auction_domain)
     }
 
     /// Fetches the tradable balance for every order owner.
     async fn fetch_balances(self: Arc<Self>, auction: Arc<Auction>) -> Arc<Balances> {
         let _timer = metrics::get().processing_stage_timer("fetch_balances");
+
+        // Collect the ALREADY CACHED appdata of orders with flashloans because we
+        // need them for the balance check later. Appdata that is not yet cached
+        // will be available in the next auction.
+        let cached_app_data: HashMap<_, _> =
+            if let Some(app_data_retriever) = &self.app_data_retriever {
+                let futures = auction.orders().iter().map(|o| async move {
+                    let app_data = app_data_retriever.get_cached(&o.app_data.hash()).await?;
+                    app_data
+                        .protocol
+                        .flashloan
+                        .is_some()
+                        .then_some((o.uid, app_data))
+                });
+                join_all(futures).await.into_iter().flatten().collect()
+            } else {
+                Default::default()
+            };
 
         // Collect trader/token/source/interaction tuples for fetching available
         // balances. Note that we are pessimistic here, if a trader is selling
@@ -244,10 +264,19 @@ impl Utilities {
             .into_iter()
             .map(|((trader, token, source), mut orders)| {
                 let first = orders.next().expect("group contains at least 1 order");
+                let first_flashloan = cached_app_data
+                    .get(&first.uid)
+                    .and_then(|a| a.protocol.flashloan.as_ref());
+
                 let mut others = orders;
+                // at this point we already need to have all the flashloan appdata!
+                // otherwise all flashloan orders will get discarded due to missing balances
                 let all_interactions_equal = others.all(|order| {
                     order.pre_interactions == first.pre_interactions
-                        && order.app_data.flashloan() == first.app_data.flashloan()
+                        && cached_app_data
+                            .get(&order.uid)
+                            .and_then(|a| a.protocol.flashloan.as_ref())
+                            == first_flashloan
                 });
                 Query {
                     owner: trader.0.0,
@@ -330,7 +359,7 @@ impl Utilities {
                     let app_data_retriever = app_data_retriever.clone();
                     async move {
                         let fetched_app_data = app_data_retriever
-                            .get(&app_data_hash)
+                            .get_or_fetch(&app_data_hash)
                             .await
                             .tap_err(|err| {
                                 tracing::warn!(?app_data_hash, ?err, "failed to fetch app data");

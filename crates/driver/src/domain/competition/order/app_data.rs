@@ -47,8 +47,15 @@ impl AppDataRetriever {
         }))
     }
 
+    pub async fn get_cached(
+        &self,
+        app_data: &AppDataHash,
+    ) -> Option<Arc<app_data::ValidatedAppData>> {
+        self.0.cache.get(app_data).await.flatten()
+    }
+
     /// Retrieves the full app-data for the given `app_data` hash, if exists.
-    pub async fn get(
+    pub async fn get_or_fetch(
         &self,
         app_data: &AppDataHash,
     ) -> Result<Option<Arc<app_data::ValidatedAppData>>, FetchingError> {
