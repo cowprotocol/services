@@ -24,6 +24,40 @@ impl Storage {
         }))
     }
 
+    pub(crate) async fn initialize_from_database(&self) -> anyhow::Result<()> {
+        let mut ex = self.0.db.acquire().await?;
+        let db_amms =
+            database::cow_amms::fetch_by_helper(&mut ex, self.0.helper.address().as_bytes())
+                .await?;
+
+        if db_amms.is_empty() {
+            return Ok(());
+        }
+
+        let mut processed_amms = Vec::new();
+        for db_amm in db_amms {
+            let amm_address = ethcontract::Address::from_slice(&db_amm.address.0);
+            match Amm::new(amm_address, &self.0.helper).await {
+                Ok(amm) => {
+                    processed_amms.push(Arc::new(amm));
+                }
+                Err(err) => {
+                    tracing::warn!(?amm_address, ?err, "failed to initialize AMM from database");
+                }
+            }
+        }
+
+        // @todo: refine it
+        if !processed_amms.is_empty() {
+            let count = processed_amms.len();
+            let mut cache = self.0.cache.write().await;
+            cache.insert(self.0.start_of_index + 1, processed_amms);
+            tracing::info!(count, "initialized AMMs from database");
+        }
+
+        Ok(())
+    }
+
     pub(crate) async fn cow_amms(&self) -> Vec<Arc<Amm>> {
         let lock = self.0.cache.read().await;
         lock.values()
@@ -61,11 +95,29 @@ impl EventStoring<ethcontract::Event<CowAmmEvent>> for Storage {
         events: Vec<ethcontract::Event<CowAmmEvent>>,
         range: RangeInclusive<u64>,
     ) -> anyhow::Result<()> {
-        // Context to drop the write lock before calling `append_events()`
+        // Collect AMM addresses to delete from database
+        let amm_addresses_to_delete = {
+            let cache = &*self.0.cache.read().await;
+            let mut addresses = Vec::new();
+            for key in *range.start()..=*range.end() {
+                if let Some(amms) = cache.get(&key) {
+                    for amm in amms {
+                        addresses.push(amm.address().as_bytes().to_vec());
+                    }
+                }
+            }
+            addresses
+        };
+
+        // Delete AMMs from database
+        if !amm_addresses_to_delete.is_empty() {
+            let mut ex = self.0.db.acquire().await?;
+            database::cow_amms::delete_by_addresses(&mut ex, &amm_addresses_to_delete).await?;
+        }
+
+        // Remove the Cow AMM events from cache in the given range
         {
             let cache = &mut *self.0.cache.write().await;
-
-            // Remove the Cow AMM events in the given range
             for key in *range.start()..=*range.end() {
                 cache.remove(&key);
             }
@@ -105,6 +157,18 @@ impl EventStoring<ethcontract::Event<CowAmmEvent>> for Storage {
                 }
             };
         }
+
+        // Persist AMMs to database
+        if !processed_events.is_empty() {
+            let db_amms = processed_events
+                .iter()
+                .map(|(_, amm)| amm.as_ref().into())
+                .collect::<Vec<database::cow_amms::CowAmm>>();
+            let mut ex = self.0.db.acquire().await?;
+            database::cow_amms::batch_upsert(&mut ex, &db_amms).await?;
+        }
+
+        // Update cache
         let cache = &mut *self.0.cache.write().await;
         for (block, amm) in processed_events {
             tracing::info!(cow_amm = ?amm.address(), "indexed new cow amm");

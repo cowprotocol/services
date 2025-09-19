@@ -47,6 +47,12 @@ impl Registry {
             CowAmmLegacyHelper::at(&self.web3, helper_contract),
             db,
         );
+
+        // @todo: return Err here
+        if let Err(err) = storage.initialize_from_database().await {
+            tracing::error!(?err, "failed to initialize AMM cache from database");
+        }
+
         self.storage.write().await.push(storage.clone());
 
         let indexer = Factory {
