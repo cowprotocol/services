@@ -14,9 +14,9 @@ use {
         sources::{BaselineSource, swapr::SwaprPoolReader},
     },
     anyhow::{Context, Result},
-    contracts::IUniswapLikeRouter,
+    contracts::alloy::IUniswapLikeRouter,
     ethcontract::{H160, H256},
-    ethrpc::alloy::conversions::IntoLegacy,
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     hex_literal::hex,
     std::{fmt::Display, str::FromStr, sync::Arc},
 };
@@ -56,7 +56,7 @@ enum PoolReadingStyle {
 }
 
 pub struct UniV2BaselineSource {
-    pub router: IUniswapLikeRouter,
+    pub router: IUniswapLikeRouter::Instance,
     pub pair_provider: PairProvider,
     pub pool_fetching: Arc<dyn PoolFetching>,
 }
@@ -110,10 +110,13 @@ impl UniV2BaselineSourceParameters {
 
     pub async fn into_source(&self, web3: &Web3) -> Result<UniV2BaselineSource> {
         let web3 = ethrpc::instrumented::instrument_with_label(web3, "uniswapV2".into());
-        let router = contracts::IUniswapLikeRouter::at(&web3, self.router);
+        let router = contracts::alloy::IUniswapLikeRouter::Instance::new(
+            self.router.into_alloy(),
+            web3.alloy.clone(),
+        );
         let factory = router.factory().call().await.context("factory")?;
         let pair_provider = pair_provider::PairProvider {
-            factory,
+            factory: factory.into_legacy(),
             init_code_digest: self.init_code_digest.0,
         };
         let pool_reader = DefaultPoolReader::new(web3.clone(), pair_provider);

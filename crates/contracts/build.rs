@@ -585,7 +585,6 @@ fn main() {
     });
     generate_contract("IAavePool");
     generate_contract("IFlashLoanSolverWrapper");
-    generate_contract("IUniswapLikeRouter");
     generate_contract("IUniswapLikePair");
     // EIP-1271 contract - SignatureValidator
     generate_contract("ERC1271SignatureValidator");

@@ -251,12 +251,6 @@ pub trait ContractAt {
     fn at(eth: &Ethereum, address: eth::ContractAddress) -> Self;
 }
 
-impl ContractAt for contracts::IUniswapLikeRouter {
-    fn at(eth: &Ethereum, address: eth::ContractAddress) -> Self {
-        Self::at(&eth.web3, address.0)
-    }
-}
-
 impl ContractAt for contracts::ERC20 {
     fn at(eth: &Ethereum, address: eth::ContractAddress) -> Self {
         Self::at(&eth.web3, address.into())
