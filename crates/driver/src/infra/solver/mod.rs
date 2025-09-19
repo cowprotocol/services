@@ -4,10 +4,12 @@ use {
         domain::{
             competition::{
                 auction::{self, Auction},
-                bad_tokens, order,
+                bad_tokens,
+                order,
                 solution::{self, Solution},
             },
-            eth, liquidity,
+            eth,
+            liquidity,
             time::Remaining,
         },
         infra::{
