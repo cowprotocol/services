@@ -129,16 +129,25 @@ impl Cache {
             .build();
 
         let address = match self.web3.eth().call(req, None).await {
-            Ok(address) => Ok(address),
+            Ok(result) => Self::parse_address(result),
             Err(_) => {
                 let req_legacy = CallRequest::builder()
                     .to(amm_address.0)
                     .data(Bytes(FUNCTION_SELECTOR_LEGACY.to_vec()))
                     .build();
-                self.web3.eth().call(req_legacy, None).await
+                let result = self.web3.eth().call(req_legacy, None).await?;
+                Self::parse_address(result)
             }
         };
 
-        Ok(eth::Address(eth::H160::from_slice(&address?.0)))
+        Ok(address?)
+    }
+
+    fn parse_address(data: Bytes) -> anyhow::Result<eth::Address> {
+        match data.0.len() {
+            32 => Ok(eth::Address(eth::H160::from_slice(&data.0[12..]))),
+            20 => Ok(eth::Address(eth::H160::from_slice(&data.0))),
+            invalid => Err(anyhow::anyhow!("Invalid address length: {}", invalid)),
+        }
     }
 }
