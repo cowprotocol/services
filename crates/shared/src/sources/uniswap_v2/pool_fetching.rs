@@ -351,8 +351,8 @@ fn handle_results(fetched_pool: FetchedPool, address: H160) -> Result<Option<Poo
     let token1_balance = handle_contract_error(fetched_pool.token1_balance)?;
 
     let pool = reserves.and_then(|reserves| {
-        let r0 = ::alloy::primitives::U256::from(reserves.reserve0);
-        let r1 = ::alloy::primitives::U256::from(reserves.reserve1);
+        let r0 = u128::try_from(reserves.reserve0).ok()?;
+        let r1 = u128::try_from(reserves.reserve1).ok()?;
         // Some ERC20s (e.g. AMPL) have an elastic supply and can thus reduce the
         // balance of their owners without any transfer or other interaction ("rebase").
         // Such behavior can implicitly change the *k* in the pool's constant product
@@ -366,13 +366,11 @@ fn handle_results(fetched_pool: FetchedPool, address: H160) -> Result<Option<Poo
         // benefit by withdrawing the excess from the pool without selling anything).
         // We therefore exclude all pools where the pool's token balance of either token
         // in the pair is less than the cached reserve.
-        if r0.into_legacy() > token0_balance? || r1.into_legacy() > token1_balance? {
+        if U256::from(r0) > token0_balance? || U256::from(r1) > token1_balance? {
             return None;
         }
         // Errors here should never happen because reserves are uint<112, 2>
         // meaning they'll always fit in u128, but panicking here is not a good idea
-        let r0 = u128::try_from(reserves.reserve0).ok()?;
-        let r1 = u128::try_from(reserves.reserve1).ok()?;
         Some(Pool::uniswap(address, fetched_pool.pair, (r0, r1)))
     });
 
