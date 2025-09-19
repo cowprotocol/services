@@ -359,7 +359,7 @@ impl Utilities {
 
         let cow_amms = self
             .cow_amm_cache
-            .get_or_create_amms(&auction.surplus_capturing_jit_order_owners_with_helper)
+            .get_or_create_amms(&auction.surplus_capturing_jit_order_owners)
             .await;
 
         let domain_separator = self.eth.contracts().settlement_domain_separator();
