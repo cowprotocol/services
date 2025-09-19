@@ -170,7 +170,9 @@ async fn forked_mainnet_repay_debt_with_collateral_of_safe(web3: Web3) {
             r#"{{
                 "metadata": {{
                     "flashloan": {{
-                        "lender": "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2",
+                        "liquidityProvider": "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2",
+                        "protocolAdapter": "0x7d9c4dee56933151bc5c909cfe09def0d315cb4a",
+                        "receiver": "{:?}"
                         "token": "{:?}",
                         "amount": "{:?}"
                     }},
@@ -195,6 +197,7 @@ async fn forked_mainnet_repay_debt_with_collateral_of_safe(web3: Web3) {
                 }}
             }}"#,
             // flashloan
+            trader.address(),
             onchain.contracts().weth.address(),
             // take out a loan that's bigger than we originally borrowed
             flashloan_amount,
