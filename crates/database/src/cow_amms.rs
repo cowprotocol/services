@@ -1,6 +1,6 @@
 use {
-    crate::Address,
-    sqlx::{Executor, PgConnection, Row},
+    crate::{Address, PgTransaction},
+    sqlx::{Executor, PgConnection, QueryBuilder, Row},
     tracing::instrument,
 };
 
@@ -12,25 +12,47 @@ pub struct CowAmm {
     pub tradeable_tokens: Vec<Address>,
 }
 
-/// Insert or update a CoW AMM in the database
+/// Insert or update multiple CoW AMMs in the database using batch insert
 #[instrument(skip_all)]
-pub async fn upsert(ex: &mut PgConnection, cow_amm: &CowAmm) -> Result<(), sqlx::Error> {
-    const QUERY: &str = r#"
-INSERT INTO cow_amms (address, helper_contract_address, tradeable_tokens)
-VALUES ($1, $2, $3)
+pub async fn upsert_batched(
+    ex: &mut PgTransaction<'_>,
+    cow_amms: &[CowAmm],
+) -> Result<(), sqlx::Error> {
+    if cow_amms.is_empty() {
+        return Ok(());
+    }
+
+    const BATCH_SIZE: usize = 200;
+
+    for chunk in cow_amms.chunks(BATCH_SIZE) {
+        upsert(ex, chunk).await?;
+    }
+
+    Ok(())
+}
+
+/// Insert or update a batch of CoW AMMs in the database
+#[instrument(skip_all)]
+async fn upsert(ex: &mut PgConnection, cow_amms: &[CowAmm]) -> Result<(), sqlx::Error> {
+    const QUERY: &str =
+        "INSERT INTO cow_amms (address, helper_contract_address, tradeable_tokens) ";
+    const CONFLICT_CLAUSE: &str = r#"
 ON CONFLICT (address)
 DO UPDATE SET
     helper_contract_address = EXCLUDED.helper_contract_address,
-    tradeable_tokens = EXCLUDED.tradeable_tokens;
-    "#;
+    tradeable_tokens = EXCLUDED.tradeable_tokens"#;
 
-    ex.execute(
-        sqlx::query(QUERY)
-            .bind(cow_amm.address)
-            .bind(cow_amm.helper_contract_address)
-            .bind(cow_amm.tradeable_tokens.clone()),
-    )
-    .await?;
+    let mut query_builder = QueryBuilder::new(QUERY);
+
+    query_builder.push_values(cow_amms, |mut builder, cow_amm| {
+        builder
+            .push_bind(cow_amm.address)
+            .push_bind(cow_amm.helper_contract_address)
+            .push_bind(cow_amm.tradeable_tokens.clone());
+    });
+    query_builder.push(CONFLICT_CLAUSE);
+    query_builder.build().execute(ex).await?;
+
     Ok(())
 }
 
@@ -80,19 +102,6 @@ WHERE address = ANY($1);
     Ok(())
 }
 
-/// Insert multiple CoW AMMs in a batch
-#[instrument(skip_all)]
-pub async fn batch_upsert(ex: &mut PgConnection, cow_amms: &[CowAmm]) -> Result<(), sqlx::Error> {
-    if cow_amms.is_empty() {
-        return Ok(());
-    }
-
-    for cow_amm in cow_amms {
-        upsert(ex, cow_amm).await?;
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use {super::*, crate::byte_array::ByteArray, sqlx::Connection};
@@ -112,7 +121,9 @@ mod tests {
         };
 
         // Test upsert
-        upsert(&mut db, &cow_amm).await.unwrap();
+        upsert(&mut db, std::slice::from_ref(&cow_amm))
+            .await
+            .unwrap();
 
         // Test fetch by helper
         let fetched = fetch_by_helper(&mut db, &helper_address).await.unwrap();
@@ -125,7 +136,7 @@ mod tests {
             helper_contract_address: helper_address,
             tradeable_tokens: vec![ByteArray([3u8; 20])],
         };
-        batch_upsert(&mut db, std::slice::from_ref(&cow_amm2))
+        upsert_batched(&mut db, std::slice::from_ref(&cow_amm2))
             .await
             .unwrap();
 

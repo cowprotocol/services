@@ -26,9 +26,8 @@ impl Storage {
 
     pub(crate) async fn initialize_from_database(&self) -> anyhow::Result<()> {
         let mut ex = self.0.db.acquire().await?;
-        let db_amms =
-            database::cow_amms::fetch_by_helper(&mut ex, self.0.helper.address().as_bytes())
-                .await?;
+        let helper_address = database::byte_array::ByteArray(self.0.helper.address().0);
+        let db_amms = database::cow_amms::fetch_by_helper(&mut ex, &helper_address).await?;
 
         if db_amms.is_empty() {
             return Ok(());
@@ -102,7 +101,7 @@ impl EventStoring<ethcontract::Event<CowAmmEvent>> for Storage {
             for key in *range.start()..=*range.end() {
                 if let Some(amms) = cache.get(&key) {
                     for amm in amms {
-                        addresses.push(amm.address().as_bytes().to_vec());
+                        addresses.push(database::byte_array::ByteArray(amm.address().0));
                     }
                 }
             }
@@ -164,8 +163,8 @@ impl EventStoring<ethcontract::Event<CowAmmEvent>> for Storage {
                 .iter()
                 .map(|(_, amm)| amm.as_ref().into())
                 .collect::<Vec<database::cow_amms::CowAmm>>();
-            let mut ex = self.0.db.acquire().await?;
-            database::cow_amms::batch_upsert(&mut ex, &db_amms).await?;
+            let mut ex = self.0.db.begin().await?;
+            database::cow_amms::upsert_batched(&mut ex, &db_amms).await?;
         }
 
         // Update cache
