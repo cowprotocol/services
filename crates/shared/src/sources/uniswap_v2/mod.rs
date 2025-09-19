@@ -67,61 +67,45 @@ impl UniV2BaselineSourceParameters {
 
         let chain_id = chain.parse::<u64>().expect("chain id should be an integer");
 
-        let (contract, init_code_digest, pool_reading) = match source {
+        match source {
             BS::None | BS::BalancerV2 | BS::ZeroEx | BS::UniswapV3 => None,
-            BS::UniswapV2 => Some((
-                contracts::UniswapV2Router02::raw_contract(),
-                UNISWAP_INIT,
-                PoolReadingStyle::Default,
-            )),
-            BS::Honeyswap => {
-                return Some(Self {
-                    router: contracts::alloy::HoneyswapRouter::deployment_address(&chain_id)
-                        .map(IntoLegacy::into_legacy)?,
-                    init_code_digest: H256(HONEYSWAP_INIT),
-                    pool_reading: PoolReadingStyle::Default,
-                });
-            }
-            BS::SushiSwap => {
-                return Some(Self {
-                    router: contracts::alloy::SushiSwapRouter::deployment_address(&chain_id)
-                        .map(IntoLegacy::into_legacy)?,
-                    init_code_digest: SUSHISWAP_INIT.into(),
-                    pool_reading: PoolReadingStyle::Default,
-                });
-            }
-            BS::Swapr => {
-                return Some(Self {
-                    router: contracts::alloy::SwaprRouter::deployment_address(&chain_id)
-                        .map(IntoLegacy::into_legacy)?,
-                    init_code_digest: SWAPR_INIT.into(),
-                    pool_reading: PoolReadingStyle::Swapr,
-                });
-            }
-            BS::TestnetUniswapV2 => {
-                return Some(Self {
-                    router: contracts::alloy::TestnetUniswapV2Router02::deployment_address(
-                        &chain_id,
-                    )
+            BS::UniswapV2 => Some(Self {
+                router: contracts::alloy::UniswapV2Router02::deployment_address(&chain_id)
                     .map(IntoLegacy::into_legacy)?,
-                    init_code_digest: TESTNET_UNISWAP_INIT.into(),
-                    pool_reading: PoolReadingStyle::Default,
-                });
-            }
-            BS::Baoswap => {
-                return Some(Self {
-                    router: contracts::alloy::BaoswapRouter::deployment_address(&chain_id)
-                        .map(IntoLegacy::into_legacy)?,
-                    init_code_digest: H256(BAOSWAP_INIT),
-                    pool_reading: PoolReadingStyle::Default,
-                });
-            }
-        }?;
-        Some(Self {
-            router: contract.networks.get(chain)?.address,
-            init_code_digest: H256(init_code_digest),
-            pool_reading,
-        })
+                init_code_digest: UNISWAP_INIT.into(),
+                pool_reading: PoolReadingStyle::Default,
+            }),
+            BS::Honeyswap => Some(Self {
+                router: contracts::alloy::HoneyswapRouter::deployment_address(&chain_id)
+                    .map(IntoLegacy::into_legacy)?,
+                init_code_digest: HONEYSWAP_INIT.into(),
+                pool_reading: PoolReadingStyle::Default,
+            }),
+            BS::SushiSwap => Some(Self {
+                router: contracts::alloy::SushiSwapRouter::deployment_address(&chain_id)
+                    .map(IntoLegacy::into_legacy)?,
+                init_code_digest: SUSHISWAP_INIT.into(),
+                pool_reading: PoolReadingStyle::Default,
+            }),
+            BS::Swapr => Some(Self {
+                router: contracts::alloy::SwaprRouter::deployment_address(&chain_id)
+                    .map(IntoLegacy::into_legacy)?,
+                init_code_digest: SWAPR_INIT.into(),
+                pool_reading: PoolReadingStyle::Swapr,
+            }),
+            BS::TestnetUniswapV2 => Some(Self {
+                router: contracts::alloy::TestnetUniswapV2Router02::deployment_address(&chain_id)
+                    .map(IntoLegacy::into_legacy)?,
+                init_code_digest: TESTNET_UNISWAP_INIT.into(),
+                pool_reading: PoolReadingStyle::Default,
+            }),
+            BS::Baoswap => Some(Self {
+                router: contracts::alloy::BaoswapRouter::deployment_address(&chain_id)
+                    .map(IntoLegacy::into_legacy)?,
+                init_code_digest: BAOSWAP_INIT.into(),
+                pool_reading: PoolReadingStyle::Default,
+            }),
+        }
     }
 
     pub async fn into_source(&self, web3: &Web3) -> Result<UniV2BaselineSource> {

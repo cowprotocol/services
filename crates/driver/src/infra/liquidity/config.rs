@@ -15,6 +15,7 @@ use {
         SUSHISWAP_INIT,
         SWAPR_INIT,
         TESTNET_UNISWAP_INIT,
+        UNISWAP_INIT,
     },
     std::{collections::HashSet, time::Duration},
 };
@@ -64,9 +65,10 @@ impl UniswapV2 {
     #[allow(clippy::self_named_constructors)]
     pub fn uniswap_v2(chain: Chain) -> Option<Self> {
         Some(Self {
-            router: deployment_address(contracts::UniswapV2Router02::raw_contract(), chain)?,
-            pool_code: hex!("96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f")
-                .into(),
+            router: ContractAddress::from(
+                contracts::alloy::UniswapV2Router02::deployment_address(&chain.id())?.into_legacy(),
+            ),
+            pool_code: UNISWAP_INIT.into(),
             missing_pool_cache_time: Duration::from_secs(60 * 60),
         })
     }

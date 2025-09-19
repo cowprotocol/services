@@ -1,19 +1,17 @@
 use {
-    e2e::{
-        setup::{
-            Db,
-            ExtraServiceArgs,
-            MintableToken,
-            OnchainComponents,
-            Services,
-            TIMEOUT,
-            TestAccount,
-            eth,
-            run_test,
-            to_wei,
-            wait_for_condition,
-        },
-        tx,
+    alloy::primitives::U256,
+    e2e::setup::{
+        Db,
+        ExtraServiceArgs,
+        MintableToken,
+        OnchainComponents,
+        Services,
+        TIMEOUT,
+        TestAccount,
+        eth,
+        run_test,
+        to_wei,
+        wait_for_condition,
     },
     ethrpc::{
         Web3,
@@ -29,10 +27,7 @@ use {
     secp256k1::SecretKey,
     sqlx::Row,
     std::time::Instant,
-    web3::{
-        signing::SecretKeyRef,
-        types::{H160, U256},
-    },
+    web3::{signing::SecretKeyRef, types::H160},
 };
 
 #[tokio::test]
@@ -266,37 +261,35 @@ async fn setup(
         .unwrap();
 
     token_a
-        .approve(
-            onchain.contracts().uniswap_v2_router.address().into_alloy(),
-            eth(1000),
-        )
+        .approve(*onchain.contracts().uniswap_v2_router.address(), eth(1000))
         .from(solver.address().into_alloy())
         .send_and_watch()
         .await
         .unwrap();
 
     token_b
-        .approve(
-            onchain.contracts().uniswap_v2_router.address().into_alloy(),
+        .approve(*onchain.contracts().uniswap_v2_router.address(), eth(1000))
+        .from(solver.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
+    onchain
+        .contracts()
+        .uniswap_v2_router
+        .addLiquidity(
+            *token_a.address(),
+            *token_b.address(),
             eth(1000),
+            eth(1000),
+            U256::ZERO,
+            U256::ZERO,
+            solver.address().into_alloy(),
+            U256::MAX,
         )
         .from(solver.address().into_alloy())
         .send_and_watch()
         .await
         .unwrap();
-    tx!(
-        solver.account(),
-        onchain.contracts().uniswap_v2_router.add_liquidity(
-            token_a.address().into_legacy(),
-            token_b.address().into_legacy(),
-            to_wei(1000),
-            to_wei(1000),
-            0_u64.into(),
-            0_u64.into(),
-            solver.address(),
-            U256::max_value(),
-        )
-    );
 
     // Approve GPv2 for trading
 

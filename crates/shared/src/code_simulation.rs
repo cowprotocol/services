@@ -4,11 +4,11 @@ use {
     crate::tenderly_api::{SimulationKind, SimulationRequest, StateObject, TenderlyApi},
     anyhow::{Context as _, Result, ensure},
     contracts::errors::EthcontractErrorType,
-    ethcontract::errors::ExecutionError,
-    ethrpc::{
-        Web3,
-        extensions::{EthExt as _, StateOverride, StateOverrides},
+    ethcontract::{
+        errors::ExecutionError,
+        state_overrides::{StateOverride, StateOverrides},
     },
+    ethrpc::{Web3, extensions::EthExt as _},
     std::sync::Arc,
     thiserror::Error,
     tracing::instrument,

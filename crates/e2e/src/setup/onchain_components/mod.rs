@@ -473,7 +473,7 @@ impl OnchainComponents {
 
             contract
                 .approve(
-                    self.contracts.uniswap_v2_router.address().into_alloy(),
+                    *self.contracts.uniswap_v2_router.address(),
                     token_amount.into_alloy(),
                 )
                 .from(minter.address().into_alloy())
@@ -483,23 +483,27 @@ impl OnchainComponents {
 
             tx!(
                 minter,
-                self.contracts
-                    .weth
-                    .approve(self.contracts.uniswap_v2_router.address(), weth_amount)
-            );
-            tx!(
-                minter,
-                self.contracts.uniswap_v2_router.add_liquidity(
-                    contract.address().into_legacy(),
-                    self.contracts.weth.address(),
-                    token_amount,
-                    weth_amount,
-                    0_u64.into(),
-                    0_u64.into(),
-                    minter.address(),
-                    U256::max_value(),
+                self.contracts.weth.approve(
+                    self.contracts.uniswap_v2_router.address().into_legacy(),
+                    weth_amount
                 )
             );
+            self.contracts
+                .uniswap_v2_router
+                .addLiquidity(
+                    *contract.address(),
+                    self.contracts.weth.address().into_alloy(),
+                    token_amount.into_alloy(),
+                    weth_amount.into_alloy(),
+                    ::alloy::primitives::U256::ZERO,
+                    ::alloy::primitives::U256::ZERO,
+                    minter.address().into_alloy(),
+                    ::alloy::primitives::U256::MAX,
+                )
+                .from(minter.address().into_alloy())
+                .send_and_watch()
+                .await
+                .unwrap();
         }
     }
 
@@ -523,7 +527,7 @@ impl OnchainComponents {
         asset_a
             .0
             .approve(
-                self.contracts.uniswap_v2_router.address().into_alloy(),
+                *self.contracts.uniswap_v2_router.address(),
                 asset_a.1.into_alloy(),
             )
             .from(lp.address().into_alloy())
@@ -534,26 +538,29 @@ impl OnchainComponents {
         asset_b
             .0
             .approve(
-                self.contracts.uniswap_v2_router.address().into_alloy(),
+                *self.contracts.uniswap_v2_router.address(),
                 asset_b.1.into_alloy(),
             )
             .from(lp.address().into_alloy())
             .send_and_watch()
             .await
             .unwrap();
-        tx!(
-            lp,
-            self.contracts.uniswap_v2_router.add_liquidity(
-                asset_a.0.address().into_legacy(),
-                asset_b.0.address().into_legacy(),
-                asset_a.1,
-                asset_b.1,
-                0_u64.into(),
-                0_u64.into(),
-                lp.address(),
-                U256::max_value(),
+        self.contracts
+            .uniswap_v2_router
+            .addLiquidity(
+                *asset_a.0.address(),
+                *asset_b.0.address(),
+                asset_a.1.into_alloy(),
+                asset_b.1.into_alloy(),
+                ::alloy::primitives::U256::ZERO,
+                ::alloy::primitives::U256::ZERO,
+                lp.address().into_alloy(),
+                ::alloy::primitives::U256::MAX,
             )
-        );
+            .from(lp.address().into_alloy())
+            .send_and_watch()
+            .await
+            .unwrap();
     }
 
     /// Mints `amount` tokens to its `token`-WETH Uniswap V2 pool.
@@ -637,27 +644,34 @@ impl OnchainComponents {
             .unwrap();
         tx!(
             holder,
-            cow.approve(self.contracts.uniswap_v2_router.address(), cow_amount)
-        );
-        tx!(
-            holder,
-            self.contracts
-                .weth
-                .approve(self.contracts.uniswap_v2_router.address(), weth_amount)
-        );
-        tx!(
-            holder,
-            self.contracts.uniswap_v2_router.add_liquidity(
-                cow.address(),
-                self.contracts.weth.address(),
-                cow_amount,
-                weth_amount,
-                0_u64.into(),
-                0_u64.into(),
-                holder.address(),
-                U256::max_value(),
+            cow.approve(
+                self.contracts.uniswap_v2_router.address().into_legacy(),
+                cow_amount
             )
         );
+        tx!(
+            holder,
+            self.contracts.weth.approve(
+                self.contracts.uniswap_v2_router.address().into_legacy(),
+                weth_amount
+            )
+        );
+        self.contracts
+            .uniswap_v2_router
+            .addLiquidity(
+                cow.address().into_alloy(),
+                self.contracts.weth.address().into_alloy(),
+                cow_amount.into_alloy(),
+                weth_amount.into_alloy(),
+                ::alloy::primitives::U256::ZERO,
+                ::alloy::primitives::U256::ZERO,
+                holder.address().into_alloy(),
+                ::alloy::primitives::U256::MAX,
+            )
+            .from(holder.address().into_alloy())
+            .send_and_watch()
+            .await
+            .unwrap();
 
         cow
     }
