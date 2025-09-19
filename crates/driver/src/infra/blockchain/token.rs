@@ -1,9 +1,6 @@
 use {
     super::{Error, Ethereum},
-    crate::domain::{competition::order, eth},
-    futures::TryFutureExt,
-    tap::TapFallible,
-    web3::types::CallRequest,
+    crate::domain::eth,
 };
 
 /// An ERC-20 token.
@@ -11,14 +8,12 @@ use {
 /// https://eips.ethereum.org/EIPS/eip-20
 pub struct Erc20 {
     token: contracts::ERC20,
-    ethereum: Ethereum,
 }
 
 impl Erc20 {
     pub(super) fn new(eth: &Ethereum, address: eth::TokenAddress) -> Self {
         Self {
             token: eth.contract_at(address.into()),
-            ethereum: eth.clone(),
         }
     }
 
@@ -80,150 +75,6 @@ impl Erc20 {
             .await
             .map(Into::into)
             .map_err(Into::into)
-    }
-
-    /// Fetches the tradable balance for the specified user given an order's
-    /// pre-interactions.
-    pub async fn tradable_balance(
-        &self,
-        trader: eth::Address,
-        source: order::SellTokenBalance,
-        interactions: &[eth::Interaction],
-        disable_access_list_simulation: bool,
-    ) -> Result<eth::TokenAmount, Error> {
-        if interactions.is_empty() {
-            self.tradable_balance_simple(trader, source).await
-        } else {
-            self.tradable_balance_simulated(
-                trader,
-                source,
-                interactions,
-                disable_access_list_simulation,
-            )
-            .await
-        }
-    }
-
-    /// Uses a custom helper contract to simulate balances while taking
-    /// pre-interactions into account. This is the most accurate method to
-    /// compute tradable balances but is very slow.
-    async fn tradable_balance_simulated(
-        &self,
-        trader: eth::Address,
-        source: order::SellTokenBalance,
-        interactions: &[eth::Interaction],
-        disable_access_lists: bool,
-    ) -> Result<eth::TokenAmount, Error> {
-        let interactions: Vec<_> = interactions.iter().map(|i| i.clone().into()).collect();
-        let shared::account_balances::Simulation {
-            token_balance: _,
-            allowance: _,
-            effective_balance,
-            can_transfer,
-        } = self
-            .ethereum
-            .balance_simulator()
-            .simulate(
-                trader.0,
-                self.token.address(),
-                source.into(),
-                &interactions,
-                None,
-                |mut delegate_call| {
-                    let ethereum = self.ethereum.clone();
-                    async move {
-                        // Add the access lists to the delegate call if they are enabled
-                        // system-wide.
-                        if disable_access_lists {
-                            return delegate_call;
-                        }
-
-                        let access_list_call = CallRequest {
-                            data: delegate_call.tx.data.clone(),
-                            to: delegate_call.tx.to,
-                            from: delegate_call
-                                .tx
-                                .from
-                                .as_ref()
-                                .map(|account| account.address()),
-                            ..Default::default()
-                        };
-                        let access_list = ethereum
-                            .create_access_list(access_list_call)
-                            .await
-                            .tap_err(|err| {
-                                tracing::debug!(
-                                    ?err,
-                                    "failed to create access list for balance simulation"
-                                );
-                            })
-                            .ok();
-                        delegate_call.tx.access_list = access_list.map(Into::into);
-                        delegate_call
-                    }
-                },
-            )
-            .await?;
-
-        if can_transfer {
-            Ok(effective_balance.into())
-        } else {
-            Ok(eth::TokenAmount(0.into()))
-        }
-    }
-
-    /// Faster balance query that does not take pre-interactions into account.
-    async fn tradable_balance_simple(
-        &self,
-        trader: eth::Address,
-        source: order::SellTokenBalance,
-    ) -> Result<eth::TokenAmount, Error> {
-        use order::SellTokenBalance;
-
-        let relayer = self.ethereum.contracts().vault_relayer();
-        let usable_balance = match source {
-            SellTokenBalance::Erc20 => {
-                let balance = self.balance(trader);
-                let allowance = self.allowance(trader, eth::Address(relayer.into()));
-                let (balance, allowance) = futures::try_join!(balance, allowance)?;
-                std::cmp::min(balance.0, allowance.0.amount)
-            }
-            SellTokenBalance::External => {
-                let vault = self.ethereum.contracts().vault();
-                let balance = self.balance(trader);
-                let approved = vault
-                    .methods()
-                    .has_approved_relayer(trader.0, relayer.into())
-                    .call()
-                    .map_err(Error::from);
-                let allowance = self.allowance(trader, vault.address().into());
-                let (balance, approved, allowance) =
-                    futures::try_join!(balance, approved, allowance)?;
-                match approved {
-                    true => std::cmp::min(balance.0, allowance.0.amount),
-                    false => 0.into(),
-                }
-            }
-            SellTokenBalance::Internal => {
-                let vault = self.ethereum.contracts().vault();
-                let balance = vault
-                    .methods()
-                    .get_internal_balance(trader.0, vec![self.token.address()])
-                    .call()
-                    .map_err(Error::from);
-                let approved = vault
-                    .methods()
-                    .has_approved_relayer(trader.0, relayer.into())
-                    .call()
-                    .map_err(Error::from);
-                let (balance, approved) = futures::try_join!(balance, approved)?;
-                match approved {
-                    true => balance[0], // internal approvals are always U256::MAX
-                    false => 0.into(),
-                }
-            }
-        };
-        Ok(eth::TokenAmount(usable_balance))
     }
 }
 
