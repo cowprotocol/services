@@ -7,7 +7,6 @@ use {
         },
         infra::{self, blockchain::Ethereum},
     },
-    alloy::providers::{Provider, ProviderBuilder, mock::Asserter},
     async_trait::async_trait,
     contracts::{GPv2Settlement, alloy::IUniswapLikeRouter},
     ethrpc::{
@@ -60,8 +59,7 @@ pub fn router(pool: &ConstantProductOrder) -> eth::ContractAddress {
         .as_any()
         .downcast_ref::<uniswap_v2::Inner>()
         .expect("downcast uniswap settlement handler")
-        .router()
-        .address();
+        .router();
     eth::ContractAddress::from(address.into_legacy())
 }
 
@@ -100,12 +98,7 @@ pub fn to_interaction(
     receiver: &eth::Address,
 ) -> eth::Interaction {
     let handler = uniswap_v2::Inner::new(
-        IUniswapLikeRouter::Instance::new(
-            pool.router.0.into_alloy(),
-            ProviderBuilder::new()
-                .connect_mocked_client(Asserter::default())
-                .erased(),
-        ),
+        pool.router.0.into_alloy(),
         GPv2Settlement::at(&ethrpc::dummy::web3(), receiver.0),
         Mutex::new(Allowances::empty(receiver.0)),
     );
@@ -167,7 +160,7 @@ where
     };
 
     Ok(Box::new(UniswapLikeLiquidity::with_allowances(
-        router,
+        *router.address(),
         settlement,
         Box::new(NoAllowanceManaging),
         pool_fetcher,
