@@ -1,2 +1,4 @@
 target/
+playground/
+crates/e2e/
 Dockerfile

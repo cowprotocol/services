@@ -9,22 +9,22 @@ license = "MIT OR Apache-2.0"
 axum = { workspace = true, optional = true }
 atty = { workspace = true }
 async-trait = { workspace = true }
-chrono = { workspace = true, features = ["now"] }
+chrono = { workspace = true }
 console-subscriber = { workspace = true }
 futures = { workspace = true }
 opentelemetry = { workspace = true }
-opentelemetry-otlp = { workspace = true, features = ["grpc-tonic"] }
+opentelemetry-otlp = { workspace = true }
 opentelemetry_sdk = { workspace = true }
 pin-project-lite = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-time = { workspace = true, features = ["macros"] }
-tokio = { workspace = true, features = ["fs"] }
+time = { workspace = true }
+tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-opentelemetry = { workspace = true }
-tracing-subscriber = { workspace = true, features = ["env-filter", "fmt", "time"] }
+tracing-subscriber = { workspace = true }
 warp = { workspace = true }
 tracing-serde = { workspace = true }
 

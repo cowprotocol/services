@@ -22,7 +22,7 @@ async-trait = { workspace = true }
 bigdecimal = { workspace = true }
 cached = { workspace = true }
 chain = { workspace = true }
-chrono = { workspace = true, features = ["clock"] }
+chrono = { workspace = true }
 clap = { workspace = true }
 contracts = { workspace = true }
 database = { workspace = true }
@@ -42,7 +42,7 @@ observe = { workspace = true }
 primitive-types = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
-reqwest = { workspace = true, features = ["json"] }
+reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
@@ -50,7 +50,7 @@ shared = { workspace = true }
 strum_macros = { workspace = true }
 sqlx = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
+tokio = { workspace = true }
 tracing = { workspace = true }
 url = { workspace = true }
 warp = { workspace = true }
@@ -61,7 +61,7 @@ tokio = { workspace = true, features = ["test-util"] }
 
 [build-dependencies]
 anyhow = { workspace = true }
-vergen = { workspace = true, features = ["git", "gitcl"] }
+vergen = { workspace = true }
 
 [lints]
 workspace = true

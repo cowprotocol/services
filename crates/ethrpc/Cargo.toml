@@ -11,7 +11,7 @@ name = "ethrpc"
 path = "src/lib.rs"
 
 [dependencies]
-alloy = { workspace = true, default-features = false, features = ["json-rpc", "providers", "rpc-client", "rpc-types", "transports", "reqwest", "signers", "signer-aws", "signer-local", "eips"] }
+alloy = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 contracts = { workspace = true }
@@ -25,11 +25,11 @@ observe = { workspace = true }
 primitive-types = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
-reqwest = { workspace = true, features = ["cookies"] }
+reqwest = { workspace = true }
 scopeguard = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-tokio = { workspace = true, features = ["rt", "rt-multi-thread"] }
+tokio = { workspace = true }
 tokio-stream = { workspace = true }
 tower = { workspace = true }
 tracing = { workspace = true }

@@ -1,59 +1,103 @@
+FROM rust:1-slim-bookworm AS chef
+WORKDIR /src/
+RUN apt-get update && apt-get install -y mold libssl-dev pkg-config git && apt-get clean
+RUN rustup install stable && rustup component add clippy rustfmt
+# configure to use the fast linker
+RUN mkdir ~/.cargo && echo "\
+[target.$(rustc -Vv | grep host | awk '{print $2}')] \
+linker = \"clang\" \
+rustflags = [\"-C\", \"link-arg=-fuse-ld=/usr/bin/mold\"] \
+" > ~/.cargo/config.toml
+
+RUN cargo install cargo-chef
+
+FROM chef AS planner
+COPY . .
+RUN cargo chef prepare --recipe-path recipe.json
+
 FROM docker.io/flyway/flyway:10.7.1 AS migrations
 COPY database/ /flyway/
 CMD ["migrate"]
 
-FROM docker.io/rust:1-slim-bookworm AS cargo-build
-WORKDIR /src/
+FROM chef AS builder
+COPY --from=planner /src/recipe.json recipe.json
+# --mount=type=cache,target=./target,sharing=locked 
+RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo chef cook --release --recipe-path recipe.json
 
-# Install dependencies
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update && \
-    apt-get install -y git libssl-dev pkg-config
-# Install Rust toolchain
-RUN rustup install stable && rustup default stable
+# Copy only the library crates for now
+# --mount=type=cache,target=./target,sharing=locked 
+COPY Cargo.toml Cargo.lock ./
+COPY ./crates/app-data/ ./crates/app-data
+COPY ./crates/database/ ./crates/database
+COPY ./crates/bytes-hex/ ./crates/bytes-hex
+COPY ./crates/contracts/ ./crates/contracts
+COPY ./crates/shared/ ./crates/shared
+COPY ./crates/number/ ./crates/number
+COPY ./crates/model/ ./crates/model
+COPY ./crates/rate-limit/ ./crates/rate-limit
+COPY ./crates/chain/ ./crates/chain
+COPY ./crates/ethrpc/ ./crates/ethrpc
+COPY ./crates/observe/ ./crates/observe
+COPY ./crates/order-validation/ ./crates/order-validation
+RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release --package shared
+COPY ./crates/solver/ ./crates/solver
+RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release --package solver
 
-# Copy and Build Code
-COPY . .
-RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/src/target \
-    CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release && \
-    cp target/release/alerter / && \
-    cp target/release/autopilot / && \
-    cp target/release/driver / && \
-    cp target/release/orderbook / && \
-    cp target/release/refunder / && \
-    cp target/release/solvers /
-
-# Create an intermediate image to extract the binaries
-FROM docker.io/debian:bookworm-slim AS intermediate
+# Create an base image for all the binaries
+FROM docker.io/debian:bookworm-slim AS base
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update && \
     apt-get install -y ca-certificates tini gettext-base && \
     apt-get clean
 
-FROM intermediate AS alerter
-COPY --from=cargo-build /alerter /usr/local/bin/alerter
+FROM builder AS alerter-build
+RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release --package alerter
+
+FROM base AS alerter
+COPY --from=alerter-build /src/target/release/alerter /usr/local/bin/alerter
 ENTRYPOINT [ "alerter" ]
 
-FROM intermediate AS autopilot
-COPY --from=cargo-build /autopilot /usr/local/bin/autopilot
+FROM builder AS autopilot-build
+RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release --package autopilot
+
+FROM base AS autopilot
+COPY ./crates/autopilot/ ./crates/autopilot
+COPY --from=autopilot-build /src/target/release/autopilot /usr/local/bin/autopilot
 ENTRYPOINT [ "autopilot" ]
 
-FROM intermediate AS driver
-COPY --from=cargo-build /driver /usr/local/bin/driver
+FROM builder AS driver-build
+COPY ./crates/driver/ ./crates/driver
+RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release --package driver
+
+FROM base AS driver
+COPY --from=driver-build /src/target/release/driver /usr/local/bin/driver
 ENTRYPOINT [ "driver" ]
 
-FROM intermediate AS orderbook
-COPY --from=cargo-build /orderbook /usr/local/bin/orderbook
+FROM builder AS orderbook-build
+COPY ./crates/orderbook/ ./crates/orderbook
+RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release --package orderbook
+
+FROM base AS orderbook
+COPY --from=orderbook-build /src/target/release/orderbook /usr/local/bin/orderbook
 ENTRYPOINT [ "orderbook" ]
 
-FROM intermediate AS refunder
-COPY --from=cargo-build /refunder /usr/local/bin/refunder
+FROM builder AS refunder-build
+COPY ./crates/refunder/ ./crates/refunder
+RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release --package refunder
+
+FROM base AS refunder
+COPY --from=refunder-build /src/target/release/refunder /usr/local/bin/refunder
 ENTRYPOINT [ "refunder" ]
 
-FROM intermediate AS solvers
-COPY --from=cargo-build /solvers /usr/local/bin/solvers
+FROM builder AS solvers-build
+COPY ./crates/solvers/ ./crates/solvers
+RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release --package solvers
+
+FROM base AS solvers
+COPY --from=solvers-build /src/target/release/solvers /usr/local/bin/solvers
 ENTRYPOINT [ "solvers" ]
 
 # Extract Binary
-FROM intermediate
+FROM base
 RUN apt-get update && \
     apt-get install -y build-essential cmake git zlib1g-dev libelf-dev libdw-dev libboost-dev libboost-iostreams-dev libboost-program-options-dev libboost-system-dev libboost-filesystem-dev libunwind-dev libzstd-dev git
 RUN git clone https://invent.kde.org/sdk/heaptrack.git /heaptrack && \
