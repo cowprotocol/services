@@ -193,6 +193,7 @@ async fn run<F, Fut, T>(
     observe::tracing::initialize_reentrant(&obs_config);
     observe::panic_hook::install();
 
+    services::ensure_e2e_readonly_user().await;
     // The mutex guarantees that no more than a test at a time is running on
     // the testing node.
     // Note that the mutex is expected to become poisoned if a test panics. This
