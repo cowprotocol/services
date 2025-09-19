@@ -177,66 +177,6 @@ pub fn tx(
         prices: auction.native_prices().clone(),
     };
 
-    // Add all interactions needed to move flash loaned tokens around
-    // These interactions are executed before all other pre-interactions
-    let web3 = contracts.settlement().raw_instance().web3();
-    let flashloans = solution
-        .flashloans
-        .values()
-        .map(|flashloan| {
-            let protocol_adapter =
-                contracts::IFlashLoanSolverWrapper::at(&web3, flashloan.protocol_adapter.into());
-
-            // Allow settlement contract to pull borrowed tokens from flashloan wrapper
-            pre_interactions.insert(
-                0,
-                approve_flashloan(
-                    flashloan.token,
-                    flashloan.amount,
-                    contracts.settlement().address().into(),
-                    &protocol_adapter,
-                ),
-            );
-
-            // Transfer tokens from the protocol adapter to user (i.e. receiver) to later
-            // allow settlement contract to pull in all the necessary sell
-            // tokens from the user.
-            let tx = contracts::ERC20::at(
-                &contracts.settlement().raw_instance().web3(),
-                flashloan.token.into(),
-            )
-            .transfer_from(
-                protocol_adapter.address(),
-                flashloan.receiver.into(),
-                flashloan.amount.0,
-            )
-            .into_inner();
-            pre_interactions.insert(
-                1,
-                eth::Interaction {
-                    target: tx.to.unwrap().into(),
-                    value: eth::U256::zero().into(),
-                    call_data: tx.data.unwrap().0.into(),
-                },
-            );
-
-            // Allow flash loan liquidity provider to take tokens from adapter contract
-            post_interactions.push(approve_flashloan(
-                flashloan.token,
-                flashloan.amount,
-                flashloan.liquidity_provider,
-                &protocol_adapter,
-            ));
-
-            Ok((
-                flashloan.amount.0,
-                protocol_adapter.address(),
-                flashloan.liquidity_provider.0,
-                flashloan.token.0.0,
-            ))
-        })
-        .collect::<Result<Vec<(eth::U256, eth::H160, eth::H160, eth::H160)>, Error>>()?;
-
     for interaction in solution.interactions() {
         if matches!(internalization, settlement::Internalization::Enable)
             && interaction.internalize()
@@ -280,12 +220,26 @@ pub fn tx(
     settle_calldata.extend(auction.id().ok_or(Error::MissingAuctionId)?.to_be_bytes());
 
     // Target and calldata depend on whether a flashloan is used
-    let (to, calldata) = if flashloans.is_empty() {
+    let (to, calldata) = if solution.flashloans.is_empty() {
         (contracts.settlement().address().into(), settle_calldata)
     } else {
         let router = contracts
             .flashloan_router()
             .ok_or(Error::FlashloanSupportDisabled)?;
+
+        let flashloans = solution
+            .flashloans
+            .values()
+            .map(|flashloan| {
+                (
+                    flashloan.amount.0,
+                    flashloan.protocol_adapter.0,
+                    flashloan.liquidity_provider.0,
+                    flashloan.token.0.0,
+                )
+            })
+            .collect();
+
         let call = router.flash_loan_and_settle(flashloans, ethcontract::Bytes(settle_calldata));
         let calldata = call.tx.data.unwrap().0;
         (router.address().into(), calldata)
@@ -349,22 +303,6 @@ pub fn approve(allowance: &Allowance) -> eth::Interaction {
         ]
         .concat()
         .into(),
-    }
-}
-
-fn approve_flashloan(
-    token: eth::TokenAddress,
-    amount: eth::TokenAmount,
-    spender: eth::ContractAddress,
-    flashloan_wrapper: &contracts::IFlashLoanSolverWrapper,
-) -> eth::Interaction {
-    let tx = flashloan_wrapper
-        .approve(token.into(), spender.into(), amount.0)
-        .into_inner();
-    eth::Interaction {
-        target: tx.to.unwrap().into(),
-        value: eth::U256::zero().into(),
-        call_data: tx.data.unwrap().0.into(),
     }
 }
 
