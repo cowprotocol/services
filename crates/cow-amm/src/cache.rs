@@ -1,5 +1,5 @@
 use {
-    crate::Amm,
+    crate::{Amm, Metrics},
     anyhow::Context,
     contracts::{CowAmmLegacyHelper, cow_amm_legacy_helper::Event as CowAmmEvent},
     database::byte_array::ByteArray,
@@ -28,7 +28,14 @@ impl Storage {
     pub(crate) async fn initialize_from_database(&self) -> anyhow::Result<()> {
         let mut ex = self.0.db.acquire().await?;
         let helper_address = ByteArray(self.0.helper.address().0);
-        let db_amms = database::cow_amms::fetch_by_helper(&mut ex, &helper_address).await?;
+        let db_amms = {
+            let _timer = Metrics::get()
+                .database_queries
+                .with_label_values(&["cow_amm_fetch_by_helper"])
+                .start_timer();
+
+            database::cow_amms::fetch_by_helper(&mut ex, &helper_address).await?
+        };
 
         if db_amms.is_empty() {
             return Ok(());
@@ -147,6 +154,11 @@ impl EventStoring<ethcontract::Event<CowAmmEvent>> for Storage {
                 .iter()
                 .map(|(_, amm)| amm.as_ref().into())
                 .collect::<Vec<database::cow_amms::CowAmm>>();
+            let _timer = Metrics::get()
+                .database_queries
+                .with_label_values(&["cow_amms_upsert_batched"])
+                .start_timer();
+
             let mut ex = self.0.db.begin().await?;
             database::cow_amms::upsert_batched(&mut ex, &db_amms).await?;
         }
