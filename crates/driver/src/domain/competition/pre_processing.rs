@@ -1,7 +1,11 @@
 use {
     super::{Auction, Order, order},
     crate::{
-        domain::{competition::order::SellTokenBalance, eth, liquidity},
+        domain::{
+            competition::order::{SellTokenBalance, app_data::AppData},
+            eth,
+            liquidity,
+        },
         infra::{self, api::routes::solve::dto::SolveRequest, observe::metrics, tokens},
         util::Bytes,
     },
@@ -214,16 +218,20 @@ impl Utilities {
         // now that we finally know the auction id we can set it in the span
         init_auction_id_in_span(Some(auction_dto.id()));
 
+        let app_data = self
+            .app_data_retriever
+            .as_ref()
+            .map(|r| r.get_cached())
+            .unwrap_or_default();
+
         let auction_domain = {
             let _timer = metrics::get().processing_stage_timer("convert_to_domain");
             let auction = auction_dto
-                .into_domain(&self.eth, &self.tokens)
+                .into_domain(&self.eth, &self.tokens, app_data)
                 .await
                 .context("could not convert auction DTO to domain type")?;
             Arc::new(auction)
         };
-
-        // TODO fetch already cached app_data here to make things easier in `fetch_balance()`.
 
         Ok(auction_domain)
     }
@@ -231,24 +239,6 @@ impl Utilities {
     /// Fetches the tradable balance for every order owner.
     async fn fetch_balances(self: Arc<Self>, auction: Arc<Auction>) -> Arc<Balances> {
         let _timer = metrics::get().processing_stage_timer("fetch_balances");
-
-        // Collect the ALREADY CACHED appdata of orders with flashloans because we
-        // need them for the balance check later. Appdata that is not yet cached
-        // will be available in the next auction.
-        let cached_app_data: HashMap<_, _> =
-            if let Some(app_data_retriever) = &self.app_data_retriever {
-                let futures = auction.orders().iter().map(|o| async move {
-                    let app_data = app_data_retriever.get_cached(&o.app_data.hash()).await?;
-                    app_data
-                        .protocol
-                        .flashloan
-                        .is_some()
-                        .then_some((o.uid, app_data))
-                });
-                join_all(futures).await.into_iter().flatten().collect()
-            } else {
-                Default::default()
-            };
 
         // Collect trader/token/source/interaction tuples for fetching available
         // balances. Note that we are pessimistic here, if a trader is selling
@@ -264,19 +254,11 @@ impl Utilities {
             .into_iter()
             .map(|((trader, token, source), mut orders)| {
                 let first = orders.next().expect("group contains at least 1 order");
-                let first_flashloan = cached_app_data
-                    .get(&first.uid)
-                    .and_then(|a| a.protocol.flashloan.as_ref());
 
                 let mut others = orders;
-                // at this point we already need to have all the flashloan appdata!
-                // otherwise all flashloan orders will get discarded due to missing balances
                 let all_interactions_equal = others.all(|order| {
                     order.pre_interactions == first.pre_interactions
-                        && cached_app_data
-                            .get(&order.uid)
-                            .and_then(|a| a.protocol.flashloan.as_ref())
-                            == first_flashloan
+                        && order.app_data.flashloan() == first.app_data.flashloan()
                 });
                 Query {
                     owner: trader.0.0,
@@ -337,8 +319,8 @@ impl Utilities {
         Arc::new(result)
     }
 
-    /// Fetches the app data for all orders in the auction.
-    /// Returns a map from app data hash to the fetched app data.
+    /// Fetches the full app data for all orders where we currently only have
+    /// the hash. Returns a map from app data hash to the fetched app data.
     async fn collect_orders_app_data(
         self: Arc<Self>,
         auction: Arc<Auction>,
@@ -353,10 +335,13 @@ impl Utilities {
             auction
                 .orders
                 .iter()
-                .map(|order| order.app_data.hash())
+                .flat_map(|order| match order.app_data {
+                    AppData::Full(_) => None,
+                    AppData::Hash(hash) => Some(hash),
+                })
                 .unique()
                 .map(|app_data_hash| {
-                    let app_data_retriever = app_data_retriever.clone();
+                    let app_data_retriever = &app_data_retriever;
                     async move {
                         let fetched_app_data = app_data_retriever
                             .get_or_fetch(&app_data_hash)
