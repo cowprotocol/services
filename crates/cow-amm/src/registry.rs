@@ -7,6 +7,7 @@ use {
         event_handling::EventHandler,
         maintenance::{Maintaining, ServiceMaintenance},
     },
+    sqlx::PgPool,
     std::sync::Arc,
     tokio::sync::{Mutex, RwLock},
     tracing::instrument,
@@ -39,11 +40,22 @@ impl Registry {
         deployment_block: u64,
         factory: Address,
         helper_contract: Address,
+        db: PgPool,
     ) {
         let storage = Storage::new(
             deployment_block,
             CowAmmLegacyHelper::at(&self.web3, helper_contract),
+            db,
         );
+
+        if let Err(err) = storage.initialize_from_database().await {
+            tracing::error!(
+                ?err,
+                ?helper_contract,
+                "failed to initialize AMM cache from database"
+            );
+        }
+
         self.storage.write().await.push(storage.clone());
 
         let indexer = Factory {

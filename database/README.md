@@ -624,3 +624,18 @@ We support different expiration times for orders with different signing schemes.
  market    | Short lived order that may receive surplus. Users agree to a static fee upfront by signing it.
  liquidity | These orders must be traded at their limit price and may not receive any surplus. Violating this is a slashable offence.
  limit     | Long lived order that may receive surplus. Users sign a static fee of 0 upfront and either the backend or the solvers compute a dynamic fee that gets taken from the surplus (while still respecting the user's limit price!).
+
+
+### cow\_amms
+
+Stores information about indexed CoW AMMs that have been discovered through blockchain events. Each row represents a CoW AMM pool with its associated helper contract and tradeable tokens.
+
+Column                        | Type    | Nullable | Details
+------------------------------|---------|----------|--------
+ address                      | bytea   | not null | 20 bytes address of the CoW AMM pool contract
+ helper\_contract\_address    | bytea   | not null | 20 bytes address of the helper contract used to interact with this AMM
+ tradeable\_tokens            | bytea[] | not null | array of 20 bytes token addresses that can be traded through this AMM
+
+Indexes:
+- "cow\_amms\_pkey" PRIMARY KEY, btree (`address`)
+- "idx\_cow\_amms\_helper\_contract" btree (`helper_contract_address`)
