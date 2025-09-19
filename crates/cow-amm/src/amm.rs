@@ -20,21 +20,6 @@ pub struct Amm {
     tradeable_tokens: Vec<Address>,
 }
 
-impl From<&Amm> for database::cow_amms::CowAmm {
-    fn from(a: &Amm) -> Self {
-        database::cow_amms::CowAmm {
-            address: ByteArray(a.address.0),
-            helper_contract_address: ByteArray(a.helper.address().0),
-            tradeable_tokens: a
-                .tradeable_tokens
-                .iter()
-                .cloned()
-                .map(|addr| ByteArray(addr.0))
-                .collect(),
-        }
-    }
-}
-
 impl Amm {
     pub async fn new(address: Address, helper: &CowAmmLegacyHelper) -> Result<Self, MethodError> {
         let tradeable_tokens = helper.tokens(address).call().await?;
@@ -96,6 +81,20 @@ impl Amm {
             .context("invalid signature")?;
 
         Ok(template)
+    }
+
+    pub fn try_to_db_domain(&self, block_number: u64) -> Result<database::cow_amms::CowAmm> {
+        Ok(database::cow_amms::CowAmm {
+            address: ByteArray(self.address.0),
+            tradeable_tokens: self
+                .tradeable_tokens
+                .iter()
+                .cloned()
+                .map(|addr| ByteArray(addr.0))
+                .collect(),
+            block_number: i64::try_from(block_number)
+                .with_context(|| format!("block number {block_number} is not i64"))?,
+        })
     }
 
     /// Converts a successful response of the CowAmmHelper into domain types.

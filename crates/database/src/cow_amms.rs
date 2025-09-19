@@ -1,15 +1,15 @@
 use {
     crate::{Address, PgTransaction},
-    sqlx::{Executor, PgConnection, QueryBuilder, Row},
+    sqlx::{Executor, PgConnection, QueryBuilder},
     tracing::instrument,
 };
 
 /// Represents a CoW AMM stored in the database
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, sqlx::FromRow)]
 pub struct CowAmm {
     pub address: Address,
-    pub helper_contract_address: Address,
     pub tradeable_tokens: Vec<Address>,
+    pub block_number: i64,
 }
 
 /// Insert or update multiple CoW AMMs in the database using batch insert
@@ -31,25 +31,24 @@ pub async fn upsert_batched(
     Ok(())
 }
 
-// @todo: add deployment block number column
 /// Insert or update a batch of CoW AMMs in the database
 #[instrument(skip_all)]
 async fn upsert(ex: &mut PgConnection, cow_amms: &[CowAmm]) -> Result<(), sqlx::Error> {
-    const QUERY: &str =
-        "INSERT INTO cow_amms (address, helper_contract_address, tradeable_tokens) ";
+    const QUERY: &str = "INSERT INTO cow_amms (address, tradeable_tokens, block_number) ";
     const CONFLICT_CLAUSE: &str = r#"
 ON CONFLICT (address)
 DO UPDATE SET
-    helper_contract_address = EXCLUDED.helper_contract_address,
-    tradeable_tokens = EXCLUDED.tradeable_tokens"#;
+    tradeable_tokens = EXCLUDED.tradeable_tokens,
+    block_number     = EXCLUDED.block_number
+    "#;
 
     let mut query_builder = QueryBuilder::new(QUERY);
 
     query_builder.push_values(cow_amms, |mut builder, cow_amm| {
         builder
             .push_bind(cow_amm.address)
-            .push_bind(cow_amm.helper_contract_address)
-            .push_bind(cow_amm.tradeable_tokens.clone());
+            .push_bind(cow_amm.tradeable_tokens.clone())
+            .push_bind(cow_amm.block_number);
     });
     query_builder.push(CONFLICT_CLAUSE);
     query_builder.build().execute(ex).await?;
@@ -59,47 +58,30 @@ DO UPDATE SET
 
 /// Fetch all CoW AMMs for a specific helper contract
 #[instrument(skip_all)]
-pub async fn fetch_by_helper(
+pub async fn fetch_by_address(
     ex: &mut PgConnection,
-    helper_contract_address: &Address,
+    address: &Address,
 ) -> Result<Vec<CowAmm>, sqlx::Error> {
-    const QUERY: &str = r#"
-SELECT address, helper_contract_address, tradeable_tokens
-FROM cow_amms
-WHERE helper_contract_address = $1;
-    "#;
+    const QUERY: &str = "SELECT * FROM cow_amms WHERE address = $1";
 
-    let rows = sqlx::query(QUERY)
-        .bind(helper_contract_address)
-        .fetch_all(ex)
-        .await?;
+    let cow_amms = sqlx::query_as(QUERY).bind(address).fetch_all(ex).await?;
 
-    Ok(rows
-        .into_iter()
-        .map(|row| CowAmm {
-            address: row.get("address"),
-            helper_contract_address: row.get("helper_contract_address"),
-            tradeable_tokens: row.get("tradeable_tokens"),
-        })
-        .collect())
+    Ok(cow_amms)
 }
 
 /// Delete CoW AMMs by their addresses
 #[instrument(skip_all)]
-pub async fn delete_by_addresses(
-    ex: &mut PgConnection,
-    addresses: &[Address],
-) -> Result<(), sqlx::Error> {
-    if addresses.is_empty() {
+pub async fn delete_by_blocks(ex: &mut PgConnection, blocks: &[i64]) -> Result<(), sqlx::Error> {
+    if blocks.is_empty() {
         return Ok(());
     }
 
     const QUERY: &str = r#"
 DELETE FROM cow_amms
-WHERE address = ANY($1);
+WHERE block_number = ANY($1);
     "#;
 
-    ex.execute(sqlx::query(QUERY).bind(addresses)).await?;
+    ex.execute(sqlx::query(QUERY).bind(blocks)).await?;
     Ok(())
 }
 
@@ -114,10 +96,10 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        let helper_address = ByteArray([1u8; 20]);
+        let address = ByteArray([1u8; 20]);
         let cow_amm = CowAmm {
-            address: ByteArray([42u8; 20]),
-            helper_contract_address: helper_address,
+            address,
+            block_number: 1,
             tradeable_tokens: vec![ByteArray([1u8; 20]), ByteArray([2u8; 20])],
         };
 
@@ -126,29 +108,27 @@ mod tests {
             .await
             .unwrap();
 
-        // Test fetch by helper
-        let fetched = fetch_by_helper(&mut db, &helper_address).await.unwrap();
+        // Test fetch by address
+        let fetched = fetch_by_address(&mut db, &address).await.unwrap();
         assert_eq!(fetched.len(), 1);
         assert_eq!(fetched[0], cow_amm);
 
         // Test batch upsert
         let cow_amm2 = CowAmm {
             address: ByteArray([43u8; 20]),
-            helper_contract_address: helper_address,
+            block_number: 1,
             tradeable_tokens: vec![ByteArray([3u8; 20])],
         };
         upsert_batched(&mut db, std::slice::from_ref(&cow_amm2))
             .await
             .unwrap();
 
-        let fetched = fetch_by_helper(&mut db, &helper_address).await.unwrap();
+        let fetched = fetch_by_address(&mut db, &address).await.unwrap();
         assert_eq!(fetched.len(), 2);
 
         // Test delete by addresses
-        delete_by_addresses(&mut db, &[cow_amm.address])
-            .await
-            .unwrap();
-        let fetched = fetch_by_helper(&mut db, &helper_address).await.unwrap();
+        delete_by_blocks(&mut db, &[1]).await.unwrap();
+        let fetched = fetch_by_address(&mut db, &address).await.unwrap();
         assert_eq!(fetched.len(), 1);
         assert_eq!(fetched[0], cow_amm2);
     }

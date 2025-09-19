@@ -27,6 +27,7 @@ impl Storage {
 
     pub(crate) async fn initialize_from_database(&self) -> anyhow::Result<()> {
         let mut ex = self.0.db.acquire().await?;
+        // @todo, fetch all amms in advance and split by helper address
         let helper_address = ByteArray(self.0.helper.address().0);
         let db_amms = {
             let _timer = Metrics::get()
@@ -34,7 +35,7 @@ impl Storage {
                 .with_label_values(&["cow_amm_fetch_by_helper"])
                 .start_timer();
 
-            database::cow_amms::fetch_by_helper(&mut ex, &helper_address).await?
+            database::cow_amms::fetch_by_address(&mut ex, &helper_address).await?
         };
 
         if db_amms.is_empty() {
@@ -42,9 +43,11 @@ impl Storage {
         }
 
         let mut processed_amms = Vec::new();
+        let mut block_number = 0;
         for db_amm in db_amms {
             let amm_address = ethcontract::Address::from_slice(&db_amm.address.0);
             let amm = Amm::new(amm_address, &self.0.helper).await?;
+            block_number = db_amm.block_number.max(block_number);
             processed_amms.push(Arc::new(amm));
         }
 
@@ -52,7 +55,7 @@ impl Storage {
             let count = processed_amms.len();
             let mut cache = self.0.cache.write().await;
             // @todo: this is not right, fetch the start index first
-            cache.insert(self.0.start_of_index + 1, processed_amms);
+            cache.insert(self.0, processed_amms);
             tracing::info!(count, ?helper_address, "initialized AMMs from database");
         }
 
@@ -96,17 +99,12 @@ impl EventStoring<ethcontract::Event<CowAmmEvent>> for Storage {
         events: Vec<ethcontract::Event<CowAmmEvent>>,
         range: RangeInclusive<u64>,
     ) -> anyhow::Result<()> {
-        let amm_addresses_to_delete = {
-            let cache = &*self.0.cache.read().await;
-            (*range.start()..=*range.end())
-                .flat_map(|block_number| cache.get(&block_number).cloned().unwrap_or_default())
-                .map(|amm| ByteArray(amm.address().0))
-                .collect::<Vec<_>>()
-        };
-
-        if !amm_addresses_to_delete.is_empty() {
+        {
             let mut ex = self.0.db.acquire().await?;
-            database::cow_amms::delete_by_addresses(&mut ex, &amm_addresses_to_delete).await?;
+            let blocks = (*range.start()..=*range.end())
+                .map(|block| i64::try_from(block).context("block number is not u64"))
+                .collect::<anyhow::Result<Vec<_>>>()?;
+            database::cow_amms::delete_by_blocks(&mut ex, &blocks).await?;
         }
 
         {
@@ -153,7 +151,20 @@ impl EventStoring<ethcontract::Event<CowAmmEvent>> for Storage {
         if !processed_events.is_empty() {
             let db_amms = processed_events
                 .iter()
-                .map(|(_, amm)| amm.as_ref().into())
+                .filter_map(|(block_number, amm)| {
+                    amm.as_ref()
+                        .try_to_db_domain(*block_number)
+                        .map_err(|err| {
+                            tracing::warn!(
+                                ?err,
+                                ?amm,
+                                ?block_number,
+                                "failed to convert amm to db domain"
+                            );
+                            err
+                        })
+                        .ok()
+                })
                 .collect::<Vec<database::cow_amms::CowAmm>>();
             let _timer = Metrics::get()
                 .database_queries

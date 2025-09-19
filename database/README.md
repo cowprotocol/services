@@ -630,12 +630,11 @@ We support different expiration times for orders with different signing schemes.
 
 Stores information about indexed CoW AMMs that have been discovered through blockchain events. Each row represents a CoW AMM pool with its associated helper contract and tradeable tokens.
 
-Column                        | Type    | Nullable | Details
-------------------------------|---------|----------|--------
- address                      | bytea   | not null | 20 bytes address of the CoW AMM pool contract
- helper\_contract\_address    | bytea   | not null | 20 bytes address of the helper contract used to interact with this AMM
- tradeable\_tokens            | bytea[] | not null | array of 20 bytes token addresses that can be traded through this AMM
+Column                        | Meaning
+------------------------------|--------
+ address                      | Address of the CoW AMM pool contract
+ tradeable\_tokens            | Token addresses that can be traded through this AMM
+ block\_number                | Deployed block number
 
 Indexes:
 - "cow\_amms\_pkey" PRIMARY KEY, btree (`address`)
-- "idx\_cow\_amms\_helper\_contract" btree (`helper_contract_address`)
