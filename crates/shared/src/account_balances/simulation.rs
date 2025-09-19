@@ -54,6 +54,7 @@ impl Balances {
                 &query.interactions,
                 None,
                 |delegate_call| async move { delegate_call },
+                query.flashloan.as_ref(),
             )
             .await?;
         Ok(if simulation.can_transfer {
@@ -115,7 +116,7 @@ impl BalanceFetching for Balances {
         let futures = queries
             .iter()
             .map(|query| async {
-                if query.interactions.is_empty() {
+                if query.interactions.is_empty() && query.flashloan.is_none() {
                     let token = contracts::ERC20::at(&self.web3, query.token);
                     self.tradable_balance_simple(query, &token).await
                 } else {
@@ -141,6 +142,7 @@ impl BalanceFetching for Balances {
                 &query.interactions,
                 Some(amount),
                 |delegate_call| async move { delegate_call },
+                query.flashloan.as_ref(),
             )
             .await
             .map_err(|err| TransferSimulationError::Other(err.into()))?;
@@ -161,11 +163,33 @@ impl BalanceFetching for Balances {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, ethrpc::Web3, model::order::SellTokenSource};
+    use {
+        super::*,
+        crate::price_estimation::trade_verifier::balance_overrides::{
+            BalanceOverrideRequest,
+            BalanceOverriding,
+        },
+        ethcontract::state_overrides::StateOverride,
+        ethrpc::Web3,
+        model::order::SellTokenSource,
+        std::sync::Arc,
+    };
 
     #[ignore]
     #[tokio::test]
     async fn test_for_user() {
+        struct DummyBalanceOverriding;
+
+        #[async_trait::async_trait]
+        impl BalanceOverriding for DummyBalanceOverriding {
+            async fn state_override(
+                &self,
+                _request: BalanceOverrideRequest,
+            ) -> Option<StateOverride> {
+                None
+            }
+        }
+
         let web3 = Web3::new_from_env();
         let settlement =
             contracts::GPv2Settlement::at(&web3, addr!("9008d19f58aabd9ed0d60971565aa8510560ab41"));
@@ -180,6 +204,7 @@ mod tests {
                 balances,
                 addr!("C92E8bdf79f0507f65a392b0ab4667716BFE0110"),
                 Some(addr!("BA12222222228d8Ba445958a75a0704d566BF2C8")),
+                Arc::new(DummyBalanceOverriding),
             ),
         );
 
@@ -195,6 +220,7 @@ mod tests {
                     token,
                     source,
                     interactions: vec![],
+                    flashloan: None,
                 },
                 amount,
             )

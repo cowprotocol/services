@@ -47,7 +47,6 @@ use {
         maintenance::ServiceMaintenance,
         order_quoting::{self, OrderQuoter},
         price_estimation::factory::{self, PriceEstimatorFactory},
-        signature_validator,
         sources::{BaselineSource, uniswap_v2::UniV2BaselineSourceParameters},
         token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
         token_list::{AutoUpdatingTokenList, TokenListConfiguration},
@@ -241,14 +240,7 @@ pub async fn run(args: Arguments) {
 
     let chain = Chain::try_from(chain_id).expect("incorrect chain ID");
 
-    let signature_validator = signature_validator::validator(
-        &web3,
-        signature_validator::Contracts {
-            settlement: eth.contracts().settlement().clone(),
-            signatures: eth.contracts().signatures().clone(),
-            vault_relayer,
-        },
-    );
+    let balance_overrides = args.price_estimation.balance_overrides.init(web3.clone());
 
     let balance_fetcher = account_balances::cached(
         &web3,
@@ -257,6 +249,7 @@ pub async fn run(args: Arguments) {
             eth.contracts().balances().clone(),
             vault_relayer,
             vault.as_ref().map(|contract| contract.address()),
+            balance_overrides,
         ),
         eth.current_block().clone(),
     );
@@ -498,10 +491,8 @@ pub async fn run(args: Arguments) {
             eth.contracts().chainalysis_oracle().clone(),
             args.banned_users,
         ),
-        balance_fetcher.clone(),
         bad_token_detector.clone(),
         native_price_estimator.clone(),
-        signature_validator.clone(),
         eth.contracts().weth().address(),
         args.limit_order_price_factor
             .try_into()
@@ -509,7 +500,6 @@ pub async fn run(args: Arguments) {
         domain::ProtocolFees::new(&args.fee_policies, args.fee_policy_max_partner_fee),
         cow_amm_registry.clone(),
         args.run_loop_native_price_timeout,
-        eth.contracts().settlement().address(),
     );
 
     let liveness = Arc::new(Liveness::new(args.max_auction_age));

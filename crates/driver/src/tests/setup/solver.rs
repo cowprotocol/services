@@ -157,8 +157,9 @@ impl Solver {
             }
             if let Some(flashloan) = quote.order.app_data.flashloan() {
                 order["flashloanHint"] = json!(FlashloanHint {
-                    lender: flashloan.lender.unwrap(),
-                    borrower: flashloan.borrower.unwrap(),
+                    liquidity_provider: flashloan.liquidity_provider,
+                    protocol_adapter: flashloan.protocol_adapter,
+                    receiver: flashloan.receiver,
                     token: flashloan.token,
                     amount: flashloan.amount
                 });
@@ -473,7 +474,7 @@ impl Solver {
             .iter()
             .flat_map(|solution| solution.flashloans.clone())
             .map(|(_order, flashloan)| FlashloanWrapperConfig {
-                lender: flashloan.lender,
+                lender: flashloan.receiver,
                 helper_contract: config.blockchain.flashloan_wrapper.address(),
                 fee_in_bps: Default::default(),
             })

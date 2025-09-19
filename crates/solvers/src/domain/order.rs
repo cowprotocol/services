@@ -138,8 +138,9 @@ impl Debug for AppData {
 /// A hint for the solver to use a flashloan for this order.
 #[derive(Debug, Clone)]
 pub struct FlashloanHint {
-    pub lender: eth::Address,
-    pub borrower: eth::Address,
+    pub liquidity_provider: eth::Address,
+    pub protocol_adapter: eth::Address,
+    pub receiver: eth::Address,
     pub token: eth::TokenAddress,
     pub amount: eth::U256,
 }

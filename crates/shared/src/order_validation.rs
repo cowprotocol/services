@@ -1,6 +1,6 @@
 use {
     crate::{
-        account_balances::{self, BalanceFetching, TransferSimulationError},
+        account_balances::{self, BalanceFetching, Flashloan, TransferSimulationError},
         bad_token::{BadTokenDetecting, TokenQuality},
         code_fetching::CodeFetching,
         order_quoting::{
@@ -375,19 +375,6 @@ impl OrderValidator {
     ) -> Result<(), ValidationError> {
         let mut res = Ok(());
 
-        // Check if there's a flashloan hint that could provide the sell token
-        let has_flashloan_for_sell_token =
-            app_data
-                .inner
-                .protocol
-                .flashloan
-                .as_ref()
-                .is_some_and(|flashloan| {
-                    flashloan.borrower.is_none_or(|b| b == owner)
-                        && flashloan.token == order.data().sell_token
-                        && flashloan.amount >= order.data().sell_amount
-                });
-
         // Simulate transferring a small token balance into the settlement contract.
         // As a spam protection we require that an account must have at least 1 atom
         // of the sell_token. However, some tokens (e.g. rebasing tokens) actually run
@@ -405,6 +392,16 @@ impl OrderValidator {
                         owner,
                         source: order.data().sell_token_balance,
                         interactions: app_data.interactions.pre.clone(),
+                        flashloan: app_data
+                            .inner
+                            .protocol
+                            .flashloan
+                            .as_ref()
+                            .map(|f| Flashloan {
+                                token: f.token,
+                                receiver: f.receiver,
+                                amount: f.amount,
+                            }),
                     },
                     transfer_amount,
                 )
@@ -415,16 +412,13 @@ impl OrderValidator {
                     TransferSimulationError::InsufficientAllowance
                     | TransferSimulationError::InsufficientBalance
                     | TransferSimulationError::TransferFailed,
-                ) if order.signature == Signature::PreSign || has_flashloan_for_sell_token => {
-                    // We have exceptions for:
-                    // 1. Pre-sign orders where they do not require sufficient balance or allowance.
-                    //    The idea is that this allows smart contracts to place orders bundled with
-                    //    other transactions that either produce the required balance or set the
-                    //    allowance. This would, for example, allow a Gnosis Safe to bundle the
-                    //    pre-signature transaction with a WETH wrap and WETH approval to the vault
-                    //    relayer contract.
-                    // 2. Orders with flashloan hints that match the sell token, since the flashloan
-                    //    will provide the necessary tokens during settlement.
+                ) if order.signature == Signature::PreSign => {
+                    // Pre-sign orders do not require sufficient balance or allowance.
+                    // The idea is that this allows smart contracts to place orders bundled with
+                    // other transactions that either produce the required balance or set the
+                    // allowance. This would, for example, allow a Gnosis Safe to bundle the
+                    // pre-signature transaction with a WETH wrap and WETH approval to the vault
+                    // relayer contract.
                     return Ok(());
                 }
                 Err(err) => match err {
@@ -581,32 +575,40 @@ impl OrderValidating for OrderValidator {
         };
         let uid = data.uid(domain_separator, &owner);
 
-        let verification_gas_limit = if let Signature::Eip1271(signature) = &order.signature {
-            if self.eip1271_skip_creation_validation {
-                tracing::debug!(?signature, "skipping EIP-1271 signature validation");
-                // We don't care! Because we are skipping validation anyway
-                0u64
+        let verification_gas_limit =
+            if let Signature::Eip1271(signature) = &order.signature {
+                if self.eip1271_skip_creation_validation {
+                    tracing::debug!(?signature, "skipping EIP-1271 signature validation");
+                    // We don't care! Because we are skipping validation anyway
+                    0u64
+                } else {
+                    let hash = hashed_eip712_message(domain_separator, &data.hash_struct());
+                    self.signature_validator
+                        .validate_signature_and_get_additional_gas(SignatureCheck {
+                            signer: owner,
+                            hash,
+                            signature: signature.to_owned(),
+                            interactions: app_data.interactions.pre.clone(),
+                            flashloan: app_data.inner.protocol.flashloan.as_ref().map(|f| {
+                                Flashloan {
+                                    receiver: f.receiver,
+                                    token: f.token,
+                                    amount: f.amount,
+                                }
+                            }),
+                        })
+                        .await
+                        .map_err(|err| match err {
+                            SignatureValidationError::Invalid => {
+                                ValidationError::InvalidEip1271Signature(H256(hash))
+                            }
+                            SignatureValidationError::Other(err) => ValidationError::Other(err),
+                        })?
+                }
             } else {
-                let hash = hashed_eip712_message(domain_separator, &data.hash_struct());
-                self.signature_validator
-                    .validate_signature_and_get_additional_gas(SignatureCheck {
-                        signer: owner,
-                        hash,
-                        signature: signature.to_owned(),
-                        interactions: app_data.interactions.pre.clone(),
-                    })
-                    .await
-                    .map_err(|err| match err {
-                        SignatureValidationError::Invalid => {
-                            ValidationError::InvalidEip1271Signature(H256(hash))
-                        }
-                        SignatureValidationError::Other(err) => ValidationError::Other(err),
-                    })?
-            }
-        } else {
-            // in any other case, just apply 0
-            0u64
-        };
+                // in any other case, just apply 0
+                0u64
+            };
 
         if data.buy_amount.is_zero() || data.sell_amount.is_zero() {
             return Err(ValidationError::ZeroAmount);
@@ -1405,6 +1407,7 @@ mod tests {
                 hash: order_hash,
                 signature: vec![1, 2, 3],
                 interactions: pre_interactions.clone(),
+                flashloan: None,
             }))
             .returning(|_| Ok(0u64));
 
@@ -1433,6 +1436,7 @@ mod tests {
                 hash: order_hash,
                 signature: vec![1, 2, 3],
                 interactions: pre_interactions.clone(),
+                flashloan: None,
             }))
             .returning(|_| Err(SignatureValidationError::Invalid));
 

@@ -2,6 +2,7 @@ use {
     super::{Error, Ethereum},
     crate::domain::{competition::order, eth},
     futures::TryFutureExt,
+    shared::account_balances::Flashloan,
     tap::TapFallible,
     web3::types::CallRequest,
 };
@@ -90,8 +91,9 @@ impl Erc20 {
         source: order::SellTokenBalance,
         interactions: &[eth::Interaction],
         disable_access_list_simulation: bool,
+        flashloan: Option<&Flashloan>,
     ) -> Result<eth::TokenAmount, Error> {
-        if interactions.is_empty() {
+        if interactions.is_empty() && flashloan.is_none() {
             self.tradable_balance_simple(trader, source).await
         } else {
             self.tradable_balance_simulated(
@@ -99,6 +101,7 @@ impl Erc20 {
                 source,
                 interactions,
                 disable_access_list_simulation,
+                flashloan,
             )
             .await
         }
@@ -113,6 +116,7 @@ impl Erc20 {
         source: order::SellTokenBalance,
         interactions: &[eth::Interaction],
         disable_access_lists: bool,
+        flashloan: Option<&Flashloan>,
     ) -> Result<eth::TokenAmount, Error> {
         let interactions: Vec<_> = interactions.iter().map(|i| i.clone().into()).collect();
         let shared::account_balances::Simulation {
@@ -162,6 +166,7 @@ impl Erc20 {
                         delegate_call
                     }
                 },
+                flashloan,
             )
             .await?;
 

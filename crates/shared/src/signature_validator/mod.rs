@@ -1,4 +1,8 @@
 use {
+    crate::{
+        account_balances::Flashloan,
+        price_estimation::trade_verifier::balance_overrides::BalanceOverriding,
+    },
     ethcontract::Bytes,
     ethrpc::Web3,
     hex_literal::hex,
@@ -17,6 +21,16 @@ pub struct SignatureCheck {
     pub hash: [u8; 32],
     pub signature: Vec<u8>,
     pub interactions: Vec<InteractionData>,
+    pub flashloan: Option<Flashloan>,
+}
+
+impl SignatureCheck {
+    /// Returns whether the check should work as is or if setup
+    /// steps before performing the check are needed (e.g. pre-interactions,
+    /// flashloan).
+    pub fn requires_setup(&self) -> bool {
+        !self.interactions.is_empty() || self.flashloan.is_some()
+    }
 }
 
 impl std::fmt::Debug for SignatureCheck {
@@ -29,6 +43,7 @@ impl std::fmt::Debug for SignatureCheck {
                 &format_args!("0x{}", hex::encode(&self.signature)),
             )
             .field("interactions", &self.interactions)
+            .field("flashloan", &self.flashloan)
             .finish()
     }
 }
@@ -80,11 +95,16 @@ pub struct Contracts {
 }
 
 /// Creates the default [`SignatureValidating`] instance.
-pub fn validator(web3: &Web3, contracts: Contracts) -> Arc<dyn SignatureValidating> {
+pub fn validator(
+    web3: &Web3,
+    contracts: Contracts,
+    balance_overrides: Arc<dyn BalanceOverriding>,
+) -> Arc<dyn SignatureValidating> {
     Arc::new(simulation::Validator::new(
         web3,
         contracts.settlement,
         contracts.signatures,
         contracts.vault_relayer,
+        balance_overrides,
     ))
 }

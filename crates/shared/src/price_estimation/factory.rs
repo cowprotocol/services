@@ -114,7 +114,7 @@ impl<'a> PriceEstimatorFactory<'a> {
             None => Arc::new(web3.clone()),
         };
 
-        let balance_overrides = args.balance_overrides.init(simulator.clone());
+        let balance_overrides = args.balance_overrides.init(web3.clone());
 
         let verifier = TradeVerifier::new(
             web3,

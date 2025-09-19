@@ -18,7 +18,8 @@ use {
         signature::Signature,
     },
     shared::{
-        account_balances::{BalanceFetching, Query},
+        account_balances::{BalanceFetching, Flashloan, Query},
+        price_estimation::trade_verifier::balance_overrides::BalanceOverriding,
         signature_validator::SignatureValidating,
     },
     std::{collections::HashMap, future::Future, sync::Arc},
@@ -118,6 +119,7 @@ impl DataAggregator {
         liquidity_fetcher: infra::liquidity::Fetcher,
         tokens: tokens::Fetcher,
         balance_fetcher: Arc<dyn BalanceFetching>,
+        balance_overrides: Arc<dyn BalanceOverriding>,
     ) -> Self {
         let signature_validator = shared::signature_validator::validator(
             eth.web3(),
@@ -126,6 +128,7 @@ impl DataAggregator {
                 vault_relayer: eth.contracts().vault_relayer().0,
                 signatures: eth.contracts().signatures().clone(),
             },
+            balance_overrides,
         );
 
         Self {
@@ -242,8 +245,10 @@ impl Utilities {
             .map(|((trader, token, source), mut orders)| {
                 let first = orders.next().expect("group contains at least 1 order");
                 let mut others = orders;
-                let all_interactions_equal =
-                    others.all(|order| order.pre_interactions == first.pre_interactions);
+                let all_interactions_equal = others.all(|order| {
+                    order.pre_interactions == first.pre_interactions
+                        && order.app_data.flashloan() == first.app_data.flashloan()
+                });
                 Query {
                     owner: trader.0.0,
                     token: token.0.0,
@@ -264,6 +269,15 @@ impl Utilities {
                             .collect()
                     } else {
                         Vec::default()
+                    },
+                    flashloan: if all_interactions_equal {
+                        first.app_data.flashloan().map(|f| Flashloan {
+                            token: f.token,
+                            receiver: f.receiver,
+                            amount: f.amount,
+                        })
+                    } else {
+                        None
                     },
                 }
             })

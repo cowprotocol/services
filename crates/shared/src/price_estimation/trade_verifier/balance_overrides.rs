@@ -2,11 +2,9 @@ mod detector;
 
 use {
     self::detector::{DetectionError, Detector},
-    crate::code_simulation::CodeSimulating,
     anyhow::Context as _,
     cached::{Cached, SizedCache},
-    ethcontract::{Address, H256, U256},
-    ethrpc::extensions::StateOverride,
+    ethcontract::{Address, H256, U256, state_overrides::StateOverride},
     maplit::hashmap,
     std::{
         collections::HashMap,
@@ -51,13 +49,13 @@ pub struct Arguments {
 
 impl Arguments {
     /// Creates a balance overrides instance from the current configuration.
-    pub fn init(&self, simulator: Arc<dyn CodeSimulating>) -> Arc<dyn BalanceOverriding> {
+    pub fn init(&self, web3: ethrpc::Web3) -> Arc<dyn BalanceOverriding> {
         Arc::new(BalanceOverrides {
             hardcoded: self.quote_token_balance_overrides.0.clone(),
             detector: self.quote_autodetect_token_balance_overrides.then(|| {
                 (
                     Detector::new(
-                        simulator,
+                        web3,
                         self.quote_autodetect_token_balance_overrides_probing_depth,
                     ),
                     Mutex::new(SizedCache::with_size(
@@ -239,14 +237,24 @@ pub struct BalanceOverrides {
 }
 
 impl BalanceOverrides {
+    pub fn new(web3: ethrpc::Web3, probing_depth: u8, cache_size: usize) -> Self {
+        Self {
+            hardcoded: Default::default(),
+            detector: Some((
+                Detector::new(web3, probing_depth),
+                Mutex::new(SizedCache::with_size(cache_size)),
+            )),
+        }
+    }
+
     async fn cached_detection(&self, token: Address) -> Option<Strategy> {
         let (detector, cache) = self.detector.as_ref()?;
-        tracing::trace!(?token, "attempting to auto-detect");
+        tracing::error!(?token, "attempting to auto-detect");
 
         {
             let mut cache = cache.lock().unwrap();
             if let Some(strategy) = cache.cache_get(&token) {
-                tracing::trace!(?token, "cache hit");
+                tracing::error!(?token, "cache hit");
                 return strategy.clone();
             }
         }
@@ -257,11 +265,11 @@ impl BalanceOverrides {
         // it. Anything else is likely a temporary simulator (i.e. node) failure
         // which we don't want to cache.
         if matches!(&strategy, Ok(_) | Err(DetectionError::NotFound)) {
-            tracing::debug!(?token, ?strategy, "caching auto-detected strategy");
+            tracing::error!(?token, ?strategy, "caching auto-detected strategy");
             let cached_strategy = strategy.as_ref().ok().cloned();
             cache.lock().unwrap().cache_set(token, cached_strategy);
         } else {
-            tracing::warn!(
+            tracing::error!(
                 ?token,
                 ?strategy,
                 "error auto-detecting token balance override strategy"
