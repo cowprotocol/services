@@ -2111,6 +2111,7 @@ dependencies = [
  "app-data",
  "async-trait",
  "contracts",
+ "database",
  "ethcontract",
  "ethrpc",
  "hex",

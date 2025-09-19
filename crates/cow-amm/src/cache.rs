@@ -1,9 +1,11 @@
 use {
     crate::Amm,
+    anyhow::Context,
     contracts::{CowAmmLegacyHelper, cow_amm_legacy_helper::Event as CowAmmEvent},
     ethcontract::{Address, errors::ExecutionError},
     ethrpc::block_stream::RangeInclusive,
     shared::event_handling::EventStoring,
+    sqlx::PgPool,
     std::{collections::BTreeMap, sync::Arc},
     tokio::sync::RwLock,
 };
@@ -12,12 +14,13 @@ use {
 pub(crate) struct Storage(Arc<Inner>);
 
 impl Storage {
-    pub(crate) fn new(deployment_block: u64, helper: CowAmmLegacyHelper) -> Self {
+    pub(crate) fn new(deployment_block: u64, helper: CowAmmLegacyHelper, db: PgPool) -> Self {
         Self(Arc::new(Inner {
             cache: Default::default(),
             // make sure to start 1 block **before** the deployment to get all the events
             start_of_index: deployment_block - 1,
             helper,
+            db,
         }))
     }
 
@@ -47,6 +50,8 @@ struct Inner {
     start_of_index: u64,
     /// Helper contract to query required data from the cow amm.
     helper: CowAmmLegacyHelper,
+    /// Database connection to persist CoW AMMs and the last indexed block.
+    db: PgPool,
 }
 
 #[async_trait::async_trait]
@@ -112,15 +117,26 @@ impl EventStoring<ethcontract::Event<CowAmmEvent>> for Storage {
     async fn last_event_block(&self) -> anyhow::Result<u64> {
         let cache = self.0.cache.read().await;
 
-        let last_block = cache
-            .last_key_value()
-            .map(|(block, _amms)| *block)
-            .unwrap_or(self.0.start_of_index);
-        Ok(last_block)
+        match cache.last_key_value() {
+            Some((block, _amms)) => Ok(*block),
+            None => {
+                let mut ex = self.0.db.acquire().await?;
+                database::last_indexed_blocks::fetch(&mut ex, &self.0.helper.address().to_string())
+                    .await?
+                    .map(|block| block.try_into().context("last block is not u64"))
+                    .unwrap_or(Ok(self.0.start_of_index))
+            }
+        }
     }
 
-    async fn persist_last_indexed_block(&mut self, _new_value: u64) -> anyhow::Result<()> {
-        // storage is only in-memory so we don't need to persist anything here
+    async fn persist_last_indexed_block(&mut self, latest_block: u64) -> anyhow::Result<()> {
+        let mut ex = self.0.db.acquire().await?;
+        database::last_indexed_blocks::update(
+            &mut ex,
+            &self.0.helper.address().to_string(),
+            i64::try_from(latest_block).context("last block is not u64")?,
+        )
+        .await?;
         Ok(())
     }
 }
