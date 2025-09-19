@@ -37,8 +37,7 @@ impl Cache {
     }
 
     /// Gets or creates AMM instances for the given surplus capturing JIT order
-    /// owners with their helpers. Returns a list of AMM instances that were
-    /// successfully created or retrieved from cache.
+    /// owners.
     pub async fn get_or_create_amms(
         &self,
         surplus_capturing_jit_order_owners: &HashSet<eth::Address>,
@@ -114,6 +113,9 @@ impl Cache {
         cached_amms
     }
 
+    /// Fetches the factory address for the given AMM by calling the
+    /// `factory` function. If that fails, it tries the legacy function
+    /// `FACTORY`.
     async fn fetch_amm_factory_address(
         &self,
         amm_address: eth::Address,
