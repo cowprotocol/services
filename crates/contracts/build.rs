@@ -589,21 +589,6 @@ fn main() {
     generate_contract("IUniswapLikePair");
     // EIP-1271 contract - SignatureValidator
     generate_contract("ERC1271SignatureValidator");
-    generate_contract_with_config("UniswapV2Factory", |builder| {
-        // <https://docs.uniswap.org/contracts/v2/reference/smart-contracts/factory>
-        builder
-            .add_network_str(MAINNET, "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f")
-            .add_network_str(GOERLI, "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f")
-            .add_network_str(GNOSIS, "0xA818b4F111Ccac7AA31D0BCc0806d64F2E0737D7")
-            .add_network_str(ARBITRUM_ONE, "0xf1D7CC64Fb4452F05c498126312eBE29f30Fbcf9")
-            .add_network_str(BASE, "0x8909Dc15e40173Ff4699343b6eB8132c65e18eC6")
-            .add_network_str(SEPOLIA, "0xF62c03E08ada871A0bEb309762E260a7a6a880E6")
-            .add_network_str(AVALANCHE, "0x9e5A52f57b3038F1B8EeE45F28b3C1967e22799C")
-            .add_network_str(BNB, "0x8909Dc15e40173Ff4699343b6eB8132c65e18eC6")
-            .add_network_str(OPTIMISM, "0x0c3c1c532F1e39EdF36BE9Fe0bE1410313E074Bf")
-            .add_network_str(POLYGON, "0x9e5A52f57b3038F1B8EeE45F28b3C1967e22799C")
-        // Not available on Lens
-    });
     generate_contract_with_config("UniswapV2Router02", |builder| {
         // <https://docs.uniswap.org/contracts/v2/reference/smart-contracts/router-02>
         builder

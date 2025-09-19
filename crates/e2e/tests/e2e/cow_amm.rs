@@ -112,9 +112,9 @@ async fn cow_amm_jit(web3: Web3) {
     let pair = onchain
         .contracts()
         .uniswap_v2_factory
-        .get_pair(
-            onchain.contracts().weth.address(),
-            dai.address().into_legacy(),
+        .getPair(
+            onchain.contracts().weth.address().into_alloy(),
+            *dai.address(),
         )
         .call()
         .await
@@ -131,9 +131,7 @@ async fn cow_amm_jit(web3: Web3) {
         .unwrap();
 
     // pad with 12 zeros in the front to end up with 32 bytes
-    let oracle_data: Vec<_> = std::iter::repeat_n(0u8, 12)
-        .chain(pair.as_bytes().to_vec())
-        .collect();
+    let oracle_data: Vec<_> = std::iter::repeat_n(0u8, 12).chain(pair.to_vec()).collect();
     const APP_DATA: [u8; 32] = [12u8; 32];
 
     cow_amm_factory
@@ -738,9 +736,9 @@ async fn cow_amm_opposite_direction(web3: Web3) {
     let pair = onchain
         .contracts()
         .uniswap_v2_factory
-        .get_pair(
-            onchain.contracts().weth.address(),
-            dai.address().into_legacy(),
+        .getPair(
+            onchain.contracts().weth.address().into_alloy(),
+            *dai.address(),
         )
         .call()
         .await
@@ -757,9 +755,7 @@ async fn cow_amm_opposite_direction(web3: Web3) {
         .unwrap();
 
     // pad with 12 zeros to end up with 32 bytes
-    let oracle_data: Vec<_> = std::iter::repeat_n(0u8, 12)
-        .chain(pair.as_bytes().to_vec())
-        .collect();
+    let oracle_data: Vec<_> = std::iter::repeat_n(0u8, 12).chain(pair.to_vec()).collect();
     const APP_DATA: [u8; 32] = [12u8; 32];
 
     // Create the CoW AMM
