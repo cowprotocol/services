@@ -207,7 +207,7 @@ impl Solutions {
                     weth,
                     solution.gas.map(|gas| eth::Gas(gas.into())),
                     solver.config().fee_handler,
-                    auction.surplus_capturing_jit_order_owners_with_helper(),
+                    auction.surplus_capturing_jit_order_owners(),
                     solution.flashloans
                         // convert the flashloan info provided by the solver
                         .map(|f| f.iter().map(|(order, loan)|(order.into(), loan.into())).collect())

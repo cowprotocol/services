@@ -236,8 +236,7 @@ impl RunLoop {
             block: auction.block,
             orders: auction.orders,
             prices: auction.prices,
-            surplus_capturing_jit_order_owners_by_helper: auction
-                .surplus_capturing_jit_order_owners_by_helper,
+            surplus_capturing_jit_order_owners: auction.surplus_capturing_jit_order_owners,
         })
     }
 
@@ -514,7 +513,7 @@ impl RunLoop {
             self.persistence
                 .save_surplus_capturing_jit_order_owners(
                     auction.id,
-                    &auction.surplus_capturing_jit_order_owners_by_helper,
+                    &auction.surplus_capturing_jit_order_owners,
                 )
                 .map_err(|e| e.0.context("failed to save jit order owners")),
             self.persistence
@@ -851,11 +850,8 @@ impl RunLoop {
 
         auction.orders.retain(|o| !in_flight.contains(&o.uid));
         auction
-            .surplus_capturing_jit_order_owners_by_helper
-            .retain(|_helper, owners| {
-                owners.retain(|owner| !in_flight.iter().any(|order| order.owner() == *owner));
-                !owners.is_empty()
-            });
+            .surplus_capturing_jit_order_owners
+            .retain(|owner| !in_flight.iter().any(|i| i.owner() == *owner));
         tracing::debug!(
             orders = ?in_flight,
             "filtered out in-flight orders and surplus_capturing_jit_order_owners"

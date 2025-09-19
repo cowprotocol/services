@@ -8,7 +8,7 @@ use {
     primitive_types::{H160, U256},
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
-    std::collections::{BTreeMap, HashMap},
+    std::collections::BTreeMap,
 };
 
 pub fn from_domain(auction: domain::RawAuctionData) -> RawAuctionData {
@@ -24,15 +24,10 @@ pub fn from_domain(auction: domain::RawAuctionData) -> RawAuctionData {
             .into_iter()
             .map(|(key, value)| (key.into(), value.get().into()))
             .collect(),
-        surplus_capturing_jit_order_owners_by_helper: auction
-            .surplus_capturing_jit_order_owners_by_helper
+        surplus_capturing_jit_order_owners: auction
+            .surplus_capturing_jit_order_owners
             .into_iter()
-            .map(|(helper, owners)| {
-                (
-                    helper.into(),
-                    owners.into_iter().map(Into::into).collect::<Vec<_>>(),
-                )
-            })
+            .map(Into::into)
             .collect(),
     }
 }
@@ -46,7 +41,7 @@ pub struct RawAuctionData {
     #[serde_as(as = "BTreeMap<_, HexOrDecimalU256>")]
     pub prices: BTreeMap<H160, U256>,
     #[serde(default)]
-    pub surplus_capturing_jit_order_owners_by_helper: HashMap<H160, Vec<H160>>,
+    pub surplus_capturing_jit_order_owners: Vec<H160>,
 }
 
 pub type AuctionId = i64;
@@ -79,16 +74,11 @@ impl Auction {
                     Price::try_new(value.into()).map(|price| (eth::TokenAddress(key), price))
                 })
                 .collect::<Result<_, _>>()?,
-            surplus_capturing_jit_order_owners_by_helper: self
+            surplus_capturing_jit_order_owners: self
                 .auction
-                .surplus_capturing_jit_order_owners_by_helper
+                .surplus_capturing_jit_order_owners
                 .into_iter()
-                .map(|(helper, owners)| {
-                    (
-                        helper.into(),
-                        owners.into_iter().map(Into::into).collect::<Vec<_>>(),
-                    )
-                })
+                .map(Into::into)
                 .collect(),
         })
     }

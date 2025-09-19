@@ -61,16 +61,10 @@ impl Request {
                 .collect(),
             deadline: Utc::now() + chrono::Duration::from_std(time_limit).unwrap(),
             surplus_capturing_jit_order_owners: auction
-                .surplus_capturing_jit_order_owners_by_helper
-                .values()
-                .flatten()
+                .surplus_capturing_jit_order_owners
+                .iter()
                 .map(|address| address.0)
                 .collect::<Vec<_>>(),
-            surplus_capturing_jit_order_owners_by_helper: auction
-                .surplus_capturing_jit_order_owners_by_helper
-                .iter()
-                .map(|(helper, owners)| (helper.0, owners.iter().map(|owner| owner.0).collect()))
-                .collect(),
         };
         Self(Arc::from(serde_json::value::to_raw_value(&helper).expect(
             "only fails with non-string keys which we do not have",
@@ -99,7 +93,6 @@ struct RequestHelper {
     pub orders: Vec<Order>,
     pub deadline: DateTime<Utc>,
     pub surplus_capturing_jit_order_owners: Vec<H160>,
-    pub surplus_capturing_jit_order_owners_by_helper: HashMap<H160, Vec<H160>>,
 }
 
 #[serde_as]

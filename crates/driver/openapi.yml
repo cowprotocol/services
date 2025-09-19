@@ -464,14 +464,14 @@ components:
             Information about tokens used in the auction.
         deadline:
           $ref: "#/components/schemas/DateTime"
-        surplusCapturingJitOrderOwnersByHelper:
-          type: object
-          additionalProperties:
-            type: array
-            items:
-              $ref: "#/components/schemas/Address"
+        surplusCapturingJitOrderOwners:
+          type: array
+          items:
+            $ref: "#/components/schemas/Address"
           description: >
-            HashMap of CoW AMM owner addresses grouped by their helper SC address.
+            List of addresses on whose surplus will count towards the objective
+            value of their solution (unlike other orders that were created by
+            the solver).
     SolveResponse:
       description: |
         Response of the solve endpoint.
