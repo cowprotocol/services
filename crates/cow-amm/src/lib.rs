@@ -9,7 +9,7 @@ pub use {amm::Amm, contracts::CowAmmLegacyHelper as Helper, registry::Registry};
 #[derive(prometheus_metric_storage::MetricStorage)]
 pub(crate) struct Metrics {
     /// Timing of db queries.
-    #[metric(name = "persistence_database_queries", labels("type"))]
+    #[metric(name = "cow_amm_database_queries", labels("type"))]
     database_queries: prometheus::HistogramVec,
 }
 
