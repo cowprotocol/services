@@ -14,7 +14,7 @@ use {
         alloy::{InstanceExt, UniswapV2Factory, UniswapV2Router02},
         support::{Balances, Signatures},
     },
-    ethcontract::{Address, H256, U256, errors::DeployError},
+    ethcontract::{Address, H256, U256},
     ethrpc::alloy::conversions::IntoAlloy,
     model::DomainSeparator,
     shared::ethrpc::Web3,

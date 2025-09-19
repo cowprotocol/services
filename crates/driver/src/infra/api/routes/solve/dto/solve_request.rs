@@ -16,10 +16,7 @@ use {
     },
     serde::Deserialize,
     serde_with::serde_as,
-    std::{
-        collections::HashMap,
-        sync::Arc,
-    },
+    std::{collections::HashMap, sync::Arc},
     tracing::instrument,
 };
 
