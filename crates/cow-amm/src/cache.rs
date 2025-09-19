@@ -2,6 +2,7 @@ use {
     crate::Amm,
     anyhow::Context,
     contracts::{CowAmmLegacyHelper, cow_amm_legacy_helper::Event as CowAmmEvent},
+    database::byte_array::ByteArray,
     ethcontract::{Address, errors::ExecutionError},
     ethrpc::block_stream::RangeInclusive,
     shared::event_handling::EventStoring,
@@ -94,27 +95,20 @@ impl EventStoring<ethcontract::Event<CowAmmEvent>> for Storage {
         events: Vec<ethcontract::Event<CowAmmEvent>>,
         range: RangeInclusive<u64>,
     ) -> anyhow::Result<()> {
-        // Collect AMM addresses to delete from database
         let amm_addresses_to_delete = {
             let cache = &*self.0.cache.read().await;
-            let mut addresses = Vec::new();
-            for key in *range.start()..=*range.end() {
-                if let Some(amms) = cache.get(&key) {
-                    for amm in amms {
-                        addresses.push(database::byte_array::ByteArray(amm.address().0));
-                    }
-                }
-            }
-            addresses
+            (*range.start()..=*range.end())
+                .flat_map(|block_number| cache.get(&block_number).cloned().unwrap_or_default())
+                .map(|amm| ByteArray(amm.address().0))
+                .collect::<Vec<_>>()
         };
 
-        // Delete AMMs from database
+        // @todo: use IntoIterator here as well
         if !amm_addresses_to_delete.is_empty() {
             let mut ex = self.0.db.acquire().await?;
             database::cow_amms::delete_by_addresses(&mut ex, &amm_addresses_to_delete).await?;
         }
 
-        // Remove the Cow AMM events from cache in the given range
         {
             let cache = &mut *self.0.cache.write().await;
             for key in *range.start()..=*range.end() {
@@ -122,7 +116,6 @@ impl EventStoring<ethcontract::Event<CowAmmEvent>> for Storage {
             }
         }
 
-        // Apply all the new events
         self.append_events(events).await
     }
 
@@ -157,8 +150,8 @@ impl EventStoring<ethcontract::Event<CowAmmEvent>> for Storage {
             };
         }
 
-        // Persist AMMs to database
         if !processed_events.is_empty() {
+            // @todo: use IntoIterator here as well
             let db_amms = processed_events
                 .iter()
                 .map(|(_, amm)| amm.as_ref().into())
