@@ -1,15 +1,24 @@
-FROM rust:1-slim-bookworm AS chef
+FROM debian:bookworm AS chef
 WORKDIR /src/
-RUN apt-get update && apt-get install -y mold libssl-dev pkg-config git && apt-get clean
-RUN rustup install stable && rustup component add clippy rustfmt
+RUN apt-get update && apt-get install -y curl git clang mold libssl-dev pkg-config git && apt-get clean
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH="$PATH:/root/.cargo/bin"
+RUN rustup component add clippy rustfmt
 # configure to use the fast linker
-RUN mkdir ~/.cargo && echo "\
-[target.$(rustc -Vv | grep host | awk '{print $2}')] \
-linker = \"clang\" \
-rustflags = [\"-C\", \"link-arg=-fuse-ld=/usr/bin/mold\"] \
+RUN echo "\
+[build]\n \
+target = \"$(rustc -Vv | grep host | awk '{print $2}')\"\n \
+[target.$(rustc -Vv | grep host | awk '{print $2}')]\n \
+linker = \"clang\"\n \
+rustflags = [\"-C\", \"link-arg=-fuse-ld=/usr/bin/mold\"]\n \
 " > ~/.cargo/config.toml
 
 RUN cargo install cargo-chef
+
+FROM chef AS localdev
+# envs/tools suitable for running the stack locally
+ENV RUST_BACKTRACE=1
+RUN cargo install cargo-watch
 
 FROM chef AS planner
 COPY . .
