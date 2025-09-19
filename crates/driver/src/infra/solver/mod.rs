@@ -4,12 +4,10 @@ use {
         domain::{
             competition::{
                 auction::{self, Auction},
-                bad_tokens,
-                order,
+                bad_tokens, order,
                 solution::{self, Solution},
             },
-            eth,
-            liquidity,
+            eth, liquidity,
             time::Remaining,
         },
         infra::{
@@ -289,11 +287,14 @@ impl Solver {
             started_at.elapsed(),
         );
         let res = res?;
-        let res: solvers_dto::solution::Solutions = serde_json::from_str(&res)
-            .tap_err(|err| {
-                tracing::warn!(res, ?err, "failed to parse solver response");
-                self.notify(auction.id(), None, notify::Kind::SerializationError("Error: request format invalid".to_string())); // Hardcoded to avoid unbound message body size
-            })?;
+        let res: solvers_dto::solution::Solutions = serde_json::from_str(&res).tap_err(|err| {
+            tracing::warn!(res, ?err, "failed to parse solver response");
+            self.notify(
+                auction.id(),
+                None,
+                notify::Kind::SerializationError("Error: request format invalid".to_string()),
+            ); // Hardcoded to avoid unbound message body size
+        })?;
         let solutions = dto::Solutions::from(res).into_domain(
             auction,
             liquidity,
