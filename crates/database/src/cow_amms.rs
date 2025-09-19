@@ -38,7 +38,7 @@ DO UPDATE SET
 #[instrument(skip_all)]
 pub async fn fetch_by_helper(
     ex: &mut PgConnection,
-    helper_contract_address: &[u8],
+    helper_contract_address: &Address,
 ) -> Result<Vec<CowAmm>, sqlx::Error> {
     const QUERY: &str = r#"
 SELECT address, helper_contract_address, tradeable_tokens
@@ -65,7 +65,7 @@ WHERE helper_contract_address = $1;
 #[instrument(skip_all)]
 pub async fn delete_by_addresses(
     ex: &mut PgConnection,
-    addresses: &[Vec<u8>],
+    addresses: &[Address],
 ) -> Result<(), sqlx::Error> {
     if addresses.is_empty() {
         return Ok(());
@@ -93,48 +93,51 @@ pub async fn batch_upsert(ex: &mut PgConnection, cow_amms: &[CowAmm]) -> Result<
     Ok(())
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use {super::*, sqlx::Connection};
+#[cfg(test)]
+mod tests {
+    use {super::*, crate::byte_array::ByteArray, sqlx::Connection};
 
-// #[tokio::test]
-// #[ignore]
-// async fn postgres_cow_amm_roundtrip() {
-//     let mut db = PgConnection::connect("postgresql://").await.unwrap();
-//     let mut db = db.begin().await.unwrap();
-//     crate::clear_DANGER_(&mut db).await.unwrap();
-//
-//     let helper_address = vec![1u8; 20];
-//     let cow_amm = CowAmm {
-//         address: vec![42u8; 20],
-//         helper_contract_address: helper_address.clone(),
-//         tradeable_tokens: vec![vec![1u8; 20], vec![2u8; 20]],
-//     };
-//
-//     // Test upsert
-//     upsert(&mut db, &cow_amm).await.unwrap();
-//
-//     // Test fetch by helper
-//     let fetched = fetch_by_helper(&mut db,
-// &helper_address).await.unwrap();     assert_eq!(fetched.len(), 1);
-//     assert_eq!(fetched[0], cow_amm);
-//
-//     // Test batch upsert
-//     let cow_amm2 = CowAmm {
-//         address: vec![43u8; 20],
-//         helper_contract_address: helper_address.clone(),
-//         tradeable_tokens: vec![vec![3u8; 20]],
-//     };
-//     batch_upsert(&mut db, &[cow_amm2.clone()]).await.unwrap();
-//
-//     let fetched = fetch_by_helper(&mut db,
-// &helper_address).await.unwrap();     assert_eq!(fetched.len(), 2);
-//
-//     // Test delete by addresses
-//     delete_by_addresses(&mut db,
-// &[cow_amm.address.clone()]).await.unwrap();     let fetched =
-// fetch_by_helper(&mut db, &helper_address).await.unwrap();
-//     assert_eq!(fetched.len(), 1);
-//     assert_eq!(fetched[0], cow_amm2);
-// }
-// }
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_cow_amm_roundtrip() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let helper_address = ByteArray([1u8; 20]);
+        let cow_amm = CowAmm {
+            address: ByteArray([42u8; 20]),
+            helper_contract_address: helper_address,
+            tradeable_tokens: vec![ByteArray([1u8; 20]), ByteArray([2u8; 20])],
+        };
+
+        // Test upsert
+        upsert(&mut db, &cow_amm).await.unwrap();
+
+        // Test fetch by helper
+        let fetched = fetch_by_helper(&mut db, &helper_address).await.unwrap();
+        assert_eq!(fetched.len(), 1);
+        assert_eq!(fetched[0], cow_amm);
+
+        // Test batch upsert
+        let cow_amm2 = CowAmm {
+            address: ByteArray([43u8; 20]),
+            helper_contract_address: helper_address,
+            tradeable_tokens: vec![ByteArray([3u8; 20])],
+        };
+        batch_upsert(&mut db, std::slice::from_ref(&cow_amm2))
+            .await
+            .unwrap();
+
+        let fetched = fetch_by_helper(&mut db, &helper_address).await.unwrap();
+        assert_eq!(fetched.len(), 2);
+
+        // Test delete by addresses
+        delete_by_addresses(&mut db, &[cow_amm.address])
+            .await
+            .unwrap();
+        let fetched = fetch_by_helper(&mut db, &helper_address).await.unwrap();
+        assert_eq!(fetched.len(), 1);
+        assert_eq!(fetched[0], cow_amm2);
+    }
+}
