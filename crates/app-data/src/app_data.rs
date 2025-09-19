@@ -41,12 +41,15 @@ pub struct ProtocolAppData {
 #[serde_as]
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
 #[cfg_attr(any(test, feature = "test_helpers"), derive(Serialize))]
+#[serde(rename_all = "camelCase")]
 pub struct Flashloan {
     /// Which contract to request the flashloan from.
-    pub lender: Option<H160>,
-    /// Who should receive the borrowed tokens. If this is not
-    /// set the order owner will get the tokens.
-    pub borrower: Option<H160>,
+    pub liquidity_provider: H160,
+    /// Which helper contract should be used to request
+    /// the flashloan with.
+    pub protocol_adapter: H160,
+    /// Who should receive the borrowed tokens.
+    pub receiver: H160,
     /// Which token to flashloan.
     pub token: H160,
     /// How much of the token to flashloan.

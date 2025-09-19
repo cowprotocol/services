@@ -38,10 +38,6 @@ balances = "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b"
 signatures = "0x8262d639c38470F38d2eff15926F7071c28057Af"
 flashloan-router = "0x0000000000000000000000000000000000000000"
 
-[[contracts.flashloan-wrappers]]
-lender = "0x0000000000000000000000000000000000000000"
-helper-contract = "0x0000000000000000000000000000000000000000"
-
 [[contracts.cow-amms]]
 # address of factory creating new CoW AMMs
 factory = "0x86f3df416979136cb4fdea2c0886301b911c163b"

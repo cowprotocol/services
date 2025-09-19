@@ -15,9 +15,10 @@ use {
 #[ignore]
 async fn solutions_with_flashloan() {
     let flashloan = Flashloan {
-        lender: Some(H160::from_low_u64_be(1)),
-        borrower: Some(H160::from_low_u64_be(2)),
+        liquidity_provider: H160::from_low_u64_be(1),
+        receiver: H160::from_low_u64_be(2),
         token: H160::from_low_u64_be(3),
+        protocol_adapter: H160::from_low_u64_be(4),
         amount: 3.into(),
     };
     let protocol_app_data = ProtocolAppData {
@@ -51,9 +52,10 @@ async fn solutions_with_flashloan() {
 #[ignore]
 async fn solutions_without_flashloan() {
     let flashloan = Flashloan {
-        lender: Some(H160::from_low_u64_be(1)),
-        borrower: Some(H160::from_low_u64_be(2)),
+        liquidity_provider: H160::from_low_u64_be(1),
+        receiver: H160::from_low_u64_be(2),
         token: H160::from_low_u64_be(3),
+        protocol_adapter: H160::from_low_u64_be(4),
         amount: 3.into(),
     };
     let protocol_app_data = ProtocolAppData {
@@ -94,8 +96,9 @@ fn protocol_app_data_into_validated(protocol: ProtocolAppData) -> app_data::Vali
 
 fn flashloan_into_dto(flashloan: Flashloan) -> solvers_dto::solution::Flashloan {
     solvers_dto::solution::Flashloan {
-        lender: flashloan.lender.unwrap_or_default(),
-        borrower: flashloan.borrower.unwrap_or_default(),
+        liquidity_provider: flashloan.liquidity_provider,
+        protocol_adapter: flashloan.protocol_adapter,
+        receiver: flashloan.receiver,
         token: flashloan.token,
         amount: flashloan.amount,
     }

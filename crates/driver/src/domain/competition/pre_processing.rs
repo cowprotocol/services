@@ -285,7 +285,7 @@ impl Utilities {
                             .map(|loan| BalanceOverrideRequest {
                                 token: loan.token,
                                 amount: loan.amount,
-                                holder: loan.borrower.unwrap_or(trader.0.0),
+                                holder: loan.receiver,
                             })
                     } else {
                         None
