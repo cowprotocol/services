@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use {
     super::order::Order,
     crate::{
@@ -9,7 +8,7 @@ use {
     primitive_types::{H160, U256},
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
-    std::collections::BTreeMap,
+    std::collections::{BTreeMap, HashMap},
 };
 
 pub fn from_domain(auction: domain::RawAuctionData) -> RawAuctionData {
