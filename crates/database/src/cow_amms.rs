@@ -31,6 +31,7 @@ pub async fn upsert_batched(
     Ok(())
 }
 
+// @todo: add deployment block number column
 /// Insert or update a batch of CoW AMMs in the database
 #[instrument(skip_all)]
 async fn upsert(ex: &mut PgConnection, cow_amms: &[CowAmm]) -> Result<(), sqlx::Error> {

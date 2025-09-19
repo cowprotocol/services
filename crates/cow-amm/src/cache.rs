@@ -51,6 +51,7 @@ impl Storage {
         if !processed_amms.is_empty() {
             let count = processed_amms.len();
             let mut cache = self.0.cache.write().await;
+            // @todo: this is not right, fetch the start index first
             cache.insert(self.0.start_of_index + 1, processed_amms);
             tracing::info!(count, ?helper_address, "initialized AMMs from database");
         }
