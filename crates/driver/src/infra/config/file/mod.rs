@@ -370,6 +370,10 @@ struct ContractsConfig {
     /// Override the default address of the Signatures contract.
     signatures: Option<eth::H160>,
 
+    /// List of all cow amm factories with the corresponding helper contract.
+    #[serde(default)]
+    cow_amms: Vec<CowAmmConfig>,
+
     /// Flashloan wrapper-related configs.
     #[serde(default)]
     flashloan_wrappers: Vec<FlashloanWrapperConfig>,
@@ -394,6 +398,15 @@ pub struct FlashloanWrapperConfig {
     /// Flashloan fee in bps.
     #[serde(default)]
     pub fee_in_bps: eth::U256,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct CowAmmConfig {
+    /// CoW AMM factory address.
+    pub factory: eth::H160,
+    /// Which helper contract to use for interfacing with CoW AMMs.
+    pub helper: eth::H160,
 }
 
 #[derive(Debug, Deserialize)]

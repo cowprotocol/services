@@ -134,7 +134,13 @@ impl DataAggregator {
             },
         );
 
-        let cow_amm_cache = cow_amm::Cache::new(eth.web3().clone());
+        let cow_amm_helper_by_factory = eth
+            .contracts()
+            .cow_amm_helper_by_factory()
+            .iter()
+            .map(|(factory, helper)| (factory.0.into(), helper.0.into()))
+            .collect();
+        let cow_amm_cache = cow_amm::Cache::new(eth.web3().clone(), cow_amm_helper_by_factory);
 
         Self {
             utilities: Arc::new(Utilities {

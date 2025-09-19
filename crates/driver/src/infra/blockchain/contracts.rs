@@ -32,6 +32,7 @@ pub struct Contracts {
     /// specified.
     flashloan_default_lender: Option<eth::ContractAddress>,
     balance_helper: contracts::support::Balances,
+    cow_amm_helper_by_factory: HashMap<eth::ContractAddress, eth::ContractAddress>,
 }
 
 #[derive(Debug, Clone)]
@@ -46,6 +47,7 @@ pub struct Addresses {
     pub signatures: Option<eth::ContractAddress>,
     pub weth: Option<eth::ContractAddress>,
     pub balances: Option<eth::ContractAddress>,
+    pub cow_amm_helper_by_factory: HashMap<eth::ContractAddress, eth::ContractAddress>,
     pub flashloan_wrappers: Vec<config::file::FlashloanWrapperConfig>,
     pub flashloan_router: Option<eth::ContractAddress>,
     pub flashloan_default_lender: Option<eth::ContractAddress>,
@@ -145,6 +147,7 @@ impl Contracts {
             flashloan_router,
             flashloan_default_lender: addresses.flashloan_default_lender,
             balance_helper,
+            cow_amm_helper_by_factory: addresses.cow_amm_helper_by_factory,
         })
     }
 
@@ -194,16 +197,12 @@ impl Contracts {
     pub fn balance_helper(&self) -> &contracts::support::Balances {
         &self.balance_helper
     }
-}
 
-#[derive(Debug, Clone)]
-pub struct CowAmmConfig {
-    /// Which contract to index for CoW AMM deployment events.
-    pub factory: eth::H160,
-    /// Which helper contract to use for interfacing with the indexed CoW AMMs.
-    pub helper: eth::H160,
-    /// At which block indexing should start on the factory.
-    pub index_start: u64,
+    pub fn cow_amm_helper_by_factory(
+        &self,
+    ) -> &HashMap<eth::ContractAddress, eth::ContractAddress> {
+        &self.cow_amm_helper_by_factory
+    }
 }
 
 /// Returns the address of a contract for the specified network, or `None` if
