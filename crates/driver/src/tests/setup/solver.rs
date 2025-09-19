@@ -47,7 +47,7 @@ pub struct Config<'a> {
     pub quote: bool,
     pub fee_handler: FeeHandler,
     pub private_key: ethcontract::PrivateKey,
-    pub expected_surplus_capturing_jit_order_owners: Vec<H160>,
+    pub expected_surplus_capturing_jit_order_owners_by_helper: HashMap<H160, Vec<H160>>,
     pub allow_multiple_solve_requests: bool,
 }
 
@@ -319,7 +319,9 @@ impl Solver {
                         }));
                         // Skipping the prices for JIT orders (non-surplus-capturing)
                         if config
-                            .expected_surplus_capturing_jit_order_owners
+                            .expected_surplus_capturing_jit_order_owners_by_helper
+                            .values()
+                            .flatten()
                             .contains(&jit.quoted_order.order.owner)
                         {
                             let previous_value = prices_json.insert(
@@ -518,7 +520,7 @@ impl Solver {
                         "liquidity": [],
                         "effectiveGasPrice": effective_gas_price,
                         "deadline": config.deadline.solvers(),
-                        "surplusCapturingJitOrderOwners": config.expected_surplus_capturing_jit_order_owners,
+                        "surplusCapturingJitOrderOwnersByHelper": config.expected_surplus_capturing_jit_order_owners_by_helper,
                     });
                     assert_eq!(req, expected, "unexpected /solve request");
                     let mut state = state.0.lock().unwrap();

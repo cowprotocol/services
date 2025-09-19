@@ -150,7 +150,7 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
         "tokens": tokens_json,
         "orders": orders_json,
         "deadline": test.deadline,
-        "surplusCapturingJitOrderOwners": test.surplus_capturing_jit_order_owners,
+        "surplusCapturingJitOrderOwnersByHelper": test.surplus_capturing_jit_order_owners_by_helper,
     })
 }
 

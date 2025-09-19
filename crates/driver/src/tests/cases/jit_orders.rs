@@ -1,22 +1,25 @@
-use crate::{
-    domain::{
-        competition::{order, order::Side},
-        eth,
-    },
-    tests::{
-        self,
-        cases::{EtherExt, is_approximately_equal},
-        setup::{
+use {
+    crate::{
+        domain::{
+            competition::{order, order::Side},
+            eth,
+        },
+        tests::{
             self,
-            ExpectedOrderAmounts,
-            Test,
-            ab_adjusted_pool,
-            ab_liquidity_quote,
-            ab_order,
-            ab_solution,
-            test_solver,
+            cases::{EtherExt, is_approximately_equal},
+            setup::{
+                self,
+                ExpectedOrderAmounts,
+                Test,
+                ab_adjusted_pool,
+                ab_liquidity_quote,
+                ab_order,
+                ab_solution,
+                test_solver,
+            },
         },
     },
+    primitive_types::H160,
 };
 
 struct Amounts {
@@ -97,21 +100,20 @@ async fn protocol_fee_test_case(test_case: TestCase) {
         .no_surplus();
 
     let solver = test_solver();
-
-    let test: Test = tests::setup()
+    let solver_address = solver.address();
+    let setup_builder = tests::setup()
         .name(test_name)
         .pool(pool)
         .jit_order(jit_order.clone())
         .order(order.clone())
         .solution(ab_solution())
-        .surplus_capturing_jit_order_owners(if test_case.is_surplus_capturing_jit_order {
-            vec![solver.address()]
-        } else {
-            Vec::default()
-        })
-        .solvers(vec![solver])
-        .done()
-        .await;
+        .solvers(vec![solver]);
+    let setup_builder = if test_case.is_surplus_capturing_jit_order {
+        setup_builder.surplus_capturing_jit_order_owners(H160::random(), vec![solver_address])
+    } else {
+        setup_builder
+    };
+    let test: Test = setup_builder.done().await;
 
     let result = test.solve().await.ok();
     assert!(is_approximately_equal(

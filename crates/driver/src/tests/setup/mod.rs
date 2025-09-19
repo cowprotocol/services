@@ -550,7 +550,7 @@ pub struct Setup {
     /// List of jit orders returned by the solver
     jit_orders: Vec<JitOrder>,
     /// List of surplus capturing JIT-order owners
-    surplus_capturing_jit_order_owners: Vec<H160>,
+    surplus_capturing_jit_order_owners_by_helper: HashMap<H160, Vec<H160>>,
     /// In case your test requires multiple `/solve` requests
     allow_multiple_solve_requests: bool,
     /// Auction ID used during tests
@@ -874,9 +874,12 @@ impl Setup {
 
     pub fn surplus_capturing_jit_order_owners(
         mut self,
+        helper: H160,
         surplus_capturing_jit_order_owners: Vec<H160>,
     ) -> Self {
-        self.surplus_capturing_jit_order_owners
+        self.surplus_capturing_jit_order_owners_by_helper
+            .entry(helper)
+            .or_default()
             .extend(surplus_capturing_jit_order_owners);
         self
     }
@@ -917,7 +920,7 @@ impl Setup {
             trusted,
             config_file,
             jit_orders,
-            surplus_capturing_jit_order_owners,
+            surplus_capturing_jit_order_owners_by_helper,
             ..
         } = self;
 
@@ -991,8 +994,8 @@ impl Setup {
                 quote: self.quote,
                 fee_handler: solver.fee_handler,
                 private_key: solver.private_key.clone(),
-                expected_surplus_capturing_jit_order_owners: surplus_capturing_jit_order_owners
-                    .clone(),
+                expected_surplus_capturing_jit_order_owners_by_helper:
+                    surplus_capturing_jit_order_owners_by_helper.clone(),
                 allow_multiple_solve_requests: self.allow_multiple_solve_requests,
             })
             .await;
@@ -1024,7 +1027,7 @@ impl Setup {
             settle_submission_deadline: self.settle_submission_deadline,
             quoted_orders: quotes,
             quote: self.quote,
-            surplus_capturing_jit_order_owners,
+            surplus_capturing_jit_order_owners_by_helper,
             auction_id: self.auction_id,
         }
     }
@@ -1066,7 +1069,7 @@ pub struct Test {
     /// Is this testing the /quote endpoint?
     quote: bool,
     /// List of surplus capturing JIT-order owners
-    surplus_capturing_jit_order_owners: Vec<H160>,
+    surplus_capturing_jit_order_owners_by_helper: HashMap<H160, Vec<H160>>,
     auction_id: i64,
 }
 
