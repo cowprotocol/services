@@ -251,7 +251,7 @@ impl SolvableOrdersCache {
             OrderEventLabel::Filtered,
         );
 
-        let valid_cow_amms: Vec<_> = cow_amms
+        let surplus_capturing_jit_order_owners = cow_amms
             .iter()
             .filter(|cow_amm| {
                 cow_amm.traded_tokens().iter().all(|token| {
@@ -266,20 +266,10 @@ impl SolvableOrdersCache {
                     price_exist
                 })
             })
-            .collect();
-
-        let surplus_capturing_jit_order_owners_by_helper = {
-            let mut by_helper: HashMap<eth::Address, Vec<eth::Address>> = HashMap::new();
-            for cow_amm in &valid_cow_amms {
-                let helper_address = eth::Address::from(cow_amm.helper_address());
-                let amm_address = eth::Address::from(*cow_amm.address());
-                by_helper
-                    .entry(helper_address)
-                    .or_default()
-                    .push(amm_address);
-            }
-            by_helper
-        };
+            .map(|cow_amm| cow_amm.address())
+            .cloned()
+            .map(eth::Address::from)
+            .collect::<Vec<_>>();
         let auction = domain::RawAuctionData {
             block,
             orders: orders
@@ -289,11 +279,8 @@ impl SolvableOrdersCache {
                         .quotes
                         .get(&order.metadata.uid.into())
                         .cloned();
-                    self.protocol_fees.apply(
-                        order,
-                        quote,
-                        &surplus_capturing_jit_order_owners_by_helper,
-                    )
+                    self.protocol_fees
+                        .apply(order, quote, &surplus_capturing_jit_order_owners)
                 })
                 .collect(),
             prices: prices
@@ -302,7 +289,7 @@ impl SolvableOrdersCache {
                     Price::try_new(value.into()).map(|price| (eth::TokenAddress(key), price))
                 })
                 .collect::<Result<_, _>>()?,
-            surplus_capturing_jit_order_owners_by_helper,
+            surplus_capturing_jit_order_owners,
         };
 
         *self.cache.lock().await = Some(Inner {
@@ -495,6 +482,9 @@ async fn find_invalid_signature_orders(
                         hash,
                         signature: signature.clone(),
                         interactions: order.interactions.pre.clone(),
+                        // TODO delete balance and signature logic in the autopilot
+                        // altogether
+                        balance_override: None,
                     })
                     .await
                 {
@@ -1264,6 +1254,7 @@ mod tests {
                     value: U256::zero(),
                     call_data: vec![5, 6],
                 }],
+                balance_override: None,
             }))
             .returning(|_| Ok(()));
         signature_validator
@@ -1273,6 +1264,7 @@ mod tests {
                 hash: [4; 32],
                 signature: vec![4, 4, 4, 4],
                 interactions: vec![],
+                balance_override: None,
             }))
             .returning(|_| Err(SignatureValidationError::Invalid));
         signature_validator
@@ -1282,6 +1274,7 @@ mod tests {
                 hash: [5; 32],
                 signature: vec![5, 5, 5, 5, 5],
                 interactions: vec![],
+                balance_override: None,
             }))
             .returning(|_| Ok(()));
 

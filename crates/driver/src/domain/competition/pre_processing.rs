@@ -24,6 +24,7 @@ use {
     },
     shared::{
         account_balances::{BalanceFetching, Query},
+        price_estimation::trade_verifier::balance_overrides::BalanceOverrideRequest,
         signature_validator::SignatureValidating,
     },
     std::{collections::HashMap, future::Future, sync::Arc},
@@ -132,9 +133,16 @@ impl DataAggregator {
                 vault_relayer: eth.contracts().vault_relayer().0,
                 signatures: eth.contracts().signatures().clone(),
             },
+            eth.balance_overrider(),
         );
 
-        let cow_amm_cache = cow_amm::Cache::new(eth.web3().clone());
+        let cow_amm_helper_by_factory = eth
+            .contracts()
+            .cow_amm_helper_by_factory()
+            .iter()
+            .map(|(factory, helper)| (factory.0.into(), helper.0.into()))
+            .collect();
+        let cow_amm_cache = cow_amm::Cache::new(eth.web3().clone(), cow_amm_helper_by_factory);
 
         Self {
             utilities: Arc::new(Utilities {
@@ -256,8 +264,10 @@ impl Utilities {
             .map(|((trader, token, source), mut orders)| {
                 let first = orders.next().expect("group contains at least 1 order");
                 let mut others = orders;
-                let all_interactions_equal =
-                    others.all(|order| order.pre_interactions == first.pre_interactions);
+                let all_setups_equal = others.all(|order| {
+                    order.pre_interactions == first.pre_interactions
+                        && order.app_data.flashloan() == first.app_data.flashloan()
+                });
                 Query {
                     owner: trader.0.0,
                     token: token.0.0,
@@ -266,7 +276,7 @@ impl Utilities {
                         SellTokenBalance::Internal => SellTokenSource::Internal,
                         SellTokenBalance::External => SellTokenSource::External,
                     },
-                    interactions: if all_interactions_equal {
+                    interactions: if all_setups_equal {
                         first
                             .pre_interactions
                             .iter()
@@ -278,6 +288,18 @@ impl Utilities {
                             .collect()
                     } else {
                         Vec::default()
+                    },
+                    balance_override: if all_setups_equal {
+                        first
+                            .app_data
+                            .flashloan()
+                            .map(|loan| BalanceOverrideRequest {
+                                token: loan.token,
+                                amount: loan.amount,
+                                holder: loan.borrower.unwrap_or(trader.0.0),
+                            })
+                    } else {
+                        None
                     },
                 }
             })
@@ -359,7 +381,7 @@ impl Utilities {
 
         let cow_amms = self
             .cow_amm_cache
-            .get_or_create_amms(&auction.surplus_capturing_jit_order_owners_with_helper)
+            .get_or_create_amms(&auction.surplus_capturing_jit_order_owners)
             .await;
 
         let domain_separator = self.eth.contracts().settlement_domain_separator();

@@ -376,6 +376,12 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
             weth: config.contracts.weth.map(Into::into),
             balances: config.contracts.balances.map(Into::into),
             signatures: config.contracts.signatures.map(Into::into),
+            cow_amm_helper_by_factory: config
+                .contracts
+                .cow_amms
+                .into_iter()
+                .map(|cfg| (cfg.factory.into(), cfg.helper.into()))
+                .collect(),
             flashloan_default_lender: {
                 // Make sure flashloan default lender exists in the flashloan wrappers
                 if let Some(default_lender) = config.contracts.flashloan_default_lender

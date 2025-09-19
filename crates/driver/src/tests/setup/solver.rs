@@ -47,7 +47,7 @@ pub struct Config<'a> {
     pub quote: bool,
     pub fee_handler: FeeHandler,
     pub private_key: ethcontract::PrivateKey,
-    pub expected_surplus_capturing_jit_order_owners_by_helper: HashMap<H160, Vec<H160>>,
+    pub expected_surplus_capturing_jit_order_owners: Vec<H160>,
     pub allow_multiple_solve_requests: bool,
 }
 
@@ -319,9 +319,7 @@ impl Solver {
                         }));
                         // Skipping the prices for JIT orders (non-surplus-capturing)
                         if config
-                            .expected_surplus_capturing_jit_order_owners_by_helper
-                            .values()
-                            .flatten()
+                            .expected_surplus_capturing_jit_order_owners
                             .contains(&jit.quoted_order.order.owner)
                         {
                             let previous_value = prices_json.insert(
@@ -487,6 +485,7 @@ impl Solver {
                 weth: Some(config.blockchain.weth.address().into()),
                 balances: Some(config.blockchain.balances.address().into()),
                 signatures: Some(config.blockchain.signatures.address().into()),
+                cow_amm_helper_by_factory: Default::default(),
                 flashloan_default_lender: flashloan_wrappers.first().map(|w| w.lender.into()),
                 flashloan_wrappers,
                 flashloan_router: Some(config.blockchain.flashloan_wrapper.address().into()),
@@ -513,11 +512,6 @@ impl Solver {
                         .0
                         .0
                         .to_string();
-                    let surplus_capturing_owners =
-                        config.expected_surplus_capturing_jit_order_owners_by_helper
-                            .iter()
-                            .flat_map(|(_, owners)| owners.clone())
-                            .collect::<Vec<_>>();
                     let expected = json!({
                         "id": (!config.quote).then_some("1"),
                         "tokens": tokens_json,
@@ -525,7 +519,7 @@ impl Solver {
                         "liquidity": [],
                         "effectiveGasPrice": effective_gas_price,
                         "deadline": config.deadline.solvers(),
-                        "surplusCapturingJitOrderOwners": surplus_capturing_owners,
+                        "surplusCapturingJitOrderOwners": config.expected_surplus_capturing_jit_order_owners,
                     });
                     assert_eq!(req, expected, "unexpected /solve request");
                     let mut state = state.0.lock().unwrap();

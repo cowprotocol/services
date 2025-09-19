@@ -107,9 +107,7 @@ impl Order {
             // first solution
             solutions
                 .into_iter()
-                .find(|solution| {
-                    !solution.is_empty(auction.surplus_capturing_jit_order_owners_with_helper())
-                })
+                .find(|solution| !solution.is_empty(auction.surplus_capturing_jit_order_owners()))
                 .ok_or(QuotingFailed::NoSolutions)?,
         )
     }
@@ -177,7 +175,7 @@ impl Order {
             .into_iter(),
             self.deadline,
             eth,
-            HashMap::default(),
+            HashSet::default(),
         )
         .await
         .map_err(|err| match err {

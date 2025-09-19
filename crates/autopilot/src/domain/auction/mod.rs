@@ -15,7 +15,7 @@ pub struct RawAuctionData {
     pub block: u64,
     pub orders: Vec<Order>,
     pub prices: Prices,
-    pub surplus_capturing_jit_order_owners_by_helper: HashMap<eth::Address, Vec<eth::Address>>,
+    pub surplus_capturing_jit_order_owners: Vec<eth::Address>,
 }
 
 pub type Id = i64;
@@ -26,7 +26,7 @@ pub struct Auction {
     pub block: u64,
     pub orders: Vec<Order>,
     pub prices: Prices,
-    pub surplus_capturing_jit_order_owners_by_helper: HashMap<eth::Address, Vec<eth::Address>>,
+    pub surplus_capturing_jit_order_owners: Vec<eth::Address>,
 }
 
 impl PartialEq for Auction {
@@ -34,8 +34,7 @@ impl PartialEq for Auction {
         self.block == other.block
             && self.orders == other.orders
             && self.prices == other.prices
-            && self.surplus_capturing_jit_order_owners_by_helper
-                == other.surplus_capturing_jit_order_owners_by_helper
+            && self.surplus_capturing_jit_order_owners == other.surplus_capturing_jit_order_owners
     }
 }
 

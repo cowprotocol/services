@@ -311,9 +311,9 @@ impl TradeVerifier {
             })
             .await
         {
-            Some(solver_balance_override) => {
+            Some((token, solver_balance_override)) => {
                 tracing::trace!(?solver_balance_override, "solver balance override enabled");
-                overrides.insert(query.sell_token, solver_balance_override);
+                overrides.insert(token, solver_balance_override);
 
                 if verification.from.is_zero() {
                     verification.from = H160::random();

@@ -1,6 +1,6 @@
 use {
     crate::setup::*,
-    ethcontract::H160,
+    ethcontract::{H160, common::DeploymentInformation},
     reqwest::Url,
     std::collections::HashSet,
     tokio::task::JoinHandle,
@@ -165,6 +165,28 @@ solving-share-of-deadline = 1.0
 
     let encoded_base_tokens = encode_base_tokens(base_tokens.clone());
 
+    let cow_amms = contracts
+        .cow_amm_helper
+        .iter()
+        .map(|contract| {
+            let Some(DeploymentInformation::BlockNumber(block)) = contract.deployment_information()
+            else {
+                panic!("unknown deployment block for cow amm contract");
+            };
+
+            format!(
+                r#"
+[[contracts.cow-amms]]
+helper = "{:?}"
+factory = "{:?}"
+"#,
+                block - 1, // start indexing 1 block before the contract was deployed
+                contract.address(),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
     let flashloan_router_config = contracts
         .flashloan_router
         .as_ref()
@@ -220,6 +242,8 @@ signatures = "{:?}"
 
 {maker_adapter}
 {aave_adapter}
+
+{cow_amms}
 
 {solvers}
 

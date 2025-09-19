@@ -313,8 +313,8 @@ pub fn new(
         effective_gas_price: auction.gas_price().effective().into(),
         deadline,
         surplus_capturing_jit_order_owners: auction
-            .surplus_capturing_jit_order_owners_with_helper()
-            .keys()
+            .surplus_capturing_jit_order_owners()
+            .iter()
             .cloned()
             .map(Into::into)
             .collect::<Vec<_>>(),

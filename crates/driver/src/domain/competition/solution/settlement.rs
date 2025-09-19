@@ -13,7 +13,7 @@ use {
         infra::{Simulator, blockchain::Ethereum, observe, solver::ManageNativeToken},
     },
     futures::future::try_join_all,
-    std::collections::{BTreeSet, HashMap},
+    std::collections::{BTreeSet, HashMap, HashSet},
     tracing::instrument,
 };
 
@@ -250,10 +250,10 @@ impl Settlement {
     pub fn score(
         &self,
         prices: &auction::Prices,
-        surplus_capturing_jit_order_owners_with_helper: &HashMap<eth::Address, eth::Address>,
+        surplus_capturing_jit_order_owners: &HashSet<eth::Address>,
     ) -> Result<eth::Ether, solution::error::Scoring> {
         self.solution
-            .scoring(prices, surplus_capturing_jit_order_owners_with_helper)
+            .scoring(prices, surplus_capturing_jit_order_owners)
     }
 
     /// The solution encoded in this settlement.

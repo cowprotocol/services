@@ -385,9 +385,8 @@ impl<'a> From<&'a domain::Auction> for Auction<'a> {
                 .collect(),
             native_prices: &original.prices,
             surplus_capturing_jit_order_owners: original
-                .surplus_capturing_jit_order_owners_by_helper
-                .values()
-                .flatten()
+                .surplus_capturing_jit_order_owners
+                .iter()
                 .cloned()
                 .collect(),
         }
@@ -1350,7 +1349,7 @@ mod tests {
             block: 0,
             orders,
             prices,
-            surplus_capturing_jit_order_owners_by_helper: Default::default(),
+            surplus_capturing_jit_order_owners: vec![],
         }
     }
 
