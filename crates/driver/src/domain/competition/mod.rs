@@ -112,6 +112,7 @@ impl Competition {
     /// Solve an auction as part of this competition.
     pub async fn solve(&self, auction: Arc<String>) -> Result<Option<Solved>, Error> {
         let start = Instant::now();
+        tracing::info!("newlog auction={:?}", auction);
 
         let tasks = self
             .fetcher
