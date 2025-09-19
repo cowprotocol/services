@@ -180,7 +180,7 @@ solving-share-of-deadline = 1.0
 helper = "{:?}"
 factory = "{:?}"
 "#,
-                block - 1, // start indexing 1 block before the contract was deployed
+                contract.address(),
                 contract.address(),
             )
         })
