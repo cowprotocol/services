@@ -1,6 +1,6 @@
 use {
     crate::setup::*,
-    ethcontract::{H160, common::DeploymentInformation},
+    ethcontract::H160,
     reqwest::Url,
     std::collections::HashSet,
     tokio::task::JoinHandle,
@@ -169,11 +169,6 @@ solving-share-of-deadline = 1.0
         .cow_amm_helper
         .iter()
         .map(|contract| {
-            let Some(DeploymentInformation::BlockNumber(block)) = contract.deployment_information()
-            else {
-                panic!("unknown deployment block for cow amm contract");
-            };
-
             format!(
                 r#"
 [[contracts.cow-amms]]

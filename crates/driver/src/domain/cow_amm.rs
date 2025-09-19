@@ -128,8 +128,9 @@ impl Cache {
             .data(Bytes(FUNCTION_SELECTOR.to_vec()))
             .build();
 
-        let address = match self.web3.eth().call(req, None).await {
+        match self.web3.eth().call(req, None).await {
             Ok(result) => Self::parse_address(result),
+            // Try legacy function if the first call failed
             Err(_) => {
                 let req_legacy = CallRequest::builder()
                     .to(amm_address.0)
@@ -138,9 +139,7 @@ impl Cache {
                 let result = self.web3.eth().call(req_legacy, None).await?;
                 Self::parse_address(result)
             }
-        };
-
-        Ok(address?)
+        }
     }
 
     fn parse_address(data: Bytes) -> anyhow::Result<eth::Address> {
