@@ -460,13 +460,16 @@ impl OnchainComponents {
                 .unwrap();
             tx_value!(minter, weth_amount, self.contracts.weth.deposit());
 
-            tx!(
-                minter,
-                self.contracts.uniswap_v2_factory.create_pair(
-                    contract.address().into_legacy(),
-                    self.contracts.weth.address()
+            self.contracts
+                .uniswap_v2_factory
+                .createPair(
+                    *contract.address(),
+                    self.contracts.weth.address().into_alloy(),
                 )
-            );
+                .from(minter.address().into_alloy())
+                .send_and_watch()
+                .await
+                .unwrap();
 
             contract
                 .approve(
@@ -509,13 +512,13 @@ impl OnchainComponents {
         asset_a.0.mint(lp.address(), asset_a.1).await;
         asset_b.0.mint(lp.address(), asset_b.1).await;
 
-        tx!(
-            lp,
-            self.contracts.uniswap_v2_factory.create_pair(
-                asset_a.0.address().into_legacy(),
-                asset_b.0.address().into_legacy()
-            )
-        );
+        self.contracts
+            .uniswap_v2_factory
+            .createPair(*asset_a.0.address(), *asset_b.0.address())
+            .from(lp.address().into_alloy())
+            .send_and_watch()
+            .await
+            .unwrap();
 
         asset_a
             .0
@@ -561,10 +564,11 @@ impl OnchainComponents {
             &self.web3,
             self.contracts
                 .uniswap_v2_factory
-                .get_pair(self.contracts.weth.address(), token.address().into_legacy())
+                .getPair(self.contracts.weth.address().into_alloy(), *token.address())
                 .call()
                 .await
-                .expect("failed to get Uniswap V2 pair"),
+                .expect("failed to get Uniswap V2 pair")
+                .into_legacy(),
         );
         assert!(!pair.address().is_zero(), "Uniswap V2 pair is not deployed");
 
@@ -621,12 +625,16 @@ impl OnchainComponents {
 
         tx_value!(holder, weth_amount, self.contracts.weth.deposit());
 
-        tx!(
-            holder,
-            self.contracts
-                .uniswap_v2_factory
-                .create_pair(cow.address(), self.contracts.weth.address())
-        );
+        self.contracts
+            .uniswap_v2_factory
+            .createPair(
+                cow.address().into_alloy(),
+                self.contracts.weth.address().into_alloy(),
+            )
+            .from(holder.address().into_alloy())
+            .send_and_watch()
+            .await
+            .unwrap();
         tx!(
             holder,
             cow.approve(self.contracts.uniswap_v2_router.address(), cow_amount)

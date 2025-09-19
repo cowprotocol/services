@@ -57,13 +57,14 @@ async fn try_replace_unreplaceable_order_test(web3: Web3) {
     // Create and fund Uniswap pool
     token_a.mint(solver.address(), to_wei(1000)).await;
     token_b.mint(solver.address(), to_wei(1000)).await;
-    tx!(
-        solver.account(),
-        onchain.contracts().uniswap_v2_factory.create_pair(
-            token_a.address().into_legacy(),
-            token_b.address().into_legacy()
-        )
-    );
+    onchain
+        .contracts()
+        .uniswap_v2_factory
+        .createPair(*token_a.address(), *token_b.address())
+        .from(solver.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     token_a
         .approve(
@@ -239,13 +240,14 @@ async fn try_replace_someone_else_order_test(web3: Web3) {
     // Create and fund Uniswap pool
     token_a.mint(solver.address(), to_wei(1000)).await;
     token_b.mint(solver.address(), to_wei(1000)).await;
-    tx!(
-        solver.account(),
-        onchain.contracts().uniswap_v2_factory.create_pair(
-            token_a.address().into_legacy(),
-            token_b.address().into_legacy()
-        )
-    );
+    onchain
+        .contracts()
+        .uniswap_v2_factory
+        .createPair(*token_a.address(), *token_b.address())
+        .from(solver.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     token_a
         .approve(
@@ -378,13 +380,14 @@ async fn single_replace_order_test(web3: Web3) {
     // Create and fund Uniswap pool
     token_a.mint(solver.address(), to_wei(1000)).await;
     token_b.mint(solver.address(), to_wei(1000)).await;
-    tx!(
-        solver.account(),
-        onchain.contracts().uniswap_v2_factory.create_pair(
-            token_a.address().into_legacy(),
-            token_b.address().into_legacy()
-        )
-    );
+    onchain
+        .contracts()
+        .uniswap_v2_factory
+        .createPair(*token_a.address(), *token_b.address())
+        .from(solver.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     token_a
         .approve(

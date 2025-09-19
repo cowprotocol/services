@@ -1,10 +1,12 @@
 //! A pool state reading implementation specific to Swapr.
 
 use {
-    crate::sources::uniswap_v2::pool_fetching::{self, DefaultPoolReader, Pool, PoolReading},
+    crate::sources::uniswap_v2::pool_fetching::{DefaultPoolReader, Pool, PoolReading},
+    alloy::sol_types::GenericContractError,
     anyhow::Result,
-    contracts::ISwaprPair,
-    ethcontract::{BlockId, errors::MethodError},
+    contracts::alloy::ISwaprPair,
+    ethcontract::BlockId,
+    ethrpc::alloy::conversions::IntoAlloy,
     futures::{FutureExt as _, future::BoxFuture},
     model::TokenPair,
     num::rational::Ratio,
@@ -22,13 +24,14 @@ const FEE_BASE: u32 = 10_000;
 impl PoolReading for SwaprPoolReader {
     fn read_state(&self, pair: TokenPair, block: BlockId) -> BoxFuture<'_, Result<Option<Pool>>> {
         let pair_address = self.0.pair_provider.pair_address(&pair);
-        let pair_contract = ISwaprPair::at(&self.0.web3, pair_address);
-
         let fetch_pool = self.0.read_state(pair, block);
-        let fetch_fee = pair_contract.swap_fee().block(block).call();
 
         async move {
-            let (pool, fee) = futures::join!(fetch_pool, fetch_fee);
+            let pair_contract =
+                ISwaprPair::Instance::new(pair_address.into_alloy(), self.0.web3.alloy.clone());
+            let fetch_fee = pair_contract.swapFee().block(block.into_alloy());
+
+            let (pool, fee) = futures::join!(fetch_pool, fetch_fee.call().into_future());
             handle_results(pool, fee)
         }
         .boxed()
@@ -37,9 +40,22 @@ impl PoolReading for SwaprPoolReader {
 
 fn handle_results(
     pool: Result<Option<Pool>>,
-    fee: Result<u32, MethodError>,
+    fee: Result<u32, alloy::contract::Error>,
 ) -> Result<Option<Pool>> {
-    let fee = pool_fetching::handle_contract_error(fee)?;
+    use alloy::contract::Error;
+    let fee = match fee {
+        Ok(fee) => Some(fee),
+        // Alloy "hides" the contract execution errors under the transport error
+        Err(err @ Error::TransportError(_)) => {
+            // So we need to try to decode the error as a generic contract error,
+            // we return in case it isn't a contract error
+            match err.try_decode_into_interface_error::<GenericContractError>() {
+                Ok(_) => None, // contract error
+                Err(err) => return Err(err)?,
+            }
+        }
+        Err(_) => None,
+    };
     Ok(pool?.and_then(|pool| {
         Some(Pool {
             fee: Ratio::new(fee?, FEE_BASE),
@@ -57,7 +73,7 @@ mod tests {
             recent_block_cache::Block,
             sources::{BaselineSource, uniswap_v2},
         },
-        contracts::errors::testing_contract_error,
+        contracts::errors::testing_alloy_contract_error,
         ethcontract::H160,
         maplit::hashset,
     };
@@ -94,7 +110,7 @@ mod tests {
         assert!(
             handle_results(
                 Ok(Some(Pool::uniswap(address, tokens, (0, 0)))),
-                Err(testing_contract_error()),
+                Err(testing_alloy_contract_error()),
             )
             .unwrap()
             .is_none()

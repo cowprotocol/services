@@ -1,12 +1,22 @@
 use {
     crate::maintenance::Maintaining,
+    alloy::{
+        providers::{DynProvider, Provider},
+        rpc::types::{Filter, Log},
+        sol_types::SolEventInterface,
+    },
     anyhow::{Context, Result},
     ethcontract::{EventMetadata, dyns::DynAllEventsBuilder},
-    ethrpc::block_stream::{BlockNumberHash, BlockRetrieving, RangeInclusive},
+    ethrpc::{
+        alloy::conversions::{IntoAlloy, IntoLegacy},
+        block_stream::{BlockNumberHash, BlockRetrieving, RangeInclusive},
+    },
     futures::{Stream, StreamExt, TryStreamExt, future},
+    primitive_types::H256,
     std::{pin::Pin, sync::Arc},
     tokio::sync::Mutex,
     tracing::Instrument,
+    web3::types::Address,
 };
 
 // We expect that there is never a reorg that changes more than the last n
@@ -87,6 +97,107 @@ pub trait EthcontractEventRetrieving {
     fn get_events(&self) -> DynAllEventsBuilder<Self::Event>;
 }
 
+pub trait AlloyEventRetrieving {
+    type Event: SolEventInterface + Send + Sync + 'static;
+
+    /// Returns a filter that is used to query for the events of interest.
+    fn filter(&self) -> Filter;
+
+    fn provider(&self) -> &DynProvider;
+}
+
+/// A thin wrapper to avoid conflicts with EthcontractEventRetrieving
+/// implementation. Will be dropped once fully migrated to alloy.
+pub struct AlloyEventRetriever<T>(pub T);
+
+/// Common `alloy` crate-related event retrieval patterns are extracted to
+/// this trait to avoid code duplication in implementations.
+#[async_trait::async_trait]
+impl<T> EventRetrieving for AlloyEventRetriever<T>
+where
+    T: AlloyEventRetrieving + Send + Sync,
+{
+    type Event = (T::Event, Log);
+
+    async fn get_events_by_block_hash(&self, block_hash: H256) -> Result<Vec<Self::Event>> {
+        let filter = self.0.filter().at_block_hash(block_hash.into_alloy());
+        let events = self
+            .0
+            .provider()
+            .get_logs(&filter)
+            .await
+            .map_err(anyhow::Error::from)?
+            .into_iter()
+            .filter_map(|log| {
+                let event = T::Event::decode_log(&log.inner).ok()?;
+                Some((event.data, log))
+            })
+            .collect();
+
+        Ok(events)
+    }
+
+    // Unfortunately, alloy's `watch_logs` does not support pagination yet, so it
+    // is implemented manually here
+    async fn get_events_by_block_range(
+        &self,
+        block_range: &RangeInclusive<u64>,
+    ) -> Result<EventStream<Self::Event>> {
+        const CHUNK_SIZE: usize = 500;
+
+        let start = *block_range.start();
+        let end = *block_range.end();
+        let provider = self.0.provider().clone();
+        let base_filter = self.0.filter();
+
+        let stream = futures::stream::iter(start..=end)
+            .chunks(CHUNK_SIZE)
+            .then(move |range| {
+                let provider = provider.clone();
+                let filter = base_filter.clone();
+
+                async move {
+                    let Some((start, end)) = range.first().zip(range.last()) else {
+                        return Ok(Vec::new());
+                    };
+                    let filter = filter.from_block(*start).to_block(*end);
+                    let logs = provider.get_logs(&filter).await.with_context(|| {
+                        format!("unable to get logs for blocks range {}-{}", start, end)
+                    })?;
+
+                    let events: Vec<Result<_>> = logs
+                        .into_iter()
+                        .map(|log| {
+                            T::Event::decode_log(&log.inner)
+                                .with_context(|| format!("unable to parse log: {:?}", log))
+                                .map(|event| (event.data, log))
+                        })
+                        .collect();
+
+                    Ok(events)
+                }
+            })
+            .flat_map(|chunk_result| {
+                futures::stream::iter(match chunk_result {
+                    Ok(events) => events,
+                    Err(e) => vec![Err(e)],
+                })
+            });
+
+        Ok(Box::pin(stream))
+    }
+
+    fn address(&self) -> Vec<Address> {
+        self.0
+            .filter()
+            .address
+            .iter()
+            .copied()
+            .map(IntoLegacy::into_legacy)
+            .collect()
+    }
+}
+
 /// Common `ethcontract` crate-related event retrieval patterns are extracted to
 /// this trait to avoid code duplication and any dependencies on the
 /// `ethcontract` crate in the main event handling traits. This will be removed
@@ -140,7 +251,7 @@ pub trait EventRetrieving {
         block_range: &RangeInclusive<u64>,
     ) -> Result<EventStream<Self::Event>>;
 
-    fn address(&self) -> Vec<ethcontract::Address>;
+    fn address(&self) -> Vec<Address>;
 }
 
 #[derive(Debug)]
@@ -827,28 +938,28 @@ mod tests {
                 H256::from_str(
                     "0xa21ba3de6ac42185aa2b21e37cd63ff1572b763adff7e828f86590df1d1be118",
                 )
-                .unwrap(),
+                    .unwrap(),
             ),
             (
                 15575560,
                 H256::from_str(
                     "0x5a737331194081e99b73d7a8b7a2ccff84e0aff39fa0e39aca0b660f3d6694c4",
                 )
-                .unwrap(),
+                    .unwrap(),
             ),
             (
                 15575561,
                 H256::from_str(
                     "0xe91ec1a5a795c0739d99a60ac1df37cdf90b6c75c8150ace1cbad5b21f473b75", //WRONG HASH!
                 )
-                .unwrap(),
+                    .unwrap(),
             ),
             (
                 15575562,
                 H256::from_str(
                     "0xac1ca15622f17c62004de1f746728d4051103d8b7e558d39fd9fcec4d3348937",
                 )
-                .unwrap(),
+                    .unwrap(),
             ),
         ];
         let event_handler = EventHandler::new(

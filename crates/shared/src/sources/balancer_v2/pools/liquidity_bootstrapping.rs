@@ -7,11 +7,12 @@ use {
         swap::fixed_point::Bfp,
     },
     anyhow::Result,
-    contracts::{
+    contracts::alloy::{
         BalancerV2LiquidityBootstrappingPool,
         BalancerV2LiquidityBootstrappingPoolFactory,
     },
     ethcontract::BlockId,
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::{FutureExt as _, future::BoxFuture},
 };
 
@@ -39,7 +40,7 @@ impl PoolIndexing for PoolInfo {
 }
 
 #[async_trait::async_trait]
-impl FactoryIndexing for BalancerV2LiquidityBootstrappingPoolFactory {
+impl FactoryIndexing for BalancerV2LiquidityBootstrappingPoolFactory::Instance {
     type PoolInfo = PoolInfo;
     type PoolState = PoolState;
 
@@ -53,16 +54,33 @@ impl FactoryIndexing for BalancerV2LiquidityBootstrappingPoolFactory {
         common_pool_state: BoxFuture<'static, common::PoolState>,
         block: BlockId,
     ) -> BoxFuture<'static, Result<Option<Self::PoolState>>> {
-        let pool_contract = BalancerV2LiquidityBootstrappingPool::at(
-            &self.raw_instance().web3(),
-            pool_info.common.address,
+        let pool_contract = BalancerV2LiquidityBootstrappingPool::Instance::new(
+            pool_info.common.address.into_alloy(),
+            self.provider().clone(),
         );
 
         let fetch_common = common_pool_state.map(Result::Ok);
         // Liquidity bootstrapping pools use dynamic weights, meaning that we
         // need to fetch them every time.
-        let fetch_weights = pool_contract.get_normalized_weights().block(block).call();
-        let fetch_swap_enabled = pool_contract.get_swap_enabled().block(block).call();
+        let weights_block = block.into_alloy();
+        let swap_block = weights_block;
+        let pool_contract_clone = pool_contract.clone();
+        let fetch_weights = async move {
+            pool_contract
+                .getNormalizedWeights()
+                .block(weights_block)
+                .call()
+                .await
+                .map_err(anyhow::Error::from)
+        };
+        let fetch_swap_enabled = async move {
+            pool_contract_clone
+                .getSwapEnabled()
+                .block(swap_block)
+                .call()
+                .await
+                .map_err(anyhow::Error::from)
+        };
 
         async move {
             let (common, weights, swap_enabled) =
@@ -80,7 +98,7 @@ impl FactoryIndexing for BalancerV2LiquidityBootstrappingPoolFactory {
                         address,
                         TokenState {
                             common,
-                            weight: Bfp::from_wei(weight),
+                            weight: Bfp::from_wei(weight.into_legacy()),
                         },
                     )
                 })
