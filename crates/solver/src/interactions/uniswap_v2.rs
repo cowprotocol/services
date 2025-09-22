@@ -1,15 +1,13 @@
 use {
-    alloy::{primitives::Address, sol_types::SolCall},
-    contracts::{GPv2Settlement, alloy::IUniswapLikeRouter},
+    contracts::{GPv2Settlement, IUniswapLikeRouter},
     ethcontract::Bytes,
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     primitive_types::{H160, U256},
     shared::interaction::{EncodedInteraction, Interaction},
 };
 
 #[derive(Debug)]
 pub struct UniswapInteraction {
-    pub router: Address,
+    pub router: IUniswapLikeRouter,
     pub settlement: GPv2Settlement,
     pub amount_out: U256,
     pub amount_in_max: U256,
@@ -25,15 +23,15 @@ impl Interaction for UniswapInteraction {
 
 impl UniswapInteraction {
     pub fn encode_swap(&self) -> EncodedInteraction {
-        let calldata = IUniswapLikeRouter::IUniswapLikeRouter::swapTokensForExactTokensCall {
-            amountOut: self.amount_out.into_alloy(),
-            amountInMax: self.amount_in_max.into_alloy(),
-            path: vec![self.token_in.into_alloy(), self.token_out.into_alloy()],
-            to: self.settlement.address().into_alloy(),
-            deadline: ::alloy::primitives::U256::MAX,
-        }
-        .abi_encode();
-        (self.router.into_legacy(), 0.into(), Bytes(calldata))
+        let method = self.router.swap_tokens_for_exact_tokens(
+            self.amount_out,
+            self.amount_in_max,
+            vec![self.token_in, self.token_out],
+            self.settlement.address(),
+            U256::MAX,
+        );
+        let calldata = method.tx.data.expect("no calldata").0;
+        (self.router.address(), 0.into(), Bytes(calldata))
     }
 }
 
@@ -41,8 +39,8 @@ impl UniswapInteraction {
 mod tests {
     use {
         super::*,
-        alloy::primitives::Address,
-        ethrpc::{alloy::conversions::IntoLegacy, dummy},
+        contracts::{IUniswapLikeRouter, dummy_contract},
+        ethrpc::dummy,
         hex_literal::hex,
     };
 
@@ -59,12 +57,11 @@ mod tests {
         let token_in = H160::from_low_u64_be(7);
         let token_out = 8;
         let payout_to = 9u8;
-
-        let router_address = Address::from(&[1u8; 20]);
+        let router = dummy_contract!(IUniswapLikeRouter, H160::from_low_u64_be(4));
         let settlement =
             GPv2Settlement::at(&dummy::web3(), H160::from_low_u64_be(payout_to as u64));
         let interaction = UniswapInteraction {
-            router: router_address,
+            router: router.clone(),
             settlement,
             amount_out: amount_out.into(),
             amount_in_max: amount_in_max.into(),
@@ -74,7 +71,7 @@ mod tests {
         let swap_call = interaction.encode();
 
         // Verify Swap
-        assert_eq!(swap_call.0, router_address.into_legacy());
+        assert_eq!(swap_call.0, router.address());
         let call = &swap_call.2.0;
         let swap_signature = hex!("8803dbee");
         let path_offset = 160;
