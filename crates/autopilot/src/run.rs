@@ -500,6 +500,7 @@ pub async fn run(args: Arguments) {
         infra::banned::Users::new(
             eth.contracts().chainalysis_oracle().clone(),
             args.banned_users,
+            args.banned_users_max_cache_size.get(),
         ),
         balance_fetcher.clone(),
         bad_token_detector.clone(),
