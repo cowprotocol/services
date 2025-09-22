@@ -380,19 +380,19 @@ impl SolvableOrdersCache {
         counter: &mut OrderFilterCounter,
         invalid_order_uids: &mut HashSet<OrderUid>,
     ) -> Vec<Order> {
+        let filter_invalid_signatures = async {
+            if !self.filter_orders {
+                return Default::default();
+            }
+            find_invalid_signature_orders(&orders, self.signature_validator.as_ref()).await
+        };
+
         let (banned_user_orders, invalid_signature_orders, unsupported_token_orders) = tokio::join!(
             self.timed_future(
                 "banned_user_filtering",
                 find_banned_user_orders(&orders, &self.banned_users)
             ),
-            self.timed_future(
-                "invalid_signature_filtering",
-                find_invalid_signature_orders(
-                    &orders,
-                    self.signature_validator.as_ref(),
-                    self.filter_orders
-                )
-            ),
+            self.timed_future("invalid_signature_filtering", filter_invalid_signatures),
             self.timed_future(
                 "unsupported_token_filtering",
                 find_unsupported_tokens(&orders, self.bad_token_detector.clone())
@@ -471,12 +471,7 @@ async fn get_native_prices(
 async fn find_invalid_signature_orders(
     orders: &[Order],
     signature_validator: &dyn SignatureValidating,
-    order_filtering_enabled: bool,
 ) -> Vec<OrderUid> {
-    if !order_filtering_enabled {
-        return Default::default();
-    }
-
     let mut invalid_orders = vec![];
     let mut signature_check_futures = FuturesUnordered::new();
 
@@ -1295,7 +1290,7 @@ mod tests {
             .returning(|_| Ok(()));
 
         let invalid_signature_orders =
-            find_invalid_signature_orders(&orders, &signature_validator, true).await;
+            find_invalid_signature_orders(&orders, &signature_validator).await;
         assert_eq!(
             invalid_signature_orders,
             vec![OrderUid::from_parts(H256([4; 32]), H160([44; 20]), 4)]
