@@ -39,11 +39,6 @@ impl Amm {
         &self.tradeable_tokens
     }
 
-    /// Returns the address of the helper contract used by this AMM.
-    pub fn helper_address(&self) -> Address {
-        self.helper.address()
-    }
-
     /// Returns an order to rebalance the AMM based on the provided reference
     /// prices. `prices` need to be computed using a common denominator and
     /// need to be supplied in the same order as `traded_tokens` returns

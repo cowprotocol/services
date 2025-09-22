@@ -114,32 +114,20 @@ impl Cache {
     }
 
     /// Fetches the factory address for the given AMM by calling the
-    /// `factory` function. If that fails, it tries the legacy function
-    /// `FACTORY`.
+    /// `FACTORY` function.
     async fn fetch_amm_factory_address(
         &self,
         amm_address: eth::Address,
     ) -> anyhow::Result<eth::Address> {
+        // @todo: bind to the corresponding SC helper
         const FUNCTION_SELECTOR: [u8; 4] = hex!("2dd31000");
-        const FUNCTION_SELECTOR_LEGACY: [u8; 4] = hex!("c45a0155");
-
         let req = CallRequest::builder()
             .to(amm_address.0)
             .data(Bytes(FUNCTION_SELECTOR.to_vec()))
             .build();
 
-        match self.web3.eth().call(req, None).await {
-            Ok(result) => Self::parse_address(result),
-            // Try legacy function if the first call failed
-            Err(_) => {
-                let req_legacy = CallRequest::builder()
-                    .to(amm_address.0)
-                    .data(Bytes(FUNCTION_SELECTOR_LEGACY.to_vec()))
-                    .build();
-                let result = self.web3.eth().call(req_legacy, None).await?;
-                Self::parse_address(result)
-            }
-        }
+        let result = self.web3.eth().call(req, None).await?;
+        Self::parse_address(result)
     }
 
     fn parse_address(data: Bytes) -> anyhow::Result<eth::Address> {
