@@ -1,12 +1,8 @@
 //! A pool state reading implementation specific to Swapr.
 
 use {
-    crate::sources::uniswap_v2::pool_fetching::{
-        DefaultPoolReader,
-        Pool,
-        PoolReading,
-        handle_alloy_contract_error,
-    },
+    crate::sources::uniswap_v2::pool_fetching::{DefaultPoolReader, Pool, PoolReading},
+    alloy::sol_types::GenericContractError,
     anyhow::Result,
     contracts::alloy::ISwaprPair,
     ethcontract::BlockId,
@@ -46,7 +42,20 @@ fn handle_results(
     pool: Result<Option<Pool>>,
     fee: Result<u32, alloy::contract::Error>,
 ) -> Result<Option<Pool>> {
-    let fee = handle_alloy_contract_error(fee)?;
+    use alloy::contract::Error;
+    let fee = match fee {
+        Ok(fee) => Some(fee),
+        // Alloy "hides" the contract execution errors under the transport error
+        Err(err @ Error::TransportError(_)) => {
+            // So we need to try to decode the error as a generic contract error,
+            // we return in case it isn't a contract error
+            match err.try_decode_into_interface_error::<GenericContractError>() {
+                Ok(_) => None, // contract error
+                Err(err) => return Err(err)?,
+            }
+        }
+        Err(_) => None,
+    };
     Ok(pool?.and_then(|pool| {
         Some(Pool {
             fee: Ratio::new(fee?, FEE_BASE),
