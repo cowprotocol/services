@@ -72,6 +72,7 @@ impl Amm {
                 hash,
                 signature: template.signature.to_bytes(),
                 interactions: template.pre_interactions.clone(),
+                balance_override: None,
             })
             .await
             .context("invalid signature")?;

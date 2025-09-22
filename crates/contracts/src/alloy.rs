@@ -381,6 +381,65 @@ crate::bindings!(
     }
 );
 crate::bindings!(ISwaprPair);
+crate::bindings!(
+    TestnetUniswapV2Router02,
+    crate::deployments! {
+        // <https://sepolia.etherscan.io/tx/0x2bf9a91a42d53e161897d9c581f798df9db6fb00587803dde7e7b8859118d821>
+        SEPOLIA => address!("0x86dcd3293C53Cf8EFd7303B57beb2a3F671dDE98"),
+    }
+);
+crate::bindings!(
+    UniswapV2Factory,
+    // <https://docs.uniswap.org/contracts/v2/reference/smart-contracts/factory>
+    crate::deployments! {
+        // <https://etherscan.io/tx/0xc31d7e7e85cab1d38ce1b8ac17e821ccd47dbde00f9d57f2bd8613bff9428396>
+        MAINNET => address!("0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f"),
+        // <https://gnosisscan.io/tx/0x446de52c460bed3f49a4342eab247bb4b2fe2993962c284fb9bc14a983c7a3d4>
+        GNOSIS => address!("0xA818b4F111Ccac7AA31D0BCc0806d64F2E0737D7"),
+        // <https://arbiscan.io/tx/0x83b597d54496c0b64d66a3b9a65c312e406262511c908f702ef06755d13ab2f3>
+        ARBITRUM_ONE => address!("0xf1D7CC64Fb4452F05c498126312eBE29f30Fbcf9"),
+        // <https://basescan.org/tx/0x3c94031f81d9afe3beeb8fbcf4dcf1bd5b5688b86081d94e3d0231514dc00d31>
+        BASE => address!("0x8909Dc15e40173Ff4699343b6eB8132c65e18eC6"),
+        // <https://sepolia.etherscan.io/tx/0x0a5e26b22f6b470857957a1d5a92ad4a7d3c5e7cf254ddd80edfe23df70eae71>
+        SEPOLIA => address!("0xF62c03E08ada871A0bEb309762E260a7a6a880E6"),
+        // <https://snowtrace.io/tx/0xd06a069b11fc0c998b404c5736957cc16c71cf1f7dbf8a7d4244c84036ea6edd>
+        AVALANCHE => address!("0x9e5A52f57b3038F1B8EeE45F28b3C1967e22799C"),
+        // <https://bscscan.com/tx/0x7305a4bddc54eee158f245a09526969697ac1a9f56d090b124ebfc85ff71a5cf>
+        BNB => address!("0x8909Dc15e40173Ff4699343b6eB8132c65e18eC6"),
+        // <https://optimistic.etherscan.io/tx/0xf7227dcbbfa4ea2bb2634f2a1f364a64b028f9e9e393974fea8d435cd097c72e>
+        OPTIMISM => address!("0x0c3c1c532F1e39EdF36BE9Fe0bE1410313E074Bf"),
+        // <https://polygonscan.com/tx/0x712ac56155a301fca4b7a761e232233f41a104865a74b1a59293835da355292a>
+        POLYGON => address!("0x9e5A52f57b3038F1B8EeE45F28b3C1967e22799C"),
+        // Not available on Lens
+    }
+);
+crate::bindings!(
+    UniswapV2Router02,
+    // <https://docs.uniswap.org/contracts/v2/reference/smart-contracts/router-02>
+    crate::deployments! {
+        // <https://etherscan.io/tx/0x4fc1580e7f66c58b7c26881cce0aab9c3509afe6e507527f30566fbf8039bcd0>
+        MAINNET => address!("0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D"),
+        // <https://gnosisscan.io/tx/0xfcc495cdb313b48bbb0cd0a25cb2e8fd512eb8fb0b15f75947a9d5668e47a918>
+        GNOSIS => address!("0x1C232F01118CB8B424793ae03F870aa7D0ac7f77"),
+        // <https://arbiscan.io/tx/0x630cd9d56a85e1bac7795d254fef861304a6838e28869badef19f19defb48ba6>
+        ARBITRUM_ONE => address!("0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24"),
+        // <https://basescan.org/tx/0x039224ce16ebe5574f51da761acbdfbd21099d6230c39fcd8ff566bbfd6a50a9>
+        BASE => address!("0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24"),
+        // <https://sepolia.etherscan.io/tx/0x92674b51681d2e99e71e03bd387bc0f0e79f2412302b49ed5626d1fa2311bab9>
+        SEPOLIA => address!("0xeE567Fe1712Faf6149d80dA1E6934E354124CfE3"),
+        // <https://snowtrace.io/tx/0x7372f1eedf9d32fb4185d486911f44542723dae766eea04bc3f14724bae9552e>
+        AVALANCHE => address!("0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24"),
+        // <https://bscscan.com/tx/0x9e940f846abea7dcc1f0bd5c261f405c104628c855346f8cac966f52905ee0fa>
+        BNB => address!("0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24"),
+        // <https://optimistic.etherscan.io/tx/0x2dcb9a76100e5be49e89085b87bd447b1966a9d823d5985e1a8197834c60e6bd>
+        OPTIMISM => address!("0x4A7b5Da61326A6379179b40d00F57E5bbDC962c2"),
+        // <https://polygonscan.com/tx/0x66186e0cacd2f6b3ad2eae586bd331daafd0572eb80bf71be694181858198025>
+        POLYGON => address!("0xedf6066a2b290C185783862C7F4776A2C8077AD1"),
+        // Not available on Lens
+    }
+);
+crate::bindings!(IUniswapLikeRouter);
+crate::bindings!(IUniswapLikePair);
 
 pub use alloy::providers::DynProvider as Provider;
 
@@ -580,6 +639,23 @@ mod tests {
 
         for chain_id in &[MAINNET, GNOSIS, ARBITRUM_ONE] {
             assert!(SwaprRouter::deployment_address(chain_id).is_some());
+        }
+
+        assert!(TestnetUniswapV2Router02::deployment_address(&SEPOLIA).is_some());
+
+        for chain_id in &[
+            MAINNET,
+            GNOSIS,
+            ARBITRUM_ONE,
+            BASE,
+            SEPOLIA,
+            AVALANCHE,
+            BNB,
+            OPTIMISM,
+            POLYGON,
+        ] {
+            assert!(UniswapV2Factory::deployment_address(chain_id).is_some());
+            assert!(UniswapV2Router02::deployment_address(chain_id).is_some());
         }
     }
 
