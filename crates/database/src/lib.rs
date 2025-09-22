@@ -4,6 +4,7 @@ pub mod auction_orders;
 pub mod auction_participants;
 pub mod auction_prices;
 pub mod byte_array;
+pub mod cow_amms;
 pub mod ethflow_orders;
 pub mod events;
 pub mod fee_policies;
@@ -54,6 +55,7 @@ pub const TABLES: &[&str] = &[
     "app_data",
     "auction_orders",
     "auctions",
+    "cow_amms",
     "ethflow_orders",
     "ethflow_refunds",
     "interactions",

@@ -1,9 +1,12 @@
 use {
-    crate::Amm,
+    crate::{Amm, Metrics},
+    anyhow::Context,
     contracts::{CowAmmLegacyHelper, cow_amm_legacy_helper::Event as CowAmmEvent},
+    database::byte_array::ByteArray,
     ethcontract::{Address, errors::ExecutionError},
     ethrpc::block_stream::RangeInclusive,
     shared::event_handling::EventStoring,
+    sqlx::PgPool,
     std::{collections::BTreeMap, sync::Arc},
     tokio::sync::RwLock,
 };
@@ -12,13 +15,48 @@ use {
 pub(crate) struct Storage(Arc<Inner>);
 
 impl Storage {
-    pub(crate) fn new(deployment_block: u64, helper: CowAmmLegacyHelper) -> Self {
+    pub(crate) fn new(deployment_block: u64, helper: CowAmmLegacyHelper, db: PgPool) -> Self {
         Self(Arc::new(Inner {
             cache: Default::default(),
             // make sure to start 1 block **before** the deployment to get all the events
             start_of_index: deployment_block - 1,
             helper,
+            db,
         }))
+    }
+
+    pub(crate) async fn initialize_from_database(&self) -> anyhow::Result<()> {
+        let mut ex = self.0.db.acquire().await?;
+        let helper_address = ByteArray(self.0.helper.address().0);
+        let db_amms = {
+            let _timer = Metrics::get()
+                .database_queries
+                .with_label_values(&["cow_amm_fetch_by_helper"])
+                .start_timer();
+
+            database::cow_amms::fetch_by_helper(&mut ex, &helper_address).await?
+        };
+
+        if db_amms.is_empty() {
+            return Ok(());
+        }
+
+        let mut processed_amms = Vec::new();
+        for db_amm in db_amms {
+            let amm_address = ethcontract::Address::from_slice(&db_amm.address.0);
+            let amm = Amm::new(amm_address, &self.0.helper).await?;
+            processed_amms.push(Arc::new(amm));
+        }
+
+        if !processed_amms.is_empty() {
+            let count = processed_amms.len();
+            let mut cache = self.0.cache.write().await;
+            // @todo: this is not right, fetch the start index first
+            cache.insert(self.0.start_of_index + 1, processed_amms);
+            tracing::info!(count, ?helper_address, "initialized AMMs from database");
+        }
+
+        Ok(())
     }
 
     pub(crate) async fn cow_amms(&self) -> Vec<Arc<Amm>> {
@@ -47,6 +85,8 @@ struct Inner {
     start_of_index: u64,
     /// Helper contract to query required data from the cow amm.
     helper: CowAmmLegacyHelper,
+    /// Database connection to persist CoW AMMs and the last indexed block.
+    db: PgPool,
 }
 
 #[async_trait::async_trait]
@@ -56,17 +96,26 @@ impl EventStoring<ethcontract::Event<CowAmmEvent>> for Storage {
         events: Vec<ethcontract::Event<CowAmmEvent>>,
         range: RangeInclusive<u64>,
     ) -> anyhow::Result<()> {
-        // Context to drop the write lock before calling `append_events()`
+        let amm_addresses_to_delete = {
+            let cache = &*self.0.cache.read().await;
+            (*range.start()..=*range.end())
+                .flat_map(|block_number| cache.get(&block_number).cloned().unwrap_or_default())
+                .map(|amm| ByteArray(amm.address().0))
+                .collect::<Vec<_>>()
+        };
+
+        if !amm_addresses_to_delete.is_empty() {
+            let mut ex = self.0.db.acquire().await?;
+            database::cow_amms::delete_by_addresses(&mut ex, &amm_addresses_to_delete).await?;
+        }
+
         {
             let cache = &mut *self.0.cache.write().await;
-
-            // Remove the Cow AMM events in the given range
             for key in *range.start()..=*range.end() {
                 cache.remove(&key);
             }
         }
 
-        // Apply all the new events
         self.append_events(events).await
     }
 
@@ -100,6 +149,22 @@ impl EventStoring<ethcontract::Event<CowAmmEvent>> for Storage {
                 }
             };
         }
+
+        if !processed_events.is_empty() {
+            let db_amms = processed_events
+                .iter()
+                .map(|(_, amm)| amm.as_ref().into())
+                .collect::<Vec<database::cow_amms::CowAmm>>();
+            let _timer = Metrics::get()
+                .database_queries
+                .with_label_values(&["cow_amms_upsert_batched"])
+                .start_timer();
+
+            let mut ex = self.0.db.begin().await?;
+            database::cow_amms::upsert_batched(&mut ex, &db_amms).await?;
+        }
+
+        // Update cache
         let cache = &mut *self.0.cache.write().await;
         for (block, amm) in processed_events {
             tracing::info!(cow_amm = ?amm.address(), "indexed new cow amm");
@@ -112,15 +177,26 @@ impl EventStoring<ethcontract::Event<CowAmmEvent>> for Storage {
     async fn last_event_block(&self) -> anyhow::Result<u64> {
         let cache = self.0.cache.read().await;
 
-        let last_block = cache
-            .last_key_value()
-            .map(|(block, _amms)| *block)
-            .unwrap_or(self.0.start_of_index);
-        Ok(last_block)
+        match cache.last_key_value() {
+            Some((block, _amms)) => Ok(*block),
+            None => {
+                let mut ex = self.0.db.acquire().await?;
+                database::last_indexed_blocks::fetch(&mut ex, &self.0.helper.address().to_string())
+                    .await?
+                    .map(|block| block.try_into().context("last block is not u64"))
+                    .unwrap_or(Ok(self.0.start_of_index))
+            }
+        }
     }
 
-    async fn persist_last_indexed_block(&mut self, _new_value: u64) -> anyhow::Result<()> {
-        // storage is only in-memory so we don't need to persist anything here
+    async fn persist_last_indexed_block(&mut self, latest_block: u64) -> anyhow::Result<()> {
+        let mut ex = self.0.db.acquire().await?;
+        database::last_indexed_blocks::update(
+            &mut ex,
+            &self.0.helper.address().to_string(),
+            i64::try_from(latest_block).context("last block is not u64")?,
+        )
+        .await?;
         Ok(())
     }
 }
