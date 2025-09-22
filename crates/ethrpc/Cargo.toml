@@ -25,6 +25,7 @@ observe = { workspace = true }
 primitive-types = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
+rand = { workspace = true }
 reqwest = { workspace = true, features = ["cookies"] }
 scopeguard = { workspace = true }
 serde = { workspace = true }

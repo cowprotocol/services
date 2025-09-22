@@ -12,7 +12,7 @@ use {
     alloy::{
         providers::{DynProvider, Provider, ProviderBuilder},
         rpc::{
-            client::RpcClient,
+            client::{RpcClient, RpcClientInner},
             json_rpc::{RequestPacket, ResponsePacket, SerializedRequest},
         },
         transports::TransportError,
@@ -160,7 +160,14 @@ impl ProviderLabelingExt for DynProvider {
         let is_local = self.client().is_local();
         let transport = self.client().transport().clone();
         let transport_with_label = LabelingLayer { label }.layer(transport);
-        let client = RpcClient::new(transport_with_label, is_local);
+        // The random ID mitigates the possibility of duplicate request IDs between
+        // providers when batching; furthemore, since we're using a uniform distribution
+        // we need to be aware that we might get a value close enough to u64::MAX to
+        // overflow after a couple requests, to solve that we generate a u32 first and
+        // convert it to u64 to ensure we have plenty space.
+        let id = rand::random::<u32>().into();
+        let inner = RpcClientInner::new(transport_with_label, is_local).with_id(id);
+        let client = RpcClient::from_inner(inner);
         ProviderBuilder::new().connect_client(client).erased()
     }
 }

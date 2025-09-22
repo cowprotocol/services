@@ -21,7 +21,7 @@ use {
         stream::StreamExt as _,
     },
     std::{
-        collections::HashMap,
+        collections::{HashMap, VecDeque},
         fmt::Debug,
         marker::PhantomData,
         pin::Pin,
@@ -126,14 +126,26 @@ where
                     let clone: S = inner.clone();
                     let mut inner = std::mem::replace(&mut inner, clone);
 
+                    // map request_id => sender to quickly find the correct sender if
+                    // the node returns sub-responses in a different order
+                    let mut senders: HashMap<_, VecDeque<_>> = HashMap::with_capacity(batch.len());
+                    let mut requests = Vec::with_capacity(batch.len());
+
                     async move {
-                        // map request_id => sender to quickly find the correct sender if
-                        // the node returns sub-responses in a different order
-                        let (mut senders, requests): (HashMap<_, _>, Vec<_>) = batch
-                            .into_iter()
-                            .filter(|(sender, _)| !sender.is_canceled())
-                            .map(|(sender, request)| ((request.id().clone(), sender), request))
-                            .unzip();
+                        for (sender, request) in batch {
+                            if sender.is_canceled() {
+                                tracing::trace!(request_id = %request.id(), "cancelled sender");
+                                continue
+                            }
+                            // Even with the random request IDs we still might get duplicate request IDs
+                            // (e.g. some ID outgrew another and now they overlap)
+                            // in that case we'll hope that the node returns responses in order
+                            senders.entry(request.id().clone())
+                                .or_insert_with(VecDeque::new)
+                                .push_back(sender);
+                            requests.push(request);
+                        }
+
                         if requests.is_empty() {
                             tracing::trace!("all callers stopped awaiting their request");
                             return;
@@ -153,16 +165,27 @@ where
                         match result {
                             Err(err) => {
                                 let err = format!("batch call failed: {err:?}");
-                                for sender in senders.into_values() {
+                                for sender in senders.into_values().into_iter().flatten() {
                                     let _ = sender.send(Err(TransportErrorKind::custom_str(&err)));
                                 }
                             }
                             Ok(responses) => {
                                 for response in responses {
-                                    let Some(sender) = senders.remove(&response.id) else {
-                                        tracing::warn!(id = ?response.id, "missing response for id");
+                                    tracing::trace!(response_id = %response.id, "attempting to remove response");
+
+                                    let Some(response_senders) = senders.get_mut(&response.id) else {
+                                        tracing::warn!(response_id = ?response.id, "missing sender for response");
                                         continue;
                                     };
+                                    let Some(sender) = response_senders.pop_front() else {
+                                        tracing::warn!(response_id = ?response.id, "received more responses than expected");
+                                        continue;
+                                    };
+
+                                    if response_senders.is_empty() {
+                                        senders.remove(&response.id);
+                                    }
+
                                     let _ = sender.send(Ok(response));
                                 }
                             }
