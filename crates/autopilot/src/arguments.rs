@@ -249,6 +249,11 @@ pub struct Arguments {
     /// Configuration for the solver participation guard.
     #[clap(flatten)]
     pub db_based_solver_participation_guard: DbBasedSolverParticipationGuardConfig,
+
+    /// Configures whether the autopilot is supposed to do any non-trivial
+    /// order filtering (e.g. based on balances or EIP-1271 signature validity).
+    #[clap(long, env, default_value = "true", action = clap::ArgAction::Set)]
+    pub enable_order_filtering: bool,
 }
 
 #[derive(Debug, clap::Parser)]
@@ -378,6 +383,7 @@ impl std::fmt::Display for Arguments {
             archive_node_url,
             max_solutions_per_solver,
             db_based_solver_participation_guard,
+            enable_order_filtering,
         } = self;
 
         write!(f, "{shared}")?;
@@ -449,6 +455,7 @@ impl std::fmt::Display for Arguments {
             f,
             "db_based_solver_participation_guard: {db_based_solver_participation_guard:?}"
         )?;
+        writeln!(f, "enable_order_filtering: {enable_order_filtering}")?;
         Ok(())
     }
 }

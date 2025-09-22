@@ -100,6 +100,7 @@ pub struct SolvableOrdersCache {
     cow_amm_registry: cow_amm::Registry,
     native_price_timeout: Duration,
     settlement_contract: H160,
+    filter_orders: bool,
 }
 
 type Balances = HashMap<Query, U256>;
@@ -125,6 +126,7 @@ impl SolvableOrdersCache {
         cow_amm_registry: cow_amm::Registry,
         native_price_timeout: Duration,
         settlement_contract: H160,
+        filter_orders: bool,
     ) -> Arc<Self> {
         Arc::new(Self {
             min_order_validity_period,
@@ -142,6 +144,7 @@ impl SolvableOrdersCache {
             cow_amm_registry,
             native_price_timeout,
             settlement_contract,
+            filter_orders,
         })
     }
 
@@ -311,6 +314,10 @@ impl SolvableOrdersCache {
                 self.balance_fetcher.get_balances(&queries),
             )
             .await;
+        if !self.filter_orders {
+            return Default::default();
+        }
+
         tracing::trace!("fetched balances for solvable orders");
         queries
             .into_iter()
@@ -380,7 +387,11 @@ impl SolvableOrdersCache {
             ),
             self.timed_future(
                 "invalid_signature_filtering",
-                find_invalid_signature_orders(&orders, self.signature_validator.as_ref())
+                find_invalid_signature_orders(
+                    &orders,
+                    self.signature_validator.as_ref(),
+                    self.filter_orders
+                )
             ),
             self.timed_future(
                 "unsupported_token_filtering",
@@ -460,7 +471,12 @@ async fn get_native_prices(
 async fn find_invalid_signature_orders(
     orders: &[Order],
     signature_validator: &dyn SignatureValidating,
+    order_filtering_enabled: bool,
 ) -> Vec<OrderUid> {
+    if !order_filtering_enabled {
+        return Default::default();
+    }
+
     let mut invalid_orders = vec![];
     let mut signature_check_futures = FuturesUnordered::new();
 
@@ -1279,7 +1295,7 @@ mod tests {
             .returning(|_| Ok(()));
 
         let invalid_signature_orders =
-            find_invalid_signature_orders(&orders, &signature_validator).await;
+            find_invalid_signature_orders(&orders, &signature_validator, true).await;
         assert_eq!(
             invalid_signature_orders,
             vec![OrderUid::from_parts(H256([4; 32]), H160([44; 20]), 4)]
