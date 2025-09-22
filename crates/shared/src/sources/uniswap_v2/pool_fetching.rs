@@ -10,7 +10,7 @@ use {
         errors::EthcontractErrorType,
     },
     ethcontract::{BlockId, H160, U256, errors::MethodError},
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    ethrpc::alloy::conversions::IntoAlloy,
     futures::{
         FutureExt as _,
         future::{self, BoxFuture},
