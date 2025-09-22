@@ -131,8 +131,16 @@ where
                         // the node returns sub-responses in a different order
                         let (mut senders, requests): (HashMap<_, _>, Vec<_>) = batch
                             .into_iter()
-                            .filter(|(sender, _)| !sender.is_canceled())
-                            .map(|(sender, request)| ((request.id().clone(), sender), request))
+                            .filter(|(sender, request)| {
+                                if sender.is_canceled() {
+                                    tracing::debug!(request_id = %request.id(), "cancelled sender");
+                                }
+                                !sender.is_canceled()
+                            })
+                            .map(|(sender, request)| {
+                                tracing::debug!(request_id = %request.id() , "storing request");
+                                ((request.id().clone(), sender), request)
+                            })
                             .unzip();
                         if requests.is_empty() {
                             tracing::trace!("all callers stopped awaiting their request");
@@ -159,6 +167,7 @@ where
                             }
                             Ok(responses) => {
                                 for response in responses {
+                                    tracing::debug!(response_id = %response.id, "attempting to remove response");
                                     let Some(sender) = senders.remove(&response.id) else {
                                         tracing::warn!(id = ?response.id, "missing response for id");
                                         continue;
