@@ -82,10 +82,6 @@ pub struct Arguments {
     #[clap(long, env, use_value_delimiter = true)]
     pub unsupported_tokens: Vec<H160>,
 
-    /// The number of pairs that are automatically updated in the pool cache.
-    #[clap(long, env, default_value = "200")]
-    pub pool_cache_lru_size: NonZeroUsize,
-
     /// Which estimators to use to estimate token prices in terms of the chain's
     /// native token. Estimators with the same name need to also be specified as
     /// built-in, legacy or external price estimators (lookup happens in this
@@ -349,7 +345,6 @@ impl std::fmt::Display for Arguments {
             skip_event_sync,
             allowed_tokens,
             unsupported_tokens,
-            pool_cache_lru_size,
             native_price_estimators,
             min_order_validity_period,
             banned_users,
@@ -394,7 +389,6 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "skip_event_sync: {skip_event_sync}")?;
         writeln!(f, "allowed_tokens: {allowed_tokens:?}")?;
         writeln!(f, "unsupported_tokens: {unsupported_tokens:?}")?;
-        writeln!(f, "pool_cache_lru_size: {pool_cache_lru_size}")?;
         writeln!(f, "native_price_estimators: {native_price_estimators}")?;
         writeln!(
             f,
