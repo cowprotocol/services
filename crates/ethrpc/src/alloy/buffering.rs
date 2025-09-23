@@ -165,7 +165,7 @@ where
                         match result {
                             Err(err) => {
                                 let err = format!("batch call failed: {err:?}");
-                                for sender in senders.into_values().into_iter().flatten() {
+                                for sender in senders.into_values().flatten() {
                                     let _ = sender.send(Err(TransportErrorKind::custom_str(&err)));
                                 }
                             }
