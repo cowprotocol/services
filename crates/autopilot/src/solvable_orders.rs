@@ -100,7 +100,7 @@ pub struct SolvableOrdersCache {
     cow_amm_registry: cow_amm::Registry,
     native_price_timeout: Duration,
     settlement_contract: H160,
-    filter_orders: bool,
+    disable_order_filters: bool,
 }
 
 type Balances = HashMap<Query, U256>;
@@ -126,7 +126,7 @@ impl SolvableOrdersCache {
         cow_amm_registry: cow_amm::Registry,
         native_price_timeout: Duration,
         settlement_contract: H160,
-        filter_orders: bool,
+        disable_order_filters: bool,
     ) -> Arc<Self> {
         Arc::new(Self {
             min_order_validity_period,
@@ -144,7 +144,7 @@ impl SolvableOrdersCache {
             cow_amm_registry,
             native_price_timeout,
             settlement_contract,
-            filter_orders,
+            disable_order_filters,
         })
     }
 
@@ -314,7 +314,7 @@ impl SolvableOrdersCache {
                 self.balance_fetcher.get_balances(&queries),
             )
             .await;
-        if !self.filter_orders {
+        if self.disable_order_filters {
             return Default::default();
         }
 
@@ -381,7 +381,7 @@ impl SolvableOrdersCache {
         invalid_order_uids: &mut HashSet<OrderUid>,
     ) -> Vec<Order> {
         let filter_invalid_signatures = async {
-            if !self.filter_orders {
+            if self.disable_order_filters {
                 return Default::default();
             }
             find_invalid_signature_orders(&orders, self.signature_validator.as_ref()).await
