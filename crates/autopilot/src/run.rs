@@ -578,6 +578,7 @@ pub async fn run(args: Arguments, control: Control) {
         cow_amm_registry.clone(),
         args.run_loop_native_price_timeout,
         eth.contracts().settlement().address(),
+        args.disable_order_filtering,
     );
 
     let liveness = Arc::new(Liveness::new(args.max_auction_age));
