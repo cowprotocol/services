@@ -2,7 +2,6 @@ pub use primitive_types::{H160, H256, U256};
 use {
     crate::{domain, util::conv::U256Ext},
     derive_more::{Display, From, Into},
-    std::ops::Add,
 };
 
 /// ERC20 token address for ETH. In reality, ETH is not an ERC20 token because
