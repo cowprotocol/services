@@ -135,6 +135,20 @@ impl BatchRequestEntry {
         let _ = std::mem::replace(self, self_);
         result
     }
+
+    fn for_each(self, f: impl Fn(ResponseSender)) {
+        match self {
+            BatchRequestEntry::Empty => (/* nothing to do */),
+            BatchRequestEntry::Unique(sender) => {
+                f(sender);
+            }
+            BatchRequestEntry::Duplicated(senders) => {
+                for sender in senders {
+                    f(sender);
+                }
+            }
+        }
+    }
 }
 
 impl<S> BatchCallProvider<S>
@@ -226,20 +240,10 @@ where
                         match result {
                             Err(err) => {
                                 let err = format!("batch call failed: {err:?}");
-                                for sender in senders.into_values() {
-                                    match sender {
-                                        BatchRequestEntry::Empty => {
-                                            tracing::warn!("found empty batch entry, some sender might have been lost!");
-                                        },
-                                        BatchRequestEntry::Unique(sender) => {
-                                            let _ = sender.send(Err(TransportErrorKind::custom_str(&err)));
-                                        },
-                                        BatchRequestEntry::Duplicated(senders) => {
-                                            for sender in senders {
-                                                let _ = sender.send(Err(TransportErrorKind::custom_str(&err)));
-                                            }
-                                        },
-                                    }
+                                for entry in senders.into_values() {
+                                    entry.for_each(|sender| {
+                                        let _ = sender.send(Err(TransportErrorKind::custom_str(&err)));
+                                    });
                                 }
                             }
                             Ok(responses) => {
