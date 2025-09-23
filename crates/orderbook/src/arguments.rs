@@ -98,10 +98,6 @@ pub struct Arguments {
     #[clap(long, env, use_value_delimiter = true)]
     pub allowed_tokens: Vec<H160>,
 
-    /// The number of pairs that are automatically updated in the pool cache.
-    #[clap(long, env, default_value = "200")]
-    pub pool_cache_lru_size: NonZeroUsize,
-
     /// Skip EIP-1271 order signature validation on creation.
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
     pub eip1271_skip_creation_validation: bool,
@@ -154,7 +150,6 @@ impl std::fmt::Display for Arguments {
             unsupported_tokens,
             banned_users,
             allowed_tokens,
-            pool_cache_lru_size,
             eip1271_skip_creation_validation,
             solvable_orders_max_update_age_blocks,
             native_price_estimators,
@@ -192,7 +187,6 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "unsupported_tokens: {unsupported_tokens:?}")?;
         writeln!(f, "banned_users: {banned_users:?}")?;
         writeln!(f, "allowed_tokens: {allowed_tokens:?}")?;
-        writeln!(f, "pool_cache_lru_size: {pool_cache_lru_size}")?;
         writeln!(
             f,
             "eip1271_skip_creation_validation: {eip1271_skip_creation_validation}"
