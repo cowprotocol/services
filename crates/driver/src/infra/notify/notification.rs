@@ -51,6 +51,8 @@ pub enum Kind {
         reason: BanReason,
         until: DateTime<Utc>,
     },
+    /// The solver sent an invalid request format
+    DeserializationError(String),
 }
 
 #[derive(Debug)]
