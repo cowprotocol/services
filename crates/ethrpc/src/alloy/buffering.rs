@@ -76,9 +76,11 @@ type CallContext = (
 
 type ResponseSender = oneshot::Sender<Result<Response, RpcError<TransportErrorKind>>>;
 
+#[derive(Default)]
 enum BatchRequestEntry {
     /// The entry is empty, this value should only be used for default-like
     /// initialization.
+    #[default]
     Empty,
     Unique(ResponseSender),
     Duplicated(VecDeque<ResponseSender>),
@@ -88,8 +90,9 @@ impl BatchRequestEntry {
     /// Pushes a sender to the back of the entry, if the entry is `Unique` it
     /// will become `Duplicated`, if it is `Duplicated` it will just add it
     /// to the existing deque.
-    fn push_back(&mut self, sender: ResponseSender) {
+    fn enqueue(&mut self, sender: ResponseSender) {
         let self_ = match std::mem::replace(self, Self::Empty) {
+            BatchRequestEntry::Empty => Self::Unique(sender),
             BatchRequestEntry::Unique(old_sender) => {
                 let mut deque = VecDeque::new();
                 deque.push_back(old_sender);
@@ -100,42 +103,51 @@ impl BatchRequestEntry {
                 senders.push_back(sender);
                 Self::Duplicated(senders)
             }
-            BatchRequestEntry::Empty => Self::Unique(sender),
         };
         let _ = std::mem::replace(self, self_);
     }
 
-    fn pop_front(&mut self) -> Option<ResponseSender> {
+    /// Dequeues a value from the entry, will return `None` if the current state
+    /// is `Empty`. It will change the state according to the remaining
+    /// senders too (i.e. `Duplicated(2)` -> `Unique` -> `Empty`).
+    fn dequeue(&mut self) -> Option<ResponseSender> {
         let mut result = None;
         let self_ = match std::mem::replace(self, Self::Empty) {
+            BatchRequestEntry::Empty => BatchRequestEntry::Empty,
             BatchRequestEntry::Unique(old_sender) => {
                 result = Some(old_sender);
                 BatchRequestEntry::Empty
             }
-            BatchRequestEntry::Duplicated(mut senders) => {
-                let sender = senders.pop_front();
-                match sender {
-                    Some(_) => {
-                        result = sender;
-                        match senders.len() {
-                            0 => BatchRequestEntry::Empty,
-                            1 => BatchRequestEntry::Unique(
-                                senders
-                                    .pop_back()
-                                    .expect("safe since we just checked the length"),
-                            ),
-                            _ => BatchRequestEntry::Duplicated(senders),
-                        }
-                    }
-                    None => BatchRequestEntry::Empty,
-                }
+            BatchRequestEntry::Duplicated(senders) => {
+                let (self_, sender) = Self::dequeue_on_duplicated(senders);
+                result = sender;
+                self_
             }
-            BatchRequestEntry::Empty => BatchRequestEntry::Empty,
         };
         let _ = std::mem::replace(self, self_);
         result
     }
 
+    fn dequeue_on_duplicated(
+        mut senders: VecDeque<ResponseSender>,
+    ) -> (Self, Option<ResponseSender>) {
+        let sender = senders.pop_front();
+        let self_ = match sender {
+            Some(_) => match senders.len() {
+                0 => BatchRequestEntry::Empty,
+                1 => BatchRequestEntry::Unique(
+                    senders
+                        .pop_back()
+                        .expect("safe since we just checked the length"),
+                ),
+                _ => BatchRequestEntry::Duplicated(senders),
+            },
+            None => BatchRequestEntry::Empty,
+        };
+        (self_, sender)
+    }
+
+    /// Applies the provided closure to the existing senders.
     fn for_each(self, f: impl Fn(ResponseSender)) {
         match self {
             BatchRequestEntry::Empty => (/* nothing to do */),
@@ -194,76 +206,79 @@ where
         config: Config,
         calls: mpsc::UnboundedReceiver<CallContext>,
     ) -> JoinHandle<()> {
+        let f = move |batch: Vec<(ResponseSender, SerializedRequest)>| {
+            // Clones service via [`std::mem::replace`] as recommended by
+            // <https://docs.rs/tower/latest/tower/trait.Service.html#be-careful-when-cloning-inner-services>
+            let clone: S = inner.clone();
+            let mut inner = std::mem::replace(&mut inner, clone);
+
+            // Map<Id, Senders> because even with random IDs we might get duplicates,
+            // (e.g. some ID outgrew another and now they overlap) in that case
+            // we use the Deque to enforce FIFO and hope the node didn't re-order responses
+            let mut senders: HashMap<_, BatchRequestEntry> = HashMap::with_capacity(batch.len());
+            let mut requests = Vec::with_capacity(batch.len());
+
+            async move {
+                for (sender, request) in batch {
+                    if sender.is_canceled() {
+                        tracing::trace!(request_id = %request.id(), "canceled sender");
+                        continue;
+                    }
+                    senders
+                        .entry(request.id().clone())
+                        .or_default()
+                        .enqueue(sender);
+                    requests.push(request);
+                }
+
+                if requests.is_empty() {
+                    tracing::trace!("all callers stopped awaiting their request");
+                    return;
+                }
+
+                let result = inner
+                    .call(RequestPacket::Batch(requests))
+                    .await
+                    .map(|response| match response {
+                        ResponsePacket::Batch(res) => res,
+                        ResponsePacket::Single(res) => {
+                            tracing::warn!("received single response for batch request");
+                            vec![res]
+                        }
+                    });
+
+                match result {
+                    Err(err) => {
+                        let err = format!("batch call failed: {err:?}");
+                        for entry in senders.into_values() {
+                            entry.for_each(|sender| {
+                                let _ = sender.send(Err(TransportErrorKind::custom_str(&err)));
+                            });
+                        }
+                    }
+                    Ok(responses) => {
+                        for response in responses {
+                            tracing::trace!(response_id = %response.id, "attempting to remove response");
+                            let Some(entry) = senders.get_mut(&response.id) else {
+                                tracing::warn!(response_id = %response.id, "missing sender for response");
+                                continue;
+                            };
+                            let Some(sender) = entry.dequeue() else {
+                                tracing::warn!(response_id = %response.id, "more responses than senders (may have lost some sender)");
+                                continue;
+                            };
+                            tracing::debug!(response_id = %response.id, "sending response");
+                            let _ = sender.send(Ok(response));
+                        }
+                    }
+                }
+            }
+        };
         tokio::task::spawn(
             calls
                 .chunks_timeout(config.ethrpc_max_batch_size, config.ethrpc_batch_delay)
-                .for_each_concurrent(config.ethrpc_max_concurrent_requests, move |batch|{
-                    // Clones service via [`std::mem::replace`] as recommended by
-                    // <https://docs.rs/tower/latest/tower/trait.Service.html#be-careful-when-cloning-inner-services>
-                    let clone: S = inner.clone();
-                    let mut inner = std::mem::replace(&mut inner, clone);
-
-                    // Map<Id, Senders> because even with random IDs we might get duplicates,
-                    // (e.g. some ID outgrew another and now they overlap) in that case
-                    // we use the Deque to enforce FIFO and hope the node didn't re-order responses
-                    let mut senders: HashMap<_, BatchRequestEntry> = HashMap::with_capacity(batch.len());
-                    let mut requests = Vec::with_capacity(batch.len());
-
-                    async move {
-                        for (sender, request) in batch {
-                            if sender.is_canceled() {
-                                tracing::trace!(request_id = %request.id(), "canceled sender");
-                                continue
-                            }
-                            senders.entry(request.id().clone())
-                            .or_insert(BatchRequestEntry::Empty)
-                            .push_back(sender);
-                            requests.push(request);
-                        }
-
-                        if requests.is_empty() {
-                            tracing::trace!("all callers stopped awaiting their request");
-                            return;
-                        }
-
-                        let result = inner
-                            .call(RequestPacket::Batch(requests))
-                            .await
-                            .map(|response| match response {
-                                ResponsePacket::Batch(res) => res,
-                                ResponsePacket::Single(res) => {
-                                    tracing::warn!("received single response for batch request");
-                                    vec![res]
-                                }
-                            });
-
-                        match result {
-                            Err(err) => {
-                                let err = format!("batch call failed: {err:?}");
-                                for entry in senders.into_values() {
-                                    entry.for_each(|sender| {
-                                        let _ = sender.send(Err(TransportErrorKind::custom_str(&err)));
-                                    });
-                                }
-                            }
-                            Ok(responses) => {
-                                for response in responses {
-                                    tracing::trace!(response_id = %response.id, "attempting to remove response");
-                                    let Some(entry) = senders.get_mut(&response.id) else {
-                                        tracing::warn!(response_id = %response.id, "missing sender for response");
-                                        continue;
-                                    };
-                                    let Some(sender) = entry.pop_front() else {
-                                        tracing::warn!(response_id = %response.id, "more responses than senders (may have lost some sender)");
-                                        continue;
-                                    };
-                                    tracing::debug!(response_id = %response.id, "sending response");
-                                    let _ = sender.send(Ok(response));
-                                }
-                            }
-                        }
-            }
-        }))
+                .for_each_concurrent(config.ethrpc_max_concurrent_requests, f),
+        )
     }
 }
 
@@ -332,7 +347,7 @@ mod test {
         let mut unique = BatchRequestEntry::Unique(tx_1);
 
         let (tx_2, _) = oneshot::channel();
-        unique.push_back(tx_2);
+        unique.enqueue(tx_2);
 
         match unique {
             BatchRequestEntry::Unique(_) => panic!("failed to upgrade batch entry"),
@@ -348,7 +363,7 @@ mod test {
         let mut empty = BatchRequestEntry::Empty;
 
         let (tx, _) = oneshot::channel();
-        empty.push_back(tx);
+        empty.enqueue(tx);
 
         match empty {
             BatchRequestEntry::Unique(_) => {
@@ -371,7 +386,7 @@ mod test {
         let mut duplicated = BatchRequestEntry::Duplicated(deque);
 
         let (tx_3, _) = oneshot::channel();
-        duplicated.push_back(tx_3);
+        duplicated.enqueue(tx_3);
 
         match duplicated {
             BatchRequestEntry::Duplicated(senders) => {
