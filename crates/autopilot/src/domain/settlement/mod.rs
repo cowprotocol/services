@@ -58,6 +58,10 @@ pub struct Settlement {
 }
 
 impl Settlement {
+    pub fn auction_id(&self) -> i64 {
+        self.auction.id
+    }
+
     pub fn solver(&self) -> eth::Address {
         self.solver
     }

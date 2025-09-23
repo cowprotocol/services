@@ -12,7 +12,12 @@ use {
             pools::{FactoryIndexing, Pool, PoolStatus, common::PoolInfoFetching},
         },
     },
-    alloy::{contract::Event, providers::DynProvider, rpc::types::Log},
+    BalancerV2BasePoolFactory::BalancerV2BasePoolFactory::BalancerV2BasePoolFactoryEvents,
+    alloy::{
+        providers::DynProvider,
+        rpc::types::{Filter, Log},
+        sol_types::SolEvent,
+    },
     anyhow::Result,
     contracts::{
         alloy::{
@@ -24,6 +29,7 @@ use {
     ethcontract::{BlockId, H256, errors::MethodError},
     ethrpc::block_stream::{BlockNumberHash, BlockRetrieving},
     futures::future,
+    maplit::hashset,
     model::TokenPair,
     std::{collections::HashSet, sync::Arc},
     tokio::sync::Mutex,
@@ -33,10 +39,16 @@ pub struct BasePoolFactoryContract(BalancerV2BasePoolFactory::Instance);
 
 #[async_trait::async_trait]
 impl AlloyEventRetrieving for BasePoolFactoryContract {
-    type Event = PoolCreated;
+    type Event = BalancerV2BasePoolFactoryEvents;
 
-    fn get_events(&self) -> Event<&DynProvider, Self::Event> {
-        self.0.PoolCreated_filter()
+    fn provider(&self) -> &DynProvider {
+        self.0.provider()
+    }
+
+    fn filter(&self) -> Filter {
+        Filter::new()
+            .event_signature(hashset![PoolCreated::SIGNATURE_HASH])
+            .address(*self.0.address())
     }
 }
 
@@ -45,7 +57,7 @@ type PoolUpdater<Factory> = Mutex<
     EventHandler<
         AlloyEventRetriever<BasePoolFactoryContract>,
         PoolStorage<Factory>,
-        (PoolCreated, Log),
+        (BalancerV2BasePoolFactoryEvents, Log),
     >,
 >;
 

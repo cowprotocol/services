@@ -22,7 +22,10 @@ use {
     },
     alloy::rpc::types::Log,
     anyhow::{Context, Result},
-    contracts::alloy::BalancerV2BasePoolFactory::BalancerV2BasePoolFactory::PoolCreated,
+    contracts::alloy::BalancerV2BasePoolFactory::BalancerV2BasePoolFactory::{
+        BalancerV2BasePoolFactoryEvents,
+        PoolCreated,
+    },
     ethcontract::{H160, H256},
     ethrpc::{alloy::conversions::IntoLegacy, block_stream::RangeInclusive},
     model::TokenPair,
@@ -181,13 +184,13 @@ where
 }
 
 #[async_trait::async_trait]
-impl<Factory> EventStoring<(PoolCreated, Log)> for PoolStorage<Factory>
+impl<Factory> EventStoring<(BalancerV2BasePoolFactoryEvents, Log)> for PoolStorage<Factory>
 where
     Factory: FactoryIndexing,
 {
     async fn replace_events(
         &mut self,
-        events: Vec<(PoolCreated, Log)>,
+        events: Vec<(BalancerV2BasePoolFactoryEvents, Log)>,
         range: RangeInclusive<u64>,
     ) -> Result<()> {
         tracing::debug!("replacing {} events for block {:?}", events.len(), range);
@@ -196,10 +199,14 @@ where
         self.append_events(events).await
     }
 
-    async fn append_events(&mut self, events: Vec<(PoolCreated, Log)>) -> Result<()> {
+    async fn append_events(
+        &mut self,
+        events: Vec<(BalancerV2BasePoolFactoryEvents, Log)>,
+    ) -> Result<()> {
         tracing::debug!("inserting {} events", events.len());
 
         for (event, log) in events {
+            let BalancerV2BasePoolFactoryEvents::PoolCreated(event) = event;
             let block_created = log.block_number.context("event missing block number")?;
 
             self.index_pool_creation(event, block_created).await?;

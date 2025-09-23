@@ -325,6 +325,119 @@ crate::bindings!(
        GNOSIS => (address!("0x6093AeBAC87d62b1A5a4cEec91204e35020E38bE"))
     }
 );
+crate::bindings!(
+    HoneyswapRouter,
+    crate::deployments! {
+        GNOSIS => (address!("0x1C232F01118CB8B424793ae03F870aa7D0ac7f77"))
+    }
+);
+crate::bindings!(
+    PancakeRouter,
+    crate::deployments! {
+        // <https://etherscan.io/tx/0x6e441248a9835ca10a3c29a19f2e1ed61d2e35f3ecb3a5b9e4ee170d62a22d16>
+        MAINNET => (address!("0xEfF92A263d31888d860bD50809A8D171709b7b1c")),
+        // <https://arbiscan.io/tx/0x4a2da73cbfcaafb0347e4525307a095e38bf7532435cb0327d1f5ee2ee15a011>
+        ARBITRUM_ONE => (address!("0x8cFe327CEc66d1C090Dd72bd0FF11d690C33a2Eb")),
+        // <https://basescan.org/tx/0xda322aef5776698ac6da56be1ffaa0f9994a983cdeb9f2aeaba47437809ae6ef>
+        BASE => (address!("0x8cFe327CEc66d1C090Dd72bd0FF11d690C33a2Eb")),
+        // <https://bscscan.com/tx/0x1bfbff8411ed44e609d911476b0d35a28284545b690902806ea0a7ff0453e931>
+        BNB => (address!("0x10ED43C718714eb63d5aA57B78B54704E256024E"))
+    }
+);
+crate::bindings!(
+    SushiSwapRouter,
+    // <https://docs.sushi.com/contracts/cpamm>
+    crate::deployments! {
+        // <https://etherscan.io/tx/0x4ff39eceee7ba9a63736eae38be69b10347975ff5fa4d9b85743a51e1c384094>
+        MAINNET => (address!("0xd9e1ce17f2641f24ae83637ab66a2cca9c378b9f")),
+        // <https://gnosisscan.io/tx/0x8b45ccbc2afd0132ef8b636064e0e745ff93b53942a56e320bb930666dd0fb18>
+        GNOSIS => (address!("0x1b02da8cb0d097eb8d57a175b88c7d8b47997506")),
+        // <https://arbiscan.io/tx/0x40b22402bcac46330149ac9848f8bddd02b0a1e79d4a71934655a634051be1a1>
+        ARBITRUM_ONE => (address!("0x1b02da8cb0d097eb8d57a175b88c7d8b47997506")),
+        // <https://basescan.org/tx/0xbb673c483292e03d202e95a023048b8bda459bf12402e7688f7e10be8b4dc67d>
+        BASE => (address!("0x6bded42c6da8fbf0d2ba55b2fa120c5e0c8d7891")),
+        // <https://snowtrace.io/tx/0x8185bcd3cc8544f8767e5270c4d7eb1e9b170fc0532fc4f0d7e7a1018e1f13ba>
+        AVALANCHE => (address!("0x1b02da8cb0d097eb8d57a175b88c7d8b47997506")),
+        // <https://bscscan.com/tx/0xf22f827ae797390f6e478b0a11aa6e92d6da527f47130ef70d313ff0e0b2a83f>
+        BNB => (address!("0x1b02da8cb0d097eb8d57a175b88c7d8b47997506")),
+        // <https://optimistic.etherscan.io/tx/0x88be6cc83f5bfccb8196db351866bac5c99ab8f7b451ea9975319ba05c3bf8f7>
+        OPTIMISM => (address!("0x2abf469074dc0b54d793850807e6eb5faf2625b1")),
+        // <https://polygonscan.com/tx/0x3dcf8fc780ae6fbe40b1ae57927a8fb405f54cbe89d0021a781a100d2086e5ba>
+        POLYGON => (address!("0x1b02da8cb0d097eb8d57a175b88c7d8b47997506")),
+        // Not available on Lens
+    }
+);
+crate::bindings!(
+    SwaprRouter,
+    // <https://swapr.gitbook.io/swapr/contracts>
+    crate::deployments! {
+        // <https://etherscan.io/tx/0x3f4ccc676637906db24caf043c89dafce959321c02266c6a4ab706fcec79a5f7>
+        MAINNET => address!("0xb9960d9bca016e9748be75dd52f02188b9d0829f"),
+        // <https://gnosisscan.io/tx/0x0406e774caced468b8f84d7c7ed9b6e9c324601af38f44e385aecf7a7d01feb4>
+        GNOSIS => address!("0xE43e60736b1cb4a75ad25240E2f9a62Bff65c0C0"),
+        // <https://arbiscan.io/tx/0x09771774fc138775472910f6bb0f2e03ff74e1e32a658e9c3e4d8f59f6431ba8>
+        ARBITRUM_ONE => address!("0x530476d5583724A89c8841eB6Da76E7Af4C0F17E"),
+        // Not available on Base and Lens
+    }
+);
+crate::bindings!(ISwaprPair);
+crate::bindings!(
+    TestnetUniswapV2Router02,
+    crate::deployments! {
+        // <https://sepolia.etherscan.io/tx/0x2bf9a91a42d53e161897d9c581f798df9db6fb00587803dde7e7b8859118d821>
+        SEPOLIA => address!("0x86dcd3293C53Cf8EFd7303B57beb2a3F671dDE98"),
+    }
+);
+crate::bindings!(
+    UniswapV2Factory,
+    // <https://docs.uniswap.org/contracts/v2/reference/smart-contracts/factory>
+    crate::deployments! {
+        // <https://etherscan.io/tx/0xc31d7e7e85cab1d38ce1b8ac17e821ccd47dbde00f9d57f2bd8613bff9428396>
+        MAINNET => address!("0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f"),
+        // <https://gnosisscan.io/tx/0x446de52c460bed3f49a4342eab247bb4b2fe2993962c284fb9bc14a983c7a3d4>
+        GNOSIS => address!("0xA818b4F111Ccac7AA31D0BCc0806d64F2E0737D7"),
+        // <https://arbiscan.io/tx/0x83b597d54496c0b64d66a3b9a65c312e406262511c908f702ef06755d13ab2f3>
+        ARBITRUM_ONE => address!("0xf1D7CC64Fb4452F05c498126312eBE29f30Fbcf9"),
+        // <https://basescan.org/tx/0x3c94031f81d9afe3beeb8fbcf4dcf1bd5b5688b86081d94e3d0231514dc00d31>
+        BASE => address!("0x8909Dc15e40173Ff4699343b6eB8132c65e18eC6"),
+        // <https://sepolia.etherscan.io/tx/0x0a5e26b22f6b470857957a1d5a92ad4a7d3c5e7cf254ddd80edfe23df70eae71>
+        SEPOLIA => address!("0xF62c03E08ada871A0bEb309762E260a7a6a880E6"),
+        // <https://snowtrace.io/tx/0xd06a069b11fc0c998b404c5736957cc16c71cf1f7dbf8a7d4244c84036ea6edd>
+        AVALANCHE => address!("0x9e5A52f57b3038F1B8EeE45F28b3C1967e22799C"),
+        // <https://bscscan.com/tx/0x7305a4bddc54eee158f245a09526969697ac1a9f56d090b124ebfc85ff71a5cf>
+        BNB => address!("0x8909Dc15e40173Ff4699343b6eB8132c65e18eC6"),
+        // <https://optimistic.etherscan.io/tx/0xf7227dcbbfa4ea2bb2634f2a1f364a64b028f9e9e393974fea8d435cd097c72e>
+        OPTIMISM => address!("0x0c3c1c532F1e39EdF36BE9Fe0bE1410313E074Bf"),
+        // <https://polygonscan.com/tx/0x712ac56155a301fca4b7a761e232233f41a104865a74b1a59293835da355292a>
+        POLYGON => address!("0x9e5A52f57b3038F1B8EeE45F28b3C1967e22799C"),
+        // Not available on Lens
+    }
+);
+crate::bindings!(
+    UniswapV2Router02,
+    // <https://docs.uniswap.org/contracts/v2/reference/smart-contracts/router-02>
+    crate::deployments! {
+        // <https://etherscan.io/tx/0x4fc1580e7f66c58b7c26881cce0aab9c3509afe6e507527f30566fbf8039bcd0>
+        MAINNET => address!("0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D"),
+        // <https://gnosisscan.io/tx/0xfcc495cdb313b48bbb0cd0a25cb2e8fd512eb8fb0b15f75947a9d5668e47a918>
+        GNOSIS => address!("0x1C232F01118CB8B424793ae03F870aa7D0ac7f77"),
+        // <https://arbiscan.io/tx/0x630cd9d56a85e1bac7795d254fef861304a6838e28869badef19f19defb48ba6>
+        ARBITRUM_ONE => address!("0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24"),
+        // <https://basescan.org/tx/0x039224ce16ebe5574f51da761acbdfbd21099d6230c39fcd8ff566bbfd6a50a9>
+        BASE => address!("0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24"),
+        // <https://sepolia.etherscan.io/tx/0x92674b51681d2e99e71e03bd387bc0f0e79f2412302b49ed5626d1fa2311bab9>
+        SEPOLIA => address!("0xeE567Fe1712Faf6149d80dA1E6934E354124CfE3"),
+        // <https://snowtrace.io/tx/0x7372f1eedf9d32fb4185d486911f44542723dae766eea04bc3f14724bae9552e>
+        AVALANCHE => address!("0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24"),
+        // <https://bscscan.com/tx/0x9e940f846abea7dcc1f0bd5c261f405c104628c855346f8cac966f52905ee0fa>
+        BNB => address!("0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24"),
+        // <https://optimistic.etherscan.io/tx/0x2dcb9a76100e5be49e89085b87bd447b1966a9d823d5985e1a8197834c60e6bd>
+        OPTIMISM => address!("0x4A7b5Da61326A6379179b40d00F57E5bbDC962c2"),
+        // <https://polygonscan.com/tx/0x66186e0cacd2f6b3ad2eae586bd331daafd0572eb80bf71be694181858198025>
+        POLYGON => address!("0xedf6066a2b290C185783862C7F4776A2C8077AD1"),
+        // Not available on Lens
+    }
+);
 
 pub use alloy::providers::DynProvider as Provider;
 
@@ -503,6 +616,45 @@ mod tests {
     #[test]
     fn test_has_address() {
         assert!(BaoswapRouter::deployment_address(&GNOSIS).is_some());
+        assert!(HoneyswapRouter::deployment_address(&GNOSIS).is_some());
+
+        for chain_id in &[MAINNET, ARBITRUM_ONE, BASE, BNB] {
+            assert!(PancakeRouter::deployment_address(chain_id).is_some());
+        }
+
+        for chain_id in &[
+            MAINNET,
+            GNOSIS,
+            ARBITRUM_ONE,
+            BASE,
+            AVALANCHE,
+            BNB,
+            OPTIMISM,
+            POLYGON,
+        ] {
+            assert!(SushiSwapRouter::deployment_address(chain_id).is_some());
+        }
+
+        for chain_id in &[MAINNET, GNOSIS, ARBITRUM_ONE] {
+            assert!(SwaprRouter::deployment_address(chain_id).is_some());
+        }
+
+        assert!(TestnetUniswapV2Router02::deployment_address(&SEPOLIA).is_some());
+
+        for chain_id in &[
+            MAINNET,
+            GNOSIS,
+            ARBITRUM_ONE,
+            BASE,
+            SEPOLIA,
+            AVALANCHE,
+            BNB,
+            OPTIMISM,
+            POLYGON,
+        ] {
+            assert!(UniswapV2Factory::deployment_address(chain_id).is_some());
+            assert!(UniswapV2Router02::deployment_address(chain_id).is_some());
+        }
     }
 
     #[test]

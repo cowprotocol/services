@@ -589,67 +589,6 @@ fn main() {
     generate_contract("IUniswapLikePair");
     // EIP-1271 contract - SignatureValidator
     generate_contract("ERC1271SignatureValidator");
-    generate_contract_with_config("PancakeRouter", |builder| {
-        builder
-            .add_network_str(MAINNET, "0xEfF92A263d31888d860bD50809A8D171709b7b1c")
-            .add_network_str(ARBITRUM_ONE, "0x8cFe327CEc66d1C090Dd72bd0FF11d690C33a2Eb")
-            .add_network_str(BASE, "0x8cFe327CEc66d1C090Dd72bd0FF11d690C33a2Eb")
-            .add_network_str(BNB, "0x10ED43C718714eb63d5aA57B78B54704E256024E")
-        // Not available on Lens
-    });
-    generate_contract_with_config("SushiSwapRouter", |builder| {
-        // <https://docs.sushi.com/contracts/cpamm>
-        builder
-            .add_network_str(MAINNET, "0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F")
-            .add_network_str(GOERLI, "0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506")
-            .add_network_str(GNOSIS, "0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506")
-            .add_network_str(ARBITRUM_ONE, "0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506")
-            .add_network_str(BASE, "0x6BDED42c6DA8FBf0d2bA55B2fa120C5e0c8D7891")
-            .add_network_str(AVALANCHE, "0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506")
-            .add_network_str(BNB, "0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506")
-            .add_network_str(OPTIMISM, "0x2ABf469074dc0b54d793850807E6eb5Faf2625b1")
-            .add_network_str(POLYGON, "0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506")
-        // Not available on Lens
-    });
-    generate_contract_with_config("SwaprRouter", |builder| {
-        // <https://swapr.gitbook.io/swapr/contracts>
-        builder
-            .add_network_str(MAINNET, "0xb9960d9bca016e9748be75dd52f02188b9d0829f")
-            .add_network_str(GNOSIS, "0xE43e60736b1cb4a75ad25240E2f9a62Bff65c0C0")
-            .add_network_str(ARBITRUM_ONE, "0x530476d5583724A89c8841eB6Da76E7Af4C0F17E")
-        // Not available on Base and Lens
-    });
-    generate_contract("ISwaprPair");
-    generate_contract_with_config("UniswapV2Factory", |builder| {
-        // <https://docs.uniswap.org/contracts/v2/reference/smart-contracts/factory>
-        builder
-            .add_network_str(MAINNET, "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f")
-            .add_network_str(GOERLI, "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f")
-            .add_network_str(GNOSIS, "0xA818b4F111Ccac7AA31D0BCc0806d64F2E0737D7")
-            .add_network_str(ARBITRUM_ONE, "0xf1D7CC64Fb4452F05c498126312eBE29f30Fbcf9")
-            .add_network_str(BASE, "0x8909Dc15e40173Ff4699343b6eB8132c65e18eC6")
-            .add_network_str(SEPOLIA, "0xF62c03E08ada871A0bEb309762E260a7a6a880E6")
-            .add_network_str(AVALANCHE, "0x9e5A52f57b3038F1B8EeE45F28b3C1967e22799C")
-            .add_network_str(BNB, "0x8909Dc15e40173Ff4699343b6eB8132c65e18eC6")
-            .add_network_str(OPTIMISM, "0x0c3c1c532F1e39EdF36BE9Fe0bE1410313E074Bf")
-            .add_network_str(POLYGON, "0x9e5A52f57b3038F1B8EeE45F28b3C1967e22799C")
-        // Not available on Lens
-    });
-    generate_contract_with_config("UniswapV2Router02", |builder| {
-        // <https://docs.uniswap.org/contracts/v2/reference/smart-contracts/router-02>
-        builder
-            .add_network_str(MAINNET, "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D")
-            .add_network_str(GOERLI, "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D")
-            .add_network_str(GNOSIS, "0x1C232F01118CB8B424793ae03F870aa7D0ac7f77")
-            .add_network_str(ARBITRUM_ONE, "0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24")
-            .add_network_str(BASE, "0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24")
-            .add_network_str(SEPOLIA, "0xeE567Fe1712Faf6149d80dA1E6934E354124CfE3")
-            .add_network_str(AVALANCHE, "0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24")
-            .add_network_str(BNB, "0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24")
-            .add_network_str(OPTIMISM, "0x4A7b5Da61326A6379179b40d00F57E5bbDC962c2")
-            .add_network_str(POLYGON, "0xedf6066a2b290C185783862C7F4776A2C8077AD1")
-        // Not available on Lens
-    });
     generate_contract_with_config("UniswapV3SwapRouterV2", |builder| {
         // <https://github.com/Uniswap/v3-periphery/blob/697c2474757ea89fec12a4e6db16a574fe259610/deploys.md>
         builder
@@ -719,13 +658,6 @@ fn main() {
             .add_network_str(BASE, "0xc694a91e6b071bF030A18BD3053A7fE09B6DaE69")
         // Not available on Lens
     });
-
-    // Unofficial Uniswap v2 liquidity on the Sepolia testnet.
-    generate_contract_with_config("TestnetUniswapV2Router02", |builder| {
-        // <https://github.com/eth-clients/sepolia/issues/47#issuecomment-1681562464>
-        builder.add_network_str(SEPOLIA, "0x86dcd3293C53Cf8EFd7303B57beb2a3F671dDE98")
-    });
-
     generate_contract("CowAmm");
     generate_contract_with_config("CowAmmConstantProductFactory", |builder| {
         builder

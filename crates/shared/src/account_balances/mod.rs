@@ -1,6 +1,15 @@
 use {
+    crate::price_estimation::trade_verifier::balance_overrides::{
+        BalanceOverrideRequest,
+        BalanceOverriding,
+    },
     alloy::sol_types::{SolType, sol_data},
-    ethcontract::{Bytes, contract::MethodBuilder, dyns::DynTransport},
+    ethcontract::{
+        Bytes,
+        contract::MethodBuilder,
+        dyns::DynTransport,
+        state_overrides::StateOverrides,
+    },
     ethrpc::{Web3, block_stream::CurrentBlockWatcher},
     model::{
         interaction::InteractionData,
@@ -20,6 +29,7 @@ pub struct Query {
     pub token: H160,
     pub source: SellTokenSource,
     pub interactions: Vec<InteractionData>,
+    pub balance_override: Option<BalanceOverrideRequest>,
 }
 
 impl Query {
@@ -29,6 +39,9 @@ impl Query {
             token: o.data.sell_token,
             source: o.data.sell_token_balance,
             interactions: o.interactions.pre.clone(),
+            // TODO eventually delete together with the balance
+            // checks in the autopilot
+            balance_override: None,
         }
     }
 }
@@ -83,11 +96,13 @@ pub fn cached(
     cached
 }
 
+#[derive(Clone)]
 pub struct BalanceSimulator {
     settlement: contracts::GPv2Settlement,
     balances: contracts::support::Balances,
     vault_relayer: H160,
     vault: H160,
+    balance_overrider: Arc<dyn BalanceOverriding>,
 }
 
 impl BalanceSimulator {
@@ -96,12 +111,14 @@ impl BalanceSimulator {
         balances: contracts::support::Balances,
         vault_relayer: H160,
         vault: Option<H160>,
+        balance_overrider: Arc<dyn BalanceOverriding>,
     ) -> Self {
         Self {
             settlement,
             vault_relayer,
             vault: vault.unwrap_or_default(),
             balances,
+            balance_overrider,
         }
     }
 
@@ -113,6 +130,7 @@ impl BalanceSimulator {
         self.vault
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn simulate<F, Fut>(
         &self,
         owner: H160,
@@ -121,11 +139,21 @@ impl BalanceSimulator {
         interactions: &[InteractionData],
         amount: Option<U256>,
         add_access_lists: F,
+        balance_override: Option<BalanceOverrideRequest>,
     ) -> Result<Simulation, SimulationError>
     where
         F: FnOnce(MethodBuilder<DynTransport, Bytes<Vec<u8>>>) -> Fut,
         Fut: Future<Output = MethodBuilder<DynTransport, Bytes<Vec<u8>>>>,
     {
+        let overrides: StateOverrides = match balance_override {
+            Some(overrides) => self
+                .balance_overrider
+                .state_override(overrides)
+                .await
+                .into_iter()
+                .collect(),
+            None => Default::default(),
+        };
         // We simulate the balances from the Settlement contract's context. This
         // allows us to check:
         // 1. How the pre-interactions would behave as part of the settlement
@@ -155,7 +183,7 @@ impl BalanceSimulator {
 
         let delegate_call = add_access_lists(delegate_call).await;
 
-        let response = delegate_call.call().await?;
+        let response = delegate_call.call_with_state_overrides(&overrides).await?;
         let (token_balance, allowance, effective_balance, can_transfer) =
             <(
                 sol_data::Uint<256>,

@@ -18,7 +18,7 @@ use {
     error::Error,
     futures::Future,
     observe::distributed_tracing::tracing_axum::{make_span, record_trace_id},
-    shared::account_balances::{self, BalanceSimulator},
+    shared::account_balances,
     std::{net::SocketAddr, sync::Arc},
     tokio::sync::oneshot,
 };
@@ -55,12 +55,7 @@ impl Api {
 
         let balance_fetcher = account_balances::cached(
             self.eth.web3(),
-            BalanceSimulator::new(
-                self.eth.contracts().settlement().clone(),
-                self.eth.contracts().balance_helper().clone(),
-                self.eth.contracts().vault_relayer().0,
-                Some(self.eth.contracts().vault().address()),
-            ),
+            self.eth.balance_simulator().clone(),
             self.eth.current_block().clone(),
         );
 

@@ -728,6 +728,7 @@ pub enum GasEstimatorType {
         max_block_percentile: f64,
     },
     Web3,
+    Alloy,
 }
 
 impl Default for GasEstimatorType {
