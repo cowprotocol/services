@@ -146,7 +146,7 @@ impl RunLoop {
             let reward = reference_score
                 .map(|reference| {
                     total_score.checked_sub(reference).unwrap_or_else(|| {
-                        tracing::warn!(
+                        tracing::trace!(
                             driver =% driver.name,
                             ?reference_score,
                             ?total_score,
