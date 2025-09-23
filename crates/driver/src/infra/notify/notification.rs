@@ -52,7 +52,7 @@ pub enum Kind {
         until: DateTime<Utc>,
     },
     /// The solver sent an invalid request format
-    SerializationError(String),
+    DeserializationError(String),
 }
 
 #[derive(Debug)]
