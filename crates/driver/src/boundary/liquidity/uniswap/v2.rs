@@ -8,8 +8,12 @@ use {
         infra::{self, blockchain::Ethereum},
     },
     async_trait::async_trait,
-    contracts::{GPv2Settlement, IUniswapLikeRouter},
-    ethrpc::{Web3, block_stream::CurrentBlockWatcher},
+    contracts::{GPv2Settlement, alloy::IUniswapLikeRouter},
+    ethrpc::{
+        Web3,
+        alloy::conversions::{IntoAlloy, IntoLegacy},
+        block_stream::CurrentBlockWatcher,
+    },
     shared::{
         http_solver::model::TokenAmount,
         sources::uniswap_v2::{
@@ -50,13 +54,13 @@ pub fn to_domain(id: liquidity::Id, pool: ConstantProductOrder) -> Result<liquid
 }
 
 pub fn router(pool: &ConstantProductOrder) -> eth::ContractAddress {
-    pool.settlement_handling
+    let address = pool
+        .settlement_handling
         .as_any()
         .downcast_ref::<uniswap_v2::Inner>()
         .expect("downcast uniswap settlement handler")
-        .router()
-        .address()
-        .into()
+        .router();
+    eth::ContractAddress::from(address.into_legacy())
 }
 
 pub(in crate::boundary::liquidity) fn to_domain_pool(
@@ -94,7 +98,7 @@ pub fn to_interaction(
     receiver: &eth::Address,
 ) -> eth::Interaction {
     let handler = uniswap_v2::Inner::new(
-        IUniswapLikeRouter::at(&ethrpc::dummy::web3(), pool.router.into()),
+        pool.router.0.into_alloy(),
         GPv2Settlement::at(&ethrpc::dummy::web3(), receiver.0),
         Mutex::new(Allowances::empty(receiver.0)),
     );
@@ -132,12 +136,13 @@ where
     R: PoolReading + Send + Sync + 'static,
     F: FnOnce(Web3, PairProvider) -> R,
 {
-    let router = eth.contract_at::<IUniswapLikeRouter>(config.router);
+    let router =
+        IUniswapLikeRouter::Instance::new(config.router.0.into_alloy(), eth.web3().alloy.clone());
     let settlement = eth.contracts().settlement().clone();
     let pool_fetcher = {
         let factory = router.factory().call().await?;
         let pair_provider = PairProvider {
-            factory,
+            factory: factory.into_legacy(),
             init_code_digest: config.pool_code.into(),
         };
 
@@ -155,7 +160,7 @@ where
     };
 
     Ok(Box::new(UniswapLikeLiquidity::with_allowances(
-        router,
+        *router.address(),
         settlement,
         Box::new(NoAllowanceManaging),
         pool_fetcher,
