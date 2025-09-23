@@ -2,12 +2,14 @@ use {
     contracts::alloy::ChainalysisOracle,
     ethcontract::{H160, futures::future::join_all},
     ethrpc::alloy::conversions::IntoAlloy,
+    lru::LruCache,
     std::{
-        collections::{HashMap, HashSet},
+        collections::HashSet,
+        num::NonZeroUsize,
         sync::Arc,
         time::{Duration, Instant},
     },
-    tokio::sync::RwLock,
+    tokio::sync::Mutex,
 };
 
 /// A list of banned users and an optional registry that can be checked onchain.
@@ -24,14 +26,14 @@ struct UserMetadata {
 
 struct Onchain {
     contract: ChainalysisOracle::Instance,
-    cache: RwLock<HashMap<H160, UserMetadata>>,
+    cache: Mutex<LruCache<H160, UserMetadata>>,
 }
 
 impl Onchain {
-    pub fn new(contract: ChainalysisOracle::Instance) -> Arc<Self> {
+    pub fn new(contract: ChainalysisOracle::Instance, cache_max_size: usize) -> Arc<Self> {
         let onchain = Arc::new(Self {
             contract,
-            cache: Default::default(),
+            cache: Mutex::new(LruCache::new(NonZeroUsize::new(cache_max_size).unwrap())),
         });
 
         onchain.clone().spawn_maintenance_task();
@@ -54,7 +56,7 @@ impl Onchain {
 
                 let expired_data: Vec<_> = {
                     let now = Instant::now();
-                    let cache = detector.cache.read().await;
+                    let cache = detector.cache.lock().await;
                     cache
                         .iter()
                         .filter_map(|(address, metadata)| {
@@ -105,10 +107,10 @@ impl Onchain {
     }
 
     async fn insert_many_into_cache(&self, addresses: impl Iterator<Item = (H160, UserMetadata)>) {
-        let mut cache = self.cache.write().await;
+        let mut cache = self.cache.lock().await;
         let now = Instant::now();
         for (address, metadata) in addresses {
-            cache.insert(
+            cache.put(
                 address,
                 UserMetadata {
                     last_updated: now,
@@ -123,10 +125,14 @@ impl Users {
     /// Creates a new `Users` instance that checks the hardcoded list and uses
     /// the given `web3` instance to determine whether an onchain registry of
     /// banned addresses is available.
-    pub fn new(contract: Option<ChainalysisOracle::Instance>, banned_users: Vec<H160>) -> Self {
+    pub fn new(
+        contract: Option<ChainalysisOracle::Instance>,
+        banned_users: Vec<H160>,
+        cache_max_size: usize,
+    ) -> Self {
         Self {
             list: HashSet::from_iter(banned_users),
-            onchain: contract.map(Onchain::new),
+            onchain: contract.map(|instance| Onchain::new(instance, cache_max_size)),
         }
     }
 
@@ -169,10 +175,10 @@ impl Users {
         };
         let need_lookup: Vec<_> = {
             // Scope here to release the lock before the async lookups
-            let cache = onchain.cache.read().await;
+            let mut cache = onchain.cache.lock().await;
             need_lookup
                 .into_iter()
-                .filter(|address| match &mut cache.get(address) {
+                .filter(|address| match cache.get(address) {
                     Some(metadata) => {
                         metadata.is_banned.then(|| banned.insert(*address));
                         false
@@ -189,12 +195,12 @@ impl Users {
         )
         .await;
 
-        let mut cache = onchain.cache.write().await;
+        let mut cache = onchain.cache.lock().await;
         let now = Instant::now();
         for (address, result) in to_cache {
             match result {
                 Ok(is_banned) => {
-                    cache.insert(
+                    cache.put(
                         address,
                         UserMetadata {
                             is_banned,
