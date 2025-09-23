@@ -9,7 +9,7 @@ use {
         sync::Arc,
         time::{Duration, Instant},
     },
-    tokio::sync::RwLock,
+    tokio::sync::Mutex,
 };
 
 /// A list of banned users and an optional registry that can be checked onchain.
@@ -26,14 +26,14 @@ struct UserMetadata {
 
 struct Onchain {
     contract: ChainalysisOracle::Instance,
-    cache: RwLock<LruCache<H160, UserMetadata>>,
+    cache: Mutex<LruCache<H160, UserMetadata>>,
 }
 
 impl Onchain {
     pub fn new(contract: ChainalysisOracle::Instance, cache_max_size: usize) -> Arc<Self> {
         let onchain = Arc::new(Self {
             contract,
-            cache: RwLock::new(LruCache::new(NonZeroUsize::new(cache_max_size).unwrap())),
+            cache: Mutex::new(LruCache::new(NonZeroUsize::new(cache_max_size).unwrap())),
         });
 
         onchain.clone().spawn_maintenance_task();
@@ -56,7 +56,7 @@ impl Onchain {
 
                 let expired_data: Vec<_> = {
                     let now = Instant::now();
-                    let cache = detector.cache.read().await;
+                    let cache = detector.cache.lock().await;
                     cache
                         .iter()
                         .filter_map(|(address, metadata)| {
@@ -107,7 +107,7 @@ impl Onchain {
     }
 
     async fn insert_many_into_cache(&self, addresses: impl Iterator<Item = (H160, UserMetadata)>) {
-        let mut cache = self.cache.write().await;
+        let mut cache = self.cache.lock().await;
         let now = Instant::now();
         for (address, metadata) in addresses {
             cache.put(
@@ -175,7 +175,7 @@ impl Users {
         };
         let need_lookup: Vec<_> = {
             // Scope here to release the lock before the async lookups
-            let mut cache = onchain.cache.write().await;
+            let mut cache = onchain.cache.lock().await;
             need_lookup
                 .into_iter()
                 .filter(|address| match cache.get(address) {
@@ -195,7 +195,7 @@ impl Users {
         )
         .await;
 
-        let mut cache = onchain.cache.write().await;
+        let mut cache = onchain.cache.lock().await;
         let now = Instant::now();
         for (address, result) in to_cache {
             match result {
