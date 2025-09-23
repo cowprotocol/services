@@ -163,11 +163,11 @@ impl<'a> Services<'a> {
     /// driver delays the submission of the solution until shortly before the
     /// deadline in case the solution would start to revert at some point).
     /// Allows to externally control the shutdown of autopilot.
-    pub async fn start_autopilot_with_control(
+    pub async fn start_autopilot_with_shutdown_controller(
         &self,
         solve_deadline: Option<Duration>,
         extra_args: Vec<String>,
-        control: autopilot::run::Control,
+        control: autopilot::shutdown_controller::ShutdownController,
     ) -> JoinHandle<()> {
         let solve_deadline = solve_deadline.unwrap_or(Duration::from_secs(2));
         let ethflow_contracts = self
@@ -212,10 +212,10 @@ impl<'a> Services<'a> {
         solve_deadline: Option<Duration>,
         extra_args: Vec<String>,
     ) -> JoinHandle<()> {
-        self.start_autopilot_with_control(
+        self.start_autopilot_with_shutdown_controller(
             solve_deadline,
             extra_args,
-            autopilot::run::Control::default(),
+            autopilot::shutdown_controller::ShutdownController::default(),
         )
         .await
     }

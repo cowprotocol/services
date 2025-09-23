@@ -17,7 +17,6 @@ impl PgLockGuard {
     }
 
     async fn unlock(mut self) {
-        // TODO what can we do with the result?
         let _ = sqlx::query("SELECT pg_advisory_unlock(hashtextextended($1, 0))")
             .bind(self.key)
             .execute(&mut *self.conn)
@@ -25,7 +24,6 @@ impl PgLockGuard {
             .map_err(|err| {
                 tracing::warn!(error = %err, "lock release failed");
             });
-        // conn returns to pool unlocked
     }
 }
 
@@ -48,13 +46,13 @@ impl LeaderLock {
         }
     }
 
-    // Call every loop; handles acquire/release/liveness. Returns "am I leader rn?"
-    pub async fn tick(&mut self) -> Result<bool, sqlx::Error> {
+    /// Tries to acquire the leader lock and handles the liveness status.
+    pub async fn try_acquire(&mut self) -> Result<bool, sqlx::Error> {
         // if we think we're leader, verify the session is alive
         if let Some(lock) = self.lock_guard.as_mut()
             && !lock.ping().await
         {
-            tracing::warn!("leader session died; demoting");
+            tracing::warn!("leader session died");
             self.lock_guard = None; // lock already gone with the dead session
         }
 
@@ -68,7 +66,7 @@ impl LeaderLock {
                     .fetch_one(&mut *conn)
                     .await?;
             if got_lock {
-                tracing::info!("became leader");
+                tracing::info!("leader lock acquired");
                 self.lock_guard = Some(PgLockGuard {
                     conn,
                     key: self.key.to_owned(),
@@ -79,7 +77,7 @@ impl LeaderLock {
         Ok(self.lock_guard.is_some())
     }
 
-    pub async fn step_down(&mut self) {
+    pub async fn release(&mut self) {
         if let Some(lock) = self.lock_guard.take() {
             lock.unlock().await;
             tracing::info!("released leader lock");

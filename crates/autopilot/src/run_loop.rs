@@ -22,6 +22,7 @@ use {
         },
         maintenance::Maintenance,
         run::Liveness,
+        shutdown_controller::ShutdownController,
         solvable_orders::SolvableOrdersCache,
     },
     ::observe::metrics,
@@ -119,7 +120,7 @@ impl RunLoop {
         }
     }
 
-    pub async fn run_forever(self, mut control: crate::run::Control) {
+    pub async fn run_forever(self, mut control: ShutdownController) {
         Maintenance::spawn_cow_amm_indexing_task(
             self.maintenance.clone(),
             self.eth.current_block().clone(),
@@ -137,7 +138,7 @@ impl RunLoop {
         let mut was_leader = false;
 
         while !control.should_shutdown() {
-            let is_leader = leader.tick().await.unwrap_or_else(|err| {
+            let is_leader = leader.try_acquire().await.unwrap_or_else(|err| {
                 tracing::warn!(error=%err, "failed to become leader");
                 false
             });
@@ -159,23 +160,20 @@ impl RunLoop {
                 readiness.store(true, Ordering::Release);
             }
 
-            tokio::select!(
-                _ = control.wait_for_shutdown() => {
-                    break
-                },
-                auction = self_arc.next_auction(start_block, &mut last_auction, &mut last_block) => {
-                    if let Some(auction) = auction {
-                        let auction_id = auction.id;
-                        self_arc.single_run(auction)
-                        .instrument(tracing::info_span!("auction", auction_id))
-                        .await
-                    }
-                }
-            );
+            if let Some(auction) = self_arc
+                .next_auction(start_block, &mut last_auction, &mut last_block)
+                .await
+            {
+                let auction_id = auction.id;
+                self_arc
+                    .single_run(auction)
+                    .instrument(tracing::info_span!("auction", auction_id))
+                    .await
+            }
         }
 
         tracing::info!("Shutdown received, stepping down as the leader");
-        leader.step_down().await;
+        leader.release().await;
         Metrics::leader_step_down();
     }
 
