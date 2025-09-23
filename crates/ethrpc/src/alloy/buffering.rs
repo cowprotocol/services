@@ -96,6 +96,10 @@ impl BatchRequestEntry {
     }
 
     fn push_back(&mut self, sender: ResponseSender) {
+        debug_assert!(
+            self.value.is_some(),
+            "cannot push_back after you start pop_front"
+        );
         // Never puts anything in `value` because it would break the whole premise of
         // "pushing back"
         self.duplicates.push_back(sender);
@@ -153,7 +157,7 @@ where
         config: Config,
         calls: mpsc::UnboundedReceiver<CallContext>,
     ) -> JoinHandle<()> {
-        let f = move |batch: Vec<(ResponseSender, SerializedRequest)>| {
+        let process_batch = move |batch: Vec<(ResponseSender, SerializedRequest)>| {
             // Clones service via [`std::mem::replace`] as recommended by
             // <https://docs.rs/tower/latest/tower/trait.Service.html#be-careful-when-cloning-inner-services>
             let clone: S = inner.clone();
@@ -219,8 +223,7 @@ where
                         let err = format!("batch call failed: {err:?}");
                         senders
                             .into_values()
-                            .map(|sender| sender.into_iter())
-                            .flatten()
+                            .flat_map(|sender| sender.into_iter())
                             .for_each(|sender| {
                                 let _ = sender.send(Err(TransportErrorKind::custom_str(&err)));
                             });
@@ -231,7 +234,7 @@ where
         tokio::task::spawn(
             calls
                 .chunks_timeout(config.ethrpc_max_batch_size, config.ethrpc_batch_delay)
-                .for_each_concurrent(config.ethrpc_max_concurrent_requests, f),
+                .for_each_concurrent(config.ethrpc_max_concurrent_requests, process_batch),
         )
     }
 }
