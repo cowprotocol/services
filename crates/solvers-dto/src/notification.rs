@@ -70,7 +70,7 @@ pub enum Kind {
         reason: BanReason,
         until: DateTime<Utc>,
     },
-    SerializationError {
+    DeserializationError {
         reason: String,
     },
 }
