@@ -104,6 +104,37 @@ impl BatchRequestEntry {
         };
         let _ = std::mem::replace(self, self_);
     }
+
+    fn pop_front(&mut self) -> Option<ResponseSender> {
+        let mut result = None;
+        let self_ = match std::mem::replace(self, Self::Empty) {
+            BatchRequestEntry::Unique(old_sender) => {
+                result = Some(old_sender);
+                BatchRequestEntry::Empty
+            }
+            BatchRequestEntry::Duplicated(mut senders) => {
+                let sender = senders.pop_front();
+                match sender {
+                    Some(_) => {
+                        result = sender;
+                        match senders.len() {
+                            0 => BatchRequestEntry::Empty,
+                            1 => BatchRequestEntry::Unique(
+                                senders
+                                    .pop_back()
+                                    .expect("safe since we just checked the length"),
+                            ),
+                            _ => BatchRequestEntry::Duplicated(senders),
+                        }
+                    }
+                    None => BatchRequestEntry::Empty,
+                }
+            }
+            BatchRequestEntry::Empty => BatchRequestEntry::Empty,
+        };
+        let _ = std::mem::replace(self, self_);
+        result
+    }
 }
 
 impl<S> BatchCallProvider<S>
@@ -214,31 +245,16 @@ where
                             Ok(responses) => {
                                 for response in responses {
                                     tracing::trace!(response_id = %response.id, "attempting to remove response");
-
-                                    let Some(entry) = senders.remove(&response.id) else {
-                                        tracing::warn!(response_id = ?response.id, "missing sender for response");
+                                    let Some(entry) = senders.get_mut(&response.id) else {
+                                        tracing::warn!(response_id = %response.id, "missing sender for response");
                                         continue;
                                     };
-
-                                    match entry {
-                                        BatchRequestEntry::Empty => {
-                                            tracing::warn!("found empty batch entry, some sender might have been lost!");
-                                        },
-                                        BatchRequestEntry::Unique(sender) => {
-                                            let _ = sender.send(Ok(response));
-                                        },
-                                        BatchRequestEntry::Duplicated(mut response_senders) => {
-                                            let response_id = response.id.clone();
-                                            let Some(sender) = response_senders.pop_front() else {
-                                                tracing::warn!(response_id = ?response.id, "received more responses than expected");
-                                                continue;
-                                            };
-                                            let _ = sender.send(Ok(response));
-                                            if !response_senders.is_empty() {
-                                                senders.insert(response_id, BatchRequestEntry::Duplicated(response_senders));
-                                            }
-                                        },
-                                    }
+                                    let Some(sender) = entry.pop_front() else {
+                                        tracing::warn!(response_id = %response.id, "more responses than senders (may have lost some sender)");
+                                        continue;
+                                    };
+                                    tracing::debug!(response_id = %response.id, "sending response");
+                                    let _ = sender.send(Ok(response));
                                 }
                             }
                         }
