@@ -990,10 +990,10 @@ struct Metrics {
     #[metric(buckets(0, 0.25, 0.5, 0.75, 1, 1.5, 2, 2.5, 3, 4, 5, 6))]
     current_block_delay: prometheus::Histogram,
 
-    /// Tracks the number of times autopilot stepped down from being leader
-    leader_step_down: prometheus::IntCounter,
-    /// Tracks the number of times autopilot became leader
-    leader_step_up: prometheus::IntCounter,
+    /// Tracks the current leader status
+    /// 1 - is currently autopilot leader
+    /// 0 - is currently autopilot follower
+    is_leader: prometheus::IntGauge,
 }
 
 impl Metrics {
@@ -1095,12 +1095,12 @@ impl Metrics {
             .observe(init_block_timestamp.elapsed().as_secs_f64())
     }
 
-    fn leader_step_down() {
-        Self::get().leader_step_down.inc();
+    fn leader_step_up() {
+        Self::get().is_leader.set(1)
     }
 
-    fn leader_step_up() {
-        Self::get().leader_step_up.inc();
+    fn leader_step_down() {
+        Self::get().is_leader.set(0)
     }
 }
 
