@@ -295,7 +295,7 @@ impl Solver {
                 auction.id(),
                 None,
                 notify::Kind::DeserializationError(format!("Request format invalid: {err}")),
-            ); // Hardcoded to avoid unbound message body size
+            );
         })?;
         let solutions = dto::Solutions::from(res).into_domain(
             auction,
