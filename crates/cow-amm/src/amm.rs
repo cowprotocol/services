@@ -20,10 +20,7 @@ pub struct Amm {
 }
 
 impl Amm {
-    pub(crate) async fn new(
-        address: Address,
-        helper: &CowAmmLegacyHelper,
-    ) -> Result<Self, MethodError> {
+    pub async fn new(address: Address, helper: &CowAmmLegacyHelper) -> Result<Self, MethodError> {
         let tradeable_tokens = helper.tokens(address).call().await?;
 
         Ok(Self {
@@ -40,6 +37,11 @@ impl Amm {
     /// Returns all tokens traded by this pool in stable order.
     pub fn traded_tokens(&self) -> &[Address] {
         &self.tradeable_tokens
+    }
+
+    /// Returns the address of the helper contract used by this AMM.
+    pub fn helper_address(&self) -> Address {
+        self.helper.address()
     }
 
     /// Returns an order to rebalance the AMM based on the provided reference
