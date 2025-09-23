@@ -13,8 +13,8 @@
 use {
     crate::Config,
     alloy::{
-        rpc::json_rpc::{RequestPacket, Response, ResponsePacket, SerializedRequest},
-        transports::{TransportError, TransportErrorKind},
+        rpc::json_rpc::{Id, RequestPacket, Response, ResponsePacket, SerializedRequest},
+        transports::{RpcError, TransportError, TransportErrorKind},
     },
     futures::{
         channel::{mpsc, oneshot},
@@ -30,6 +30,7 @@ use {
     tokio::task::JoinHandle,
     tokio_stream::StreamExt,
     tower::{Layer, Service},
+    web3::{BatchTransport, transports::Batch},
 };
 
 /// Layer that buffers multiple calls into batch calls.
@@ -73,6 +74,38 @@ type CallContext = (
     oneshot::Sender<Result<Response, TransportError>>,
     SerializedRequest,
 );
+
+type ResponseSender = oneshot::Sender<Result<Response, RpcError<TransportErrorKind>>>;
+
+enum BatchRequestEntry {
+    /// The entry is empty, this value should only be used for default-like
+    /// initialization.
+    Empty,
+    Unique(ResponseSender),
+    Duplicated(VecDeque<ResponseSender>),
+}
+
+impl BatchRequestEntry {
+    /// Pushes a sender to the back of the entry, if the entry is `Unique` it
+    /// will become `Duplicated`, if it is `Duplicated` it will just add it
+    /// to the existing deque.
+    fn push_back(&mut self, sender: ResponseSender) {
+        let self_ = match std::mem::replace(self, Self::Empty) {
+            BatchRequestEntry::Unique(old_sender) => {
+                let mut deque = VecDeque::new();
+                deque.push_back(old_sender);
+                deque.push_back(sender);
+                Self::Duplicated(deque)
+            }
+            BatchRequestEntry::Duplicated(mut senders) => {
+                senders.push_back(sender);
+                Self::Duplicated(senders)
+            }
+            BatchRequestEntry::Empty => Self::Unique(sender),
+        };
+        let _ = std::mem::replace(self, self_);
+    }
+}
 
 impl<S> BatchCallProvider<S>
 where
@@ -126,23 +159,21 @@ where
                     let clone: S = inner.clone();
                     let mut inner = std::mem::replace(&mut inner, clone);
 
-                    // map request_id => sender to quickly find the correct sender if
-                    // the node returns sub-responses in a different order
-                    let mut senders: HashMap<_, VecDeque<_>> = HashMap::with_capacity(batch.len());
+                    // Map<Id, Senders> because even with random IDs we might get duplicates,
+                    // (e.g. some ID outgrew another and now they overlap) in that case
+                    // we use the Deque to enforce FIFO and hope the node didn't re-order responses
+                    let mut senders: HashMap<_, BatchRequestEntry> = HashMap::with_capacity(batch.len());
                     let mut requests = Vec::with_capacity(batch.len());
 
                     async move {
                         for (sender, request) in batch {
                             if sender.is_canceled() {
-                                tracing::trace!(request_id = %request.id(), "cancelled sender");
+                                tracing::trace!(request_id = %request.id(), "canceled sender");
                                 continue
                             }
-                            // Even with the random request IDs we still might get duplicate request IDs
-                            // (e.g. some ID outgrew another and now they overlap)
-                            // in that case we'll hope that the node returns responses in order
                             senders.entry(request.id().clone())
-                                .or_insert_with(VecDeque::new)
-                                .push_back(sender);
+                            .or_insert(BatchRequestEntry::Empty)
+                            .push_back(sender);
                             requests.push(request);
                         }
 
@@ -165,28 +196,50 @@ where
                         match result {
                             Err(err) => {
                                 let err = format!("batch call failed: {err:?}");
-                                for sender in senders.into_values().flatten() {
-                                    let _ = sender.send(Err(TransportErrorKind::custom_str(&err)));
+                                for sender in senders.into_values() {
+                                    match sender {
+                                        BatchRequestEntry::Empty => {
+                                            tracing::warn!("found empty batch entry, some sender might have been lost!");
+                                        },
+                                        BatchRequestEntry::Unique(sender) => {
+                                            let _ = sender.send(Err(TransportErrorKind::custom_str(&err)));
+                                        },
+                                        BatchRequestEntry::Duplicated(senders) => {
+                                            for sender in senders {
+                                                let _ = sender.send(Err(TransportErrorKind::custom_str(&err)));
+                                            }
+                                        },
+                                    }
                                 }
                             }
                             Ok(responses) => {
                                 for response in responses {
                                     tracing::trace!(response_id = %response.id, "attempting to remove response");
 
-                                    let Some(response_senders) = senders.get_mut(&response.id) else {
+                                    let Some(entry) = senders.remove(&response.id) else {
                                         tracing::warn!(response_id = ?response.id, "missing sender for response");
                                         continue;
                                     };
-                                    let Some(sender) = response_senders.pop_front() else {
-                                        tracing::warn!(response_id = ?response.id, "received more responses than expected");
-                                        continue;
-                                    };
 
-                                    if response_senders.is_empty() {
-                                        senders.remove(&response.id);
+                                    match entry {
+                                        BatchRequestEntry::Empty => {
+                                            tracing::warn!("found empty batch entry, some sender might have been lost!");
+                                        },
+                                        BatchRequestEntry::Unique(sender) => {
+                                            let _ = sender.send(Ok(response));
+                                        },
+                                        BatchRequestEntry::Duplicated(mut response_senders) => {
+                                            let response_id = response.id.clone();
+                                            let Some(sender) = response_senders.pop_front() else {
+                                                tracing::warn!(response_id = ?response.id, "received more responses than expected");
+                                                continue;
+                                            };
+                                            let _ = sender.send(Ok(response));
+                                            if !response_senders.is_empty() {
+                                                senders.insert(response_id, BatchRequestEntry::Duplicated(response_senders));
+                                            }
+                                        },
                                     }
-
-                                    let _ = sender.send(Ok(response));
                                 }
                             }
                         }
@@ -242,6 +295,71 @@ where
                     "manually batching calls is not supported by the auto batching layer",
                 ))
             }),
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use {
+        crate::alloy::buffering::BatchRequestEntry,
+        futures::channel::oneshot,
+        std::collections::VecDeque,
+    };
+
+    #[test]
+    fn test_batch_entry_push_back() {
+        let (tx_1, _) = oneshot::channel();
+        let mut unique = BatchRequestEntry::Unique(tx_1);
+
+        let (tx_2, _) = oneshot::channel();
+        unique.push_back(tx_2);
+
+        match unique {
+            BatchRequestEntry::Unique(_) => panic!("failed to upgrade batch entry"),
+            BatchRequestEntry::Duplicated(senders) => {
+                assert_eq!(senders.len(), 2);
+            }
+            BatchRequestEntry::Empty => panic!("this entry shouldn't be empty for this test"),
+        }
+    }
+
+    #[test]
+    fn test_batch_entry_empty_to_unique() {
+        let mut empty = BatchRequestEntry::Empty;
+
+        let (tx, _) = oneshot::channel();
+        empty.push_back(tx);
+
+        match empty {
+            BatchRequestEntry::Unique(_) => {
+                // Success: Empty correctly upgraded to Unique
+            }
+            BatchRequestEntry::Duplicated(_) => {
+                panic!("empty should upgrade to unique, not duplicated")
+            }
+            BatchRequestEntry::Empty => panic!("entry should no longer be empty"),
+        }
+    }
+
+    #[test]
+    fn test_batch_entry_duplicated_to_duplicated() {
+        let (tx_1, _) = oneshot::channel();
+        let (tx_2, _) = oneshot::channel();
+        let mut deque = VecDeque::new();
+        deque.push_back(tx_1);
+        deque.push_back(tx_2);
+        let mut duplicated = BatchRequestEntry::Duplicated(deque);
+
+        let (tx_3, _) = oneshot::channel();
+        duplicated.push_back(tx_3);
+
+        match duplicated {
+            BatchRequestEntry::Duplicated(senders) => {
+                assert_eq!(senders.len(), 3);
+            }
+            BatchRequestEntry::Unique(_) => panic!("duplicated should remain duplicated"),
+            BatchRequestEntry::Empty => panic!("duplicated should not become empty"),
         }
     }
 }
