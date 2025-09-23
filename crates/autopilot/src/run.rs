@@ -87,7 +87,7 @@ impl Liveness {
     }
 }
 
-pub struct Control {
+pub struct ShutdownController {
     shutdown: tokio::sync::broadcast::Receiver<()>,
 }
 
