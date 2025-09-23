@@ -13,7 +13,7 @@
 use {
     crate::Config,
     alloy::{
-        rpc::json_rpc::{Id, RequestPacket, Response, ResponsePacket, SerializedRequest},
+        rpc::json_rpc::{RequestPacket, Response, ResponsePacket, SerializedRequest},
         transports::{RpcError, TransportError, TransportErrorKind},
     },
     futures::{
@@ -30,7 +30,6 @@ use {
     tokio::task::JoinHandle,
     tokio_stream::StreamExt,
     tower::{Layer, Service},
-    web3::{BatchTransport, transports::Batch},
 };
 
 /// Layer that buffers multiple calls into batch calls.
