@@ -76,90 +76,37 @@ type CallContext = (
 
 type ResponseSender = oneshot::Sender<Result<Response, RpcError<TransportErrorKind>>>;
 
-#[derive(Default)]
-enum BatchRequestEntry {
-    /// The entry is empty, this value should only be used for default-like
-    /// initialization.
-    #[default]
-    Empty,
-    Unique(ResponseSender),
-    Duplicated(VecDeque<ResponseSender>),
+/// Batch to keep track of duplicates in FIFO order.
+/// Will spill *all* duplicate elements to `duplicates` instead of ever
+/// back-filling the head.
+///
+/// The idea behind this approach is to avoid extra allocations and indirections
+/// for non-duplicate items (most of them).
+struct BatchRequestEntry {
+    value: Option<ResponseSender>,
+    duplicates: VecDeque<ResponseSender>,
 }
 
 impl BatchRequestEntry {
-    /// Pushes a sender to the back of the entry, if the entry is `Unique` it
-    /// will become `Duplicated`, if it is `Duplicated` it will just add it
-    /// to the existing deque.
-    fn enqueue(&mut self, sender: ResponseSender) {
-        let self_ = match std::mem::replace(self, Self::Empty) {
-            BatchRequestEntry::Empty => Self::Unique(sender),
-            BatchRequestEntry::Unique(old_sender) => {
-                let mut deque = VecDeque::new();
-                deque.push_back(old_sender);
-                deque.push_back(sender);
-                Self::Duplicated(deque)
-            }
-            BatchRequestEntry::Duplicated(mut senders) => {
-                senders.push_back(sender);
-                Self::Duplicated(senders)
-            }
-        };
-        let _ = std::mem::replace(self, self_);
-    }
-
-    /// Dequeues a value from the entry, will return `None` if the current state
-    /// is `Empty`. It will change the state according to the remaining
-    /// senders too (i.e. `Duplicated(2)` -> `Unique` -> `Empty`).
-    fn dequeue(&mut self) -> Option<ResponseSender> {
-        let mut result = None;
-        let self_ = match std::mem::replace(self, Self::Empty) {
-            BatchRequestEntry::Empty => BatchRequestEntry::Empty,
-            BatchRequestEntry::Unique(old_sender) => {
-                result = Some(old_sender);
-                BatchRequestEntry::Empty
-            }
-            BatchRequestEntry::Duplicated(senders) => {
-                let (self_, sender) = Self::dequeue_on_duplicated(senders);
-                result = sender;
-                self_
-            }
-        };
-        let _ = std::mem::replace(self, self_);
-        result
-    }
-
-    fn dequeue_on_duplicated(
-        mut senders: VecDeque<ResponseSender>,
-    ) -> (Self, Option<ResponseSender>) {
-        let sender = senders.pop_front();
-        let self_ = match sender {
-            Some(_) => match senders.len() {
-                0 => BatchRequestEntry::Empty,
-                1 => BatchRequestEntry::Unique(
-                    senders
-                        .pop_back()
-                        .expect("safe since we just checked the length"),
-                ),
-                _ => BatchRequestEntry::Duplicated(senders),
-            },
-            None => BatchRequestEntry::Empty,
-        };
-        (self_, sender)
-    }
-
-    /// Applies the provided closure to the existing senders.
-    fn for_each(self, f: impl Fn(ResponseSender)) {
-        match self {
-            BatchRequestEntry::Empty => (/* nothing to do */),
-            BatchRequestEntry::Unique(sender) => {
-                f(sender);
-            }
-            BatchRequestEntry::Duplicated(senders) => {
-                for sender in senders {
-                    f(sender);
-                }
-            }
+    fn new(sender: ResponseSender) -> Self {
+        Self {
+            value: Some(sender),
+            duplicates: Default::default(),
         }
+    }
+
+    fn push_back(&mut self, sender: ResponseSender) {
+        // Never puts anything in `value` because it would break the whole premise of
+        // "pushing back"
+        self.duplicates.push_back(sender);
+    }
+
+    fn pop_front(&mut self) -> Option<ResponseSender> {
+        self.value.take().or_else(|| self.duplicates.pop_front())
+    }
+
+    fn into_iter(self) -> impl Iterator<Item = ResponseSender> {
+        self.value.into_iter().chain(self.duplicates)
     }
 }
 
@@ -224,10 +171,15 @@ where
                         tracing::trace!(request_id = %request.id(), "canceled sender");
                         continue;
                     }
-                    senders
-                        .entry(request.id().clone())
-                        .or_default()
-                        .enqueue(sender);
+
+                    match senders.entry(request.id().clone()) {
+                        std::collections::hash_map::Entry::Occupied(mut occupied_entry) => {
+                            occupied_entry.get_mut().push_back(sender);
+                        }
+                        std::collections::hash_map::Entry::Vacant(vacant_entry) => {
+                            vacant_entry.insert(BatchRequestEntry::new(sender));
+                        }
+                    }
                     requests.push(request);
                 }
 
@@ -248,14 +200,6 @@ where
                     });
 
                 match result {
-                    Err(err) => {
-                        let err = format!("batch call failed: {err:?}");
-                        for entry in senders.into_values() {
-                            entry.for_each(|sender| {
-                                let _ = sender.send(Err(TransportErrorKind::custom_str(&err)));
-                            });
-                        }
-                    }
                     Ok(responses) => {
                         for response in responses {
                             tracing::trace!(response_id = %response.id, "attempting to remove response");
@@ -263,13 +207,23 @@ where
                                 tracing::warn!(response_id = %response.id, "missing sender for response");
                                 continue;
                             };
-                            let Some(sender) = entry.dequeue() else {
+                            let Some(sender) = entry.pop_front() else {
                                 tracing::warn!(response_id = %response.id, "more responses than senders (may have lost some sender)");
                                 continue;
                             };
                             tracing::debug!(response_id = %response.id, "sending response");
                             let _ = sender.send(Ok(response));
                         }
+                    }
+                    Err(err) => {
+                        let err = format!("batch call failed: {err:?}");
+                        senders
+                            .into_values()
+                            .map(|sender| sender.into_iter())
+                            .flatten()
+                            .for_each(|sender| {
+                                let _ = sender.send(Err(TransportErrorKind::custom_str(&err)));
+                            });
                     }
                 }
             }
@@ -335,65 +289,35 @@ where
 
 #[cfg(test)]
 mod test {
-    use {
-        crate::alloy::buffering::BatchRequestEntry,
-        futures::channel::oneshot,
-        std::collections::VecDeque,
-    };
+    use {crate::alloy::buffering::BatchRequestEntry, futures::channel::oneshot};
 
     #[test]
-    fn test_batch_entry_push_back() {
-        let (tx_1, _) = oneshot::channel();
-        let mut unique = BatchRequestEntry::Unique(tx_1);
+    fn test_batch_request_entry_pop_twice() {
+        let (sender, _receiver) = oneshot::channel();
+        let mut entry = BatchRequestEntry::new(sender);
 
-        let (tx_2, _) = oneshot::channel();
-        unique.enqueue(tx_2);
+        let first_pop = entry.pop_front();
+        assert!(first_pop.is_some());
 
-        match unique {
-            BatchRequestEntry::Unique(_) => panic!("failed to upgrade batch entry"),
-            BatchRequestEntry::Duplicated(senders) => {
-                assert_eq!(senders.len(), 2);
-            }
-            BatchRequestEntry::Empty => panic!("this entry shouldn't be empty for this test"),
-        }
+        let second_pop = entry.pop_front();
+        assert!(second_pop.is_none());
     }
 
     #[test]
-    fn test_batch_entry_empty_to_unique() {
-        let mut empty = BatchRequestEntry::Empty;
+    fn test_batch_request_entry_add_element_pop_thrice() {
+        let (sender1, _receiver1) = oneshot::channel();
+        let (sender2, _receiver2) = oneshot::channel();
+        let mut entry = BatchRequestEntry::new(sender1);
 
-        let (tx, _) = oneshot::channel();
-        empty.enqueue(tx);
+        entry.push_back(sender2);
 
-        match empty {
-            BatchRequestEntry::Unique(_) => {
-                // Success: Empty correctly upgraded to Unique
-            }
-            BatchRequestEntry::Duplicated(_) => {
-                panic!("empty should upgrade to unique, not duplicated")
-            }
-            BatchRequestEntry::Empty => panic!("entry should no longer be empty"),
-        }
-    }
+        let first_pop = entry.pop_front();
+        assert!(first_pop.is_some());
 
-    #[test]
-    fn test_batch_entry_duplicated_to_duplicated() {
-        let (tx_1, _) = oneshot::channel();
-        let (tx_2, _) = oneshot::channel();
-        let mut deque = VecDeque::new();
-        deque.push_back(tx_1);
-        deque.push_back(tx_2);
-        let mut duplicated = BatchRequestEntry::Duplicated(deque);
+        let second_pop = entry.pop_front();
+        assert!(second_pop.is_some());
 
-        let (tx_3, _) = oneshot::channel();
-        duplicated.enqueue(tx_3);
-
-        match duplicated {
-            BatchRequestEntry::Duplicated(senders) => {
-                assert_eq!(senders.len(), 3);
-            }
-            BatchRequestEntry::Unique(_) => panic!("duplicated should remain duplicated"),
-            BatchRequestEntry::Empty => panic!("duplicated should not become empty"),
-        }
+        let third_pop = entry.pop_front();
+        assert!(third_pop.is_none());
     }
 }
