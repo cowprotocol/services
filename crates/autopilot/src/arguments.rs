@@ -114,7 +114,7 @@ pub struct Arguments {
     pub banned_users: Vec<H160>,
 
     /// Maximum number of entries to keep in the banned users cache.
-    #[clap(long, env, default_value = "20000")]
+    #[clap(long, env, default_value = "10000")]
     pub banned_users_max_cache_size: NonZeroUsize,
 
     /// If the auction hasn't been updated in this amount of time the pod fails
