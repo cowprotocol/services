@@ -294,7 +294,7 @@ impl Solver {
             self.notify(
                 auction.id(),
                 None,
-                notify::Kind::DeserializationError("Error: request format invalid".to_string()),
+                notify::Kind::DeserializationError("Request format invalid: failed to deserialize message".to_string()),
             ); // Hardcoded to avoid unbound message body size
         })?;
         let solutions = dto::Solutions::from(res).into_domain(
