@@ -186,7 +186,7 @@ services:
       dockerfile: Dockerfile.explorer
       args:
         - CHAIN=$CHAIN
-        - ETH_RPC_URL=http://127.0.0.1:8545
+        - ETH_RPC_URL=http://chain:8545
     ports:
       - 8001:80
 

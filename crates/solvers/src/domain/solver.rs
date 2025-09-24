@@ -6,8 +6,7 @@
 //! over separate paths.
 
 use {
-    super::solution::Solution,
-    crate::{
+    super::solution::Solution, crate::{
         boundary,
         domain::{
             auction,
@@ -17,10 +16,7 @@ use {
             solution,
         },
         infra::metrics,
-    },
-    ethereum_types::U256,
-    reqwest::Url,
-    std::{cmp, collections::HashSet, sync::Arc},
+    }, ethcontract::H160, ethereum_types::U256, reqwest::Url, std::{cmp, collections::HashSet, sync::Arc}
 };
 
 pub struct Solver(Arc<Inner>);
@@ -190,7 +186,8 @@ impl Inner {
                 }
             };
 
-            let compute_solution = async |request| -> Option<Solution> {
+            let compute_solution = async |request: Request| -> Option<Solution> {
+                let wrapper = request.wrapper;
                 let route = boundary_solver.route(request, self.max_hops).await?;
                 let interactions = route
                     .segments
@@ -229,6 +226,7 @@ impl Inner {
                         output,
                         interactions,
                         gas,
+                        wrapper,
                     }
                     .into_solution(fee)?
                     .with_id(solution::Id(i as u64))
@@ -250,7 +248,7 @@ impl Inner {
 
     fn requests_for_order(&self, order: &Order) -> impl Iterator<Item = Request> + use<> {
         let order::Order {
-            sell, buy, side, ..
+            sell, buy, side, wrapper, ..
         } = order.clone();
 
         let n = if order.partially_fillable {
@@ -272,6 +270,7 @@ impl Inner {
                         amount: buy.amount / divisor,
                     },
                     side,
+                    wrapper
                 }
             })
             .filter(|r| !r.sell.amount.is_zero() && !r.buy.amount.is_zero())
@@ -297,10 +296,13 @@ impl Inner {
             amount: self.native_token_price_estimation_amount,
         };
 
+        let wrapper = order.wrapper;
+
         Request {
             sell,
             buy,
             side: order::Side::Buy,
+            wrapper,
         }
     }
 }
@@ -322,6 +324,7 @@ pub struct Request {
     pub sell: eth::Asset,
     pub buy: eth::Asset,
     pub side: order::Side,
+    pub wrapper: Option<H160>,
 }
 
 /// A trading route.

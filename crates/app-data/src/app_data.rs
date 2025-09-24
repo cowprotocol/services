@@ -27,12 +27,12 @@ pub struct ValidatedAppData {
 pub struct ProtocolAppData {
     #[serde(default)]
     pub hooks: Hooks,
-    pub wrapper: Option<H160>,
     pub signer: Option<H160>,
     pub replaced_order: Option<ReplacedOrder>,
     #[serde(default)]
     pub partner_fee: PartnerFees,
     pub flashloan: Option<Flashloan>,
+    pub wrapper: Option<H160>,
 }
 
 /// Contains information to hint at how a solver could make

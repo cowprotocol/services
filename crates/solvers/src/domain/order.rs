@@ -2,6 +2,7 @@
 
 use {
     crate::{domain::eth, util},
+    ethcontract::H160,
     ethereum_types::{Address, H256},
     std::fmt::{self, Debug, Display, Formatter},
 };
@@ -16,6 +17,7 @@ pub struct Order {
     pub class: Class,
     pub partially_fillable: bool,
     pub flashloan_hint: Option<FlashloanHint>,
+    pub wrapper: Option<H160>,
 }
 
 impl Order {

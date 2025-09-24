@@ -303,6 +303,8 @@ pub fn tx(
         interactions.push(unwrap(native_unwrap, contracts.weth()));
     }
 
+    println!("SETTLEMENT TARGET RESOLVE {:?}", solution.wrapper);
+
     let settlement_target = if let Some(w) = solution.wrapper {
         &GPv2Settlement::at(contracts.web3(), w.into())
     } else {

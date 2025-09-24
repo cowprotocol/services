@@ -1,15 +1,5 @@
 use {
-    crate::util::Bytes,
-    anyhow::Context,
-    app_data::AppDataDocument,
-    derive_more::From,
-    futures::FutureExt,
-    moka::future::Cache,
-    reqwest::StatusCode,
-    shared::request_sharing::BoxRequestSharing,
-    std::sync::Arc,
-    thiserror::Error,
-    url::Url,
+    crate::util::Bytes, anyhow::Context, app_data::AppDataDocument, derive_more::From, ethcontract::H160, futures::FutureExt, moka::future::Cache, reqwest::StatusCode, shared::request_sharing::BoxRequestSharing, std::sync::Arc, thiserror::Error, url::Url
 };
 
 /// A struct for retrieving order's full app-data by its hash from a remote
@@ -128,6 +118,13 @@ impl AppData {
         match self {
             Self::Hash(_) => None,
             Self::Full(data) => data.protocol.flashloan.as_ref(),
+        }
+    }
+
+    pub fn wrapper(&self) -> Option<&H160> {
+        match self {
+            Self::Hash(_) => None,
+            Self::Full(data) => data.protocol.wrapper.as_ref(),
         }
     }
 }

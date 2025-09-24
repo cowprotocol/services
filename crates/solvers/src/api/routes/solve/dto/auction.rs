@@ -68,6 +68,7 @@ pub fn into_domain(auction: Auction) -> Result<auction::Auction, Error> {
                         token: eth::TokenAddress(hint.token),
                         amount: hint.amount,
                     }),
+                wrapper: order.wrapper,
             })
             .collect(),
         liquidity: auction
