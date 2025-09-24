@@ -572,6 +572,8 @@ impl OrderQuoter {
                     call_data: i.data.clone(),
                 })
                 .collect(),
+            // quote verification already tries to auto-fake missing balances
+            balance_override: None,
         };
         let mut balances = self.balance_fetcher.get_balances(&[query]).await;
         balances.pop().context("missing balance result")?

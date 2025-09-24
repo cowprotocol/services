@@ -45,6 +45,25 @@ pub fn provider(url: &str) -> (AlloyProvider, MutWallet) {
     (provider, wallet)
 }
 
+/// Extension to simplify using random IDs when instantiating [`RpcClient`].
+pub trait RpcClientRandomIdExt {
+    fn with_random_id(t: impl IntoBoxTransport, is_local: bool) -> Self;
+}
+
+impl RpcClientRandomIdExt for RpcClient {
+    /// Creates a new [`RpcClient`] with a random request ID.
+    fn with_random_id(t: impl IntoBoxTransport, is_local: bool) -> Self {
+        // The random ID mitigates the possibility of duplicate request IDs between
+        // providers when batching; furthemore, since we're using a uniform distribution
+        // we need to be aware that we might get a value close enough to u64::MAX to
+        // overflow after a couple requests, to solve that we generate a u32 first and
+        // convert it to u64 to ensure we have plenty space.
+        let id = rand::random::<u32>().into();
+        let inner = RpcClientInner::new(t, is_local).with_id(id);
+        Self::from_inner(inner)
+    }
+}
+
 pub trait ProviderSignerExt {
     /// Creates a new provider with the given signer.
     fn with_signer(&self, signer: Account) -> Self;
@@ -60,7 +79,7 @@ impl ProviderSignerExt for AlloyProvider {
         let is_local = self.client().is_local();
         let transport = self.client().transport().clone();
         let wallet = EthereumWallet::new(signer);
-        let client = RpcClient::new(transport, is_local);
+        let client = RpcClient::with_random_id(transport, is_local);
 
         ProviderBuilder::new()
             .wallet(wallet)
@@ -123,5 +142,6 @@ mod test_util {
     }
 }
 
+use alloy::{rpc::client::RpcClientInner, transports::IntoBoxTransport};
 #[cfg(feature = "test-util")]
 pub use test_util::{CallBuilderExt, ProviderExt};

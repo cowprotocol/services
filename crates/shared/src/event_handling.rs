@@ -137,62 +137,52 @@ where
         Ok(events)
     }
 
-    // Unfortunatelly, alloy's `watch_logs` does not support pagination yet, so it
+    // Unfortunately, alloy's `watch_logs` does not support pagination yet, so it
     // is implemented manually here
     async fn get_events_by_block_range(
         &self,
         block_range: &RangeInclusive<u64>,
     ) -> Result<EventStream<Self::Event>> {
-        const CHUNK_SIZE: u64 = 500;
+        const CHUNK_SIZE: usize = 500;
 
         let start = *block_range.start();
         let end = *block_range.end();
-
-        let mut chunks = Vec::new();
-        let mut current_start = start;
-
-        while current_start <= end {
-            let current_end = std::cmp::min(current_start + CHUNK_SIZE - 1, end);
-            chunks.push(current_start..=current_end);
-            current_start = current_end + 1;
-        }
-
         let provider = self.0.provider().clone();
         let base_filter = self.0.filter();
 
-        let stream = futures::stream::iter(chunks)
-            .then(move |chunk_range| {
+        let stream = futures::stream::iter(start..=end)
+            .chunks(CHUNK_SIZE)
+            .then(move |range| {
                 let provider = provider.clone();
-                let filter = base_filter
-                    .clone()
-                    .from_block(*chunk_range.start())
-                    .to_block(*chunk_range.end());
+                let filter = base_filter.clone();
 
                 async move {
-                    let logs = provider
-                        .get_logs(&filter)
-                        .await
-                        .map_err(anyhow::Error::from)?;
+                    let Some((start, end)) = range.first().zip(range.last()) else {
+                        return Ok(Vec::new());
+                    };
+                    let filter = filter.from_block(*start).to_block(*end);
+                    let logs = provider.get_logs(&filter).await.with_context(|| {
+                        format!("unable to get logs for blocks range {}-{}", start, end)
+                    })?;
 
-                    let events: Result<Vec<_>> = logs
+                    let events: Vec<Result<_>> = logs
                         .into_iter()
                         .map(|log| {
-                            let event =
-                                T::Event::decode_log(&log.inner).map_err(anyhow::Error::from)?;
-                            Ok((event.data, log))
+                            T::Event::decode_log(&log.inner)
+                                .with_context(|| format!("unable to parse log: {:?}", log))
+                                .map(|event| (event.data, log))
                         })
                         .collect();
 
-                    events
+                    Ok(events)
                 }
             })
-            .map(|chunk_result| {
+            .flat_map(|chunk_result| {
                 futures::stream::iter(match chunk_result {
-                    Ok(events) => events.into_iter().map(Ok).collect::<Vec<_>>(),
+                    Ok(events) => events,
                     Err(e) => vec![Err(e)],
                 })
-            })
-            .flatten();
+            });
 
         Ok(Box::pin(stream))
     }
@@ -202,7 +192,7 @@ where
             .filter()
             .address
             .iter()
-            .cloned()
+            .copied()
             .map(IntoLegacy::into_legacy)
             .collect()
     }
@@ -948,28 +938,28 @@ mod tests {
                 H256::from_str(
                     "0xa21ba3de6ac42185aa2b21e37cd63ff1572b763adff7e828f86590df1d1be118",
                 )
-                .unwrap(),
+                    .unwrap(),
             ),
             (
                 15575560,
                 H256::from_str(
                     "0x5a737331194081e99b73d7a8b7a2ccff84e0aff39fa0e39aca0b660f3d6694c4",
                 )
-                .unwrap(),
+                    .unwrap(),
             ),
             (
                 15575561,
                 H256::from_str(
                     "0xe91ec1a5a795c0739d99a60ac1df37cdf90b6c75c8150ace1cbad5b21f473b75", //WRONG HASH!
                 )
-                .unwrap(),
+                    .unwrap(),
             ),
             (
                 15575562,
                 H256::from_str(
                     "0xac1ca15622f17c62004de1f746728d4051103d8b7e558d39fd9fcec4d3348937",
                 )
-                .unwrap(),
+                    .unwrap(),
             ),
         ];
         let event_handler = EventHandler::new(

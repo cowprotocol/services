@@ -54,7 +54,6 @@ include_contracts! {
     BalancerV2Authorizer;
     BalancerV2Vault;
     BalancerV3BatchRouter;
-    BaoswapRouter;
     CowAmm;
     CowAmmConstantProductFactory;
     CowAmmLegacyHelper;
@@ -68,21 +67,11 @@ include_contracts! {
     FlashLoanRouter;
     GPv2AllowListAuthentication;
     GPv2Settlement;
-    HoneyswapRouter;
     HooksTrampoline;
     IAavePool;
     IFlashLoanSolverWrapper;
-    ISwaprPair;
-    IUniswapLikePair;
-    IUniswapLikeRouter;
     IUniswapV3Factory;
-    PancakeRouter;
     Permit2;
-    SushiSwapRouter;
-    SwaprRouter;
-    TestnetUniswapV2Router02;
-    UniswapV2Factory;
-    UniswapV2Router02;
     UniswapV3QuoterV2;
     UniswapV3SwapRouterV2;
     WETH9;
@@ -90,11 +79,9 @@ include_contracts! {
 
 pub mod support {
     include_contracts! {
-        AnyoneAuthenticator;
         Balances;
         Multicall;
         Signatures;
-        Solver;
         Spardose;
         Swapper;
         Trader;
@@ -186,11 +173,6 @@ mod tests {
         for network in &[MAINNET, GNOSIS, SEPOLIA] {
             assert_has_deployment_address!(CowProtocolToken for *network);
         }
-        for network in &[MAINNET, GNOSIS, ARBITRUM_ONE] {
-            assert_has_deployment_address!(SushiSwapRouter for *network);
-            assert_has_deployment_address!(UniswapV2Factory for *network);
-            assert_has_deployment_address!(UniswapV2Router02 for *network);
-        }
         for network in &[
             MAINNET,
             ARBITRUM_ONE,
@@ -214,26 +196,11 @@ mod tests {
             );
         }
 
-        for network in &[MAINNET, ARBITRUM_ONE] {
-            assert_has_deployment_address!(PancakeRouter for *network);
-        }
-
         assert!(alloy::BalancerV2WeightedPoolFactory::deployment_address(&MAINNET).is_some());
 
         for network in &[MAINNET, GNOSIS, ARBITRUM_ONE] {
             assert!(alloy::BalancerV2StablePoolFactoryV2::deployment_address(network).is_some());
         }
-
-        for network in &[MAINNET, GNOSIS, ARBITRUM_ONE] {
-            assert_has_deployment_address!(SwaprRouter for *network);
-        }
-
-        // only gnosis
-        assert_has_deployment_address!(BaoswapRouter for GNOSIS);
-        assert_has_deployment_address!(HoneyswapRouter for GNOSIS);
-
-        // only sepolia
-        assert_has_deployment_address!(TestnetUniswapV2Router02 for SEPOLIA);
     }
 
     #[test]
@@ -274,6 +241,5 @@ mod tests {
         }
 
         assert_has_bytecode!(support::Trader);
-        assert_has_bytecode!(support::Solver);
     }
 }

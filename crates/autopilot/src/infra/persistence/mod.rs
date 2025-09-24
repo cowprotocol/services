@@ -11,6 +11,7 @@ use {
     chrono::{DateTime, Utc},
     database::{
         events::EventIndex,
+        leader_pg_lock::LeaderLock,
         order_events::OrderEventLabel,
         order_execution::Asset,
         orders::{
@@ -33,6 +34,7 @@ use {
         collections::{HashMap, HashSet},
         ops::DerefMut,
         sync::Arc,
+        time::Duration,
     },
     tracing::Instrument,
 };
@@ -55,6 +57,10 @@ impl Persistence {
             },
             postgres,
         }
+    }
+
+    pub async fn leader(&self, key: String) -> LeaderLock {
+        LeaderLock::new(self.postgres.pool.clone(), key, Duration::from_millis(200))
     }
 
     /// There is always only one `current` auction.
@@ -637,7 +643,6 @@ impl Persistence {
     pub async fn save_settlement(
         &self,
         event: domain::eth::SettlementEvent,
-        auction_id: domain::auction::Id,
         settlement: Option<&domain::settlement::Settlement>,
     ) -> Result<(), DatabaseError> {
         let _timer = Metrics::get()
@@ -649,6 +654,8 @@ impl Persistence {
 
         let block_number = i64::try_from(event.block.0).context("block overflow")?;
         let log_index = i64::try_from(event.log_index).context("log index overflow")?;
+        let auction_id = settlement.map(|s| s.auction_id()).unwrap_or_default();
+        tracing::debug!(hash = ?event.transaction, ?auction_id, "saving settlement details for tx");
 
         database::settlements::update_settlement_auction(
             &mut ex,

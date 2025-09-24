@@ -1,10 +1,22 @@
 use {
-    crate::{domain::eth, infra::blockchain::contracts::deployment_address},
+    crate::{
+        domain::eth::{self, ContractAddress},
+        infra::blockchain::contracts::deployment_address,
+    },
     alloy::primitives::Address,
     chain::Chain,
     derive_more::Debug,
+    ethrpc::alloy::conversions::IntoLegacy,
     hex_literal::hex,
     reqwest::Url,
+    shared::sources::uniswap_v2::{
+        BAOSWAP_INIT,
+        HONEYSWAP_INIT,
+        SUSHISWAP_INIT,
+        SWAPR_INIT,
+        TESTNET_UNISWAP_INIT,
+        UNISWAP_INIT,
+    },
     std::{collections::HashSet, time::Duration},
 };
 
@@ -53,9 +65,10 @@ impl UniswapV2 {
     #[allow(clippy::self_named_constructors)]
     pub fn uniswap_v2(chain: Chain) -> Option<Self> {
         Some(Self {
-            router: deployment_address(contracts::UniswapV2Router02::raw_contract(), chain)?,
-            pool_code: hex!("96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f")
-                .into(),
+            router: ContractAddress::from(
+                contracts::alloy::UniswapV2Router02::deployment_address(&chain.id())?.into_legacy(),
+            ),
+            pool_code: UNISWAP_INIT.into(),
             missing_pool_cache_time: Duration::from_secs(60 * 60),
         })
     }
@@ -63,9 +76,10 @@ impl UniswapV2 {
     /// Returns the liquidity configuration for SushiSwap.
     pub fn sushi_swap(chain: Chain) -> Option<Self> {
         Some(Self {
-            router: deployment_address(contracts::SushiSwapRouter::raw_contract(), chain)?,
-            pool_code: hex!("e18a34eb0e04b04f7a0ac29a6e80748dca96319b42c54d679cb821dca90c6303")
-                .into(),
+            router: ContractAddress::from(
+                contracts::alloy::SushiSwapRouter::deployment_address(&chain.id())?.into_legacy(),
+            ),
+            pool_code: SUSHISWAP_INIT.into(),
             missing_pool_cache_time: Duration::from_secs(60 * 60),
         })
     }
@@ -73,9 +87,10 @@ impl UniswapV2 {
     /// Returns the liquidity configuration for Honeyswap.
     pub fn honeyswap(chain: Chain) -> Option<Self> {
         Some(Self {
-            router: deployment_address(contracts::HoneyswapRouter::raw_contract(), chain)?,
-            pool_code: hex!("3f88503e8580ab941773b59034fb4b2a63e86dbc031b3633a925533ad3ed2b93")
-                .into(),
+            router: ContractAddress::from(
+                contracts::alloy::BaoswapRouter::deployment_address(&chain.id())?.into_legacy(),
+            ),
+            pool_code: HONEYSWAP_INIT.into(),
             missing_pool_cache_time: Duration::from_secs(60 * 60),
         })
     }
@@ -83,9 +98,10 @@ impl UniswapV2 {
     /// Returns the liquidity configuration for Baoswap.
     pub fn baoswap(chain: Chain) -> Option<Self> {
         Some(Self {
-            router: deployment_address(contracts::BaoswapRouter::raw_contract(), chain)?,
-            pool_code: hex!("0bae3ead48c325ce433426d2e8e6b07dac10835baec21e163760682ea3d3520d")
-                .into(),
+            router: ContractAddress::from(
+                contracts::alloy::BaoswapRouter::deployment_address(&chain.id())?.into_legacy(),
+            ),
+            pool_code: BAOSWAP_INIT.into(),
             missing_pool_cache_time: Duration::from_secs(60 * 60),
         })
     }
@@ -98,7 +114,9 @@ impl UniswapV2 {
         }
         .into();
         Some(Self {
-            router: deployment_address(contracts::PancakeRouter::raw_contract(), chain)?,
+            router: ContractAddress::from(
+                contracts::alloy::PancakeRouter::deployment_address(&chain.id())?.into_legacy(),
+            ),
             pool_code,
             missing_pool_cache_time: Duration::from_secs(60 * 60),
         })
@@ -108,9 +126,11 @@ impl UniswapV2 {
     /// test networks.
     pub fn testnet_uniswapv2(chain: Chain) -> Option<Self> {
         Some(Self {
-            router: deployment_address(contracts::TestnetUniswapV2Router02::raw_contract(), chain)?,
-            pool_code: hex!("0efd7612822d579e24a8851501d8c2ad854264a1050e3dfcee8afcca08f80a86")
-                .into(),
+            router: ContractAddress::from(
+                contracts::alloy::TestnetUniswapV2Router02::deployment_address(&chain.id())?
+                    .into_legacy(),
+            ),
+            pool_code: TESTNET_UNISWAP_INIT.into(),
             missing_pool_cache_time: Duration::from_secs(60 * 60),
         })
     }
@@ -134,9 +154,10 @@ impl Swapr {
     #[allow(clippy::self_named_constructors)]
     pub fn swapr(chain: Chain) -> Option<Self> {
         Some(Self {
-            router: deployment_address(contracts::SwaprRouter::raw_contract(), chain)?,
-            pool_code: hex!("d306a548755b9295ee49cc729e13ca4a45e00199bbd890fa146da43a50571776")
-                .into(),
+            router: ContractAddress::from(
+                contracts::alloy::SwaprRouter::deployment_address(&chain.id())?.into_legacy(),
+            ),
+            pool_code: SWAPR_INIT.into(),
             missing_pool_cache_time: Duration::from_secs(60 * 60),
         })
     }

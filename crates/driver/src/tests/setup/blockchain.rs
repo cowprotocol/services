@@ -31,7 +31,7 @@ use {
 pub struct Pair {
     token_a: &'static str,
     token_b: &'static str,
-    contract: contracts::IUniswapLikePair,
+    contract: contracts::alloy::IUniswapLikePair::Instance,
     pool: Pool,
 }
 
@@ -46,7 +46,6 @@ pub struct Blockchain {
     pub settlement: contracts::GPv2Settlement,
     pub balances: contracts::support::Balances,
     pub signatures: contracts::support::Signatures,
-    pub flashloan_wrapper: contracts::ERC3156FlashLoanSolverWrapper,
     pub flashloan_router: contracts::FlashLoanRouter,
     pub ethflow: Option<ContractAddress>,
     pub domain_separator: boundary::DomainSeparator,
@@ -373,14 +372,6 @@ impl Blockchain {
         )
         .await
         .unwrap();
-        let flashloan_wrapper = wait_for(
-            &web3,
-            contracts::ERC3156FlashLoanSolverWrapper::builder(&web3, flashloan_router.address())
-                .from(main_trader_account.clone())
-                .deploy(),
-        )
-        .await
-        .unwrap();
 
         let mut trader_accounts = Vec::new();
         for config in config.solvers {
@@ -439,15 +430,16 @@ impl Blockchain {
             }
         }
         // Create the uniswap factory.
-        let uniswap_factory = wait_for(
-            &web3,
-            contracts::UniswapV2Factory::builder(&web3, main_trader_account.address())
-                .from(main_trader_account.clone())
-                .deploy(),
+        let contract_address = contracts::alloy::UniswapV2Factory::Instance::deploy_builder(
+            web3.alloy.clone(),
+            main_trader_account.address().into_alloy(),
         )
+        .from(main_trader_account.address().into_alloy())
+        .deploy()
         .await
         .unwrap();
-
+        let uniswap_factory =
+            contracts::alloy::UniswapV2Factory::Instance::new(contract_address, web3.alloy.clone());
         // Create and fund a uniswap pair for each pool. Fund the settlement contract
         // with the same liquidity as the pool, to allow for internalized interactions.
         let mut pairs = Vec::new();
@@ -472,23 +464,20 @@ impl Blockchain {
                     .into_legacy()
             };
             // Create the pair.
-            wait_for(
-                &web3,
-                uniswap_factory
-                    .create_pair(token_a, token_b)
-                    .from(main_trader_account.clone())
-                    .send(),
-            )
-            .await
-            .unwrap();
+            uniswap_factory
+                .createPair(token_a.into_alloy(), token_b.into_alloy())
+                .from(main_trader_account.address().into_alloy())
+                .send_and_watch()
+                .await
+                .unwrap();
             // Fund the pair and the settlement contract.
-            let pair = contracts::IUniswapLikePair::at(
-                &web3,
+            let pair = contracts::alloy::IUniswapLikePair::Instance::new(
                 uniswap_factory
-                    .get_pair(token_a, token_b)
+                    .getPair(token_a.into_alloy(), token_b.into_alloy())
                     .call()
                     .await
                     .unwrap(),
+                web3.alloy.clone(),
             );
             pairs.push(Pair {
                 token_a: pool.reserve_a.token,
@@ -499,7 +488,7 @@ impl Blockchain {
             if pool.reserve_a.token == "WETH" {
                 wait_for(
                     &web3,
-                    weth.transfer(pair.address(), pool.reserve_a.amount)
+                    weth.transfer(pair.address().into_legacy(), pool.reserve_a.amount)
                         .from(primary_account(&web3).await)
                         .send(),
                 )
@@ -540,10 +529,7 @@ impl Blockchain {
                 tokens
                     .get(pool.reserve_a.token)
                     .unwrap()
-                    .mint(
-                        pair.address().into_alloy(),
-                        pool.reserve_a.amount.into_alloy(),
-                    )
+                    .mint(*pair.address(), pool.reserve_a.amount.into_alloy())
                     .from(main_trader_account.address().into_alloy())
                     .send_and_watch()
                     .await
@@ -578,7 +564,7 @@ impl Blockchain {
             if pool.reserve_b.token == "WETH" {
                 wait_for(
                     &web3,
-                    weth.transfer(pair.address(), pool.reserve_b.amount)
+                    weth.transfer(pair.address().into_legacy(), pool.reserve_b.amount)
                         .from(primary_account(&web3).await)
                         .send(),
                 )
@@ -619,10 +605,7 @@ impl Blockchain {
                 tokens
                     .get(pool.reserve_b.token)
                     .unwrap()
-                    .mint(
-                        pair.address().into_alloy(),
-                        pool.reserve_b.amount.into_alloy(),
-                    )
+                    .mint(*pair.address(), pool.reserve_b.amount.into_alloy())
                     .from(main_trader_account.address().into_alloy())
                     .send_and_watch()
                     .await
@@ -653,16 +636,11 @@ impl Blockchain {
                         .unwrap();
                 }
             }
-            wait_for(
-                &web3,
-                pair.mint(
-                    "0x8270bA71b28CF60859B547A2346aCDE824D6ed40"
-                        .parse()
-                        .unwrap(),
-                )
-                .from(main_trader_account.clone())
-                .send(),
-            )
+            pair.mint(::alloy::primitives::address!(
+                "0x8270bA71b28CF60859B547A2346aCDE824D6ed40"
+            ))
+            .from(main_trader_account.address().into_alloy())
+            .send_and_watch()
             .await
             .unwrap();
         }
@@ -691,7 +669,6 @@ impl Blockchain {
             web3_url: node.url(),
             node,
             pairs,
-            flashloan_wrapper,
             flashloan_router,
         }
     }
@@ -828,7 +805,7 @@ impl Blockchain {
 
             // Create the interactions fulfilling the order.
             let transfer_interaction = sell_token
-                .transfer(pair.contract.address(), execution.sell)
+                .transfer(pair.contract.address().into_legacy(), execution.sell)
                 .tx
                 .data
                 .unwrap()
@@ -848,15 +825,13 @@ impl Blockchain {
             let swap_interaction = pair
                 .contract
                 .swap(
-                    amount_0_out,
-                    amount_1_out,
-                    self.settlement.address(),
+                    amount_0_out.into_alloy(),
+                    amount_1_out.into_alloy(),
+                    self.settlement.address().into_alloy(),
                     Default::default(),
                 )
-                .tx
-                .data
-                .unwrap()
-                .0;
+                .calldata()
+                .to_vec();
             fulfillments.push(Fulfillment {
                 quoted_order: self.quote(order),
                 execution: execution.clone(),
@@ -875,7 +850,7 @@ impl Blockchain {
                         internalize: false,
                     },
                     Interaction {
-                        address: pair.contract.address(),
+                        address: pair.contract.address().into_legacy(),
                         calldata: match solution.calldata {
                             super::Calldata::Valid { .. } => swap_interaction,
                             super::Calldata::Invalid => {
