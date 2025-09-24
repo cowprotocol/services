@@ -11,7 +11,7 @@ use {
     crate::{
         domain::{
             self,
-            competition::{Participant, Unranked, winner_selection},
+            competition::{Participant, Score, Unranked, winner_selection},
             eth::WrappedNativeToken,
         },
         infra::{
@@ -25,6 +25,7 @@ use {
     anyhow::Context,
     ethrpc::block_stream::CurrentBlockWatcher,
     itertools::Itertools,
+    num::{CheckedSub, Saturating},
     shared::token_list::AutoUpdatingTokenList,
     std::{num::NonZeroUsize, sync::Arc, time::Duration},
     tracing::{Instrument, instrument},
@@ -135,7 +136,7 @@ impl RunLoop {
         let total_score = ranking
             .winners()
             .map(|p| p.solution().score())
-            .reduce(std::ops::Add::add)
+            .reduce(Score::saturating_add)
             .unwrap_or_default();
 
         for participant in ranking.ranked() {
@@ -143,7 +144,17 @@ impl RunLoop {
             let reference_score = scores.get(&participant.driver().submission_address);
             let driver = participant.driver();
             let reward = reference_score
-                .map(|reference| total_score - *reference)
+                .map(|reference| {
+                    total_score.checked_sub(reference).unwrap_or_else(|| {
+                        tracing::trace!(
+                            driver =% driver.name,
+                            ?reference_score,
+                            ?total_score,
+                            "reference score exceeds total score, capping reward to 0"
+                        );
+                        Score::default()
+                    })
+                })
                 .unwrap_or_default();
 
             tracing::info!(
