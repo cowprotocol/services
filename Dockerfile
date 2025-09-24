@@ -30,11 +30,9 @@ CMD ["migrate"]
 
 FROM chef AS builder
 COPY --from=planner /src/recipe.json recipe.json
-# --mount=type=cache,target=./target,sharing=locked 
 RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo chef cook --release --recipe-path recipe.json
 
 # Copy only the library crates for now
-# --mount=type=cache,target=./target,sharing=locked 
 COPY Cargo.toml Cargo.lock ./
 COPY ./crates/app-data/ ./crates/app-data
 COPY ./crates/database/ ./crates/database

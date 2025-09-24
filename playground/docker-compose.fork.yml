@@ -137,7 +137,7 @@ services:
       target: localdev
       dockerfile: ./Dockerfile
     restart: always
-    command: ["cargo", "watch", "-x", "run --bin driver -- --config configs/driver-${ENV}.toml"]
+    command: ["cargo", "watch", "-x", "run --bin driver -- --config configs/${ENV}/driver.toml"]
     environment:
       - ETHRPC=http://chain:8545
       - ADDR=0.0.0.0:80
@@ -159,7 +159,7 @@ services:
       target: localdev
       dockerfile: ./Dockerfile
     restart: always
-    command: ["cargo", "watch", "-x", "run --bin solvers -- baseline --config configs/baseline-${ENV}.toml"]
+    command: ["cargo", "watch", "-x", "run --bin solvers -- baseline --config configs/${ENV}/baseline.toml"]
     environment:
       - ADDR=0.0.0.0:80
       - LOG=solvers=trace,shared=trace
