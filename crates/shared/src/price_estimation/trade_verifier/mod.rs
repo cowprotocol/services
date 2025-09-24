@@ -5,7 +5,7 @@ use {
     super::{Estimate, Verification},
     crate::{
         code_fetching::CodeFetching,
-        code_simulation::CodeSimulating,
+        code_simulation::TenderlyCodeSimulator,
         encoded_settlement::{EncodedSettlement, EncodedTrade, encode_trade},
         interaction::EncodedInteraction,
         trade_finding::{
@@ -17,8 +17,8 @@ use {
         },
     },
     ::alloy::sol_types::SolCall,
-    alloy::primitives::Address,
-    anyhow::{Context, Result},
+    alloy::{contract::CallBuilder, primitives::Address},
+    anyhow::{Context, Result, anyhow},
     bigdecimal::BigDecimal,
     contracts::{
         GPv2Settlement,
@@ -49,7 +49,6 @@ use {
         sync::Arc,
     },
     tracing::instrument,
-    web3::types::CallRequest,
 };
 
 #[async_trait::async_trait]
@@ -69,7 +68,7 @@ pub trait TradeVerifying: Send + Sync + 'static {
 #[derive(Clone)]
 pub struct TradeVerifier {
     web3: Web3,
-    simulator: Arc<dyn CodeSimulating>,
+    simulator: Option<Arc<TenderlyCodeSimulator>>,
     code_fetcher: Arc<dyn CodeFetching>,
     balance_overrides: Arc<dyn BalanceOverriding>,
     block_stream: CurrentBlockWatcher,
@@ -88,7 +87,7 @@ impl TradeVerifier {
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
         web3: Web3,
-        simulator: Arc<dyn CodeSimulating>,
+        simulator: Option<Arc<TenderlyCodeSimulator>>,
         code_fetcher: Arc<dyn CodeFetching>,
         balance_overrides: Arc<dyn BalanceOverriding>,
         block_stream: CurrentBlockWatcher,
@@ -185,20 +184,24 @@ impl TradeVerifier {
         };
 
         let block = *self.block_stream.borrow();
-
-        let call = CallRequest {
+        let call = CallBuilder::new_raw(self.web3.alloy.clone(), swap_simulation.abi_encode().into())
             // Initiate tx as solver so gas doesn't get deducted from user's ETH.
-            from: Some(solver_address),
-            to: Some(solver_address),
-            data: Some(swap_simulation.abi_encode().into()),
-            gas: Some(Self::DEFAULT_GAS.into()),
-            gas_price: Some(block.gas_price),
-            ..Default::default()
-        };
+                .from(solver_address.into_alloy())
+                .to(solver_address.into_alloy())
+                .gas(Self::DEFAULT_GAS)
+                .gas_price(u128::try_from(block.gas_price).map_err(|err| anyhow!(err)).context("converting gas price to u128")?)
+                .state(overrides.clone());
 
-        let output = self
-            .simulator
-            .simulate(call, overrides, Some(block.number))
+        if let Some(tenderly) = &self.simulator {
+            if let Err(err) =
+                tenderly.log_simulation_command(call.clone(), overrides, Some(block.number))
+            {
+                tracing::debug!(?err, "could not log tenderly simulation command");
+            }
+        }
+
+        let output = call
+            .call()
             .await
             .context("failed to simulate quote")
             .map_err(Error::SimulationFailed);
@@ -290,7 +293,7 @@ impl TradeVerifier {
         verification: &mut Verification,
         query: &PriceQuery,
         trade: &TradeKind,
-    ) -> Result<HashMap<H160, StateOverride>> {
+    ) -> Result<alloy::rpc::types::eth::state::StateOverride> {
         let mut overrides = HashMap::with_capacity(6);
 
         // Provide mocked balances if possible to the spardose to allow it to
@@ -407,7 +410,7 @@ impl TradeVerifier {
         }
         overrides.insert(trade.tx_origin().unwrap_or(trade.solver()), solver_override);
 
-        Ok(overrides)
+        Ok(overrides.into_alloy())
     }
 }
 
