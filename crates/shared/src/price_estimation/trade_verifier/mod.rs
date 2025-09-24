@@ -239,13 +239,7 @@ impl TradeVerifier {
             }
         };
 
-        let mut summary = SettleOutput::from_swap(
-            output
-                .context("simulation failed")
-                .map_err(Error::SimulationFailed)?,
-            query.kind,
-            &tokens,
-        )?;
+        let mut summary = SettleOutput::from_swap(output?, query.kind, &tokens)?;
 
         {
             // Quote accuracy gets determined by how many tokens had to be paid out of the
