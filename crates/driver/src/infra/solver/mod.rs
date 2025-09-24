@@ -225,7 +225,6 @@ impl Solver {
     ) -> Result<Vec<Solution>, Error> {
         let flashloan_hints = self.assemble_flashloan_hints(auction);
         let wrappers = self.assemble_wrappers(auction);
-        println!("ASSEMBLED WRAPPERS: {:?}", auction.orders);
         // Fetch the solutions from the solver.
         let weth = self.eth.contracts().weth_address();
         let auction_dto = dto::auction::new(

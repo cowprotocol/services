@@ -330,7 +330,7 @@ pub fn tx(
 
     // Target and calldata depend on whether a flashloan is used
     let (to, calldata) = if flashloans.is_empty() {
-        (contracts.settlement().address().into(), settle_calldata)
+        (settlement_target.address().into(), settle_calldata)
     } else {
         let router = contracts
             .flashloan_router()
