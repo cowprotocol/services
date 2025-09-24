@@ -1,0 +1,7 @@
+chain-id = "232"
+base-tokens = [ "0x88f08e304ec4f90d644cec3fb69b8ad414acf884", "0x6bdc36e20d267ff0dd6097799f82e78907105e2f", "0xe5ecd226b3032910ceaa43ba92ee8232f8237553", "0xb0588f9a9cade7cd5f194a5fe77acd6a58250f82" ]
+max-hops = 1
+max-partial-attempts = 5
+solution-gas-offset = 166391
+native-token-price-estimation-amount = "100000000000000000"
+uni-v3-node-url = "https://rpc.lenx.xyz"
