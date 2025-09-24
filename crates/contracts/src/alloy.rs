@@ -443,6 +443,7 @@ crate::bindings!(IUniswapLikePair);
 
 pub mod support {
     crate::bindings!(AnyoneAuthenticator);
+    crate::bindings!(Solver);
 }
 
 pub use alloy::providers::DynProvider as Provider;
