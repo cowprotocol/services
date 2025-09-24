@@ -31,16 +31,23 @@ impl BaselineSolvable for Pool {
             return None;
         }
 
-        self.uni_v3_quoter_contract
-            .quote_exact_input_single((in_token, out_token, in_amount, self.fee, 0.into()))
-            .call()
-            .await
-            .map(
-                |(amount_out, _sqrt_price_x96_after, _initialized_ticks_crossed, _gas_estimate)| {
-                    amount_out
-                },
-            )
-            .ok()
+        tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            self.uni_v3_quoter_contract
+                .quote_exact_input_single((in_token, out_token, in_amount, self.fee, 0.into()))
+                .call(),
+        )
+        .await
+        .map_err(|_| {
+            tracing::warn!("Timeout when querying Uniswap V3 quoter contract");
+        })
+        .ok()?
+        .map(
+            |(amount_out, _sqrt_price_x96_after, _initialized_ticks_crossed, _gas_estimate)| {
+                amount_out
+            },
+        )
+        .ok()
     }
 
     async fn get_amount_in(
@@ -53,16 +60,23 @@ impl BaselineSolvable for Pool {
             return None;
         }
 
-        self.uni_v3_quoter_contract
-            .quote_exact_output_single((in_token, out_token, out_amount, self.fee, 0.into()))
-            .call()
-            .await
-            .map(
-                |(amount_in, _sqrt_price_x96_after, _initialized_ticks_crossed, _gas_estimate)| {
-                    amount_in
-                },
-            )
-            .ok()
+        tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            self.uni_v3_quoter_contract
+                .quote_exact_output_single((in_token, out_token, out_amount, self.fee, 0.into()))
+                .call(),
+        )
+        .await
+        .map_err(|_| {
+            tracing::warn!("Timeout when querying Uniswap V3 quoter contract");
+        })
+        .ok()?
+        .map(
+            |(amount_in, _sqrt_price_x96_after, _initialized_ticks_crossed, _gas_estimate)| {
+                amount_in
+            },
+        )
+        .ok()
     }
 
     async fn gas_cost(&self) -> usize {
