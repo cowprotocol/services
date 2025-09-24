@@ -445,8 +445,6 @@ pub mod support {
     crate::bindings!(AnyoneAuthenticator);
     crate::bindings!(Solver);
     crate::bindings!(Spardose);
-    // Support contract used for solver fee simulations.
-    crate::bindings!(Swapper);
 }
 
 pub use alloy::providers::DynProvider as Provider;
