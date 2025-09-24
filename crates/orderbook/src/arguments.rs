@@ -78,6 +78,10 @@ pub struct Arguments {
     #[clap(long, env, use_value_delimiter = true)]
     pub banned_users: Vec<H160>,
 
+    /// Maximum number of entries to keep in the banned users cache.
+    #[clap(long, env, default_value = "100")]
+    pub banned_users_max_cache_size: NonZeroUsize,
+
     /// Which estimators to use to estimate token prices in terms of the chain's
     /// native token.
     #[clap(long, env)]
@@ -149,6 +153,7 @@ impl std::fmt::Display for Arguments {
             max_limit_order_validity_period,
             unsupported_tokens,
             banned_users,
+            banned_users_max_cache_size,
             allowed_tokens,
             eip1271_skip_creation_validation,
             solvable_orders_max_update_age_blocks,
@@ -186,6 +191,10 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(f, "unsupported_tokens: {unsupported_tokens:?}")?;
         writeln!(f, "banned_users: {banned_users:?}")?;
+        writeln!(
+            f,
+            "banned_users_max_cache_size: {banned_users_max_cache_size:?}"
+        )?;
         writeln!(f, "allowed_tokens: {allowed_tokens:?}")?;
         writeln!(
             f,
