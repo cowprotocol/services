@@ -139,7 +139,7 @@ impl RunLoop {
 
         while !control.should_shutdown() {
             let is_leader = leader.try_acquire().await.unwrap_or_else(|err| {
-                tracing::warn!(error=%err, "failed to become leader");
+                tracing::warn!(?err, "failed to become leader");
                 false
             });
 
