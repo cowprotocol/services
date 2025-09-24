@@ -113,11 +113,12 @@ impl Validator {
             .call_with_state_overrides(&overrides)
             .await;
 
-        let response_bytes = result.inspect_err(|e| {
+        let response_bytes = result.inspect_err(|err| {
             tracing::debug!(
                 ?simulation,
                 ?check,
                 ?overrides,
+                ?err,
                 "signature verification failed"
             )
         })?;
