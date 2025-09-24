@@ -118,6 +118,19 @@ impl<S: Subscriber + for<'lookup> LookupSpan<'lookup>> Layer<S> for RequestIdLay
             span.extensions_mut().insert(request_id);
         }
     }
+
+    /// Clean up the RequestId when the span is closed to prevent memory leaks
+    /// in the internal HashMap storage.
+    fn on_close(&self, id: Id, ctx: Context<'_, S>) {
+        let Some(span) = ctx.span(&id) else {
+            return;
+        };
+        if span.name() != crate::distributed_tracing::request_id::SPAN_NAME {
+            return;
+        }
+
+        span.extensions_mut().remove::<RequestId>();
+    }
 }
 
 #[cfg(test)]
