@@ -9,7 +9,7 @@ license = "MIT OR Apache-2.0"
 doctest = false
 
 [dependencies]
-alloy = { workspace = true }
+alloy = { workspace = true, features = ["sol-types"] }
 anyhow = { workspace = true }
 app-data = { workspace = true }
 bytes-hex = { workspace = true }
@@ -17,7 +17,7 @@ async-trait = { workspace = true }
 bigdecimal = { workspace = true }
 cached = { workspace = true }
 chain = { workspace = true }
-chrono = { workspace = true }
+chrono = { workspace = true, features = ["clock"] }
 clap = { workspace = true }
 contracts = { workspace = true }
 dashmap = { workspace = true }
@@ -45,17 +45,17 @@ prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 rand = { workspace = true }
 rate-limit = { workspace = true }
-reqwest = { workspace = true }
-rust_decimal = { workspace = true }
+reqwest = { workspace = true, features = ["cookies", "gzip", "json"] }
+rust_decimal = { workspace = true, features = ["maths"] }
 secp256k1 = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
 strum = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["macros", "time"] }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter", "fmt", "time"] }
 url = { workspace = true }
 web3 = { workspace = true }
 

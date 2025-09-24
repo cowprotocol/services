@@ -3,31 +3,31 @@ resolver = "3"
 members = ["crates/*"]
 
 [workspace.dependencies]
-alloy = { version = "1.0.30", default-features = false, features = ["json-rpc", "json-abi", "sol-types", "contract", "providers", "rpc-client", "rpc-types", "transports", "reqwest", "signers", "signer-aws", "signer-local", "eips"] }
+alloy = { version = "1.0.30", default-features = false }
 anyhow = "=1.0.76"
 async-trait = "0.1.80"
 axum = "0.6"
-bigdecimal = { version = "0.3", features = ["serde"] }
+bigdecimal = "0.3"
 cached = { version = "0.49.3", default-features = false }
-chrono = { version = "0.4.38", default-features = false, features = ["now", "serde", "clock"] }
+chrono = { version = "0.4.38", default-features = false }
 clap = { version = "4.5.6", features = ["derive", "env"] }
 dashmap = "6.1.0"
 derivative = "2.2.0"
 derive_more = { version = "1.0.0", features = ["full"] }
-ethcontract = { git = "https://github.com/cowprotocol/ethcontract-rs", rev = "8817f4ba868e686f21cda886d6c8b75834eb51f2", default-features = false, features = ["aws-kms"] }
+ethcontract = { git = "https://github.com/cowprotocol/ethcontract-rs", rev = "c057a6e78827d762e1827c8d57cb687fc1f0af1a", default-features = false, features = ["aws-kms"] }
 mimalloc = "0.1.43"
-ethcontract-generate = { git = "https://github.com/cowprotocol/ethcontract-rs", rev = "8817f4ba868e686f21cda886d6c8b75834eb51f2", default-features = false, features = ["http"] }
-ethcontract-mock = { git = "https://github.com/cowprotocol/ethcontract-rs", rev = "8817f4ba868e686f21cda886d6c8b75834eb51f2", default-features = false }
+ethcontract-generate = { git = "https://github.com/cowprotocol/ethcontract-rs", rev = "c057a6e78827d762e1827c8d57cb687fc1f0af1a", default-features = false }
+ethcontract-mock = { git = "https://github.com/cowprotocol/ethcontract-rs", rev = "c057a6e78827d762e1827c8d57cb687fc1f0af1a", default-features = false }
 ethereum-types = "0.14.1"
 flate2 = "1.0.30"
 futures = "0.3.30"
 gas-estimation = { git = "https://github.com/cowprotocol/gas-estimation", tag = "v0.7.3", features = ["web3_", "tokio_"] }
-hex = { version = "0.4.3", default-features = false, features = ["alloc"] }
+hex = { version = "0.4.3", default-features = false }
 hex-literal = "0.4.1"
 humantime = "2.1.0"
 humantime-serde = "1.1.1"
 hyper = "0.14.29"
-indexmap = { version = "2.2.6", features = ["serde"] }
+indexmap = "2.2.6"
 itertools = "0.14"
 maplit = "1.0.2"
 mockall = "0.12.1"
@@ -37,7 +37,7 @@ prometheus = "0.13.4"
 prometheus-metric-storage = "0.5.0"
 rand = "0.8.5"
 regex = "1.10.4"
-reqwest = { version = "0.11.27", features = ["json", "gzip", "cookies"] }
+reqwest = "0.11.27"
 secp256k1 = "0.27.0"
 serde = { version = "1.0.203", features = ["derive"] }
 serde_json = "1.0.117"
@@ -47,20 +47,20 @@ strum = { version = "0.26.2", features = ["derive"] }
 tempfile = "3.10.1"
 thiserror = "1.0.61"
 toml = "0.8.14"
-tokio = { version = "1.38.0", features = ["tracing", "macros", "rt-multi-thread", "signal", "time", "fs", "sync"] }
+tokio = { version = "1.38.0", features = ["tracing"] }
 tokio-stream = { version = "0.1.15", features = ["sync"] }
 tracing = "0.1.41"
-tracing-subscriber = { version = "0.3.19", features = ["env-filter", "fmt", "time", "json"] }
-url = { version = "2.5.0", features = ["serde"] }
+tracing-subscriber = { version = "0.3.19", features = ["json"] }
+url = "2.5.0"
 warp = { git = 'https://github.com/cowprotocol/warp.git', rev = "586244e", default-features = false }
-web3 = { version = "0.19.0", default-features = false, features = ["http", "signing"] }
+web3 = { version = "0.19.0", default-features = false }
 app-data = { path = "crates/app-data" }
 arc-swap = "1.7.1"
 async-stream = "0.3.5"
 atty = "0.2"
 autopilot = { path = "crates/autopilot" }
-aws-config = { version = "1.5.1", features = ["behavior-version-latest"] }
-aws-sdk-s3 = { version = "1.34.0", default-features = false, features = ["rustls", "rt-tokio"] }
+aws-config = "1.5.1"
+aws-sdk-s3 = { version = "1.34.0", default-features = false }
 bytes-hex = { path = "crates/bytes-hex" }
 chain = { path = "crates/chain" }
 console-subscriber = "0.3.0"
@@ -72,20 +72,20 @@ driver = { path = "crates/driver" }
 ethabi = "18.0"
 ethrpc = { path = "crates/ethrpc" }
 model = { path = "crates/model" }
-moka = { version = "0.12.10", features = ["future"] }
+moka = "0.12.10"
 multibase = "0.9"
 number = { path = "crates/number" }
-observe = { path = "crates/observe", features = ["axum-tracing"] }
+observe = { path = "crates/observe" }
 order-validation = { path = "crates/order-validation" }
 opentelemetry = { version = "0.30", features = ["tracing"] }
-opentelemetry-otlp = { version = "0.30", features = ["grpc-tonic"] }
+opentelemetry-otlp = "0.30"
 opentelemetry_sdk = "0.30"
 orderbook = { path = "crates/orderbook" }
 paste = "1.0"
 pin-project-lite = "0.2.14"
 rate-limit = { path = "crates/rate-limit" }
 refunder = { path = "crates/refunder" }
-rust_decimal = { version = "1.35.0", features = ["maths"] }
+rust_decimal = "1.35.0"
 s3 = { path = "crates/s3" }
 scopeguard = "1.2.0"
 shared = { path = "crates/shared" }
@@ -95,13 +95,13 @@ solvers-dto = { path = "crates/solvers-dto" }
 strum_macros = "0.26.4"
 tap = "1.0.1"
 testlib = { path = "crates/testlib" }
-time = { version = "0.3.37", features = ["macros"] }
-tiny-keccak = { version = "2.0.2", features = ["keccak"] }
+time = "0.3.37"
+tiny-keccak = "2.0.2"
 tower = "0.4"
-tower-http = { version = "0.4", features = ["limit", "trace"]}
+tower-http = "0.4"
 tracing-opentelemetry = "0.31"
 tracing-serde = "0.2"
-vergen = { version = "8", features = ["git", "gitcl"] }
+vergen = "8"
 
 [workspace.lints]
 clippy.cast_possible_wrap = "deny"

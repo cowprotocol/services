@@ -48,7 +48,7 @@ primitive-types = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 rand = { workspace = true }
-reqwest = { workspace = true }
+reqwest = { workspace = true, features = ["gzip", "json"] }
 rust_decimal = { workspace = true }
 s3 = { workspace = true }
 serde = { workspace = true }
@@ -58,7 +58,7 @@ shared = { workspace = true }
 sqlx = { workspace = true }
 strum = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
 tracing = { workspace = true }
 url = { workspace = true }
 web3 = { workspace = true }
@@ -69,7 +69,7 @@ tokio = { workspace = true, features = ["test-util"] }
 
 [build-dependencies]
 anyhow = { workspace = true }
-vergen = { workspace = true }
+vergen = { workspace = true, features = ["git", "gitcl"] }
 
 [lints]
 workspace = true

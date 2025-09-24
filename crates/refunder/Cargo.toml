@@ -25,7 +25,7 @@ prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 shared = { workspace = true }
 sqlx = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["macros", "time", "rt-multi-thread"] }
 tracing = { workspace = true }
 url = { workspace = true }
 

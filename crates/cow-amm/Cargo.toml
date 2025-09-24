@@ -12,7 +12,7 @@ ethcontract = { workspace = true }
 ethrpc = { workspace = true }
 model = { workspace = true }
 shared = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = [] }
 tracing = { workspace = true }
 hex = { workspace = true }
 hex-literal = { workspace = true }

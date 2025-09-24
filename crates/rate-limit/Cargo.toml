@@ -12,9 +12,9 @@ humantime = { workspace = true }
 observe = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
-reqwest = { workspace = true }
+reqwest = { workspace = true, features = ["json"] }
 thiserror = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = [] }
 tracing = { workspace = true }
 
 [lints]

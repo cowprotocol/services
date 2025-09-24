@@ -14,10 +14,10 @@ path = "src/main.rs"
 
 [dependencies]
 axum = { workspace = true }
-bigdecimal = { workspace = true }
+bigdecimal = { workspace = true, features = ["serde"] }
 chain = { workspace = true }
-chrono = { workspace = true }
-clap = { workspace = true }
+chrono = { workspace = true, features = ["serde"], default-features = false }
+clap = { workspace = true, features = ["derive", "env"] }
 derive_more = { workspace = true }
 ethereum-types = { workspace = true }
 ethrpc = { workspace = true }
@@ -36,10 +36,10 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
 solvers-dto = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "time"] }
 toml = { workspace = true }
 tower = { workspace = true }
-tower-http = { workspace = true }
+tower-http = { workspace = true, features = ["limit", "trace"] }
 web3 = { workspace = true }
 
 # TODO Once solvers are ported and E2E tests set up, slowly migrate code and
@@ -47,12 +47,12 @@ web3 = { workspace = true }
 anyhow = { workspace = true }
 contracts = { workspace = true }
 model = { workspace = true }
-observe = { workspace = true }
+observe = { workspace = true, features = ["axum-tracing"] }
 shared = { workspace = true }
 solver = { workspace = true }
 tracing = { workspace = true }
 opentelemetry = { workspace = true }
-tracing-opentelemetry = { workspace = true }
+tracing-opentelemetry = "0.31.0"
 
 [dev-dependencies]
 tempfile = { workspace = true }
@@ -61,7 +61,7 @@ ethcontract = { workspace = true }
 
 [build-dependencies]
 anyhow = { workspace = true }
-vergen = { workspace = true }
+vergen = { workspace = true, features = ["git", "gitcl"] }
 
 [lints]
 workspace = true
