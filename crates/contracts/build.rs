@@ -705,9 +705,6 @@ fn main() {
     });
     generate_contract("CowAmmUniswapV2PriceOracle");
 
-    // Support contracts used for trade and token simulations.
-    generate_contract("Trader");
-
     // Support contracts used for various order simulations.
     generate_contract_with_config("Balances", |builder| {
         builder
