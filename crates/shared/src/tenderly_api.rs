@@ -421,9 +421,8 @@ impl TenderlyCodeSimulator {
             simulation_kind: Some(SimulationKind::Quick),
             state_objects: Some(
                 overrides
-                    .into_legacy()
                     .into_iter()
-                    .map(|(key, value)| Ok((key, value.try_into()?)))
+                    .map(|(key, value)| Ok((key.into_legacy(), value.into_legacy().try_into()?)))
                     .collect::<Result<_>>()?,
             ),
             ..Default::default()

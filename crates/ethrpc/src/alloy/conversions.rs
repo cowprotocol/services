@@ -263,13 +263,3 @@ impl IntoLegacy for alloy::rpc::types::eth::state::AccountOverride {
         }
     }
 }
-
-impl IntoLegacy for alloy::rpc::types::eth::state::StateOverride {
-    type To = ethcontract::state_overrides::StateOverrides;
-
-    fn into_legacy(self) -> Self::To {
-        self.into_iter()
-            .map(|(k, v)| (k.into_legacy(), v.into_legacy()))
-            .collect()
-    }
-}
