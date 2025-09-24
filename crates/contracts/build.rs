@@ -706,7 +706,6 @@ fn main() {
     generate_contract("CowAmmUniswapV2PriceOracle");
 
     // Support contracts used for trade and token simulations.
-    generate_contract("Solver");
     generate_contract("Spardose");
     generate_contract("Trader");
 
@@ -739,7 +738,6 @@ fn main() {
     });
 
     // Support contract used for solver fee simulations.
-    generate_contract("AnyoneAuthenticator");
     generate_contract("Swapper");
 
     // Contract for batching multiple `eth_call`s into a single one.
