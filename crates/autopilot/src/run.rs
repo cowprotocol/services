@@ -30,6 +30,7 @@ use {
     ethrpc::{Web3, block_stream::block_number_to_block_number_hash},
     futures::StreamExt,
     model::DomainSeparator,
+    num::ToPrimitive,
     observe::metrics::LivenessChecking,
     shared::{
         account_balances::{self, BalanceSimulator},
@@ -507,6 +508,7 @@ pub async fn run(args: Arguments) {
         infra::banned::Users::new(
             eth.contracts().chainalysis_oracle().clone(),
             args.banned_users,
+            args.banned_users_max_cache_size.get().to_u64().unwrap(),
         ),
         balance_fetcher.clone(),
         bad_token_detector.clone(),
@@ -520,6 +522,7 @@ pub async fn run(args: Arguments) {
         cow_amm_registry.clone(),
         args.run_loop_native_price_timeout,
         eth.contracts().settlement().address(),
+        args.disable_order_filtering,
     );
 
     let liveness = Arc::new(Liveness::new(args.max_auction_age));
