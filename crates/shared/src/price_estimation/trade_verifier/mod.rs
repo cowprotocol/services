@@ -192,12 +192,11 @@ impl TradeVerifier {
                 .gas_price(u128::try_from(block.gas_price).map_err(|err| anyhow!(err)).context("converting gas price to u128")?)
                 .state(overrides.clone());
 
-        if let Some(tenderly) = &self.simulator {
-            if let Err(err) =
+        if let Some(tenderly) = &self.simulator
+            && let Err(err) =
                 tenderly.log_simulation_command(call.clone(), overrides, Some(block.number))
-            {
-                tracing::debug!(?err, "could not log tenderly simulation command");
-            }
+        {
+            tracing::debug!(?err, "could not log tenderly simulation command");
         }
 
         let output = call

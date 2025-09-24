@@ -76,8 +76,7 @@ impl TenderlyCodeSimulator {
             from: tx.from.map(IntoLegacy::into_legacy).unwrap_or_default(),
             to: tx
                 .to
-                .map(TxKind::into_to)
-                .flatten()
+                .and_then(TxKind::into_to)
                 .map(IntoLegacy::into_legacy)
                 .unwrap_or_default(),
             input: tx
