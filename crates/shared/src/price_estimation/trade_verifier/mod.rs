@@ -5,9 +5,9 @@ use {
     super::{Estimate, Verification},
     crate::{
         code_fetching::CodeFetching,
-        code_simulation::TenderlyCodeSimulator,
         encoded_settlement::{EncodedSettlement, EncodedTrade, encode_trade},
         interaction::EncodedInteraction,
+        tenderly_api::TenderlyCodeSimulator,
         trade_finding::{
             Interaction,
             QuoteExecution,
@@ -184,6 +184,7 @@ impl TradeVerifier {
         };
 
         let block = *self.block_stream.borrow();
+
         let call = CallBuilder::new_raw(self.web3.alloy.clone(), swap_simulation.abi_encode().into())
             // Initiate tx as solver so gas doesn't get deducted from user's ETH.
                 .from(solver_address.into_alloy())

@@ -16,7 +16,6 @@ use {
         bad_token::BadTokenDetecting,
         baseline_solver::BaseTokens,
         code_fetching::CachedCodeFetcher,
-        code_simulation::TenderlyCodeSimulator,
         ethrpc::Web3,
         http_client::HttpClientFactory,
         price_estimation::{
@@ -25,6 +24,7 @@ use {
             competition::PriceRanking,
             native::NativePriceEstimating,
         },
+        tenderly_api::TenderlyCodeSimulator,
         token_info::TokenInfoFetching,
     },
     anyhow::{Context as _, Result},
