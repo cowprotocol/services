@@ -441,6 +441,10 @@ crate::bindings!(
 crate::bindings!(IUniswapLikeRouter);
 crate::bindings!(IUniswapLikePair);
 
+pub mod support {
+    crate::bindings!(AnyoneAuthenticator);
+}
+
 pub use alloy::providers::DynProvider as Provider;
 
 /// Extension trait to attach some useful functions to the contract instance.

@@ -109,6 +109,10 @@ pub struct Arguments {
     #[clap(long, env, use_value_delimiter = true)]
     pub banned_users: Vec<H160>,
 
+    /// Maximum number of entries to keep in the banned users cache.
+    #[clap(long, env, default_value = "10000")]
+    pub banned_users_max_cache_size: NonZeroUsize,
+
     /// If the auction hasn't been updated in this amount of time the pod fails
     /// the liveness check. Expects a value in seconds.
     #[clap(
@@ -353,6 +357,7 @@ impl std::fmt::Display for Arguments {
             native_price_estimators,
             min_order_validity_period,
             banned_users,
+            banned_users_max_cache_size,
             max_auction_age,
             limit_order_price_factor,
             trusted_tokens_url,
@@ -401,6 +406,10 @@ impl std::fmt::Display for Arguments {
             "min_order_validity_period: {min_order_validity_period:?}"
         )?;
         writeln!(f, "banned_users: {banned_users:?}")?;
+        writeln!(
+            f,
+            "banned_users_max_cache_size: {banned_users_max_cache_size:?}"
+        )?;
         writeln!(f, "max_auction_age: {max_auction_age:?}")?;
         writeln!(f, "limit_order_price_factor: {limit_order_price_factor:?}")?;
         display_option(f, "trusted_tokens_url", trusted_tokens_url)?;
