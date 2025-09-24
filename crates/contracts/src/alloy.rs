@@ -444,6 +444,7 @@ crate::bindings!(IUniswapLikePair);
 pub mod support {
     crate::bindings!(AnyoneAuthenticator);
     crate::bindings!(Solver);
+    crate::bindings!(Spardose);
 }
 
 pub use alloy::providers::DynProvider as Provider;
