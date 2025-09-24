@@ -2738,7 +2738,7 @@ dependencies = [
 [[package]]
 name = "ethcontract"
 version = "0.25.9"
-source = "git+https://github.com/cowprotocol/ethcontract-rs?rev=c057a6e78827d762e1827c8d57cb687fc1f0af1a#c057a6e78827d762e1827c8d57cb687fc1f0af1a"
+source = "git+https://github.com/cowprotocol/ethcontract-rs?rev=8e112a88988040cde6110379ee6d1be768a13244#8e112a88988040cde6110379ee6d1be768a13244"
 dependencies = [
  "arrayvec",
  "aws-config",
@@ -2764,7 +2764,7 @@ dependencies = [
 [[package]]
 name = "ethcontract-common"
 version = "0.25.9"
-source = "git+https://github.com/cowprotocol/ethcontract-rs?rev=c057a6e78827d762e1827c8d57cb687fc1f0af1a#c057a6e78827d762e1827c8d57cb687fc1f0af1a"
+source = "git+https://github.com/cowprotocol/ethcontract-rs?rev=8e112a88988040cde6110379ee6d1be768a13244#8e112a88988040cde6110379ee6d1be768a13244"
 dependencies = [
  "ethabi",
  "hex",
@@ -2779,7 +2779,7 @@ dependencies = [
 [[package]]
 name = "ethcontract-derive"
 version = "0.25.9"
-source = "git+https://github.com/cowprotocol/ethcontract-rs?rev=c057a6e78827d762e1827c8d57cb687fc1f0af1a#c057a6e78827d762e1827c8d57cb687fc1f0af1a"
+source = "git+https://github.com/cowprotocol/ethcontract-rs?rev=8e112a88988040cde6110379ee6d1be768a13244#8e112a88988040cde6110379ee6d1be768a13244"
 dependencies = [
  "anyhow",
  "ethcontract-common",
@@ -2792,7 +2792,7 @@ dependencies = [
 [[package]]
 name = "ethcontract-generate"
 version = "0.25.9"
-source = "git+https://github.com/cowprotocol/ethcontract-rs?rev=c057a6e78827d762e1827c8d57cb687fc1f0af1a#c057a6e78827d762e1827c8d57cb687fc1f0af1a"
+source = "git+https://github.com/cowprotocol/ethcontract-rs?rev=8e112a88988040cde6110379ee6d1be768a13244#8e112a88988040cde6110379ee6d1be768a13244"
 dependencies = [
  "Inflector",
  "anyhow",
@@ -2807,7 +2807,7 @@ dependencies = [
 [[package]]
 name = "ethcontract-mock"
 version = "0.25.9"
-source = "git+https://github.com/cowprotocol/ethcontract-rs?rev=c057a6e78827d762e1827c8d57cb687fc1f0af1a#c057a6e78827d762e1827c8d57cb687fc1f0af1a"
+source = "git+https://github.com/cowprotocol/ethcontract-rs?rev=8e112a88988040cde6110379ee6d1be768a13244#8e112a88988040cde6110379ee6d1be768a13244"
 dependencies = [
  "ethcontract",
  "hex",
@@ -2849,6 +2849,7 @@ dependencies = [
  "primitive-types",
  "prometheus",
  "prometheus-metric-storage",
+ "rand 0.8.5",
  "reqwest 0.11.27",
  "scopeguard",
  "serde",
@@ -4604,6 +4605,7 @@ dependencies = [
  "contracts",
  "ethcontract",
  "ethrpc",
+ "moka",
  "thiserror 1.0.61",
  "tokio",
  "tracing",
