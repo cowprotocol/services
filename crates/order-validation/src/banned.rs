@@ -2,14 +2,12 @@ use {
     contracts::alloy::ChainalysisOracle,
     ethcontract::{H160, futures::future::join_all},
     ethrpc::alloy::conversions::IntoAlloy,
-    lru::LruCache,
+    moka::sync::Cache,
     std::{
         collections::HashSet,
-        num::NonZeroUsize,
         sync::Arc,
         time::{Duration, Instant},
     },
-    tokio::sync::Mutex,
 };
 
 /// A list of banned users and an optional registry that can be checked onchain.
@@ -26,14 +24,14 @@ struct UserMetadata {
 
 struct Onchain {
     contract: ChainalysisOracle::Instance,
-    cache: Mutex<LruCache<H160, UserMetadata>>,
+    cache: Cache<H160, UserMetadata>,
 }
 
 impl Onchain {
     pub fn new(contract: ChainalysisOracle::Instance, cache_max_size: usize) -> Arc<Self> {
         let onchain = Arc::new(Self {
             contract,
-            cache: Mutex::new(LruCache::new(NonZeroUsize::new(cache_max_size).unwrap())),
+            cache: Cache::builder().max_capacity(cache_max_size as u64).build(),
         });
 
         onchain.clone().spawn_maintenance_task();
@@ -56,8 +54,8 @@ impl Onchain {
 
                 let expired_data: Vec<_> = {
                     let now = Instant::now();
-                    let cache = detector.cache.lock().await;
-                    cache
+                    detector
+                        .cache
                         .iter()
                         .filter_map(|(address, metadata)| {
                             let expired = now
@@ -65,7 +63,7 @@ impl Onchain {
                                 .unwrap_or_default()
                                 >= cache_expiry - maintenance_timeout;
 
-                            expired.then_some((*address, metadata.clone()))
+                            expired.then_some((address, metadata))
                         })
                         .collect()
                 };
@@ -73,9 +71,9 @@ impl Onchain {
                 let results = join_all(expired_data.into_iter().map(|(address, metadata)| {
                     let detector = detector.clone();
                     async move {
-                        match detector.fetch(address).await {
+                        match detector.fetch(*address).await {
                             Ok(result) => Some((
-                                address,
+                                *address,
                                 UserMetadata {
                                     is_banned: result,
                                     ..metadata
@@ -83,7 +81,7 @@ impl Onchain {
                             )),
                             Err(err) => {
                                 tracing::warn!(
-                                    ?address,
+                                    address = ?*address,
                                     ?err,
                                     "unable to determine banned status in the background task"
                                 );
@@ -96,7 +94,7 @@ impl Onchain {
                 .into_iter()
                 .flatten();
 
-                detector.insert_many_into_cache(results).await;
+                detector.insert_many_into_cache(results);
 
                 let remaining_sleep = maintenance_timeout
                     .checked_sub(start.elapsed())
@@ -106,11 +104,10 @@ impl Onchain {
         });
     }
 
-    async fn insert_many_into_cache(&self, addresses: impl Iterator<Item = (H160, UserMetadata)>) {
-        let mut cache = self.cache.lock().await;
+    fn insert_many_into_cache(&self, addresses: impl Iterator<Item = (H160, UserMetadata)>) {
         let now = Instant::now();
         for (address, metadata) in addresses {
-            cache.put(
+            self.cache.insert(
                 address,
                 UserMetadata {
                     last_updated: now,
@@ -174,18 +171,18 @@ impl Users {
             return banned;
         };
         let need_lookup: Vec<_> = {
-            // Scope here to release the lock before the async lookups
-            let mut cache = onchain.cache.lock().await;
-            need_lookup
-                .into_iter()
-                .filter(|address| match cache.get(address) {
+            let mut filtered = Vec::new();
+            for address in need_lookup {
+                match onchain.cache.get(&address) {
                     Some(metadata) => {
-                        metadata.is_banned.then(|| banned.insert(*address));
-                        false
+                        metadata.is_banned.then(|| banned.insert(address));
                     }
-                    _ => true,
-                })
-                .collect()
+                    None => {
+                        filtered.push(address);
+                    }
+                }
+            }
+            filtered
         };
 
         let to_cache = join_all(
@@ -195,12 +192,11 @@ impl Users {
         )
         .await;
 
-        let mut cache = onchain.cache.lock().await;
         let now = Instant::now();
         for (address, result) in to_cache {
             match result {
                 Ok(is_banned) => {
-                    cache.put(
+                    onchain.cache.insert(
                         address,
                         UserMetadata {
                             is_banned,
