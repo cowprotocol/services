@@ -65,6 +65,7 @@ pub struct Config {
     pub max_run_loop_delay: Duration,
     pub max_winners_per_auction: NonZeroUsize,
     pub max_solutions_per_solver: NonZeroUsize,
+    pub enable_leader_lock: bool,
 }
 
 pub struct RunLoop {
@@ -130,20 +131,30 @@ impl RunLoop {
         let mut last_block = None;
 
         let self_arc = Arc::new(self);
-        let mut leader = self_arc
-            .persistence
-            .leader("autopilot_startup".to_string())
-            .await;
-
+        let mut leader = if self_arc.config.enable_leader_lock {
+            Some(
+                self_arc
+                    .persistence
+                    .leader("autopilot_startup".to_string())
+                    .await,
+            )
+        } else {
+            None
+        };
         let mut was_leader = false;
 
         while !control.should_shutdown() {
-            let is_leader = leader.try_acquire().await.unwrap_or_else(|err| {
-                tracing::warn!(?err, "failed to become leader");
-                false
-            });
+            let is_leader = if let Some(ref mut leader) = leader {
+                leader.try_acquire().await.unwrap_or_else(|err| {
+                    tracing::error!(?err, "failed to become leader");
+                    Metrics::leader_lock_error();
+                    false
+                })
+            } else {
+                true
+            };
 
-            if is_leader && !was_leader {
+            if leader.is_some() && is_leader && !was_leader {
                 tracing::info!("Stepped up as a leader");
                 Metrics::leader_step_up();
             }
@@ -172,9 +183,11 @@ impl RunLoop {
             }
         }
 
-        tracing::info!("Shutdown received, stepping down as the leader");
-        leader.release().await;
-        Metrics::leader_step_down();
+        if let Some(mut leader) = leader {
+            tracing::info!("Shutdown received, stepping down as the leader");
+            leader.release().await;
+            Metrics::leader_step_down();
+        }
     }
 
     async fn update_caches(&self, prev_block: &mut Option<H256>, is_leader: bool) -> BlockInfo {
@@ -994,6 +1007,9 @@ struct Metrics {
     /// 1 - is currently autopilot leader
     /// 0 - is currently autopilot follower
     is_leader: prometheus::IntGauge,
+
+    /// Trackes the count of errors acquiring leader lock (should never happen)
+    leader_lock_error: prometheus::IntCounter,
 }
 
 impl Metrics {
@@ -1101,6 +1117,10 @@ impl Metrics {
 
     fn leader_step_down() {
         Self::get().is_leader.set(0)
+    }
+
+    fn leader_lock_error() {
+        Self::get().leader_lock_error.inc()
     }
 }
 

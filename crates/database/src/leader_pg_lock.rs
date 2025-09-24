@@ -10,14 +10,20 @@ struct PgLockGuard {
 
 impl PgLockGuard {
     async fn ping(&mut self) -> bool {
-        sqlx::query("SELECT 1")
+        const QUERY: &str = r#"SELECT 1"#;
+
+        sqlx::query(QUERY)
             .execute(&mut *self.conn)
             .await
             .is_ok()
     }
 
     async fn unlock(mut self) {
-        let _ = sqlx::query("SELECT pg_advisory_unlock(hashtextextended($1, 0))")
+        const QUERY: &str = r#"
+SELECT pg_advisory_unlock(hashtextextended($1, 0));
+        "#;
+
+        let _ = sqlx::query(QUERY)
             .bind(self.key)
             .execute(&mut *self.conn)
             .await
@@ -48,6 +54,10 @@ impl LeaderLock {
 
     /// Tries to acquire the leader lock and handles the liveness status.
     pub async fn try_acquire(&mut self) -> Result<bool, sqlx::Error> {
+        const QUERY: &str = r#"
+SELECT pg_try_advisory_lock(hashtextextended($1, 0));
+        "#;
+
         // if we think we're leader, verify the session is alive
         if let Some(lock) = self.lock_guard.as_mut()
             && !lock.ping().await
@@ -61,7 +71,7 @@ impl LeaderLock {
             self.last_try = Instant::now();
             let mut conn = self.pool.acquire().await?;
             let got_lock: bool =
-                sqlx::query_scalar("SELECT pg_try_advisory_lock(hashtextextended($1, 0))")
+                sqlx::query_scalar(QUERY)
                     .bind(&self.key)
                     .fetch_one(&mut *conn)
                     .await?;

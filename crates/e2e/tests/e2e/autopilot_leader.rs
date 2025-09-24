@@ -91,7 +91,8 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
             hex::encode(solver1.address())),
         "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
         "--gas-estimators=http://localhost:11088/gasprice".to_string(),
-        "--metrics-address=0.0.0.0:9590".to_string()
+        "--metrics-address=0.0.0.0:9590".to_string(),
+        "--enable-leader-lock=true".to_string(),
     ], control).await;
 
     // Configure autopilot-backup only with test_solver2
@@ -100,6 +101,7 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
             hex::encode(solver2.address())),
         "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver2".to_string(),
         "--gas-estimators=http://localhost:11088/gasprice".to_string(),
+        "--enable-leader-lock=true".to_string(),
     ]).await;
 
     services
