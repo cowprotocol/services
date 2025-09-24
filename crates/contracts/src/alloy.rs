@@ -442,10 +442,10 @@ crate::bindings!(IUniswapLikeRouter);
 crate::bindings!(IUniswapLikePair);
 
 pub mod support {
+    // Support contracts used for trade and token simulations.
     crate::bindings!(AnyoneAuthenticator);
     crate::bindings!(Solver);
     crate::bindings!(Spardose);
-    // Support contracts used for trade and token simulations.
     crate::bindings!(Trader);
 }
 
