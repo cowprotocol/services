@@ -6,16 +6,15 @@ use {
         http_client::HttpClientFactory,
     },
     alloy::{
-        contract::CallBuilder,
         primitives::TxKind,
-        rpc::types::state::StateOverride as AlloyStateOverride,
+        rpc::types::{TransactionRequest, state::StateOverride as AlloyStateOverride},
     },
     anyhow::{Result, ensure},
     bytes_hex::BytesHex,
     clap::Parser,
     contracts::errors::EthcontractErrorType,
     ethcontract::{errors::ExecutionError, state_overrides::StateOverride},
-    ethrpc::{AlloyProvider, alloy::conversions::IntoLegacy},
+    ethrpc::alloy::conversions::IntoLegacy,
     prometheus::IntGaugeVec,
     reqwest::{
         Url,
@@ -387,12 +386,10 @@ impl TenderlyCodeSimulator {
 
     fn prepare_request(
         &self,
-        call: CallBuilder<AlloyProvider, ()>,
+        tx: TransactionRequest,
         overrides: AlloyStateOverride,
         block: Option<u64>,
     ) -> Result<SimulationRequest> {
-        let tx = call.into_transaction_request();
-
         Ok(SimulationRequest {
             block_number: block,
             // By default, tenderly simulates on the top of the specified block, whereas regular
@@ -431,14 +428,14 @@ impl TenderlyCodeSimulator {
 
     pub fn log_simulation_command(
         &self,
-        call: CallBuilder<AlloyProvider, ()>,
+        tx: TransactionRequest,
         overrides: AlloyStateOverride,
         block: Option<u64>,
     ) -> Result<()> {
         let request = SimulationRequest {
             save: Some(true),
             save_if_fails: Some(true),
-            ..self.prepare_request(call, overrides, block)?
+            ..self.prepare_request(tx, overrides, block)?
         };
         self.tenderly.log(request)
     }

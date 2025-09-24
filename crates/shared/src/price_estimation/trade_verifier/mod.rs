@@ -17,7 +17,7 @@ use {
         },
     },
     ::alloy::sol_types::SolCall,
-    alloy::{contract::CallBuilder, primitives::Address},
+    alloy::primitives::Address,
     anyhow::{Context, Result, anyhow},
     bigdecimal::BigDecimal,
     contracts::{
@@ -176,32 +176,34 @@ impl TradeVerifier {
             )
             .tx;
 
-        let swap_simulation = Solver::Solver::swapCall {
-            settlementContract: self.settlement.address().into_alloy(),
-            tokens: tokens.iter().cloned().map(IntoAlloy::into_alloy).collect(),
-            receiver: verification.receiver.into_alloy(),
-            settlementCall: alloy::primitives::Bytes::from(settlement.data.unwrap().0),
-        };
-
         let block = *self.block_stream.borrow();
 
-        let call = CallBuilder::new_raw(self.web3.alloy.clone(), swap_simulation.abi_encode().into())
+        let solver = Solver::Instance::new(solver_address.into_alloy(), self.web3.alloy.clone());
+        let swap_simulation = solver.swap(
+            self.settlement.address().into_alloy(),
+            tokens.iter().cloned().map(IntoAlloy::into_alloy).collect(),
+            verification.receiver.into_alloy(),
+            alloy::primitives::Bytes::from(settlement.data.unwrap().0),
+        )
             // Initiate tx as solver so gas doesn't get deducted from user's ETH.
-                .from(solver_address.into_alloy())
-                .to(solver_address.into_alloy())
-                .gas(Self::DEFAULT_GAS)
-                .gas_price(u128::try_from(block.gas_price).map_err(|err| anyhow!(err)).context("converting gas price to u128")?)
-                .state(overrides.clone());
+        .from(solver_address.into_alloy())
+        .to(solver_address.into_alloy())
+        .gas(Self::DEFAULT_GAS)
+        .gas_price(u128::try_from(block.gas_price).map_err(|err| anyhow!(err)).context("converting gas price to u128")?);
 
         if let Some(tenderly) = &self.simulator
-            && let Err(err) =
-                tenderly.log_simulation_command(call.clone(), overrides, Some(block.number))
+            && let Err(err) = tenderly.log_simulation_command(
+                swap_simulation.clone().into_transaction_request(),
+                overrides.clone(),
+                Some(block.number),
+            )
         {
             tracing::debug!(?err, "could not log tenderly simulation command");
         }
 
-        let output = call
+        let output = swap_simulation
             .call()
+            .overrides(overrides)
             .await
             .context("failed to simulate quote")
             .map_err(Error::SimulationFailed);
@@ -237,9 +239,13 @@ impl TradeVerifier {
             }
         };
 
-        let mut summary = SettleOutput::decode(&output?, query.kind, &tokens)
-            .context("could not decode simulation output")
-            .map_err(Error::SimulationFailed)?;
+        let mut summary = SettleOutput::from_swap(
+            output
+                .context("simulation failed")
+                .map_err(Error::SimulationFailed)?,
+            query.kind,
+            &tokens,
+        )?;
 
         {
             // Quote accuracy gets determined by how many tokens had to be paid out of the
@@ -749,16 +755,14 @@ struct SettleOutput {
 }
 
 impl SettleOutput {
-    fn decode(output: &[u8], kind: OrderKind, tokens_vec: &[H160]) -> Result<Self> {
-        use Solver::Solver::{swapCall, swapReturn};
-        // NOTE(jmg-duarte): The validation is (afaik) a typecheck over the result, I've
-        // defaulted to validate the data, but we may be able to skip it given we have
-        // some control over the nodes we're using
-        let swapReturn {
+    fn from_swap(
+        Solver::Solver::swapReturn {
             gasUsed,
             queriedBalances,
-        } = swapCall::abi_decode_returns_validate(output).context("decoding swap return")?;
-
+        }: Solver::Solver::swapReturn,
+        kind: OrderKind,
+        tokens_vec: &[H160],
+    ) -> Result<Self> {
         // The balances are stored in the following order:
         // [...tokens_before, user_balance_before, user_balance_after, ...tokens_after]
         let mut i = 0;
