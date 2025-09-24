@@ -445,6 +445,8 @@ pub mod support {
     crate::bindings!(AnyoneAuthenticator);
     crate::bindings!(Solver);
     crate::bindings!(Spardose);
+    // Support contracts used for trade and token simulations.
+    crate::bindings!(Trader);
 }
 
 pub use alloy::providers::DynProvider as Provider;

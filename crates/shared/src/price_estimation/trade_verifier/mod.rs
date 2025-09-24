@@ -23,10 +23,8 @@ use {
     contracts::{
         GPv2Settlement,
         WETH9,
-        alloy::support::{AnyoneAuthenticator, Solver, Spardose},
-        deployed_bytecode,
+        alloy::support::{AnyoneAuthenticator, Solver, Spardose, Trader},
         dummy_contract,
-        support::Trader,
     },
     ethcontract::{Bytes, H160, U256, state_overrides::StateOverride},
     ethrpc::{
@@ -345,7 +343,7 @@ impl TradeVerifier {
         overrides.insert(
             verification.from,
             StateOverride {
-                code: Some(deployed_bytecode!(Trader)),
+                code: Some(Trader::Trader::DEPLOYED_BYTECODE.clone().into_legacy()),
                 ..Default::default()
             },
         );
