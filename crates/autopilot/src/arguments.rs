@@ -254,6 +254,12 @@ pub struct Arguments {
     /// order filtering (e.g. based on balances or EIP-1271 signature validity).
     #[clap(long, env, default_value = "false", action = clap::ArgAction::Set)]
     pub disable_order_filtering: bool,
+
+    /// Enables the usage of leader lock in the database
+    /// The second instance of autopilot will act as a follower
+    /// and not cut any auctions.
+    #[clap(long, env, default_value = "false", action = clap::ArgAction::Set)]
+    pub enable_leader_lock: bool,
 }
 
 #[derive(Debug, clap::Parser)]
@@ -384,6 +390,7 @@ impl std::fmt::Display for Arguments {
             max_solutions_per_solver,
             db_based_solver_participation_guard,
             disable_order_filtering,
+            enable_leader_lock,
         } = self;
 
         write!(f, "{shared}")?;
@@ -459,6 +466,7 @@ impl std::fmt::Display for Arguments {
             "db_based_solver_participation_guard: {db_based_solver_participation_guard:?}"
         )?;
         writeln!(f, "disable_order_filtering: {disable_order_filtering}")?;
+        writeln!(f, "enable_leader_lock: {enable_leader_lock}")?;
         Ok(())
     }
 }

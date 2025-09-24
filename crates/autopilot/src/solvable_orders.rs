@@ -162,7 +162,7 @@ impl SolvableOrdersCache {
     /// Usually this method is called from update_task. If it isn't, which is
     /// the case in unit tests, then concurrent calls might overwrite each
     /// other's results.
-    pub async fn update(&self, block: u64) -> Result<()> {
+    pub async fn update(&self, block: u64, store_events: bool) -> Result<()> {
         let start = Instant::now();
 
         let db_solvable_orders = self.get_solvable_orders().await?;
@@ -247,18 +247,20 @@ impl SolvableOrdersCache {
         let removed = counter.record(&orders);
         filtered_order_events.extend(removed);
 
-        // spawning a background task since `order_events` table insert operation takes
-        // a while and the result is ignored.
-        self.persistence.store_order_events(
-            invalid_order_uids.iter().map(|id| domain::OrderUid(id.0)),
-            OrderEventLabel::Invalid,
-        );
-        self.persistence.store_order_events(
-            filtered_order_events
-                .iter()
-                .map(|id| domain::OrderUid(id.0)),
-            OrderEventLabel::Filtered,
-        );
+        if store_events {
+            // spawning a background task since `order_events` table insert operation takes
+            // a while and the result is ignored.
+            self.persistence.store_order_events(
+                invalid_order_uids.iter().map(|id| domain::OrderUid(id.0)),
+                OrderEventLabel::Invalid,
+            );
+            self.persistence.store_order_events(
+                filtered_order_events
+                    .iter()
+                    .map(|id| domain::OrderUid(id.0)),
+                OrderEventLabel::Filtered,
+            );
+        }
 
         let surplus_capturing_jit_order_owners = cow_amms
             .iter()

@@ -4,7 +4,11 @@ use {
         collections::HashMap,
         convert::Infallible,
         net::SocketAddr,
-        sync::{Arc, OnceLock},
+        sync::{
+            Arc,
+            OnceLock,
+            atomic::{AtomicBool, Ordering},
+        },
     },
     tokio::task::{self, JoinHandle},
     warp::{Filter, Rejection, Reply},
@@ -76,8 +80,14 @@ pub trait LivenessChecking: Send + Sync {
     async fn is_alive(&self) -> bool;
 }
 
-pub fn serve_metrics(liveness: Arc<dyn LivenessChecking>, address: SocketAddr) -> JoinHandle<()> {
-    let filter = handle_metrics().or(handle_liveness(liveness));
+pub fn serve_metrics(
+    liveness: Arc<dyn LivenessChecking>,
+    address: SocketAddr,
+    readiness: Arc<Option<AtomicBool>>,
+) -> JoinHandle<()> {
+    let filter = handle_metrics()
+        .or(handle_liveness(liveness))
+        .or(handle_readiness(readiness));
     tracing::info!(%address, "serving metrics");
     task::spawn(warp::serve(filter).bind(address))
 }
@@ -95,6 +105,29 @@ fn handle_liveness(
         let liveness_checker = liveness_checker.clone();
         async move {
             let status = if liveness_checker.is_alive().await {
+                warp::http::StatusCode::OK
+            } else {
+                warp::http::StatusCode::SERVICE_UNAVAILABLE
+            };
+            Result::<_, Infallible>::Ok(warp::reply::with_status(warp::reply(), status))
+        }
+    })
+}
+
+fn handle_readiness(
+    readiness: Arc<Option<AtomicBool>>,
+) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
+    warp::path("ready").and_then(move || {
+        let readiness = readiness.clone();
+        async move {
+            let Some(ref readiness) = *readiness else {
+                // if readiness is not configured we're ready right away
+                return Result::<_, Infallible>::Ok(warp::reply::with_status(
+                    warp::reply(),
+                    warp::http::StatusCode::OK,
+                ));
+            };
+            let status = if readiness.load(Ordering::Acquire) {
                 warp::http::StatusCode::OK
             } else {
                 warp::http::StatusCode::SERVICE_UNAVAILABLE
