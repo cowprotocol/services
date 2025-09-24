@@ -113,12 +113,14 @@ impl Validator {
             .call_with_state_overrides(&overrides)
             .await;
 
-        let response_bytes = result.inspect_err(|e| tracing::debug!(
-                    ?simulation,
-                    ?check,
-                    ?overrides,
-                    "signature verification failed"
-                ))?;
+        let response_bytes = result.inspect_err(|e| {
+            tracing::debug!(
+                ?simulation,
+                ?check,
+                ?overrides,
+                "signature verification failed"
+            )
+        })?;
 
         let gas_used = <sol_data::Uint<256>>::abi_decode(&response_bytes.0)
             .with_context(|| {
