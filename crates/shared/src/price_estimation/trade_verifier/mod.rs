@@ -21,9 +21,10 @@ use {
     contracts::{
         GPv2Settlement,
         WETH9,
+        alloy::support::AnyoneAuthenticator,
         deployed_bytecode,
         dummy_contract,
-        support::{AnyoneAuthenticator, Solver, Spardose, Trader},
+        support::{Solver, Spardose, Trader},
     },
     ethcontract::{Bytes, H160, U256, state_overrides::StateOverride, tokens::Tokenize},
     ethrpc::{Web3, block_stream::CurrentBlockWatcher},
@@ -388,7 +389,9 @@ impl TradeVerifier {
             overrides.insert(
                 authenticator,
                 StateOverride {
-                    code: Some(deployed_bytecode!(AnyoneAuthenticator)),
+                    code: Some(web3::types::Bytes::from(
+                        AnyoneAuthenticator::AnyoneAuthenticator::DEPLOYED_BYTECODE.to_vec(),
+                    )),
                     ..Default::default()
                 },
             );

@@ -438,6 +438,12 @@ crate::bindings!(
         // Not available on Lens
     }
 );
+crate::bindings!(IUniswapLikeRouter);
+crate::bindings!(IUniswapLikePair);
+
+pub mod support {
+    crate::bindings!(AnyoneAuthenticator);
+}
 
 pub use alloy::providers::DynProvider as Provider;
 

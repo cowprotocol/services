@@ -239,18 +239,23 @@ components:
         Contains information to hint at how to make use of flashloans to settle the associated order.
       type: object
       required:
-        - lender
-        - borrower
+        - liquidityProvider
+        - protocolAdapter
+        - receiver
         - token
         - amount
       properties:
-        lender:
+        liquidityProvider:
           description: Which contract to request the flashloan from.
           allOf:
             - $ref: "#/components/schemas/Address"
-        borrower:
+        protocolAdapter:
+          description: Which contract adapts the liquidity provider to the cow protocol interface.
+          allOf:
+            - $ref: "#/components/schemas/Address"
+        receiver:
           description: |
-            Who should receive the borrowed tokens. If this is not set the order owner will get the tokens.
+            Address that should receive the borrowed tokens.
           allOf:
             - $ref: "#/components/schemas/Address"
         token:
@@ -266,14 +271,17 @@ components:
         Contains information about a flashloan for the solver's solution.
       type: object
       required:
-        - lender
-        - borrower
+        - liquidityProvider
+        - protocolAdapter
+        - receiver
         - token
         - amount
       properties:
-        lender:
+        liquidityProvider:
           $ref: "#/components/schemas/Address"
-        borrower:
+        protocolAdapter:
+          $ref: "#/components/schemas/Address"
+        receiver:
           $ref: "#/components/schemas/Address"
         token:
           $ref: "#/components/schemas/Token"
