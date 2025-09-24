@@ -15,6 +15,7 @@ use {
         GasPriceEstimating,
         nativegasestimator::{NativeGasEstimator, Params},
     },
+    shared::gas_price_estimation::alloy::AlloyGasPriceEstimator,
     std::{sync::Arc, time::Duration},
 };
 
@@ -54,6 +55,7 @@ impl GasPriceEstimator {
                 .map_err(Error::GasPrice)?,
             ),
             GasEstimatorType::Web3 => Arc::new(web3.legacy.clone()),
+            GasEstimatorType::Alloy => Arc::new(AlloyGasPriceEstimator::new(web3.alloy.clone())),
         };
         let additional_tip = mempools
             .iter()

@@ -69,6 +69,9 @@ pub fn new(
                 },
                 until,
             },
+            notify::Kind::DeserializationError(reason) => {
+                solvers_dto::notification::Kind::DeserializationError { reason }
+            }
         },
     }
 }

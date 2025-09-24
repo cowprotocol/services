@@ -1,5 +1,5 @@
 use {
-    crate::util::Bytes, anyhow::Context, app_data::AppDataDocument, derive_more::From, ethcontract::H160, futures::FutureExt, moka::future::Cache, reqwest::StatusCode, shared::request_sharing::BoxRequestSharing, std::sync::Arc, thiserror::Error, url::Url
+    crate::util::Bytes, anyhow::Context, app_data::AppDataDocument, derive_more::From, ethcontract::H160, futures::FutureExt, moka::future::Cache, reqwest::StatusCode, shared::request_sharing::BoxRequestSharing, std::{collections::HashMap, sync::Arc}, thiserror::Error, url::Url
 };
 
 /// A struct for retrieving order's full app-data by its hash from a remote
@@ -37,8 +37,17 @@ impl AppDataRetriever {
         }))
     }
 
-    /// Retrieves the full app-data for the given `app_data` hash, if exists.
-    pub async fn get(
+    /// Returns all values that are currently cached.
+    pub fn get_cached(&self) -> HashMap<Arc<AppDataHash>, Arc<app_data::ValidatedAppData>> {
+        self.0
+            .cache
+            .iter()
+            .flat_map(|(key, value)| Some((key, value?)))
+            .collect()
+    }
+
+    /// Retrieves the full app-data for the given `app_data` hash, if it exists.
+    pub async fn get_cached_or_fetch(
         &self,
         app_data: &AppDataHash,
     ) -> Result<Option<Arc<app_data::ValidatedAppData>>, FetchingError> {
