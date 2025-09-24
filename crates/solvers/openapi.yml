@@ -255,7 +255,7 @@ components:
             - $ref: "#/components/schemas/Address"
         receiver:
           description: |
-            Addres that should receive the borrowed tokens.
+            Address that should receive the borrowed tokens.
           allOf:
             - $ref: "#/components/schemas/Address"
         token:
