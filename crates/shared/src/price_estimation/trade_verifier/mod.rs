@@ -17,10 +17,7 @@ use {
         },
     },
     ::alloy::sol_types::SolCall,
-    alloy::{
-        contract::CallBuilder,
-        primitives::{Address, address},
-    },
+    alloy::primitives::{Address, address},
     anyhow::{Context, Result, anyhow},
     bigdecimal::BigDecimal,
     contracts::{
