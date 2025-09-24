@@ -82,10 +82,6 @@ pub struct Arguments {
     #[clap(long, env, use_value_delimiter = true)]
     pub unsupported_tokens: Vec<H160>,
 
-    /// The number of pairs that are automatically updated in the pool cache.
-    #[clap(long, env, default_value = "200")]
-    pub pool_cache_lru_size: NonZeroUsize,
-
     /// Which estimators to use to estimate token prices in terms of the chain's
     /// native token. Estimators with the same name need to also be specified as
     /// built-in, legacy or external price estimators (lookup happens in this
@@ -253,6 +249,11 @@ pub struct Arguments {
     /// Configuration for the solver participation guard.
     #[clap(flatten)]
     pub db_based_solver_participation_guard: DbBasedSolverParticipationGuardConfig,
+
+    /// Configures whether the autopilot is supposed to do any non-trivial
+    /// order filtering (e.g. based on balances or EIP-1271 signature validity).
+    #[clap(long, env, default_value = "false", action = clap::ArgAction::Set)]
+    pub disable_order_filtering: bool,
 }
 
 #[derive(Debug, clap::Parser)]
@@ -353,7 +354,6 @@ impl std::fmt::Display for Arguments {
             skip_event_sync,
             allowed_tokens,
             unsupported_tokens,
-            pool_cache_lru_size,
             native_price_estimators,
             min_order_validity_period,
             banned_users,
@@ -383,6 +383,7 @@ impl std::fmt::Display for Arguments {
             archive_node_url,
             max_solutions_per_solver,
             db_based_solver_participation_guard,
+            disable_order_filtering,
         } = self;
 
         write!(f, "{shared}")?;
@@ -399,7 +400,6 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "skip_event_sync: {skip_event_sync}")?;
         writeln!(f, "allowed_tokens: {allowed_tokens:?}")?;
         writeln!(f, "unsupported_tokens: {unsupported_tokens:?}")?;
-        writeln!(f, "pool_cache_lru_size: {pool_cache_lru_size}")?;
         writeln!(f, "native_price_estimators: {native_price_estimators}")?;
         writeln!(
             f,
@@ -458,6 +458,7 @@ impl std::fmt::Display for Arguments {
             f,
             "db_based_solver_participation_guard: {db_based_solver_participation_guard:?}"
         )?;
+        writeln!(f, "disable_order_filtering: {disable_order_filtering}")?;
         Ok(())
     }
 }

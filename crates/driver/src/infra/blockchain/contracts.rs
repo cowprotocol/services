@@ -1,13 +1,8 @@
 use {
-    crate::{
-        boundary,
-        domain::eth,
-        infra::{blockchain::Ethereum, config},
-    },
+    crate::{boundary, domain::eth, infra::blockchain::Ethereum},
     chain::Chain,
     contracts::FlashLoanRouter,
     ethrpc::{Web3, block_stream::CurrentBlockWatcher},
-    std::collections::HashMap,
     thiserror::Error,
 };
 
@@ -23,23 +18,12 @@ pub struct Contracts {
     settlement_domain_separator: eth::DomainSeparator,
     cow_amm_registry: cow_amm::Registry,
 
-    /// Each lender potentially has different solver wrapper.
-    flashloan_wrapper_by_lender: HashMap<eth::ContractAddress, FlashloanWrapperData>,
     /// Single router that supports multiple flashloans in the
     /// same settlement.
     // TODO: make this non-optional when contracts are deployed
     // everywhere
     flashloan_router: Option<FlashLoanRouter>,
-    /// Default lender to use for flashloans, if flashloan doesn't have a lender
-    /// specified.
-    flashloan_default_lender: Option<eth::ContractAddress>,
     balance_helper: contracts::support::Balances,
-}
-
-#[derive(Debug, Clone)]
-pub struct FlashloanWrapperData {
-    pub helper_contract: contracts::IFlashLoanSolverWrapper,
-    pub fee_in_bps: eth::U256,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -49,9 +33,7 @@ pub struct Addresses {
     pub weth: Option<eth::ContractAddress>,
     pub balances: Option<eth::ContractAddress>,
     pub cow_amms: Vec<CowAmmConfig>,
-    pub flashloan_wrappers: Vec<config::file::FlashloanWrapperConfig>,
     pub flashloan_router: Option<eth::ContractAddress>,
-    pub flashloan_default_lender: Option<eth::ContractAddress>,
 }
 
 impl Contracts {
@@ -124,25 +106,6 @@ impl Contracts {
         }
         cow_amm_registry.spawn_maintenance_task(block_stream);
 
-        let flashloan_wrapper_by_lender = addresses
-            .flashloan_wrappers
-            .iter()
-            .map(|wrapper_config| {
-                let helper_contract = contracts::IFlashLoanSolverWrapper::at(
-                    web3,
-                    address_for(
-                        contracts::IFlashLoanSolverWrapper::raw_contract(),
-                        Some(wrapper_config.helper_contract.into()),
-                    ),
-                );
-                let wrapper_data = FlashloanWrapperData {
-                    helper_contract,
-                    fee_in_bps: wrapper_config.fee_in_bps,
-                };
-                (wrapper_config.lender.into(), wrapper_data)
-            })
-            .collect();
-
         // TODO: use `address_for()` once contracts are deployed
         let flashloan_router = addresses
             .flashloan_router
@@ -162,9 +125,7 @@ impl Contracts {
             weth,
             settlement_domain_separator,
             cow_amm_registry,
-            flashloan_wrapper_by_lender,
             flashloan_router,
-            flashloan_default_lender: addresses.flashloan_default_lender,
             balance_helper,
         })
     }
@@ -199,17 +160,6 @@ impl Contracts {
 
     pub fn cow_amm_registry(&self) -> &cow_amm::Registry {
         &self.cow_amm_registry
-    }
-
-    pub fn get_flashloan_wrapper(
-        &self,
-        lender: &eth::ContractAddress,
-    ) -> Option<&FlashloanWrapperData> {
-        self.flashloan_wrapper_by_lender.get(lender)
-    }
-
-    pub fn flashloan_default_lender(&self) -> Option<eth::ContractAddress> {
-        self.flashloan_default_lender
     }
 
     pub fn flashloan_router(&self) -> Option<&contracts::FlashLoanRouter> {
