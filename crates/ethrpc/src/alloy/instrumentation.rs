@@ -9,6 +9,7 @@
 //! trait to conveniently create a new `Provider` with an additional
 //! [`LabelingLayer`].
 use {
+    crate::alloy::RpcClientRandomIdExt,
     alloy::{
         providers::{DynProvider, Provider, ProviderBuilder},
         rpc::{
@@ -160,7 +161,7 @@ impl ProviderLabelingExt for DynProvider {
         let is_local = self.client().is_local();
         let transport = self.client().transport().clone();
         let transport_with_label = LabelingLayer { label }.layer(transport);
-        let client = RpcClient::new(transport_with_label, is_local);
+        let client = RpcClient::with_random_id(transport_with_label, is_local);
         ProviderBuilder::new().connect_client(client).erased()
     }
 }
