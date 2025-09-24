@@ -83,7 +83,6 @@ pub mod support {
         Balances;
         Multicall;
         Signatures;
-        Spardose;
         Swapper;
         Trader;
     }

@@ -706,7 +706,6 @@ fn main() {
     generate_contract("CowAmmUniswapV2PriceOracle");
 
     // Support contracts used for trade and token simulations.
-    generate_contract("Spardose");
     generate_contract("Trader");
 
     // Support contracts used for various order simulations.

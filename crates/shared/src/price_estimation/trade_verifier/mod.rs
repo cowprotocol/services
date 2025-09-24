@@ -17,16 +17,16 @@ use {
         },
     },
     ::alloy::sol_types::SolCall,
-    alloy::primitives::Address,
+    alloy::primitives::{Address, address},
     anyhow::{Context, Result, anyhow},
     bigdecimal::BigDecimal,
     contracts::{
         GPv2Settlement,
         WETH9,
-        alloy::support::{AnyoneAuthenticator, Solver},
+        alloy::support::{AnyoneAuthenticator, Solver, Spardose},
         deployed_bytecode,
         dummy_contract,
-        support::{Spardose, Trader},
+        support::Trader,
     },
     ethcontract::{Bytes, H160, U256, state_overrides::StateOverride},
     ethrpc::{
@@ -81,7 +81,7 @@ pub struct TradeVerifier {
 
 impl TradeVerifier {
     const DEFAULT_GAS: u64 = 12_000_000;
-    const SPARDOSE: H160 = addr!("0000000000000000000000000000000000020000");
+    const SPARDOSE: Address = address!("0000000000000000000000000000000000020000");
     const TRADER_IMPL: H160 = addr!("0000000000000000000000000000000000010000");
 
     #[allow(clippy::too_many_arguments)]
@@ -309,7 +309,7 @@ impl TradeVerifier {
             .balance_overrides
             .state_override(BalanceOverrideRequest {
                 token: query.sell_token,
-                holder: Self::SPARDOSE,
+                holder: Self::SPARDOSE.into_legacy(),
                 amount: match query.kind {
                     OrderKind::Sell => query.in_amount.get(),
                     OrderKind::Buy => trade.out_amount(
@@ -372,9 +372,9 @@ impl TradeVerifier {
         // simulations (Solidity reverts on attempts to call addresses without
         // any code).
         overrides.insert(
-            Self::SPARDOSE,
+            Self::SPARDOSE.into_legacy(),
             StateOverride {
-                code: Some(deployed_bytecode!(Spardose)),
+                code: Some(Spardose::Spardose::DEPLOYED_BYTECODE.clone().into_legacy()),
                 ..Default::default()
             },
         );
@@ -537,7 +537,7 @@ fn encode_settlement(
             sellToken: query.sell_token.into_alloy(),
             sellAmount: sell_amount.into_alloy(),
             nativeToken: native_token.into_alloy(),
-            spardose: TradeVerifier::SPARDOSE.into_alloy(),
+            spardose: TradeVerifier::SPARDOSE,
         }
         .abi_encode();
         Interaction {
