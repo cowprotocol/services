@@ -163,6 +163,7 @@ impl RunLoop {
             let start_block = self_arc.update_caches(&mut last_block, is_leader).await;
             if !is_leader {
                 // only the leader is supposed to run the auctions
+                tokio::time::sleep(Duration::from_millis(200)).await;
                 continue;
             }
 

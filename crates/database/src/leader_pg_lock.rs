@@ -12,10 +12,7 @@ impl PgLockGuard {
     async fn ping(&mut self) -> bool {
         const QUERY: &str = r#"SELECT 1"#;
 
-        sqlx::query(QUERY)
-            .execute(&mut *self.conn)
-            .await
-            .is_ok()
+        sqlx::query(QUERY).execute(&mut *self.conn).await.is_ok()
     }
 
     async fn unlock(mut self) {
@@ -70,11 +67,10 @@ SELECT pg_try_advisory_lock(hashtextextended($1, 0));
         if self.lock_guard.is_none() && self.last_try.elapsed() >= self.try_every {
             self.last_try = Instant::now();
             let mut conn = self.pool.acquire().await?;
-            let got_lock: bool =
-                sqlx::query_scalar(QUERY)
-                    .bind(&self.key)
-                    .fetch_one(&mut *conn)
-                    .await?;
+            let got_lock: bool = sqlx::query_scalar(QUERY)
+                .bind(&self.key)
+                .fetch_one(&mut *conn)
+                .await?;
             if got_lock {
                 tracing::info!("leader lock acquired");
                 self.lock_guard = Some(PgLockGuard {
