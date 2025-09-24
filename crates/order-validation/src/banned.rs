@@ -28,10 +28,10 @@ struct Onchain {
 }
 
 impl Onchain {
-    pub fn new(contract: ChainalysisOracle::Instance, cache_max_size: usize) -> Arc<Self> {
+    pub fn new(contract: ChainalysisOracle::Instance, cache_max_size: u64) -> Arc<Self> {
         let onchain = Arc::new(Self {
             contract,
-            cache: Cache::builder().max_capacity(cache_max_size as u64).build(),
+            cache: Cache::builder().max_capacity(cache_max_size).build(),
         });
 
         onchain.clone().spawn_maintenance_task();
@@ -125,7 +125,7 @@ impl Users {
     pub fn new(
         contract: Option<ChainalysisOracle::Instance>,
         banned_users: Vec<H160>,
-        cache_max_size: usize,
+        cache_max_size: u64,
     ) -> Self {
         Self {
             list: HashSet::from_iter(banned_users),
