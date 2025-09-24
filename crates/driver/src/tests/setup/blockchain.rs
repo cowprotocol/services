@@ -46,7 +46,6 @@ pub struct Blockchain {
     pub settlement: contracts::GPv2Settlement,
     pub balances: contracts::support::Balances,
     pub signatures: contracts::support::Signatures,
-    pub flashloan_wrapper: contracts::ERC3156FlashLoanSolverWrapper,
     pub flashloan_router: contracts::FlashLoanRouter,
     pub ethflow: Option<ContractAddress>,
     pub domain_separator: boundary::DomainSeparator,
@@ -373,14 +372,6 @@ impl Blockchain {
         )
         .await
         .unwrap();
-        let flashloan_wrapper = wait_for(
-            &web3,
-            contracts::ERC3156FlashLoanSolverWrapper::builder(&web3, flashloan_router.address())
-                .from(main_trader_account.clone())
-                .deploy(),
-        )
-        .await
-        .unwrap();
 
         let mut trader_accounts = Vec::new();
         for config in config.solvers {
@@ -678,7 +669,6 @@ impl Blockchain {
             web3_url: node.url(),
             node,
             pairs,
-            flashloan_wrapper,
             flashloan_router,
         }
     }

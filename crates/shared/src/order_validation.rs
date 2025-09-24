@@ -399,7 +399,7 @@ impl OrderValidator {
                         balance_override: app_data.inner.protocol.flashloan.as_ref().map(|loan| {
                             BalanceOverrideRequest {
                                 token: loan.token,
-                                holder: loan.borrower.unwrap_or(owner),
+                                holder: loan.receiver,
                                 amount: loan.amount,
                             }
                         }),
@@ -592,7 +592,7 @@ impl OrderValidating for OrderValidator {
                         balance_override: app_data.inner.protocol.flashloan.as_ref().map(|loan| {
                             BalanceOverrideRequest {
                                 token: loan.token,
-                                holder: loan.borrower.unwrap_or(owner),
+                                holder: loan.receiver,
                                 amount: loan.amount,
                             }
                         }),
@@ -2046,8 +2046,9 @@ mod tests {
                 full: r#"{
                     "metadata": {
                         "flashloan": {
-                            "lender": "0x1111111111111111111111111111111111111111",
-                            "borrower": "0x2222222222222222222222222222222222222222",
+                            "liquidityProvider": "0x1111111111111111111111111111111111111111",
+                            "protocolAdapter": "0x2222222222222222222222222222222222222222",
+                            "receiver": "0x0000000000000000000000000000000000000000",
                             "token": "0x0100000000000000000000000000000000000000",
                             "amount": "150"
                         }
@@ -2083,8 +2084,9 @@ mod tests {
                 full: r#"{
                     "metadata": {
                         "flashloan": {
-                            "lender": "0x1111111111111111111111111111111111111111",
-                            "borrower": "0x2222222222222222222222222222222222222222",
+                            "liquidityProvider": "0x1111111111111111111111111111111111111111",
+                            "receiver": "0x2222222222222222222222222222222222222222",
+                            "protocolAdapter": "0x3333333333333333333333333333333333333333",
                             "token": "0x0100000000000000000000000000000000000000",
                             "amount": "50"
                         }
@@ -2119,8 +2121,9 @@ mod tests {
                 full: r#"{
                     "metadata": {
                         "flashloan": {
-                            "lender": "0x1111111111111111111111111111111111111111",
-                            "borrower": "0x2222222222222222222222222222222222222222",
+                            "liquidityProvider": "0x1111111111111111111111111111111111111111",
+                            "receiver": "0x2222222222222222222222222222222222222222",
+                            "protocolAdapter": "0x3333333333333333333333333333333333333333",
                             "token": "0x0300000000000000000000000000000000000000",
                             "amount": "150"
                         }
