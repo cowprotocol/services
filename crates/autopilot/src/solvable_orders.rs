@@ -193,12 +193,13 @@ impl SolvableOrdersCache {
             let orders = orders_with_balance(orders, &balances, self.settlement_contract);
             let removed = counter.checkpoint("insufficient_balance", &orders);
             invalid_order_uids.extend(removed);
+
+            let orders = filter_dust_orders(orders, &balances);
+            let removed = counter.checkpoint("dust_order", &orders);
+            filtered_order_events.extend(removed);
+
             orders
         };
-
-        let orders = filter_dust_orders(orders, &balances);
-        let removed = counter.checkpoint("dust_order", &orders);
-        filtered_order_events.extend(removed);
 
         let cow_amm_tokens = cow_amms
             .iter()
