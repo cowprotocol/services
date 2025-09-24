@@ -75,10 +75,10 @@ impl Validator {
         &self,
         check: SignatureCheck,
     ) -> Result<Simulation, SignatureValidationError> {
-        let overrides: StateOverrides = match check.balance_override {
+        let overrides: StateOverrides = match &check.balance_override {
             Some(overrides) => self
                 .balance_overrider
-                .state_override(overrides)
+                .state_override(overrides.clone())
                 .await
                 .into_iter()
                 .collect(),
@@ -93,25 +93,43 @@ impl Validator {
             (self.settlement.address(), self.vault_relayer),
             check.signer,
             Bytes(check.hash),
-            Bytes(check.signature),
+            Bytes(check.signature.clone()),
             check
                 .interactions
-                .into_iter()
-                .map(|i| (i.target, i.value, Bytes(i.call_data)))
+                .iter()
+                .map(|i| (i.target, i.value, Bytes(i.call_data.clone())))
                 .collect(),
         );
-        let response_bytes = self
+        let simulation = self
             .settlement
             .simulate_delegatecall(
                 self.signatures.address(),
                 Bytes(validate_call.tx.data.unwrap_or_default().0),
             )
-            .from(crate::SIMULATION_ACCOUNT.clone())
+            .from(crate::SIMULATION_ACCOUNT.clone());
+
+        let result = simulation
+            .clone()
             .call_with_state_overrides(&overrides)
-            .await?;
+            .await;
+
+        let response_bytes = result.inspect_err(|err| {
+            tracing::debug!(
+                ?simulation,
+                ?check,
+                ?overrides,
+                ?err,
+                "signature verification failed"
+            )
+        })?;
 
         let gas_used = <sol_data::Uint<256>>::abi_decode(&response_bytes.0)
-            .context("could not decode signature check result")?
+            .with_context(|| {
+                format!(
+                    "could not decode signature check result: {}",
+                    hex::encode(&response_bytes.0)
+                )
+            })?
             .into_legacy();
 
         Ok(Simulation { gas_used })
