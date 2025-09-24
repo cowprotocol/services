@@ -49,7 +49,7 @@ use {
         sync::Arc,
     },
     tracing::instrument,
-    web3::{ethabi::Token, types::CallRequest},
+    web3::types::CallRequest,
 };
 
 #[async_trait::async_trait]
