@@ -14,7 +14,6 @@ mod database;
 mod eth_integration;
 mod eth_safe;
 mod ethflow;
-mod flashloans;
 mod hooks;
 mod jit_orders;
 mod limit_orders;

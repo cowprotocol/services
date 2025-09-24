@@ -31,6 +31,7 @@ use {
     ethrpc::{Web3, block_stream::block_number_to_block_number_hash},
     futures::StreamExt,
     model::DomainSeparator,
+    num::ToPrimitive,
     observe::metrics::LivenessChecking,
     shared::{
         account_balances::{self, BalanceSimulator},
@@ -501,6 +502,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         infra::banned::Users::new(
             eth.contracts().chainalysis_oracle().clone(),
             args.banned_users,
+            args.banned_users_max_cache_size.get().to_u64().unwrap(),
         ),
         balance_fetcher.clone(),
         bad_token_detector.clone(),

@@ -378,30 +378,9 @@ struct ContractsConfig {
     #[serde(default)]
     cow_amms: Vec<CowAmmConfig>,
 
-    /// Flashloan wrapper-related configs.
-    #[serde(default)]
-    flashloan_wrappers: Vec<FlashloanWrapperConfig>,
-
     /// Flashloan router to support taking out multiple flashloans
     /// in the same settlement.
     flashloan_router: Option<eth::H160>,
-
-    /// Address of the default flashloan lender that should be used as lender,
-    /// for all flashloans that don't have a specific lender set.
-    flashloan_default_lender: Option<eth::H160>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct FlashloanWrapperConfig {
-    /// Flashloan lender smart contract address.
-    pub lender: eth::H160,
-    /// Flashloan helper contract address.
-    /// Currently Maker and Aave lenders are supported.
-    pub helper_contract: eth::H160,
-    /// Flashloan fee in bps.
-    #[serde(default)]
-    pub fee_in_bps: eth::U256,
 }
 
 #[derive(Debug, Clone, Deserialize)]

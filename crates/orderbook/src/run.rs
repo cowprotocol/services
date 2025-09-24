@@ -23,6 +23,7 @@ use {
     ethcontract::errors::DeployError,
     futures::{FutureExt, StreamExt},
     model::{DomainSeparator, order::BUY_ETH_ADDRESS},
+    num::ToPrimitive,
     observe::metrics::{DEFAULT_METRICS_PORT, serve_metrics},
     order_validation,
     shared::{
@@ -391,6 +392,7 @@ pub async fn run(args: Arguments) {
         Arc::new(order_validation::banned::Users::new(
             chainalysis_oracle,
             args.banned_users,
+            args.banned_users_max_cache_size.get().to_u64().unwrap(),
         )),
         validity_configuration,
         args.eip1271_skip_creation_validation,
