@@ -21,6 +21,7 @@ use {
         maintenance::Maintenance,
         run_loop::{self, RunLoop},
         shadow,
+        shutdown_controller::ShutdownController,
         solvable_orders::SolvableOrdersCache,
     },
     chain::Chain,
@@ -30,6 +31,7 @@ use {
     ethrpc::{Web3, block_stream::block_number_to_block_number_hash},
     futures::StreamExt,
     model::DomainSeparator,
+    num::ToPrimitive,
     observe::metrics::LivenessChecking,
     shared::{
         account_balances::{self, BalanceSimulator},
@@ -53,7 +55,7 @@ use {
         token_list::{AutoUpdatingTokenList, TokenListConfiguration},
     },
     std::{
-        sync::{Arc, RwLock},
+        sync::{Arc, RwLock, atomic::AtomicBool},
         time::{Duration, Instant},
     },
     tracing::{Instrument, info_span, instrument},
@@ -144,12 +146,12 @@ pub async fn start(args: impl Iterator<Item = String>) {
     if args.shadow.is_some() {
         shadow_mode(args).await;
     } else {
-        run(args).await;
+        run(args, ShutdownController::default()).await;
     }
 }
 
 /// Assumes tracing and metrics registry have already been set up.
-pub async fn run(args: Arguments) {
+pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     assert!(args.shadow.is_none(), "cannot run in shadow mode");
     // Start a new span that measures the initialization phase of the autopilot
     let startup_span = info_span!("autopilot_startup");
@@ -500,6 +502,7 @@ pub async fn run(args: Arguments) {
         infra::banned::Users::new(
             eth.contracts().chainalysis_oracle().clone(),
             args.banned_users,
+            args.banned_users_max_cache_size.get().to_u64().unwrap(),
         ),
         balance_fetcher.clone(),
         bad_token_detector.clone(),
@@ -517,7 +520,8 @@ pub async fn run(args: Arguments) {
     );
 
     let liveness = Arc::new(Liveness::new(args.max_auction_age));
-    observe::metrics::serve_metrics(liveness.clone(), args.metrics_address);
+    let readiness = Arc::new(Some(AtomicBool::new(false)));
+    observe::metrics::serve_metrics(liveness.clone(), args.metrics_address, readiness.clone());
 
     let order_events_cleaner_config = crate::periodic_db_cleanup::OrderEventsCleanerConfig::new(
         args.order_events_cleanup_interval,
@@ -618,6 +622,7 @@ pub async fn run(args: Arguments) {
         max_run_loop_delay: args.max_run_loop_delay,
         max_winners_per_auction: args.max_winners_per_auction,
         max_solutions_per_solver: args.max_solutions_per_solver,
+        enable_leader_lock: args.enable_leader_lock,
     };
 
     let drivers_futures = args
@@ -660,11 +665,12 @@ pub async fn run(args: Arguments) {
         solvable_orders_cache,
         trusted_tokens,
         liveness.clone(),
+        readiness.clone(),
         Arc::new(maintenance),
         competition_updates_sender,
     );
     drop(startup_span_guard);
-    run.run_forever().await;
+    run.run_forever(shutdown_controller).await;
 }
 
 async fn shadow_mode(args: Arguments) -> ! {
@@ -740,7 +746,7 @@ async fn shadow_mode(args: Arguments) -> ! {
     };
 
     let liveness = Arc::new(Liveness::new(args.max_auction_age));
-    observe::metrics::serve_metrics(liveness.clone(), args.metrics_address);
+    observe::metrics::serve_metrics(liveness.clone(), args.metrics_address, Default::default());
 
     let current_block = ethrpc::block_stream::current_block_stream(
         args.shared.node_url,

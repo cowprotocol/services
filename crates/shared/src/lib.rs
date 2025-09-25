@@ -8,7 +8,6 @@ pub mod arguments;
 pub mod bad_token;
 pub mod baseline_solver;
 pub mod code_fetching;
-pub mod code_simulation;
 pub mod conversions;
 pub mod current_block;
 pub mod db_order_conversions;

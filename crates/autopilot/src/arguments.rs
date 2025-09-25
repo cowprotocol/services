@@ -109,6 +109,10 @@ pub struct Arguments {
     #[clap(long, env, use_value_delimiter = true)]
     pub banned_users: Vec<H160>,
 
+    /// Maximum number of entries to keep in the banned users cache.
+    #[clap(long, env, default_value = "10000")]
+    pub banned_users_max_cache_size: NonZeroUsize,
+
     /// If the auction hasn't been updated in this amount of time the pod fails
     /// the liveness check. Expects a value in seconds.
     #[clap(
@@ -250,6 +254,12 @@ pub struct Arguments {
     /// order filtering (e.g. based on balances or EIP-1271 signature validity).
     #[clap(long, env, default_value = "false", action = clap::ArgAction::Set)]
     pub disable_order_filtering: bool,
+
+    /// Enables the usage of leader lock in the database
+    /// The second instance of autopilot will act as a follower
+    /// and not cut any auctions.
+    #[clap(long, env, default_value = "false", action = clap::ArgAction::Set)]
+    pub enable_leader_lock: bool,
 }
 
 #[derive(Debug, clap::Parser)]
@@ -353,6 +363,7 @@ impl std::fmt::Display for Arguments {
             native_price_estimators,
             min_order_validity_period,
             banned_users,
+            banned_users_max_cache_size,
             max_auction_age,
             limit_order_price_factor,
             trusted_tokens_url,
@@ -379,6 +390,7 @@ impl std::fmt::Display for Arguments {
             max_solutions_per_solver,
             db_based_solver_participation_guard,
             disable_order_filtering,
+            enable_leader_lock,
         } = self;
 
         write!(f, "{shared}")?;
@@ -401,6 +413,10 @@ impl std::fmt::Display for Arguments {
             "min_order_validity_period: {min_order_validity_period:?}"
         )?;
         writeln!(f, "banned_users: {banned_users:?}")?;
+        writeln!(
+            f,
+            "banned_users_max_cache_size: {banned_users_max_cache_size:?}"
+        )?;
         writeln!(f, "max_auction_age: {max_auction_age:?}")?;
         writeln!(f, "limit_order_price_factor: {limit_order_price_factor:?}")?;
         display_option(f, "trusted_tokens_url", trusted_tokens_url)?;
@@ -450,6 +466,7 @@ impl std::fmt::Display for Arguments {
             "db_based_solver_participation_guard: {db_based_solver_participation_guard:?}"
         )?;
         writeln!(f, "disable_order_filtering: {disable_order_filtering}")?;
+        writeln!(f, "enable_leader_lock: {enable_leader_lock}")?;
         Ok(())
     }
 }

@@ -23,6 +23,7 @@
 //! had not participated in the competition.
 //! That is effectively a measurement of how much better each order got executed
 //! because solver S participated in the competition.
+
 use {
     crate::domain::{
         self,
@@ -41,10 +42,8 @@ use {
     },
     anyhow::{Context, Result},
     itertools::{Either, Itertools},
-    std::{
-        collections::{HashMap, HashSet},
-        ops::Add,
-    },
+    num::Saturating,
+    std::collections::{HashMap, HashSet},
 };
 
 /// Implements auction arbitration in 3 phases:
@@ -182,7 +181,7 @@ impl Arbitrator {
                 .enumerate()
                 .filter(|(index, _)| winner_indices.contains(index))
                 .filter_map(|(_, solution)| solution.computed_score)
-                .reduce(Score::add)
+                .reduce(Score::saturating_add)
                 .unwrap_or_default();
             reference_scores.insert(solver, score);
         }
@@ -260,7 +259,7 @@ fn compute_scores_by_solution(
         Ok(score) => {
             let total_score = score
                 .values()
-                .fold(Default::default(), |acc, score| acc + *score);
+                .fold(Score::default(), |acc, score| acc.saturating_add(*score));
             scores.insert(
                 SolutionKey {
                     driver: p.driver().submission_address,
@@ -294,7 +293,7 @@ fn compute_scores_by_solution(
 ///     (A, B) => 15
 ///     (B, C) => 5
 fn score_by_token_pair(solution: &Solution, auction: &Auction) -> Result<ScoreByDirection> {
-    let mut scores = HashMap::default();
+    let mut scores: HashMap<DirectedTokenPair, Score> = HashMap::default();
     for (uid, trade) in solution.orders() {
         if !auction.contributes_to_score(uid) {
             continue;
@@ -344,7 +343,10 @@ fn score_by_token_pair(solution: &Solution, auction: &Auction) -> Result<ScoreBy
             buy: trade.buy.token,
         };
 
-        *scores.entry(token_pair).or_default() += Score(score);
+        scores
+            .entry(token_pair)
+            .or_default()
+            .saturating_add_assign(Score(score));
     }
     Ok(scores)
 }

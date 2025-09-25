@@ -25,6 +25,7 @@ use {
         ops::DerefMut,
         time::Duration,
     },
+    tokio::task::JoinHandle,
     web3::Transport,
 };
 
@@ -160,8 +161,14 @@ impl<'a> Services<'a> {
     /// Optionally specify a solve deadline to use instead of the default 2s.
     /// (note: specifying a larger solve deadline will impact test times as the
     /// driver delays the submission of the solution until shortly before the
-    /// deadline in case the solution would start to revert at some point)
-    pub async fn start_autopilot(&self, solve_deadline: Option<Duration>, extra_args: Vec<String>) {
+    /// deadline in case the solution would start to revert at some point).
+    /// Allows to externally control the shutdown of autopilot.
+    pub async fn start_autopilot_with_shutdown_controller(
+        &self,
+        solve_deadline: Option<Duration>,
+        extra_args: Vec<String>,
+        control: autopilot::shutdown_controller::ShutdownController,
+    ) -> JoinHandle<()> {
         let solve_deadline = solve_deadline.unwrap_or(Duration::from_secs(2));
         let ethflow_contracts = self
             .contracts
@@ -189,8 +196,28 @@ impl<'a> Services<'a> {
         let args = ignore_overwritten_cli_params(args);
 
         let args = autopilot::arguments::Arguments::try_parse_from(args).unwrap();
-        tokio::task::spawn(autopilot::run(args));
+        let join_handle = tokio::task::spawn(autopilot::run(args, control));
         self.wait_until_autopilot_ready().await;
+
+        join_handle
+    }
+
+    /// Start the autopilot service in a background task.
+    /// Optionally specify a solve deadline to use instead of the default 2s.
+    /// (note: specifying a larger solve deadline will impact test times as the
+    /// driver delays the submission of the solution until shortly before the
+    /// deadline in case the solution would start to revert at some point)
+    pub async fn start_autopilot(
+        &self,
+        solve_deadline: Option<Duration>,
+        extra_args: Vec<String>,
+    ) -> JoinHandle<()> {
+        self.start_autopilot_with_shutdown_controller(
+            solve_deadline,
+            extra_args,
+            autopilot::shutdown_controller::ShutdownController::default(),
+        )
+        .await
     }
 
     /// Start the api service in a background tasks.
