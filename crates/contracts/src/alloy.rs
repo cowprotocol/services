@@ -441,6 +441,23 @@ crate::bindings!(
 crate::bindings!(IUniswapLikeRouter);
 crate::bindings!(IUniswapLikePair);
 
+crate::bindings!(
+    HooksTrampoline,
+    // <https://github.com/cowprotocol/hooks-trampoline/blob/993427166ade6c65875b932f853776299290ac4b/networks.json>
+    crate::deployments! {
+        MAINNET  => address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
+        GNOSIS  => address!("0x01DcB88678aedD0C4cC9552B20F4718550250574"),
+        SEPOLIA  => address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
+        ARBITRUM_ONE  => address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
+        BASE  => address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
+        AVALANCHE  => address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
+        BNB  => address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
+        OPTIMISM  => address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
+        POLYGON  => address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
+        LENS  => address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
+    }
+);
+
 pub mod support {
     // Support contracts used for trade and token simulations.
     crate::bindings!(AnyoneAuthenticator);

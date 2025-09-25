@@ -10,9 +10,8 @@ use {
         FlashLoanRouter,
         GPv2AllowListAuthentication,
         GPv2Settlement,
-        HooksTrampoline,
         WETH9,
-        alloy::{InstanceExt, UniswapV2Factory, UniswapV2Router02},
+        alloy::{HooksTrampoline, InstanceExt, UniswapV2Factory, UniswapV2Router02},
         support::{Balances, Signatures},
     },
     ethcontract::{Address, H256, U256, errors::DeployError},
@@ -40,7 +39,7 @@ pub struct Contracts {
     pub allowance: Address,
     pub domain_separator: DomainSeparator,
     pub ethflows: Vec<CoWSwapEthFlow>,
-    pub hooks: HooksTrampoline,
+    pub hooks: HooksTrampoline::Instance,
     pub cow_amm_helper: Option<CowAmmLegacyHelper>,
     pub flashloan_wrapper_maker: Option<ERC3156FlashLoanSolverWrapper>,
     pub flashloan_wrapper_aave: Option<AaveFlashLoanSolverWrapper>,
@@ -115,7 +114,9 @@ impl Contracts {
                     .0,
             ),
             ethflows: vec![CoWSwapEthFlow::deployed(web3).await.unwrap()],
-            hooks: HooksTrampoline::deployed(web3).await.unwrap(),
+            hooks: HooksTrampoline::Instance::deployed(&web3.alloy)
+                .await
+                .unwrap(),
             gp_settlement,
             balances,
             signatures,
@@ -210,7 +211,12 @@ impl Contracts {
             web3,
             CoWSwapEthFlow(gp_settlement.address(), weth.address())
         );
-        let hooks = deploy!(web3, HooksTrampoline(gp_settlement.address()));
+        let hooks = HooksTrampoline::Instance::deploy(
+            web3.alloy.clone(),
+            gp_settlement.address().into_alloy(),
+        )
+        .await
+        .unwrap();
         let flashloan_router = deploy!(web3, FlashLoanRouter(gp_settlement.address()));
         let flashloan_wrapper_maker = deploy!(
             web3,
