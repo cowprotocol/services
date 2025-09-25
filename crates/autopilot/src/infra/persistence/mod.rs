@@ -28,7 +28,7 @@ use {
     },
     futures::{StreamExt, TryStreamExt},
     itertools::Itertools,
-    number::conversions::{big_decimal_to_u256, u256_to_big_decimal, u256_to_big_uint},
+    number::conversions::{u256_to_big_decimal, u256_to_big_uint},
     primitive_types::H256,
     shared::db_order_conversions::full_order_into_model_order,
     std::{
@@ -280,26 +280,6 @@ impl Persistence {
         .map(|hash| H256(hash.0).into()))
     }
 
-    pub async fn get_auction_comparison(
-        &self,
-        auction_id: domain::auction::Id,
-        trades: &[EncodedTrade],
-    ) -> Result<domain::settlement::Auction, error::Auction> {
-        let original = async {
-            let start = std::time::Instant::now();
-            let res = self.get_auction(auction_id).await;
-            (start.elapsed(), res)
-        };
-        let optimized = async {
-            let start = std::time::Instant::now();
-            let res = self.get_auction_optimized(trades, auction_id).await;
-            (start.elapsed(), res)
-        };
-        let (original, optimized) = tokio::join!(original, optimized);
-        tracing::debug!(original = ?original.0, optimized = ?optimized.0, "get auction finished");
-        original.1
-    }
-
     /// Save auction related data to the database.
     pub async fn save_auction(
         &self,
@@ -346,130 +326,10 @@ impl Persistence {
         Ok(ex.commit().await?)
     }
 
-    /// Get auction data.
-    pub async fn get_auction(
-        &self,
-        auction_id: domain::auction::Id,
-    ) -> Result<domain::settlement::Auction, error::Auction> {
-        let _timer = Metrics::get()
-            .database_queries
-            .with_label_values(&["get_auction"])
-            .start_timer();
-
-        let mut ex = self
-            .postgres
-            .pool
-            .begin()
-            .await
-            .map_err(error::Auction::DatabaseError)?;
-
-        let surplus_capturing_jit_order_owners =
-            database::surplus_capturing_jit_order_owners::fetch(&mut ex, auction_id)
-                .await
-                .map_err(error::Auction::DatabaseError)?
-                .ok_or(error::Auction::NotFound)?
-                .into_iter()
-                .map(|owner| eth::H160(owner.0).into())
-                .collect();
-
-        let prices = database::auction_prices::fetch(&mut ex, auction_id)
-            .await
-            .map_err(error::Auction::DatabaseError)?
-            .into_iter()
-            .map(|price| {
-                let token = eth::H160(price.token.0).into();
-                let price = big_decimal_to_u256(&price.price)
-                    .ok_or(domain::auction::InvalidPrice)
-                    .and_then(|p| domain::auction::Price::try_new(p.into()))
-                    .map_err(|_err| error::Auction::InvalidPrice(token));
-                price.map(|price| (token, price))
-            })
-            .collect::<Result<_, _>>()?;
-
-        let orders = {
-            // get all orders from a competition auction
-            let auction_orders = database::auction_orders::fetch(&mut ex, auction_id)
-                .await
-                .map_err(error::Auction::DatabaseError)?
-                .ok_or(error::Auction::NotFound)?
-                .into_iter()
-                .map(|order| domain::OrderUid(order.0))
-                .collect::<HashSet<_>>();
-
-            // get fee policies for all orders that were part of the competition auction
-            let fee_policies = database::fee_policies::fetch_all(
-                &mut ex,
-                auction_orders
-                    .iter()
-                    .map(|o| (auction_id, ByteArray(o.0)))
-                    .collect::<Vec<_>>()
-                    .as_slice(),
-            )
-            .await
-            .map_err(error::Auction::DatabaseError)?
-            .into_iter()
-            .map(|((_, order), policies)| (domain::OrderUid(order.0), policies))
-            .collect::<HashMap<_, _>>();
-
-            // get quotes for all orders with PriceImprovement fee policy
-            let quotes = self
-                .postgres
-                .read_quotes(fee_policies.iter().filter_map(|(order_uid, policies)| {
-                    policies
-                        .iter()
-                        .any(|policy| {
-                            matches!(
-                                policy.kind,
-                                database::fee_policies::FeePolicyKind::PriceImprovement
-                            )
-                        })
-                        .then_some(order_uid)
-                }))
-                .await
-                .map_err(error::Auction::DatabaseError)?;
-
-            // compile order data
-            let mut orders = HashMap::new();
-            for order in auction_orders.iter() {
-                let order_policies = match fee_policies.get(order) {
-                    Some(policies) => policies
-                        .iter()
-                        .cloned()
-                        .map(|policy| {
-                            dto::fee_policy::try_into_domain(policy, quotes.get(order))
-                                .map_err(|err| error::Auction::InvalidFeePolicy(err, *order))
-                        })
-                        .collect::<Result<Vec<_>, _>>()?,
-                    None => vec![],
-                };
-                orders.insert(*order, order_policies);
-            }
-            orders
-        };
-
-        let block = {
-            let competition = database::solver_competition::load_by_id(&mut ex, auction_id)
-                .await?
-                .ok_or(error::Auction::NotFound)?;
-            serde_json::from_value::<boundary::SolverCompetitionDB>(competition.json)
-                .map_err(|_| error::Auction::NotFound)?
-                .auction_start_block
-                .into()
-        };
-
-        Ok(domain::settlement::Auction {
-            id: auction_id,
-            block,
-            orders,
-            prices,
-            surplus_capturing_jit_order_owners,
-        })
-    }
-
-    /// Returns only auction data that is relvant for processing the
+    /// Returns only auction data that is relevant for processing the
     /// settled trades. e.g. only native prices for traded tokens are
     /// included - not ALL native prices provided in the auction.
-    pub async fn get_auction_optimized(
+    pub async fn get_auction(
         &self,
         trades: &[EncodedTrade],
         auction_id: AuctionId,

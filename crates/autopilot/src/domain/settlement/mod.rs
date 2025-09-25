@@ -162,7 +162,7 @@ impl Settlement {
     ) -> Result<Self, Error> {
         let (auction, solver_winning_solutions) = tokio::try_join!(
             persistence
-                .get_auction_comparison(settled.auction_id, &settled.trades)
+                .get_auction(&settled.trades, settled.auction_id)
                 .map_err(Error::from),
             persistence
                 .get_solver_winning_solutions(settled.auction_id, settled.solver)
