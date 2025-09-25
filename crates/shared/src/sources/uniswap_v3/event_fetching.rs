@@ -132,12 +132,12 @@ mod tests {
 
     fn build_event((block_number, log_index): (u64, usize)) -> WithAddress<UniswapV3PoolEvents> {
         WithAddress::new(
-            UniswapV3PoolEvents::Swap(build_swap_event((block_number, log_index))),
+            UniswapV3PoolEvents::Swap(build_swap_event(block_number, log_index)),
             Default::default(),
         )
     }
 
-    fn build_swap_event((block_number, log_index): (u64, usize)) -> Swap {
+    fn build_swap_event(block_number: u64, log_index: usize) -> Swap {
         Swap {
             sender: Default::default(),
             recipient: Default::default(),
@@ -153,7 +153,7 @@ mod tests {
     fn build_alloy_event(
         (block_number, log_index): (u64, usize),
     ) -> (AlloyUniswapV3PoolEvents, Log) {
-        let event = AlloyUniswapV3PoolEvents::Swap(build_swap_event((block_number, log_index)));
+        let event = AlloyUniswapV3PoolEvents::Swap(build_swap_event(block_number, log_index));
         let log = Log {
             block_number: Some(block_number),
             log_index: Some(log_index.try_into().unwrap()),
