@@ -443,8 +443,11 @@ crate::bindings!(IUniswapLikePair);
 crate::bindings!(UniswapV3Pool);
 
 pub mod support {
+    // Support contracts used for trade and token simulations.
     crate::bindings!(AnyoneAuthenticator);
     crate::bindings!(Solver);
+    crate::bindings!(Spardose);
+    crate::bindings!(Trader);
 }
 
 pub use alloy::providers::DynProvider as Provider;

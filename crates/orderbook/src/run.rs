@@ -169,8 +169,10 @@ pub async fn run(args: Arguments) {
         .await
         .expect("Deployed contract constants don't match the ones in this binary");
     let domain_separator = DomainSeparator::new(chain_id, settlement_contract.address());
-    let postgres = Postgres::try_new(args.db_url.as_str()).expect("failed to create database");
-
+    let postgres_write =
+        Postgres::try_new(args.db_write_url.as_str()).expect("failed to create database");
+    let postgres_read = Postgres::try_new(args.db_read_url.unwrap_or(args.db_write_url).as_str())
+        .expect("failed to create read replica database");
     let balance_fetcher = account_balances::fetcher(
         &web3,
         BalanceSimulator::new(
@@ -315,7 +317,7 @@ pub async fn run(args: Arguments) {
         )
         .await
         .unwrap();
-    let prices = postgres.fetch_latest_prices().await.unwrap();
+    let prices = postgres_write.fetch_latest_prices().await.unwrap();
     native_price_estimator.initialize_cache(prices);
 
     let price_estimator = price_estimator_factory
@@ -356,7 +358,7 @@ pub async fn run(args: Arguments) {
             price_estimator,
             native_price_estimator.clone(),
             gas_price_estimator.clone(),
-            Arc::new(postgres.clone()),
+            Arc::new(postgres_write.clone()),
             order_quoting::Validity {
                 eip1271_onchain_quote: chrono::Duration::from_std(
                     args.order_quoting.eip1271_onchain_quote_validity,
@@ -401,7 +403,7 @@ pub async fn run(args: Arguments) {
         optimal_quoter.clone(),
         balance_fetcher,
         signature_validator,
-        Arc::new(postgres.clone()),
+        Arc::new(postgres_write.clone()),
         args.max_limit_orders_per_user,
         code_fetcher,
         app_data_validator.clone(),
@@ -420,13 +422,14 @@ pub async fn run(args: Arguments) {
         .map(IpfsAppData::new);
     let app_data = Arc::new(crate::app_data::Registry::new(
         app_data_validator,
-        postgres.clone(),
+        postgres_write.clone(),
         ipfs,
     ));
     let orderbook = Arc::new(Orderbook::new(
         domain_separator,
         settlement_contract.address(),
-        postgres.clone(),
+        postgres_write.clone(),
+        postgres_read.clone(),
         order_validator.clone(),
         app_data.clone(),
         args.active_order_competition_threshold,
@@ -440,7 +443,8 @@ pub async fn run(args: Arguments) {
 
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let serve_api = serve_api(
-        postgres,
+        postgres_write,
+        postgres_read,
         orderbook.clone(),
         quotes,
         app_data,
@@ -510,6 +514,7 @@ async fn check_database_connection(orderbook: &Orderbook) {
 #[allow(clippy::too_many_arguments)]
 fn serve_api(
     database: Postgres,
+    database_replica: Postgres,
     orderbook: Arc<Orderbook>,
     quotes: Arc<QuoteHandler>,
     app_data: Arc<crate::app_data::Registry>,
@@ -520,6 +525,7 @@ fn serve_api(
 ) -> JoinHandle<()> {
     let filter = api::handle_all_routes(
         database,
+        database_replica,
         orderbook,
         quotes,
         app_data,

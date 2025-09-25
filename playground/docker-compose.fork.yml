@@ -55,7 +55,7 @@ services:
     build:
       context: ../
       target: migrations
-      dockerfile: ./Dockerfile
+      dockerfile: ./playground/Dockerfile
     restart: on-failure
     environment:
       - FLYWAY_URL=jdbc:postgresql://db/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
@@ -65,9 +65,10 @@ services:
   orderbook:
     build:
       context: ../
-      target: orderbook
-      dockerfile: ./Dockerfile
+      target: localdev
+      dockerfile: ./playground/Dockerfile
     restart: always
+    command: ["cargo", "watch", "-x", "run --bin orderbook"]
     environment:
       - NODE_URL=http://chain:8545
       - DB_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
@@ -86,6 +87,8 @@ services:
       - RUST_BACKTRACE=1
       - TOML_TRACE_ERROR=1
       - TRACING_COLLECTOR_ENDPOINT=http://tempo:4317
+    volumes:
+      - ../:/src
     depends_on:
       - db-migrations
     ports:
@@ -94,9 +97,10 @@ services:
   autopilot:
     build:
       context: ../
-      target: autopilot
-      dockerfile: ./Dockerfile
+      target: localdev
+      dockerfile: ./playground/Dockerfile
     restart: always
+    command: ["cargo", "watch", "-x", "run --bin autopilot"]
     environment:
       - DB_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
       - LOG_FILTER=warn,autopilot=info,shared=info,shared::price_estimation=info
@@ -119,6 +123,8 @@ services:
       - TOML_TRACE_ERROR=1
       - ETHFLOW_CONTRACTS
       - ETHFLOW_INDEXING_START
+    volumes:
+      - ../:/src
     depends_on:
       orderbook:
         condition: service_started
@@ -128,10 +134,10 @@ services:
   driver:
     build:
       context: ../
-      target: driver
-      dockerfile: ./Dockerfile
+      target: localdev
+      dockerfile: ./playground/Dockerfile
     restart: always
-    command: --config /driver.toml
+    command: ["cargo", "watch", "-x", "run --bin driver -- --config configs/${ENV}/driver.toml"]
     environment:
       - ETHRPC=http://chain:8545
       - ADDR=0.0.0.0:80
@@ -139,7 +145,7 @@ services:
       - TOML_TRACE_ERROR=1
       - TRACING_COLLECTOR_ENDPOINT=http://tempo:4317
     volumes:
-      - ./driver.toml:/driver.toml
+      - ../:/src
     ports:
       - 9000:80
     depends_on:
@@ -150,17 +156,17 @@ services:
   baseline:
     build:
       context: ../
-      target: solvers
-      dockerfile: ./Dockerfile
+      target: localdev
+      dockerfile: ./playground/Dockerfile
     restart: always
-    command: baseline --config /baseline.toml
+    command: ["cargo", "watch", "-x", "run --bin solvers -- baseline --config configs/${ENV}/baseline.toml"]
     environment:
       - ADDR=0.0.0.0:80
       - LOG=solvers=trace,shared=trace
       - RUST_BACKTRACE=1
       - TOML_TRACE_ERROR=1
     volumes:
-      - ./baseline.toml:/baseline.toml
+      - ../:/src
     ports:
       - 9001:80
 
@@ -180,7 +186,7 @@ services:
       dockerfile: Dockerfile.explorer
       args:
         - CHAIN=$CHAIN
-        - ETH_RPC_URL=http://127.0.0.1:8545
+        - ETH_RPC_URL=http://chain:8545
     ports:
       - 8001:80
 
