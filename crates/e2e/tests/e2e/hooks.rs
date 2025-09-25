@@ -237,7 +237,7 @@ async fn allowance(web3: Web3) {
     // any funds.
     let allowance = cow
         .allowance(
-            onchain.contracts().hooks.address().clone().into_legacy(),
+            (*onchain.contracts().hooks.address()).into_legacy(),
             trader.address(),
         )
         .call()
@@ -248,7 +248,7 @@ async fn allowance(web3: Web3) {
         .contracts()
         .weth
         .allowance(
-            onchain.contracts().hooks.address().clone().into_legacy(),
+            (*onchain.contracts().hooks.address()).into_legacy(),
             trader.address(),
         )
         .call()

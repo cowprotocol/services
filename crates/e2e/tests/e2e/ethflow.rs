@@ -220,7 +220,7 @@ async fn eth_flow_tx(web3: Web3) {
     // which proofs that the interactions were correctly sandboxed.
     let trampoline = onchain.contracts().hooks.address();
     let allowance = dai
-        .allowance(trampoline.clone(), trader.address().into_alloy())
+        .allowance(*trampoline, trader.address().into_alloy())
         .call()
         .await
         .unwrap();
