@@ -24,7 +24,6 @@ use {
         signature_validator::SignatureValidating,
     },
     std::{collections::HashMap, future::Future, sync::Arc, time::Duration},
-    tap::TapFallible,
     tokio::sync::Mutex,
     tracing::Instrument,
 };
@@ -341,7 +340,7 @@ impl Utilities {
                 let fetched_app_data = app_data_retriever
                     .get_cached_or_fetch(&app_data_hash)
                     .await
-                    .tap_err(|err| {
+                    .inspect_err(|err| {
                         tracing::warn!(?app_data_hash, ?err, "failed to fetch app data");
                     })
                     .ok()
