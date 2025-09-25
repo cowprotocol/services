@@ -49,8 +49,12 @@ To run the services locally you should use the [`playground`](./playground/READM
 You can launch it with the following command:
 
 ```
-docker compose up -f playground/docker-compose.fork.yml up -d
+docker compose -f playground/docker-compose.fork.yml up --build
 ```
+
+Optionally you can limit the services run by the playground by specifying the desired service's names (ex. `driver autopilot`).
+
+Once stabilized, the playground will watch your local directory for changes and automatically recompile and restart the services as needed.
 
 You can read more about the services available and their respective ports in the [playground's README](./playground/README.md).
 

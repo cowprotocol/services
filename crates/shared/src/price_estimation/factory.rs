@@ -16,7 +16,6 @@ use {
         bad_token::BadTokenDetecting,
         baseline_solver::BaseTokens,
         code_fetching::CachedCodeFetcher,
-        code_simulation::{self, CodeSimulating, TenderlyCodeSimulator},
         ethrpc::Web3,
         http_client::HttpClientFactory,
         price_estimation::{
@@ -25,6 +24,7 @@ use {
             competition::PriceRanking,
             native::NativePriceEstimating,
         },
+        tenderly_api::TenderlyCodeSimulator,
         token_info::TokenInfoFetching,
     },
     anyhow::{Context as _, Result},
@@ -104,21 +104,13 @@ impl<'a> PriceEstimatorFactory<'a> {
             .tenderly
             .get_api_instance(&components.http_factory, "price_estimation".to_owned())
             .unwrap()
-            .map(|t| TenderlyCodeSimulator::new(t, network.chain.id()));
-
-        let simulator: Arc<dyn CodeSimulating> = match tenderly {
-            Some(tenderly) => Arc::new(code_simulation::Web3ThenTenderly::new(
-                web3.clone(),
-                tenderly,
-            )),
-            None => Arc::new(web3.clone()),
-        };
+            .map(|t| Arc::new(TenderlyCodeSimulator::new(t, network.chain.id())));
 
         let balance_overrides = args.balance_overrides.init(web3.clone());
 
         let verifier = TradeVerifier::new(
             web3,
-            simulator,
+            tenderly,
             components.code_fetcher.clone(),
             balance_overrides,
             network.block_stream.clone(),

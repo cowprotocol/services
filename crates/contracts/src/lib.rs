@@ -83,9 +83,6 @@ pub mod support {
         Balances;
         Multicall;
         Signatures;
-        Spardose;
-        Swapper;
-        Trader;
     }
 }
 
@@ -230,17 +227,5 @@ mod tests {
         for network in &[MAINNET, GNOSIS, ARBITRUM_ONE] {
             assert!(alloy::BalancerV2StablePoolFactoryV2::deployment_address(network).is_some());
         }
-    }
-
-    #[test]
-    fn bytecode() {
-        macro_rules! assert_has_bytecode {
-            ($contract:ty) => {{
-                let contract = <$contract>::raw_contract();
-                assert!(!contract.bytecode.is_empty());
-            }};
-        }
-
-        assert_has_bytecode!(support::Trader);
     }
 }

@@ -1,18 +1,17 @@
 # CoW Playground
 
 The ultimate goal is to have a single command that will spin up a local CoW network, with all the components needed to
-run the CoW Protocol stack 🚀
+run the CoW Protocol stack. The stack will also auto-recompile and restart any services for a live editing experience 🚀
 
 ## Quickstart
 
 1. Clone this repo.
-2. It is expected that this is run from a `devcontainer` in VSCode, or a similar environment.
-3. Configure the stack by editing the `.env.example` file and renaming it to `.env`. **NOTE**: RPC demand is very high,
+2. Configure the stack by editing the `.env.example` file and renaming it to `.env`. **NOTE**: RPC demand is very high,
    for optimal performance, use a local node. The stack was tested with `reth` on `mainnet`.
-4. Run `docker-compose -f docker-compose.fork.yml up -d`.
-5. Configure Rabby Wallet (or see [Metamask specific notes](#metamask)) to use the RPC endpoint at
+3. Run `docker-compose -f docker-compose.fork.yml up --build`.
+4. Configure Rabby Wallet (or see [Metamask specific notes](#metamask)) to use the RPC endpoint at
    `http://localhost:8545` (for `mainnet`, or your network of choice).
-6. Configure your wallet to use a test account (any of the first 10 accounts from the test mnemonic will do).
+5. Configure your wallet to use a test account (any of the first 10 accounts from the test mnemonic will do).
 
 **NOTE**: By default, `anvil` will set the balances of the first 10 accounts to 10000 ETH. The wallet configuration is:
 
@@ -40,6 +39,7 @@ Now with Rabby configured, and the services started, you can browse to http://lo
 > Initially you will start with 10000 ETH, to run proper transaction you will need to wrap some ETH first.
 > The EthFlow is not configured by default, the next section explains how to set it up.
 > You can follow along with watching the logs of the `autopilot`, `driver`, and `baseline` solver to see how the Protocol interacts.
+> If you make any changes to the files in your repo directory, services will automatically be recompiled and restarted.
 > The CoW Explorer is avialable at http://localhost:8001 to see more information about transaction status
 
 ### Resetting the playground
