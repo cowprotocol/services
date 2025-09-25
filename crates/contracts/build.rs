@@ -705,11 +705,6 @@ fn main() {
     });
     generate_contract("CowAmmUniswapV2PriceOracle");
 
-    // Support contracts used for trade and token simulations.
-    generate_contract("Solver");
-    generate_contract("Spardose");
-    generate_contract("Trader");
-
     // Support contracts used for various order simulations.
     generate_contract_with_config("Balances", |builder| {
         builder
@@ -737,9 +732,6 @@ fn main() {
             .add_network_str(GNOSIS, "0x8262d639c38470F38d2eff15926F7071c28057Af")
             .add_network_str(SEPOLIA, "0x8262d639c38470F38d2eff15926F7071c28057Af")
     });
-
-    // Support contract used for solver fee simulations.
-    generate_contract("Swapper");
 
     // Contract for batching multiple `eth_call`s into a single one.
     generate_contract("Multicall");
