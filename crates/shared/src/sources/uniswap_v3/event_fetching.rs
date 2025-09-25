@@ -137,7 +137,7 @@ mod tests {
         )
     }
 
-    fn build_swap_event(block_number: u64, log_index: usize) -> Swap {
+    fn build_swap_event(block_number: u64, tick: usize) -> Swap {
         Swap {
             sender: Default::default(),
             recipient: Default::default(),
@@ -146,7 +146,7 @@ mod tests {
             sqrtPriceX96: Default::default(),
             // Encode some values to properly compare the items
             liquidity: block_number.to_u128().unwrap(),
-            tick: I24::try_from(log_index).unwrap(),
+            tick: I24::try_from(tick).unwrap(),
         }
     }
 
