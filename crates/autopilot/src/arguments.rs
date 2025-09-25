@@ -4,14 +4,13 @@ use {
     clap::ValueEnum,
     primitive_types::{H160, U256},
     shared::{
-        arguments::{display_list, display_option},
+        arguments::{display_list, display_option, display_secret_option},
         bad_token::token_owner_finder,
         http_client,
         price_estimation::{self, NativePriceEstimators},
     },
     std::{
-        fmt,
-        fmt::{Display, Formatter},
+        fmt::{self, Display, Formatter},
         net::SocketAddr,
         num::NonZeroUsize,
         str::FromStr,
@@ -62,7 +61,12 @@ pub struct Arguments {
     /// Url of the Postgres database. By default connects to locally running
     /// postgres.
     #[clap(long, env, default_value = "postgresql://")]
-    pub db_url: Url,
+    pub db_write_url: Url,
+
+    /// Url of the Postgres database replica. By default it's the same as
+    /// db_write_url
+    #[clap(long, env)]
+    pub db_read_url: Option<Url>,
 
     /// The number of order events to insert in a single batch.
     #[clap(long, env, default_value = "500")]
@@ -377,7 +381,8 @@ impl std::fmt::Display for Arguments {
             fee_policy_max_partner_fee,
             order_events_cleanup_interval,
             order_events_cleanup_threshold,
-            db_url,
+            db_write_url,
+            db_read_url,
             insert_batch_size,
             native_price_estimation_results_required,
             max_settlement_transaction_wait,
@@ -402,8 +407,8 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "ethflow_contracts: {ethflow_contracts:?}")?;
         writeln!(f, "ethflow_indexing_start: {ethflow_indexing_start:?}")?;
         writeln!(f, "metrics_address: {metrics_address}")?;
-        let _intentionally_ignored = db_url;
-        writeln!(f, "db_url: SECRET")?;
+        display_secret_option(f, "db_write_url", Some(&db_write_url))?;
+        display_secret_option(f, "db_read_url", db_read_url.as_ref())?;
         writeln!(f, "skip_event_sync: {skip_event_sync}")?;
         writeln!(f, "allowed_tokens: {allowed_tokens:?}")?;
         writeln!(f, "unsupported_tokens: {unsupported_tokens:?}")?;
