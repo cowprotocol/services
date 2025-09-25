@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/*"]
 
 [workspace.dependencies]
-alloy = { version = "1.0.30", default-features = false }
+alloy = { git = "https://github.com/alloy-rs/alloy", rev = "v1.0.36", default-features = false }
 anyhow = "=1.0.76"
 async-trait = "0.1.80"
 axum = "0.6"
@@ -103,5 +103,14 @@ tracing-opentelemetry = "0.31"
 tracing-serde = "0.2"
 vergen = "8"
 
+
 [workspace.lints]
 clippy.cast_possible_wrap = "deny"
+
+[patch.crates-io]
+alloy-core = { git = "https://github.com/squadgazzz/core", rev = "ac97ec5f5412c094881dd347d53431bde0669af2" }
+alloy-primitives = { git = "https://github.com/squadgazzz/core", rev = "ac97ec5f5412c094881dd347d53431bde0669af2" }
+alloy-dyn-abi = { git = "https://github.com/squadgazzz/core", rev = "ac97ec5f5412c094881dd347d53431bde0669af2" }
+alloy-json-abi = { git = "https://github.com/squadgazzz/core", rev = "ac97ec5f5412c094881dd347d53431bde0669af2" }
+alloy-sol-types = { git = "https://github.com/squadgazzz/core", rev = "ac97ec5f5412c094881dd347d53431bde0669af2" }
+alloy-sol-macro-input = { git = "https://github.com/squadgazzz/core", rev = "ac97ec5f5412c094881dd347d53431bde0669af2" }

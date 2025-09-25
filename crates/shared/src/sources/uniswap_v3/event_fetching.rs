@@ -4,16 +4,15 @@ use {
     alloy::{
         primitives::Address,
         providers::DynProvider,
-        rpc::types::{Filter, Log},
+        rpc::types::{Filter, FilterSet, Log},
         sol_types::SolEvent,
     },
     anyhow::{Context, Result},
     contracts::alloy::{
         UniswapV3Pool,
-        UniswapV3Pool::UniswapV3Pool::{Burn, Mint, Swap},
+        UniswapV3Pool::UniswapV3Pool::{Burn, Mint, Swap, UniswapV3PoolEvents},
     },
     ethrpc::block_stream::RangeInclusive,
-    maplit::hashset,
     std::collections::BTreeMap,
 };
 
@@ -26,11 +25,11 @@ impl AlloyEventRetrieving for UniswapV3PoolEventFetcher {
         // No pool address filter since the generated request might be too large
         // leading to RPC performance issues.
         // More details: <https://github.com/cowprotocol/services/pull/3620>
-        Filter::new().address(vec![]).event_signature(hashset![
-            Swap::SIGNATURE_HASH,
-            Burn::SIGNATURE_HASH,
-            Mint::SIGNATURE_HASH
-        ])
+        let mut set = FilterSet::default();
+        set.insert(Swap::SIGNATURE_HASH);
+        set.insert(Burn::SIGNATURE_HASH);
+        set.insert(Mint::SIGNATURE_HASH);
+        Filter::new().address(vec![]).event_signature(set)
     }
 
     fn provider(&self) -> &DynProvider {
@@ -38,55 +37,27 @@ impl AlloyEventRetrieving for UniswapV3PoolEventFetcher {
     }
 }
 
-#[derive(Clone)]
-pub struct WithAddress<T>(pub T, pub Address);
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WithAddress<T>(T, Address);
 
-// AlloyUniswapV3PoolEvents doesn't derive Clone, so we need this wrapper
-#[derive(Clone)]
-pub enum UniswapV3PoolEvent {
-    Swap(WithAddress<Swap>),
-    Burn(WithAddress<Burn>),
-    Mint(WithAddress<Mint>),
-}
-
-impl UniswapV3PoolEvent {
-    pub fn address(&self) -> Address {
-        match self {
-            UniswapV3PoolEvent::Swap(WithAddress(_, address)) => *address,
-            UniswapV3PoolEvent::Burn(WithAddress(_, address)) => *address,
-            UniswapV3PoolEvent::Mint(WithAddress(_, address)) => *address,
-        }
+impl<T> WithAddress<T> {
+    pub fn new(inner: T, address: Address) -> Self {
+        Self(inner, address)
     }
-}
 
-impl TryFrom<(&AlloyUniswapV3PoolEvents, &Log)> for UniswapV3PoolEvent {
-    type Error = ();
+    pub fn inner(&self) -> &T {
+        &self.0
+    }
 
-    fn try_from(
-        (event, log): (&AlloyUniswapV3PoolEvents, &Log),
-    ) -> std::result::Result<Self, Self::Error> {
-        match event {
-            AlloyUniswapV3PoolEvents::Swap(event) => Ok(UniswapV3PoolEvent::Swap(WithAddress(
-                event.clone(),
-                log.address(),
-            ))),
-            AlloyUniswapV3PoolEvents::Burn(event) => Ok(UniswapV3PoolEvent::Burn(WithAddress(
-                event.clone(),
-                log.address(),
-            ))),
-            AlloyUniswapV3PoolEvents::Mint(event) => Ok(UniswapV3PoolEvent::Mint(WithAddress(
-                event.clone(),
-                log.address(),
-            ))),
-            _ => Err(()),
-        }
+    pub fn address(&self) -> Address {
+        self.1
     }
 }
 
 #[derive(Default)]
 pub struct RecentEventsCache {
     /// (block number, event log index) used as a Key
-    events: BTreeMap<(u64, usize), UniswapV3PoolEvent>,
+    events: BTreeMap<(u64, usize), WithAddress<UniswapV3PoolEvents>>,
 }
 
 impl RecentEventsCache {
@@ -101,7 +72,10 @@ impl RecentEventsCache {
         self.events.split_off(&(delete_from_block_number, 0));
     }
 
-    pub fn get_events(&self, block_range: RangeInclusive<u64>) -> Vec<UniswapV3PoolEvent> {
+    pub fn get_events(
+        &self,
+        block_range: RangeInclusive<u64>,
+    ) -> Vec<WithAddress<UniswapV3PoolEvents>> {
         self.events
             .range((*block_range.start(), 0)..=(*block_range.end(), usize::MAX))
             .map(|(_, event)| event)
@@ -123,16 +97,16 @@ impl EventStoring<(AlloyUniswapV3PoolEvents, Log)> for RecentEventsCache {
 
     async fn append_events(&mut self, events: Vec<(AlloyUniswapV3PoolEvents, Log)>) -> Result<()> {
         for (event, log) in events {
-            let Ok(event) = UniswapV3PoolEvent::try_from((&event, &log)) else {
-                continue;
-            };
             let block_number = log.block_number.context("log block number is empty")?;
             let log_index = log
                 .log_index
                 .context("log index is empty")?
                 .try_into()
                 .context("log index too large")?;
-            self.events.insert((block_number, log_index), event);
+            self.events.insert(
+                (block_number, log_index),
+                WithAddress::new(event, log.address()),
+            );
         }
         Ok(())
     }
@@ -154,134 +128,13 @@ impl EventStoring<(AlloyUniswapV3PoolEvents, Log)> for RecentEventsCache {
 
 #[cfg(test)]
 mod tests {
-    use {
-        super::*,
-        alloy::primitives::{I256, U160, U256, aliases::I24},
-        num::ToPrimitive,
-        std::{
-            fmt,
-            fmt::{Debug, Formatter},
-        },
-    };
+    use {super::*, alloy::primitives::aliases::I24, num::ToPrimitive};
 
-    trait EventKey {
-        type Key: Eq + Debug;
-
-        fn key(&self) -> Self::Key;
-    }
-
-    impl EventKey for Swap {
-        type Key = (Address, Address, U160, I256, I256, u128, I24);
-
-        fn key(&self) -> Self::Key {
-            (
-                self.sender,
-                self.recipient,
-                self.sqrtPriceX96,
-                self.amount0,
-                self.amount1,
-                self.liquidity,
-                self.tick,
-            )
-        }
-    }
-
-    impl EventKey for Burn {
-        type Key = (Address, U256, U256, u128, I24, I24);
-
-        fn key(&self) -> Self::Key {
-            (
-                self.owner,
-                self.amount0,
-                self.amount1,
-                self.amount,
-                self.tickLower,
-                self.tickUpper,
-            )
-        }
-    }
-
-    impl EventKey for Mint {
-        type Key = (Address, Address, U256, U256, u128, I24, I24);
-
-        fn key(&self) -> Self::Key {
-            (
-                self.sender,
-                self.owner,
-                self.amount0,
-                self.amount1,
-                self.amount,
-                self.tickLower,
-                self.tickUpper,
-            )
-        }
-    }
-
-    impl PartialEq for UniswapV3PoolEvent {
-        fn eq(&self, other: &Self) -> bool {
-            use UniswapV3PoolEvent::*;
-            match (self, other) {
-                (Swap(WithAddress(a, addr_a)), Swap(WithAddress(b, addr_b))) => {
-                    addr_a == addr_b && a.key() == b.key()
-                }
-                (Burn(WithAddress(a, addr_a)), Burn(WithAddress(b, addr_b))) => {
-                    addr_a == addr_b && a.key() == b.key()
-                }
-                (Mint(WithAddress(a, addr_a)), Mint(WithAddress(b, addr_b))) => {
-                    addr_a == addr_b && a.key() == b.key()
-                }
-                _ => false,
-            }
-        }
-    }
-
-    impl Debug for UniswapV3PoolEvent {
-        fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-            use UniswapV3PoolEvent::*;
-            match self {
-                Swap(WithAddress(event, address)) => f
-                    .debug_struct("Swap")
-                    .field("address", address)
-                    .field("sender", &event.sender)
-                    .field("recipient", &event.recipient)
-                    .field("amount0", &event.amount0)
-                    .field("amount1", &event.amount1)
-                    .field("sqrtPriceX96", &event.sqrtPriceX96)
-                    .field("liquidity", &event.liquidity)
-                    .field("tick", &event.tick)
-                    .finish(),
-                Burn(WithAddress(event, address)) => f
-                    .debug_struct("Burn")
-                    .field("address", address)
-                    .field("owner", &event.owner)
-                    .field("amount0", &event.amount0)
-                    .field("amount1", &event.amount1)
-                    .field("amount", &event.amount)
-                    .field("tickLower", &event.tickLower)
-                    .field("tickUpper", &event.tickUpper)
-                    .finish(),
-                Mint(WithAddress(event, address)) => f
-                    .debug_struct("Mint")
-                    .field("address", address)
-                    .field("sender", &event.sender)
-                    .field("owner", &event.owner)
-                    .field("amount0", &event.amount0)
-                    .field("amount1", &event.amount1)
-                    .field("amount", &event.amount)
-                    .field("tickLower", &event.tickLower)
-                    .field("tickUpper", &event.tickUpper)
-                    .finish(),
-            }
-        }
-    }
-
-    impl Eq for UniswapV3PoolEvent {}
-
-    fn build_event((block_number, log_index): (u64, usize)) -> UniswapV3PoolEvent {
-        UniswapV3PoolEvent::Swap(WithAddress(
-            build_swap_event((block_number, log_index)),
+    fn build_event((block_number, log_index): (u64, usize)) -> WithAddress<UniswapV3PoolEvents> {
+        WithAddress::new(
+            UniswapV3PoolEvents::Swap(build_swap_event((block_number, log_index))),
             Default::default(),
-        ))
+        )
     }
 
     fn build_swap_event((block_number, log_index): (u64, usize)) -> Swap {
