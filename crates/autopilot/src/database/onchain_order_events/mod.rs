@@ -793,7 +793,10 @@ mod test {
     use {
         super::*,
         crate::database::Config,
-        contracts::cowswap_onchain_orders::event_data::OrderPlacement as ContractOrderPlacement,
+        contracts::{
+            alloy::InstanceExt,
+            cowswap_onchain_orders::event_data::OrderPlacement as ContractOrderPlacement,
+        },
         database::{byte_array::ByteArray, onchain_broadcasted_orders::OnchainOrderPlacement},
         ethcontract::{Bytes, EventMetadata, H160, U256},
         ethrpc::Web3,
@@ -1245,7 +1248,7 @@ mod test {
                     insert_batch_size: NonZeroUsize::new(500).unwrap(),
                 },
             },
-            trampoline: contracts::alloy::HooksTrampoline::Instance::deployed(&web3)
+            trampoline: contracts::alloy::HooksTrampoline::Instance::deployed(&web3.alloy)
                 .await
                 .unwrap(),
             web3,
