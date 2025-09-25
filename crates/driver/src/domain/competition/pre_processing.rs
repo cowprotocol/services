@@ -11,7 +11,7 @@ use {
     },
     anyhow::{Context, Result},
     chrono::Utc,
-    futures::{FutureExt, StreamExt, future::BoxFuture, stream::FuturesOrdered},
+    futures::{FutureExt, StreamExt, future::BoxFuture, stream::FuturesUnordered},
     itertools::Itertools,
     model::{
         interaction::InteractionData,
@@ -328,7 +328,7 @@ impl Utilities {
 
         let _timer = metrics::get().processing_stage_timer("fetch_app_data");
 
-        let futures: FuturesOrdered<_> = auction
+        let futures: FuturesUnordered<_> = auction
             .orders
             .iter()
             .flat_map(|order| match order.app_data {
