@@ -359,9 +359,8 @@ impl Utilities {
         // auction after a restart. But on subsequent auctions everything should be
         // available.
         const MAX_APP_DATA_WAIT: Duration = Duration::from_millis(500);
-        let timeout = tokio::time::sleep(MAX_APP_DATA_WAIT);
         let app_data: HashMap<_, _> = futures
-            .take_until(timeout)
+            .take_until(tokio::time::sleep(MAX_APP_DATA_WAIT))
             .filter_map(async move |(hash, json)| Some((hash, json?)))
             .collect()
             .await;
