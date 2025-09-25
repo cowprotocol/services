@@ -363,10 +363,10 @@ impl Utilities {
         // all futures fully the remaining appdata requests will finish in background
         // tasks. That way we should have enough time to immediately fetch appdatas
         // of new orders (once the cache is filled). But we also don't run the risk
-        // of stalling the driver completely until everything was fetched.
+        // of stalling the driver completely until everything is fetched.
         // In practice that means the solver will only see a few appdatas in the first
-        // auction after a restart but on subsequent auctions everything should be
-        // awailble.
+        // auction after a restart. But on subsequent auctions everything should be
+        // available.
         const MAX_APP_DATA_WAIT: Duration = Duration::from_millis(500);
         let timeout = tokio::time::sleep(MAX_APP_DATA_WAIT);
         let app_data: HashMap<_, _> = futures
