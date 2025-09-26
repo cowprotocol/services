@@ -446,7 +446,7 @@ crate::bindings!(
     // <https://github.com/cowprotocol/hooks-trampoline/blob/993427166ade6c65875b932f853776299290ac4b/networks.json>
     crate::deployments! {
         MAINNET  => address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
-        GNOSIS  => address!("0x01DcB88678aedD0C4cC9552B20F4718550250574"),
+        GNOSIS  => address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
         SEPOLIA  => address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
         ARBITRUM_ONE  => address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
         BASE  => address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
