@@ -1,6 +1,7 @@
 use {
     crate::{app_data_hash::hash_full_app_data, AppDataHash, Hooks},
     anyhow::{anyhow, Context, Result},
+    bytes_hex::BytesHex,
     number::serialization::HexOrDecimalU256,
     primitive_types::{H160, U256},
     serde::{de, Deserialize, Deserializer, Serialize, Serializer},
@@ -21,6 +22,7 @@ pub struct ValidatedAppData {
     pub protocol: ProtocolAppData,
 }
 
+#[serde_as]
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
 #[cfg_attr(any(test, feature = "test_helpers"), derive(Serialize))]
 #[serde(rename_all = "camelCase")]
@@ -33,6 +35,7 @@ pub struct ProtocolAppData {
     pub partner_fee: PartnerFees,
     pub flashloan: Option<Flashloan>,
     pub wrapper: Option<H160>,
+    #[serde_as(as = "Option<BytesHex>")]
     pub wrapper_data: Option<Vec<u8>>,
 }
 

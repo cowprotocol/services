@@ -323,13 +323,15 @@ impl Solver {
             .collect()
     }
 
-    fn assemble_wrappers(&self, auction: &Auction) -> HashMap<order::Uid, H160> {
+    fn assemble_wrappers(&self, auction: &Auction) -> HashMap<order::Uid, (H160, Vec<u8>)> {
         auction
             .orders()
             .iter()
             .flat_map(|order| {
                 let wrapper = order.app_data.wrapper()?;
-                Some((order.uid, *wrapper))
+                let wrapper_data = order.app_data.wrapper_data().cloned().unwrap_or(Vec::new());
+                println!("ASSEMBLE! WRAPPERS {:?} with wd {:?}", order.app_data, wrapper_data);
+                Some((order.uid, (*wrapper, wrapper_data)))
             })
             .collect()
     }
