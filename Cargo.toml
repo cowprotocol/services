@@ -108,9 +108,9 @@ vergen = "8"
 clippy.cast_possible_wrap = "deny"
 
 [patch.crates-io]
-alloy-core = { git = "https://github.com/squadgazzz/core", rev = "ac97ec5f5412c094881dd347d53431bde0669af2" }
-alloy-primitives = { git = "https://github.com/squadgazzz/core", rev = "ac97ec5f5412c094881dd347d53431bde0669af2" }
-alloy-dyn-abi = { git = "https://github.com/squadgazzz/core", rev = "ac97ec5f5412c094881dd347d53431bde0669af2" }
-alloy-json-abi = { git = "https://github.com/squadgazzz/core", rev = "ac97ec5f5412c094881dd347d53431bde0669af2" }
-alloy-sol-types = { git = "https://github.com/squadgazzz/core", rev = "ac97ec5f5412c094881dd347d53431bde0669af2" }
-alloy-sol-macro-input = { git = "https://github.com/squadgazzz/core", rev = "ac97ec5f5412c094881dd347d53431bde0669af2" }
+alloy-core = { git = "https://github.com/alloy-rs/core", rev = "d624bec5bb9b867ea902e04369aa06ca3d34fbdb" }
+alloy-primitives = { git = "https://github.com/alloy-rs/core", rev = "d624bec5bb9b867ea902e04369aa06ca3d34fbdb" }
+alloy-dyn-abi = { git = "https://github.com/alloy-rs/core", rev = "d624bec5bb9b867ea902e04369aa06ca3d34fbdb" }
+alloy-json-abi = { git = "https://github.com/alloy-rs/core", rev = "d624bec5bb9b867ea902e04369aa06ca3d34fbdb" }
+alloy-sol-types = { git = "https://github.com/alloy-rs/core", rev = "d624bec5bb9b867ea902e04369aa06ca3d34fbdb" }
+alloy-sol-macro-input = { git = "https://github.com/alloy-rs/core", rev = "d624bec5bb9b867ea902e04369aa06ca3d34fbdb" }
