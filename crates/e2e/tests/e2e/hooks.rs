@@ -236,7 +236,10 @@ async fn allowance(web3: Web3) {
     // This is OK since the `HooksTrampoline` contract is not used for holding
     // any funds.
     let allowance = cow
-        .allowance(onchain.contracts().hooks.address(), trader.address())
+        .allowance(
+            (*onchain.contracts().hooks.address()).into_legacy(),
+            trader.address(),
+        )
         .call()
         .await
         .unwrap();
@@ -244,7 +247,10 @@ async fn allowance(web3: Web3) {
     let allowance = onchain
         .contracts()
         .weth
-        .allowance(onchain.contracts().hooks.address(), trader.address())
+        .allowance(
+            (*onchain.contracts().hooks.address()).into_legacy(),
+            trader.address(),
+        )
         .call()
         .await
         .unwrap();
