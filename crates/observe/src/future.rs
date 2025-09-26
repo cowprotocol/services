@@ -70,14 +70,18 @@ impl<T: FusedFuture> FusedFuture for Measurable<T> {
 }
 
 #[derive(prometheus_metric_storage::MetricStorage)]
-struct Metrics {
+pub struct Metrics {
     /// Timing of measured futures.
     #[metric(labels("label"))]
     future_execution_times: prometheus::HistogramVec,
+
+    /// Counter for RequestId span lifecycle events.
+    #[metric(labels("event"))]
+    pub request_id_span_events: prometheus::IntCounterVec,
 }
 
 impl Metrics {
-    fn get() -> &'static Self {
+    pub fn get() -> &'static Self {
         Metrics::instance(super::metrics::get_storage_registry()).unwrap()
     }
 }

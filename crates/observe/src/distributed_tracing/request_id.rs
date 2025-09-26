@@ -116,6 +116,10 @@ impl<S: Subscriber + for<'lookup> LookupSpan<'lookup>> Layer<S> for RequestIdLay
 
         if let Some(request_id) = visitor.0 {
             span.extensions_mut().insert(request_id);
+            crate::future::Metrics::get()
+                .request_id_span_events
+                .with_label_values(&["on_new_span"])
+                .inc();
         }
     }
 
@@ -128,6 +132,11 @@ impl<S: Subscriber + for<'lookup> LookupSpan<'lookup>> Layer<S> for RequestIdLay
         if span.name() != crate::distributed_tracing::request_id::SPAN_NAME {
             return;
         }
+
+        crate::future::Metrics::get()
+            .request_id_span_events
+            .with_label_values(&["on_close"])
+            .inc();
 
         span.extensions_mut().remove::<RequestId>();
     }
