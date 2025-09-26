@@ -334,6 +334,11 @@ impl Persistence {
         trades: &[EncodedTrade],
         auction_id: AuctionId,
     ) -> Result<domain::settlement::Auction, error::Auction> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["get_auction"])
+            .start_timer();
+
         const QUERY: &str = r#"
             WITH
 
