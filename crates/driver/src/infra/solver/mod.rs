@@ -1,6 +1,5 @@
 use {
-    super::notify,
-    crate::{
+    super::notify, crate::{
         domain::{
             competition::{
                 auction::{self, Auction},
@@ -19,16 +18,7 @@ use {
             persistence::{Persistence, S3},
         },
         util,
-    },
-    anyhow::Result,
-    derive_more::{From, Into},
-    num::BigRational,
-    observe::tracing::tracing_headers,
-    reqwest::header::HeaderName,
-    std::{collections::HashMap, time::Duration},
-    tap::TapFallible,
-    thiserror::Error,
-    tracing::{Instrument, instrument},
+    }, anyhow::Result, derive_more::{From, Into}, ethcontract::H160, num::BigRational, observe::tracing::tracing_headers, reqwest::header::HeaderName, std::{collections::HashMap, time::Duration}, tap::TapFallible, thiserror::Error, tracing::{instrument, Instrument}
 };
 
 pub mod dto;
@@ -234,6 +224,7 @@ impl Solver {
         liquidity: &[liquidity::Liquidity],
     ) -> Result<Vec<Solution>, Error> {
         let flashloan_hints = self.assemble_flashloan_hints(auction);
+        let wrappers = self.assemble_wrappers(auction);
         // Fetch the solutions from the solver.
         let weth = self.eth.contracts().weth_address();
         let auction_dto = dto::auction::new(
@@ -243,6 +234,7 @@ impl Solver {
             self.config.fee_handler,
             self.config.solver_native_token,
             &flashloan_hints,
+            &wrappers,
             auction.deadline(self.timeouts()).solvers(),
         );
 
@@ -327,6 +319,19 @@ impl Solver {
                     amount: hint.amount.into(),
                 };
                 Some((order.uid, flashloan))
+            })
+            .collect()
+    }
+
+    fn assemble_wrappers(&self, auction: &Auction) -> HashMap<order::Uid, (H160, Vec<u8>)> {
+        auction
+            .orders()
+            .iter()
+            .flat_map(|order| {
+                let wrapper = order.app_data.wrapper()?;
+                let wrapper_data = order.app_data.wrapper_data().cloned().unwrap_or(Vec::new());
+                println!("ASSEMBLE! WRAPPERS {:?} with wd {:?}", order.app_data, wrapper_data);
+                Some((order.uid, (*wrapper, wrapper_data)))
             })
             .collect()
     }

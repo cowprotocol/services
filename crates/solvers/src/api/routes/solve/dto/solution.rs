@@ -118,6 +118,8 @@ pub fn from_domain(solutions: &[solution::Solution]) -> super::Solutions {
                 gas: solution.gas.map(|gas| gas.0.as_u64()),
                 // rely on driver to fill in the blanks
                 flashloans: None,
+                wrapper: solution.wrapper.map(|w| w.0),
+                wrapper_data: solution.wrapper_data.clone(),
             })
             .collect(),
     }

@@ -6,7 +6,7 @@ use {
                 self,
                 order::{self, Partial},
             },
-            eth::{self, Ether, allowance},
+            eth::{self, allowance, Ether},
             liquidity,
         },
         infra::{self, solver::ManageNativeToken},
@@ -96,7 +96,7 @@ pub fn tx(
                         sell_amount: trade.order().sell.amount.into(),
                         buy_amount: trade.order().buy.amount.into(),
                         valid_to: trade.order().valid_to.into(),
-                        app_data: trade.order().app_data.hash().0.0.into(),
+                        app_data: trade.order().app_data.hash().0 .0.into(),
                         fee_amount: eth::U256::zero(),
                         flags: Flags {
                             side: trade.order().side,
@@ -134,7 +134,7 @@ pub fn tx(
                         sell_amount: trade.order().sell.amount.into(),
                         buy_amount: trade.order().buy.amount.into(),
                         valid_to: trade.order().valid_to.into(),
-                        app_data: trade.order().app_data.0.0.into(),
+                        app_data: trade.order().app_data.0 .0.into(),
                         fee_amount: eth::U256::zero(),
                         flags: Flags {
                             side: trade.order().side,
@@ -201,19 +201,29 @@ pub fn tx(
         interactions.push(unwrap(native_unwrap, contracts.weth()));
     }
 
-    let tx = contracts
-        .settlement()
-        .settle(
+    let interactions = [
+        pre_interactions.iter().map(codec::interaction).collect(),
+        interactions.iter().map(codec::interaction).collect(),
+        post_interactions.iter().map(codec::interaction).collect(),
+    ];
+
+    let tx = if let Some(w) = solution.wrapper {
+        contracts::GPv2Wrapper::at(contracts.web3(), w.into()).wrapped_settle(
             tokens,
             clearing_prices,
             trades.iter().map(codec::trade).collect(),
-            [
-                pre_interactions.iter().map(codec::interaction).collect(),
-                interactions.iter().map(codec::interaction).collect(),
-                post_interactions.iter().map(codec::interaction).collect(),
-            ],
+            interactions,
+            ethcontract::Bytes(solution.wrapper_data.clone().unwrap_or_default()),
         )
-        .into_inner();
+    } else {
+        contracts.settlement().settle(
+            tokens,
+            clearing_prices,
+            trades.iter().map(codec::trade).collect(),
+            interactions,
+        )
+    }
+    .into_inner();
 
     // Encode the auction id into the calldata
     let mut settle_calldata = tx.data.unwrap().0;
@@ -221,7 +231,7 @@ pub fn tx(
 
     // Target and calldata depend on whether a flashloan is used
     let (to, calldata) = if solution.flashloans.is_empty() {
-        (contracts.settlement().address().into(), settle_calldata)
+        (tx.to.unwrap().into(), settle_calldata)
     } else {
         let router = contracts
             .flashloan_router()
@@ -235,7 +245,7 @@ pub fn tx(
                     flashloan.amount.0,
                     flashloan.protocol_adapter.0,
                     flashloan.liquidity_provider.0,
-                    flashloan.token.0.0,
+                    flashloan.token.0 .0,
                 )
             })
             .collect();

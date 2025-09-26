@@ -3,7 +3,7 @@ use {
         domain::{
             competition::{
                 self,
-                order::{self, Side, fees, signature::Scheme},
+                order::{self, fees, signature::Scheme, Side},
             },
             eth::{self},
             liquidity,
@@ -12,11 +12,13 @@ use {
         util::conv::{rational_to_big_decimal, u256::U256Ext},
     },
     app_data::AppDataHash,
+    ethcontract::H160,
     ethrpc::alloy::conversions::IntoLegacy,
     model::order::{BuyTokenDestination, SellTokenSource},
     std::collections::HashMap,
 };
 
+#[allow(clippy::too_many_arguments)]
 pub fn new(
     auction: &competition::Auction,
     liquidity: &[liquidity::Liquidity],
@@ -24,6 +26,7 @@ pub fn new(
     fee_handler: FeeHandler,
     solver_native_token: ManageNativeToken,
     flashloan_hints: &HashMap<order::Uid, eth::Flashloan>,
+    wrappers: &HashMap<order::Uid, (H160, Vec<u8>)>,
     deadline: chrono::DateTime<chrono::Utc>,
 ) -> solvers_dto::auction::Auction {
     let mut tokens: HashMap<eth::H160, _> = auction
@@ -154,6 +157,8 @@ pub fn new(
                     ),
                     app_data: AppDataHash(order.app_data.hash().0.into()),
                     flashloan_hint: flashloan_hints.get(&order.uid).map(Into::into),
+                    wrapper: wrappers.get(&order.uid).map(|v| v.0),
+                    wrapper_data: wrappers.get(&order.uid).map(|v| v.1.clone()),
                     signature: order.signature.data.clone().into(),
                     signing_scheme: match order.signature.scheme {
                         Scheme::Eip712 => solvers_dto::auction::SigningScheme::Eip712,

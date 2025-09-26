@@ -1,9 +1,10 @@
 use {
-    crate::{AppDataHash, Hooks, app_data_hash::hash_full_app_data},
-    anyhow::{Context, Result, anyhow},
+    crate::{app_data_hash::hash_full_app_data, AppDataHash, Hooks},
+    anyhow::{anyhow, Context, Result},
+    bytes_hex::BytesHex,
     number::serialization::HexOrDecimalU256,
     primitive_types::{H160, U256},
-    serde::{Deserialize, Deserializer, Serialize, Serializer, de},
+    serde::{de, Deserialize, Deserializer, Serialize, Serializer},
     serde_with::serde_as,
     std::{
         fmt::{self, Display},
@@ -21,6 +22,7 @@ pub struct ValidatedAppData {
     pub protocol: ProtocolAppData,
 }
 
+#[serde_as]
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
 #[cfg_attr(any(test, feature = "test_helpers"), derive(Serialize))]
 #[serde(rename_all = "camelCase")]
@@ -32,6 +34,9 @@ pub struct ProtocolAppData {
     #[serde(default)]
     pub partner_fee: PartnerFees,
     pub flashloan: Option<Flashloan>,
+    pub wrapper: Option<H160>,
+    #[serde_as(as = "Option<BytesHex>")]
+    pub wrapper_data: Option<Vec<u8>>,
 }
 
 /// Contains information to hint at how a solver could make
@@ -431,6 +436,8 @@ impl From<BackendAppData> for ProtocolAppData {
     fn from(value: BackendAppData) -> Self {
         Self {
             hooks: value.hooks,
+            wrapper: None,
+            wrapper_data: None,
             signer: None,
             replaced_order: None,
             partner_fee: PartnerFees::default(),

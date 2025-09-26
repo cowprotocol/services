@@ -24,6 +24,7 @@ pub struct Contracts {
     // everywhere
     flashloan_router: Option<FlashLoanRouter>,
     balance_helper: contracts::support::Balances,
+    web3: Web3,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -127,6 +128,7 @@ impl Contracts {
             cow_amm_registry,
             flashloan_router,
             balance_helper,
+            web3: web3.clone(),
         })
     }
 
@@ -168,6 +170,10 @@ impl Contracts {
 
     pub fn balance_helper(&self) -> &contracts::support::Balances {
         &self.balance_helper
+    }
+
+    pub fn web3(&self) -> &Web3 {
+        &self.web3
     }
 }
 
