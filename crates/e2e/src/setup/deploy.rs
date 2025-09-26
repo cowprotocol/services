@@ -4,14 +4,19 @@ use {
         AaveFlashLoanSolverWrapper,
         BalancerV2Authorizer,
         BalancerV2Vault,
-        CoWSwapEthFlow,
         CowAmmLegacyHelper,
         ERC3156FlashLoanSolverWrapper,
         FlashLoanRouter,
         GPv2AllowListAuthentication,
         GPv2Settlement,
         WETH9,
-        alloy::{HooksTrampoline, InstanceExt, UniswapV2Factory, UniswapV2Router02},
+        alloy::{
+            CoWSwapEthFlow,
+            HooksTrampoline,
+            InstanceExt,
+            UniswapV2Factory,
+            UniswapV2Router02,
+        },
         support::{Balances, Signatures},
     },
     ethcontract::{Address, H256, U256, errors::DeployError},
@@ -38,7 +43,7 @@ pub struct Contracts {
     pub weth: WETH9,
     pub allowance: Address,
     pub domain_separator: DomainSeparator,
-    pub ethflows: Vec<CoWSwapEthFlow>,
+    pub ethflows: Vec<CoWSwapEthFlow::Instance>,
     pub hooks: HooksTrampoline::Instance,
     pub cow_amm_helper: Option<CowAmmLegacyHelper>,
     pub flashloan_wrapper_maker: Option<ERC3156FlashLoanSolverWrapper>,
@@ -113,7 +118,11 @@ impl Contracts {
                     .expect("Couldn't query domain separator")
                     .0,
             ),
-            ethflows: vec![CoWSwapEthFlow::deployed(web3).await.unwrap()],
+            ethflows: vec![
+                CoWSwapEthFlow::Instance::deployed(&web3.alloy)
+                    .await
+                    .unwrap(),
+            ],
             hooks: HooksTrampoline::Instance::deployed(&web3.alloy)
                 .await
                 .unwrap(),
@@ -203,14 +212,20 @@ impl Contracts {
                 .0,
         );
 
-        let ethflow = deploy!(
-            web3,
-            CoWSwapEthFlow(gp_settlement.address(), weth.address())
-        );
-        let ethflow_secondary = deploy!(
-            web3,
-            CoWSwapEthFlow(gp_settlement.address(), weth.address())
-        );
+        let ethflow = CoWSwapEthFlow::Instance::deploy(
+            web3.alloy.clone(),
+            gp_settlement.address().into_alloy(),
+            weth.address().into_alloy(),
+        )
+        .await
+        .unwrap();
+        let ethflow_secondary = CoWSwapEthFlow::Instance::deploy(
+            web3.alloy.clone(),
+            gp_settlement.address().into_alloy(),
+            weth.address().into_alloy(),
+        )
+        .await
+        .unwrap();
         let hooks = HooksTrampoline::Instance::deploy(
             web3.alloy.clone(),
             gp_settlement.address().into_alloy(),

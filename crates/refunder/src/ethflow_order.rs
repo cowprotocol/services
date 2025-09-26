@@ -1,10 +1,13 @@
 use {
+    contracts::alloy::CoWSwapEthFlow,
     database::{ethflow_orders::EthOrderData, orders::Order},
     ethcontract::{Bytes, H160, U256},
+    ethrpc::alloy::conversions::IntoAlloy,
     number::conversions::big_decimal_to_u256,
 };
 // Data structure reflecting the contract ethflow order
 // https://github.com/cowprotocol/ethflowcontract/blob/main/src/libraries/EthFlowOrder.sol#L19
+#[derive(Clone)]
 pub struct EthflowOrder {
     pub buy_token: H160,
     pub receiver: H160,
@@ -30,6 +33,22 @@ impl EthflowOrder {
             self.partially_fillable,
             self.quote_id,
         )
+    }
+}
+
+impl From<EthflowOrder> for CoWSwapEthFlow::EthFlowOrder::Data {
+    fn from(value: EthflowOrder) -> Self {
+        CoWSwapEthFlow::EthFlowOrder::Data {
+            buyToken: value.buy_token.into_alloy(),
+            receiver: value.receiver.into_alloy(),
+            sellAmount: value.sell_amount.into_alloy(),
+            buyAmount: value.buy_amount.into_alloy(),
+            appData: value.app_data.0.into(),
+            feeAmount: value.fee_amount.into_alloy(),
+            validTo: value.valid_to,
+            partiallyFillable: value.partially_fillable,
+            quoteId: value.quote_id,
+        }
     }
 }
 
