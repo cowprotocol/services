@@ -33,6 +33,7 @@ pub struct ProtocolAppData {
     pub partner_fee: PartnerFees,
     pub flashloan: Option<Flashloan>,
     pub wrapper: Option<H160>,
+    pub wrapper_data: Option<Vec<u8>>,
 }
 
 /// Contains information to hint at how a solver could make
@@ -433,6 +434,7 @@ impl From<BackendAppData> for ProtocolAppData {
         Self {
             hooks: value.hooks,
             wrapper: None,
+            wrapper_data: None,
             signer: None,
             replaced_order: None,
             partner_fee: PartnerFees::default(),

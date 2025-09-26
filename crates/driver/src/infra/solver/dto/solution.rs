@@ -224,7 +224,8 @@ impl Solutions {
                                 flashloan_hints.get(&uid).cloned()?,
                             ))
                         }).collect()),
-                    solution.wrapper.map(|w| w.into())
+                    solution.wrapper.map(|w| w.into()),
+                    solution.wrapper_data.clone()
                 )
                 .map_err(|err| match err {
                     competition::solution::error::Solution::InvalidClearingPrices => {

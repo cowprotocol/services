@@ -188,6 +188,7 @@ impl Inner {
 
             let compute_solution = async |request: Request| -> Option<Solution> {
                 let wrapper = request.wrapper;
+                let wrapper_data = request.wrapper_data.clone();
                 let route = boundary_solver.route(request, self.max_hops).await?;
                 let interactions = route
                     .segments
@@ -227,6 +228,7 @@ impl Inner {
                         interactions,
                         gas,
                         wrapper,
+                        wrapper_data,
                     }
                     .into_solution(fee)?
                     .with_id(solution::Id(i as u64))
@@ -248,7 +250,7 @@ impl Inner {
 
     fn requests_for_order(&self, order: &Order) -> impl Iterator<Item = Request> + use<> {
         let order::Order {
-            sell, buy, side, wrapper, ..
+            sell, buy, side, wrapper, wrapper_data, ..
         } = order.clone();
 
         let n = if order.partially_fillable {
@@ -270,7 +272,8 @@ impl Inner {
                         amount: buy.amount / divisor,
                     },
                     side,
-                    wrapper
+                    wrapper,
+                    wrapper_data: wrapper_data.clone(),
                 }
             })
             .filter(|r| !r.sell.amount.is_zero() && !r.buy.amount.is_zero())
@@ -297,12 +300,14 @@ impl Inner {
         };
 
         let wrapper = order.wrapper;
+        let wrapper_data = order.wrapper_data.clone();
 
         Request {
             sell,
             buy,
             side: order::Side::Buy,
             wrapper,
+            wrapper_data,
         }
     }
 }
@@ -325,6 +330,7 @@ pub struct Request {
     pub buy: eth::Asset,
     pub side: order::Side,
     pub wrapper: Option<H160>,
+    pub wrapper_data: Option<Vec<u8>>,
 }
 
 /// A trading route.

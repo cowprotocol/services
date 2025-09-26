@@ -19,6 +19,7 @@ pub struct Solution {
     pub post_interactions: Vec<eth::Interaction>,
     pub gas: Option<eth::Gas>,
     pub wrapper: Option<eth::Address>,
+    pub wrapper_data: Option<Vec<u8>>,
 }
 
 impl Solution {
@@ -114,6 +115,8 @@ pub struct Single {
     pub gas: eth::Gas,
     /// The wrapper to use, if any
     pub wrapper: Option<H160>,
+    /// The wrapper data to use, if any
+    pub wrapper_data: Option<Vec<u8>>,
 }
 
 impl Single {
@@ -127,6 +130,7 @@ impl Single {
             interactions,
             gas,
             wrapper,
+            wrapper_data,
         } = self;
 
         if (order.sell.token, order.buy.token) != (input.token, output.token) {
@@ -185,7 +189,8 @@ impl Single {
             post_interactions: Default::default(),
             gas: Some(gas),
             trades: vec![Trade::Fulfillment(Fulfillment::new(order, executed, fee)?)],
-            wrapper: wrapper.map(|v| eth::Address(v)),
+            wrapper: wrapper.map(eth::Address),
+            wrapper_data,
         })
     }
 }

@@ -1,1 +1,144 @@
-{"abi":[{"type":"function","name":"AUTHENTICATOR","inputs":[],"outputs":[{"name":"","type":"address","internalType":"contract GPv2Authentication"}],"stateMutability":"view"},{"type":"function","name":"UPSTREAM_SETTLEMENT","inputs":[],"outputs":[{"name":"","type":"address","internalType":"contract GPv2Settlement"}],"stateMutability":"view"},{"type":"function","name":"wrappedSettle","inputs":[{"name":"tokens","type":"address[]","internalType":"contract IERC20[]"},{"name":"clearingPrices","type":"uint256[]","internalType":"uint256[]"},{"name":"trades","type":"tuple[]","internalType":"struct GPv2Trade.Data[]","components":[{"name":"sellTokenIndex","type":"uint256","internalType":"uint256"},{"name":"buyTokenIndex","type":"uint256","internalType":"uint256"},{"name":"receiver","type":"address","internalType":"address"},{"name":"sellAmount","type":"uint256","internalType":"uint256"},{"name":"buyAmount","type":"uint256","internalType":"uint256"},{"name":"validTo","type":"uint32","internalType":"uint32"},{"name":"appData","type":"bytes32","internalType":"bytes32"},{"name":"feeAmount","type":"uint256","internalType":"uint256"},{"name":"flags","type":"uint256","internalType":"uint256"},{"name":"executedAmount","type":"uint256","internalType":"uint256"},{"name":"signature","type":"bytes","internalType":"bytes"}]},{"name":"interactions","type":"tuple[][3]","internalType":"struct GPv2Interaction.Data[][3]","components":[{"name":"target","type":"address","internalType":"address"},{"name":"value","type":"uint256","internalType":"uint256"},{"name":"callData","type":"bytes","internalType":"bytes"}]},{"name":"wrapperData","type":"bytes","internalType":"bytes"}],"outputs":[],"stateMutability":"nonpayable"}],"bytecode":{"object":"0x","sourceMap":"","linkReferences":{}},"deployedBytecode":{"object":"0x","sourceMap":"","linkReferences":{}},"methodIdentifiers":{"AUTHENTICATOR()":"c6186181","UPSTREAM_SETTLEMENT()":"08046235","wrappedSettle(address[],uint256[],(uint256,uint256,address,uint256,uint256,uint32,bytes32,uint256,uint256,uint256,bytes)[],(address,uint256,bytes)[][3],bytes)":"edcc6316"},"rawMetadata":"{\"compiler\":{\"version\":\"0.8.30+commit.73712a01\"},\"language\":\"Solidity\",\"output\":{\"abi\":[{\"inputs\":[],\"name\":\"AUTHENTICATOR\",\"outputs\":[{\"internalType\":\"contract GPv2Authentication\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"UPSTREAM_SETTLEMENT\",\"outputs\":[{\"internalType\":\"contract GPv2Settlement\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"contract IERC20[]\",\"name\":\"tokens\",\"type\":\"address[]\"},{\"internalType\":\"uint256[]\",\"name\":\"clearingPrices\",\"type\":\"uint256[]\"},{\"components\":[{\"internalType\":\"uint256\",\"name\":\"sellTokenIndex\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"buyTokenIndex\",\"type\":\"uint256\"},{\"internalType\":\"address\",\"name\":\"receiver\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"sellAmount\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"buyAmount\",\"type\":\"uint256\"},{\"internalType\":\"uint32\",\"name\":\"validTo\",\"type\":\"uint32\"},{\"internalType\":\"bytes32\",\"name\":\"appData\",\"type\":\"bytes32\"},{\"internalType\":\"uint256\",\"name\":\"feeAmount\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"flags\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"executedAmount\",\"type\":\"uint256\"},{\"internalType\":\"bytes\",\"name\":\"signature\",\"type\":\"bytes\"}],\"internalType\":\"struct GPv2Trade.Data[]\",\"name\":\"trades\",\"type\":\"tuple[]\"},{\"components\":[{\"internalType\":\"address\",\"name\":\"target\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"value\",\"type\":\"uint256\"},{\"internalType\":\"bytes\",\"name\":\"callData\",\"type\":\"bytes\"}],\"internalType\":\"struct GPv2Interaction.Data[][3]\",\"name\":\"interactions\",\"type\":\"tuple[][3]\"},{\"internalType\":\"bytes\",\"name\":\"wrapperData\",\"type\":\"bytes\"}],\"name\":\"wrappedSettle\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"}],\"devdoc\":{\"details\":\"Interface defining required methods for wrappers of the GPv2Settlement contract for CoW orders A wrapper should: * call the equivalent `settle` on the GPv2Settlement contract (0x9008D19f58AAbD9eD0D60971565AA8510560ab41) * verify that the caller is authorized via the GPv2Authentication contract. A wrapper may also execute, or otherwise put the blockchain in a state that needs to be established prior to settlement. Additionally, it needs to be approved by the GPv2Authentication contract\",\"kind\":\"dev\",\"methods\":{\"wrappedSettle(address[],uint256[],(uint256,uint256,address,uint256,uint256,uint32,bytes32,uint256,uint256,uint256,bytes)[],(address,uint256,bytes)[][3],bytes)\":{\"details\":\"Called to initiate a wrapped call against the settlement function. See GPv2Settlement.settle() for more information.\"}},\"version\":1},\"userdoc\":{\"kind\":\"user\",\"methods\":{},\"version\":1}},\"settings\":{\"compilationTarget\":{\"src/contracts/GPv2Wrapper.sol\":\"GPv2Wrapper\"},\"evmVersion\":\"cancun\",\"libraries\":{},\"metadata\":{\"bytecodeHash\":\"ipfs\"},\"optimizer\":{\"enabled\":true,\"runs\":1000000},\"remappings\":[\":@ensdomains/=node_modules/@ensdomains/\",\":@gnosis.pm/=node_modules/@gnosis.pm/\",\":@openzeppelin/=node_modules/@openzeppelin/\",\":@uniswap/=node_modules/@uniswap/\",\":canonical-weth/=node_modules/canonical-weth/\",\":eth-gas-reporter/=node_modules/eth-gas-reporter/\",\":forge-std/=lib/forge-std/src/\",\":hardhat-deploy/=node_modules/hardhat-deploy/\",\":hardhat/=node_modules/hardhat/\"]},\"sources\":{\"src/contracts/GPv2Settlement.sol\":{\"keccak256\":\"0x3eb7e2bbcbe9c244324ea3bc962d584b011b4e18b208e83f1859b4479fdfb182\",\"license\":\"LGPL-3.0-or-later\",\"urls\":[\"bzz-raw://4e94f95fae641f240db7352bf53acf095a48ddda838055ec665fce29cb575c9e\",\"dweb:/ipfs/QmZtAhuhbqVKSuxJ74wn4mXz2vq1t7N3KCiigZTscUxz1S\"]},\"src/contracts/GPv2VaultRelayer.sol\":{\"keccak256\":\"0x31a5e6f5492617f4ab4f92b47c34c57124d1f629c28c471592e5fb7e6399dd9b\",\"license\":\"LGPL-3.0-or-later\",\"urls\":[\"bzz-raw://f763bbbac5d873367a8d53df14e4704ea8d3035af3ab575f77a504c44573fdba\",\"dweb:/ipfs/QmVYMkoNA8i6CCQqbyfrhc5jPuz1JH4hzsWakrCyGtLRHW\"]},\"src/contracts/GPv2Wrapper.sol\":{\"keccak256\":\"0x5bc695f22efdf3f013441ac58e2a3d6cab785daad929d16787213a0487842cbd\",\"license\":\"GPL-3.0-or-later\",\"urls\":[\"bzz-raw://eb019c2dedf15b3138a1209b8ed3b1d522601f703e9463b1456fe3039245c703\",\"dweb:/ipfs/QmP2QHoiVApQvVXvWkSQGVJCGWY6GYBb8wSJAPqvF1PXu4\"]},\"src/contracts/interfaces/GPv2Authentication.sol\":{\"keccak256\":\"0x5d7aa0a9ed46dab8b3b95a95f6ece8709eba8b058a9ab5f248da06a659acecb1\",\"license\":\"LGPL-3.0-or-later\",\"urls\":[\"bzz-raw://1ca78a537f927489c5097c9901bacce53745d78f3efc47d418a9c662de4660cd\",\"dweb:/ipfs/QmedJbsJ8S5ovrVRoEBQraLWmu9WxxYLPAJKDVYj6aPJVD\"]},\"src/contracts/interfaces/GPv2EIP1271.sol\":{\"keccak256\":\"0x980bddd301af4e9ee0fff5bd84a0bd12d7a359be4f5abda0f1c99e607e445b1c\",\"license\":\"LGPL-3.0-or-later\",\"urls\":[\"bzz-raw://d50e341790048037515c9f471a48bad1598c04bc846eaf84b40bb5cabcfbe2d4\",\"dweb:/ipfs/QmfJR7MVkgN5yEzsTSHe3RVtRfanoTkdS8m1ensCnMX7oM\"]},\"src/contracts/interfaces/IERC20.sol\":{\"keccak256\":\"0x2db02cc0e23db99d10cd21590425b714060a556bcfb934cb5ab3b80aef1610ba\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://c05f8a21a244e6566a3e555028cebeebd1c38902f0cea2e9b014cc7becaf3140\",\"dweb:/ipfs/QmTBY1GphjwAnY2nC9qKMwj5HeAUJMgFdo5YZcVxsVyqFb\"]},\"src/contracts/interfaces/IVault.sol\":{\"keccak256\":\"0x438c78286c8448302972b38ac26c175ba1402b523e81b3c58ef1a902bac0a0ed\",\"license\":\"GPL-3.0-or-later\",\"urls\":[\"bzz-raw://12f16e5d690f6cff7c7e198592aa7514ed66ade3b9ab319f95ff930cb389aa1a\",\"dweb:/ipfs/QmUgQVDo4Lj4tba7twCy5SXpCT1kyxbBYhBdagbBqRMezc\"]},\"src/contracts/libraries/GPv2Interaction.sol\":{\"keccak256\":\"0x7b69b3d536c995e84a5fe4ec3dc63ddf01a3538f72ece83828e87aa90df33a7d\",\"license\":\"LGPL-3.0-or-later\",\"urls\":[\"bzz-raw://7ba34b22f5b25cd6fecfd0d5e9b6077b36130a2cb4539b1311de0f328c226958\",\"dweb:/ipfs/QmUURWvPbrZ6Z4iDv8Sa8soQCZyKZCsCcdMzgY9Jy5RNV2\"]},\"src/contracts/libraries/GPv2Order.sol\":{\"keccak256\":\"0xb96efb76433446cf0ccb9f5bc926301a9c8bcbfd17dcd6a36a1e6207f5b436b2\",\"license\":\"LGPL-3.0-or-later\",\"urls\":[\"bzz-raw://5ec097e17d3e47e16808a5246a99af7ef618bb58ccb61d7331bfca1929cbbd82\",\"dweb:/ipfs/QmbH7rg5s5gdpa5KENMUXHyGBWJyQn6XEwv9JakRSCcv8n\"]},\"src/contracts/libraries/GPv2SafeERC20.sol\":{\"keccak256\":\"0x3c156de3e1710d184847cf9b919e766caba9edc879b29b67f3de60c5144b73d6\",\"license\":\"LGPL-3.0-or-later\",\"urls\":[\"bzz-raw://2d84c0b020ab3105c630b23d998f3cd6e6f028ebf8015f89d29a3d7aa6677f96\",\"dweb:/ipfs/QmbuaSHRRrwznWhrymU7nx8wzEAC6C8HUKofaTEjQML9kw\"]},\"src/contracts/libraries/GPv2Trade.sol\":{\"keccak256\":\"0xdfd7efab95dc63adcfc09ac18181e02fcec50051e9c53d6789cfab1ee0a280b9\",\"license\":\"LGPL-3.0-or-later\",\"urls\":[\"bzz-raw://42364d6e91d86b33b1efc67e4cbcf6bf79e3fc6ed669700c68bfc51c6189f81f\",\"dweb:/ipfs/QmRo4phfSFWc6nL9TEkvZ7EKHvkgJ2h8sfhSa6UXAekvQF\"]},\"src/contracts/libraries/GPv2Transfer.sol\":{\"keccak256\":\"0xe961ebb1e57eab2cbe83650660741ffff4f494ba0a7effdf6e8637cc76ec8a8e\",\"license\":\"LGPL-3.0-or-later\",\"urls\":[\"bzz-raw://d9d779b3ad983a6e599d2aac76ee09aa7049c9420fa81ea41e9657e957f81ff1\",\"dweb:/ipfs/Qma7MHLXvDZRzSMXGKLjTYbRkVYRdqqFYruKMciE3CWd5x\"]},\"src/contracts/libraries/SafeCast.sol\":{\"keccak256\":\"0x1080c5a0503fb51c76806e85b474a795f4e5e401d78cf9ce89f9bf5e921c01f9\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://703f2afd5f5fea8886762b93bc42117a2dc25dfa5464446205b56b0a7cb85d28\",\"dweb:/ipfs/QmRteh6BJdxBdhtsJAhG8EiNGQPRd4Mwb9HWEH56PuGMeQ\"]},\"src/contracts/libraries/SafeMath.sol\":{\"keccak256\":\"0x035ecce1066e2cbb1420bda9f1347fc6b95dbd67c370af04d3b2596aae8721cc\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://8d5696297da38e3667d4f6d961829cdd3303ad346da4021e68ddc05ad886a98e\",\"dweb:/ipfs/QmRzHy19ZWDU3mieEdUZgwnaFgi67eFx7SHHWH4Wzahx5d\"]},\"src/contracts/mixins/GPv2Signing.sol\":{\"keccak256\":\"0x9034debeaf3d46e2fc026ade2e40b56140b7f63b6870371b381c886c679232cb\",\"license\":\"LGPL-3.0-or-later\",\"urls\":[\"bzz-raw://cf9096d052f176ecc1326d346c1993bf921f5f440eb830c8febfaf535ab3f290\",\"dweb:/ipfs/QmeGmu7E3xXr3x3BsMX9iHma5hoJvXxomx2J3GQBp8ANMV\"]},\"src/contracts/mixins/ReentrancyGuard.sol\":{\"keccak256\":\"0x35c029266e8cb2e2d522d3e37cc2660bfb433708cf832382c94c8a286160abe5\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://6e7b2e00d8ce5ccfae5a421785efb7370407846ce0e618c304eefdca5a7f7146\",\"dweb:/ipfs/QmPGBheUjYnSumMYYq6wigGF5k9Cu9ZUozNaBAwKYAM28g\"]},\"src/contracts/mixins/StorageAccessible.sol\":{\"keccak256\":\"0xd783fd67c7b5fc34a56472803cfee2ccaf428d807765df877357983448060d97\",\"license\":\"LGPL-3.0-only\",\"urls\":[\"bzz-raw://e5cc6b42ca8f0a0ed3739ab1f739322ff70b0b67d523cb742921c79c583137c5\",\"dweb:/ipfs/QmeGtzZ4aMwQunUmNMGxR2tc3yaGR5FaYhRMCN6aJXF6hq\"]}},\"version\":1}","metadata":{"compiler":{"version":"0.8.30+commit.73712a01"},"language":"Solidity","output":{"abi":[{"inputs":[],"stateMutability":"view","type":"function","name":"AUTHENTICATOR","outputs":[{"internalType":"contract GPv2Authentication","name":"","type":"address"}]},{"inputs":[],"stateMutability":"view","type":"function","name":"UPSTREAM_SETTLEMENT","outputs":[{"internalType":"contract GPv2Settlement","name":"","type":"address"}]},{"inputs":[{"internalType":"contract IERC20[]","name":"tokens","type":"address[]"},{"internalType":"uint256[]","name":"clearingPrices","type":"uint256[]"},{"internalType":"struct GPv2Trade.Data[]","name":"trades","type":"tuple[]","components":[{"internalType":"uint256","name":"sellTokenIndex","type":"uint256"},{"internalType":"uint256","name":"buyTokenIndex","type":"uint256"},{"internalType":"address","name":"receiver","type":"address"},{"internalType":"uint256","name":"sellAmount","type":"uint256"},{"internalType":"uint256","name":"buyAmount","type":"uint256"},{"internalType":"uint32","name":"validTo","type":"uint32"},{"internalType":"bytes32","name":"appData","type":"bytes32"},{"internalType":"uint256","name":"feeAmount","type":"uint256"},{"internalType":"uint256","name":"flags","type":"uint256"},{"internalType":"uint256","name":"executedAmount","type":"uint256"},{"internalType":"bytes","name":"signature","type":"bytes"}]},{"internalType":"struct GPv2Interaction.Data[][3]","name":"interactions","type":"tuple[][3]","components":[{"internalType":"address","name":"target","type":"address"},{"internalType":"uint256","name":"value","type":"uint256"},{"internalType":"bytes","name":"callData","type":"bytes"}]},{"internalType":"bytes","name":"wrapperData","type":"bytes"}],"stateMutability":"nonpayable","type":"function","name":"wrappedSettle"}],"devdoc":{"kind":"dev","methods":{"wrappedSettle(address[],uint256[],(uint256,uint256,address,uint256,uint256,uint32,bytes32,uint256,uint256,uint256,bytes)[],(address,uint256,bytes)[][3],bytes)":{"details":"Called to initiate a wrapped call against the settlement function. See GPv2Settlement.settle() for more information."}},"version":1},"userdoc":{"kind":"user","methods":{},"version":1}},"settings":{"remappings":["@ensdomains/=node_modules/@ensdomains/","@gnosis.pm/=node_modules/@gnosis.pm/","@openzeppelin/=node_modules/@openzeppelin/","@uniswap/=node_modules/@uniswap/","canonical-weth/=node_modules/canonical-weth/","eth-gas-reporter/=node_modules/eth-gas-reporter/","forge-std/=lib/forge-std/src/","hardhat-deploy/=node_modules/hardhat-deploy/","hardhat/=node_modules/hardhat/"],"optimizer":{"enabled":true,"runs":1000000},"metadata":{"bytecodeHash":"ipfs"},"compilationTarget":{"src/contracts/GPv2Wrapper.sol":"GPv2Wrapper"},"evmVersion":"cancun","libraries":{}},"sources":{"src/contracts/GPv2Settlement.sol":{"keccak256":"0x3eb7e2bbcbe9c244324ea3bc962d584b011b4e18b208e83f1859b4479fdfb182","urls":["bzz-raw://4e94f95fae641f240db7352bf53acf095a48ddda838055ec665fce29cb575c9e","dweb:/ipfs/QmZtAhuhbqVKSuxJ74wn4mXz2vq1t7N3KCiigZTscUxz1S"],"license":"LGPL-3.0-or-later"},"src/contracts/GPv2VaultRelayer.sol":{"keccak256":"0x31a5e6f5492617f4ab4f92b47c34c57124d1f629c28c471592e5fb7e6399dd9b","urls":["bzz-raw://f763bbbac5d873367a8d53df14e4704ea8d3035af3ab575f77a504c44573fdba","dweb:/ipfs/QmVYMkoNA8i6CCQqbyfrhc5jPuz1JH4hzsWakrCyGtLRHW"],"license":"LGPL-3.0-or-later"},"src/contracts/GPv2Wrapper.sol":{"keccak256":"0x5bc695f22efdf3f013441ac58e2a3d6cab785daad929d16787213a0487842cbd","urls":["bzz-raw://eb019c2dedf15b3138a1209b8ed3b1d522601f703e9463b1456fe3039245c703","dweb:/ipfs/QmP2QHoiVApQvVXvWkSQGVJCGWY6GYBb8wSJAPqvF1PXu4"],"license":"GPL-3.0-or-later"},"src/contracts/interfaces/GPv2Authentication.sol":{"keccak256":"0x5d7aa0a9ed46dab8b3b95a95f6ece8709eba8b058a9ab5f248da06a659acecb1","urls":["bzz-raw://1ca78a537f927489c5097c9901bacce53745d78f3efc47d418a9c662de4660cd","dweb:/ipfs/QmedJbsJ8S5ovrVRoEBQraLWmu9WxxYLPAJKDVYj6aPJVD"],"license":"LGPL-3.0-or-later"},"src/contracts/interfaces/GPv2EIP1271.sol":{"keccak256":"0x980bddd301af4e9ee0fff5bd84a0bd12d7a359be4f5abda0f1c99e607e445b1c","urls":["bzz-raw://d50e341790048037515c9f471a48bad1598c04bc846eaf84b40bb5cabcfbe2d4","dweb:/ipfs/QmfJR7MVkgN5yEzsTSHe3RVtRfanoTkdS8m1ensCnMX7oM"],"license":"LGPL-3.0-or-later"},"src/contracts/interfaces/IERC20.sol":{"keccak256":"0x2db02cc0e23db99d10cd21590425b714060a556bcfb934cb5ab3b80aef1610ba","urls":["bzz-raw://c05f8a21a244e6566a3e555028cebeebd1c38902f0cea2e9b014cc7becaf3140","dweb:/ipfs/QmTBY1GphjwAnY2nC9qKMwj5HeAUJMgFdo5YZcVxsVyqFb"],"license":"MIT"},"src/contracts/interfaces/IVault.sol":{"keccak256":"0x438c78286c8448302972b38ac26c175ba1402b523e81b3c58ef1a902bac0a0ed","urls":["bzz-raw://12f16e5d690f6cff7c7e198592aa7514ed66ade3b9ab319f95ff930cb389aa1a","dweb:/ipfs/QmUgQVDo4Lj4tba7twCy5SXpCT1kyxbBYhBdagbBqRMezc"],"license":"GPL-3.0-or-later"},"src/contracts/libraries/GPv2Interaction.sol":{"keccak256":"0x7b69b3d536c995e84a5fe4ec3dc63ddf01a3538f72ece83828e87aa90df33a7d","urls":["bzz-raw://7ba34b22f5b25cd6fecfd0d5e9b6077b36130a2cb4539b1311de0f328c226958","dweb:/ipfs/QmUURWvPbrZ6Z4iDv8Sa8soQCZyKZCsCcdMzgY9Jy5RNV2"],"license":"LGPL-3.0-or-later"},"src/contracts/libraries/GPv2Order.sol":{"keccak256":"0xb96efb76433446cf0ccb9f5bc926301a9c8bcbfd17dcd6a36a1e6207f5b436b2","urls":["bzz-raw://5ec097e17d3e47e16808a5246a99af7ef618bb58ccb61d7331bfca1929cbbd82","dweb:/ipfs/QmbH7rg5s5gdpa5KENMUXHyGBWJyQn6XEwv9JakRSCcv8n"],"license":"LGPL-3.0-or-later"},"src/contracts/libraries/GPv2SafeERC20.sol":{"keccak256":"0x3c156de3e1710d184847cf9b919e766caba9edc879b29b67f3de60c5144b73d6","urls":["bzz-raw://2d84c0b020ab3105c630b23d998f3cd6e6f028ebf8015f89d29a3d7aa6677f96","dweb:/ipfs/QmbuaSHRRrwznWhrymU7nx8wzEAC6C8HUKofaTEjQML9kw"],"license":"LGPL-3.0-or-later"},"src/contracts/libraries/GPv2Trade.sol":{"keccak256":"0xdfd7efab95dc63adcfc09ac18181e02fcec50051e9c53d6789cfab1ee0a280b9","urls":["bzz-raw://42364d6e91d86b33b1efc67e4cbcf6bf79e3fc6ed669700c68bfc51c6189f81f","dweb:/ipfs/QmRo4phfSFWc6nL9TEkvZ7EKHvkgJ2h8sfhSa6UXAekvQF"],"license":"LGPL-3.0-or-later"},"src/contracts/libraries/GPv2Transfer.sol":{"keccak256":"0xe961ebb1e57eab2cbe83650660741ffff4f494ba0a7effdf6e8637cc76ec8a8e","urls":["bzz-raw://d9d779b3ad983a6e599d2aac76ee09aa7049c9420fa81ea41e9657e957f81ff1","dweb:/ipfs/Qma7MHLXvDZRzSMXGKLjTYbRkVYRdqqFYruKMciE3CWd5x"],"license":"LGPL-3.0-or-later"},"src/contracts/libraries/SafeCast.sol":{"keccak256":"0x1080c5a0503fb51c76806e85b474a795f4e5e401d78cf9ce89f9bf5e921c01f9","urls":["bzz-raw://703f2afd5f5fea8886762b93bc42117a2dc25dfa5464446205b56b0a7cb85d28","dweb:/ipfs/QmRteh6BJdxBdhtsJAhG8EiNGQPRd4Mwb9HWEH56PuGMeQ"],"license":"MIT"},"src/contracts/libraries/SafeMath.sol":{"keccak256":"0x035ecce1066e2cbb1420bda9f1347fc6b95dbd67c370af04d3b2596aae8721cc","urls":["bzz-raw://8d5696297da38e3667d4f6d961829cdd3303ad346da4021e68ddc05ad886a98e","dweb:/ipfs/QmRzHy19ZWDU3mieEdUZgwnaFgi67eFx7SHHWH4Wzahx5d"],"license":"MIT"},"src/contracts/mixins/GPv2Signing.sol":{"keccak256":"0x9034debeaf3d46e2fc026ade2e40b56140b7f63b6870371b381c886c679232cb","urls":["bzz-raw://cf9096d052f176ecc1326d346c1993bf921f5f440eb830c8febfaf535ab3f290","dweb:/ipfs/QmeGmu7E3xXr3x3BsMX9iHma5hoJvXxomx2J3GQBp8ANMV"],"license":"LGPL-3.0-or-later"},"src/contracts/mixins/ReentrancyGuard.sol":{"keccak256":"0x35c029266e8cb2e2d522d3e37cc2660bfb433708cf832382c94c8a286160abe5","urls":["bzz-raw://6e7b2e00d8ce5ccfae5a421785efb7370407846ce0e618c304eefdca5a7f7146","dweb:/ipfs/QmPGBheUjYnSumMYYq6wigGF5k9Cu9ZUozNaBAwKYAM28g"],"license":"MIT"},"src/contracts/mixins/StorageAccessible.sol":{"keccak256":"0xd783fd67c7b5fc34a56472803cfee2ccaf428d807765df877357983448060d97","urls":["bzz-raw://e5cc6b42ca8f0a0ed3739ab1f739322ff70b0b67d523cb742921c79c583137c5","dweb:/ipfs/QmeGtzZ4aMwQunUmNMGxR2tc3yaGR5FaYhRMCN6aJXF6hq"],"license":"LGPL-3.0-only"}},"version":1},"id":2}
+{
+  "_format": "hh-sol-artifact-1",
+  "contractName": "GPv2Wrapper",
+  "sourceName": "src/contracts/GPv2Wrapper.sol",
+  "abi": [
+    {
+      "inputs": [],
+      "name": "AUTHENTICATOR",
+      "outputs": [
+        {
+          "internalType": "contract GPv2Authentication",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "UPSTREAM_SETTLEMENT",
+      "outputs": [
+        {
+          "internalType": "contract GPv2Settlement",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "contract IERC20[]",
+          "name": "tokens",
+          "type": "address[]"
+        },
+        {
+          "internalType": "uint256[]",
+          "name": "clearingPrices",
+          "type": "uint256[]"
+        },
+        {
+          "components": [
+            {
+              "internalType": "uint256",
+              "name": "sellTokenIndex",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "buyTokenIndex",
+              "type": "uint256"
+            },
+            {
+              "internalType": "address",
+              "name": "receiver",
+              "type": "address"
+            },
+            {
+              "internalType": "uint256",
+              "name": "sellAmount",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "buyAmount",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint32",
+              "name": "validTo",
+              "type": "uint32"
+            },
+            {
+              "internalType": "bytes32",
+              "name": "appData",
+              "type": "bytes32"
+            },
+            {
+              "internalType": "uint256",
+              "name": "feeAmount",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "flags",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "executedAmount",
+              "type": "uint256"
+            },
+            {
+              "internalType": "bytes",
+              "name": "signature",
+              "type": "bytes"
+            }
+          ],
+          "internalType": "struct GPv2Trade.Data[]",
+          "name": "trades",
+          "type": "tuple[]"
+        },
+        {
+          "components": [
+            {
+              "internalType": "address",
+              "name": "target",
+              "type": "address"
+            },
+            {
+              "internalType": "uint256",
+              "name": "value",
+              "type": "uint256"
+            },
+            {
+              "internalType": "bytes",
+              "name": "callData",
+              "type": "bytes"
+            }
+          ],
+          "internalType": "struct GPv2Interaction.Data[][3]",
+          "name": "interactions",
+          "type": "tuple[][3]"
+        },
+        {
+          "internalType": "bytes",
+          "name": "wrapperData",
+          "type": "bytes"
+        }
+      ],
+      "name": "wrappedSettle",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    }
+  ],
+  "bytecode": "0x",
+  "deployedBytecode": "0x",
+  "linkReferences": {},
+  "deployedLinkReferences": {}
+}

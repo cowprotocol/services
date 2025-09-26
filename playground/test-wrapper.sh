@@ -1,8 +1,8 @@
 #!/bin/bash
 set -x
 
-appData='{\"version\":\"0.9.0\",\"metadata\":{\"wrapper\":\"0x71d2363e959194F9d96bE781991016E17A7f53Dd\"}}'
-appDataUnescaped="{\"version\":\"0.9.0\",\"metadata\":{\"wrapper\":\"0x71d2363e959194F9d96bE781991016E17A7f53Dd\"}}"
+appData='{\"version\":\"0.9.0\",\"metadata\":{\"wrapper\":\"0xdAa2E293726d0d20ddC17fee8064900dC9574e3f\",\"wrapper_data\":\"0x12345678ffff\"}}'
+appDataUnescaped="{\"version\":\"0.9.0\",\"metadata\":{\"wrapper\":\"0xdAa2E293726d0d20ddC17fee8064900dC9574e3f\",\"wrapper_data\":\"0x12345678ffff\"}}"
 appDataHash=$(cast keccak "$appDataUnescaped")
 
 # valid until 24 hours from now

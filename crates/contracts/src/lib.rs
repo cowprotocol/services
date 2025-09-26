@@ -4,10 +4,10 @@ pub use ethcontract;
 pub mod alloy;
 pub mod errors;
 use {
-    anyhow::{Result, anyhow, bail},
+    anyhow::{anyhow, bail, Result},
     ethcontract::{
+        common::{contract::Network, DeploymentInformation},
         Contract,
-        common::{DeploymentInformation, contract::Network},
     },
 };
 
@@ -67,6 +67,7 @@ include_contracts! {
     FlashLoanRouter;
     GPv2AllowListAuthentication;
     GPv2Settlement;
+    GPv2Wrapper;
     HooksTrampoline;
     IAavePool;
     IFlashLoanSolverWrapper;
@@ -105,7 +106,7 @@ mod tests {
             futures::future::{self, FutureExt as _, Ready},
             json::json,
             jsonrpc::{Call, Id, MethodCall, Params, Value},
-            web3::{BatchTransport, RequestId, Transport, Web3, error::Result as Web3Result},
+            web3::{error::Result as Web3Result, BatchTransport, RequestId, Transport, Web3},
         },
     };
 

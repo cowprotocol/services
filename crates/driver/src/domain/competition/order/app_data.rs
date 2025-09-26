@@ -136,6 +136,13 @@ impl AppData {
             Self::Full(data) => data.protocol.wrapper.as_ref(),
         }
     }
+
+    pub fn wrapper_data(&self) -> Option<&Vec<u8>> {
+        match self {
+            Self::Hash(_) => None,
+            Self::Full(data) => data.protocol.wrapper_data.as_ref(),
+        }
+    }
 }
 
 impl From<[u8; APP_DATA_LEN]> for AppData {

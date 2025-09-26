@@ -329,7 +329,7 @@ impl Solver {
             .iter()
             .flat_map(|order| {
                 let wrapper = order.app_data.wrapper()?;
-                Some((order.uid, wrapper.clone()))
+                Some((order.uid, *wrapper))
             })
             .collect()
     }

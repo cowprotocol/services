@@ -1,6 +1,7 @@
 app-data-fetching-enabled = true
 orderbook-url = 'http://orderbook'
 
+
 [[solver]]
 name = "baseline" # Arbitrary name given to this solver, must be unique
 endpoint = "http://baseline"

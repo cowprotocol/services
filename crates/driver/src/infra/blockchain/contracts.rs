@@ -1,5 +1,5 @@
 use {
-    crate::{boundary, domain::eth, infra::{blockchain::Ethereum, config}},
+    crate::{boundary, domain::eth, infra::blockchain::Ethereum},
     chain::Chain,
     contracts::FlashLoanRouter,
     ethrpc::{Web3, block_stream::CurrentBlockWatcher},

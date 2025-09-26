@@ -10,11 +10,9 @@ use {
             liquidity,
         },
         infra::{self, solver::ManageNativeToken},
-        util::{conv::u256::U256Ext, Bytes},
+        util::Bytes,
     },
     allowance::Allowance,
-    contracts::GPv2Settlement,
-    ethcontract::H160,
     itertools::Itertools,
 };
 
@@ -203,24 +201,29 @@ pub fn tx(
         interactions.push(unwrap(native_unwrap, contracts.weth()));
     }
 
-    let settlement_target = if let Some(w) = solution.wrapper {
-        &GPv2Settlement::at(contracts.web3(), w.into())
-    } else {
-        contracts.settlement()
-    };
+    let interactions = [
+        pre_interactions.iter().map(codec::interaction).collect(),
+        interactions.iter().map(codec::interaction).collect(),
+        post_interactions.iter().map(codec::interaction).collect(),
+    ];
 
-    let tx = settlement_target
-        .settle(
+    let tx = if let Some(w) = solution.wrapper {
+        contracts::GPv2Wrapper::at(contracts.web3(), w.into()).wrapped_settle(
             tokens,
             clearing_prices,
             trades.iter().map(codec::trade).collect(),
-            [
-                pre_interactions.iter().map(codec::interaction).collect(),
-                interactions.iter().map(codec::interaction).collect(),
-                post_interactions.iter().map(codec::interaction).collect(),
-            ],
+            interactions,
+            ethcontract::Bytes(solution.wrapper_data.clone().unwrap_or_default()),
         )
-        .into_inner();
+    } else {
+        contracts.settlement().settle(
+            tokens,
+            clearing_prices,
+            trades.iter().map(codec::trade).collect(),
+            interactions,
+        )
+    }
+    .into_inner();
 
     // Encode the auction id into the calldata
     let mut settle_calldata = tx.data.unwrap().0;
@@ -228,7 +231,7 @@ pub fn tx(
 
     // Target and calldata depend on whether a flashloan is used
     let (to, calldata) = if solution.flashloans.is_empty() {
-        (settlement_target.address().into(), settle_calldata)
+        (tx.to.unwrap().into(), settle_calldata)
     } else {
         let router = contracts
             .flashloan_router()

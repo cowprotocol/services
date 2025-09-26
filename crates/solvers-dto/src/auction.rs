@@ -4,7 +4,7 @@ use {
     bigdecimal::BigDecimal,
     number::serialization::HexOrDecimalU256,
     serde::{Deserialize, Serialize},
-    serde_with::{DisplayFromStr, serde_as},
+    serde_with::{serde_as, DisplayFromStr},
     std::collections::HashMap,
     web3::types::{H160, H256, U256},
 };
@@ -56,7 +56,10 @@ pub struct Order {
     pub app_data: AppDataHash,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub flashloan_hint: Option<FlashloanHint>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub wrapper: Option<H160>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wrapper_data: Option<Vec<u8>>,
     pub signing_scheme: SigningScheme,
     #[serde(with = "bytes_hex")]
     pub signature: Vec<u8>,

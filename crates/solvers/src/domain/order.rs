@@ -18,6 +18,7 @@ pub struct Order {
     pub partially_fillable: bool,
     pub flashloan_hint: Option<FlashloanHint>,
     pub wrapper: Option<H160>,
+    pub wrapper_data: Option<Vec<u8>>,
 }
 
 impl Order {

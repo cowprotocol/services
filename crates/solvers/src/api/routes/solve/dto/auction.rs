@@ -70,6 +70,7 @@ pub fn into_domain(auction: Auction) -> Result<auction::Auction, Error> {
                         amount: hint.amount,
                     }),
                 wrapper: order.wrapper,
+                wrapper_data: order.wrapper_data.clone(),
             })
             .collect(),
         liquidity: auction

@@ -18,6 +18,7 @@ use {
     std::collections::HashMap,
 };
 
+#[allow(clippy::too_many_arguments)]
 pub fn new(
     auction: &competition::Auction,
     liquidity: &[liquidity::Liquidity],
@@ -156,7 +157,8 @@ pub fn new(
                     ),
                     app_data: AppDataHash(order.app_data.hash().0.into()),
                     flashloan_hint: flashloan_hints.get(&order.uid).map(Into::into),
-                    wrapper: wrappers.get(&order.uid).map(|v| v.clone()),
+                    wrapper: wrappers.get(&order.uid).copied(),
+                    wrapper_data: order.app_data.wrapper_data().cloned(),
                     signature: order.signature.data.clone().into(),
                     signing_scheme: match order.signature.scheme {
                         Scheme::Eip712 => solvers_dto::auction::SigningScheme::Eip712,
