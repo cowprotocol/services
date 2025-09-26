@@ -3,7 +3,7 @@ use {
         BalanceOverrideRequest,
         BalanceOverriding,
     },
-    ethcontract::Bytes,
+    alloy::primitives::FixedBytes,
     ethrpc::Web3,
     hex_literal::hex,
     model::interaction::InteractionData,
@@ -75,7 +75,7 @@ pub trait SignatureValidating: Send + Sync {
 /// The Magical value as defined by EIP-1271
 const MAGICAL_VALUE: [u8; 4] = hex!("1626ba7e");
 
-pub fn check_erc1271_result(result: Bytes<[u8; 4]>) -> Result<(), SignatureValidationError> {
+pub fn check_erc1271_result(result: FixedBytes<4>) -> Result<(), SignatureValidationError> {
     if result.0 == MAGICAL_VALUE {
         Ok(())
     } else {

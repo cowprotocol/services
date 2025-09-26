@@ -1,6 +1,6 @@
 use {
+    alloy::primitives::Address,
     clap::Parser,
-    ethcontract::H160,
     shared::{arguments::display_option, ethrpc, http_client, logging_args_with_default_filter},
     std::time::Duration,
     url::Url,
@@ -58,7 +58,7 @@ pub struct Arguments {
 
     /// Addresses of the ethflow contracts
     #[clap(long, env, use_value_delimiter = true)]
-    pub ethflow_contracts: Vec<H160>,
+    pub ethflow_contracts: Vec<Address>,
 
     #[clap(long, env, hide_env_values = true)]
     pub refunder_pk: String,
