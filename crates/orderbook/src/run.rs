@@ -15,12 +15,12 @@ use {
     contracts::{
         BalancerV2Vault,
         GPv2Settlement,
-        HooksTrampoline,
         IUniswapV3Factory,
         WETH9,
-        alloy::{ChainalysisOracle, InstanceExt},
+        alloy::{ChainalysisOracle, HooksTrampoline, InstanceExt},
     },
     ethcontract::errors::DeployError,
+    ethrpc::alloy::conversions::IntoAlloy,
     futures::{FutureExt, StreamExt},
     model::{DomainSeparator, order::BUY_ETH_ADDRESS},
     num::ToPrimitive,
@@ -159,8 +159,8 @@ pub async fn run(args: Arguments) {
     };
 
     let hooks_contract = match args.shared.hooks_contract_address {
-        Some(address) => HooksTrampoline::at(&web3, address),
-        None => HooksTrampoline::deployed(&web3)
+        Some(address) => HooksTrampoline::Instance::new(address.into_alloy(), web3.alloy.clone()),
+        None => HooksTrampoline::Instance::deployed(&web3.alloy)
             .await
             .expect("load hooks trampoline contract"),
     };

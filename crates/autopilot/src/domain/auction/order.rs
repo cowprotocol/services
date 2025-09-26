@@ -1,9 +1,8 @@
 use {
-    crate::{
-        domain,
-        domain::{eth, fee},
-    },
+    crate::domain::{self, eth, fee},
     primitive_types::{H160, H256, U256},
+    serde::Deserialize,
+    serde_with::serde_as,
     std::fmt::{self, Debug, Display, Formatter},
 };
 
@@ -32,8 +31,9 @@ pub struct Order {
 }
 
 // uid as 56 bytes: 32 for orderDigest, 20 for ownerAddress and 4 for validTo
-#[derive(Copy, Clone, PartialEq, Hash, Eq)]
-pub struct OrderUid(pub [u8; 56]);
+#[serde_as]
+#[derive(Copy, Clone, PartialEq, Hash, Eq, Deserialize)]
+pub struct OrderUid(#[serde_as(as = "bytes_hex::BytesHex")] pub [u8; 56]);
 
 impl OrderUid {
     pub fn owner(&self) -> eth::Address {
