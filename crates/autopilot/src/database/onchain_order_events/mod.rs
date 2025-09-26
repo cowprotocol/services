@@ -12,7 +12,7 @@ use {
     app_data::AppDataHash,
     chrono::{TimeZone, Utc},
     contracts::{
-        alloy::HooksTrampoline::HooksTrampoline::Hook,
+        alloy::HooksTrampoline::{self, HooksTrampoline::Hook},
         cowswap_onchain_orders::{
             Event as ContractEvent,
             event_data::{OrderInvalidation, OrderPlacement as ContractOrderPlacement},
@@ -74,7 +74,7 @@ pub struct OnchainOrderParser<EventData: Send + Sync, EventRow: Send + Sync> {
     domain_separator: DomainSeparator,
     settlement_contract: H160,
     metrics: &'static Metrics,
-    trampoline: contracts::alloy::HooksTrampoline::Instance,
+    trampoline: HooksTrampoline::Instance,
 }
 
 impl<EventData, EventRow> OnchainOrderParser<EventData, EventRow>
@@ -89,7 +89,7 @@ where
         custom_onchain_data_parser: Box<dyn OnchainOrderParsing<EventData, EventRow>>,
         domain_separator: DomainSeparator,
         settlement_contract: H160,
-        trampoline: contracts::alloy::HooksTrampoline::Instance,
+        trampoline: HooksTrampoline::Instance,
     ) -> Self {
         OnchainOrderParser {
             db,
@@ -698,7 +698,7 @@ fn extract_order_data_from_onchain_order_placement_event(
 async fn insert_order_hooks(
     db: &mut PgConnection,
     orders: &[Order],
-    trampoline: &contracts::alloy::HooksTrampoline::Instance,
+    trampoline: &HooksTrampoline::Instance,
 ) -> Result<()> {
     let mut interactions_to_insert = vec![];
 
@@ -1248,7 +1248,7 @@ mod test {
                     insert_batch_size: NonZeroUsize::new(500).unwrap(),
                 },
             },
-            trampoline: contracts::alloy::HooksTrampoline::Instance::deployed(&web3.alloy)
+            trampoline: HooksTrampoline::Instance::deployed(&web3.alloy)
                 .await
                 .unwrap(),
             web3,
