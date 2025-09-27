@@ -150,9 +150,9 @@ mod tests {
         super::*,
         crate::sources::balancer_v2::graph_api::Token,
         alloy::{
-            dyn_abi::{DynSolValue, FunctionExt},
             primitives::Address,
             providers::{Provider, ProviderBuilder, mock::Asserter},
+            sol_types::SolCall,
         },
         ethcontract::{H160, H256},
         ethcontract_mock::Mock,
@@ -240,22 +240,12 @@ mod tests {
             Address::new([0xfa; 20]),
             provider.clone(),
         );
-        let get_normalized_weights_response = {
-            let weighted_response = DynSolValue::Array(
-                weights
-                    .iter()
-                    .copied()
-                    .map(|w| DynSolValue::Uint(w.as_uint256().into_alloy(), 256))
-                    .collect(),
+        let get_normalized_weights_response =
+            BalancerV2WeightedPool::BalancerV2WeightedPool::getNormalizedWeightsCall::abi_encode_returns(
+                &weights.iter()
+                    .map(|w| w.as_uint256().into_alloy())
+                    .collect()
             );
-
-            BalancerV2WeightedPool::abi_functions_by_name("getNormalizedWeights")
-                .unwrap()
-                .first()
-                .unwrap()
-                .abi_encode_output(&[weighted_response])
-                .unwrap()
-        };
         asserter.push_success(&get_normalized_weights_response);
 
         let pool = factory
