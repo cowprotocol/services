@@ -153,10 +153,6 @@ pub async fn start(args: impl Iterator<Item = String>) {
 /// Assumes tracing and metrics registry have already been set up.
 pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     assert!(args.shadow.is_none(), "cannot run in shadow mode");
-    // Start a new span that measures the initialization phase of the autopilot
-    let startup_span = info_span!("autopilot_startup");
-    let startup_span_guard = startup_span.enter();
-
     let db_write = Postgres::new(args.db_write_url.as_str(), args.insert_batch_size)
         .await
         .unwrap();
@@ -676,7 +672,6 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         Arc::new(maintenance),
         competition_updates_sender,
     );
-    drop(startup_span_guard);
     run.run_forever(shutdown_controller).await;
 }
 

@@ -73,9 +73,6 @@ pub async fn start(args: impl Iterator<Item = String>) {
 }
 
 pub async fn run(args: Arguments) {
-    // Start a new span that measures the initialization phase of the orderbook
-    let startup_span = tracing::info_span!("orderbook_startup");
-    let startup_span_guard = startup_span.enter();
     let http_factory = HttpClientFactory::new(&args.http_client);
 
     let web3 = shared::ethrpc::web3(
@@ -461,7 +458,6 @@ pub async fn run(args: Arguments) {
     tracing::info!(%metrics_address, "serving metrics");
     let metrics_task = serve_metrics(orderbook, metrics_address, Default::default());
 
-    drop(startup_span_guard);
     futures::pin_mut!(serve_api);
     tokio::select! {
         result = &mut serve_api => panic!("API task exited {result:?}"),
