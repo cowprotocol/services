@@ -1,4 +1,4 @@
-![pull request](https://github.com/cowprotocol/services/workflows/pull%20request/badge.svg) ![deploy](https://github.com/cowprotocol/services/workflows/deploy/badge.svg)
+[![pull request](https://github.com/cowprotocol/services/workflows/pull%20request/badge.svg)](https://github.com/cowprotocol/services/actions/workflows/pull-request.yaml) [![deploy](https://github.com/cowprotocol/services/workflows/deploy/badge.svg)](https://github.com/cowprotocol/services/actions/workflows/deploy.yaml)
 
 # Cow Protocol Services
 
