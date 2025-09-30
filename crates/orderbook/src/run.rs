@@ -15,12 +15,12 @@ use {
     contracts::{
         BalancerV2Vault,
         GPv2Settlement,
-        HooksTrampoline,
         IUniswapV3Factory,
         WETH9,
-        alloy::{ChainalysisOracle, InstanceExt},
+        alloy::{ChainalysisOracle, HooksTrampoline, InstanceExt},
     },
     ethcontract::errors::DeployError,
+    ethrpc::alloy::conversions::IntoAlloy,
     futures::{FutureExt, StreamExt},
     model::{DomainSeparator, order::BUY_ETH_ADDRESS},
     num::ToPrimitive,
@@ -73,9 +73,6 @@ pub async fn start(args: impl Iterator<Item = String>) {
 }
 
 pub async fn run(args: Arguments) {
-    // Start a new span that measures the initialization phase of the orderbook
-    let startup_span = tracing::info_span!("orderbook_startup");
-    let startup_span_guard = startup_span.enter();
     let http_factory = HttpClientFactory::new(&args.http_client);
 
     let web3 = shared::ethrpc::web3(
@@ -159,8 +156,8 @@ pub async fn run(args: Arguments) {
     };
 
     let hooks_contract = match args.shared.hooks_contract_address {
-        Some(address) => HooksTrampoline::at(&web3, address),
-        None => HooksTrampoline::deployed(&web3)
+        Some(address) => HooksTrampoline::Instance::new(address.into_alloy(), web3.alloy.clone()),
+        None => HooksTrampoline::Instance::deployed(&web3.alloy)
             .await
             .expect("load hooks trampoline contract"),
     };
@@ -169,8 +166,10 @@ pub async fn run(args: Arguments) {
         .await
         .expect("Deployed contract constants don't match the ones in this binary");
     let domain_separator = DomainSeparator::new(chain_id, settlement_contract.address());
-    let postgres = Postgres::try_new(args.db_url.as_str()).expect("failed to create database");
-
+    let postgres_write =
+        Postgres::try_new(args.db_write_url.as_str()).expect("failed to create database");
+    let postgres_read = Postgres::try_new(args.db_read_url.unwrap_or(args.db_write_url).as_str())
+        .expect("failed to create read replica database");
     let balance_fetcher = account_balances::fetcher(
         &web3,
         BalanceSimulator::new(
@@ -315,7 +314,7 @@ pub async fn run(args: Arguments) {
         )
         .await
         .unwrap();
-    let prices = postgres.fetch_latest_prices().await.unwrap();
+    let prices = postgres_write.fetch_latest_prices().await.unwrap();
     native_price_estimator.initialize_cache(prices);
 
     let price_estimator = price_estimator_factory
@@ -356,7 +355,7 @@ pub async fn run(args: Arguments) {
             price_estimator,
             native_price_estimator.clone(),
             gas_price_estimator.clone(),
-            Arc::new(postgres.clone()),
+            Arc::new(postgres_write.clone()),
             order_quoting::Validity {
                 eip1271_onchain_quote: chrono::Duration::from_std(
                     args.order_quoting.eip1271_onchain_quote_validity,
@@ -401,7 +400,7 @@ pub async fn run(args: Arguments) {
         optimal_quoter.clone(),
         balance_fetcher,
         signature_validator,
-        Arc::new(postgres.clone()),
+        Arc::new(postgres_write.clone()),
         args.max_limit_orders_per_user,
         code_fetcher,
         app_data_validator.clone(),
@@ -420,13 +419,14 @@ pub async fn run(args: Arguments) {
         .map(IpfsAppData::new);
     let app_data = Arc::new(crate::app_data::Registry::new(
         app_data_validator,
-        postgres.clone(),
+        postgres_write.clone(),
         ipfs,
     ));
     let orderbook = Arc::new(Orderbook::new(
         domain_separator,
         settlement_contract.address(),
-        postgres.clone(),
+        postgres_write.clone(),
+        postgres_read.clone(),
         order_validator.clone(),
         app_data.clone(),
         args.active_order_competition_threshold,
@@ -440,7 +440,8 @@ pub async fn run(args: Arguments) {
 
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let serve_api = serve_api(
-        postgres,
+        postgres_write,
+        postgres_read,
         orderbook.clone(),
         quotes,
         app_data,
@@ -457,7 +458,6 @@ pub async fn run(args: Arguments) {
     tracing::info!(%metrics_address, "serving metrics");
     let metrics_task = serve_metrics(orderbook, metrics_address, Default::default());
 
-    drop(startup_span_guard);
     futures::pin_mut!(serve_api);
     tokio::select! {
         result = &mut serve_api => panic!("API task exited {result:?}"),
@@ -510,6 +510,7 @@ async fn check_database_connection(orderbook: &Orderbook) {
 #[allow(clippy::too_many_arguments)]
 fn serve_api(
     database: Postgres,
+    database_replica: Postgres,
     orderbook: Arc<Orderbook>,
     quotes: Arc<QuoteHandler>,
     app_data: Arc<crate::app_data::Registry>,
@@ -520,6 +521,7 @@ fn serve_api(
 ) -> JoinHandle<()> {
     let filter = api::handle_all_routes(
         database,
+        database_replica,
         orderbook,
         quotes,
         app_data,

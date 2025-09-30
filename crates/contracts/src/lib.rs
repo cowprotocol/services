@@ -67,7 +67,6 @@ include_contracts! {
     FlashLoanRouter;
     GPv2AllowListAuthentication;
     GPv2Settlement;
-    HooksTrampoline;
     IAavePool;
     IFlashLoanSolverWrapper;
     IUniswapV3Factory;
@@ -83,9 +82,6 @@ pub mod support {
         Balances;
         Multicall;
         Signatures;
-        Spardose;
-        Swapper;
-        Trader;
     }
 }
 
@@ -165,7 +161,6 @@ mod tests {
         for network in &[MAINNET, GNOSIS, SEPOLIA, ARBITRUM_ONE] {
             assert_has_deployment_address!(GPv2Settlement for *network);
             assert_has_deployment_address!(WETH9 for *network);
-            assert_has_deployment_address!(HooksTrampoline for *network);
             assert_has_deployment_address!(BalancerV2Vault for *network);
             assert!(
                 alloy::BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory::deployment_address(network).is_some()
@@ -230,17 +225,5 @@ mod tests {
         for network in &[MAINNET, GNOSIS, ARBITRUM_ONE] {
             assert!(alloy::BalancerV2StablePoolFactoryV2::deployment_address(network).is_some());
         }
-    }
-
-    #[test]
-    fn bytecode() {
-        macro_rules! assert_has_bytecode {
-            ($contract:ty) => {{
-                let contract = <$contract>::raw_contract();
-                assert!(!contract.bytecode.is_empty());
-            }};
-        }
-
-        assert_has_bytecode!(support::Trader);
     }
 }

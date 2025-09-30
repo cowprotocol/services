@@ -23,6 +23,7 @@ use {
     std::{
         collections::{HashMap, hash_map::Entry},
         ops::DerefMut,
+        sync::LazyLock,
         time::Duration,
     },
     tokio::task::JoinHandle,
@@ -38,6 +39,12 @@ pub const TRADES_ENDPOINT: &str = "/api/v1/trades";
 pub const VERSION_ENDPOINT: &str = "/api/v1/version";
 pub const SOLVER_COMPETITION_ENDPOINT: &str = "/api/v2/solver_competition";
 const LOCAL_DB_URL: &str = "postgresql://";
+static LOCAL_READ_ONLY_DB_URL: LazyLock<String> = LazyLock::new(|| {
+    format!(
+        "postgresql://readonly@localhost/{db}",
+        db = std::env::var("USER").unwrap()
+    )
+});
 
 fn order_status_endpoint(uid: &OrderUid) -> String {
     format!("/api/v1/orders/{uid}/status")
@@ -127,6 +134,8 @@ impl<'a> Services<'a> {
                 "--hooks-contract-address={:?}",
                 self.contracts.hooks.address()
             ),
+            "--db-read-url".to_string(),
+            LOCAL_READ_ONLY_DB_URL.clone(),
         ]
         .into_iter()
     }
@@ -734,6 +743,62 @@ pub async fn clear_database() {
         attempt += 1;
         if attempt >= 10 {
             panic!("repeatedly failed to clear DB");
+        }
+    }
+}
+
+pub async fn ensure_e2e_readonly_user() {
+    use sqlx::{Executor, Row};
+
+    const PSQL_DUPLICATE_OBJECT_ERROR_CODE: &str = "42710";
+
+    tracing::info!("Ensuring read-only user exists");
+    let mut db = sqlx::PgConnection::connect(LOCAL_DB_URL)
+        .await
+        .expect("Database connection error");
+    let mut db: sqlx::Transaction<'_, sqlx::Postgres> = db
+        .begin()
+        .await
+        .expect("Database transaction creation error");
+    let current_db: String = db
+        .fetch_one("SELECT current_database();")
+        .await
+        .expect("Current database name fetching error")
+        .get(0);
+
+    let res = db
+        .execute(
+            format!(
+                r#"
+    CREATE ROLE readonly WITH LOGIN PASSWORD 'password';
+    GRANT CONNECT ON DATABASE "{current_db}" TO readonly;
+    GRANT USAGE ON SCHEMA public TO readonly;
+    GRANT SELECT ON ALL TABLES IN SCHEMA public TO readonly;
+    GRANT SELECT ON ALL SEQUENCES IN SCHEMA public TO readonly;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO readonly;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON SEQUENCES TO readonly;
+    "#
+            )
+            .as_str(),
+        )
+        .await;
+
+    match res {
+        Err(sqlx::Error::Database(e))
+            if e.code()
+                .is_some_and(|c| c == PSQL_DUPLICATE_OBJECT_ERROR_CODE) =>
+        {
+            // this is considered expected, if multiple tests are run against the same
+            // database
+            tracing::info!("Read-only user already exists! {:?}", e);
+        }
+        Err(e) => {
+            tracing::error!("Read-only user creation failed {:?}", e);
+            panic!("Read-only user creation failed {:?}", e);
+        }
+        Ok(_) => {
+            tracing::info!("Read only user created");
+            db.commit().await.expect("Transaction commit error");
         }
     }
 }
