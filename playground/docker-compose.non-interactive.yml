@@ -15,16 +15,19 @@ services:
       # with simple bytecode that always returns a solidity `true` value, alleviating
       # the requirement to register a solver's private key for the sake of testing on
       # a fork.
-      test: [ "CMD-SHELL", "
+      test: [
+          "CMD-SHELL",
+          "
           response=$$(wget -qO- --header='Content-Type: application/json' --post-data='{\"jsonrpc\":\"2.0\", \"method\":\"eth_blockNumber\", \"params\":[], \"id\":1}' http://127.0.0.1:8545);
           block=$$(echo $$response | sed -n 's/.*\"result\":\"\\([^\"\\]*\\)\".*/\\1/p');
           if [ -n \"$$block\" ] && [ \"$$block\" != \"0x0\" ] && [ \"$$block\" != \"null\" ]; then
-            /usr/local/bin/cast rpc -r http://127.0.0.1:8545 anvil_setCode 0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE 0x600160005260206000F3;
-            exit 0;
+          /usr/local/bin/cast rpc -r http://127.0.0.1:8545 anvil_setCode 0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE 0x600160005260206000F3;
+          exit 0;
           else
-            exit 1;
+          exit 1;
           fi;
-        " ]
+          ",
+        ]
       interval: 5s
       timeout: 30s
       retries: 5
@@ -55,7 +58,7 @@ services:
     build:
       context: ../
       target: migrations
-      dockerfile: ./playground/Dockerfile
+      dockerfile: ./Dockerfile
     restart: on-failure
     environment:
       - FLYWAY_URL=jdbc:postgresql://db/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
@@ -65,10 +68,9 @@ services:
   orderbook:
     build:
       context: ../
-      target: localdev
-      dockerfile: ./playground/Dockerfile
+      target: orderbook
+      dockerfile: ./Dockerfile
     restart: always
-    command: ["cargo", "watch", "-x", "run --bin orderbook"]
     environment:
       - NODE_URL=http://chain:8545
       - DB_WRITE_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
@@ -98,10 +100,9 @@ services:
   autopilot:
     build:
       context: ../
-      target: localdev
-      dockerfile: ./playground/Dockerfile
+      target: autopilot
+      dockerfile: ./Dockerfile
     restart: always
-    command: ["cargo", "watch", "-x", "run --bin autopilot"]
     environment:
       - DB_WRITE_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
       - DB_READ_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
@@ -136,16 +137,10 @@ services:
   driver:
     build:
       context: ../
-      target: localdev
-      dockerfile: ./playground/Dockerfile
+      target: driver
+      dockerfile: ./Dockerfile
     restart: always
-    command:
-      [
-        "cargo",
-        "watch",
-        "-x",
-        "run --bin driver -- --config configs/${ENV}/driver.toml",
-      ]
+    command: ["--config", "/driver.toml"]
     environment:
       - ETHRPC=http://chain:8545
       - ADDR=0.0.0.0:80
@@ -153,7 +148,7 @@ services:
       - TOML_TRACE_ERROR=1
       - TRACING_COLLECTOR_ENDPOINT=http://tempo:4317
     volumes:
-      - ../:/src
+      - ./driver.toml:/driver.toml
     ports:
       - 9000:80
     depends_on:
@@ -164,23 +159,17 @@ services:
   baseline:
     build:
       context: ../
-      target: localdev
-      dockerfile: ./playground/Dockerfile
+      target: solvers
+      dockerfile: ./Dockerfile
     restart: always
-    command:
-      [
-        "cargo",
-        "watch",
-        "-x",
-        "run --bin solvers -- baseline --config configs/${ENV}/baseline.toml",
-      ]
+    command: ["baseline", "--config", "/baseline.toml"]
     environment:
       - ADDR=0.0.0.0:80
       - LOG=solvers=trace,shared=trace
       - RUST_BACKTRACE=1
       - TOML_TRACE_ERROR=1
     volumes:
-      - ../:/src
+      - ./baseline.toml:/baseline.toml
     ports:
       - 9001:80
 
@@ -190,7 +179,7 @@ services:
       dockerfile: Dockerfile.cowswap
       args:
         - CHAIN=$CHAIN
-        - ETH_RPC_URL=http://127.0.0.1:8545
+        - ETH_RPC_URL=http://chain:8545
     ports:
       - 8000:80
 
