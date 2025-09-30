@@ -26,6 +26,7 @@ use {
 };
 
 /// Buffered transport configuration.
+#[derive(Debug)]
 pub struct Configuration {
     /// The maximum amount of concurrent batches to send to the node.
     ///
