@@ -1,4 +1,5 @@
 use {
+    alloy::primitives::Address,
     primitive_types::H160,
     reqwest::Url,
     shared::{
@@ -81,7 +82,7 @@ pub struct Arguments {
 
     /// List of account addresses to be denied from order creation
     #[clap(long, env, use_value_delimiter = true)]
-    pub banned_users: Vec<H160>,
+    pub banned_users: Vec<Address>,
 
     /// Maximum number of entries to keep in the banned users cache.
     #[clap(long, env, default_value = "100")]

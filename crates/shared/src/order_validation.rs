@@ -452,7 +452,7 @@ impl OrderValidating for OrderValidator {
     async fn partial_validate(&self, order: PreOrderData) -> Result<(), PartialValidationError> {
         if !self
             .banned_users
-            .banned([order.receiver, order.owner])
+            .banned([order.receiver.into_alloy(), order.owner.into_alloy()])
             .await
             .is_empty()
         {
@@ -1005,7 +1005,7 @@ mod tests {
             signature_validator::MockSignatureValidating,
         },
         alloy::{
-            primitives::{Address, address},
+            primitives::{Address, U160, address},
             providers::{Provider, ProviderBuilder, mock::Asserter},
         },
         contracts::dummy_contract,
@@ -1070,7 +1070,7 @@ mod tests {
             max_market: Duration::from_secs(100),
             max_limit: Duration::from_secs(200),
         };
-        let banned_users = hashset![H160::from_low_u64_be(1)];
+        let banned_users = hashset![Address::from(U160::from(1))];
         let legit_valid_to =
             time::now_in_epoch_seconds() + validity_configuration.min.as_secs() as u32 + 2;
         let mut limit_order_counter = MockLimitOrderCounting::new();

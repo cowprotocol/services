@@ -7,6 +7,7 @@ use {
     anyhow::{Context, Result},
     bigdecimal::BigDecimal,
     database::order_events::OrderEventLabel,
+    ethrpc::alloy::conversions::IntoAlloy,
     futures::{FutureExt, StreamExt, future::join_all, stream::FuturesUnordered},
     indexmap::IndexSet,
     itertools::Itertools,
@@ -441,18 +442,19 @@ impl SolvableOrdersCache {
 /// users.
 async fn find_banned_user_orders(orders: &[Order], banned_users: &banned::Users) -> Vec<OrderUid> {
     let banned = banned_users
-        .banned(
-            orders
-                .iter()
-                .flat_map(|order| std::iter::once(order.metadata.owner).chain(order.data.receiver)),
-        )
+        .banned(orders.iter().flat_map(|order| {
+            std::iter::once(order.metadata.owner)
+                .chain(order.data.receiver)
+                .map(IntoAlloy::into_alloy)
+        }))
         .await;
     orders
         .iter()
         .filter_map(|order| {
-            std::iter::once(&order.metadata.owner)
-                .chain(&order.data.receiver)
-                .any(|addr| banned.contains(addr))
+            std::iter::once(order.metadata.owner)
+                .chain(order.data.receiver)
+                .map(IntoAlloy::into_alloy)
+                .any(|addr| banned.contains(&addr))
                 .then_some(order.metadata.uid)
         })
         .collect()
@@ -878,6 +880,7 @@ impl OrderFilterCounter {
 mod tests {
     use {
         super::*,
+        alloy::primitives::Address,
         futures::FutureExt,
         maplit::{btreemap, hashset},
         mockall::predicate::eq,
@@ -1156,7 +1159,7 @@ mod tests {
 
     #[tokio::test]
     async fn filters_banned_users() {
-        let banned_users = hashset!(H160([0xba; 20]), H160([0xbb; 20]));
+        let banned_users = hashset!(Address::from([0xba; 20]), Address::from([0xbb; 20]));
         let orders = [
             H160([1; 20]),
             H160([1; 20]),
