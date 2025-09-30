@@ -483,7 +483,7 @@ crate::bindings!(
         // <https://polygonscan.com/tx/0xc3781c19674d97623d13afc938fca94d53583f4051020512100e84fecd230f91>
         POLYGON => (address!("0x04501b9b1d52e67f6862d157e00d13419d2d6e95"), 71296258),
         // <https://explorer.lens.xyz/tx/0xc59b5ffadb40158f9390b1d77f19346dbe9214b27f26346dfa2990ad379a1a32>
-        LENS => (address!("0xFb337f8a725A142f65fb9ff4902d41cc901de222"), 71296258),
+        LENS => (address!("0xFb337f8a725A142f65fb9ff4902d41cc901de222"), 3007173),
     }
 );
 
