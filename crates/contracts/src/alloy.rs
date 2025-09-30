@@ -462,28 +462,28 @@ crate::bindings!(
 
 crate::bindings!(
     CoWSwapEthFlow,
-    // <https://etherscan.io/tx/0x0247e3c15f59a52b099f192265f1c1e6227f48a280717b3eefd7a5d9d0c051a1>
     crate::deployments! {
+        // <https://etherscan.io/tx/0x0247e3c15f59a52b099f192265f1c1e6227f48a280717b3eefd7a5d9d0c051a1>
         MAINNET => (address!("0x40a50cf069e992aa4536211b23f286ef88752187"), 16169866),
         // <https://gnosisscan.io/tx/0x6280e079f454fbb5de3c52beddd64ca2b5be0a4b3ec74edfd5f47e118347d4fb>
-        GNOSIS => (address!("0x40a50cf069e992aa4536211b23f286ef88752187"), 16169866),
+        GNOSIS => (address!("0x40a50cf069e992aa4536211b23f286ef88752187"), 25414331),
         // <https://github.com/cowprotocol/ethflowcontract/blob/v1.1.0-artifacts/networks.prod.json#L11-L14>
         // <https://sepolia.etherscan.io/tx/0x558a7608a770b5c4f68fffa9b02e7908a40f61b557b435ea768a4c62cb79ae25>
-        SEPOLIA => (address!("0x0b7795E18767259CC253a2dF471db34c72B49516"), 16169866),
+        SEPOLIA => (address!("0x0b7795E18767259CC253a2dF471db34c72B49516"), 4718739),
         // <https://arbiscan.io/tx/0xa4066ca77bbe1f21776b4c26315ead3b1c054b35814b49e0c35afcbff23e1b8d>
-        ARBITRUM_ONE => (address!("0x6DFE75B5ddce1ADE279D4fa6BD6AeF3cBb6f49dB"), 16169866),
+        ARBITRUM_ONE => (address!("0x6DFE75B5ddce1ADE279D4fa6BD6AeF3cBb6f49dB"), 204747458),
         // <https://basescan.org/tx/0xc3555c4b065867cbf34382438e1bbaf8ee39eaf10fb0c70940c8955962e76e2c>
-        BASE => (address!("0x3C3eA1829891BC9bEC3d06A81d5d169e52a415e3"), 16169866),
+        BASE => (address!("0x3C3eA1829891BC9bEC3d06A81d5d169e52a415e3"), 21490258),
         // <https://snowscan.xyz/tx/0x71a2ed9754247210786effa3269bc6eb68b7521b5052ac9f205af7ac364f608f>
-        AVALANCHE => (address!("0x04501b9b1d52e67f6862d157e00d13419d2d6e95"), 16169866),
+        AVALANCHE => (address!("0x04501b9b1d52e67f6862d157e00d13419d2d6e95"), 60496408),
         // <https://bscscan.com/tx/0x959a60a42d36e0efd247b3cf19ed9d6da503d01bce6f87ed31e5e5921111222e>
-        BNB => (address!("0x04501b9b1d52e67f6862d157e00d13419d2d6e95"), 16169866),
+        BNB => (address!("0x04501b9b1d52e67f6862d157e00d13419d2d6e95"), 48411237),
         // <https://optimistic.etherscan.io/tx/0x0644f10f7ae5448240fc592ad21abf4dabac473a9d80904af5f7865f2d6509e2>
-        OPTIMISM => (address!("0x04501b9b1d52e67f6862d157e00d13419d2d6e95"), 16169866),
+        OPTIMISM => (address!("0x04501b9b1d52e67f6862d157e00d13419d2d6e95"), 134607215),
         // <https://polygonscan.com/tx/0xc3781c19674d97623d13afc938fca94d53583f4051020512100e84fecd230f91>
-        POLYGON => (address!("0x04501b9b1d52e67f6862d157e00d13419d2d6e95"), 16169866),
+        POLYGON => (address!("0x04501b9b1d52e67f6862d157e00d13419d2d6e95"), 71296258),
         // <https://explorer.lens.xyz/tx/0xc59b5ffadb40158f9390b1d77f19346dbe9214b27f26346dfa2990ad379a1a32>
-        LENS => (address!("0xFb337f8a725A142f65fb9ff4902d41cc901de222"), 16169866),
+        LENS => (address!("0xFb337f8a725A142f65fb9ff4902d41cc901de222"), 71296258),
     }
 );
 
