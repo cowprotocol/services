@@ -3,13 +3,7 @@ resolver = "3"
 members = ["crates/*"]
 
 [workspace.dependencies]
-alloy = { git = "https://github.com/alloy-rs/alloy", rev = "v1.0.36", default-features = false }
-alloy-core = "1.4.0"
-alloy-primitives = "1.4.0"
-alloy-dyn-abi = "1.4.0"
-alloy-json-abi = "1.4.0"
-alloy-sol-types = "1.4.0"
-alloy-sol-macro-input = "1.4.0"
+alloy = { version = "1.0.36", default-features = false }
 anyhow = "=1.0.76"
 async-trait = "0.1.80"
 axum = "0.6"
@@ -108,7 +102,6 @@ tower-http = "0.4"
 tracing-opentelemetry = "0.31"
 tracing-serde = "0.2"
 vergen = "8"
-
 
 [workspace.lints]
 clippy.cast_possible_wrap = "deny"

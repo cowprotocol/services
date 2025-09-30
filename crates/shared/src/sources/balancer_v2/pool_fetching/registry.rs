@@ -20,10 +20,7 @@ use {
     },
     anyhow::Result,
     contracts::{
-        alloy::{
-            BalancerV2BasePoolFactory,
-            BalancerV2BasePoolFactory::BalancerV2BasePoolFactory::PoolCreated,
-        },
+        alloy::BalancerV2BasePoolFactory::{self, BalancerV2BasePoolFactory::PoolCreated},
         errors::EthcontractErrorType,
     },
     ethcontract::{BlockId, H256, errors::MethodError},
@@ -45,10 +42,8 @@ impl AlloyEventRetrieving for BasePoolFactoryContract {
     }
 
     fn filter(&self) -> Filter {
-        let mut set = FilterSet::default();
-        set.insert(PoolCreated::SIGNATURE_HASH);
         Filter::new()
-            .event_signature(set)
+            .event_signature(FilterSet::from_iter([PoolCreated::SIGNATURE_HASH]))
             .address(*self.0.address())
     }
 }
