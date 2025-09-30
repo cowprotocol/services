@@ -1,17 +1,24 @@
 use {
     super::{
-        event_fetching::{RecentEventsCache, UniswapV3Event, UniswapV3PoolEventFetcher},
+        event_fetching::{RecentEventsCache, UniswapV3PoolEventFetcher},
         graph_api::{PoolData, Token, UniV3SubgraphClient},
     },
     crate::{
-        event_handling::{EventHandler, EventStoring, MAX_REORG_BLOCK_COUNT},
+        event_handling::{AlloyEventRetriever, EventHandler, EventStoring, MAX_REORG_BLOCK_COUNT},
         maintenance::Maintaining,
         recent_block_cache::Block,
+        sources::uniswap_v3::event_fetching::WithAddress,
     },
+    alloy::rpc::types::Log,
     anyhow::{Context, Result},
-    ethcontract::{Event, H160, U256},
+    contracts::alloy::UniswapV3Pool::UniswapV3Pool::{
+        UniswapV3PoolEvents as AlloyUniswapV3PoolEvents,
+        UniswapV3PoolEvents,
+    },
+    ethcontract::{H160, U256},
     ethrpc::{
         Web3,
+        alloy::conversions::IntoLegacy,
         block_stream::{BlockRetrieving, RangeInclusive},
     },
     itertools::{Either, Itertools},
@@ -266,9 +273,9 @@ pub struct UniswapV3PoolFetcher {
     /// pools state.
     events: tokio::sync::Mutex<
         EventHandler<
-            UniswapV3PoolEventFetcher,
+            AlloyEventRetriever<UniswapV3PoolEventFetcher>,
             RecentEventsCache,
-            ethcontract::Event<UniswapV3Event>,
+            (AlloyUniswapV3PoolEvents, Log),
         >,
     >,
 }
@@ -296,7 +303,7 @@ impl UniswapV3PoolFetcher {
 
         let events = tokio::sync::Mutex::new(EventHandler::new(
             block_retriever,
-            UniswapV3PoolEventFetcher(web3),
+            AlloyEventRetriever(UniswapV3PoolEventFetcher(web3.alloy)),
             RecentEventsCache::default(),
             Some(init_block),
         ));
@@ -405,17 +412,19 @@ impl PoolFetching for UniswapV3PoolFetcher {
 }
 
 /// For a given checkpoint, append events to get a new checkpoint
-fn append_events(pools: &mut HashMap<H160, PoolInfo>, events: Vec<Event<UniswapV3Event>>) {
+fn append_events(
+    pools: &mut HashMap<H160, PoolInfo>,
+    events: Vec<WithAddress<UniswapV3PoolEvents>>,
+) {
     for event in events {
-        let address = event
-            .meta
-            .expect("metadata must exist for mined blocks")
-            .address;
-        if let Some(pool) = pools.get_mut(&address).map(|pool| &mut pool.state) {
-            match event.data {
-                UniswapV3Event::Burn(burn) => {
-                    let tick_lower = BigInt::from(burn.tick_lower);
-                    let tick_upper = BigInt::from(burn.tick_upper);
+        if let Some(pool) = pools
+            .get_mut(&event.address().into_legacy())
+            .map(|pool| &mut pool.state)
+        {
+            match event.inner() {
+                UniswapV3PoolEvents::Burn(burn) => {
+                    let tick_lower = BigInt::from(burn.tickLower.as_i32());
+                    let tick_upper = BigInt::from(burn.tickUpper.as_i32());
 
                     // liquidity tracks the liquidity on recent tick,
                     // only need to update it if the new position includes the recent tick.
@@ -442,9 +451,9 @@ fn append_events(pools: &mut HashMap<H160, PoolInfo>, events: Vec<Event<UniswapV
                         pool.liquidity_net.remove(&tick_upper);
                     }
                 }
-                UniswapV3Event::Mint(mint) => {
-                    let tick_lower = BigInt::from(mint.tick_lower);
-                    let tick_upper = BigInt::from(mint.tick_upper);
+                UniswapV3PoolEvents::Mint(mint) => {
+                    let tick_lower = BigInt::from(mint.tickLower.as_i32());
+                    let tick_upper = BigInt::from(mint.tickUpper.as_i32());
 
                     // liquidity tracks the liquidity on recent tick,
                     // only need to update it if the new position includes the recent tick.
@@ -471,11 +480,13 @@ fn append_events(pools: &mut HashMap<H160, PoolInfo>, events: Vec<Event<UniswapV
                         pool.liquidity_net.remove(&tick_upper);
                     }
                 }
-                UniswapV3Event::Swap(swap) => {
-                    pool.tick = BigInt::from(swap.tick);
+                UniswapV3PoolEvents::Swap(swap) => {
+                    pool.tick = BigInt::from(swap.tick.as_i32());
                     pool.liquidity = swap.liquidity.into();
-                    pool.sqrt_price = swap.sqrt_price_x96;
+                    pool.sqrt_price =
+                        alloy::primitives::U256::from(swap.sqrtPriceX96).into_legacy();
                 }
+                _ => continue,
             }
         }
     }
@@ -510,8 +521,9 @@ impl Maintaining for UniswapV3PoolFetcher {
 mod tests {
     use {
         super::*,
-        contracts::uniswap_v3_pool::event_data::{Burn, Mint, Swap},
-        ethcontract::EventMetadata,
+        alloy::primitives::{U160, aliases::I24},
+        contracts::alloy::UniswapV3Pool::UniswapV3Pool::{Burn, Mint, Swap},
+        ethrpc::alloy::conversions::IntoAlloy,
         serde_json::json,
         std::str::FromStr,
         testlib::assert_json_matches,
@@ -606,18 +618,18 @@ mod tests {
         };
         let mut pools = HashMap::from([(address, pool)]);
 
-        let event = Event {
-            data: UniswapV3Event::Swap(Swap {
-                sqrt_price_x96: 1.into(),
-                liquidity: 2,
-                tick: 3,
-                ..Default::default()
+        let event = WithAddress::new(
+            UniswapV3PoolEvents::Swap(Swap {
+                sqrtPriceX96: U160::try_from(1).unwrap(),
+                liquidity: 2u128,
+                tick: I24::try_from(3).unwrap(),
+                sender: Default::default(),
+                recipient: Default::default(),
+                amount0: Default::default(),
+                amount1: Default::default(),
             }),
-            meta: Some(EventMetadata {
-                address,
-                ..Default::default()
-            }),
-        };
+            address.into_alloy(),
+        );
         append_events(&mut pools, vec![event]);
 
         assert_eq!(pools[&address].state.tick, BigInt::from(3));
@@ -635,18 +647,17 @@ mod tests {
         let mut pools = HashMap::from([(address, pool)]);
 
         // add first burn event
-        let event = Event {
-            data: UniswapV3Event::Burn(Burn {
-                tick_lower: 100000,
-                tick_upper: 110000,
-                amount: 12345,
-                ..Default::default()
+        let event = WithAddress::new(
+            UniswapV3PoolEvents::Burn(Burn {
+                tickLower: I24::try_from(100000).unwrap(),
+                tickUpper: I24::try_from(110000).unwrap(),
+                amount: 12345u128,
+                owner: Default::default(),
+                amount0: Default::default(),
+                amount1: Default::default(),
             }),
-            meta: Some(EventMetadata {
-                address,
-                ..Default::default()
-            }),
-        };
+            address.into_alloy(),
+        );
         append_events(&mut pools, vec![event]);
         assert_eq!(
             pools[&address].state.liquidity_net,
@@ -657,18 +668,17 @@ mod tests {
         );
 
         // add second burn event
-        let event = Event {
-            data: UniswapV3Event::Burn(Burn {
-                tick_lower: 105000,
-                tick_upper: 110000,
-                amount: 54321,
-                ..Default::default()
+        let event = WithAddress::new(
+            UniswapV3PoolEvents::Burn(Burn {
+                tickLower: I24::try_from(105000).unwrap(),
+                tickUpper: I24::try_from(110000).unwrap(),
+                amount: 54321u128,
+                owner: Default::default(),
+                amount0: Default::default(),
+                amount1: Default::default(),
             }),
-            meta: Some(EventMetadata {
-                address,
-                ..Default::default()
-            }),
-        };
+            address.into_alloy(),
+        );
         append_events(&mut pools, vec![event]);
         assert_eq!(
             pools[&address].state.liquidity_net,
@@ -690,18 +700,18 @@ mod tests {
         let mut pools = HashMap::from([(address, pool)]);
 
         // add first mint event
-        let event = Event {
-            data: UniswapV3Event::Mint(Mint {
-                tick_lower: 100000,
-                tick_upper: 110000,
-                amount: 12345,
-                ..Default::default()
+        let event = WithAddress::new(
+            UniswapV3PoolEvents::Mint(Mint {
+                tickLower: I24::try_from(100000).unwrap(),
+                tickUpper: I24::try_from(110000).unwrap(),
+                amount: 12345u128,
+                owner: Default::default(),
+                amount0: Default::default(),
+                amount1: Default::default(),
+                sender: Default::default(),
             }),
-            meta: Some(EventMetadata {
-                address,
-                ..Default::default()
-            }),
-        };
+            address.into_alloy(),
+        );
         append_events(&mut pools, vec![event]);
         assert_eq!(
             pools[&address].state.liquidity_net,
@@ -712,18 +722,18 @@ mod tests {
         );
 
         // add second burn event
-        let event = Event {
-            data: UniswapV3Event::Mint(Mint {
-                tick_lower: 105000,
-                tick_upper: 110000,
-                amount: 54321,
-                ..Default::default()
+        let event = WithAddress::new(
+            UniswapV3PoolEvents::Mint(Mint {
+                tickLower: I24::try_from(105000).unwrap(),
+                tickUpper: I24::try_from(110000).unwrap(),
+                amount: 54321u128,
+                owner: Default::default(),
+                amount0: Default::default(),
+                amount1: Default::default(),
+                sender: Default::default(),
             }),
-            meta: Some(EventMetadata {
-                address,
-                ..Default::default()
-            }),
-        };
+            address.into_alloy(),
+        );
         append_events(&mut pools, vec![event]);
         assert_eq!(
             pools[&address].state.liquidity_net,
