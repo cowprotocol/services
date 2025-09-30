@@ -816,8 +816,8 @@ pub enum EthFlowOrderOnchainStatus {
 impl From<CoWSwapEthFlow::CoWSwapEthFlow::ordersReturn> for EthFlowOrderOnchainStatus {
     fn from(value: CoWSwapEthFlow::CoWSwapEthFlow::ordersReturn) -> Self {
         match value.owner {
-            owner if owner == NO_OWNER.into_alloy() => Self::Free,
-            owner if owner == INVALIDATED_OWNER.into_alloy() => Self::Invalidated,
+            owner if owner == NO_OWNER => Self::Free,
+            owner if owner == INVALIDATED_OWNER => Self::Invalidated,
             _ => Self::Created(value.owner.into_legacy(), value.validTo),
         }
     }

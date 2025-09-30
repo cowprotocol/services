@@ -1,7 +1,7 @@
 use {
     super::ethflow_order::{EthflowOrder, order_to_ethflow_data},
     crate::submitter::Submitter,
-    alloy::primitives::Address,
+    alloy::primitives::{Address, address},
     anyhow::{Context, Result, anyhow},
     contracts::alloy::CoWSwapEthFlow,
     database::{
@@ -9,19 +9,15 @@ use {
         ethflow_orders::{EthOrderPlacement, read_order, refundable_orders},
         orders::read_order as read_db_order,
     },
-    ethcontract::{Account, H160, H256},
-    ethrpc::{
-        Web3,
-        alloy::conversions::IntoAlloy,
-        block_stream::timestamp_of_current_block_in_seconds,
-    },
+    ethcontract::{Account, H256},
+    ethrpc::{Web3, block_stream::timestamp_of_current_block_in_seconds},
     futures::{StreamExt, stream},
     sqlx::PgPool,
     std::collections::HashMap,
 };
 
-pub const NO_OWNER: H160 = H160([0u8; 20]);
-pub const INVALIDATED_OWNER: H160 = H160([255u8; 20]);
+pub const NO_OWNER: Address = Address::ZERO;
+pub const INVALIDATED_OWNER: Address = address!("0xffffffffffffffffffffffffffffffffffffffff");
 const MAX_NUMBER_OF_UIDS_PER_REFUND_TX: usize = 30;
 
 type CoWSwapEthFlowAddress = Address;
@@ -137,10 +133,8 @@ impl RefundService {
                     }
                 };
                 let refund_status = match order_owner {
-                    Some(bytes) if bytes == INVALIDATED_OWNER.into_alloy() => {
-                        RefundStatus::Refunded
-                    }
-                    Some(bytes) if bytes == NO_OWNER.into_alloy() => RefundStatus::Invalid,
+                    Some(bytes) if bytes == INVALIDATED_OWNER => RefundStatus::Refunded,
+                    Some(bytes) if bytes == NO_OWNER => RefundStatus::Invalid,
                     // any other owner
                     _ => RefundStatus::NotYetRefunded,
                 };
