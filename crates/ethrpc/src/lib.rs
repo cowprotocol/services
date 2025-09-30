@@ -116,16 +116,7 @@ pub fn web3(
 ) -> Web3 {
     let http = http_factory.cookie_store(true).build().unwrap();
     let http = HttpTransport::new(http, url.clone(), name.to_string());
-    let buffered_config = args.into_buffered_configuration();
-    let backtrace = std::backtrace::Backtrace::capture();
-    tracing::info!(
-        ?buffered_config,
-        name = %name.to_string(),
-        url = %url,
-        backtrace = %backtrace,
-        "Creating Web3 transport with buffered configuration"
-    );
-    let transport = match buffered_config {
+    let transport = match args.into_buffered_configuration() {
         Some(config) => Web3Transport::new(BufferedTransport::with_config(http, config)),
         None => Web3Transport::new(http),
     };
