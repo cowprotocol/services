@@ -1,8 +1,5 @@
 use {
-    crate::{
-        domain::eth,
-        infra::blockchain::Ethereum,
-    },
+    crate::{domain::eth, infra::blockchain::Ethereum},
     chain::Chain,
     contracts::FlashLoanRouter,
     ethrpc::Web3,

@@ -472,7 +472,7 @@ impl Solver {
                 balances: Some(config.blockchain.balances.address().into()),
                 signatures: Some(config.blockchain.signatures.address().into()),
                 cow_amm_helper_by_factory: Default::default(),
-                flashloan_router: Some(config.blockchain.flashloan_wrapper.address().into()),
+                flashloan_router: Some(config.blockchain.flashloan_router.address().into()),
             },
             gas,
         )
