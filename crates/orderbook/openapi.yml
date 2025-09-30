@@ -328,7 +328,7 @@ paths:
           description: Unexpected error.
   /api/v1/quote:
     post:
-      operationId: quoteOrder
+      operationId: quote
       summary: Quote a price and fee for the specified order parameters.
       description: >
         Given a partial order compute the minimum fee and a price estimate for
