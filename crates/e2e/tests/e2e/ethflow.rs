@@ -813,16 +813,6 @@ pub enum EthFlowOrderOnchainStatus {
     Free,
 }
 
-impl From<(H160, u32)> for EthFlowOrderOnchainStatus {
-    fn from((owner, valid_to): (H160, u32)) -> Self {
-        match owner {
-            owner if owner == NO_OWNER => Self::Free,
-            owner if owner == INVALIDATED_OWNER => Self::Invalidated,
-            _ => Self::Created(owner, valid_to),
-        }
-    }
-}
-
 impl From<CoWSwapEthFlow::CoWSwapEthFlow::ordersReturn> for EthFlowOrderOnchainStatus {
     fn from(value: CoWSwapEthFlow::CoWSwapEthFlow::ordersReturn) -> Self {
         match value.owner {
