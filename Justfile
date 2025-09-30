@@ -3,15 +3,15 @@ help:
 
 # Run unit tests
 test-unit:
-    cargo nextest run --locked
+    cargo nextest run
 
 # Run doc tests
 test-doc:
-    cargo test --doc --locked
+    cargo test --doc
 
 # Run database tests
 test-db:
-    cargo nextest run postgres --test-threads 1 --run-ignored ignored-only --locked
+    cargo nextest run postgres --test-threads 1 --run-ignored ignored-only
 
 # Run End-to-end tests on local node (this machine)
 test-e2e-local: (test-e2e "local_node")
@@ -23,10 +23,10 @@ test-e2e-forked: (test-e2e "forked_node")
 
 # Run End-to-end tests with custom filters
 test-e2e *filters:
-    cargo nextest run -p e2e {{filters}} --test-threads 1 --failure-output final --run-ignored ignored-only --locked
+    cargo nextest run -p e2e {{filters}} --test-threads 1 --failure-output final --run-ignored ignored-only
 
 test-driver:
-    RUST_MIN_STACK=3145728 cargo nextest run -p driver --test-threads 1 --run-ignored ignored-only --locked
+    RUST_MIN_STACK=3145728 cargo nextest run -p driver --test-threads 1 --run-ignored ignored-only
 
 # Run clippy
 clippy:

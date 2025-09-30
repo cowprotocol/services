@@ -94,7 +94,7 @@ jobs:
       - uses: extractions/setup-just@e33e0265a09d6d736e2ee1e0eb685ef1de4669ff
         with:
           just-version: 1.39.0
-      - run: cargo build --tests --locked
+      - run: cargo build --tests
       - run: just test-unit
 
   test-db:
@@ -113,7 +113,7 @@ jobs:
       - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
       # Start the build process in the background. The following cargo test command will automatically
       # wait for the build process to be done before proceeding.
-      - run: cargo build -p orderbook -p database -p autopilot --tests --locked &
+      - run: cargo build -p orderbook -p database -p autopilot --tests &
       - uses: taiki-e/install-action@e4767ccc6762bc4347ef2275c75ea77f5f36e27f # nextest
       - uses: yu-ichiro/spin-up-docker-compose-action@b7808421e139a485cb455f78e66605ca9dbe4334 # v1.2
         with:
@@ -146,7 +146,7 @@ jobs:
       - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
       # Start the build process in the background. The following cargo test command will automatically
       # wait for the build process to be done before proceeding.
-      - run: cargo build -p e2e --tests --locked &
+      - run: cargo build -p e2e --tests &
       - uses: taiki-e/install-action@e4767ccc6762bc4347ef2275c75ea77f5f36e27f # nextest
       - uses: yu-ichiro/spin-up-docker-compose-action@b7808421e139a485cb455f78e66605ca9dbe4334 # v1.2
         with:
@@ -189,7 +189,7 @@ jobs:
       - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
       # Start the build process in the background. The following cargo test command will automatically
       # wait for the build process to be done before proceeding.
-      - run: cargo build -p e2e --tests --locked &
+      - run: cargo build -p e2e --tests &
       - uses: taiki-e/install-action@e4767ccc6762bc4347ef2275c75ea77f5f36e27f # nextest
       - uses: yu-ichiro/spin-up-docker-compose-action@b7808421e139a485cb455f78e66605ca9dbe4334 # v1.2
         with:
@@ -225,7 +225,7 @@ jobs:
         with:
           just-version: 1.39.0
       # Build the driver's tests.
-      - run: cargo build -p driver --tests --locked
+      - run: cargo build -p driver --tests
       # Don't spawn any docker containers. The driver's tests will spawn anvil itself.
       - run: just test-driver
 
@@ -266,7 +266,7 @@ jobs:
       - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
       # Start the build process in the background. The following cargo test command will automatically
       # wait for the build process to be done before proceeding.
-      - run: cargo build -p e2e --tests --locked &
+      - run: cargo build -p e2e --tests &
       - uses: taiki-e/install-action@e4767ccc6762bc4347ef2275c75ea77f5f36e27f # nextest
       - uses: yu-ichiro/spin-up-docker-compose-action@b7808421e139a485cb455f78e66605ca9dbe4334 # v1.2
         with:
