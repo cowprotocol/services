@@ -4,6 +4,12 @@ members = ["crates/*"]
 
 [workspace.dependencies]
 alloy = { git = "https://github.com/alloy-rs/alloy", rev = "v1.0.36", default-features = false }
+alloy-core = "1.4.0"
+alloy-primitives = "1.4.0"
+alloy-dyn-abi = "1.4.0"
+alloy-json-abi = "1.4.0"
+alloy-sol-types = "1.4.0"
+alloy-sol-macro-input = "1.4.0"
 anyhow = "=1.0.76"
 async-trait = "0.1.80"
 axum = "0.6"
@@ -106,11 +112,3 @@ vergen = "8"
 
 [workspace.lints]
 clippy.cast_possible_wrap = "deny"
-
-[patch.crates-io]
-alloy-core = { git = "https://github.com/alloy-rs/core", rev = "d624bec5bb9b867ea902e04369aa06ca3d34fbdb" }
-alloy-primitives = { git = "https://github.com/alloy-rs/core", rev = "d624bec5bb9b867ea902e04369aa06ca3d34fbdb" }
-alloy-dyn-abi = { git = "https://github.com/alloy-rs/core", rev = "d624bec5bb9b867ea902e04369aa06ca3d34fbdb" }
-alloy-json-abi = { git = "https://github.com/alloy-rs/core", rev = "d624bec5bb9b867ea902e04369aa06ca3d34fbdb" }
-alloy-sol-types = { git = "https://github.com/alloy-rs/core", rev = "d624bec5bb9b867ea902e04369aa06ca3d34fbdb" }
-alloy-sol-macro-input = { git = "https://github.com/alloy-rs/core", rev = "d624bec5bb9b867ea902e04369aa06ca3d34fbdb" }
