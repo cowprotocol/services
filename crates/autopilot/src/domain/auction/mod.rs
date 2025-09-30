@@ -1,6 +1,5 @@
 use {
     super::{Order, eth},
-    serde::Deserialize,
     std::collections::HashMap,
 };
 
@@ -41,7 +40,7 @@ impl PartialEq for Auction {
 
 /// The price of a token in wei. This represents how much wei is needed to buy
 /// 10**18 of another token.
-#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Price(eth::Ether);
 
 impl Price {

@@ -1,12 +1,7 @@
 //! Serialization of Vec<u8> to 0x prefixed hex string
 
 use {
-    serde::{
-        Deserialize,
-        Deserializer,
-        Serializer,
-        de::{self, Error},
-    },
+    serde::{Deserialize, Deserializer, Serializer, de::Error},
     serde_with::{DeserializeAs, SerializeAs},
     std::borrow::Cow,
 };
@@ -56,49 +51,6 @@ impl<'de> DeserializeAs<'de, Vec<u8>> for BytesHex {
         D: Deserializer<'de>,
     {
         deserialize(deserializer)
-    }
-}
-
-impl<'de, const N: usize> DeserializeAs<'de, [u8; N]> for BytesHex {
-    fn deserialize_as<D: Deserializer<'de>>(deserializer: D) -> Result<[u8; N], D::Error> {
-        struct Visitor<const N: usize> {
-            result: [u8; N],
-        }
-
-        impl<const N: usize> de::Visitor<'_> for Visitor<N> {
-            type Value = [u8; N];
-
-            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                write!(
-                    formatter,
-                    "a hex-encoded string starting with \"0x\" containing {N} bytes",
-                )
-            }
-
-            fn visit_str<E>(mut self, s: &str) -> Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                if !s.starts_with("0x") {
-                    return Err(de::Error::custom(format!(
-                        "failed to decode {s:?} as a hex string: missing \"0x\" prefix",
-                    )));
-                }
-                let decoded = hex::decode(&s[2..]).map_err(|err| {
-                    de::Error::custom(format!("failed to decode {s:?} as a hex string: {err}",))
-                })?;
-                if decoded.len() != N {
-                    return Err(de::Error::custom(format!(
-                        "failed to decode {s:?} as a hex string: expected {N} bytes, got {}",
-                        decoded.len()
-                    )));
-                }
-                self.result.copy_from_slice(&decoded);
-                Ok(self.result)
-            }
-        }
-
-        deserializer.deserialize_str(Visitor { result: [0; N] })
     }
 }
 

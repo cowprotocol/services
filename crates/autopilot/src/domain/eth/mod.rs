@@ -2,9 +2,6 @@ pub use primitive_types::{H160, H256, U256};
 use {
     crate::{domain, util::conv::U256Ext},
     derive_more::{Display, From, Into},
-    number::serialization::HexOrDecimalU256,
-    serde::Deserialize,
-    serde_with::serde_as,
 };
 
 /// ERC20 token address for ETH. In reality, ETH is not an ERC20 token because
@@ -16,24 +13,12 @@ pub const NATIVE_TOKEN: TokenAddress = TokenAddress(H160([0xee; 20]));
 
 /// An address. Can be an EOA or a smart contract address.
 #[derive(
-    Debug,
-    Default,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    From,
-    Into,
-    Display,
-    Deserialize,
+    Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, From, Into, Display,
 )]
 pub struct Address(pub H160);
 
 /// Block number.
-#[derive(Debug, Copy, Clone, From, PartialEq, PartialOrd, Default, Deserialize)]
+#[derive(Debug, Copy, Clone, From, PartialEq, PartialOrd, Default)]
 pub struct BlockNo(pub u64);
 
 /// Adding blocks to a block number.
@@ -52,7 +37,7 @@ pub struct TxId(pub H256);
 /// An ERC20 token address.
 ///
 /// https://eips.ethereum.org/EIPS/eip-20
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, From, Into, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, From, Into)]
 pub struct TokenAddress(pub H160);
 
 impl TokenAddress {
@@ -267,7 +252,6 @@ pub struct Asset {
 }
 
 /// An amount of native Ether tokens denominated in wei.
-#[serde_as]
 #[derive(
     Clone,
     Copy,
@@ -282,9 +266,8 @@ pub struct Asset {
     Default,
     derive_more::Add,
     derive_more::Sub,
-    Deserialize,
 )]
-pub struct Ether(#[serde_as(as = "HexOrDecimalU256")] pub U256);
+pub struct Ether(pub U256);
 
 impl num::Saturating for Ether {
     fn saturating_add(self, v: Self) -> Self {
