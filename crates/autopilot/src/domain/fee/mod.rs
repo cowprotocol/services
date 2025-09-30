@@ -16,7 +16,6 @@ use {
     derive_more::Into,
     primitive_types::{H160, U256},
     rust_decimal::Decimal,
-    serde::Deserialize,
     std::{collections::HashSet, str::FromStr},
 };
 
@@ -267,8 +266,7 @@ impl ProtocolFees {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Deserialize)]
-#[serde(tag = "type")]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Policy {
     /// If the order receives more than limit price, take the protocol fee as a
     /// percentage of the difference. The fee is taken in `sell` token for
@@ -303,7 +301,7 @@ pub enum Policy {
     },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Into, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Into)]
 pub struct FeeFactor(f64);
 
 /// TryFrom implementation for the cases we want to enforce the constrain [0, 1)
@@ -327,7 +325,7 @@ impl FromStr for FeeFactor {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Quote {
     /// The amount of the sell token.
     pub sell_amount: U256,
