@@ -620,7 +620,7 @@ mod tests {
 
         let event = WithAddress::new(
             UniswapV3PoolEvents::Swap(Swap {
-                sqrtPriceX96: U160::try_from(1).unwrap(),
+                sqrtPriceX96: U160::from(1),
                 liquidity: 2u128,
                 tick: I24::try_from(3).unwrap(),
                 sender: Default::default(),

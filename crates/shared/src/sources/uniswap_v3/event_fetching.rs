@@ -25,11 +25,14 @@ impl AlloyEventRetrieving for UniswapV3PoolEventFetcher {
         // No pool address filter since the generated request might be too large
         // leading to RPC performance issues.
         // More details: <https://github.com/cowprotocol/services/pull/3620>
-        let mut set = FilterSet::default();
-        set.insert(Swap::SIGNATURE_HASH);
-        set.insert(Burn::SIGNATURE_HASH);
-        set.insert(Mint::SIGNATURE_HASH);
-        Filter::new().address(vec![]).event_signature(set)
+        let signature_filter = FilterSet::from_iter([
+            Swap::SIGNATURE_HASH,
+            Burn::SIGNATURE_HASH,
+            Mint::SIGNATURE_HASH,
+        ]);
+        Filter::new()
+            .address(vec![])
+            .event_signature(signature_filter)
     }
 
     fn provider(&self) -> &DynProvider {
@@ -37,6 +40,8 @@ impl AlloyEventRetrieving for UniswapV3PoolEventFetcher {
     }
 }
 
+/// Just a helper container to keep track of the event's originating contract
+/// address.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WithAddress<T>(T, Address);
 
