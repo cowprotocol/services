@@ -4,12 +4,13 @@ use {
     crate::database::{Postgres, events::bytes_to_order_uid},
     alloy::rpc::types::Log,
     anyhow::Result,
+    contracts::alloy::CoWSwapEthFlow::CoWSwapEthFlow::CoWSwapEthFlowEvents,
     database::ethflow_orders::Refund,
     ethrpc::block_stream::RangeInclusive,
     shared::event_handling::EventStoring,
 };
 
-fn get_refunds(events: Vec<(EthFlowEvent, Log)>) -> Result<Vec<Refund>> {
+fn get_refunds(events: Vec<(CoWSwapEthFlowEvents, Log)>) -> Result<Vec<Refund>> {
     events
         .into_iter()
         .filter_map(|(event, log)| {
@@ -23,7 +24,7 @@ fn get_refunds(events: Vec<(EthFlowEvent, Log)>) -> Result<Vec<Refund>> {
             };
 
             let order_uid = match event {
-                EthFlowEvent::OrderRefund(event) => event.orderUid,
+                CoWSwapEthFlowEvents::OrderRefund(event) => event.orderUid,
                 _ => return None,
             };
             let order_uid = match bytes_to_order_uid(&order_uid.0) {
@@ -39,13 +40,11 @@ fn get_refunds(events: Vec<(EthFlowEvent, Log)>) -> Result<Vec<Refund>> {
         .collect()
 }
 
-type EthFlowEvent = contracts::alloy::CoWSwapEthFlow::CoWSwapEthFlow::CoWSwapEthFlowEvents;
-
 /// This name is used to store the latest indexed block in the db.
 pub(crate) const INDEX_NAME: &str = "ethflow_refunds";
 
 #[async_trait::async_trait]
-impl EventStoring<(EthFlowEvent, Log)> for Postgres {
+impl EventStoring<(CoWSwapEthFlowEvents, Log)> for Postgres {
     async fn last_event_block(&self) -> Result<u64> {
         crate::boundary::events::read_last_block_from_db(&self.pool, INDEX_NAME).await
     }
@@ -54,7 +53,7 @@ impl EventStoring<(EthFlowEvent, Log)> for Postgres {
         crate::boundary::events::write_last_block_to_db(&self.pool, last_block, INDEX_NAME).await
     }
 
-    async fn append_events(&mut self, events: Vec<(EthFlowEvent, Log)>) -> Result<()> {
+    async fn append_events(&mut self, events: Vec<(CoWSwapEthFlowEvents, Log)>) -> Result<()> {
         let refunds = match get_refunds(events)? {
             refunds if !refunds.is_empty() => refunds,
             _ => return Ok(()),
@@ -71,7 +70,7 @@ impl EventStoring<(EthFlowEvent, Log)> for Postgres {
 
     async fn replace_events(
         &mut self,
-        events: Vec<(EthFlowEvent, Log)>,
+        events: Vec<(CoWSwapEthFlowEvents, Log)>,
         range: RangeInclusive<u64>,
     ) -> Result<()> {
         let refunds = get_refunds(events)?;

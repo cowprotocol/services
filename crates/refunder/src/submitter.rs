@@ -35,6 +35,11 @@ const START_PRIORITY_FEE_TIP: u64 = 2_000_000_000;
 // max_fee_per_gas needs to be increased by at least 10 percent.
 const GAS_PRICE_BUMP: f64 = 1.125;
 
+/// Type safe cast to avoid unexpected issues due to type changes.
+const fn f64_to_u128(n: f64) -> u128 {
+    n as u128
+}
+
 pub struct Submitter {
     pub web3: Web3,
     pub account: Account,
@@ -79,8 +84,8 @@ impl Submitter {
         let tx_result = ethflow_contract
             .invalidateOrdersIgnoringNotAllowed(encoded_ethflow_orders)
             // Gas conversions are lossy but technically the should not have decimal points even though they're floats
-            .max_priority_fee_per_gas(gas_price.max_priority_fee_per_gas as u128)
-            .max_fee_per_gas(gas_price.max_fee_per_gas as u128)
+            .max_priority_fee_per_gas(f64_to_u128(gas_price.max_priority_fee_per_gas))
+            .max_fee_per_gas(f64_to_u128(gas_price.max_fee_per_gas))
             .from(self.account.address().into_alloy())
             .nonce(nonce.low_u64())
             .send()
