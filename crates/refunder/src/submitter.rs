@@ -9,22 +9,15 @@
 // In the re-newed attempt for submission the same nonce is used as before.
 
 use {
-    super::ethflow_order::EncodedEthflowOrder,
+    alloy::primitives::Address,
     anyhow::{Result, anyhow},
-    contracts::CoWSwapEthFlow,
+    contracts::alloy::CoWSwapEthFlow::{self, EthFlowOrder},
     database::OrderUid,
-    ethcontract::{
-        Account,
-        H160,
-        U256,
-        transaction::{ResolveCondition, confirm::ConfirmParams},
-    },
+    ethcontract::{Account, U256},
+    ethrpc::alloy::conversions::IntoAlloy,
     gas_estimation::{GasPrice1559, GasPriceEstimating},
-    shared::{
-        conversions::into_gas_price,
-        ethrpc::Web3,
-        submitter_constants::{TX_ALREADY_KNOWN, TX_ALREADY_MINED},
-    },
+    shared::ethrpc::Web3,
+    std::time::Duration,
 };
 
 // Max gas price used for submitting transactions
@@ -41,6 +34,11 @@ const START_PRIORITY_FEE_TIP: u64 = 2_000_000_000;
 // In order to resubmit a new tx with the same nonce, the gas tip and
 // max_fee_per_gas needs to be increased by at least 10 percent.
 const GAS_PRICE_BUMP: f64 = 1.125;
+
+/// Type safe cast to avoid unexpected issues due to type changes.
+const fn f64_to_u128(n: f64) -> u128 {
+    n as u128
+}
 
 pub struct Submitter {
     pub web3: Web3,
@@ -64,14 +62,11 @@ impl Submitter {
     pub async fn submit(
         &mut self,
         uids: Vec<OrderUid>,
-        encoded_ethflow_orders: Vec<EncodedEthflowOrder>,
-        ethflow_contract: H160,
+        encoded_ethflow_orders: Vec<EthFlowOrder::Data>,
+        ethflow_contract: Address,
     ) -> Result<()> {
-        let confirm_params = ConfirmParams {
-            block_timeout: Some(5),
-            ..Default::default()
-        };
-        let resolve_conditions = ResolveCondition::Confirmed(confirm_params);
+        const TIMEOUT_5_BLOCKS: Duration = Duration::from_secs(60);
+
         let gas_price_estimation = self.gas_estimator.estimate().await?;
         let nonce = self.get_submission_nonce().await?;
         let gas_price = calculate_submission_gas_price(
@@ -83,42 +78,28 @@ impl Submitter {
 
         self.gas_parameters_of_last_tx = Some(gas_price);
         self.nonce_of_last_submission = Some(nonce);
-        let ethflow_contract = CoWSwapEthFlow::at(&self.web3, ethflow_contract);
+
+        let ethflow_contract =
+            CoWSwapEthFlow::Instance::new(ethflow_contract, self.web3.alloy.clone());
         let tx_result = ethflow_contract
-            .invalidate_orders_ignoring_not_allowed(encoded_ethflow_orders)
-            .gas_price(into_gas_price(&gas_price))
-            .from(self.account.clone())
-            .nonce(nonce)
-            .into_inner()
-            .resolve(resolve_conditions)
+            .invalidateOrdersIgnoringNotAllowed(encoded_ethflow_orders)
+            // Gas conversions are lossy but technically the should not have decimal points even though they're floats
+            .max_priority_fee_per_gas(f64_to_u128(gas_price.max_priority_fee_per_gas))
+            .max_fee_per_gas(f64_to_u128(gas_price.max_fee_per_gas))
+            .from(self.account.address().into_alloy())
+            .nonce(nonce.low_u64())
             .send()
-            .await;
+            .await?.with_timeout(Some(TIMEOUT_5_BLOCKS)).get_receipt().await;
+
         match tx_result {
-            Ok(handle) => {
+            Ok(receipt) => {
                 tracing::debug!(
                     "Tx to refund the orderuids {:?} yielded following result {:?}",
                     uids,
-                    handle
+                    receipt
                 );
             }
-            Err(err) => {
-                let err = err.to_string();
-                if TX_ALREADY_MINED.iter().any(|msg| err.contains(msg)) {
-                    // It could happen that the previous tx got mined right before the tx was
-                    // send.
-                    tracing::debug!(?err, "transaction already mined");
-                } else if TX_ALREADY_KNOWN.iter().any(|msg| err.contains(msg)) {
-                    // This case means that the node is already aware of the tx
-                    // This can only happen after restarts, or close to the MAX_GAS_PRICE
-                    // as usually we would always increase the gas tip compared to previous tx.
-                    // Hence, we irgnore the warning and just retry.
-                    tracing::debug!(?err, "transaction already known");
-                } else {
-                    // Todo: Handle the error "replacement transaction underpriced"
-                    // This could happen after restarts or close to the MAX_GAS_PRICE
-                    tracing::warn!(?err, "submission failed");
-                }
-            }
+            Err(err) => tracing::debug!("transaction failed with: {err}"),
         }
         Ok(())
     }
