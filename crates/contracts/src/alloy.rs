@@ -486,6 +486,7 @@ crate::bindings!(
         LENS => (address!("0xFb337f8a725A142f65fb9ff4902d41cc901de222"), 3007173),
     }
 );
+crate::bindings!(CoWSwapOnchainOrders);
 
 pub mod support {
     // Support contracts used for trade and token simulations.

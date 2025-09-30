@@ -19,7 +19,7 @@ use {
         IntCounterVec,
         core::{AtomicU64, GenericGauge},
     },
-    shared::maintenance::Maintaining,
+    shared::{event_handling::AlloyEventRetriever, maintenance::Maintaining},
     std::{future::Future, sync::Arc},
     tokio::sync::Mutex,
 };
@@ -153,8 +153,10 @@ impl Maintenance {
     }
 }
 
-type EthflowIndexer =
-    EventUpdater<OnchainOrderParser<EthFlowData, EthFlowDataForDb>, CoWSwapOnchainOrdersContract>;
+type EthflowIndexer = EventUpdater<
+    OnchainOrderParser<EthFlowData, EthFlowDataForDb>,
+    AlloyEventRetriever<CoWSwapOnchainOrdersContract>,
+>;
 
 #[derive(prometheus_metric_storage::MetricStorage)]
 #[metric(subsystem = "autopilot_maintenance")]

@@ -1,4 +1,5 @@
 use {
+    alloy::rpc::types::Log,
     anyhow::{Context, Result, anyhow},
     contracts::gpv2_settlement::{
         Event as ContractEvent,
@@ -17,7 +18,7 @@ use {
     },
     ethcontract::{Event as EthContractEvent, EventMetadata},
     number::conversions::u256_to_big_decimal,
-    std::convert::TryInto,
+    std::{convert::TryInto, i64},
 };
 
 pub fn contract_to_db_events(
@@ -82,6 +83,19 @@ pub fn meta_to_event_index(meta: &EventMetadata) -> EventIndex {
     EventIndex {
         block_number: i64::try_from(meta.block_number).unwrap_or(i64::MAX),
         log_index: i64::try_from(meta.log_index).unwrap_or(i64::MAX),
+    }
+}
+
+pub fn log_to_event_index(log: &Log) -> EventIndex {
+    EventIndex {
+        block_number: log
+            .block_number
+            .and_then(|n| i64::try_from(n).ok())
+            .unwrap_or(i64::MAX),
+        log_index: log
+            .log_index
+            .and_then(|n| i64::try_from(n).ok())
+            .unwrap_or(i64::MAX),
     }
 }
 
