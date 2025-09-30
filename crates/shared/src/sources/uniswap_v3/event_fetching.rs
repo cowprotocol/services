@@ -1,99 +1,68 @@
 use {
-    crate::event_handling::{EthcontractEventRetrieving, EventStoring},
+    crate::event_handling::{AlloyEventRetrieving, EventStoring},
+    UniswapV3Pool::UniswapV3Pool::UniswapV3PoolEvents as AlloyUniswapV3PoolEvents,
+    alloy::{
+        primitives::Address,
+        providers::DynProvider,
+        rpc::types::{Filter, FilterSet, Log},
+        sol_types::SolEvent,
+    },
     anyhow::{Context, Result},
-    contracts::{
+    contracts::alloy::{
         UniswapV3Pool,
-        uniswap_v3_pool::event_data::{Burn, Mint, Swap},
+        UniswapV3Pool::UniswapV3Pool::{Burn, Mint, Swap, UniswapV3PoolEvents},
     },
-    ethcontract::{
-        Event,
-        H160,
-        H256,
-        RawLog,
-        common::abi::Error,
-        contract::ParseLog,
-        dyns::DynAllEventsBuilder,
-        errors::ExecutionError,
-    },
-    ethrpc::{Web3, block_stream::RangeInclusive},
-    hex_literal::hex,
+    ethrpc::block_stream::RangeInclusive,
     std::collections::BTreeMap,
 };
 
-const SWAP_TOPIC: [u8; 32] =
-    hex!("c42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67");
-const BURN_TOPIC: [u8; 32] =
-    hex!("0c396cd989a39f4459b5fa1aed6a9a8dcdbc45908acfd67e028cd568da98982c");
-const MINT_TOPIC: [u8; 32] =
-    hex!("7a53080ba414158be7ec69b987b5fb7d07dee101fe85488f0853ae16239d0bde");
+pub struct UniswapV3PoolEventFetcher(pub DynProvider);
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum UniswapV3Event {
-    Burn(Burn),
-    Mint(Mint),
-    Swap(Swap),
-}
+impl AlloyEventRetrieving for UniswapV3PoolEventFetcher {
+    type Event = AlloyUniswapV3PoolEvents;
 
-impl ParseLog for UniswapV3Event {
-    fn parse_log(log: RawLog) -> Result<Self, ExecutionError> {
-        let standard_event: Option<Result<UniswapV3Event, ExecutionError>> =
-            log.topics.first().copied().map(|topic| match topic {
-                H256(BURN_TOPIC) => Ok(UniswapV3Event::Burn(
-                    log.clone().decode(
-                        UniswapV3Pool::raw_contract()
-                            .interface
-                            .abi
-                            .event("Burn")
-                            .expect("generated event decode"),
-                    )?,
-                )),
-                H256(MINT_TOPIC) => Ok(UniswapV3Event::Mint(
-                    log.clone().decode(
-                        UniswapV3Pool::raw_contract()
-                            .interface
-                            .abi
-                            .event("Mint")
-                            .expect("generated event decode"),
-                    )?,
-                )),
-                H256(SWAP_TOPIC) => Ok(UniswapV3Event::Swap(
-                    log.clone().decode(
-                        UniswapV3Pool::raw_contract()
-                            .interface
-                            .abi
-                            .event("Swap")
-                            .expect("generated event decode"),
-                    )?,
-                )),
-                _ => Err(ExecutionError::from(Error::InvalidData)),
-            });
-        if let Some(Ok(data)) = standard_event {
-            return Ok(data);
-        }
-        Err(ExecutionError::from(Error::InvalidData))
-    }
-}
-
-pub struct UniswapV3PoolEventFetcher(pub Web3);
-
-impl EthcontractEventRetrieving for UniswapV3PoolEventFetcher {
-    type Event = UniswapV3Event;
-
-    fn get_events(&self) -> DynAllEventsBuilder<Self::Event> {
-        let mut events = DynAllEventsBuilder::new(self.0.legacy.clone(), H160::default(), None);
-        let events_signatures = vec![H256(SWAP_TOPIC), H256(BURN_TOPIC), H256(MINT_TOPIC)];
-        events.filter = events
-            .filter
+    fn filter(&self) -> Filter {
+        // No pool address filter since the generated request might be too large
+        // leading to RPC performance issues.
+        // More details: <https://github.com/cowprotocol/services/pull/3620>
+        let signature_filter = FilterSet::from_iter([
+            Swap::SIGNATURE_HASH,
+            Burn::SIGNATURE_HASH,
+            Mint::SIGNATURE_HASH,
+        ]);
+        Filter::new()
             .address(vec![])
-            .topic0(events_signatures.into());
-        events
+            .event_signature(signature_filter)
+    }
+
+    fn provider(&self) -> &DynProvider {
+        &self.0
     }
 }
 
-#[derive(Debug, Default)]
+/// Just a helper container to keep track of the event's originating contract
+/// address.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WithAddress<T>(T, Address);
+
+impl<T> WithAddress<T> {
+    pub fn new(inner: T, address: Address) -> Self {
+        Self(inner, address)
+    }
+
+    pub fn inner(&self) -> &T {
+        &self.0
+    }
+
+    pub fn address(&self) -> Address {
+        self.1
+    }
+}
+
+#[derive(Default)]
 pub struct RecentEventsCache {
     /// (block number, event log index) used as a Key
-    events: BTreeMap<(u64, usize), Event<UniswapV3Event>>,
+    events: BTreeMap<(u64, usize), WithAddress<UniswapV3PoolEvents>>,
 }
 
 impl RecentEventsCache {
@@ -108,7 +77,10 @@ impl RecentEventsCache {
         self.events.split_off(&(delete_from_block_number, 0));
     }
 
-    pub fn get_events(&self, block_range: RangeInclusive<u64>) -> Vec<Event<UniswapV3Event>> {
+    pub fn get_events(
+        &self,
+        block_range: RangeInclusive<u64>,
+    ) -> Vec<WithAddress<UniswapV3PoolEvents>> {
         self.events
             .range((*block_range.start(), 0)..=(*block_range.end(), usize::MAX))
             .map(|(_, event)| event)
@@ -118,21 +90,28 @@ impl RecentEventsCache {
 }
 
 #[async_trait::async_trait]
-impl EventStoring<Event<UniswapV3Event>> for RecentEventsCache {
+impl EventStoring<(AlloyUniswapV3PoolEvents, Log)> for RecentEventsCache {
     async fn replace_events(
         &mut self,
-        events: Vec<Event<UniswapV3Event>>,
+        events: Vec<(AlloyUniswapV3PoolEvents, Log)>,
         range: RangeInclusive<u64>,
     ) -> Result<()> {
         self.remove_events_newer_than_block(*range.start());
         self.append_events(events).await
     }
 
-    async fn append_events(&mut self, events: Vec<Event<UniswapV3Event>>) -> Result<()> {
-        for event in events {
-            let event_meta = event.meta.as_ref().context("event meta is empty")?;
-            self.events
-                .insert((event_meta.block_number, event_meta.log_index), event);
+    async fn append_events(&mut self, events: Vec<(AlloyUniswapV3PoolEvents, Log)>) -> Result<()> {
+        for (event, log) in events {
+            let block_number = log.block_number.context("log block number is empty")?;
+            let log_index = log
+                .log_index
+                .context("log index is empty")?
+                .try_into()
+                .context("log index too large")?;
+            self.events.insert(
+                (block_number, log_index),
+                WithAddress::new(event, log.address()),
+            );
         }
         Ok(())
     }
@@ -154,17 +133,39 @@ impl EventStoring<Event<UniswapV3Event>> for RecentEventsCache {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, ethcontract::EventMetadata};
+    use {super::*, alloy::primitives::aliases::I24, num::ToPrimitive};
 
-    fn build_event((block_number, log_index): (u64, usize)) -> Event<UniswapV3Event> {
-        Event {
-            data: UniswapV3Event::Swap(Swap::default()),
-            meta: Some(EventMetadata {
-                block_number,
-                log_index,
-                ..Default::default()
-            }),
+    fn build_event((block_number, log_index): (u64, usize)) -> WithAddress<UniswapV3PoolEvents> {
+        WithAddress::new(
+            UniswapV3PoolEvents::Swap(build_swap_event(block_number, log_index)),
+            Default::default(),
+        )
+    }
+
+    fn build_swap_event(block_number: u64, tick: usize) -> Swap {
+        Swap {
+            sender: Default::default(),
+            recipient: Default::default(),
+            amount0: Default::default(),
+            amount1: Default::default(),
+            sqrtPriceX96: Default::default(),
+            // Encode some values to properly compare the items
+            liquidity: block_number.to_u128().unwrap(),
+            tick: I24::try_from(tick).unwrap(),
         }
+    }
+
+    fn build_alloy_event(
+        (block_number, log_index): (u64, usize),
+    ) -> (AlloyUniswapV3PoolEvents, Log) {
+        let event = AlloyUniswapV3PoolEvents::Swap(build_swap_event(block_number, log_index));
+        let log = Log {
+            block_number: Some(block_number),
+            log_index: Some(log_index.try_into().unwrap()),
+            ..Default::default()
+        };
+
+        (event, log)
     }
 
     #[test]
@@ -255,9 +256,9 @@ mod tests {
         let mut cache = RecentEventsCache { events };
 
         let appended_events = vec![
-            build_event((1, 2)),
-            build_event((2, 0)),
-            build_event((2, 1)),
+            build_alloy_event((1, 2)),
+            build_alloy_event((2, 0)),
+            build_alloy_event((2, 1)),
         ];
         cache.append_events(appended_events).await.unwrap();
 

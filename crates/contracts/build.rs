@@ -568,25 +568,8 @@ fn main() {
     generate_contract_with_config("HoneyswapRouter", |builder| {
         builder.add_network_str(GNOSIS, "0x1C232F01118CB8B424793ae03F870aa7D0ac7f77")
     });
-    generate_contract_with_config("HooksTrampoline", |builder| {
-        // <https://github.com/cowprotocol/hooks-trampoline/blob/993427166ade6c65875b932f853776299290ac4b/networks.json>
-        builder
-            .add_network_str(MAINNET, "0x60Bf78233f48eC42eE3F101b9a05eC7878728006")
-            .add_network_str(GOERLI, "0x60Bf78233f48eC42eE3F101b9a05eC7878728006")
-            .add_network_str(GNOSIS, "0x01DcB88678aedD0C4cC9552B20F4718550250574")
-            .add_network_str(SEPOLIA, "0x60Bf78233f48eC42eE3F101b9a05eC7878728006")
-            .add_network_str(ARBITRUM_ONE, "0x60Bf78233f48eC42eE3F101b9a05eC7878728006")
-            .add_network_str(BASE, "0x60Bf78233f48eC42eE3F101b9a05eC7878728006")
-            .add_network_str(AVALANCHE, "0x60Bf78233f48eC42eE3F101b9a05eC7878728006")
-            .add_network_str(BNB, "0x60Bf78233f48eC42eE3F101b9a05eC7878728006")
-            .add_network_str(OPTIMISM, "0x60Bf78233f48eC42eE3F101b9a05eC7878728006")
-            .add_network_str(POLYGON, "0x60Bf78233f48eC42eE3F101b9a05eC7878728006")
-            .add_network_str(LENS, "0x60Bf78233f48eC42eE3F101b9a05eC7878728006")
-    });
     generate_contract("IAavePool");
     generate_contract("IFlashLoanSolverWrapper");
-    generate_contract("IUniswapLikeRouter");
-    generate_contract("IUniswapLikePair");
     // EIP-1271 contract - SignatureValidator
     generate_contract("ERC1271SignatureValidator");
     generate_contract_with_config("UniswapV3SwapRouterV2", |builder| {
@@ -602,7 +585,6 @@ fn main() {
             .add_network_str(LENS, "0x6ddD32cd941041D8b61df213B9f515A7D288Dc13")
         // Not available on Gnosis Chain
     });
-    generate_contract("UniswapV3Pool");
     generate_contract_with_config("UniswapV3QuoterV2", |builder| {
         // <https://docs.uniswap.org/contracts/v3/reference/deployments/>
         builder
@@ -707,11 +689,6 @@ fn main() {
     });
     generate_contract("CowAmmUniswapV2PriceOracle");
 
-    // Support contracts used for trade and token simulations.
-    generate_contract("Solver");
-    generate_contract("Spardose");
-    generate_contract("Trader");
-
     // Support contracts used for various order simulations.
     generate_contract_with_config("Balances", |builder| {
         builder
@@ -739,10 +716,6 @@ fn main() {
             .add_network_str(GNOSIS, "0x8262d639c38470F38d2eff15926F7071c28057Af")
             .add_network_str(SEPOLIA, "0x8262d639c38470F38d2eff15926F7071c28057Af")
     });
-
-    // Support contract used for solver fee simulations.
-    generate_contract("AnyoneAuthenticator");
-    generate_contract("Swapper");
 
     // Contract for batching multiple `eth_call`s into a single one.
     generate_contract("Multicall");

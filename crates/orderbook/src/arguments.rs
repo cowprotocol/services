@@ -38,7 +38,12 @@ pub struct Arguments {
     /// Url of the Postgres database. By default connects to locally running
     /// postgres.
     #[clap(long, env, default_value = "postgresql://")]
-    pub db_url: Url,
+    pub db_write_url: Url,
+
+    /// Url of the Postgres database replica. By default it's the same as
+    /// db_write_url
+    #[clap(long, env)]
+    pub db_read_url: Option<Url>,
 
     /// The minimum amount of time in seconds an order has to be valid for.
     #[clap(
@@ -78,6 +83,10 @@ pub struct Arguments {
     #[clap(long, env, use_value_delimiter = true)]
     pub banned_users: Vec<H160>,
 
+    /// Maximum number of entries to keep in the banned users cache.
+    #[clap(long, env, default_value = "100")]
+    pub banned_users_max_cache_size: NonZeroUsize,
+
     /// Which estimators to use to estimate token prices in terms of the chain's
     /// native token.
     #[clap(long, env)]
@@ -97,10 +106,6 @@ pub struct Arguments {
     /// automatically allowed.
     #[clap(long, env, use_value_delimiter = true)]
     pub allowed_tokens: Vec<H160>,
-
-    /// The number of pairs that are automatically updated in the pool cache.
-    #[clap(long, env, default_value = "200")]
-    pub pool_cache_lru_size: NonZeroUsize,
 
     /// Skip EIP-1271 order signature validation on creation.
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
@@ -153,8 +158,8 @@ impl std::fmt::Display for Arguments {
             max_limit_order_validity_period,
             unsupported_tokens,
             banned_users,
+            banned_users_max_cache_size,
             allowed_tokens,
-            pool_cache_lru_size,
             eip1271_skip_creation_validation,
             solvable_orders_max_update_age_blocks,
             native_price_estimators,
@@ -163,7 +168,8 @@ impl std::fmt::Display for Arguments {
             ipfs_gateway,
             ipfs_pinata_auth,
             app_data_size_limit,
-            db_url,
+            db_write_url: db_url,
+            db_read_url,
             max_gas_per_order,
             active_order_competition_threshold,
         } = self;
@@ -177,6 +183,7 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "bind_address: {bind_address}")?;
         let _intentionally_ignored = db_url;
         writeln!(f, "db_url: SECRET")?;
+        display_secret_option(f, "db_read_url", db_read_url.as_ref())?;
         writeln!(
             f,
             "min_order_validity_period: {min_order_validity_period:?}"
@@ -191,8 +198,11 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(f, "unsupported_tokens: {unsupported_tokens:?}")?;
         writeln!(f, "banned_users: {banned_users:?}")?;
+        writeln!(
+            f,
+            "banned_users_max_cache_size: {banned_users_max_cache_size:?}"
+        )?;
         writeln!(f, "allowed_tokens: {allowed_tokens:?}")?;
-        writeln!(f, "pool_cache_lru_size: {pool_cache_lru_size}")?;
         writeln!(
             f,
             "eip1271_skip_creation_validation: {eip1271_skip_creation_validation}"

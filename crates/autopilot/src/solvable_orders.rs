@@ -100,6 +100,7 @@ pub struct SolvableOrdersCache {
     cow_amm_registry: cow_amm::Registry,
     native_price_timeout: Duration,
     settlement_contract: H160,
+    disable_order_filters: bool,
 }
 
 type Balances = HashMap<Query, U256>;
@@ -125,6 +126,7 @@ impl SolvableOrdersCache {
         cow_amm_registry: cow_amm::Registry,
         native_price_timeout: Duration,
         settlement_contract: H160,
+        disable_order_filters: bool,
     ) -> Arc<Self> {
         Arc::new(Self {
             min_order_validity_period,
@@ -142,6 +144,7 @@ impl SolvableOrdersCache {
             cow_amm_registry,
             native_price_timeout,
             settlement_contract,
+            disable_order_filters,
         })
     }
 
@@ -159,7 +162,7 @@ impl SolvableOrdersCache {
     /// Usually this method is called from update_task. If it isn't, which is
     /// the case in unit tests, then concurrent calls might overwrite each
     /// other's results.
-    pub async fn update(&self, block: u64) -> Result<()> {
+    pub async fn update(&self, block: u64, store_events: bool) -> Result<()> {
         let start = Instant::now();
 
         let db_solvable_orders = self.get_solvable_orders().await?;
@@ -184,13 +187,19 @@ impl SolvableOrdersCache {
             )
         };
 
-        let orders = orders_with_balance(orders, &balances, self.settlement_contract);
-        let removed = counter.checkpoint("insufficient_balance", &orders);
-        invalid_order_uids.extend(removed);
+        let orders = if self.disable_order_filters {
+            orders
+        } else {
+            let orders = orders_with_balance(orders, &balances, self.settlement_contract);
+            let removed = counter.checkpoint("insufficient_balance", &orders);
+            invalid_order_uids.extend(removed);
 
-        let orders = filter_dust_orders(orders, &balances);
-        let removed = counter.checkpoint("dust_order", &orders);
-        filtered_order_events.extend(removed);
+            let orders = filter_dust_orders(orders, &balances);
+            let removed = counter.checkpoint("dust_order", &orders);
+            filtered_order_events.extend(removed);
+
+            orders
+        };
 
         let cow_amm_tokens = cow_amms
             .iter()
@@ -238,18 +247,20 @@ impl SolvableOrdersCache {
         let removed = counter.record(&orders);
         filtered_order_events.extend(removed);
 
-        // spawning a background task since `order_events` table insert operation takes
-        // a while and the result is ignored.
-        self.persistence.store_order_events(
-            invalid_order_uids.iter().map(|id| domain::OrderUid(id.0)),
-            OrderEventLabel::Invalid,
-        );
-        self.persistence.store_order_events(
-            filtered_order_events
-                .iter()
-                .map(|id| domain::OrderUid(id.0)),
-            OrderEventLabel::Filtered,
-        );
+        if store_events {
+            // spawning a background task since `order_events` table insert operation takes
+            // a while and the result is ignored.
+            self.persistence.store_order_events(
+                invalid_order_uids.iter().map(|id| domain::OrderUid(id.0)),
+                OrderEventLabel::Invalid,
+            );
+            self.persistence.store_order_events(
+                filtered_order_events
+                    .iter()
+                    .map(|id| domain::OrderUid(id.0)),
+                OrderEventLabel::Filtered,
+            );
+        }
 
         let surplus_capturing_jit_order_owners = cow_amms
             .iter()
@@ -311,6 +322,10 @@ impl SolvableOrdersCache {
                 self.balance_fetcher.get_balances(&queries),
             )
             .await;
+        if self.disable_order_filters {
+            return Default::default();
+        }
+
         tracing::trace!("fetched balances for solvable orders");
         queries
             .into_iter()
@@ -373,15 +388,19 @@ impl SolvableOrdersCache {
         counter: &mut OrderFilterCounter,
         invalid_order_uids: &mut HashSet<OrderUid>,
     ) -> Vec<Order> {
+        let filter_invalid_signatures = async {
+            if self.disable_order_filters {
+                return Default::default();
+            }
+            find_invalid_signature_orders(&orders, self.signature_validator.as_ref()).await
+        };
+
         let (banned_user_orders, invalid_signature_orders, unsupported_token_orders) = tokio::join!(
             self.timed_future(
                 "banned_user_filtering",
                 find_banned_user_orders(&orders, &self.banned_users)
             ),
-            self.timed_future(
-                "invalid_signature_filtering",
-                find_invalid_signature_orders(&orders, self.signature_validator.as_ref())
-            ),
+            self.timed_future("invalid_signature_filtering", filter_invalid_signatures),
             self.timed_future(
                 "unsupported_token_filtering",
                 find_unsupported_tokens(&orders, self.bad_token_detector.clone())

@@ -21,8 +21,9 @@ use {
     anyhow::{Result, anyhow},
     app_data::{AppDataHash, Hook, Hooks, ValidatedAppData, Validator},
     async_trait::async_trait,
-    contracts::{HooksTrampoline, WETH9},
-    ethcontract::{Bytes, H160, H256, U256},
+    contracts::{WETH9, alloy::HooksTrampoline},
+    ethcontract::{H160, H256, U256},
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     model::{
         DomainSeparator,
         interaction::InteractionData,
@@ -221,7 +222,7 @@ pub struct OrderValidator {
     validity_configuration: OrderValidPeriodConfiguration,
     eip1271_skip_creation_validation: bool,
     bad_token_detector: Arc<dyn BadTokenDetecting>,
-    hooks: HooksTrampoline,
+    hooks: HooksTrampoline::Instance,
     /// For Full-Validation: performed time of order placement
     quoter: Arc<dyn OrderQuoting>,
     balance_fetcher: Arc<dyn BalanceFetching>,
@@ -293,7 +294,7 @@ impl OrderValidator {
         validity_configuration: OrderValidPeriodConfiguration,
         eip1271_skip_creation_validation: bool,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
-        hooks: HooksTrampoline,
+        hooks: HooksTrampoline::Instance,
         quoter: Arc<dyn OrderQuoting>,
         balance_fetcher: Arc<dyn BalanceFetching>,
         signature_validator: Arc<dyn SignatureValidating>,
@@ -339,26 +340,24 @@ impl OrderValidator {
                 vec![]
             } else {
                 vec![InteractionData {
-                    target: self.hooks.address(),
+                    target: self.hooks.address().into_legacy(),
                     value: U256::zero(),
                     call_data: self
                         .hooks
                         .execute(
                             hooks
                                 .iter()
-                                .map(|hook| {
-                                    (
-                                        hook.target,
-                                        Bytes(hook.call_data.clone()),
-                                        hook.gas_limit.into(),
-                                    )
+                                .map(|hook| HooksTrampoline::HooksTrampoline::Hook {
+                                    target: hook.target.into_alloy(),
+                                    callData: alloy::primitives::Bytes::from(
+                                        hook.call_data.clone(),
+                                    ),
+                                    gasLimit: alloy::primitives::U256::from(hook.gas_limit),
                                 })
                                 .collect(),
                         )
-                        .tx
-                        .data
-                        .unwrap()
-                        .0,
+                        .calldata()
+                        .to_vec(),
                 }]
             }
         };
@@ -399,7 +398,7 @@ impl OrderValidator {
                         balance_override: app_data.inner.protocol.flashloan.as_ref().map(|loan| {
                             BalanceOverrideRequest {
                                 token: loan.token,
-                                holder: loan.borrower.unwrap_or(owner),
+                                holder: loan.receiver,
                                 amount: loan.amount,
                             }
                         }),
@@ -592,7 +591,7 @@ impl OrderValidating for OrderValidator {
                         balance_override: app_data.inner.protocol.flashloan.as_ref().map(|loan| {
                             BalanceOverrideRequest {
                                 token: loan.token,
-                                holder: loan.borrower.unwrap_or(owner),
+                                holder: loan.receiver,
                                 amount: loan.amount,
                             }
                         }),
@@ -1005,6 +1004,10 @@ mod tests {
             order_quoting::{FindQuoteError, MockOrderQuoting},
             signature_validator::MockSignatureValidating,
         },
+        alloy::{
+            primitives::{Address, address},
+            providers::{Provider, ProviderBuilder, mock::Asserter},
+        },
         contracts::dummy_contract,
         ethcontract::web3::signing::SecretKeyRef,
         futures::FutureExt,
@@ -1078,7 +1081,12 @@ mod tests {
             validity_configuration,
             false,
             Arc::new(MockBadTokenDetecting::new()),
-            dummy_contract!(HooksTrampoline, [0xcf; 20]),
+            HooksTrampoline::Instance::new(
+                Address::from([0xcf; 20]),
+                ProviderBuilder::new()
+                    .connect_mocked_client(Asserter::new())
+                    .erased(),
+            ),
             Arc::new(MockOrderQuoting::new()),
             Arc::new(MockBalanceFetching::new()),
             Arc::new(MockSignatureValidating::new()),
@@ -1225,7 +1233,12 @@ mod tests {
             validity_configuration,
             false,
             Arc::new(bad_token_detector),
-            dummy_contract!(HooksTrampoline, [0xcf; 20]),
+            HooksTrampoline::Instance::new(
+                Address::from([0xcf; 20]),
+                ProviderBuilder::new()
+                    .connect_mocked_client(Asserter::new())
+                    .erased(),
+            ),
             Arc::new(MockOrderQuoting::new()),
             Arc::new(MockBalanceFetching::new()),
             Arc::new(MockSignatureValidating::new()),
@@ -1305,7 +1318,12 @@ mod tests {
 
         let max_limit_orders_per_user = 1;
 
-        let hooks = dummy_contract!(HooksTrampoline, [0xcf; 20]);
+        let hooks = HooksTrampoline::Instance::new(
+            Address::from([0xcf; 20]),
+            ProviderBuilder::new()
+                .connect_mocked_client(Asserter::new())
+                .erased(),
+        );
 
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
@@ -1385,18 +1403,18 @@ mod tests {
         let order_hash = hashed_eip712_message(&domain_separator, &creation.data().hash_struct());
 
         let pre_interactions = vec![InteractionData {
-            target: hooks.address(),
+            target: hooks.address().into_legacy(),
             value: U256::zero(),
             call_data: hooks
-                .execute(vec![(
-                    addr!("1111111111111111111111111111111111111111"),
-                    Bytes(vec![0x11, 0x22, 0x33]),
-                    42.into(),
-                )])
-                .tx
-                .data
-                .unwrap()
-                .0,
+                .execute(vec![
+                    (HooksTrampoline::HooksTrampoline::Hook {
+                        target: address!("1111111111111111111111111111111111111111"),
+                        callData: alloy::primitives::Bytes::from(vec![0x11, 0x22, 0x33]),
+                        gasLimit: alloy::primitives::U256::from(42),
+                    }),
+                ])
+                .calldata()
+                .to_vec(),
         }];
 
         let mut signature_validator = MockSignatureValidating::new();
@@ -1529,7 +1547,12 @@ mod tests {
             },
             false,
             Arc::new(bad_token_detector),
-            dummy_contract!(HooksTrampoline, [0xcf; 20]),
+            HooksTrampoline::Instance::new(
+                Address::from([0xcf; 20]),
+                ProviderBuilder::new()
+                    .connect_mocked_client(Asserter::new())
+                    .erased(),
+            ),
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             signature_validating,
@@ -1600,7 +1623,12 @@ mod tests {
             OrderValidPeriodConfiguration::any(),
             false,
             Arc::new(bad_token_detector),
-            dummy_contract!(HooksTrampoline, [0xcf; 20]),
+            HooksTrampoline::Instance::new(
+                Address::from([0xcf; 20]),
+                ProviderBuilder::new()
+                    .connect_mocked_client(Asserter::new())
+                    .erased(),
+            ),
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             signature_validating,
@@ -1658,7 +1686,12 @@ mod tests {
             OrderValidPeriodConfiguration::any(),
             false,
             Arc::new(bad_token_detector),
-            dummy_contract!(HooksTrampoline, [0xcf; 20]),
+            HooksTrampoline::Instance::new(
+                Address::from([0xcf; 20]),
+                ProviderBuilder::new()
+                    .connect_mocked_client(Asserter::new())
+                    .erased(),
+            ),
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             Arc::new(MockSignatureValidating::new()),
@@ -1709,7 +1742,12 @@ mod tests {
             OrderValidPeriodConfiguration::any(),
             false,
             Arc::new(bad_token_detector),
-            dummy_contract!(HooksTrampoline, [0xcf; 20]),
+            HooksTrampoline::Instance::new(
+                Address::from([0xcf; 20]),
+                ProviderBuilder::new()
+                    .connect_mocked_client(Asserter::new())
+                    .erased(),
+            ),
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             Arc::new(MockSignatureValidating::new()),
@@ -1763,7 +1801,12 @@ mod tests {
             OrderValidPeriodConfiguration::any(),
             false,
             Arc::new(bad_token_detector),
-            dummy_contract!(HooksTrampoline, [0xcf; 20]),
+            HooksTrampoline::Instance::new(
+                Address::from([0xcf; 20]),
+                ProviderBuilder::new()
+                    .connect_mocked_client(Asserter::new())
+                    .erased(),
+            ),
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             Arc::new(MockSignatureValidating::new()),
@@ -1820,7 +1863,12 @@ mod tests {
             OrderValidPeriodConfiguration::any(),
             false,
             Arc::new(bad_token_detector),
-            dummy_contract!(HooksTrampoline, [0xcf; 20]),
+            HooksTrampoline::Instance::new(
+                Address::from([0xcf; 20]),
+                ProviderBuilder::new()
+                    .connect_mocked_client(Asserter::new())
+                    .erased(),
+            ),
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             Arc::new(MockSignatureValidating::new()),
@@ -1876,7 +1924,12 @@ mod tests {
             OrderValidPeriodConfiguration::any(),
             false,
             Arc::new(bad_token_detector),
-            dummy_contract!(HooksTrampoline, [0xcf; 20]),
+            HooksTrampoline::Instance::new(
+                Address::from([0xcf; 20]),
+                ProviderBuilder::new()
+                    .connect_mocked_client(Asserter::new())
+                    .erased(),
+            ),
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             Arc::new(signature_validator),
@@ -1939,7 +1992,12 @@ mod tests {
                 OrderValidPeriodConfiguration::any(),
                 false,
                 Arc::new(bad_token_detector),
-                dummy_contract!(HooksTrampoline, [0xcf; 20]),
+                HooksTrampoline::Instance::new(
+                    Address::from([0xcf; 20]),
+                    ProviderBuilder::new()
+                        .connect_mocked_client(Asserter::new())
+                        .erased(),
+                ),
                 Arc::new(order_quoter),
                 Arc::new(balance_fetcher),
                 Arc::new(MockSignatureValidating::new()),
@@ -2024,7 +2082,12 @@ mod tests {
             OrderValidPeriodConfiguration::any(),
             false,
             Arc::new(bad_token_detector),
-            dummy_contract!(HooksTrampoline, [0xcf; 20]),
+            HooksTrampoline::Instance::new(
+                Address::from([0xcf; 20]),
+                ProviderBuilder::new()
+                    .connect_mocked_client(Asserter::new())
+                    .erased(),
+            ),
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             Arc::new(MockSignatureValidating::new()),
@@ -2046,8 +2109,9 @@ mod tests {
                 full: r#"{
                     "metadata": {
                         "flashloan": {
-                            "lender": "0x1111111111111111111111111111111111111111",
-                            "borrower": "0x2222222222222222222222222222222222222222",
+                            "liquidityProvider": "0x1111111111111111111111111111111111111111",
+                            "protocolAdapter": "0x2222222222222222222222222222222222222222",
+                            "receiver": "0x0000000000000000000000000000000000000000",
                             "token": "0x0100000000000000000000000000000000000000",
                             "amount": "150"
                         }
@@ -2083,8 +2147,9 @@ mod tests {
                 full: r#"{
                     "metadata": {
                         "flashloan": {
-                            "lender": "0x1111111111111111111111111111111111111111",
-                            "borrower": "0x2222222222222222222222222222222222222222",
+                            "liquidityProvider": "0x1111111111111111111111111111111111111111",
+                            "receiver": "0x2222222222222222222222222222222222222222",
+                            "protocolAdapter": "0x3333333333333333333333333333333333333333",
                             "token": "0x0100000000000000000000000000000000000000",
                             "amount": "50"
                         }
@@ -2119,8 +2184,9 @@ mod tests {
                 full: r#"{
                     "metadata": {
                         "flashloan": {
-                            "lender": "0x1111111111111111111111111111111111111111",
-                            "borrower": "0x2222222222222222222222222222222222222222",
+                            "liquidityProvider": "0x1111111111111111111111111111111111111111",
+                            "receiver": "0x2222222222222222222222222222222222222222",
+                            "protocolAdapter": "0x3333333333333333333333333333333333333333",
                             "token": "0x0300000000000000000000000000000000000000",
                             "amount": "150"
                         }
@@ -2431,7 +2497,12 @@ mod tests {
             },
             false,
             Arc::new(bad_token_detector),
-            dummy_contract!(HooksTrampoline, [0xcf; 20]),
+            HooksTrampoline::Instance::new(
+                Address::from([0xcf; 20]),
+                ProviderBuilder::new()
+                    .connect_mocked_client(Asserter::new())
+                    .erased(),
+            ),
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             Arc::new(signature_validating),

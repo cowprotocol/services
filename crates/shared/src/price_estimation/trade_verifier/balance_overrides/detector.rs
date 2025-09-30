@@ -1,6 +1,6 @@
 use {
     super::Strategy,
-    crate::code_simulation::SimulationError,
+    crate::tenderly_api::SimulationError,
     anyhow::Context,
     contracts::ERC20,
     ethcontract::{Address, H256, U256, state_overrides::StateOverride},

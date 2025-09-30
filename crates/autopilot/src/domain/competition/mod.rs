@@ -2,6 +2,7 @@ use {
     super::auction::order,
     crate::domain::{self, auction, eth},
     derive_more::Display,
+    num::Saturating,
     std::collections::HashMap,
 };
 
@@ -99,7 +100,6 @@ pub struct TradedOrder {
     PartialOrd,
     Display,
     Default,
-    derive_more::AddAssign,
     derive_more::Add,
     derive_more::Sub,
     Eq,
@@ -118,6 +118,26 @@ impl Score {
 
     pub fn get(&self) -> &eth::Ether {
         &self.0
+    }
+
+    pub fn saturating_add_assign(&mut self, other: Self) {
+        self.0 = self.0.saturating_add(other.0);
+    }
+}
+
+impl num::Saturating for Score {
+    fn saturating_add(self, v: Self) -> Self {
+        Self(self.0.saturating_add(v.0))
+    }
+
+    fn saturating_sub(self, v: Self) -> Self {
+        Self(self.0.saturating_sub(v.0))
+    }
+}
+
+impl num::CheckedSub for Score {
+    fn checked_sub(&self, v: &Self) -> Option<Self> {
+        self.0.checked_sub(&v.0).map(Score)
     }
 }
 

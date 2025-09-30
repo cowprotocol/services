@@ -438,6 +438,35 @@ crate::bindings!(
         // Not available on Lens
     }
 );
+crate::bindings!(IUniswapLikeRouter);
+crate::bindings!(IUniswapLikePair);
+crate::bindings!(UniswapV3Pool);
+
+crate::bindings!(
+    HooksTrampoline,
+    // <https://github.com/cowprotocol/hooks-trampoline/blob/993427166ade6c65875b932f853776299290ac4b/networks.json>
+    crate::deployments! {
+        MAINNET  => address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
+        // Gnosis is using the old instance of the hook trampoline since it's hardcoded in gnosis pay rebalance integration.
+        GNOSIS  => address!("0x01DcB88678aedD0C4cC9552B20F4718550250574"),
+        SEPOLIA  => address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
+        ARBITRUM_ONE  => address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
+        BASE  => address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
+        AVALANCHE  => address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
+        BNB  => address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
+        OPTIMISM  => address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
+        POLYGON  => address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
+        LENS  => address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
+    }
+);
+
+pub mod support {
+    // Support contracts used for trade and token simulations.
+    crate::bindings!(AnyoneAuthenticator);
+    crate::bindings!(Solver);
+    crate::bindings!(Spardose);
+    crate::bindings!(Trader);
+}
 
 pub use alloy::providers::DynProvider as Provider;
 
@@ -502,7 +531,7 @@ macro_rules! bindings {
             mod [<$contract Private>] {
                 alloy::sol!(
                     #[allow(missing_docs, clippy::too_many_arguments)]
-                    #[sol(rpc)]
+                    #[sol(rpc, all_derives)]
                     $contract,
                     concat!("./artifacts/", stringify!($contract), ".json"),
                 );
@@ -510,46 +539,15 @@ macro_rules! bindings {
 
             #[allow(non_snake_case)]
             pub mod $contract {
-                use {
-                    std::sync::LazyLock,
-                    anyhow::{anyhow, Result},
-                    alloy::{
-                        json_abi::{ContractObject, Function, JsonAbi},
-                        primitives::Selector,
-                        providers::DynProvider,
-                    },
-                };
+                use alloy::providers::DynProvider;
 
                 pub use super::[<$contract Private>]::*;
                 pub type Instance = $contract::[<$contract Instance>]<DynProvider>;
 
-                /// The contract's ABI parsed from the bundled artifact.
-                pub static ABI: LazyLock<JsonAbi> = LazyLock::new(|| {
-                    let obj: ContractObject = serde_json::from_str(include_str!(concat!(
-                        "../artifacts/", stringify!($contract), ".json"
-                    )))
-                    .expect(concat!("failed to parse artifact JSON for ", stringify!($contract)));
-                    obj.abi.expect(&format!("artifact for {} missing `abi` field", stringify!($contract)))
-                });
-
-                /// Return all function overloads 4-byte selectors by *name*.
-                pub fn selector_by_name(name: &str) -> Result<Vec<Selector>> {
-                    let Some(funcs) = ABI.functions.get(name) else {
-                        return Err(anyhow!("no function named `{name}` in ABI"));
-                    };
-                    Ok(funcs.iter().map(|f| f.selector()).collect())
-                }
-
-                /// Return all abi function overloads by *name*.
-                pub fn abi_functions_by_name(name: &str) -> Result<Vec<Function>> {
-                    let Some(funcs) = ABI.functions.get(name) else {
-                        return Err(anyhow!("no function named `{name}` in ABI"));
-                    };
-                    Ok(funcs.clone())
-                }
-
                 $(
                 use {
+                    std::sync::LazyLock,
+                    anyhow::Result,
                     std::collections::HashMap,
                     alloy::{
                         providers::Provider,
@@ -611,7 +609,6 @@ macro_rules! bindings {
 mod tests {
     use super::networks::*;
     use super::*;
-    use alloy::primitives::Selector;
 
     #[test]
     fn test_has_address() {
@@ -655,67 +652,5 @@ mod tests {
             assert!(UniswapV2Factory::deployment_address(chain_id).is_some());
             assert!(UniswapV2Router02::deployment_address(chain_id).is_some());
         }
-    }
-
-    #[test]
-    fn test_selector_by_name_valid_function() {
-        let result = ChainalysisOracle::selector_by_name("isSanctioned");
-        assert!(result.is_ok());
-
-        let selectors = result.unwrap();
-        assert_eq!(selectors.len(), 1);
-
-        let selector = &selectors[0];
-        assert_eq!(selector, &Selector::from([0xdf, 0x59, 0x2f, 0x7d]));
-    }
-
-    #[test]
-    fn test_selector_by_name_multiple_overloads() {
-        // Test with a contract that might have function overloads
-        // Using IZeroex which likely has multiple swap functions
-        let result = IZeroex::selector_by_name("transformERC20");
-
-        let selectors = result.unwrap();
-
-        assert!(!selectors.is_empty());
-
-        for selector in &selectors {
-            assert_eq!(selector.as_slice().len(), 4);
-        }
-    }
-
-    #[test]
-    fn test_selector_by_name_invalid_function() {
-        let result = ChainalysisOracle::selector_by_name("nonExistentFunction");
-        assert!(result.is_err());
-
-        let error_msg = result.unwrap_err().to_string();
-        assert!(error_msg.contains("no function named `nonExistentFunction` in ABI"));
-    }
-
-    #[test]
-    fn test_selector_by_name_empty_string() {
-        let result = ChainalysisOracle::selector_by_name("");
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_selector_by_name_case_sensitive() {
-        let result1 = ChainalysisOracle::selector_by_name("isSanctioned");
-        let result2 = ChainalysisOracle::selector_by_name("IsSanctioned");
-        let result3 = ChainalysisOracle::selector_by_name("ISSANCTIONED");
-
-        assert!(result1.is_ok());
-        assert!(result2.is_err());
-        assert!(result3.is_err());
-    }
-
-    #[test]
-    fn test_get_function_valid() {
-        let functions = ChainalysisOracle::abi_functions_by_name("isSanctioned").unwrap();
-        assert_eq!(functions.len(), 1);
-
-        let function = &functions[0];
-        assert_eq!(function.name, "isSanctioned");
     }
 }
