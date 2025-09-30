@@ -585,6 +585,7 @@ fn main() {
             .add_network_str(LENS, "0x6ddD32cd941041D8b61df213B9f515A7D288Dc13")
         // Not available on Gnosis Chain
     });
+    generate_contract("UniswapV3Pool");
     generate_contract_with_config("UniswapV3QuoterV2", |builder| {
         // <https://docs.uniswap.org/contracts/v3/reference/deployments/>
         builder

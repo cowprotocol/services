@@ -15,7 +15,7 @@ use {
     BalancerV2BasePoolFactory::BalancerV2BasePoolFactory::BalancerV2BasePoolFactoryEvents,
     alloy::{
         providers::DynProvider,
-        rpc::types::{Filter, FilterSet, Log},
+        rpc::types::{Filter, Log},
         sol_types::SolEvent,
     },
     anyhow::Result,
@@ -29,6 +29,7 @@ use {
     ethcontract::{BlockId, H256, errors::MethodError},
     ethrpc::block_stream::{BlockNumberHash, BlockRetrieving},
     futures::future,
+    maplit::hashset,
     model::TokenPair,
     std::{collections::HashSet, sync::Arc},
     tokio::sync::Mutex,
@@ -45,10 +46,8 @@ impl AlloyEventRetrieving for BasePoolFactoryContract {
     }
 
     fn filter(&self) -> Filter {
-        let mut set = FilterSet::default();
-        set.insert(PoolCreated::SIGNATURE_HASH);
         Filter::new()
-            .event_signature(set)
+            .event_signature(hashset![PoolCreated::SIGNATURE_HASH])
             .address(*self.0.address())
     }
 }
