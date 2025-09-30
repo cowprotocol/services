@@ -120,7 +120,7 @@ paths:
           $ref: "#/components/responses/InternalServerError"
   /settle:
     post:
-      operationId: settleAuction
+      operationId: settle
       description: |-
         Execute the previously solved auction on chain.
 
