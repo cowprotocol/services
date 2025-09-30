@@ -60,7 +60,7 @@ paths:
           $ref: "#/components/responses/InternalServerError"
   /solve:
     post:
-      operationId: solveAuction
+      operationId: solve
       description: |-
         Solve the passed in auction.
 
