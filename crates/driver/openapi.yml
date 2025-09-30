@@ -7,6 +7,7 @@ info:
 paths:
   /quote:
     get:
+      operationId: getQuote
       description: Get price estimation quote.
       parameters:
         - in: query
@@ -59,6 +60,7 @@ paths:
           $ref: "#/components/responses/InternalServerError"
   /solve:
     post:
+      operationId: solve
       description: |-
         Solve the passed in auction.
 
@@ -93,6 +95,7 @@ paths:
           $ref: "#/components/responses/InternalServerError"
   /reveal:
     post:
+      operationId: revealCalldata
       description: >
         Reveal the calldata of the previously solved auction.
 
@@ -117,11 +120,12 @@ paths:
           $ref: "#/components/responses/InternalServerError"
   /settle:
     post:
+      operationId: settle
       description: |-
         Execute the previously solved auction on chain.
 
         The auction that should be executed is identified through its id and was
-        recently returned by this Solver's solve endpoint. 
+        recently returned by this Solver's solve endpoint.
 
         By accepting the execute request the Solver promises to execute the
         solution on chain immediately.
@@ -140,6 +144,7 @@ paths:
           $ref: "#/components/responses/InternalServerError"
   /notify:
     post:
+      operationId: receiveNotification
       description: |
         Receive a notification with a specific reason.
       requestBody:
