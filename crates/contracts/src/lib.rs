@@ -80,6 +80,7 @@ pub mod support {
         Balances;
         Multicall;
         Signatures;
+        Swapper;
     }
 }
 
