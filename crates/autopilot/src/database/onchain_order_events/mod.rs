@@ -245,20 +245,19 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
         for (event, log) in order_placement_events {
             if let Some(tx_hash) = log.transaction_hash
                 && let Some(event_index) = log_to_event_index(&log)
+                && let Some(quote_id) = quote_id_hashmap.get(&event_index)
             {
-                if let Some(quote_id) = quote_id_hashmap.get(&event_index) {
-                    events_and_quotes.push((
-                        event,
-                        log,
-                        // timestamp must be available, as otherwise, the
-                        // function get_block_numbers_of_events would have errored
-                        *block_number_timestamp_hashmap
-                            .get(&(event_index.block_number as u64))
-                            .unwrap() as i64,
-                        *quote_id,
-                        tx_hash,
-                    ));
-                }
+                events_and_quotes.push((
+                    event,
+                    log,
+                    // timestamp must be available, as otherwise, the
+                    // function get_block_numbers_of_events would have errored
+                    *block_number_timestamp_hashmap
+                        .get(&(event_index.block_number as u64))
+                        .unwrap() as i64,
+                    *quote_id,
+                    tx_hash,
+                ));
             }
         }
         let onchain_order_data = parse_general_onchain_order_placement_data(

@@ -1,6 +1,6 @@
 use {
     alloy::{
-        primitives::{Address, B256, b256},
+        primitives::Address,
         rpc::types::{Filter, FilterSet},
         sol_types::SolEvent,
     },
