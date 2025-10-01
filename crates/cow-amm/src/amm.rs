@@ -2,6 +2,7 @@ use {
     anyhow::{Context, Result},
     app_data::AppDataHash,
     contracts::CowAmmLegacyHelper,
+    database::byte_array::ByteArray,
     ethcontract::{Address, Bytes, U256, errors::MethodError},
     model::{
         DomainSeparator,
@@ -17,6 +18,21 @@ pub struct Amm {
     helper: contracts::CowAmmLegacyHelper,
     address: Address,
     tradeable_tokens: Vec<Address>,
+}
+
+impl From<&Amm> for database::cow_amms::CowAmm {
+    fn from(a: &Amm) -> Self {
+        database::cow_amms::CowAmm {
+            address: ByteArray(a.address.0),
+            helper_contract_address: ByteArray(a.helper.address().0),
+            tradeable_tokens: a
+                .tradeable_tokens
+                .iter()
+                .cloned()
+                .map(|addr| ByteArray(addr.0))
+                .collect(),
+        }
+    }
 }
 
 impl Amm {
