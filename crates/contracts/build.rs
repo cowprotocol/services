@@ -53,99 +53,6 @@ fn main() {
         }
         builder
     });
-    generate_contract_with_config("CoWSwapEthFlow", |builder| {
-        builder
-            .contract_mod_override("cowswap_eth_flow")
-            .add_network(
-                MAINNET,
-                Network {
-                    address: addr("0x40a50cf069e992aa4536211b23f286ef88752187"),
-                    // <https://etherscan.io/tx/0x0247e3c15f59a52b099f192265f1c1e6227f48a280717b3eefd7a5d9d0c051a1>
-                    deployment_information: Some(DeploymentInformation::BlockNumber(16169866)),
-                },
-            )
-            .add_network(
-                GOERLI,
-                Network {
-                    address: addr("0x40a50cf069e992aa4536211b23f286ef88752187"),
-                    // <https://goerli.etherscan.io/tx/0x427f4e96a6de122720428c652258eb07b463869a32239f99a6e9b321d9584f9c>
-                    deployment_information: Some(DeploymentInformation::BlockNumber(8123017)),
-                },
-            )
-            .add_network(
-                GNOSIS,
-                Network {
-                    address: addr("0x40a50cf069e992aa4536211b23f286ef88752187"),
-                    // <https://gnosisscan.io/tx/0x6280e079f454fbb5de3c52beddd64ca2b5be0a4b3ec74edfd5f47e118347d4fb>
-                    deployment_information: Some(DeploymentInformation::BlockNumber(25414331)),
-                },
-            )
-            .add_network(
-                SEPOLIA,
-                Network {
-                    // <https://github.com/cowprotocol/ethflowcontract/blob/v1.1.0-artifacts/networks.prod.json#L11-L14>
-                    address: addr("0x0b7795E18767259CC253a2dF471db34c72B49516"),
-                    // <https://sepolia.etherscan.io/tx/0x558a7608a770b5c4f68fffa9b02e7908a40f61b557b435ea768a4c62cb79ae25>
-                    deployment_information: Some(DeploymentInformation::BlockNumber(4718739)),
-                },
-            )
-            .add_network(
-                ARBITRUM_ONE,
-                Network {
-                    address: addr("0x6DFE75B5ddce1ADE279D4fa6BD6AeF3cBb6f49dB"),
-                    // <https://arbiscan.io/tx/0xa4066ca77bbe1f21776b4c26315ead3b1c054b35814b49e0c35afcbff23e1b8d>
-                    deployment_information: Some(DeploymentInformation::BlockNumber(204747458)),
-                },
-            )
-            .add_network(
-                BASE,
-                Network {
-                    address: addr("0x3C3eA1829891BC9bEC3d06A81d5d169e52a415e3"),
-                    // <https://basescan.org/tx/0xc3555c4b065867cbf34382438e1bbaf8ee39eaf10fb0c70940c8955962e76e2c>
-                    deployment_information: Some(DeploymentInformation::BlockNumber(21490258)),
-                },
-            )
-            .add_network(
-                AVALANCHE,
-                Network {
-                    address: addr("0x04501b9b1d52e67f6862d157e00d13419d2d6e95"),
-                    // <https://snowscan.xyz/tx/0x71a2ed9754247210786effa3269bc6eb68b7521b5052ac9f205af7ac364f608f>
-                    deployment_information: Some(DeploymentInformation::BlockNumber(60496408)),
-                },
-            )
-            .add_network(
-                BNB,
-                Network {
-                    address: addr("0x04501b9b1d52e67f6862d157e00d13419d2d6e95"),
-                    // <https://bscscan.com/tx/0x959a60a42d36e0efd247b3cf19ed9d6da503d01bce6f87ed31e5e5921111222e>
-                    deployment_information: Some(DeploymentInformation::BlockNumber(48411237)),
-                },
-            )
-            .add_network(
-                OPTIMISM,
-                Network {
-                    address: addr("0x04501b9b1d52e67f6862d157e00d13419d2d6e95"),
-                    // <https://optimistic.etherscan.io/tx/0x0644f10f7ae5448240fc592ad21abf4dabac473a9d80904af5f7865f2d6509e2>
-                    deployment_information: Some(DeploymentInformation::BlockNumber(134607215)),
-                },
-            )
-            .add_network(
-                POLYGON,
-                Network {
-                    address: addr("0x04501b9b1d52e67f6862d157e00d13419d2d6e95"),
-                    // <https://polygonscan.com/tx/0xc3781c19674d97623d13afc938fca94d53583f4051020512100e84fecd230f91>
-                    deployment_information: Some(DeploymentInformation::BlockNumber(71296258)),
-                },
-            )
-            .add_network(
-                LENS,
-                Network {
-                    address: addr("0xFb337f8a725A142f65fb9ff4902d41cc901de222"),
-                    // <https://explorer.lens.xyz/tx/0xc59b5ffadb40158f9390b1d77f19346dbe9214b27f26346dfa2990ad379a1a32>
-                    deployment_information: Some(DeploymentInformation::BlockNumber(71296258)),
-                },
-            )
-    });
     generate_contract_with_config("CoWSwapOnchainOrders", |builder| {
         builder.contract_mod_override("cowswap_onchain_orders")
     });
@@ -568,42 +475,10 @@ fn main() {
     generate_contract_with_config("HoneyswapRouter", |builder| {
         builder.add_network_str(GNOSIS, "0x1C232F01118CB8B424793ae03F870aa7D0ac7f77")
     });
-    generate_contract_with_config("HooksTrampoline", |builder| {
-        // <https://github.com/cowprotocol/hooks-trampoline/blob/993427166ade6c65875b932f853776299290ac4b/networks.json>
-        builder
-            .add_network_str(MAINNET, "0x60Bf78233f48eC42eE3F101b9a05eC7878728006")
-            .add_network_str(GOERLI, "0x60Bf78233f48eC42eE3F101b9a05eC7878728006")
-            .add_network_str(GNOSIS, "0x01DcB88678aedD0C4cC9552B20F4718550250574")
-            .add_network_str(SEPOLIA, "0x60Bf78233f48eC42eE3F101b9a05eC7878728006")
-            .add_network_str(ARBITRUM_ONE, "0x60Bf78233f48eC42eE3F101b9a05eC7878728006")
-            .add_network_str(BASE, "0x60Bf78233f48eC42eE3F101b9a05eC7878728006")
-            .add_network_str(AVALANCHE, "0x60Bf78233f48eC42eE3F101b9a05eC7878728006")
-            .add_network_str(BNB, "0x60Bf78233f48eC42eE3F101b9a05eC7878728006")
-            .add_network_str(OPTIMISM, "0x60Bf78233f48eC42eE3F101b9a05eC7878728006")
-            .add_network_str(POLYGON, "0x60Bf78233f48eC42eE3F101b9a05eC7878728006")
-            .add_network_str(LENS, "0x60Bf78233f48eC42eE3F101b9a05eC7878728006")
-    });
     generate_contract("IAavePool");
     generate_contract("IFlashLoanSolverWrapper");
-    generate_contract("IUniswapLikeRouter");
-    generate_contract("IUniswapLikePair");
     // EIP-1271 contract - SignatureValidator
     generate_contract("ERC1271SignatureValidator");
-    generate_contract_with_config("UniswapV2Router02", |builder| {
-        // <https://docs.uniswap.org/contracts/v2/reference/smart-contracts/router-02>
-        builder
-            .add_network_str(MAINNET, "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D")
-            .add_network_str(GOERLI, "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D")
-            .add_network_str(GNOSIS, "0x1C232F01118CB8B424793ae03F870aa7D0ac7f77")
-            .add_network_str(ARBITRUM_ONE, "0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24")
-            .add_network_str(BASE, "0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24")
-            .add_network_str(SEPOLIA, "0xeE567Fe1712Faf6149d80dA1E6934E354124CfE3")
-            .add_network_str(AVALANCHE, "0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24")
-            .add_network_str(BNB, "0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24")
-            .add_network_str(OPTIMISM, "0x4A7b5Da61326A6379179b40d00F57E5bbDC962c2")
-            .add_network_str(POLYGON, "0xedf6066a2b290C185783862C7F4776A2C8077AD1")
-        // Not available on Lens
-    });
     generate_contract_with_config("UniswapV3SwapRouterV2", |builder| {
         // <https://github.com/Uniswap/v3-periphery/blob/697c2474757ea89fec12a4e6db16a574fe259610/deploys.md>
         builder
@@ -617,7 +492,6 @@ fn main() {
             .add_network_str(LENS, "0x6ddD32cd941041D8b61df213B9f515A7D288Dc13")
         // Not available on Gnosis Chain
     });
-    generate_contract("UniswapV3Pool");
     generate_contract_with_config("UniswapV3QuoterV2", |builder| {
         // <https://docs.uniswap.org/contracts/v3/reference/deployments/>
         builder
@@ -728,11 +602,6 @@ fn main() {
     });
     generate_contract("CowAmmUniswapV2PriceOracle");
 
-    // Support contracts used for trade and token simulations.
-    generate_contract("Solver");
-    generate_contract("Spardose");
-    generate_contract("Trader");
-
     // Support contracts used for various order simulations.
     generate_contract_with_config("Balances", |builder| {
         builder
@@ -760,10 +629,6 @@ fn main() {
             .add_network_str(GNOSIS, "0x8262d639c38470F38d2eff15926F7071c28057Af")
             .add_network_str(SEPOLIA, "0x8262d639c38470F38d2eff15926F7071c28057Af")
     });
-
-    // Support contract used for solver fee simulations.
-    generate_contract("AnyoneAuthenticator");
-    generate_contract("Swapper");
 
     // Contract for batching multiple `eth_call`s into a single one.
     generate_contract("Multicall");

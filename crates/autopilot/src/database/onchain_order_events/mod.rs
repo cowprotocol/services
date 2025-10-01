@@ -7,12 +7,16 @@ use {
         Postgres,
         events::{bytes_to_order_uid, meta_to_event_index},
     },
+    alloy::primitives::U256,
     anyhow::{Context, Result, anyhow, bail},
     app_data::AppDataHash,
     chrono::{TimeZone, Utc},
-    contracts::cowswap_onchain_orders::{
-        Event as ContractEvent,
-        event_data::{OrderInvalidation, OrderPlacement as ContractOrderPlacement},
+    contracts::{
+        alloy::HooksTrampoline::{self, HooksTrampoline::Hook},
+        cowswap_onchain_orders::{
+            Event as ContractEvent,
+            event_data::{OrderInvalidation, OrderPlacement as ContractOrderPlacement},
+        },
     },
     database::{
         PgTransaction,
@@ -24,6 +28,7 @@ use {
     ethcontract::{Event as EthContractEvent, H160, TransactionHash},
     ethrpc::{
         Web3,
+        alloy::conversions::IntoAlloy,
         block_stream::{RangeInclusive, timestamp_of_block_in_seconds},
     },
     futures::{StreamExt, stream},
@@ -69,7 +74,7 @@ pub struct OnchainOrderParser<EventData: Send + Sync, EventRow: Send + Sync> {
     domain_separator: DomainSeparator,
     settlement_contract: H160,
     metrics: &'static Metrics,
-    trampoline: contracts::HooksTrampoline,
+    trampoline: HooksTrampoline::Instance,
 }
 
 impl<EventData, EventRow> OnchainOrderParser<EventData, EventRow>
@@ -84,7 +89,7 @@ where
         custom_onchain_data_parser: Box<dyn OnchainOrderParsing<EventData, EventRow>>,
         domain_separator: DomainSeparator,
         settlement_contract: H160,
-        trampoline: contracts::HooksTrampoline,
+        trampoline: HooksTrampoline::Instance,
     ) -> Self {
         OnchainOrderParser {
             db,
@@ -693,7 +698,7 @@ fn extract_order_data_from_onchain_order_placement_event(
 async fn insert_order_hooks(
     db: &mut PgConnection,
     orders: &[Order],
-    trampoline: &contracts::HooksTrampoline,
+    trampoline: &HooksTrampoline::Instance,
 ) -> Result<()> {
     let mut interactions_to_insert = vec![];
 
@@ -702,19 +707,15 @@ async fn insert_order_hooks(
             .execute(
                 hooks
                     .into_iter()
-                    .map(|hook| {
-                        (
-                            hook.target,
-                            ethcontract::Bytes(hook.call_data.clone()),
-                            hook.gas_limit.into(),
-                        )
+                    .map(|hook| Hook {
+                        target: hook.target.into_alloy(),
+                        callData: alloy::primitives::Bytes::from(hook.call_data.clone()),
+                        gasLimit: U256::from(hook.gas_limit),
                     })
                     .collect(),
             )
-            .tx
-            .data
-            .unwrap()
-            .0
+            .calldata()
+            .to_vec()
     };
 
     for order in orders {
@@ -739,7 +740,7 @@ async fn insert_order_hooks(
 
         if !parsed.hooks.pre.is_empty() {
             let interaction = database::orders::Interaction {
-                target: ByteArray(trampoline.address().0),
+                target: ByteArray(trampoline.address().0.0),
                 value: 0.into(),
                 data: execute_via_trampoline(parsed.hooks.pre),
                 index: interactions_count.next_pre_interaction_index,
@@ -750,7 +751,7 @@ async fn insert_order_hooks(
 
         if !parsed.hooks.post.is_empty() {
             let interaction = database::orders::Interaction {
-                target: ByteArray(trampoline.address().0),
+                target: ByteArray(trampoline.address().0.0),
                 value: 0.into(),
                 data: execute_via_trampoline(parsed.hooks.post),
                 index: interactions_count.next_post_interaction_index,
@@ -792,7 +793,10 @@ mod test {
     use {
         super::*,
         crate::database::Config,
-        contracts::cowswap_onchain_orders::event_data::OrderPlacement as ContractOrderPlacement,
+        contracts::{
+            alloy::InstanceExt,
+            cowswap_onchain_orders::event_data::OrderPlacement as ContractOrderPlacement,
+        },
         database::{byte_array::ByteArray, onchain_broadcasted_orders::OnchainOrderPlacement},
         ethcontract::{Bytes, EventMetadata, H160, U256},
         ethrpc::Web3,
@@ -1244,7 +1248,9 @@ mod test {
                     insert_batch_size: NonZeroUsize::new(500).unwrap(),
                 },
             },
-            trampoline: contracts::HooksTrampoline::deployed(&web3).await.unwrap(),
+            trampoline: HooksTrampoline::Instance::deployed(&web3.alloy)
+                .await
+                .unwrap(),
             web3,
             quoter: Arc::new(order_quoter),
             custom_onchain_data_parser: Box::new(custom_onchain_order_parser),

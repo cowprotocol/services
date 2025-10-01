@@ -1,7 +1,11 @@
 use {
     super::{Auction, Order, order},
     crate::{
-        domain::{competition::order::SellTokenBalance, eth, liquidity},
+        domain::{
+            competition::order::{SellTokenBalance, app_data::AppData},
+            eth,
+            liquidity,
+        },
         infra::{self, api::routes::solve::dto::SolveRequest, observe::metrics, tokens},
         util::Bytes,
     },
@@ -19,6 +23,7 @@ use {
     },
     shared::{
         account_balances::{BalanceFetching, Query},
+        price_estimation::trade_verifier::balance_overrides::BalanceOverrideRequest,
         signature_validator::SignatureValidating,
     },
     std::{collections::HashMap, future::Future, sync::Arc},
@@ -126,6 +131,7 @@ impl DataAggregator {
                 vault_relayer: eth.contracts().vault_relayer().0,
                 signatures: eth.contracts().signatures().clone(),
             },
+            eth.balance_overrider(),
         );
 
         Self {
@@ -213,8 +219,13 @@ impl Utilities {
 
         let auction_domain = {
             let _timer = metrics::get().processing_stage_timer("convert_to_domain");
+            let app_data = self
+                .app_data_retriever
+                .as_ref()
+                .map(|retriever| retriever.get_cached())
+                .unwrap_or_default();
             let auction = auction_dto
-                .into_domain(&self.eth, &self.tokens)
+                .into_domain(&self.eth, &self.tokens, app_data)
                 .await
                 .context("could not convert auction DTO to domain type")?;
             Arc::new(auction)
@@ -242,8 +253,10 @@ impl Utilities {
             .map(|((trader, token, source), mut orders)| {
                 let first = orders.next().expect("group contains at least 1 order");
                 let mut others = orders;
-                let all_interactions_equal =
-                    others.all(|order| order.pre_interactions == first.pre_interactions);
+                let all_setups_equal = others.all(|order| {
+                    order.pre_interactions == first.pre_interactions
+                        && order.app_data.flashloan() == first.app_data.flashloan()
+                });
                 Query {
                     owner: trader.0.0,
                     token: token.0.0,
@@ -252,7 +265,7 @@ impl Utilities {
                         SellTokenBalance::Internal => SellTokenSource::Internal,
                         SellTokenBalance::External => SellTokenSource::External,
                     },
-                    interactions: if all_interactions_equal {
+                    interactions: if all_setups_equal {
                         first
                             .pre_interactions
                             .iter()
@@ -264,6 +277,18 @@ impl Utilities {
                             .collect()
                     } else {
                         Vec::default()
+                    },
+                    balance_override: if all_setups_equal {
+                        first
+                            .app_data
+                            .flashloan()
+                            .map(|loan| BalanceOverrideRequest {
+                                token: loan.token,
+                                amount: loan.amount,
+                                holder: loan.receiver,
+                            })
+                    } else {
+                        None
                     },
                 }
             })
@@ -310,13 +335,17 @@ impl Utilities {
             auction
                 .orders
                 .iter()
-                .map(|order| order.app_data.hash())
+                .flat_map(|order| match order.app_data {
+                    AppData::Full(_) => None,
+                    // only fetch appdata we don't already have in full
+                    AppData::Hash(hash) => Some(hash),
+                })
                 .unique()
                 .map(|app_data_hash| {
                     let app_data_retriever = app_data_retriever.clone();
                     async move {
                         let fetched_app_data = app_data_retriever
-                            .get(&app_data_hash)
+                            .get_cached_or_fetch(&app_data_hash)
                             .await
                             .tap_err(|err| {
                                 tracing::warn!(?app_data_hash, ?err, "failed to fetch app data");

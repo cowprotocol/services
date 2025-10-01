@@ -6,7 +6,7 @@ pub mod submitter;
 use {
     crate::arguments::Arguments,
     clap::Parser,
-    contracts::CoWSwapEthFlow,
+    contracts::alloy::CoWSwapEthFlow,
     ethcontract::{Account, PrivateKey},
     observe::metrics::LivenessChecking,
     refund_service::RefundService,
@@ -58,12 +58,16 @@ pub async fn run(args: arguments::Arguments) {
         // Program will be healthy at the start even if no loop was ran yet.
         last_successful_loop: RwLock::new(Instant::now()),
     });
-    observe::metrics::serve_metrics(liveness.clone(), ([0, 0, 0, 0], args.metrics_port).into());
+    observe::metrics::serve_metrics(
+        liveness.clone(),
+        ([0, 0, 0, 0], args.metrics_port).into(),
+        Default::default(),
+    );
 
     let ethflow_contracts = args
         .ethflow_contracts
         .iter()
-        .map(|contract| CoWSwapEthFlow::at(&web3, *contract))
+        .map(|contract| CoWSwapEthFlow::Instance::new(*contract, web3.alloy.clone()))
         .collect();
     let refunder_account = Account::Offline(args.refunder_pk.parse::<PrivateKey>().unwrap(), None);
     let mut refunder = RefundService::new(

@@ -54,6 +54,7 @@ impl Balances {
                 &query.interactions,
                 None,
                 |delegate_call| async move { delegate_call },
+                query.balance_override.clone(),
             )
             .await?;
         Ok(if simulation.can_transfer {
@@ -141,6 +142,7 @@ impl BalanceFetching for Balances {
                 &query.interactions,
                 Some(amount),
                 |delegate_call| async move { delegate_call },
+                query.balance_override.clone(),
             )
             .await
             .map_err(|err| TransferSimulationError::Other(err.into()))?;
@@ -161,7 +163,13 @@ impl BalanceFetching for Balances {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, ethrpc::Web3, model::order::SellTokenSource};
+    use {
+        super::*,
+        crate::price_estimation::trade_verifier::balance_overrides::DummyOverrider,
+        ethrpc::Web3,
+        model::order::SellTokenSource,
+        std::sync::Arc,
+    };
 
     #[ignore]
     #[tokio::test]
@@ -180,6 +188,7 @@ mod tests {
                 balances,
                 addr!("C92E8bdf79f0507f65a392b0ab4667716BFE0110"),
                 Some(addr!("BA12222222228d8Ba445958a75a0704d566BF2C8")),
+                Arc::new(DummyOverrider),
             ),
         );
 
@@ -195,6 +204,7 @@ mod tests {
                     token,
                     source,
                     interactions: vec![],
+                    balance_override: None,
                 },
                 amount,
             )

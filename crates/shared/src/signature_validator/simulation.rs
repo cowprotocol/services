@@ -5,11 +5,14 @@
 
 use {
     super::{SignatureCheck, SignatureValidating, SignatureValidationError},
-    anyhow::Result,
+    crate::price_estimation::trade_verifier::balance_overrides::BalanceOverriding,
+    alloy::{dyn_abi::SolType, sol_types::sol_data},
+    anyhow::{Context, Result},
     contracts::{ERC1271SignatureValidator, errors::EthcontractErrorType},
-    ethcontract::Bytes,
-    ethrpc::Web3,
+    ethcontract::{Bytes, state_overrides::StateOverrides},
+    ethrpc::{Web3, alloy::conversions::IntoLegacy},
     primitive_types::{H160, U256},
+    std::sync::Arc,
     tracing::instrument,
 };
 
@@ -18,6 +21,7 @@ pub struct Validator {
     settlement: contracts::GPv2Settlement,
     vault_relayer: H160,
     web3: Web3,
+    balance_overrider: Arc<dyn BalanceOverriding>,
 }
 
 impl Validator {
@@ -29,6 +33,7 @@ impl Validator {
         settlement: contracts::GPv2Settlement,
         signatures: contracts::support::Signatures,
         vault_relayer: H160,
+        balance_overrider: Arc<dyn BalanceOverriding>,
     ) -> Self {
         let web3 = ethrpc::instrumented::instrument_with_label(web3, "signatureValidation".into());
         Self {
@@ -36,12 +41,13 @@ impl Validator {
             settlement,
             vault_relayer,
             web3: web3.clone(),
+            balance_overrider,
         }
     }
 
-    /// Simulate isValidSignature for the cases in which the order does not have
-    /// pre-interactions
-    async fn simulate_without_pre_interactions(
+    /// Simulate isValidSignature for the cases in which the order does not
+    /// require a "setup" in the form of pre-interactions or a flashloan.
+    async fn simulate_without_setup(
         &self,
         check: SignatureCheck,
     ) -> Result<(), SignatureValidationError> {
@@ -69,6 +75,15 @@ impl Validator {
         &self,
         check: SignatureCheck,
     ) -> Result<Simulation, SignatureValidationError> {
+        let overrides: StateOverrides = match &check.balance_override {
+            Some(overrides) => self
+                .balance_overrider
+                .state_override(overrides.clone())
+                .await
+                .into_iter()
+                .collect(),
+            None => Default::default(),
+        };
         // We simulate the signature verification from the Settlement contract's
         // context. This allows us to check:
         // 1. How the pre-interactions would behave as part of the settlement
@@ -78,27 +93,46 @@ impl Validator {
             (self.settlement.address(), self.vault_relayer),
             check.signer,
             Bytes(check.hash),
-            Bytes(check.signature),
+            Bytes(check.signature.clone()),
             check
                 .interactions
-                .into_iter()
-                .map(|i| (i.target, i.value, Bytes(i.call_data)))
+                .iter()
+                .map(|i| (i.target, i.value, Bytes(i.call_data.clone())))
                 .collect(),
         );
-        let gas_cost_call = self
+        let simulation = self
             .settlement
             .simulate_delegatecall(
                 self.signatures.address(),
                 Bytes(validate_call.tx.data.unwrap_or_default().0),
             )
             .from(crate::SIMULATION_ACCOUNT.clone());
-        let result = gas_cost_call
-            .tx
-            .estimate_gas()
-            .await
-            .map_err(|_| SignatureValidationError::Invalid);
 
-        Ok(Simulation { gas_used: result? })
+        let result = simulation
+            .clone()
+            .call_with_state_overrides(&overrides)
+            .await;
+
+        let response_bytes = result.inspect_err(|err| {
+            tracing::debug!(
+                ?simulation,
+                ?check,
+                ?overrides,
+                ?err,
+                "signature verification failed"
+            )
+        })?;
+
+        let gas_used = <sol_data::Uint<256>>::abi_decode(&response_bytes.0)
+            .with_context(|| {
+                format!(
+                    "could not decode signature check result: {}",
+                    hex::encode(&response_bytes.0)
+                )
+            })?
+            .into_legacy();
+
+        Ok(Simulation { gas_used })
     }
 }
 
@@ -109,10 +143,10 @@ impl SignatureValidating for Validator {
         &self,
         check: SignatureCheck,
     ) -> Result<(), SignatureValidationError> {
-        if check.interactions.is_empty() {
-            self.simulate_without_pre_interactions(check).await
-        } else {
+        if check.requires_setup() {
             self.simulate(check).await.map(|_| ())
+        } else {
+            self.simulate_without_setup(check).await
         }
     }
 

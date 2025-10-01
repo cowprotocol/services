@@ -96,20 +96,14 @@ async fn combined_protocol_fees(web3: Web3) {
         token.mint(solver.address(), to_wei(1000)).await;
 
         token
-            .approve(
-                onchain.contracts().uniswap_v2_router.address().into_alloy(),
-                eth(1000),
-            )
+            .approve(*onchain.contracts().uniswap_v2_router.address(), eth(1000))
             .from(solver.address().into_alloy())
             .send_and_watch()
             .await
             .unwrap();
 
         token
-            .approve(
-                onchain.contracts().uniswap_v2_router.address().into_alloy(),
-                eth(100),
-            )
+            .approve(*onchain.contracts().uniswap_v2_router.address(), eth(100))
             .from(trader.address().into_alloy())
             .send_and_watch()
             .await
@@ -130,10 +124,14 @@ async fn combined_protocol_fees(web3: Web3) {
     );
     tx!(
         solver.account(),
-        onchain
-            .contracts()
-            .weth
-            .approve(onchain.contracts().uniswap_v2_router.address(), to_wei(200))
+        onchain.contracts().weth.approve(
+            onchain
+                .contracts()
+                .uniswap_v2_router
+                .address()
+                .into_legacy(),
+            to_wei(200)
+        )
     );
 
     let autopilot_config = vec![
@@ -432,20 +430,14 @@ async fn surplus_partner_fee(web3: Web3) {
     token.mint(solver.address(), to_wei(1000)).await;
 
     token
-        .approve(
-            onchain.contracts().uniswap_v2_router.address().into_alloy(),
-            eth(1000),
-        )
+        .approve(*onchain.contracts().uniswap_v2_router.address(), eth(1000))
         .from(solver.address().into_alloy())
         .send_and_watch()
         .await
         .unwrap();
 
     token
-        .approve(
-            onchain.contracts().uniswap_v2_router.address().into_alloy(),
-            eth(100),
-        )
+        .approve(*onchain.contracts().uniswap_v2_router.address(), eth(100))
         .from(trader.address().into_alloy())
         .send_and_watch()
         .await
@@ -464,10 +456,14 @@ async fn surplus_partner_fee(web3: Web3) {
     );
     tx!(
         solver.account(),
-        onchain
-            .contracts()
-            .weth
-            .approve(onchain.contracts().uniswap_v2_router.address(), to_wei(200))
+        onchain.contracts().weth.approve(
+            onchain
+                .contracts()
+                .uniswap_v2_router
+                .address()
+                .into_legacy(),
+            to_wei(200)
+        )
     );
 
     let services = Services::new(&onchain).await;
@@ -654,37 +650,35 @@ async fn volume_fee_buy_order_test(web3: Web3) {
         .unwrap();
 
     token_gno
-        .approve(
-            onchain.contracts().uniswap_v2_router.address().into_alloy(),
-            eth(1000),
-        )
+        .approve(*onchain.contracts().uniswap_v2_router.address(), eth(1000))
         .from(solver.address().into_alloy())
         .send_and_watch()
         .await
         .unwrap();
 
     token_dai
-        .approve(
-            onchain.contracts().uniswap_v2_router.address().into_alloy(),
+        .approve(*onchain.contracts().uniswap_v2_router.address(), eth(1000))
+        .from(solver.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
+    onchain
+        .contracts()
+        .uniswap_v2_router
+        .addLiquidity(
+            *token_gno.address(),
+            *token_dai.address(),
             eth(1000),
+            eth(1000),
+            ::alloy::primitives::U256::ZERO,
+            ::alloy::primitives::U256::ZERO,
+            solver.address().into_alloy(),
+            ::alloy::primitives::U256::MAX,
         )
         .from(solver.address().into_alloy())
         .send_and_watch()
         .await
         .unwrap();
-    tx!(
-        solver.account(),
-        onchain.contracts().uniswap_v2_router.add_liquidity(
-            token_gno.address().into_legacy(),
-            token_dai.address().into_legacy(),
-            to_wei(1000),
-            to_wei(1000),
-            0_u64.into(),
-            0_u64.into(),
-            solver.address(),
-            U256::max_value(),
-        )
-    );
 
     // Approve GPv2 for trading
 

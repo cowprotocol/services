@@ -413,6 +413,89 @@ crate::bindings!(
         // Not available on Lens
     }
 );
+crate::bindings!(
+    UniswapV2Router02,
+    // <https://docs.uniswap.org/contracts/v2/reference/smart-contracts/router-02>
+    crate::deployments! {
+        // <https://etherscan.io/tx/0x4fc1580e7f66c58b7c26881cce0aab9c3509afe6e507527f30566fbf8039bcd0>
+        MAINNET => address!("0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D"),
+        // <https://gnosisscan.io/tx/0xfcc495cdb313b48bbb0cd0a25cb2e8fd512eb8fb0b15f75947a9d5668e47a918>
+        GNOSIS => address!("0x1C232F01118CB8B424793ae03F870aa7D0ac7f77"),
+        // <https://arbiscan.io/tx/0x630cd9d56a85e1bac7795d254fef861304a6838e28869badef19f19defb48ba6>
+        ARBITRUM_ONE => address!("0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24"),
+        // <https://basescan.org/tx/0x039224ce16ebe5574f51da761acbdfbd21099d6230c39fcd8ff566bbfd6a50a9>
+        BASE => address!("0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24"),
+        // <https://sepolia.etherscan.io/tx/0x92674b51681d2e99e71e03bd387bc0f0e79f2412302b49ed5626d1fa2311bab9>
+        SEPOLIA => address!("0xeE567Fe1712Faf6149d80dA1E6934E354124CfE3"),
+        // <https://snowtrace.io/tx/0x7372f1eedf9d32fb4185d486911f44542723dae766eea04bc3f14724bae9552e>
+        AVALANCHE => address!("0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24"),
+        // <https://bscscan.com/tx/0x9e940f846abea7dcc1f0bd5c261f405c104628c855346f8cac966f52905ee0fa>
+        BNB => address!("0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24"),
+        // <https://optimistic.etherscan.io/tx/0x2dcb9a76100e5be49e89085b87bd447b1966a9d823d5985e1a8197834c60e6bd>
+        OPTIMISM => address!("0x4A7b5Da61326A6379179b40d00F57E5bbDC962c2"),
+        // <https://polygonscan.com/tx/0x66186e0cacd2f6b3ad2eae586bd331daafd0572eb80bf71be694181858198025>
+        POLYGON => address!("0xedf6066a2b290C185783862C7F4776A2C8077AD1"),
+        // Not available on Lens
+    }
+);
+crate::bindings!(IUniswapLikeRouter);
+crate::bindings!(IUniswapLikePair);
+crate::bindings!(UniswapV3Pool);
+
+crate::bindings!(
+    HooksTrampoline,
+    // <https://github.com/cowprotocol/hooks-trampoline/blob/993427166ade6c65875b932f853776299290ac4b/networks.json>
+    crate::deployments! {
+        MAINNET  => address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
+        // Gnosis is using the old instance of the hook trampoline since it's hardcoded in gnosis pay rebalance integration.
+        GNOSIS  => address!("0x01DcB88678aedD0C4cC9552B20F4718550250574"),
+        SEPOLIA  => address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
+        ARBITRUM_ONE  => address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
+        BASE  => address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
+        AVALANCHE  => address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
+        BNB  => address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
+        OPTIMISM  => address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
+        POLYGON  => address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
+        LENS  => address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
+    }
+);
+
+crate::bindings!(
+    CoWSwapEthFlow,
+    crate::deployments! {
+        // <https://etherscan.io/tx/0x0247e3c15f59a52b099f192265f1c1e6227f48a280717b3eefd7a5d9d0c051a1>
+        MAINNET => (address!("0x40a50cf069e992aa4536211b23f286ef88752187"), 16169866),
+        // <https://gnosisscan.io/tx/0x6280e079f454fbb5de3c52beddd64ca2b5be0a4b3ec74edfd5f47e118347d4fb>
+        GNOSIS => (address!("0x40a50cf069e992aa4536211b23f286ef88752187"), 25414331),
+        // <https://github.com/cowprotocol/ethflowcontract/blob/v1.1.0-artifacts/networks.prod.json#L11-L14>
+        // <https://sepolia.etherscan.io/tx/0x558a7608a770b5c4f68fffa9b02e7908a40f61b557b435ea768a4c62cb79ae25>
+        SEPOLIA => (address!("0x0b7795E18767259CC253a2dF471db34c72B49516"), 4718739),
+        // <https://arbiscan.io/tx/0xa4066ca77bbe1f21776b4c26315ead3b1c054b35814b49e0c35afcbff23e1b8d>
+        ARBITRUM_ONE => (address!("0x6DFE75B5ddce1ADE279D4fa6BD6AeF3cBb6f49dB"), 204747458),
+        // <https://basescan.org/tx/0xc3555c4b065867cbf34382438e1bbaf8ee39eaf10fb0c70940c8955962e76e2c>
+        BASE => (address!("0x3C3eA1829891BC9bEC3d06A81d5d169e52a415e3"), 21490258),
+        // <https://snowscan.xyz/tx/0x71a2ed9754247210786effa3269bc6eb68b7521b5052ac9f205af7ac364f608f>
+        AVALANCHE => (address!("0x04501b9b1d52e67f6862d157e00d13419d2d6e95"), 60496408),
+        // <https://bscscan.com/tx/0x959a60a42d36e0efd247b3cf19ed9d6da503d01bce6f87ed31e5e5921111222e>
+        BNB => (address!("0x04501b9b1d52e67f6862d157e00d13419d2d6e95"), 48411237),
+        // <https://optimistic.etherscan.io/tx/0x0644f10f7ae5448240fc592ad21abf4dabac473a9d80904af5f7865f2d6509e2>
+        OPTIMISM => (address!("0x04501b9b1d52e67f6862d157e00d13419d2d6e95"), 134607215),
+        // <https://polygonscan.com/tx/0xc3781c19674d97623d13afc938fca94d53583f4051020512100e84fecd230f91>
+        POLYGON => (address!("0x04501b9b1d52e67f6862d157e00d13419d2d6e95"), 71296258),
+        // <https://explorer.lens.xyz/tx/0xc59b5ffadb40158f9390b1d77f19346dbe9214b27f26346dfa2990ad379a1a32>
+        LENS => (address!("0xFb337f8a725A142f65fb9ff4902d41cc901de222"), 3007173),
+    }
+);
+
+pub mod support {
+    // Support contracts used for trade and token simulations.
+    crate::bindings!(AnyoneAuthenticator);
+    crate::bindings!(Solver);
+    crate::bindings!(Spardose);
+    crate::bindings!(Trader);
+    // Support contract used for solver fee simulations in the gnosis/solvers repo.
+    crate::bindings!(Swapper);
+}
 
 pub use alloy::providers::DynProvider as Provider;
 
@@ -477,7 +560,7 @@ macro_rules! bindings {
             mod [<$contract Private>] {
                 alloy::sol!(
                     #[allow(missing_docs, clippy::too_many_arguments)]
-                    #[sol(rpc)]
+                    #[sol(rpc, all_derives)]
                     $contract,
                     concat!("./artifacts/", stringify!($contract), ".json"),
                 );
@@ -485,46 +568,15 @@ macro_rules! bindings {
 
             #[allow(non_snake_case)]
             pub mod $contract {
-                use {
-                    std::sync::LazyLock,
-                    anyhow::{anyhow, Result},
-                    alloy::{
-                        json_abi::{ContractObject, Function, JsonAbi},
-                        primitives::Selector,
-                        providers::DynProvider,
-                    },
-                };
+                use alloy::providers::DynProvider;
 
                 pub use super::[<$contract Private>]::*;
                 pub type Instance = $contract::[<$contract Instance>]<DynProvider>;
 
-                /// The contract's ABI parsed from the bundled artifact.
-                pub static ABI: LazyLock<JsonAbi> = LazyLock::new(|| {
-                    let obj: ContractObject = serde_json::from_str(include_str!(concat!(
-                        "../artifacts/", stringify!($contract), ".json"
-                    )))
-                    .expect(concat!("failed to parse artifact JSON for ", stringify!($contract)));
-                    obj.abi.expect(&format!("artifact for {} missing `abi` field", stringify!($contract)))
-                });
-
-                /// Return all function overloads 4-byte selectors by *name*.
-                pub fn selector_by_name(name: &str) -> Result<Vec<Selector>> {
-                    let Some(funcs) = ABI.functions.get(name) else {
-                        return Err(anyhow!("no function named `{name}` in ABI"));
-                    };
-                    Ok(funcs.iter().map(|f| f.selector()).collect())
-                }
-
-                /// Return all abi function overloads by *name*.
-                pub fn abi_functions_by_name(name: &str) -> Result<Vec<Function>> {
-                    let Some(funcs) = ABI.functions.get(name) else {
-                        return Err(anyhow!("no function named `{name}` in ABI"));
-                    };
-                    Ok(funcs.clone())
-                }
-
                 $(
                 use {
+                    std::sync::LazyLock,
+                    anyhow::Result,
                     std::collections::HashMap,
                     alloy::{
                         providers::Provider,
@@ -586,7 +638,6 @@ macro_rules! bindings {
 mod tests {
     use super::networks::*;
     use super::*;
-    use alloy::primitives::Selector;
 
     #[test]
     fn test_has_address() {
@@ -628,68 +679,7 @@ mod tests {
             POLYGON,
         ] {
             assert!(UniswapV2Factory::deployment_address(chain_id).is_some());
+            assert!(UniswapV2Router02::deployment_address(chain_id).is_some());
         }
-    }
-
-    #[test]
-    fn test_selector_by_name_valid_function() {
-        let result = ChainalysisOracle::selector_by_name("isSanctioned");
-        assert!(result.is_ok());
-
-        let selectors = result.unwrap();
-        assert_eq!(selectors.len(), 1);
-
-        let selector = &selectors[0];
-        assert_eq!(selector, &Selector::from([0xdf, 0x59, 0x2f, 0x7d]));
-    }
-
-    #[test]
-    fn test_selector_by_name_multiple_overloads() {
-        // Test with a contract that might have function overloads
-        // Using IZeroex which likely has multiple swap functions
-        let result = IZeroex::selector_by_name("transformERC20");
-
-        let selectors = result.unwrap();
-
-        assert!(!selectors.is_empty());
-
-        for selector in &selectors {
-            assert_eq!(selector.as_slice().len(), 4);
-        }
-    }
-
-    #[test]
-    fn test_selector_by_name_invalid_function() {
-        let result = ChainalysisOracle::selector_by_name("nonExistentFunction");
-        assert!(result.is_err());
-
-        let error_msg = result.unwrap_err().to_string();
-        assert!(error_msg.contains("no function named `nonExistentFunction` in ABI"));
-    }
-
-    #[test]
-    fn test_selector_by_name_empty_string() {
-        let result = ChainalysisOracle::selector_by_name("");
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_selector_by_name_case_sensitive() {
-        let result1 = ChainalysisOracle::selector_by_name("isSanctioned");
-        let result2 = ChainalysisOracle::selector_by_name("IsSanctioned");
-        let result3 = ChainalysisOracle::selector_by_name("ISSANCTIONED");
-
-        assert!(result1.is_ok());
-        assert!(result2.is_err());
-        assert!(result3.is_err());
-    }
-
-    #[test]
-    fn test_get_function_valid() {
-        let functions = ChainalysisOracle::abi_functions_by_name("isSanctioned").unwrap();
-        assert_eq!(functions.len(), 1);
-
-        let function = &functions[0];
-        assert_eq!(function.name, "isSanctioned");
     }
 }

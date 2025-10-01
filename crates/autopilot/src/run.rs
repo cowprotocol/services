@@ -21,15 +21,21 @@ use {
         maintenance::Maintenance,
         run_loop::{self, RunLoop},
         shadow,
+        shutdown_controller::ShutdownController,
         solvable_orders::SolvableOrdersCache,
     },
     chain::Chain,
     clap::Parser,
     contracts::{BalancerV2Vault, IUniswapV3Factory},
     ethcontract::{BlockNumber, H160, common::DeploymentInformation, errors::DeployError},
-    ethrpc::{Web3, block_stream::block_number_to_block_number_hash},
+    ethrpc::{
+        Web3,
+        alloy::conversions::IntoAlloy,
+        block_stream::block_number_to_block_number_hash,
+    },
     futures::StreamExt,
     model::DomainSeparator,
+    num::ToPrimitive,
     observe::metrics::LivenessChecking,
     shared::{
         account_balances::{self, BalanceSimulator},
@@ -43,6 +49,7 @@ use {
         },
         baseline_solver::BaseTokens,
         code_fetching::CachedCodeFetcher,
+        event_handling::AlloyEventRetriever,
         http_client::HttpClientFactory,
         maintenance::ServiceMaintenance,
         order_quoting::{self, OrderQuoter},
@@ -53,7 +60,7 @@ use {
         token_list::{AutoUpdatingTokenList, TokenListConfiguration},
     },
     std::{
-        sync::{Arc, RwLock},
+        sync::{Arc, RwLock, atomic::AtomicBool},
         time::{Duration, Instant},
     },
     tracing::{Instrument, info_span, instrument},
@@ -144,21 +151,24 @@ pub async fn start(args: impl Iterator<Item = String>) {
     if args.shadow.is_some() {
         shadow_mode(args).await;
     } else {
-        run(args).await;
+        run(args, ShutdownController::default()).await;
     }
 }
 
 /// Assumes tracing and metrics registry have already been set up.
-pub async fn run(args: Arguments) {
+pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     assert!(args.shadow.is_none(), "cannot run in shadow mode");
-    // Start a new span that measures the initialization phase of the autopilot
-    let startup_span = info_span!("autopilot_startup");
-    let startup_span_guard = startup_span.enter();
-
-    let db = Postgres::new(args.db_url.as_str(), args.insert_batch_size)
+    let db_write = Postgres::new(args.db_write_url.as_str(), args.insert_batch_size)
         .await
         .unwrap();
-    crate::database::run_database_metrics_work(db.clone());
+
+    let db_read = Postgres::new(
+        args.db_read_url.unwrap_or(args.db_write_url).as_str(),
+        args.insert_batch_size,
+    )
+    .await
+    .unwrap();
+    crate::database::run_database_metrics_work(db_read.clone());
 
     let http_factory = HttpClientFactory::new(&args.http_client);
     let web3 = shared::ethrpc::web3(
@@ -241,6 +251,7 @@ pub async fn run(args: Arguments) {
 
     let chain = Chain::try_from(chain_id).expect("incorrect chain ID");
 
+    let balance_overrider = args.price_estimation.balance_overrides.init(web3.clone());
     let signature_validator = signature_validator::validator(
         &web3,
         signature_validator::Contracts {
@@ -248,6 +259,7 @@ pub async fn run(args: Arguments) {
             signatures: eth.contracts().signatures().clone(),
             vault_relayer,
         },
+        balance_overrider.clone(),
     );
 
     let balance_fetcher = account_balances::cached(
@@ -257,6 +269,7 @@ pub async fn run(args: Arguments) {
             eth.contracts().balances().clone(),
             vault_relayer,
             vault.as_ref().map(|contract| contract.address()),
+            balance_overrider,
         ),
         eth.current_block().clone(),
     );
@@ -390,7 +403,7 @@ pub async fn run(args: Arguments) {
         .instrument(info_span!("native_price_estimator"))
         .await
         .unwrap();
-    let prices = db.fetch_latest_prices().await.unwrap();
+    let prices = db_write.fetch_latest_prices().await.unwrap();
     native_price_estimator.initialize_cache(prices);
 
     let price_estimator = price_estimator_factory
@@ -420,7 +433,7 @@ pub async fn run(args: Arguments) {
         tokio::sync::mpsc::unbounded_channel();
 
     let persistence =
-        infra::persistence::Persistence::new(args.s3.into().unwrap(), Arc::new(db.clone()))
+        infra::persistence::Persistence::new(args.s3.into().unwrap(), Arc::new(db_write.clone()))
             .instrument(info_span!("persistence_init"))
             .await;
     let settlement_observer =
@@ -448,7 +461,7 @@ pub async fn run(args: Arguments) {
             eth.contracts().settlement().clone(),
         ),
         boundary::events::settlement::Indexer::new(
-            db.clone(),
+            db_write.clone(),
             settlement_observer,
             settlement_contract_start_index,
         ),
@@ -471,7 +484,7 @@ pub async fn run(args: Arguments) {
         price_estimator,
         native_price_estimator.clone(),
         gas_price_estimator,
-        Arc::new(db.clone()),
+        Arc::new(db_write.clone()),
         order_quoting::Validity {
             eip1271_onchain_quote: chrono::Duration::from_std(
                 args.order_quoting.eip1271_onchain_quote_validity,
@@ -497,6 +510,7 @@ pub async fn run(args: Arguments) {
         infra::banned::Users::new(
             eth.contracts().chainalysis_oracle().clone(),
             args.banned_users,
+            args.banned_users_max_cache_size.get().to_u64().unwrap(),
         ),
         balance_fetcher.clone(),
         bad_token_detector.clone(),
@@ -510,10 +524,12 @@ pub async fn run(args: Arguments) {
         cow_amm_registry.clone(),
         args.run_loop_native_price_timeout,
         eth.contracts().settlement().address(),
+        args.disable_order_filtering,
     );
 
     let liveness = Arc::new(Liveness::new(args.max_auction_age));
-    observe::metrics::serve_metrics(liveness.clone(), args.metrics_address);
+    let readiness = Arc::new(Some(AtomicBool::new(false)));
+    observe::metrics::serve_metrics(liveness.clone(), args.metrics_address, readiness.clone());
 
     let order_events_cleaner_config = crate::periodic_db_cleanup::OrderEventsCleanerConfig::new(
         args.order_events_cleanup_interval,
@@ -521,7 +537,7 @@ pub async fn run(args: Arguments) {
     );
     let order_events_cleaner = crate::periodic_db_cleanup::OrderEventsCleaner::new(
         order_events_cleaner_config,
-        db.clone(),
+        db_write.clone(),
     );
 
     tokio::task::spawn(
@@ -541,7 +557,7 @@ pub async fn run(args: Arguments) {
     let trusted_tokens =
         AutoUpdatingTokenList::from_configuration(market_makable_token_list_configuration).await;
 
-    let mut maintenance = Maintenance::new(settlement_event_indexer, db.clone());
+    let mut maintenance = Maintenance::new(settlement_event_indexer, db_write.clone());
     maintenance.with_cow_amms(&cow_amm_registry);
 
     if !args.ethflow_contracts.is_empty() {
@@ -550,15 +566,22 @@ pub async fn run(args: Arguments) {
             args.ethflow_indexing_start,
             &web3,
             chain_id,
-            db.clone(),
+            db_write.clone(),
         )
         .await;
 
         let refund_event_handler = EventUpdater::new_skip_blocks_before(
             // This cares only about ethflow refund events because all the other ethflow
             // events are already indexed by the OnchainOrderParser.
-            EthFlowRefundRetriever::new(web3.clone(), args.ethflow_contracts.clone()),
-            db.clone(),
+            AlloyEventRetriever(EthFlowRefundRetriever::new(
+                web3.clone(),
+                args.ethflow_contracts
+                    .iter()
+                    .cloned()
+                    .map(IntoAlloy::into_alloy)
+                    .collect(),
+            )),
+            db_write.clone(),
             block_retriever.clone(),
             ethflow_refund_start_block,
         )
@@ -568,7 +591,7 @@ pub async fn run(args: Arguments) {
 
         let custom_ethflow_order_parser = EthFlowOnchainOrderParser {};
         let onchain_order_event_parser = OnchainOrderParser::new(
-            db.clone(),
+            db_write.clone(),
             web3.clone(),
             quoter.clone(),
             Box::new(custom_ethflow_order_parser),
@@ -582,7 +605,7 @@ pub async fn run(args: Arguments) {
             args.ethflow_indexing_start,
             &web3,
             chain_id,
-            &db,
+            &db_write,
         )
         .await;
 
@@ -614,6 +637,7 @@ pub async fn run(args: Arguments) {
         max_run_loop_delay: args.max_run_loop_delay,
         max_winners_per_auction: args.max_winners_per_auction,
         max_solutions_per_solver: args.max_solutions_per_solver,
+        enable_leader_lock: args.enable_leader_lock,
     };
 
     let drivers_futures = args
@@ -656,11 +680,11 @@ pub async fn run(args: Arguments) {
         solvable_orders_cache,
         trusted_tokens,
         liveness.clone(),
+        readiness.clone(),
         Arc::new(maintenance),
         competition_updates_sender,
     );
-    drop(startup_span_guard);
-    run.run_forever().await;
+    run.run_forever(shutdown_controller).await;
 }
 
 async fn shadow_mode(args: Arguments) -> ! {
@@ -736,7 +760,7 @@ async fn shadow_mode(args: Arguments) -> ! {
     };
 
     let liveness = Arc::new(Liveness::new(args.max_auction_age));
-    observe::metrics::serve_metrics(liveness.clone(), args.metrics_address);
+    observe::metrics::serve_metrics(liveness.clone(), args.metrics_address, Default::default());
 
     let current_block = ethrpc::block_stream::current_block_stream(
         args.shared.node_url,

@@ -7,7 +7,7 @@ use {
     moka::future::Cache,
     reqwest::StatusCode,
     shared::request_sharing::BoxRequestSharing,
-    std::sync::Arc,
+    std::{collections::HashMap, sync::Arc},
     thiserror::Error,
     url::Url,
 };
@@ -47,8 +47,17 @@ impl AppDataRetriever {
         }))
     }
 
-    /// Retrieves the full app-data for the given `app_data` hash, if exists.
-    pub async fn get(
+    /// Returns all values that are currently cached.
+    pub fn get_cached(&self) -> HashMap<Arc<AppDataHash>, Arc<app_data::ValidatedAppData>> {
+        self.0
+            .cache
+            .iter()
+            .flat_map(|(key, value)| Some((key, value?)))
+            .collect()
+    }
+
+    /// Retrieves the full app-data for the given `app_data` hash, if it exists.
+    pub async fn get_cached_or_fetch(
         &self,
         app_data: &AppDataHash,
     ) -> Result<Option<Arc<app_data::ValidatedAppData>>, FetchingError> {

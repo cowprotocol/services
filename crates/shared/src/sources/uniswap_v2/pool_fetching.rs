@@ -1,10 +1,16 @@
 use {
     super::pair_provider::PairProvider,
     crate::{baseline_solver::BaselineSolvable, ethrpc::Web3, recent_block_cache::Block},
+    alloy::sol_types::GenericContractError,
     anyhow::Result,
     cached::{Cached, TimedCache},
-    contracts::{ERC20, IUniswapLikePair, errors::EthcontractErrorType},
+    contracts::{
+        ERC20,
+        alloy::IUniswapLikePair::{self, IUniswapLikePair::getReservesReturn},
+        errors::EthcontractErrorType,
+    },
     ethcontract::{BlockId, H160, U256, errors::MethodError},
+    ethrpc::alloy::conversions::IntoAlloy,
     futures::{
         FutureExt as _,
         future::{self, BoxFuture},
@@ -267,9 +273,6 @@ impl PoolReading for DefaultPoolReader {
     fn read_state(&self, pair: TokenPair, block: BlockId) -> BoxFuture<'_, Result<Option<Pool>>> {
         let pair_address = self.pair_provider.pair_address(&pair);
 
-        let pair_contract = IUniswapLikePair::at(&self.web3, pair_address);
-        let fetch_reserves = pair_contract.get_reserves().block(block).call();
-
         // Fetch ERC20 token balances of the pools to sanity check with reserves
         let token0 = ERC20::at(&self.web3, pair.get().0);
         let token1 = ERC20::at(&self.web3, pair.get().1);
@@ -278,8 +281,16 @@ impl PoolReading for DefaultPoolReader {
         let fetch_token1_balance = token1.balance_of(pair_address).block(block).call();
 
         async move {
-            let (reserves, token0_balance, token1_balance) =
-                futures::join!(fetch_reserves, fetch_token0_balance, fetch_token1_balance);
+            let pair_contract =
+                IUniswapLikePair::Instance::new(pair_address.into_alloy(), self.web3.alloy.clone());
+            let fetch_reserves = pair_contract.getReserves().block(block.into_alloy());
+
+            let (reserves, token0_balance, token1_balance) = futures::join!(
+                fetch_reserves.call().into_future(),
+                fetch_token0_balance,
+                fetch_token1_balance
+            );
+
             handle_results(
                 FetchedPool {
                     pair,
@@ -296,7 +307,7 @@ impl PoolReading for DefaultPoolReader {
 
 struct FetchedPool {
     pair: TokenPair,
-    reserves: Result<(u128, u128, u32), MethodError>,
+    reserves: Result<getReservesReturn, alloy::contract::Error>,
     token0_balance: Result<U256, MethodError>,
     token1_balance: Result<U256, MethodError>,
 }
@@ -313,12 +324,35 @@ pub fn handle_contract_error<T>(result: Result<T, MethodError>) -> Result<Option
     }
 }
 
+/// Node errors should be bubbled up but contract errors should lead to the pool
+/// being skipped.
+// Based on `handle_contract_error`.
+pub fn handle_alloy_contract_error<T>(
+    result: Result<T, alloy::contract::Error>,
+) -> Result<Option<T>> {
+    match result {
+        Ok(result) => Ok(Some(result)),
+        // Alloy "hides" the contract execution errors under the transport error
+        Err(err @ alloy::contract::Error::TransportError(_)) => {
+            // So we need to try to decode the error as a generic contract error,
+            // we return in case it isn't a contract error
+            match err.try_decode_into_interface_error::<GenericContractError>() {
+                Ok(_) => Ok(None), // contract error
+                Err(err) => Err(err)?,
+            }
+        }
+        Err(_) => Ok(None),
+    }
+}
+
 fn handle_results(fetched_pool: FetchedPool, address: H160) -> Result<Option<Pool>> {
-    let reserves = handle_contract_error(fetched_pool.reserves)?;
+    let reserves = handle_alloy_contract_error(fetched_pool.reserves)?;
     let token0_balance = handle_contract_error(fetched_pool.token0_balance)?;
     let token1_balance = handle_contract_error(fetched_pool.token1_balance)?;
 
     let pool = reserves.and_then(|reserves| {
+        let r0 = u128::try_from(reserves.reserve0).ok()?;
+        let r1 = u128::try_from(reserves.reserve1).ok()?;
         // Some ERC20s (e.g. AMPL) have an elastic supply and can thus reduce the
         // balance of their owners without any transfer or other interaction ("rebase").
         // Such behavior can implicitly change the *k* in the pool's constant product
@@ -332,14 +366,12 @@ fn handle_results(fetched_pool: FetchedPool, address: H160) -> Result<Option<Poo
         // benefit by withdrawing the excess from the pool without selling anything).
         // We therefore exclude all pools where the pool's token balance of either token
         // in the pair is less than the cached reserve.
-        if U256::from(reserves.0) > token0_balance? || U256::from(reserves.1) > token1_balance? {
+        if U256::from(r0) > token0_balance? || U256::from(r1) > token1_balance? {
             return None;
         }
-        Some(Pool::uniswap(
-            address,
-            fetched_pool.pair,
-            (reserves.0, reserves.1),
-        ))
+        // Errors here should never happen because reserves are uint<112, 2>
+        // meaning they'll always fit in u128, but panicking here is not a good idea
+        Some(Pool::uniswap(address, fetched_pool.pair, (r0, r1)))
     });
 
     Ok(pool)
@@ -373,7 +405,7 @@ pub mod test_util {
 mod tests {
     use {
         super::*,
-        contracts::errors::{testing_contract_error, testing_node_error},
+        contracts::errors::{testing_alloy_contract_error, testing_alloy_node_error},
     };
 
     #[test]
@@ -507,7 +539,7 @@ mod tests {
     #[test]
     fn pool_fetcher_forwards_node_error() {
         let fetched_pool = FetchedPool {
-            reserves: Err(testing_node_error()),
+            reserves: Err(testing_alloy_node_error()),
             pair: Default::default(),
             token0_balance: Ok(1.into()),
             token1_balance: Ok(1.into()),
@@ -519,7 +551,7 @@ mod tests {
     #[test]
     fn pool_fetcher_skips_contract_error() {
         let fetched_pool = FetchedPool {
-            reserves: Err(testing_contract_error()),
+            reserves: Err(testing_alloy_contract_error()),
             pair: Default::default(),
             token0_balance: Ok(1.into()),
             token1_balance: Ok(1.into()),

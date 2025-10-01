@@ -40,7 +40,8 @@ mod put_app_data;
 mod version;
 
 pub fn handle_all_routes(
-    database: Postgres,
+    database_write: Postgres,
+    database_read: Postgres,
     orderbook: Arc<Orderbook>,
     quotes: Arc<QuoteHandler>,
     app_data: Arc<app_data::Registry>,
@@ -66,7 +67,7 @@ pub fn handle_all_routes(
         ),
         (
             "v1/get_trades",
-            box_filter(get_trades::get_trades(database.clone())),
+            box_filter(get_trades::get_trades(database_read.clone())),
         ),
         (
             "v1/cancel_order",
@@ -91,21 +92,25 @@ pub fn handle_all_routes(
         ),
         (
             "v1/solver_competition",
-            box_filter(get_solver_competition::get(Arc::new(database.clone()))),
+            box_filter(get_solver_competition::get(Arc::new(
+                database_write.clone(),
+            ))),
         ),
         (
             "v2/solver_competition",
-            box_filter(get_solver_competition_v2::get(database.clone())),
+            box_filter(get_solver_competition_v2::get(database_write.clone())),
         ),
         (
             "v1/solver_competition/latest",
             box_filter(get_solver_competition::get_latest(Arc::new(
-                database.clone(),
+                database_write.clone(),
             ))),
         ),
         (
             "v2/solver_competition/latest",
-            box_filter(get_solver_competition_v2::get_latest(database.clone())),
+            box_filter(get_solver_competition_v2::get_latest(
+                database_write.clone(),
+            )),
         ),
         ("v1/version", box_filter(version::version())),
         (
@@ -117,7 +122,7 @@ pub fn handle_all_routes(
         ),
         (
             "v1/get_app_data",
-            get_app_data::get(database.clone()).boxed(),
+            get_app_data::get(database_read.clone()).boxed(),
         ),
         (
             "v1/put_app_data",
@@ -125,11 +130,11 @@ pub fn handle_all_routes(
         ),
         (
             "v1/get_total_surplus",
-            box_filter(get_total_surplus::get(database.clone())),
+            box_filter(get_total_surplus::get(database_read.clone())),
         ),
         (
             "v1/get_token_metadata",
-            box_filter(get_token_metadata::get_token_metadata(database)),
+            box_filter(get_token_metadata::get_token_metadata(database_read)),
         ),
     ];
 

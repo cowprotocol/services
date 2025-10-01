@@ -7,6 +7,7 @@ use {
     anyhow::{Context, Result},
     bigdecimal::BigDecimal,
     database::order_events::OrderEventLabel,
+    ethrpc::alloy::conversions::IntoAlloy,
     futures::{FutureExt, StreamExt, future::join_all, stream::FuturesUnordered},
     indexmap::IndexSet,
     itertools::Itertools,
@@ -100,6 +101,7 @@ pub struct SolvableOrdersCache {
     cow_amm_registry: cow_amm::Registry,
     native_price_timeout: Duration,
     settlement_contract: H160,
+    disable_order_filters: bool,
 }
 
 type Balances = HashMap<Query, U256>;
@@ -125,6 +127,7 @@ impl SolvableOrdersCache {
         cow_amm_registry: cow_amm::Registry,
         native_price_timeout: Duration,
         settlement_contract: H160,
+        disable_order_filters: bool,
     ) -> Arc<Self> {
         Arc::new(Self {
             min_order_validity_period,
@@ -142,6 +145,7 @@ impl SolvableOrdersCache {
             cow_amm_registry,
             native_price_timeout,
             settlement_contract,
+            disable_order_filters,
         })
     }
 
@@ -159,7 +163,7 @@ impl SolvableOrdersCache {
     /// Usually this method is called from update_task. If it isn't, which is
     /// the case in unit tests, then concurrent calls might overwrite each
     /// other's results.
-    pub async fn update(&self, block: u64) -> Result<()> {
+    pub async fn update(&self, block: u64, store_events: bool) -> Result<()> {
         let start = Instant::now();
 
         let db_solvable_orders = self.get_solvable_orders().await?;
@@ -184,13 +188,19 @@ impl SolvableOrdersCache {
             )
         };
 
-        let orders = orders_with_balance(orders, &balances, self.settlement_contract);
-        let removed = counter.checkpoint("insufficient_balance", &orders);
-        invalid_order_uids.extend(removed);
+        let orders = if self.disable_order_filters {
+            orders
+        } else {
+            let orders = orders_with_balance(orders, &balances, self.settlement_contract);
+            let removed = counter.checkpoint("insufficient_balance", &orders);
+            invalid_order_uids.extend(removed);
 
-        let orders = filter_dust_orders(orders, &balances);
-        let removed = counter.checkpoint("dust_order", &orders);
-        filtered_order_events.extend(removed);
+            let orders = filter_dust_orders(orders, &balances);
+            let removed = counter.checkpoint("dust_order", &orders);
+            filtered_order_events.extend(removed);
+
+            orders
+        };
 
         let cow_amm_tokens = cow_amms
             .iter()
@@ -238,18 +248,20 @@ impl SolvableOrdersCache {
         let removed = counter.record(&orders);
         filtered_order_events.extend(removed);
 
-        // spawning a background task since `order_events` table insert operation takes
-        // a while and the result is ignored.
-        self.persistence.store_order_events(
-            invalid_order_uids.iter().map(|id| domain::OrderUid(id.0)),
-            OrderEventLabel::Invalid,
-        );
-        self.persistence.store_order_events(
-            filtered_order_events
-                .iter()
-                .map(|id| domain::OrderUid(id.0)),
-            OrderEventLabel::Filtered,
-        );
+        if store_events {
+            // spawning a background task since `order_events` table insert operation takes
+            // a while and the result is ignored.
+            self.persistence.store_order_events(
+                invalid_order_uids.iter().map(|id| domain::OrderUid(id.0)),
+                OrderEventLabel::Invalid,
+            );
+            self.persistence.store_order_events(
+                filtered_order_events
+                    .iter()
+                    .map(|id| domain::OrderUid(id.0)),
+                OrderEventLabel::Filtered,
+            );
+        }
 
         let surplus_capturing_jit_order_owners = cow_amms
             .iter()
@@ -311,6 +323,10 @@ impl SolvableOrdersCache {
                 self.balance_fetcher.get_balances(&queries),
             )
             .await;
+        if self.disable_order_filters {
+            return Default::default();
+        }
+
         tracing::trace!("fetched balances for solvable orders");
         queries
             .into_iter()
@@ -373,15 +389,19 @@ impl SolvableOrdersCache {
         counter: &mut OrderFilterCounter,
         invalid_order_uids: &mut HashSet<OrderUid>,
     ) -> Vec<Order> {
+        let filter_invalid_signatures = async {
+            if self.disable_order_filters {
+                return Default::default();
+            }
+            find_invalid_signature_orders(&orders, self.signature_validator.as_ref()).await
+        };
+
         let (banned_user_orders, invalid_signature_orders, unsupported_token_orders) = tokio::join!(
             self.timed_future(
                 "banned_user_filtering",
                 find_banned_user_orders(&orders, &self.banned_users)
             ),
-            self.timed_future(
-                "invalid_signature_filtering",
-                find_invalid_signature_orders(&orders, self.signature_validator.as_ref())
-            ),
+            self.timed_future("invalid_signature_filtering", filter_invalid_signatures),
             self.timed_future(
                 "unsupported_token_filtering",
                 find_unsupported_tokens(&orders, self.bad_token_detector.clone())
@@ -422,18 +442,19 @@ impl SolvableOrdersCache {
 /// users.
 async fn find_banned_user_orders(orders: &[Order], banned_users: &banned::Users) -> Vec<OrderUid> {
     let banned = banned_users
-        .banned(
-            orders
-                .iter()
-                .flat_map(|order| std::iter::once(order.metadata.owner).chain(order.data.receiver)),
-        )
+        .banned(orders.iter().flat_map(|order| {
+            std::iter::once(order.metadata.owner)
+                .chain(order.data.receiver)
+                .map(IntoAlloy::into_alloy)
+        }))
         .await;
     orders
         .iter()
         .filter_map(|order| {
-            std::iter::once(&order.metadata.owner)
-                .chain(&order.data.receiver)
-                .any(|addr| banned.contains(addr))
+            std::iter::once(order.metadata.owner)
+                .chain(order.data.receiver)
+                .map(IntoAlloy::into_alloy)
+                .any(|addr| banned.contains(&addr))
                 .then_some(order.metadata.uid)
         })
         .collect()
@@ -482,6 +503,9 @@ async fn find_invalid_signature_orders(
                         hash,
                         signature: signature.clone(),
                         interactions: order.interactions.pre.clone(),
+                        // TODO delete balance and signature logic in the autopilot
+                        // altogether
+                        balance_override: None,
                     })
                     .await
                 {
@@ -856,6 +880,7 @@ impl OrderFilterCounter {
 mod tests {
     use {
         super::*,
+        alloy::primitives::Address,
         futures::FutureExt,
         maplit::{btreemap, hashset},
         mockall::predicate::eq,
@@ -1134,7 +1159,7 @@ mod tests {
 
     #[tokio::test]
     async fn filters_banned_users() {
-        let banned_users = hashset!(H160([0xba; 20]), H160([0xbb; 20]));
+        let banned_users = hashset!(Address::from([0xba; 20]), Address::from([0xbb; 20]));
         let orders = [
             H160([1; 20]),
             H160([1; 20]),
@@ -1251,6 +1276,7 @@ mod tests {
                     value: U256::zero(),
                     call_data: vec![5, 6],
                 }],
+                balance_override: None,
             }))
             .returning(|_| Ok(()));
         signature_validator
@@ -1260,6 +1286,7 @@ mod tests {
                 hash: [4; 32],
                 signature: vec![4, 4, 4, 4],
                 interactions: vec![],
+                balance_override: None,
             }))
             .returning(|_| Err(SignatureValidationError::Invalid));
         signature_validator
@@ -1269,6 +1296,7 @@ mod tests {
                 hash: [5; 32],
                 signature: vec![5, 5, 5, 5, 5],
                 interactions: vec![],
+                balance_override: None,
             }))
             .returning(|_| Ok(()));
 
