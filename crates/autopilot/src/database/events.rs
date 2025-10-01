@@ -18,7 +18,7 @@ use {
     },
     ethcontract::{Event as EthContractEvent, EventMetadata},
     number::conversions::u256_to_big_decimal,
-    std::{convert::TryInto, i64},
+    std::convert::TryInto,
 };
 
 pub fn contract_to_db_events(

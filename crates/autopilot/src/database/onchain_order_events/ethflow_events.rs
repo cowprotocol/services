@@ -296,20 +296,7 @@ mod test {
         let event_data = ContractOrderPlacement {
             data: vec![0u8, 0u8, 3u8, 2u8, 0u8, 0u8, 1u8, 2u8, 0u8, 0u8, 1u8, 2u8].into(),
             sender: Default::default(),
-            order: CoWSwapOnchainOrders::GPv2Order::Data {
-                sellToken: Default::default(),
-                buyToken: Default::default(),
-                receiver: Default::default(),
-                sellAmount: Default::default(),
-                buyAmount: Default::default(),
-                validTo: Default::default(),
-                appData: Default::default(),
-                feeAmount: Default::default(),
-                kind: Default::default(),
-                partiallyFillable: Default::default(),
-                sellTokenBalance: Default::default(),
-                buyTokenBalance: Default::default(),
-            },
+            order: Default::default(),
             signature: CoWSwapOnchainOrders::ICoWSwapOnchainOrders::OnchainSignature {
                 scheme: 0,
                 data: Default::default(),
