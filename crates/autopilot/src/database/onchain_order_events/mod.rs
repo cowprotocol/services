@@ -912,7 +912,7 @@ mod test {
         let expected_order_data = OrderData {
             sell_token: sellToken.into_legacy(),
             buy_token: buyToken.into_legacy(),
-            receiver: Some(receiver.into_legacy()),
+            receiver: None,
             sell_amount: sellAmount.into_legacy(),
             buy_amount: buyAmount.into_legacy(),
             valid_to: validTo,
