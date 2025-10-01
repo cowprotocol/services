@@ -2,16 +2,11 @@ use {
     alloy::{
         primitives::{Address, B256, b256},
         rpc::types::{Filter, FilterSet},
+        sol_types::SolEvent,
     },
+    contracts::alloy::CoWSwapOnchainOrders,
     shared::{ethrpc::Web3, event_handling::AlloyEventRetrieving},
 };
-
-const ORDER_PLACEMENT_TOPIC: B256 =
-    b256!("cf5f9de2984132265203b5c335b25727702ca77262ff622e136baa7362bf1da9");
-const ORDER_INVALIDATION_TOPIC: B256 =
-    b256!("b8bad102ac8bbacfef31ff1c906ec6d951c230b4dce750bb0376b812ad35852a");
-static ALL_VALID_ONCHAIN_ORDER_TOPICS: [B256; 2] =
-    [ORDER_PLACEMENT_TOPIC, ORDER_INVALIDATION_TOPIC];
 
 // Note: we use a custom implementation of `EventRetrieving` rather than using
 // the one that is automatically derivable from the onchain-order contract. This
@@ -36,13 +31,15 @@ impl CoWSwapOnchainOrdersContract {
 }
 
 impl AlloyEventRetrieving for CoWSwapOnchainOrdersContract {
-    type Event =
-        contracts::alloy::CoWSwapOnchainOrders::CoWSwapOnchainOrders::CoWSwapOnchainOrdersEvents;
+    type Event = CoWSwapOnchainOrders::CoWSwapOnchainOrders::CoWSwapOnchainOrdersEvents;
 
     fn filter(&self) -> alloy::rpc::types::Filter {
         Filter::new()
             .address(self.addresses.clone())
-            .event_signature(FilterSet::from_iter(ALL_VALID_ONCHAIN_ORDER_TOPICS))
+            .event_signature(FilterSet::from_iter([
+                CoWSwapOnchainOrders::CoWSwapOnchainOrders::OrderInvalidation::SIGNATURE_HASH,
+                CoWSwapOnchainOrders::CoWSwapOnchainOrders::OrderPlacement::SIGNATURE_HASH,
+            ]))
     }
 
     fn provider(&self) -> &contracts::alloy::Provider {

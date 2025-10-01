@@ -242,11 +242,10 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
             quote_id_hashmap.insert(*event_index, custom_onchain_data.quote_id);
         }
         let mut events_and_quotes = Vec::new();
-        for event in order_placement_events {
-            let (event, log) = event;
-
-            if let Some(tx_hash) = log.transaction_hash {
-                let event_index = log_to_event_index(&log);
+        for (event, log) in order_placement_events {
+            if let Some(tx_hash) = log.transaction_hash
+                && let Some(event_index) = log_to_event_index(&log)
+            {
                 if let Some(quote_id) = quote_id_hashmap.get(&event_index) {
                     events_and_quotes.push((
                         event,
@@ -412,16 +411,16 @@ fn get_invalidation_events(
     events
         .into_iter()
         .filter_map(|(data, log)| {
-            if log.transaction_hash.is_none() {
+            let Some(event_index) = log_to_event_index(&log) else {
                 return Some(Err(anyhow!("invalidation event without metadata")));
-            }
+            };
             let data = match data {
                 ContractEvent::OrderInvalidation(event) => event,
                 _ => {
                     return None;
                 }
             };
-            Some(Ok((log_to_event_index(&log), data)))
+            Some(Ok((event_index, data)))
         })
         .collect()
 }
@@ -460,10 +459,10 @@ async fn parse_general_onchain_order_placement_data(
 ) -> Vec<GeneralOnchainOrderPlacementData> {
     let futures = order_placement_events_and_quotes_zipped.into_iter().map(
         |(data, log, event_timestamp, quote_id, tx_hash)| async move {
-            if log.transaction_hash.is_none() {
+            let Some(event_index) = log_to_event_index(&log) else {
                 metrics.inc_onchain_order_errors("no_metadata");
                 return Err(anyhow!("event without metadata"));
-            }
+            };
             let event = match data {
                 ContractEvent::OrderPlacement(event) => event,
                 _ => {
@@ -513,13 +512,7 @@ async fn parse_general_onchain_order_placement_data(
                     None
                 }
             };
-            Ok((
-                log_to_event_index(&log),
-                quote,
-                order_data.0,
-                order_data.1,
-                tx_hash,
-            ))
+            Ok((event_index, quote, order_data.0, order_data.1, tx_hash))
         },
     );
     let onchain_order_placement_data: Vec<Result<GeneralOnchainOrderPlacementData>> =

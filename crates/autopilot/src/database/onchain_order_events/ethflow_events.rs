@@ -56,7 +56,7 @@ impl OnchainOrderParsing<EthFlowData, EthFlowDataForDb> for EthFlowOnchainOrderP
         contract_events
             .iter()
             .filter_map(|(data, log)| {
-                let Some(_) = log.block_number else {
+                let Some(event_index) = log_to_event_index(log) else {
                     return Some(Err(anyhow!("event without metadata")));
                 };
                 let event = match data {
@@ -65,7 +65,7 @@ impl OnchainOrderParsing<EthFlowData, EthFlowDataForDb> for EthFlowOnchainOrderP
                 };
                 match convert_to_quote_id_and_user_valid_to(event) {
                     Ok((quote_id, user_valid_to)) => Some(Ok((
-                        log_to_event_index(log),
+                        event_index,
                         OnchainOrderCustomData {
                             quote_id,
                             additional_data: Some(EthFlowData { user_valid_to }),
