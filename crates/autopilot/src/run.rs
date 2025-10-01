@@ -162,7 +162,9 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         .await
         .unwrap();
 
-    let db_read = if let Some(db_read_url) = args.db_read_url {
+    let db_read = if let Some(db_read_url) = args.db_read_url
+        && args.db_write_url != db_read_url
+    {
         Postgres::new(db_read_url.as_str(), args.insert_batch_size)
             .await
             .unwrap()

@@ -169,8 +169,10 @@ pub async fn run(args: Arguments) {
     let postgres_write =
         Postgres::try_new(args.db_write_url.as_str()).expect("failed to create database");
 
-    let postgres_read = if let Some(db_read_url) = args.db_read_url {
-        Postgres::try_new(db_read_url.as_str()).expect("failed to create read replica database")
+    let postgres_read = if let Some(db_read_url) = args.db_read_url
+        && args.db_write_url != db_read_url
+    {
+        Postgres::try_new(db_read_url.as_str()).expect("failed to create read replica databaseR")
     } else {
         postgres_write.clone()
     };
