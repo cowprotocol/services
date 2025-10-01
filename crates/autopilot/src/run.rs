@@ -167,7 +167,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     {
         Postgres::new(db_read_url.as_str(), args.insert_batch_size)
             .await
-            .unwrap()
+            .expect("failed to create read replica database")
     } else {
         db_write.clone()
     };
