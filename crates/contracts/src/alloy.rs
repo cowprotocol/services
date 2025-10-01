@@ -465,6 +465,8 @@ pub mod support {
     crate::bindings!(Solver);
     crate::bindings!(Spardose);
     crate::bindings!(Trader);
+    // Support contract used for solver fee simulations in the gnosis/solvers repo.
+    crate::bindings!(Swapper);
 }
 
 pub use alloy::providers::DynProvider as Provider;
