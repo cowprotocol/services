@@ -22,6 +22,9 @@ struct UserMetadata {
     last_updated: Instant,
 }
 
+/// Onchain banned user checker using Chainalysis Oracle with caching and
+/// background refresh. Maintains a size-bounded LRU cache with periodic
+/// maintenance to refresh expired entries.
 struct Onchain {
     contract: ChainalysisOracle::Instance,
     cache: Cache<Address, UserMetadata>,
@@ -41,8 +44,6 @@ impl Onchain {
 
     /// Spawns a background task that periodically checks the cache for expired
     /// entries and re-run checks for them.
-    ///
-    /// Doesn't clean the cache, so it can grow indefinitely.
     fn spawn_maintenance_task(self: Arc<Self>) {
         let cache_expiry = Duration::from_secs(60 * 60);
         let maintenance_timeout = Duration::from_secs(60);
