@@ -218,7 +218,6 @@ impl Onchain {
     }
 }
 
-/// Errors that can occur during banned user checking operations.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("failed to fetch banned users from onchain")]
