@@ -63,6 +63,25 @@ pub struct Transaction {
     pub trades: Vec<EncodedTrade>,
 }
 
+ // multi settlement transaction
+#[derive(Debug, Clone)]
+pub struct MultiSettlementTransaction {
+    pub hash: eth::TxId,
+    pub block: eth::BlockNo,
+    pub timestamp: u32,
+    pub gas: eth::Gas,
+    pub gas_price: eth::EffectiveGasPrice,
+    pub solver: eth::Address,
+    pub settlements: Vec<SettlementData>,
+}
+
+
+#[derive(Debug, Clone)]
+pub struct SettlementData {
+    pub auction_id: domain::auction::Id,
+    pub trades: Vec<EncodedTrade>,
+}
+
 impl Transaction {
     pub async fn try_new(
         transaction: &eth::Transaction,
@@ -173,6 +192,149 @@ impl Transaction {
     }
 }
 
+impl MultiSettlementTransaction {
+ // create new multi settlement transaction
+    pub async fn try_new(
+        transaction: &eth::Transaction,
+        domain_separator: &eth::DomainSeparator,
+        settlement_contract: eth::Address,
+        authenticator: &impl Authenticator,
+    ) -> Result<Self, Error> {
+        // Find all settlement traces in the transaction
+        let settlement_traces = find_all_settlement_traces_and_callers(&transaction.trace_calls, settlement_contract);
+        
+        if settlement_traces.is_empty() {
+            return Err(Error::MissingCalldata);
+        }
+
+        let block = BlockId::Number(transaction.block.0.into());
+        let solver = find_solver_address(authenticator, settlement_traces[0].1.clone(), block).await?;
+        let solver = solver.ok_or(Error::MissingSolver)?;
+
+        
+        const META_DATA_LEN: usize = 8;
+
+        let mut settlements = Vec::with_capacity(settlement_traces.len());
+        
+        for (trace, _callers) in settlement_traces {
+            let calldata = &trace.input;
+            
+            let (data, metadata) = calldata.0.split_at(
+                calldata
+                    .0
+                    .len()
+                    .checked_sub(META_DATA_LEN)
+                    .ok_or(Error::MissingCalldata)?,
+            );
+            let metadata: Option<[u8; META_DATA_LEN]> = metadata.try_into().ok();
+            let auction_id = metadata
+                .map(crate::domain::auction::Id::from_be_bytes)
+                .ok_or(Error::MissingAuctionId)?;
+
+            let trades = {
+                let tokenized::Tokenized {
+                    tokens,
+                    clearing_prices,
+                    trades: decoded_trades,
+                    interactions: _interactions,
+                } = tokenized::Tokenized::try_new(&crate::util::Bytes(data.to_vec()))?;
+
+                let mut trades = Vec::with_capacity(decoded_trades.len());
+                for trade in decoded_trades {
+                    let flags = tokenized::TradeFlags(trade.8);
+                    let sell_token_index = trade.0.as_usize();
+                    let buy_token_index = trade.1.as_usize();
+                    let sell_token = tokens[sell_token_index];
+                    let buy_token = tokens[buy_token_index];
+                    let uniform_sell_token_index = tokens
+                        .iter()
+                        .position(|token| token == &sell_token)
+                        .unwrap();
+                    let uniform_buy_token_index =
+                        tokens.iter().position(|token| token == &buy_token).unwrap();
+                    trades.push(EncodedTrade {
+                        uid: tokenized::order_uid(&trade, &tokens, domain_separator)
+                            .map_err(Error::OrderUidRecover)?,
+                        sell: eth::Asset {
+                            token: sell_token.into(),
+                            amount: trade.3.into(),
+                        },
+                        buy: eth::Asset {
+                            token: buy_token.into(),
+                            amount: trade.4.into(),
+                        },
+                        side: flags.side(),
+                        receiver: trade.2.into(),
+                        valid_to: trade.5,
+                        app_data: domain::auction::order::AppDataHash(trade.6.0),
+                        fee_amount: trade.7.into(),
+                        sell_token_balance: flags.sell_token_balance().into(),
+                        buy_token_balance: flags.buy_token_balance().into(),
+                        partially_fillable: flags.partially_fillable(),
+                        signature: (boundary::Signature::from_bytes(
+                            flags.signing_scheme(),
+                            &trade.10.0,
+                        )
+                        .map_err(Error::SignatureRecover)?)
+                        .into(),
+                        executed: trade.9.into(),
+                        prices: Prices {
+                            uniform: ClearingPrices {
+                                sell: clearing_prices[uniform_sell_token_index].into(),
+                                buy: clearing_prices[uniform_buy_token_index].into(),
+                            },
+                            custom: ClearingPrices {
+                                sell: clearing_prices[sell_token_index].into(),
+                                buy: clearing_prices[buy_token_index].into(),
+                            },
+                        },
+                    })
+                }
+                trades
+            };
+
+            settlements.push(SettlementData {
+                auction_id,
+                trades,
+            });
+        }
+
+        Ok(Self {
+            hash: transaction.hash,
+            block: transaction.block,
+            timestamp: transaction.timestamp,
+            gas: transaction.gas,
+            gas_price: transaction.gas_price,
+            solver,
+            settlements,
+        })
+    }
+
+    /// Returns true if this transaction contains multiple settlements.
+    pub fn is_multi_settlement(&self) -> bool {
+        self.settlements.len() > 1
+    }
+
+ // convert to single transaction
+    pub fn to_single_transaction(&self) -> Option<Transaction> {
+        if self.settlements.len() == 1 {
+            let settlement = &self.settlements[0];
+            Some(Transaction {
+                hash: self.hash,
+                auction_id: settlement.auction_id,
+                block: self.block,
+                timestamp: self.timestamp,
+                gas: self.gas,
+                gas_price: self.gas_price,
+                solver: self.solver,
+                trades: settlement.trades.clone(),
+            })
+        } else {
+            None
+        }
+    }
+}
+
 fn find_settlement_trace_and_callers(
     call_frame: &eth::CallFrame,
     settlement_contract: eth::Address,
@@ -194,6 +356,29 @@ fn find_settlement_trace_and_callers(
     }
 
     None
+}
+
+// find all settlement traces in a transaction and return them with their call paths
+fn find_all_settlement_traces_and_callers(
+    call_frame: &eth::CallFrame,
+    settlement_contract: eth::Address,
+) -> Vec<(&eth::CallFrame, Vec<eth::Address>)> {
+    let mut results = Vec::new();
+    let mut queue = std::collections::VecDeque::new();
+    queue.push_back((call_frame, vec![call_frame.from]));
+
+    while let Some((call_frame, callers_so_far)) = queue.pop_front() {
+        if is_settlement_trace(call_frame, settlement_contract) {
+            results.push((call_frame, callers_so_far.clone()));
+        }
+        for sub_call in &call_frame.calls {
+            let mut new_callers = callers_so_far.clone();
+            new_callers.push(sub_call.from);
+            queue.push_back((sub_call, new_callers));
+        }
+    }
+
+    results
 }
 
 fn is_settlement_trace(trace: &eth::CallFrame, settlement_contract: eth::Address) -> bool {

@@ -45,6 +45,23 @@ LIMIT 1
 }
 
 #[instrument(skip_all)]
+pub async fn get_all_unprocessed_settlements_for_transaction(
+    ex: &mut PgConnection,
+    tx_hash: TransactionHash,
+) -> Result<Vec<SettlementEvent>, sqlx::Error> {
+    const QUERY: &str = r#"
+SELECT block_number, log_index, tx_hash
+FROM settlements
+WHERE tx_hash = $1 AND auction_id IS NULL
+ORDER BY log_index ASC
+    "#;
+    sqlx::query_as(QUERY)
+        .bind(tx_hash)
+        .fetch_all(ex)
+        .await
+}
+
+#[instrument(skip_all)]
 pub async fn update_settlement_auction(
     ex: &mut PgConnection,
     block_number: i64,

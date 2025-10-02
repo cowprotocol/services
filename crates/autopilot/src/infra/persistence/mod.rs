@@ -940,6 +940,32 @@ impl Persistence {
             .context("solver_competition::fetch_solver_winning_solutions")?,
         )
     }
+
+  // get all unprocessed settlements for a given transaction hash
+    pub async fn get_all_unprocessed_settlements_for_transaction(
+        &self,
+        tx_hash: eth::TxId,
+    ) -> Result<Vec<domain::eth::SettlementEvent>, DatabaseError> {
+        let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["get_all_unprocessed_settlements_for_transaction"])
+            .start_timer();
+
+        Ok(database::settlements::get_all_unprocessed_settlements_for_transaction(
+            &mut ex,
+            ByteArray(tx_hash.0.into()),
+        )
+        .await
+        .context("failed to fetch all unprocessed settlements for transaction")?
+        .into_iter()
+        .map(|event| eth::SettlementEvent {
+            transaction: eth::TxId(primitive_types::H256(event.tx_hash.0)),
+            block: eth::BlockNo(event.block_number.try_into().unwrap_or_default()),
+            log_index: event.log_index.try_into().unwrap_or_default(),
+        })
+        .collect())
+    }
 }
 
 #[derive(prometheus_metric_storage::MetricStorage)]
