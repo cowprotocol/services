@@ -1,12 +1,13 @@
 use {
     super::{OnchainOrderCustomData, OnchainOrderParsing},
-    crate::database::events::meta_to_event_index,
+    crate::database::events::log_to_event_index,
+    alloy::rpc::types::Log,
     anyhow::{Context, Result, anyhow},
     contracts::{
         GPv2Settlement,
-        cowswap_onchain_orders::{
-            Event as ContractEvent,
-            event_data::OrderPlacement as ContractOrderPlacement,
+        alloy::CoWSwapOnchainOrders::CoWSwapOnchainOrders::{
+            CoWSwapOnchainOrdersEvents as ContractEvent,
+            OrderPlacement as ContractOrderPlacement,
         },
         deployment_block,
     },
@@ -18,7 +19,6 @@ use {
         onchain_broadcasted_orders::OnchainOrderPlacement,
         orders::{ExecutionTime, Interaction, Order},
     },
-    ethcontract::Event as EthContractEvent,
     ethrpc::{
         Web3,
         block_stream::{BlockNumberHash, block_number_to_block_number_hash},
@@ -51,14 +51,13 @@ pub struct EthFlowDataForDb {
 impl OnchainOrderParsing<EthFlowData, EthFlowDataForDb> for EthFlowOnchainOrderParser {
     fn parse_custom_event_data(
         &self,
-        contract_events: &[EthContractEvent<ContractEvent>],
+        contract_events: &[(ContractEvent, Log)],
     ) -> Result<Vec<(EventIndex, OnchainOrderCustomData<EthFlowData>)>> {
         contract_events
             .iter()
-            .filter_map(|EthContractEvent { data, meta }| {
-                let meta = match meta {
-                    Some(meta) => meta,
-                    None => return Some(Err(anyhow!("event without metadata"))),
+            .filter_map(|(data, log)| {
+                let Some(event_index) = log_to_event_index(log) else {
+                    return Some(Err(anyhow!("event without metadata")));
                 };
                 let event = match data {
                     ContractEvent::OrderPlacement(event) => event,
@@ -66,7 +65,7 @@ impl OnchainOrderParsing<EthFlowData, EthFlowDataForDb> for EthFlowOnchainOrderP
                 };
                 match convert_to_quote_id_and_user_valid_to(event) {
                     Ok((quote_id, user_valid_to)) => Some(Ok((
-                        meta_to_event_index(meta),
+                        event_index,
                         OnchainOrderCustomData {
                             quote_id,
                             additional_data: Some(EthFlowData { user_valid_to }),
@@ -141,10 +140,9 @@ impl OnchainOrderParsing<EthFlowData, EthFlowDataForDb> for EthFlowOnchainOrderP
 fn convert_to_quote_id_and_user_valid_to(
     order_placement: &ContractOrderPlacement,
 ) -> Result<(i64, u32)> {
-    let data = order_placement.data.0.as_slice();
-    anyhow::ensure!(data.len() == 12, "invalid data length");
-    let quote_id = i64::from_be_bytes(data[0..8].try_into().unwrap());
-    let user_valid_to = u32::from_be_bytes(data[8..12].try_into().unwrap());
+    anyhow::ensure!(order_placement.data.len() == 12, "invalid data length");
+    let quote_id = i64::from_be_bytes(order_placement.data[0..8].try_into().unwrap());
+    let user_valid_to = u32::from_be_bytes(order_placement.data[8..12].try_into().unwrap());
     Ok((quote_id, user_valid_to))
 }
 
@@ -288,17 +286,21 @@ async fn find_indexing_start_block(
 mod test {
     use {
         super::*,
-        ethcontract::{Bytes, EventMetadata, H160, U256},
+        alloy::primitives::{Address, U256},
+        contracts::alloy::CoWSwapOnchainOrders,
         model::order::{BuyTokenDestination, OrderKind, SellTokenSource},
     };
 
     #[test]
     pub fn test_convert_to_quote_id_and_user_valid_to() {
         let event_data = ContractOrderPlacement {
-            data: ethcontract::Bytes(vec![
-                0u8, 0u8, 3u8, 2u8, 0u8, 0u8, 1u8, 2u8, 0u8, 0u8, 1u8, 2u8,
-            ]),
-            ..Default::default()
+            data: vec![0u8, 0u8, 3u8, 2u8, 0u8, 0u8, 1u8, 2u8, 0u8, 0u8, 1u8, 2u8].into(),
+            sender: Default::default(),
+            order: Default::default(),
+            signature: CoWSwapOnchainOrders::ICoWSwapOnchainOrders::OnchainSignature {
+                scheme: 0,
+                data: Default::default(),
+            },
         };
         let expected_user_valid_to = 0x00_00_01_02;
         let expected_quote_id = 0x00_00_03_02_00_00_01_02;
@@ -309,63 +311,46 @@ mod test {
 
     #[test]
     pub fn parse_custom_event_data_filters_out_invalid_events() {
-        let sell_token = H160::from([1; 20]);
-        let buy_token = H160::from([2; 20]);
-        let receiver = H160::from([3; 20]);
-        let sender = H160::from([4; 20]);
-        let sell_amount = U256::from_dec_str("10").unwrap();
-        let buy_amount = U256::from_dec_str("11").unwrap();
-        let valid_to = 1u32;
-        let app_data = ethcontract::tokens::Bytes([5u8; 32]);
-        let fee_amount = U256::from_dec_str("12").unwrap();
-        let owner = H160::from([6; 20]);
         let order_placement = ContractOrderPlacement {
-            sender,
-            order: (
-                sell_token,
-                buy_token,
-                receiver,
-                sell_amount,
-                buy_amount,
-                valid_to,
-                app_data,
-                fee_amount,
-                Bytes(OrderKind::SELL),
-                true,
-                Bytes(SellTokenSource::ERC20),
-                Bytes(BuyTokenDestination::ERC20),
-            ),
-            signature: (0u8, Bytes(owner.as_ref().into())),
-            data: ethcontract::Bytes(vec![
-                0u8, 0u8, 1u8, 2u8, 0u8, 0u8, 1u8, 2u8, 0u8, 0u8, 1u8, 2u8,
-            ]),
+            sender: Address::from([4; 20]),
+            order: CoWSwapOnchainOrders::GPv2Order::Data {
+                sellToken: Address::from([1; 20]),
+                buyToken: Address::from([2; 20]),
+                receiver: Address::from([3; 20]),
+                sellAmount: U256::from(10),
+                buyAmount: U256::from(11),
+                validTo: 1,
+                appData: [5u8; 32].into(),
+                feeAmount: U256::from(12),
+                kind: OrderKind::SELL.into(),
+                partiallyFillable: true,
+                sellTokenBalance: SellTokenSource::ERC20.into(),
+                buyTokenBalance: BuyTokenDestination::ERC20.into(),
+            },
+            signature: CoWSwapOnchainOrders::ICoWSwapOnchainOrders::OnchainSignature {
+                scheme: 0,
+                data: [6; 20].into(),
+            },
+            data: vec![0u8, 0u8, 1u8, 2u8, 0u8, 0u8, 1u8, 2u8, 0u8, 0u8, 1u8, 2u8].into(),
         };
-        let event_data = EthContractEvent {
-            data: ContractEvent::OrderPlacement(order_placement.clone()),
-            meta: Some(EventMetadata {
-                block_number: 1,
-                log_index: 0usize,
-                ..Default::default()
-            }),
+        let event_data = ContractEvent::OrderPlacement(order_placement.clone());
+        let log = Log {
+            log_index: Some(0),
+            block_number: Some(1),
+            ..Default::default()
         };
+
         let ethflow_onchain_order_parser = EthFlowOnchainOrderParser {};
         let result = ethflow_onchain_order_parser
-            .parse_custom_event_data(vec![event_data].as_slice())
+            .parse_custom_event_data(vec![(event_data, log.clone())].as_slice())
             .unwrap();
         assert_eq!(result.len(), 1);
 
         let mut order_placement_2 = order_placement;
-        order_placement_2.data = Bytes(Vec::new()); // <- This will produce an error
-        let event_data = EthContractEvent {
-            data: ContractEvent::OrderPlacement(order_placement_2),
-            meta: Some(EventMetadata {
-                block_number: 1,
-                log_index: 0usize,
-                ..Default::default()
-            }),
-        };
+        order_placement_2.data = vec![].into(); // <- This will produce an error
+        let event_data = ContractEvent::OrderPlacement(order_placement_2);
         let result = ethflow_onchain_order_parser
-            .parse_custom_event_data(vec![event_data].as_slice())
+            .parse_custom_event_data(vec![(event_data, log)].as_slice())
             .unwrap();
         assert_eq!(result.len(), 0);
     }
