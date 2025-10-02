@@ -1,4 +1,7 @@
-name: Claude Code
+name: Claude Code Assistant
+
+# Triggers when @claude is mentioned in comments, issues, or PR reviews
+# Provides code analysis, answers questions, and helps with debugging
 
 on:
   issue_comment:
@@ -10,6 +13,13 @@ on:
   pull_request_review:
     types: [submitted]
 
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  id-token: write
+  actions: read
+
 jobs:
   claude:
     if: |
@@ -17,34 +27,71 @@ jobs:
       (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
       (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
       (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: read
-      issues: read
-      id-token: write
-      actions: read # Required for Claude to read CI results on PRs
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          fetch-depth: 0
 
-      - name: Run Claude Code
-        id: claude
+      - name: Run Claude Code Assistant
         uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ github.token }}
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          
-          # This is an optional setting that allows Claude to read CI results on PRs
+
           additional_permissions: |
             actions: read
 
-          # Optional: Give a custom prompt to Claude. If this is not specified, Claude will perform the instructions specified in the comment that tagged it.
-          # prompt: 'Update the pull request description to include a summary of changes.'
+          prompt: |
+            You are a helpful code assistant for the CoW Protocol services codebase.
 
-          # Optional: Add claude_args to customize behavior and configuration
-          # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
-          # or https://docs.claude.com/en/docs/claude-code/sdk#command-line for available options
-          # claude_args: '--model claude-opus-4-1-20250805 --allowed-tools Bash(gh pr:*)'
+            CONTEXT:
+            - Repository: ${{ github.repository }}
+            - Event: ${{ github.event_name }}
+            - Triggered by: @claude mention
+
+            YOUR TASK:
+            Respond to the user's request mentioned in their comment/issue. The user tagged you with @claude followed by their question or request.
+
+            CAPABILITIES:
+            1. **Code Analysis**: Examine code, explain logic, identify patterns
+            2. **Bug Investigation**: Help debug issues, suggest fixes
+            3. **Architecture Questions**: Explain system design, data flow, component interactions
+            4. **Best Practices**: Suggest Rust idioms, performance improvements
+            5. **Documentation**: Explain how things work based on CLAUDE.md and codebase
+
+            GUIDELINES:
+            - DO NOT modify PR/issue descriptions unless explicitly asked
+            - DO post comments with your analysis/answers
+            - Use CLAUDE.md for project conventions
+            - Reference specific files and line numbers when relevant (e.g., `path/to/file.rs:42`)
+            - For PRs: Can use `gh pr diff` to examine changes
+            - For issues: Can use `gh issue view` to get context
+            - Be concise but thorough
+            - Focus on being helpful and accurate
+
+            RESPONSE FORMAT:
+            Post your response as a comment using:
+            ```bash
+            gh pr comment <number> --body "your response"
+            # OR
+            gh issue comment <number> --body "your response"
+            ```
+
+            IMPORTANT RULES:
+            - DO NOT change any repository files
+            - DO NOT update PR/issue descriptions
+            - DO provide clear, actionable answers
+            - DO reference codebase patterns and conventions
+            - DO use code blocks for examples
+
+            Start by identifying what the user is asking for and respond appropriately.
+
+          claude_args: |
+            --model claude-sonnet-4-5-20250929
+            --allowedTools Read,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr comment:*),Bash(gh issue view:*),Bash(gh issue comment:*),Bash(gh run view:*)
 
