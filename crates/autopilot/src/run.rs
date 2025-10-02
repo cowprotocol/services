@@ -158,12 +158,16 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         .await
         .unwrap();
 
-    let db_read = Postgres::new(
-        args.db_read_url.unwrap_or(args.db_write_url).as_str(),
-        args.insert_batch_size,
-    )
-    .await
-    .unwrap();
+    let db_read = if let Some(db_read_url) = args.db_read_url
+        && args.db_write_url != db_read_url
+    {
+        Postgres::new(db_read_url.as_str(), args.insert_batch_size)
+            .await
+            .expect("failed to create read replica database")
+    } else {
+        db_write.clone()
+    };
+
     crate::database::run_database_metrics_work(db_read.clone());
 
     let http_factory = HttpClientFactory::new(&args.http_client);

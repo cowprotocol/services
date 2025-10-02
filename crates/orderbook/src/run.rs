@@ -168,8 +168,15 @@ pub async fn run(args: Arguments) {
     let domain_separator = DomainSeparator::new(chain_id, settlement_contract.address());
     let postgres_write =
         Postgres::try_new(args.db_write_url.as_str()).expect("failed to create database");
-    let postgres_read = Postgres::try_new(args.db_read_url.unwrap_or(args.db_write_url).as_str())
-        .expect("failed to create read replica database");
+
+    let postgres_read = if let Some(db_read_url) = args.db_read_url
+        && args.db_write_url != db_read_url
+    {
+        Postgres::try_new(db_read_url.as_str()).expect("failed to create read replica databaseR")
+    } else {
+        postgres_write.clone()
+    };
+
     let balance_fetcher = account_balances::fetcher(
         &web3,
         BalanceSimulator::new(
