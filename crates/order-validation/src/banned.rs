@@ -1,3 +1,9 @@
+//! Banned user detection for order validation.
+//!
+//! Checks if addresses are banned using a hardcoded list and optionally the
+//! Chainalysis Oracle on-chain registry. On-chain results are cached (1-hour
+//! expiry, LRU eviction) with background refresh every 60 seconds.
+
 use {
     alloy::primitives::Address,
     contracts::alloy::ChainalysisOracle,
@@ -149,6 +155,8 @@ impl Users {
     }
 
     /// Returns a subset of addresses from the input iterator which are banned.
+    ///
+    /// On cache-misses, it will use the Chainalysis oracle to fetch the users.
     pub async fn banned(&self, addresses: impl IntoIterator<Item = Address>) -> HashSet<Address> {
         let mut banned = HashSet::new();
 
@@ -204,7 +212,7 @@ impl Users {
                     is_banned.then(|| banned.insert(address));
                 }
                 Err(err) => {
-                    tracing::warn!(?err, ?address, "failed to fetch banned status",);
+                    tracing::warn!(?err, ?address, "failed to fetch banned status");
                 }
             }
         }
