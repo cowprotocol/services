@@ -387,6 +387,9 @@ impl Orderbook {
         Ok(())
     }
 
+    /// The app data may contain the `replaced_order` field, in that case we
+    /// need to fetch said order to cancel it before moving forward with the
+    /// current one.
     async fn get_replaced_order(
         &self,
         new_order: &OrderCreation,
