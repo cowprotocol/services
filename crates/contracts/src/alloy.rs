@@ -487,6 +487,15 @@ crate::bindings!(
     }
 );
 
+crate::bindings!(
+    ILiquoriceSettlement,
+    crate::deployments! {
+        // <https://liquorice.gitbook.io/liquorice-docs/links/smart-contracts>
+        MAINNET => address!("0x0448633eb8B0A42EfED924C42069E0DcF08fb552"),
+        ARBITRUM_ONE => address!("0x0448633eb8B0A42EfED924C42069E0DcF08fb552"),
+    }
+);
+
 pub mod support {
     // Support contracts used for trade and token simulations.
     crate::bindings!(AnyoneAuthenticator);
