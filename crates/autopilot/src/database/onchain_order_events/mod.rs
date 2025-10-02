@@ -241,13 +241,14 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
             }
             quote_id_hashmap.insert(*event_index, custom_onchain_data.quote_id);
         }
-        let mut events_and_quotes = Vec::new();
-        for (event, log) in order_placement_events {
-            if let Some(tx_hash) = log.transaction_hash
-                && let Some(event_index) = log_to_event_index(&log)
-                && let Some(quote_id) = quote_id_hashmap.get(&event_index)
-            {
-                events_and_quotes.push((
+        let events_and_quotes = order_placement_events
+            .into_iter()
+            .filter_map(|(event, log)| {
+                let tx_hash = log.transaction_hash?;
+                let event_index = log_to_event_index(&log)?;
+                let quote_id = quote_id_hashmap.get(&event_index)?;
+
+                Some((
                     event,
                     log,
                     // timestamp must be available, as otherwise, the
@@ -257,9 +258,9 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
                         .unwrap() as i64,
                     *quote_id,
                     tx_hash,
-                ));
-            }
-        }
+                ))
+            })
+            .collect::<Vec<_>>();
         let onchain_order_data = parse_general_onchain_order_placement_data(
             &*self.quoter,
             events_and_quotes,
