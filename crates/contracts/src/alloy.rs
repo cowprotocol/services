@@ -488,6 +488,7 @@ crate::bindings!(
 );
 crate::bindings!(CoWSwapOnchainOrders);
 
+// Used in the gnosis/solvers repo for the balancer solver
 crate::bindings!(
     BalancerQueries,
     crate::deployments! {
