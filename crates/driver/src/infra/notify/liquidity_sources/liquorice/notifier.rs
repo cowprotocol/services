@@ -150,13 +150,10 @@ mod utils {
         }
 
         // Decode the calldata using the Liquorice settlement contract ABI
-        let input = interaction
-            .call_data
-            .0
-            .strip_prefix(&ILiquoriceSettlement::ILiquoriceSettlement::settleSingleCall::SELECTOR)
-            .and_then(|input| {
-                ILiquoriceSettlement::ILiquoriceSettlement::settleSingleCall::abi_decode(input).ok()
-            })?;
+        let input = ILiquoriceSettlement::ILiquoriceSettlement::settleSingleCall::abi_decode(
+            &interaction.call_data.0,
+        )
+        .ok()?;
 
         Some(input._order.rfqId)
     }
