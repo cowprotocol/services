@@ -261,6 +261,13 @@ impl Orderbook {
         }
     }
 
+    /// Adds an order to the order book.
+    ///
+    /// 1. If the provided app data is an hash, retrieves it.
+    /// 2. Tries to get an order to replace, if the app data specifies one.
+    /// 3. Validates and constructs an order
+    /// 4. If the new order is to replace an old one, replaces it; otherwise,
+    ///    the new order is simply inserted in the database
     #[instrument(skip_all)]
     pub async fn add_order(
         &self,
@@ -418,6 +425,13 @@ impl Orderbook {
         Ok(None)
     }
 
+    /// Replaces the `old_order` with `validated_new_order` in the database
+    /// (cancels the old one and inserts the new one), but not before
+    /// performing some validations.
+    ///
+    /// 1. New order's signature cannot be a `PreSign` order
+    /// 2. Old and new order owners MUST match
+    /// 3. The old order can't be being bid on
     pub async fn replace_order(
         &self,
         validated_new_order: Order,
