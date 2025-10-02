@@ -2,56 +2,137 @@ name: Claude Code Review
 
 on:
   pull_request:
-    types: [opened, synchronize]
-    # Optional: Only run on specific file changes
-    # paths:
-    #   - "src/**/*.ts"
-    #   - "src/**/*.tsx"
-    #   - "src/**/*.js"
-    #   - "src/**/*.jsx"
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: read
+  id-token: write
+  actions: read
 
 jobs:
   claude-review:
-    # Optional: Filter by PR author
-    # if: |
-    #   github.event.pull_request.user.login == 'external-contributor' ||
-    #   github.event.pull_request.user.login == 'new-developer' ||
-    #   github.event.pull_request.author_association == 'FIRST_TIME_CONTRIBUTOR'
-    
+    if: github.event.pull_request.user.login == 'squadgazzz'
+
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: read
-      issues: read
-      id-token: write
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          fetch-depth: 0
 
       - name: Run Claude Code Review
-        id: claude-review
         uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ github.token }}
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: |
-            REPO: ${{ github.repository }}
+            REPOSITORY: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}
+            PR AUTHOR: ${{ github.event.pull_request.user.login }}
+            PR TITLE: ${{ github.event.pull_request.title }}
 
-            Please review this pull request and provide feedback on:
-            - Code quality and best practices
-            - Potential bugs or issues
-            - Performance considerations
-            - Security concerns
-            - Test coverage
-            
-            Use the repository's CLAUDE.md for guidance on style and conventions. Be constructive and helpful in your feedback.
+            You are a Rust code reviewer for the CoW Protocol services codebase.
 
-            Use `gh pr comment` with your Bash tool to leave your review as a comment on the PR.
-          
-          # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
-          # or https://docs.claude.com/en/docs/claude-code/sdk#command-line for available options
-          claude_args: '--allowed-tools "Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*)"'
+            TASK:
+            1. Generate a PR description if the PR body is empty
+            2. Review the PR diff and leave inline comments on problematic code
 
+            PART 1 - PR DESCRIPTION (only if PR body is empty):
+            Use `gh pr view ${{ github.event.pull_request.number }} --json body` to check if PR has a description.
+            If body is empty, generate and update PR description using:
+            ```
+            gh pr edit ${{ github.event.pull_request.number }} --body-file /dev/stdin <<'EOF'
+            ## Description
+            [High-level description of changes, background, and motivation]
+
+            ## Changes
+            - [List of specific changes made]
+            - [Each bullet should be a concrete change]
+
+            ## How to test
+            [How these changes should be tested. If no new tests were added, write "Existing tests"]
+
+            ## Related issues
+            <!-- Link related issues here, e.g., Fixes #123 -->
+            EOF
+            ```
+
+            PART 2 - CODE REVIEW:
+
+            REVIEW FOCUS (issues only, no positive feedback):
+            1. **Bugs & Logic Errors**: Race conditions, off-by-one errors, incorrect error handling, panic risks
+            2. **Non-Idiomatic Rust**: Unnecessary clones, missing iterators, improper lifetimes, unwrap() abuse
+            3. **Style Deviations**: Check CLAUDE.md for project conventions (alloy vs ethcontract patterns, RPC batching, quote system)
+            4. **Test Coverage**: Missing tests for new functionality, edge cases not covered
+            5. **Performance Issues**: Unnecessary allocations, blocking operations in async code
+            6. **Security Concerns**: Input validation, authorization checks, data exposure
+
+            REVIEW PROCESS:
+            1. Use `gh pr diff ${{ github.event.pull_request.number }}` to get the full diff
+            2. Analyze each changed file carefully for the issues above
+            3. Post a high-level summary comment first using:
+               ```
+               gh pr comment ${{ github.event.pull_request.number }} \
+                 --body-file /dev/stdin <<'EOF'
+               ## 🤖 Claude Code Review
+
+               **Summary**: [1-2 sentence overview of what this PR does]
+
+               **Files Changed**: [Count and brief categorization]
+
+               **Issues Found**: [Number of issues, or "None" if clean]
+               EOF
+               ```
+            4. For each problem found, leave an inline issue comment using:
+               ```
+               gh pr comment ${{ github.event.pull_request.number }} \
+                 --body-file /dev/stdin <<'EOF'
+               **[Issue Type]** Brief description
+
+               **File**: `path/to/file.rs:LINE`
+
+               **Problem**: Clear explanation of the issue
+
+               **Suggested Fix**:
+               ```rust
+               // Corrected code here
+               ```
+
+               **Why**: Explanation of why this is better
+               EOF
+               ```
+
+            CRITICAL RULES:
+            - DO NOT mention positive aspects or praise in issue comments
+            - DO include a high-level summary comment describing what the PR does
+            - DO NOT modify any repository files
+            - BE CONCISE: Issue comments should be 3-5 lines maximum
+            - ONLY comment on actual problems, not style preferences unless they deviate from CLAUDE.md
+            - For Rust-specific issues, suggest idiomatic alternatives
+            - Check that new features have corresponding tests
+
+            EXAMPLE COMMENT FORMAT:
+            ```
+            **[Bug]** Potential panic on empty vector
+
+            **File**: `crates/shared/src/foo.rs:42`
+
+            **Problem**: `quotes.first().unwrap()` will panic if quotes is empty
+
+            **Fix**:
+            ```rust
+            let quote = quotes.first().ok_or(Error::NoQuotes)?;
+            ```
+
+            **Why**: Graceful error handling instead of panic
+            ```
+
+            Start by fetching the PR diff and analyzing it systematically.
+
+          claude_args: |
+            --model claude-sonnet-4-5-20250929
+            --allowedTools Read,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr edit:*),Bash(gh pr comment:*)
