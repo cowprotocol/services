@@ -28,11 +28,7 @@ use {
     clap::Parser,
     contracts::{BalancerV2Vault, IUniswapV3Factory},
     ethcontract::{BlockNumber, H160, common::DeploymentInformation, errors::DeployError},
-    ethrpc::{
-        Web3,
-        alloy::conversions::IntoAlloy,
-        block_stream::block_number_to_block_number_hash,
-    },
+    ethrpc::{Web3, block_stream::block_number_to_block_number_hash},
     futures::StreamExt,
     model::DomainSeparator,
     num::ToPrimitive,
@@ -575,11 +571,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
             // events are already indexed by the OnchainOrderParser.
             AlloyEventRetriever(EthFlowRefundRetriever::new(
                 web3.clone(),
-                args.ethflow_contracts
-                    .iter()
-                    .cloned()
-                    .map(IntoAlloy::into_alloy)
-                    .collect(),
+                args.ethflow_contracts.clone(),
             )),
             db_write.clone(),
             block_retriever.clone(),
@@ -612,7 +604,10 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         let onchain_order_indexer = EventUpdater::new_skip_blocks_before(
             // The events from the ethflow contract are read with the more generic contract
             // interface called CoWSwapOnchainOrders.
-            CoWSwapOnchainOrdersContract::new(web3.clone(), args.ethflow_contracts),
+            AlloyEventRetriever(CoWSwapOnchainOrdersContract::new(
+                web3.clone(),
+                args.ethflow_contracts,
+            )),
             onchain_order_event_parser,
             block_retriever,
             ethflow_start_block,

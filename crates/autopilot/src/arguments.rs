@@ -43,7 +43,7 @@ pub struct Arguments {
     /// Support for multiple contract was added to support transition period for
     /// integrators when the migration of the eth-flow contract happens.
     #[clap(long, env, use_value_delimiter = true)]
-    pub ethflow_contracts: Vec<H160>,
+    pub ethflow_contracts: Vec<Address>,
 
     /// Timestamp at which we should start indexing eth-flow contract events.
     /// If there are already events in the database for a date later than this,

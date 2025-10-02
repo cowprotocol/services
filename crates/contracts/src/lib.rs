@@ -58,7 +58,6 @@ include_contracts! {
     CowAmmConstantProductFactory;
     CowAmmLegacyHelper;
     CowAmmUniswapV2PriceOracle;
-    CoWSwapOnchainOrders;
     CowProtocolToken;
     ERC1271SignatureValidator;
     ERC20;
