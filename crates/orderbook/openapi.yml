@@ -27,6 +27,14 @@ servers:
     url: "https://api.cow.fi/polygon"
   - description: Polygon (Staging)
     url: "https://barn.api.cow.fi/polygon"
+  - description: Lens (Prod)
+    url: "https://api.cow.fi/lens"
+  - description: Lens (Staging)
+    url: "https://barn.api.cow.fi/lens"
+  - description: BNB (Prod)
+    url: "https://api.cow.fi/bnb"
+  - description: BNB (Staging)
+    url: "https://barn.api.cow.fi/bnb"
   - description: Sepolia (Prod)
     url: "https://api.cow.fi/sepolia"
   - description: Sepolia (Staging)
