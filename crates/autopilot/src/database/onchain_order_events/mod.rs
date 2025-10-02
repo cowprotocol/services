@@ -2,21 +2,22 @@ pub mod ethflow_events;
 pub mod event_retriever;
 
 use {
-    super::{
-        Metrics as DatabaseMetrics,
-        Postgres,
-        events::{bytes_to_order_uid, meta_to_event_index},
+    super::{Metrics as DatabaseMetrics, Postgres, events::bytes_to_order_uid},
+    crate::database::events::log_to_event_index,
+    alloy::{
+        primitives::{Address, TxHash, U256},
+        rpc::types::Log,
     },
-    alloy::primitives::U256,
     anyhow::{Context, Result, anyhow, bail},
     app_data::AppDataHash,
     chrono::{TimeZone, Utc},
-    contracts::{
-        alloy::HooksTrampoline::{self, HooksTrampoline::Hook},
-        cowswap_onchain_orders::{
-            Event as ContractEvent,
-            event_data::{OrderInvalidation, OrderPlacement as ContractOrderPlacement},
+    contracts::alloy::{
+        CoWSwapOnchainOrders::CoWSwapOnchainOrders::{
+            CoWSwapOnchainOrdersEvents as ContractEvent,
+            OrderInvalidation,
+            OrderPlacement as ContractOrderPlacement,
         },
+        HooksTrampoline::{self, HooksTrampoline::Hook},
     },
     database::{
         PgTransaction,
@@ -25,10 +26,10 @@ use {
         onchain_broadcasted_orders::{OnchainOrderPlacement, OnchainOrderPlacementError},
         orders::{Order, OrderClass, insert_quotes},
     },
-    ethcontract::{Event as EthContractEvent, H160, TransactionHash},
+    ethcontract::H160,
     ethrpc::{
         Web3,
-        alloy::conversions::IntoAlloy,
+        alloy::conversions::{IntoAlloy, IntoLegacy},
         block_stream::{RangeInclusive, timestamp_of_block_in_seconds},
     },
     futures::{StreamExt, stream},
@@ -142,7 +143,7 @@ where
     // Errors that are unexpected / non-recoverable should be returned as errors
     fn parse_custom_event_data(
         &self,
-        contract_events: &[EthContractEvent<ContractEvent>],
+        contract_events: &[(ContractEvent, Log)],
     ) -> Result<Vec<(EventIndex, OnchainOrderCustomData<EventData>)>>;
 
     // This function allow to create the specific object that will be stored in
@@ -160,7 +161,7 @@ where
 pub(crate) const INDEX_NAME: &str = "onchain_orders";
 
 #[async_trait::async_trait]
-impl<T, W> EventStoring<EthContractEvent<ContractEvent>> for OnchainOrderParser<T, W>
+impl<T, W> EventStoring<(ContractEvent, Log)> for OnchainOrderParser<T, W>
 where
     T: Send + Sync + Clone,
     W: Send + Sync + Clone,
@@ -184,7 +185,7 @@ where
 
     async fn replace_events(
         &mut self,
-        events: Vec<EthContractEvent<ContractEvent>>,
+        events: Vec<(ContractEvent, Log)>,
         range: RangeInclusive<u64>,
     ) -> Result<()> {
         let _timer = DatabaseMetrics::get()
@@ -202,7 +203,7 @@ where
         Ok(())
     }
 
-    async fn append_events(&mut self, events: Vec<EthContractEvent<ContractEvent>>) -> Result<()> {
+    async fn append_events(&mut self, events: Vec<(ContractEvent, Log)>) -> Result<()> {
         let _timer = DatabaseMetrics::get()
             .database_queries
             .with_label_values(&["append_onchain_order_events"])
@@ -219,13 +220,13 @@ where
 impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
     async fn extract_custom_and_general_order_data(
         &self,
-        order_placement_events: Vec<EthContractEvent<ContractEvent>>,
+        order_placement_events: Vec<(ContractEvent, Log)>,
     ) -> Result<(
         Vec<W>,
         Vec<Option<database::orders::Quote>>,
         Vec<(database::events::EventIndex, OnchainOrderPlacement)>,
         Vec<Order>,
-        Vec<TransactionHash>,
+        Vec<TxHash>,
     )> {
         let block_number_timestamp_hashmap =
             get_block_numbers_of_events(&self.web3, &order_placement_events).await?;
@@ -240,26 +241,26 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
             }
             quote_id_hashmap.insert(*event_index, custom_onchain_data.quote_id);
         }
-        let mut events_and_quotes = Vec::new();
-        for event in order_placement_events.iter() {
-            let EthContractEvent { meta, .. } = event;
-            if let Some(meta) = meta {
-                let event_index = meta_to_event_index(meta);
-                let tx_hash = meta.transaction_hash;
-                if let Some(quote_id) = quote_id_hashmap.get(&event_index) {
-                    events_and_quotes.push((
-                        event.clone(),
-                        // timestamp must be available, as otherwise, the
-                        // function get_block_numbers_of_events would have errored
-                        *block_number_timestamp_hashmap
-                            .get(&(event_index.block_number as u64))
-                            .unwrap() as i64,
-                        *quote_id,
-                        tx_hash,
-                    ));
-                }
-            }
-        }
+        let events_and_quotes = order_placement_events
+            .into_iter()
+            .filter_map(|(event, log)| {
+                let tx_hash = log.transaction_hash?;
+                let event_index = log_to_event_index(&log)?;
+                let quote_id = quote_id_hashmap.get(&event_index)?;
+
+                Some((
+                    event,
+                    log,
+                    // timestamp must be available, as otherwise, the
+                    // function get_block_numbers_of_events would have errored
+                    *block_number_timestamp_hashmap
+                        .get(&(event_index.block_number as u64))
+                        .unwrap() as i64,
+                    *quote_id,
+                    tx_hash,
+                ))
+            })
+            .collect::<Vec<_>>();
         let onchain_order_data = parse_general_onchain_order_placement_data(
             &*self.quoter,
             events_and_quotes,
@@ -313,15 +314,13 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
 
     async fn insert_events(
         &self,
-        events: Vec<EthContractEvent<ContractEvent>>,
+        events: Vec<(ContractEvent, Log)>,
         transaction: &mut sqlx::Transaction<'static, sqlx::Postgres>,
     ) -> Result<()> {
         let order_placement_events = events
             .clone()
             .into_iter()
-            .filter(|EthContractEvent { data, .. }| {
-                matches!(data, ContractEvent::OrderPlacement(_))
-            })
+            .filter(|(event, _)| matches!(event, ContractEvent::OrderPlacement(_)))
             .collect();
         let invalidation_events = get_invalidation_events(events)?;
         let invalided_order_uids = extract_invalidated_order_uids(invalidation_events)?;
@@ -384,16 +383,13 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
 
 async fn get_block_numbers_of_events(
     web3: &Web3,
-    events: &[EthContractEvent<ContractEvent>],
+    events: &[(ContractEvent, Log)],
 ) -> Result<HashMap<u64, u32>> {
     let mut event_block_numbers: Vec<u64> = events
         .iter()
-        .map(|EthContractEvent { meta, .. }| {
-            let meta = match meta {
-                Some(meta) => meta,
-                None => return Err(anyhow!("event without metadata")),
-            };
-            Ok(meta.block_number)
+        .map(|(_, log)| {
+            log.block_number
+                .ok_or_else(|| anyhow!("event without metadata"))
         })
         .collect::<Result<Vec<u64>>>()?;
     event_block_numbers.dedup();
@@ -410,14 +406,13 @@ async fn get_block_numbers_of_events(
 }
 
 fn get_invalidation_events(
-    events: Vec<EthContractEvent<ContractEvent>>,
+    events: Vec<(ContractEvent, Log)>,
 ) -> Result<Vec<(EventIndex, OrderInvalidation)>> {
     events
         .into_iter()
-        .filter_map(|EthContractEvent { data, meta }| {
-            let meta = match meta {
-                Some(meta) => meta,
-                None => return Some(Err(anyhow!("invalidation event without metadata"))),
+        .filter_map(|(data, log)| {
+            let Some(event_index) = log_to_event_index(&log) else {
+                return Some(Err(anyhow!("invalidation event without metadata")));
             };
             let data = match data {
                 ContractEvent::OrderInvalidation(event) => event,
@@ -425,7 +420,7 @@ fn get_invalidation_events(
                     return None;
                 }
             };
-            Some(Ok((meta_to_event_index(&meta), data)))
+            Some(Ok((event_index, data)))
         })
         .collect()
 }
@@ -442,7 +437,7 @@ fn extract_invalidated_order_uids(
                 // enforces that the enough bytes are sent
                 // If the error happens anyways, we want to stop indexing and
                 // hence escalate the error
-                bytes_to_order_uid(invalidation.order_uid.0.as_slice())?,
+                bytes_to_order_uid(&invalidation.orderUid)?,
             ))
         })
         .collect()
@@ -453,28 +448,20 @@ type GeneralOnchainOrderPlacementData = (
     Option<database::orders::Quote>,
     OnchainOrderPlacement,
     Order,
-    TransactionHash,
+    TxHash,
 );
 async fn parse_general_onchain_order_placement_data(
     quoter: &'_ dyn OrderQuoting,
-    order_placement_events_and_quotes_zipped: Vec<(
-        EthContractEvent<ContractEvent>,
-        i64,
-        i64,
-        TransactionHash,
-    )>,
+    order_placement_events_and_quotes_zipped: Vec<(ContractEvent, Log, i64, i64, TxHash)>,
     domain_separator: DomainSeparator,
     settlement_contract: H160,
     metrics: &'static Metrics,
 ) -> Vec<GeneralOnchainOrderPlacementData> {
     let futures = order_placement_events_and_quotes_zipped.into_iter().map(
-        |(EthContractEvent { data, meta }, event_timestamp, quote_id, tx_hash)| async move {
-            let meta = match meta {
-                Some(meta) => meta,
-                None => {
-                    metrics.inc_onchain_order_errors("no_metadata");
-                    return Err(anyhow!("event without metadata"));
-                }
+        |(data, log, event_timestamp, quote_id, tx_hash)| async move {
+            let Some(event_index) = log_to_event_index(&log) else {
+                metrics.inc_onchain_order_errors("no_metadata");
+                return Err(anyhow!("event without metadata"));
             };
             let event = match data {
                 ContractEvent::OrderPlacement(event) => event,
@@ -499,7 +486,7 @@ async fn parse_general_onchain_order_placement_data(
                 order_data,
                 signing_scheme,
                 order_uid,
-                owner,
+                owner.into_legacy(),
                 settlement_contract,
                 metrics,
             );
@@ -525,13 +512,7 @@ async fn parse_general_onchain_order_placement_data(
                     None
                 }
             };
-            Ok((
-                meta_to_event_index(&meta),
-                quote,
-                order_data.0,
-                order_data.1,
-                tx_hash,
-            ))
+            Ok((event_index, quote, order_data.0, order_data.1, tx_hash))
         },
     );
     let onchain_order_placement_data: Vec<Result<GeneralOnchainOrderPlacementData>> =
@@ -637,7 +618,7 @@ fn convert_onchain_order_placement(
         fee_amount: u256_to_big_decimal(&order_data.fee_amount),
         kind: order_kind_into(order_data.kind),
         partially_fillable: order_data.partially_fillable,
-        signature: order_placement.signature.1.0.clone(),
+        signature: order_placement.signature.data.to_vec(),
         signing_scheme: signing_scheme_into(signing_scheme),
         settlement_contract: ByteArray(settlement_contract.0),
         sell_token_balance: sell_token_source_into(order_data.sell_token_balance),
@@ -650,7 +631,7 @@ fn convert_onchain_order_placement(
     };
     let onchain_order_placement_event = OnchainOrderPlacement {
         order_uid: ByteArray(order_uid.0),
-        sender: ByteArray(order_placement.sender.0),
+        sender: ByteArray(*order_placement.sender.0),
         placement_error: quote.err(),
     };
     (onchain_order_placement_event, order)
@@ -659,11 +640,11 @@ fn convert_onchain_order_placement(
 fn extract_order_data_from_onchain_order_placement_event(
     order_placement: &ContractOrderPlacement,
     domain_separator: DomainSeparator,
-) -> Result<(OrderData, H160, SigningScheme, OrderUid)> {
-    let (signing_scheme, owner) = match order_placement.signature.0 {
+) -> Result<(OrderData, Address, SigningScheme, OrderUid)> {
+    let (signing_scheme, owner) = match order_placement.signature.scheme {
         0 => (
             SigningScheme::Eip1271,
-            H160::from_slice(&order_placement.signature.1.0[..20]),
+            Address::from_slice(&order_placement.signature.data),
         ),
         1 => (SigningScheme::PreSign, order_placement.sender),
         // Signatures can only be 0 and 1 by definition in the smart contrac:
@@ -672,26 +653,30 @@ fn extract_order_data_from_onchain_order_placement_event(
         _ => bail!("unreachable state while parsing owner"),
     };
 
-    let receiver = match order_placement.order.2 {
-        H160(bytes) if bytes == [0u8; 20] => None,
+    let receiver = match order_placement.order.receiver {
+        Address(bytes) if bytes.0 == [0u8; 20] => None,
         receiver => Some(receiver),
     };
 
     let order_data = OrderData {
-        sell_token: order_placement.order.0,
-        buy_token: order_placement.order.1,
-        receiver,
-        sell_amount: order_placement.order.3,
-        buy_amount: order_placement.order.4,
-        valid_to: order_placement.order.5,
-        app_data: AppDataHash(order_placement.order.6.0),
-        fee_amount: order_placement.order.7,
-        kind: OrderKind::from_contract_bytes(order_placement.order.8.0)?,
-        partially_fillable: order_placement.order.9,
-        sell_token_balance: SellTokenSource::from_contract_bytes(order_placement.order.10.0)?,
-        buy_token_balance: BuyTokenDestination::from_contract_bytes(order_placement.order.11.0)?,
+        sell_token: order_placement.order.sellToken.into_legacy(),
+        buy_token: order_placement.order.buyToken.into_legacy(),
+        receiver: receiver.map(IntoLegacy::into_legacy),
+        sell_amount: order_placement.order.sellAmount.into_legacy(),
+        buy_amount: order_placement.order.buyAmount.into_legacy(),
+        valid_to: order_placement.order.validTo,
+        app_data: AppDataHash(order_placement.order.appData.0),
+        fee_amount: order_placement.order.feeAmount.into_legacy(),
+        kind: OrderKind::from_contract_bytes(order_placement.order.kind.0)?,
+        partially_fillable: order_placement.order.partiallyFillable,
+        sell_token_balance: SellTokenSource::from_contract_bytes(
+            order_placement.order.sellTokenBalance.0,
+        )?,
+        buy_token_balance: BuyTokenDestination::from_contract_bytes(
+            order_placement.order.buyTokenBalance.0,
+        )?,
     };
-    let order_uid = order_data.uid(&domain_separator, &owner);
+    let order_uid = order_data.uid(&domain_separator, &owner.into_legacy());
     Ok((order_data, owner, signing_scheme, order_uid))
 }
 
@@ -790,15 +775,15 @@ impl Metrics {
 
 #[cfg(test)]
 mod test {
+    #![allow(non_snake_case)]
+
     use {
         super::*,
         crate::database::Config,
-        contracts::{
-            alloy::InstanceExt,
-            cowswap_onchain_orders::event_data::OrderPlacement as ContractOrderPlacement,
-        },
+        alloy::primitives::U256,
+        contracts::alloy::{CoWSwapOnchainOrders, InstanceExt},
         database::{byte_array::ByteArray, onchain_broadcasted_orders::OnchainOrderPlacement},
-        ethcontract::{Bytes, EventMetadata, H160, U256},
+        ethcontract::H160,
         ethrpc::Web3,
         model::{
             DomainSeparator,
@@ -822,34 +807,43 @@ mod test {
 
     #[test]
     fn test_extract_order_data_from_onchain_order_placement_event() {
-        let sell_token = H160::from([1; 20]);
-        let buy_token = H160::from([2; 20]);
-        let receiver = H160::from([3; 20]);
-        let sender = H160::from([4; 20]);
-        let sell_amount = U256::from_dec_str("10").unwrap();
-        let buy_amount = U256::from_dec_str("11").unwrap();
-        let valid_to = 1u32;
-        let app_data = ethcontract::tokens::Bytes([5u8; 32]);
-        let fee_amount = U256::from_dec_str("12").unwrap();
-        let owner = H160::from([6; 20]);
+        let sender = Address::from([4; 20]);
+        let owner = Address::from([6; 20]);
+
+        let sellToken = Address::from([1; 20]);
+        let buyToken = Address::from([2; 20]);
+        let receiver = Address::from([3; 20]);
+        let sellAmount = U256::from(10);
+        let buyAmount = U256::from(11);
+        let validTo = 1;
+        let appData = [5u8; 32].into();
+        let feeAmount = U256::from(12);
+        let kind = OrderKind::SELL.into();
+        let partiallyFillable = true;
+        let sellTokenBalance = SellTokenSource::ERC20.into();
+        let buyTokenBalance = BuyTokenDestination::ERC20.into();
+
         let order_placement = ContractOrderPlacement {
-            sender,
-            order: (
-                sell_token,
-                buy_token,
+            sender: Address::from([4; 20]),
+            order: CoWSwapOnchainOrders::GPv2Order::Data {
+                sellToken,
+                buyToken,
                 receiver,
-                sell_amount,
-                buy_amount,
-                valid_to,
-                app_data,
-                fee_amount,
-                Bytes(OrderKind::SELL),
-                true,
-                Bytes(SellTokenSource::ERC20),
-                Bytes(BuyTokenDestination::ERC20),
-            ),
-            signature: (0u8, Bytes(owner.as_ref().into())),
-            ..Default::default()
+                sellAmount,
+                buyAmount,
+                validTo,
+                appData,
+                feeAmount,
+                kind,
+                partiallyFillable,
+                sellTokenBalance,
+                buyTokenBalance,
+            },
+            signature: CoWSwapOnchainOrders::ICoWSwapOnchainOrders::OnchainSignature {
+                scheme: 0,
+                data: owner.0.into(),
+            },
+            data: vec![0u8, 0u8, 1u8, 2u8, 0u8, 0u8, 1u8, 2u8, 0u8, 0u8, 1u8, 2u8].into(),
         };
         let domain_separator = DomainSeparator([7u8; 32]);
         let (order_data, owner, signing_scheme, order_uid) =
@@ -859,45 +853,49 @@ mod test {
             )
             .unwrap();
         let expected_order_data = OrderData {
-            sell_token,
-            buy_token,
-            receiver: Some(receiver),
-            sell_amount,
-            buy_amount,
-            valid_to,
-            app_data: AppDataHash(app_data.0),
-            fee_amount,
+            sell_token: sellToken.into_legacy(),
+            buy_token: buyToken.into_legacy(),
+            receiver: Some(receiver.into_legacy()),
+            sell_amount: sellAmount.into_legacy(),
+            buy_amount: buyAmount.into_legacy(),
+            valid_to: validTo,
+            app_data: AppDataHash(appData.0),
+            fee_amount: feeAmount.into_legacy(),
             kind: OrderKind::Sell,
-            partially_fillable: order_placement.order.9,
+            partially_fillable: order_placement.order.partiallyFillable,
             sell_token_balance: SellTokenSource::Erc20,
             buy_token_balance: BuyTokenDestination::Erc20,
         };
-        let expected_uid = expected_order_data.uid(&domain_separator, &owner);
+        let expected_uid = expected_order_data.uid(&domain_separator, &owner.into_legacy());
         assert_eq!(sender, order_placement.sender);
         assert_eq!(signing_scheme, SigningScheme::Eip1271);
         assert_eq!(order_data, expected_order_data);
         assert_eq!(expected_uid, order_uid);
 
-        let receiver = H160::zero();
+        let receiver = Address::ZERO;
         let order_placement = ContractOrderPlacement {
-            sender,
-            order: (
-                sell_token,
-                buy_token,
+            sender: Address::from([4; 20]),
+            order: CoWSwapOnchainOrders::GPv2Order::Data {
+                sellToken,
+                buyToken,
                 receiver,
-                sell_amount,
-                buy_amount,
-                valid_to,
-                app_data,
-                fee_amount,
-                Bytes(OrderKind::SELL),
-                true,
-                Bytes(SellTokenSource::ERC20),
-                Bytes(BuyTokenDestination::ERC20),
-            ),
-            signature: (1u8, Bytes(owner.as_ref().into())),
-            ..Default::default()
+                sellAmount,
+                buyAmount,
+                validTo,
+                appData,
+                feeAmount,
+                kind,
+                partiallyFillable,
+                sellTokenBalance,
+                buyTokenBalance,
+            },
+            signature: CoWSwapOnchainOrders::ICoWSwapOnchainOrders::OnchainSignature {
+                scheme: 1,
+                data: owner.0.into(),
+            },
+            data: vec![0u8, 0u8, 1u8, 2u8, 0u8, 0u8, 1u8, 2u8, 0u8, 0u8, 1u8, 2u8].into(),
         };
+
         let (order_data, owner, signing_scheme, _) =
             extract_order_data_from_onchain_order_placement_event(
                 &order_placement,
@@ -905,16 +903,16 @@ mod test {
             )
             .unwrap();
         let expected_order_data = OrderData {
-            sell_token,
-            buy_token,
+            sell_token: sellToken.into_legacy(),
+            buy_token: buyToken.into_legacy(),
             receiver: None,
-            sell_amount,
-            buy_amount,
-            valid_to,
-            app_data: AppDataHash(app_data.0),
-            fee_amount,
+            sell_amount: sellAmount.into_legacy(),
+            buy_amount: buyAmount.into_legacy(),
+            valid_to: validTo,
+            app_data: AppDataHash(appData.0),
+            fee_amount: feeAmount.into_legacy(),
             kind: OrderKind::Sell,
-            partially_fillable: order_placement.order.9,
+            partially_fillable: order_placement.order.partiallyFillable,
             sell_token_balance: SellTokenSource::Erc20,
             buy_token_balance: BuyTokenDestination::Erc20,
         };
@@ -925,48 +923,54 @@ mod test {
 
     #[test]
     fn test_convert_onchain_order_placement() {
-        let sell_token = H160::from([1; 20]);
-        let buy_token = H160::from([2; 20]);
-        let receiver = H160::from([3; 20]);
-        let sender = H160::from([4; 20]);
-        let sell_amount = U256::from_dec_str("10").unwrap();
-        let buy_amount = U256::from_dec_str("11").unwrap();
+        let sell_token = Address::from([1; 20]);
+        let buy_token = Address::from([2; 20]);
+        let receiver = Address::from([3; 20]);
+        let sender = Address::from([4; 20]);
+        let sell_amount = U256::from(10);
+        let buy_amount = U256::from(11);
         let valid_to = 1u32;
-        let app_data = ethcontract::tokens::Bytes([11u8; 32]);
-        let fee_amount = U256::from_dec_str("12").unwrap();
-        let owner = H160::from([5; 20]);
+        let app_data = [11u8; 32];
+        let fee_amount = U256::from(12);
+        let owner = Address::from([5; 20]);
+
         let order_data = OrderData {
-            sell_token,
-            buy_token,
-            receiver: Some(receiver),
-            sell_amount,
-            buy_amount,
+            sell_token: sell_token.into_legacy(),
+            buy_token: buy_token.into_legacy(),
+            receiver: Some(receiver.into_legacy()),
+            sell_amount: sell_amount.into_legacy(),
+            buy_amount: buy_amount.into_legacy(),
             valid_to,
-            app_data: AppDataHash(app_data.0),
-            fee_amount,
+            app_data: AppDataHash(app_data),
+            fee_amount: fee_amount.into_legacy(),
             kind: OrderKind::Sell,
             partially_fillable: false,
             sell_token_balance: SellTokenSource::Erc20,
             buy_token_balance: BuyTokenDestination::Erc20,
         };
+
         let order_placement = ContractOrderPlacement {
             sender,
-            order: (
-                sell_token,
-                buy_token,
+            order: contracts::alloy::CoWSwapOnchainOrders::GPv2Order::Data {
+                sellToken: sell_token,
+                buyToken: buy_token,
                 receiver,
-                sell_amount,
-                buy_amount,
-                valid_to,
-                app_data,
-                fee_amount,
-                Bytes(OrderKind::SELL),
-                false,
-                Bytes(SellTokenSource::ERC20),
-                Bytes(BuyTokenDestination::ERC20),
-            ),
-            signature: (0u8, Bytes(owner.as_ref().into())),
-            ..Default::default()
+                sellAmount: sell_amount,
+                buyAmount: buy_amount,
+                validTo: valid_to,
+                appData: app_data.into(),
+                feeAmount: fee_amount,
+                kind: OrderKind::SELL.into(),
+                partiallyFillable: false,
+                sellTokenBalance: SellTokenSource::ERC20.into(),
+                buyTokenBalance: BuyTokenDestination::ERC20.into(),
+            },
+            signature:
+                contracts::alloy::CoWSwapOnchainOrders::ICoWSwapOnchainOrders::OnchainSignature {
+                    scheme: 0,
+                    data: owner.0.into(),
+                },
+            data: Default::default(),
         };
         let settlement_contract = H160::from([8u8; 20]);
         let quote = Quote::default();
@@ -980,32 +984,32 @@ mod test {
             order_data,
             signing_scheme,
             order_uid,
-            owner,
+            owner.into_legacy(),
             settlement_contract,
             Metrics::get(),
         );
         let expected_order_data = OrderData {
-            sell_token,
-            buy_token,
-            receiver: Some(receiver),
-            sell_amount,
-            buy_amount,
+            sell_token: sell_token.into_legacy(),
+            buy_token: buy_token.into_legacy(),
+            receiver: Some(receiver.into_legacy()),
+            sell_amount: sell_amount.into_legacy(),
+            buy_amount: buy_amount.into_legacy(),
             valid_to,
-            app_data: AppDataHash(app_data.0),
-            fee_amount,
+            app_data: AppDataHash(app_data),
+            fee_amount: fee_amount.into_legacy(),
             kind: OrderKind::Sell,
-            partially_fillable: order_placement.order.9,
+            partially_fillable: order_placement.order.partiallyFillable,
             sell_token_balance: SellTokenSource::Erc20,
             buy_token_balance: BuyTokenDestination::Erc20,
         };
         let expected_onchain_order_placement = OnchainOrderPlacement {
             order_uid: ByteArray(order_uid.0),
-            sender: ByteArray(order_placement.sender.0),
+            sender: ByteArray(order_placement.sender.0.0),
             placement_error: None,
         };
         let expected_order = database::orders::Order {
             uid: ByteArray(order_uid.0),
-            owner: ByteArray(owner.0),
+            owner: ByteArray(owner.into_legacy().0),
             creation_timestamp: order.creation_timestamp, /* Using the actual result to keep test
                                                            * simple */
             sell_token: ByteArray(expected_order_data.sell_token.0),
@@ -1019,7 +1023,7 @@ mod test {
             kind: order_kind_into(expected_order_data.kind),
             class: OrderClass::Market,
             partially_fillable: expected_order_data.partially_fillable,
-            signature: order_placement.signature.1.0,
+            signature: order_placement.signature.data.to_vec(),
             signing_scheme: signing_scheme_into(SigningScheme::Eip1271),
             settlement_contract: ByteArray(settlement_contract.0),
             sell_token_balance: sell_token_source_into(expected_order_data.sell_token_balance),
@@ -1032,25 +1036,25 @@ mod test {
 
     #[test]
     fn test_convert_onchain_limit_order_placement() {
-        let sell_token = H160::from([1; 20]);
-        let buy_token = H160::from([2; 20]);
-        let receiver = H160::from([3; 20]);
-        let sender = H160::from([4; 20]);
-        let sell_amount = U256::from_dec_str("10").unwrap();
-        let buy_amount = U256::from_dec_str("11").unwrap();
+        let sell_token = Address::from([1; 20]);
+        let buy_token = Address::from([2; 20]);
+        let receiver = Address::from([3; 20]);
+        let sender = Address::from([4; 20]);
+        let sell_amount = U256::from(10);
+        let buy_amount = U256::from(11);
         let valid_to = 1u32;
-        let app_data = ethcontract::tokens::Bytes([11u8; 32]);
-        let fee_amount = U256::from_dec_str("0").unwrap();
-        let owner = H160::from([5; 20]);
+        let app_data = [11u8; 32];
+        let fee_amount = U256::from(0);
+        let owner = Address::from([5; 20]);
         let order_data = OrderData {
-            sell_token,
-            buy_token,
-            receiver: Some(receiver),
-            sell_amount,
-            buy_amount,
+            sell_token: sell_token.into_legacy(),
+            buy_token: buy_token.into_legacy(),
+            receiver: Some(receiver.into_legacy()),
+            sell_amount: sell_amount.into_legacy(),
+            buy_amount: buy_amount.into_legacy(),
             valid_to,
-            app_data: AppDataHash(app_data.0),
-            fee_amount,
+            app_data: AppDataHash(app_data),
+            fee_amount: fee_amount.into_legacy(),
             kind: OrderKind::Sell,
             partially_fillable: false,
             sell_token_balance: SellTokenSource::Erc20,
@@ -1058,27 +1062,31 @@ mod test {
         };
         let order_placement = ContractOrderPlacement {
             sender,
-            order: (
-                sell_token,
-                buy_token,
+            order: contracts::alloy::CoWSwapOnchainOrders::GPv2Order::Data {
+                sellToken: sell_token,
+                buyToken: buy_token,
                 receiver,
-                sell_amount,
-                buy_amount,
-                valid_to,
-                app_data,
-                fee_amount,
-                Bytes(OrderKind::SELL),
-                false,
-                Bytes(SellTokenSource::ERC20),
-                Bytes(BuyTokenDestination::ERC20),
-            ),
-            signature: (0u8, Bytes(owner.as_ref().into())),
-            ..Default::default()
+                sellAmount: sell_amount,
+                buyAmount: buy_amount,
+                validTo: valid_to,
+                appData: app_data.into(),
+                feeAmount: fee_amount,
+                kind: OrderKind::SELL.into(),
+                partiallyFillable: false,
+                sellTokenBalance: SellTokenSource::ERC20.into(),
+                buyTokenBalance: BuyTokenDestination::ERC20.into(),
+            },
+            signature:
+                contracts::alloy::CoWSwapOnchainOrders::ICoWSwapOnchainOrders::OnchainSignature {
+                    scheme: 0,
+                    data: owner.0.into(),
+                },
+            data: Default::default(),
         };
         let settlement_contract = H160::from([8u8; 20]);
         let quote = Quote {
-            sell_amount,
-            buy_amount: buy_amount / 2,
+            sell_amount: sell_amount.into_legacy(),
+            buy_amount: (buy_amount / U256::from(2)).into_legacy(),
             ..Default::default()
         };
         let order_uid = OrderUid([9u8; 56]);
@@ -1090,32 +1098,32 @@ mod test {
             order_data,
             signing_scheme,
             order_uid,
-            owner,
+            owner.into_legacy(),
             settlement_contract,
             Metrics::get(),
         );
         let expected_order_data = OrderData {
-            sell_token,
-            buy_token,
-            receiver: Some(receiver),
-            sell_amount,
-            buy_amount,
+            sell_token: sell_token.into_legacy(),
+            buy_token: buy_token.into_legacy(),
+            receiver: Some(receiver.into_legacy()),
+            sell_amount: sell_amount.into_legacy(),
+            buy_amount: buy_amount.into_legacy(),
             valid_to,
-            app_data: AppDataHash(app_data.0),
+            app_data: AppDataHash(app_data),
             fee_amount: 0.into(),
             kind: OrderKind::Sell,
-            partially_fillable: order_placement.order.9,
+            partially_fillable: order_placement.order.partiallyFillable,
             sell_token_balance: SellTokenSource::Erc20,
             buy_token_balance: BuyTokenDestination::Erc20,
         };
         let expected_onchain_order_placement = OnchainOrderPlacement {
             order_uid: ByteArray(order_uid.0),
-            sender: ByteArray(order_placement.sender.0),
+            sender: ByteArray(order_placement.sender.0.0),
             placement_error: None,
         };
         let expected_order = database::orders::Order {
             uid: ByteArray(order_uid.0),
-            owner: ByteArray(owner.0),
+            owner: ByteArray(owner.into_legacy().0),
             creation_timestamp: order.creation_timestamp, /* Using the actual result to keep test
                                                            * simple */
             sell_token: ByteArray(expected_order_data.sell_token.0),
@@ -1125,11 +1133,11 @@ mod test {
             buy_amount: u256_to_big_decimal(&expected_order_data.buy_amount),
             valid_to: expected_order_data.valid_to as i64,
             app_data: ByteArray(expected_order_data.app_data.0),
-            fee_amount: u256_to_big_decimal(&fee_amount),
+            fee_amount: u256_to_big_decimal(&fee_amount.into_legacy()),
             kind: order_kind_into(expected_order_data.kind),
             class: OrderClass::Limit,
             partially_fillable: expected_order_data.partially_fillable,
-            signature: order_placement.signature.1.0,
+            signature: order_placement.signature.data.to_vec(),
             signing_scheme: signing_scheme_into(SigningScheme::Eip1271),
             settlement_contract: ByteArray(settlement_contract.0),
             sell_token_balance: sell_token_source_into(expected_order_data.sell_token_balance),
@@ -1143,67 +1151,68 @@ mod test {
     #[ignore]
     #[tokio::test]
     async fn extract_custom_and_general_order_data_matches_quotes_with_correct_events() {
-        let sell_token = H160::from([1; 20]);
-        let buy_token = H160::from([2; 20]);
-        let receiver = H160::from([3; 20]);
-        let sender = H160::from([4; 20]);
-        let sell_amount = U256::from_dec_str("10").unwrap();
-        let buy_amount = U256::from_dec_str("11").unwrap();
+        let sell_token = Address::from([1; 20]);
+        let buy_token = Address::from([2; 20]);
+        let receiver = Address::from([3; 20]);
+        let sender = Address::from([4; 20]);
+        let sell_amount = U256::from(10);
+        let buy_amount = U256::from(11);
         let valid_to = 1u32;
-        let app_data = ethcontract::tokens::Bytes([5u8; 32]);
-        let fee_amount = U256::from_dec_str("12").unwrap();
-        let owner = H160::from([6; 20]);
+        let app_data = [5u8; 32];
+        let fee_amount = U256::from(12);
+        let owner = Address::from([6; 20]);
         let order_placement = ContractOrderPlacement {
             sender,
-            order: (
-                sell_token,
-                buy_token,
+            order: contracts::alloy::CoWSwapOnchainOrders::GPv2Order::Data {
+                sellToken: sell_token,
+                buyToken: buy_token,
                 receiver,
-                sell_amount,
-                buy_amount,
-                valid_to,
-                app_data,
-                fee_amount,
-                Bytes(OrderKind::SELL),
-                true,
-                Bytes(SellTokenSource::ERC20),
-                Bytes(BuyTokenDestination::ERC20),
-            ),
-            signature: (0u8, Bytes(owner.as_ref().into())),
-            data: ethcontract::Bytes(vec![
-                0u8, 0u8, 1u8, 2u8, 0u8, 0u8, 1u8, 2u8, 0u8, 0u8, 1u8, 2u8,
-            ]),
+                sellAmount: sell_amount,
+                buyAmount: buy_amount,
+                validTo: valid_to,
+                appData: app_data.into(),
+                feeAmount: fee_amount,
+                kind: OrderKind::SELL.into(),
+                partiallyFillable: true,
+                sellTokenBalance: SellTokenSource::ERC20.into(),
+                buyTokenBalance: BuyTokenDestination::ERC20.into(),
+            },
+            signature:
+                contracts::alloy::CoWSwapOnchainOrders::ICoWSwapOnchainOrders::OnchainSignature {
+                    scheme: 0,
+                    data: owner.0.into(),
+                },
+            data: vec![0u8, 0u8, 1u8, 2u8, 0u8, 0u8, 1u8, 2u8, 0u8, 0u8, 1u8, 2u8].into(),
         };
 
-        let event_data_1 = EthContractEvent {
-            data: ContractEvent::OrderPlacement(order_placement.clone()),
-            meta: Some(EventMetadata {
-                block_number: 1,
-                log_index: 0usize,
-                ..Default::default()
-            }),
+        let log_1 = Log {
+            block_number: Some(1),
+            log_index: Some(0),
+            ..Default::default()
+        };
+        let event_data_1 = ContractEvent::OrderPlacement(order_placement.clone());
+        let log_2 = Log {
+            block_number: Some(3),
+            log_index: Some(0),
+            ..Default::default()
         };
         let mut order_placement_2 = order_placement.clone();
         // With the following operation, we will create an invalid event data, and hence
         // the whole event parsing process will produce an error for this event.
-        order_placement_2.data = Bytes(Vec::new());
-        let event_data_2 = EthContractEvent {
-            data: ContractEvent::OrderPlacement(order_placement_2),
-            meta: Some(EventMetadata {
-                block_number: 3,
-                log_index: 0usize,
-                ..Default::default()
-            }),
-        };
+        order_placement_2.data = vec![].into();
+        let event_data_2 = ContractEvent::OrderPlacement(order_placement_2);
         let domain_separator = DomainSeparator([7u8; 32]);
         let mut order_quoter = MockOrderQuoting::new();
         let quote = Quote {
             id: Some(0i64),
             data: QuoteData {
-                sell_token,
-                buy_token,
-                quoted_sell_amount: sell_amount.checked_sub(1.into()).unwrap(),
-                quoted_buy_amount: buy_amount.checked_sub(1.into()).unwrap(),
+                sell_token: sell_token.into_legacy(),
+                buy_token: buy_token.into_legacy(),
+                quoted_sell_amount: sell_amount
+                    .checked_sub(U256::from(1))
+                    .unwrap()
+                    .into_legacy(),
+                quoted_buy_amount: buy_amount.checked_sub(U256::from(1)).unwrap().into_legacy(),
                 fee_parameters: FeeParameters {
                     gas_amount: 2.0f64,
                     gas_price: 3.0f64,
@@ -1211,9 +1220,9 @@ mod test {
                 },
                 ..Default::default()
             },
-            sell_amount,
-            buy_amount,
-            fee_amount,
+            sell_amount: sell_amount.into_legacy(),
+            buy_amount: buy_amount.into_legacy(),
+            fee_amount: fee_amount.into_legacy(),
         };
         let cloned_quote = quote.clone();
         order_quoter
@@ -1259,24 +1268,27 @@ mod test {
             metrics: Metrics::get(),
         };
         let result = onchain_order_parser
-            .extract_custom_and_general_order_data(vec![event_data_1.clone(), event_data_2.clone()])
+            .extract_custom_and_general_order_data(vec![
+                (event_data_1, log_1),
+                (event_data_2, log_2),
+            ])
             .await
             .unwrap();
         let expected_order_data = OrderData {
-            sell_token,
-            buy_token,
-            receiver: Some(receiver),
-            sell_amount,
-            buy_amount,
+            sell_token: sell_token.into_legacy(),
+            buy_token: buy_token.into_legacy(),
+            receiver: Some(receiver.into_legacy()),
+            sell_amount: sell_amount.into_legacy(),
+            buy_amount: buy_amount.into_legacy(),
             valid_to,
-            app_data: AppDataHash(app_data.0),
-            fee_amount,
+            app_data: AppDataHash(app_data),
+            fee_amount: fee_amount.into_legacy(),
             kind: OrderKind::Sell,
-            partially_fillable: order_placement.order.9,
+            partially_fillable: order_placement.order.partiallyFillable,
             sell_token_balance: SellTokenSource::Erc20,
             buy_token_balance: BuyTokenDestination::Erc20,
         };
-        let expected_uid = expected_order_data.uid(&domain_separator, &owner);
+        let expected_uid = expected_order_data.uid(&domain_separator, &owner.into_legacy());
         let expected_event_index = EventIndex {
             block_number: 1,
             log_index: 0,
@@ -1299,7 +1311,7 @@ mod test {
                 expected_event_index,
                 OnchainOrderPlacement {
                     order_uid: ByteArray(expected_uid.0),
-                    sender: ByteArray(sender.0),
+                    sender: ByteArray(sender.0.0),
                     placement_error: None,
                 },
             )]
