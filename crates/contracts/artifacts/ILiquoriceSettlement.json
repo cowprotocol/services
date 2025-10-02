@@ -1,0 +1,1078 @@
+{
+  "abi": [
+    {
+      "type": "function",
+      "name": "AUTHENTICATOR",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "address",
+          "internalType": "contract IAllowListAuthentication"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "BALANCE_MANAGER",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "address",
+          "internalType": "contract IBalanceManager"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "REPOSITORY",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "address",
+          "internalType": "contract IRepository"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "isValidSignature",
+      "inputs": [
+        {
+          "name": "_hash",
+          "type": "bytes32",
+          "internalType": "bytes32"
+        },
+        {
+          "name": "_signature",
+          "type": "bytes",
+          "internalType": "bytes"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "",
+          "type": "bytes4",
+          "internalType": "bytes4"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "settle",
+      "inputs": [
+        {
+          "name": "_signer",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "_filledTakerAmount",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "_order",
+          "type": "tuple",
+          "internalType": "struct ILiquoriceSettlement.Order",
+          "components": [
+            {
+              "name": "market",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "chainId",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "rfqId",
+              "type": "string",
+              "internalType": "string"
+            },
+            {
+              "name": "nonce",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "trader",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "effectiveTrader",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "quoteExpiry",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "recipient",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "minFillAmount",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "baseTokenData",
+              "type": "tuple",
+              "internalType": "struct ILiquoriceSettlement.BaseTokenData",
+              "components": [
+                {
+                  "name": "addr",
+                  "type": "address",
+                  "internalType": "address"
+                },
+                {
+                  "name": "amount",
+                  "type": "uint256",
+                  "internalType": "uint256"
+                },
+                {
+                  "name": "toRecipient",
+                  "type": "uint256",
+                  "internalType": "uint256"
+                },
+                {
+                  "name": "toRepay",
+                  "type": "uint256",
+                  "internalType": "uint256"
+                },
+                {
+                  "name": "toSupply",
+                  "type": "uint256",
+                  "internalType": "uint256"
+                }
+              ]
+            },
+            {
+              "name": "quoteTokenData",
+              "type": "tuple",
+              "internalType": "struct ILiquoriceSettlement.QuoteTokenData",
+              "components": [
+                {
+                  "name": "addr",
+                  "type": "address",
+                  "internalType": "address"
+                },
+                {
+                  "name": "amount",
+                  "type": "uint256",
+                  "internalType": "uint256"
+                },
+                {
+                  "name": "toTrader",
+                  "type": "uint256",
+                  "internalType": "uint256"
+                },
+                {
+                  "name": "toWithdraw",
+                  "type": "uint256",
+                  "internalType": "uint256"
+                },
+                {
+                  "name": "toBorrow",
+                  "type": "uint256",
+                  "internalType": "uint256"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "_interactions",
+          "type": "tuple[]",
+          "internalType": "struct GPv2Interaction.Data[]",
+          "components": [
+            {
+              "name": "target",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "value",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "callData",
+              "type": "bytes",
+              "internalType": "bytes"
+            }
+          ]
+        },
+        {
+          "name": "_hooks",
+          "type": "tuple",
+          "internalType": "struct GPv2Interaction.Hooks",
+          "components": [
+            {
+              "name": "beforeSettle",
+              "type": "tuple[]",
+              "internalType": "struct GPv2Interaction.Data[]",
+              "components": [
+                {
+                  "name": "target",
+                  "type": "address",
+                  "internalType": "address"
+                },
+                {
+                  "name": "value",
+                  "type": "uint256",
+                  "internalType": "uint256"
+                },
+                {
+                  "name": "callData",
+                  "type": "bytes",
+                  "internalType": "bytes"
+                }
+              ]
+            },
+            {
+              "name": "afterSettle",
+              "type": "tuple[]",
+              "internalType": "struct GPv2Interaction.Data[]",
+              "components": [
+                {
+                  "name": "target",
+                  "type": "address",
+                  "internalType": "address"
+                },
+                {
+                  "name": "value",
+                  "type": "uint256",
+                  "internalType": "uint256"
+                },
+                {
+                  "name": "callData",
+                  "type": "bytes",
+                  "internalType": "bytes"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "_makerSignature",
+          "type": "tuple",
+          "internalType": "struct Signature.TypedSignature",
+          "components": [
+            {
+              "name": "signatureType",
+              "type": "uint8",
+              "internalType": "enum Signature.Type"
+            },
+            {
+              "name": "transferCommand",
+              "type": "uint8",
+              "internalType": "enum Signature.TransferCommand"
+            },
+            {
+              "name": "signatureBytes",
+              "type": "bytes",
+              "internalType": "bytes"
+            }
+          ]
+        },
+        {
+          "name": "_takerSignature",
+          "type": "tuple",
+          "internalType": "struct Signature.TypedSignature",
+          "components": [
+            {
+              "name": "signatureType",
+              "type": "uint8",
+              "internalType": "enum Signature.Type"
+            },
+            {
+              "name": "transferCommand",
+              "type": "uint8",
+              "internalType": "enum Signature.TransferCommand"
+            },
+            {
+              "name": "signatureBytes",
+              "type": "bytes",
+              "internalType": "bytes"
+            }
+          ]
+        }
+      ],
+      "outputs": [],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "settleSingle",
+      "inputs": [
+        {
+          "name": "_signer",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "_order",
+          "type": "tuple",
+          "internalType": "struct ILiquoriceSettlement.Single",
+          "components": [
+            {
+              "name": "rfqId",
+              "type": "string",
+              "internalType": "string"
+            },
+            {
+              "name": "nonce",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "trader",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "effectiveTrader",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "baseToken",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "quoteToken",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "baseTokenAmount",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "quoteTokenAmount",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "minFillAmount",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "quoteExpiry",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "recipient",
+              "type": "address",
+              "internalType": "address"
+            }
+          ]
+        },
+        {
+          "name": "_makerSignature",
+          "type": "tuple",
+          "internalType": "struct Signature.TypedSignature",
+          "components": [
+            {
+              "name": "signatureType",
+              "type": "uint8",
+              "internalType": "enum Signature.Type"
+            },
+            {
+              "name": "transferCommand",
+              "type": "uint8",
+              "internalType": "enum Signature.TransferCommand"
+            },
+            {
+              "name": "signatureBytes",
+              "type": "bytes",
+              "internalType": "bytes"
+            }
+          ]
+        },
+        {
+          "name": "_filledTakerAmount",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "_takerSignature",
+          "type": "tuple",
+          "internalType": "struct Signature.TypedSignature",
+          "components": [
+            {
+              "name": "signatureType",
+              "type": "uint8",
+              "internalType": "enum Signature.Type"
+            },
+            {
+              "name": "transferCommand",
+              "type": "uint8",
+              "internalType": "enum Signature.TransferCommand"
+            },
+            {
+              "name": "signatureBytes",
+              "type": "bytes",
+              "internalType": "bytes"
+            }
+          ]
+        }
+      ],
+      "outputs": [],
+      "stateMutability": "payable"
+    }
+  ],
+  "methodIdentifiers": {
+    "AUTHENTICATOR()": "c6186181",
+    "BALANCE_MANAGER()": "29bcdc95",
+    "REPOSITORY()": "6f35d2d2",
+    "isValidSignature(bytes32,bytes)": "1626ba7e",
+    "settle(address,uint256,(address,uint256,string,uint256,address,address,uint256,address,uint256,(address,uint256,uint256,uint256,uint256),(address,uint256,uint256,uint256,uint256)),(address,uint256,bytes)[],((address,uint256,bytes)[],(address,uint256,bytes)[]),(uint8,uint8,bytes),(uint8,uint8,bytes))": "cba673a7",
+    "settleSingle(address,(string,uint256,address,address,address,address,uint256,uint256,uint256,uint256,address),(uint8,uint8,bytes),uint256,(uint8,uint8,bytes))": "9935c868"
+  },
+  "rawMetadata": "{\"compiler\":{\"version\":\"0.8.23+commit.f704f362\"},\"language\":\"Solidity\",\"output\":{\"abi\":[{\"inputs\":[],\"name\":\"AUTHENTICATOR\",\"outputs\":[{\"internalType\":\"contract IAllowListAuthentication\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"BALANCE_MANAGER\",\"outputs\":[{\"internalType\":\"contract IBalanceManager\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"REPOSITORY\",\"outputs\":[{\"internalType\":\"contract IRepository\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"_hash\",\"type\":\"bytes32\"},{\"internalType\":\"bytes\",\"name\":\"_signature\",\"type\":\"bytes\"}],\"name\":\"isValidSignature\",\"outputs\":[{\"internalType\":\"bytes4\",\"name\":\"\",\"type\":\"bytes4\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"_signer\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"_filledTakerAmount\",\"type\":\"uint256\"},{\"components\":[{\"internalType\":\"address\",\"name\":\"market\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"chainId\",\"type\":\"uint256\"},{\"internalType\":\"string\",\"name\":\"rfqId\",\"type\":\"string\"},{\"internalType\":\"uint256\",\"name\":\"nonce\",\"type\":\"uint256\"},{\"internalType\":\"address\",\"name\":\"trader\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"effectiveTrader\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"quoteExpiry\",\"type\":\"uint256\"},{\"internalType\":\"address\",\"name\":\"recipient\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"minFillAmount\",\"type\":\"uint256\"},{\"components\":[{\"internalType\":\"address\",\"name\":\"addr\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"amount\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"toRecipient\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"toRepay\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"toSupply\",\"type\":\"uint256\"}],\"internalType\":\"struct ILiquoriceSettlement.BaseTokenData\",\"name\":\"baseTokenData\",\"type\":\"tuple\"},{\"components\":[{\"internalType\":\"address\",\"name\":\"addr\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"amount\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"toTrader\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"toWithdraw\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"toBorrow\",\"type\":\"uint256\"}],\"internalType\":\"struct ILiquoriceSettlement.QuoteTokenData\",\"name\":\"quoteTokenData\",\"type\":\"tuple\"}],\"internalType\":\"struct ILiquoriceSettlement.Order\",\"name\":\"_order\",\"type\":\"tuple\"},{\"components\":[{\"internalType\":\"address\",\"name\":\"target\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"value\",\"type\":\"uint256\"},{\"internalType\":\"bytes\",\"name\":\"callData\",\"type\":\"bytes\"}],\"internalType\":\"struct GPv2Interaction.Data[]\",\"name\":\"_interactions\",\"type\":\"tuple[]\"},{\"components\":[{\"components\":[{\"internalType\":\"address\",\"name\":\"target\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"value\",\"type\":\"uint256\"},{\"internalType\":\"bytes\",\"name\":\"callData\",\"type\":\"bytes\"}],\"internalType\":\"struct GPv2Interaction.Data[]\",\"name\":\"beforeSettle\",\"type\":\"tuple[]\"},{\"components\":[{\"internalType\":\"address\",\"name\":\"target\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"value\",\"type\":\"uint256\"},{\"internalType\":\"bytes\",\"name\":\"callData\",\"type\":\"bytes\"}],\"internalType\":\"struct GPv2Interaction.Data[]\",\"name\":\"afterSettle\",\"type\":\"tuple[]\"}],\"internalType\":\"struct GPv2Interaction.Hooks\",\"name\":\"_hooks\",\"type\":\"tuple\"},{\"components\":[{\"internalType\":\"enum Signature.Type\",\"name\":\"signatureType\",\"type\":\"uint8\"},{\"internalType\":\"enum Signature.TransferCommand\",\"name\":\"transferCommand\",\"type\":\"uint8\"},{\"internalType\":\"bytes\",\"name\":\"signatureBytes\",\"type\":\"bytes\"}],\"internalType\":\"struct Signature.TypedSignature\",\"name\":\"_makerSignature\",\"type\":\"tuple\"},{\"components\":[{\"internalType\":\"enum Signature.Type\",\"name\":\"signatureType\",\"type\":\"uint8\"},{\"internalType\":\"enum Signature.TransferCommand\",\"name\":\"transferCommand\",\"type\":\"uint8\"},{\"internalType\":\"bytes\",\"name\":\"signatureBytes\",\"type\":\"bytes\"}],\"internalType\":\"struct Signature.TypedSignature\",\"name\":\"_takerSignature\",\"type\":\"tuple\"}],\"name\":\"settle\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"_signer\",\"type\":\"address\"},{\"components\":[{\"internalType\":\"string\",\"name\":\"rfqId\",\"type\":\"string\"},{\"internalType\":\"uint256\",\"name\":\"nonce\",\"type\":\"uint256\"},{\"internalType\":\"address\",\"name\":\"trader\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"effectiveTrader\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"baseToken\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"quoteToken\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"baseTokenAmount\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"quoteTokenAmount\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"minFillAmount\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"quoteExpiry\",\"type\":\"uint256\"},{\"internalType\":\"address\",\"name\":\"recipient\",\"type\":\"address\"}],\"internalType\":\"struct ILiquoriceSettlement.Single\",\"name\":\"_order\",\"type\":\"tuple\"},{\"components\":[{\"internalType\":\"enum Signature.Type\",\"name\":\"signatureType\",\"type\":\"uint8\"},{\"internalType\":\"enum Signature.TransferCommand\",\"name\":\"transferCommand\",\"type\":\"uint8\"},{\"internalType\":\"bytes\",\"name\":\"signatureBytes\",\"type\":\"bytes\"}],\"internalType\":\"struct Signature.TypedSignature\",\"name\":\"_makerSignature\",\"type\":\"tuple\"},{\"internalType\":\"uint256\",\"name\":\"_filledTakerAmount\",\"type\":\"uint256\"},{\"components\":[{\"internalType\":\"enum Signature.Type\",\"name\":\"signatureType\",\"type\":\"uint8\"},{\"internalType\":\"enum Signature.TransferCommand\",\"name\":\"transferCommand\",\"type\":\"uint8\"},{\"internalType\":\"bytes\",\"name\":\"signatureBytes\",\"type\":\"bytes\"}],\"internalType\":\"struct Signature.TypedSignature\",\"name\":\"_takerSignature\",\"type\":\"tuple\"}],\"name\":\"settleSingle\",\"outputs\":[],\"stateMutability\":\"payable\",\"type\":\"function\"}],\"devdoc\":{\"kind\":\"dev\",\"methods\":{\"AUTHENTICATOR()\":{\"returns\":{\"_0\":\"IAllowListAuthentication Authenticator interface\"}},\"BALANCE_MANAGER()\":{\"returns\":{\"_0\":\"IBalanceManager The balance manager interface\"}},\"REPOSITORY()\":{\"returns\":{\"_0\":\"IRepository Repository interface\"}},\"isValidSignature(bytes32,bytes)\":{\"params\":{\"_hash\":\"Hash of the data\",\"_signature\":\"Signature to validate\"},\"returns\":{\"_0\":\"Magic value if signature is valid, otherwise 0xffffffff\"}},\"settle(address,uint256,(address,uint256,string,uint256,address,address,uint256,address,uint256,(address,uint256,uint256,uint256,uint256),(address,uint256,uint256,uint256,uint256)),(address,uint256,bytes)[],((address,uint256,bytes)[],(address,uint256,bytes)[]),(uint8,uint8,bytes),(uint8,uint8,bytes))\":{\"params\":{\"_filledTakerAmount\":\"Amount filled by the taker\",\"_hooks\":\"Hooks to be called before and after settlement\",\"_interactions\":\"Array of interaction data to be executed during settlement\",\"_makerSignature\":\"Typed signature of the maker\",\"_order\":\"Order data\",\"_signer\":\"Address that signed the order\",\"_takerSignature\":\"Typed signature of the taker\"}},\"settleSingle(address,(string,uint256,address,address,address,address,uint256,uint256,uint256,uint256,address),(uint8,uint8,bytes),uint256,(uint8,uint8,bytes))\":{\"params\":{\"_filledTakerAmount\":\"Amount filled by the taker\",\"_makerSignature\":\"Signature of the maker\",\"_order\":\"Single order data\",\"_signer\":\"Address that signed the order\",\"_takerSignature\":\"Signature of the taker\"}}},\"version\":1},\"userdoc\":{\"kind\":\"user\",\"methods\":{\"AUTHENTICATOR()\":{\"notice\":\"Returns the address of the authenticator contract\"},\"BALANCE_MANAGER()\":{\"notice\":\"Returns the address of the balance manager contract\"},\"REPOSITORY()\":{\"notice\":\"Returns the address of the repository contract\"},\"isValidSignature(bytes32,bytes)\":{\"notice\":\"Validates a signature\"},\"settle(address,uint256,(address,uint256,string,uint256,address,address,uint256,address,uint256,(address,uint256,uint256,uint256,uint256),(address,uint256,uint256,uint256,uint256)),(address,uint256,bytes)[],((address,uint256,bytes)[],(address,uint256,bytes)[]),(uint8,uint8,bytes),(uint8,uint8,bytes))\":{\"notice\":\"Settles a signed order with the given interactions and hooks\"},\"settleSingle(address,(string,uint256,address,address,address,address,uint256,uint256,uint256,uint256,address),(uint8,uint8,bytes),uint256,(uint8,uint8,bytes))\":{\"notice\":\"Settles a single order\"}},\"version\":1}},\"settings\":{\"compilationTarget\":{\"src/interfaces/ILiquoriceSettlement.sol\":\"ILiquoriceSettlement\"},\"evmVersion\":\"shanghai\",\"libraries\":{},\"metadata\":{\"bytecodeHash\":\"ipfs\"},\"optimizer\":{\"enabled\":true,\"runs\":10000},\"remappings\":[\":@chainlink/=lib/chainlink/contracts/\",\":@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/\",\":@openzeppelin/contracts/=lib/openzeppelin-contracts-upgradeable/lib/openzeppelin-contracts/contracts/\",\":chainlink/=lib/chainlink/\",\":contracts/=src/contracts/\",\":ds-test/=node_modules/ds-test/src/\",\":erc4626-tests/=lib/openzeppelin-contracts-upgradeable/lib/erc4626-tests/\",\":forge-std/=lib/forge-std/src/\",\":halmos-cheatcodes/=lib/openzeppelin-contracts/lib/halmos-cheatcodes/src/\",\":interfaces/=src/interfaces/\",\":openzeppelin-contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/\",\":openzeppelin-contracts/=lib/openzeppelin-contracts/\",\":openzeppelin-foundry-upgrades/=lib/openzeppelin-foundry-upgrades/src/\",\":openzeppelin-upgrades/=lib/openzeppelin-upgrades/\",\":solidity-stringutils/=lib/openzeppelin-foundry-upgrades/lib/solidity-stringutils/\"]},\"sources\":{\"src/contracts/lib/GPv2Interaction.sol\":{\"keccak256\":\"0x55968a83f6ae3d8d806b8faf02360abc676fb7476d05f33c0c9d324e6336fd0f\",\"license\":\"LGPL-3.0-or-later\",\"urls\":[\"bzz-raw://2d813e60c3fa006d02c8fd1aed73d2d47f9f153ac3c410d408384f3084e46de3\",\"dweb:/ipfs/QmdNyQMmyscMH6CVUkhQQfGdKdxgqhqDEe5K4iwrvcWDsk\"]},\"src/contracts/lib/Signature.sol\":{\"keccak256\":\"0xc084fe793244e2e7b0f4a51440df7dbf97d39b4ad6450a2b8a082cb6d86993b5\",\"license\":\"BUSL-1.1\",\"urls\":[\"bzz-raw://9bff9732e68149a83f2e044c7f1700432997750166cd15f4a54f73bd68a475aa\",\"dweb:/ipfs/QmZJMNppHQ3nUDcJhAkrMYa4QWhGLDr4Tzah6LndgrDCib\"]},\"src/interfaces/IACLManager.sol\":{\"keccak256\":\"0xeee5cbedcfaff01733979b8f439a817aa67b09d9e330d21e11f180dceebed024\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://814431cd9df23d0d7cc0f9761927e2aa18fc7fa599f34422f332ee6352580d69\",\"dweb:/ipfs/QmXLdGsdMyeX5j64rAaByz35SwEMPMQ7usXwruWjEPo6Cz\"]},\"src/interfaces/IAllowListAuthentication.sol\":{\"keccak256\":\"0xbabb9eda80757d9355ab9863fccb3fdb1f15c1cbce458c3236d792d007077a9e\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://f6fa97e90b315ffc3cae3998adda6810c856ea96be015e797723e13b436d1a10\",\"dweb:/ipfs/Qme1dzXXcMDQpeqyqfuSbZDY6GKWjyrRBQrNDjitPeXQEF\"]},\"src/interfaces/IBalanceManager.sol\":{\"keccak256\":\"0xc4cff6f33170df6d91a866ee69263c9b90091e94027bea04038558c315e6e127\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://867164a381fb78da320c89db6b15978becd49be61e2349abc805362904bffb4e\",\"dweb:/ipfs/QmPY9UYCi9YVdCC8A1UxmTPcnV5BmMj93Gq1nqxBv4fMJ7\"]},\"src/interfaces/IInterestRateModel.sol\":{\"keccak256\":\"0xccd4c1dea98176c392de07cb8f5a2ac969405090d42d831310fa53464c0d9264\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://a22b5b87be29e616142b6c4677e109e9246157c4b7e6378334fbc7ba403d82de\",\"dweb:/ipfs/QmXmSF34VsktTfqSCJU8Mz9sTaXGVk7xdYQwr9NcsR3k43\"]},\"src/interfaces/ILiquoriceSettlement.sol\":{\"keccak256\":\"0xa4a36d51f174d9994c39287f89e63bbea57ff5adcd2a9bc649c67bb5cae75272\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://8562fe9fc033c3e3320c5d95ad10e49f5e23ea50a5e9eaf186cbf53d9f1ce7a6\",\"dweb:/ipfs/QmXKSjRi8oxmS5xd5V95HofYtFzYfehbL6s8t2MKoXR7y1\"]},\"src/interfaces/IPriceProvider.sol\":{\"keccak256\":\"0x75812be8d692287010f5ee9ce13556df1bd8299faa64b42c49cd08cf7cc53847\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://623d4faa57b078a33a2afe0d13fc426c4a750ae7f07f9d826000047dab54148e\",\"dweb:/ipfs/QmYmFpZnLug6FBG9C8s1mxPBjZHwiCk7cRBC7A9WXtyGKE\"]},\"src/interfaces/IRepository.sol\":{\"keccak256\":\"0xf08a5812ce10042564d518994db487c49d9f35d511da07a5103b9b886b6e2607\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://b602c9f5a61c9796f711330ee56d4f0287adc656c686acf391d4e8c45453e6d0\",\"dweb:/ipfs/QmQ7XJ1qERgRxWurpkS3t1XDtuBUTpQEz14h4eXBc8vp9t\"]}},\"version\":1}",
+  "metadata": {
+    "compiler": {
+      "version": "0.8.23+commit.f704f362"
+    },
+    "language": "Solidity",
+    "output": {
+      "abi": [
+        {
+          "inputs": [],
+          "stateMutability": "view",
+          "type": "function",
+          "name": "AUTHENTICATOR",
+          "outputs": [
+            {
+              "internalType": "contract IAllowListAuthentication",
+              "name": "",
+              "type": "address"
+            }
+          ]
+        },
+        {
+          "inputs": [],
+          "stateMutability": "view",
+          "type": "function",
+          "name": "BALANCE_MANAGER",
+          "outputs": [
+            {
+              "internalType": "contract IBalanceManager",
+              "name": "",
+              "type": "address"
+            }
+          ]
+        },
+        {
+          "inputs": [],
+          "stateMutability": "view",
+          "type": "function",
+          "name": "REPOSITORY",
+          "outputs": [
+            {
+              "internalType": "contract IRepository",
+              "name": "",
+              "type": "address"
+            }
+          ]
+        },
+        {
+          "inputs": [
+            {
+              "internalType": "bytes32",
+              "name": "_hash",
+              "type": "bytes32"
+            },
+            {
+              "internalType": "bytes",
+              "name": "_signature",
+              "type": "bytes"
+            }
+          ],
+          "stateMutability": "view",
+          "type": "function",
+          "name": "isValidSignature",
+          "outputs": [
+            {
+              "internalType": "bytes4",
+              "name": "",
+              "type": "bytes4"
+            }
+          ]
+        },
+        {
+          "inputs": [
+            {
+              "internalType": "address",
+              "name": "_signer",
+              "type": "address"
+            },
+            {
+              "internalType": "uint256",
+              "name": "_filledTakerAmount",
+              "type": "uint256"
+            },
+            {
+              "internalType": "struct ILiquoriceSettlement.Order",
+              "name": "_order",
+              "type": "tuple",
+              "components": [
+                {
+                  "internalType": "address",
+                  "name": "market",
+                  "type": "address"
+                },
+                {
+                  "internalType": "uint256",
+                  "name": "chainId",
+                  "type": "uint256"
+                },
+                {
+                  "internalType": "string",
+                  "name": "rfqId",
+                  "type": "string"
+                },
+                {
+                  "internalType": "uint256",
+                  "name": "nonce",
+                  "type": "uint256"
+                },
+                {
+                  "internalType": "address",
+                  "name": "trader",
+                  "type": "address"
+                },
+                {
+                  "internalType": "address",
+                  "name": "effectiveTrader",
+                  "type": "address"
+                },
+                {
+                  "internalType": "uint256",
+                  "name": "quoteExpiry",
+                  "type": "uint256"
+                },
+                {
+                  "internalType": "address",
+                  "name": "recipient",
+                  "type": "address"
+                },
+                {
+                  "internalType": "uint256",
+                  "name": "minFillAmount",
+                  "type": "uint256"
+                },
+                {
+                  "internalType": "struct ILiquoriceSettlement.BaseTokenData",
+                  "name": "baseTokenData",
+                  "type": "tuple",
+                  "components": [
+                    {
+                      "internalType": "address",
+                      "name": "addr",
+                      "type": "address"
+                    },
+                    {
+                      "internalType": "uint256",
+                      "name": "amount",
+                      "type": "uint256"
+                    },
+                    {
+                      "internalType": "uint256",
+                      "name": "toRecipient",
+                      "type": "uint256"
+                    },
+                    {
+                      "internalType": "uint256",
+                      "name": "toRepay",
+                      "type": "uint256"
+                    },
+                    {
+                      "internalType": "uint256",
+                      "name": "toSupply",
+                      "type": "uint256"
+                    }
+                  ]
+                },
+                {
+                  "internalType": "struct ILiquoriceSettlement.QuoteTokenData",
+                  "name": "quoteTokenData",
+                  "type": "tuple",
+                  "components": [
+                    {
+                      "internalType": "address",
+                      "name": "addr",
+                      "type": "address"
+                    },
+                    {
+                      "internalType": "uint256",
+                      "name": "amount",
+                      "type": "uint256"
+                    },
+                    {
+                      "internalType": "uint256",
+                      "name": "toTrader",
+                      "type": "uint256"
+                    },
+                    {
+                      "internalType": "uint256",
+                      "name": "toWithdraw",
+                      "type": "uint256"
+                    },
+                    {
+                      "internalType": "uint256",
+                      "name": "toBorrow",
+                      "type": "uint256"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "internalType": "struct GPv2Interaction.Data[]",
+              "name": "_interactions",
+              "type": "tuple[]",
+              "components": [
+                {
+                  "internalType": "address",
+                  "name": "target",
+                  "type": "address"
+                },
+                {
+                  "internalType": "uint256",
+                  "name": "value",
+                  "type": "uint256"
+                },
+                {
+                  "internalType": "bytes",
+                  "name": "callData",
+                  "type": "bytes"
+                }
+              ]
+            },
+            {
+              "internalType": "struct GPv2Interaction.Hooks",
+              "name": "_hooks",
+              "type": "tuple",
+              "components": [
+                {
+                  "internalType": "struct GPv2Interaction.Data[]",
+                  "name": "beforeSettle",
+                  "type": "tuple[]",
+                  "components": [
+                    {
+                      "internalType": "address",
+                      "name": "target",
+                      "type": "address"
+                    },
+                    {
+                      "internalType": "uint256",
+                      "name": "value",
+                      "type": "uint256"
+                    },
+                    {
+                      "internalType": "bytes",
+                      "name": "callData",
+                      "type": "bytes"
+                    }
+                  ]
+                },
+                {
+                  "internalType": "struct GPv2Interaction.Data[]",
+                  "name": "afterSettle",
+                  "type": "tuple[]",
+                  "components": [
+                    {
+                      "internalType": "address",
+                      "name": "target",
+                      "type": "address"
+                    },
+                    {
+                      "internalType": "uint256",
+                      "name": "value",
+                      "type": "uint256"
+                    },
+                    {
+                      "internalType": "bytes",
+                      "name": "callData",
+                      "type": "bytes"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "internalType": "struct Signature.TypedSignature",
+              "name": "_makerSignature",
+              "type": "tuple",
+              "components": [
+                {
+                  "internalType": "enum Signature.Type",
+                  "name": "signatureType",
+                  "type": "uint8"
+                },
+                {
+                  "internalType": "enum Signature.TransferCommand",
+                  "name": "transferCommand",
+                  "type": "uint8"
+                },
+                {
+                  "internalType": "bytes",
+                  "name": "signatureBytes",
+                  "type": "bytes"
+                }
+              ]
+            },
+            {
+              "internalType": "struct Signature.TypedSignature",
+              "name": "_takerSignature",
+              "type": "tuple",
+              "components": [
+                {
+                  "internalType": "enum Signature.Type",
+                  "name": "signatureType",
+                  "type": "uint8"
+                },
+                {
+                  "internalType": "enum Signature.TransferCommand",
+                  "name": "transferCommand",
+                  "type": "uint8"
+                },
+                {
+                  "internalType": "bytes",
+                  "name": "signatureBytes",
+                  "type": "bytes"
+                }
+              ]
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "type": "function",
+          "name": "settle"
+        },
+        {
+          "inputs": [
+            {
+              "internalType": "address",
+              "name": "_signer",
+              "type": "address"
+            },
+            {
+              "internalType": "struct ILiquoriceSettlement.Single",
+              "name": "_order",
+              "type": "tuple",
+              "components": [
+                {
+                  "internalType": "string",
+                  "name": "rfqId",
+                  "type": "string"
+                },
+                {
+                  "internalType": "uint256",
+                  "name": "nonce",
+                  "type": "uint256"
+                },
+                {
+                  "internalType": "address",
+                  "name": "trader",
+                  "type": "address"
+                },
+                {
+                  "internalType": "address",
+                  "name": "effectiveTrader",
+                  "type": "address"
+                },
+                {
+                  "internalType": "address",
+                  "name": "baseToken",
+                  "type": "address"
+                },
+                {
+                  "internalType": "address",
+                  "name": "quoteToken",
+                  "type": "address"
+                },
+                {
+                  "internalType": "uint256",
+                  "name": "baseTokenAmount",
+                  "type": "uint256"
+                },
+                {
+                  "internalType": "uint256",
+                  "name": "quoteTokenAmount",
+                  "type": "uint256"
+                },
+                {
+                  "internalType": "uint256",
+                  "name": "minFillAmount",
+                  "type": "uint256"
+                },
+                {
+                  "internalType": "uint256",
+                  "name": "quoteExpiry",
+                  "type": "uint256"
+                },
+                {
+                  "internalType": "address",
+                  "name": "recipient",
+                  "type": "address"
+                }
+              ]
+            },
+            {
+              "internalType": "struct Signature.TypedSignature",
+              "name": "_makerSignature",
+              "type": "tuple",
+              "components": [
+                {
+                  "internalType": "enum Signature.Type",
+                  "name": "signatureType",
+                  "type": "uint8"
+                },
+                {
+                  "internalType": "enum Signature.TransferCommand",
+                  "name": "transferCommand",
+                  "type": "uint8"
+                },
+                {
+                  "internalType": "bytes",
+                  "name": "signatureBytes",
+                  "type": "bytes"
+                }
+              ]
+            },
+            {
+              "internalType": "uint256",
+              "name": "_filledTakerAmount",
+              "type": "uint256"
+            },
+            {
+              "internalType": "struct Signature.TypedSignature",
+              "name": "_takerSignature",
+              "type": "tuple",
+              "components": [
+                {
+                  "internalType": "enum Signature.Type",
+                  "name": "signatureType",
+                  "type": "uint8"
+                },
+                {
+                  "internalType": "enum Signature.TransferCommand",
+                  "name": "transferCommand",
+                  "type": "uint8"
+                },
+                {
+                  "internalType": "bytes",
+                  "name": "signatureBytes",
+                  "type": "bytes"
+                }
+              ]
+            }
+          ],
+          "stateMutability": "payable",
+          "type": "function",
+          "name": "settleSingle"
+        }
+      ],
+      "devdoc": {
+        "kind": "dev",
+        "methods": {
+          "AUTHENTICATOR()": {
+            "returns": {
+              "_0": "IAllowListAuthentication Authenticator interface"
+            }
+          },
+          "BALANCE_MANAGER()": {
+            "returns": {
+              "_0": "IBalanceManager The balance manager interface"
+            }
+          },
+          "REPOSITORY()": {
+            "returns": {
+              "_0": "IRepository Repository interface"
+            }
+          },
+          "isValidSignature(bytes32,bytes)": {
+            "params": {
+              "_hash": "Hash of the data",
+              "_signature": "Signature to validate"
+            },
+            "returns": {
+              "_0": "Magic value if signature is valid, otherwise 0xffffffff"
+            }
+          },
+          "settle(address,uint256,(address,uint256,string,uint256,address,address,uint256,address,uint256,(address,uint256,uint256,uint256,uint256),(address,uint256,uint256,uint256,uint256)),(address,uint256,bytes)[],((address,uint256,bytes)[],(address,uint256,bytes)[]),(uint8,uint8,bytes),(uint8,uint8,bytes))": {
+            "params": {
+              "_filledTakerAmount": "Amount filled by the taker",
+              "_hooks": "Hooks to be called before and after settlement",
+              "_interactions": "Array of interaction data to be executed during settlement",
+              "_makerSignature": "Typed signature of the maker",
+              "_order": "Order data",
+              "_signer": "Address that signed the order",
+              "_takerSignature": "Typed signature of the taker"
+            }
+          },
+          "settleSingle(address,(string,uint256,address,address,address,address,uint256,uint256,uint256,uint256,address),(uint8,uint8,bytes),uint256,(uint8,uint8,bytes))": {
+            "params": {
+              "_filledTakerAmount": "Amount filled by the taker",
+              "_makerSignature": "Signature of the maker",
+              "_order": "Single order data",
+              "_signer": "Address that signed the order",
+              "_takerSignature": "Signature of the taker"
+            }
+          }
+        },
+        "version": 1
+      },
+      "userdoc": {
+        "kind": "user",
+        "methods": {
+          "AUTHENTICATOR()": {
+            "notice": "Returns the address of the authenticator contract"
+          },
+          "BALANCE_MANAGER()": {
+            "notice": "Returns the address of the balance manager contract"
+          },
+          "REPOSITORY()": {
+            "notice": "Returns the address of the repository contract"
+          },
+          "isValidSignature(bytes32,bytes)": {
+            "notice": "Validates a signature"
+          },
+          "settle(address,uint256,(address,uint256,string,uint256,address,address,uint256,address,uint256,(address,uint256,uint256,uint256,uint256),(address,uint256,uint256,uint256,uint256)),(address,uint256,bytes)[],((address,uint256,bytes)[],(address,uint256,bytes)[]),(uint8,uint8,bytes),(uint8,uint8,bytes))": {
+            "notice": "Settles a signed order with the given interactions and hooks"
+          },
+          "settleSingle(address,(string,uint256,address,address,address,address,uint256,uint256,uint256,uint256,address),(uint8,uint8,bytes),uint256,(uint8,uint8,bytes))": {
+            "notice": "Settles a single order"
+          }
+        },
+        "version": 1
+      }
+    },
+    "settings": {
+      "remappings": [
+        "@chainlink/=lib/chainlink/contracts/",
+        "@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/",
+        "@openzeppelin/contracts/=lib/openzeppelin-contracts-upgradeable/lib/openzeppelin-contracts/contracts/",
+        "chainlink/=lib/chainlink/",
+        "contracts/=src/contracts/",
+        "ds-test/=node_modules/ds-test/src/",
+        "erc4626-tests/=lib/openzeppelin-contracts-upgradeable/lib/erc4626-tests/",
+        "forge-std/=lib/forge-std/src/",
+        "halmos-cheatcodes/=lib/openzeppelin-contracts/lib/halmos-cheatcodes/src/",
+        "interfaces/=src/interfaces/",
+        "openzeppelin-contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/",
+        "openzeppelin-contracts/=lib/openzeppelin-contracts/",
+        "openzeppelin-foundry-upgrades/=lib/openzeppelin-foundry-upgrades/src/",
+        "openzeppelin-upgrades/=lib/openzeppelin-upgrades/",
+        "solidity-stringutils/=lib/openzeppelin-foundry-upgrades/lib/solidity-stringutils/"
+      ],
+      "optimizer": {
+        "enabled": true,
+        "runs": 10000
+      },
+      "metadata": {
+        "bytecodeHash": "ipfs"
+      },
+      "compilationTarget": {
+        "src/interfaces/ILiquoriceSettlement.sol": "ILiquoriceSettlement"
+      },
+      "evmVersion": "shanghai",
+      "libraries": {}
+    },
+    "sources": {
+      "src/contracts/lib/GPv2Interaction.sol": {
+        "keccak256": "0x55968a83f6ae3d8d806b8faf02360abc676fb7476d05f33c0c9d324e6336fd0f",
+        "urls": [
+          "bzz-raw://2d813e60c3fa006d02c8fd1aed73d2d47f9f153ac3c410d408384f3084e46de3",
+          "dweb:/ipfs/QmdNyQMmyscMH6CVUkhQQfGdKdxgqhqDEe5K4iwrvcWDsk"
+        ],
+        "license": "LGPL-3.0-or-later"
+      },
+      "src/contracts/lib/Signature.sol": {
+        "keccak256": "0xc084fe793244e2e7b0f4a51440df7dbf97d39b4ad6450a2b8a082cb6d86993b5",
+        "urls": [
+          "bzz-raw://9bff9732e68149a83f2e044c7f1700432997750166cd15f4a54f73bd68a475aa",
+          "dweb:/ipfs/QmZJMNppHQ3nUDcJhAkrMYa4QWhGLDr4Tzah6LndgrDCib"
+        ],
+        "license": "BUSL-1.1"
+      },
+      "src/interfaces/IACLManager.sol": {
+        "keccak256": "0xeee5cbedcfaff01733979b8f439a817aa67b09d9e330d21e11f180dceebed024",
+        "urls": [
+          "bzz-raw://814431cd9df23d0d7cc0f9761927e2aa18fc7fa599f34422f332ee6352580d69",
+          "dweb:/ipfs/QmXLdGsdMyeX5j64rAaByz35SwEMPMQ7usXwruWjEPo6Cz"
+        ],
+        "license": "MIT"
+      },
+      "src/interfaces/IAllowListAuthentication.sol": {
+        "keccak256": "0xbabb9eda80757d9355ab9863fccb3fdb1f15c1cbce458c3236d792d007077a9e",
+        "urls": [
+          "bzz-raw://f6fa97e90b315ffc3cae3998adda6810c856ea96be015e797723e13b436d1a10",
+          "dweb:/ipfs/Qme1dzXXcMDQpeqyqfuSbZDY6GKWjyrRBQrNDjitPeXQEF"
+        ],
+        "license": "MIT"
+      },
+      "src/interfaces/IBalanceManager.sol": {
+        "keccak256": "0xc4cff6f33170df6d91a866ee69263c9b90091e94027bea04038558c315e6e127",
+        "urls": [
+          "bzz-raw://867164a381fb78da320c89db6b15978becd49be61e2349abc805362904bffb4e",
+          "dweb:/ipfs/QmPY9UYCi9YVdCC8A1UxmTPcnV5BmMj93Gq1nqxBv4fMJ7"
+        ],
+        "license": "MIT"
+      },
+      "src/interfaces/IInterestRateModel.sol": {
+        "keccak256": "0xccd4c1dea98176c392de07cb8f5a2ac969405090d42d831310fa53464c0d9264",
+        "urls": [
+          "bzz-raw://a22b5b87be29e616142b6c4677e109e9246157c4b7e6378334fbc7ba403d82de",
+          "dweb:/ipfs/QmXmSF34VsktTfqSCJU8Mz9sTaXGVk7xdYQwr9NcsR3k43"
+        ],
+        "license": "MIT"
+      },
+      "src/interfaces/ILiquoriceSettlement.sol": {
+        "keccak256": "0xa4a36d51f174d9994c39287f89e63bbea57ff5adcd2a9bc649c67bb5cae75272",
+        "urls": [
+          "bzz-raw://8562fe9fc033c3e3320c5d95ad10e49f5e23ea50a5e9eaf186cbf53d9f1ce7a6",
+          "dweb:/ipfs/QmXKSjRi8oxmS5xd5V95HofYtFzYfehbL6s8t2MKoXR7y1"
+        ],
+        "license": "MIT"
+      },
+      "src/interfaces/IPriceProvider.sol": {
+        "keccak256": "0x75812be8d692287010f5ee9ce13556df1bd8299faa64b42c49cd08cf7cc53847",
+        "urls": [
+          "bzz-raw://623d4faa57b078a33a2afe0d13fc426c4a750ae7f07f9d826000047dab54148e",
+          "dweb:/ipfs/QmYmFpZnLug6FBG9C8s1mxPBjZHwiCk7cRBC7A9WXtyGKE"
+        ],
+        "license": "MIT"
+      },
+      "src/interfaces/IRepository.sol": {
+        "keccak256": "0xf08a5812ce10042564d518994db487c49d9f35d511da07a5103b9b886b6e2607",
+        "urls": [
+          "bzz-raw://b602c9f5a61c9796f711330ee56d4f0287adc656c686acf391d4e8c45453e6d0",
+          "dweb:/ipfs/QmQ7XJ1qERgRxWurpkS3t1XDtuBUTpQEz14h4eXBc8vp9t"
+        ],
+        "license": "MIT"
+      }
+    },
+    "version": 1
+  },
+  "id": 108
+}
