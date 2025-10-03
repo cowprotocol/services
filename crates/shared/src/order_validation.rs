@@ -334,6 +334,11 @@ impl OrderValidator {
         Ok(())
     }
 
+    /// Converts the provided pre and post [`Hooks`] into pre and post
+    /// [`Interactions`], respectively.
+    ///
+    /// This is done by returning the [`HooksTrampoline`] `execute` calldata
+    /// with the (pre/post) hooks calldata as the parameter.
     fn custom_interactions(&self, hooks: &Hooks) -> Interactions {
         let to_interactions = |hooks: &[Hook]| -> Vec<InteractionData> {
             if hooks.is_empty() {
@@ -500,6 +505,15 @@ impl OrderValidating for OrderValidator {
         Ok(())
     }
 
+    /// Validates the provided app data, returning an [`OrderAppData`] if valid.
+    ///
+    /// The validation entails verifying that the app data is well formed and
+    /// its size.
+    ///
+    /// * In the case the app data contains both a hash and the data, the data
+    ///   will be compared against the hash.
+    /// * The app data the override will be ignored unless the provided app data
+    ///   is a hash.
     fn validate_app_data(
         &self,
         app_data: &OrderCreationAppData,
