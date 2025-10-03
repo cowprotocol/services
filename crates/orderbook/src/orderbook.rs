@@ -261,13 +261,14 @@ impl Orderbook {
         }
     }
 
-    /// Adds an order to the order book.
+    /// Adds an order to the order book, placing it in the database.
     ///
-    /// 1. If the provided app data is an hash, retrieves it.
-    /// 2. Tries to get an order to replace, if the app data specifies one.
-    /// 3. Validates and constructs an order
+    /// 1. If the provided app data is an hash (instead of a complete app data
+    ///    JSON), retrieves it.
+    /// 3. Validates and constructs an order.
     /// 4. If the new order is to replace an old one, replaces it; otherwise,
-    ///    the new order is simply inserted in the database
+    ///    the new order is simply inserted in the database. the new order is
+    ///    simply inserted in the database
     #[instrument(skip_all)]
     pub async fn add_order(
         &self,
@@ -310,7 +311,8 @@ impl Orderbook {
 
     /// Finds an order for cancellation.
     ///
-    /// Returns an error if the order cannot be found or cannot be cancelled.
+    /// Returns an error if the order cannot be found or cannot be cancelled
+    /// (for example, orders using PreSign).
     async fn find_order_for_cancellation(
         &self,
         order_uid: &OrderUid,
@@ -394,9 +396,10 @@ impl Orderbook {
         Ok(())
     }
 
-    /// The app data may contain the `replaced_order` field, in that case we
-    /// need to fetch said order to cancel it before moving forward with the
-    /// current one.
+    /// Using the provided app data, finds the order to be replaced.
+    ///
+    /// It will validate the provided app data before searching for the order to
+    /// be replaced.
     async fn get_replaced_order(
         &self,
         new_order: &OrderCreation,
@@ -429,17 +432,15 @@ impl Orderbook {
     /// (cancels the old one and inserts the new one), but not before
     /// performing some validations.
     ///
-    /// 1. New order's signature cannot be a `PreSign` order
-    /// 2. Old and new order owners MUST match
-    /// 3. The old order can't be being bid on
+    /// 1. New order's signature cannot be a `PreSign` order to avoid users
+    ///    cancelling orders on someone else's behalf.
+    /// 2. Old and new order MUST have the same signer.
+    /// 3. The old order cannot be bid on (to prevent double spending).
     pub async fn replace_order(
         &self,
         validated_new_order: Order,
         old_order: Order,
     ) -> Result<(), AddOrderError> {
-        // Replacement order signatures need to be validated meaning we cannot
-        // accept `PreSign` orders, otherwise anyone can cancel a user order by
-        // submitting a `PreSign` order on someone's behalf.
         validated_new_order
             .signature
             .scheme()
@@ -448,16 +449,12 @@ impl Orderbook {
                 OrderReplacementError::InvalidSignature,
             ))?;
 
-        // Verify that the new order is a valid replacement order by checking
-        // that both the old and new orders have the same signer.
         if validated_new_order.metadata.owner != old_order.metadata.owner {
             return Err(AddOrderError::InvalidReplacement(
                 OrderReplacementError::WrongOwner,
             ));
         }
 
-        // Verify that the old order is not being actively bid on by solvers,
-        // to prevent the possible double spending of both orders.
         if self
             .order_is_actively_bid_on(old_order.metadata.uid)
             .await?
