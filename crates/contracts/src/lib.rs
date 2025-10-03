@@ -66,7 +66,6 @@ include_contracts! {
     GPv2Settlement;
     IAavePool;
     IFlashLoanSolverWrapper;
-    ILiquoriceSettlement;
     IUniswapV3Factory;
     Permit2;
     UniswapV3QuoterV2;

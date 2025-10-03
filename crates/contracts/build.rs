@@ -474,12 +474,6 @@ fn main() {
             .add_network_str(LENS, "0xc3A5b857Ba82a2586A45a8B59ECc3AA50Bc3D0e3")
         // Not available on Gnosis Chain
     });
-    generate_contract_with_config("ILiquoriceSettlement", |builder| {
-        // <https://liquorice.gitbook.io/liquorice-docs/links/smart-contracts>
-        builder
-            .add_network_str(MAINNET, "0x0448633eb8B0A42EfED924C42069E0DcF08fb552")
-            .add_network_str(ARBITRUM_ONE, "0x0448633eb8B0A42EfED924C42069E0DcF08fb552")
-    });
     generate_contract_with_config("CowProtocolToken", |builder| {
         builder
             .add_network_str(MAINNET, "0xDEf1CA1fb7FBcDC777520aa7f396b4E015F497aB")

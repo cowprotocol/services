@@ -1,6 +1,10 @@
 use {
+    alloy::primitives::Bytes,
     chrono::Utc,
-    contracts::{ERC20, ILiquoriceSettlement},
+    contracts::{
+        ERC20,
+        alloy::{ILiquoriceSettlement, InstanceExt},
+    },
     driver::{domain::eth::H160, infra},
     e2e::{
         api,
@@ -19,7 +23,10 @@ use {
         tx,
     },
     ethcontract::prelude::U256,
-    ethrpc::Web3,
+    ethrpc::{
+        Web3,
+        alloy::conversions::{IntoAlloy, IntoLegacy},
+    },
     hex_literal::hex,
     model::{
         order::{OrderCreation, OrderKind},
@@ -106,12 +113,15 @@ async fn liquidity_source_notification(web3: Web3) {
 
     // Liquorice settlement contract through which we will trade with the
     // `liquorice_maker`
-    let liquorice_settlement = ILiquoriceSettlement::deployed(&web3).await.unwrap();
+    let liquorice_settlement = ILiquoriceSettlement::Instance::deployed(&web3.alloy)
+        .await
+        .unwrap();
     let liquorice_balance_manager_address = liquorice_settlement
-        .balance_manager()
+        .BALANCE_MANAGER()
         .call()
         .await
-        .expect("balance manager");
+        .expect("no balance manager found")
+        .into_legacy();
 
     // Fund `liquorice_maker`
     {
@@ -227,29 +237,46 @@ http-timeout = "10s"
     let liquorice_solution_calldata = {
         // Create Liquorice order signature
         let liquorice_order_signature = liquorice_order.sign(
-            &api::liquorice::onchain::DomainSeparator::new(1, liquorice_settlement.address()),
+            &api::liquorice::onchain::DomainSeparator::new(
+                1,
+                liquorice_settlement.address().into_legacy(),
+            ),
             liquorice_order.hash(),
             &liquorice_maker,
         );
 
         // Create Liquorice settlement calldata
         liquorice_settlement
-            .settle_single(
-                liquorice_maker.address(),
-                liquorice_order.as_tuple(),
-                liquorice_order_signature.as_tuple(),
-                liquorice_order.quote_token_amount,
+            .settleSingle(
+                liquorice_maker.address().into_alloy(),
+                ILiquoriceSettlement::ILiquoriceSettlement::Single {
+                    rfqId: liquorice_order.rfq_id.clone(),
+                    nonce: liquorice_order.nonce.into_alloy(),
+                    trader: liquorice_order.trader.into_alloy(),
+                    effectiveTrader: liquorice_order.effective_trader.into_alloy(),
+                    baseToken: liquorice_order.base_token.into_alloy(),
+                    quoteToken: liquorice_order.quote_token.into_alloy(),
+                    baseTokenAmount: liquorice_order.base_token_amount.into_alloy(),
+                    quoteTokenAmount: liquorice_order.quote_token_amount.into_alloy(),
+                    minFillAmount: liquorice_order.min_fill_amount.into_alloy(),
+                    quoteExpiry: liquorice_order.quote_expiry.into_alloy(),
+                    recipient: liquorice_order.recipient.into_alloy(),
+                },
+                ILiquoriceSettlement::Signature::TypedSignature {
+                    signatureType: liquorice_order_signature.signature_type,
+                    transferCommand: liquorice_order_signature.transfer_command,
+                    signatureBytes: Bytes::from(liquorice_order_signature.signature_bytes.0),
+                },
+                liquorice_order.quote_token_amount.into_alloy(),
                 // Taker signature is not used in this use case
-                api::liquorice::onchain::order::Signature {
-                    signature_type: 0,
-                    transfer_command: 0,
-                    signature_bytes: ethcontract::Bytes(vec![0u8; 65]),
-                }
-                .as_tuple(),
+                ILiquoriceSettlement::Signature::TypedSignature {
+                    signatureType: 0,
+                    transferCommand: 0,
+                    signatureBytes: Bytes::from(vec![0u8; 65]),
+                },
             )
-            .tx
-            .data
-            .unwrap()
+            .calldata()
+            .to_vec()
     };
 
     // Submit solution to CoW
@@ -269,8 +296,8 @@ http-timeout = "10s"
         pre_interactions: vec![],
         interactions: vec![solvers_dto::solution::Interaction::Custom(
             solvers_dto::solution::CustomInteraction {
-                target: liquorice_settlement.address(),
-                calldata: liquorice_solution_calldata.0,
+                target: liquorice_settlement.address().into_legacy(),
+                calldata: liquorice_solution_calldata,
                 value: 0.into(),
                 allowances: vec![solvers_dto::solution::Allowance {
                     token: token_usdc.address(),
