@@ -128,65 +128,8 @@ impl Transaction {
             gas_price: transaction.gas_price,
             solver: solver.ok_or(Error::MissingSolver)?,
             trades: {
-                let tokenized::Tokenized {
-                    tokens,
-                    clearing_prices,
-                    trades: decoded_trades,
-                    interactions: _interactions,
-                } = tokenized::Tokenized::try_new(&crate::util::Bytes(data.to_vec()))?;
-
-                let mut trades = Vec::with_capacity(decoded_trades.len());
-                for trade in decoded_trades {
-                    let flags = tokenized::TradeFlags(trade.8);
-                    let sell_token_index = trade.0.as_usize();
-                    let buy_token_index = trade.1.as_usize();
-                    let sell_token = tokens[sell_token_index];
-                    let buy_token = tokens[buy_token_index];
-                    let uniform_sell_token_index = tokens
-                        .iter()
-                        .position(|token| token == &sell_token)
-                        .unwrap();
-                    let uniform_buy_token_index =
-                        tokens.iter().position(|token| token == &buy_token).unwrap();
-                    trades.push(EncodedTrade {
-                        uid: tokenized::order_uid(&trade, &tokens, domain_separator)
-                            .map_err(Error::OrderUidRecover)?,
-                        sell: eth::Asset {
-                            token: sell_token.into(),
-                            amount: trade.3.into(),
-                        },
-                        buy: eth::Asset {
-                            token: buy_token.into(),
-                            amount: trade.4.into(),
-                        },
-                        side: flags.side(),
-                        receiver: trade.2.into(),
-                        valid_to: trade.5,
-                        app_data: domain::auction::order::AppDataHash(trade.6.0),
-                        fee_amount: trade.7.into(),
-                        sell_token_balance: flags.sell_token_balance().into(),
-                        buy_token_balance: flags.buy_token_balance().into(),
-                        partially_fillable: flags.partially_fillable(),
-                        signature: (boundary::Signature::from_bytes(
-                            flags.signing_scheme(),
-                            &trade.10.0,
-                        )
-                        .map_err(Error::SignatureRecover)?)
-                        .into(),
-                        executed: trade.9.into(),
-                        prices: Prices {
-                            uniform: ClearingPrices {
-                                sell: clearing_prices[uniform_sell_token_index].into(),
-                                buy: clearing_prices[uniform_buy_token_index].into(),
-                            },
-                            custom: ClearingPrices {
-                                sell: clearing_prices[sell_token_index].into(),
-                                buy: clearing_prices[buy_token_index].into(),
-                            },
-                        },
-                    })
-                }
-                trades
+                let tokenized = tokenized::Tokenized::try_new(&crate::util::Bytes(data.to_vec()))?;
+                get_encoded_trades(tokenized, domain_separator)?
             },
         })
     }
@@ -231,67 +174,8 @@ impl MultiSettlementTransaction {
                 .map(crate::domain::auction::Id::from_be_bytes)
                 .ok_or(Error::MissingAuctionId)?;
 
-            let trades = {
-                let tokenized::Tokenized {
-                    tokens,
-                    clearing_prices,
-                    trades: decoded_trades,
-                    interactions: _interactions,
-                } = tokenized::Tokenized::try_new(&crate::util::Bytes(data.to_vec()))?;
-
-                let mut trades = Vec::with_capacity(decoded_trades.len());
-                for trade in decoded_trades {
-                    let flags = tokenized::TradeFlags(trade.8);
-                    let sell_token_index = trade.0.as_usize();
-                    let buy_token_index = trade.1.as_usize();
-                    let sell_token = tokens[sell_token_index];
-                    let buy_token = tokens[buy_token_index];
-                    let uniform_sell_token_index = tokens
-                        .iter()
-                        .position(|token| token == &sell_token)
-                        .unwrap();
-                    let uniform_buy_token_index =
-                        tokens.iter().position(|token| token == &buy_token).unwrap();
-                    trades.push(EncodedTrade {
-                        uid: tokenized::order_uid(&trade, &tokens, domain_separator)
-                            .map_err(Error::OrderUidRecover)?,
-                        sell: eth::Asset {
-                            token: sell_token.into(),
-                            amount: trade.3.into(),
-                        },
-                        buy: eth::Asset {
-                            token: buy_token.into(),
-                            amount: trade.4.into(),
-                        },
-                        side: flags.side(),
-                        receiver: trade.2.into(),
-                        valid_to: trade.5,
-                        app_data: domain::auction::order::AppDataHash(trade.6.0),
-                        fee_amount: trade.7.into(),
-                        sell_token_balance: flags.sell_token_balance().into(),
-                        buy_token_balance: flags.buy_token_balance().into(),
-                        partially_fillable: flags.partially_fillable(),
-                        signature: (boundary::Signature::from_bytes(
-                            flags.signing_scheme(),
-                            &trade.10.0,
-                        )
-                        .map_err(Error::SignatureRecover)?)
-                        .into(),
-                        executed: trade.9.into(),
-                        prices: Prices {
-                            uniform: ClearingPrices {
-                                sell: clearing_prices[uniform_sell_token_index].into(),
-                                buy: clearing_prices[uniform_buy_token_index].into(),
-                            },
-                            custom: ClearingPrices {
-                                sell: clearing_prices[sell_token_index].into(),
-                                buy: clearing_prices[buy_token_index].into(),
-                            },
-                        },
-                    })
-                }
-                trades
-            };
+            let tokenized = tokenized::Tokenized::try_new(&crate::util::Bytes(data.to_vec()))?;
+            let trades = get_encoded_trades(tokenized, domain_separator)?;
 
             settlements.push(SettlementData {
                 auction_id,
@@ -310,29 +194,68 @@ impl MultiSettlementTransaction {
         })
     }
 
-    /// Returns true if this transaction contains multiple settlements.
-    pub fn is_multi_settlement(&self) -> bool {
-        self.settlements.len() > 1
-    }
+}
 
- // convert to single transaction
-    pub fn to_single_transaction(&self) -> Option<Transaction> {
-        if self.settlements.len() == 1 {
-            let settlement = &self.settlements[0];
-            Some(Transaction {
-                hash: self.hash,
-                auction_id: settlement.auction_id,
-                block: self.block,
-                timestamp: self.timestamp,
-                gas: self.gas,
-                gas_price: self.gas_price,
-                solver: self.solver,
-                trades: settlement.trades.clone(),
-            })
-        } else {
-            None
-        }
-    }
+fn get_encoded_trades(
+    tokenized: tokenized::Tokenized, 
+    domain_separator: &eth::DomainSeparator
+) -> Result<Vec<EncodedTrade>, Error> {
+    let tokenized::Tokenized {
+        tokens,
+        clearing_prices,
+        trades,
+        ..
+    } = tokenized;
+    trades.into_iter().map(|trade| {
+        let flags = tokenized::TradeFlags(trade.8);
+        let sell_token_index = trade.0.as_usize();
+        let buy_token_index = trade.1.as_usize();
+        let sell_token = tokens[sell_token_index];
+        let buy_token = tokens[buy_token_index];
+        let uniform_sell_token_index = tokens
+            .iter()
+            .position(|token| token == &sell_token)
+            .unwrap();
+        let uniform_buy_token_index =
+            tokens.iter().position(|token| token == &buy_token).unwrap();
+        (|| Ok(EncodedTrade {
+            uid: tokenized::order_uid(&trade, &tokens, domain_separator)
+                .map_err(Error::OrderUidRecover)?,
+            sell: eth::Asset {
+                token: sell_token.into(),
+                amount: trade.3.into(),
+            },
+            buy: eth::Asset {
+                token: buy_token.into(),
+                amount: trade.4.into(),
+            },
+            side: flags.side(),
+            receiver: trade.2.into(),
+            valid_to: trade.5,
+            app_data: domain::auction::order::AppDataHash(trade.6.0),
+            fee_amount: trade.7.into(),
+            sell_token_balance: flags.sell_token_balance().into(),
+            buy_token_balance: flags.buy_token_balance().into(),
+            partially_fillable: flags.partially_fillable(),
+            signature: (boundary::Signature::from_bytes(
+                flags.signing_scheme(),
+                &trade.10.0,
+            )
+            .map_err(Error::SignatureRecover)?)
+            .into(),
+            executed: trade.9.into(),
+            prices: Prices {
+                uniform: ClearingPrices {
+                    sell: clearing_prices[uniform_sell_token_index].into(),
+                    buy: clearing_prices[uniform_buy_token_index].into(),
+                },
+                custom: ClearingPrices {
+                    sell: clearing_prices[sell_token_index].into(),
+                    buy: clearing_prices[buy_token_index].into(),
+                },
+            },
+        }))()
+    }).collect::<Result<_, Error>>()
 }
 
 fn find_settlement_trace_and_callers(
