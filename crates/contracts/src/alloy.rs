@@ -488,6 +488,28 @@ crate::bindings!(
 );
 crate::bindings!(CoWSwapOnchainOrders);
 
+// Used in the gnosis/solvers repo for the balancer solver
+crate::bindings!(
+    BalancerQueries,
+    crate::deployments! {
+        // <https://etherscan.io/tx/0x30799534f3a0ab8c7fa492b88b56e9354152ffaddad15415184a3926c0dd9b09>
+        MAINNET => (address!("0xE39B5e3B6D74016b2F6A9673D7d7493B6DF549d5"), 15188261),
+        // <https://arbiscan.io/tx/0x710d93aab52b6c10197eab20f9d6db1af3931f9890233d8832268291ef2f54b3>
+        ARBITRUM_ONE => (address!("0xE39B5e3B6D74016b2F6A9673D7d7493B6DF549d5"), 18238624),
+        // <https://optimistic.etherscan.io/tx/0xf3b2aaf3e12c7de0987dc99a26242b227b9bc055342dda2e013dab0657d6f9f1>
+        OPTIMISM => (address!("0xE39B5e3B6D74016b2F6A9673D7d7493B6DF549d5"), 15288107),
+        // <https://basescan.org/tx/0x425d04ee79511c17d06cd96fe1df9e0727f7e7d46b31f36ecaa044ada6a0d29a>
+        BASE => (address!("0x300Ab2038EAc391f26D9F895dc61F8F66a548833"), 1205869),
+        // <https://gnosisscan.io/tx/0x5beb3051d393aac24cb236dc850c644f345af65c4927030bd1033403e2f2e503>
+        GNOSIS => (address!("0x0F3e0c4218b7b0108a3643cFe9D3ec0d4F57c54e"), 24821845),
+        // <https://polygonscan.com/tx/0x0b74f5c230f9b7df8c7a7f0d1ebd5e6c3fab51a67a9bcc8f05c350180041682e>
+        POLYGON => (address!("0xE39B5e3B6D74016b2F6A9673D7d7493B6DF549d5"), 30988035),
+        // <https://snowtrace.io/tx/0xf484e1efde47209bad5f72642bcb8d8e2a4092a5036434724ffa2d039e93a1bf?chainid=43114>
+        AVALANCHE => (address!("0xC128468b7Ce63eA702C1f104D55A2566b13D3ABD"), 26387068),
+        // Not available on Lens
+    }
+);
+
 crate::bindings!(
     ILiquoriceSettlement,
     crate::deployments! {

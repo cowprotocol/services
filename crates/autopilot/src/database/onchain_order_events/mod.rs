@@ -259,8 +259,7 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
                     *quote_id,
                     tx_hash,
                 ))
-            })
-            .collect::<Vec<_>>();
+            });
         let onchain_order_data = parse_general_onchain_order_placement_data(
             &*self.quoter,
             events_and_quotes,
@@ -450,14 +449,17 @@ type GeneralOnchainOrderPlacementData = (
     Order,
     TxHash,
 );
-async fn parse_general_onchain_order_placement_data(
+async fn parse_general_onchain_order_placement_data<I>(
     quoter: &'_ dyn OrderQuoting,
-    order_placement_events_and_quotes_zipped: Vec<(ContractEvent, Log, i64, i64, TxHash)>,
+    order_placement_events_and_quotes_zipped: I,
     domain_separator: DomainSeparator,
     settlement_contract: H160,
     metrics: &'static Metrics,
-) -> Vec<GeneralOnchainOrderPlacementData> {
-    let futures = order_placement_events_and_quotes_zipped.into_iter().map(
+) -> Vec<GeneralOnchainOrderPlacementData>
+where
+    I: Iterator<Item = (ContractEvent, Log, i64, i64, TxHash)>,
+{
+    let futures = order_placement_events_and_quotes_zipped.map(
         |(data, log, event_timestamp, quote_id, tx_hash)| async move {
             let Some(event_index) = log_to_event_index(&log) else {
                 metrics.inc_onchain_order_errors("no_metadata");
