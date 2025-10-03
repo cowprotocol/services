@@ -471,11 +471,10 @@ impl Solver {
                 weth: Some(config.blockchain.weth.address().into()),
                 balances: Some(config.blockchain.balances.address().into()),
                 signatures: Some(config.blockchain.signatures.address().into()),
-                cow_amms: vec![],
+                cow_amm_helper_by_factory: Default::default(),
                 flashloan_router: Some(config.blockchain.flashloan_router.address().into()),
             },
             gas,
-            None,
         )
         .await;
 
