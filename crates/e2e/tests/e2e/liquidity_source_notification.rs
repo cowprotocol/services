@@ -120,7 +120,7 @@ async fn liquidity_source_notification(web3: Web3) {
         .BALANCE_MANAGER()
         .call()
         .await
-        .expect("balance manager")
+        .expect("no balance manager found")
         .into_legacy();
 
     // Fund `liquorice_maker`
