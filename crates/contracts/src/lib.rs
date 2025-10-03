@@ -65,7 +65,6 @@ include_contracts! {
     GPv2AllowListAuthentication;
     GPv2Settlement;
     IAavePool;
-    IFlashLoanSolverWrapper;
     IUniswapV3Factory;
     Permit2;
     UniswapV3QuoterV2;
