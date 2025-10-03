@@ -25,6 +25,18 @@ pub struct SignatureCheck {
 }
 
 impl SignatureCheck {
+    /// A signature check requires setup when there are interactions to be taken
+    /// into account or when the balance override is set.
+    ///
+    /// Interactions require setup because a trader may not be able to trade
+    /// without the pre-interaction, consider a case where, through the
+    /// pre-interaction, the trader claims an airdrop, giving them enough
+    /// balance to perform the trade; thus we need to simulate the
+    /// pre-interaction first to validate whether the trader can actually
+    /// perform the trade.
+    ///
+    /// The balance override is a simple way to test for things like flashloans,
+    /// where we simply assume the user will have X funds.
     fn requires_setup(&self) -> bool {
         !self.interactions.is_empty() || self.balance_override.is_some()
     }
