@@ -143,8 +143,7 @@ impl Validator {
 
 #[async_trait::async_trait]
 impl SignatureValidating for Validator {
-    /// Will validate a signature, setting up state for the simulation if
-    /// needed.
+    /// Validates a signature, setting up state for the simulation if needed.
     #[instrument(skip_all)]
     async fn validate_signature(
         &self,

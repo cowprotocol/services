@@ -508,12 +508,12 @@ impl OrderValidating for OrderValidator {
     /// Validates the provided app data, returning an [`OrderAppData`] if valid.
     ///
     /// The validation entails verifying that the app data is well formed and
-    /// it's size.
+    /// its size.
     ///
-    /// * In the case the app data contains both an hash and the data, the data
+    /// * In the case the app data contains both a hash and the data, the data
     ///   will be compared against the hash.
     /// * The app data the override will be ignored unless the provided app data
-    ///   is an hash.
+    ///   is a hash.
     fn validate_app_data(
         &self,
         app_data: &OrderCreationAppData,
