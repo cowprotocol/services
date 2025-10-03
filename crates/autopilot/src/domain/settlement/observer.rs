@@ -297,7 +297,9 @@ impl Observer {
             Err(err) => {
                 match err {
                     settlement::transaction::Error::Authentication(_) => {
-           // this has to be a temporary error because the settlement contract guarantees that SOME allow listed contract executed the transaction.
+                        // This is a temporary error because the authenticator service might be down or network issues.
+                        // It resolves itself when the service comes back online or network is fixed
+                        // and we return an error so the transaction gets retried later instead of marking it as permanently failed.
                         tracing::warn!(?tx, ?err, "could not determine solver address");
                         Err(anyhow!(format!(
                             "could not determine solver address - err: {err:?}"
