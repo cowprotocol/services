@@ -8,6 +8,7 @@ use {
 };
 
 mod tokenized;
+const META_DATA_LEN: usize = 8;
 
 /// The following trait allows to implement custom solver authentication logic
 /// for transactions.
@@ -103,9 +104,6 @@ impl Transaction {
         let block = BlockId::Number(transaction.block.0.into());
         let solver = find_solver_address(authenticator, callers, block).await?;
 
-        /// Number of bytes that may be appended to the calldata to store an
-        /// auction id.
-        const META_DATA_LEN: usize = 8;
 
         let (data, metadata) = calldata.0.split_at(
             calldata
@@ -155,7 +153,6 @@ impl MultiSettlementTransaction {
         let solver = solver.ok_or(Error::MissingSolver)?;
 
         
-        const META_DATA_LEN: usize = 8;
 
         let mut settlements = Vec::with_capacity(settlement_traces.len());
         

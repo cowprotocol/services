@@ -91,14 +91,14 @@ impl Observer {
         tracing::debug!(tx = ?event.transaction, "found unprocessed settlement");
 
 
-        let multi_settlements = self
+        let settlements = self
             .fetch_multi_settlement_data_for_transaction(event.transaction)
             .await?;
         
-        if multi_settlements.len() > 1 {
+        if settlements.len() > 1 {
             tracing::info!(
                 tx = ?event.transaction, 
-                count = multi_settlements.len(),
+                count = settlements.len(),
                 "processing multi-settlement transaction"
             );
             
@@ -109,18 +109,18 @@ impl Observer {
                 .await
                 .context("failed to fetch all settlement events for transaction")?;
             
-            if all_events.len() != multi_settlements.len() {
+            if all_events.len() != settlements.len() {
                 tracing::warn!(
                     tx = ?event.transaction,
                     event_count = all_events.len(),
-                    settlement_count = multi_settlements.len(),
+                    settlement_count = settlements.len(),
                     "mismatch between settlement events and settlements"
                 );
                 // Fall back 
                 return self.process_single_settlement_event(event).await;
             }
             
-            for (i, settlement) in multi_settlements.into_iter().enumerate() {
+            for (i, settlement) in settlements.into_iter().enumerate() {
                 if let Some(settlement_event) = all_events.get(i) {
                     self.persistence
                         .save_settlement(*settlement_event, Some(&settlement))
@@ -130,9 +130,9 @@ impl Observer {
             }
             
             return Ok(IndexSuccess::IndexedSettlement);
-        } else if multi_settlements.len() == 1 {
+        } else if settlements.len() == 1 {
             
-            let settlement = multi_settlements.into_iter().next().unwrap();
+            let settlement = settlements.into_iter().next().unwrap();
             self.persistence
                 .save_settlement(event, Some(&settlement))
                 .await
@@ -296,23 +296,17 @@ impl Observer {
             }
             Err(err) => {
                 match err {
-                    settlement::transaction::Error::MissingCalldata => {
-                        tracing::error!(?tx, ?err, "invalid settlement transaction");
-                        Ok(vec![])
+                    settlement::transaction::Error::Authentication(_) => {
+           // this has to be a temporary error because the settlement contract guarantees that SOME allow listed contract executed the transaction.
+                        tracing::warn!(?tx, ?err, "could not determine solver address");
+                        Err(anyhow!(format!(
+                            "could not determine solver address - err: {err:?}"
+                        )))
                     }
-                    settlement::transaction::Error::MissingAuctionId
-                    | settlement::transaction::Error::Decoding(_)
-                    | settlement::transaction::Error::SignatureRecover(_)
-                    | settlement::transaction::Error::OrderUidRecover(_)
-                    | settlement::transaction::Error::MissingSolver => {
+                    _ => {
+                        // All other errors are treated as invalid settlement transactions
                         tracing::warn!(?tx, ?err, "invalid settlement transaction");
                         Ok(vec![])
-                    }
-                    settlement::transaction::Error::Authentication(_) => {
-                        // This has to be a temporary error because the settlement contract
-                        Err(anyhow!(format!(
-                            "could not determing solver address - err: {err:?}"
-                        )))
                     }
                 }
             }
