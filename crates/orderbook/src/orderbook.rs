@@ -261,14 +261,13 @@ impl Orderbook {
         }
     }
 
-    /// Adds an order to the order book, placing it in the database.
+    /// Validates and stores an order in the database.
     ///
-    /// 1. If the provided app data is an hash (instead of a complete app data
-    ///    JSON), retrieves it.
+    /// 1. If the provided app data is a hash (instead of a complete app data
+    ///    JSON), retrieves it from the database.
     /// 3. Validates and constructs an order.
     /// 4. If the new order is to replace an old one, replaces it; otherwise,
-    ///    the new order is simply inserted in the database. the new order is
-    ///    simply inserted in the database
+    ///    the new order is simply inserted in the database
     #[instrument(skip_all)]
     pub async fn add_order(
         &self,
@@ -398,8 +397,8 @@ impl Orderbook {
 
     /// Using the provided app data, finds the order to be replaced.
     ///
-    /// It will validate the provided app data before searching for the order to
-    /// be replaced.
+    /// Validates the provided app data before searching for the order to be
+    /// replaced.
     async fn get_replaced_order(
         &self,
         new_order: &OrderCreation,
