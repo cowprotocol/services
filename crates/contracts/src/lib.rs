@@ -64,7 +64,6 @@ include_contracts! {
     FlashLoanRouter;
     GPv2AllowListAuthentication;
     GPv2Settlement;
-    IAavePool;
     IUniswapV3Factory;
     Permit2;
     UniswapV3QuoterV2;

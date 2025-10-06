@@ -412,7 +412,6 @@ fn main() {
     generate_contract_with_config("HoneyswapRouter", |builder| {
         builder.add_network_str(GNOSIS, "0x1C232F01118CB8B424793ae03F870aa7D0ac7f77")
     });
-    generate_contract("IAavePool");
     // EIP-1271 contract - SignatureValidator
     generate_contract("ERC1271SignatureValidator");
     generate_contract_with_config("UniswapV3SwapRouterV2", |builder| {
