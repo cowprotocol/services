@@ -1,6 +1,9 @@
 use {
     crate::{
-        domain::{competition, eth, liquidity},
+        domain::{
+            competition::{self, solution::WrapperCall},
+            eth, liquidity,
+        },
         infra::Solver,
         util::Bytes,
     },
@@ -224,8 +227,7 @@ impl Solutions {
                                 flashloan_hints.get(&uid).cloned()?,
                             ))
                         }).collect()),
-                    solution.wrapper.map(|w| w.into()),
-                    solution.wrapper_data.clone()
+                    solution.wrappers.clone().into_iter().map(|w| WrapperCall(eth::Address(w.0), w.1)).collect()
                 )
                 .map_err(|err| match err {
                     competition::solution::error::Solution::InvalidClearingPrices => {

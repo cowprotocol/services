@@ -1,4 +1,5 @@
 use {
+    alloy::primitives::Address,
     primitive_types::H160,
     reqwest::Url,
     shared::{
@@ -38,7 +39,12 @@ pub struct Arguments {
     /// Url of the Postgres database. By default connects to locally running
     /// postgres.
     #[clap(long, env, default_value = "postgresql://")]
-    pub db_url: Url,
+    pub db_write_url: Url,
+
+    /// Url of the Postgres database replica. By default it's the same as
+    /// db_write_url
+    #[clap(long, env)]
+    pub db_read_url: Option<Url>,
 
     /// The minimum amount of time in seconds an order has to be valid for.
     #[clap(
@@ -76,7 +82,7 @@ pub struct Arguments {
 
     /// List of account addresses to be denied from order creation
     #[clap(long, env, use_value_delimiter = true)]
-    pub banned_users: Vec<H160>,
+    pub banned_users: Vec<Address>,
 
     /// Maximum number of entries to keep in the banned users cache.
     #[clap(long, env, default_value = "100")]
@@ -163,7 +169,8 @@ impl std::fmt::Display for Arguments {
             ipfs_gateway,
             ipfs_pinata_auth,
             app_data_size_limit,
-            db_url,
+            db_write_url: db_url,
+            db_read_url,
             max_gas_per_order,
             active_order_competition_threshold,
         } = self;
@@ -177,6 +184,7 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "bind_address: {bind_address}")?;
         let _intentionally_ignored = db_url;
         writeln!(f, "db_url: SECRET")?;
+        display_secret_option(f, "db_read_url", db_read_url.as_ref())?;
         writeln!(
             f,
             "min_order_validity_period: {min_order_validity_period:?}"

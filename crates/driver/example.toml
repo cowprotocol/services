@@ -107,3 +107,10 @@ max-order-age = "1m"
 # [enso]
 # url = "http://localhost:8454"
 # network-block-interval = "12s"
+
+# [liquidity-sources-notifier] # Sends settlement notifications to third party liquidity sources used by solvers
+# [liquidity-sources-notifier.liquorice]
+# base-url = "https://api.liquorice.tech/"
+# api-key = "..."
+# http_timeout = "10s"
+

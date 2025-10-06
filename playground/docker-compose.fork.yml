@@ -71,7 +71,8 @@ services:
     command: ["cargo", "watch", "-x", "run --bin orderbook"]
     environment:
       - NODE_URL=http://chain:8545
-      - DB_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
+      - DB_WRITE_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
+      - DB_READ_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
       - ACCOUNT_BALANCES_SIMULATION=true
       - ACCOUNT_BALANCES_SIMULATOR=Web3
       - SIMULATION_NODE_URL=http://chain:8545
@@ -102,7 +103,8 @@ services:
     restart: always
     command: ["cargo", "watch", "-x", "run --bin autopilot"]
     environment:
-      - DB_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
+      - DB_WRITE_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
+      - DB_READ_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
       - LOG_FILTER=warn,autopilot=info,shared=info,shared::price_estimation=info
       - NODE_URL=http://chain:8545
       - SIMULATION_NODE_URL=http://chain:8545
@@ -137,7 +139,13 @@ services:
       target: localdev
       dockerfile: ./playground/Dockerfile
     restart: always
-    command: ["cargo", "watch", "-x", "run --bin driver -- --config configs/${ENV}/driver.toml"]
+    command:
+      [
+        "cargo",
+        "watch",
+        "-x",
+        "run --bin driver -- --config configs/${ENV}/driver.toml",
+      ]
     environment:
       - ETHRPC=http://chain:8545
       - ADDR=0.0.0.0:80
@@ -159,7 +167,13 @@ services:
       target: localdev
       dockerfile: ./playground/Dockerfile
     restart: always
-    command: ["cargo", "watch", "-x", "run --bin solvers -- baseline --config configs/${ENV}/baseline.toml"]
+    command:
+      [
+        "cargo",
+        "watch",
+        "-x",
+        "run --bin solvers -- baseline --config configs/${ENV}/baseline.toml",
+      ]
     environment:
       - ADDR=0.0.0.0:80
       - LOG=solvers=trace,shared=trace
@@ -194,7 +208,7 @@ services:
     image: grafana/tempo:latest
     ports:
       - "4317:4317" # OTLP gRPC
-    command: [ "-config.file=/etc/tempo.yaml" ]
+    command: ["-config.file=/etc/tempo.yaml"]
     volumes:
       - ./tempo.yaml:/etc/tempo.yaml
 

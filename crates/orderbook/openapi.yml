@@ -27,6 +27,14 @@ servers:
     url: "https://api.cow.fi/polygon"
   - description: Polygon (Staging)
     url: "https://barn.api.cow.fi/polygon"
+  - description: Lens (Prod)
+    url: "https://api.cow.fi/lens"
+  - description: Lens (Staging)
+    url: "https://barn.api.cow.fi/lens"
+  - description: BNB (Prod)
+    url: "https://api.cow.fi/bnb"
+  - description: BNB (Staging)
+    url: "https://barn.api.cow.fi/bnb"
   - description: Sepolia (Prod)
     url: "https://api.cow.fi/sepolia"
   - description: Sepolia (Staging)
@@ -36,6 +44,7 @@ servers:
 paths:
   /api/v1/orders:
     post:
+      operationId: createOrder
       summary: >-
         Create a new order. In order to replace an existing order with a new
         one, the appData must contain a [valid replacement order
@@ -76,6 +85,7 @@ paths:
             schema:
               $ref: "#/components/schemas/OrderCreation"
     delete:
+      operationId: cancelOrders
       summary: Cancel multiple orders by marking them invalid with a timestamp.
       description: >
         This is a *best effort* cancellation, and might not prevent solvers from
@@ -105,6 +115,7 @@ paths:
           description: One or more orders were not found and no orders were cancelled.
   "/api/v1/orders/{UID}":
     get:
+      operationId: getOrder
       summary: Get existing order from UID.
       parameters:
         - in: path
@@ -122,6 +133,7 @@ paths:
         "404":
           description: Order was not found.
     delete:
+      operationId: cancelOrder
       deprecated: true
       summary: Cancel an order by marking it invalid with a timestamp.
       description: |-
@@ -159,6 +171,7 @@ paths:
           description: Order was not found.
   "/api/v1/orders/{UID}/status":
     get:
+      operationId: getOrderStatus
       summary: Get the status of an order.
       parameters:
         - in: path
@@ -177,6 +190,7 @@ paths:
                 $ref: "#/components/schemas/CompetitionOrderStatus"
   "/api/v1/transactions/{txHash}/orders":
     get:
+      operationId: getOrdersByTxHash
       summary: Get orders by settlement transaction hash.
       parameters:
         - in: path
@@ -195,6 +209,7 @@ paths:
                   $ref: "#/components/schemas/Order"
   /api/v1/trades:
     get:
+      operationId: getTrades
       summary: Get existing trades.
       description: |
         Exactly one of `owner` or `orderUid` must be set.
@@ -229,6 +244,7 @@ paths:
                   $ref: "#/components/schemas/Trade"
   /api/v1/auction:
     get:
+      operationId: getCurrentBatchAuction
       summary: Get the current batch auction.
       description: |-
         The current batch auction that solvers should be solving right now. This
@@ -249,6 +265,7 @@ paths:
                 $ref: "#/components/schemas/Auction"
   "/api/v1/account/{owner}/orders":
     get:
+      operationId: getUserOrdersPaginated
       summary: Get orders of one user paginated.
       description: |-
         The orders are sorted by their creation date descending (newest orders
@@ -290,6 +307,7 @@ paths:
           description: Problem with parameters like limit being too large.
   "/api/v1/token/{token}/native_price":
     get:
+      operationId: getTokenNativePrice
       summary: Get native price for the given token.
       description: |-
         Price is the exchange rate between the specified token and the network's
@@ -318,6 +336,7 @@ paths:
           description: Unexpected error.
   /api/v1/quote:
     post:
+      operationId: quote
       summary: Quote a price and fee for the specified order parameters.
       description: >
         Given a partial order compute the minimum fee and a price estimate for
@@ -352,6 +371,7 @@ paths:
           description: Unexpected error quoting an order.
   "/api/v1/solver_competition/{auction_id}":
     get:
+      operationId: getSolverCompetitionByAuctionId
       deprecated: true
       summary: Get information about a solver competition.
       description: |
@@ -373,6 +393,7 @@ paths:
           description: No competition information available for this auction id.
   "/api/v1/solver_competition/by_tx_hash/{tx_hash}":
     get:
+      operationId: getSolverCompetitionByTxHash
       deprecated: true
       summary: Get information about solver competition.
       description: |
@@ -395,6 +416,7 @@ paths:
           description: No competition information available for this `tx_hash`.
   /api/v1/solver_competition/latest:
     get:
+      operationId: getSolverCompetitionLatest
       deprecated: true
       summary: Get information about the most recent solver competition.
       description: |
@@ -410,6 +432,7 @@ paths:
           description: No competition information available.
   "/api/v2/solver_competition/{auction_id}":
     get:
+      operationId: getSolverCompetitionByAuctionIdV2
       summary: Get information about a solver competition.
       description: |
         Returns the competition information by `auction_id`.
@@ -430,6 +453,7 @@ paths:
           description: No competition information available for this auction id.
   "/api/v2/solver_competition/by_tx_hash/{tx_hash}":
     get:
+      operationId: getSolverCompetitionByTxHashV2
       summary: Get information about solver competition.
       description: |
         Returns the competition information by `tx_hash`.
@@ -451,6 +475,7 @@ paths:
           description: No competition information available for this `tx_hash`.
   /api/v2/solver_competition/latest:
     get:
+      operationId: getSolverCompetitionLatestV2
       summary: Get information about the most recent solver competition.
       description: |
         Returns the competition information for the last seen auction_id.
@@ -465,6 +490,7 @@ paths:
           description: No competition information available.
   /api/v1/version:
     get:
+      operationId: getApiVersion
       summary: Get the API's current deployed version.
       description: >
         Returns the git commit hash, branch name and release tag (code:
@@ -473,9 +499,10 @@ paths:
         "200":
           description: Version
           content:
-            text/plain: { }
+            text/plain: {}
   "/api/v1/app_data/{app_data_hash}":
     get:
+      operationId: getAppDataByHash
       summary: Get the full `appData` from contract `appDataHash`.
       parameters:
         - in: path
@@ -493,6 +520,7 @@ paths:
         "404":
           description: No full `appData` stored for this hash.
     put:
+      operationId: registerAppDataByHash
       summary: Registers a full `appData` so it can be referenced by `appDataHash`.
       description: >
         Uploads a full `appData` to orderbook so that orders created with the
@@ -530,6 +558,7 @@ paths:
           description: Error storing the full `appData`
   /api/v1/app_data:
     put:
+      operationId: registerAppData
       summary: Registers a full `appData` and returns `appDataHash`.
       description: >
         Uploads a full `appData` to orderbook and returns the corresponding
@@ -560,6 +589,7 @@ paths:
           description: Error storing the full `appData`
   "/api/v1/users/{address}/total_surplus":
     get:
+      operationId: getAddressTotalSurplus
       summary: "Get the total surplus earned by the user. [UNSTABLE]"
       description: |-
         ### Caution

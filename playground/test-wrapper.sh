@@ -1,9 +1,14 @@
 #!/bin/bash
 set -x
 
-appData='{\"version\":\"0.9.0\",\"metadata\":{\"wrapper\":\"0xdAa2E293726d0d20ddC17fee8064900dC9574e3f\",\"wrapper_data\":\"0x12345678ffff\"}}'
-appDataUnescaped="{\"version\":\"0.9.0\",\"metadata\":{\"wrapper\":\"0xdAa2E293726d0d20ddC17fee8064900dC9574e3f\",\"wrapper_data\":\"0x12345678ffff\"}}"
+#appData='{\"version\":\"0.9.0\",\"metadata\":{\"wrapper\":\"0xdAa2E293726d0d20ddC17fee8064900dC9574e3f\",\"wrapperData\":\"0x12345678ffff\"}}'
+#appDataUnescaped="{\"version\":\"0.9.0\",\"metadata\":{\"wrapper\":\"0xdAa2E293726d0d20ddC17fee8064900dC9574e3f\",\"wrapperData\":\"0x12345678ffff\"}}"
+appData='{\"version\":\"0.9.0\",\"metadata\":{}}'
+appDataUnescaped="{\"version\":\"0.9.0\",\"metadata\":{}}"
+
+
 appDataHash=$(cast keccak "$appDataUnescaped")
+#appDataHash="0x0000000000000000000000000000000000000000000000000000000000000000"
 
 # valid until 24 hours from now
 validTo=$(date -d "5 minutes" +%s)

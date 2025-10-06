@@ -8,6 +8,7 @@ info:
 paths:
   /solve:
     post:
+      operationId: solve
       description: |
         Solve the passed in auction instance.
       requestBody:
@@ -41,6 +42,7 @@ paths:
           description: Something went wrong when handling the request.
   /notify:
     post:
+      operationId: notify
       description: |
         Receive a status notification about a previously provided solution.
       requestBody:

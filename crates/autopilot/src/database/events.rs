@@ -1,4 +1,5 @@
 use {
+    alloy::rpc::types::Log,
     anyhow::{Context, Result, anyhow},
     contracts::gpv2_settlement::{
         Event as ContractEvent,
@@ -83,6 +84,13 @@ pub fn meta_to_event_index(meta: &EventMetadata) -> EventIndex {
         block_number: i64::try_from(meta.block_number).unwrap_or(i64::MAX),
         log_index: i64::try_from(meta.log_index).unwrap_or(i64::MAX),
     }
+}
+
+pub fn log_to_event_index(log: &Log) -> Option<EventIndex> {
+    Some(EventIndex {
+        block_number: log.block_number.and_then(|n| i64::try_from(n).ok())?,
+        log_index: log.log_index.and_then(|n| i64::try_from(n).ok())?,
+    })
 }
 
 pub fn bytes_to_order_uid(bytes: &[u8]) -> Result<OrderUid> {

@@ -3,3 +3,7 @@ disallowed-methods = [
     { path = "alloy::rpc::client::RpcClient::new_batch", reason = "There is no need to manually send batched requests because the alloy transport layer batches requests automatically under the hood." },
     { path = "alloy::rpc::client::BatchRequest::new", reason = "There is no need to manually send batched requests because the alloy transport layer batches requests automatically under the hood." },
 ]
+await-holding-invalid-types = [
+  "tracing::span::Entered",
+  "tracing::span::EnteredSpan",
+]

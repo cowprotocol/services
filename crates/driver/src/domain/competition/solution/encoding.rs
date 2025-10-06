@@ -207,23 +207,54 @@ pub fn tx(
         post_interactions.iter().map(codec::interaction).collect(),
     ];
 
-    let tx = if let Some(w) = solution.wrapper {
-        contracts::GPv2Wrapper::at(contracts.web3(), w.into()).wrapped_settle(
-            tokens,
-            clearing_prices,
-            trades.iter().map(codec::trade).collect(),
-            interactions,
-            ethcontract::Bytes(solution.wrapper_data.clone().unwrap_or_default()),
-        )
+    let tx = if !solution.wrappers.is_empty() {
+        let wrapped_tx =
+            contracts::GPv2Settlement::at(contracts.web3(), solution.wrappers[0].0.into())
+                .settle(
+                    tokens,
+                    clearing_prices,
+                    trades.iter().map(codec::trade).collect(),
+                    interactions,
+                )
+                .into_inner();
+
+        let original_data = wrapped_tx.data.as_ref().unwrap().clone().0;
+        let mut call_data = Vec::with_capacity(
+            original_data.len()
+                + solution
+                    .wrappers
+                    .iter()
+                    .map(|v| v.1.as_ref().map(|v| v.len()).unwrap_or_default())
+                    .sum::<usize>(),
+        );
+
+        call_data.extend(&original_data[..4]);
+
+        call_data.extend(solution.wrappers[0].1.as_ref().unwrap_or(&Vec::new()));
+
+        for w in &solution.wrappers[1..] {
+            call_data.extend([0u8; 12]);
+            call_data.extend(w.0 .0.as_bytes());
+            call_data.extend(w.1.as_ref().unwrap_or(&Vec::new()));
+        }
+
+        call_data.extend([0u8; 12]);
+        call_data.extend(contracts.settlement().address().as_bytes());
+
+        call_data.extend(&original_data[4..]);
+
+        wrapped_tx.data(web3::types::Bytes(call_data))
     } else {
-        contracts.settlement().settle(
-            tokens,
-            clearing_prices,
-            trades.iter().map(codec::trade).collect(),
-            interactions,
-        )
-    }
-    .into_inner();
+        contracts
+            .settlement()
+            .settle(
+                tokens,
+                clearing_prices,
+                trades.iter().map(codec::trade).collect(),
+                interactions,
+            )
+            .into_inner()
+    };
 
     // Encode the auction id into the calldata
     let mut settle_calldata = tx.data.unwrap().0;

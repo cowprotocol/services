@@ -45,6 +45,7 @@ use {
         },
         baseline_solver::BaseTokens,
         code_fetching::CachedCodeFetcher,
+        event_handling::AlloyEventRetriever,
         http_client::HttpClientFactory,
         maintenance::ServiceMaintenance,
         order_quoting::{self, OrderQuoter},
@@ -153,14 +154,21 @@ pub async fn start(args: impl Iterator<Item = String>) {
 /// Assumes tracing and metrics registry have already been set up.
 pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     assert!(args.shadow.is_none(), "cannot run in shadow mode");
-    // Start a new span that measures the initialization phase of the autopilot
-    let startup_span = info_span!("autopilot_startup");
-    let startup_span_guard = startup_span.enter();
-
-    let db = Postgres::new(args.db_url.as_str(), args.insert_batch_size)
+    let db_write = Postgres::new(args.db_write_url.as_str(), args.insert_batch_size)
         .await
         .unwrap();
-    crate::database::run_database_metrics_work(db.clone());
+
+    let db_read = if let Some(db_read_url) = args.db_read_url
+        && args.db_write_url != db_read_url
+    {
+        Postgres::new(db_read_url.as_str(), args.insert_batch_size)
+            .await
+            .expect("failed to create read replica database")
+    } else {
+        db_write.clone()
+    };
+
+    crate::database::run_database_metrics_work(db_read.clone());
 
     let http_factory = HttpClientFactory::new(&args.http_client);
     let web3 = shared::ethrpc::web3(
@@ -395,7 +403,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         .instrument(info_span!("native_price_estimator"))
         .await
         .unwrap();
-    let prices = db.fetch_latest_prices().await.unwrap();
+    let prices = db_write.fetch_latest_prices().await.unwrap();
     native_price_estimator.initialize_cache(prices);
 
     let price_estimator = price_estimator_factory
@@ -425,7 +433,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         tokio::sync::mpsc::unbounded_channel();
 
     let persistence =
-        infra::persistence::Persistence::new(args.s3.into().unwrap(), Arc::new(db.clone()))
+        infra::persistence::Persistence::new(args.s3.into().unwrap(), Arc::new(db_write.clone()))
             .instrument(info_span!("persistence_init"))
             .await;
     let settlement_observer =
@@ -453,7 +461,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
             eth.contracts().settlement().clone(),
         ),
         boundary::events::settlement::Indexer::new(
-            db.clone(),
+            db_write.clone(),
             settlement_observer,
             settlement_contract_start_index,
         ),
@@ -476,7 +484,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         price_estimator,
         native_price_estimator.clone(),
         gas_price_estimator,
-        Arc::new(db.clone()),
+        Arc::new(db_write.clone()),
         order_quoting::Validity {
             eip1271_onchain_quote: chrono::Duration::from_std(
                 args.order_quoting.eip1271_onchain_quote_validity,
@@ -529,7 +537,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     );
     let order_events_cleaner = crate::periodic_db_cleanup::OrderEventsCleaner::new(
         order_events_cleaner_config,
-        db.clone(),
+        db_write.clone(),
     );
 
     tokio::task::spawn(
@@ -549,7 +557,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     let trusted_tokens =
         AutoUpdatingTokenList::from_configuration(market_makable_token_list_configuration).await;
 
-    let mut maintenance = Maintenance::new(settlement_event_indexer, db.clone());
+    let mut maintenance = Maintenance::new(settlement_event_indexer, db_write.clone());
     maintenance.with_cow_amms(&cow_amm_registry);
 
     if !args.ethflow_contracts.is_empty() {
@@ -558,15 +566,18 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
             args.ethflow_indexing_start,
             &web3,
             chain_id,
-            db.clone(),
+            db_write.clone(),
         )
         .await;
 
         let refund_event_handler = EventUpdater::new_skip_blocks_before(
             // This cares only about ethflow refund events because all the other ethflow
             // events are already indexed by the OnchainOrderParser.
-            EthFlowRefundRetriever::new(web3.clone(), args.ethflow_contracts.clone()),
-            db.clone(),
+            AlloyEventRetriever(EthFlowRefundRetriever::new(
+                web3.clone(),
+                args.ethflow_contracts.clone(),
+            )),
+            db_write.clone(),
             block_retriever.clone(),
             ethflow_refund_start_block,
         )
@@ -576,7 +587,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
 
         let custom_ethflow_order_parser = EthFlowOnchainOrderParser {};
         let onchain_order_event_parser = OnchainOrderParser::new(
-            db.clone(),
+            db_write.clone(),
             web3.clone(),
             quoter.clone(),
             Box::new(custom_ethflow_order_parser),
@@ -590,14 +601,17 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
             args.ethflow_indexing_start,
             &web3,
             chain_id,
-            &db,
+            &db_write,
         )
         .await;
 
         let onchain_order_indexer = EventUpdater::new_skip_blocks_before(
             // The events from the ethflow contract are read with the more generic contract
             // interface called CoWSwapOnchainOrders.
-            CoWSwapOnchainOrdersContract::new(web3.clone(), args.ethflow_contracts),
+            AlloyEventRetriever(CoWSwapOnchainOrdersContract::new(
+                web3.clone(),
+                args.ethflow_contracts,
+            )),
             onchain_order_event_parser,
             block_retriever,
             ethflow_start_block,
@@ -669,7 +683,6 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         Arc::new(maintenance),
         competition_updates_sender,
     );
-    drop(startup_span_guard);
     run.run_forever(shutdown_controller).await;
 }
 

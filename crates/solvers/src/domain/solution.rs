@@ -8,6 +8,12 @@ use {
 #[derive(Debug, Default, Copy, Clone)]
 pub struct Id(pub u64);
 
+#[derive(Debug, Default)]
+pub struct WrapperCall {
+    pub target: eth::Address,
+    pub data: Option<Vec<u8>>,
+}
+
 /// A solution to an auction.
 #[derive(Debug, Default)]
 pub struct Solution {
@@ -18,8 +24,7 @@ pub struct Solution {
     pub interactions: Vec<Interaction>,
     pub post_interactions: Vec<eth::Interaction>,
     pub gas: Option<eth::Gas>,
-    pub wrapper: Option<eth::Address>,
-    pub wrapper_data: Option<Vec<u8>>,
+    pub wrappers: Vec<WrapperCall>,
 }
 
 impl Solution {
@@ -189,8 +194,14 @@ impl Single {
             post_interactions: Default::default(),
             gas: Some(gas),
             trades: vec![Trade::Fulfillment(Fulfillment::new(order, executed, fee)?)],
-            wrapper: wrapper.map(eth::Address),
-            wrapper_data,
+            wrappers: wrapper
+                .map(|addr| {
+                    vec![WrapperCall {
+                        target: eth::Address(addr),
+                        data: wrapper_data,
+                    }]
+                })
+                .unwrap_or_default(),
         })
     }
 }
