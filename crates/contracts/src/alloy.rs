@@ -519,6 +519,8 @@ crate::bindings!(
     }
 );
 
+crate::bindings!(IFlashLoanSolverWrapper);
+
 pub mod support {
     // Support contracts used for trade and token simulations.
     crate::bindings!(AnyoneAuthenticator);
