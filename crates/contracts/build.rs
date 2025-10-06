@@ -410,8 +410,6 @@ fn main() {
             )
     });
 
-    generate_contract_with_config("GPv2Wrapper", |builder| builder);
-
     generate_contract_with_config("HoneyswapRouter", |builder| {
         builder.add_network_str(GNOSIS, "0x1C232F01118CB8B424793ae03F870aa7D0ac7f77")
     });
