@@ -5,13 +5,13 @@ use {
         BalancerV2Authorizer,
         BalancerV2Vault,
         CowAmmLegacyHelper,
-        ERC3156FlashLoanSolverWrapper,
         FlashLoanRouter,
         GPv2AllowListAuthentication,
         GPv2Settlement,
         WETH9,
         alloy::{
             CoWSwapEthFlow,
+            ERC3156FlashLoanSolverWrapper,
             HooksTrampoline,
             InstanceExt,
             UniswapV2Factory,
@@ -46,7 +46,7 @@ pub struct Contracts {
     pub ethflows: Vec<CoWSwapEthFlow::Instance>,
     pub hooks: HooksTrampoline::Instance,
     pub cow_amm_helper: Option<CowAmmLegacyHelper>,
-    pub flashloan_wrapper_maker: Option<ERC3156FlashLoanSolverWrapper>,
+    pub flashloan_wrapper_maker: Option<ERC3156FlashLoanSolverWrapper::Instance>,
     pub flashloan_wrapper_aave: Option<AaveFlashLoanSolverWrapper>,
     pub flashloan_router: Option<FlashLoanRouter>,
 }
@@ -85,10 +85,12 @@ impl Contracts {
         let flashloan_wrapper_aave = AaveFlashLoanSolverWrapper::deployed(web3).await.ok();
 
         let flashloan_wrapper_maker = match &flashloan_router {
-            Some(router) => ERC3156FlashLoanSolverWrapper::builder(web3, router.address())
-                .deploy()
-                .await
-                .ok(),
+            Some(router) => ERC3156FlashLoanSolverWrapper::Instance::deploy(
+                web3.alloy.clone(),
+                router.address().into_alloy(),
+            )
+            .await
+            .ok(),
             None => None,
         };
 
@@ -233,10 +235,12 @@ impl Contracts {
         .await
         .unwrap();
         let flashloan_router = deploy!(web3, FlashLoanRouter(gp_settlement.address()));
-        let flashloan_wrapper_maker = deploy!(
-            web3,
-            ERC3156FlashLoanSolverWrapper(flashloan_router.address())
-        );
+        let flashloan_wrapper_maker = ERC3156FlashLoanSolverWrapper::Instance::deploy(
+            web3.alloy.clone(),
+            flashloan_router.address().into_alloy(),
+        )
+        .await
+        .unwrap();
         let flashloan_wrapper_aave =
             deploy!(web3, AaveFlashLoanSolverWrapper(flashloan_router.address()));
 
