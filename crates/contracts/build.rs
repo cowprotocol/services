@@ -32,27 +32,6 @@ fn main() {
     // - https://doc.rust-lang.org/cargo/reference/build-scripts.html#cargorerun-if-changedpath
     println!("cargo:rerun-if-changed=build.rs");
 
-    generate_contract_with_config("AaveFlashLoanSolverWrapper", |builder| {
-        let mut builder = builder;
-        for network in [
-            MAINNET,
-            GNOSIS,
-            SEPOLIA,
-            ARBITRUM_ONE,
-            BASE,
-            POLYGON,
-            AVALANCHE,
-        ] {
-            builder = builder.add_network(
-                network,
-                Network {
-                    address: addr("0x7d9c4dee56933151bc5c909cfe09def0d315cb4a"),
-                    deployment_information: None,
-                },
-            );
-        }
-        builder
-    });
     generate_contract_with_config("BalancerV2Authorizer", |builder| {
         builder.contract_mod_override("balancer_v2_authorizer")
     });
