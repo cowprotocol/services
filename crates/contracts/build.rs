@@ -204,7 +204,6 @@ fn main() {
         // Not available on Lens
     });
     generate_contract("ERC20");
-    generate_contract("ERC3156FlashLoanSolverWrapper");
     generate_contract_with_config("FlashLoanRouter", |builder| {
         let mut builder = builder;
         for network in [
