@@ -3,7 +3,7 @@ use {
         domain::{
             competition::{
                 self,
-                order::{self, fees, signature::Scheme, Side},
+                order::{self, Side, fees, signature::Scheme},
             },
             eth::{self},
             liquidity,

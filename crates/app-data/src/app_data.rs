@@ -1,10 +1,10 @@
 use {
-    crate::{app_data_hash::hash_full_app_data, AppDataHash, Hooks},
-    anyhow::{anyhow, Context, Result},
+    crate::{AppDataHash, Hooks, app_data_hash::hash_full_app_data},
+    anyhow::{Context, Result, anyhow},
     bytes_hex::BytesHex,
     number::serialization::HexOrDecimalU256,
     primitive_types::{H160, U256},
-    serde::{de, Deserialize, Deserializer, Serialize, Serializer},
+    serde::{Deserialize, Deserializer, Serialize, Serializer, de},
     serde_with::serde_as,
     std::{
         fmt::{self, Display},

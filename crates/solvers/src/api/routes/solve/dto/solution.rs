@@ -1,6 +1,7 @@
 use {
     crate::domain::{
-        eth, order,
+        eth,
+        order,
         solution::{self},
     },
     solvers_dto::solution::*,

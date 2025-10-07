@@ -4,10 +4,10 @@ pub use ethcontract;
 pub mod alloy;
 pub mod errors;
 use {
-    anyhow::{anyhow, bail, Result},
+    anyhow::{Result, anyhow, bail},
     ethcontract::{
-        common::{contract::Network, DeploymentInformation},
         Contract,
+        common::{DeploymentInformation, contract::Network},
     },
 };
 
@@ -100,7 +100,7 @@ mod tests {
             futures::future::{self, FutureExt as _, Ready},
             json::json,
             jsonrpc::{Call, Id, MethodCall, Params, Value},
-            web3::{error::Result as Web3Result, BatchTransport, RequestId, Transport, Web3},
+            web3::{BatchTransport, RequestId, Transport, Web3, error::Result as Web3Result},
         },
     };
 

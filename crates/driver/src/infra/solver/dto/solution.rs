@@ -2,7 +2,8 @@ use {
     crate::{
         domain::{
             competition::{self, solution::WrapperCall},
-            eth, liquidity,
+            eth,
+            liquidity,
         },
         infra::Solver,
         util::Bytes,
@@ -10,8 +11,8 @@ use {
     app_data::AppDataHash,
     itertools::Itertools,
     model::{
-        order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
         DomainSeparator,
+        order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
     },
     std::{collections::HashMap, str::FromStr},
 };

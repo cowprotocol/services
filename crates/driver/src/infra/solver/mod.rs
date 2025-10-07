@@ -1,5 +1,6 @@
 use {
-    super::notify, crate::{
+    super::notify,
+    crate::{
         domain::{
             competition::{
                 auction::{self, Auction},
@@ -18,7 +19,17 @@ use {
             persistence::{Persistence, S3},
         },
         util,
-    }, anyhow::Result, derive_more::{From, Into}, ethcontract::H160, num::BigRational, observe::tracing::tracing_headers, reqwest::header::HeaderName, std::{collections::HashMap, time::Duration}, tap::TapFallible, thiserror::Error, tracing::{instrument, Instrument}
+    },
+    anyhow::Result,
+    derive_more::{From, Into},
+    ethcontract::H160,
+    num::BigRational,
+    observe::tracing::tracing_headers,
+    reqwest::header::HeaderName,
+    std::{collections::HashMap, time::Duration},
+    tap::TapFallible,
+    thiserror::Error,
+    tracing::{Instrument, instrument},
 };
 
 pub mod dto;
@@ -330,7 +341,10 @@ impl Solver {
             .flat_map(|order| {
                 let wrapper = order.app_data.wrapper()?;
                 let wrapper_data = order.app_data.wrapper_data().cloned().unwrap_or(Vec::new());
-                println!("ASSEMBLE! WRAPPERS {:?} with wd {:?}", order.app_data, wrapper_data);
+                println!(
+                    "ASSEMBLE! WRAPPERS {:?} with wd {:?}",
+                    order.app_data, wrapper_data
+                );
                 Some((order.uid, (*wrapper, wrapper_data)))
             })
             .collect()

@@ -4,7 +4,7 @@ use {
     bigdecimal::BigDecimal,
     number::serialization::HexOrDecimalU256,
     serde::{Deserialize, Serialize},
-    serde_with::{serde_as, DisplayFromStr},
+    serde_with::{DisplayFromStr, serde_as},
     std::collections::HashMap,
     web3::types::{H160, H256, U256},
 };

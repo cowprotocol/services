@@ -3,7 +3,6 @@
 // and if so checking if it finds a matchable order according to an external
 // price api (0x). If this is the case it alerts.
 
-
 use {
     anyhow::{Context, Result},
     clap::Parser,

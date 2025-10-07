@@ -6,7 +6,8 @@
 //! over separate paths.
 
 use {
-    super::solution::Solution, crate::{
+    super::solution::Solution,
+    crate::{
         boundary,
         domain::{
             auction,
@@ -17,8 +18,7 @@ use {
         },
         infra::metrics,
     },
-    ethereum_types::U256,
-    ethereum_types::H160,
+    ethereum_types::{H160, U256},
     reqwest::Url,
     std::{cmp, collections::HashSet, sync::Arc},
     tracing::Instrument,
@@ -254,7 +254,12 @@ impl Inner {
 
     fn requests_for_order(&self, order: &Order) -> impl Iterator<Item = Request> + use<> {
         let order::Order {
-            sell, buy, side, wrapper, wrapper_data, ..
+            sell,
+            buy,
+            side,
+            wrapper,
+            wrapper_data,
+            ..
         } = order.clone();
 
         let n = if order.partially_fillable {
