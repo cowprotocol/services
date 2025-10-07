@@ -519,10 +519,6 @@ crate::bindings!(
     }
 );
 
-crate::bindings!(ERC3156FlashLoanSolverWrapper);
-crate::bindings!(IFlashLoanSolverWrapper);
-crate::bindings!(IAavePool);
-
 pub mod support {
     // Support contracts used for trade and token simulations.
     crate::bindings!(AnyoneAuthenticator);
