@@ -207,7 +207,7 @@ pub fn tx(
         post_interactions.iter().map(codec::interaction).collect(),
     ];
 
-    let tx = if !solution.wrappers.is_empty() {
+    let (mut to, mut calldata) = if !solution.wrappers.is_empty() {
         let wrapped_tx =
             contracts::GPv2Settlement::at(contracts.web3(), solution.wrappers[0].0.into())
                 .settle(
@@ -228,7 +228,7 @@ pub fn tx(
                     .sum::<usize>(),
         );
 
-        call_data.extend(&original_data[..4]);
+        call_data.extend(&original_data);
 
         call_data.extend(solution.wrappers[0].1.as_ref().unwrap_or(&Vec::new()));
 
@@ -241,11 +241,9 @@ pub fn tx(
         call_data.extend([0u8; 12]);
         call_data.extend(contracts.settlement().address().as_bytes());
 
-        call_data.extend(&original_data[4..]);
-
-        wrapped_tx.data(web3::types::Bytes(call_data))
+        (solution.wrappers[0].0.into(), call_data)
     } else {
-        contracts
+        let tx = contracts
             .settlement()
             .settle(
                 tokens,
@@ -253,16 +251,17 @@ pub fn tx(
                 trades.iter().map(codec::trade).collect(),
                 interactions,
             )
-            .into_inner()
+            .into_inner();
+
+        (tx.to.unwrap().into(), tx.data.unwrap().0)
     };
 
     // Encode the auction id into the calldata
-    let mut settle_calldata = tx.data.unwrap().0;
-    settle_calldata.extend(auction.id().ok_or(Error::MissingAuctionId)?.to_be_bytes());
+    calldata.extend(auction.id().ok_or(Error::MissingAuctionId)?.to_be_bytes());
 
     // Target and calldata depend on whether a flashloan is used
-    let (to, calldata) = if solution.flashloans.is_empty() {
-        (tx.to.unwrap().into(), settle_calldata)
+    (to, calldata) = if solution.flashloans.is_empty() {
+        (to, calldata)
     } else {
         let router = contracts
             .flashloan_router()
@@ -281,9 +280,9 @@ pub fn tx(
             })
             .collect();
 
-        let call = router.flash_loan_and_settle(flashloans, ethcontract::Bytes(settle_calldata));
-        let calldata = call.tx.data.unwrap().0;
-        (router.address().into(), calldata)
+        let call = router.flash_loan_and_settle(flashloans, ethcontract::Bytes(calldata));
+        let fl_calldata = call.tx.data.unwrap().0;
+        (router.address().into(), fl_calldata)
     };
 
     Ok(eth::Tx {

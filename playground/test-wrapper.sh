@@ -1,8 +1,10 @@
 #!/bin/bash
 set -x
 
-#appData='{\"version\":\"0.9.0\",\"metadata\":{\"wrapper\":\"0xdAa2E293726d0d20ddC17fee8064900dC9574e3f\",\"wrapperData\":\"0x12345678ffff\"}}'
-#appDataUnescaped="{\"version\":\"0.9.0\",\"metadata\":{\"wrapper\":\"0xdAa2E293726d0d20ddC17fee8064900dC9574e3f\",\"wrapperData\":\"0x12345678ffff\"}}"
+WRAPPER_CONTRACT=${WRAPPER_CONTRACT:-0x54112E2F481AC239661914691082039d7B05A264}
+
+#appData='{\"version\":\"0.9.0\",\"metadata\":{\"wrapper\":\"'${WRAPPER_CONTRACT}'\",\"wrapperData\":\"0x\"}}'
+#appDataUnescaped="{\"version\":\"0.9.0\",\"metadata\":{\"wrapper\":\"${WRAPPER_CONTRACT}\",\"wrapperData\":\"0x\"}}"
 appData='{\"version\":\"0.9.0\",\"metadata\":{}}'
 appDataUnescaped="{\"version\":\"0.9.0\",\"metadata\":{}}"
 
