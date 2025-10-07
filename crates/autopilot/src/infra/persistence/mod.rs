@@ -367,7 +367,7 @@ impl Persistence {
 
         let orders = {
             // get all orders from a competition auction
-            let auction_orders = database::auction_orders::fetch(&mut ex, auction_id)
+            let auction_orders = database::auction::get_order_uids(&mut ex, auction_id)
                 .await
                 .map_err(error::Auction::DatabaseError)?
                 .ok_or(error::Auction::NotFound)?
