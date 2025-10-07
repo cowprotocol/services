@@ -241,7 +241,7 @@ pub fn tx(
             .collect();
 
         let calldata = router
-            .flashLoanAndSettle(flashloans, alloy::primitives::Bytes::from(settle_calldata))
+            .flashLoanAndSettle(flashloans, settle_calldata.into())
             .calldata()
             .to_vec();
         (router.address().into_legacy().into(), calldata)
