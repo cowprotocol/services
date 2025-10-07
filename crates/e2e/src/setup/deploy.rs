@@ -4,12 +4,12 @@ use {
         BalancerV2Authorizer,
         BalancerV2Vault,
         CowAmmLegacyHelper,
-        FlashLoanRouter,
         GPv2AllowListAuthentication,
         GPv2Settlement,
         WETH9,
         alloy::{
             CoWSwapEthFlow,
+            FlashLoanRouter,
             HooksTrampoline,
             InstanceExt,
             UniswapV2Factory,
@@ -44,7 +44,7 @@ pub struct Contracts {
     pub ethflows: Vec<CoWSwapEthFlow::Instance>,
     pub hooks: HooksTrampoline::Instance,
     pub cow_amm_helper: Option<CowAmmLegacyHelper>,
-    pub flashloan_router: Option<FlashLoanRouter>,
+    pub flashloan_router: Option<FlashLoanRouter::Instance>,
 }
 
 impl Contracts {
@@ -77,7 +77,7 @@ impl Contracts {
                 .expect("failed to find signatures contract"),
         };
 
-        let flashloan_router = FlashLoanRouter::deployed(web3).await.ok();
+        let flashloan_router = FlashLoanRouter::Instance::deployed(&web3.alloy).await.ok();
 
         Self {
             chain_id: network_id
@@ -217,7 +217,12 @@ impl Contracts {
         )
         .await
         .unwrap();
-        let flashloan_router = deploy!(web3, FlashLoanRouter(gp_settlement.address()));
+        let flashloan_router = FlashLoanRouter::Instance::deploy(
+            web3.alloy.clone(),
+            gp_settlement.address().into_alloy(),
+        )
+        .await
+        .unwrap();
 
         Self {
             chain_id: network_id

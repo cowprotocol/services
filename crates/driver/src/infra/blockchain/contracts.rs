@@ -1,8 +1,12 @@
 use {
     crate::{boundary, domain::eth, infra::blockchain::Ethereum},
     chain::Chain,
-    contracts::FlashLoanRouter,
-    ethrpc::{Web3, block_stream::CurrentBlockWatcher},
+    contracts::alloy::FlashLoanRouter,
+    ethrpc::{
+        Web3,
+        alloy::conversions::{IntoAlloy, IntoLegacy},
+        block_stream::CurrentBlockWatcher,
+    },
     thiserror::Error,
 };
 
@@ -22,7 +26,7 @@ pub struct Contracts {
     /// same settlement.
     // TODO: make this non-optional when contracts are deployed
     // everywhere
-    flashloan_router: Option<FlashLoanRouter>,
+    flashloan_router: Option<FlashLoanRouter::Instance>,
     balance_helper: contracts::support::Balances,
 }
 
@@ -110,12 +114,13 @@ impl Contracts {
         let flashloan_router = addresses
             .flashloan_router
             .or_else(|| {
-                contracts::FlashLoanRouter::raw_contract()
-                    .networks
-                    .get(&chain.id().to_string())
-                    .map(|deployment| eth::ContractAddress(deployment.address))
+                FlashLoanRouter::deployment_address(&chain.id()).map(|deployment_address| {
+                    eth::ContractAddress(deployment_address.into_legacy())
+                })
             })
-            .map(|address| contracts::FlashLoanRouter::at(web3, address.0));
+            .map(|address| {
+                FlashLoanRouter::Instance::new(address.0.into_alloy(), web3.alloy.clone())
+            });
 
         Ok(Self {
             settlement,
@@ -162,7 +167,7 @@ impl Contracts {
         &self.cow_amm_registry
     }
 
-    pub fn flashloan_router(&self) -> Option<&contracts::FlashLoanRouter> {
+    pub fn flashloan_router(&self) -> Option<&FlashLoanRouter::Instance> {
         self.flashloan_router.as_ref()
     }
 
