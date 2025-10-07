@@ -4,7 +4,6 @@ use {
         BalancerV2Authorizer,
         BalancerV2Vault,
         CowAmmLegacyHelper,
-        FlashLoanRouter,
         GPv2AllowListAuthentication,
         GPv2Settlement,
         WETH9,
@@ -19,7 +18,7 @@ use {
         support::{Balances, Signatures},
     },
     ethcontract::{Address, H256, U256, errors::DeployError},
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    ethrpc::alloy::conversions::IntoAlloy,
     model::DomainSeparator,
     shared::ethrpc::Web3,
 };
