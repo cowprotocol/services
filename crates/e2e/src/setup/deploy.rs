@@ -10,10 +10,12 @@ use {
         WETH9,
         alloy::{
             CoWSwapEthFlow,
-            ERC3156FlashLoanSolverWrapper,
             FlashLoanRouter,
+            HooksTrampoline,
+            InstanceExt,
             UniswapV2Factory,
             UniswapV2Router02,
+        },
         support::{Balances, Signatures},
     },
     ethcontract::{Address, H256, U256, errors::DeployError},
