@@ -8,7 +8,7 @@
 
 use {
     crate::{
-        domain::{competition::solution::Settlement, eth},
+        domain::competition::solution::Settlement,
         infra::{
             self,
             notify::liquidity_sources::{
@@ -17,9 +17,10 @@ use {
             },
         },
     },
+    alloy::primitives::Address,
     anyhow::{Context, Result, anyhow},
     chrono::Utc,
-    contracts::ILiquoriceSettlement,
+    contracts::alloy::ILiquoriceSettlement,
 };
 
 const NOTIFICATION_SOURCE: &str = "cow_protocol";
@@ -30,7 +31,7 @@ pub struct Notifier {
     client: liquorice::Client,
     /// Address of the Liquorice settlement contract is used to
     /// find relevant interactions in CoW settlement contract
-    liquorice_settlement_contract_address: eth::Address,
+    liquorice_settlement_contract_address: Address,
 }
 
 impl Notifier {
@@ -38,11 +39,9 @@ impl Notifier {
         config: &infra::notify::liquidity_sources::config::Liquorice,
         chain: chain::Chain,
     ) -> Result<Self> {
-        let liquorice_settlement_contract_address = ILiquoriceSettlement::raw_contract()
-            .networks
-            .get(chain.id().to_string().as_str())
-            .map(|network| network.address.into())
-            .ok_or(anyhow!("Liquorice settlement contract not found"))?;
+        let liquorice_settlement_contract_address =
+            ILiquoriceSettlement::deployment_address(&chain.id())
+                .ok_or(anyhow!("Liquorice settlement contract not found"))?;
 
         Ok(Self {
             client: liquorice::Client::new(
@@ -89,9 +88,9 @@ mod utils {
             competition::{solution, solution::Settlement},
             eth,
         },
-        contracts::ILiquoriceSettlement,
-        ethabi::Token,
-        ethcontract::common::FunctionExt,
+        alloy::{primitives::Address, sol_types::SolCall},
+        contracts::alloy::ILiquoriceSettlement,
+        ethrpc::alloy::conversions::IntoAlloy,
         std::collections::HashSet,
     };
 
@@ -99,7 +98,7 @@ mod utils {
     /// <https://liquorice.gitbook.io/liquorice-docs/for-market-makers/basic-market-making-api#id-3.-receiving-rfq>
     pub fn extract_rfq_ids_from_settlement(
         settlement: &Settlement,
-        liquorice_settlement_contract_address: eth::Address,
+        liquorice_settlement_contract_address: Address,
     ) -> HashSet<String> {
         // Aggregate all interactions from the settlement and extract RFQ ID from each
         settlement
@@ -144,40 +143,19 @@ mod utils {
     /// <https://etherscan.io/address/0x0448633eb8b0a42efed924c42069e0dcf08fb552#code#F8#L83>
     pub fn extract_rfq_id_from_interaction(
         interaction: &eth::Interaction,
-        liquorice_settlement_contract_address: eth::Address,
+        liquorice_settlement_contract_address: Address,
     ) -> Option<String> {
-        if interaction.target != liquorice_settlement_contract_address {
+        if interaction.target.0.into_alloy() != liquorice_settlement_contract_address {
             return None;
         }
 
         // Decode the calldata using the Liquorice settlement contract ABI
-        let tokens = {
-            let settle_single_function = ILiquoriceSettlement::raw_contract()
-                .interface
-                .abi
-                .function("settleSingle")
-                .unwrap();
+        let input = ILiquoriceSettlement::ILiquoriceSettlement::settleSingleCall::abi_decode(
+            &interaction.call_data.0,
+        )
+        .ok()?;
 
-            interaction
-                .call_data
-                .0
-                .strip_prefix(&settle_single_function.selector())
-                .and_then(|input| settle_single_function.decode_input(input).ok())
-        }?;
-
-        // Token at index 1 corresponds to `Single` order
-        // <https://etherscan.io/address/0x0448633eb8b0a42efed924c42069e0dcf08fb552#code#F8#L85>
-        tokens.get(1).and_then(|token| match token {
-            Token::Tuple(tokens) => {
-                // Token at index 0 corresponds to `rfqId` field
-                // <https://etherscan.io/address/0x0448633eb8b0a42efed924c42069e0dcf08fb552#code#F8#L42>
-                tokens.first().and_then(|token| match token {
-                    Token::String(rfq_id) => Some(rfq_id.clone()),
-                    _ => None,
-                })
-            }
-            _ => None,
-        })
+        Some(input._order.rfqId)
     }
 
     #[cfg(test)]
@@ -188,6 +166,7 @@ mod utils {
                 infra::notify::liquidity_sources::liquorice::notifier::utils::extract_rfq_id_from_interaction,
                 util::Bytes,
             },
+            ethrpc::alloy::conversions::IntoAlloy,
             primitive_types::H160,
         };
 
@@ -202,7 +181,7 @@ mod utils {
                     call_data: Bytes(calldata),
                     value: 0.into(),
                 },
-                liquorice_settlement_address,
+                liquorice_settlement_address.0.into_alloy(),
             )
             .unwrap();
             assert_eq!(rfq_id, "c99d2e3f-702b-49c9-8bb8-43775770f2f3".to_string());
@@ -217,7 +196,7 @@ mod utils {
                     call_data: Bytes(vec![]),
                     value: 0.into(),
                 },
-                liquorice_settlement_address,
+                liquorice_settlement_address.0.into_alloy(),
             );
 
             assert!(rfq_id.is_none());
@@ -231,7 +210,7 @@ mod utils {
                     call_data: Bytes(vec![]),
                     value: 0.into(),
                 },
-                H160::random().into(),
+                H160::random().into_alloy(),
             );
 
             assert!(rfq_id.is_none());

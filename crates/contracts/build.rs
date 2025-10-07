@@ -32,27 +32,6 @@ fn main() {
     // - https://doc.rust-lang.org/cargo/reference/build-scripts.html#cargorerun-if-changedpath
     println!("cargo:rerun-if-changed=build.rs");
 
-    generate_contract_with_config("AaveFlashLoanSolverWrapper", |builder| {
-        let mut builder = builder;
-        for network in [
-            MAINNET,
-            GNOSIS,
-            SEPOLIA,
-            ARBITRUM_ONE,
-            BASE,
-            POLYGON,
-            AVALANCHE,
-        ] {
-            builder = builder.add_network(
-                network,
-                Network {
-                    address: addr("0x7d9c4dee56933151bc5c909cfe09def0d315cb4a"),
-                    deployment_information: None,
-                },
-            );
-        }
-        builder
-    });
     generate_contract_with_config("BalancerV2Authorizer", |builder| {
         builder.contract_mod_override("balancer_v2_authorizer")
     });
@@ -204,28 +183,6 @@ fn main() {
         // Not available on Lens
     });
     generate_contract("ERC20");
-    generate_contract("ERC3156FlashLoanSolverWrapper");
-    generate_contract_with_config("FlashLoanRouter", |builder| {
-        let mut builder = builder;
-        for network in [
-            MAINNET,
-            GNOSIS,
-            SEPOLIA,
-            ARBITRUM_ONE,
-            BASE,
-            POLYGON,
-            AVALANCHE,
-        ] {
-            builder = builder.add_network(
-                network,
-                Network {
-                    address: addr("0x9da8b48441583a2b93e2ef8213aad0ec0b392c69"),
-                    deployment_information: None,
-                },
-            );
-        }
-        builder
-    });
     generate_contract_with_config("GPv2AllowListAuthentication", |builder| {
         builder
             .contract_mod_override("gpv2_allow_list_authentication")
@@ -412,8 +369,6 @@ fn main() {
     generate_contract_with_config("HoneyswapRouter", |builder| {
         builder.add_network_str(GNOSIS, "0x1C232F01118CB8B424793ae03F870aa7D0ac7f77")
     });
-    generate_contract("IAavePool");
-    generate_contract("IFlashLoanSolverWrapper");
     // EIP-1271 contract - SignatureValidator
     generate_contract("ERC1271SignatureValidator");
     generate_contract_with_config("UniswapV3SwapRouterV2", |builder| {
@@ -473,12 +428,6 @@ fn main() {
             // not official
             .add_network_str(LENS, "0xc3A5b857Ba82a2586A45a8B59ECc3AA50Bc3D0e3")
         // Not available on Gnosis Chain
-    });
-    generate_contract_with_config("ILiquoriceSettlement", |builder| {
-        // <https://liquorice.gitbook.io/liquorice-docs/links/smart-contracts>
-        builder
-            .add_network_str(MAINNET, "0x0448633eb8B0A42EfED924C42069E0DcF08fb552")
-            .add_network_str(ARBITRUM_ONE, "0x0448633eb8B0A42EfED924C42069E0DcF08fb552")
     });
     generate_contract_with_config("CowProtocolToken", |builder| {
         builder

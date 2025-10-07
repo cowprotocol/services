@@ -70,6 +70,11 @@ impl Validator {
         Ok(())
     }
 
+    /// Simulates the signature validation setting balance overrides and
+    /// pre-interactions; returning the gas used.
+    ///
+    /// These are required as they may interact with the signature, for example,
+    /// adding composable CoW orders.
     #[instrument(skip_all, fields(interactions_len = check.interactions.len()))]
     async fn simulate(
         &self,
@@ -138,6 +143,7 @@ impl Validator {
 
 #[async_trait::async_trait]
 impl SignatureValidating for Validator {
+    /// Validates a signature, setting up state for the simulation if needed.
     #[instrument(skip_all)]
     async fn validate_signature(
         &self,
