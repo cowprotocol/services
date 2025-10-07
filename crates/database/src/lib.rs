@@ -1,6 +1,5 @@
 pub mod app_data;
 pub mod auction;
-pub mod auction_orders;
 pub mod auction_participants;
 pub mod auction_prices;
 pub mod byte_array;
@@ -53,7 +52,6 @@ pub type PgTransaction<'a> = sqlx::Transaction<'a, sqlx::Postgres>;
 /// The names of tables we use in the db.
 pub const TABLES: &[&str] = &[
     "app_data",
-    "auction_orders",
     "auctions",
     "ethflow_orders",
     "ethflow_refunds",
