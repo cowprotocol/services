@@ -8,7 +8,7 @@ use {
         tests::{self, boundary, cases::EtherExt},
     },
     alloy::{primitives::U256, signers::local::PrivateKeySigner},
-    contracts::alloy::ERC20Mintable,
+    contracts::alloy::{ERC20Mintable, FlashLoanRouter},
     ethcontract::PrivateKey,
     ethrpc::{
         Web3,
@@ -46,7 +46,7 @@ pub struct Blockchain {
     pub settlement: contracts::GPv2Settlement,
     pub balances: contracts::support::Balances,
     pub signatures: contracts::support::Signatures,
-    pub flashloan_router: contracts::FlashLoanRouter,
+    pub flashloan_router: FlashLoanRouter::Instance,
     pub ethflow: Option<ContractAddress>,
     pub domain_separator: boundary::DomainSeparator,
     pub node: Node,
@@ -364,14 +364,16 @@ impl Blockchain {
             .unwrap()
         };
 
-        let flashloan_router = wait_for(
-            &web3,
-            contracts::FlashLoanRouter::builder(&web3, settlement.address())
-                .from(main_trader_account.clone())
-                .deploy(),
+        let flashloan_router_address = FlashLoanRouter::Instance::deploy_builder(
+            web3.alloy.clone(),
+            settlement.address().into_alloy(),
         )
+        .from(main_trader_account.address().into_alloy())
+        .deploy()
         .await
         .unwrap();
+        let flashloan_router =
+            FlashLoanRouter::Instance::new(flashloan_router_address, web3.alloy.clone());
 
         let mut trader_accounts = Vec::new();
         for config in config.solvers {

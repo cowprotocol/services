@@ -49,7 +49,6 @@ macro_rules! include_contracts {
 }
 
 include_contracts! {
-    AaveFlashLoanSolverWrapper;
     BalancerV2Authorizer;
     BalancerV2Vault;
     BalancerV3BatchRouter;
@@ -60,12 +59,8 @@ include_contracts! {
     CowProtocolToken;
     ERC1271SignatureValidator;
     ERC20;
-    ERC3156FlashLoanSolverWrapper;
-    FlashLoanRouter;
     GPv2AllowListAuthentication;
     GPv2Settlement;
-    IAavePool;
-    IFlashLoanSolverWrapper;
     IUniswapV3Factory;
     Permit2;
     UniswapV3QuoterV2;

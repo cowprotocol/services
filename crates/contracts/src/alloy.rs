@@ -519,6 +519,19 @@ crate::bindings!(
     }
 );
 
+crate::bindings!(
+    FlashLoanRouter,
+    crate::deployments! {
+        MAINNET => address!("0x9da8b48441583a2b93e2ef8213aad0ec0b392c69"),
+        GNOSIS => address!("0x9da8b48441583a2b93e2ef8213aad0ec0b392c69"),
+        SEPOLIA => address!("0x9da8b48441583a2b93e2ef8213aad0ec0b392c69"),
+        ARBITRUM_ONE => address!("0x9da8b48441583a2b93e2ef8213aad0ec0b392c69"),
+        BASE => address!("0x9da8b48441583a2b93e2ef8213aad0ec0b392c69"),
+        POLYGON => address!("0x9da8b48441583a2b93e2ef8213aad0ec0b392c69"),
+        AVALANCHE => address!("0x9da8b48441583a2b93e2ef8213aad0ec0b392c69"),
+    }
+);
+
 pub mod support {
     // Support contracts used for trade and token simulations.
     crate::bindings!(AnyoneAuthenticator);

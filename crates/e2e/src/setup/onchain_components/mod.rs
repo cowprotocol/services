@@ -393,7 +393,7 @@ impl OnchainComponents {
         if let Some(router) = &self.contracts.flashloan_router {
             self.contracts
                 .gp_authenticator
-                .add_solver(router.address())
+                .add_solver(router.address().into_legacy())
                 .from(auth_manager.clone())
                 .send()
                 .await
