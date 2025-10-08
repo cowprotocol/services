@@ -3,7 +3,6 @@ use {
     anyhow::Context,
     app_data::AppDataDocument,
     derive_more::From,
-    ethcontract::H160,
     futures::FutureExt,
     moka::future::Cache,
     reqwest::StatusCode,
@@ -141,17 +140,10 @@ impl AppData {
         }
     }
 
-    pub fn wrapper(&self) -> Option<&H160> {
+    pub fn wrappers(&self) -> Option<&[app_data::WrapperCall]> {
         match self {
             Self::Hash(_) => None,
-            Self::Full(data) => data.protocol.wrapper.as_ref(),
-        }
-    }
-
-    pub fn wrapper_data(&self) -> Option<&Vec<u8>> {
-        match self {
-            Self::Hash(_) => None,
-            Self::Full(data) => data.protocol.wrapper_data.as_ref(),
+            Self::Full(data) => data.protocol.wrappers.as_deref(),
         }
     }
 }

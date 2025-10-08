@@ -334,18 +334,20 @@ impl Solver {
             .collect()
     }
 
-    fn assemble_wrappers(&self, auction: &Auction) -> HashMap<order::Uid, (H160, Vec<u8>)> {
+    fn assemble_wrappers(&self, auction: &Auction) -> HashMap<order::Uid, Vec<(H160, Vec<u8>)>> {
         auction
             .orders()
             .iter()
-            .flat_map(|order| {
-                let wrapper = order.app_data.wrapper()?;
-                let wrapper_data = order.app_data.wrapper_data().cloned().unwrap_or(Vec::new());
-                println!(
-                    "ASSEMBLE! WRAPPERS {:?} with wd {:?}",
-                    order.app_data, wrapper_data
-                );
-                Some((order.uid, (*wrapper, wrapper_data)))
+            .filter_map(|order| {
+                let wrappers = order.app_data.wrappers()?;
+                if wrappers.is_empty() {
+                    return None;
+                }
+                let wrapper_calls = wrappers
+                    .iter()
+                    .map(|w| (w.address, w.data.clone()))
+                    .collect();
+                Some((order.uid, wrapper_calls))
             })
             .collect()
     }

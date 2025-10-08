@@ -1,6 +1,5 @@
 use {
     crate::domain::{auction, eth, liquidity, order},
-    ethcontract::H160,
     ethereum_types::{Address, U256},
     std::{collections::HashMap, slice},
 };
@@ -118,10 +117,8 @@ pub struct Single {
     pub interactions: Vec<Interaction>,
     /// The estimated gas needed for the solution settling this single order.
     pub gas: eth::Gas,
-    /// The wrapper to use, if any
-    pub wrapper: Option<H160>,
-    /// The wrapper data to use, if any
-    pub wrapper_data: Option<Vec<u8>>,
+    /// The wrapper calls to use, if any
+    pub wrappers: Option<Vec<order::WrapperCall>>,
 }
 
 impl Single {
@@ -134,8 +131,7 @@ impl Single {
             output,
             interactions,
             gas,
-            wrapper,
-            wrapper_data,
+            wrappers,
         } = self;
 
         if (order.sell.token, order.buy.token) != (input.token, output.token) {
@@ -194,12 +190,15 @@ impl Single {
             post_interactions: Default::default(),
             gas: Some(gas),
             trades: vec![Trade::Fulfillment(Fulfillment::new(order, executed, fee)?)],
-            wrappers: wrapper
-                .map(|addr| {
-                    vec![WrapperCall {
-                        target: eth::Address(addr),
-                        data: wrapper_data,
-                    }]
+            wrappers: wrappers
+                .map(|calls| {
+                    calls
+                        .iter()
+                        .map(|w| WrapperCall {
+                            target: eth::Address(w.address),
+                            data: Some(w.data.clone()),
+                        })
+                        .collect()
                 })
                 .unwrap_or_default(),
         })

@@ -18,7 +18,7 @@ use {
         },
         infra::metrics,
     },
-    ethereum_types::{H160, U256},
+    ethereum_types::U256,
     reqwest::Url,
     std::{cmp, collections::HashSet, sync::Arc},
     tracing::Instrument,
@@ -191,8 +191,7 @@ impl Inner {
             };
 
             let compute_solution = async |request: Request| -> Option<Solution> {
-                let wrapper = request.wrapper;
-                let wrapper_data = request.wrapper_data.clone();
+                let wrappers = request.wrappers.clone();
                 let route = boundary_solver.route(request, self.max_hops).await?;
                 let interactions = route
                     .segments
@@ -231,8 +230,7 @@ impl Inner {
                         output,
                         interactions,
                         gas,
-                        wrapper,
-                        wrapper_data,
+                        wrappers,
                     }
                     .into_solution(fee)?
                     .with_id(solution::Id(i as u64))
@@ -257,8 +255,7 @@ impl Inner {
             sell,
             buy,
             side,
-            wrapper,
-            wrapper_data,
+            wrappers,
             ..
         } = order.clone();
 
@@ -281,8 +278,7 @@ impl Inner {
                         amount: buy.amount / divisor,
                     },
                     side,
-                    wrapper,
-                    wrapper_data: wrapper_data.clone(),
+                    wrappers: wrappers.clone(),
                 }
             })
             .filter(|r| !r.sell.amount.is_zero() && !r.buy.amount.is_zero())
@@ -308,15 +304,11 @@ impl Inner {
             amount: self.native_token_price_estimation_amount,
         };
 
-        let wrapper = order.wrapper;
-        let wrapper_data = order.wrapper_data.clone();
-
         Request {
             sell,
             buy,
             side: order::Side::Buy,
-            wrapper,
-            wrapper_data,
+            wrappers: order.wrappers.clone(),
         }
     }
 }
@@ -338,8 +330,7 @@ pub struct Request {
     pub sell: eth::Asset,
     pub buy: eth::Asset,
     pub side: order::Side,
-    pub wrapper: Option<H160>,
-    pub wrapper_data: Option<Vec<u8>>,
+    pub wrappers: Option<Vec<order::WrapperCall>>,
 }
 
 /// A trading route.

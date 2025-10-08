@@ -3,10 +3,10 @@ set -x
 
 WRAPPER_CONTRACT=${WRAPPER_CONTRACT:-0x54112E2F481AC239661914691082039d7B05A264}
 
-#appData='{\"version\":\"0.9.0\",\"metadata\":{\"wrapper\":\"'${WRAPPER_CONTRACT}'\",\"wrapperData\":\"0x\"}}'
-#appDataUnescaped="{\"version\":\"0.9.0\",\"metadata\":{\"wrapper\":\"${WRAPPER_CONTRACT}\",\"wrapperData\":\"0x\"}}"
-appData='{\"version\":\"0.9.0\",\"metadata\":{}}'
-appDataUnescaped="{\"version\":\"0.9.0\",\"metadata\":{}}"
+appData='{\"version\":\"0.9.0\",\"metadata\":{\"wrappers\":[{\"address\":\"'${WRAPPER_CONTRACT}'\",\"data\":\"0x\"}]}}'
+appDataUnescaped="{\"version\":\"0.9.0\",\"metadata\":{\"wrappers\":[{\"address\":\"${WRAPPER_CONTRACT}\",\"data\":\"0x\"}]}}"
+#appData='{\"version\":\"0.9.0\",\"metadata\":{}}'
+#appDataUnescaped="{\"version\":\"0.9.0\",\"metadata\":{}}"
 
 
 appDataHash=$(cast keccak "$appDataUnescaped")

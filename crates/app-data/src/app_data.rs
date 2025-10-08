@@ -34,9 +34,8 @@ pub struct ProtocolAppData {
     #[serde(default)]
     pub partner_fee: PartnerFees,
     pub flashloan: Option<Flashloan>,
-    pub wrapper: Option<H160>,
-    #[serde_as(as = "Option<BytesHex>")]
-    pub wrapper_data: Option<Vec<u8>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wrappers: Option<Vec<WrapperCall>>,
 }
 
 /// Contains information to hint at how a solver could make
@@ -60,6 +59,20 @@ pub struct Flashloan {
     /// How much of the token to flashloan.
     #[serde_as(as = "HexOrDecimalU256")]
     pub amount: U256,
+}
+
+/// Contains information about wrapper contracts that should be used
+/// to wrap/unwrap tokens for settlement.
+#[serde_as]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[cfg_attr(any(test, feature = "test_helpers"), derive(Serialize))]
+#[serde(rename_all = "camelCase")]
+pub struct WrapperCall {
+    /// The address of the wrapper contract.
+    pub address: H160,
+    /// Additional calldata to be passed to the wrapper contract.
+    #[serde_as(as = "BytesHex")]
+    pub data: Vec<u8>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
@@ -436,8 +449,7 @@ impl From<BackendAppData> for ProtocolAppData {
     fn from(value: BackendAppData) -> Self {
         Self {
             hooks: value.hooks,
-            wrapper: None,
-            wrapper_data: None,
+            wrappers: None,
             signer: None,
             replaced_order: None,
             partner_fee: PartnerFees::default(),

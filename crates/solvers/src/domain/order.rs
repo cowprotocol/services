@@ -17,8 +17,7 @@ pub struct Order {
     pub class: Class,
     pub partially_fillable: bool,
     pub flashloan_hint: Option<FlashloanHint>,
-    pub wrapper: Option<H160>,
-    pub wrapper_data: Option<Vec<u8>>,
+    pub wrappers: Option<Vec<WrapperCall>>,
 }
 
 impl Order {
@@ -146,4 +145,10 @@ pub struct FlashloanHint {
     pub receiver: eth::Address,
     pub token: eth::TokenAddress,
     pub amount: eth::U256,
+}
+
+#[derive(Debug, Clone)]
+pub struct WrapperCall {
+    pub address: H160,
+    pub data: Vec<u8>,
 }
