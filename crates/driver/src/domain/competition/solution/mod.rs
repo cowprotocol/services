@@ -39,7 +39,10 @@ pub use {error::Error, interaction::Interaction, settlement::Settlement, trade::
 type Prices = HashMap<eth::TokenAddress, eth::U256>;
 
 #[derive(Clone)]
-pub struct WrapperCall(pub eth::Address, pub Option<Vec<u8>>);
+pub struct WrapperCall {
+    pub address: eth::Address,
+    pub data: Option<Vec<u8>>,
+}
 
 // TODO Add a constructor and ensure that the clearing prices are included for
 // each trade

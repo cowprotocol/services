@@ -1,9 +1,5 @@
 use {
-    crate::domain::{
-        eth,
-        order,
-        solution,
-    },
+    crate::domain::{eth, order, solution},
     solvers_dto::solution::*,
 };
 
@@ -125,7 +121,10 @@ pub fn from_domain(solutions: &[solution::Solution]) -> super::Solutions {
                 wrappers: solution
                     .wrappers
                     .iter()
-                    .map(|w| (w.target.0, w.data.clone()))
+                    .map(|w| solvers_dto::solution::WrapperCall {
+                        address: w.target.0,
+                        data: w.data.clone(),
+                    })
                     .collect(),
             })
             .collect(),

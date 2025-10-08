@@ -209,7 +209,7 @@ pub fn tx(
 
     let (mut to, mut calldata) = if !solution.wrappers.is_empty() {
         let wrapped_tx =
-            contracts::GPv2Settlement::at(contracts.web3(), solution.wrappers[0].0.into())
+            contracts::GPv2Settlement::at(contracts.web3(), solution.wrappers[0].address.into())
                 .settle(
                     tokens,
                     clearing_prices,
@@ -224,24 +224,24 @@ pub fn tx(
                 + solution
                     .wrappers
                     .iter()
-                    .map(|v| v.1.as_ref().map(|v| v.len()).unwrap_or_default())
+                    .map(|v| v.data.as_ref().map(|v| v.len()).unwrap_or_default())
                     .sum::<usize>(),
         );
 
         call_data.extend(&original_data);
 
-        call_data.extend(solution.wrappers[0].1.as_ref().unwrap_or(&Vec::new()));
+        call_data.extend(solution.wrappers[0].data.as_ref().unwrap_or(&Vec::new()));
 
         for w in &solution.wrappers[1..] {
             call_data.extend([0u8; 12]);
-            call_data.extend(w.0.0.as_bytes());
-            call_data.extend(w.1.as_ref().unwrap_or(&Vec::new()));
+            call_data.extend(w.address.0.as_bytes());
+            call_data.extend(w.data.as_ref().unwrap_or(&Vec::new()));
         }
 
         call_data.extend([0u8; 12]);
         call_data.extend(contracts.settlement().address().as_bytes());
 
-        (solution.wrappers[0].0.into(), call_data)
+        (solution.wrappers[0].address.into(), call_data)
     } else {
         let tx = contracts
             .settlement()

@@ -228,7 +228,10 @@ impl Solutions {
                                 flashloan_hints.get(&uid).cloned()?,
                             ))
                         }).collect()),
-                    solution.wrappers.clone().into_iter().map(|w| WrapperCall(eth::Address(w.0), w.1)).collect()
+                    solution.wrappers.clone().into_iter().map(|w| WrapperCall {
+                        address: eth::Address(w.address),
+                        data: w.data,
+                    }).collect()
                 )
                 .map_err(|err| match err {
                     competition::solution::error::Solution::InvalidClearingPrices => {
