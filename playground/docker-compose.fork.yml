@@ -223,7 +223,8 @@ services:
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
       - GF_AUTH_DISABLE_LOGIN_FORM=true
-      - GF_DATASOURCES_DEFAULT_URL=http://prometheus:9090
+    volumes:
+      - ./grafana-prometheus.yml:/etc/grafana/provisioning/datasources/prometheus.yml
 
   prometheus:
     image: prom/prometheus:latest
