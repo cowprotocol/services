@@ -281,7 +281,7 @@ pub fn tx(
             .collect();
 
         let fl_calldata = router
-            .flashLoanAndSettle(flashloans, settle_calldata.into())
+            .flashLoanAndSettle(flashloans, calldata.into())
             .calldata()
             .to_vec();
         (router.address().into_legacy().into(), fl_calldata)
