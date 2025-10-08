@@ -6,7 +6,7 @@ use {
                 self,
                 order::{self, Partial},
             },
-            eth::{self, allowance, Ether},
+            eth::{self, Ether, allowance},
             liquidity,
         },
         infra::{self, solver::ManageNativeToken},
@@ -98,7 +98,7 @@ pub fn tx(
                         sell_amount: trade.order().sell.amount.into(),
                         buy_amount: trade.order().buy.amount.into(),
                         valid_to: trade.order().valid_to.into(),
-                        app_data: trade.order().app_data.hash().0 .0.into(),
+                        app_data: trade.order().app_data.hash().0.0.into(),
                         fee_amount: eth::U256::zero(),
                         flags: Flags {
                             side: trade.order().side,
@@ -136,7 +136,7 @@ pub fn tx(
                         sell_amount: trade.order().sell.amount.into(),
                         buy_amount: trade.order().buy.amount.into(),
                         valid_to: trade.order().valid_to.into(),
-                        app_data: trade.order().app_data.0 .0.into(),
+                        app_data: trade.order().app_data.0.0.into(),
                         fee_amount: eth::U256::zero(),
                         flags: Flags {
                             side: trade.order().side,
@@ -276,7 +276,7 @@ pub fn tx(
                 amount: flashloan.amount.0.into_alloy(),
                 borrower: flashloan.protocol_adapter.0.into_alloy(),
                 lender: flashloan.liquidity_provider.0.into_alloy(),
-                token: flashloan.token.0 .0.into_alloy(),
+                token: flashloan.token.0.0.into_alloy(),
             })
             .collect();
 
