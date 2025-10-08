@@ -941,7 +941,6 @@ impl Persistence {
         )
     }
 
-  // get all unprocessed settlements for a given transaction hash
     pub async fn get_all_unprocessed_settlements_for_transaction(
         &self,
         tx_hash: eth::TxId,

@@ -43,7 +43,7 @@ impl Authenticator for contracts::GPv2AllowListAuthentication {
     }
 }
 
-/// An on-chain transaction that settled a solution.
+/// An on-chain transaction that settled one or more solutions.
 #[derive(Debug, Clone)]
 pub struct Transaction {
     /// The hash of the transaction.
@@ -64,9 +64,17 @@ pub struct Transaction {
     pub trades: Vec<EncodedTrade>,
 }
 
- // multi settlement transaction
+/// Data for a single settlement within a transaction.
 #[derive(Debug, Clone)]
-pub struct MultiSettlementTransaction {
+pub struct SettlementData {
+    pub auction_id: domain::auction::Id,
+    pub trades: Vec<EncodedTrade>,
+}
+
+/// Represents all settlements contained in a transaction.
+/// Works for both single and multiple settlement transactions.
+#[derive(Debug, Clone)]
+pub struct TransactionSettlements {
     pub hash: eth::TxId,
     pub block: eth::BlockNo,
     pub timestamp: u32,
@@ -76,13 +84,6 @@ pub struct MultiSettlementTransaction {
     pub settlements: Vec<SettlementData>,
 }
 
-
-#[derive(Debug, Clone)]
-pub struct SettlementData {
-    pub auction_id: domain::auction::Id,
-    pub trades: Vec<EncodedTrade>,
-}
-
 impl Transaction {
     pub async fn try_new(
         transaction: &eth::Transaction,
@@ -90,58 +91,47 @@ impl Transaction {
         settlement_contract: eth::Address,
         authenticator: &impl Authenticator,
     ) -> Result<Self, Error> {
-        // Find trace call to settlement contract
-        let (calldata, callers) = find_settlement_trace_and_callers(&transaction.trace_calls, settlement_contract)
-            .map(|(trace, path)| (trace.input.clone(), path.clone()))
-            // All transactions emitting settlement events should have a /settle call, 
-            // otherwise it's an execution client bug
+        let multi_settlement = TransactionSettlements::try_new(
+            transaction,
+            domain_separator,
+            settlement_contract,
+            authenticator,
+        )
+        .await?;
+
+        let first_settlement = multi_settlement
+            .settlements
+            .first()
             .ok_or(Error::MissingCalldata)?;
 
-        // Find solver (submission address)
-        // In cases of solvers using EOA to submit solutions, the address is the sender
-        // of the transaction. In cases of solvers using a smart contract to
-        // submit solutions, the address is deduced from the calldata.
-        let block = BlockId::Number(transaction.block.0.into());
-        let solver = find_solver_address(authenticator, callers, block).await?;
+        Ok(Self::from_multi_settlement(&multi_settlement, first_settlement))
+    }
 
-
-        let (data, metadata) = calldata.0.split_at(
-            calldata
-                .0
-                .len()
-                .checked_sub(META_DATA_LEN)
-                // should contain at META_DATA_LEN bytes for auction id
-                .ok_or(Error::MissingCalldata)?,
-        );
-        let metadata: Option<[u8; META_DATA_LEN]> = metadata.try_into().ok();
-        let auction_id = metadata
-            .map(crate::domain::auction::Id::from_be_bytes)
-            .ok_or(Error::MissingAuctionId)?;
-        Ok(Self {
-            hash: transaction.hash,
-            auction_id,
-            block: transaction.block,
-            timestamp: transaction.timestamp,
-            gas: transaction.gas,
-            gas_price: transaction.gas_price,
-            solver: solver.ok_or(Error::MissingSolver)?,
-            trades: {
-                let tokenized = tokenized::Tokenized::try_new(&crate::util::Bytes(data.to_vec()))?;
-                get_encoded_trades(tokenized, domain_separator)?
-            },
-        })
+    /// Constructs a Transaction from a TransactionSettlements and a specific SettlementData.
+    pub fn from_multi_settlement(
+        multi: &TransactionSettlements,
+        settlement: &SettlementData,
+    ) -> Self {
+        Self {
+            hash: multi.hash,
+            auction_id: settlement.auction_id,
+            block: multi.block,
+            timestamp: multi.timestamp,
+            gas: multi.gas,
+            gas_price: multi.gas_price,
+            solver: multi.solver,
+            trades: settlement.trades.clone(),
+        }
     }
 }
 
-impl MultiSettlementTransaction {
- // create new multi settlement transaction
+impl TransactionSettlements {
     pub async fn try_new(
         transaction: &eth::Transaction,
         domain_separator: &eth::DomainSeparator,
         settlement_contract: eth::Address,
         authenticator: &impl Authenticator,
     ) -> Result<Self, Error> {
-        // Find all settlement traces in the transaction
         let settlement_traces = find_all_settlement_traces_and_callers(&transaction.trace_calls, settlement_contract);
         
         if settlement_traces.is_empty() {
@@ -151,8 +141,6 @@ impl MultiSettlementTransaction {
         let block = BlockId::Number(transaction.block.0.into());
         let solver = find_solver_address(authenticator, settlement_traces[0].1.clone(), block).await?;
         let solver = solver.ok_or(Error::MissingSolver)?;
-
-        
 
         let mut settlements = Vec::with_capacity(settlement_traces.len());
         
@@ -190,7 +178,6 @@ impl MultiSettlementTransaction {
             settlements,
         })
     }
-
 }
 
 fn get_encoded_trades(
@@ -255,30 +242,6 @@ fn get_encoded_trades(
     }).collect::<Result<_, Error>>()
 }
 
-fn find_settlement_trace_and_callers(
-    call_frame: &eth::CallFrame,
-    settlement_contract: eth::Address,
-) -> Option<(&eth::CallFrame, Vec<eth::Address>)> {
-    // Use a queue (VecDeque) to keep track of frames to process
-    let mut queue = std::collections::VecDeque::new();
-    queue.push_back((call_frame, vec![call_frame.from]));
-
-    while let Some((call_frame, callers_so_far)) = queue.pop_front() {
-        if is_settlement_trace(call_frame, settlement_contract) {
-            return Some((call_frame, callers_so_far));
-        }
-        // Add all nested calls to the queue with the updated caller
-        for sub_call in &call_frame.calls {
-            let mut new_callers = callers_so_far.clone();
-            new_callers.push(sub_call.from);
-            queue.push_back((sub_call, new_callers));
-        }
-    }
-
-    None
-}
-
-// find all settlement traces in a transaction and return them with their call paths
 fn find_all_settlement_traces_and_callers(
     call_frame: &eth::CallFrame,
     settlement_contract: eth::Address,
@@ -290,6 +253,7 @@ fn find_all_settlement_traces_and_callers(
     while let Some((call_frame, callers_so_far)) = queue.pop_front() {
         if is_settlement_trace(call_frame, settlement_contract) {
             results.push((call_frame, callers_so_far.clone()));
+            continue;
         }
         for sub_call in &call_frame.calls {
             let mut new_callers = callers_so_far.clone();
