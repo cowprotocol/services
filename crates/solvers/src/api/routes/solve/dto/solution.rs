@@ -2,7 +2,7 @@ use {
     crate::domain::{
         eth,
         order,
-        solution::{self},
+        solution,
     },
     solvers_dto::solution::*,
 };
