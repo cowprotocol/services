@@ -228,7 +228,7 @@ impl Solutions {
                                 flashloan_hints.get(&uid).cloned()?,
                             ))
                         }).collect()),
-                    solution.wrappers.clone().into_iter().map(|w| WrapperCall {
+                    solution.wrappers.iter().cloned().map(|w| WrapperCall {
                         address: eth::Address(w.address),
                         data: w.data,
                     }).collect()
