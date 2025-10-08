@@ -2,27 +2,22 @@ global:
   scrape_interval: 5s
 
 scrape_configs:
-  # Prometheus itself
   - job_name: "prometheus"
     static_configs:
       - targets: ["prometheus:9090"]
 
-  # Orderbook service
   - job_name: "orderbook"
     static_configs:
       - targets: ["orderbook:9586"]
 
-  # Autopilot service
   - job_name: "autopilot"
     static_configs:
       - targets: ["autopilot:9589"]
 
-  # Driver service
   - job_name: "driver"
     static_configs:
       - targets: ["driver:80"]
 
-  # Baseline solver
   - job_name: "baseline"
     static_configs:
       - targets: ["baseline:80"]
