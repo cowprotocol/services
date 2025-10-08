@@ -312,6 +312,7 @@ http-timeout = "10s"
         post_interactions: vec![],
         gas: None,
         flashloans: None,
+        wrappers: vec![],
     }));
 
     // Wait for trade
