@@ -381,7 +381,7 @@ impl TradeVerifier {
         let solver_override = StateOverride {
             code: Some(Solver::Solver::DEPLOYED_BYTECODE.clone().into()),
             // Allow solver simulations to proceed even if the real account holds no ETH.
-            balance: Some(U256::MAX),
+            balance: Some(U256::exp10(18)),
             ..Default::default()
         };
 
