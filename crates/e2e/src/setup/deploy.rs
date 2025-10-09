@@ -5,7 +5,6 @@ use {
         BalancerV2Authorizer,
         BalancerV2Vault,
         CoWSwapEthFlow,
-        CowAmmLegacyHelper,
         ERC3156FlashLoanSolverWrapper,
         FlashLoanRouter,
         GPv2AllowListAuthentication,

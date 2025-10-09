@@ -2,7 +2,7 @@ use {
     crate::domain::eth,
     contracts::CowAmmLegacyHelper,
     cow_amm::Amm,
-    hex_literal::hex,
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     itertools::{
         Either::{Left, Right},
         Itertools,
@@ -12,7 +12,6 @@ use {
         sync::Arc,
     },
     tokio::sync::RwLock,
-    web3::types::{Bytes, CallRequest},
 };
 
 /// Cache for CoW AMM data to avoid using the registry dependency.
@@ -119,22 +118,10 @@ impl Cache {
         &self,
         amm_address: eth::Address,
     ) -> anyhow::Result<eth::Address> {
-        // @todo: bind to the corresponding SC helper
-        const FUNCTION_SELECTOR: [u8; 4] = hex!("2dd31000");
-        let req = CallRequest::builder()
-            .to(amm_address.0)
-            .data(Bytes(FUNCTION_SELECTOR.to_vec()))
-            .build();
-
-        let result = self.web3.eth().call(req, None).await?;
-        Self::parse_address(result)
-    }
-
-    fn parse_address(data: Bytes) -> anyhow::Result<eth::Address> {
-        match data.0.len() {
-            32 => Ok(eth::Address(eth::H160::from_slice(&data.0[12..]))),
-            20 => Ok(eth::Address(eth::H160::from_slice(&data.0))),
-            invalid => Err(anyhow::anyhow!("Invalid address length: {}", invalid)),
-        }
+        let factory_getter = contracts::alloy::cow_amm::CowAmmFactoryGetter::Instance::new(
+            amm_address.0.into_alloy(),
+            self.web3.alloy.clone(),
+        );
+        Ok(factory_getter.FACTORY().call().await?.into_legacy().into())
     }
 }
