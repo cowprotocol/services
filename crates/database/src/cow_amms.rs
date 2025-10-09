@@ -122,7 +122,7 @@ mod tests {
         let cow_amm2 = CowAmm {
             address: ByteArray([43u8; 20]),
             factory_address: address,
-            block_number: 1,
+            block_number: 2,
             tradeable_tokens: vec![ByteArray([3u8; 20])],
         };
         upsert_batched(&mut db, std::slice::from_ref(&cow_amm2))
