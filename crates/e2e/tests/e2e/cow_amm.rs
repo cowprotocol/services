@@ -1,9 +1,6 @@
 use {
     app_data::AppDataHash,
-    contracts::{
-        ERC20,
-        support::{Balances, Signatures},
-    },
+    contracts::{ERC20, alloy::support::Signatures, support::Balances},
     driver::domain::eth::NonZeroU256,
     e2e::{
         deploy,
@@ -426,10 +423,12 @@ async fn cow_amm_driver_support(web3: Web3) {
     // syncing, we deploy the following SCs
     let deployed_contracts = {
         let balances = deploy!(&web3, Balances());
-        let signatures = deploy!(&web3, Signatures());
+        let signatures = Signatures::Instance::deploy(web3.alloy.clone())
+            .await
+            .unwrap();
         DeployedContracts {
             balances: Some(balances.address()),
-            signatures: Some(signatures.address()),
+            signatures: Some(signatures.address().into_legacy()),
         }
     };
     let mut onchain = OnchainComponents::deployed_with(web3.clone(), deployed_contracts).await;

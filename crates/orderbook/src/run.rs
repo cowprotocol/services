@@ -116,8 +116,11 @@ pub async fn run(args: Arguments) {
         .await
         .expect("Couldn't get vault relayer address");
     let signatures_contract = match args.shared.signatures_contract_address {
-        Some(address) => contracts::support::Signatures::with_deployment_info(&web3, address, None),
-        None => contracts::support::Signatures::deployed(&web3)
+        Some(address) => contracts::alloy::support::Signatures::Instance::new(
+            address.into_alloy(),
+            web3.alloy.clone(),
+        ),
+        None => contracts::alloy::support::Signatures::Instance::deploy(web3.alloy.clone())
             .await
             .expect("load signatures contract"),
     };
