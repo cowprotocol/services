@@ -206,6 +206,7 @@ impl serde::Serialize for FeePolicy {
 
 #[derive(Clone)]
 pub struct Validator {
+    /// App data size limit (in bytes).
     size_limit: usize,
 }
 
@@ -217,14 +218,21 @@ impl Default for Validator {
 }
 
 impl Validator {
+    /// Creates a new app data [`Validator`] with the provided `size_limit`.
     pub fn new(size_limit: usize) -> Self {
         Self { size_limit }
     }
 
+    /// Returns, in bytes, the app data size limit.
     pub fn size_limit(&self) -> usize {
         self.size_limit
     }
 
+    /// Parses and validates the provided app data bytes, returns the parsed and
+    /// validated app data.
+    ///
+    /// 1. App data is below or equal to [`Validator::size_limit`].
+    /// 2. App data is a valid JSON & valid app data object.
     pub fn validate(&self, full_app_data: &[u8]) -> Result<ValidatedAppData> {
         if full_app_data.len() > self.size_limit {
             return Err(anyhow!(

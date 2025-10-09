@@ -293,33 +293,57 @@ pub struct QuoteAmounts {
 #[serde(rename_all = "camelCase")]
 pub struct OrderCreation {
     // These fields are the same as in `OrderData`.
+    /// The address of the token being sold.
     pub sell_token: H160,
+    /// The address of the token being bought.
     pub buy_token: H160,
+    /// The receiver of the `buy_token`. This field will be `None` if the
+    /// receiver is the same as the owner.
     #[serde(default)]
     pub receiver: Option<H160>,
+    /// The *maximum* amount of `sell_token`s that should be sold.
     #[serde_as(as = "HexOrDecimalU256")]
     pub sell_amount: U256,
+    /// The *minimum* amount of `buy_token`s that should be bought.
     #[serde_as(as = "HexOrDecimalU256")]
     pub buy_amount: U256,
+    /// The point in time when the order can no longer be settled (UNIX
+    /// timestamp in seconds).
     pub valid_to: u32,
     #[serde_as(as = "HexOrDecimalU256")]
+    /// The fee agreed to by the user, it will be taken out in `sell_token`.
     pub fee_amount: U256,
+    /// The kind of order (i.e. sell or buy).
     pub kind: OrderKind,
+    /// Whether the order can be carried out in multiple smaller trades, or it
+    /// must be carried out in a single trade (a.k.a. fill-or-kill).
     pub partially_fillable: bool,
+    /// The amount of `sell_token`s to be transfered into the settlement
+    /// contract.
     #[serde(default)]
     pub sell_token_balance: SellTokenSource,
+    /// The amount of `buy_token`s to be transfered to the `receiver` (or owner
+    /// in case the `receiver` is None).
     #[serde(default)]
     pub buy_token_balance: BuyTokenDestination,
-
+    /// The address of the order submitter.
+    ///
+    /// In the EthFlow case, it will have the address of the EthFlow smart
+    /// contract.
     pub from: Option<H160>,
+    /// The owner's signature of the order.
     #[serde(flatten)]
     pub signature: Signature,
+    /// The ID of the quote this order refers to.
     pub quote_id: Option<QuoteId>,
+    /// The order's AppData (can be an hash, the JSON body or both).
     #[serde(flatten)]
     pub app_data: OrderCreationAppData,
 }
 
 impl OrderCreation {
+    /// Returns the order's data — i.e. the [`OrderCreation`] without
+    /// `signature`, `quote_id` and with the `app_data`'s hash.
     pub fn data(&self) -> OrderData {
         OrderData {
             sell_token: self.sell_token,
@@ -337,6 +361,10 @@ impl OrderCreation {
         }
     }
 
+    /// Signs the current [`OrderCreation`]'s data ([`OrderData`]) using ECDSA,
+    /// returning a signed [`OrderCreation`].
+    ///
+    /// The existing signature is replaced.
     pub fn sign(
         mut self,
         signing_scheme: EcdsaSigningScheme,
@@ -894,12 +922,24 @@ impl OrderKind {
 #[strum(ascii_case_insensitive)]
 #[serde(rename_all = "snake_case")]
 pub enum SellTokenSource {
-    /// Direct ERC20 allowances to the Vault relayer contract
+    /// Sell tokens will be drawn from the users regular ERC20 token allowance
+    /// to the Vault relayer contract.
     #[default]
     Erc20,
-    /// Internal balances to the Vault with GPv2 relayer approval
+    /// Sell tokens will be drawn from the users regular ERC20 tokens *through*
+    /// the Vault, this is done by having a specific ERC20 allowance for the
+    /// Vault and relayer approval for the GPv2VaultRelayer.
+    ///
+    /// Check the [CoW docs on Balancer Internal Balances](2) for more details.
+    ///
+    /// [2]: https://docs.cow.fi/cow-protocol/reference/contracts/core/vault-relayer#balancer-external-balances
     External,
-    /// ERC20 allowances to the Vault with GPv2 relayer approval
+    /// Sell tokens will be drawn from the users Vault internal balances,
+    /// requires the user to approve the GPv2VaultRelayer.
+    ///
+    /// Check the [CoW docs on Balancer External Balances](1) for more details.
+    ///
+    /// [1]: https://docs.cow.fi/cow-protocol/reference/contracts/core/vault-relayer#balancer-internal-balances
     Internal,
 }
 
