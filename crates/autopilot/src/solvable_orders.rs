@@ -33,10 +33,10 @@ use {
         collections::{BTreeMap, HashMap, HashSet, btree_map::Entry},
         future::Future,
         sync::Arc,
-        time::Duration,
+        time::{Duration, Instant},
     },
     strum::VariantNames,
-    tokio::{sync::Mutex, time::Instant},
+    tokio::sync::Mutex,
 };
 
 #[derive(prometheus_metric_storage::MetricStorage)]
@@ -165,6 +165,9 @@ impl SolvableOrdersCache {
     /// other's results.
     pub async fn update(&self, block: u64, store_events: bool) -> Result<()> {
         let start = Instant::now();
+
+        let _timer = observe::metrics::metrics()
+            .on_auction_overhead_start("autopilot", "update_solvabe_orders");
 
         let db_solvable_orders = self.get_solvable_orders().await?;
         tracing::trace!("fetched solvable orders from db");
