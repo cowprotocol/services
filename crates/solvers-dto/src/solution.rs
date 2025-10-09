@@ -30,6 +30,8 @@ pub struct Solution {
     pub gas: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub flashloans: Option<HashMap<OrderUid, Flashloan>>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub wrappers: Vec<WrapperCall>,
 }
 
 #[serde_as]
@@ -215,4 +217,13 @@ pub struct Flashloan {
     pub token: H160,
     #[serde_as(as = "HexOrDecimalU256")]
     pub amount: U256,
+}
+
+#[serde_as]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WrapperCall {
+    pub address: H160,
+    #[serde_as(as = "Option<serialize::Hex>")]
+    pub data: Option<Vec<u8>>,
 }

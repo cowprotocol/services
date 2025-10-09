@@ -56,6 +56,8 @@ pub struct Order {
     pub app_data: AppDataHash,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub flashloan_hint: Option<FlashloanHint>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wrappers: Option<Vec<WrapperCall>>,
     pub signing_scheme: SigningScheme,
     #[serde(with = "bytes_hex")]
     pub signature: Vec<u8>,
@@ -294,4 +296,12 @@ pub struct FlashloanHint {
     pub token: H160,
     #[serde_as(as = "HexOrDecimalU256")]
     pub amount: U256,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WrapperCall {
+    pub address: H160,
+    #[serde(with = "bytes_hex")]
+    pub data: Vec<u8>,
 }

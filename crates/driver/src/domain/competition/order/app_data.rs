@@ -139,6 +139,13 @@ impl AppData {
             Self::Full(data) => data.protocol.flashloan.as_ref(),
         }
     }
+
+    pub fn wrappers(&self) -> Option<&[app_data::WrapperCall]> {
+        match self {
+            Self::Hash(_) => None,
+            Self::Full(data) => data.protocol.wrappers.as_deref(),
+        }
+    }
 }
 
 impl From<[u8; APP_DATA_LEN]> for AppData {

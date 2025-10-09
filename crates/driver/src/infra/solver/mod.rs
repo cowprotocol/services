@@ -22,6 +22,7 @@ use {
     },
     anyhow::Result,
     derive_more::{From, Into},
+    ethcontract::H160,
     num::BigRational,
     observe::tracing::tracing_headers,
     reqwest::header::HeaderName,
@@ -234,6 +235,7 @@ impl Solver {
         liquidity: &[liquidity::Liquidity],
     ) -> Result<Vec<Solution>, Error> {
         let flashloan_hints = self.assemble_flashloan_hints(auction);
+        let wrappers = self.assemble_wrappers(auction);
         // Fetch the solutions from the solver.
         let weth = self.eth.contracts().weth_address();
         let auction_dto = dto::auction::new(
@@ -243,6 +245,7 @@ impl Solver {
             self.config.fee_handler,
             self.config.solver_native_token,
             &flashloan_hints,
+            &wrappers,
             auction.deadline(self.timeouts()).solvers(),
         );
 
@@ -327,6 +330,24 @@ impl Solver {
                     amount: hint.amount.into(),
                 };
                 Some((order.uid, flashloan))
+            })
+            .collect()
+    }
+
+    fn assemble_wrappers(&self, auction: &Auction) -> HashMap<order::Uid, Vec<(H160, Vec<u8>)>> {
+        auction
+            .orders()
+            .iter()
+            .filter_map(|order| {
+                let wrappers = order.app_data.wrappers()?;
+                if wrappers.is_empty() {
+                    return None;
+                }
+                let wrapper_calls = wrappers
+                    .iter()
+                    .map(|w| (w.address, w.data.clone()))
+                    .collect();
+                Some((order.uid, wrapper_calls))
             })
             .collect()
     }

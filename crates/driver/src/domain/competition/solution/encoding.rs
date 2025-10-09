@@ -203,27 +203,67 @@ pub fn tx(
         interactions.push(unwrap(native_unwrap, contracts.weth()));
     }
 
-    let tx = contracts
-        .settlement()
-        .settle(
-            tokens,
-            clearing_prices,
-            trades.iter().map(codec::trade).collect(),
-            [
-                pre_interactions.iter().map(codec::interaction).collect(),
-                interactions.iter().map(codec::interaction).collect(),
-                post_interactions.iter().map(codec::interaction).collect(),
-            ],
-        )
-        .into_inner();
+    let interactions = [
+        pre_interactions.iter().map(codec::interaction).collect(),
+        interactions.iter().map(codec::interaction).collect(),
+        post_interactions.iter().map(codec::interaction).collect(),
+    ];
+
+    let (mut to, mut calldata) = if !solution.wrappers.is_empty() {
+        let wrapped_tx =
+            contracts::GPv2Settlement::at(contracts.web3(), solution.wrappers[0].address.into())
+                .settle(
+                    tokens,
+                    clearing_prices,
+                    trades.iter().map(codec::trade).collect(),
+                    interactions,
+                )
+                .into_inner();
+
+        let original_data = wrapped_tx.data.as_ref().unwrap().clone().0;
+        let mut call_data = Vec::with_capacity(
+            original_data.len()
+                + solution
+                    .wrappers
+                    .iter()
+                    .map(|v| v.data.as_ref().map(|v| v.len()).unwrap_or_default())
+                    .sum::<usize>(),
+        );
+
+        call_data.extend(&original_data);
+
+        call_data.extend(solution.wrappers[0].data.as_ref().unwrap_or(&Vec::new()));
+
+        for w in &solution.wrappers[1..] {
+            call_data.extend([0u8; 12]);
+            call_data.extend(w.address.0.as_bytes());
+            call_data.extend(w.data.as_ref().unwrap_or(&Vec::new()));
+        }
+
+        call_data.extend([0u8; 12]);
+        call_data.extend(contracts.settlement().address().as_bytes());
+
+        (solution.wrappers[0].address.into(), call_data)
+    } else {
+        let tx = contracts
+            .settlement()
+            .settle(
+                tokens,
+                clearing_prices,
+                trades.iter().map(codec::trade).collect(),
+                interactions,
+            )
+            .into_inner();
+
+        (tx.to.unwrap().into(), tx.data.unwrap().0)
+    };
 
     // Encode the auction id into the calldata
-    let mut settle_calldata = tx.data.unwrap().0;
-    settle_calldata.extend(auction.id().ok_or(Error::MissingAuctionId)?.to_be_bytes());
+    calldata.extend(auction.id().ok_or(Error::MissingAuctionId)?.to_be_bytes());
 
     // Target and calldata depend on whether a flashloan is used
-    let (to, calldata) = if solution.flashloans.is_empty() {
-        (contracts.settlement().address().into(), settle_calldata)
+    (to, calldata) = if solution.flashloans.is_empty() {
+        (to, calldata)
     } else {
         let router = contracts
             .flashloan_router()
@@ -240,11 +280,11 @@ pub fn tx(
             })
             .collect();
 
-        let calldata = router
-            .flashLoanAndSettle(flashloans, settle_calldata.into())
+        let fl_calldata = router
+            .flashLoanAndSettle(flashloans, calldata.into())
             .calldata()
             .to_vec();
-        (router.address().into_legacy().into(), calldata)
+        (router.address().into_legacy().into(), fl_calldata)
     };
 
     Ok(eth::Tx {

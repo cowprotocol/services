@@ -455,6 +455,7 @@ async fn store_filtered_solutions(web3: Web3) {
         post_interactions: vec![],
         gas: None,
         flashloans: None,
+        wrappers: vec![],
     }));
 
     // bad solver settles both orders at 2:1. Because it can't beat the
@@ -484,6 +485,7 @@ async fn store_filtered_solutions(web3: Web3) {
         post_interactions: vec![],
         gas: None,
         flashloans: None,
+        wrappers: vec![],
     }));
 
     // Drive solution
