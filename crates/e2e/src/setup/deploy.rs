@@ -14,8 +14,9 @@ use {
             InstanceExt,
             UniswapV2Factory,
             UniswapV2Router02,
+            support::Signatures,
         },
-        support::{Balances, Signatures},
+        support::Balances,
     },
     ethcontract::{Address, H256, U256, errors::DeployError},
     ethrpc::alloy::conversions::IntoAlloy,
@@ -33,7 +34,7 @@ pub struct Contracts {
     pub chain_id: u64,
     pub balancer_vault: BalancerV2Vault,
     pub gp_settlement: GPv2Settlement,
-    pub signatures: Signatures,
+    pub signatures: Signatures::Instance,
     pub gp_authenticator: GPv2AllowListAuthentication,
     pub balances: Balances,
     pub uniswap_v2_factory: UniswapV2Factory::Instance,
@@ -71,8 +72,8 @@ impl Contracts {
                 .expect("failed to find balances contract"),
         };
         let signatures = match deployed.signatures {
-            Some(address) => Signatures::at(web3, address),
-            None => Signatures::deployed(web3)
+            Some(address) => Signatures::Instance::new(address.into_alloy(), web3.alloy.clone()),
+            None => Signatures::Instance::deployed(&web3.alloy)
                 .await
                 .expect("failed to find signatures contract"),
         };
@@ -169,7 +170,9 @@ impl Contracts {
             GPv2Settlement(gp_authenticator.address(), balancer_vault.address(),)
         );
         let balances = deploy!(web3, Balances());
-        let signatures = deploy!(web3, Signatures());
+        let signatures = Signatures::Instance::deploy(web3.alloy.clone())
+            .await
+            .unwrap();
 
         contracts::vault::grant_required_roles(
             &balancer_authorizer,
