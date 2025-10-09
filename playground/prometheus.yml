@@ -1,0 +1,23 @@
+global:
+  scrape_interval: 5s
+
+scrape_configs:
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["prometheus:9090"]
+
+  - job_name: "orderbook"
+    static_configs:
+      - targets: ["orderbook:9586"]
+
+  - job_name: "autopilot"
+    static_configs:
+      - targets: ["autopilot:9589"]
+
+  - job_name: "driver"
+    static_configs:
+      - targets: ["driver:80"]
+
+  - job_name: "baseline"
+    static_configs:
+      - targets: ["baseline:80"]
