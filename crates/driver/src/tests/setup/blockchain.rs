@@ -8,7 +8,7 @@ use {
         tests::{self, boundary, cases::EtherExt},
     },
     alloy::{primitives::U256, signers::local::PrivateKeySigner},
-    contracts::alloy::{ERC20Mintable, FlashLoanRouter},
+    contracts::alloy::{ERC20Mintable, FlashLoanRouter, support::Signatures},
     ethcontract::PrivateKey,
     ethrpc::{
         Web3,
@@ -45,7 +45,7 @@ pub struct Blockchain {
     pub weth: contracts::WETH9,
     pub settlement: contracts::GPv2Settlement,
     pub balances: contracts::support::Balances,
-    pub signatures: contracts::alloy::support::Signatures::Instance,
+    pub signatures: Signatures::Instance,
     pub flashloan_router: FlashLoanRouter::Instance,
     pub ethflow: Option<ContractAddress>,
     pub domain_separator: boundary::DomainSeparator,
@@ -351,23 +351,16 @@ impl Blockchain {
         .await
         .unwrap();
 
-        let signatures = if let Some(signatures_address) = config.signatures_address {
-            contracts::alloy::support::Signatures::Instance::new(
-                signatures_address.into_alloy(),
-                web3.alloy.clone(),
-            )
+        let signatures_address = if let Some(signatures_address) = config.signatures_address {
+            signatures_address.into_alloy()
         } else {
-            let signatures_address =
-                contracts::alloy::support::Signatures::Instance::deploy_builder(web3.alloy.clone())
-                    .from(main_trader_account.address().into_alloy())
-                    .deploy()
-                    .await
-                    .unwrap();
-            contracts::alloy::support::Signatures::Instance::new(
-                signatures_address,
-                web3.alloy.clone(),
-            )
+            Signatures::Instance::deploy_builder(web3.alloy.clone())
+                .from(main_trader_account.address().into_alloy())
+                .deploy()
+                .await
+                .unwrap()
         };
+        let signatures = Signatures::Instance::new(signatures_address, web3.alloy.clone());
 
         let flashloan_router_address = FlashLoanRouter::Instance::deploy_builder(
             web3.alloy.clone(),

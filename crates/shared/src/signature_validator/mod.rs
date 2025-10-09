@@ -111,7 +111,7 @@ pub fn validator(
     Arc::new(simulation::Validator::new(
         web3,
         contracts.settlement,
-        contracts.signatures,
+        *contracts.signatures.address(),
         contracts.vault_relayer.into_alloy(),
         balance_overrider,
     ))

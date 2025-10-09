@@ -6,7 +6,11 @@
 use {
     super::{SignatureCheck, SignatureValidating, SignatureValidationError},
     crate::price_estimation::trade_verifier::balance_overrides::BalanceOverriding,
-    alloy::{dyn_abi::SolType, primitives::Address, sol_types::sol_data},
+    alloy::{
+        dyn_abi::SolType,
+        primitives::Address,
+        sol_types::{SolCall, sol_data},
+    },
     anyhow::{Context, Result},
     contracts::{
         ERC1271SignatureValidator,
@@ -24,7 +28,7 @@ use {
 };
 
 pub struct Validator {
-    signatures: contracts::alloy::support::Signatures::Instance,
+    signatures_address: Address,
     settlement: contracts::GPv2Settlement,
     vault_relayer: Address,
     web3: Web3,
@@ -38,13 +42,13 @@ impl Validator {
     pub fn new(
         web3: &Web3,
         settlement: contracts::GPv2Settlement,
-        signatures: contracts::alloy::support::Signatures::Instance,
+        signatures_address: Address,
         vault_relayer: Address,
         balance_overrider: Arc<dyn BalanceOverriding>,
     ) -> Self {
         let web3 = ethrpc::instrumented::instrument_with_label(web3, "signatureValidation".into());
         Self {
-            signatures,
+            signatures_address,
             settlement,
             vault_relayer,
             web3: web3.clone(),
@@ -101,16 +105,15 @@ impl Validator {
         // 1. How the pre-interactions would behave as part of the settlement
         // 2. Simulate the actual `isValidSignature` calls that would happen as part of
         //    a settlement
-
-        let validate_call = self.signatures.validate(
-            Signatures::Signatures::Contracts {
+        let validate_call = Signatures::Signatures::validateCall {
+            contracts: Signatures::Signatures::Contracts {
                 settlement: self.settlement.address().into_alloy(),
                 vaultRelayer: self.vault_relayer,
             },
-            check.signer.into_alloy(),
-            check.hash.into(),
-            check.signature.clone().into(),
-            check
+            signer: check.signer.into_alloy(),
+            order: check.hash.into(),
+            signature: check.signature.clone().into(),
+            interactions: check
                 .interactions
                 .iter()
                 .map(|i| Signatures::Signatures::Interaction {
@@ -119,12 +122,12 @@ impl Validator {
                     callData: i.call_data.clone().into(),
                 })
                 .collect(),
-        );
+        };
         let simulation = self
             .settlement
             .simulate_delegatecall(
-                self.signatures.address().into_legacy(),
-                Bytes(validate_call.calldata().to_vec()),
+                self.signatures_address.into_legacy(),
+                Bytes(validate_call.abi_encode()),
             )
             .from(crate::SIMULATION_ACCOUNT.clone());
 
