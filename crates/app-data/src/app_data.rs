@@ -218,7 +218,8 @@ impl Default for Validator {
 }
 
 impl Validator {
-    /// Creates a new app data [`Validator`] with the provided `size_limit`.
+    /// Creates a new app data [`Validator`] with the provided app data
+    /// `size_limit` (in bytes).
     pub fn new(size_limit: usize) -> Self {
         Self { size_limit }
     }

@@ -297,23 +297,38 @@ pub struct OrderCreation {
     pub sell_token: H160,
     /// The address of the token being bought.
     pub buy_token: H160,
-    /// The receiver of the `buy_token`. This field will be `None` if the
-    /// receiver is the same as the owner.
+    /// The receiver of the `buy_token`. When this field is `None`, the receiver
+    /// is the same as the owner.
     #[serde(default)]
     pub receiver: Option<H160>,
-    /// The *maximum* amount of `sell_token`s that should be sold.
+    /// The *maximum* amount of `sell_token`s that may be sold.
     #[serde_as(as = "HexOrDecimalU256")]
     pub sell_amount: U256,
     /// The *minimum* amount of `buy_token`s that should be bought.
     #[serde_as(as = "HexOrDecimalU256")]
     pub buy_amount: U256,
-    /// The point in time when the order can no longer be settled (UNIX
+    /// The block timestamp when the order can no longer be settled (UNIX
     /// timestamp in seconds).
     pub valid_to: u32,
     #[serde_as(as = "HexOrDecimalU256")]
-    /// The fee agreed to by the user, it will be taken out in `sell_token`.
+    /// (Deprecated) The fee agreed to by the user, it will be taken out in
+    /// `sell_token`.
+    ///
+    /// Deprecation note: orders with a non-zero `fee_amount` should be rejected
+    /// by the API.
     pub fee_amount: U256,
     /// The kind of order (i.e. sell or buy).
+    ///
+    /// * Sell orders state the owner's intent to *sell* X amount of token A in
+    /// exchange for some amount of token B (the exact amount is dependent on
+    /// token pairs, solvers, etc).
+    /// * Buy orders state the owner's intent to *buy* X amount of token A in
+    ///   exchange for some amount of token B (the exact amount is dependent on
+    ///   token pairs, solvers, etc).
+    ///
+    /// In very simple terms, when selling the owner sets the amount of tokens
+    /// going out of their pocket, when buying the owner sets the amount of
+    /// tokens coming in to their pocket.
     pub kind: OrderKind,
     /// Whether the order can be carried out in multiple smaller trades, or it
     /// must be carried out in a single trade (a.k.a. fill-or-kill).
