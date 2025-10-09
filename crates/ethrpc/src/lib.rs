@@ -6,7 +6,6 @@ pub mod extensions;
 pub mod http;
 pub mod instrumented;
 pub mod mock;
-pub mod multicall;
 
 use {
     self::{buffered::BufferedTransport, http::HttpTransport},

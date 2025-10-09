@@ -540,6 +540,22 @@ pub mod support {
     crate::bindings!(Trader);
     // Support contract used for solver fee simulations in the gnosis/solvers repo.
     crate::bindings!(Swapper);
+
+    crate::bindings!(
+        Signatures,
+        crate::deployments! {
+            MAINNET => address!("0x8262d639c38470F38d2eff15926F7071c28057Af"),
+            ARBITRUM_ONE => address!("0x8262d639c38470F38d2eff15926F7071c28057Af"),
+            BASE => address!("0x8262d639c38470F38d2eff15926F7071c28057Af"),
+            AVALANCHE => address!("0x8262d639c38470F38d2eff15926F7071c28057Af"),
+            BNB => address!("0x8262d639c38470F38d2eff15926F7071c28057Af"),
+            OPTIMISM => address!("0x8262d639c38470F38d2eff15926F7071c28057Af"),
+            POLYGON => address!("0x8262d639c38470F38d2eff15926F7071c28057Af"),
+            LENS => address!("0x8262d639c38470F38d2eff15926F7071c28057Af"),
+            GNOSIS => address!("0x8262d639c38470F38d2eff15926F7071c28057Af"),
+            SEPOLIA => address!("0x8262d639c38470F38d2eff15926F7071c28057Af"),
+        }
+    );
 }
 
 pub use alloy::providers::DynProvider as Provider;

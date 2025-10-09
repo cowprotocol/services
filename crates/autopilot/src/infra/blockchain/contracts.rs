@@ -9,7 +9,7 @@ use {
 #[derive(Debug, Clone)]
 pub struct Contracts {
     settlement: contracts::GPv2Settlement,
-    signatures: contracts::support::Signatures,
+    signatures: contracts::alloy::support::Signatures::Instance,
     weth: contracts::WETH9,
     balances: contracts::support::Balances,
     chainalysis_oracle: Option<ChainalysisOracle::Instance>,
@@ -47,12 +47,13 @@ impl Contracts {
             ),
         );
 
-        let signatures = contracts::support::Signatures::at(
-            web3,
-            address_for(
-                contracts::support::Signatures::raw_contract(),
-                addresses.signatures,
-            ),
+        let signatures = contracts::alloy::support::Signatures::Instance::new(
+            addresses
+                .signatures
+                .map(IntoAlloy::into_alloy)
+                .or_else(|| contracts::alloy::support::Signatures::deployment_address(&chain.id()))
+                .unwrap(),
+            web3.alloy.clone(),
         );
 
         let weth = contracts::WETH9::at(
@@ -119,7 +120,7 @@ impl Contracts {
         &self.balances
     }
 
-    pub fn signatures(&self) -> &contracts::support::Signatures {
+    pub fn signatures(&self) -> &contracts::alloy::support::Signatures::Instance {
         &self.signatures
     }
 
