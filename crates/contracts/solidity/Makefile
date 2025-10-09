@@ -10,10 +10,10 @@ ARTIFACTDIR := ../artifacts
 CONTRACTS := \
 	AnyoneAuthenticator.sol \
 	Balances.sol \
-	Multicall.sol \
 	Signatures.sol \
 	Solver.sol \
 	Spardose.sol \
+	Swapper.sol \
 	Trader.sol
 ARTIFACTS := $(patsubst %.sol,$(ARTIFACTDIR)/%.json,$(CONTRACTS))
 

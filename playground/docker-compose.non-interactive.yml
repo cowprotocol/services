@@ -95,7 +95,8 @@ services:
     depends_on:
       - db-migrations
     ports:
-      - 8080:80
+      - 8080:80 # API
+      - 9586:9586 # metrics
 
   autopilot:
     build:
@@ -133,6 +134,8 @@ services:
         condition: service_started
       chain:
         condition: service_healthy
+    ports:
+      - 9589:9589 # metrics
 
   driver:
     build:
@@ -150,7 +153,7 @@ services:
     volumes:
       - ./driver.toml:/driver.toml
     ports:
-      - 9000:80
+      - 9000:80 # API & metrics
     depends_on:
       chain:
         condition: service_healthy
@@ -171,7 +174,7 @@ services:
     volumes:
       - ./baseline.toml:/baseline.toml
     ports:
-      - 9001:80
+      - 9001:80 # API & metrics
 
   frontend:
     build:
@@ -209,6 +212,18 @@ services:
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
       - GF_AUTH_DISABLE_LOGIN_FORM=true
+    volumes:
+      - ./grafana-prometheus.yml:/etc/grafana/provisioning/datasources/prometheus.yml
+
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    restart: always
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
 
 volumes:
   postgres:

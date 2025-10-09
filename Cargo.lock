@@ -4677,8 +4677,8 @@ version = "0.1.0"
 dependencies = [
  "alloy",
  "contracts",
- "ethcontract",
  "ethrpc",
+ "futures",
  "moka",
  "thiserror 1.0.61",
  "tokio",
@@ -5329,6 +5329,7 @@ dependencies = [
 name = "refunder"
 version = "0.1.0"
 dependencies = [
+ "alloy",
  "anyhow",
  "async-trait",
  "clap",

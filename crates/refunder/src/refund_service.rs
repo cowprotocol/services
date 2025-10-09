@@ -1,30 +1,31 @@
 use {
-    super::ethflow_order::{EncodedEthflowOrder, EthflowOrder, order_to_ethflow_data},
+    super::ethflow_order::{EthflowOrder, order_to_ethflow_data},
     crate::submitter::Submitter,
+    alloy::primitives::{Address, address},
     anyhow::{Context, Result, anyhow},
-    contracts::CoWSwapEthFlow,
+    contracts::alloy::CoWSwapEthFlow,
     database::{
         OrderUid,
         ethflow_orders::{EthOrderPlacement, read_order, refundable_orders},
         orders::read_order as read_db_order,
     },
-    ethcontract::{Account, H160, H256},
+    ethcontract::{Account, H256},
     ethrpc::{Web3, block_stream::timestamp_of_current_block_in_seconds},
     futures::{StreamExt, stream},
     sqlx::PgPool,
     std::collections::HashMap,
 };
 
-pub const NO_OWNER: H160 = H160([0u8; 20]);
-pub const INVALIDATED_OWNER: H160 = H160([255u8; 20]);
+pub const NO_OWNER: Address = Address::ZERO;
+pub const INVALIDATED_OWNER: Address = address!("0xffffffffffffffffffffffffffffffffffffffff");
 const MAX_NUMBER_OF_UIDS_PER_REFUND_TX: usize = 30;
 
-type CoWSwapEthFlowAddress = H160;
+type CoWSwapEthFlowAddress = Address;
 
 pub struct RefundService {
     pub db: PgPool,
     pub web3: Web3,
-    pub ethflow_contracts: Vec<CoWSwapEthFlow>,
+    pub ethflow_contracts: Vec<CoWSwapEthFlow::Instance>,
     pub min_validity_duration: i64,
     pub min_price_deviation: f64,
     pub submitter: Submitter,
@@ -41,7 +42,7 @@ impl RefundService {
     pub fn new(
         db: PgPool,
         web3: Web3,
-        ethflow_contracts: Vec<CoWSwapEthFlow>,
+        ethflow_contracts: Vec<CoWSwapEthFlow::Instance>,
         min_validity_duration: i64,
         min_price_deviation_bps: i64,
         account: Account,
@@ -100,15 +101,12 @@ impl RefundService {
             .into_iter()
             .filter_map(|eth_order_placement| {
                 // Owner of the ethflow order is always the ethflow contract itself
-                let ethflow_contract_address = H160(
-                    eth_order_placement.uid.0[32..52]
-                        .try_into()
-                        .expect("order_uid slice with incorrect length"),
-                );
+                let ethflow_contract_address =
+                    Address::from_slice(&eth_order_placement.uid.0[32..52]);
                 let ethflow_contract = self
                     .ethflow_contracts
                     .iter()
-                    .find(|contract| contract.address() == ethflow_contract_address);
+                    .find(|contract| *contract.address() == ethflow_contract_address);
                 if ethflow_contract.is_none() {
                     tracing::warn!(
                         uid = format!("0x{}", hex::encode(eth_order_placement.uid.0)),
@@ -122,12 +120,9 @@ impl RefundService {
                 let order_hash: [u8; 32] = eth_order_placement.uid.0[0..32]
                     .try_into()
                     .expect("order_uid slice with incorrect length");
-                let order = ethflow_contract
-                    .orders(ethcontract::tokens::Bytes(order_hash))
-                    .call()
-                    .await;
+                let order = ethflow_contract.orders(order_hash.into()).call().await;
                 let order_owner = match order {
-                    Ok(order) => Some(order.0),
+                    Ok(order) => Some(order.owner),
                     Err(err) => {
                         tracing::error!(
                             uid =? H256(order_hash),
@@ -157,7 +152,7 @@ impl RefundService {
                 RefundStatus::Invalid => invalid_uids.push(uid),
                 RefundStatus::NotYetRefunded => {
                     to_be_refunded_uids
-                        .entry(ethflow_contract.address())
+                        .entry(*ethflow_contract.address())
                         .or_default()
                         .push(uid);
                 }
@@ -213,11 +208,11 @@ impl RefundService {
                         .context(format!("uid {uid:?}"))
                 }
             });
-            let encoded_ethflow_orders: Vec<EncodedEthflowOrder> = stream::iter(futures)
+            let encoded_ethflow_orders: Vec<_> = stream::iter(futures)
                 .buffer_unordered(10)
                 .filter_map(|result| async {
                     match result {
-                        Ok(order) => Some(order.encode()),
+                        Ok(order) => Some(CoWSwapEthFlow::EthFlowOrder::Data::from(order)),
                         Err(err) => {
                             tracing::error!(?err, "failed to get data from db");
                             None

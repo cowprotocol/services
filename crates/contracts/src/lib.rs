@@ -49,8 +49,6 @@ macro_rules! include_contracts {
 }
 
 include_contracts! {
-    AaveFlashLoanSolverWrapper;
-    BalancerQueries;
     BalancerV2Authorizer;
     BalancerV2Vault;
     BalancerV3BatchRouter;
@@ -58,17 +56,11 @@ include_contracts! {
     CowAmmConstantProductFactory;
     CowAmmLegacyHelper;
     CowAmmUniswapV2PriceOracle;
-    CoWSwapEthFlow;
-    CoWSwapOnchainOrders;
     CowProtocolToken;
     ERC1271SignatureValidator;
     ERC20;
-    ERC3156FlashLoanSolverWrapper;
-    FlashLoanRouter;
     GPv2AllowListAuthentication;
     GPv2Settlement;
-    IAavePool;
-    IFlashLoanSolverWrapper;
     IUniswapV3Factory;
     Permit2;
     UniswapV3QuoterV2;
@@ -79,8 +71,6 @@ include_contracts! {
 pub mod support {
     include_contracts! {
         Balances;
-        Multicall;
-        Signatures;
     }
 }
 

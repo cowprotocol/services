@@ -1,5 +1,5 @@
 use {
-    super::transaction::{self, Prices},
+    super::{transaction, transaction::Prices},
     crate::domain::{
         self,
         auction::{self, order},
@@ -7,7 +7,6 @@ use {
         fee,
     },
     bigdecimal::Zero,
-    std::collections::HashMap,
 };
 
 pub mod math;
@@ -41,6 +40,11 @@ impl Trade {
         }
     }
 
+    /// CIP38 score defined as surplus + protocol fee
+    pub fn score(&self, auction: &super::Auction) -> Result<eth::Ether, math::Error> {
+        math::Trade::from(self).score(&auction.orders, &auction.prices)
+    }
+
     /// Surplus of a trade.
     pub fn surplus_in_ether(&self, prices: &auction::Prices) -> Result<eth::Ether, math::Error> {
         match self {
@@ -64,13 +68,10 @@ impl Trade {
     }
 
     /// All fees broke down into protocol fees per policy and total fee.
-    pub fn fee_breakdown(
-        &self,
-        fee_policies: &HashMap<domain::OrderUid, impl AsRef<[fee::Policy]>>,
-    ) -> Result<FeeBreakdown, math::Error> {
+    pub fn fee_breakdown(&self, auction: &super::Auction) -> Result<FeeBreakdown, math::Error> {
         let trade = math::Trade::from(self);
         let total = trade.fee_in_sell_token()?;
-        let protocol = trade.protocol_fees(fee_policies)?;
+        let protocol = trade.protocol_fees(&auction.orders)?;
         Ok(FeeBreakdown {
             total: eth::Asset {
                 token: self.sell_token(),

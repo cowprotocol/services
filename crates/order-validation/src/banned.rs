@@ -1,7 +1,13 @@
+//! Banned user detection for order validation.
+//!
+//! Checks if addresses are banned using a hardcoded list and optionally the
+//! Chainalysis Oracle on-chain registry. On-chain results are cached (1-hour
+//! expiry, LRU eviction) with background refresh every 60 seconds.
+
 use {
+    alloy::primitives::Address,
     contracts::alloy::ChainalysisOracle,
-    ethcontract::{H160, futures::future::join_all},
-    ethrpc::alloy::conversions::IntoAlloy,
+    futures::future::join_all,
     moka::sync::Cache,
     std::{
         collections::HashSet,
@@ -12,7 +18,7 @@ use {
 
 /// A list of banned users and an optional registry that can be checked onchain.
 pub struct Users {
-    list: HashSet<H160>,
+    list: HashSet<Address>,
     onchain: Option<Arc<Onchain>>,
 }
 
@@ -22,9 +28,12 @@ struct UserMetadata {
     last_updated: Instant,
 }
 
+/// Onchain banned user checker using Chainalysis Oracle with caching and
+/// background refresh. Maintains a size-bounded LRU cache with periodic
+/// maintenance to refresh expired entries.
 struct Onchain {
     contract: ChainalysisOracle::Instance,
-    cache: Cache<H160, UserMetadata>,
+    cache: Cache<Address, UserMetadata>,
 }
 
 impl Onchain {
@@ -41,8 +50,6 @@ impl Onchain {
 
     /// Spawns a background task that periodically checks the cache for expired
     /// entries and re-run checks for them.
-    ///
-    /// Doesn't clean the cache, so it can grow indefinitely.
     fn spawn_maintenance_task(self: Arc<Self>) {
         let cache_expiry = Duration::from_secs(60 * 60);
         let maintenance_timeout = Duration::from_secs(60);
@@ -52,21 +59,18 @@ impl Onchain {
             loop {
                 let start = Instant::now();
 
-                let expired_data: Vec<_> = {
-                    let now = Instant::now();
-                    detector
-                        .cache
-                        .iter()
-                        .filter_map(|(address, metadata)| {
-                            let expired = now
-                                .checked_duration_since(metadata.last_updated)
-                                .unwrap_or_default()
-                                >= cache_expiry - maintenance_timeout;
+                let expired_data: Vec<_> = detector
+                    .cache
+                    .iter()
+                    .filter_map(|(address, metadata)| {
+                        let expired = start
+                            .checked_duration_since(metadata.last_updated)
+                            .unwrap_or_default()
+                            >= cache_expiry - maintenance_timeout;
 
-                            expired.then_some((address, metadata))
-                        })
-                        .collect()
-                };
+                        expired.then_some((address, metadata))
+                    })
+                    .collect();
 
                 let results = join_all(expired_data.into_iter().map(|(address, metadata)| {
                     let detector = detector.clone();
@@ -104,7 +108,7 @@ impl Onchain {
         });
     }
 
-    fn insert_many_into_cache(&self, addresses: impl Iterator<Item = (H160, UserMetadata)>) {
+    fn insert_many_into_cache(&self, addresses: impl Iterator<Item = (Address, UserMetadata)>) {
         let now = Instant::now();
         for (address, metadata) in addresses {
             self.cache.insert(
@@ -124,7 +128,7 @@ impl Users {
     /// banned addresses is available.
     pub fn new(
         contract: Option<ChainalysisOracle::Instance>,
-        banned_users: Vec<H160>,
+        banned_users: Vec<Address>,
         cache_max_size: u64,
     ) -> Self {
         Self {
@@ -143,7 +147,7 @@ impl Users {
 
     /// Creates a new `Users` instance that passes all addresses except for the
     /// ones in `list`.
-    pub fn from_set(list: HashSet<H160>) -> Self {
+    pub fn from_set(list: HashSet<Address>) -> Self {
         Self {
             list,
             onchain: None,
@@ -151,7 +155,9 @@ impl Users {
     }
 
     /// Returns a subset of addresses from the input iterator which are banned.
-    pub async fn banned(&self, addresses: impl IntoIterator<Item = H160>) -> HashSet<H160> {
+    ///
+    /// On cache-misses, it will use the Chainalysis oracle to fetch the users.
+    pub async fn banned(&self, addresses: impl IntoIterator<Item = Address>) -> HashSet<Address> {
         let mut banned = HashSet::new();
 
         let need_lookup = addresses
@@ -206,7 +212,7 @@ impl Users {
                     is_banned.then(|| banned.insert(address));
                 }
                 Err(err) => {
-                    tracing::warn!(?err, ?address, "failed to fetch banned status",);
+                    tracing::warn!(?err, ?address, "failed to fetch banned status");
                 }
             }
         }
@@ -215,12 +221,8 @@ impl Users {
 }
 
 impl Onchain {
-    async fn fetch(&self, address: H160) -> Result<bool, Error> {
-        Ok(self
-            .contract
-            .isSanctioned(address.into_alloy())
-            .call()
-            .await?)
+    async fn fetch(&self, address: Address) -> Result<bool, Error> {
+        Ok(self.contract.isSanctioned(address).call().await?)
     }
 }
 

@@ -1,8 +1,12 @@
 use {
     crate::{domain::eth, infra::blockchain::Ethereum},
     chain::Chain,
-    contracts::FlashLoanRouter,
-    ethrpc::Web3,
+    contracts::alloy::FlashLoanRouter,
+    ethrpc::{
+        Web3,
+        alloy::conversions::{IntoAlloy, IntoLegacy},
+        block_stream::CurrentBlockWatcher,
+    },
     std::collections::HashMap,
     thiserror::Error,
 };
@@ -12,7 +16,7 @@ pub struct Contracts {
     settlement: contracts::GPv2Settlement,
     vault_relayer: eth::ContractAddress,
     vault: contracts::BalancerV2Vault,
-    signatures: contracts::support::Signatures,
+    signatures: contracts::alloy::support::Signatures::Instance,
     weth: contracts::WETH9,
 
     /// The domain separator for settlement contract used for signing orders.
@@ -22,7 +26,7 @@ pub struct Contracts {
     /// same settlement.
     // TODO: make this non-optional when contracts are deployed
     // everywhere
-    flashloan_router: Option<FlashLoanRouter>,
+    flashloan_router: Option<FlashLoanRouter::Instance>,
     balance_helper: contracts::support::Balances,
     cow_amm_helper_by_factory: HashMap<eth::ContractAddress, eth::ContractAddress>,
 }
@@ -68,12 +72,13 @@ impl Contracts {
                 addresses.balances,
             ),
         );
-        let signatures = contracts::support::Signatures::at(
-            web3,
-            address_for(
-                contracts::support::Signatures::raw_contract(),
-                addresses.signatures,
-            ),
+        let signatures = contracts::alloy::support::Signatures::Instance::new(
+            addresses
+                .signatures
+                .map(|addr| addr.0.into_alloy())
+                .or_else(|| contracts::alloy::support::Signatures::deployment_address(&chain.id()))
+                .unwrap(),
+            web3.alloy.clone(),
         );
 
         let weth = contracts::WETH9::at(
@@ -94,12 +99,13 @@ impl Contracts {
         let flashloan_router = addresses
             .flashloan_router
             .or_else(|| {
-                contracts::FlashLoanRouter::raw_contract()
-                    .networks
-                    .get(&chain.id().to_string())
-                    .map(|deployment| eth::ContractAddress(deployment.address))
+                FlashLoanRouter::deployment_address(&chain.id()).map(|deployment_address| {
+                    eth::ContractAddress(deployment_address.into_legacy())
+                })
             })
-            .map(|address| contracts::FlashLoanRouter::at(web3, address.0));
+            .map(|address| {
+                FlashLoanRouter::Instance::new(address.0.into_alloy(), web3.alloy.clone())
+            });
 
         Ok(Self {
             settlement,
@@ -118,7 +124,7 @@ impl Contracts {
         &self.settlement
     }
 
-    pub fn signatures(&self) -> &contracts::support::Signatures {
+    pub fn signatures(&self) -> &contracts::alloy::support::Signatures::Instance {
         &self.signatures
     }
 
@@ -142,7 +148,7 @@ impl Contracts {
         &self.settlement_domain_separator
     }
 
-    pub fn flashloan_router(&self) -> Option<&contracts::FlashLoanRouter> {
+    pub fn flashloan_router(&self) -> Option<&FlashLoanRouter::Instance> {
         self.flashloan_router.as_ref()
     }
 

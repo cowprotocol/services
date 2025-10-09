@@ -116,8 +116,11 @@ pub async fn run(args: Arguments) {
         .await
         .expect("Couldn't get vault relayer address");
     let signatures_contract = match args.shared.signatures_contract_address {
-        Some(address) => contracts::support::Signatures::with_deployment_info(&web3, address, None),
-        None => contracts::support::Signatures::deployed(&web3)
+        Some(address) => contracts::alloy::support::Signatures::Instance::new(
+            address.into_alloy(),
+            web3.alloy.clone(),
+        ),
+        None => contracts::alloy::support::Signatures::Instance::deployed(&web3.alloy)
             .await
             .expect("load signatures contract"),
     };
@@ -168,8 +171,15 @@ pub async fn run(args: Arguments) {
     let domain_separator = DomainSeparator::new(chain_id, settlement_contract.address());
     let postgres_write =
         Postgres::try_new(args.db_write_url.as_str()).expect("failed to create database");
-    let postgres_read = Postgres::try_new(args.db_read_url.unwrap_or(args.db_write_url).as_str())
-        .expect("failed to create read replica database");
+
+    let postgres_read = if let Some(db_read_url) = args.db_read_url
+        && args.db_write_url != db_read_url
+    {
+        Postgres::try_new(db_read_url.as_str()).expect("failed to create read replica databaseR")
+    } else {
+        postgres_write.clone()
+    };
+
     let balance_fetcher = account_balances::fetcher(
         &web3,
         BalanceSimulator::new(

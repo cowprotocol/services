@@ -124,24 +124,21 @@ impl Settlement {
         self.trades
             .iter()
             .map(|trade| {
-                let fee_breakdown =
-                    trade
-                        .fee_breakdown(&self.auction.orders)
-                        .unwrap_or_else(|err| {
-                            tracing::warn!(
-                                ?err,
-                                trade = %trade.uid(),
-                                "possible incomplete fee breakdown calculation",
-                            );
-                            trade::FeeBreakdown {
-                                total: eth::Asset {
-                                    // TODO surplus token
-                                    token: trade.sell_token(),
-                                    amount: num::zero(),
-                                },
-                                protocol: vec![],
-                            }
-                        });
+                let fee_breakdown = trade.fee_breakdown(&self.auction).unwrap_or_else(|err| {
+                    tracing::warn!(
+                        ?err,
+                        trade = %trade.uid(),
+                        "possible incomplete fee breakdown calculation",
+                    );
+                    trade::FeeBreakdown {
+                        total: eth::Asset {
+                            // TODO surplus token
+                            token: trade.sell_token(),
+                            amount: num::zero(),
+                        },
+                        protocol: vec![],
+                    }
+                });
                 (*trade.uid(), fee_breakdown)
             })
             .collect()
@@ -162,7 +159,7 @@ impl Settlement {
     ) -> Result<Self, Error> {
         let (auction, solver_winning_solutions) = tokio::try_join!(
             persistence
-                .get_auction(&settled.trades, settled.auction_id)
+                .get_auction(settled.auction_id)
                 .map_err(Error::from),
             persistence
                 .get_solver_winning_solutions(settled.auction_id, settled.solver)
@@ -901,6 +898,11 @@ mod tests {
             trade.surplus_in_ether(&auction.prices).unwrap().0,
             eth::U256::from(384509480572312u128)
         );
+
+        assert_eq!(
+            trade.score(&auction).unwrap().0,
+            eth::U256::from(769018961144625u128) // 2 x surplus
+        );
     }
 
     // https://etherscan.io/tx/0x24ea2ea3d70db3e864935008d14170389bda124c786ca90dfb745278db9d24ee
@@ -1255,18 +1257,14 @@ mod tests {
         };
         let jit_trade = super::trade::Trade::new(transaction.trades[1].clone(), &auction, 0);
         assert_eq!(jit_trade.fee_in_ether(&auction.prices).unwrap().0, 0.into());
+        assert_eq!(jit_trade.score(&auction).unwrap().0, 0.into());
         assert_eq!(
-            jit_trade
-                .fee_breakdown(&auction.orders)
-                .unwrap()
-                .total
-                .amount
-                .0,
+            jit_trade.fee_breakdown(&auction).unwrap().total.amount.0,
             0.into()
         );
         assert!(
             jit_trade
-                .fee_breakdown(&auction.orders)
+                .fee_breakdown(&auction)
                 .unwrap()
                 .protocol
                 .is_empty()

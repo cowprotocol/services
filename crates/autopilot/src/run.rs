@@ -45,6 +45,7 @@ use {
         },
         baseline_solver::BaseTokens,
         code_fetching::CachedCodeFetcher,
+        event_handling::AlloyEventRetriever,
         http_client::HttpClientFactory,
         maintenance::ServiceMaintenance,
         order_quoting::{self, OrderQuoter},
@@ -157,12 +158,16 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         .await
         .unwrap();
 
-    let db_read = Postgres::new(
-        args.db_read_url.unwrap_or(args.db_write_url).as_str(),
-        args.insert_batch_size,
-    )
-    .await
-    .unwrap();
+    let db_read = if let Some(db_read_url) = args.db_read_url
+        && args.db_write_url != db_read_url
+    {
+        Postgres::new(db_read_url.as_str(), args.insert_batch_size)
+            .await
+            .expect("failed to create read replica database")
+    } else {
+        db_write.clone()
+    };
+
     crate::database::run_database_metrics_work(db_read.clone());
 
     let http_factory = HttpClientFactory::new(&args.http_client);
@@ -568,7 +573,10 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         let refund_event_handler = EventUpdater::new_skip_blocks_before(
             // This cares only about ethflow refund events because all the other ethflow
             // events are already indexed by the OnchainOrderParser.
-            EthFlowRefundRetriever::new(web3.clone(), args.ethflow_contracts.clone()),
+            AlloyEventRetriever(EthFlowRefundRetriever::new(
+                web3.clone(),
+                args.ethflow_contracts.clone(),
+            )),
             db_write.clone(),
             block_retriever.clone(),
             ethflow_refund_start_block,
@@ -600,7 +608,10 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         let onchain_order_indexer = EventUpdater::new_skip_blocks_before(
             // The events from the ethflow contract are read with the more generic contract
             // interface called CoWSwapOnchainOrders.
-            CoWSwapOnchainOrdersContract::new(web3.clone(), args.ethflow_contracts),
+            AlloyEventRetriever(CoWSwapOnchainOrdersContract::new(
+                web3.clone(),
+                args.ethflow_contracts,
+            )),
             onchain_order_event_parser,
             block_retriever,
             ethflow_start_block,

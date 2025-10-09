@@ -334,6 +334,11 @@ impl OrderValidator {
         Ok(())
     }
 
+    /// Converts the provided pre and post [`Hooks`] into pre and post
+    /// [`Interactions`], respectively.
+    ///
+    /// This is done by returning the [`HooksTrampoline`] `execute` calldata
+    /// with the (pre/post) hooks calldata as the parameter.
     fn custom_interactions(&self, hooks: &Hooks) -> Interactions {
         let to_interactions = |hooks: &[Hook]| -> Vec<InteractionData> {
             if hooks.is_empty() {
@@ -452,7 +457,7 @@ impl OrderValidating for OrderValidator {
     async fn partial_validate(&self, order: PreOrderData) -> Result<(), PartialValidationError> {
         if !self
             .banned_users
-            .banned([order.receiver, order.owner])
+            .banned([order.receiver.into_alloy(), order.owner.into_alloy()])
             .await
             .is_empty()
         {
@@ -500,6 +505,15 @@ impl OrderValidating for OrderValidator {
         Ok(())
     }
 
+    /// Validates the provided app data, returning an [`OrderAppData`] if valid.
+    ///
+    /// The validation entails verifying that the app data is well formed and
+    /// its size.
+    ///
+    /// * In the case the app data contains both a hash and the data, the data
+    ///   will be compared against the hash.
+    /// * The app data the override will be ignored unless the provided app data
+    ///   is a hash.
     fn validate_app_data(
         &self,
         app_data: &OrderCreationAppData,
@@ -1005,7 +1019,7 @@ mod tests {
             signature_validator::MockSignatureValidating,
         },
         alloy::{
-            primitives::{Address, address},
+            primitives::{Address, U160, address},
             providers::{Provider, ProviderBuilder, mock::Asserter},
         },
         contracts::dummy_contract,
@@ -1070,7 +1084,7 @@ mod tests {
             max_market: Duration::from_secs(100),
             max_limit: Duration::from_secs(200),
         };
-        let banned_users = hashset![H160::from_low_u64_be(1)];
+        let banned_users = hashset![Address::from(U160::from(1))];
         let legit_valid_to =
             time::now_in_epoch_seconds() + validity_configuration.min.as_secs() as u32 + 2;
         let mut limit_order_counter = MockLimitOrderCounting::new();
