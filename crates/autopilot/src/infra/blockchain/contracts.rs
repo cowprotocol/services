@@ -1,19 +1,19 @@
 use {
     crate::domain,
     chain::Chain,
-    contracts::alloy::{ChainalysisOracle, InstanceExt},
-    ethrpc::Web3,
+    contracts::alloy::{ChainalysisOracle, HooksTrampoline, InstanceExt},
+    ethrpc::{Web3, alloy::conversions::IntoAlloy},
     primitive_types::H160,
 };
 
 #[derive(Debug, Clone)]
 pub struct Contracts {
     settlement: contracts::GPv2Settlement,
-    signatures: contracts::support::Signatures,
+    signatures: contracts::alloy::support::Signatures::Instance,
     weth: contracts::WETH9,
     balances: contracts::support::Balances,
     chainalysis_oracle: Option<ChainalysisOracle::Instance>,
-    trampoline: contracts::HooksTrampoline,
+    trampoline: HooksTrampoline::Instance,
 
     /// The authenticator contract that decides which solver is allowed to
     /// submit settlements.
@@ -47,12 +47,13 @@ impl Contracts {
             ),
         );
 
-        let signatures = contracts::support::Signatures::at(
-            web3,
-            address_for(
-                contracts::support::Signatures::raw_contract(),
-                addresses.signatures,
-            ),
+        let signatures = contracts::alloy::support::Signatures::Instance::new(
+            addresses
+                .signatures
+                .map(IntoAlloy::into_alloy)
+                .or_else(|| contracts::alloy::support::Signatures::deployment_address(&chain.id()))
+                .unwrap(),
+            web3.alloy.clone(),
         );
 
         let weth = contracts::WETH9::at(
@@ -68,12 +69,13 @@ impl Contracts {
             ),
         );
 
-        let trampoline = contracts::HooksTrampoline::at(
-            web3,
-            address_for(
-                contracts::HooksTrampoline::raw_contract(),
-                addresses.trampoline,
-            ),
+        let trampoline = HooksTrampoline::Instance::new(
+            addresses
+                .trampoline
+                .map(IntoAlloy::into_alloy)
+                .or_else(|| HooksTrampoline::deployment_address(&chain.id()))
+                .unwrap(),
+            web3.alloy.clone(),
         );
 
         let chainalysis_oracle = ChainalysisOracle::Instance::deployed(&web3.alloy)
@@ -118,11 +120,11 @@ impl Contracts {
         &self.balances
     }
 
-    pub fn signatures(&self) -> &contracts::support::Signatures {
+    pub fn signatures(&self) -> &contracts::alloy::support::Signatures::Instance {
         &self.signatures
     }
 
-    pub fn trampoline(&self) -> &contracts::HooksTrampoline {
+    pub fn trampoline(&self) -> &HooksTrampoline::Instance {
         &self.trampoline
     }
 

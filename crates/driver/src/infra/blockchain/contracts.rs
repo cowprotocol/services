@@ -1,11 +1,11 @@
 use {
-    crate::{
-        domain::eth,
-        infra::{blockchain::Ethereum, config},
-    },
+    crate::{domain::eth, infra::blockchain::Ethereum},
     chain::Chain,
-    contracts::FlashLoanRouter,
-    ethrpc::Web3,
+    contracts::alloy::FlashLoanRouter,
+    ethrpc::{
+        Web3,
+        alloy::conversions::{IntoAlloy, IntoLegacy},
+    },
     std::collections::HashMap,
     thiserror::Error,
 };
@@ -15,30 +15,19 @@ pub struct Contracts {
     settlement: contracts::GPv2Settlement,
     vault_relayer: eth::ContractAddress,
     vault: contracts::BalancerV2Vault,
-    signatures: contracts::support::Signatures,
+    signatures: contracts::alloy::support::Signatures::Instance,
     weth: contracts::WETH9,
 
     /// The domain separator for settlement contract used for signing orders.
     settlement_domain_separator: eth::DomainSeparator,
 
-    /// Each lender potentially has different solver wrapper.
-    flashloan_wrapper_by_lender: HashMap<eth::ContractAddress, FlashloanWrapperData>,
     /// Single router that supports multiple flashloans in the
     /// same settlement.
     // TODO: make this non-optional when contracts are deployed
     // everywhere
-    flashloan_router: Option<FlashLoanRouter>,
-    /// Default lender to use for flashloans, if flashloan doesn't have a lender
-    /// specified.
-    flashloan_default_lender: Option<eth::ContractAddress>,
+    flashloan_router: Option<FlashLoanRouter::Instance>,
     balance_helper: contracts::support::Balances,
     cow_amm_helper_by_factory: HashMap<eth::ContractAddress, eth::ContractAddress>,
-}
-
-#[derive(Debug, Clone)]
-pub struct FlashloanWrapperData {
-    pub helper_contract: contracts::IFlashLoanSolverWrapper,
-    pub fee_in_bps: eth::U256,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -48,9 +37,7 @@ pub struct Addresses {
     pub weth: Option<eth::ContractAddress>,
     pub balances: Option<eth::ContractAddress>,
     pub cow_amm_helper_by_factory: HashMap<eth::ContractAddress, eth::ContractAddress>,
-    pub flashloan_wrappers: Vec<config::file::FlashloanWrapperConfig>,
     pub flashloan_router: Option<eth::ContractAddress>,
-    pub flashloan_default_lender: Option<eth::ContractAddress>,
 }
 
 impl Contracts {
@@ -84,12 +71,13 @@ impl Contracts {
                 addresses.balances,
             ),
         );
-        let signatures = contracts::support::Signatures::at(
-            web3,
-            address_for(
-                contracts::support::Signatures::raw_contract(),
-                addresses.signatures,
-            ),
+        let signatures = contracts::alloy::support::Signatures::Instance::new(
+            addresses
+                .signatures
+                .map(|addr| addr.0.into_alloy())
+                .or_else(|| contracts::alloy::support::Signatures::deployment_address(&chain.id()))
+                .unwrap(),
+            web3.alloy.clone(),
         );
 
         let weth = contracts::WETH9::at(
@@ -106,35 +94,17 @@ impl Contracts {
                 .0,
         );
 
-        let flashloan_wrapper_by_lender = addresses
-            .flashloan_wrappers
-            .iter()
-            .map(|wrapper_config| {
-                let helper_contract = contracts::IFlashLoanSolverWrapper::at(
-                    web3,
-                    address_for(
-                        contracts::IFlashLoanSolverWrapper::raw_contract(),
-                        Some(wrapper_config.helper_contract.into()),
-                    ),
-                );
-                let wrapper_data = FlashloanWrapperData {
-                    helper_contract,
-                    fee_in_bps: wrapper_config.fee_in_bps,
-                };
-                (wrapper_config.lender.into(), wrapper_data)
-            })
-            .collect();
-
         // TODO: use `address_for()` once contracts are deployed
         let flashloan_router = addresses
             .flashloan_router
             .or_else(|| {
-                contracts::FlashLoanRouter::raw_contract()
-                    .networks
-                    .get(&chain.id().to_string())
-                    .map(|deployment| eth::ContractAddress(deployment.address))
+                FlashLoanRouter::deployment_address(&chain.id()).map(|deployment_address| {
+                    eth::ContractAddress(deployment_address.into_legacy())
+                })
             })
-            .map(|address| contracts::FlashLoanRouter::at(web3, address.0));
+            .map(|address| {
+                FlashLoanRouter::Instance::new(address.0.into_alloy(), web3.alloy.clone())
+            });
 
         Ok(Self {
             settlement,
@@ -143,9 +113,7 @@ impl Contracts {
             signatures,
             weth,
             settlement_domain_separator,
-            flashloan_wrapper_by_lender,
             flashloan_router,
-            flashloan_default_lender: addresses.flashloan_default_lender,
             balance_helper,
             cow_amm_helper_by_factory: addresses.cow_amm_helper_by_factory,
         })
@@ -155,7 +123,7 @@ impl Contracts {
         &self.settlement
     }
 
-    pub fn signatures(&self) -> &contracts::support::Signatures {
+    pub fn signatures(&self) -> &contracts::alloy::support::Signatures::Instance {
         &self.signatures
     }
 
@@ -179,18 +147,7 @@ impl Contracts {
         &self.settlement_domain_separator
     }
 
-    pub fn get_flashloan_wrapper(
-        &self,
-        lender: &eth::ContractAddress,
-    ) -> Option<&FlashloanWrapperData> {
-        self.flashloan_wrapper_by_lender.get(lender)
-    }
-
-    pub fn flashloan_default_lender(&self) -> Option<eth::ContractAddress> {
-        self.flashloan_default_lender
-    }
-
-    pub fn flashloan_router(&self) -> Option<&contracts::FlashLoanRouter> {
+    pub fn flashloan_router(&self) -> Option<&FlashLoanRouter::Instance> {
         self.flashloan_router.as_ref()
     }
 
@@ -223,12 +180,6 @@ pub fn deployment_address(
 /// A trait for initializing contract instances with dynamic addresses.
 pub trait ContractAt {
     fn at(eth: &Ethereum, address: eth::ContractAddress) -> Self;
-}
-
-impl ContractAt for contracts::IUniswapLikeRouter {
-    fn at(eth: &Ethereum, address: eth::ContractAddress) -> Self {
-        Self::at(&eth.web3, address.0)
-    }
 }
 
 impl ContractAt for contracts::ERC20 {

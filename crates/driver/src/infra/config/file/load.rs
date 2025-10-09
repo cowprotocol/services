@@ -7,6 +7,7 @@ use {
             config::file,
             liquidity,
             mempool,
+            notify,
             simulator,
             solver::{self, BadTokenDetection, SolutionMerging},
         },
@@ -305,6 +306,17 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                     http_timeout: config.http_timeout,
                 }),
         },
+        liquidity_sources_notifier: config.liquidity_sources_notifier.map(|notifier| {
+            notify::liquidity_sources::config::Config {
+                liquorice: notifier.liquorice.map(|liquorice_config| {
+                    notify::liquidity_sources::config::Liquorice {
+                        base_url: liquorice_config.base_url,
+                        api_key: liquorice_config.api_key,
+                        http_timeout: liquorice_config.http_timeout,
+                    }
+                }),
+            }
+        }),
         mempools: config
             .submission
             .mempools
@@ -382,23 +394,6 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                 .into_iter()
                 .map(|cfg| (cfg.factory.into(), cfg.helper.into()))
                 .collect(),
-            flashloan_default_lender: {
-                // Make sure flashloan default lender exists in the flashloan wrappers
-                if let Some(default_lender) = config.contracts.flashloan_default_lender
-                    && !config
-                        .contracts
-                        .flashloan_wrappers
-                        .iter()
-                        .any(|wrapper| wrapper.lender == default_lender)
-                {
-                    panic!(
-                        "Flashloan default lender {default_lender:?} not found in flashloan \
-                         wrappers"
-                    );
-                }
-                config.contracts.flashloan_default_lender.map(Into::into)
-            },
-            flashloan_wrappers: config.contracts.flashloan_wrappers,
             flashloan_router: config.contracts.flashloan_router.map(Into::into),
         },
         disable_access_list_simulation: config.disable_access_list_simulation,

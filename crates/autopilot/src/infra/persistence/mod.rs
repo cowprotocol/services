@@ -11,6 +11,7 @@ use {
     chrono::{DateTime, Utc},
     database::{
         events::EventIndex,
+        leader_pg_lock::LeaderLock,
         order_events::OrderEventLabel,
         order_execution::Asset,
         orders::{
@@ -33,6 +34,7 @@ use {
         collections::{HashMap, HashSet},
         ops::DerefMut,
         sync::Arc,
+        time::Duration,
     },
     tracing::Instrument,
 };
@@ -55,6 +57,10 @@ impl Persistence {
             },
             postgres,
         }
+    }
+
+    pub async fn leader(&self, key: String) -> LeaderLock {
+        LeaderLock::new(self.postgres.pool.clone(), key, Duration::from_millis(200))
     }
 
     /// There is always only one `current` auction.
@@ -361,7 +367,7 @@ impl Persistence {
 
         let orders = {
             // get all orders from a competition auction
-            let auction_orders = database::auction_orders::fetch(&mut ex, auction_id)
+            let auction_orders = database::auction::get_order_uids(&mut ex, auction_id)
                 .await
                 .map_err(error::Auction::DatabaseError)?
                 .ok_or(error::Auction::NotFound)?

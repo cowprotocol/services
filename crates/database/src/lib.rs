@@ -1,6 +1,5 @@
 pub mod app_data;
 pub mod auction;
-pub mod auction_orders;
 pub mod auction_participants;
 pub mod auction_prices;
 pub mod byte_array;
@@ -10,6 +9,7 @@ pub mod events;
 pub mod fee_policies;
 pub mod jit_orders;
 pub mod last_indexed_blocks;
+pub mod leader_pg_lock;
 pub mod onchain_broadcasted_orders;
 pub mod onchain_invalidations;
 pub mod order_events;
@@ -53,7 +53,6 @@ pub type PgTransaction<'a> = sqlx::Transaction<'a, sqlx::Postgres>;
 /// The names of tables we use in the db.
 pub const TABLES: &[&str] = &[
     "app_data",
-    "auction_orders",
     "auctions",
     "cow_amms",
     "ethflow_orders",

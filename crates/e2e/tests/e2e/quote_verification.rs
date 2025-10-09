@@ -143,7 +143,7 @@ async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
 
     let verifier = TradeVerifier::new(
         web3.clone(),
-        Arc::new(web3.clone()),
+        None,
         Arc::new(web3.clone()),
         Arc::new(BalanceOverrides::default()),
         block_stream,

@@ -438,6 +438,129 @@ crate::bindings!(
         // Not available on Lens
     }
 );
+crate::bindings!(IUniswapLikeRouter);
+crate::bindings!(IUniswapLikePair);
+crate::bindings!(UniswapV3Pool);
+
+crate::bindings!(
+    HooksTrampoline,
+    // <https://github.com/cowprotocol/hooks-trampoline/blob/993427166ade6c65875b932f853776299290ac4b/networks.json>
+    crate::deployments! {
+        MAINNET  => address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
+        // Gnosis is using the old instance of the hook trampoline since it's hardcoded in gnosis pay rebalance integration.
+        GNOSIS  => address!("0x01DcB88678aedD0C4cC9552B20F4718550250574"),
+        SEPOLIA  => address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
+        ARBITRUM_ONE  => address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
+        BASE  => address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
+        AVALANCHE  => address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
+        BNB  => address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
+        OPTIMISM  => address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
+        POLYGON  => address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
+        LENS  => address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
+    }
+);
+
+crate::bindings!(
+    CoWSwapEthFlow,
+    crate::deployments! {
+        // <https://etherscan.io/tx/0x0247e3c15f59a52b099f192265f1c1e6227f48a280717b3eefd7a5d9d0c051a1>
+        MAINNET => (address!("0x40a50cf069e992aa4536211b23f286ef88752187"), 16169866),
+        // <https://gnosisscan.io/tx/0x6280e079f454fbb5de3c52beddd64ca2b5be0a4b3ec74edfd5f47e118347d4fb>
+        GNOSIS => (address!("0x40a50cf069e992aa4536211b23f286ef88752187"), 25414331),
+        // <https://github.com/cowprotocol/ethflowcontract/blob/v1.1.0-artifacts/networks.prod.json#L11-L14>
+        // <https://sepolia.etherscan.io/tx/0x558a7608a770b5c4f68fffa9b02e7908a40f61b557b435ea768a4c62cb79ae25>
+        SEPOLIA => (address!("0x0b7795E18767259CC253a2dF471db34c72B49516"), 4718739),
+        // <https://arbiscan.io/tx/0xa4066ca77bbe1f21776b4c26315ead3b1c054b35814b49e0c35afcbff23e1b8d>
+        ARBITRUM_ONE => (address!("0x6DFE75B5ddce1ADE279D4fa6BD6AeF3cBb6f49dB"), 204747458),
+        // <https://basescan.org/tx/0xc3555c4b065867cbf34382438e1bbaf8ee39eaf10fb0c70940c8955962e76e2c>
+        BASE => (address!("0x3C3eA1829891BC9bEC3d06A81d5d169e52a415e3"), 21490258),
+        // <https://snowscan.xyz/tx/0x71a2ed9754247210786effa3269bc6eb68b7521b5052ac9f205af7ac364f608f>
+        AVALANCHE => (address!("0x04501b9b1d52e67f6862d157e00d13419d2d6e95"), 60496408),
+        // <https://bscscan.com/tx/0x959a60a42d36e0efd247b3cf19ed9d6da503d01bce6f87ed31e5e5921111222e>
+        BNB => (address!("0x04501b9b1d52e67f6862d157e00d13419d2d6e95"), 48411237),
+        // <https://optimistic.etherscan.io/tx/0x0644f10f7ae5448240fc592ad21abf4dabac473a9d80904af5f7865f2d6509e2>
+        OPTIMISM => (address!("0x04501b9b1d52e67f6862d157e00d13419d2d6e95"), 134607215),
+        // <https://polygonscan.com/tx/0xc3781c19674d97623d13afc938fca94d53583f4051020512100e84fecd230f91>
+        POLYGON => (address!("0x04501b9b1d52e67f6862d157e00d13419d2d6e95"), 71296258),
+        // <https://explorer.lens.xyz/tx/0xc59b5ffadb40158f9390b1d77f19346dbe9214b27f26346dfa2990ad379a1a32>
+        LENS => (address!("0xFb337f8a725A142f65fb9ff4902d41cc901de222"), 3007173),
+    }
+);
+crate::bindings!(CoWSwapOnchainOrders);
+
+// Used in the gnosis/solvers repo for the balancer solver
+crate::bindings!(
+    BalancerQueries,
+    crate::deployments! {
+        // <https://etherscan.io/tx/0x30799534f3a0ab8c7fa492b88b56e9354152ffaddad15415184a3926c0dd9b09>
+        MAINNET => (address!("0xE39B5e3B6D74016b2F6A9673D7d7493B6DF549d5"), 15188261),
+        // <https://arbiscan.io/tx/0x710d93aab52b6c10197eab20f9d6db1af3931f9890233d8832268291ef2f54b3>
+        ARBITRUM_ONE => (address!("0xE39B5e3B6D74016b2F6A9673D7d7493B6DF549d5"), 18238624),
+        // <https://optimistic.etherscan.io/tx/0xf3b2aaf3e12c7de0987dc99a26242b227b9bc055342dda2e013dab0657d6f9f1>
+        OPTIMISM => (address!("0xE39B5e3B6D74016b2F6A9673D7d7493B6DF549d5"), 15288107),
+        // <https://basescan.org/tx/0x425d04ee79511c17d06cd96fe1df9e0727f7e7d46b31f36ecaa044ada6a0d29a>
+        BASE => (address!("0x300Ab2038EAc391f26D9F895dc61F8F66a548833"), 1205869),
+        // <https://gnosisscan.io/tx/0x5beb3051d393aac24cb236dc850c644f345af65c4927030bd1033403e2f2e503>
+        GNOSIS => (address!("0x0F3e0c4218b7b0108a3643cFe9D3ec0d4F57c54e"), 24821845),
+        // <https://polygonscan.com/tx/0x0b74f5c230f9b7df8c7a7f0d1ebd5e6c3fab51a67a9bcc8f05c350180041682e>
+        POLYGON => (address!("0xE39B5e3B6D74016b2F6A9673D7d7493B6DF549d5"), 30988035),
+        // <https://snowtrace.io/tx/0xf484e1efde47209bad5f72642bcb8d8e2a4092a5036434724ffa2d039e93a1bf?chainid=43114>
+        AVALANCHE => (address!("0xC128468b7Ce63eA702C1f104D55A2566b13D3ABD"), 26387068),
+        // Not available on Lens
+    }
+);
+
+crate::bindings!(
+    ILiquoriceSettlement,
+    crate::deployments! {
+        // <https://liquorice.gitbook.io/liquorice-docs/links/smart-contracts>
+        MAINNET => address!("0x0448633eb8B0A42EfED924C42069E0DcF08fb552"),
+        ARBITRUM_ONE => address!("0x0448633eb8B0A42EfED924C42069E0DcF08fb552"),
+    }
+);
+
+crate::bindings!(
+    FlashLoanRouter,
+    crate::deployments! {
+        MAINNET => address!("0x9da8b48441583a2b93e2ef8213aad0ec0b392c69"),
+        GNOSIS => address!("0x9da8b48441583a2b93e2ef8213aad0ec0b392c69"),
+        SEPOLIA => address!("0x9da8b48441583a2b93e2ef8213aad0ec0b392c69"),
+        ARBITRUM_ONE => address!("0x9da8b48441583a2b93e2ef8213aad0ec0b392c69"),
+        BASE => address!("0x9da8b48441583a2b93e2ef8213aad0ec0b392c69"),
+        POLYGON => address!("0x9da8b48441583a2b93e2ef8213aad0ec0b392c69"),
+        AVALANCHE => address!("0x9da8b48441583a2b93e2ef8213aad0ec0b392c69"),
+    }
+);
+
+pub mod cow_amm {
+    crate::bindings!(CowAmmFactoryGetter);
+}
+
+pub mod support {
+    // Support contracts used for trade and token simulations.
+    crate::bindings!(AnyoneAuthenticator);
+    crate::bindings!(Solver);
+    crate::bindings!(Spardose);
+    crate::bindings!(Trader);
+    // Support contract used for solver fee simulations in the gnosis/solvers repo.
+    crate::bindings!(Swapper);
+
+    crate::bindings!(
+        Signatures,
+        crate::deployments! {
+            MAINNET => address!("0x8262d639c38470F38d2eff15926F7071c28057Af"),
+            ARBITRUM_ONE => address!("0x8262d639c38470F38d2eff15926F7071c28057Af"),
+            BASE => address!("0x8262d639c38470F38d2eff15926F7071c28057Af"),
+            AVALANCHE => address!("0x8262d639c38470F38d2eff15926F7071c28057Af"),
+            BNB => address!("0x8262d639c38470F38d2eff15926F7071c28057Af"),
+            OPTIMISM => address!("0x8262d639c38470F38d2eff15926F7071c28057Af"),
+            POLYGON => address!("0x8262d639c38470F38d2eff15926F7071c28057Af"),
+            LENS => address!("0x8262d639c38470F38d2eff15926F7071c28057Af"),
+            GNOSIS => address!("0x8262d639c38470F38d2eff15926F7071c28057Af"),
+            SEPOLIA => address!("0x8262d639c38470F38d2eff15926F7071c28057Af"),
+        }
+    );
+}
 
 pub use alloy::providers::DynProvider as Provider;
 
@@ -502,7 +625,7 @@ macro_rules! bindings {
             mod [<$contract Private>] {
                 alloy::sol!(
                     #[allow(missing_docs, clippy::too_many_arguments)]
-                    #[sol(rpc)]
+                    #[sol(rpc, all_derives)]
                     $contract,
                     concat!("./artifacts/", stringify!($contract), ".json"),
                 );
@@ -510,46 +633,15 @@ macro_rules! bindings {
 
             #[allow(non_snake_case)]
             pub mod $contract {
-                use {
-                    std::sync::LazyLock,
-                    anyhow::{anyhow, Result},
-                    alloy::{
-                        json_abi::{ContractObject, Function, JsonAbi},
-                        primitives::Selector,
-                        providers::DynProvider,
-                    },
-                };
+                use alloy::providers::DynProvider;
 
                 pub use super::[<$contract Private>]::*;
                 pub type Instance = $contract::[<$contract Instance>]<DynProvider>;
 
-                /// The contract's ABI parsed from the bundled artifact.
-                pub static ABI: LazyLock<JsonAbi> = LazyLock::new(|| {
-                    let obj: ContractObject = serde_json::from_str(include_str!(concat!(
-                        "../artifacts/", stringify!($contract), ".json"
-                    )))
-                    .expect(concat!("failed to parse artifact JSON for ", stringify!($contract)));
-                    obj.abi.expect(&format!("artifact for {} missing `abi` field", stringify!($contract)))
-                });
-
-                /// Return all function overloads 4-byte selectors by *name*.
-                pub fn selector_by_name(name: &str) -> Result<Vec<Selector>> {
-                    let Some(funcs) = ABI.functions.get(name) else {
-                        return Err(anyhow!("no function named `{name}` in ABI"));
-                    };
-                    Ok(funcs.iter().map(|f| f.selector()).collect())
-                }
-
-                /// Return all abi function overloads by *name*.
-                pub fn abi_functions_by_name(name: &str) -> Result<Vec<Function>> {
-                    let Some(funcs) = ABI.functions.get(name) else {
-                        return Err(anyhow!("no function named `{name}` in ABI"));
-                    };
-                    Ok(funcs.clone())
-                }
-
                 $(
                 use {
+                    std::sync::LazyLock,
+                    anyhow::Result,
                     std::collections::HashMap,
                     alloy::{
                         providers::Provider,
@@ -611,7 +703,6 @@ macro_rules! bindings {
 mod tests {
     use super::networks::*;
     use super::*;
-    use alloy::primitives::Selector;
 
     #[test]
     fn test_has_address() {
@@ -655,67 +746,5 @@ mod tests {
             assert!(UniswapV2Factory::deployment_address(chain_id).is_some());
             assert!(UniswapV2Router02::deployment_address(chain_id).is_some());
         }
-    }
-
-    #[test]
-    fn test_selector_by_name_valid_function() {
-        let result = ChainalysisOracle::selector_by_name("isSanctioned");
-        assert!(result.is_ok());
-
-        let selectors = result.unwrap();
-        assert_eq!(selectors.len(), 1);
-
-        let selector = &selectors[0];
-        assert_eq!(selector, &Selector::from([0xdf, 0x59, 0x2f, 0x7d]));
-    }
-
-    #[test]
-    fn test_selector_by_name_multiple_overloads() {
-        // Test with a contract that might have function overloads
-        // Using IZeroex which likely has multiple swap functions
-        let result = IZeroex::selector_by_name("transformERC20");
-
-        let selectors = result.unwrap();
-
-        assert!(!selectors.is_empty());
-
-        for selector in &selectors {
-            assert_eq!(selector.as_slice().len(), 4);
-        }
-    }
-
-    #[test]
-    fn test_selector_by_name_invalid_function() {
-        let result = ChainalysisOracle::selector_by_name("nonExistentFunction");
-        assert!(result.is_err());
-
-        let error_msg = result.unwrap_err().to_string();
-        assert!(error_msg.contains("no function named `nonExistentFunction` in ABI"));
-    }
-
-    #[test]
-    fn test_selector_by_name_empty_string() {
-        let result = ChainalysisOracle::selector_by_name("");
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_selector_by_name_case_sensitive() {
-        let result1 = ChainalysisOracle::selector_by_name("isSanctioned");
-        let result2 = ChainalysisOracle::selector_by_name("IsSanctioned");
-        let result3 = ChainalysisOracle::selector_by_name("ISSANCTIONED");
-
-        assert!(result1.is_ok());
-        assert!(result2.is_err());
-        assert!(result3.is_err());
-    }
-
-    #[test]
-    fn test_get_function_valid() {
-        let functions = ChainalysisOracle::abi_functions_by_name("isSanctioned").unwrap();
-        assert_eq!(functions.len(), 1);
-
-        let function = &functions[0];
-        assert_eq!(function.name, "isSanctioned");
     }
 }

@@ -2,7 +2,7 @@ use {
     crate::domain::eth,
     contracts::CowAmmLegacyHelper,
     cow_amm::Amm,
-    hex_literal::hex,
+    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     itertools::{
         Either::{Left, Right},
         Itertools,
@@ -12,7 +12,6 @@ use {
         sync::Arc,
     },
     tokio::sync::RwLock,
-    web3::types::{Bytes, CallRequest},
 };
 
 /// Cache for CoW AMM data to avoid using the registry dependency.
@@ -114,31 +113,15 @@ impl Cache {
     }
 
     /// Fetches the factory address for the given AMM by calling the
-    /// `factory` function. If that fails, it tries the legacy function
-    /// `FACTORY`.
+    /// `FACTORY` function.
     async fn fetch_amm_factory_address(
         &self,
         amm_address: eth::Address,
     ) -> anyhow::Result<eth::Address> {
-        const FUNCTION_SELECTOR: [u8; 4] = hex!("2dd31000");
-        const FUNCTION_SELECTOR_LEGACY: [u8; 4] = hex!("c45a0155");
-
-        let req = CallRequest::builder()
-            .to(amm_address.0)
-            .data(Bytes(FUNCTION_SELECTOR.to_vec()))
-            .build();
-
-        let address = match self.web3.eth().call(req, None).await {
-            Ok(address) => Ok(address),
-            Err(_) => {
-                let req_legacy = CallRequest::builder()
-                    .to(amm_address.0)
-                    .data(Bytes(FUNCTION_SELECTOR_LEGACY.to_vec()))
-                    .build();
-                self.web3.eth().call(req_legacy, None).await
-            }
-        };
-
-        Ok(eth::Address(eth::H160::from_slice(&address?.0)))
+        let factory_getter = contracts::alloy::cow_amm::CowAmmFactoryGetter::Instance::new(
+            amm_address.0.into_alloy(),
+            self.web3.alloy.clone(),
+        );
+        Ok(factory_getter.FACTORY().call().await?.into_legacy().into())
     }
 }

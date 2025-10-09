@@ -1,6 +1,6 @@
 use {
     crate::setup::*,
-    ethcontract::{H160, common::DeploymentInformation},
+    ethcontract::H160,
     reqwest::Url,
     std::collections::HashSet,
     tokio::task::JoinHandle,
@@ -164,64 +164,10 @@ solving-share-of-deadline = 1.0
     let liquidity = liquidity.to_string(contracts);
 
     let encoded_base_tokens = encode_base_tokens(base_tokens.clone());
-
-    let cow_amms = contracts
-        .cow_amm_helper
-        .iter()
-        .map(|contract| {
-            let Some(DeploymentInformation::BlockNumber(block)) = contract.deployment_information()
-            else {
-                panic!("unknown deployment block for cow amm contract");
-            };
-
-            format!(
-                r#"
-[[contracts.cow-amms]]
-helper = "{:?}"
-factory = "{:?}"
-"#,
-                block - 1, // start indexing 1 block before the contract was deployed
-                contract.address(),
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-
     let flashloan_router_config = contracts
         .flashloan_router
         .as_ref()
         .map(|contract| format!("flashloan-router = \"{:?}\"", contract.address()))
-        .unwrap_or_default();
-
-    let maker_adapter = contracts
-        .flashloan_wrapper_maker
-        .as_ref()
-        .map(|contract| {
-            format!(
-                r#"
-            [[contracts.flashloan-wrappers]] # Maker
-            lender = "0x60744434d6339a6B27d73d9Eda62b6F66a0a04FA"
-            helper-contract = "{:?}"
-        "#,
-                contract.address()
-            )
-        })
-        .unwrap_or_default();
-
-    let aave_adapter = contracts
-        .flashloan_wrapper_aave
-        .as_ref()
-        .map(|contract| {
-            format!(
-                r#"
-            [[contracts.flashloan-wrappers]] # Aave
-            lender = "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2"
-            helper-contract = "{:?}"
-            fee-in-bps = "5"
-        "#,
-                contract.address()
-            )
-        })
         .unwrap_or_default();
 
     let base_config = format!(
@@ -239,11 +185,6 @@ weth = "{:?}"
 balances = "{:?}"
 signatures = "{:?}"
 {flashloan_router_config}
-
-{maker_adapter}
-{aave_adapter}
-
-{cow_amms}
 
 {solvers}
 

@@ -232,6 +232,7 @@ pub struct Orderbook {
     domain_separator: DomainSeparator,
     settlement_contract: H160,
     database: crate::database::Postgres,
+    database_replica: crate::database::Postgres,
     order_validator: Arc<dyn OrderValidating>,
     app_data: Arc<crate::app_data::Registry>,
     active_order_competition_threshold: u32,
@@ -243,6 +244,7 @@ impl Orderbook {
         domain_separator: DomainSeparator,
         settlement_contract: H160,
         database: crate::database::Postgres,
+        database_replica: crate::database::Postgres,
         order_validator: Arc<dyn OrderValidating>,
         app_data: Arc<crate::app_data::Registry>,
         active_order_competition_threshold: u32,
@@ -252,12 +254,20 @@ impl Orderbook {
             domain_separator,
             settlement_contract,
             database,
+            database_replica,
             order_validator,
             app_data,
             active_order_competition_threshold,
         }
     }
 
+    /// Validates and stores an order in the database.
+    ///
+    /// 1. If the provided app data is a hash (instead of a complete app data
+    ///    JSON), retrieves it from the database.
+    /// 3. Validates and constructs an order.
+    /// 4. If the new order is to replace an old one, replaces it; otherwise,
+    ///    the new order is simply inserted in the database
     #[instrument(skip_all)]
     pub async fn add_order(
         &self,
@@ -300,7 +310,8 @@ impl Orderbook {
 
     /// Finds an order for cancellation.
     ///
-    /// Returns an error if the order cannot be found or cannot be cancelled.
+    /// Returns an error if the order cannot be found or cannot be cancelled
+    /// (for example, orders using PreSign).
     async fn find_order_for_cancellation(
         &self,
         order_uid: &OrderUid,
@@ -384,6 +395,10 @@ impl Orderbook {
         Ok(())
     }
 
+    /// Using the provided app data, finds the order to be replaced.
+    ///
+    /// Validates the provided app data before searching for the order to be
+    /// replaced.
     async fn get_replaced_order(
         &self,
         new_order: &OrderCreation,
@@ -412,14 +427,19 @@ impl Orderbook {
         Ok(None)
     }
 
+    /// Replaces the `old_order` with `validated_new_order` in the database
+    /// (cancels the old one and inserts the new one), but not before
+    /// performing some validations.
+    ///
+    /// 1. New order's signature cannot be a `PreSign` order to avoid users
+    ///    cancelling orders on someone else's behalf.
+    /// 2. Old and new order MUST have the same signer.
+    /// 3. The old order cannot be bid on (to prevent double spending).
     pub async fn replace_order(
         &self,
         validated_new_order: Order,
         old_order: Order,
     ) -> Result<(), AddOrderError> {
-        // Replacement order signatures need to be validated meaning we cannot
-        // accept `PreSign` orders, otherwise anyone can cancel a user order by
-        // submitting a `PreSign` order on someone's behalf.
         validated_new_order
             .signature
             .scheme()
@@ -428,16 +448,12 @@ impl Orderbook {
                 OrderReplacementError::InvalidSignature,
             ))?;
 
-        // Verify that the new order is a valid replacement order by checking
-        // that both the old and new orders have the same signer.
         if validated_new_order.metadata.owner != old_order.metadata.owner {
             return Err(AddOrderError::InvalidReplacement(
                 OrderReplacementError::WrongOwner,
             ));
         }
 
-        // Verify that the old order is not being actively bid on by solvers,
-        // to prevent the possible double spending of both orders.
         if self
             .order_is_actively_bid_on(old_order.metadata.uid)
             .await?
@@ -477,11 +493,11 @@ impl Orderbook {
     }
 
     pub async fn get_order(&self, uid: &OrderUid) -> Result<Option<Order>> {
-        self.database.single_order(uid).await
+        self.database_replica.single_order(uid).await
     }
 
     pub async fn get_orders_for_tx(&self, hash: &H256) -> Result<Vec<Order>> {
-        self.database.orders_for_tx(hash).await
+        self.database_replica.orders_for_tx(hash).await
     }
 
     pub async fn get_auction(&self) -> Result<Option<dto::AuctionWithId>> {
@@ -501,7 +517,7 @@ impl Orderbook {
         offset: u64,
         limit: u64,
     ) -> Result<Vec<Order>> {
-        self.database
+        self.database_replica
             .user_orders(owner, offset, Some(limit))
             .await
             .context("get_user_orders error")
@@ -674,6 +690,8 @@ mod tests {
         let database = crate::database::Postgres::try_new("postgresql://").unwrap();
         database::clear_DANGER(&database.pool).await.unwrap();
         database.insert_order(&old_order).await.unwrap();
+
+        let database_replica = database.clone();
         let app_data = Arc::new(crate::app_data::Registry::new(
             Validator::new(8192),
             database.clone(),
@@ -681,6 +699,7 @@ mod tests {
         ));
         let orderbook = Orderbook {
             database,
+            database_replica,
             order_validator: Arc::new(order_validator),
             domain_separator: Default::default(),
             settlement_contract: H160([0xba; 20]),

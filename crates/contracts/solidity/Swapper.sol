@@ -29,7 +29,7 @@ contract Swapper {
     /// @param sell - the asset being sold in the swap.
     /// @param buy - the asset being bought in the swap.
     /// @param allowance - the required ERC-20 allowance for the swap; the
-    /// approval will be me made on behalf of the settlement contract.
+    /// approval will be made on behalf of the settlement contract.
     /// @param calls - the calls for executing the swap.
     ///
     /// @return gasUsed - the cumulative gas used for executing the simulated
