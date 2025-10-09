@@ -7,7 +7,7 @@ use {
     ethrpc::block_stream::RangeInclusive,
     shared::event_handling::EventStoring,
     sqlx::PgPool,
-    std::{collections::BTreeMap, sync::Arc},
+    std::{collections::HashMap, sync::Arc},
     tokio::sync::RwLock,
 };
 
@@ -84,7 +84,7 @@ struct Inner {
     /// Store indexed data associated to the indexed events type id.
     /// That type erasure allows us to index multiple concrete contracts
     /// in a single Registry to make for a nicer user facing API.
-    cache: RwLock<BTreeMap<u64, Vec<Arc<Amm>>>>,
+    cache: RwLock<HashMap<u64, Vec<Arc<Amm>>>>,
     /// The earliest block where indexing the contract makes sense.
     /// The contract did not emit any events before this block.
     start_of_index: u64,
@@ -189,18 +189,11 @@ impl EventStoring<ethcontract::Event<CowAmmEvent>> for Storage {
     }
 
     async fn last_event_block(&self) -> anyhow::Result<u64> {
-        let cache = self.0.cache.read().await;
-
-        match cache.last_key_value() {
-            Some((block, _amms)) => Ok(*block),
-            None => {
-                let mut ex = self.0.db.acquire().await?;
-                database::last_indexed_blocks::fetch(&mut ex, &self.0.helper.address().to_string())
-                    .await?
-                    .map(|block| block.try_into().context("last block is not u64"))
-                    .unwrap_or(Ok(self.0.start_of_index))
-            }
-        }
+        let mut ex = self.0.db.acquire().await?;
+        database::last_indexed_blocks::fetch(&mut ex, &self.0.helper.address().to_string())
+            .await?
+            .map(|block| block.try_into().context("last block is not u64"))
+            .unwrap_or(Ok(self.0.start_of_index))
     }
 
     async fn persist_last_indexed_block(&mut self, latest_block: u64) -> anyhow::Result<()> {
