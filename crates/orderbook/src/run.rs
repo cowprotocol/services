@@ -120,7 +120,7 @@ pub async fn run(args: Arguments) {
             address.into_alloy(),
             web3.alloy.clone(),
         ),
-        None => contracts::alloy::support::Signatures::Instance::deploy(web3.alloy.clone())
+        None => contracts::alloy::support::Signatures::Instance::deployed(&web3.alloy)
             .await
             .expect("load signatures contract"),
     };
