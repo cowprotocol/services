@@ -14,7 +14,7 @@ use {
         alloy::{HooksTrampoline, InstanceExt, UniswapV2Factory, UniswapV2Router02},
         support::{Balances, Signatures},
     },
-    ethcontract::{Address, H256, U256, errors::DeployError},
+    ethcontract::{Address, H256, U256},
     ethrpc::alloy::conversions::IntoAlloy,
     model::DomainSeparator,
     shared::ethrpc::Web3,
@@ -40,7 +40,6 @@ pub struct Contracts {
     pub domain_separator: DomainSeparator,
     pub ethflows: Vec<CoWSwapEthFlow>,
     pub hooks: HooksTrampoline::Instance,
-    pub cow_amm_helper: Option<CowAmmLegacyHelper>,
     pub flashloan_wrapper_maker: Option<ERC3156FlashLoanSolverWrapper>,
     pub flashloan_wrapper_aave: Option<AaveFlashLoanSolverWrapper>,
     pub flashloan_router: Option<FlashLoanRouter>,
@@ -57,12 +56,6 @@ impl Contracts {
         tracing::info!("connected to forked test network {}", network_id);
 
         let gp_settlement = GPv2Settlement::deployed(web3).await.unwrap();
-        let cow_amm_helper = match contracts::CowAmmLegacyHelper::deployed(web3).await {
-            Err(DeployError::NotFound(_)) => None,
-            Err(err) => panic!("failed to find deployed contract: {err:?}"),
-            Ok(contract) => Some(contract),
-        };
-
         let balances = match deployed.balances {
             Some(address) => Balances::at(web3, address),
             None => Balances::deployed(web3)
@@ -120,7 +113,6 @@ impl Contracts {
             gp_settlement,
             balances,
             signatures,
-            cow_amm_helper,
             flashloan_wrapper_maker,
             flashloan_wrapper_aave,
             flashloan_router,
@@ -242,7 +234,6 @@ impl Contracts {
             ethflows: vec![ethflow, ethflow_secondary],
             hooks,
             // Current helper contract only works in forked tests
-            cow_amm_helper: None,
             flashloan_wrapper_maker: Some(flashloan_wrapper_maker),
             flashloan_wrapper_aave: Some(flashloan_wrapper_aave),
             flashloan_router: Some(flashloan_router),

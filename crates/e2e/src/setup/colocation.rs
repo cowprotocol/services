@@ -164,24 +164,6 @@ solving-share-of-deadline = 1.0
     let liquidity = liquidity.to_string(contracts);
 
     let encoded_base_tokens = encode_base_tokens(base_tokens.clone());
-
-    let cow_amms = contracts
-        .cow_amm_helper
-        .iter()
-        .map(|contract| {
-            format!(
-                r#"
-[[contracts.cow-amms]]
-helper = "{:?}"
-factory = "{:?}"
-"#,
-                contract.address(),
-                contract.address(),
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-
     let flashloan_router_config = contracts
         .flashloan_router
         .as_ref()
@@ -203,8 +185,6 @@ weth = "{:?}"
 balances = "{:?}"
 signatures = "{:?}"
 {flashloan_router_config}
-
-{cow_amms}
 
 {solvers}
 
