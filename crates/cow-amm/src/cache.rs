@@ -20,23 +20,30 @@ impl Storage {
         helper: CowAmmLegacyHelper,
         factory_address: Address,
         db: PgPool,
-    ) -> anyhow::Result<Self> {
+    ) -> Self {
         let self_ = Self(Arc::new(Inner {
             cache: Default::default(),
+            factory_address,
             // make sure to start 1 block **before** the deployment to get all the events
             start_of_index: deployment_block - 1,
             helper,
             db,
         }));
 
-        self_.initialize_from_database(factory_address).await?;
+        if let Err(err) = self_.initialize_from_database().await {
+            tracing::error!(
+                ?err,
+                ?factory_address,
+                "failed to initialize AMM cache from database"
+            );
+        }
 
-        Ok(self_)
+        self_
     }
 
-    async fn initialize_from_database(&self, factory_address: Address) -> anyhow::Result<()> {
+    async fn initialize_from_database(&self) -> anyhow::Result<()> {
         let mut ex = self.0.db.acquire().await?;
-        let factory_address = ByteArray(factory_address.0);
+        let factory_address = ByteArray(self.0.factory_address.0);
         let db_amms = {
             let _timer = Metrics::get()
                 .database_queries
@@ -97,6 +104,8 @@ struct Inner {
     /// The earliest block where indexing the contract makes sense.
     /// The contract did not emit any events before this block.
     start_of_index: u64,
+    /// Address of the factory contract that deployed the AMMs.
+    factory_address: Address,
     /// Helper contract to query required data from the cow amm.
     helper: CowAmmLegacyHelper,
     /// Database connection to persist CoW AMMs and the last indexed block.
@@ -209,7 +218,7 @@ impl EventStoring<ethcontract::Event<CowAmmEvent>> for Storage {
         let mut ex = self.0.db.acquire().await?;
         database::last_indexed_blocks::update(
             &mut ex,
-            &self.0.helper.address().to_string(),
+            &self.0.factory_address.to_string(),
             i64::try_from(latest_block).context("last block is not u64")?,
         )
         .await?;
