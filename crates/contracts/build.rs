@@ -516,9 +516,6 @@ fn main() {
             .add_network_str(SEPOLIA, "0x8262d639c38470F38d2eff15926F7071c28057Af")
     });
 
-    // Contract for batching multiple `eth_call`s into a single one.
-    generate_contract("Multicall");
-
     // Test Contract for incrementing arbitrary counters.
     generate_contract("Counter");
 
