@@ -333,20 +333,22 @@ pub struct OrderCreation {
     /// Whether the order can be carried out in multiple smaller trades, or it
     /// must be carried out in a single trade (a.k.a. fill-or-kill).
     pub partially_fillable: bool,
-    /// The amount of `sell_token`s to be transfered into the settlement
-    /// contract.
+    /// Defines how tokens are transferred from the user into the settlement
+    /// contract, can be an ERC-20 transfer, drawn from the user's internal
+    /// Balancer Vault or through an ERC-20 transfer made through the Balancer
+    /// Vault.
     #[serde(default)]
     pub sell_token_balance: SellTokenSource,
-    /// The amount of `buy_token`s to be transfered to the `receiver` (or owner
-    /// in case the `receiver` is None).
+    /// Defines how tokens are transferred back to the user, either as an ERC-20
+    /// token transfer or internal Balancer Vault transfer.
     #[serde(default)]
     pub buy_token_balance: BuyTokenDestination,
-    /// The address of the order submitter.
+    /// The address of the order's owner (can be a smart contract's address).
     ///
     /// In the EthFlow case, it will have the address of the EthFlow smart
     /// contract.
     pub from: Option<H160>,
-    /// The owner's signature of the order.
+    /// The owner's signature of the order's data.
     #[serde(flatten)]
     pub signature: Signature,
     /// The ID of the quote this order refers to.
@@ -358,7 +360,7 @@ pub struct OrderCreation {
 
 impl OrderCreation {
     /// Returns the order's data — i.e. the [`OrderCreation`] without
-    /// `signature`, `quote_id` and with the `app_data`'s hash.
+    /// the metadata: `signature`, `quote_id` and with the `app_data`'s hash.
     pub fn data(&self) -> OrderData {
         OrderData {
             sell_token: self.sell_token,
