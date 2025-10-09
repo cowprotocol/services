@@ -472,6 +472,7 @@ impl Solver {
                 weth: Some(config.blockchain.weth.address().into()),
                 balances: Some(config.blockchain.balances.address().into()),
                 signatures: Some(config.blockchain.signatures.address().into_legacy().into()),
+                cow_amm_helper_by_factory: Default::default(),
                 flashloan_router: Some(
                     config
                         .blockchain

@@ -5,7 +5,6 @@ use {
     ethrpc::{
         Web3,
         alloy::conversions::{IntoAlloy, IntoLegacy},
-        block_stream::CurrentBlockWatcher,
     },
     std::collections::HashMap,
     thiserror::Error,
