@@ -621,8 +621,9 @@ Stores information about indexed CoW AMMs that have been discovered through bloc
 Column                        | Meaning
 ------------------------------|--------
  address                      | Address of the CoW AMM pool contract
+ helper\_address              | Address of the helper contract associated with this AMM
  tradeable\_tokens            | Token addresses that can be traded through this AMM
- block\_number                | Deployed block number
+ block\_number                | Deployed block number(when the AMM is finalized)
 
 Indexes:
 - "cow\_amms\_pkey" PRIMARY KEY, btree (`address`)

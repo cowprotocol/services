@@ -78,9 +78,14 @@ impl Amm {
         Ok(template)
     }
 
-    pub fn try_to_db_domain(&self, block_number: u64) -> Result<database::cow_amms::CowAmm> {
+    pub fn try_to_db_domain(
+        &self,
+        block_number: u64,
+        helper: Address,
+    ) -> Result<database::cow_amms::CowAmm> {
         Ok(database::cow_amms::CowAmm {
             address: ByteArray(self.address.0),
+            helper_address: ByteArray(helper.0),
             tradeable_tokens: self
                 .tradeable_tokens
                 .iter()

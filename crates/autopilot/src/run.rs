@@ -480,7 +480,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
                 config.index_start,
                 config.factory,
                 config.helper,
-                db.pool.clone(),
+                db_write.pool.clone(),
             )
             .await;
     }

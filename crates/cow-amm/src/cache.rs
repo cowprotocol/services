@@ -27,7 +27,6 @@ impl Storage {
 
     pub(crate) async fn initialize_from_database(&self) -> anyhow::Result<()> {
         let mut ex = self.0.db.acquire().await?;
-        // @todo, fetch all amms in advance and split by helper address
         let helper_address = ByteArray(self.0.helper.address().0);
         let db_amms = {
             let _timer = Metrics::get()
@@ -35,7 +34,7 @@ impl Storage {
                 .with_label_values(&["cow_amm_fetch_by_helper"])
                 .start_timer();
 
-            database::cow_amms::fetch_by_address(&mut ex, &helper_address).await?
+            database::cow_amms::fetch_by_helper_address(&mut ex, &helper_address).await?
         };
 
         if db_amms.is_empty() {
@@ -43,19 +42,22 @@ impl Storage {
         }
 
         let mut processed_amms = Vec::new();
-        let mut block_number = 0;
         for db_amm in db_amms {
             let amm_address = ethcontract::Address::from_slice(&db_amm.address.0);
             let amm = Amm::new(amm_address, &self.0.helper).await?;
-            block_number = db_amm.block_number.max(block_number);
-            processed_amms.push(Arc::new(amm));
+            let block_number = u64::try_from(db_amm.block_number).context(format!(
+                "db stored cow amm {:?} block number is not u64",
+                db_amm.address
+            ))?;
+            processed_amms.push((block_number, Arc::new(amm)));
         }
 
         if !processed_amms.is_empty() {
             let count = processed_amms.len();
             let mut cache = self.0.cache.write().await;
-            // @todo: this is not right, fetch the start index first
-            cache.insert(self.0, processed_amms);
+            for (block_number, amm) in processed_amms {
+                cache.entry(block_number).or_default().push(amm);
+            }
             tracing::info!(count, ?helper_address, "initialized AMMs from database");
         }
 
@@ -153,12 +155,13 @@ impl EventStoring<ethcontract::Event<CowAmmEvent>> for Storage {
                 .iter()
                 .filter_map(|(block_number, amm)| {
                     amm.as_ref()
-                        .try_to_db_domain(*block_number)
+                        .try_to_db_domain(*block_number, self.0.helper.address())
                         .map_err(|err| {
                             tracing::warn!(
                                 ?err,
                                 ?amm,
                                 ?block_number,
+                                helper = ?self.0.helper.address(),
                                 "failed to convert amm to db domain"
                             );
                             err
