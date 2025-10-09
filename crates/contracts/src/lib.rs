@@ -74,12 +74,6 @@ pub mod support {
     }
 }
 
-pub mod test {
-    include_contracts! {
-        Counter;
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use crate::alloy::networks::{
