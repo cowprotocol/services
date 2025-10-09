@@ -85,7 +85,7 @@ impl Amm {
     ) -> Result<database::cow_amms::CowAmm> {
         Ok(database::cow_amms::CowAmm {
             address: ByteArray(self.address.0),
-            helper_address: ByteArray(helper.0),
+            factory_address: ByteArray(helper.0),
             tradeable_tokens: self
                 .tradeable_tokens
                 .iter()

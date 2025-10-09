@@ -45,6 +45,7 @@ impl Registry {
         let storage = Storage::new(
             deployment_block,
             CowAmmLegacyHelper::at(&self.web3, helper_contract),
+            factory,
             db,
         );
 

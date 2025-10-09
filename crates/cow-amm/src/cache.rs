@@ -15,26 +15,35 @@ use {
 pub(crate) struct Storage(Arc<Inner>);
 
 impl Storage {
-    pub(crate) fn new(deployment_block: u64, helper: CowAmmLegacyHelper, db: PgPool) -> Self {
-        Self(Arc::new(Inner {
+    pub(crate) async fn new(
+        deployment_block: u64,
+        helper: CowAmmLegacyHelper,
+        factory_address: Address,
+        db: PgPool,
+    ) -> anyhow::Result<Self> {
+        let self_ = Self(Arc::new(Inner {
             cache: Default::default(),
             // make sure to start 1 block **before** the deployment to get all the events
             start_of_index: deployment_block - 1,
             helper,
             db,
-        }))
+        }));
+
+        self_.initialize_from_database(factory_address).await?;
+
+        Ok(self_)
     }
 
-    pub(crate) async fn initialize_from_database(&self) -> anyhow::Result<()> {
+    async fn initialize_from_database(&self, factory_address: Address) -> anyhow::Result<()> {
         let mut ex = self.0.db.acquire().await?;
-        let helper_address = ByteArray(self.0.helper.address().0);
+        let factory_address = ByteArray(factory_address.0);
         let db_amms = {
             let _timer = Metrics::get()
                 .database_queries
                 .with_label_values(&["cow_amm_fetch_by_helper"])
                 .start_timer();
 
-            database::cow_amms::fetch_by_helper_address(&mut ex, &helper_address).await?
+            database::cow_amms::fetch_by_factory_address(&mut ex, &factory_address).await?
         };
 
         if db_amms.is_empty() {
@@ -58,7 +67,7 @@ impl Storage {
             for (block_number, amm) in processed_amms {
                 cache.entry(block_number).or_default().push(amm);
             }
-            tracing::info!(count, ?helper_address, "initialized AMMs from database");
+            tracing::info!(count, ?factory_address, "initialized AMMs from database");
         }
 
         Ok(())
