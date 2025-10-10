@@ -10,9 +10,10 @@ use {
     std::{
         collections::HashMap,
         fmt::{self, Debug, Formatter},
-        sync::{Arc, RwLock},
+        sync::Arc,
         time::Duration,
     },
+    tokio::sync::RwLock,
     tracing::Instrument,
 };
 
@@ -94,7 +95,7 @@ impl Inner {
     async fn update(&self) -> Result<()> {
         let token_owner_pairs = self.solver.get_token_owner_pairs().await?;
 
-        let mut cache = self.cache.write().unwrap();
+        let mut cache = self.cache.write().await;
         *cache = token_owner_pairs;
 
         Ok(())
@@ -114,7 +115,7 @@ impl TokenOwnerProposing for AutoUpdatingSolverTokenOwnerFinder {
             .inner
             .cache
             .read()
-            .unwrap()
+            .await
             .get(&token)
             .cloned()
             .unwrap_or_default())

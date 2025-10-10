@@ -630,7 +630,9 @@ async fn get_orders_with_native_prices(
         }
     });
     let tokens_by_priority = prioritize_missing_prices(filtered);
-    native_price_estimator.replace_high_priority(tokens_by_priority);
+    native_price_estimator
+        .replace_high_priority(tokens_by_priority)
+        .await;
 
     // Record separate metrics just for missing native token prices for market
     // orders, as they should be prioritized.

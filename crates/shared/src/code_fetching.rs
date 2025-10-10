@@ -5,7 +5,8 @@ use {
     crate::ethrpc::Web3,
     anyhow::Result,
     cached::{Cached, SizedCache},
-    std::sync::{Arc, Mutex},
+    std::sync::Arc,
+    tokio::sync::Mutex,
     tracing::instrument,
     web3::types::{Bytes, H160},
 };
@@ -53,7 +54,7 @@ impl CachedCodeFetcher {
         F: FnOnce(&Bytes) -> T,
     {
         {
-            let mut cache = self.cache.lock().unwrap();
+            let mut cache = self.cache.lock().await;
             if let Some(code) = cache.cache_get(&address) {
                 return Ok(handle(code));
             }
@@ -61,7 +62,7 @@ impl CachedCodeFetcher {
 
         let code = self.inner.code(address).await?;
         let result = handle(&code);
-        self.cache.lock().unwrap().cache_set(address, code);
+        self.cache.lock().await.cache_set(address, code);
         Ok(result)
     }
 }

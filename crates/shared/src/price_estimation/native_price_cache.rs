@@ -10,13 +10,16 @@ use {
     indexmap::IndexSet,
     primitive_types::H160,
     prometheus::{IntCounter, IntCounterVec, IntGauge},
-    rand::Rng,
+    rand::{Rng, SeedableRng},
     std::{
         collections::{HashMap, hash_map::Entry},
-        sync::{Arc, Mutex, MutexGuard, Weak},
+        sync::{Arc, Weak},
         time::{Duration, Instant},
     },
-    tokio::time,
+    tokio::{
+        sync::{Mutex, MutexGuard},
+        time,
+    },
     tracing::{Instrument, instrument},
 };
 
@@ -180,7 +183,7 @@ impl Inner {
             let current_accumulative_errors_count = {
                 // check if the price is cached by now
                 let now = Instant::now();
-                let mut cache = self.cache.lock().unwrap();
+                let mut cache = self.cache.lock().await;
 
                 match Self::get_cached_price(*token, now, &mut cache, &max_age, false) {
                     Some(cached) if cached.is_ready() => {
@@ -201,7 +204,7 @@ impl Inner {
             // update price in cache
             if should_cache(&result) {
                 let now = Instant::now();
-                let mut cache = self.cache.lock().unwrap();
+                let mut cache = self.cache.lock().await;
 
                 cache.insert(
                     *token,
@@ -217,17 +220,17 @@ impl Inner {
     }
 
     /// Tokens with highest priority first.
-    fn sorted_tokens_to_update(&self, max_age: Duration, now: Instant) -> Vec<H160> {
+    async fn sorted_tokens_to_update(&self, max_age: Duration, now: Instant) -> Vec<H160> {
         let mut outdated: Vec<_> = self
             .cache
             .lock()
-            .unwrap()
+            .await
             .iter()
             .filter(|(_, cached)| now.saturating_duration_since(cached.updated_at) > max_age)
             .map(|(token, cached)| (*token, cached.requested_at))
             .collect();
 
-        let high_priority = self.high_priority.lock().unwrap().clone();
+        let high_priority = self.high_priority.lock().await.clone();
         let index = |token: &H160| high_priority.get_index_of(token).unwrap_or(usize::MAX);
         outdated.sort_by_cached_key(|entry| {
             (
@@ -262,10 +265,10 @@ impl UpdateTask {
         let metrics = Metrics::get();
         metrics
             .native_price_cache_size
-            .set(i64::try_from(inner.cache.lock().unwrap().len()).unwrap_or(i64::MAX));
+            .set(i64::try_from(inner.cache.lock().await.len()).unwrap_or(i64::MAX));
 
         let max_age = inner.max_age.saturating_sub(self.prefetch_time);
-        let mut outdated_entries = inner.sorted_tokens_to_update(max_age, Instant::now());
+        let mut outdated_entries = inner.sorted_tokens_to_update(max_age, Instant::now()).await;
 
         tracing::trace!(tokens = ?outdated_entries, first_n = ?self.update_size, "outdated prices to fetch");
 
@@ -298,8 +301,8 @@ impl UpdateTask {
 }
 
 impl CachingNativePriceEstimator {
-    pub fn initialize_cache(&self, prices: HashMap<H160, BigDecimal>) {
-        let mut rng = rand::thread_rng();
+    pub async fn initialize_cache(&self, prices: HashMap<H160, BigDecimal>) {
+        let mut rng = rand::rngs::StdRng::from_entropy();
         let now = std::time::Instant::now();
 
         let cache = prices
@@ -323,7 +326,7 @@ impl CachingNativePriceEstimator {
             })
             .collect::<HashMap<_, _>>();
 
-        *self.0.cache.lock().unwrap() = cache;
+        *self.0.cache.lock().await = cache;
     }
 
     /// Creates new CachingNativePriceEstimator using `estimator` to calculate
@@ -370,12 +373,12 @@ impl CachingNativePriceEstimator {
     /// Only returns prices that are currently cached. Missing prices will get
     /// prioritized to get fetched during the next cycles of the maintenance
     /// background task.
-    fn get_cached_prices(
+    async fn get_cached_prices(
         &self,
         tokens: &[H160],
     ) -> HashMap<H160, Result<f64, PriceEstimationError>> {
         let now = Instant::now();
-        let mut cache = self.0.cache.lock().unwrap();
+        let mut cache = self.0.cache.lock().await;
         let mut results = HashMap::default();
         for token in tokens {
             let cached = Inner::get_ready_to_use_cached_price(
@@ -397,9 +400,9 @@ impl CachingNativePriceEstimator {
         results
     }
 
-    pub fn replace_high_priority(&self, tokens: IndexSet<H160>) {
+    pub async fn replace_high_priority(&self, tokens: IndexSet<H160>) {
         tracing::trace!(?tokens, "update high priority tokens");
-        *self.0.high_priority.lock().unwrap() = tokens;
+        *self.0.high_priority.lock().await = tokens;
     }
 
     pub async fn estimate_native_prices_with_timeout<'a>(
@@ -407,7 +410,7 @@ impl CachingNativePriceEstimator {
         tokens: &'a [H160],
         timeout: Duration,
     ) -> HashMap<H160, NativePriceEstimateResult> {
-        let mut prices = self.get_cached_prices(tokens);
+        let mut prices = self.get_cached_prices(tokens).await;
         if timeout.is_zero() {
             return prices;
         }
@@ -445,7 +448,7 @@ impl NativePriceEstimating for CachingNativePriceEstimator {
         async move {
             let cached = {
                 let now = Instant::now();
-                let mut cache = self.0.cache.lock().unwrap();
+                let mut cache = self.0.cache.lock().await;
                 Inner::get_ready_to_use_cached_price(token, now, &mut cache, &self.0.max_age, false)
             };
 
@@ -509,12 +512,12 @@ mod tests {
             Default::default(),
             HEALTHY_PRICE_ESTIMATION_TIME,
         );
-        estimator.initialize_cache(prices);
+        estimator.initialize_cache(prices).await;
 
         {
             // Check that `updated_at` timestamps are initialized with
             // reasonable values.
-            let cache = estimator.0.cache.lock().unwrap();
+            let cache = estimator.0.cache.lock().await;
             for value in cache.values() {
                 let elapsed = value.updated_at.elapsed();
                 assert!(elapsed >= min_age && elapsed <= max_age);
@@ -964,8 +967,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn outdated_entries_prioritized() {
+    #[tokio::test]
+    async fn outdated_entries_prioritized() {
         let t0 = H160::from_low_u64_be(0);
         let t1 = H160::from_low_u64_be(1);
         let now = Instant::now();
@@ -988,13 +991,17 @@ mod tests {
 
         let now = now + Duration::from_secs(1);
 
-        *inner.high_priority.lock().unwrap() = std::iter::once(t0).collect();
-        let tokens = inner.sorted_tokens_to_update(Duration::from_secs(0), now);
+        *inner.high_priority.lock().await = std::iter::once(t0).collect();
+        let tokens = inner
+            .sorted_tokens_to_update(Duration::from_secs(0), now)
+            .await;
         assert_eq!(tokens[0], t0);
         assert_eq!(tokens[1], t1);
 
-        *inner.high_priority.lock().unwrap() = std::iter::once(t1).collect();
-        let tokens = inner.sorted_tokens_to_update(Duration::from_secs(0), now);
+        *inner.high_priority.lock().await = std::iter::once(t1).collect();
+        let tokens = inner
+            .sorted_tokens_to_update(Duration::from_secs(0), now)
+            .await;
         assert_eq!(tokens[0], t1);
         assert_eq!(tokens[1], t0);
     }

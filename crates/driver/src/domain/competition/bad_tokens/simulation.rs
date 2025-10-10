@@ -112,6 +112,7 @@ impl Detector {
                 .boxed()
             })
             .await
+            .await
     }
 }
 

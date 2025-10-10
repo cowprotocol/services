@@ -248,7 +248,7 @@ impl RunLoop {
         }
 
         observe::log_auction_delta(&previous, &auction);
-        self.liveness.auction();
+        self.liveness.auction().await;
         Metrics::auction_ready(start_block.observed_at);
         Some(auction)
     }
@@ -284,7 +284,7 @@ impl RunLoop {
 
         if auction.orders.is_empty() {
             // Updating liveness probe to not report unhealthy due to this optimization
-            self.liveness.auction();
+            self.liveness.auction().await;
             tracing::debug!("skipping empty auction");
             return None;
         }
@@ -593,7 +593,7 @@ impl RunLoop {
     ) -> Vec<competition::Participant<Unranked>> {
         let request = solve::Request::new(
             auction,
-            &self.trusted_tokens.all(),
+            &self.trusted_tokens.all().await,
             self.config.solve_deadline,
         );
 

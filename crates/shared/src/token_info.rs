@@ -9,11 +9,9 @@ use {
         future::{BoxFuture, Shared},
     },
     model::order::BUY_ETH_ADDRESS,
-    std::{
-        collections::HashMap,
-        sync::{Arc, Mutex},
-    },
+    std::{collections::HashMap, sync::Arc},
     thiserror::Error,
+    tokio::sync::Mutex,
 };
 
 #[cfg_attr(test, derive(Eq, PartialEq))]
@@ -120,7 +118,7 @@ impl CachedTokenInfoFetcher {
 impl CachedTokenInfoFetcher {
     async fn fetch_token(&self, address: H160) -> Result<TokenInfo, Error> {
         let fetch = {
-            let mut cache = self.cache.lock().unwrap();
+            let mut cache = self.cache.lock().await;
             cache
                 .entry(address)
                 .or_insert({
@@ -134,7 +132,7 @@ impl CachedTokenInfoFetcher {
 
         let info = fetch.await;
         if info.is_err() {
-            let mut cache = self.cache.lock().unwrap();
+            let mut cache = self.cache.lock().await;
             if let Some(Err(_)) = cache.get(&address).and_then(|fetch| fetch.peek()) {
                 cache.remove(&address);
             }

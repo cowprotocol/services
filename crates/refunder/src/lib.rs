@@ -13,9 +13,10 @@ use {
     shared::http_client::HttpClientFactory,
     sqlx::PgPool,
     std::{
-        sync::{Arc, RwLock},
+        sync::Arc,
         time::{Duration, Instant},
     },
+    tokio::sync::RwLock,
 };
 
 const LOOP_INTERVAL: Duration = Duration::from_secs(30);
@@ -83,7 +84,7 @@ pub async fn run(args: arguments::Arguments) {
         match refunder.try_to_refund_all_eligble_orders().await {
             Ok(_) => {
                 track_refunding_loop_result("success");
-                *liveness.last_successful_loop.write().unwrap() = Instant::now()
+                *liveness.last_successful_loop.write().await = Instant::now()
             }
             Err(err) => {
                 track_refunding_loop_result("error");
@@ -101,7 +102,7 @@ struct Liveness {
 #[async_trait::async_trait]
 impl LivenessChecking for Liveness {
     async fn is_alive(&self) -> bool {
-        Instant::now().duration_since(*self.last_successful_loop.read().unwrap())
+        Instant::now().duration_since(*self.last_successful_loop.read().await)
             < DELAY_FROM_LAST_LOOP_BEFORE_UNHEALTHY
     }
 }

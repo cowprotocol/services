@@ -114,6 +114,7 @@ impl ExternalTradeFinder {
         self.sharing
             .shared_or_else(query.clone(), fut)
             .await
+            .await
             .map_err(TradeError::from)
     }
 }

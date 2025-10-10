@@ -106,6 +106,7 @@ impl AppDataRetriever {
             .request_sharing
             .shared_or_else(*app_data, app_data_fut)
             .await
+            .await
     }
 }
 

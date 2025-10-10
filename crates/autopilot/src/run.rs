@@ -56,9 +56,10 @@ use {
         token_list::{AutoUpdatingTokenList, TokenListConfiguration},
     },
     std::{
-        sync::{Arc, RwLock, atomic::AtomicBool},
+        sync::{Arc, atomic::AtomicBool},
         time::{Duration, Instant},
     },
+    tokio::sync::RwLock,
     tracing::{Instrument, info_span, instrument},
     url::Url,
 };
@@ -71,7 +72,7 @@ pub struct Liveness {
 #[async_trait::async_trait]
 impl LivenessChecking for Liveness {
     async fn is_alive(&self) -> bool {
-        let last_auction_time = self.last_auction_time.read().unwrap();
+        let last_auction_time = self.last_auction_time.read().await;
         let auction_age = last_auction_time.elapsed();
         auction_age <= self.max_auction_age
     }
@@ -85,8 +86,8 @@ impl Liveness {
         }
     }
 
-    pub fn auction(&self) {
-        *self.last_auction_time.write().unwrap() = Instant::now();
+    pub async fn auction(&self) {
+        *self.last_auction_time.write().await = Instant::now();
     }
 }
 
@@ -404,7 +405,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         .await
         .unwrap();
     let prices = db_write.fetch_latest_prices().await.unwrap();
-    native_price_estimator.initialize_cache(prices);
+    native_price_estimator.initialize_cache(prices).await;
 
     let price_estimator = price_estimator_factory
         .price_estimator(

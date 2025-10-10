@@ -7,13 +7,8 @@ use {
         IntCounterVec,
         core::{AtomicU64, GenericGaugeVec},
     },
-    std::{
-        collections::HashMap,
-        future::Future,
-        hash::Hash,
-        sync::{Arc, Mutex},
-        time::Duration,
-    },
+    std::{collections::HashMap, future::Future, hash::Hash, sync::Arc, time::Duration},
+    tokio::sync::Mutex,
 };
 
 // The design of this module is intentionally simple. Every time a shared future
@@ -54,8 +49,8 @@ where
         }
     }
 
-    fn collect_garbage(cache: &Cache<Request, Fut>, label: &str) {
-        let mut cache = cache.lock().unwrap();
+    async fn collect_garbage(cache: &Cache<Request, Fut>, label: &str) {
+        let mut cache = cache.lock().await;
         cache.retain(|_request, weak| weak.upgrade().is_some());
         Metrics::get()
             .request_sharing_cached_items
@@ -66,7 +61,7 @@ where
     fn spawn_gc(cache: Cache<Request, Fut>, label: String) {
         tokio::task::spawn(async move {
             loop {
-                Self::collect_garbage(&cache, &label);
+                Self::collect_garbage(&cache, &label).await;
                 tokio::time::sleep(Duration::from_millis(500)).await;
             }
         });
@@ -100,11 +95,11 @@ where
 {
     /// Returns an existing in flight future or creates and uses a new future
     /// from the specified closure.
-    pub fn shared_or_else<F>(&self, request: Request, future: F) -> Shared<Fut>
+    pub async fn shared_or_else<F>(&self, request: Request, future: F) -> Shared<Fut>
     where
         F: FnOnce(&Request) -> Fut,
     {
-        let mut in_flight = self.in_flight.lock().unwrap();
+        let mut in_flight = self.in_flight.lock().await;
 
         let existing = in_flight.get(&request).and_then(WeakShared::upgrade);
 
@@ -165,8 +160,12 @@ mod tests {
             request_label: label.clone(),
         };
 
-        let shared0 = sharing.shared_or_else(0, |_| futures::future::ready(0).boxed());
-        let shared1 = sharing.shared_or_else(0, |_| async { panic!() }.boxed());
+        let shared0 = sharing
+            .shared_or_else(0, |_| futures::future::ready(0).boxed())
+            .await;
+        let shared1 = sharing
+            .shared_or_else(0, |_| async { panic!() }.boxed())
+            .await;
 
         assert!(shared0.ptr_eq(&shared1));
         assert_eq!(shared0.strong_count().unwrap(), 2);
@@ -179,16 +178,16 @@ mod tests {
         assert_eq!(shared1.weak_count().unwrap(), 1);
 
         // GC does not delete any keys because some tasks still use the future
-        RequestSharing::collect_garbage(&sharing.in_flight, &label);
-        assert_eq!(sharing.in_flight.lock().unwrap().len(), 1);
-        assert!(sharing.in_flight.lock().unwrap().get(&0).is_some());
+        RequestSharing::collect_garbage(&sharing.in_flight, &label).await;
+        assert_eq!(sharing.in_flight.lock().await.len(), 1);
+        assert!(sharing.in_flight.lock().await.get(&0).is_some());
 
         // complete second shared
         assert_eq!(shared1.now_or_never().unwrap(), 0);
 
-        RequestSharing::collect_garbage(&sharing.in_flight, &label);
+        RequestSharing::collect_garbage(&sharing.in_flight, &label).await;
 
         // GC deleted all now unused futures
-        assert!(sharing.in_flight.lock().unwrap().is_empty());
+        assert!(sharing.in_flight.lock().await.is_empty());
     }
 }

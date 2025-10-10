@@ -82,7 +82,7 @@ impl RunLoop {
                 continue;
             };
             observe::log_auction_delta(&previous, &auction);
-            self.liveness.auction();
+            self.liveness.auction().await;
 
             self.single_run(&auction)
                 .instrument(tracing::info_span!("auction", auction.id))
@@ -178,7 +178,11 @@ impl RunLoop {
     /// Runs the solver competition, making all configured drivers participate.
     #[instrument(skip_all)]
     async fn competition(&self, auction: &domain::Auction) -> Vec<Participant<Unranked>> {
-        let request = solve::Request::new(auction, &self.trusted_tokens.all(), self.solve_deadline);
+        let request = solve::Request::new(
+            auction,
+            &self.trusted_tokens.all().await,
+            self.solve_deadline,
+        );
 
         futures::future::join_all(
             self.drivers

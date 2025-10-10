@@ -10,11 +10,8 @@ use {
     reqwest::{Client, header::AUTHORIZATION},
     serde::Deserialize,
     serde_with::serde_as,
-    std::{
-        collections::HashMap,
-        sync::{Arc, Mutex},
-        time::Duration,
-    },
+    std::{collections::HashMap, sync::Arc, time::Duration},
+    tokio::sync::Mutex,
     tracing::instrument,
     url::Url,
 };
@@ -77,7 +74,7 @@ impl OneInch {
                 match current_prices {
                     Ok(current_prices) => {
                         tracing::debug!("OneInch spot prices updated");
-                        *prices.lock().unwrap() = current_prices;
+                        *prices.lock().await = current_prices;
                     }
                     Err(err) => {
                         tracing::warn!(?err, "OneInch spot price update failed");
@@ -97,7 +94,7 @@ impl NativePriceEstimating for OneInch {
         _timeout: Duration, // ignored since cache lookup take ms anyway
     ) -> BoxFuture<'_, NativePriceEstimateResult> {
         async move {
-            let prices = self.prices.lock().unwrap();
+            let prices = self.prices.lock().await;
             prices
                 .get(&token)
                 .cloned()

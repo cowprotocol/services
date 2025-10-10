@@ -4,11 +4,8 @@ use {
     prometheus::IntCounterVec,
     reqwest::{Client, Url},
     serde::Deserialize,
-    std::{
-        collections::HashSet,
-        sync::{Arc, RwLock},
-        time::Duration,
-    },
+    std::{collections::HashSet, sync::Arc, time::Duration},
+    tokio::sync::RwLock,
     tracing::{Instrument, instrument},
 };
 
@@ -72,8 +69,7 @@ impl AutoUpdatingTokenList {
                                 .token_list_updates
                                 .with_label_values(&["success"])
                                 .inc();
-                            let mut w = tokens.write().unwrap();
-                            *w = new_tokens;
+                            *tokens.write().await = new_tokens;
                         }
                         Err(err) => {
                             metrics
@@ -97,12 +93,12 @@ impl AutoUpdatingTokenList {
         }
     }
 
-    pub fn contains(&self, address: &H160) -> bool {
-        self.tokens.read().unwrap().contains(address)
+    pub async fn contains(&self, address: &H160) -> bool {
+        self.tokens.read().await.contains(address)
     }
 
-    pub fn all(&self) -> HashSet<H160> {
-        self.tokens.read().unwrap().clone()
+    pub async fn all(&self) -> HashSet<H160> {
+        self.tokens.read().await.clone()
     }
 }
 
@@ -205,8 +201,8 @@ pub mod tests {
         );
     }
 
-    #[test]
-    fn test_creation_with_chain_id() {
+    #[tokio::test]
+    async fn test_creation_with_chain_id() {
         let list = serde_json::from_str::<TokenListModel>(EXAMPLE_LIST).unwrap();
         let config = TokenListConfiguration {
             url: Default::default(),
@@ -217,9 +213,13 @@ pub mod tests {
         };
         let tokens = config.get_list(list.tokens);
         let instance = AutoUpdatingTokenList::new(tokens);
-        assert!(instance.contains(&testlib::tokens::USDC));
+        assert!(instance.contains(&testlib::tokens::USDC).await);
         // Chain ID 4
-        assert!(!instance.contains(&addr!("39AA39c021dfbaE8faC545936693aC917d5E7563")),);
+        assert!(
+            !instance
+                .contains(&addr!("39AA39c021dfbaE8faC545936693aC917d5E7563"))
+                .await
+        );
     }
 
     #[ignore]

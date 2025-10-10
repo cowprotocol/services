@@ -10,8 +10,9 @@ use {
         collections::HashMap,
         fmt::{self, Display, Formatter},
         str::FromStr,
-        sync::{Arc, Mutex},
+        sync::Arc,
     },
+    tokio::sync::Mutex,
     web3::signing,
 };
 
@@ -257,7 +258,7 @@ impl BalanceOverrides {
         tracing::trace!(?token, "attempting to auto-detect");
 
         {
-            let mut cache = cache.lock().unwrap();
+            let mut cache = cache.lock().await;
             if let Some(strategy) = cache.cache_get(&token) {
                 tracing::trace!(?token, "cache hit");
                 return strategy.clone();
@@ -272,7 +273,7 @@ impl BalanceOverrides {
         if matches!(&strategy, Ok(_) | Err(DetectionError::NotFound)) {
             tracing::debug!(?token, ?strategy, "caching auto-detected strategy");
             let cached_strategy = strategy.as_ref().ok().cloned();
-            cache.lock().unwrap().cache_set(token, cached_strategy);
+            cache.lock().await.cache_set(token, cached_strategy);
         } else {
             tracing::warn!(
                 ?token,

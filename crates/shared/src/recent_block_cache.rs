@@ -38,9 +38,10 @@ use {
         collections::{BTreeMap, HashMap, HashSet, hash_map::Entry},
         hash::Hash,
         num::{NonZeroU64, NonZeroUsize},
-        sync::{Arc, Mutex},
+        sync::Arc,
         time::Duration,
     },
+    tokio::sync::Mutex,
     tracing::Instrument,
 };
 
@@ -228,7 +229,7 @@ where
         let keys = self
             .mutexed
             .lock()
-            .unwrap()
+            .await
             .keys_of_recently_used_entries()
             .collect::<HashSet<_>>();
         tracing::debug!("automatically updating {} entries", keys.len());
@@ -236,7 +237,7 @@ where
             .fetch_inner_many(keys.clone(), Block::Number(new_block))
             .await?;
 
-        let mut mutexed = self.mutexed.lock().unwrap();
+        let mut mutexed = self.mutexed.lock().await;
         mutexed.insert(new_block, keys, found_values);
         let oldest_to_keep = new_block.saturating_sub(self.number_of_blocks_to_cache.get() - 1);
         mutexed.remove_cached_blocks_older_than(oldest_to_keep);
@@ -265,21 +266,24 @@ where
         let retries = self.maximum_retries;
         let delay = self.delay_between_retries;
         let fetcher = self.fetcher.clone();
-        let fut = self.requests.shared_or_else((key, block), |entry| {
-            let (key, block) = entry.clone();
-            async move {
-                for _ in 0..=retries {
-                    let keys = [key.clone()].into();
-                    match fetcher.fetch_values(keys, block).await {
-                        Ok(values) => return Some(values),
-                        Err(err) => tracing::warn!("retrying fetch because error: {:?}", err),
+        let fut = self
+            .requests
+            .shared_or_else((key, block), |entry| {
+                let (key, block) = entry.clone();
+                async move {
+                    for _ in 0..=retries {
+                        let keys = [key.clone()].into();
+                        match fetcher.fetch_values(keys, block).await {
+                            Ok(values) => return Some(values),
+                            Err(err) => tracing::warn!("retrying fetch because error: {:?}", err),
+                        }
+                        tokio::time::sleep(delay).await;
                     }
-                    tokio::time::sleep(delay).await;
+                    None
                 }
-                None
-            }
-            .boxed()
-        });
+                .boxed()
+            })
+            .await;
         fut.await.context("could not fetch liquidity")
     }
 
@@ -294,7 +298,7 @@ where
         let mut cache_misses = HashSet::new();
         let last_update_block;
         {
-            let mut mutexed = self.mutexed.lock().unwrap();
+            let mut mutexed = self.mutexed.lock().await;
             for key in keys {
                 match mutexed.get(key.clone(), block) {
                     Some(values) => {
@@ -334,7 +338,7 @@ where
             let found_keys = fetched.iter().map(K::for_value).unique().collect_vec();
             cache_hits.extend_from_slice(&fetched);
 
-            let mut mutexed = self.mutexed.lock().unwrap();
+            let mut mutexed = self.mutexed.lock().await;
             mutexed.insert(cache_miss_block, chunk.iter().cloned(), fetched);
             if block.is_some() {
                 // Only if a block number was specified the caller actually cared about the most
@@ -512,7 +516,7 @@ mod tests {
             let fetched = self
                 .0
                 .lock()
-                .unwrap()
+                .await
                 .iter()
                 .filter(|value| requested.contains(&TestKey(value.key)))
                 .cloned()
@@ -556,11 +560,11 @@ mod tests {
         .unwrap()
         .inner;
 
-        let assert_keys_recently_used = |expected_keys: &[usize]| {
+        let assert_keys_recently_used = async |expected_keys: &[usize]| {
             let cached_keys = cache
                 .mutexed
                 .lock()
-                .unwrap()
+                .await
                 .keys_of_recently_used_entries()
                 .collect::<Vec<_>>();
             let expected_keys: Vec<_> = expected_keys.iter().copied().map(TestKey).collect();
@@ -571,25 +575,25 @@ mod tests {
             .fetch(test_keys(0..1), Block::Number(block_number))
             .await
             .unwrap();
-        assert_keys_recently_used(&[0]);
+        assert_keys_recently_used(&[0]).await;
 
         // Don't cache this because we didn't request the liquidity on a specific block.
         cache.fetch(test_keys(1..2), Block::Recent).await.unwrap();
-        assert_keys_recently_used(&[0]);
+        assert_keys_recently_used(&[0]).await;
 
         // Don't cache this because there is no liquidity for this block on-chain.
         cache
             .fetch(test_keys(2..3), Block::Number(block_number))
             .await
             .unwrap();
-        assert_keys_recently_used(&[0]);
+        assert_keys_recently_used(&[0]).await;
 
         // Cache the new key but evict the other key because we have a limited capacity.
         cache
             .fetch(test_keys(3..4), Block::Number(block_number))
             .await
             .unwrap();
-        assert_keys_recently_used(&[3]);
+        assert_keys_recently_used(&[3]).await;
     }
 
     #[tokio::test]
@@ -620,7 +624,7 @@ mod tests {
             TestValue::new(2, "1"),
             TestValue::new(3, "1"),
         ];
-        values.lock().unwrap().clone_from(&initial_values);
+        values.lock().await.clone_from(&initial_values);
 
         let result = cache
             .fetch(test_keys(0..2), Block::Number(block_number))
@@ -640,9 +644,9 @@ mod tests {
             TestValue::new(2, "2"),
             TestValue::new(3, "2"),
         ];
-        values.lock().unwrap().clone_from(&updated_values);
+        values.lock().await.clone_from(&updated_values);
         cache.update_cache_at_block(block_number).await.unwrap();
-        values.lock().unwrap().clear();
+        values.lock().await.clear();
 
         let result = cache.fetch(test_keys(0..4), Block::Recent).await.unwrap();
         assert_eq!(result.len(), 4);
@@ -679,7 +683,7 @@ mod tests {
         let value1 = TestValue::new(1, "1");
         let value2 = TestValue::new(2, "2");
 
-        *values.lock().unwrap() = vec![value0.clone(), value1.clone()];
+        *values.lock().await = vec![value0.clone(), value1.clone()];
         // cache miss gets cached
         cache
             .fetch(test_keys(0..2), Block::Recent)
@@ -687,7 +691,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        *values.lock().unwrap() = vec![value2.clone()];
+        *values.lock().await = vec![value2.clone()];
         // key 1 is cache hit, key 2 is miss
         let result = cache
             .fetch(test_keys(1..3), Block::Recent)
@@ -699,7 +703,7 @@ mod tests {
         assert!(result.contains(&value2));
 
         // Make sure everything is still properly cached.
-        values.lock().unwrap().clear();
+        values.lock().await.clear();
         let result = cache
             .fetch(test_keys(0..3), Block::Recent)
             .now_or_never()
@@ -734,7 +738,7 @@ mod tests {
         .inner;
 
         // cache at block 5
-        *values.lock().unwrap() = vec![TestValue::new(0, "foo")];
+        *values.lock().await = vec![TestValue::new(0, "foo")];
         let result = cache
             .fetch(test_keys(0..1), Block::Number(5))
             .now_or_never()
@@ -743,7 +747,7 @@ mod tests {
         assert_eq!(result, vec![TestValue::new(0, "foo")]);
 
         // cache at block 6
-        *values.lock().unwrap() = vec![TestValue::new(0, "bar")];
+        *values.lock().await = vec![TestValue::new(0, "bar")];
         let result = cache
             .fetch(test_keys(0..1), Block::Number(6))
             .now_or_never()
@@ -751,7 +755,7 @@ mod tests {
             .unwrap();
         assert_eq!(result, vec![TestValue::new(0, "bar")]);
 
-        values.lock().unwrap().clear();
+        values.lock().await.clear();
         // cache hit at block 6
         let result = cache
             .fetch(test_keys(0..1), Block::Recent)
@@ -762,7 +766,7 @@ mod tests {
 
         // Now cache at an earlier block and see that it doesn't override the most
         // recent entry.
-        *values.lock().unwrap() = vec![TestValue::new(0, "baz")];
+        *values.lock().await = vec![TestValue::new(0, "baz")];
         let result = cache
             .fetch(test_keys(0..1), Block::Number(4))
             .now_or_never()
@@ -807,26 +811,26 @@ mod tests {
             .fetch(test_keys(0..10), Block::Number(10))
             .await
             .unwrap();
-        assert_eq!(cache.mutexed.lock().unwrap().entries.len(), 10);
+        assert_eq!(cache.mutexed.lock().await.entries.len(), 10);
 
         block_sender.send(block(11)).unwrap();
         // Fetch updated liquidity for 2 of the initial 10 keys
         cache.update_cache_at_block(11).await.unwrap();
         // Fetch 2 new keys which are NOT scheduled for background updates
         cache.fetch(test_keys(10..12), Block::Recent).await.unwrap();
-        assert_eq!(cache.mutexed.lock().unwrap().entries.len(), 12);
+        assert_eq!(cache.mutexed.lock().await.entries.len(), 12);
 
         block_sender.send(block(12)).unwrap();
         // Fetch updated liquidity for 2 of the initial 10 keys
         cache.update_cache_at_block(12).await.unwrap();
-        assert_eq!(cache.mutexed.lock().unwrap().entries.len(), 4);
+        assert_eq!(cache.mutexed.lock().await.entries.len(), 4);
 
         block_sender.send(block(13)).unwrap();
         // Update 2 blocks in background but now it's time to evict the 2 additional
         // keys we fetched with `Block::Recent` because we are only allowed to
         // keep state that is up to 2 blocks old.
         cache.update_cache_at_block(13).await.unwrap();
-        assert_eq!(cache.mutexed.lock().unwrap().entries.len(), 2);
+        assert_eq!(cache.mutexed.lock().await.entries.len(), 2);
     }
 
     #[tokio::test]
@@ -857,8 +861,8 @@ mod tests {
             .now_or_never()
             .unwrap()
             .unwrap();
-        assert!(cache.mutexed.lock().unwrap().get(key, Some(7)).is_some());
-        assert!(cache.mutexed.lock().unwrap().get(key, None).is_none());
+        assert!(cache.mutexed.lock().await.get(key, Some(7)).is_some());
+        assert!(cache.mutexed.lock().await.get(key, None).is_none());
 
         // cache at block 8
         cache
@@ -866,8 +870,8 @@ mod tests {
             .now_or_never()
             .unwrap()
             .unwrap();
-        assert!(cache.mutexed.lock().unwrap().get(key, Some(7)).is_some());
-        assert!(cache.mutexed.lock().unwrap().get(key, Some(8)).is_some());
-        assert!(cache.mutexed.lock().unwrap().get(key, None).is_some());
+        assert!(cache.mutexed.lock().await.get(key, Some(7)).is_some());
+        assert!(cache.mutexed.lock().await.get(key, Some(8)).is_some());
+        assert!(cache.mutexed.lock().await.get(key, None).is_some());
     }
 }

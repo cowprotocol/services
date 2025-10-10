@@ -160,6 +160,7 @@ impl Inner {
 
             self.requests.shared_or_else(*token, build_request)
         });
+        let futures = futures::future::join_all(futures).await;
         futures::future::join_all(futures).await
     }
 

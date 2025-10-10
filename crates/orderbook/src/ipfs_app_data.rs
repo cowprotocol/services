@@ -3,7 +3,7 @@ use {
     anyhow::Result,
     app_data::{AppDataHash, create_ipfs_cid},
     cached::{Cached, TimedSizedCache},
-    std::sync::Mutex,
+    tokio::sync::Mutex,
 };
 
 pub struct IpfsAppData {
@@ -91,7 +91,7 @@ impl IpfsAppData {
         if let Some(cached) = self
             .cache
             .lock()
-            .unwrap()
+            .await
             .cache_get(contract_app_data)
             .cloned()
         {
@@ -113,7 +113,7 @@ impl IpfsAppData {
 
         self.cache
             .lock()
-            .unwrap()
+            .await
             .cache_set(*contract_app_data, result.clone());
         metric.with_label_values(&[outcome(&result), "node"]).inc();
         Ok(result)
