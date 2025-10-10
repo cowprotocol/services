@@ -103,20 +103,22 @@ await window.ethereum.request({
 
 ## Components
 
-| **Component** | **Container name** | **Host port** | **Container port** | **Stack**  |
-|---------------|--------------------|---------------|--------------------|------------|
-| Autopilot     | autopilot          | N/A           | N/A                | Common     |
-| Driver        | driver             | N/A           | 80                 | Common     |
-| Baseline      | baseline           | N/A           | 80                 | Common     |
-| CoW Swap      | cowswap            | 8000          | 80                 | Local/Fork |
-| CoW Explorer  | cowexplorer        | 8001          | 80                 | Local/Fork |
-| Orderbook     | orderbook          | 8080          | 80                 | Local/Fork |
-| RPC           | chain              | 8545          | 8545               | Local/Fork |
-| Postgres      | postgres           | 5432          | 5432               | Local/Fork |
-| Adminer       | adminer            | 8082          | 8080               | Local/Fork |
-| Grafana       | grafana            | 3000          | 3000               | Local/Fork |
+| **Component** | **Container name** | **Host port** | **Container port** | **Tokio Console Port** | **Stack**  |
+|---------------|--------------------|---------------|--------------------|------------------------|------------|
+| Autopilot     | autopilot          | N/A           | N/A                | 6670                   | Local/Fork |
+| Driver        | driver             | N/A           | 80                 | 6671                   | Local/Fork |
+| Baseline      | baseline           | N/A           | 80                 | 6672                   | Local/Fork |
+| CoW Swap      | cowswap            | 8000          | 80                 | N/A                    | Local/Fork |
+| CoW Explorer  | cowexplorer        | 8001          | 80                 | N/A                    | Local/Fork |
+| Orderbook     | orderbook          | 8080          | 80                 | 6669                   | Local/Fork |
+| RPC           | chain              | 8545          | 8545               | N/A                    | Local/Fork |
+| Postgres      | postgres           | 5432          | 5432               | N/A                    | Local/Fork |
+| Adminer       | adminer            | 8082          | 8080               | N/A                    | Local/Fork |
+| Grafana       | grafana            | 3000          | 3000               | N/A                    | Local/Fork |
 
 **NOTE**: Currently only **FORK** mode is supported.
+
+Some services support to be inspected with [tokio-console](https://github.com/tokio-rs/console). For that simply install `tokio-console` and run `tokio-console http://localhost:<PORT>`. The relevant port numbers can be found in the table above.
 
 ## Modes
 
