@@ -4,7 +4,7 @@
 
 use {
     crate::interactions::Erc20ApproveInteraction,
-    anyhow::{Context as _, Result, anyhow, ensure},
+    anyhow::{Context as _, Result, ensure},
     contracts::{ERC20, dummy_contract},
     dashmap::DashMap,
     ethcontract::{H160, U256},
