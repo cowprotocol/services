@@ -3,19 +3,39 @@ use {
         domain::{
             competition::{
                 self,
-                order::{self, Side, fees, signature::Scheme},
+                order::{self, fees, signature::Scheme, Side},
             },
             eth::{self},
             liquidity,
         },
         infra::{config::file::FeeHandler, solver::ManageNativeToken},
-        util::conv::{rational_to_big_decimal, u256::U256Ext},
+        util::{
+            conv::{rational_to_big_decimal, u256::U256Ext},
+            serialize::Cached,
+        },
     },
     app_data::AppDataHash,
     ethrpc::alloy::conversions::IntoLegacy,
     model::order::{BuyTokenDestination, SellTokenSource},
+    serde::Serialize,
+    serde_with::{serde_as, DisplayFromStr},
     std::collections::HashMap,
 };
+
+#[serde_as]
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Auction {
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    pub id: Option<i64>,
+    pub tokens: HashMap<eth::H160, Cached<solvers_dto::auction::Token>>,
+    pub orders: Vec<Cached<solvers_dto::auction::Order>>,
+    pub liquidity: Vec<Cached<solvers_dto::auction::Liquidity>>,
+    #[serde_as(as = "number::serialization::HexOrDecimalU256")]
+    pub effective_gas_price: eth::U256,
+    pub deadline: chrono::DateTime<chrono::Utc>,
+    pub surplus_capturing_jit_order_owners: Vec<eth::H160>,
+}
 
 pub fn new(
     auction: &competition::Auction,
@@ -25,20 +45,20 @@ pub fn new(
     solver_native_token: ManageNativeToken,
     flashloan_hints: &HashMap<order::Uid, eth::Flashloan>,
     deadline: chrono::DateTime<chrono::Utc>,
-) -> solvers_dto::auction::Auction {
+) -> Auction {
     let mut tokens: HashMap<eth::H160, _> = auction
         .tokens()
         .iter()
         .map(|token| {
             (
                 token.address.into(),
-                solvers_dto::auction::Token {
+                Cached::new(solvers_dto::auction::Token {
                     decimals: token.decimals,
                     symbol: token.symbol.clone(),
                     reference_price: token.price.map(Into::into),
                     available_balance: token.available_balance,
                     trusted: token.trusted,
-                },
+                }),
             )
         })
         .collect();
@@ -64,7 +84,7 @@ pub fn new(
         tokens.entry(token.into()).or_insert_with(Default::default);
     }
 
-    solvers_dto::auction::Auction {
+    Auction {
         id: auction.id().as_ref().map(|id| id.0),
         orders: auction
             .orders()
@@ -107,7 +127,7 @@ pub fn new(
                         }
                     })
                 }
-                solvers_dto::auction::Order {
+                Cached::new(solvers_dto::auction::Order {
                     uid: order.uid.into(),
                     sell_token: available.sell.token.into(),
                     buy_token: available.buy.token.into(),
@@ -162,14 +182,14 @@ pub fn new(
                         Scheme::PreSign => solvers_dto::auction::SigningScheme::PreSign,
                     },
                     valid_to: order.valid_to.into(),
-                }
+                })
             })
             .collect(),
         liquidity: liquidity
             .iter()
             .map(|liquidity| match &liquidity.kind {
                 liquidity::Kind::UniswapV2(pool) => {
-                    solvers_dto::auction::Liquidity::ConstantProduct(
+                    Cached::new(solvers_dto::auction::Liquidity::ConstantProduct(
                         solvers_dto::auction::ConstantProductPool {
                             id: liquidity.id.0.to_string(),
                             address: pool.address.into(),
@@ -189,10 +209,10 @@ pub fn new(
                                 .collect(),
                             fee: bigdecimal::BigDecimal::new(3.into(), 3),
                         },
-                    )
+                    ))
                 }
                 liquidity::Kind::UniswapV3(pool) => {
-                    solvers_dto::auction::Liquidity::ConcentratedLiquidity(
+                    Cached::new(solvers_dto::auction::Liquidity::ConcentratedLiquidity(
                         solvers_dto::auction::ConcentratedLiquidityPool {
                             id: liquidity.id.0.to_string(),
                             address: pool.address.0,
@@ -209,9 +229,9 @@ pub fn new(
                                 .collect(),
                             fee: rational_to_big_decimal(&pool.fee.0),
                         },
-                    )
+                    ))
                 }
-                liquidity::Kind::BalancerV2Stable(pool) => {
+                liquidity::Kind::BalancerV2Stable(pool) => Cached::new(
                     solvers_dto::auction::Liquidity::Stable(solvers_dto::auction::StablePool {
                         id: liquidity.id.0.to_string(),
                         address: pool.id.address().into(),
@@ -235,10 +255,10 @@ pub fn new(
                             pool.amplification_parameter.precision().to_big_int(),
                         )),
                         fee: fee_to_decimal(pool.fee),
-                    })
-                }
+                    }),
+                ),
                 liquidity::Kind::BalancerV2Weighted(pool) => {
-                    solvers_dto::auction::Liquidity::WeightedProduct(
+                    Cached::new(solvers_dto::auction::Liquidity::WeightedProduct(
                         solvers_dto::auction::WeightedProductPool {
                             id: liquidity.id.0.to_string(),
                             address: pool.id.address().into(),
@@ -268,32 +288,34 @@ pub fn new(
                                 }
                             },
                         },
-                    )
+                    ))
                 }
-                liquidity::Kind::Swapr(pool) => solvers_dto::auction::Liquidity::ConstantProduct(
-                    solvers_dto::auction::ConstantProductPool {
-                        id: liquidity.id.0.to_string(),
-                        address: pool.base.address.into(),
-                        router: pool.base.router.into(),
-                        gas_estimate: liquidity.gas.into(),
-                        tokens: pool
-                            .base
-                            .reserves
-                            .iter()
-                            .map(|asset| {
-                                (
-                                    asset.token.into(),
-                                    solvers_dto::auction::ConstantProductReserve {
-                                        balance: asset.amount.into(),
-                                    },
-                                )
-                            })
-                            .collect(),
-                        fee: bigdecimal::BigDecimal::new(pool.fee.bps().into(), 4),
-                    },
-                ),
+                liquidity::Kind::Swapr(pool) => {
+                    Cached::new(solvers_dto::auction::Liquidity::ConstantProduct(
+                        solvers_dto::auction::ConstantProductPool {
+                            id: liquidity.id.0.to_string(),
+                            address: pool.base.address.into(),
+                            router: pool.base.router.into(),
+                            gas_estimate: liquidity.gas.into(),
+                            tokens: pool
+                                .base
+                                .reserves
+                                .iter()
+                                .map(|asset| {
+                                    (
+                                        asset.token.into(),
+                                        solvers_dto::auction::ConstantProductReserve {
+                                            balance: asset.amount.into(),
+                                        },
+                                    )
+                                })
+                                .collect(),
+                            fee: bigdecimal::BigDecimal::new(pool.fee.bps().into(), 4),
+                        },
+                    ))
+                }
                 liquidity::Kind::ZeroEx(limit_order) => {
-                    solvers_dto::auction::Liquidity::LimitOrder(
+                    Cached::new(solvers_dto::auction::Liquidity::LimitOrder(
                         solvers_dto::auction::ForeignLimitOrder {
                             id: liquidity.id.0.to_string(),
                             address: limit_order.zeroex.address().into_legacy(),
@@ -305,7 +327,7 @@ pub fn new(
                             taker_amount: limit_order.fillable.taker.into(),
                             taker_token_fee_amount: limit_order.order.taker_token_fee_amount.into(),
                         },
-                    )
+                    ))
                 }
             })
             .collect(),
