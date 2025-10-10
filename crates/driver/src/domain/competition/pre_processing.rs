@@ -206,6 +206,8 @@ impl Utilities {
     async fn parse_request(&self, solve_request: Arc<String>) -> Result<Arc<Auction>> {
         let auction_dto: SolveRequest = {
             let _timer = metrics::get().processing_stage_timer("parse_dto");
+            let _timer2 =
+                observe::metrics::metrics().on_auction_overhead_start("driver", "parse_dto");
             // deserialization takes tens of milliseconds so run it on a blocking task
             tokio::task::spawn_blocking(move || {
                 serde_json::from_str(&solve_request).context("could not parse solve request")
@@ -219,6 +221,8 @@ impl Utilities {
 
         let auction_domain = {
             let _timer = metrics::get().processing_stage_timer("convert_to_domain");
+            let _timer2 = observe::metrics::metrics()
+                .on_auction_overhead_start("driver", "convert_to_domain");
             let app_data = self
                 .app_data_retriever
                 .as_ref()
@@ -237,6 +241,8 @@ impl Utilities {
     /// Fetches the tradable balance for every order owner.
     async fn fetch_balances(self: Arc<Self>, auction: Arc<Auction>) -> Arc<Balances> {
         let _timer = metrics::get().processing_stage_timer("fetch_balances");
+        let _timer2 =
+            observe::metrics::metrics().on_auction_overhead_start("driver", "fetch_balances");
 
         // Collect trader/token/source/interaction tuples for fetching available
         // balances. Note that we are pessimistic here, if a trader is selling
@@ -330,6 +336,8 @@ impl Utilities {
         };
 
         let _timer = metrics::get().processing_stage_timer("fetch_app_data");
+        let _timer2 =
+            observe::metrics::metrics().on_auction_overhead_start("driver", "fetch_app_data");
 
         let app_data = join_all(
             auction
@@ -367,6 +375,8 @@ impl Utilities {
 
     async fn cow_amm_orders(self: Arc<Self>, auction: Arc<Auction>) -> Arc<Vec<Order>> {
         let _timer = metrics::get().processing_stage_timer("cow_amm_orders");
+        let _timer2 =
+            observe::metrics::metrics().on_auction_overhead_start("driver", "cow_amm_orders");
         let cow_amms = self.eth.contracts().cow_amm_registry().amms().await;
         let domain_separator = self.eth.contracts().settlement_domain_separator();
         let domain_separator = model::DomainSeparator(domain_separator.0);
@@ -487,6 +497,8 @@ impl Utilities {
         auction: Arc<Auction>,
     ) -> Arc<Vec<liquidity::Liquidity>> {
         let _timer = metrics::get().processing_stage_timer("fetch_liquidity");
+        let _timer2 =
+            observe::metrics::metrics().on_auction_overhead_start("driver", "fetch_liquidity");
         let pairs = auction.liquidity_pairs();
         Arc::new(
             self.liquidity_fetcher

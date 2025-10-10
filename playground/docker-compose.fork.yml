@@ -88,12 +88,17 @@ services:
       - RUST_BACKTRACE=1
       - TOML_TRACE_ERROR=1
       - TRACING_COLLECTOR_ENDPOINT=http://tempo:4317
+      - TOKIO_CONSOLE=true
+      - TOKIO_CONSOLE_RETENTION=600sec
+      - TOKIO_CONSOLE_BIND=0.0.0.0:6669
     volumes:
       - ../:/src
     depends_on:
       - db-migrations
     ports:
-      - 8080:80
+      - 8080:80 # API
+      - 9586:9586 # metrics
+      - 6669:6669 # tokio console
 
   autopilot:
     build:
@@ -125,6 +130,9 @@ services:
       - TOML_TRACE_ERROR=1
       - ETHFLOW_CONTRACTS
       - ETHFLOW_INDEXING_START
+      - TOKIO_CONSOLE=true
+      - TOKIO_CONSOLE_RETENTION=600sec
+      - TOKIO_CONSOLE_BIND=0.0.0.0:6669
     volumes:
       - ../:/src
     depends_on:
@@ -132,6 +140,9 @@ services:
         condition: service_started
       chain:
         condition: service_healthy
+    ports:
+      - 9589:9589 # metrics
+      - 6670:6669 # tokio console
 
   driver:
     build:
@@ -152,10 +163,14 @@ services:
       - RUST_BACKTRACE=1
       - TOML_TRACE_ERROR=1
       - TRACING_COLLECTOR_ENDPOINT=http://tempo:4317
+      - TOKIO_CONSOLE=true
+      - TOKIO_CONSOLE_RETENTION=600sec
+      - TOKIO_CONSOLE_BIND=0.0.0.0:6669
     volumes:
       - ../:/src
     ports:
-      - 9000:80
+      - 9000:80 # API & metrics
+      - 6671:6669 # tokio console
     depends_on:
       chain:
         condition: service_healthy
@@ -179,10 +194,14 @@ services:
       - LOG=solvers=trace,shared=trace
       - RUST_BACKTRACE=1
       - TOML_TRACE_ERROR=1
+      - TOKIO_CONSOLE=true
+      - TOKIO_CONSOLE_RETENTION=600sec
+      - TOKIO_CONSOLE_BIND=0.0.0.0:6669
     volumes:
       - ../:/src
     ports:
-      - 9001:80
+      - 9001:80 # API & metrics
+      - 6672:6669 # tokio console
 
   frontend:
     build:
@@ -220,6 +239,17 @@ services:
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
       - GF_AUTH_DISABLE_LOGIN_FORM=true
+    volumes:
+      - ./grafana-prometheus.yml:/etc/grafana/provisioning/datasources/prometheus.yml
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    restart: always
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
 
 volumes:
   postgres:
