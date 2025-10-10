@@ -4,10 +4,11 @@ use {
         fmt::{Display, Formatter},
         future::Future,
         str::FromStr,
-        sync::{Arc, Mutex, MutexGuard},
+        sync::Arc,
         time::{Duration, Instant},
     },
     thiserror::Error,
+    tokio::sync::{Mutex, MutexGuard},
 };
 
 #[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
@@ -168,8 +169,8 @@ pub struct RateLimiter {
 }
 
 impl RateLimiter {
-    fn strategy(&self) -> MutexGuard<'_, Strategy> {
-        self.strategy.lock().unwrap()
+    async fn strategy(&self) -> MutexGuard<'_, Strategy> {
+        self.strategy.lock().await
     }
 
     pub fn from_strategy(strategy: Strategy, name: String) -> Self {
@@ -218,6 +219,7 @@ impl RateLimiter {
     ) -> Result<T, Error> {
         let times_rate_limited = self
             .strategy()
+            .await
             .times_rate_limited(Instant::now(), &self.name);
         let times_rate_limited = match times_rate_limited {
             None => {
@@ -232,12 +234,13 @@ impl RateLimiter {
         if requires_back_off(&result) {
             let new_back_off = self
                 .strategy()
+                .await
                 .response_rate_limited(times_rate_limited, &self.name);
             if let Some(new_back_off) = new_back_off {
                 tracing::warn!(?self.name, ?new_back_off, "extended rate limiting");
             }
         } else {
-            self.strategy().response_ok(&self.name);
+            self.strategy().await.response_ok(&self.name);
             if times_rate_limited > 0 {
                 tracing::debug!(?self.name, "reset rate limit");
             }
@@ -251,15 +254,15 @@ impl RateLimiter {
         task: impl Future<Output = T>,
         requires_back_off: impl Fn(&T) -> bool,
     ) -> Result<T, Error> {
-        if let Some(back_off_duration) = self.get_back_off_duration_if_limited() {
+        if let Some(back_off_duration) = self.get_back_off_duration_if_limited().await {
             tokio::time::sleep(back_off_duration).await;
         }
 
         self.execute(task, requires_back_off).await
     }
 
-    fn get_back_off_duration_if_limited(&self) -> Option<Duration> {
-        let strategy = self.strategy.lock().unwrap();
+    async fn get_back_off_duration_if_limited(&self) -> Option<Duration> {
+        let strategy = self.strategy.lock().await;
         let now = Instant::now();
 
         if strategy.drop_requests_until > now {
@@ -324,7 +327,7 @@ mod tests {
             // get_current_back_off returns how much the back off should be extended if we
             // were to encounter an error now, therefore we start with 20
             Duration::from_millis(20),
-            rate_limiter.strategy().get_current_back_off()
+            rate_limiter.strategy().await.get_current_back_off()
         );
 
         // generate first response requiring a rate limit
@@ -333,7 +336,7 @@ mod tests {
         assert!(matches!(result, Ok(2)));
         assert_eq!(
             Duration::from_millis(40),
-            rate_limiter.strategy().get_current_back_off()
+            rate_limiter.strategy().await.get_current_back_off()
         );
 
         let result = rate_limiter
@@ -358,7 +361,7 @@ mod tests {
         assert_eq!(
             // back off got increased but doesn't exceed max_back_off
             Duration::from_millis(50),
-            rate_limiter.strategy().get_current_back_off()
+            rate_limiter.strategy().await.get_current_back_off()
         );
     }
 
@@ -377,7 +380,7 @@ mod tests {
 
         assert_eq!(result, 1);
         {
-            let current_strategy = rate_limiter.strategy.lock().unwrap();
+            let current_strategy = rate_limiter.strategy.lock().await;
             assert!(current_strategy.drop_requests_until < original_drop_until.add(timeout));
         }
 
@@ -400,7 +403,7 @@ mod tests {
 
         assert_eq!(result, 1);
         let drop_until = {
-            let current_strategy = rate_limiter.strategy.lock().unwrap();
+            let current_strategy = rate_limiter.strategy.lock().await;
             let drop_until = current_strategy.drop_requests_until;
             assert!(drop_until >= original_drop_until.add(timeout));
             drop_until
@@ -410,7 +413,7 @@ mod tests {
         let result = rate_limiter.execute(async { 1 }, |_| false).await;
         assert_eq!(result, Err(Error::RateLimited));
         {
-            let current_strategy = rate_limiter.strategy.lock().unwrap();
+            let current_strategy = rate_limiter.strategy.lock().await;
             assert_eq!(current_strategy.drop_requests_until, drop_until);
         }
 

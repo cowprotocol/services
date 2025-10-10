@@ -27,12 +27,12 @@ use {
     std::{
         cmp::Reverse,
         collections::{HashMap, HashSet, VecDeque},
-        sync::{Arc, Mutex},
+        sync::Arc,
         time::{Duration, Instant},
     },
     tap::TapFallible,
     tokio::{
-        sync::{mpsc, oneshot},
+        sync::{Mutex, mpsc, oneshot},
         task,
     },
     tracing::{Instrument, instrument},
@@ -346,7 +346,7 @@ impl Competition {
         let solution_id = settlement.solution().get();
 
         {
-            let mut lock = self.settlements.lock().unwrap();
+            let mut lock = self.settlements.lock().await;
             lock.push_front(settlement.clone());
 
             /// Number of solutions that may be cached at most.
@@ -370,7 +370,7 @@ impl Competition {
                         *score_ref = None;
                         self.settlements
                             .lock()
-                            .unwrap()
+                            .await
                             .retain(|s| s.solution().get() != solution_id);
                         notify::simulation_failed(
                             &self.solver,
@@ -541,7 +541,7 @@ impl Competition {
         let settlement = self
             .settlements
             .lock()
-            .unwrap()
+            .await
             .iter()
             .find(|s| s.solution().get() == solution_id && s.auction_id == auction_id)
             .cloned()
@@ -657,7 +657,7 @@ impl Competition {
         submission_deadline: BlockNo,
     ) -> Result<Settled, Error> {
         let mut settlement = {
-            let mut lock = self.settlements.lock().unwrap();
+            let mut lock = self.settlements.lock().await;
             let index = lock
                 .iter()
                 .position(|s| s.solution().get() == solution_id && s.auction_id == auction_id)
@@ -722,16 +722,6 @@ impl Competition {
                 tx_hash,
             }),
         }
-    }
-
-    /// The ID of the auction being competed on.
-    pub fn auction_id(&self, solution_id: u64) -> Option<auction::Id> {
-        self.settlements
-            .lock()
-            .unwrap()
-            .iter()
-            .find(|s| s.solution().get() == solution_id)
-            .map(|s| s.auction_id)
     }
 
     /// Returns whether the settlement can be executed or would revert.

@@ -9,10 +9,8 @@ use {
     itertools::Itertools,
     model::order::BUY_ETH_ADDRESS,
     shared::request_sharing::BoxRequestSharing,
-    std::{
-        collections::HashMap,
-        sync::{Arc, RwLock},
-    },
+    std::{collections::HashMap, sync::Arc},
+    tokio::sync::RwLock,
     tracing::Instrument,
 };
 
@@ -74,7 +72,7 @@ async fn update_task(blocks: CurrentBlockWatcher, inner: std::sync::Weak<Inner>)
 async fn update_balances(inner: Arc<Inner>) -> Result<(), blockchain::Error> {
     let settlement = inner.eth.contracts().settlement().address().into();
     let futures = {
-        let cache = inner.cache.read().unwrap();
+        let cache = inner.cache.read().await;
         let tokens = cache.keys().cloned().collect::<Vec<_>>();
         tokens.into_iter().map(|token| {
             let erc20 = inner.eth.erc20(token);
@@ -102,7 +100,7 @@ async fn update_balances(inner: Arc<Inner>) -> Result<(), blockchain::Error> {
 
     let mut keys_without_balances = vec![];
     {
-        let mut cache = inner.cache.write().unwrap();
+        let mut cache = inner.cache.write().await;
         for (key, entry) in cache.iter_mut() {
             if let Some(balance) = balances.remove(key) {
                 entry.balance = balance;
@@ -175,7 +173,7 @@ impl Inner {
 
         let fetched = self.fetch_token_infos(tokens).await;
         {
-            let cache = self.cache.read().unwrap();
+            let cache = self.cache.read().await;
             if tokens.iter().all(|token| cache.contains_key(token)) {
                 // Often multiple callers are racing to fetch the same Metadata.
                 // If somebody else already cached the data we don't want to take an
@@ -185,13 +183,13 @@ impl Inner {
         }
         self.cache
             .write()
-            .unwrap()
+            .await
             .extend(fetched.into_iter().flatten());
     }
 
     async fn get(&self, addresses: &[eth::TokenAddress]) -> HashMap<eth::TokenAddress, Metadata> {
         let to_fetch: Vec<_> = {
-            let cache = self.cache.read().unwrap();
+            let cache = self.cache.read().await;
 
             // Compute set of requested addresses that are not in cache.
             addresses
@@ -206,7 +204,7 @@ impl Inner {
 
         self.cache_missing_tokens(&to_fetch).await;
 
-        let cache = self.cache.read().unwrap();
+        let cache = self.cache.read().await;
         // Return token infos from the cache.
         addresses
             .iter()

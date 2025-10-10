@@ -5,10 +5,8 @@ use {
     futures::StreamExt,
     itertools::Itertools,
     primitive_types::U256,
-    std::{
-        collections::HashMap,
-        sync::{Arc, Mutex},
-    },
+    std::{collections::HashMap, sync::Arc},
+    tokio::sync::Mutex,
     tracing::{Instrument, instrument},
 };
 
@@ -94,8 +92,8 @@ struct CacheResponse {
 }
 
 impl Balances {
-    fn get_cached_balances(&self, queries: &[Query]) -> CacheResponse {
-        let mut cache = self.balance_cache.lock().unwrap();
+    async fn get_cached_balances(&self, queries: &[Query]) -> CacheResponse {
+        let mut cache = self.balance_cache.lock().await;
         let (cached, missing) = queries
             .iter()
             .enumerate()
@@ -119,7 +117,7 @@ impl Balances {
         let task = async move {
             while let Some(block) = stream.next().await {
                 let balances_to_update = {
-                    let mut cache = cache.lock().unwrap();
+                    let mut cache = cache.lock().await;
                     cache.last_seen_block = block.number;
                     cache
                         .data
@@ -135,7 +133,7 @@ impl Balances {
 
                 let results = inner.get_balances(&balances_to_update).await;
 
-                let mut cache = cache.lock().unwrap();
+                let mut cache = cache.lock().await;
                 balances_to_update
                     .into_iter()
                     .zip(results)
@@ -163,7 +161,7 @@ impl BalanceFetching for Balances {
             mut cached,
             missing,
             requested_at,
-        } = self.get_cached_balances(queries);
+        } = self.get_cached_balances(queries).await;
 
         if missing.is_empty() {
             return cached.into_iter().map(|(_, result)| result).collect();
@@ -173,7 +171,7 @@ impl BalanceFetching for Balances {
         let new_balances = self.inner.get_balances(&missing_queries).await;
 
         {
-            let mut cache = self.balance_cache.lock().unwrap();
+            let mut cache = self.balance_cache.lock().await;
             for (query, result) in missing_queries.into_iter().zip(new_balances.iter()) {
                 if let Ok(balance) = result {
                     cache.insert_balance(query, *balance, requested_at)
@@ -329,18 +327,18 @@ mod tests {
         let fetcher = Balances::new(Arc::new(inner));
         fetcher.spawn_background_task(receiver);
 
-        let cached_entry = || {
-            let cache = fetcher.balance_cache.lock().unwrap();
+        let cached_entry = async || {
+            let cache = fetcher.balance_cache.lock().await;
             cache.data.get(&query(1)).cloned()
         };
 
-        assert!(cached_entry().is_none());
+        assert!(cached_entry().await.is_none());
         // 1st call to `inner`. Balance gets cached.
         let result = fetcher.get_balances(&[query(1)]).await;
         assert_eq!(result[0].as_ref().unwrap(), &1.into());
 
         for block in 1..=EVICTION_TIME + 1 {
-            assert!(cached_entry().is_some());
+            assert!(cached_entry().await.is_some());
             // New block gets detected.
             sender
                 .send(BlockInfo {
@@ -350,6 +348,6 @@ mod tests {
                 .unwrap();
             tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
         }
-        assert!(cached_entry().is_none());
+        assert!(cached_entry().await.is_none());
     }
 }
