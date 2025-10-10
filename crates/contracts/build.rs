@@ -506,9 +506,6 @@ fn main() {
     // Test Contract for incrementing arbitrary counters.
     generate_contract("Counter");
 
-    // Test Contract for using up a specified amount of gas.
-    generate_contract("GasHog");
-
     // Contract for Uniswap's Permit2 contract.
     generate_contract_with_config("Permit2", |builder| {
         builder
