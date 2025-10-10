@@ -1,5 +1,8 @@
 use {
-    prometheus::Encoder,
+    prometheus::{
+        Encoder,
+        core::{AtomicF64, AtomicU64, GenericCounterVec},
+    },
     std::{
         collections::HashMap,
         convert::Infallible,
@@ -9,6 +12,7 @@ use {
             OnceLock,
             atomic::{AtomicBool, Ordering},
         },
+        time::Instant,
     },
     tokio::task::{self, JoinHandle},
     warp::{Filter, Rejection, Reply},
@@ -135,4 +139,45 @@ fn handle_readiness(
             Result::<_, Infallible>::Ok(warp::reply::with_status(warp::reply(), status))
         }
     })
+}
+
+/// Metrics shared by potentially all processes.
+#[derive(prometheus_metric_storage::MetricStorage)]
+pub struct Metrics {
+    /// All the time losses we incur while arbitrating the auctions
+    #[metric(labels("component", "phase"))]
+    pub auction_overhead_time: GenericCounterVec<AtomicF64>,
+
+    /// How many measurements we did for each source of overhead.
+    #[metric(labels("component", "phase"))]
+    pub auction_overhead_count: GenericCounterVec<AtomicU64>,
+}
+
+impl Metrics {
+    /// Returns a struct that measures the overhead when it gets dropped.
+    #[must_use]
+    pub fn on_auction_overhead_start<'a, 'b, 'c>(
+        &'a self,
+        component: &'b str,
+        phase: &'c str,
+    ) -> impl Drop + use<'a, 'b, 'c> {
+        let start = std::time::Instant::now();
+        scopeguard::guard(start, move |start| {
+            self.measure_auction_overhead(start, component, phase);
+        })
+    }
+
+    pub fn measure_auction_overhead(&self, start: Instant, component: &str, phase: &str) {
+        self.auction_overhead_time
+            .with_label_values(&[component, phase])
+            .inc_by(start.elapsed().as_secs_f64());
+
+        self.auction_overhead_count
+            .with_label_values(&[component, phase])
+            .inc()
+    }
+}
+
+pub fn metrics() -> &'static Metrics {
+    Metrics::instance(get_storage_registry()).unwrap()
 }
