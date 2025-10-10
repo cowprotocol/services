@@ -1,6 +1,5 @@
 pub mod app_data;
 pub mod auction;
-pub mod auction_participants;
 pub mod auction_prices;
 pub mod byte_array;
 pub mod ethflow_orders;
