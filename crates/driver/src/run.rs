@@ -28,7 +28,7 @@ use {
 pub async fn start(args: impl Iterator<Item = String>) {
     observe::panic_hook::install();
     let args = cli::Args::parse_from(args);
-    run_with(args, None).await
+    let _ = tokio::task::spawn(run_with(args, None)).await;
 }
 
 /// This function exists to enable running the driver for testing. The

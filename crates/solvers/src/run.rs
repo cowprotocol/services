@@ -13,7 +13,7 @@ use {
 pub async fn start(args: impl IntoIterator<Item = String>) {
     observe::panic_hook::install();
     let args = cli::Args::parse_from(args);
-    run_with(args, None).await;
+    let _ = tokio::task::spawn(run_with(args, None)).await;
 }
 
 pub async fn run(

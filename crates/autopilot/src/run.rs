@@ -144,11 +144,13 @@ pub async fn start(args: impl Iterator<Item = String>) {
         panic!("colocation is enabled but no drivers are configured");
     }
 
-    if args.shadow.is_some() {
-        shadow_mode(args).await;
-    } else {
-        run(args, ShutdownController::default()).await;
-    }
+    let _ = tokio::task::spawn(async move {
+        if args.shadow.is_some() {
+            shadow_mode(args).await;
+        } else {
+            run(args, ShutdownController::default()).await;
+        }
+    }).await;
 }
 
 /// Assumes tracing and metrics registry have already been set up.
