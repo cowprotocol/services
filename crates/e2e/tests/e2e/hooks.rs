@@ -449,18 +449,34 @@ async fn partial_fills(web3: Web3) {
         onchain.contracts().weth.deposit()
     );
 
+    let balance_before_first_trade = onchain
+        .contracts()
+        .weth
+        .balance_of(trader.address())
+        .call()
+        .await
+        .unwrap();
+
     tracing::info!("Starting services.");
     let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
-    let pre_inc = counter.incrementCounter("pre".to_string());
+    let pre_inc = counter.setCounterToBalance(
+        "pre".to_string(),
+        onchain.contracts().weth.address().into_alloy(),
+        trader.address().into_alloy(),
+    );
     let pre_hook = Hook {
         target: counter.address().into_legacy(),
         call_data: pre_inc.calldata().to_vec(),
         gas_limit: pre_inc.estimate_gas().await.unwrap(),
     };
 
-    let post_inc = counter.incrementCounter("post".to_string());
+    let post_inc = counter.setCounterToBalance(
+        "post".to_string(),
+        onchain.contracts().weth.address().into_alloy(),
+        trader.address().into_alloy(),
+    );
     let post_hook = Hook {
         target: counter.address().into_legacy(),
         call_data: post_inc.calldata().to_vec(),
@@ -509,10 +525,30 @@ async fn partial_fills(web3: Web3) {
             == 0.into()
     };
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
-    assert_eq!(counter.counters("pre".to_string()).call().await.unwrap(), 1);
+    let post_balance_after_first_trade = onchain
+        .contracts()
+        .weth
+        .balance_of(trader.address())
+        .call()
+        .await
+        .unwrap();
     assert_eq!(
-        counter.counters("post".to_string()).call().await.unwrap(),
-        1
+        counter
+            .counters("pre".to_string())
+            .call()
+            .await
+            .unwrap()
+            .into_legacy(),
+        balance_before_first_trade
+    );
+    assert_eq!(
+        counter
+            .counters("post".to_string())
+            .call()
+            .await
+            .unwrap()
+            .into_legacy(),
+        post_balance_after_first_trade
     );
 
     tracing::info!("Fund remaining sell balance.");
@@ -524,10 +560,29 @@ async fn partial_fills(web3: Web3) {
 
     tracing::info!("Waiting for second trade.");
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
-    assert_eq!(counter.counters("pre".to_string()).call().await.unwrap(), 1);
     assert_eq!(
-        counter.counters("post".to_string()).call().await.unwrap(),
-        2
+        counter
+            .counters("pre".to_string())
+            .call()
+            .await
+            .unwrap()
+            .into_legacy(),
+        balance_before_first_trade
+    );
+    assert_eq!(
+        counter
+            .counters("post".to_string())
+            .call()
+            .await
+            .unwrap()
+            .into_legacy(),
+        onchain
+            .contracts()
+            .weth
+            .balance_of(trader.address())
+            .call()
+            .await
+            .unwrap()
     );
 }
 
