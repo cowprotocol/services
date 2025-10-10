@@ -78,7 +78,6 @@ impl Observer {
     ///
     /// Returns whether an update was performed.
     async fn single_update(&self) -> Result<IndexSuccess> {
-        // Find a settlement event that has not been processed yet.
         let Some(event) = self
             .persistence
             .get_settlement_without_auction()
@@ -90,83 +89,114 @@ impl Observer {
 
         tracing::debug!(tx = ?event.transaction, "found unprocessed settlement");
 
-        let settlement_data = self
-            .fetch_auction_data_for_transaction(event.transaction)
+        let settlements = self
+            .fetch_multi_settlement_data_for_transaction(event.transaction)
             .await?;
-        self.persistence
-            .save_settlement(event, settlement_data.as_ref())
-            .await
-            .context("failed to update settlement")?;
-
-        match settlement_data {
-            None => Ok(IndexSuccess::SkippedInvalidTransaction),
-            Some(_) => Ok(IndexSuccess::IndexedSettlement),
+        
+        if settlements.is_empty() {
+            self.persistence
+                .save_settlement(event, None)
+                .await
+                .context("failed to update settlement")?;
+            return Ok(IndexSuccess::SkippedInvalidTransaction);
         }
+
+        if settlements.len() > 1 {
+            tracing::info!(
+                tx = ?event.transaction, 
+                count = settlements.len(),
+                "processing multi-settlement transaction"
+            );
+        }
+        
+        let all_events = self
+            .persistence
+            .get_all_unprocessed_settlements_for_transaction(event.transaction)
+            .await
+            .context("failed to fetch all settlement events for transaction")?;
+        
+        if all_events.len() != settlements.len() {
+            tracing::warn!(
+                tx = ?event.transaction,
+                event_count = all_events.len(),
+                settlement_count = settlements.len(),
+                "mismatch between settlement events and settlements - processing available settlements"
+            );
+        }
+        
+        for (i, settlement) in settlements.into_iter().enumerate() {
+            if let Some(settlement_event) = all_events.get(i) {
+                self.persistence
+                    .save_settlement(*settlement_event, Some(&settlement))
+                    .await
+                    .context("failed to update settlement")?;
+            }
+        }
+        
+        Ok(IndexSuccess::IndexedSettlement)
     }
 
-    /// Inspects the calldata of the transaction, decodes the arguments, and
-    /// finds off-chain data associated with it based on the attached auction_id
-    /// bytes.
-    async fn fetch_auction_data_for_transaction(
+    async fn fetch_multi_settlement_data_for_transaction(
         &self,
         tx: eth::TxId,
-    ) -> Result<Option<Settlement>> {
-        let transaction = match self.eth.transaction(tx).await {
-            Ok(transaction) => {
-                let separator = self.eth.contracts().settlement_domain_separator();
-                let settlement_contract = self.eth.contracts().settlement().address().into();
-                settlement::Transaction::try_new(
-                    &transaction,
-                    separator,
-                    settlement_contract,
-                    self.eth.contracts().authenticator(),
-                )
-                .await
-            }
-            Err(err) => {
-                return Err(anyhow!(format!(
-                    "node could not find the transaction - tx: {tx:?}, err: {err:?}",
-                )));
-            }
-        };
+    ) -> Result<Vec<Settlement>> {
+        let transaction = self.eth.transaction(tx).await
+            .with_context(|| format!("node could not find the transaction - tx: {tx:?}"))?;
+        
+        let separator = self.eth.contracts().settlement_domain_separator();
+        let settlement_contract = self.eth.contracts().settlement().address().into();
+        let transaction = settlement::transaction::TransactionSettlements::try_new(
+            &transaction,
+            separator,
+            settlement_contract,
+            self.eth.contracts().authenticator(),
+        )
+        .await;
 
         match transaction {
-            Ok(transaction) => {
-                let auction_id = transaction.auction_id;
-                match settlement::Settlement::new(transaction, &self.persistence, self.eth.chain())
-                    .await
-                {
-                    Ok(settlement) => Ok(Some(settlement)),
-                    Err(settlement::Error::Infra(err)) => {
-                        // bubble up retryable error
-                        Err(err)
-                    }
-                    Err(err) => {
-                        tracing::warn!(?tx, ?auction_id, ?err, "invalid settlement");
-                        Ok(None)
+            Ok(multi_transaction) => {
+                let mut settlements = Vec::new();
+                
+                for settlement_data in &multi_transaction.settlements {
+                    let single_transaction = settlement::transaction::Transaction::from_multi_settlement(
+                        &multi_transaction,
+                        settlement_data,
+                    );
+
+                    match settlement::Settlement::new(single_transaction, &self.persistence, self.eth.chain())
+                        .await
+                    {
+                        Ok(settlement) => {
+                            settlements.push(settlement);
+                        }
+                        Err(settlement::Error::Infra(err)) => {
+                            // bubble up retryable error
+                            return Err(err);
+                        }
+                        Err(err) => {
+                            tracing::warn!(?tx, ?settlement_data.auction_id, ?err, "invalid settlement in multi-settlement transaction");
+                            // Continue processing other settlements even if one fails
+                        }
                     }
                 }
+
+                Ok(settlements)
             }
             Err(err) => {
                 match err {
-                    settlement::transaction::Error::MissingCalldata => {
-                        tracing::error!(?tx, ?err, "invalid settlement transaction");
-                        Ok(None)
-                    }
-                    settlement::transaction::Error::MissingAuctionId
-                    | settlement::transaction::Error::Decoding(_)
-                    | settlement::transaction::Error::SignatureRecover(_)
-                    | settlement::transaction::Error::OrderUidRecover(_)
-                    | settlement::transaction::Error::MissingSolver => {
-                        tracing::warn!(?tx, ?err, "invalid settlement transaction");
-                        Ok(None)
-                    }
                     settlement::transaction::Error::Authentication(_) => {
-                        // This has to be a temporary error because the settlement contract
-                        // guarantees that SOME allow listed contract executed the transaction.
+                        // This is a temporary error because the authenticator service might be down or network issues.
+                        // It resolves itself when the service comes back online or network is fixed
+                        // and we return an error so the transaction gets retried later instead of marking it as permanently failed.
+                        tracing::warn!(?tx, ?err, "could not determine solver address");
                         Err(anyhow!(format!(
-                            "could not determing solver address - err: {err:?}"
+                            "could not determine solver address - err: {err:?}"
                         )))
+                    }
+                    _ => {
+                        // All other errors are treated as invalid settlement transactions
+                        tracing::warn!(?tx, ?err, "invalid settlement transaction");
+                        Ok(vec![])
                     }
                 }
             }
