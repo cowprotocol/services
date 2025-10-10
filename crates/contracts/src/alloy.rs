@@ -558,6 +558,13 @@ pub mod support {
     );
 }
 
+pub mod test {
+    // Test Contract for using up a specified amount of gas.
+    crate::bindings!(GasHog);
+    // Test Contract for incrementing arbitrary counters.
+    crate::bindings!(Counter);
+}
+
 pub use alloy::providers::DynProvider as Provider;
 
 /// Extension trait to attach some useful functions to the contract instance.
