@@ -31,8 +31,9 @@ use {
     std::{
         collections::{BTreeMap, HashMap, HashSet},
         ops::Neg,
-        sync::{Arc, Mutex},
+        sync::Arc,
     },
+    tokio::sync::Mutex,
     tracing::instrument,
 };
 
@@ -195,18 +196,20 @@ impl PoolsCheckpointHandler {
     /// For a given list of token pairs, fetches the pools for the ones that
     /// exist in the checkpoint. For the ones that don't exist, flag as
     /// missing and expect to exist after the next maintenance run.
-    fn get(&self, token_pairs: &HashSet<TokenPair>) -> (HashMap<H160, PoolInfo>, u64) {
-        let mut pool_ids = token_pairs
-            .iter()
-            .filter_map(|pair| self.pools_by_token_pair.get(pair))
-            .flatten()
-            .peekable();
+    async fn get(&self, token_pairs: &HashSet<TokenPair>) -> (HashMap<H160, PoolInfo>, u64) {
+        let mut pool_ids = Vec::new();
+        for pair in token_pairs {
+            if let Some(pools) = self.pools_by_token_pair.get(pair) {
+                pool_ids.extend(pools.iter());
+            }
+        }
+        let mut pool_ids = pool_ids.into_iter().peekable();
 
         tracing::trace!("get checkpoint for pool_ids: {:?}", pool_ids);
 
         match pool_ids.peek() {
             Some(_) => {
-                let mut pools_checkpoint = self.pools_checkpoint.lock().unwrap();
+                let mut pools_checkpoint = self.pools_checkpoint.lock().await;
                 let (existing_pools, missing_pools): (HashMap<H160, PoolInfo>, Vec<H160>) =
                     pool_ids.partition_map(|pool_id| match pools_checkpoint.pools.get(pool_id) {
                         Some(entry) => Either::Left((*pool_id, entry.clone())),
@@ -228,7 +231,7 @@ impl PoolsCheckpointHandler {
     /// `missing_pools` to `pools`
     async fn update_missing_pools(&self) -> Result<()> {
         let (missing_pools, block_number) = {
-            let checkpoint = self.pools_checkpoint.lock().unwrap();
+            let checkpoint = self.pools_checkpoint.lock().await;
             if checkpoint.missing_pools.is_empty() {
                 return Ok(());
             }
@@ -249,7 +252,7 @@ impl PoolsCheckpointHandler {
             "fetched pool ticks"
         );
 
-        let mut checkpoint = self.pools_checkpoint.lock().unwrap();
+        let mut checkpoint = self.pools_checkpoint.lock().await;
         for pool in pools? {
             checkpoint.missing_pools.remove(&pool.id);
             checkpoint.pools.insert(pool.id, pool.try_into()?);
@@ -298,7 +301,7 @@ impl UniswapV3PoolFetcher {
         )
         .await?;
 
-        let init_block = checkpoint.pools_checkpoint.lock().unwrap().block_number;
+        let init_block = checkpoint.pools_checkpoint.lock().await.block_number;
         let init_block = block_retriever.block(init_block).await?;
 
         let events = tokio::sync::Mutex::new(EventHandler::new(
@@ -314,12 +317,7 @@ impl UniswapV3PoolFetcher {
     /// Moves the checkpoint to the block `latest_block - MAX_REORG_BLOCK_COUNT`
     async fn move_checkpoint_to_future(&self) -> Result<()> {
         let last_event_block = self.events.lock().await.store().last_event_block().await?;
-        let old_checkpoint_block = self
-            .checkpoint
-            .pools_checkpoint
-            .lock()
-            .unwrap()
-            .block_number;
+        let old_checkpoint_block = self.checkpoint.pools_checkpoint.lock().await.block_number;
         let new_checkpoint_block = std::cmp::max(
             last_event_block.saturating_sub(MAX_REORG_BLOCK_COUNT),
             old_checkpoint_block,
@@ -330,7 +328,7 @@ impl UniswapV3PoolFetcher {
                 let block_range =
                     RangeInclusive::try_new(old_checkpoint_block + 1, new_checkpoint_block)?;
                 let events = self.events.lock().await.store().get_events(block_range);
-                let mut checkpoint = self.checkpoint.pools_checkpoint.lock().unwrap();
+                let mut checkpoint = self.checkpoint.pools_checkpoint.lock().await;
                 append_events(&mut checkpoint.pools, events);
                 checkpoint.block_number = new_checkpoint_block;
                 tracing::debug!(
@@ -395,7 +393,7 @@ impl PoolFetching for UniswapV3PoolFetcher {
 
         // this is the only place where this function uses checkpoint - no data racing
         // between maintenance
-        let (mut checkpoint, checkpoint_block_number) = self.checkpoint.get(token_pairs);
+        let (mut checkpoint, checkpoint_block_number) = self.checkpoint.get(token_pairs).await;
 
         if block_number > checkpoint_block_number {
             let block_range = RangeInclusive::try_new(checkpoint_block_number + 1, block_number)?;

@@ -21,10 +21,7 @@ use {
         recent_block_cache::Block,
         sources::uniswap_v2::pool_fetching::PoolFetching,
     },
-    std::{
-        collections::HashSet,
-        sync::{Arc, Mutex},
-    },
+    std::{collections::HashSet, sync::Arc},
     tracing::instrument,
 };
 
@@ -39,7 +36,7 @@ pub struct Inner {
     gpv2_settlement: GPv2Settlement,
     // Mapping of how much allowance the router has per token to spend on behalf of the settlement
     // contract
-    allowances: Mutex<Allowances>,
+    allowances: Allowances,
 }
 
 impl UniswapLikeLiquidity {
@@ -64,7 +61,7 @@ impl UniswapLikeLiquidity {
             inner: Arc::new(Inner {
                 router,
                 gpv2_settlement,
-                allowances: Mutex::new(Allowances::empty(router.into_legacy())),
+                allowances: Allowances::empty(router.into_legacy()),
             }),
             pool_fetcher,
             settlement_allowances,
@@ -78,11 +75,7 @@ impl UniswapLikeLiquidity {
             .get_allowances(tokens, router)
             .await?;
 
-        self.inner
-            .allowances
-            .lock()
-            .expect("Thread holding mutex panicked")
-            .extend(allowances)?;
+        self.inner.allowances.extend(allowances)?;
 
         Ok(())
     }
@@ -118,11 +111,7 @@ impl LiquidityCollecting for UniswapLikeLiquidity {
 }
 
 impl Inner {
-    pub fn new(
-        router: Address,
-        gpv2_settlement: GPv2Settlement,
-        allowances: Mutex<Allowances>,
-    ) -> Self {
+    pub fn new(router: Address, gpv2_settlement: GPv2Settlement, allowances: Allowances) -> Self {
         Inner {
             router,
             gpv2_settlement,
@@ -137,8 +126,6 @@ impl Inner {
     ) -> (Option<Approval>, UniswapInteraction) {
         let approval = self
             .allowances
-            .lock()
-            .expect("Thread holding mutex panicked")
             .approve_token_or_default(token_amount_in_max.clone());
 
         (
@@ -194,7 +181,7 @@ mod tests {
             Self {
                 router: Address::default(),
                 gpv2_settlement: dummy_contract!(GPv2Settlement, H160::zero()),
-                allowances: Mutex::new(Allowances::new(H160::zero(), allowances)),
+                allowances: Allowances::new(H160::zero(), allowances),
             }
         }
     }

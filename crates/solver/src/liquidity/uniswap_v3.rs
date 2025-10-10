@@ -21,10 +21,7 @@ use {
         recent_block_cache::Block,
         sources::uniswap_v3::pool_fetching::PoolFetching,
     },
-    std::{
-        collections::HashSet,
-        sync::{Arc, Mutex},
-    },
+    std::{collections::HashSet, sync::Arc},
     tracing::instrument,
 };
 
@@ -38,7 +35,7 @@ pub struct Inner {
     gpv2_settlement: GPv2Settlement,
     // Mapping of how much allowance the router has per token to spend on behalf of the settlement
     // contract
-    allowances: Mutex<Allowances>,
+    allowances: Allowances,
 }
 
 pub struct UniswapV3SettlementHandler {
@@ -50,7 +47,7 @@ impl UniswapV3SettlementHandler {
     pub fn new(
         router: UniswapV3SwapRouterV2,
         gpv2_settlement: GPv2Settlement,
-        allowances: Mutex<Allowances>,
+        allowances: Allowances,
         fee: Ratio<u32>,
     ) -> Self {
         Self {
@@ -91,7 +88,7 @@ impl UniswapV3Liquidity {
             inner: Arc::new(Inner {
                 router,
                 gpv2_settlement,
-                allowances: Mutex::new(Allowances::empty(router_address)),
+                allowances: Allowances::empty(router_address),
             }),
             pool_fetcher,
             settlement_allowances,
@@ -105,11 +102,7 @@ impl UniswapV3Liquidity {
             .get_allowances(tokens, router)
             .await?;
 
-        self.inner
-            .allowances
-            .lock()
-            .expect("Thread holding mutex panicked")
-            .extend(allowances)?;
+        self.inner.allowances.extend(allowances)?;
 
         Ok(())
     }
@@ -161,8 +154,6 @@ impl UniswapV3SettlementHandler {
         let approval = self
             .inner
             .allowances
-            .lock()
-            .expect("Thread holding mutex panicked")
             .approve_token_or_default(token_amount_in_max.clone());
 
         (
@@ -211,7 +202,7 @@ mod tests {
                 inner: Arc::new(Inner {
                     router: dummy_contract!(UniswapV3SwapRouterV2, H160::zero()),
                     gpv2_settlement: dummy_contract!(GPv2Settlement, H160::zero()),
-                    allowances: Mutex::new(Allowances::new(H160::zero(), allowances)),
+                    allowances: Allowances::new(H160::zero(), allowances),
                 }),
                 fee,
             }

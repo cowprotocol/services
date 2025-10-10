@@ -27,10 +27,7 @@ use {
         },
         liquidity_collector::{BackgroundInitLiquiditySource, LiquidityCollecting},
     },
-    std::{
-        collections::BTreeMap,
-        sync::{Arc, Mutex},
-    },
+    std::{collections::BTreeMap, sync::Arc},
 };
 
 pub fn to_domain(id: liquidity::Id, pool: ConcentratedLiquidity) -> Result<liquidity::Liquidity> {
@@ -83,7 +80,7 @@ pub fn to_interaction(
     let handler = UniswapV3SettlementHandler::new(
         UniswapV3SwapRouterV2::at(&web3, pool.router.0),
         GPv2Settlement::at(&web3, receiver.0),
-        Mutex::new(Allowances::empty(receiver.0)),
+        Allowances::empty(receiver.0),
         pool.fee.0,
     );
 

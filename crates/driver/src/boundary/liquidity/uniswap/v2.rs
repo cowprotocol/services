@@ -30,10 +30,7 @@ use {
         },
         liquidity_collector::LiquidityCollecting,
     },
-    std::{
-        collections::HashSet,
-        sync::{Arc, Mutex},
-    },
+    std::{collections::HashSet, sync::Arc},
 };
 
 /// Median gas used per UniswapInteraction (v2).
@@ -100,7 +97,7 @@ pub fn to_interaction(
     let handler = uniswap_v2::Inner::new(
         pool.router.0.into_alloy(),
         GPv2Settlement::at(&ethrpc::dummy::web3(), receiver.0),
-        Mutex::new(Allowances::empty(receiver.0)),
+        Allowances::empty(receiver.0),
     );
 
     let (_, interaction) = handler.settle(

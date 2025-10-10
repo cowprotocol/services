@@ -16,6 +16,7 @@ anyhow = { workspace = true }
 arc-swap = { workspace = true }
 async-trait = { workspace = true }
 contracts = { workspace = true }
+dashmap = { workspace = true }
 ethcontract = { workspace = true }
 ethrpc = { workspace = true }
 futures = { workspace = true }

@@ -6205,6 +6205,7 @@ dependencies = [
  "arc-swap",
  "async-trait",
  "contracts",
+ "dashmap",
  "derivative",
  "ethcontract",
  "ethrpc",

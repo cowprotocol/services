@@ -6,6 +6,7 @@ use {
     crate::interactions::Erc20ApproveInteraction,
     anyhow::{Context as _, Result, anyhow, ensure},
     contracts::{ERC20, dummy_contract},
+    dashmap::DashMap,
     ethcontract::{H160, U256},
     ethrpc::Web3,
     maplit::hashmap,
@@ -48,31 +49,31 @@ pub struct ApprovalRequest {
     pub amount: U256,
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug)]
 pub struct Allowances {
     spender: H160,
-    allowances: HashMap<H160, U256>,
+    allowances: DashMap<H160, U256>,
 }
 
 impl Allowances {
     pub fn new(spender: H160, allowances: HashMap<H160, U256>) -> Self {
         Self {
             spender,
-            allowances,
+            allowances: allowances.into_iter().collect(),
         }
     }
 
     pub fn empty(spender: H160) -> Self {
-        Self::new(spender, HashMap::new())
+        Self::new(spender, Default::default())
     }
 
     /// Gets the approval interaction for the specified token and amount.
     pub fn approve_token(&self, token_amount: TokenAmount) -> Result<Option<Approval>> {
-        let allowance = self
+        let allowance = *self
             .allowances
             .get(&token_amount.token)
-            .copied()
-            .ok_or_else(|| anyhow!("missing allowance for token {:?}", token_amount.token))?;
+            .with_context(|| format!("missing allowance for token {:?}", token_amount.token))?
+            .value();
 
         Ok(if allowance < token_amount.amount {
             Some(Approval {
@@ -96,12 +97,14 @@ impl Allowances {
     }
 
     /// Extends the allowance cache with another.
-    pub fn extend(&mut self, other: Self) -> Result<()> {
+    pub fn extend(&self, other: Self) -> Result<()> {
         ensure!(
             self.spender == other.spender,
             "failed to extend allowance cache for different spender"
         );
-        self.allowances.extend(other.allowances);
+        for (token, allowance) in other.allowances {
+            self.allowances.insert(token, allowance);
+        }
 
         Ok(())
     }
@@ -325,9 +328,16 @@ mod tests {
         );
     }
 
+    fn eq(actual: &DashMap<H160, U256>, expected: HashMap<H160, U256>) -> bool {
+        actual.len() == expected.len()
+            && actual
+                .iter()
+                .all(|entry| expected.get(entry.key()).unwrap() == entry.value())
+    }
+
     #[test]
     fn extend_allowances_cache() {
-        let mut allowances = Allowances::new(
+        let allowances = Allowances::new(
             H160([0x01; 20]),
             hashmap! {
                 H160([0x11; 20]) => U256::from(1),
@@ -344,19 +354,19 @@ mod tests {
             ))
             .unwrap();
 
-        assert_eq!(
-            allowances.allowances,
+        assert!(eq(
+            &allowances.allowances,
             hashmap! {
                 H160([0x11; 20]) => U256::from(42),
                 H160([0x12; 20]) => U256::from(2),
                 H160([0x13; 20]) => U256::from(3),
-            },
-        );
+            }
+        ));
     }
 
     #[test]
     fn error_extending_allowances_for_different_spenders() {
-        let mut allowances = Allowances::empty(H160([0x01; 20]));
+        let allowances = Allowances::empty(H160([0x01; 20]));
         assert!(
             allowances
                 .extend(Allowances::empty(H160([0x02; 20])))
@@ -432,14 +442,13 @@ mod tests {
         .await
         .unwrap();
 
+        assert_eq!(allowances.len(), 1);
+        let allowance = allowances.get(&spender).unwrap();
+        assert_eq!(allowance.spender, spender);
+        assert_eq!(allowance.allowances.len(), 1);
         assert_eq!(
-            allowances,
-            hashmap! {
-                spender => Allowances {
-                    spender,
-                    allowances: hashmap! { H160([0x11; 20]) => 1337.into() },
-                },
-            },
+            *allowance.allowances.get(&H160([0x11; 20])).unwrap(),
+            1337.into()
         );
     }
 }

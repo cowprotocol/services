@@ -17,11 +17,8 @@ use {
     },
     model::TokenPair,
     num::rational::Ratio,
-    std::{
-        collections::HashSet,
-        sync::{LazyLock, RwLock},
-        time::Duration,
-    },
+    std::{collections::HashSet, sync::LazyLock, time::Duration},
+    tokio::sync::RwLock,
     tracing::instrument,
 };
 
@@ -221,7 +218,7 @@ where
     async fn fetch(&self, token_pairs: HashSet<TokenPair>, at_block: Block) -> Result<Vec<Pool>> {
         let mut token_pairs: Vec<_> = token_pairs.into_iter().collect();
         {
-            let mut non_existent_pools = self.non_existent_pools.write().unwrap();
+            let mut non_existent_pools = self.non_existent_pools.write().await;
             token_pairs.retain(|pair| non_existent_pools.cache_get(pair).is_none());
         }
         let block = BlockId::Number(at_block.into());
@@ -242,7 +239,7 @@ where
         }
         if !new_missing_pairs.is_empty() {
             tracing::debug!(token_pairs = ?new_missing_pairs, "stop indexing liquidity");
-            let mut non_existent_pools = self.non_existent_pools.write().unwrap();
+            let mut non_existent_pools = self.non_existent_pools.write().await;
             for pair in new_missing_pairs {
                 non_existent_pools.cache_set(pair, ());
             }
