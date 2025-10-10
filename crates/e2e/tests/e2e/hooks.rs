@@ -428,8 +428,7 @@ async fn partial_fills(web3: Web3) {
     let [solver] = onchain.make_solvers(to_wei(1)).await;
     let [trader] = onchain.make_accounts(to_wei(3)).await;
 
-    let counter = contracts::test::Counter::builder(&web3)
-        .deploy()
+    let counter = contracts::alloy::test::Counter::Instance::deploy(web3.alloy.clone())
         .await
         .unwrap();
 
@@ -454,6 +453,20 @@ async fn partial_fills(web3: Web3) {
     let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
+    let pre_inc = counter.incrementCounter("pre".to_string());
+    let pre_hook = Hook {
+        target: counter.address().into_legacy(),
+        call_data: pre_inc.calldata().to_vec(),
+        gas_limit: pre_inc.estimate_gas().await.unwrap(),
+    };
+
+    let post_inc = counter.incrementCounter("post".to_string());
+    let post_hook = Hook {
+        target: counter.address().into_legacy(),
+        call_data: post_inc.calldata().to_vec(),
+        gas_limit: post_inc.estimate_gas().await.unwrap(),
+    };
+
     tracing::info!("Placing order");
     let order = OrderCreation {
         sell_token: onchain.contracts().weth.address(),
@@ -467,8 +480,8 @@ async fn partial_fills(web3: Web3) {
             full: json!({
                 "metadata": {
                     "hooks": {
-                        "pre": [hook_for_transaction(counter.increment_counter("pre".to_string()).tx).await],
-                        "post": [hook_for_transaction(counter.increment_counter("post".to_string()).tx).await],
+                        "pre": [pre_hook],
+                        "post": [post_hook],
                     },
                 },
             })
@@ -496,13 +509,10 @@ async fn partial_fills(web3: Web3) {
             == 0.into()
     };
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
-    assert_eq!(
-        counter.counters("pre".to_string()).call().await.unwrap(),
-        1.into()
-    );
+    assert_eq!(counter.counters("pre".to_string()).call().await.unwrap(), 1);
     assert_eq!(
         counter.counters("post".to_string()).call().await.unwrap(),
-        1.into()
+        1
     );
 
     tracing::info!("Fund remaining sell balance.");
@@ -514,13 +524,10 @@ async fn partial_fills(web3: Web3) {
 
     tracing::info!("Waiting for second trade.");
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
-    assert_eq!(
-        counter.counters("pre".to_string()).call().await.unwrap(),
-        1.into()
-    );
+    assert_eq!(counter.counters("pre".to_string()).call().await.unwrap(), 1);
     assert_eq!(
         counter.counters("post".to_string()).call().await.unwrap(),
-        2.into()
+        2
     );
 }
 
