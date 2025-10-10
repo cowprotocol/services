@@ -72,6 +72,8 @@ impl Persistence {
         &self,
         auction: &domain::RawAuctionData,
     ) -> Result<domain::auction::Id, DatabaseError> {
+        let _timer = observe::metrics::metrics()
+            .on_auction_overhead_start("autopilot", "replace_auction_in_db");
         let auction = dto::auction::from_domain(auction.clone());
         self.postgres
             .replace_current_auction(&auction)

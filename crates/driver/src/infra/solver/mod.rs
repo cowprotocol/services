@@ -25,7 +25,10 @@ use {
     num::BigRational,
     observe::tracing::tracing_headers,
     reqwest::header::HeaderName,
-    std::{collections::HashMap, time::Duration},
+    std::{
+        collections::HashMap,
+        time::{Duration, Instant},
+    },
     tap::TapFallible,
     thiserror::Error,
     tracing::{Instrument, instrument},
@@ -233,8 +236,9 @@ impl Solver {
         auction: &Auction,
         liquidity: &[liquidity::Liquidity],
     ) -> Result<Vec<Solution>, Error> {
+        let start = Instant::now();
+
         let flashloan_hints = self.assemble_flashloan_hints(auction);
-        // Fetch the solutions from the solver.
         let weth = self.eth.contracts().weth_address();
         let auction_dto = dto::auction::new(
             auction,
@@ -246,12 +250,6 @@ impl Solver {
             auction.deadline(self.timeouts()).solvers(),
         );
 
-        if let Some(id) = auction.id() {
-            // Only auctions with IDs are real auctions (/quote requests don't have an ID,
-            // and it makes no sense to store them)
-            self.persistence.archive_auction(id, &auction_dto);
-        }
-
         let body = {
             // pre-allocate a big enough buffer to avoid re-allocating memory
             // as the request gets serialized
@@ -260,6 +258,17 @@ impl Solver {
             serde_json::to_writer(&mut buffer, &auction_dto).unwrap();
             String::from_utf8(buffer).expect("serde_json only writes valid utf8")
         };
+
+        if let Some(id) = auction.id() {
+            // Only auctions with IDs are real auctions (/quote requests don't have an ID).
+            // Only for those it makes sense to archive them and measure the execution time.
+            self.persistence.archive_auction(id, &auction_dto);
+            ::observe::metrics::metrics().measure_auction_overhead(
+                start,
+                "driver",
+                "serialize_request",
+            );
+        }
 
         let url = shared::url::join(&self.config.endpoint, "solve");
         super::observe::solver_request(&url, &body);
