@@ -4,13 +4,18 @@ use {
         BalanceOverriding,
     },
     alloy::sol_types::{SolType, sol_data},
+    contracts::alloy::support::Balances,
     ethcontract::{
         Bytes,
         contract::MethodBuilder,
         dyns::DynTransport,
         state_overrides::StateOverrides,
     },
-    ethrpc::{Web3, block_stream::CurrentBlockWatcher},
+    ethrpc::{
+        Web3,
+        alloy::conversions::{IntoAlloy, IntoLegacy},
+        block_stream::CurrentBlockWatcher,
+    },
     model::{
         interaction::InteractionData,
         order::{Order, SellTokenSource},
@@ -99,7 +104,7 @@ pub fn cached(
 #[derive(Clone)]
 pub struct BalanceSimulator {
     settlement: contracts::GPv2Settlement,
-    balances: contracts::support::Balances,
+    balances: Balances::Instance,
     vault_relayer: H160,
     vault: H160,
     balance_overrider: Arc<dyn BalanceOverriding>,
@@ -108,7 +113,7 @@ pub struct BalanceSimulator {
 impl BalanceSimulator {
     pub fn new(
         settlement: contracts::GPv2Settlement,
-        balances: contracts::support::Balances,
+        balances: Balances::Instance,
         vault_relayer: H160,
         vault: Option<H160>,
         balance_overrider: Arc<dyn BalanceOverriding>,
@@ -162,22 +167,32 @@ impl BalanceSimulator {
         //
         // This allows us to end up with very accurate balance simulations.
         let balance_call = self.balances.balance(
-            (self.settlement.address(), self.vault_relayer, self.vault),
-            owner,
-            token,
-            amount.unwrap_or_default(),
-            Bytes(source.as_bytes()),
+            contracts::alloy::support::Balances::Balances::Contracts {
+                settlement: self.settlement.address().into_alloy(),
+                vaultRelayer: self.vault_relayer.into_alloy(),
+                vault: self.vault.into_alloy(),
+            },
+            owner.into_alloy(),
+            token.into_alloy(),
+            amount.unwrap_or_default().into_alloy(),
+            source.as_bytes().into(),
             interactions
                 .iter()
-                .map(|i| (i.target, i.value, Bytes(i.call_data.clone())))
+                .map(
+                    |i| contracts::alloy::support::Balances::Balances::Interaction {
+                        target: i.target.into_alloy(),
+                        value: i.value.into_alloy(),
+                        callData: i.call_data.clone().into(),
+                    },
+                )
                 .collect(),
         );
 
         let delegate_call = self
             .settlement
             .simulate_delegatecall(
-                self.balances.address(),
-                Bytes(balance_call.tx.data.unwrap_or_default().0),
+                self.balances.address().into_legacy(),
+                Bytes(balance_call.calldata().to_vec()),
             )
             .from(crate::SIMULATION_ACCOUNT.clone());
 

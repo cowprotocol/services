@@ -540,7 +540,6 @@ pub mod support {
     crate::bindings!(Trader);
     // Support contract used for solver fee simulations in the gnosis/solvers repo.
     crate::bindings!(Swapper);
-
     crate::bindings!(
         Signatures,
         crate::deployments! {
@@ -554,6 +553,22 @@ pub mod support {
             LENS => address!("0x8262d639c38470F38d2eff15926F7071c28057Af"),
             GNOSIS => address!("0x8262d639c38470F38d2eff15926F7071c28057Af"),
             SEPOLIA => address!("0x8262d639c38470F38d2eff15926F7071c28057Af"),
+        }
+    );
+    // Support contracts used for various order simulations.
+    crate::bindings!(
+        Balances,
+        crate::deployments! {
+            MAINNET => address!("0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b"),
+            ARBITRUM_ONE => address!("0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b"),
+            BASE => address!("0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b"),
+            AVALANCHE => address!("0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b"),
+            BNB => address!("0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b"),
+            OPTIMISM => address!("0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b"),
+            POLYGON => address!("0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b"),
+            LENS => address!("0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b"),
+            GNOSIS => address!("0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b"),
+            SEPOLIA => address!("0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b"),
         }
     );
 }

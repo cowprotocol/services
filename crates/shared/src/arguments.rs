@@ -11,6 +11,7 @@ use {
         },
         tenderly_api,
     },
+    alloy::primitives::Address,
     anyhow::{Context, Result, ensure},
     bigdecimal::BigDecimal,
     ethcontract::{H160, U256},
@@ -252,7 +253,7 @@ pub struct Arguments {
 
     /// Override address of the Balances contract.
     #[clap(long, env)]
-    pub balances_contract_address: Option<H160>,
+    pub balances_contract_address: Option<Address>,
 
     /// Override address of the Signatures contract.
     #[clap(long, env)]

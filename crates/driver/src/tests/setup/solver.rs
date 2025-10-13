@@ -470,7 +470,7 @@ impl Solver {
             Addresses {
                 settlement: Some(config.blockchain.settlement.address().into()),
                 weth: Some(config.blockchain.weth.address().into()),
-                balances: Some(config.blockchain.balances.address().into()),
+                balances: Some(config.blockchain.balances.address().into_legacy().into()),
                 signatures: Some(config.blockchain.signatures.address().into_legacy().into()),
                 cow_amms: vec![],
                 flashloan_router: Some(
