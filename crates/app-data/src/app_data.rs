@@ -229,8 +229,7 @@ impl Validator {
         self.size_limit
     }
 
-    /// Parses and validates the provided app data bytes, returns the parsed and
-    /// validated app data.
+    /// Parses and validates the provided app data bytes, returns the validated app data.
     ///
     /// 1. App data is below or equal to [`Validator::size_limit`].
     /// 2. App data is a valid JSON & valid app data object.
