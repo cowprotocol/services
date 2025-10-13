@@ -56,28 +56,25 @@ impl Cache {
         }
 
         let fetch_futures = missing_amms.into_iter().map(|amm_address| async move {
-            let factory_address = match self.fetch_amm_factory_address(amm_address).await {
-                Ok(address) => address,
-                Err(err) => {
+            let factory_address = self
+                .fetch_amm_factory_address(amm_address)
+                .await
+                .inspect_err(|err| {
                     tracing::warn!(
                         ?err,
                         amm_address = ?amm_address.0,
                         "failed to fetch CoW AMM factory address"
                     );
-                    return None;
-                }
-            };
+                })
+                .ok()?;
 
-            let helper = match self.helper_by_factory.get(&factory_address) {
-                Some(contract) => contract,
-                None => {
-                    tracing::warn!(
-                        factory_address = ?factory_address.0,
-                        amm_address = ?amm_address.0,
-                        "no helper contract configured for CoW AMM factory"
-                    );
-                    return None;
-                }
+            let Some(helper) = self.helper_by_factory.get(&factory_address) else {
+                tracing::warn!(
+                    factory_address = ?factory_address.0,
+                    amm_address = ?amm_address.0,
+                    "no helper contract configured for CoW AMM factory"
+                );
+                return None;
             };
 
             match Amm::new(amm_address.0, helper).await {
@@ -98,14 +95,17 @@ impl Cache {
         let fetched_results = futures::future::join_all(fetch_futures).await;
 
         // Update cache with newly fetched AMMs
-        let mut newly_created_amms = Vec::new();
-        {
+        let newly_created_amms = {
             let mut cache = self.inner.write().await;
-            for (amm_address, amm) in fetched_results.into_iter().flatten() {
-                cache.insert(amm_address, amm.clone());
-                newly_created_amms.push(amm);
-            }
-        }
+            fetched_results
+                .into_iter()
+                .flatten()
+                .map(|(amm_address, amm)| {
+                    cache.insert(amm_address, amm.clone());
+                    amm
+                })
+                .collect::<Vec<_>>()
+        };
 
         // Combine cached and newly created AMMs
         cached_amms.extend(newly_created_amms);
