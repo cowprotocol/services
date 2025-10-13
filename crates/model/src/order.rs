@@ -381,7 +381,7 @@ impl OrderCreation {
     /// Signs the current [`OrderCreation`]'s data ([`OrderData`]) using ECDSA,
     /// returning a signed [`OrderCreation`].
     ///
-    /// The existing signature is replaced.
+    /// Re-signs the order data with ECDSA and returns the updated `OrderCreation`.
     pub fn sign(
         mut self,
         signing_scheme: EcdsaSigningScheme,
