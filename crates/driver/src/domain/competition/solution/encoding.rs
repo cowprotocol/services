@@ -249,7 +249,7 @@ pub fn tx(
         wrapper_data.extend(contracts.settlement().address().as_bytes());
 
         (
-            solution.wrappers[0].address.into(),
+            solution.wrappers[0].address,
             contracts::ICowWrapper::at(contracts.web3(), solution.wrappers[0].address.into())
                 .wrapped_settle(
                     ethcontract::Bytes(settle_data),
