@@ -532,6 +532,8 @@ crate::bindings!(
     }
 );
 
+crate::bindings!(ICowWrapper);
+
 pub mod support {
     // Support contracts used for trade and token simulations.
     crate::bindings!(AnyoneAuthenticator);

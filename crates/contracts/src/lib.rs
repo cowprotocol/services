@@ -61,6 +61,7 @@ include_contracts! {
     ERC20;
     GPv2AllowListAuthentication;
     GPv2Settlement;
+    ICowWrapper;
     IUniswapV3Factory;
     Permit2;
     UniswapV3QuoterV2;

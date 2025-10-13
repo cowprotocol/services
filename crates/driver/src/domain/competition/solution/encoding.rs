@@ -31,6 +31,8 @@ pub enum Error {
     // TODO: remove when contracts are deployed everywhere
     #[error("flashloan support disabled")]
     FlashloanSupportDisabled,
+    #[error("both wrappers and flashloans cannot be encoded in the same auction")]
+    FlashloanWrappersIncompatible,
 }
 
 pub fn tx(
@@ -210,7 +212,12 @@ pub fn tx(
     ];
 
     let (mut to, mut calldata) = if !solution.wrappers.is_empty() {
-        let wrapped_tx =
+        // sanity: cant combine flashloan and
+        if !solution.flashloans.is_empty() {
+            return Err(Error::FlashloanWrappersIncompatible);
+        }
+
+        let settle_data =
             contracts::GPv2Settlement::at(contracts.web3(), solution.wrappers[0].address.into())
                 .settle(
                     tokens,
@@ -218,11 +225,13 @@ pub fn tx(
                     trades.iter().map(codec::trade).collect(),
                     interactions,
                 )
-                .into_inner();
+                .into_inner()
+                .data
+                .unwrap()
+                .0;
 
-        let original_data = wrapped_tx.data.as_ref().unwrap().clone().0;
-        let mut call_data = Vec::with_capacity(
-            original_data.len()
+        let mut wrapper_data = Vec::with_capacity(
+            (solution.wrappers.len() - 1) * 20
                 + solution
                     .wrappers
                     .iter()
@@ -230,20 +239,27 @@ pub fn tx(
                     .sum::<usize>(),
         );
 
-        call_data.extend(&original_data);
-
-        call_data.extend(solution.wrappers[0].data.as_ref().unwrap_or(&Vec::new()));
+        wrapper_data.extend(solution.wrappers[0].data.as_ref().unwrap_or(&Vec::new()));
 
         for w in &solution.wrappers[1..] {
-            call_data.extend([0u8; 12]);
-            call_data.extend(w.address.0.as_bytes());
-            call_data.extend(w.data.as_ref().unwrap_or(&Vec::new()));
+            wrapper_data.extend(w.address.0.as_bytes());
+            wrapper_data.extend(w.data.as_ref().unwrap_or(&Vec::new()));
         }
 
-        call_data.extend([0u8; 12]);
-        call_data.extend(contracts.settlement().address().as_bytes());
+        wrapper_data.extend(contracts.settlement().address().as_bytes());
 
-        (solution.wrappers[0].address.into(), call_data)
+        (
+            solution.wrappers[0].address.into(),
+            contracts::ICowWrapper::at(contracts.web3(), solution.wrappers[0].address.into())
+                .wrapped_settle(
+                    ethcontract::Bytes(settle_data),
+                    ethcontract::Bytes(wrapper_data),
+                )
+                .into_inner()
+                .data
+                .unwrap()
+                .0,
+        )
     } else {
         let tx = contracts
             .settlement()
