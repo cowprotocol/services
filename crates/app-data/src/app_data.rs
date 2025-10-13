@@ -224,15 +224,16 @@ impl Validator {
         Self { size_limit }
     }
 
-    /// Returns, in bytes, the app data size limit.
+    /// Returns the app data size limit (in bytes).
     pub fn size_limit(&self) -> usize {
         self.size_limit
     }
 
-    /// Parses and validates the provided app data bytes, returns the validated app data.
+    /// Parses and validates the provided app data bytes, returns the validated
     ///
-    /// 1. App data is below or equal to [`Validator::size_limit`].
-    /// 2. App data is a valid JSON & valid app data object.
+    /// Valid app data is considered to be:
+    /// 1. Below or equal to [`Validator::size_limit`] in size.
+    /// 2. A valid JSON & app data object.
     pub fn validate(&self, full_app_data: &[u8]) -> Result<ValidatedAppData> {
         if full_app_data.len() > self.size_limit {
             return Err(anyhow!(
