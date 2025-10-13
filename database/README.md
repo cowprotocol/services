@@ -23,18 +23,6 @@ Column                | Type        | Nullable | Details
 Indexes:
 - "app\_data\_pkey" PRIMARY KEY, btree (`contract_app_data`)
 
-### auction\_participants
-
-This table is used for [CIP-20](https://snapshot.org/#/cow.eth/proposal/0x2d3f9bd1ea72dca84b03e97dda3efc1f4a42a772c54bd2037e8b62e7d09a491f). It stores which solvers (identified by ethereum address) participated in which auctions (identified by auction id). CIP-20 specifies that "solver teams which consistently provide solutions" get rewarded.
-
-   Column     |  Type  | Nullable | Details
---------------|--------|----------|--------
- auction\_id  | bigint | not null | id of the auction
- participant  | bytea  | not null | solver that submitted a **valid** solution for the auction
-
-Indexes:
-- PRIMARY KEY: btree(`auction_id`, `participant`)
-
 ### auction\_prices
 
 Stores the native price of a token in a given auction. Used for computations related to CIP-20.

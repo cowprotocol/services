@@ -36,6 +36,8 @@ impl Request {
         trusted_tokens: &HashSet<H160>,
         time_limit: Duration,
     ) -> Self {
+        let _timer =
+            observe::metrics::metrics().on_auction_overhead_start("autopilot", "serialize_request");
         let helper = RequestHelper {
             id: auction.id,
             orders: auction

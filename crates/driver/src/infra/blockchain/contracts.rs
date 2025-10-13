@@ -15,7 +15,7 @@ pub struct Contracts {
     settlement: contracts::GPv2Settlement,
     vault_relayer: eth::ContractAddress,
     vault: contracts::BalancerV2Vault,
-    signatures: contracts::support::Signatures,
+    signatures: contracts::alloy::support::Signatures::Instance,
     weth: contracts::WETH9,
 
     /// The domain separator for settlement contract used for signing orders.
@@ -74,12 +74,13 @@ impl Contracts {
                 addresses.balances,
             ),
         );
-        let signatures = contracts::support::Signatures::at(
-            web3,
-            address_for(
-                contracts::support::Signatures::raw_contract(),
-                addresses.signatures,
-            ),
+        let signatures = contracts::alloy::support::Signatures::Instance::new(
+            addresses
+                .signatures
+                .map(|addr| addr.0.into_alloy())
+                .or_else(|| contracts::alloy::support::Signatures::deployment_address(&chain.id()))
+                .unwrap(),
+            web3.alloy.clone(),
         );
 
         let weth = contracts::WETH9::at(
@@ -141,7 +142,7 @@ impl Contracts {
         &self.settlement
     }
 
-    pub fn signatures(&self) -> &contracts::support::Signatures {
+    pub fn signatures(&self) -> &contracts::alloy::support::Signatures::Instance {
         &self.signatures
     }
 

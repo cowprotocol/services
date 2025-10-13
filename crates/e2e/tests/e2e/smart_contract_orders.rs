@@ -1,10 +1,10 @@
 use {
-    e2e::{
-        setup::{eth, safe::Safe, *},
-        tx,
-    },
+    e2e::setup::{eth, safe::Safe, *},
     ethcontract::{Bytes, H160, U256},
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    ethrpc::alloy::{
+        CallBuilderExt,
+        conversions::{IntoAlloy, IntoLegacy},
+    },
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind, OrderStatus, OrderUid},
         signature::Signature,
@@ -156,8 +156,7 @@ async fn erc1271_gas_limit(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(to_wei(1)).await;
-    let trader = contracts::test::GasHog::builder(&web3)
-        .deploy()
+    let trader = contracts::alloy::test::GasHog::Instance::deploy(web3.alloy.clone())
         .await
         .unwrap();
 
@@ -166,11 +165,17 @@ async fn erc1271_gas_limit(web3: Web3) {
         .await;
 
     // Fund trader accounts and approve relayer
-    cow.fund(trader.address(), to_wei(5)).await;
-    tx!(
-        solver.account(),
-        trader.approve(cow.address(), onchain.contracts().allowance, to_wei(10))
-    );
+    cow.fund(trader.address().into_legacy(), to_wei(5)).await;
+    trader
+        .approve(
+            cow.address().into_alloy(),
+            onchain.contracts().allowance.into_alloy(),
+            eth(10),
+        )
+        .from(solver.address().into_alloy())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     let services = Services::new(&onchain).await;
     services
@@ -195,7 +200,7 @@ async fn erc1271_gas_limit(web3: Web3) {
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         signature: Signature::Eip1271(signature.to_vec()),
-        from: Some(trader.address()),
+        from: Some(trader.address().into_legacy()),
         ..Default::default()
     };
 

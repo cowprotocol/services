@@ -71,15 +71,6 @@ include_contracts! {
 pub mod support {
     include_contracts! {
         Balances;
-        Multicall;
-        Signatures;
-    }
-}
-
-pub mod test {
-    include_contracts! {
-        Counter;
-        GasHog;
     }
 }
 
