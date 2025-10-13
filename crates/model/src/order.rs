@@ -318,25 +318,12 @@ pub struct OrderCreation {
     /// by the API.
     pub fee_amount: U256,
     /// The kind of order (i.e. sell or buy).
-    ///
-    /// * Sell orders state the owner's intent to *sell* X amount of token A in
-    /// exchange for some amount of token B (the exact amount is dependent on
-    /// token pairs, solvers, etc).
-    /// * Buy orders state the owner's intent to *buy* X amount of token A in
-    ///   exchange for some amount of token B (the exact amount is dependent on
-    ///   token pairs, solvers, etc).
-    ///
-    /// In very simple terms, when selling the owner sets the amount of tokens
-    /// going out of their pocket, when buying the owner sets the amount of
-    /// tokens coming in to their pocket.
     pub kind: OrderKind,
     /// Whether the order can be carried out in multiple smaller trades, or it
     /// must be carried out in a single trade (a.k.a. fill-or-kill).
     pub partially_fillable: bool,
-    /// Defines how tokens are transferred from the user into the settlement
-    /// contract, can be an ERC-20 transfer, drawn from the user's internal
-    /// Balancer Vault or through an ERC-20 transfer made through the Balancer
-    /// Vault.
+    /// Sell token's source — ERC20, internal vault or external vault (at the
+    /// time of writing).
     #[serde(default)]
     pub sell_token_balance: SellTokenSource,
     /// Defines how tokens are transferred back to the user, either as an ERC-20
@@ -446,6 +433,7 @@ impl OrderCreation {
     }
 }
 
+/// The order's AppData (can be an hash, the JSON body or both).
 // Note that the order of the variants is important for deserialization.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(untagged)]
@@ -859,6 +847,18 @@ impl From<app_data::OrderUid> for OrderUid {
     }
 }
 
+/// An order's kind — sell or buy.
+///
+/// * Sell orders state the owner's intent to *sell* X amount of token A in
+///   exchange for some amount of token B (the exact amount is dependent on
+///   token pairs, solvers, etc).
+/// * Buy orders state the owner's intent to *buy* X amount of token A in
+///   exchange for some amount of token B (the exact amount is dependent on
+///   token pairs, solvers, etc).
+///
+/// In very simple terms, when selling the owner sets the amount of tokens
+/// going out of their pocket, when buying the owner sets the amount of
+/// tokens coming in to their pocket.
 #[derive(Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash, EnumString)]
 #[strum(ascii_case_insensitive)]
 #[serde(rename_all = "lowercase")]
@@ -935,7 +935,12 @@ impl OrderKind {
     }
 }
 
-/// Source from which the sellAmount should be drawn upon order fulfillment
+/// Source from which the `sellAmount` should be drawn upon order fulfillment.
+///
+/// It defines how tokens are transferred from the user into the settlement
+/// contract, can be an ERC-20 transfer, drawn from the user's internal
+/// Balancer Vault or through an ERC-20 transfer made through the Balancer
+/// Vault.
 #[derive(Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash, EnumString)]
 #[strum(ascii_case_insensitive)]
 #[serde(rename_all = "snake_case")]
@@ -990,8 +995,11 @@ impl SellTokenSource {
     }
 }
 
-/// Destination for which the buyAmount should be transferred to order's
-/// receiver to upon fulfillment
+/// Destination for which the buyAmount should be transferred to the order's
+/// receiver upon fulfillment.
+///
+/// It defines how tokens are transferred back to the user, either as an ERC-20
+/// token transfer or internal Balancer Vault transfer.
 #[derive(Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash, EnumString)]
 #[strum(ascii_case_insensitive)]
 #[serde(rename_all = "snake_case")]
