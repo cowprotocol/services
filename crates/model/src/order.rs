@@ -849,13 +849,6 @@ impl From<app_data::OrderUid> for OrderUid {
 
 /// An order's kind — sell or buy.
 ///
-/// * Sell orders state the owner's intent to *sell* X amount of token A in
-///   exchange for some amount of token B (the exact amount is dependent on
-///   token pairs, solvers, etc).
-/// * Buy orders state the owner's intent to *buy* X amount of token A in
-///   exchange for some amount of token B (the exact amount is dependent on
-///   token pairs, solvers, etc).
-///
 /// In very simple terms, when selling the owner sets the amount of tokens
 /// going out of their pocket, when buying the owner sets the amount of
 /// tokens coming in to their pocket.
@@ -863,8 +856,14 @@ impl From<app_data::OrderUid> for OrderUid {
 #[strum(ascii_case_insensitive)]
 #[serde(rename_all = "lowercase")]
 pub enum OrderKind {
+    /// Buy orders state the owner's intent to *buy* X amount of token A in
+    /// exchange for some amount of token B (the exact amount is dependent on
+    /// token pairs, solvers, etc).
     #[default]
     Buy,
+    /// Sell orders state the owner's intent to *sell* X amount of token A in
+    /// exchange for some amount of token B (the exact amount is dependent on
+    /// token pairs, solvers, etc).
     Sell,
 }
 
