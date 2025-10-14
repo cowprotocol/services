@@ -487,6 +487,7 @@ crate::bindings!(
     }
 );
 crate::bindings!(CoWSwapOnchainOrders);
+crate::bindings!(ERC1271SignatureValidator);
 
 // Used in the gnosis/solvers repo for the balancer solver
 crate::bindings!(
